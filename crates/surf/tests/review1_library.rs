@@ -17,9 +17,10 @@ use surf_types::url::Url;
 fn counting() -> (impl FnMut(&str) -> Answer, Rc<Cell<usize>>) {
     let calls = Rc::new(Cell::new(0));
     let seen = Rc::clone(&calls);
-    let transport = move |_: &str| {
+    let transport = move |address: &str| {
         seen.set(seen.get() + 1);
         Answer::Response {
+            url: address.to_owned(),
             status: 200,
             media_type: "text/plain".to_owned(),
             body: Vec::new(),

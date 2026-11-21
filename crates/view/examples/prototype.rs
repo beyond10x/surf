@@ -464,9 +464,24 @@ impl Data {
     }
 
     fn event(&mut self, session: usize, at: &mut u64, name: &str, fields: &[(&str, &str)]) {
+        let fields: Vec<(&str, Option<&str>)> = fields
+            .iter()
+            .map(|(field, value)| (*field, Some(*value)))
+            .collect();
+        self.event_or_null(session, at, name, &fields);
+    }
+
+    /// An event whose fields may be absent, written `null`.
+    fn event_or_null(
+        &mut self,
+        session: usize,
+        at: &mut u64,
+        name: &str,
+        fields: &[(&str, Option<&str>)],
+    ) {
         let mut object = Object::new();
         for (field, value) in fields {
-            object = object.text(field, value);
+            object = object.maybe_text(field, *value);
         }
         let rest = Self::members(
             Object::new()
@@ -506,9 +521,33 @@ impl Data {
         self.keep(session, at, "answer", &rest);
     }
 
+    /// The `surf.agent.ActionRecorded` of the newest action of `session`.
+    fn recorded(&mut self, session: usize, at: &mut u64, url: Option<&str>) {
+        let action_id = self.identity();
+        let record = &self.sessions[session];
+        let id = record.id.clone();
+        let (sequence, command, _) = record.actions.last().cloned().unwrap_or((0, "", None));
+        let sequence = sequence.to_string();
+        self.event_or_null(
+            session,
+            at,
+            "surf.agent.ActionRecorded",
+            &[
+                ("action_id", Some(&action_id)),
+                ("session_id", Some(&id)),
+                ("sequence", Some(&sequence)),
+                ("command", Some(command)),
+                ("url", url),
+            ],
+        );
+    }
+
+    /// The four events of a real `open`, in the order of the example of `docs/view-stream.md`
+    /// (entries 2 to 5).
     fn open(&mut self, session: usize, at: &mut u64) {
         let window_id = self.sessions[session].window_id.clone();
         let tab_id = self.sessions[session].tab_id.clone();
+        let id = self.sessions[session].id.clone();
         self.action(session, at, "open", None);
         self.event(
             session,
@@ -522,11 +561,25 @@ impl Data {
             "surf.shell.TabOpened",
             &[("tab_id", &tab_id), ("window_id", &window_id)],
         );
+        self.event(
+            session,
+            at,
+            "surf.agent.SessionOpened",
+            &[
+                ("session_id", &id),
+                ("window_id", &window_id),
+                ("tab_id", &tab_id),
+            ],
+        );
+        self.recorded(session, at, None);
         self.answer(session, at, PageLine::None);
     }
 
+    /// The nine events of a real `go`, in the order of the example of `docs/view-stream.md`
+    /// (entries 8 to 16), ending with `surf.document.ParsingStarted`.
     fn go(&mut self, session: usize, page: &Page, at: &mut u64) {
         let tab_id = self.sessions[session].tab_id.clone();
+        let id = self.sessions[session].id.clone();
         let navigation_id = self.identity();
         let document_id = self.identity();
         let url = page.address;
@@ -535,11 +588,28 @@ impl Data {
         self.event(
             session,
             at,
+            "surf.agent.NavigationRequested",
+            &[("session_id", &id), ("tab_id", &tab_id), ("url", url)],
+        );
+        self.recorded(session, at, Some(url));
+        self.event(
+            session,
+            at,
             "surf.navigation.NavigationStarted",
             &[
                 ("navigation_id", &navigation_id),
                 ("tab_id", &tab_id),
                 ("url", url),
+            ],
+        );
+        self.event(
+            session,
+            at,
+            "surf.agent.SessionNavigationChanged",
+            &[
+                ("navigation_id", &navigation_id),
+                ("state", "Started"),
+                ("sessions", "1"),
             ],
         );
         self.event(
@@ -576,8 +646,18 @@ impl Data {
         self.event(
             session,
             at,
-            "surf.document.DocumentParsed",
-            &[("document_id", &document_id), ("url", url)],
+            "surf.agent.SessionNavigationChanged",
+            &[
+                ("navigation_id", &navigation_id),
+                ("state", "Committed"),
+                ("sessions", "1"),
+            ],
+        );
+        self.event(
+            session,
+            at,
+            "surf.document.ParsingStarted",
+            &[("document_id", &document_id), ("body", &body)],
         );
         let line = PageLine::Loaded {
             status: 200,

@@ -1,6 +1,6 @@
 // The session list: state, address, title, time since the last action; a click selects.
 
-import { attribute, clear, element } from "./dom.js";
+import { attribute, clear, element, text } from "./dom.js";
 
 export function since(then, now) {
   if (then === null || then === undefined) {
@@ -65,6 +65,6 @@ export function renderSessions(list, summaries, selectedId, onSelect, now = Date
 export function tick(list, now = Date.now()) {
   for (const node of list.querySelectorAll(".since")) {
     const at = node.getAttribute("data-at");
-    node.textContent = since(at === "" ? null : Number(at), now);
+    text(node, since(at === "" ? null : Number(at), now));
   }
 }

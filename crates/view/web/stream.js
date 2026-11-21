@@ -1,21 +1,20 @@
 // The token, the API requests and the event stream of docs/view-stream.md.
 //
 // The token arrives in the address's fragment, is kept in sessionStorage and removed from the
-// address. /events is read with fetch and a stream reader, because EventSource sends no
-// Authorization header.
+// address; a fragment that is not a token (the selection, #session=<id>&at=<sequence>) is kept.
+// /events is read with fetch and a stream reader, because EventSource sends no Authorization
+// header.
 
 const KEY = "surf-view-token";
 const FIRST_DELAY = 500;
 const LAST_DELAY = 5000;
 
-// Moves a token from the fragment into sessionStorage and removes the fragment; returns the
-// token kept, or null.
+// Moves a token from the fragment into sessionStorage and removes it from the address; any
+// other fragment stays. Returns the token kept, or null.
 export function takeToken() {
   const fragment = window.location.hash.replace(/^#/, "");
   if (/^[0-9a-f]{64}$/.test(fragment)) {
     window.sessionStorage.setItem(KEY, fragment);
-  }
-  if (window.location.hash) {
     window.history.replaceState(null, "", window.location.pathname);
   }
   return window.sessionStorage.getItem(KEY);
@@ -26,6 +25,12 @@ export class Refused extends Error {
     super("the view answered " + status);
     this.status = status;
   }
+}
+
+// Whether `error` is the view refusing the token (401) or the request (403): asking again with
+// the same token cannot help, and the program now on that port may not be surfd.
+export function refusal(error) {
+  return error instanceof Refused && (error.status === 401 || error.status === 403);
 }
 
 // GET of a route under /api/, with the token; the parsed JSON body.
@@ -71,7 +76,8 @@ function parseBlock(lines) {
 // only, so one sent before this stream opened is not replayed), handlers.event({id, name,
 // data}) for each entry, session and reset event, handlers.alive() on a comment line, and
 // handlers.closed() when a stream ends. A new stream follows after a delay that grows to 5 s,
-// with Last-Event-ID set to the last id read.
+// with Last-Event-ID set to the last id read. A stream answered 401 or 403 is not asked again:
+// following stops and handlers.refused(error) is called instead of handlers.closed().
 export function follow(token, from, handlers) {
   let last = from;
   let delay = FIRST_DELAY;
@@ -140,8 +146,19 @@ export function follow(token, from, handlers) {
       first = false;
       try {
         await once();
+        if (stopped) {
+          return;
+        }
         handlers.closed(null);
       } catch (error) {
+        if (stopped) {
+          return;
+        }
+        if (refusal(error)) {
+          stopped = true;
+          handlers.refused(error);
+          return;
+        }
         handlers.closed(error);
       }
     }

@@ -23,6 +23,10 @@ includes:
     taskfile: taskfiles/view-stream-check.yml
     flatten: true
     optional: true
+  view-test:
+    taskfile: taskfiles/view-test.yml
+    flatten: true
+    optional: true
 
 vars:
   REFUSALS_MAX: 28
@@ -294,4 +298,5 @@ tasks:
       - task: build
       - task: test
       - task: view-stream-check
+      - task: view-test
       - task: html-conformance

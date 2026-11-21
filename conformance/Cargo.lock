@@ -435,6 +435,9 @@ dependencies = [
 [[package]]
 name = "surf-fetch"
 version = "0.1.0"
+dependencies = [
+ "surf-url",
+]
 
 [[package]]
 name = "surf-ports"
@@ -465,6 +468,10 @@ dependencies = [
 [[package]]
 name = "surf-types"
 version = "1.0.0"
+
+[[package]]
+name = "surf-url"
+version = "0.1.0"
 
 [[package]]
 name = "syn"

@@ -1,5 +1,5 @@
 // What the page holds: the sessions in list order, the entries of the sessions it loaded, and
-// the selection. No DOM here.
+// the selection: the selected session and the playhead over its actions. No DOM here.
 
 const state = {
   newest: 0,
@@ -7,7 +7,17 @@ const state = {
   sessions: new Map(),
   entries: new Map(),
   numbers: new Map(),
+  // Per loaded session, what its last detail said of dropped entries: {dropped, log_dropped}.
+  drops: new Map(),
+  // Per session whose detail has been asked for and has not answered: {asks, entries}, the
+  // stream entries read meanwhile, which setDetail merges. Only a selected session's detail is
+  // asked for, so nothing is held for a session nobody selected.
+  awaited: new Map(),
   selected: null,
+  // Latest on: the playhead follows the newest action. Off: it stays on the action entry whose
+  // number is `playhead`.
+  latest: true,
+  playhead: null,
 };
 
 export function newest() {
@@ -44,8 +54,13 @@ export function setSessions(list) {
     }),
   );
   setNewest(list.newest);
+  for (const id of [...state.awaited.keys()]) {
+    if (!state.sessions.has(id)) {
+      state.awaited.delete(id);
+    }
+  }
   if (state.selected !== null && !state.sessions.has(state.selected)) {
-    state.selected = null;
+    select(null);
   }
 }
 
@@ -69,43 +84,137 @@ export function session(id) {
   return state.sessions.get(id) || null;
 }
 
+// Selects a session; its playhead starts with Latest on.
 export function select(id) {
   state.selected = id;
+  state.latest = true;
+  state.playhead = null;
 }
 
 export function selected() {
   return state.selected;
 }
 
+export function latest() {
+  return state.latest;
+}
+
+// Latest on: the playhead moves to the newest action and follows it.
+export function followLatest() {
+  state.latest = true;
+  state.playhead = null;
+}
+
+// The playhead on the action whose action entry has number `number`; Latest off.
+export function setPlayhead(number) {
+  state.latest = false;
+  state.playhead = number;
+}
+
+// The index of the playhead in `list` (actions() of the selected session), or -1 for none.
+// With Latest on, the newest action. With Latest off, when the action at the playhead is no
+// longer held, the playhead moves once to the oldest action that is held (the nearest to where
+// it was) and Latest stays off; with no action held at all there is no playhead.
+export function playheadIndex(list) {
+  if (list.length === 0) {
+    return -1;
+  }
+  if (state.latest) {
+    return list.length - 1;
+  }
+  const at = list.findIndex((action) => action.action.number === state.playhead);
+  if (at >= 0) {
+    return at;
+  }
+  state.playhead = list[0].action.number;
+  return 0;
+}
+
+// Moves the playhead `step` actions (-1 or 1) and turns Latest off; at either end it does
+// nothing. Whether it moved.
+export function stepPlayhead(list, step) {
+  const at = playheadIndex(list);
+  const to = at + step;
+  if (at < 0 || to < 0 || to >= list.length) {
+    return false;
+  }
+  setPlayhead(list[to].action.number);
+  return true;
+}
+
+// The detail of the session `id` is asked for: until it answers, the stream entries of that
+// session are held (addEntry). Returns the ask, for giveUp.
+export function expectDetail(id) {
+  let ask = state.awaited.get(id);
+  if (!ask) {
+    ask = { asks: 0, entries: [] };
+    state.awaited.set(id, ask);
+  }
+  ask.asks += 1;
+  return { id, ask };
+}
+
+// A detail asked for by expectDetail did not answer: what was held for it is given up once no
+// other ask of that session is waiting.
+export function giveUp(asked) {
+  asked.ask.asks -= 1;
+  if (asked.ask.asks <= 0 && state.awaited.get(asked.id) === asked.ask) {
+    state.awaited.delete(asked.id);
+  }
+}
+
 // The detail of /api/sessions/<id>: its summary and its entries. Entries already held above the
-// detail's newest are kept, so that a stream entry read while the detail loaded is not lost.
+// detail's newest are kept, so that a stream entry read while the detail loaded is not lost:
+// those of a loaded session and those held while its detail was asked for, each number once.
 export function setDetail(detail) {
   const id = detail.session.id;
   putSession(detail.session);
-  const held = state.entries.get(id) || [];
+  const held = (state.entries.get(id) || []).concat(state.awaited.has(id) ? state.awaited.get(id).entries : []);
+  state.awaited.delete(id);
   const fresh = detail.entries.slice();
   const last = fresh.length ? fresh[fresh.length - 1].number : 0;
+  const numbers = new Set(fresh.map((entry) => entry.number));
+  let sort = false;
   for (const entry of held) {
-    if (entry.number > last) {
+    if (entry.number > last && !numbers.has(entry.number)) {
+      sort = sort || (fresh.length > 0 && fresh[fresh.length - 1].number > entry.number);
+      numbers.add(entry.number);
       fresh.push(entry);
     }
   }
+  if (sort) {
+    fresh.sort((a, b) => a.number - b.number);
+  }
   state.entries.set(id, fresh);
-  state.numbers.set(id, new Set(fresh.map((entry) => entry.number)));
+  state.numbers.set(id, numbers);
+  state.drops.set(id, { dropped: detail.dropped || 0, log_dropped: detail.log_dropped === true });
   for (const entry of fresh) {
     setNewest(entry.number);
   }
+}
+
+// What the last detail of the session said of dropped entries.
+export function drops(id) {
+  return state.drops.get(id) || { dropped: 0, log_dropped: false };
 }
 
 export function loaded(id) {
   return state.entries.has(id);
 }
 
-// A stream entry. False when its session is not loaded or its number is held already.
+// A stream entry. False when its session is not loaded or its number is held already; an entry
+// of a session whose detail is asked for and has not answered is held for setDetail.
 export function addEntry(entry) {
   setNewest(entry.number);
   const numbers = state.numbers.get(entry.session);
-  if (!numbers || numbers.has(entry.number)) {
+  if (!numbers) {
+    const ask = state.awaited.get(entry.session);
+    if (ask) {
+      ask.entries.push(entry);
+    }
+    return false;
+  }
+  if (numbers.has(entry.number)) {
     return false;
   }
   numbers.add(entry.number);
@@ -121,10 +230,13 @@ export function entries(id) {
   return state.entries.get(id) || [];
 }
 
-// Everything loaded is dropped; the list and the selected session are loaded again after it.
+// Everything loaded is dropped, and what was held for a detail not yet answered; the list and
+// the selected session are loaded again after it.
 export function forget() {
   state.entries = new Map();
   state.numbers = new Map();
+  state.drops = new Map();
+  state.awaited = new Map();
 }
 
 // The entries of a session as actions: each action entry with the events after it and the
@@ -146,13 +258,14 @@ export function actions(id) {
   return result;
 }
 
-// The page line of the session's newest answer entry, or null when none is held.
-export function pageLine(id) {
-  const list = entries(id);
-  for (let at = list.length - 1; at >= 0; at -= 1) {
-    if (list[at].kind === "answer") {
-      return list[at].page;
-    }
+// The page line at the playhead of the session: its action's answer entry's page line, the
+// word "running" when that answer is not held, or null when the session has no action held.
+export function pageAt(id) {
+  const list = actions(id);
+  const at = playheadIndex(list);
+  if (at < 0) {
+    return null;
   }
-  return null;
+  const answer = list[at].answer;
+  return answer ? answer.page : "running";
 }

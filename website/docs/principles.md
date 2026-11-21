@@ -18,7 +18,8 @@ that.
 4. **No third-party code in what ships.** The Rust standard library and the operating system are
    allowed. The checks fail if the lock file lists an outside package. One exception is planned:
    audited cryptographic primitives for TLS.
-5. **No unsafe code.** Every hand-written crate forbids it.
+5. **No unsafe code.** Every hand-written crate forbids it. The one exception is a test: a
+   counting allocator that measures what a fetch holds.
 6. **Text from the web stays text.** Anything from a page, a server or an address is escaped
    before it is printed, so a page cannot forge a line of surf's output.
 7. **A passing test must be able to fail.** Tests are tried against planted defects. A storage

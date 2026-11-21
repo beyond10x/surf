@@ -19,8 +19,9 @@ const ID: &str = "0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b";
 const PORT: u16 = 8000;
 
 /// A transport that answers every address with status 200 and `text/html`.
-fn pages(_: &str) -> surf::Answer {
+fn pages(address: &str) -> surf::Answer {
     surf::Answer::Response {
+        url: address.to_string(),
         status: 200,
         media_type: "text/html".to_string(),
         body: b"<p>a page</p>".to_vec(),
@@ -259,9 +260,13 @@ fn path_shows_the_last_five_actions() {
 
 #[test]
 fn long_address_still_gets_an_answer() {
-    // Through the wire an address fits the record: a request is at most 64 KiB and quotes it the
-    // same way. The core takes requests that never crossed the wire (the scenario runner), so
-    // its address can be longer than the record holds.
+    // An address asked through the wire comes to about the record's limit at most: a request is
+    // at most 64 KiB and quotes it the same way. The address of a loaded page is not bound by
+    // the request: after a redirect it is the address the response came from, up to
+    // surf_fetch::MAX_ADDRESS_BYTES before quoting and up to four times that after, which a
+    // server can make too long for the record (case 24 of tests/redirect.rs). Here the core
+    // takes a request that never crossed the wire (as the scenario runner does), whose address
+    // is longer than the record holds.
     let address = format!("http://127.0.0.1:8000/{}", "\u{e9}".repeat(20_000));
     let go = Request {
         command: "go".to_string(),

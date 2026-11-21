@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T16:32:39Z",
+  "actor": "human:operator",
+  "artifact": "story:html-character-references",
+  "kind": "story",
+  "revision": 20,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the coordinator's run of the packages surf-html and surf-html-conformance with warnings denied, of the task html-conformance and of --list-failing charref at the unit's change (909c46a), and slot task check in the runner's form on wave/a7-redirects-charrefs-view at c09302d",
+    "reference": "exit 0; tag charref 4739/4739/4739 (2060 before), tag markup 1979/1979/1979, tag text 328/328/328, tag encoding 75/82/82 in crates/html-conformance/expected/; --list-failing charref prints no line (2679 before); 15 unit tests of surf-html, 27 tests of the harness crate, tests/entities_table.rs holds the committed table against the binary's text and the notice; entities.json vendored with 2231 names; the story named nine states 13.2.5.72 to 13.2.5.80, the standard as fetched on 2026-11-21 has eight, 13.2.5.77 to 13.2.5.84, and the body is corrected; 7 planted defects each red (the unit's runs); verdict VERIFIED"
+  }
+}

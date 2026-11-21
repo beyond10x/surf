@@ -122,7 +122,8 @@ above, and the list of standards itself was written from memory.
   a missing include must not stop them. `check` still fails when an included task is missing.
   `taskfiles/cli.yml` holds the task `cli`, `taskfiles/site.yml` the task `site-build`,
   `taskfiles/html-conformance.yml` the task `html-conformance`, `taskfiles/view-stream-check.yml`
-  the task `view-stream-check`, and `taskfiles/release.yml` the task `release-smoke`
+  the task `view-stream-check`, `taskfiles/view-test.yml` the task `view-test`, and
+  `taskfiles/release.yml` the task `release-smoke`
   (`DIR=<unpacked archive>`, optional `TARGET`), which runs `taskfiles/release-smoke.sh`; the
   release workflow calls that script with `sh`.
 - `spec/scenarios/*.yaml`: twelve authored scenario files (`ess-scenario/6`), for what synthesis
@@ -174,8 +175,16 @@ above, and the list of standards itself was written from memory.
   - `crates/url` (`surf-url`): the WHATWG URL parser surf resolves addresses with, held to the
     web-platform-tests URL data vendored under `tests/data/`; no IDNA. No dependency.
   - `crates/fetch` (`surf-fetch`): fetches an `http:` address with the standard library only and
-    returns status, media type and body, or `Unreachable`, `UnsupportedScheme` or
-    `MalformedResponse`. No dependency. Its documentation lists what it does not do.
+    returns status, media type and body, or `Unreachable`, `UnsupportedScheme`,
+    `MalformedResponse` or `TooManyRedirects`. Its documentation lists what it does not do.
+    Since wave 7 it follows up to 20 redirects (301, 302, 303, 307, 308 with a `Location`, for
+    `GET`) inside one fetch, returns the address it ended at (`Response.url`, at most 64 KiB) and
+    `TooManyRedirects` for a redirect after the twentieth; a redirect to an address that is not
+    `http:` ends as `UnsupportedScheme`. The crate documentation's section "Memory" states what
+    a fetch holds: 16,917,505 bytes at the defaults while a body is read; no bound is stated
+    while a head is read. Tests of the redirects: `redirects` 20 and
+    `adversary_redirect_memory` 2. That second file holds the only `unsafe` of the repository,
+    a counting allocator, test only; no file under a `src/` holds any. Depends on `surf-url`.
   - `crates/ports` (`surf-ports`): in-memory storage and version 4 identities for the generated
     components, one ports type per component. `AgentPorts<R = OsRandom>` stores `Session` and
     `Action`, assigns a version 4 `ActionId` from its random source (`with_source`,
@@ -196,9 +205,14 @@ above, and the list of standards itself was written from memory.
     body stays. Since wave 6 `Browser::held` also counts the body `ParsingStarted` carries, so a
     committed HTML page holds its body five times until it is delivered (`tests/held.rs`,
     `tests/forget_delivered.rs`). No parsing is added: a real page's document stays `Parsing`.
+    Since wave 7 `surf::Answer::Response` carries `url`, the address the fetch ended at, and
+    `Browser::run` delivers it as the response's address; a redirect adds no event, since the
+    transport is called once per `RequestStarted`.
     Depends on the generated crates, `surf-ports` and `surf-fetch`.
   - `crates/surf-cli` (`surf-cli`): the binary `surf` and its five tests, moved out of
-    `crates/surf`. It loads one `http:` address, with `surf-fetch` as the transport. A package of
+    `crates/surf`, and since wave 7 `redirects` 2 (the `navigation` line holds the address the
+    fetch ended at, the `request` line the address asked for). It loads one `http:` address,
+    with `surf-fetch` as the transport. A package of
     its own so that it can depend on crates that depend on the `surf` library. Depends on `surf`,
     `surf-fetch` and `surf-ports`. The release workflow builds and versions `surf-cli`
     (`crates/surf-cli/Cargo.toml`).
@@ -247,9 +261,14 @@ above, and the list of standards itself was written from memory.
     `Browser::forget_delivered` and holds no response body. Since wave 5 each answer to `surfd`
     carries the entries of its request: each action, the events the system published for it,
     and the answer without its token line (`src/entries.rs`); since wave 6 the entries of the
-    three document events too. 43 tests: `adversary_events` 1, `adversary_view` 1, `built` 9,
-    `core` 9, `e2e` 1 (runs the three built binaries, or those in `SURF_BIN_DIR`), `events` 16,
-    `memory` 1 and `view` 5 (the live view of `surfd` over the real session).
+    three document events too. Since wave 7 a `go` or an `open` follows redirects: the `page`
+    line holds the address the fetch ended at and the `did go` line the address asked for; a
+    redirect adds no event and no entry. A session whose page address does not fit the status
+    record (a server can cause that with a long redirect target) is listed by `surfd` without
+    its address; the crate documentation writes out the bounds with a quoted address of at
+    most four times its length plus two bytes. 45 tests: `adversary_events` 1,
+    `adversary_view` 1, `built` 9, `core` 9, `e2e` 1 (runs the three built binaries, or those in `SURF_BIN_DIR`), `events` 16,
+    `memory` 1, `redirect` 2 and `view` 5 (the live view of `surfd` over the real session).
     `cargo clippy -p surf-session` needs `--no-deps`: the generated `surf-types` fails clippy.
     Depends on the `surf` library, `surf-ports`, `surf-fetch`, `surf-answer`, `surf-secret`, the
     generated `surf-types`, and on `surf-agent` and `surfd` (the packages of the other two
@@ -257,18 +276,36 @@ above, and the list of standards itself was written from memory.
   - `crates/view` (`surf-view`): the live view's HTTP server, standard library only: `GET` only, a
     fixed route table, the `Host` and view-token checks, and server-sent events with a bound per
     reader. `docs/view-stream.md` is what it answers. `web/` holds the page's nine files (no
-    framework, no build step, nothing from another origin, no inline script or style, every value
-    written with `textContent`), compiled in by `page_files()` in `src/assets.rs`; the page fits
-    360 px to 1,400 px. The example `prototype` serves them over three scripted sessions; it
-    shows example data only. Since wave 6 the crate has the JSON model of
-    `docs/view-stream.md` (`src/model.rs`, no member for a token) and its one writer
-    (`src/json.rs`, `to_json`), and `surfd` serves it over real sessions; `story:view-first-page`
-    completes the page's files for them. `Source::read_newest` gives the newest number and a
+    framework, no build step, nothing from another origin, no inline script or style), compiled
+    in by `page_files()` in `src/assets.rs`; the page fits 360 px to 1,400 px. The example
+    `prototype` serves them over three scripted sessions; it shows example data only, and since
+    wave 7 publishes the four events of a real `open` and the nine of a real `go`. Since wave 6
+    the crate has the JSON model of `docs/view-stream.md` (`src/model.rs`, no member for a
+    token) and its one writer (`src/json.rs`, `to_json`), and `surfd` serves it over real
+    sessions; since wave 7 the page shows them. `Source::read_newest` gives the newest number and a
     reader from it in one call, so a stream always answers. A stream's queue holds at most
     `Limits::queue_entries` (256) entries and `Limits::queue_bytes` (1 MiB), or one larger frame
     alone: such a frame waits until the queue is empty and is then written alone. 61 tests
     (`adversary_view` 2, `http` 33, `json` 10, `prototype` 8, `stream_bounds` 6, `web` 2).
     Depends on `surf-secret`.
+    - `crates/view/web/`: the live view's page, plain HTML, CSS and JavaScript modules compiled
+      into `surfd`; the selection in the address's fragment (`#session=<id>&at=<sequence>`).
+      Since wave 7 it has a playhead over a session's actions: each segment of the timeline can
+      be selected, Latest follows the newest action and, when off, a marker counts the newer
+      ones (`1 newer`); ArrowLeft and ArrowRight move the playhead; the page line is that of
+      the action at the playhead; the marks are grouped by domain; dropped entries are a gap
+      in front of the first segment. With Latest off and its action dropped by the log's
+      bound, the playhead moves once to the oldest action held. After a 401 or 403 the page
+      stops the stream, asks nothing again and reads `offline`. A value from a session is set
+      only as `textContent` or as the value of an attribute of the list in `dom.js`, and
+      `dom.js` is the only module that sets an attribute (it throws for any other name).
+  - `crates/view-fixture` (`surf-view-fixture`): test tooling, not shipped: a binary that
+    starts a page server, `surfd` in process and sessions for the page tests, under a
+    directory of its own in `$XDG_RUNTIME_DIR`, driven by tab-separated commands on its
+    standard input (`open`, `agent`, `kill`, `stop-surfd`, `cut`, `mend`). `kill` acts only
+    for a session the fixture opened and only on a `surf-session` whose environment holds the
+    fixture's own `XDG_RUNTIME_DIR`. 2 tests (`fixture` 1, `adversary_commands` 1). Depends on
+    `surfd` and `surf-view`.
   - `crates/html` (`surf-html`): the HTML parser. Since wave 5 it decides a document's encoding
     by the sniffing algorithm and decodes UTF-8, UTF-16LE, UTF-16BE, windows-1252 and
     replacement (`src/encoding.rs`; the other 35 encodings of the label table are decoded as
@@ -277,17 +314,28 @@ above, and the list of standards itself was written from memory.
     Since wave 6 the tokenizer also runs the RCDATA, RAWTEXT, script data and PLAINTEXT states
     and the less-than sign, end tag and script data escape states they lead to, started in any
     `State`; `Tokenizer::new` takes the last start tag. It runs from one state to the end of the
-    input: no tree builder switches its state between tokens. A character reference is not
-    read (`&` is a character), and `parse_document` and `parse_fragment` return a tree that
-    holds only its root; the section "State" of `src/lib.rs` says it module by module. 25
-    tests: 12 unit tests and 13 in `tests/encoding.rs`.
+    input: no tree builder switches its state between tokens. Since wave 7 the tokenizer reads
+    named and numeric character references in data, in RCDATA and in attribute values (the
+    eight states 13.2.5.77 to 13.2.5.84 of the standard as fetched on 2026-11-21):
+    `src/charref.rs`, and the table `src/charref_table.rs` (2231 names, the BSD 3-Clause notice
+    in its header), written by the binary `entities-table` of `surf-html-conformance` from the
+    vendored `entities.json`, never edited by hand, checked by that crate's
+    `tests/entities_table.rs`. `parse_document` and `parse_fragment` return a tree that holds
+    only its root; the section "State" of `src/lib.rs` says it module by module. 28 tests: 15
+    unit tests and 13 in `tests/encoding.rs`.
   - `crates/html-conformance` (`surf-html-conformance`): the vendored html5lib-tests (commit
     `c5495c5`, 19 files, 7,134 cases, MIT) and web-platform-tests parser data (commit `13f8051`,
     62 files, 1,973 cases, 3-Clause BSD) under `data/`, each source with a `SOURCE` file of
     checksums, and a harness that prints the cases that exist, run and pass per file, per tag and
     in total. `cargo run -p surf-html-conformance` prints
-    `html-conformance: 9107 cases, 9095 run, 4442 passed` after wave 6. Nobody edits a
+    `html-conformance: 9107 cases, 9095 run, 7121 passed` after wave 7. Nobody edits a
     file under `data/`; `data/.gitattributes` (`* -text`) keeps the CR bytes of the data.
+    Since wave 7 `data/whatwg/entities.json` (the HTML Standard's, 2231 names, CC BY 4.0, with
+    its `SOURCE` file) is vendored too, and the crate has a second binary, `entities-table`,
+    which writes `crates/html/src/charref_table.rs` from it; `Cargo.toml` names `default-run`,
+    so `cargo run -p surf-html-conformance` still runs the harness. The sections
+    `tokenization` and `named-character-references` stay `incomplete`: each has tests that
+    need a script engine.
     Since wave 4 `expected/` holds, for three groups (tokenizer, tree construction, encoding),
     the counts per file, per tag and per section of the HTML Standard, and
     `surf-html-conformance --check --base <revision>` holds a run to them. It fails on a case
@@ -298,8 +346,12 @@ above, and the list of standards itself was written from memory.
     `raise:` line for it. A parser story raises the numbers in the change that makes the cases
     pass. The task `html-conformance` (`taskfiles/html-conformance.yml`) runs it and is part of
     `task check`; `.github/workflows/check.yml` fetches the full history and sets
-    `HTML_BASE: origin/main`. 25 tests in `surf-html-conformance` (`check` 17, `inventory` 4,
-    `readers` 2, `tree_format` 2).
+    `HTML_BASE: origin/main`. 27 tests in `surf-html-conformance` (`check` 17,
+    `entities_table` 2, `inventory` 4, `readers` 2, `tree_format` 2).
+- `view-tests/`: the Playwright tests of the live view's page (`@playwright/test` 1.65.0,
+  Chromium's headless shell, a committed `package-lock.json`), each case with its own
+  `surf-view-fixture`: 24 cases, 18 in `tests/first-page.spec.mjs` and 6 in
+  `tests/adversary-page.spec.mjs`. Node and Playwright are gate tooling only.
 - `conformance/` (`surf-conformance`): runs `.out/suite.json` against the Rust system in process,
   with the runner of `ess-conformance`. A Cargo workspace of its own, outside the root one, with
   its own committed `Cargo.lock` and its own `target/`. It depends on `surf`, `surf-ports` and the
@@ -350,9 +402,8 @@ A response names the address it came from, after the last redirect (`DeliverResp
 `ResponseReceived.url`): the navigation commits there, the document is parsed at it, and the
 session shows it. The request keeps the address asked for. `surf.net.FailureReason` has the
 variant `TooManyRedirects`: a redirect that arrives after 20 followed ones, the wording of the
-Fetch Standard. This is model text only: the transport (`crates/fetch`) does not follow
-redirects yet (`story:agent-fetch-redirects`), so today a redirect status is delivered as the
-response, with the address asked for.
+Fetch Standard. Since wave 7 the transport (`crates/fetch`) follows redirects inside one
+fetch and returns the address it ended at; a redirect adds no event.
 
 The agent's session: `Go` publishes `NavigationRequested`, which invokes `Navigate`.
 `NavigationStarted` also invokes `NoteNavigationStarted`; `NavigationCommitted` invokes
@@ -380,7 +431,8 @@ agent target has code (below). Since wave 5 `surfd` keeps in memory the entries 
 sends with its answers, and `surf-html` decides a document's encoding and tokenizes its markup.
 Since wave 6 `surfd` serves those entries as the live view's stream on 127.0.0.1, the tokenizer
 runs the text states too, and the specification holds the document's elements, which no parser
-fills yet.
+fills yet. Since wave 7 `surf-fetch` follows redirects, the tokenizer reads character
+references, and the live view's page shows real sessions, tested in a browser by `view-tests/`.
 
 - First target, chosen by the operator on 2026-11-20: Rust, all six components in one process (five
   until wave 2 added `agent`), a headless command line. No isolation in this target.
@@ -556,15 +608,14 @@ the others were written to a scratch directory and not compiled:
   release `0.2.0` that ships `surf`, `surf-agent`, `surfd` and `surf-session` (the agent
   binaries for Linux only at first). Work then moves to the script engine, which is its own
   repository. The waves after 4 stay in the plan; they are planned and not scheduled.
-- Present state: wave 6 is delivered (6 of 22); release `0.2.0` follows wave 4 (the releases
+- Present state: wave 7 is delivered (7 of 22); release `0.2.0` follows wave 4 (the releases
   are listed at https://github.com/beyond10x/surf/releases). The session `host-operator`
   ordered the continuation after the checkpoint on 2026-11-21, for the operator: "continue as
-  its `AGENTS.md` says". The next is wave 7 of
-  `docs/plan/agent-waves.md` (`agent-fetch-redirects`, `html-character-references`,
-  `view-first-page`). The stories accepted behind the planned waves are listed in
+  its `AGENTS.md` says". The next is wave 8 of
+  `docs/plan/agent-waves.md` (`agent-request-body-spec`, `html-tree-body`,
+  `view-detail-panel`). The stories accepted behind the planned waves are listed in
   that file, in "Accepted on 2026-11-21, behind the planned waves". Open for the next steps:
-  the live view's page on real sessions, the HTML parser on real pages, TLS, and following
-  redirects in `crates/fetch` (`story:agent-fetch-redirects`).
+  the HTML parser on real pages, the live view's detail panel, and TLS.
 - Branches: `wave/<n>-<name>` for a wave, `impl/<story-slug>` for a unit. Every checkout is a
   managed worktree (`worktree create`); nothing is edited in the primary checkout during a wave.
 - An implementor leaves its changes uncommitted; the coordinator commits, merges and owns every
@@ -596,8 +647,18 @@ Run everything through the build pool: `slot task <name>`.
   compares the two runs' suite and total (`conform-totals`), checks `generated/rust/` against
   `spec/`, checks the root `Cargo.lock` for third-party packages (`lock-check`), then builds and
   tests the root workspace with warnings denied, checks the live view's event names
-  (`view-stream-check`, after `test`), and last holds the HTML conformance counts
-  (`html-conformance`). Each step's failure fails it.
+  (`view-stream-check`, after `test`), runs the page tests in a browser (`view-test`, after
+  `view-stream-check`), and last holds the HTML conformance counts (`html-conformance`). Each
+  step's failure fails it. Because of `view-test`, `task check` needs Node and Chromium's
+  headless shell on the machine (below); the forge's workflow installs Node 22 and the shell
+  before it.
+- `task view-test`: the page tests in a browser (`taskfiles/view-test.yml`). It builds
+  `surf-agent`, `surf-session` and `surf-view-fixture`, installs `view-tests/` from its
+  `package-lock.json` with `npm ci`, and runs `npx playwright test --workers=2` in
+  `view-tests/`. It installs no browser: Chromium's headless shell of the revision
+  `@playwright/test` names must be in the Playwright cache. On a new machine, once:
+  `npm --prefix view-tests ci`, then `npx --prefix view-tests playwright install --only-shell
+  chromium`.
 - `task view-stream-check`: the event names of `docs/view-stream.md` against the AsyncAPI
   projection of `spec/` (`taskfiles/view-stream-check.yml`). It fails, naming each, for a name
   that is no message of the projection; a new event whose name nobody adds to the document
@@ -642,11 +703,12 @@ Run everything through the build pool: `slot task <name>`.
   `SURF_TOKEN`, then `target/debug/surf-agent go <url>`, `look` and `close`. The three binaries
   (`surf-agent`, `surfd`, `surf-session`) find each other in `target/debug/`, because each
   starts the next from the directory of its own executable. `XDG_RUNTIME_DIR` must be set
-  (the session's socket lives under it). Two notes: only `http:` loads and a redirect is not
-  followed (a redirect status is delivered as the response); and an answer shows no page content
-  (status, media type and address only), because no page is parsed yet. While `surfd` runs,
-  `$XDG_RUNTIME_DIR/surf/view-url` holds the live view's address and token
-  (`http://127.0.0.1:<port>/#<token>`); `docs/view-stream.md` gives its routes.
+  (the session's socket lives under it). Two notes: only `http:` loads (a redirect is followed
+  inside the fetch, and one to `https:` ends as `UnsupportedScheme`); and an answer shows no
+  page content (status, media type and address only), because no page is parsed yet. While
+  `surfd` runs, `$XDG_RUNTIME_DIR/surf/view-url` holds the live view's address and token
+  (`http://127.0.0.1:<port>/#<token>`); open it in a browser on the same machine to see the
+  sessions. `docs/view-stream.md` gives its routes.
 - `cargo run -p surf-view --example prototype`: serve the live view's page over three scripted
   sessions (open, closed, died) and print one address; open it in a browser on the same machine.
   It shows example data only.
@@ -668,7 +730,7 @@ Run everything through the build pool: `slot task <name>`.
 
 ## The gate's numbers
 
-On 2026-11-21 with ess 0.96.0, after wave 6 of the agent interface plan: `surf v1 — 9 file(s),
+On 2026-11-21 with ess 0.96.0, after wave 7 of the agent interface plan: `surf v1 — 9 file(s),
 12 scenario(s), valid` and `93 scenario(s) (12 authored), 28 refusal(s)`. Against the
 interpreter: `93 scenarios: 93 passed, 0 failed, 0 error, 0 unsupported`. Against the Rust system
 (`conform-rust`): `93 scenarios: 93 passed, 0 failed, 0 error, 0 unsupported`. `conform-totals`:
@@ -679,16 +741,20 @@ coverage inventory (`coverage.knowledge: unknown`), and ess 0.96.0 never qualifi
 unknown coverage. The gate reads the counts. The planted defect, a `Navigation` storage that
 drops every `put`, fails 33 of the 93. The crate's tests: `6 test suites: 27 passed`.
 `generated-check`: `generated/rust matches spec/ (30 artifact(s) and .ess-output)`. `cli`:
-`cli/surf-agent.yaml — valid CLI presentation binding`. `lock-check`: `Cargo.lock: 21 package(s),
-none from outside this repository`. The root workspace: `109 test suites: 453 passed, 0 failed,
+`cli/surf-agent.yaml — valid CLI presentation binding`. `lock-check`: `Cargo.lock: 22 package(s),
+none from outside this repository`. The root workspace: `118 test suites: 486 passed, 0 failed,
 0 ignored`. In it, `surf-url` prints `urltestdata: 904 cases, 872 run, 872 passed, 32 skipped`;
 the 32 are hosts outside ASCII, listed in `crates/url/tests/data/SKIPPED`. `view-stream-check`:
-`view-stream-check: 19 event name(s), each a message of the AsyncAPI projection`.
-`html-conformance`, the last step of `check`: `html-conformance: 9107 cases, 9095 run, 4442
-passed`, with `tag markup 1979/1979/1979`, `tag text 328/328/328`, `tag charref
-2060/4739/4739` and `tag encoding 75/82/82`. Before wave 6 these were 9 authored scenarios, 83
-scenarios, 27 refusals and the suite `sha256:4d9ad0c3…`, 102 suites, 407 passed, 4164 passed
-cases, `tag text 57/328/328` and `tag charref 2053/4739/4739`, and `check` had no
+`view-stream-check: 19 event name(s), each a message of the AsyncAPI projection`. `view-test`:
+`24 passed (14.6s)`; 12.9 s of it are the case that waits to see that a refused token is not
+sent again. `html-conformance`, the last step of `check`: `html-conformance: 9107 cases, 9095
+run, 7121 passed` (75 encoding cases and 7,046 tokenizer cases), with `tag markup
+1979/1979/1979`, `tag text 328/328/328`, `tag charref 4739/4739/4739` and `tag encoding
+75/82/82`. Before wave 7 these were 21 packages, 109 suites, 453 passed, 4442 passed cases
+and `tag charref 2060/4739/4739`, and `check` had no `view-test`; the scenarios, the refusals,
+the suite's digest and the 30 artifacts did not change. Before wave 6 these were 9 authored
+scenarios, 83 scenarios, 27 refusals and the suite `sha256:4d9ad0c3…`, 102 suites, 407 passed,
+4164 passed cases, `tag text 57/328/328` and `tag charref 2053/4739/4739`, and `check` had no
 `view-stream-check`; the 21 packages and the 30 artifacts did not change. Before wave 5 they
 were 97 suites, 363 passed, and 5 passed cases. Before
 wave 4 they were 7 authored scenarios, 81 scenarios, 31 failed by the planted defect, 20
@@ -697,7 +763,8 @@ not change, and the HTML conformance gate was not part of `check`.
 
 `REFUSALS_MAX` in `Taskfile.yml` is 28. `task suite` fails above it. Lower it when a refusal goes
 away; raise it only with the new refusal listed here. The list is `grep '^refused:'
-.out/synthesize.log` (read on 2026-11-21 after wave 6: 28 lines, the same as below).
+.out/synthesize.log` (read on 2026-11-21 after wave 6: 28 lines, the same as below; the gate
+after wave 7 printed `28 refusal(s)`).
 Twenty-two are `ESS-SYNTH-010`:
 
 - 10 × `<binding>/binding/delivery`: every binding is `at_most_once`, which has no second

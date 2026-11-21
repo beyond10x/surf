@@ -14,7 +14,8 @@ const BODY: usize = 777;
 fn a_parsed_body_is_held_five_times_until_delivered() {
     let body = vec![b'x'; BODY];
     let answered = body.clone();
-    let transport = move |_: &str| Answer::Response {
+    let transport = move |address: &str| Answer::Response {
+        url: address.to_owned(),
         status: 200,
         media_type: "text/html".to_owned(),
         body: answered.clone(),

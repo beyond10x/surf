@@ -1,0 +1,14 @@
+{
+  "name": "surf-view-tests",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The live view's page tests in a browser: gate tooling only, nothing of surf reads it.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test --workers=2"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0"
+  }
+}

@@ -47,18 +47,20 @@ surf v1 — 9 file(s), 12 scenario(s), valid
 the interpreter and the Rust system ran 93 scenario(s) each, of suite sha256:4cd1257a06a838a1bb2779b0309c347b1b6262703ff814da340988c32ecb7a3a
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
-Cargo.lock: 21 package(s), none from outside this repository
+Cargo.lock: 22 package(s), none from outside this repository
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.00s
-109 test suites: 453 passed, 0 failed, 0 ignored
+118 test suites: 486 passed, 0 failed, 0 ignored
 view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
-html-conformance: 9107 cases, 9095 run, 4442 passed
+  24 passed (14.6s)
+html-conformance: 9107 cases, 9095 run, 7121 passed
 ```
 
 It validates the specification, runs the 93 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
 that the lock file holds no outside package, then builds and tests, checks that every event
-name of the live view's stream is an event of the specification, and last holds the HTML
-parser's test counts where they are.
+name of the live view's stream is an event of the specification, runs the live view's page
+tests in a browser (Playwright and Chromium's headless shell), and last holds the HTML parser's
+test counts where they are.
 
 The scenario runner in
 [`conformance/`](https://github.com/beyond10x/surf/tree/main/conformance) is the one place a
@@ -79,4 +81,6 @@ $ task check
 ```
 
 `task build` builds the four binaries into `target/debug/`, and `task check` runs everything
-described above.
+described above. The page tests in `task check` also need Node and Chromium's headless shell;
+with Node there, install the shell once with `npm --prefix view-tests ci`, then
+`npx --prefix view-tests playwright install --only-shell chromium`.

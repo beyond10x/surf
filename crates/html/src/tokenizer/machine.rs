@@ -1,14 +1,18 @@
 //! The state machine of 13.2.5: the markup states, written by `story:html-tokenizer-markup`,
-//! and the RCDATA, RAWTEXT, script data and PLAINTEXT states with the states they lead to
-//! (13.2.5.2 to 13.2.5.5 and 13.2.5.9 to 13.2.5.31), written by `story:html-tokenizer-text`.
-//! Each state is written from its subsection of the standard, with the standard's name and its
-//! parse error codes, in the standard's order. The appropriate end tag check compares with the
-//! last start tag the tokenizer was created with, replaced by each start tag it emits.
+//! the RCDATA, RAWTEXT, script data and PLAINTEXT states with the states they lead to
+//! (13.2.5.2 to 13.2.5.5 and 13.2.5.9 to 13.2.5.31), written by `story:html-tokenizer-text`,
+//! and the character reference states (13.2.5.77 to 13.2.5.84), written by
+//! `story:html-character-references`. Each state is written from its subsection of the
+//! standard, with the standard's name and its parse error codes, in the standard's order. The
+//! appropriate end tag check compares with the last start tag the tokenizer was created with,
+//! replaced by each start tag it emits.
 //!
-//! Not written here: the character reference states (story `html-character-references`), of
-//! which only the character reference state's "anything else" entry stands, as a stub.
+//! A character reference keeps every value it needs in fields of [`Tokenizer`]: the return
+//! state, the temporary buffer and the character reference code. The code saturates at
+//! 0x110000, above 0x10FFFF, so that a run of digits of any length cannot overflow it.
 
 use super::{ParseError, Token, TokenAttribute, Tokenized};
+use crate::charref;
 use crate::input::{self, InputStream};
 
 const NULL: u32 = 0x0000;
@@ -18,10 +22,12 @@ const FF: u32 = 0x000C;
 const SPACE: u32 = 0x0020;
 const EXCLAMATION_MARK: u32 = 0x0021;
 const QUOTATION_MARK: u32 = 0x0022;
+const NUMBER_SIGN: u32 = 0x0023;
 const AMPERSAND: u32 = 0x0026;
 const APOSTROPHE: u32 = 0x0027;
 const HYPHEN_MINUS: u32 = 0x002D;
 const SOLIDUS: u32 = 0x002F;
+const SEMICOLON: u32 = 0x003B;
 const LESS_THAN_SIGN: u32 = 0x003C;
 const EQUALS_SIGN: u32 = 0x003D;
 const GREATER_THAN_SIGN: u32 = 0x003E;
@@ -29,7 +35,12 @@ const QUESTION_MARK: u32 = 0x003F;
 const RIGHT_SQUARE_BRACKET: u32 = 0x005D;
 const LOW_LINE: u32 = 0x005F;
 const GRAVE_ACCENT: u32 = 0x0060;
+const LATIN_CAPITAL_LETTER_X: u32 = 0x0058;
+const LATIN_SMALL_LETTER_X: u32 = 0x0078;
 const REPLACEMENT_CHARACTER: u32 = 0xFFFD;
+/// The value the character reference code saturates at: above 0x10FFFF, so still outside the
+/// Unicode range, and small enough that one more digit cannot overflow a `u32`.
+const CHARACTER_REFERENCE_CODE_MAX: u32 = 0x11_0000;
 
 /// A state of the tokenizer (13.2.5.1 and after), named as the standard names it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -111,6 +122,13 @@ pub(super) enum State {
     ProcessingInstructionData,
     ProcessingInstructionQuestionable,
     CharacterReference,
+    NamedCharacterReference,
+    AmbiguousAmpersand,
+    NumericCharacterReference,
+    HexadecimalCharacterReferenceStart,
+    HexadecimalCharacterReference,
+    DecimalCharacterReference,
+    NumericCharacterReferenceEnd,
 }
 
 /// The start or end tag token being built.
@@ -160,8 +178,29 @@ fn is_ascii_alpha(c: u32) -> bool {
     is_ascii_upper_alpha(c) || (0x61..=0x7A).contains(&c)
 }
 
+fn is_ascii_digit(c: u32) -> bool {
+    (0x30..=0x39).contains(&c)
+}
+
 fn is_ascii_alphanumeric(c: u32) -> bool {
-    is_ascii_alpha(c) || (0x30..=0x39).contains(&c)
+    is_ascii_alpha(c) || is_ascii_digit(c)
+}
+
+fn is_ascii_upper_hex_digit(c: u32) -> bool {
+    (0x41..=0x46).contains(&c)
+}
+
+fn is_ascii_lower_hex_digit(c: u32) -> bool {
+    (0x61..=0x66).contains(&c)
+}
+
+fn is_ascii_hex_digit(c: u32) -> bool {
+    is_ascii_digit(c) || is_ascii_upper_hex_digit(c) || is_ascii_lower_hex_digit(c)
+}
+
+/// ASCII whitespace (Infra): U+0009 TAB, U+000A LF, U+000C FF, U+000D CR or U+0020 SPACE.
+fn is_ascii_whitespace(c: u32) -> bool {
+    matches!(c, TAB | LF | FF | 0x000D | SPACE)
 }
 
 /// The lowercase version of an ASCII upper alpha (add 0x0020 to the code point).
@@ -182,6 +221,9 @@ pub(super) struct Tokenizer {
     /// reported.
     examined: usize,
     temporary_buffer: Vec<u32>,
+    /// The character reference code of the numeric character reference states, saturated at
+    /// [`CHARACTER_REFERENCE_CODE_MAX`].
+    character_reference_code: u32,
     /// The tag name of the last start tag to have been emitted from this tokenizer, or the one
     /// the tokenizer was created with; `None` when there is none.
     last_start_tag: Option<String>,
@@ -205,6 +247,7 @@ impl Tokenizer {
             reconsume: false,
             examined: 0,
             temporary_buffer: Vec::new(),
+            character_reference_code: 0,
             last_start_tag: last_start_tag.map(str::to_string),
             tag: TagToken::default(),
             comment: String::new(),
@@ -1482,16 +1525,184 @@ impl Tokenizer {
                     self.reconsume_in(State::ProcessingInstructionData);
                 }
             },
-            // 13.2.5.77 Character reference state, as a stub: only its "anything else" entry,
-            // so that `&` stays a character. Story `html-character-references` writes the
-            // state and the ones after it.
+            // 13.2.5.77 Character reference state
             State::CharacterReference => {
-                self.temporary_buffer = vec![AMPERSAND];
-                self.consume();
-                self.flush_code_points_consumed_as_a_character_reference();
-                self.reconsume_in(self.return_state);
+                self.temporary_buffer.clear();
+                self.temporary_buffer.push(AMPERSAND);
+                match self.consume() {
+                    Some(c) if is_ascii_alphanumeric(c) => {
+                        self.reconsume_in(State::NamedCharacterReference)
+                    }
+                    Some(NUMBER_SIGN) => {
+                        self.temporary_buffer.push(NUMBER_SIGN);
+                        self.switch_to(State::NumericCharacterReference);
+                    }
+                    _ => {
+                        self.flush_code_points_consumed_as_a_character_reference();
+                        self.reconsume_in(self.return_state);
+                    }
+                }
+            }
+            // 13.2.5.78 Named character reference state
+            State::NamedCharacterReference => self.named_character_reference(),
+            // 13.2.5.79 Ambiguous ampersand state
+            State::AmbiguousAmpersand => match self.consume() {
+                Some(c) if is_ascii_alphanumeric(c) => {
+                    if self.consumed_as_part_of_an_attribute() {
+                        push(&mut self.current_attribute().value, c);
+                    } else {
+                        self.emit_character(c);
+                    }
+                }
+                Some(SEMICOLON) => {
+                    self.error("unknown-named-character-reference");
+                    self.reconsume_in(self.return_state);
+                }
+                _ => self.reconsume_in(self.return_state),
+            },
+            // 13.2.5.80 Numeric character reference state
+            State::NumericCharacterReference => {
+                self.character_reference_code = 0;
+                match self.consume() {
+                    Some(c @ (LATIN_SMALL_LETTER_X | LATIN_CAPITAL_LETTER_X)) => {
+                        self.temporary_buffer.push(c);
+                        self.switch_to(State::HexadecimalCharacterReferenceStart);
+                    }
+                    Some(c) if is_ascii_digit(c) => {
+                        self.reconsume_in(State::DecimalCharacterReference)
+                    }
+                    _ => {
+                        self.error("absence-of-digits-in-numeric-character-reference");
+                        self.flush_code_points_consumed_as_a_character_reference();
+                        self.reconsume_in(self.return_state);
+                    }
+                }
+            }
+            // 13.2.5.81 Hexadecimal character reference start state
+            State::HexadecimalCharacterReferenceStart => match self.consume() {
+                Some(c) if is_ascii_hex_digit(c) => {
+                    self.reconsume_in(State::HexadecimalCharacterReference)
+                }
+                _ => {
+                    self.error("absence-of-digits-in-numeric-character-reference");
+                    self.flush_code_points_consumed_as_a_character_reference();
+                    self.reconsume_in(self.return_state);
+                }
+            },
+            // 13.2.5.82 Hexadecimal character reference state
+            State::HexadecimalCharacterReference => match self.consume() {
+                Some(c) if is_ascii_digit(c) => self.add_to_character_reference_code(16, c - 0x30),
+                Some(c) if is_ascii_upper_hex_digit(c) => {
+                    self.add_to_character_reference_code(16, c - 0x37)
+                }
+                Some(c) if is_ascii_lower_hex_digit(c) => {
+                    self.add_to_character_reference_code(16, c - 0x57)
+                }
+                Some(SEMICOLON) => self.switch_to(State::NumericCharacterReferenceEnd),
+                _ => {
+                    self.error("missing-semicolon-after-character-reference");
+                    self.reconsume_in(State::NumericCharacterReferenceEnd);
+                }
+            },
+            // 13.2.5.83 Decimal character reference state
+            State::DecimalCharacterReference => match self.consume() {
+                Some(c) if is_ascii_digit(c) => self.add_to_character_reference_code(10, c - 0x30),
+                Some(SEMICOLON) => self.switch_to(State::NumericCharacterReferenceEnd),
+                _ => {
+                    self.error("missing-semicolon-after-character-reference");
+                    self.reconsume_in(State::NumericCharacterReferenceEnd);
+                }
+            },
+            // 13.2.5.84 Numeric character reference end state
+            State::NumericCharacterReferenceEnd => self.numeric_character_reference_end(),
+        }
+    }
+
+    /// 13.2.5.78 Named character reference state. "Consume the maximum number of characters
+    /// possible, where the consumed characters are one of the identifiers in the first column
+    /// of the named character references table": the current input character, which the
+    /// character reference state reconsumes here, and the ones after it are looked at, at most
+    /// [`charref::LONGEST_NAME`] of them, and only those of the longest name they start with
+    /// are consumed.
+    fn named_character_reference(&mut self) {
+        let mut next = Vec::with_capacity(charref::LONGEST_NAME);
+        if self.reconsume {
+            next.extend(self.current);
+        }
+        let mut index = self.input.position();
+        while next.len() < charref::LONGEST_NAME
+            && let Some(c) = self.input.get(index)
+        {
+            next.push(c);
+            index += 1;
+        }
+        let Some((length, code_points)) = charref::longest_name(&next) else {
+            self.flush_code_points_consumed_as_a_character_reference();
+            self.switch_to(State::AmbiguousAmpersand);
+            return;
+        };
+        for _ in 0..length {
+            if let Some(c) = self.consume() {
+                self.temporary_buffer.push(c);
             }
         }
+        let last_is_semicolon = self.temporary_buffer.last() == Some(&SEMICOLON);
+        let next_input_character = self.input.get(self.input.position());
+        if self.consumed_as_part_of_an_attribute()
+            && !last_is_semicolon
+            && next_input_character.is_some_and(|c| c == EQUALS_SIGN || is_ascii_alphanumeric(c))
+        {
+            self.flush_code_points_consumed_as_a_character_reference();
+            self.switch_to(self.return_state);
+        } else {
+            if !last_is_semicolon {
+                self.error("missing-semicolon-after-character-reference");
+            }
+            self.temporary_buffer.clear();
+            self.temporary_buffer.extend_from_slice(code_points);
+            self.flush_code_points_consumed_as_a_character_reference();
+            self.switch_to(self.return_state);
+        }
+    }
+
+    /// The digit entries of the hexadecimal (13.2.5.82) and decimal (13.2.5.83) character
+    /// reference states: multiply the character reference code by `base` and add `digit`. The
+    /// code saturates at [`CHARACTER_REFERENCE_CODE_MAX`].
+    fn add_to_character_reference_code(&mut self, base: u32, digit: u32) {
+        self.character_reference_code =
+            (self.character_reference_code * base + digit).min(CHARACTER_REFERENCE_CODE_MAX);
+    }
+
+    /// 13.2.5.84 Numeric character reference end state: the checks of the character reference
+    /// code, in the standard's order, then the code point flushed and the return state.
+    fn numeric_character_reference_end(&mut self) {
+        let mut code = self.character_reference_code;
+        if code == 0x00 {
+            self.error("null-character-reference");
+            code = REPLACEMENT_CHARACTER;
+        }
+        if code > 0x10FFFF {
+            self.error("character-reference-outside-unicode-range");
+            code = REPLACEMENT_CHARACTER;
+        }
+        if input::is_surrogate(code) {
+            self.error("surrogate-character-reference");
+            code = REPLACEMENT_CHARACTER;
+        }
+        if input::is_noncharacter(code) {
+            self.error("noncharacter-character-reference");
+        }
+        if code == 0x0D || (input::is_control(code) && !is_ascii_whitespace(code)) {
+            self.error("control-character-reference");
+            if let Some(replacement) = charref::numeric_replacement(code) {
+                code = replacement;
+            }
+        }
+        self.character_reference_code = code;
+        self.temporary_buffer.clear();
+        self.temporary_buffer.push(code);
+        self.flush_code_points_consumed_as_a_character_reference();
+        self.switch_to(self.return_state);
     }
 
     /// "An appropriate end tag token": the current tag token's name is the tag name of the last
