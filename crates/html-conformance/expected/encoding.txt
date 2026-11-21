@@ -1,8 +1,8 @@
 file html5lib-tests/encoding/chardet/test_big5.txt 0/0/1 not-run:autodetect=1
 file html5lib-tests/encoding/scripted/tests1.dat 0/0/1 not-run:needs-script=1
-file html5lib-tests/encoding/test-yahoo-jp.dat 0/1/1
-file html5lib-tests/encoding/tests1.dat 0/59/59
-file html5lib-tests/encoding/tests2.dat 0/22/22
-tag encoding 0/82/82
+file html5lib-tests/encoding/test-yahoo-jp.dat 1/1/1
+file html5lib-tests/encoding/tests1.dat 52/59/59
+file html5lib-tests/encoding/tests2.dat 22/22/22
+tag encoding 75/82/82
 tag not-run 0/0/2
 section the-input-byte-stream incomplete
