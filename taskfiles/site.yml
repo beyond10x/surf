@@ -1,0 +1,20 @@
+version: '3'
+
+set: [pipefail]
+
+tasks:
+  site-build:
+    desc: Build the Docusaurus documentation site (Node) into website/build.
+    summary: |
+      Build the Docusaurus documentation site (Node) into website/build.
+
+      Installs the exact packages of website/package-lock.json with npm ci, then builds. The build
+      fails on a broken link, a broken anchor or a broken Markdown link. Node is build tooling for
+      the site only; nothing that ships depends on it.
+
+      It runs from the repository root, alone (task --taskfile taskfiles/site.yml site-build) and
+      included from the root Taskfile.yml alike.
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      - npm --prefix website ci
+      - npm --prefix website run build
