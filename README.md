@@ -8,11 +8,11 @@
 
 ![spec: ESS 0.96.0, valid](docs/badges/spec.svg)
 ![conformance: 93 of 93 scenarios](docs/badges/conformance.svg)
-![tests: 453 passed](docs/badges/tests.svg)
+![tests: 486 passed](docs/badges/tests.svg)
 ![third-party crates shipped: 0](docs/badges/dependencies.svg)
 ![unsafe code: forbidden](docs/badges/unsafe.svg)
 ![standard sections marked complete: 0](docs/badges/complete.svg)
-![roadmap: 6 of 22 waves delivered](docs/badges/roadmap.svg)
+![roadmap: 7 of 22 waves delivered](docs/badges/roadmap.svg)
 
 surf is a small browser written in Rust. It does not wrap Chromium, WebKit or Gecko, and nothing
 that ships depends on a third-party crate. Every behaviour is written down as a specification
@@ -84,7 +84,8 @@ path 2 of 2
 What it does not do yet:
 
 - Only `http:` addresses load: no TLS.
-- Redirects are not followed: a redirect status is delivered as the response.
+- Release `0.2.0` delivers a redirect status as the response. Since the seventh wave, not in a
+  release yet, a `go` follows redirects.
 - No JavaScript and no rendering.
 - Nothing of the page's content is shown yet: an answer holds the status, the media type and the
   address.
@@ -93,6 +94,27 @@ What it does not do yet:
 The commands, the token, the exit statuses and the answer, one by one:
 [Drive surf from an agent](https://beyond10x.github.io/surf/docs/drive-from-an-agent).
 Quoting lowers the risk of page text steering an agent; it does not remove it.
+
+## Watching sessions live
+
+New with the seventh wave, not in a release yet. While `surfd` runs, a page in your browser
+shows its sessions as they act. Open a session with `surf-agent open <url>`, then open the
+address in `$XDG_RUNTIME_DIR/surf/view-url` in a browser on the same machine:
+
+```console
+$ surf-agent open http://example.org/
+$ cat "$XDG_RUNTIME_DIR/surf/view-url"
+http://127.0.0.1:<port>/#<token>
+```
+
+The page lists the sessions, open, closed or died. For the selected session it shows a timeline
+of its actions with a playhead: the page line is that of the action at the playhead, "Latest"
+follows the newest action, and the arrow keys move the playhead one action. The selection is
+kept in the address, so a reload shows the same action.
+
+The view only reads: nothing on the page changes a session. It listens on 127.0.0.1 only. The
+token in the address is valid until `surfd` exits, and the browser may keep that address in its
+history.
 
 ## What surf is
 
@@ -125,7 +147,8 @@ Quoting lowers the risk of page text steering an agent; it does not remove it.
 4. **No third-party code in what ships.** The Rust standard library and the operating system
    are allowed. The checks fail if the lock file lists an outside package. One exception is
    planned: audited cryptographic primitives for TLS.
-5. **No unsafe code.** Every hand-written crate forbids it.
+5. **No unsafe code.** Every hand-written crate forbids it. The one exception is a test: a
+   counting allocator that measures what a fetch holds.
 6. **Text from the web stays text.** Anything from a page, a server or an address is escaped
    before it is printed, so a page cannot forge a line of surf's output.
 7. **A passing test must be able to fail.** Tests are tried against planted defects. A storage
@@ -142,7 +165,23 @@ Quoting lowers the risk of page text steering an agent; it does not remove it.
   and hard limits on header and body size.
 - **93 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **453 tests**, built with warnings treated as errors.
+- **486 tests**, built with warnings treated as errors, and 24 tests of the live view's page in
+  a browser.
+
+New with the seventh wave of the current plan, not in a release yet:
+
+- **Redirects are followed.** A `go` or an `open` follows up to 20 redirects (301, 302, 303,
+  307 and 308 with a `Location`) inside one fetch. The `page` line shows the address the fetch
+  ended at, and the `did go` line the address asked for. One more redirect after the twentieth
+  fails the load with `TooManyRedirects`. Only `http:` loads: a redirect to `https:` fails with
+  `UnsupportedScheme`.
+- **The live view's page shows real sessions**, with a playhead over each session's actions
+  (see "Watching sessions live" above). After a refused token the page stops and reads
+  `offline`. It is tested in a browser as a step of `task check`.
+- **The tokenizer reads character references**, named (`&amp;`) and numeric (`&#38;`), from
+  the HTML Standard's own table of 2,231 names. All 4,739 character reference cases of the test
+  data pass. No command runs the tokenizer on a page yet, so an answer still shows no page
+  content.
 
 New with the sixth wave of the current plan, not in a release yet. Nothing a `surf-agent`
 command prints has changed:
@@ -151,11 +190,11 @@ command prints has changed:
   do: the list of sessions, each session's actions, events and answers, and each new one as it
   happens. It listens on 127.0.0.1 only; while it runs, the address and the token to use are in
   `$XDG_RUNTIME_DIR/surf/view-url`. The routes are in
-  [`docs/view-stream.md`](docs/view-stream.md). The page that shows real sessions is planned
-  for wave 7.
+  [`docs/view-stream.md`](docs/view-stream.md). Since the seventh wave a page shows them
+  (above).
 - **The tokenizer reads text.** Text inside elements such as `<script>` and `<textarea>` is
   tokenized (the RCDATA, RAWTEXT, script data and PLAINTEXT states), and all 328 text cases of
-  the test data pass. Character references are not read yet.
+  the test data pass. Character references are read since the seventh wave.
 - **A document's elements in the specification.** The specification holds the elements of a
   page an agent can act on (links, buttons and form fields) and parses a document in steps:
   started, one element at a time in tree order, then finished with its title. The scenarios
@@ -175,8 +214,8 @@ New with the fifth wave of the current plan, not in a release yet. Nothing a use
   cases.
 - **The tokenizer reads markup.** Tags, attributes, comments, DOCTYPEs, processing
   instructions and CDATA sections are tokenized, and all 1,979 markup cases of the test data
-  pass. Text inside elements such as `<script>` and `<textarea>` is read since the sixth wave;
-  character references are not read yet, and the parser builds no tree, so an answer still
+  pass. Text inside elements such as `<script>` and `<textarea>` is read since the sixth wave
+  and character references since the seventh; the parser builds no tree, so an answer still
   shows no page content.
 
 New with the fourth wave of the current plan, shipped in release `0.2.0`:
@@ -189,12 +228,12 @@ New with the fourth wave of the current plan, shipped in release `0.2.0`:
 - **A response names its address.** In the specification, a response says which address it came
   from after the last redirect: the navigation commits there and the session shows it, while the
   request keeps the address asked for. A redirect that arrives after 20 followed ones is a
-  failure of its own, `TooManyRedirects`. The transport does not follow redirects yet, so
-  today a redirect status is delivered as the response.
+  failure of its own, `TooManyRedirects`. Since the seventh wave the transport follows
+  redirects (above).
 - **A gate for the HTML parser's tests.** The harness's counts are written down per file, tag
   and section, and `task check` fails when a count falls below them, when a case stops running
   without a reason, or when an expected count is lowered. The parser was empty then and passed
-  5 of 9,095 cases; after the sixth wave it passes 4,442, and the gate holds that.
+  5 of 9,095 cases; after the seventh wave it passes 7,121, and the gate holds that.
 - **Four binaries in one release.** A Linux archive holds `surf`, `surf-agent`, `surfd` and
   `surf-session`; a macOS archive holds `surf`. A smoke test runs the unpacked archive before a
   release is cut.
@@ -207,7 +246,7 @@ New with the third wave, the parts the agent commands and the live view build on
   and every value shown as text, fitting screens from 360 px to 1,400 px wide. One command from
   a source checkout, the `prototype` example of the `surf-view` crate, serves it over three
   scripted sessions and prints an address to open in a browser on the same machine. It shows
-  example data only; real sessions come with later waves.
+  example data only; since the seventh wave `surfd` serves the page over real sessions (above).
 - **An agent's actions in the model.** A session keeps a log of what the agent did, in order
   (an `open` with an address is two actions, `open` and `go`), and shows the status, media type
   and failure reason of its navigation. The specification and the Rust code hold both, with
@@ -228,7 +267,7 @@ New with the second wave:
   reader ([`docs/view-stream.md`](docs/view-stream.md)). Its page is new with the third wave.
 - **A test harness for the HTML parser.** It holds 9,107 cases from html5lib-tests and
   web-platform-tests and counts how many a parser passes. Today it runs 9,095 of them and
-  passes 4,442: 75 encoding cases and 4,367 tokenizer cases. The parser builds no tree yet.
+  passes 7,121: 75 encoding cases and 7,046 tokenizer cases. The parser builds no tree yet.
 
 New with the first wave:
 
@@ -243,26 +282,26 @@ New with the first wave:
 
 ## Roadmap
 
-The current plan has 58 stories in 22 steps, called waves. Waves 1 to 6 are delivered. The
+The current plan has 58 stories in 22 steps, called waves. Waves 1 to 7 are delivered. The
 plan is [`docs/plan/agent-waves.md`](docs/plan/agent-waves.md) and its design is
 [`docs/design/agent-interface.md`](docs/design/agent-interface.md).
 
 Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `surf-agent`,
 `surfd` and `surf-session`, for Linux only at first. The releases are listed at
 <https://github.com/beyond10x/surf/releases>. After it, work moves to the script engine, a
-project of its own. Waves 5 and 6 followed; the waves after them are planned and have no date.
+project of its own. Waves 5 to 7 followed; the waves after them are planned and have no date.
 
 | after wave | what you can do |
 |---|---|
 | 4 (delivered) | Drive a session: `surf-agent open`, `go`, `look`, `close`. A daemon keeps the sessions, one process and one token per session. |
-| 7 | Watch every session live in a local web page: where it is, what it did, what changed. Redirects are followed. |
+| 7 (delivered) | Watch every session live in a local web page: where it is and what it did, action by action. Redirects are followed. |
 | 11 | Read a real page's links, buttons and form fields, from an HTML parser held to the html5lib tests. |
 | 18 | Follow links, fill and submit forms, go back and forward. Each answer says what changed. |
 | 22 | Record an agent's session, turn it into a test, and replay it against the recorded network. |
 
-The next planned steps are the live view's page on real sessions (`surfd` serves the stream
-today), following redirects, and the HTML parser on real pages (an answer shows no page content
-yet).
+The next planned steps are the HTML parser on real pages (an answer shows no page content yet)
+and a detail panel in the live view for the selected action or event and the session's
+requests.
 TLS and `https:` are on the list below. None of them has a date.
 
 Next after that, wanted and not planned in detail yet:
@@ -307,18 +346,22 @@ surf v1 — 9 file(s), 12 scenario(s), valid
 the interpreter and the Rust system ran 93 scenario(s) each, of suite sha256:4cd1257a06a838a1bb2779b0309c347b1b6262703ff814da340988c32ecb7a3a
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
-Cargo.lock: 21 package(s), none from outside this repository
+Cargo.lock: 22 package(s), none from outside this repository
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.00s
-109 test suites: 453 passed, 0 failed, 0 ignored
+118 test suites: 486 passed, 0 failed, 0 ignored
 view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
-html-conformance: 9107 cases, 9095 run, 4442 passed
+  24 passed (14.6s)
+html-conformance: 9107 cases, 9095 run, 7121 passed
 ```
 
 It validates the specification, runs the 93 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
 that the lock file holds no outside package, then builds and tests, checks that every event
-name of the live view's stream is an event of the specification, and last holds the HTML
-parser's test counts where they are. The scenario runner in
+name of the live view's stream is an event of the specification, runs the live view's page
+tests in a browser, and last holds the HTML parser's test counts where they are. The page
+tests need Node and Chromium's headless shell; with Node there, install the shell once with
+`npm --prefix view-tests ci`, then `npx --prefix view-tests playwright install --only-shell
+chromium`. The scenario runner in
 [`conformance/`](conformance/) is the one place a third-party crate is used; nothing that
 ships depends on it.
 

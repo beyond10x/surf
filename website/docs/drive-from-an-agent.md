@@ -127,6 +127,9 @@ answer and says why on standard error.
 ## Limits
 
 - Only `http:` addresses load. No `https:` yet.
-- No redirect is followed yet.
+- Release `0.2.0` follows no redirect. Since the seventh wave, not in a release yet, a `go`
+  follows up to 20 redirects inside one fetch: the `page` line holds the address it ended at,
+  the `did go` line the address asked for, and a redirect after the twentieth fails with
+  `TooManyRedirects`.
 - No JavaScript, and no rendering: the answer says what loaded, not what a page shows.
 - Linux only.
