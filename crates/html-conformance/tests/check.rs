@@ -25,10 +25,11 @@ const TREE1: &str = "wpt/html/syntax/parsing/resources/tests1.dat";
 const TREE2: &str = "wpt/html/syntax/parsing/resources/tests2.dat";
 const ENC1: &str = "html5lib-tests/encoding/tests1.dat";
 
-/// One test that passes with the empty parser (no input, no token) and one that does not.
+/// One test that passes with the empty parser (no input, no token) and one that does not. The
+/// failing one expects `b` for the input `a`: it fails for any tokenizer, not only an empty one.
 const TEST1_DATA: &str = r#"{"tests": [
 {"description": "passes", "input": "", "output": []},
-{"description": "fails", "input": "a", "output": [["Character", "a"]]}
+{"description": "fails", "input": "a", "output": [["Character", "b"]]}
 ]}
 "#;
 
@@ -46,7 +47,9 @@ const XML_DATA: &str = r#"{"xmlViolationTests": [
 const TREE_DATA: &str =
     "#data\n<p>\n#errors\n#document\n| <html>\n|   <head>\n|   <body>\n|     <p>\n";
 
-const ENC_DATA: &str = "#data\n<meta charset=\"utf-8\">\n#encoding\nutf-8\n";
+/// The expected label is no encoding name, so the case fails for any sniffer, not only an empty
+/// one.
+const ENC_DATA: &str = "#data\n<meta charset=\"utf-8\">\n#encoding\nx-no-such-encoding\n";
 
 const INVENTORY: &str = "\
 source html5lib-tests https://example.invalid/html5lib-tests 0
