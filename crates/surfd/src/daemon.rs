@@ -21,6 +21,7 @@ use surf_answer::{Did, Head, RefusalReason, SessionState as HeadState};
 
 use crate::directory::{self, Lock};
 use crate::link::{self, LinkError, Quoted};
+use crate::log::{self, Log, OlderThanKept, SessionEntries, Subscription};
 use crate::sessions::{ENDED_MAX, Session, Sessions, State};
 
 /// How long a session process has to write `ready`: 5 seconds.
@@ -28,6 +29,11 @@ pub const SESSION_READY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// How long a session has to answer one request: 60 seconds, less than the client's 75.
 pub const SESSION_ANSWER_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// How long `surfd` goes on reading an answer that did not come within
+/// [`SESSION_ANSWER_TIMEOUT`], with the session's turn taken, before it kills the session: 10
+/// minutes. So the entries of a request the session answered late reach the log, in order.
+pub const LATE_ANSWER_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// How long a session process has to end after its standard input closed, or after its socket
 /// went away, before `surfd` kills it: 2 seconds.
@@ -76,12 +82,16 @@ pub struct Config {
     pub session_ready_timeout: Duration,
     /// [`SESSION_ANSWER_TIMEOUT`].
     pub session_answer_timeout: Duration,
+    /// [`LATE_ANSWER_TIMEOUT`].
+    pub late_answer_timeout: Duration,
     /// [`KILL_GRACE`].
     pub kill_grace: Duration,
     /// [`IDLE_EXIT`]; `surfd --idle-exit <seconds>` shortens it.
     pub idle_exit: Duration,
     /// [`CONNECTION_LIMIT`].
     pub connection_limit: usize,
+    /// The bounds of the log of the sessions' entries: [`log::Bounds::default`].
+    pub log: log::Bounds,
     /// [`Identities::Random`].
     pub identities: Identities,
     /// Where the one start line goes, `ready` or `refused <reason>`: standard output in the
@@ -102,9 +112,11 @@ impl Config {
             session_env: Vec::new(),
             session_ready_timeout: SESSION_READY_TIMEOUT,
             session_answer_timeout: SESSION_ANSWER_TIMEOUT,
+            late_answer_timeout: LATE_ANSWER_TIMEOUT,
             kill_grace: KILL_GRACE,
             idle_exit: IDLE_EXIT,
             connection_limit: CONNECTION_LIMIT,
+            log: log::Bounds::default(),
             identities: Identities::Random,
             start_line: None,
         }
@@ -119,9 +131,11 @@ impl fmt::Debug for Config {
             .field("session_env", &self.session_env)
             .field("session_ready_timeout", &self.session_ready_timeout)
             .field("session_answer_timeout", &self.session_answer_timeout)
+            .field("late_answer_timeout", &self.late_answer_timeout)
             .field("kill_grace", &self.kill_grace)
             .field("idle_exit", &self.idle_exit)
             .field("connection_limit", &self.connection_limit)
+            .field("log", &self.log)
             .field("identities", &self.identities)
             .finish_non_exhaustive()
     }
@@ -172,6 +186,7 @@ struct Shared {
     env: Vec<(OsString, OsString)>,
     ready_timeout: Duration,
     answer_timeout: Duration,
+    late_answer_timeout: Duration,
     kill_grace: Duration,
     idle_exit: Duration,
     connection_limit: usize,
@@ -191,6 +206,8 @@ struct Table {
     live: usize,
     idle_since: Option<Instant>,
     stopping: bool,
+    /// The entries the listed sessions sent.
+    log: Log,
 }
 
 impl Table {
@@ -314,6 +331,34 @@ impl Daemon {
         }
     }
 
+    /// The kept entries of the listed session `session` in order, its dropped count, or that
+    /// its log was dropped ([`crate::log`]); `None` for a session that is not listed.
+    pub fn session_entries(&self, session: &str) -> Option<SessionEntries> {
+        let table = guard(&self.shared.table);
+        if !table.entries.get(session).is_some_and(|entry| entry.listed) {
+            return None;
+        }
+        Some(table.log.session_entries(session).unwrap_or_default())
+    }
+
+    /// The kept entries of every session with a number across sessions above `number`, in that
+    /// order, or [`OlderThanKept`] when an entry above `number` was dropped.
+    pub fn entries_after(&self, number: u64) -> Result<Vec<log::Entry>, OlderThanKept> {
+        guard(&self.shared.table).log.entries_after(number)
+    }
+
+    /// The entries of [`Daemon::entries_after`], then every new entry as it is kept, in order,
+    /// through a queue of [`log::Bounds::reader_queue`] entries; disconnected when the queue is
+    /// full. Or [`OlderThanKept`].
+    pub fn subscribe_after(&self, number: u64) -> Result<Subscription, OlderThanKept> {
+        guard(&self.shared.table).log.subscribe_after(number)
+    }
+
+    /// The highest number across sessions given so far, 0 before the first entry.
+    pub fn newest_entry(&self) -> u64 {
+        guard(&self.shared.table).log.newest()
+    }
+
     /// `$XDG_RUNTIME_DIR/surf/surfd.sock`.
     pub fn socket(&self) -> &Path {
         &self.shared.socket
@@ -434,6 +479,7 @@ fn begin(config: Config, began: Instant) -> Result<Started, Refused> {
         env: config.session_env,
         ready_timeout: config.session_ready_timeout,
         answer_timeout: config.session_answer_timeout,
+        late_answer_timeout: config.late_answer_timeout,
         kill_grace: config.kill_grace,
         idle_exit: config.idle_exit,
         connection_limit: config.connection_limit,
@@ -446,6 +492,7 @@ fn begin(config: Config, began: Instant) -> Result<Started, Refused> {
             live: 0,
             idle_since: Some(Instant::now()),
             stopping: false,
+            log: Log::new(config.log),
         }),
         changed: Condvar::new(),
     });
@@ -504,6 +551,7 @@ fn snapshot(table: &Table) -> Sessions {
                     pid: entry.pid,
                     address: entry.address.clone(),
                     title: entry.title.clone(),
+                    log_dropped: table.log.log_dropped(id),
                 },
             )
         })
@@ -745,12 +793,20 @@ fn route(shared: &Arc<Shared>, request: &wire::Request, raw: &[u8]) -> wire::Ans
 
 /// How a request on the link failed.
 enum Failure {
-    /// No answer by the deadline.
-    Timeout,
+    /// No answer by the deadline; once the request was written, the connection and what was
+    /// read of the answer, to read the rest later ([`read_late`]).
+    Timeout(Option<Late>),
     /// No session socket, a refused connection, or a connection closed with no byte.
     Gone,
     /// A rule of the link broken.
     Broken,
+}
+
+/// The connection of a request whose answer did not come by the call's deadline, and the bytes
+/// of the answer read so far.
+struct Late {
+    stream: UnixStream,
+    bytes: Vec<u8>,
 }
 
 /// Pass `raw` to the session `id` over one connection to its socket and read its answer.
@@ -769,22 +825,83 @@ fn exchange(
     let mut stream = UnixStream::connect(&path).map_err(|_| Failure::Gone)?;
     let left = deadline.saturating_duration_since(Instant::now());
     if left.is_zero() {
-        return Err(Failure::Timeout);
+        return Err(Failure::Timeout(None));
     }
     stream
         .set_write_timeout(Some(left))
         .map_err(|_| Failure::Gone)?;
     if let Err(error) = stream.write_all(raw) {
         return Err(match error.kind() {
-            io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => Failure::Timeout,
+            io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut => Failure::Timeout(None),
             _ => Failure::Gone,
         });
     }
-    match link::read_answer(&mut stream, deadline) {
-        Ok(answer) => Ok(answer),
-        Err(LinkError::Timeout) => Err(Failure::Timeout),
-        Err(LinkError::Empty | LinkError::Io(_)) => Err(Failure::Gone),
-        Err(LinkError::TooLarge | LinkError::Malformed(_)) => Err(Failure::Broken),
+    let mut bytes = Vec::new();
+    match link::read_to_end(&mut stream, &mut bytes, deadline) {
+        Ok(()) => link::Answer::decode(&bytes).map_err(failure),
+        Err(LinkError::Timeout) => Err(Failure::Timeout(Some(Late { stream, bytes }))),
+        Err(error) => Err(failure(error)),
+    }
+}
+
+/// The failure of a link answer that did not decode or was not read whole.
+fn failure(error: LinkError) -> Failure {
+    match error {
+        LinkError::Timeout => Failure::Timeout(None),
+        LinkError::Empty | LinkError::Io(_) => Failure::Gone,
+        LinkError::TooLarge | LinkError::Malformed(_) => Failure::Broken,
+    }
+}
+
+/// Release the turn of `id`; for an answer that arrived, note it on the list (last action,
+/// address, title, `closed`) and keep its entries while the session is listed.
+fn settle(shared: &Shared, id: &str, answer: Option<&mut link::Answer>) {
+    let mut table = guard(&shared.table);
+    let listed = match table.entries.get_mut(id) {
+        Some(entry) => {
+            entry.turn = false;
+            if let Some(answer) = &answer {
+                entry.last_action = SystemTime::now();
+                entry.address = answer.address.clone();
+                entry.title = answer.title.clone();
+                if answer.state == link::SessionState::Closed && entry.phase == Phase::Open {
+                    entry.phase = Phase::Closing;
+                }
+            }
+            entry.listed
+        }
+        None => false,
+    };
+    if let Some(answer) = answer
+        && listed
+    {
+        table
+            .log
+            .keep_all(id, std::mem::take(&mut answer.entries), now_millis());
+    }
+    shared.changed.notify_all();
+}
+
+/// Read the rest of an answer that did not come by the call's deadline, for at most
+/// [`Config::late_answer_timeout`], while the session's turn stays taken, so that no later
+/// request reaches the session before it and its entries are kept in the order the session
+/// answered. An answer that does not come in that time, or that breaks the link, kills the
+/// session: it is listed `died`, and what it did not send is not kept.
+fn read_late(shared: Arc<Shared>, id: String, process: Arc<Process>, mut late: Late) {
+    let deadline = after(shared.late_answer_timeout);
+    let read = link::read_to_end(&mut late.stream, &mut late.bytes, deadline)
+        .and_then(|()| link::Answer::decode(&late.bytes));
+    match read {
+        Ok(mut answer) => {
+            settle(&shared, &id, Some(&mut answer));
+            if answer.state == link::SessionState::Closed {
+                process.close_input();
+            }
+        }
+        Err(_) => {
+            process.kill();
+            settle(&shared, &id, None);
+        }
     }
 }
 
@@ -866,33 +983,43 @@ fn call_session(shared: &Arc<Shared>, id: &str, raw: &[u8]) -> wire::Answer {
     };
     drop(table);
     let outcome = exchange(shared, id, raw, deadline);
-    {
-        let mut table = guard(&shared.table);
-        if let Some(entry) = table.entries.get_mut(id) {
-            entry.turn = false;
-            if let Ok(answer) = &outcome {
-                entry.last_action = SystemTime::now();
-                entry.address = answer.address.clone();
-                entry.title = answer.title.clone();
-                if answer.state == link::SessionState::Closed && entry.phase == Phase::Open {
-                    entry.phase = Phase::Closing;
-                }
-            }
-        }
-        shared.changed.notify_all();
-    }
     match outcome {
-        Ok(answer) => {
+        Ok(mut answer) => {
+            settle(shared, id, Some(&mut answer));
             if answer.state == link::SessionState::Closed {
                 process.close_input();
             }
             relay(answer)
         }
-        Err(Failure::Timeout) => own(id, HeadState::Open, RefusalReason::SessionTimeout),
-        Err(Failure::Gone) => finish(shared, id),
-        Err(Failure::Broken) => {
-            process.kill();
-            finish(shared, id)
+        Err(Failure::Timeout(Some(late))) => {
+            // The turn stays taken until the late answer is read.
+            let reader = {
+                let shared = Arc::clone(shared);
+                let id = id.to_string();
+                let process = Arc::clone(&process);
+                thread::Builder::new()
+                    .name("surfd-late-answer".into())
+                    .spawn(move || read_late(shared, id, process, late))
+            };
+            if reader.is_err() {
+                process.kill();
+                settle(shared, id, None);
+            }
+            own(id, HeadState::Open, RefusalReason::SessionTimeout)
+        }
+        Err(Failure::Timeout(None)) => {
+            settle(shared, id, None);
+            own(id, HeadState::Open, RefusalReason::SessionTimeout)
+        }
+        Err(failure) => {
+            settle(shared, id, None);
+            match failure {
+                Failure::Broken => {
+                    process.kill();
+                    finish(shared, id)
+                }
+                _ => finish(shared, id),
+            }
         }
     }
 }
@@ -1051,9 +1178,14 @@ fn open_session(shared: &Arc<Shared>, raw: &[u8]) -> wire::Answer {
         }
     }
     match exchange(shared, &id, raw, after(shared.answer_timeout)) {
-        Ok(answer) if answer.status == 0 => {
+        Ok(mut answer) if answer.status == 0 => {
             let mut table = guard(&shared.table);
             let mut ended = false;
+            if table.entries.contains_key(&id) {
+                table
+                    .log
+                    .keep_all(&id, std::mem::take(&mut answer.entries), now_millis());
+            }
             if let Some(entry) = table.entries.get_mut(&id) {
                 entry.listed = true;
                 entry.turn = false;
@@ -1088,7 +1220,7 @@ fn open_session(shared: &Arc<Shared>, raw: &[u8]) -> wire::Answer {
         Err(failure) => {
             abandon(shared, &id, &process);
             unreachable(match failure {
-                Failure::Timeout => format!(
+                Failure::Timeout(_) => format!(
                     "the session did not answer open within {} seconds",
                     shared.answer_timeout.as_secs_f64()
                 ),
@@ -1100,15 +1232,26 @@ fn open_session(shared: &Arc<Shared>, raw: &[u8]) -> wire::Answer {
     }
 }
 
-/// Keep `id` among the listed ended sessions, dropping the one that ended first above
-/// [`ENDED_MAX`].
+/// Keep `id` among the listed ended sessions, its log among the ended ones, dropping the session
+/// that ended first, and its log, above [`ENDED_MAX`].
 fn list_ended(table: &mut Table, id: &str) {
     table.ended.push_back(id.to_string());
+    table.log.end(id);
     while table.ended.len() > ENDED_MAX {
         if let Some(oldest) = table.ended.pop_front() {
             table.entries.remove(&oldest);
+            table.log.remove(&oldest);
         }
     }
+}
+
+/// Milliseconds since the Unix epoch, 0 for a clock before it.
+fn now_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |since| {
+            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+        })
 }
 
 /// The thread of one session process: read its `ready` line and tell the opener, then hold its

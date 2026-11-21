@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T13:40:36Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-session-events",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the coordinator's run of the packages surf-session, surfd and surf-agent with warnings denied at the unit's change (298d57f), and slot task check in the runner's form on wave/a5-events-html at 799eeab",
+    "reference": "exit 0; surf-session 36 tests, surfd 33, surf-agent 29; 15 cases in crates/session/tests/events.rs and 5 in crates/surfd/tests/log.rs; an adversary wrote 3 failing tests (a late answer's entries lost; an answer entry with a token line accepted), fixed in the unit and kept in the tree; 5 planted defects each red (the unit's runs); verdict VERIFIED"
+  }
+}

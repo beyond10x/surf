@@ -2,6 +2,8 @@
 //! `story:html-tokenizer-text`; the character reference states by
 //! `story:html-character-references`.
 
+mod machine;
+
 /// The state the tokenizer starts in: the ones the tree builder switches it to, and the ones
 /// the html5lib-tests data starts it in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -99,10 +101,143 @@ pub struct Tokenized {
 /// states compares against it).
 ///
 /// The input is code points and not a `&str`, because the stream can hold surrogates
-/// (`surrogate-in-input-stream`).
+/// (`surrogate-in-input-stream`). It is preprocessed first ([`crate::input`]); the parse errors
+/// of preprocessing are reported as the tokenizer consumes the code point they are for. The
+/// tokens end with one [`Token::EndOfFile`].
 ///
-/// Not written yet: returns no token and no parse error.
+/// Written: the data state, the tag, attribute, comment, DOCTYPE, CDATA section and processing
+/// instruction states. The character reference state is a stub that leaves `&` a character
+/// (story `html-character-references`). Not written yet (story `html-tokenizer-text`): the
+/// RCDATA, RAWTEXT, script data and PLAINTEXT states; started in one of them, it returns no
+/// token and no parse error, and `last_start_tag`, which only those states read, is unused.
 pub fn tokenize(input: &[u32], state: State, last_start_tag: Option<&str>) -> Tokenized {
-    let _ = (input, state, last_start_tag);
-    Tokenized::default()
+    let _ = last_start_tag;
+    let state = match state {
+        State::Data => machine::State::Data,
+        State::CdataSection => machine::State::CdataSection,
+        State::Rcdata | State::Rawtext | State::ScriptData | State::Plaintext => {
+            return Tokenized::default();
+        }
+    };
+    machine::Tokenizer::new(input, state).run()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run(input: &str) -> Tokenized {
+        let input: Vec<u32> = input.chars().map(u32::from).collect();
+        tokenize(&input, State::Data, None)
+    }
+
+    fn codes(t: &Tokenized) -> Vec<&'static str> {
+        t.errors.iter().map(|e| e.code).collect()
+    }
+
+    #[test]
+    fn a_start_tag_with_attributes_drops_the_duplicate() {
+        let t = run("<A b=1 B='2' c>");
+        assert_eq!(
+            t.tokens,
+            vec![
+                Token::StartTag {
+                    name: "a".to_string(),
+                    attributes: vec![
+                        TokenAttribute {
+                            name: "b".to_string(),
+                            value: "1".to_string()
+                        },
+                        TokenAttribute {
+                            name: "c".to_string(),
+                            value: String::new()
+                        },
+                    ],
+                    self_closing: false,
+                },
+                Token::EndOfFile,
+            ]
+        );
+        assert_eq!(codes(&t), vec!["duplicate-attribute"]);
+    }
+
+    #[test]
+    fn preprocessing_errors_take_their_place_among_the_tokenizer_errors() {
+        let t = run("<\u{1}\r\n");
+        assert_eq!(
+            codes(&t),
+            vec![
+                "control-character-in-input-stream",
+                "invalid-first-character-of-tag-name"
+            ]
+        );
+        assert_eq!(
+            t.tokens,
+            vec![
+                Token::Character(0x3C),
+                Token::Character(0x01),
+                Token::Character(0x0A),
+                Token::EndOfFile
+            ]
+        );
+        // The next input character's error is reported before the markup declaration open
+        // state decides; one further ahead only when it is consumed.
+        assert_eq!(
+            codes(&run("<!\u{B}")),
+            vec![
+                "control-character-in-input-stream",
+                "incorrectly-opened-comment"
+            ]
+        );
+        assert_eq!(
+            codes(&run("<!doc\u{80}")),
+            vec![
+                "incorrectly-opened-comment",
+                "control-character-in-input-stream"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_processing_instruction_and_a_disallowed_target() {
+        let t = run("<?foo bar??><?xml x?>");
+        assert_eq!(
+            t.tokens,
+            vec![
+                Token::ProcessingInstruction {
+                    target: "foo".to_string(),
+                    data: "bar?".to_string()
+                },
+                Token::Comment {
+                    data: "?xml x?".to_string()
+                },
+                Token::EndOfFile,
+            ]
+        );
+        assert_eq!(codes(&t), vec!["disallowed-processing-instruction-target"]);
+    }
+
+    #[test]
+    fn cdata_in_html_content_is_a_bogus_comment() {
+        let t = run("<![CDATA[x]]>");
+        assert_eq!(
+            t.tokens,
+            vec![
+                Token::Comment {
+                    data: "[CDATA[x]]".to_string()
+                },
+                Token::EndOfFile
+            ]
+        );
+        assert_eq!(codes(&t), vec!["cdata-in-html-content"]);
+    }
+
+    #[test]
+    fn a_text_state_is_not_written_yet() {
+        let input: Vec<u32> = "a".chars().map(u32::from).collect();
+        assert_eq!(
+            tokenize(&input, State::Rcdata, Some("title")),
+            Tokenized::default()
+        );
+    }
 }

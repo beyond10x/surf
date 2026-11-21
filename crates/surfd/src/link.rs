@@ -22,6 +22,8 @@
 //! state <open or closed>
 //! address "<the address, quoted>"
 //! title "<the title, quoted>"
+//! entries <n>
+//! <n bytes: the entries>
 //! answer <n>
 //! <n bytes: the answer lines>
 //! ```
@@ -32,8 +34,43 @@
 //!   closed, `open` otherwise; the address and the title of the page as the session reports
 //!   them, each a field of [`surf_answer::quote`], each absent when there is none. `surfd` keeps
 //!   them quoted ([`Quoted`]) and does not read them.
-//! - The answer lines are at most [`ANSWER_TEXT_MAX`] bytes; everything before them at most
-//!   [`RECORD_MAX`]; all of it printable ASCII and line feeds, every line ending in a line feed.
+//! - `entries <n>`, always there, `entries 0` for none: the entries of the request for the log
+//!   `surfd` keeps ([`crate::log`]), at most [`ENTRIES_MAX`] bytes ([`Entry`], below).
+//! - The answer lines are at most [`ANSWER_TEXT_MAX`] bytes; the lines of the record (every line
+//!   but the bytes of the entries and the answer lines) at most [`RECORD_MAX`]; all of it
+//!   printable ASCII and line feeds, every line ending in a line feed.
+//!
+//! # The entries
+//!
+//! The entries of one request, in the order of decision D19: for each action the session
+//! recorded, its action entry, then the events its system published for it; then one answer
+//! entry. A request that recorded no action (`look`, a refusal) has none. An action entry and an
+//! event entry are one line each; an answer entry is a line `answer-entry <m>` and the `m` bytes
+//! of its answer lines:
+//!
+//! ```text
+//! action <sequence> <command>
+//! action <sequence> <command> "<argument>"
+//! event <qualified name> <field>="<value>" <field>= …
+//! event <qualified name> unmapped
+//! answer-entry <m>
+//! <m bytes: the answer lines without the token line>
+//! ```
+//!
+//! - An action entry is the action as the `path` line prints it (`docs/agent-answer.md`): its
+//!   sequence number, its command, a word of `[a-z]+`, and its argument as a quoted field.
+//! - An event entry names the event as `spec/` does (`surf.net.RequestStarted`), then every
+//!   field of it in the order `spec/` declares them, each `<name>=` and its value as a quoted
+//!   field of [`surf_answer::quote`], or nothing after `=` for an absent optional value; or the
+//!   word `unmapped` and no field, for an event the session does not map.
+//! - The block is empty, or it starts with an action entry and its one answer entry is its last.
+//! - The answer entry is exactly the answer lines of the same link answer without their `token`
+//!   line ([`without_token`]), and holds no `token` line.
+//!
+//! `surfd` checks the entries against these rules and keeps them as they arrived; it does not
+//! read the quoted fields. It reads every link answer to its end, also one that comes after the
+//! call's timeout (`crate::LATE_ANSWER_TIMEOUT`), so the entries of every request the session
+//! answered reach the log in the order the session answered them.
 //!
 //! A session that breaks any of these rules (a byte on standard output after `ready`, an answer
 //! that does not decode, one over a limit, a connection closed in the middle of an answer, a
@@ -56,11 +93,15 @@ pub const READY: &str = wire::READY;
 /// same limit the client takes, so that no answer passes the link and is then refused.
 pub const ANSWER_TEXT_MAX: usize = wire::ANSWER_TEXT_MAX;
 
-/// The most bytes of a link answer before its answer lines: 64 KiB.
+/// The most bytes of the lines of a link answer's record, every line but the bytes of the
+/// entries and the answer lines: 64 KiB.
 pub const RECORD_MAX: usize = 64 * 1024;
 
-/// The most bytes of one link answer: [`wire::ANSWER_MAX`].
-pub const ANSWER_MAX: usize = wire::ANSWER_MAX;
+/// The most bytes of the entries of one link answer: 8 MiB.
+pub const ENTRIES_MAX: usize = 8 * 1024 * 1024;
+
+/// The most bytes of one link answer: [`ANSWER_TEXT_MAX`] + [`RECORD_MAX`] + [`ENTRIES_MAX`].
+pub const ANSWER_MAX: usize = ANSWER_TEXT_MAX + RECORD_MAX + ENTRIES_MAX;
 
 /// The name of the session socket in the session's directory.
 pub const SESSION_SOCKET: &str = "session.sock";
@@ -116,6 +157,260 @@ impl fmt::Debug for Quoted {
     }
 }
 
+/// The kind of an entry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EntryKind {
+    /// An action the session recorded.
+    Action,
+    /// An event the session's system published.
+    Event,
+    /// The answer lines of the request, without the token line.
+    Answer,
+}
+
+/// One entry of a link answer ("The entries", above).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Entry {
+    /// Its kind.
+    pub kind: EntryKind,
+    /// For an action and an event entry its one line, line feed included; for an answer entry
+    /// its answer lines. These are the bytes of the entry as the link carries them, without
+    /// the `answer-entry <m>` line.
+    pub text: String,
+}
+
+impl Entry {
+    /// The action or event entry of `line` (without its line feed), by its first word; `None`
+    /// for a line of neither kind.
+    pub fn line(line: &str) -> Option<Entry> {
+        let kind = line_kind(line)?;
+        Some(Entry {
+            kind,
+            text: format!("{line}\n"),
+        })
+    }
+
+    /// The answer entry of the answer lines `text`.
+    pub fn answer(text: &str) -> Entry {
+        Entry {
+            kind: EntryKind::Answer,
+            text: text.to_string(),
+        }
+    }
+
+    /// Whether the entry keeps the rules of its kind.
+    fn check(&self) -> Result<(), LinkError> {
+        match self.kind {
+            EntryKind::Action | EntryKind::Event => {
+                let line = self
+                    .text
+                    .strip_suffix('\n')
+                    .filter(|line| !line.contains('\n'))
+                    .ok_or(LinkError::Malformed("an entry that is not one line"))?;
+                if line_kind(line) != Some(self.kind) {
+                    return Err(LinkError::Malformed("an entry line outside its grammar"));
+                }
+                Ok(())
+            }
+            EntryKind::Answer => {
+                if self.text.is_empty() {
+                    return Err(LinkError::Malformed("an empty answer entry"));
+                }
+                check_text(self.text.as_bytes())
+            }
+        }
+    }
+}
+
+/// The kind of an action or event entry line, if it keeps the grammar of one.
+fn line_kind(line: &str) -> Option<EntryKind> {
+    if !line.bytes().all(|b| (b' '..=b'~').contains(&b)) {
+        return None;
+    }
+    if let Some(rest) = line.strip_prefix("action ") {
+        return action_line(rest).then_some(EntryKind::Action);
+    }
+    if let Some(rest) = line.strip_prefix("event ") {
+        return event_line(rest).then_some(EntryKind::Event);
+    }
+    None
+}
+
+/// `<sequence> <command>` and an optional ` <quoted>`.
+fn action_line(rest: &str) -> bool {
+    let mut words = rest.splitn(3, ' ');
+    let (Some(sequence), Some(command)) = (words.next(), words.next()) else {
+        return false;
+    };
+    let argument_ok = match words.next() {
+        None => true,
+        Some(field) => surf_answer::unquote(field).is_ok(),
+    };
+    is_number(sequence)
+        && !command.is_empty()
+        && command.bytes().all(|b| b.is_ascii_lowercase())
+        && argument_ok
+}
+
+/// `<name>` and either ` unmapped` or any number of ` <field>=` with an optional quoted value.
+fn event_line(rest: &str) -> bool {
+    let (name, mut fields) = rest.split_once(' ').unwrap_or((rest, ""));
+    if name.is_empty()
+        || !name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'_')
+    {
+        return false;
+    }
+    if fields == "unmapped" {
+        return true;
+    }
+    if rest.contains(' ') && fields.is_empty() {
+        return false;
+    }
+    while !fields.is_empty() {
+        let Some((field, after)) = fields.split_once('=') else {
+            return false;
+        };
+        if field.is_empty()
+            || !field
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+        {
+            return false;
+        }
+        let (value, next) = match after.strip_prefix('"') {
+            // A quoted field ends at the first `"` after its opening one.
+            Some(inside) => match inside.find('"') {
+                Some(end) => (&after[..end + 2], &after[end + 2..]),
+                None => return false,
+            },
+            None => ("", after),
+        };
+        if !value.is_empty() && surf_answer::unquote(value).is_err() {
+            return false;
+        }
+        fields = match next.strip_prefix(' ') {
+            Some(more) if !more.is_empty() => more,
+            Some(_) => return false,
+            None if next.is_empty() => "",
+            None => return false,
+        };
+    }
+    true
+}
+
+/// A number of `docs/agent-answer.md`: decimal digits without a leading zero.
+fn is_number(word: &str) -> bool {
+    !word.is_empty()
+        && word.bytes().all(|b| b.is_ascii_digit())
+        && (word.len() == 1 || !word.starts_with('0'))
+}
+
+/// The bytes of `entries` as the link carries them, after checking each and their order.
+fn encode_entries(entries: &[Entry]) -> Result<Vec<u8>, LinkError> {
+    check_order(entries)?;
+    let mut bytes = Vec::new();
+    for entry in entries {
+        entry.check()?;
+        if entry.kind == EntryKind::Answer {
+            bytes.extend_from_slice(format!("answer-entry {}\n", entry.text.len()).as_bytes());
+        }
+        bytes.extend_from_slice(entry.text.as_bytes());
+        if bytes.len() > ENTRIES_MAX {
+            return Err(LinkError::TooLarge);
+        }
+    }
+    Ok(bytes)
+}
+
+/// The entries in `bytes`, which hold exactly the block.
+fn decode_entries(mut rest: &[u8]) -> Result<Vec<Entry>, LinkError> {
+    let mut entries = Vec::new();
+    while !rest.is_empty() {
+        let line = next_line(&mut rest)?;
+        let entry = match line.strip_prefix("answer-entry ") {
+            Some(count) => {
+                if !is_number(count) {
+                    return Err(LinkError::Malformed("no answer entry count"));
+                }
+                let count: usize = count.parse().map_err(|_| LinkError::TooLarge)?;
+                if count > rest.len() {
+                    return Err(LinkError::Malformed(
+                        "an answer entry longer than the entries",
+                    ));
+                }
+                let (text, after) = rest.split_at(count);
+                rest = after;
+                check_text(text)?;
+                Entry::answer(
+                    std::str::from_utf8(text)
+                        .map_err(|_| LinkError::Malformed("an entry outside printable ASCII"))?,
+                )
+            }
+            None => {
+                Entry::line(line).ok_or(LinkError::Malformed("an entry outside the grammar"))?
+            }
+        };
+        entry.check()?;
+        entries.push(entry);
+    }
+    check_order(&entries)?;
+    Ok(entries)
+}
+
+/// The answer lines `text` without the `token` line, which only the answer of `open` has and
+/// which no entry keeps (decision D21): the one definition of an answer entry's bytes. No other
+/// line of an answer starts with `token `: a quoted value never starts a line
+/// (`docs/agent-answer.md`).
+pub fn without_token(text: &str) -> String {
+    text.split_inclusive('\n')
+        .filter(|line| !line.starts_with("token "))
+        .collect()
+}
+
+/// Every answer entry of `entries` (there is at most one) is exactly the answer lines `text`
+/// without the `token` line, and holds no `token` line itself.
+fn check_answer_entry(entries: &[Entry], text: &str) -> Result<(), LinkError> {
+    for entry in entries
+        .iter()
+        .filter(|entry| entry.kind == EntryKind::Answer)
+    {
+        if entry
+            .text
+            .split_inclusive('\n')
+            .any(|line| line.starts_with("token "))
+        {
+            return Err(LinkError::Malformed(
+                "an answer entry holding the token line",
+            ));
+        }
+        if entry.text != without_token(text) {
+            return Err(LinkError::Malformed(
+                "an answer entry other than the answer lines without the token line",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// No entries, or an action entry first and the one answer entry last.
+fn check_order(entries: &[Entry]) -> Result<(), LinkError> {
+    let (Some(first), Some(last)) = (entries.first(), entries.last()) else {
+        return Ok(());
+    };
+    let answers = entries
+        .iter()
+        .filter(|entry| entry.kind == EntryKind::Answer)
+        .count();
+    if first.kind != EntryKind::Action || last.kind != EntryKind::Answer || answers != 1 {
+        return Err(LinkError::Malformed(
+            "entries that do not start with an action and end with the one answer entry",
+        ));
+    }
+    Ok(())
+}
+
 /// One link answer.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Answer {
@@ -129,6 +424,9 @@ pub struct Answer {
     pub address: Option<Quoted>,
     /// The title of the page, if it has one.
     pub title: Option<Quoted>,
+    /// The entries for the log `surfd` keeps, in their order; none for a request that recorded
+    /// no action.
+    pub entries: Vec<Entry>,
     /// The answer lines, each ending in a line feed.
     pub text: String,
 }
@@ -170,6 +468,7 @@ impl Answer {
             return Err(LinkError::Malformed("a status above 3"));
         }
         check_text(self.text.as_bytes())?;
+        check_answer_entry(&self.entries, &self.text)?;
         let mut record = format!("{VERSION_LINE}\nstatus {}\n", self.status);
         if let Some(reason) = &self.reason {
             record.push_str(&format!("reason {}\n", surf_answer::quote(reason)));
@@ -184,11 +483,15 @@ impl Answer {
         if let Some(title) = &self.title {
             record.push_str(&format!("title {}\n", title.as_str()));
         }
-        record.push_str(&format!("answer {}\n", self.text.len()));
-        if record.len() > RECORD_MAX {
+        let entries = encode_entries(&self.entries)?;
+        record.push_str(&format!("entries {}\n", entries.len()));
+        let answer_line = format!("answer {}\n", self.text.len());
+        if record.len() + answer_line.len() > RECORD_MAX {
             return Err(LinkError::TooLarge);
         }
         let mut bytes = record.into_bytes();
+        bytes.extend_from_slice(&entries);
+        bytes.extend_from_slice(answer_line.as_bytes());
         bytes.extend_from_slice(self.text.as_bytes());
         Ok(bytes)
     }
@@ -243,12 +546,32 @@ impl Answer {
             );
             line = next_line(&mut rest)?;
         }
-        let count = line
+        let entries_count = line
+            .strip_prefix("entries ")
+            .filter(|digits| is_number(digits))
+            .ok_or(LinkError::Malformed("no entries count"))?;
+        let head = bytes.len() - rest.len();
+        if head > RECORD_MAX {
+            return Err(LinkError::TooLarge);
+        }
+        let entries_count: usize = entries_count.parse().map_err(|_| LinkError::TooLarge)?;
+        if entries_count > ENTRIES_MAX {
+            return Err(LinkError::TooLarge);
+        }
+        if entries_count > rest.len() {
+            return Err(LinkError::Malformed(
+                "the entries are not as long as their count",
+            ));
+        }
+        let (block, after) = rest.split_at(entries_count);
+        let entries = decode_entries(block)?;
+        rest = after;
+        let before_answer = rest.len();
+        let count = next_line(&mut rest)?
             .strip_prefix("answer ")
-            .filter(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
-            .filter(|digits| digits.len() == 1 || !digits.starts_with('0'))
+            .filter(|digits| is_number(digits))
             .ok_or(LinkError::Malformed("no answer count"))?;
-        if bytes.len() - rest.len() > RECORD_MAX {
+        if head + (before_answer - rest.len()) > RECORD_MAX {
             return Err(LinkError::TooLarge);
         }
         let count: usize = count.parse().map_err(|_| LinkError::TooLarge)?;
@@ -263,12 +586,14 @@ impl Answer {
         check_text(rest)?;
         let text = String::from_utf8(rest.to_vec())
             .map_err(|_| LinkError::Malformed("answer lines outside printable ASCII"))?;
+        check_answer_entry(&entries, &text)?;
         Ok(Answer {
             status,
             reason,
             state,
             address,
             title,
+            entries,
             text,
         })
     }
@@ -312,6 +637,19 @@ fn check_text(text: &[u8]) -> Result<(), LinkError> {
 /// bytes, all of it by `deadline`. Reading stops at the first byte over the limit.
 pub fn read_answer(stream: &mut UnixStream, deadline: Instant) -> Result<Answer, LinkError> {
     let mut bytes = Vec::new();
+    read_to_end(stream, &mut bytes, deadline)?;
+    Answer::decode(&bytes)
+}
+
+/// Read the rest of one link answer from `stream` into `bytes`, which hold what was read of it
+/// before, to the end of the connection, at most [`ANSWER_MAX`] bytes in all, by `deadline`.
+/// After [`LinkError::Timeout`] `bytes` hold everything read so far, so that a later call can
+/// go on reading the same answer.
+pub fn read_to_end(
+    stream: &mut UnixStream,
+    bytes: &mut Vec<u8>,
+    deadline: Instant,
+) -> Result<(), LinkError> {
     let mut chunk = vec![0u8; 64 * 1024];
     loop {
         let left = deadline.saturating_duration_since(Instant::now());
@@ -349,5 +687,5 @@ pub fn read_answer(stream: &mut UnixStream, deadline: Instant) -> Result<Answer,
             Err(error) => return Err(LinkError::Io(error)),
         }
     }
-    Answer::decode(&bytes)
+    Ok(())
 }

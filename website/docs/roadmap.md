@@ -5,14 +5,14 @@ description: What surf can do after which step of the current plan, and what com
 
 # Roadmap
 
-The current plan has 58 stories in 22 steps, called waves. Waves 1 to 4 are delivered.
+The current plan has 58 stories in 22 steps, called waves. Waves 1 to 5 are delivered.
 
 Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `surf-agent`,
 `surfd` and `surf-session`, for Linux only at first. The
 [releases page](https://github.com/beyond10x/surf/releases) lists the releases. After it, work
 moves to the script engine, a
-project of its own. The waves after 4 stay planned, and the steps after it, and the list under
-"After the plan", have no date.
+project of its own. Wave 5 followed; the waves after it are planned, and they and the list
+under "After the plan" have no date.
 
 | after wave | what you can do |
 |---|---|

@@ -7,7 +7,8 @@
 //! until its process ends; then `closed` when the process ended with status 0 and `surfd` did not
 //! kill it (after `close`, the session's own idle timeout, or the end of `surfd`), `died` in
 //! every other case. At most [`ENDED_MAX`] ended sessions stay listed; when one more ends, the
-//! one that ended first is dropped, and an identity that is no longer listed answers `unknown`.
+//! one that ended first is dropped, its log with it ([`crate::log`]), and an identity that is no
+//! longer listed answers `unknown`.
 //!
 //! The address and the title are kept as the session reported them on the link: quoted by
 //! `surf-answer` ([`Quoted`]), printable ASCII. `surfd` does not read them; a reader takes the
@@ -50,6 +51,8 @@ pub struct Session {
     pub address: Option<Quoted>,
     /// The title as the session last reported it, quoted.
     pub title: Option<Quoted>,
+    /// Whether the bound over all sessions dropped its log whole ([`crate::log`]).
+    pub log_dropped: bool,
 }
 
 /// The list at one moment, in the order the sessions were opened.

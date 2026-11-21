@@ -146,17 +146,21 @@ fn review2_standard_error_closed_changes_no_exit_status() {
     assert_eq!(status, Some(1));
 }
 
-/// Standard output whose reader has gone (a broken pipe) exits 3 and does not die of SIGPIPE.
+/// Standard output whose reader has gone (a broken pipe) exits 3 and does not die of SIGPIPE. The
+/// reader is gone before `surf` starts: the pipe's read end is dropped in the test before the
+/// spawn, and the write end is the child's standard output. The standard library creates both
+/// ends close-on-exec, so the child holds no read end and its first write finds no reader.
 #[test]
 fn review2_a_standard_output_whose_reader_has_gone_exits_3() {
+    let (reader, writer) = std::io::pipe().expect("pipe");
+    drop(reader);
     let mut child = Command::new(env!("CARGO_BIN_EXE_surf"))
         .arg(closed_port_address())
         .stdin(Stdio::null())
-        .stdout(Stdio::piped())
+        .stdout(writer)
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn surf");
-    drop(child.stdout.take());
     let mut stderr = String::new();
     child
         .stderr

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T13:40:36Z",
+  "actor": "human:operator",
+  "artifact": "story:html-input-stream",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the coordinator's run of the package surf-html and of the task html-conformance at the unit's change (e9f2204), and slot task check in the runner's form on wave/a5-events-html at 799eeab",
+    "reference": "exit 0; tag encoding 75/82/82 in crates/html-conformance/expected/encoding.txt (0 of 82 before); 13 tests in crates/html/tests/encoding.rs; no raise: line in the gate's log; 4 planted defects each red (the unit's runs); verdict VERIFIED"
+  }
+}

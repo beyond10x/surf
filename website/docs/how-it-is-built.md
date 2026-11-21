@@ -49,8 +49,8 @@ generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 Cargo.lock: 21 package(s), none from outside this repository
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.00s
-97 test suites: 363 passed, 0 failed, 0 ignored
-html-conformance: 9107 cases, 9095 run, 5 passed
+102 test suites: 407 passed, 0 failed, 0 ignored
+html-conformance: 9107 cases, 9095 run, 4164 passed
 ```
 
 It validates the specification, runs the 83 scenarios against the interpreter built into `ess`

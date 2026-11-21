@@ -13,7 +13,22 @@ description: What surf does today, and what it does not do yet.
   hard limits on header and body size.
 - **83 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **363 tests**, built with warnings treated as errors.
+- **407 tests**, built with warnings treated as errors.
+
+New with the fifth wave of the current plan, not in a release yet. Nothing a user of
+`surf-agent` sees has changed:
+
+- **What a session did, kept for the live view.** With each answer, a session's process sends
+  the daemon what it did: the actions, the events they caused and the answer, without the token.
+  `surfd` keeps these in memory only, bounded per session and over all sessions. Nothing shows
+  them yet; the live view reads them in a later wave.
+- **The HTML parser decides the encoding.** It sniffs a document's encoding as the HTML Standard
+  says (a byte order mark, else a `meta` element in the first 1,024 bytes, else windows-1252) and
+  decodes UTF-8, UTF-16 and windows-1252. It passes 75 of the 82 encoding cases.
+- **The tokenizer reads markup.** Tags, attributes, comments, DOCTYPEs, processing instructions
+  and CDATA sections are tokenized, and all 1,979 markup cases of the test data pass. Text inside
+  elements such as `<script>` and `<textarea>` and character references are not read yet, and
+  the parser builds no tree, so an answer still shows no page content.
 
 New with the fourth wave of the current plan, shipped in release `0.2.0` (the
 [releases page](https://github.com/beyond10x/surf/releases) lists them):
@@ -30,9 +45,9 @@ New with the fourth wave of the current plan, shipped in release `0.2.0` (the
   failure of its own, `TooManyRedirects`. The transport does not follow redirects yet, so today a
   redirect status is delivered as the response.
 - **A gate for the HTML parser's tests.** The harness's counts are written down per file, tag and
-  section, and `task check` fails when a count differs, when a case stops running without a
-  reason, or when an expected count is lowered. The parser is still empty, so it passes 5 of
-  9,095 cases, and the gate holds exactly that.
+  section, and `task check` fails when a count falls below them, when a case stops running
+  without a reason, or when an expected count is lowered. The parser was empty then and passed 5
+  of 9,095 cases; after the fifth wave it passes 4,164, and the gate holds that.
 - **Four binaries in one release.** A Linux archive holds `surf`, `surf-agent`, `surfd` and
   `surf-session`; a macOS archive holds `surf`. A smoke test runs the unpacked archive before a
   release is cut. See [Try it](try-it.md#install).
@@ -66,8 +81,8 @@ New with the second wave:
   ([`docs/view-stream.md`](https://github.com/beyond10x/surf/blob/main/docs/view-stream.md)). Its
   page is new with the third wave.
 - **A test harness for the HTML parser.** It holds 9,107 cases from html5lib-tests and
-  web-platform-tests and counts how many a parser passes. The parser is still empty, so today it
-  runs 9,095 of them and passes 5, which is one tokenizer test with an empty input.
+  web-platform-tests and counts how many a parser passes. Today it runs 9,095 of them and passes
+  4,164: 75 encoding cases and 4,089 tokenizer cases. The parser builds no tree yet.
 
 New with the first wave:
 

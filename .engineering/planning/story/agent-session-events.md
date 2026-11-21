@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-session-events
 kind: story
-status: active
+status: implemented
 title: Session processes publish their actions, events and answers to surfd, which keeps a bounded log
 summary: Each session process sends, per action, its action, events and answer lines to surfd, which stamps them with a per-session number and one across sessions, keeps at most 10,000 entries or 16 MiB per session and 64 MiB over all, and hands them to in-process readers from a number.
 relations:
@@ -11,10 +11,18 @@ relations:
 - depends_on: story:agent-session-process
 - informed_by: epic:live-view
 - depends_on: story:agent-redirect-spec
-revision: 7
+scope:
+- confidence: cited
+  path: crates/session
+- confidence: cited
+  path: crates/surfd
+- confidence: cited
+  path: docs/view-stream.md
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-11-21T13:40:36Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 
@@ -77,16 +85,28 @@ The decisions of `docs/plan/agent-plan-revision-1.md` (D17) and `docs/plan/agent
 
 - `crates/session`: after each command that records an action, the entries in the order above:
   the action entry from the view `SessionLog`; one event entry for every event its system
-  published since the last command, read in order through `Browser::system().published()` with a
-  cursor of its own; the answer entry, the rendered lines without a `token` line. One function
-  maps a `SystemEvent` to an event entry, each field value quoted by `surf-answer`; the rule is by
+  published since the last command, read in order through `Browser::system().published()` inside
+  `Session::answer`, before its `forget_delivered`, which empties that list after every answer;
+  the answer entry, the rendered lines without a `token` line. `open <url>` records two actions:
+  action `open`, the events up to and including the run after its `RecordAction`, action `go`,
+  the remaining events, then the one answer entry. One function
+  maps a `SystemEvent` to an event entry, each field value quoted by `surf-answer` (an `Integer`
+  in decimal, an enum by its variant name as `spec/` spells it, `open` and not `Open`, an
+  identity in its text form, an absent `Optional` as a field with no value); the rule is by
   field type: every field of the specification type `Bytes` (generated `Vec<u8>`; on `main` the
   `body` of `surf.net.ResponseReceived` and the `body` of `surf.navigation.NavigationCommitted`)
   is written as the text `<n> bytes`, which reaches the log
   quoted by `surf-answer`'s quoting function like every other event field (D26); an event it does not map is
-  written with `SystemEvent::name()` (generated), the mark `unmapped` and no field. The mapping
+  written with `SystemEvent::name()` (generated), the mark `unmapped` and no field (an arm under
+  `#[allow(unreachable_patterns)]` while every variant is mapped: `SystemEvent` is not
+  `#[non_exhaustive]`; no case reaches it on `main`). The mapping
   test (case 17) holds a list of the variants it covers; each story that maps an event adds it.
-- `crates/surfd`: the entries of a link answer, checked against the link rules; one log per
+- `crates/surfd`: the link answer gains, before `answer <n>`, a line `entries <n>` and the n
+  bytes of the entries in the order above: an action or an event entry is one line, every field
+  quoted (D26); an answer entry is a line `answer-entry <m>` and the m bytes of its lines. The
+  block is at most 8 MiB (`link::ENTRIES_MAX`); `link::ANSWER_MAX` becomes
+  `ANSWER_TEXT_MAX + RECORD_MAX + ENTRIES_MAX`; anything over it breaks the link as today;
+  `surfd` checks the entries against the link rules; one log per
   session; each entry stamped with the session, its per-session number from 1, its number across
   sessions from 1 for each run of `surfd`, and the time `surfd` received it (milliseconds since
   the Unix epoch). In process, beside `Daemon::sessions()` of `agent-surfd-supervisor`:
@@ -97,16 +117,35 @@ The decisions of `docs/plan/agent-plan-revision-1.md` (D17) and `docs/plan/agent
     been dropped;
   - `Daemon::subscribe_after(number)`: the same entries, then every new entry as it is kept, in
     order, through a queue of 1,024; or `OlderThanKept`.
-  The session list entry gains `log dropped`. All three bounds (entries per session, bytes per
+  The log is a public type, `surfd::log::Log`, which the daemon holds and a test drives alone
+  (keep an entry, end a session, the three readers); an entry's size is the bytes of its lines as
+  the link carried them.
+  The session list entry gains `log dropped`. A session dropped from the list (above 256 ended)
+  drops its log with it. All three bounds (entries per session, bytes per
   session, bytes over all sessions) and the queue of a live reader are options of the `surfd`
   config, so a test can lower each, here and in `story:view-surfd-serves`.
-- `crates/session/tests/` and `crates/surfd/tests/`, the counted cases. Cases that read the log run
+- `docs/view-stream.md`: the five names `surf.agent.ActionRecorded`,
+  `surf.agent.NavigationRequested`, `surf.agent.SessionClosed`,
+  `surf.agent.SessionNavigationChanged` and `surf.agent.SessionOpened` in the block "Event
+  names"; the example of `GET /api/sessions/<id>` corrected so that its `open` holds the entries
+  the session keeps (the action entry, then `surf.shell.WindowOpened`, `surf.shell.TabOpened`,
+  `surf.agent.SessionOpened` and `surf.agent.ActionRecorded` in the order case 1 measures, then
+  the answer entry) and its `go` holds the `surf.agent.*` events the session keeps for it, in
+  the order case 1 measures, with every later `number`, `index`, `newest` and byte count of the
+  document's examples moved to match.
+- The counted cases: 1 to 8 and 12 to 18 in `crates/session/tests/events.rs` (only this package
+  has the built `surf-session`), 9 to 11 in `crates/surfd/tests/log.rs`. Cases that read the log run
   `surfd` in the test process through `Daemon::start` with the built `surf-session` as the session
   program, a page server the test starts, and requests over `surf_agent::wire` (decision D29):
   1. `open` without an address, then `go` to a served page: the session log holds the `open`
      action entry, its event entries, its answer entry, the `go` action entry, its event entries
-     in the order the in-process core of the same calls lists `System::published()`, and its
-     answer entry, per-session numbers consecutive from 1;
+     in the order `System::published()` lists them (by `SystemEvent::name()`) in a
+     `surf::MemoryBrowser` the test drives itself with the commands the session issues, over the
+     same page server, and its answer entry, per-session numbers consecutive from 1; `open <url>`
+     in a second session gives action `open`, its events, action `go`, its events, one answer
+     entry. The unit first measures the number of entries of `open` and of `go` to a served HTML
+     page (counted from `spec/`, not measured: 6 and 11) and writes the measured numbers into
+     this test and its report;
   2. the answer entry of that `go` equals the lines the client printed, byte for byte, and
      `surf_answer::parse` of it gives the page line;
   3. `token_in_no_entry`: the answer entry of `open` holds every line the client printed but the
@@ -121,15 +160,20 @@ The decisions of `docs/plan/agent-plan-revision-1.md` (D17) and `docs/plan/agent
      holds a byte of the page;
   8. `go` to a page of 6 MiB: the session answers and stays `open`, and both entries have `body`
      as `6291456 bytes`;
-  9. the entry bound per session set to 10, after 25 entries: 10 kept, the first kept is
-     per-session number 16, dropped 15;
+  9. the log alone, the entry bound per session set to 10, after 25 entries: 10 kept, the first
+     kept is per-session number 16, dropped 15; and `Config::new` holds 10,000 entries,
+     16,777,216 bytes, 67,108,864 bytes and a queue of 1,024, compared with literals;
   10. the log alone, with entries of exactly 1,000 bytes and the byte bound per session set to
       4,096, after 10 entries: 4 kept, the first kept is 7, dropped 6;
   11. the log alone, entries of 1,000 bytes, the bound over all sessions set to 8,000: session A
-      ended with 4 entries, session B open with 4; after 2 more of B the log of A is dropped
-      whole, its list entry says `log dropped`, and B keeps all 6;
+      ended with 4 entries, session B open with 4; at 8,000 bytes the log of A is kept; after 1
+      more of B it is dropped whole and the log reports it dropped; after 1 more B keeps all 6.
+      Through `Daemon::start` with the bound over all sessions lowered below the bytes of one
+      session's `open` entries: session A opened and closed, then session B opened, and the list
+      entry of A says `log dropped`;
   12. `entries_after` the number of the second entry gives every later entry in order; after
-      entries were dropped, `entries_after` a number below the first kept answers `OlderThanKept`;
+      entries 1 to 6 were dropped, `entries_after(6)` gives every kept entry and
+      `entries_after(5)` answers `OlderThanKept`;
   13. `subscribe_after` the last kept number, taken before a `go`, delivers the entries of that
       `go` equal to the log, in order;
   14. a subscriber that never reads is disconnected after 1,024 entries; `surfd` and the session
@@ -148,7 +192,11 @@ The decisions of `docs/plan/agent-plan-revision-1.md` (D17) and `docs/plan/agent
       `surf.navigation.NavigationCommitted.body` on `main`, and each maps to `<n> bytes` for a body
       of 3 bytes, never to the bytes; a story that adds a `Bytes` field adds it to the list.
 
-Surfaces written: `crates/session/`, `crates/surfd/`.
+Surfaces written: `crates/session/` (`src/lib.rs`, a new module under `src/` for the mapping,
+`tests/common/mod.rs`, `tests/events.rs`), `crates/surfd/` (`src/link.rs`, `src/daemon.rs`,
+`src/log.rs`, `src/sessions.rs`, `src/lib.rs`, `examples/stand_in_session.rs`,
+`tests/common/mod.rs`, `tests/log.rs`), and `docs/view-stream.md` (the block "Event names" and
+the examples).
 
 ## For AGENTS.md (handed over in the unit report, decision D7)
 
@@ -160,7 +208,7 @@ Surfaces written: `crates/session/`, `crates/surfd/`.
 
 `cargo test -p surf-session -p surfd` passes with the 18 numbered cases, each a test named after
 its case (case 3 named `token_in_no_entry`), case 1 comparing the event names with
-`System::published()` of the in-process core, case 8 leaving the session `open`, and case 11
+`System::published()` of a `surf::MemoryBrowser` the test drives, case 8 leaving the session `open`, and case 11
 reporting the log of A dropped and 6 entries kept for B.
 
 ## Out of scope

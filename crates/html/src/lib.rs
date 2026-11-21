@@ -3,20 +3,52 @@
 //! (<https://html.spec.whatwg.org/multipage/parsing.html>). The decisions it follows are
 //! `docs/design/html-parser.md`.
 //!
-//! # State: an interface that parses nothing yet
+//! # State
 //!
-//! Every entry point returns an empty result: [`parse_document`] and [`parse_fragment`] a tree
-//! that holds only its root, [`parse_document_bytes`] that tree and no encoding,
-//! [`encoding::decode`] no text and no encoding, [`tokenizer::tokenize`] no token and no parse
-//! error. The stories of `epic:html-parser` fill one module each:
+//! Bytes are decoded and the decoded text can be tokenized, but no entry point builds a tree
+//! from it yet. [`parse_document`] and [`parse_fragment`] return a tree that holds only its
+//! root, and neither calls the tokenizer. Module by module:
 //!
-//! - [`encoding`]: the label table, the decoders, BOM sniffing and the prescan.
-//! - [`input`]: preprocessing of the input stream.
-//! - [`tokenizer`]: the tokenizer states and the token types.
-//! - [`charref`]: the character reference states and the named reference table.
-//! - [`tree`]: the node arena.
-//! - [`tree_builder`]: the insertion modes.
-//! - [`limits`]: the limits of `docs/design/html-parser.md` item 7.
+//! - [`encoding`]: written. [`encoding::decode`] runs the encoding sniffing algorithm with no
+//!   transport-layer encoding: a byte order mark (confidence certain), else the prescan of the
+//!   first 1,024 bytes ([`encoding::PRESCAN_BYTES`]) for a `meta` element and an XML
+//!   declaration, else windows-1252 (confidence tentative); it then decodes the bytes. The
+//!   decoders are those of UTF-8, UTF-16LE, UTF-16BE, windows-1252 and replacement. The other
+//!   35 of the 40 encodings in the label table [`encoding::ENCODINGS`] are decoded as
+//!   windows-1252: [`encoding::Decoded::encoding`] names the encoding chosen and
+//!   [`encoding::Decoded::decoded_with`] the one that decoded. [`encoding::get_an_encoding`]
+//!   looks a label up. [`encoding::decode_with`] decodes again with a named encoding, with
+//!   confidence certain, and returns `None` for a name that is no encoding's. The user's
+//!   override, the container document, an earlier visit and autodetection are not taken.
+//! - [`input`]: written. [`input::InputStream`] holds the code points of the input with every
+//!   CR LF and every CR on its own turned into one LF, and [`input::parse_error`] names the
+//!   three parse errors of the input stream (surrogate, noncharacter, control character).
+//! - [`tokenizer`]: partly written. [`tokenizer::tokenize`] runs the data state and the tag,
+//!   attribute, comment, DOCTYPE, CDATA section and processing instruction states, started in
+//!   [`tokenizer::State::Data`] or [`tokenizer::State::CdataSection`], and returns tokens and
+//!   parse errors. `<![CDATA[` in the data state is a bogus comment with the parse error
+//!   `cdata-in-html-content`, because there is no tree builder to say that the adjusted current
+//!   node is in a foreign namespace. Started in the RCDATA, RAWTEXT, script data or PLAINTEXT
+//!   state it returns no token and no parse error, and `last_start_tag` is not read. The
+//!   character reference state is a stub: `&` is emitted as a character, or appended to the
+//!   attribute value, and the characters after it are read in the state it came from.
+//! - [`charref`]: nothing yet. The module holds no item: no named reference table, no
+//!   character reference states.
+//! - [`tree`]: the types of the node arena and the accessors [`Tree::root`], [`Tree::data`] and
+//!   [`Tree::children`]. Nothing in the crate adds a node to a tree.
+//! - [`tree_builder`]: nothing yet. The module holds no item: no insertion mode.
+//! - [`limits`]: nothing yet. The module holds no item: none of the limits of
+//!   `docs/design/html-parser.md` item 7 is enforced.
+//!
+//! Entry points:
+//!
+//! - [`parse_document`]: returns a document with no child, whatever the input and the options.
+//! - [`parse_fragment`]: returns a document fragment with no child, whatever the input, the
+//!   context and the options.
+//! - [`parse_document_bytes`]: runs [`encoding::decode`] and passes the text to
+//!   [`parse_document`], so the tree has no child. [`ParsedDocument::encoding`] is the
+//!   encoding [`encoding::decode`] chose, always `Some`. Changing the encoding while parsing
+//!   is not written.
 //!
 //! The crate is held to the html5lib-tests and web-platform-tests data by the crate
 //! `surf-html-conformance`, which counts the cases that exist, run and pass.
@@ -69,8 +101,10 @@ pub struct Context {
 pub struct ParsedDocument {
     /// The document.
     pub tree: Tree,
-    /// The name, as the Encoding Standard writes it, of the encoding the document was decoded
-    /// with at the end of parsing; `None` when none was chosen.
+    /// The name, as the Encoding Standard writes it, of the encoding chosen for the document at
+    /// the end of parsing: the one the encoding sniffing algorithm chose
+    /// ([`encoding::Decoded::encoding`]), also when it has no decoder and the text was decoded
+    /// as windows-1252 ([`encoding::Decoded::decoded_with`]); `None` when none was chosen.
     pub encoding: Option<&'static str>,
 }
 
