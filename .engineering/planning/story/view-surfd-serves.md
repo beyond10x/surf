@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:view-surfd-serves
 kind: story
-status: active
+status: implemented
 title: surfd serves its sessions, their actions, events and page line on the view routes
 summary: surfd starts the view server on 127.0.0.1, draws the view token, writes view-url, and answers /api/sessions, /api/sessions/<id> and /events from its session list and kept logs as docs/view-stream.md says.
 relations:
@@ -54,10 +54,11 @@ scope:
   path: docs/view-stream.md
 - confidence: cited
   path: taskfiles/view-stream-check.yml
-revision: 27
+revision: 28
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:15Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:15Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-21T14:59:44Z", actor: "human:operator", revision: 28, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 

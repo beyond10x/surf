@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T14:59:44Z",
+  "actor": "human:operator",
+  "artifact": "story:view-surfd-serves",
+  "kind": "story",
+  "revision": 27,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the coordinator's run of the packages surf-view, surfd, surf-session and surf-agent with warnings denied, of view-stream-check and of lock-check at the unit's change (5600535) and again at the change for the adversary's findings (a846da5), and slot task check in the runner's form on wave/a6-document-text-view at 35e4fa9",
+    "reference": "exit 0; the story's cases 1 to 27: 10 tests in crates/view/tests/json.rs, 9 in crates/surfd/tests/view.rs, 5 in crates/session/tests/view.rs, case 23 in crates/surfd/tests/log.rs, cases 25 and 26 in crates/surfd/src/view.rs; 7 planted defects each red (the unit's runs); an adversary wrote 3 failing tests (a stream that ended with no answer; an event over 1 MiB never delivered), fixed in a846da5 with 6 more tests and kept in the tree; Cargo.lock 21 packages, none from outside; verdict VERIFIED"
+  }
+}

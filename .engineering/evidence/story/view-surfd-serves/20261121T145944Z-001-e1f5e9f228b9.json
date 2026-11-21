@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T14:59:44Z",
+  "actor": "human:operator",
+  "artifact": "story:view-surfd-serves",
+  "kind": "story",
+  "revision": 27,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "slot task check in the runner's form on wave/a6-document-text-view at 35e4fa9",
+    "reference": "exit 0: 93 scenarios passed on both runners, 109 test suites, 453 passed, 0 failed; view-stream-check 19 event names; html-conformance 9107 cases, 9095 run, 4442 passed"
+  }
+}

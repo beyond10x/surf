@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T14:59:44Z",
+  "actor": "human:operator",
+  "artifact": "story:view-stream-string-example",
+  "kind": "story",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "docs/view-stream.md and crates/view/tests/json.rs at 35e4fa9: story:view-surfd-serves corrected the example (5600535), and slot task check in the runner's form on wave/a6-document-text-view at 35e4fa9",
+    "reference": "the example reads \"a\\u0022b\\u005cc\\u003cd\\u003e\\u0026e\\u000a\\u2028é\"; case_09_the_string_matrix_reads_back_exactly of crates/view/tests/json.rs reads that block from the document and compares it with what the writer writes for the same value; tests/json.rs 10 passed; verdict VERIFIED"
+  }
+}

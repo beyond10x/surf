@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:html-tokenizer-text
 kind: story
-status: active
+status: implemented
 title: Tokenize RCDATA, RAWTEXT, script data and PLAINTEXT
 summary: The text states and the appropriate end tag check; every tokenizer case tagged markup or text passes.
 relations:
@@ -17,10 +17,11 @@ scope:
   path: crates/html/src/tokenizer.rs
 - confidence: cited
   path: crates/html/src/tokenizer/
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-21T14:59:44Z", actor: "human:operator", revision: 11, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 

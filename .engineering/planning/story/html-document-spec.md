@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:html-document-spec
 kind: story
-status: active
+status: implemented
 title: 'Specify the parsed page: title and actionable elements'
 summary: surf.document gains the title, encoding, stop reason, navigation and the actionable element rows, with authored scenarios green in the gate.
 relations:
@@ -59,10 +59,11 @@ scope:
   path: spec/scenarios/parsed-page-with-title-links-and-form.yaml
 - confidence: cited
   path: spec/scenarios/parsed-page-without-title.yaml
-revision: 30
+revision: 31
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-11-21T14:59:44Z", actor: "human:operator", revision: 31, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 
