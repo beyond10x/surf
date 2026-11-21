@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:release-agent-binaries
 kind: story
-status: active
+status: implemented
 title: Release 0.2.0 with the agent binaries for Linux
 summary: The release workflow builds, smoke-tests and packs surf, surf-agent, surfd and surf-session into each Linux archive and surf alone for macOS; the four binary packages move to 0.2.0.
 relations:
@@ -32,10 +32,11 @@ scope:
   path: website/docs/try-it.md
 - confidence: cited
   path: website/sidebars.ts
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T03:02:28Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T03:02:28Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-11-21T04:59:15Z", actor: "human:timo", revision: 6, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 

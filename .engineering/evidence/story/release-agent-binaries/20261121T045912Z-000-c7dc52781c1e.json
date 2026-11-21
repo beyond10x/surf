@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T04:59:12Z",
+  "actor": "human:timo",
+  "artifact": "story:release-agent-binaries",
+  "kind": "story",
+  "revision": 5,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "release workflow runs 44868101983 (manual, main at 78b6ca1) and the tag run of 0.2.0, read by the coordinator; release https://github.com/beyond10x/surf/releases/tag/0.2.0",
+    "reference": "both runs success on 4 targets; SHA256SUMS OK for 4 archives; each Linux archive holds surf, surf-agent, surfd, surf-session, each macOS archive surf; scan-artifact valid for 8 Linux binaries; release-smoke ok on the downloaded x86_64 archive; installed from the release by the README commands, surf-agent open, look, go http://example.org/ (page 200) and close exit 0; verdict VERIFIED"
+  }
+}
