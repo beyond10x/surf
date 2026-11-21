@@ -83,6 +83,7 @@ timeline:
     input:
       tab_id: {$instance: first-tab}
       url: https://example.org/first
+      method: Get
     outcome: started
     events:
       - event: surf.navigation.NavigationStarted
@@ -97,6 +98,7 @@ timeline:
     input:
       tab_id: {$instance: second-tab}
       url: https://example.org/second
+      method: Get
     outcome: started
     events:
       - event: surf.navigation.NavigationStarted

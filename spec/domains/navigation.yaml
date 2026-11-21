@@ -93,6 +93,18 @@ commands:
       - name: url
         type: surf.url.Url
         example: "https://example.org/"
+      # The request the navigation issues: its method, and the body with its media type, as the
+      # HTML Standard's form submission navigates to a POST resource (a request body and its
+      # content type). They are not stored on the navigation: they travel in `NavigationStarted`
+      # to the request (`fetch-on-navigation-started`).
+      - name: method
+        type: surf.net.Method
+      - name: body
+        type: Optional<Bytes>
+        example: "YT0x"
+      - name: body_type
+        type: Optional<surf.net.MediaType>
+        example: "application/x-www-form-urlencoded"
     outcomes:
       - name: started
         creates: surf.navigation.Navigation
@@ -107,6 +119,9 @@ commands:
             navigation_id: {generated: true}
             tab_id: input.tab_id
             url: input.url
+            method: input.method
+            body: input.body
+            body_type: input.body_type
         summary: The navigation is Started and its address is to be fetched.
 
   - name: surf.navigation.CommitNavigation
@@ -251,6 +266,12 @@ events:
         type: surf.shell.TabId
       - name: url
         type: surf.url.Url
+      - name: method
+        type: surf.net.Method
+      - name: body
+        type: Optional<Bytes>
+      - name: body_type
+        type: Optional<surf.net.MediaType>
 
   # `url` is the response's address, where the navigation committed.
   - name: surf.navigation.NavigationCommitted

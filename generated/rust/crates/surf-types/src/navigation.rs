@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest d31658889d516a083ce9bcfd2d7c0ada34c042952c11901405e00f6683235212
+// contract digest d86950609f0648d1fd4f49718d20e544490bed20fa1a6c742579023bd4f50f16
 // do not edit: regenerate with `ess synthesize`
 
 //! Navigation — `surf.navigation`.
@@ -377,6 +377,12 @@ pub struct Navigate {
     pub tab_id: crate::shell::TabId,
     /// `url` — `surf.url.Url`.
     pub url: crate::url::Url,
+    /// `method` — `surf.net.Method`.
+    pub method: crate::net::Method,
+    /// `body` — `Optional<Bytes>`.
+    pub body: Option<Vec<u8>>,
+    /// `body_type` — `Optional<surf.net.MediaType>`.
+    pub body_type: Option<crate::net::MediaType>,
 }
 
 /// Everything `surf.navigation.Navigate` can result in — one variant per declared outcome.
@@ -443,6 +449,12 @@ pub struct NavigationStarted {
     pub tab_id: crate::shell::TabId,
     /// `url` — `surf.url.Url`.
     pub url: crate::url::Url,
+    /// `method` — `surf.net.Method`.
+    pub method: crate::net::Method,
+    /// `body` — `Optional<Bytes>`.
+    pub body: Option<Vec<u8>>,
+    /// `body_type` — `Optional<surf.net.MediaType>`.
+    pub body_type: Option<crate::net::MediaType>,
 }
 
 /// The declared error `surf.navigation.NavigationNotFound`.

@@ -44,6 +44,14 @@ types:
     naming:
       summary: Why a request ended without a response.
 
+  - name: surf.net.Method
+    kind: enum
+    variants:
+      - name: Get
+      - name: Post
+    naming:
+      summary: The request method.
+
 # http is the only scheme fetched. Every other scheme ends the request with UnsupportedScheme.
 # A redirect is followed inside the one request, as the Fetch Standard's "HTTP-redirect fetch"
 # follows it inside one fetch: the request keeps its identity and its address (the one asked
@@ -59,9 +67,13 @@ types:
 # MalformedResponse (the Fetch Standard returns a network error for each of the first three). A
 # resolved address without a fragment takes the fragment of the current one, as in the Fetch
 # Standard's "location URL".
-# UNMAPPED: request methods and bodies (with the method change a 301, 302 or 303 makes after a
-# `POST`), headers, cookies, caching and TLS. This slice fetches with one method and says nothing
-# about how.
+# A request has a method, `Get` or `Post`, and may have a body and its media type, as the Fetch
+# Standard's request has a method and a body. The body is not stored: it travels in `Fetch` and
+# `RequestStarted` only. A redirect changes the method as the Fetch Standard's "HTTP-redirect
+# fetch" does: a 301 or 302 after a `Post`, and a 303 after any method other than `Get` (or
+# `HEAD`, which this slice does not have), continue as `Get` without a body; every other redirect,
+# a 307 and a 308 among them, keeps the method and the body.
+# UNMAPPED: request headers, cookies, caching and TLS.
 entities:
   - name: surf.net.Request
     naming:
@@ -72,6 +84,10 @@ entities:
     fields:
       - name: url
         type: surf.url.Url
+      - name: method
+        type: surf.net.Method
+      - name: body_type
+        type: Optional<surf.net.MediaType>
     lifecycle:
       initial: Pending
       states:
@@ -117,18 +133,32 @@ commands:
       - name: url
         type: surf.url.Url
         example: "https://example.org/"
+      - name: method
+        type: surf.net.Method
+      - name: body
+        type: Optional<Bytes>
+        example: "YT0x"
+      - name: body_type
+        type: Optional<surf.net.MediaType>
+        example: "application/x-www-form-urlencoded"
+    refs: ["whatwg-fetch:concept-request-method", "whatwg-fetch:concept-request-body", "whatwg-fetch:http-redirect-fetch"]
     outcomes:
       - name: started
         creates: surf.net.Request
         instance: request_id
         sets:
           url: input.url
+          method: input.method
+          body_type: input.body_type
         emits:
           - surf.net.RequestStarted
         payload:
           surf.net.RequestStarted:
             request_id: input.request_id
             url: input.url
+            method: input.method
+            body: input.body
+            body_type: input.body_type
         summary: The request is Pending.
 
   # The next two commands are the component's own steps: its transport issues them when the
@@ -233,6 +263,12 @@ events:
         type: surf.net.RequestId
       - name: url
         type: surf.url.Url
+      - name: method
+        type: surf.net.Method
+      - name: body
+        type: Optional<Bytes>
+      - name: body_type
+        type: Optional<surf.net.MediaType>
 
   # `url` is the response's address, after the last redirect; the address asked for is the
   # request's (`RequestStarted`, `Requests`).
@@ -267,6 +303,10 @@ views:
         type: surf.net.RequestId
       - name: url
         type: surf.url.Url
+      - name: method
+        type: surf.net.Method
+      - name: body_type
+        type: Optional<surf.net.MediaType>
       - name: state
         type: surf.net.Request.State
     naming:

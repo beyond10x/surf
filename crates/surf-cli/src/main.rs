@@ -9,8 +9,11 @@ use std::fmt;
 use std::io::{self, Write};
 use std::process::ExitCode;
 
-use surf::{Answer, EXIT_STOPPED, EXIT_USAGE, MemoryBrowser, answer, escape, exit_status};
-use surf_fetch::{Limits, fetch};
+use surf::{
+    Answer, EXIT_STOPPED, EXIT_USAGE, MemoryBrowser, RequestStarted, answer, escape, exit_status,
+    fetch_http,
+};
+use surf_fetch::Limits;
 use surf_ports::ComponentPorts;
 
 const USAGE: &str = "usage: surf <url>";
@@ -33,9 +36,11 @@ fn main() -> ExitCode {
         return ExitCode::from(EXIT_USAGE);
     };
     let limits = Limits::default();
-    let transport = move |address: &str| -> Answer {
-        let result = fetch(address, &limits);
+    // The binary navigates with `Get` and no body only, so `fetch_http` never refuses its request.
+    let transport = move |request: &RequestStarted| -> Answer {
+        let result = fetch_http(request, &limits);
         if let Err(failure) = &result {
+            let address = &request.url.0;
             // The failure's detail can quote the address and the operating system's text, so
             // the whole line is escaped, not only the address.
             diagnose(format_args!(
