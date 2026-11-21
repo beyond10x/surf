@@ -2,8 +2,8 @@
   "provenance": {
     "system": "surf",
     "specification_version": "v1",
-    "source_digest": "9c60a0c9c105fe9b80f59952e1b645c323414c54f720e5927cebc717e6653849",
-    "contract_digest": "055477f7d70d2837ffe9e39fee6cbc6130c982cf9d0650a28bb00f7c8ca52d2c"
+    "source_digest": "fdae7831fcca13120ec354a95153ea33220ad64708085f3bcd5b24cd8420e380",
+    "contract_digest": "d31658889d516a083ce9bcfd2d7c0ada34c042952c11901405e00f6683235212"
   },
   "scope": {
     "profile": "component-skeletons"
@@ -96,6 +96,41 @@
     {
       "kind": "domain_type",
       "source": "surf.document.DocumentId",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.document.Element.State",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.document.ElementId",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.document.ElementKind",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.document.EncodingName",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.document.ParseLimit",
       "disposition": {
         "disposition": "generated"
       }
@@ -208,6 +243,13 @@
     {
       "kind": "entity_lifecycle",
       "source": "surf.document.Document",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "entity_lifecycle",
+      "source": "surf.document.Element",
       "disposition": {
         "disposition": "generated"
       }
@@ -375,6 +417,34 @@
     {
       "kind": "command_behavior",
       "source": "surf.agent.RecordAction",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_contract",
+      "source": "surf.document.AddElement",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "surf.document.AddElement",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_contract",
+      "source": "surf.document.FinishParsing",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "surf.document.FinishParsing",
       "disposition": {
         "disposition": "generated"
       }
@@ -591,6 +661,20 @@
     },
     {
       "kind": "event_type",
+      "source": "surf.document.ElementAdded",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "event_type",
+      "source": "surf.document.ParsingStarted",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "event_type",
       "source": "surf.navigation.NavigationCancelled",
       "disposition": {
         "disposition": "generated"
@@ -690,6 +774,20 @@
     {
       "kind": "error_type",
       "source": "surf.agent.SessionStateConflict",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "error_type",
+      "source": "surf.document.DocumentNotFound",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "error_type",
+      "source": "surf.document.DocumentStateConflict",
       "disposition": {
         "disposition": "generated"
       }
@@ -802,6 +900,20 @@
     {
       "kind": "view_query",
       "source": "surf.document.Documents",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "view_type",
+      "source": "surf.document.Elements",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "view_query",
+      "source": "surf.document.Elements",
       "disposition": {
         "disposition": "generated"
       }

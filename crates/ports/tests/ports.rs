@@ -13,10 +13,13 @@ use surf_types::agent::{
     ActionCommand, ActionData, ActionId, ActionSnapshot, ActionState, SessionId,
 };
 use surf_types::behaviour::{
-    ActionStorage, DocumentStorage, FrameStorage, NavigationStorage, RequestStorage, TabStorage,
-    TryContext, WindowStorage,
+    ActionStorage, DocumentStorage, ElementStorage, FrameStorage, NavigationStorage,
+    RequestStorage, TabStorage, TryContext, WindowStorage,
 };
-use surf_types::document::{DocumentData, DocumentId, DocumentSnapshot, DocumentState};
+use surf_types::document::{
+    DocumentData, DocumentId, DocumentSnapshot, DocumentState, ElementData, ElementId, ElementKind,
+    ElementSnapshot, ElementState, EncodingName, ParseLimit,
+};
 use surf_types::navigation::{NavigationData, NavigationSnapshot, NavigationState};
 use surf_types::net::{RequestData, RequestId, RequestSnapshot, RequestState};
 use surf_types::obligation::UnmetObligation;
@@ -28,7 +31,7 @@ use surf_types::shell::{
 };
 use surf_types::url::Url;
 
-// ---- test 1: the six storages ----------------------------------------------------------------
+// ---- test 1: the eight storages --------------------------------------------------------------
 
 /// One storage trait of one ports type, as plain functions.
 struct Table<P, K, S> {
@@ -208,14 +211,24 @@ fn storage_request_put_get_list_in_insertion_order_replace_in_place_delete() {
 fn storage_document_put_get_list_in_insertion_order_replace_in_place_delete() {
     let keys = [1, 2, 3].map(|n| DocumentId(uuid(n)));
     let rows = keys.clone().map(|document_id| DocumentSnapshot {
-        state: DocumentState::Parsed,
+        state: DocumentState::Parsing,
         data: DocumentData {
             document_id,
             url: url("a"),
+            navigation_id: RequestId(uuid(9)),
+            title: None,
+            encoding: None,
+            unsupported_encoding: None,
+            stopped_by: None,
         },
     });
     let mut replacement = rows[1].clone();
+    replacement.state = DocumentState::Parsed;
     replacement.data.url = url("b");
+    replacement.data.title = Some(String::new());
+    replacement.data.encoding = Some(EncodingName("windows-1252".to_owned()));
+    replacement.data.unsupported_encoding = Some(EncodingName("EUC-KR".to_owned()));
+    replacement.data.stopped_by = Some(ParseLimit::Depth);
     exercise(
         DocumentPorts::new(),
         Table {
@@ -228,6 +241,91 @@ fn storage_document_put_get_list_in_insertion_order_replace_in_place_delete() {
         rows,
         replacement,
     );
+}
+
+#[test]
+fn storage_element_put_get_list_in_insertion_order_replace_in_place_delete() {
+    let keys = [1, 2, 3].map(|n| ElementId(uuid(n)));
+    let rows = keys.clone().map(|element_id| ElementSnapshot {
+        state: ElementState::Added,
+        data: ElementData {
+            element_id,
+            document_id: DocumentId(uuid(9)),
+            position: 1,
+            kind: ElementKind::Link,
+            label: "Home".to_owned(),
+            target: Some("/".to_owned()),
+            value: None,
+            hidden: false,
+            disabled: false,
+            checked: false,
+            required: false,
+        },
+    });
+    // An element has one state, so the replacement differs in its fields.
+    let mut replacement = rows[1].clone();
+    replacement.data.kind = ElementKind::Text;
+    replacement.data.label = "Name".to_owned();
+    replacement.data.target = None;
+    replacement.data.value = Some("Ada".to_owned());
+    replacement.data.required = true;
+    exercise(
+        DocumentPorts::new(),
+        Table {
+            get: <DocumentPorts as ElementStorage>::get,
+            put: <DocumentPorts as ElementStorage>::put,
+            delete: <DocumentPorts as ElementStorage>::delete,
+            list: <DocumentPorts as ElementStorage>::list,
+        },
+        keys,
+        rows,
+        replacement,
+    );
+}
+
+#[test]
+fn storage_document_and_element_tables_of_one_ports_value_are_apart() {
+    let mut ports = DocumentPorts::new();
+    DocumentStorage::put(
+        &mut ports,
+        DocumentSnapshot {
+            state: DocumentState::Parsing,
+            data: DocumentData {
+                document_id: DocumentId(uuid(1)),
+                url: url("a"),
+                navigation_id: RequestId(uuid(9)),
+                title: None,
+                encoding: None,
+                unsupported_encoding: None,
+                stopped_by: None,
+            },
+        },
+    );
+    assert_eq!(ElementStorage::list(&ports), Vec::new());
+    ElementStorage::put(
+        &mut ports,
+        ElementSnapshot {
+            state: ElementState::Added,
+            data: ElementData {
+                element_id: ElementId(uuid(1)),
+                document_id: DocumentId(uuid(1)),
+                position: 1,
+                kind: ElementKind::Select,
+                label: "Country".to_owned(),
+                target: None,
+                value: None,
+                hidden: false,
+                disabled: false,
+                checked: false,
+                required: false,
+            },
+        },
+    );
+    assert_eq!(DocumentStorage::list(&ports).len(), 1);
+    assert_eq!(ElementStorage::list(&ports).len(), 1);
+    ElementStorage::delete(&mut ports, &ElementId(uuid(1)));
+    assert_eq!(DocumentStorage::list(&ports).len(), 1);
+    assert_eq!(ElementStorage::list(&ports), Vec::new());
 }
 
 #[test]
@@ -358,6 +456,38 @@ fn identity_text_is_the_sources_16_bytes_with_version_and_variant_set_in_lower_c
         .expect("assigned");
     drop(ports);
     assert_eq!(source.asked, vec![16]);
+
+    let mut ports = DocumentPorts::with_source(Fixed {
+        bytes: |at| at as u8,
+        asked: Vec::new(),
+    });
+    assert_eq!(
+        ports.try_generate_surf_document_element_id(),
+        Ok(ElementId(Uuid(
+            "00010203-0405-4607-8809-0a0b0c0d0e0f".to_owned()
+        )))
+    );
+}
+
+#[test]
+fn element_identities_1000_assigned_are_distinct_version_4_and_unmet_on_the_agent_ports() {
+    let mut ports = DocumentPorts::new();
+    let mut seen = BTreeSet::new();
+    for _ in 0..1000 {
+        let ElementId(Uuid(text)) = ports
+            .try_generate_surf_document_element_id()
+            .expect("assigned");
+        assert!(is_version_4(&text), "not a version 4 UUID: {text}");
+        assert!(seen.insert(text.clone()), "assigned twice: {text}");
+    }
+    assert_eq!(seen.len(), 1000);
+    assert_eq!(
+        AgentPorts::new().try_generate_surf_document_element_id(),
+        Err(UnmetObligation {
+            capability: "context answer",
+            source: "surf.document.ElementId",
+        })
+    );
 }
 
 // ---- test 3: a source that fails -------------------------------------------------------------
@@ -410,6 +540,10 @@ fn failing_source_answers_identity_with_unmet_obligation_and_open_window_returns
         Err(unmet("surf.document.DocumentId"))
     );
     assert_eq!(
+        DocumentPorts::with_source(Failing).try_generate_surf_document_element_id(),
+        Err(unmet("surf.document.ElementId"))
+    );
+    assert_eq!(
         RendererPorts::with_source(Failing).try_generate_surf_render_frame_id(),
         Err(unmet("surf.render.FrameId"))
     );
@@ -454,6 +588,7 @@ fn five_component_ports_build_and_open_window_answers_opened_then_one_windows_ro
     assert_eq!(navigator.navigations(), Ok(Vec::new()));
     assert_eq!(net.requests(), Ok(Vec::new()));
     assert_eq!(document.documents(), Ok(Vec::new()));
+    assert_eq!(document.elements(DocumentId(uuid(1))), Ok(Vec::new()));
     assert_eq!(renderer.frames(), Ok(Vec::new()));
     assert_eq!(agent.sessions(), Ok(Vec::new()));
 }

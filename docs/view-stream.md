@@ -135,7 +135,7 @@ entries or 1 MiB, past which that stream is closed (below).
 The string rule on one value, a title holding `a"b\c<d>&e`, a line feed, U+2028 and `é`:
 
 ```json
-"a"b\c<d>&e\u000a é"
+"a\u0022b\u005cc\u003cd\u003e\u0026e\u000a\u2028é"
 ```
 
 ### The page line
@@ -169,7 +169,8 @@ first.
 
 `{"session":<summary>,"dropped":<n>,"log_dropped":<bool>,"unreadable":<n>,"entries":[<entry>,…]}`:
 
-- `dropped`: entries of this session dropped by the bound per session, the oldest first;
+- `dropped`: entries of this session dropped by any bound: one by one, the oldest first, and
+  every kept one when its log was dropped whole;
 - `log_dropped`: `true` when the bound over all sessions dropped this session's log whole
   (D24); `entries` is then empty;
 - `entries`: the kept entries in their order (below).
@@ -178,7 +179,10 @@ first.
 
 The order (D19): for each action, the action entry, then the events of that action in the order
 the components published them, then the answer entry. An entry belongs to the action entry it
-follows. A command that records no action (`look`, a refused command) has no entry.
+follows. A command that records no action (`look`, a refused command) has no entry. An action
+whose answer has not arrived has no entry yet: its entries arrive with its answer, a late one
+included (`LATE_ANSWER_TIMEOUT`, 600 s), with the time `surfd` kept them; a session killed before
+it answered ends `died`, and that action has no entry.
 
 Every entry starts with the same five members:
 `{"number","session","index","kept_at","kind",…}`: `number` is the entry's number across all
@@ -223,6 +227,8 @@ surf.navigation.NavigationCancelled
 surf.net.RequestStarted
 surf.net.ResponseReceived
 surf.net.FetchFailed
+surf.document.ParsingStarted
+surf.document.ElementAdded
 surf.document.DocumentParsed
 surf.render.FramePainted
 surf.agent.ActionRecorded
@@ -255,10 +261,12 @@ data: <one JSON line>
 Where a stream starts:
 
 - Without `Last-Event-ID`: after the newest number at the time it opens, live only.
-- With `Last-Event-ID: <n>`, `<n>` decimal digits of at most 20, not above the newest number, and
-  no entry above `<n>` dropped: every kept entry above `<n>` in number order (the reader from a
-  number, D23), then live.
-- With any other `Last-Event-ID` (older than what is kept, above the newest, which is what a
+- With `Last-Event-ID: <n>`, `<n>` decimal digits of at most 20, not above the newest number, not
+  more than 256 numbers below it (the queue of a stream, `Limits::queue_entries`), and no entry
+  above `<n>` dropped: every kept entry above `<n>` in number order (the reader from a number,
+  D23), then live.
+- With any other `Last-Event-ID` (older than what is kept, more than 256 numbers below the
+  newest, which is answered as one older than what is kept, above the newest, which is what a
   restarted `surfd` sees, or not a number): `reset` first, then live after the newest number.
 
 Live, in number order: each entry as it is kept, in the order of D19, and after each answer entry
@@ -269,7 +277,9 @@ read, and ignores an entry whose `number` it already holds.
 
 A stream is closed, and its reader resumes with `Last-Event-ID`, when its queue in the server
 passes 256 entries or 1 MiB, when `surfd`'s queue for it passes 1,024 entries
-(`story:agent-session-events`), or when one write takes longer than 10 s.
+(`story:agent-session-events`), or when one write takes longer than 10 s. An event over 1 MiB
+alone is no reason to close: it waits until the queue is empty and is then queued and written
+alone, so the queue holds at most 1 MiB or that one event; its size is bounded by `surfd`'s log.
 
 ## Examples
 
@@ -373,7 +383,7 @@ Authorization: Bearer 0123456789abcdef0123456789abcdef0123456789abcdef0123456789
 ```http
 HTTP/1.1 200 OK
 Content-Type: application/json
-Content-Length: 5255
+Content-Length: 5237
 Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 X-Content-Type-Options: nosniff
 Referrer-Policy: no-referrer
@@ -382,14 +392,15 @@ Cross-Origin-Resource-Policy: same-origin
 Date: Sat, 21 Nov 2026 02:00:00 GMT
 Connection: close
 
-{"session":{"id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","state":"open","address":"http://127.0.0.1:41000/a.html","title":null,"opened_at":1795226400000,"last_action_at":1795226401500,"ended_at":null,"page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/a.html","title":null}},"dropped":0,"log_dropped":false,"unreadable":0,"entries":[{"number":1,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":1,"kept_at":1795226400010,"kind":"action","sequence":1,"command":"open","argument":null},{"number":2,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":2,"kept_at":1795226400011,"kind":"event","name":"surf.shell.WindowOpened","unmapped":false,"fields":{"window_id":"2c4e6a80-1b3d-4f57-9a2c-4e6a8b0d2f41"}},{"number":3,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":3,"kept_at":1795226400012,"kind":"event","name":"surf.shell.TabOpened","unmapped":false,"fields":{"tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","window_id":"2c4e6a80-1b3d-4f57-9a2c-4e6a8b0d2f41"}},{"number":4,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":4,"kept_at":1795226400013,"kind":"event","name":"surf.agent.SessionOpened","unmapped":false,"fields":{"session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","window_id":"2c4e6a80-1b3d-4f57-9a2c-4e6a8b0d2f41","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72"}},{"number":5,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":5,"kept_at":1795226400014,"kind":"event","name":"surf.agent.ActionRecorded","unmapped":false,"fields":{"action_id":"e5a7c9e1-3b5d-4f71-9a3c-5e7a9c1e3b51","session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","sequence":"1","command":"open","url":null}},{"number":6,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":6,"kept_at":1795226400015,"kind":"answer","page":{"kind":"none"},"path":{"shown":1,"total":1,"actions":[{"sequence":1,"command":"open","argument":null}]}},{"number":7,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":7,"kept_at":1795226401500,"kind":"action","sequence":2,"command":"go","argument":"http://127.0.0.1:41000/a.html"},{"number":8,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":8,"kept_at":1795226401501,"kind":"event","name":"surf.agent.NavigationRequested","unmapped":false,"fields":{"session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","url":"http://127.0.0.1:41000/a.html"}},{"number":9,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":9,"kept_at":1795226401502,"kind":"event","name":"surf.agent.ActionRecorded","unmapped":false,"fields":{"action_id":"e5a7c9e1-3b5d-4f71-9a3c-5e7a9c1e3b52","session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","sequence":"2","command":"go","url":"http://127.0.0.1:41000/a.html"}},{"number":10,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":10,"kept_at":1795226401503,"kind":"event","name":"surf.navigation.NavigationStarted","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","url":"http://127.0.0.1:41000/a.html"}},{"number":11,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":11,"kept_at":1795226401504,"kind":"event","name":"surf.agent.SessionNavigationChanged","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","state":"Started","sessions":"1"}},{"number":12,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":12,"kept_at":1795226401505,"kind":"event","name":"surf.net.RequestStarted","unmapped":false,"fields":{"request_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","url":"http://127.0.0.1:41000/a.html"}},{"number":13,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":13,"kept_at":1795226401506,"kind":"event","name":"surf.net.ResponseReceived","unmapped":false,"fields":{"request_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","url":"http://127.0.0.1:41000/a.html","status":"200","media_type":"text/html","body":"5000 bytes"}},{"number":14,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":14,"kept_at":1795226401507,"kind":"event","name":"surf.navigation.NavigationCommitted","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","url":"http://127.0.0.1:41000/a.html","status":"200","media_type":"text/html","body":"5000 bytes"}},{"number":15,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":15,"kept_at":1795226401508,"kind":"event","name":"surf.agent.SessionNavigationChanged","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","state":"Committed","sessions":"1"}},{"number":16,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":16,"kept_at":1795226401509,"kind":"event","name":"surf.document.DocumentParsed","unmapped":false,"fields":{"document_id":"d2f4b6d8-0a2c-4e4a-9b6d-8f0a2c4e6b84","url":"http://127.0.0.1:41000/a.html"}},{"number":17,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":17,"kept_at":1795226401510,"kind":"answer","page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/a.html","title":null},"path":{"shown":2,"total":2,"actions":[{"sequence":1,"command":"open","argument":null},{"sequence":2,"command":"go","argument":"http://127.0.0.1:41000/a.html"}]}}]}
+{"session":{"id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","state":"open","address":"http://127.0.0.1:41000/a.html","title":null,"opened_at":1795226400000,"last_action_at":1795226401500,"ended_at":null,"page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/a.html","title":null}},"dropped":0,"log_dropped":false,"unreadable":0,"entries":[{"number":1,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":1,"kept_at":1795226400010,"kind":"action","sequence":1,"command":"open","argument":null},{"number":2,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":2,"kept_at":1795226400011,"kind":"event","name":"surf.shell.WindowOpened","unmapped":false,"fields":{"window_id":"2c4e6a80-1b3d-4f57-9a2c-4e6a8b0d2f41"}},{"number":3,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":3,"kept_at":1795226400012,"kind":"event","name":"surf.shell.TabOpened","unmapped":false,"fields":{"tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","window_id":"2c4e6a80-1b3d-4f57-9a2c-4e6a8b0d2f41"}},{"number":4,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":4,"kept_at":1795226400013,"kind":"event","name":"surf.agent.SessionOpened","unmapped":false,"fields":{"session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","window_id":"2c4e6a80-1b3d-4f57-9a2c-4e6a8b0d2f41","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72"}},{"number":5,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":5,"kept_at":1795226400014,"kind":"event","name":"surf.agent.ActionRecorded","unmapped":false,"fields":{"action_id":"e5a7c9e1-3b5d-4f71-9a3c-5e7a9c1e3b51","session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","sequence":"1","command":"open","url":null}},{"number":6,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":6,"kept_at":1795226400015,"kind":"answer","page":{"kind":"none"},"path":{"shown":1,"total":1,"actions":[{"sequence":1,"command":"open","argument":null}]}},{"number":7,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":7,"kept_at":1795226401500,"kind":"action","sequence":2,"command":"go","argument":"http://127.0.0.1:41000/a.html"},{"number":8,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":8,"kept_at":1795226401501,"kind":"event","name":"surf.agent.NavigationRequested","unmapped":false,"fields":{"session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","url":"http://127.0.0.1:41000/a.html"}},{"number":9,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":9,"kept_at":1795226401502,"kind":"event","name":"surf.agent.ActionRecorded","unmapped":false,"fields":{"action_id":"e5a7c9e1-3b5d-4f71-9a3c-5e7a9c1e3b52","session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","sequence":"2","command":"go","url":"http://127.0.0.1:41000/a.html"}},{"number":10,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":10,"kept_at":1795226401503,"kind":"event","name":"surf.navigation.NavigationStarted","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","url":"http://127.0.0.1:41000/a.html"}},{"number":11,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":11,"kept_at":1795226401504,"kind":"event","name":"surf.agent.SessionNavigationChanged","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","state":"Started","sessions":"1"}},{"number":12,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":12,"kept_at":1795226401505,"kind":"event","name":"surf.net.RequestStarted","unmapped":false,"fields":{"request_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","url":"http://127.0.0.1:41000/a.html"}},{"number":13,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":13,"kept_at":1795226401506,"kind":"event","name":"surf.net.ResponseReceived","unmapped":false,"fields":{"request_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","url":"http://127.0.0.1:41000/a.html","status":"200","media_type":"text/html","body":"5000 bytes"}},{"number":14,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":14,"kept_at":1795226401507,"kind":"event","name":"surf.navigation.NavigationCommitted","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","url":"http://127.0.0.1:41000/a.html","status":"200","media_type":"text/html","body":"5000 bytes"}},{"number":15,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":15,"kept_at":1795226401508,"kind":"event","name":"surf.agent.SessionNavigationChanged","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","state":"Committed","sessions":"1"}},{"number":16,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":16,"kept_at":1795226401509,"kind":"event","name":"surf.document.ParsingStarted","unmapped":false,"fields":{"document_id":"d2f4b6d8-0a2c-4e4a-9b6d-8f0a2c4e6b84","body":"5000 bytes"}},{"number":17,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":17,"kept_at":1795226401510,"kind":"answer","page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/a.html","title":null},"path":{"shown":2,"total":2,"actions":[{"sequence":1,"command":"open","argument":null},{"sequence":2,"command":"go","argument":"http://127.0.0.1:41000/a.html"}]}}]}
 ```
 
-The second session after the bound over all sessions dropped its log (D24), body only (341
-bytes):
+The second session after the bound over all sessions dropped its log (D24), body only (264
+bytes); with no entry kept, its `last_action_at` and `page` are `null`, as the summary's rule
+gives them:
 
 ```json
-{"session":{"id":"0b7d4e21-9c3a-4f58-b6e2-7a1d9c8e5f30","state":"closed","address":"http://127.0.0.1:9/","title":null,"opened_at":1795226401990,"last_action_at":1795226403000,"ended_at":1795226403010,"page":{"kind":"failed","reason":"Unreachable","address":"http://127.0.0.1:9/"}},"dropped":21,"log_dropped":true,"unreadable":0,"entries":[]}
+{"session":{"id":"0b7d4e21-9c3a-4f58-b6e2-7a1d9c8e5f30","state":"closed","address":"http://127.0.0.1:9/","title":null,"opened_at":1795226401990,"last_action_at":null,"ended_at":1795226403010,"page":null},"dropped":21,"log_dropped":true,"unreadable":0,"entries":[]}
 ```
 
 ### `GET /events`

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T14:59:43Z",
+  "actor": "human:operator",
+  "artifact": "story:html-tokenizer-text",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the coordinator's run of the packages surf-html and surf-html-conformance with warnings denied, of the task html-conformance and of --list-failing text and markup at the unit's change (d8e7df1), and slot task check in the runner's form on wave/a6-document-text-view at 35e4fa9",
+    "reference": "exit 0; tag text 328/328/328, tag markup 1979/1979/1979 and tag charref 2060/4739/4739 in crates/html-conformance/expected/tokenizer.txt (57, 1979 and 2053 before); --list-failing text and markup print no line; 12 unit tests of surf-html; no raise: line; 4 planted defects, 3 caught by the test data and 1 by a unit test written for it (the unit's runs); verdict VERIFIED"
+  }
+}

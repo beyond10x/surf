@@ -20,9 +20,9 @@
 //! request is handed to the transport once.
 //!
 //! The system keeps every event it published and every binding invocation; a response body is
-//! in four of them (`ResponseReceived`, `NavigationCommitted`, and the invocations of
-//! `CommitNavigation` and `ParseDocument`). A browser that lives across many loads, as the agent's
-//! session does, calls [`Browser::forget_delivered`] once it has read what it needs, so that it
+//! in five of them (`ResponseReceived`, `NavigationCommitted`, `ParsingStarted`, and the
+//! invocations of `CommitNavigation` and `ParseDocument`). A browser that lives across many loads,
+//! as the agent's session does, calls [`Browser::forget_delivered`] once it has read what it needs, so that it
 //! holds no body of a load it answered; [`Browser::held`] counts what is still held.
 //!
 //! [`Browser::load`] is what the `surf` binary does: `OpenWindow`, `OpenTab`, `Navigate`, run, and
@@ -314,14 +314,20 @@ impl<B> AgentBehaviors for B where
 
 /// The behaviours the `document` component's port needs to be part of a [`System`].
 pub trait DocumentBehaviors:
-    surf_types::document::obligations::ParseDocumentBehavior
+    surf_types::document::obligations::AddElementBehavior
+    + surf_types::document::obligations::FinishParsingBehavior
+    + surf_types::document::obligations::ParseDocumentBehavior
     + surf_types::document::obligations::DocumentsQuery
+    + surf_types::document::obligations::ElementsQuery
 {
 }
 
 impl<B> DocumentBehaviors for B where
-    B: surf_types::document::obligations::ParseDocumentBehavior
+    B: surf_types::document::obligations::AddElementBehavior
+        + surf_types::document::obligations::FinishParsingBehavior
+        + surf_types::document::obligations::ParseDocumentBehavior
         + surf_types::document::obligations::DocumentsQuery
+        + surf_types::document::obligations::ElementsQuery
 {
 }
 
@@ -522,6 +528,7 @@ fn event_body(event: &SystemEvent) -> usize {
     match event {
         SystemEvent::ResponseReceived(received) => received.body.len(),
         SystemEvent::NavigationCommitted(committed) => committed.body.len(),
+        SystemEvent::ParsingStarted(started) => started.body.len(),
         _ => 0,
     }
 }

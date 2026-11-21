@@ -1,0 +1,257 @@
+# A parsed page with a title, three links and a form, as the parser step reports it: the document
+# is started by `ParseDocument`, each actionable element is added in tree order, and
+# `FinishParsing` sets the title and the encoding. The form holds one control of each other kind,
+# so that every variant of `surf.document.ElementKind` is written and read back on both runners
+# (synthesis writes a scenario for one variant only). The select stores no value (D11). The
+# elements are added in tree order except the last link, which is added first, so a view that
+# answers rows in the order they were written fails the order.
+type: ess-scenario/6
+domain: surf.document
+scenario: parsed-page-with-title-links-and-form
+summary: A page with a title, three links and a form is Parsed, with its eleven elements in tree order.
+
+arrange:
+  - instance: page
+    entity: surf.document.Document
+
+timeline:
+  # The body is `<title>Shop</title>`; the parser step reads it, the model does not.
+  - at: 2026-01-06T09:00:00Z
+    command: surf.document.ParseDocument
+    input:
+      url: https://example.org/shop
+      body: PHRpdGxlPlNob3A8L3RpdGxlPg==
+      navigation_id: 3f1d5b7e-0000-4000-8000-000000000101
+    outcome: started
+    events:
+      - event: surf.document.ParsingStarted
+        payload:
+          body: PHRpdGxlPlNob3A8L3RpdGxlPg==
+    capture: {instance: page, event: surf.document.ParsingStarted, field: document_id}
+
+  - at: 2026-01-06T09:00:01Z
+    command: surf.document.AddElement
+    input:
+      document_id: {$instance: page}
+      position: 3
+      kind: link
+      label: Contact
+      target: "#contact"
+      hidden: false
+      disabled: false
+      checked: false
+      required: false
+    outcome: added
+    events:
+      - event: surf.document.ElementAdded
+        payload:
+          document_id: {$instance: page}
+          position: 3
+
+  - at: 2026-01-06T09:00:02Z
+    command: surf.document.AddElement
+    input:
+      document_id: {$instance: page}
+      position: 1
+      kind: link
+      label: Home
+      target: /
+      hidden: false
+      disabled: false
+      checked: false
+      required: false
+    outcome: added
+
+  - at: 2026-01-06T09:00:03Z
+    command: surf.document.AddElement
+    input:
+      document_id: {$instance: page}
+      position: 2
+      kind: link
+      label: Help
+      target: help.html
+      hidden: true
+      disabled: false
+      checked: false
+      required: false
+    outcome: added
+
+  - at: 2026-01-06T09:00:04Z
+    command: surf.document.AddElement
+    input:
+      document_id: {$instance: page}
+      position: 4
+      kind: text
+      label: Name
+      value: Ada
+      hidden: false
+      disabled: false
+      checked: false
+      required: true
+    outcome: added
+
+  - at: 2026-01-06T09:00:05Z
+    command: surf.document.AddElement
+    input:
+      document_id: {$instance: page}
+      position: 5
+      kind: password
+      label: Password
+      value: ""
+      hidden: false
+      disabled: false
+      checked: false
+      required: true
+    outcome: added
+
+  - at: 2026-01-06T09:00:06Z
+    command: surf.document.AddElement
+    input:
+      document_id: {$instance: page}
+      position: 6
+      kind: checkbox
+      label: Remember me
+      hidden: false
+      disabled: false
+      checked: true
+      required: false
+    outcome: added
+
+  - at: 2026-01-06T09:00:07Z
+    command: surf.document.AddElement
+    input:
+      document_id: {$instance: page}
+      position: 7
+      kind: radio
+      label: Express
+      hidden: false
+      disabled: true
+      checked: false
+      required: false
+    outcome: added
+
+  - at: 2026-01-06T09:00:08Z
+    command: surf.document.AddElement
+    input:
+      document_id: {$instance: page}
+      position: 8
+      kind: file
+      label: Attachment
+      value: ""
+      hidden: false
+      disabled: false
+      checked: false
+      required: false
+    outcome: added
+
+  - at: 2026-01-06T09:00:09Z
+    command: surf.document.AddElement
+    input:
+      document_id: {$instance: page}
+      position: 9
+      kind: select
+      label: Country
+      hidden: false
+      disabled: false
+      checked: false
+      required: false
+    outcome: added
+
+  - at: 2026-01-06T09:00:10Z
+    command: surf.document.AddElement
+    input:
+      document_id: {$instance: page}
+      position: 10
+      kind: textarea
+      label: Message
+      value: Hello
+      hidden: false
+      disabled: false
+      checked: false
+      required: false
+    outcome: added
+
+  - at: 2026-01-06T09:00:11Z
+    command: surf.document.AddElement
+    input:
+      document_id: {$instance: page}
+      position: 11
+      kind: button
+      label: Send
+      hidden: false
+      disabled: false
+      checked: false
+      required: false
+    outcome: added
+
+  - at: 2026-01-06T09:00:12Z
+    command: surf.document.FinishParsing
+    input:
+      document_id: {$instance: page}
+      title: Shop
+      encoding: UTF-8
+    outcome: parsed
+    events:
+      - event: surf.document.DocumentParsed
+        payload:
+          document_id: {$instance: page}
+          url: https://example.org/shop
+          navigation_id: 3f1d5b7e-0000-4000-8000-000000000101
+          title: Shop
+          encoding: UTF-8
+
+assert:
+  - view: surf.document.Documents
+    contains:
+      document_id: {$instance: page}
+      url: https://example.org/shop
+      navigation_id: 3f1d5b7e-0000-4000-8000-000000000101
+      state: Parsed
+      title: Shop
+      encoding: UTF-8
+      unsupported_encoding: null
+      stopped_by: null
+
+  - view: surf.document.Elements
+    params: {document_id: {$instance: page}}
+    counts: {at_least: 11, at_most: 11}
+  - view: surf.document.Elements
+    params: {document_id: {$instance: page}}
+    ranked: true
+  - view: surf.document.Elements
+    params: {document_id: {$instance: page}}
+    at:
+      row: first
+      fields: {document_id: {$instance: page}, position: 1, kind: link, label: Home, target: /, value: null, hidden: false, disabled: false, checked: false, required: false}
+  - view: surf.document.Elements
+    params: {document_id: {$instance: page}}
+    at:
+      row: last
+      fields: {document_id: {$instance: page}, position: 11, kind: button, label: Send, target: null, value: null, hidden: false, disabled: false, checked: false, required: false}
+  - view: surf.document.Elements
+    params: {document_id: {$instance: page}}
+    contains: {position: 2, kind: link, label: Help, target: help.html, hidden: true}
+  - view: surf.document.Elements
+    params: {document_id: {$instance: page}}
+    contains: {position: 3, kind: link, label: Contact, target: "#contact", hidden: false}
+  - view: surf.document.Elements
+    params: {document_id: {$instance: page}}
+    contains: {position: 4, kind: text, label: Name, target: null, value: Ada, required: true}
+  - view: surf.document.Elements
+    params: {document_id: {$instance: page}}
+    contains: {position: 5, kind: password, label: Password, value: "", required: true}
+  - view: surf.document.Elements
+    params: {document_id: {$instance: page}}
+    contains: {position: 6, kind: checkbox, label: Remember me, value: null, checked: true}
+  - view: surf.document.Elements
+    params: {document_id: {$instance: page}}
+    contains: {position: 7, kind: radio, label: Express, checked: false, disabled: true}
+  - view: surf.document.Elements
+    params: {document_id: {$instance: page}}
+    contains: {position: 8, kind: file, label: Attachment, value: ""}
+  - view: surf.document.Elements
+    params: {document_id: {$instance: page}}
+    contains: {position: 9, kind: select, label: Country, value: null}
+  - view: surf.document.Elements
+    params: {document_id: {$instance: page}}
+    contains: {position: 10, kind: textarea, label: Message, value: Hello}

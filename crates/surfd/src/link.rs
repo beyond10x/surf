@@ -238,66 +238,135 @@ fn line_kind(line: &str) -> Option<EntryKind> {
 
 /// `<sequence> <command>` and an optional ` <quoted>`.
 fn action_line(rest: &str) -> bool {
-    let mut words = rest.splitn(3, ' ');
-    let (Some(sequence), Some(command)) = (words.next(), words.next()) else {
-        return false;
-    };
-    let argument_ok = match words.next() {
-        None => true,
-        Some(field) => surf_answer::unquote(field).is_ok(),
-    };
-    is_number(sequence)
-        && !command.is_empty()
-        && command.bytes().all(|b| b.is_ascii_lowercase())
-        && argument_ok
+    read_action_rest(rest).is_some()
 }
 
 /// `<name>` and either ` unmapped` or any number of ` <field>=` with an optional quoted value.
 fn event_line(rest: &str) -> bool {
+    read_event_rest(rest).is_some()
+}
+
+/// An action entry line read into its parts ([`read_action`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ActionLine<'a> {
+    /// The sequence number: decimal digits without a leading zero.
+    pub sequence: &'a str,
+    /// The command, a word of `[a-z]+`.
+    pub command: &'a str,
+    /// The argument as the quoted field the line holds, quotes included; `None` when the action
+    /// has none.
+    pub argument: Option<&'a str>,
+}
+
+/// An event entry line read into its parts ([`read_event`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EventLine<'a> {
+    /// The qualified event name.
+    pub name: &'a str,
+    /// Whether the line says `unmapped`; `fields` is then empty.
+    pub unmapped: bool,
+    /// Each field in the line's order: its name and its quoted field, quotes included, or
+    /// `None` for an absent value.
+    pub fields: Vec<(&'a str, Option<&'a str>)>,
+}
+
+/// The parts of an action entry line, `action <sequence> <command> ["<argument>"]`, with or
+/// without its line feed; `None` for a line outside the grammar that [`Entry::line`] checks.
+/// The one reading of an action line: the grammar check is this function. The argument stays
+/// quoted; a reader takes its value through [`surf_answer::unquote`].
+pub fn read_action(line: &str) -> Option<ActionLine<'_>> {
+    let line = line.strip_suffix('\n').unwrap_or(line);
+    if !printable(line) {
+        return None;
+    }
+    read_action_rest(line.strip_prefix("action ")?)
+}
+
+/// The parts of an event entry line, `event <name> <field>="<value>" …` or `event <name>
+/// unmapped`, with or without its line feed; `None` for a line outside the grammar that
+/// [`Entry::line`] checks. The one reading of an event line: the grammar check is this
+/// function. The values stay quoted; a reader takes each through [`surf_answer::unquote`].
+pub fn read_event(line: &str) -> Option<EventLine<'_>> {
+    let line = line.strip_suffix('\n').unwrap_or(line);
+    if !printable(line) {
+        return None;
+    }
+    read_event_rest(line.strip_prefix("event ")?)
+}
+
+fn printable(line: &str) -> bool {
+    line.bytes().all(|b| (b' '..=b'~').contains(&b))
+}
+
+fn read_action_rest(rest: &str) -> Option<ActionLine<'_>> {
+    let mut words = rest.splitn(3, ' ');
+    let (Some(sequence), Some(command)) = (words.next(), words.next()) else {
+        return None;
+    };
+    let argument = words.next();
+    let argument_ok = argument.is_none_or(|field| surf_answer::unquote(field).is_ok());
+    let ok = is_number(sequence)
+        && !command.is_empty()
+        && command.bytes().all(|b| b.is_ascii_lowercase())
+        && argument_ok;
+    ok.then_some(ActionLine {
+        sequence,
+        command,
+        argument,
+    })
+}
+
+fn read_event_rest(rest: &str) -> Option<EventLine<'_>> {
     let (name, mut fields) = rest.split_once(' ').unwrap_or((rest, ""));
     if name.is_empty()
         || !name
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'_')
     {
-        return false;
+        return None;
     }
+    let mut read = EventLine {
+        name,
+        unmapped: false,
+        fields: Vec::new(),
+    };
     if fields == "unmapped" {
-        return true;
+        read.unmapped = true;
+        return Some(read);
     }
     if rest.contains(' ') && fields.is_empty() {
-        return false;
+        return None;
     }
     while !fields.is_empty() {
-        let Some((field, after)) = fields.split_once('=') else {
-            return false;
-        };
+        let (field, after) = fields.split_once('=')?;
         if field.is_empty()
             || !field
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
         {
-            return false;
+            return None;
         }
         let (value, next) = match after.strip_prefix('"') {
             // A quoted field ends at the first `"` after its opening one.
-            Some(inside) => match inside.find('"') {
-                Some(end) => (&after[..end + 2], &after[end + 2..]),
-                None => return false,
-            },
+            Some(inside) => {
+                let end = inside.find('"')?;
+                (&after[..end + 2], &after[end + 2..])
+            }
             None => ("", after),
         };
         if !value.is_empty() && surf_answer::unquote(value).is_err() {
-            return false;
+            return None;
         }
+        read.fields
+            .push((field, (!value.is_empty()).then_some(value)));
         fields = match next.strip_prefix(' ') {
             Some(more) if !more.is_empty() => more,
-            Some(_) => return false,
+            Some(_) => return None,
             None if next.is_empty() => "",
-            None => return false,
+            None => return None,
         };
     }
-    true
+    Some(read)
 }
 
 /// A number of `docs/agent-answer.md`: decimal digits without a leading zero.

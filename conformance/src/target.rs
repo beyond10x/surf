@@ -49,7 +49,10 @@ use surf_types::agent::{
     RecordActionOutcome, SessionData, SessionId, SessionSnapshot, SessionState,
 };
 use surf_types::behaviour::SessionStorage;
-use surf_types::document::{ParseDocument, ParseDocumentOutcome};
+use surf_types::document::{
+    AddElement, AddElementOutcome, DocumentId, DocumentState, ElementKind, EncodingName,
+    FinishParsing, FinishParsingOutcome, ParseDocument, ParseDocumentOutcome, ParseLimit,
+};
 use surf_types::navigation::{
     CancelNavigation, CancelNavigationOutcome, CommitNavigation, CommitNavigationOutcome,
     FailNavigation, FailNavigationOutcome, Navigate, NavigateOutcome, NavigationState,
@@ -210,7 +213,9 @@ fn publisher(event: &SystemEvent) -> Component {
         | SystemEvent::SessionClosed(_)
         | SystemEvent::SessionNavigationChanged(_)
         | SystemEvent::SessionOpened(_) => Component::Agent,
-        SystemEvent::DocumentParsed(_) => Component::Document,
+        SystemEvent::DocumentParsed(_)
+        | SystemEvent::ElementAdded(_)
+        | SystemEvent::ParsingStarted(_) => Component::Document,
         SystemEvent::NavigationCancelled(_)
         | SystemEvent::NavigationCommitted(_)
         | SystemEvent::NavigationFailed(_)
@@ -574,6 +579,66 @@ fn failure_reason_named(name: &str) -> Option<FailureReason> {
     .find(|reason| failure_reason(*reason) == name)
 }
 
+fn document_state(state: DocumentState) -> &'static str {
+    match state {
+        DocumentState::Parsed => "Parsed",
+        DocumentState::Parsing => "Parsing",
+    }
+}
+
+/// An element's kind as `spec/` spells it, in lower case.
+fn element_kind(kind: ElementKind) -> &'static str {
+    match kind {
+        ElementKind::Link => "link",
+        ElementKind::Button => "button",
+        ElementKind::Text => "text",
+        ElementKind::Password => "password",
+        ElementKind::Checkbox => "checkbox",
+        ElementKind::Radio => "radio",
+        ElementKind::File => "file",
+        ElementKind::Select => "select",
+        ElementKind::Textarea => "textarea",
+    }
+}
+
+fn element_kind_named(name: &str) -> Option<ElementKind> {
+    [
+        ElementKind::Link,
+        ElementKind::Button,
+        ElementKind::Text,
+        ElementKind::Password,
+        ElementKind::Checkbox,
+        ElementKind::Radio,
+        ElementKind::File,
+        ElementKind::Select,
+        ElementKind::Textarea,
+    ]
+    .into_iter()
+    .find(|kind| element_kind(*kind) == name)
+}
+
+fn parse_limit(limit: ParseLimit) -> &'static str {
+    match limit {
+        ParseLimit::InputBytes => "InputBytes",
+        ParseLimit::Depth => "Depth",
+        ParseLimit::Nodes => "Nodes",
+        ParseLimit::Attributes => "Attributes",
+        ParseLimit::StoredBytes => "StoredBytes",
+    }
+}
+
+fn parse_limit_named(name: &str) -> Option<ParseLimit> {
+    [
+        ParseLimit::InputBytes,
+        ParseLimit::Depth,
+        ParseLimit::Nodes,
+        ParseLimit::Attributes,
+        ParseLimit::StoredBytes,
+    ]
+    .into_iter()
+    .find(|limit| parse_limit(*limit) == name)
+}
+
 /// The payload of an event on the system's log, by declared field name.
 fn payload(event: &SystemEvent) -> Vec<(&'static str, Node)> {
     use values::{bytes, integer, text, uuid};
@@ -605,12 +670,30 @@ fn payload(event: &SystemEvent) -> Vec<(&'static str, Node)> {
             ("window_id", uuid(&e.window_id.0)),
             ("tab_id", uuid(&e.tab_id.0)),
         ],
-        SystemEvent::DocumentParsed(e) => {
-            vec![
-                ("document_id", uuid(&e.document_id.0)),
-                ("url", text(&e.url.0)),
-            ]
-        }
+        SystemEvent::DocumentParsed(e) => vec![
+            ("document_id", uuid(&e.document_id.0)),
+            ("url", text(&e.url.0)),
+            ("navigation_id", uuid_of(&e.navigation_id)),
+            ("title", text(&e.title)),
+            ("encoding", text(&e.encoding.0)),
+            (
+                "unsupported_encoding",
+                optional(e.unsupported_encoding.as_ref(), |name| text(&name.0)),
+            ),
+            (
+                "stopped_by",
+                optional(e.stopped_by, |limit| text(parse_limit(limit))),
+            ),
+        ],
+        SystemEvent::ElementAdded(e) => vec![
+            ("element_id", uuid(&e.element_id.0)),
+            ("document_id", uuid(&e.document_id.0)),
+            ("position", integer(e.position)),
+        ],
+        SystemEvent::ParsingStarted(e) => vec![
+            ("document_id", uuid(&e.document_id.0)),
+            ("body", bytes(&e.body)),
+        ],
         SystemEvent::NavigationCancelled(e) => vec![
             ("navigation_id", uuid_of(&e.navigation_id)),
             ("tab_id", uuid(&e.tab_id.0)),
@@ -726,7 +809,11 @@ fn invocation(
         BindingInvocation::ParseOnNavigationCommitted(input) => (
             "parse-on-navigation-committed",
             "surf.document.ParseDocument",
-            vec![("url", text(&input.url.0)), ("body", bytes(&input.body))],
+            vec![
+                ("url", text(&input.url.0)),
+                ("body", bytes(&input.body)),
+                ("navigation_id", uuid_of(&input.navigation_id)),
+            ],
         ),
         BindingInvocation::NavigateOnNavigationRequested(input) => (
             "navigate-on-navigation-requested",
@@ -1246,15 +1333,116 @@ where
             "surf.document.ParseDocument" => {
                 let url = Url(input.text("url")?);
                 let body = input.bytes("body")?;
+                let navigation_id = RequestId(input.uuid("navigation_id")?);
                 input.finish()?;
                 match browser
                     .document_mut()
-                    .parse_document(ParseDocument { url, body })
+                    .parse_document(ParseDocument {
+                        url,
+                        body,
+                        navigation_id,
+                    })
                     .map_err(unmet)?
                 {
-                    ParseDocumentOutcome::Parsed { document_parsed } => {
+                    ParseDocumentOutcome::Started { parsing_started } => {
+                        took("started", SystemEvent::ParsingStarted(parsing_started))
+                    }
+                }
+            }
+            "surf.document.AddElement" => {
+                let present = present(fields);
+                let mut input = Input::new(command, &present);
+                let document_id = DocumentId(input.uuid("document_id")?);
+                let position = input.integer("position")?;
+                let kind = input.variant("kind", element_kind_named)?;
+                let label = input.text("label")?;
+                let target = if present.contains_key("target") {
+                    Some(input.text("target")?)
+                } else {
+                    None
+                };
+                let value = if present.contains_key("value") {
+                    Some(input.text("value")?)
+                } else {
+                    None
+                };
+                let hidden = input.boolean("hidden")?;
+                let disabled = input.boolean("disabled")?;
+                let checked = input.boolean("checked")?;
+                let required = input.boolean("required")?;
+                input.finish()?;
+                match browser
+                    .document_mut()
+                    .add_element(AddElement {
+                        document_id,
+                        position,
+                        kind,
+                        label,
+                        target,
+                        value,
+                        hidden,
+                        disabled,
+                        checked,
+                        required,
+                    })
+                    .map_err(unmet)?
+                {
+                    AddElementOutcome::Added { element_added } => {
+                        took("added", SystemEvent::ElementAdded(element_added))
+                    }
+                    AddElementOutcome::NoSuchDocument { error } => refused(
+                        "no-such-document",
+                        "surf.document.DocumentNotFound",
+                        vec![("document_id", uuid(&error.document_id.0))],
+                    )?,
+                    AddElementOutcome::AlreadyParsed { error } => refused(
+                        "already-parsed",
+                        "surf.document.DocumentStateConflict",
+                        vec![("state", values::text(document_state(error.state)))],
+                    )?,
+                }
+            }
+            "surf.document.FinishParsing" => {
+                let present = present(fields);
+                let mut input = Input::new(command, &present);
+                let document_id = DocumentId(input.uuid("document_id")?);
+                let title = input.text("title")?;
+                let encoding = EncodingName(input.text("encoding")?);
+                let unsupported_encoding = if present.contains_key("unsupported_encoding") {
+                    Some(EncodingName(input.text("unsupported_encoding")?))
+                } else {
+                    None
+                };
+                let stopped_by = if present.contains_key("stopped_by") {
+                    Some(input.variant("stopped_by", parse_limit_named)?)
+                } else {
+                    None
+                };
+                input.finish()?;
+                match browser
+                    .document_mut()
+                    .finish_parsing(FinishParsing {
+                        document_id,
+                        title,
+                        encoding,
+                        unsupported_encoding,
+                        stopped_by,
+                    })
+                    .map_err(unmet)?
+                {
+                    FinishParsingOutcome::Parsed { document_parsed } => {
                         took("parsed", SystemEvent::DocumentParsed(document_parsed))
                     }
+                    FinishParsingOutcome::NoSuchDocument { error } => refused(
+                        "no-such-document",
+                        "surf.document.DocumentNotFound",
+                        vec![("document_id", uuid(&error.document_id.0))],
+                    )?,
+                    FinishParsingOutcome::WrongState { error } => refused(
+                        "wrong-state",
+                        "surf.document.DocumentStateConflict",
+                        vec![("state", values::text(document_state(error.state)))],
+                    )?,
                 }
             }
             "surf.render.PaintFrame" => {
@@ -1356,6 +1544,35 @@ where
                 .collect();
             return Ok(rows);
         }
+        if view == "surf.document.Elements" {
+            let document_id = DocumentId(params.uuid("document_id")?);
+            params.finish()?;
+            let rows = system
+                .document
+                .elements(document_id)
+                .map_err(unmet)?
+                .into_iter()
+                .map(|row| {
+                    fields(vec![
+                        ("element_id", uuid(&row.element_id.0)),
+                        ("document_id", uuid(&row.document_id.0)),
+                        ("position", integer(row.position)),
+                        ("kind", text(element_kind(row.kind))),
+                        ("label", text(&row.label)),
+                        (
+                            "target",
+                            optional(row.target.as_ref(), |target| text(target)),
+                        ),
+                        ("value", optional(row.value.as_ref(), |value| text(value))),
+                        ("hidden", values::boolean(row.hidden)),
+                        ("disabled", values::boolean(row.disabled)),
+                        ("checked", values::boolean(row.checked)),
+                        ("required", values::boolean(row.required)),
+                    ])
+                })
+                .collect();
+            return Ok(rows);
+        }
         params.finish()?;
         let rows: Vec<Vec<(&'static str, Node)>> = match view {
             "surf.agent.Sessions" => system
@@ -1399,6 +1616,21 @@ where
                     vec![
                         ("document_id", uuid(&row.document_id.0)),
                         ("url", text(&row.url.0)),
+                        ("navigation_id", uuid_of(&row.navigation_id)),
+                        ("state", text(document_state(row.state))),
+                        ("title", optional(row.title.as_ref(), |title| text(title))),
+                        (
+                            "encoding",
+                            optional(row.encoding.as_ref(), |name| text(&name.0)),
+                        ),
+                        (
+                            "unsupported_encoding",
+                            optional(row.unsupported_encoding.as_ref(), |name| text(&name.0)),
+                        ),
+                        (
+                            "stopped_by",
+                            optional(row.stopped_by, |limit| text(parse_limit(limit))),
+                        ),
                     ]
                 })
                 .collect(),
@@ -1682,7 +1914,7 @@ mod tests {
     use surf_types::agent::{
         NavigationRequested, NoteNavigationStarted, SessionId, SessionNavigationChanged,
     };
-    use surf_types::document::{DocumentId, DocumentParsed};
+    use surf_types::document::{DocumentId, ParsingStarted};
     use surf_types::navigation::{
         CommitNavigation, Navigate, NavigationCancelled, NavigationCommitted, NavigationStarted,
         NavigationState,
@@ -1760,10 +1992,10 @@ mod tests {
         })
     }
 
-    fn parsed() -> SystemEvent {
-        SystemEvent::DocumentParsed(DocumentParsed {
+    fn parsing_started() -> SystemEvent {
+        SystemEvent::ParsingStarted(ParsingStarted {
             document_id: DocumentId(Uuid("3f1d5b7e-0000-4000-8000-000000000030".to_owned())),
-            url: Url(ADDRESS.to_owned()),
+            body: Vec::new(),
         })
     }
 
@@ -1816,7 +2048,7 @@ mod tests {
             reported_events(
                 "surf.net.DeliverResponse",
                 &[received()],
-                &[received(), committed(), parsed()],
+                &[received(), committed(), parsing_started()],
                 &[commit()],
             ),
             Ok(vec![received()])

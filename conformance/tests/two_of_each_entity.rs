@@ -26,10 +26,10 @@ use surf_types::agent::{
     SessionSnapshot,
 };
 use surf_types::behaviour::{
-    ActionStorage, DocumentStorage, FrameStorage, NavigationStorage, RequestStorage,
-    SessionStorage, TabStorage, TryContext, WindowStorage,
+    ActionStorage, DocumentStorage, ElementStorage, FrameStorage, NavigationStorage,
+    RequestStorage, SessionStorage, TabStorage, TryContext, WindowStorage,
 };
-use surf_types::document::{DocumentId, DocumentSnapshot};
+use surf_types::document::{DocumentId, DocumentSnapshot, ElementId, ElementSnapshot};
 use surf_types::navigation::NavigationSnapshot;
 use surf_types::net::{RequestId, RequestSnapshot};
 use surf_types::obligation::UnmetObligation;
@@ -50,6 +50,7 @@ enum Entity {
     Navigation,
     Request,
     Document,
+    Element,
     Frame,
     Session,
     Action,
@@ -121,6 +122,7 @@ planted_storage!(
     DocumentId,
     Entity::Document
 );
+planted_storage!(ElementStorage, ElementSnapshot, ElementId, Entity::Element);
 planted_storage!(FrameStorage, FrameSnapshot, FrameId, Entity::Frame);
 planted_storage!(SessionStorage, SessionSnapshot, SessionId, Entity::Session);
 planted_storage!(ActionStorage, ActionSnapshot, ActionId, Entity::Action);
@@ -182,6 +184,13 @@ impl<P: TryContext> TryContext for Planted<P> {
             return Ok(DocumentId(same()));
         }
         self.inner.try_generate_surf_document_document_id()
+    }
+
+    fn try_generate_surf_document_element_id(&mut self) -> Result<ElementId, UnmetObligation> {
+        if self.same(Entity::Element) {
+            return Ok(ElementId(same()));
+        }
+        self.inner.try_generate_surf_document_element_id()
     }
 
     fn try_generate_surf_net_request_id(&mut self) -> Result<RequestId, UnmetObligation> {
@@ -298,6 +307,7 @@ fn one_identity_for_every_instance_of_an_entity_is_noticed_for_each_entity() {
         Defect::SameIdentity(Entity::Tab),
         Defect::SameIdentity(Entity::Navigation),
         Defect::SameIdentity(Entity::Document),
+        Defect::SameIdentity(Entity::Element),
         Defect::SameIdentity(Entity::Frame),
         Defect::SameIdentity(Entity::Action),
     ]);
@@ -311,6 +321,7 @@ fn a_view_cut_to_its_first_row_is_noticed_for_each_entity() {
         Defect::FirstRowOnly(Entity::Navigation),
         Defect::FirstRowOnly(Entity::Request),
         Defect::FirstRowOnly(Entity::Document),
+        Defect::FirstRowOnly(Entity::Element),
         Defect::FirstRowOnly(Entity::Frame),
         Defect::FirstRowOnly(Entity::Session),
         Defect::FirstRowOnly(Entity::Action),

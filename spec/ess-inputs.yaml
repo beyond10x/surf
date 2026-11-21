@@ -20,3 +20,6 @@ scenarios:
   - scenarios/agent-session-log-in-sequence-order.yaml
   - scenarios/navigation-commits-at-response-url.yaml
   - scenarios/agent-session-shows-response-url.yaml
+  - scenarios/parsed-page-with-title-links-and-form.yaml
+  - scenarios/parsed-page-without-title.yaml
+  - scenarios/parse-stopped-at-a-limit.yaml

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T14:59:44Z",
+  "actor": "human:operator",
+  "artifact": "story:html-document-spec",
+  "kind": "story",
+  "revision": 30,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the coordinator's run of the packages surf-ports, surf and surf-session with warnings denied and of the tasks validate, suite, conform, conform-rust, conform-totals and generated-check with REFUSALS_MAX=28 at the unit's change (bb18024), and slot task check in the runner's form on wave/a6-document-text-view at 35e4fa9",
+    "reference": "exit 0; 93 scenarios (12 authored), 28 refusals, 93 of 93 on the interpreter and on the Rust system, suite sha256:4cd1257a06a838a1bb2779b0309c347b1b6262703ff814da340988c32ecb7a3a; generated/rust matches spec/ (30 artifacts); the one new refusal is ESS-SYNTH-014 for AddElement/added, covered by the authored scenario parsed-page-with-title-links-and-form; 5 planted defects each red (the unit's runs); two test files outside the story's first list admitted and added to its scope; verdict VERIFIED"
+  }
+}

@@ -69,8 +69,12 @@ components:
     accepts:
       commands:
         - surf.document.ParseDocument
+        - surf.document.AddElement
+        - surf.document.FinishParsing
     publishes:
       events:
+        - surf.document.ParsingStarted
+        - surf.document.ElementAdded
         - surf.document.DocumentParsed
     reached_by: in_process
 
@@ -175,6 +179,7 @@ bindings:
     mapping:
       url: event.url
       body: event.body
+      navigation_id: event.navigation_id
     delivery: at_most_once
     # ParseDocument refuses nothing. If it does not run at all, the tab shows no document.
     on_failure: drop

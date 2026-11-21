@@ -14,8 +14,8 @@ const ID: &str = "0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b";
 
 #[test]
 fn bodies_of_answered_commands_are_not_kept() {
-    // A body of 256 KiB, loaded 21 times: kept, it would be 4 copies per load (two events and
-    // two binding invocations each carry it), 21 MiB in all.
+    // A body of 256 KiB, loaded 21 times: kept, it would be 5 copies per load (three events and
+    // two binding invocations each carry it), 26.25 MiB in all.
     let mut body = b"<!doctype html><p>".to_vec();
     body.resize(256 * 1024, b'x');
     let pages = PageServer::with_body(body);

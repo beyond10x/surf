@@ -39,23 +39,25 @@ One command checks everything:
 
 ```console
 $ task check
-surf v1 — 9 file(s), 9 scenario(s), valid
-83 scenario(s) (9 authored), 27 refusal(s), written to .out/suite.json
-  83 scenarios: 83 passed, 0 failed, 0 error, 0 unsupported
-83 scenario(s) (9 authored), 27 refusal(s), written to .out/suite.json
-  83 scenarios: 83 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 83 scenario(s) each, of suite sha256:4d9ad0c31479f50662514ef890cfa8bf01b2eaee94669f5df38269e13feda726
+surf v1 — 9 file(s), 12 scenario(s), valid
+93 scenario(s) (12 authored), 28 refusal(s), written to .out/suite.json
+  93 scenarios: 93 passed, 0 failed, 0 error, 0 unsupported
+93 scenario(s) (12 authored), 28 refusal(s), written to .out/suite.json
+  93 scenarios: 93 passed, 0 failed, 0 error, 0 unsupported
+the interpreter and the Rust system ran 93 scenario(s) each, of suite sha256:4cd1257a06a838a1bb2779b0309c347b1b6262703ff814da340988c32ecb7a3a
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 Cargo.lock: 21 package(s), none from outside this repository
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.00s
-102 test suites: 407 passed, 0 failed, 0 ignored
-html-conformance: 9107 cases, 9095 run, 4164 passed
+109 test suites: 453 passed, 0 failed, 0 ignored
+view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
+html-conformance: 9107 cases, 9095 run, 4442 passed
 ```
 
-It validates the specification, runs the 83 scenarios against the interpreter built into `ess`
+It validates the specification, runs the 93 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
-that the lock file holds no outside package, then builds and tests, and last holds the HTML
+that the lock file holds no outside package, then builds and tests, checks that every event
+name of the live view's stream is an event of the specification, and last holds the HTML
 parser's test counts where they are.
 
 The scenario runner in

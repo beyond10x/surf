@@ -23,13 +23,16 @@
 //! - [`input`]: written. [`input::InputStream`] holds the code points of the input with every
 //!   CR LF and every CR on its own turned into one LF, and [`input::parse_error`] names the
 //!   three parse errors of the input stream (surrogate, noncharacter, control character).
-//! - [`tokenizer`]: partly written. [`tokenizer::tokenize`] runs the data state and the tag,
-//!   attribute, comment, DOCTYPE, CDATA section and processing instruction states, started in
-//!   [`tokenizer::State::Data`] or [`tokenizer::State::CdataSection`], and returns tokens and
-//!   parse errors. `<![CDATA[` in the data state is a bogus comment with the parse error
-//!   `cdata-in-html-content`, because there is no tree builder to say that the adjusted current
-//!   node is in a foreign namespace. Started in the RCDATA, RAWTEXT, script data or PLAINTEXT
-//!   state it returns no token and no parse error, and `last_start_tag` is not read. The
+//! - [`tokenizer`]: written but for the character reference states. [`tokenizer::tokenize`]
+//!   runs the data, RCDATA, RAWTEXT, script data and PLAINTEXT states, the less-than sign, end
+//!   tag and script data escape states they lead to, and the tag, attribute, comment, DOCTYPE,
+//!   CDATA section and processing instruction states, started in any [`tokenizer::State`], and
+//!   returns tokens and parse errors. It reads `last_start_tag` as the last start tag emitted,
+//!   which each start tag it emits replaces; an end tag in the RCDATA, RAWTEXT or script data
+//!   states ends them only when its name is that tag's. It runs from one state to the end of
+//!   the input: no tree builder switches its state between tokens. `<![CDATA[` in the data
+//!   state is a bogus comment with the parse error `cdata-in-html-content`, because there is no
+//!   tree builder to say that the adjusted current node is in a foreign namespace. The
 //!   character reference state is a stub: `&` is emitted as a character, or appended to the
 //!   attribute value, and the characters after it are read in the state it came from.
 //! - [`charref`]: nothing yet. The module holds no item: no named reference table, no

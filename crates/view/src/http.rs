@@ -8,7 +8,7 @@
 //!   two threads (`sse.rs`), at most [`Limits::streams`] streams.
 //! - memory per connection: the head buffer, at most [`Limits::head_bytes`]; the header lines
 //!   kept, at most [`Limits::head_lines`]; a stream's queue, at most [`Limits::queue_entries`]
-//!   and [`Limits::queue_bytes`].
+//!   and [`Limits::queue_bytes`], or one larger frame alone, whose size the source bounds.
 //! - time: the head within [`Limits::receive`] of the accept, or the connection is closed with
 //!   no answer; the answer within [`Limits::write`] of its first byte; after the answer at most
 //!   [`LINGER`] and [`LINGER_BYTES`] of reading what the client still sends (RFC 9112, tear-down,
@@ -59,7 +59,8 @@ pub struct Limits {
     pub streams: usize,
     /// Entries queued for one stream: 256. Past it that stream is closed.
     pub queue_entries: usize,
-    /// Bytes queued for one stream: 1 MiB. Past it that stream is closed.
+    /// Bytes queued for one stream: 1 MiB, or one frame alone when that frame is larger, which
+    /// waits until the queue is empty. Past it that stream is closed.
     pub queue_bytes: usize,
     /// The interval of the `: keep-alive` comment on a stream: 15 s.
     pub heartbeat: Duration,
@@ -119,8 +120,26 @@ pub trait Source: Send + Sync + 'static {
     fn newest(&self) -> u64;
     /// A reader that yields every kept entry above `number` in number order and then, live,
     /// every new entry and every `session` item; or [`TooOld`] when an entry above `number` is
-    /// no longer kept. `session` items come only live, never from the replay.
+    /// no longer kept, or when `number` is more than [`Limits::queue_entries`] below the newest
+    /// number at the time of the call, so that a replay fits the stream's queue (`surfd`'s
+    /// source answers both). `session` items come only live, never from the replay. The newest
+    /// number can move between a call of [`Source::newest`] and this one, so `TooOld` is allowed
+    /// for a number that [`Source::newest`] gave; a stream from the newest number is opened by
+    /// [`Source::read_newest`].
     fn read_from(&self, number: u64) -> Result<Box<dyn Reader>, TooOld>;
+
+    /// The newest number and a reader from it, live only, read together so that no entry kept
+    /// meanwhile can make the read [`TooOld`]. The number is the `id:` of a `reset`.
+    ///
+    /// The default reads [`Source::newest`] and then [`Source::read_from`] that number, and so
+    /// can answer `TooOld` when more entries than `read_from` allows are kept between the two
+    /// calls; a source that keeps entries while a stream opens gives both in one hold of its
+    /// lock (`surfd`'s source does). On `TooOld` the server writes the stream's head, `reset`
+    /// when one is due, and closes the stream: its reader resumes with `Last-Event-ID`.
+    fn read_newest(&self) -> Result<(u64, Box<dyn Reader>), TooOld> {
+        let newest = self.newest();
+        self.read_from(newest).map(|reader| (newest, reader))
+    }
 }
 
 /// What the connection threads share.
