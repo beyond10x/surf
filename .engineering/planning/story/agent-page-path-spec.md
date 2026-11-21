@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-page-path-spec
 kind: story
-status: active
+status: implemented
 title: Specify the action log and the fields of the page line
 summary: Action rows owned by a session give path and log their lines; the session shows the status, media type and failure reason of its page.
 relations:
@@ -35,10 +35,11 @@ scope:
   path: spec/ess-inputs.yaml
 - confidence: cited
   path: spec/scenarios
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-11-21T02:59:46Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 

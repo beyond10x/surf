@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T02:59:46Z",
+  "actor": "human:timo",
+  "artifact": "story:view-page-prototype",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p surf-view, run by the coordinator in the unit tree at 150fa04 and again at 1011948",
+    "reference": "http 33, prototype 8, web 2 passed, 0 failed; cargo tree lists surf-view and surf-secret; the example opened in the operator's browser on 2026-11-21, and again after the narrow-width follow-up; verdict VERIFIED"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T02:59:46Z",
+  "actor": "human:timo",
+  "artifact": "story:agent-surfd-supervisor",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p surfd -p surf-agent, run twice by the coordinator in the unit tree at 662e4e5",
+    "reference": "55 passed in each run (surfd 26 in two suites, surf-agent 29), 0 failed; no process and no directory left; cargo tree lists surfd, surf-agent, surf-answer, surf-secret; the unit's five runs and two planted defects; verdict VERIFIED"
+  }
+}

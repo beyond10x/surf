@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:runner-surf-cli-package
 kind: story
-status: active
+status: implemented
 title: Move the surf binary into a package of its own
 summary: crates/surf-cli holds the surf binary and its tests, so it can depend on crates that depend on the surf library.
 relations:
@@ -27,10 +27,11 @@ scope:
   path: crates/surf/tests/review1_output.rs
 - confidence: cited
   path: crates/surf/tests/review2_output.rs
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-11-21T02:59:46Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 

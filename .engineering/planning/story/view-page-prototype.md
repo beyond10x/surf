@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:view-page-prototype
 kind: story
-status: active
+status: implemented
 title: A prototype of the live view page over example data, before surfd serves it
 summary: The first version of the page files under crates/view/web/, compiled into surf-view, and an example program that serves them over scripted sessions in the shapes of docs/view-stream.md, so a person can open the view before the daemon exists.
 relations:
@@ -21,10 +21,11 @@ scope:
   path: crates/view/tests/web.rs
 - confidence: cited
   path: crates/view/web
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T02:01:50Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T02:01:51Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-21T02:59:46Z", actor: "human:timo", revision: 5, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 

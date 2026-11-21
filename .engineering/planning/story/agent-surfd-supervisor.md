@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-surfd-supervisor
 kind: story
-status: active
+status: implemented
 title: 'surfd: one daemon per user that starts, supervises and routes to the session processes'
 summary: The surfd binary, its start on the first open, the session list, supervision of session processes, routing, idle exit and the directory and socket checks.
 relations:
@@ -22,10 +22,11 @@ scope:
   path: crates/agent/tests/common
 - confidence: cited
   path: crates/surfd
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-21T02:59:46Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 
