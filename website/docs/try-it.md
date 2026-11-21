@@ -1,32 +1,43 @@
 ---
 title: Try it
-description: Download the surf binary and load one page.
+description: Download surf, load one page, and find the agent binaries.
 ---
 
 # Try it
 
-surf comes as one pre-built binary. It loads one `http:` address and prints what happened; it
-shows no page.
+surf comes as pre-built binaries. `surf` loads one `http:` address and prints what happened; it
+shows no page. On Linux, `surf-agent` drives a browser session one call at a time, for an AI
+agent or a script ([Drive surf from an agent](drive-from-an-agent.md)).
 
 ## Install
 
-Each [release](https://github.com/beyond10x/surf/releases) has a `surf` binary for Linux
-(x86_64 and aarch64, statically linked, any distribution) and macOS (Apple silicon and Intel),
-and a `SHA256SUMS` file. Pick your target: `x86_64-unknown-linux-musl`,
+Each [release](https://github.com/beyond10x/surf/releases) has an archive per target and a
+`SHA256SUMS` file. Pick your target: `x86_64-unknown-linux-musl`,
 `aarch64-unknown-linux-musl`, `aarch64-apple-darwin` or `x86_64-apple-darwin`.
 
+- A Linux archive (x86_64 and aarch64, statically linked, any distribution) holds four
+  binaries: `surf`, `surf-agent`, `surfd` and `surf-session`. Install the four together, into
+  one directory: `surf-agent` starts `surfd` from its own directory, and `surfd` starts
+  `surf-session` from its own.
+- A macOS archive (Apple silicon and Intel) holds `surf`: the agent binaries read the caller's
+  user id from `/proc/self` and need `XDG_RUNTIME_DIR`, and macOS has neither.
+
+On Linux:
+
 ```console
-$ version=0.1.0 target=x86_64-unknown-linux-musl
+$ version=0.2.0 target=x86_64-unknown-linux-musl
 $ base=https://github.com/beyond10x/surf/releases/download/$version
 $ curl -fsSLO $base/surf-$version-$target.tar.gz -fsSLO $base/SHA256SUMS
 $ grep " surf-$version-$target.tar.gz\$" SHA256SUMS | sha256sum --check
 $ tar -xzf surf-$version-$target.tar.gz
-$ sudo install surf-$version-$target/surf /usr/local/bin/surf
+$ sudo install surf-$version-$target/surf* /usr/local/bin/
 ```
 
-On macOS use `shasum -a 256 --check` in place of `sha256sum --check`. The macOS binaries are
-not signed or notarised: a file downloaded with `curl` runs as it is; one downloaded with a
-browser needs `xattr -d com.apple.quarantine surf` first. There is no Windows binary yet.
+On macOS, with `target=aarch64-apple-darwin` or `target=x86_64-apple-darwin`, use
+`shasum -a 256 --check` in place of `sha256sum --check`, and install the one binary:
+`sudo install surf-$version-$target/surf /usr/local/bin/surf`. The macOS binaries are not
+signed or notarised: a file downloaded with `curl` runs as it is; one downloaded with a browser
+needs `xattr -d com.apple.quarantine surf` first. There is no Windows binary yet.
 
 ## Load a page
 

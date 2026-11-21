@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 5042a1110c657521cdce7556f33cbda05f4df3fdd350ca1ac5dfafd26db14a63
+// contract digest 055477f7d70d2837ffe9e39fee6cbc6130c982cf9d0650a28bb00f7c8ca52d2c
 // do not edit: regenerate with `ess synthesize`
 
 //! What the specification fully determines, generated: the behaviour of every command the plan
@@ -480,8 +480,9 @@ where
             crate::navigation::AnyNavigation::Started(instance) => crate::navigation::AnyNavigation::Committed(instance.commit()),
             _ => return Ok(crate::navigation::CommitNavigationOutcome::WrongState { error: crate::navigation::NavigationStateConflict { state: held_state } }),
         };
-        let next = moved.snapshot();
-        let answer = crate::navigation::CommitNavigationOutcome::Committed { navigation_committed: crate::navigation::NavigationCommitted { navigation_id: input.navigation_id.clone(), tab_id: before.tab_id.clone(), url: before.url.clone(), status: input.status.clone(), media_type: input.media_type.clone(), body: input.body.clone() } };
+        let mut next = moved.snapshot();
+        next.data.url = input.url.clone();
+        let answer = crate::navigation::CommitNavigationOutcome::Committed { navigation_committed: crate::navigation::NavigationCommitted { navigation_id: input.navigation_id.clone(), tab_id: before.tab_id.clone(), url: input.url.clone(), status: input.status.clone(), media_type: input.media_type.clone(), body: input.body.clone() } };
         NavigationStorage::put(&mut self.ports, next);
         return Ok(answer);
     }
@@ -553,13 +554,12 @@ where
         };
         let _ = &held;
         let held_state = held.state;
-        let before = held.data.clone();
         let moved = match held.refine() {
             crate::net::AnyRequest::Pending(instance) => crate::net::AnyRequest::Responded(instance.respond()),
             _ => return Ok(crate::net::DeliverResponseOutcome::WrongState { error: crate::net::RequestStateConflict { state: held_state } }),
         };
         let next = moved.snapshot();
-        let answer = crate::net::DeliverResponseOutcome::Responded { response_received: crate::net::ResponseReceived { request_id: input.request_id.clone(), url: before.url.clone(), status: input.status.clone(), media_type: input.media_type.clone(), body: input.body.clone() } };
+        let answer = crate::net::DeliverResponseOutcome::Responded { response_received: crate::net::ResponseReceived { request_id: input.request_id.clone(), url: input.url.clone(), status: input.status.clone(), media_type: input.media_type.clone(), body: input.body.clone() } };
         RequestStorage::put(&mut self.ports, next);
         return Ok(answer);
     }

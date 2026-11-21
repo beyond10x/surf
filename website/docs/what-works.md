@@ -11,17 +11,36 @@ description: What surf does today, and what it does not do yet.
   `renderer`.
 - **Its own HTTP/1.1 client**, with one deadline for the whole exchange (40 seconds at most) and
   hard limits on header and body size.
-- **81 specified scenarios**, each passing twice: once against the specification's own
+- **83 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **324 tests**, built with warnings treated as errors.
+- **363 tests**, built with warnings treated as errors.
 
-New with the third wave of the current plan. Nothing here lets you do something new with the
-`surf` binary yet (release `0.1.0` does what it did); these are parts the next waves build on:
+New with the fourth wave of the current plan, shipped in release `0.2.0` (the
+[releases page](https://github.com/beyond10x/surf/releases) lists them):
+
+- **The agent commands.** On Linux, `surf-agent open`, `go`, `look` and `close` run against a
+  real daemon and a real session process, and load real pages over `http:`. Each session has its
+  own process and its own token; a call with the wrong token learns nothing but the refusal, and
+  after each answer the session holds no page body. An answer holds the status, the media type
+  and the address, not yet the page's content, because no page is parsed yet. How to use them:
+  [Drive surf from an agent](drive-from-an-agent.md).
+- **A response names its address.** In the specification, a response says which address it came
+  from after the last redirect: the navigation commits there and the session shows it, while the
+  request keeps the address asked for. A redirect that arrives after 20 followed ones is a
+  failure of its own, `TooManyRedirects`. The transport does not follow redirects yet, so today a
+  redirect status is delivered as the response.
+- **A gate for the HTML parser's tests.** The harness's counts are written down per file, tag and
+  section, and `task check` fails when a count differs, when a case stops running without a
+  reason, or when an expected count is lowered. The parser is still empty, so it passes 5 of
+  9,095 cases, and the gate holds exactly that.
+- **Four binaries in one release.** A Linux archive holds `surf`, `surf-agent`, `surfd` and
+  `surf-session`; a macOS archive holds `surf`. A smoke test runs the unpacked archive before a
+  release is cut. See [Try it](try-it.md#install).
+
+New with the third wave, the parts the agent commands and the live view build on:
 
 - **The daemon, `surfd`.** It keeps the list of sessions (open, closed or died), passes each
-  request to the session's own process and the answer back, and exits when it has been idle. It
-  is tested against a stand-in session. The session process comes next, so `surf-agent` still
-  cannot open a session.
+  request to the session's own process and the answer back, and exits when it has been idle.
 - **The live view's page.** Nine plain files, with no framework, nothing from another origin and
   every value shown as text, fitting screens from 360 px to 1,400 px wide. One command from a
   source checkout, the `prototype` example of the `surf-view` crate, serves it over three
@@ -41,9 +60,7 @@ New with the second wave:
 - **The agent command line, `surf-agent`**: its parser follows the command-line document
   [`cli/surf-agent.yaml`](https://github.com/beyond10x/surf/blob/main/cli/surf-agent.yaml), the
   session token is read from the environment or a file only you can read, and it talks to a
-  daemon over a Unix socket. That daemon, `surfd`, is new with the third wave, but the session
-  process it starts is not there yet, so `surf-agent` cannot open a session; its tests run
-  against a stand-in.
+  daemon over a Unix socket. With the fourth wave it drives real sessions.
 - **The live view's web server.** It answers `GET` requests only, from a fixed set of routes,
   checks the `Host` header and a view token, and streams events with a bounded queue per reader
   ([`docs/view-stream.md`](https://github.com/beyond10x/surf/blob/main/docs/view-stream.md)). Its
@@ -58,8 +75,7 @@ New with the first wave:
   cross-browser URL test data. The other 32 need internationalised host names and are listed as
   skipped.
 - **The agent answer format**: a renderer and a parser that reads every answer back unchanged,
-  tested with 50 hostile values. The command that prints it arrives with wave 4 of the
-  [roadmap](roadmap.md).
+  tested with 50 hostile values. `surf-agent` prints it since the fourth wave.
 - **Secret handling**: random numbers from the operating system, a comparison that does not leak
   where two secrets differ, and the session token.
 
@@ -68,4 +84,7 @@ New with the first wave:
 - No window and no rendering. The `renderer` component is specified; it does not render yet.
 - No JavaScript.
 - No `https:`. Only `http:` addresses load.
+- No redirects: a redirect status is delivered as the response, not followed.
+- No page content in an agent's answer: status, media type and address only.
+- The agent binaries run on Linux only.
 - No standard section is marked complete.

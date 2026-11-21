@@ -2,14 +2,17 @@
 format: aep.planning-md/3
 id: story:random-source-failure-cause
 kind: story
-status: draft
+status: active
 title: Carry the cause when the random source fails
 summary: A failing /dev/urandom ends the run with exit 3 and an unmet obligation; the operating system's error is dropped at crates/ports/src/random.rs:71.
 tags:
 - from-finding
 relations:
 - informed_by: story:memory-ports
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-21T03:02:27Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-11-21T03:02:27Z", actor: "human:timo", revision: 4}
 ---
 ## Context
 

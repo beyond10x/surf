@@ -1,0 +1,7 @@
+surf 1 session <id> open
+token <token>
+did open "http://127.0.0.1:<port>/a"
+page 200 "text/html" "http://127.0.0.1:<port>/a"
+path 2 of 2
+  1 open
+  2 go "http://127.0.0.1:<port>/a"

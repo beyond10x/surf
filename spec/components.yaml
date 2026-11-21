@@ -132,13 +132,14 @@ bindings:
     on_failure: drop
 
   - id: commit-on-response
-    summary: A response commits the navigation that asked for it.
+    summary: A response commits the navigation that asked for it, at the address the response came from.
     when:
       event: surf.net.ResponseReceived
     invoke:
       command: surf.navigation.CommitNavigation
     mapping:
       navigation_id: event.request_id
+      url: event.url
       status: event.status
       media_type: event.media_type
       body: event.body
@@ -161,8 +162,9 @@ bindings:
     on_failure: drop
 
   - id: parse-on-navigation-committed
-    summary: A committed navigation's response is parsed into a document.
-    # Only HTML is parsed. A response of any other media type invokes nothing.
+    summary: A committed navigation's response is parsed into a document at the response's address.
+    # Only HTML is parsed. A response of any other media type invokes nothing. `event.url` is the
+    # address the navigation committed at: the response's, after the last redirect.
     # UNMAPPED: what a tab shows for a response that is not HTML (an image, plain text, a
     # download) and for a failed navigation (an error page).
     when:
@@ -212,13 +214,14 @@ bindings:
     on_failure: drop
 
   - id: note-on-navigation-committed
-    summary: A committed navigation is shown as Committed, with its status and media type.
+    summary: A committed navigation is shown as Committed, with its address, status and media type.
     when:
       event: surf.navigation.NavigationCommitted
     invoke:
       command: surf.agent.NoteNavigationCommitted
     mapping:
       navigation_id: event.navigation_id
+      url: event.url
       status: event.status
       media_type: event.media_type
     delivery: at_most_once

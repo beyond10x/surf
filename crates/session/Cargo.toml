@@ -1,0 +1,25 @@
+[package]
+name = "surf-session"
+description = "One surf agent session: a library core over any transport, and the binary surf-session that surfd starts and alone connects to, with the standard library only."
+version = "0.2.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+
+[lib]
+name = "surf_session"
+path = "src/lib.rs"
+
+[[bin]]
+name = "surf-session"
+path = "src/main.rs"
+
+[dependencies]
+surf = { path = "../surf" }
+surf-ports = { path = "../ports" }
+surf-fetch = { path = "../fetch" }
+surf-answer = { path = "../answer" }
+surf-secret = { path = "../secret" }
+surf-agent = { path = "../agent" }
+surfd = { path = "../surfd" }
+surf-types = { path = "../../generated/rust/crates/surf-types" }

@@ -2,14 +2,17 @@
 format: aep.planning-md/3
 id: story:agent-token-hash
 kind: story
-status: draft
+status: active
 title: Keep only a hash of the session token
 summary: 'Deferred: the session process keeps the hash of the token and compares hashes in constant time, once the cryptographic crate is chosen.'
 tags:
 - deferred
 relations:
 - informed_by: epic:agent-cli-target
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-21T03:02:27Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-11-21T03:02:27Z", actor: "human:timo", revision: 3}
 ---
 ## What
 

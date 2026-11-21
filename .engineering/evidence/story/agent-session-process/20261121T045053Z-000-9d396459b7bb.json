@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T04:50:53Z",
+  "actor": "human:timo",
+  "artifact": "story:agent-session-process",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p surf-session -p surfd -p surf-agent twice, and a run by hand of the three built binaries against a local server, by the coordinator in the unit tree at 508ae21; follow-up e045b43",
+    "reference": "74 passed in each run; by hand: open, look, go, a wrong token refused with the head line only, a file: address refused as UnsupportedScheme, close, look after close refused; no token on disk; follow-up: 0 body bytes held after each of 21 loads; verdict VERIFIED"
+  }
+}

@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 5042a1110c657521cdce7556f33cbda05f4df3fdd350ca1ac5dfafd26db14a63
+// contract digest 055477f7d70d2837ffe9e39fee6cbc6130c982cf9d0650a28bb00f7c8ca52d2c
 // do not edit: regenerate with `ess synthesize`
 
 //! Navigation — `surf.navigation`.
@@ -287,6 +287,8 @@ pub enum CancelNavigationOutcome {
 pub struct CommitNavigation {
     /// `navigation_id` — `surf.net.RequestId`.
     pub navigation_id: crate::net::RequestId,
+    /// `url` — `surf.url.Url`.
+    pub url: crate::url::Url,
     /// `status` — `surf.net.Status`.
     pub status: crate::net::Status,
     /// `media_type` — `surf.net.MediaType`.

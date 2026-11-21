@@ -1,0 +1,56 @@
+# A response that comes from another address than the one asked for, as a redirect followed
+# inside the request delivers it: the navigation commits at the response's address and its
+# document has that address, while the request keeps the address asked for. Synthesis cannot
+# arrange it, for the reason `page-load-commits-and-parses.yaml` gives.
+type: ess-scenario/6
+domain: surf.navigation
+scenario: navigation-commits-at-response-url
+summary: A navigation whose response comes from another address commits there, and its document has that address.
+
+arrange:
+  - instance: load
+    entity: surf.navigation.Navigation
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 3f1d5b7e-0000-4000-8000-000000000011
+      url: http://example.org/old
+    outcome: started
+    events:
+      - event: surf.navigation.NavigationStarted
+        payload:
+          url: http://example.org/old
+    capture: {instance: load, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  # The body is `<html></html>`.
+  - at: 2026-01-06T09:00:01Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: load}
+      url: http://example.org/new
+      status: 200
+      media_type: text/html
+      body: PGh0bWw+PC9odG1sPg==
+    outcome: responded
+    events:
+      - event: surf.net.ResponseReceived
+        payload:
+          request_id: {$instance: load}
+          url: http://example.org/new
+
+assert:
+  # The request keeps the address it was asked for.
+  - view: surf.net.Requests
+    contains: {request_id: {$instance: load}, url: http://example.org/old, state: Responded}
+
+  # The navigation committed at the response's address.
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: load}, url: http://example.org/new, state: Committed}
+
+  - view: surf.document.Documents
+    contains: {url: http://example.org/new}
+  - view: surf.document.Documents
+    counts: {at_least: 1, at_most: 1}

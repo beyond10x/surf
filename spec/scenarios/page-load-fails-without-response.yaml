@@ -23,12 +23,19 @@ timeline:
           url: https://example.org/
     capture: {instance: load, event: surf.navigation.NavigationStarted, field: navigation_id}
 
+  # The reason is TooManyRedirects: synthesis sends only the first variant of a reason
+  # (Unreachable), so this is the scenario that sends the last one and reads it back.
   - at: 2026-01-06T09:00:01Z
     command: surf.net.FailRequest
     input:
       request_id: {$instance: load}
-      reason: Unreachable
+      reason: TooManyRedirects
     outcome: failed
+    events:
+      - event: surf.net.FetchFailed
+        payload:
+          request_id: {$instance: load}
+          reason: TooManyRedirects
 
 assert:
   # The request `fetch-on-navigation-started` made is for the address navigated to.

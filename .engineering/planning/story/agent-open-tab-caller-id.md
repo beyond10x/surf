@@ -2,14 +2,17 @@
 format: aep.planning-md/3
 id: story:agent-open-tab-caller-id
 kind: story
-status: draft
+status: active
 title: OpenTab takes a caller-chosen tab identity
 summary: 'Deferred: a binding from SessionOpened opens the tab of a session, so the session process no longer issues OpenWindow and OpenTab itself.'
 tags:
 - deferred
 relations:
 - informed_by: epic:agent-cli-target
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-21T03:02:26Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-11-21T03:02:26Z", actor: "human:timo", revision: 3}
 ---
 ## What
 

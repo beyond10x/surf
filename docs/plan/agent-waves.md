@@ -24,7 +24,7 @@ collision; a story that collides moves to the next wave. The table below is the 
 | 1 (delivered, [page](agent-wave-1.md)) | `agent-answer-format`, `agent-cli-spec`, `agent-secret-primitives`, `agent-url-parser`, `html-decisions`, `runner-decisions`, `view-decisions` |
 | 2 (delivered, [page](agent-wave-2.md)) | `agent-cli-client`, `agent-session-spec`, `html-conformance-harness`, `view-http-server` |
 | 3 (delivered, [page](agent-wave-3.md)) | `agent-page-path-spec`, `agent-surfd-supervisor`, `runner-surf-cli-package` (moved from wave 2 after D32: it shares `crates/surf/Cargo.toml` with `agent-session-spec`), `view-page-prototype` (added in wave 2: the page on example data, so that it can be opened before `surfd` exists) |
-| 4 | `agent-redirect-spec`, `agent-session-process`, `html-conformance-gate` |
+| 4 (delivered, [page](agent-wave-4.md)) | `agent-redirect-spec`, `agent-session-process`, `html-conformance-gate`; then `release-agent-binaries`, alone |
 | 5 | `agent-session-events`, `html-input-stream`, `html-tokenizer-markup` |
 | 6 | `html-document-spec`, `html-tokenizer-text`, `view-surfd-serves` |
 | 7 | `agent-fetch-redirects`, `html-character-references`, `view-first-page` |
@@ -60,6 +60,17 @@ collision; a story that collides moves to the next wave. The table below is the 
 - After wave 11: a real page's elements come from the HTML parser (`story:html-document-port`).
 - After wave 18: links, forms, history and the `changed` block.
 - After wave 22: record a session, make a scenario from it, run it against the replayed network.
+
+## Accepted on 2026-11-21, behind the planned waves
+
+The operator accepted every draft on 2026-11-21 ("Accept all your drafts"). These stories
+are active in the store and are taken up after the planned waves, or earlier where a wave
+touches their files anyway: `agent-answer-paging`, `agent-close-window`,
+`agent-open-tab-caller-id`, `agent-token-hash`, `invalid-address-ending`,
+`random-source-failure-cause`, `runner-detail-option`, `runner-detailed-changes` (with
+`epic:detailed-mode`), and four from the wave records: `agent-file-open-race`,
+`agent-surfd-session-limit`, `agent-surfd-idle-exit-race`, `view-stream-string-example`.
+`release-agent-binaries` runs after wave 4, alone (the checkpoint above).
 
 ## Rules of a wave in this plan
 

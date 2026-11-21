@@ -11,6 +11,14 @@ includes:
     taskfile: taskfiles/site.yml
     flatten: true
     optional: true
+  html-conformance:
+    taskfile: taskfiles/html-conformance.yml
+    flatten: true
+    optional: true
+  release:
+    taskfile: taskfiles/release.yml
+    flatten: true
+    optional: true
 
 vars:
   REFUSALS_MAX: 27
@@ -281,3 +289,4 @@ tasks:
       - task: lock-check
       - task: build
       - task: test
+      - task: html-conformance

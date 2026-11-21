@@ -29,6 +29,35 @@ path 2 of 2
 note parser: tables,foreign-content
 ```
 
+## What an answer holds today
+
+The example above shows the whole format. The binaries of release `0.2.0` (`surf-agent`,
+`surfd`, `surf-session`) parse no page yet, so they print fewer lines:
+
+- the head line, `surf 1 session <id> <state>`;
+- `token <64 digits>`, in the answer of `open` only;
+- `did <command>`, `did <command> "<argument>"` or `did refused <reason>`;
+- `page <status> "<media type>" "<address>"` for a loaded page, `page failed <reason>
+  "<address>"` for a failed load, or `page none` before the first load;
+- `path <shown> of <total>` and its indented lines.
+
+A loaded page shows no title, even when the document has one, and no `note parser:` line is
+printed. Both arrive with the HTML parser (`story:html-document-port`). The two names the
+section "Note" refers to, `surf_html::NOT_YET_PARSED` and `Browser::parser_not_yet_parsed`, do
+not exist yet.
+
+An answer of today's binaries, to `go`:
+
+```
+surf 1 session 7ffade4a-4d71-491c-a6c5-b69681d68d07 open
+did go "http://example.org/missing"
+page 404 "text/html" "http://example.org/missing"
+path 3 of 3
+  1 open
+  2 go "http://example.org/"
+  3 go "http://example.org/missing"
+```
+
 ## Lines
 
 - An answer is one or more lines. Every line ends in a line feed (U+000A), the last one too.
@@ -232,6 +261,10 @@ or stopped. The table of `did refused` gives the status of each reason.
 
 A refusal still prints the answer: the head line, then `did refused <reason>`, then the current
 state of the session as far as the one answering knows it (`page`, `path`, the notes).
+A `token` refusal prints the head line and the `did` line only: a caller without the token
+learns nothing of the session. So does a `usage` refusal of `open` (such as a second `open`
+to the same session process) and of a request that is not in the format of the wire: neither carries
+the session's token.
 
 ## Parsing
 

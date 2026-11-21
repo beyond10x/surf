@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T04:50:53Z",
+  "actor": "human:timo",
+  "artifact": "story:html-conformance-gate",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p surf-html -p surf-html-conformance and the task html-conformance, run by the coordinator in the unit tree at 92b115a",
+    "reference": "check 17, inventory 4, readers 2, tree_format 2 passed; the task exits 0 with 9 section lines, 11 tag lines and html-conformance: 9107 cases, 9095 run, 5 passed; 16 and 4 planted defects each failing (the unit's runs); verdict VERIFIED"
+  }
+}

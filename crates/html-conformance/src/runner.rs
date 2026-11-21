@@ -19,7 +19,7 @@ use surf_html::{ParseOptions, parse_document, parse_document_bytes, parse_fragme
 
 use crate::cases::{self, Case, Expected, Input, Tok, push_tok};
 use crate::dump;
-use crate::inventory::Inventory;
+use crate::inventory::{Group, Inventory};
 
 /// What running a case gave.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -177,6 +177,9 @@ pub struct FileReport {
     pub count: Count,
     /// Each reason cases of it are not run, with their number, in first-seen order.
     pub not_run: Vec<(&'static str, usize)>,
+    /// Its cases per tag, keyed as a `file` line of the inventory keys them (the tag's name, or
+    /// `not-run:<reason>`), in first-seen order.
+    pub tags: Vec<(String, usize)>,
 }
 
 /// The counts of a whole run.
@@ -186,6 +189,10 @@ pub struct Report {
     pub files: Vec<FileReport>,
     /// Per tag, in the order of the inventory's `tag` lines; a tag no line names after them.
     pub tags: Vec<(String, Count)>,
+    /// Per group, in the order of [`Group::ALL`], for each group that has a data file: per tag
+    /// that has a case in that group, its counts over that group's cases, in the order of
+    /// [`Report::tags`].
+    pub groups: Vec<(Group, Vec<(String, Count)>)>,
     /// Over every case.
     pub total: Count,
     /// Every case that runs and does not pass: path, case number, tag name.
@@ -224,20 +231,29 @@ pub fn run_all(data: &Path, inventory: &Inventory) -> Result<Report, cases::Erro
     let mut report = Report {
         files: Vec::new(),
         tags: Vec::new(),
+        groups: Vec::new(),
         total: Count::default(),
         failing: Vec::new(),
     };
+    let mut outcomes: Vec<(Group, &'static str, Outcome)> = Vec::new();
     for file in &inventory.files {
         let mut file_report = FileReport {
             path: file.path.clone(),
             count: Count::default(),
             not_run: Vec::new(),
+            tags: Vec::new(),
         };
         for case in cases::read(data, file.group, &file.path)? {
             let outcome = run(&case);
             file_report.count.add(outcome);
             report.total.add(outcome);
             let name = case.tag.name();
+            outcomes.push((file.group, name, outcome));
+            let key = case.tag.inventory_key();
+            match file_report.tags.iter_mut().find(|(k, _)| *k == key) {
+                Some((_, n)) => *n += 1,
+                None => file_report.tags.push((key, 1)),
+            }
             match tags.iter_mut().find(|(n, _)| n == name) {
                 Some((_, count)) => count.add(outcome),
                 None => {
@@ -258,6 +274,24 @@ pub fn run_all(data: &Path, inventory: &Inventory) -> Result<Report, cases::Erro
             }
         }
         report.files.push(file_report);
+    }
+    for group in Group::ALL {
+        if !inventory.files.iter().any(|f| f.group == group) {
+            continue;
+        }
+        let mut per_tag: Vec<(String, Count)> = Vec::new();
+        for (name, _) in &tags {
+            let mut count = Count::default();
+            for (g, n, outcome) in &outcomes {
+                if *g == group && n == name {
+                    count.add(*outcome);
+                }
+            }
+            if count.exist > 0 {
+                per_tag.push((name.clone(), count));
+            }
+        }
+        report.groups.push((group, per_tag));
     }
     report.tags = tags;
     Ok(report)

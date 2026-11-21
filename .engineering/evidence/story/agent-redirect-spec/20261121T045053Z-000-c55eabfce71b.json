@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T04:50:53Z",
+  "actor": "human:timo",
+  "artifact": "story:agent-redirect-spec",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "slot task check on wave/a4-session at d1571b4, run by the coordinator",
+    "reference": "exit 0; 9 scenario files; 83 scenarios (9 authored) passed on both runners; 27 refusals; 30 artifacts; the numbers equal the draft measured before the unit; 3 planted defects each caught (the unit's runs); verdict VERIFIED"
+  }
+}

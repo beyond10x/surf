@@ -1,0 +1,8 @@
+surf 1 session <id> closed
+did close
+page 200 "text/html" "http://127.0.0.1:<port>/b"
+path 4 of 4
+  1 open
+  2 go "http://127.0.0.1:<port>/a"
+  3 go "http://127.0.0.1:<port>/b"
+  4 close

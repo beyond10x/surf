@@ -11,8 +11,8 @@ nothing that ships depends on a third-party crate. Every behaviour is written do
 specification before any code exists, and a test suite generated from that specification runs
 against the real code on every change.
 
-It is young. Today it loads a page from the command line and tells you what happened. It is
-growing into two things:
+It is young. Today it loads a page from the command line and tells you what happened, and on
+Linux an agent can open a session and send it to a page. It is growing into two things:
 
 - a browser that an AI agent drives from the command line, where each call answers in a few
   dense lines of text: where you are, what you can do here, what just changed;
@@ -22,7 +22,8 @@ growing into two things:
 :::caution[Not for daily use]
 
 surf has no window, no rendering, no JavaScript and no `https:` yet. It loads one `http:` address
-from the command line and prints what happened.
+from the command line and prints what happened; `surf-agent` does the same for an agent, one
+call at a time, and shows no page content yet.
 
 :::
 
@@ -47,7 +48,8 @@ from the command line and prints what happened.
 
 ## Where to go next
 
-- [Try it](try-it.md): build surf and load a page.
+- [Try it](try-it.md): install surf and load a page.
+- [Drive surf from an agent](drive-from-an-agent.md): `surf-agent open`, `go`, `look` and `close`.
 - [Principles](principles.md): the rules surf is built by.
 - [What works today](what-works.md) and the [roadmap](roadmap.md).
 - [How it is built](how-it-is-built.md): the specification, the components and the gate.

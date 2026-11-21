@@ -2,13 +2,16 @@
 format: aep.planning-md/3
 id: story:runner-detail-option
 kind: story
-status: draft
+status: active
 title: --detail on surf-agent commands shows the detailed changes
 summary: Every surf-agent command that answers with a changed block takes --detail and then lists attribute, class and text changes too.
 relations:
 - depends_on: story:runner-detailed-changes
 - decomposes: epic:detailed-mode
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-21T03:02:28Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-11-21T03:02:28Z", actor: "human:timo", revision: 3}
 ---
 ## Context
 
