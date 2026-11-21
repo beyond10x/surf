@@ -18,3 +18,4 @@ path = "src/main.rs"
 surf-agent = { path = "../agent" }
 surf-answer = { path = "../answer" }
 surf-secret = { path = "../secret" }
+surf-view = { path = "../view" }

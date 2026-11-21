@@ -162,4 +162,5 @@ dependencies = [
  "surf-agent",
  "surf-answer",
  "surf-secret",
+ "surf-view",
 ]

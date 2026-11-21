@@ -6,6 +6,7 @@ use std::ffi::OsString;
 use std::fmt;
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, Read, Write};
+use std::net::{Ipv4Addr, TcpListener};
 use std::os::unix::fs::FileTypeExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::os::unix::process::CommandExt;
@@ -18,11 +19,13 @@ use std::time::{Duration, Instant, SystemTime};
 
 use surf_agent::wire;
 use surf_answer::{Did, Head, RefusalReason, SessionState as HeadState};
+use surf_secret::Token;
 
 use crate::directory::{self, Lock};
 use crate::link::{self, LinkError, Quoted};
 use crate::log::{self, Log, OlderThanKept, SessionEntries, Subscription};
 use crate::sessions::{ENDED_MAX, Session, Sessions, State};
+use crate::view::{Tables, View};
 
 /// How long a session process has to write `ready`: 5 seconds.
 pub const SESSION_READY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -97,6 +100,11 @@ pub struct Config {
     /// Where the one start line goes, `ready` or `refused <reason>`: standard output in the
     /// binary, nowhere when `None`.
     pub start_line: Option<Box<dyn Write + Send>>,
+    /// The limits of the live view's server: [`surf_view::Limits::default`].
+    pub view_limits: surf_view::Limits,
+    /// Where the view line goes, `http://127.0.0.1:<port>/#<token>` and a line feed, the bytes
+    /// of `view-url`: standard error in the binary, nowhere when `None`.
+    pub view_line: Option<Box<dyn Write + Send>>,
 }
 
 impl Config {
@@ -119,6 +127,8 @@ impl Config {
             log: log::Bounds::default(),
             identities: Identities::Random,
             start_line: None,
+            view_limits: surf_view::Limits::default(),
+            view_line: None,
         }
     }
 }
@@ -137,6 +147,7 @@ impl fmt::Debug for Config {
             .field("connection_limit", &self.connection_limit)
             .field("log", &self.log)
             .field("identities", &self.identities)
+            .field("view_limits", &self.view_limits)
             .finish_non_exhaustive()
     }
 }
@@ -163,11 +174,14 @@ pub enum Started {
     Another,
 }
 
-/// A running `surfd`. Dropping it ends it: it stops accepting, kills its session processes,
-/// waits for them and removes `surfd.sock`.
+/// A running `surfd`. Dropping it ends it: it stops the live view's server and removes
+/// `view-url`, stops accepting, kills its session processes, waits for them and removes
+/// `surfd.sock`, and then releases the lock.
 pub struct Daemon {
     shared: Arc<Shared>,
     lock: Option<File>,
+    /// The live view's server, from the start on.
+    view: Option<surf_view::Server>,
 }
 
 impl fmt::Debug for Daemon {
@@ -380,6 +394,10 @@ impl Daemon {
 impl Drop for Daemon {
     fn drop(&mut self) {
         let shared = &self.shared;
+        if let Some(view) = self.view.take() {
+            view.stop();
+            let _ = directory::remove_view_url(&shared.surf);
+        }
         {
             let mut table = guard(&shared.table);
             table.stopping = true;
@@ -469,8 +487,8 @@ fn begin(config: Config, began: Instant) -> Result<Started, Refused> {
     directory::remove_stale(&surf, caller).map_err(refused)?;
     let listener = UnixListener::bind(&socket)
         .map_err(|error| refused(format!("cannot bind {}: {error}", socket.display())))?;
-    // story:view-surfd-serves starts the live view's server here: after surfd.sock is bound,
-    // before `ready` is written.
+    let view_limits = config.view_limits;
+    let view_line = config.view_line;
     let shared = Arc::new(Shared {
         surf,
         socket,
@@ -496,10 +514,14 @@ fn begin(config: Config, began: Instant) -> Result<Started, Refused> {
         }),
         changed: Condvar::new(),
     });
-    let daemon = Daemon {
+    // From here on a refusal drops `daemon`, which removes surfd.sock and releases the lock.
+    let mut daemon = Daemon {
         shared: Arc::clone(&shared),
         lock: Some(lock),
+        view: None,
     };
+    // The live view's server: after surfd.sock is bound, before `ready` is written.
+    daemon.view = Some(start_view(&shared, view_limits, view_line)?);
     let accepting = Arc::clone(&shared);
     thread::Builder::new()
         .name("surfd-accept".into())
@@ -511,6 +533,53 @@ fn begin(config: Config, began: Instant) -> Result<Started, Refused> {
         .spawn(move || idle_loop(idling))
         .map_err(|error| refused(format!("cannot start a thread: {error}")))?;
     Ok(Started::Daemon(daemon))
+}
+
+/// Start the live view's server over `shared`: a listener on 127.0.0.1 port 0, the view token
+/// drawn by `surf-secret`, the page's files, then the line `http://127.0.0.1:<port>/#<token>` in
+/// `view-url` and on `line`. A failure refuses the start, naming the address or the path, never
+/// the token; nothing is left listening, as the server is dropped with the refusal.
+fn start_view(
+    shared: &Arc<Shared>,
+    limits: surf_view::Limits,
+    line: Option<Box<dyn Write + Send>>,
+) -> Result<surf_view::Server, Refused> {
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .map_err(|error| refused(format!("cannot listen on 127.0.0.1 for the view: {error}")))?;
+    let port = listener
+        .local_addr()
+        .map_err(|error| refused(format!("cannot read the view's address: {error}")))?
+        .port();
+    let token =
+        Token::draw().map_err(|error| refused(format!("cannot draw the view token: {error}")))?;
+    let url = format!("http://127.0.0.1:{port}/#{}\n", token.to_hex());
+    let source = View::new(Arc::clone(shared), limits.queue_entries);
+    let config = surf_view::Config {
+        token,
+        host: format!("127.0.0.1:{port}"),
+        files: surf_view::page_files(),
+        limits,
+    };
+    let server = surf_view::serve(listener, config, source).map_err(|error| {
+        refused(format!(
+            "cannot serve the view on 127.0.0.1:{port}: {error}"
+        ))
+    })?;
+    directory::write_view_url(&shared.surf, &url).map_err(refused)?;
+    if let Some(mut out) = line {
+        let _ = out.write_all(url.as_bytes());
+        let _ = out.flush();
+    }
+    Ok(server)
+}
+
+/// What the view reads: the list and the log under one hold of the table lock.
+impl Tables for Shared {
+    fn hold<R>(&self, read: impl FnOnce(&Sessions, &mut Log) -> R) -> R {
+        let mut table = guard(&self.table);
+        let sessions = snapshot(&table);
+        read(&sessions, &mut table.log)
+    }
 }
 
 /// `text` with every character outside printable ASCII written as `\x` and two hexadecimal

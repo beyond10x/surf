@@ -24,7 +24,7 @@ fn surf_entries(dir: &TestDir) -> Vec<String> {
     names
 }
 
-const ONLY_DAEMON: [&str; 2] = ["surfd.lock", "surfd.sock"];
+const ONLY_DAEMON: [&str; 3] = ["surfd.lock", "surfd.sock", "view-url"];
 
 #[test]
 fn case_01_open_answers_with_the_token_and_lists_the_session() {
