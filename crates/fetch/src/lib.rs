@@ -99,7 +99,10 @@
 //!
 //! A request body is the caller's: [`send`] borrows it and writes it from the caller's slice,
 //! after the head, and allocates no copy of it, also when a 307 or 308 repeats it. None of the
-//! sums below counts it.
+//! sums below counts it. So while it is written the fetch holds what it holds without it: a
+//! `POST` of 4 MiB sent twice through a 308, with short addresses and a response of 2 bytes,
+//! holds at most the header limit and one read buffer over the whole fetch, 73,728 bytes at the
+//! defaults (8,761 measured).
 //!
 //! - **While the body of the last response is read**, at most the sum of these, 16,917,505
 //!   bytes at the defaults:
@@ -143,8 +146,12 @@
 //! trailer section is not read), proxies, cookies, caching, `Refresh`, or URL parsing beyond
 //! splitting an `http:` address into host, port and request target and resolving a `Location`.
 //!
-//! A server that answers and closes before it read a request body makes the write fail: that is
-//! [`Failure::Unreachable`], as every failure to send the request is, and its answer is not read.
+//! A server that answers and closes before it read a request body ends the fetch in one of two
+//! ways, and a caller may rely on neither. What decides is whether the write of the request met
+//! the closed connection. When it did not (as a rule, a body small enough for the socket's
+//! buffers: it is written without an error), the answer is read and returned as a [`Response`].
+//! When it did (as a rule, a body larger than those buffers), the write fails: that is
+//! [`Failure::Unreachable`], as every failure to send the request is, and the answer is not read.
 //!
 //! # Addresses
 //!
@@ -226,7 +233,12 @@ impl Method {
 }
 
 /// A request to send, borrowed from the caller: nothing of it is copied, the body least of all.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Its [`Debug`](fmt::Debug) text shows the address, the method and the media type, and the body
+/// by its length only, never its bytes, since a form's body can carry a password:
+/// `Request { address: "http://example.org/login", method: Post, body: Some(16 bytes),
+/// media_type: Some("application/x-www-form-urlencoded") }`.
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Request<'a> {
     /// The address, as for [`fetch`].
     pub address: &'a str,
@@ -237,6 +249,27 @@ pub struct Request<'a> {
     /// The media type of the body, `type/subtype` without parameters, sent as `Content-Type`.
     /// Only a [`Method::Post`] may have one.
     pub media_type: Option<&'a str>,
+}
+
+impl fmt::Debug for Request<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Request")
+            .field("address", &self.address)
+            .field("method", &self.method)
+            .field("body", &self.body.map(|body| BodyLength(body.len())))
+            .field("media_type", &self.media_type)
+            .finish()
+    }
+}
+
+/// The length of a request body, which is all the [`Debug`](fmt::Debug) text of a [`Request`]
+/// shows of it: `<n> bytes`.
+struct BodyLength(usize);
+
+impl fmt::Debug for BodyLength {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} bytes", self.0)
+    }
 }
 
 /// A complete response, whatever its status.

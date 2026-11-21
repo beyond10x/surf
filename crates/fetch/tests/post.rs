@@ -1,14 +1,19 @@
 //! Cases 1 to 13 of the story that sends a `POST` (wave 9): `surf_fetch::send` of a `Post` with a body and its
 //! media type, the checks before any connection, and the method a redirect continues with, each
-//! against a server the test starts on `127.0.0.1` port 0 and stops before it ends.
+//! against a server the test starts on `127.0.0.1` port 0 and stops before it ends. And three
+//! cases of the fixes after the adversary's pass: a `Get` with a body or a media type is refused
+//! without connecting, a server that answers and closes before it read the body ends the fetch
+//! in its answer or `Unreachable`, and the `Debug` text of a request does not show its body.
 //!
 //! A server reads the head of a request and then `Content-Length` bytes before it answers, then
 //! keeps every byte that arrives until the client closes: a request that sent more than it
-//! declared shows those bytes. Every reply declares its length and closes its side after it.
+//! declared shows those bytes. Every reply declares its length and closes its side after it. The
+//! one exception is the server of the answer-and-close case, which reads the head only.
 
 use std::io::{ErrorKind, Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -62,13 +67,22 @@ struct Server {
 impl Server {
     /// A server that answers the request target with what `route` returns.
     fn start(route: impl Fn(&str) -> Vec<u8> + Send + 'static) -> Server {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let route: Route = Box::new(route);
+        let kept = Arc::clone(&seen);
+        Server::handling(seen, move |stream| answer(stream, &route, &kept))
+    }
+
+    /// A server that hands each connection to `handle`; `seen` is what [`Server::finish`]
+    /// returns.
+    fn handling(
+        seen: Arc<Mutex<Vec<Seen>>>,
+        handle: impl Fn(TcpStream) + Send + 'static,
+    ) -> Server {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
         let port = listener.local_addr().expect("local address").port();
-        let seen = Arc::new(Mutex::new(Vec::new()));
         let stop = Arc::new(AtomicBool::new(false));
-        let route: Route = Box::new(route);
         let handle = {
-            let seen = Arc::clone(&seen);
             let stop = Arc::clone(&stop);
             thread::spawn(move || {
                 for stream in listener.incoming() {
@@ -76,7 +90,7 @@ impl Server {
                         break;
                     }
                     let Ok(stream) = stream else { continue };
-                    answer(stream, &route, &seen);
+                    handle(stream);
                 }
             })
         };
@@ -454,4 +468,128 @@ fn post_body_outside_ascii_arrives_unchanged() {
     assert_eq!(request.field("content-length"), Some("7"));
     assert_eq!(request.body, body);
     assert_eq!(request.after, b"");
+}
+
+/// The check of `send` that refuses a `Get` with a body or a media type, reached without
+/// `surf::fetch_http`, which refuses such a request before it calls `send`: without the check the
+/// body would follow a `GET` head that declares no length, and a server would read it as a second
+/// request. An empty body, a body, a media type alone, and both: each ends `Unreachable` with the
+/// detail that names the check, and nothing connects.
+#[test]
+fn get_with_body_or_media_type_fails_without_connecting() {
+    let (listener, address) = silent_listener();
+    for (body, media_type) in [
+        (Some(&b""[..]), None),
+        (Some(&b"a=1"[..]), None),
+        (None, Some(FORM)),
+        (Some(&b"a=1"[..]), Some(FORM)),
+    ] {
+        let request = Request {
+            address: &address,
+            method: Method::Get,
+            body,
+            media_type,
+        };
+        match send(&request, &limits()) {
+            Err(Failure::Unreachable(detail)) => assert!(
+                detail.contains("GET with a body or a media type"),
+                "{request:?}: the detail does not name the check: {detail:?}"
+            ),
+            other => panic!("{request:?}: expected Unreachable, got {other:?}"),
+        }
+        match listener.accept() {
+            Err(error) => assert_eq!(error.kind(), ErrorKind::WouldBlock, "{error}"),
+            Ok((_, peer)) => panic!("{request:?}: {peer} connected"),
+        }
+    }
+}
+
+/// What the server of [`answer_and_close`] answers.
+const TOO_LARGE: &[u8] =
+    b"HTTP/1.1 413 Content Too Large\r\nContent-Type: text/plain\r\nContent-Length: 7\r\n\r\ntoo big";
+
+/// Read the head of the request only, write [`TOO_LARGE`] and close, the body unread.
+fn answer_and_close(mut stream: TcpStream) {
+    let _ = stream.set_read_timeout(Some(BOUND));
+    let _ = stream.set_write_timeout(Some(BOUND));
+    if read_head(&mut stream).is_some() {
+        let _ = stream.write_all(TOO_LARGE);
+    }
+}
+
+/// How long a fetch of the answer-and-close case may take before it counts as a hang: well
+/// under its read timeout, so a fetch that waits for the read timeout counts as one.
+const DEADLINE: Duration = Duration::from_secs(10);
+
+/// The crate documentation, "What it does not do": a server that answers and closes before it
+/// read a request body ends the fetch in its answer or in `Unreachable`, and a caller may rely on
+/// neither. For a body of 7 bytes and one of 4 MiB, ten times each, the fetch ends within
+/// [`DEADLINE`] in one of the two: never another failure, a panic or a hang. Which of the two is
+/// not asserted.
+#[test]
+fn answer_and_close_before_the_body_is_read_ends_in_the_answer_or_unreachable() {
+    let limits = Limits {
+        connect_timeout: Duration::from_secs(2),
+        read_timeout: Duration::from_secs(30),
+        ..Limits::default()
+    };
+    assert!(limits.read_timeout > DEADLINE);
+    let small: Arc<[u8]> = Arc::from(&b"a=1&b=2"[..]);
+    let large: Arc<[u8]> = Arc::from(vec![b'x'; 4 * 1024 * 1024]);
+    for body in [small, large] {
+        // How many runs ended in the answer: printed, not asserted.
+        let mut answered = 0;
+        for run in 0..10 {
+            let server = Server::handling(Arc::default(), answer_and_close);
+            let address = server.url("/form");
+            let (sent, ended) = mpsc::channel();
+            let sending = Arc::clone(&body);
+            thread::spawn(move || {
+                let result = send(&post(&address, Some(&sending[..]), Some(FORM)), &limits);
+                let _ = sent.send(result);
+            });
+            let outcome = ended.recv_timeout(DEADLINE);
+            drop(server);
+            let case = format!("a body of {} bytes, run {run}", body.len());
+            match outcome {
+                Ok(Ok(response)) => {
+                    assert_eq!(
+                        (response.status, response.body.as_slice()),
+                        (413, &b"too big"[..]),
+                        "{case}"
+                    );
+                    answered += 1;
+                }
+                Ok(Err(Failure::Unreachable(_))) => {}
+                Ok(Err(failure)) => {
+                    panic!("{case}: expected the answer or Unreachable, got {failure:?}")
+                }
+                Err(RecvTimeoutError::Timeout) => panic!("{case}: no end within {DEADLINE:?}"),
+                Err(RecvTimeoutError::Disconnected) => panic!("{case}: send panicked"),
+            }
+        }
+        eprintln!(
+            "outcome a body of {} bytes: {answered} of 10 answered, the others Unreachable",
+            body.len()
+        );
+    }
+}
+
+/// The `Debug` text of a request shows its body's length, never its bytes: neither as text nor
+/// as the list of numbers a derived `Debug` prints for a byte slice.
+#[test]
+fn request_debug_text_shows_the_body_length_not_the_body() {
+    let body = b"password=hunter2";
+    let request = post("http://127.0.0.1:1/login", Some(body), Some(FORM));
+    let numbers = format!("{:?}", &b"hunter2"[..]);
+    let numbers = numbers.trim_start_matches('[').trim_end_matches(']');
+    for text in [format!("{request:?}"), format!("{request:#?}")] {
+        assert!(!text.contains("hunter2"), "{text}");
+        assert!(!text.contains(numbers), "{text}");
+        assert!(text.contains("16 bytes"), "{text}");
+        assert!(text.contains("http://127.0.0.1:1/login"), "{text}");
+        assert!(text.contains("Post"), "{text}");
+        assert!(text.contains(FORM), "{text}");
+    }
+    assert_eq!(body.len(), 16);
 }
