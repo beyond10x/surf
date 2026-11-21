@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-fetch-redirects
 kind: story
-status: active
+status: implemented
 title: surf-fetch follows redirects and reports the response URL
 summary: 301, 302, 303, 307 and 308 followed for GET up to 20 times, Location resolved with surf-url; the surf transport delivers the final URL.
 relations:
@@ -40,10 +40,11 @@ scope:
   path: docs/surf-command.md
 - confidence: cited
   path: spec/domains/net.yaml
-revision: 20
+revision: 21
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-11-21T16:32:39Z", actor: "human:operator", revision: 21, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T16:32:39Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-fetch-redirects",
+  "kind": "story",
+  "revision": 20,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the coordinator's run of the packages surf-fetch, surf-session, surf and surf-cli with warnings denied, of cargo doc with warnings denied and of lock-check at the unit's change (38b08d2) and again at the change for the adversary's findings (a8d7b88), and slot task check in the runner's form on wave/a7-redirects-charrefs-view at c09302d",
+    "reference": "exit 0; the story's cases 1 to 23: 20 in crates/fetch/tests/redirects.rs, 2 in crates/surf-cli/tests/redirects.rs, 1 in crates/session/tests/redirect.rs; 9 planted defects each red (the unit's runs); three rules confirmed in the Fetch Standard as fetched on 2026-11-21; an adversary's pass: ten attacks held, one failing test (a fetch held 130,394 bytes more than its documentation said) and two findings by judgement, fixed in a8d7b88: the bound while a body is read is stated as a sum, 16,917,505 bytes at the defaults, and held by crates/fetch/tests/adversary_redirect_memory.rs (2 cases, 1 planted defect red); case 24 pins a redirect to an address that does not fit the status record; the resolving of a Location counts against the read timeout; verdict VERIFIED"
+  }
+}

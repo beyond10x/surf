@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:html-character-references
 kind: story
-status: active
+status: implemented
 title: Character references, and every tokenizer case that needs no script passing
 summary: Named and numeric character references from a vendored entities.json; every tokenizer case of the test data passes (7121 of 9095 run), and the tokenizer sections stay incomplete until the cases that need a script engine can run.
 relations:
@@ -33,15 +33,16 @@ scope:
   path: crates/html/src/tokenizer.rs
 - confidence: cited
   path: crates/html/src/tokenizer/machine.rs
-revision: 19
+revision: 21
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-21T16:32:39Z", actor: "human:operator", revision: 21, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 
 The third and last tokenizer story. Character references (`&amp;`, `&#x41;`, `&notin`) are
-consumed by their own tokenizer states (13.2.5.72 to 13.2.5.80), in data, in RCDATA and in
+consumed by their own tokenizer states (13.2.5.77 to 13.2.5.84), in data, in RCDATA and in
 attribute values, with the rules for a missing semicolon, for a named reference inside an
 attribute, and for numeric references to null, surrogates, noncharacters, controls and values
 above U+10FFFF. The named references come from the table of 13.5 "Named character references",
@@ -101,17 +102,17 @@ What is there on `main` after wave 6:
   the number of names (2231) and the sha256 of `entities.json`. No `source` line for `whatwg` in
   the note's `html-inventory` block: `entities.json` holds no case, and `paths::data_files` walks
   only the inventory's sources.
-- `crates/html/src/tokenizer/machine.rs`: the states 13.2.5.72 to 13.2.5.80 in `State` and in
-  `step` (character reference, named character reference, ambiguous ampersand, numeric
-  character reference, hexadecimal and decimal character reference start, hexadecimal and
-  decimal character reference, numeric character reference end), replacing the stub, each with
+- `crates/html/src/tokenizer/machine.rs`: the eight states 13.2.5.77 to 13.2.5.84 in `State`
+  and in `step` (character reference, named character reference, ambiguous ampersand, numeric
+  character reference, hexadecimal character reference start, hexadecimal and decimal
+  character reference, numeric character reference end), replacing the stub, each with
   the standard's name and parse error codes in the standard's order. The character reference
   code is held in a field of `Tokenizer` and saturates above 0x10FFFF (`test4.test` 38 to 42 go
   up to `&#18446744073709551681;`, 20 digits). The doc comment of the module loses "Not written
   here".
 - `crates/html/src/charref.rs`: the named reference lookup, longest match first, reading at most
   32 code points after `&` (the longest name; `entities.test` 12 holds a run of several hundred
-  letters), and the numeric replacement table of 13.2.5.80 (0x80 to 0x9F). No public item.
+  letters), and the numeric replacement table of 13.2.5.84 (0x80 to 0x9F). No public item.
 - `crates/html/src/charref_table.rs`: the named table as Rust data, written by the binary
   `entities-table` of the harness crate (`cargo run -p surf-html-conformance --bin
   entities-table`) from the vendored JSON's `codepoints`, never edited by hand. Its header,

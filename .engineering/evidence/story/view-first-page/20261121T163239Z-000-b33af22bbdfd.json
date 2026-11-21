@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T16:32:39Z",
+  "actor": "human:operator",
+  "artifact": "story:view-first-page",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the coordinator's run of the packages surf-view-fixture and surf-view with warnings denied, of the example build, of the tasks view-test, lock-check and view-stream-check at the unit's change (cc1dbd7) and again at the change for the adversary's findings (61a44cf), and slot task check in the runner's form on wave/a7-redirects-charrefs-view at c09302d",
+    "reference": "exit 0; the story's 18 cases in view-tests/tests/first-page.spec.mjs, 7 of them red on the page of wave 6; 10 planted defects each red (the unit's runs); cases 15 and 16 take the connection away with a pipe in the fixture, since setOffline was measured not to end an open stream; view-test is a step of check and of the forge's workflow (27e1855); an adversary's pass: twelve attacks held, three failing tests and four findings by judgement; five fixed in 61a44cf with 6 cases in view-tests/tests/adversary-page.spec.mjs and 1 test in crates/view-fixture/tests/adversary_commands.rs (6 planted defects each red), two filed as drafts; view-test 24 passed; Cargo.lock 22 packages, none from outside; verdict VERIFIED"
+  }
+}

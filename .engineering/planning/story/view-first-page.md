@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:view-first-page
 kind: story
-status: active
+status: implemented
 title: 'The first live view: session list, page line, timeline of actions and events, live follow'
 summary: The page compiled into surfd shows every session, the selected session's page line, its actions with their events on a timeline with a playhead and Latest, live; with the Playwright tooling and the fixture in the gate.
 relations:
@@ -20,10 +20,11 @@ scope:
   path: taskfiles/view-test.yml
 - confidence: cited
   path: view-tests
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-21T16:32:39Z", actor: "human:operator", revision: 12, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 
