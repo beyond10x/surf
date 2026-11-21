@@ -1,0 +1,12 @@
+[package]
+name = "surf-page"
+description = "The title and the actionable elements of a document parsed by surf-html: links and form controls with their kind, target or value and flags."
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+
+[dependencies]
+surf-html = { path = "../html" }
+
+[dev-dependencies]
