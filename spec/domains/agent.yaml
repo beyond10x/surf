@@ -2,18 +2,14 @@ domain: surf.agent
 
 summary: >-
   A browser session an AI agent drives from a command line: opened once, acted on with a token,
-  read back as text, closed. This slice holds only the types the command line
-  `cli/surf-agent.yaml` names; the session itself, its commands and its views come with the
-  session model. The `net` component holds this domain until the `agent` component has commands
-  (`story:agent-session-spec`).
+  read back as text, closed. Every action of the agent is mapped onto the commands the other
+  components already accept; this domain holds only what the agent's session adds to them. The
+  `agent` component holds it.
 
 naming:
   wire: agent
   display: Agent
 
-# UNMAPPED: the session entity, its lifecycle, its commands and its views. The types below are
-# what `cli/surf-agent.yaml` takes and answers, so that `ess specify cli` can check it before the
-# session model exists. What would settle it: the session model (`story:agent-session-spec`).
 types:
   - name: surf.agent.SessionId
     kind: newtype
@@ -22,21 +18,35 @@ types:
       summary: The identity of a session, drawn by `open`; not secret, it appears in listings.
 
   # The token is a credential, not a name: whoever holds it drives the session, so it is distinct
-  # from `SessionId` and no view or event carries it. Its form is 32 bytes from the operating
-  # system's random source, written as 64 lower-case hexadecimal digits. It is not declared as an
-  # `alphabet:` or a length: the command-line binding refuses a constrained type ("invariants are
-  # explicit refusals", ess-cli/2), so the form is checked by the code that issues and reads it.
+  # from `SessionId`. Its form is 32 bytes from the operating system's random source, written as
+  # 64 lower-case hexadecimal digits. It is not declared as an `alphabet:` or a length: the
+  # command-line binding refuses a constrained type ("invariants are explicit refusals",
+  # ess-cli/2), so the form is checked by the code that issues and reads it.
+  # It is named only by the three command-line shapes below that carry it (`SessionCall`,
+  # `GoCall`, `OpenedSession`): no entity, command, event or view holds it, so no stored row and no
+  # published event carries the secret.
+  # UNMAPPED: that a session's token is what makes its caller `surf.agent.SessionHolder`. The
+  # session process issues the token when it opens its session, keeps only a hash of it, compares
+  # a presented token with it in constant time, and sends the call as `SessionHolder` with that
+  # `session_id`; the model says only "the caller's credential carries session S". `OpenSession`
+  # does not answer the token: marked `one_time_response`, it makes ess 0.96.0 refuse Rust code
+  # for every component ("one_time_response requires implementation-owned atomic durable
+  # consumption and fresh issuance; this code target cannot implement that policy",
+  # docs/plan/agent-cli-draft-1.md). What would settle it: an ESS construct naming an issued value
+  # as the credential of an actor, which a code target can implement.
   - name: surf.agent.SessionToken
     kind: newtype
     of: String
     naming:
       summary: The secret an agent presents to act on its session, 64 lower-case hexadecimal digits.
 
-  # The shapes the command-line binding reads and answers. An `ess-cli/2` callable names a declared
-  # struct as its input and a declared type as its result; a command's input, a command's response
-  # and a view's row are not types it can name. `session_id` is `String` in each, not `SessionId`:
-  # the binding refuses a `Uuid` underneath ("unsupported CLI primitive `Uuid`", ess 0.96.0), so
-  # the client parses the text into the identity and answers a malformed one as an invalid input.
+  # The shapes the command-line binding `cli/surf-agent.yaml` reads and answers. An `ess-cli/2`
+  # callable names a declared struct as its input and a declared type as its result; a command's
+  # input, a command's response and a view's row are not types it can name. They add no meaning:
+  # each mirrors the command or view the callable maps to, plus the token the call presents.
+  # `session_id` is `String` in each, not `SessionId`: the binding refuses a `Uuid` underneath
+  # ("unsupported CLI primitive `Uuid`", ess 0.96.0), so the client parses the text into the
+  # identity and answers a malformed one as an invalid input.
   - name: surf.agent.OpenCall
     kind: struct
     naming:
@@ -77,19 +87,457 @@ types:
       - name: token
         type: surf.agent.SessionToken
 
-  # `state` is text: the session's lifecycle state is declared with the session entity, which
-  # this slice does not have.
-  # UNMAPPED: `state` as `surf.agent.Session.State`. What would settle it: the session entity.
   - name: surf.agent.SessionReadout
     kind: struct
     naming:
-      summary: The state of a session, as every call but `open` answers it.
+      summary: A row of `SessionState`, as every call but `open` answers it.
     fields:
       - name: session_id
         type: String
       - name: state
-        type: String
+        type: surf.agent.Session.State
       - name: url
         type: Optional<surf.url.Url>
       - name: navigation_state
         type: Optional<surf.navigation.Navigation.State>
+
+entities:
+  - name: surf.agent.Session
+    naming:
+      summary: One agent's session, holding one tab in one window of its own.
+    identity:
+      name: session_id
+      type: surf.agent.SessionId
+    fields:
+      # The window and the tab are held by the shell component. This component stores their
+      # identities and reads nothing of them, as `surf.navigation.Navigation` stores its tab.
+      - name: window_id
+        type: surf.shell.WindowId
+      - name: tab_id
+        type: surf.shell.TabId
+      # The session a caller's credential must carry to act on this one: its own identity, which
+      # `OpenSession` copies here. The holder check compares it with the caller in `when_subject:`,
+      # because a guard over the stored row cannot read the row's identity (`ESS-COMMAND-003`,
+      # `unobservable_fact`). Compared with the input instead (`when: session_id !=
+      # caller.session_id`), synthesis sends the acts that arrange a Closed session as a caller
+      # that is not its holder, and three of its scenarios fail against the interpreter
+      # (`Go/outcome/closed`, `Session/state/Closed/refuses/{Go,CloseSession}`, ess 0.96.0).
+      - name: holder
+        type: surf.agent.SessionId
+      # What the agent reads back about its current navigation. The navigator holds the
+      # navigation; this component reads none of its rows and keeps the copy its events report
+      # (`NoteNavigationStarted`, `NoteNavigationEnded`). All three are absent until the first
+      # navigation of the session started.
+      - name: navigation_id
+        type: Optional<surf.net.RequestId>
+      - name: url
+        type: Optional<surf.url.Url>
+      - name: navigation_state
+        type: Optional<surf.navigation.Navigation.State>
+    relations:
+      # The shell holds the window. A closed session leaves it Open: nothing closes a window yet.
+      # UNMAPPED: closing the session's window with the session. What would settle it: a command
+      # that closes a window (`story:agent-close-window`).
+      - name: window
+        kind: references
+        target: surf.shell.Window
+        cardinality: one
+        via: window_id
+      # UNMAPPED: one tab for the life of the session. What happens when a page opens another tab
+      # or window (a later slice, with script and links) is not said, so `cardinality: many` is
+      # not written. What would settle it: the slice that lets a page open a tab. The answer taken
+      # until then: one tab.
+      - name: tab
+        kind: references
+        target: surf.shell.Tab
+        cardinality: one
+        via: tab_id
+      - name: navigation
+        kind: references
+        target: surf.navigation.Navigation
+        cardinality: one
+        via: navigation_id
+      # Declared because `holder` is typed as this entity's identity (`ESS-ENTITY-019`): it names
+      # the session itself.
+      - name: holder
+        kind: references
+        target: surf.agent.Session
+        cardinality: one
+        via: holder
+      # UNMAPPED: the session's document. `surf.document.DocumentParsed` carries the document's
+      # identity and address and names no navigation or tab, so nothing can tell which session a
+      # parsed document belongs to. What would settle it: a document that carries its navigation
+      # (`story:html-document-spec`, `epic:html-parser`). Until then the agent reads the
+      # navigation's address, which is the document's for a committed HTML response.
+    lifecycle:
+      initial: Open
+      states:
+        - name: Open
+          summary: The agent may act on it.
+        - name: Closed
+          summary: The agent closed it; it accepts nothing more and its token acts on nothing.
+      terminal: [Closed]
+      transitions:
+        - name: close
+          from: [Open]
+          to: Closed
+
+# Two callers. Whoever can reach the session directory opens a session; afterwards only a caller
+# whose credential carries the session acts on it. An actor's `attributes:` are what its
+# credential carries and the credential is their authority, not the request (ess/16,
+# website/docs/guides/specify/values-and-views.md, "Read the caller's credential"). A command
+# compares the attribute with the session it addresses. What makes a credential carry a session
+# is the token, which the session process checks (the marker at the token's type above).
+# Who may open a session: whoever can reach the session directory, which only the local user can
+# read (`docs/design/agent-interface.md`, section 3); no further check applies.
+actors:
+  - name: surf.agent.Opener
+    may:
+      - surf.agent.OpenSession
+      - surf.agent.Sessions
+    naming:
+      display: Opener
+      summary: Whoever can reach the session directory; it has no session yet.
+
+  - name: surf.agent.SessionHolder
+    attributes:
+      - name: session_id
+        type: surf.agent.SessionId
+    may:
+      - surf.agent.Go
+      - surf.agent.CloseSession
+      - surf.agent.SessionState
+    naming:
+      display: Session holder
+      summary: An agent that presented the token of one session.
+
+errors:
+  - name: surf.agent.SessionNotFound
+    summary: No session has this identity.
+    fields:
+      - name: session_id
+        type: surf.agent.SessionId
+
+  - name: surf.agent.SessionExists
+    summary: A session already has this identity, so nothing moved.
+    fields:
+      - name: session_id
+        type: surf.agent.SessionId
+
+  - name: surf.agent.NotSessionHolder
+    summary: The caller's token is not this session's, so nothing moved.
+    fields:
+      - name: session_id
+        type: surf.agent.SessionId
+
+  - name: surf.agent.SessionStateConflict
+    summary: The session is not in a state this command acts from, so nothing moved.
+    fields:
+      - name: state
+        type: surf.agent.Session.State
+
+commands:
+  # The caller chooses the session's identity, as `surf.net.Fetch` takes its `request_id`: `open`
+  # draws it and the session process sends it here. An identity the target minted at run time
+  # could not be named by a conformance suite, whose caller values are fixed when it is written.
+  # The window and the tab come first: the session process issues `surf.shell.OpenWindow`, then
+  # `surf.shell.OpenTab`, then this command, outside any binding, because those two mint their
+  # identities and no binding carries a value back to the event that caused it. A caller-chosen
+  # `tab_id` on `OpenTab` is a story of its own (`story:agent-open-tab-caller-id`).
+  # Nothing is answered: the token is the session process's (the marker at the token's type).
+  - name: surf.agent.OpenSession
+    naming:
+      wire: open-session
+      display: Open a session
+      summary: Open a session over a window and tab of its own.
+    input:
+      - name: session_id
+        type: surf.agent.SessionId
+      - name: window_id
+        type: surf.shell.WindowId
+      - name: tab_id
+        type: surf.shell.TabId
+    outcomes:
+      - name: opened
+        creates: surf.agent.Session
+        instance: session_id
+        sets:
+          window_id: input.window_id
+          tab_id: input.tab_id
+          holder: input.session_id
+        emits:
+          - surf.agent.SessionOpened
+        payload:
+          surf.agent.SessionOpened:
+            session_id: input.session_id
+            window_id: input.window_id
+            tab_id: input.tab_id
+        summary: The session is Open.
+
+      - name: exists
+        existing_instance: true
+        error: surf.agent.SessionExists
+        payload:
+          surf.agent.SessionExists:
+            session_id: input.session_id
+        summary: A session already has this identity; it is unchanged.
+
+  # Going to an address is asking the navigator for it: the session's fields change only when the
+  # navigation the request starts is reported back through `NoteNavigationStarted`. The accepting
+  # branch is an `updates:` that sets nothing, because a `preserves:` branch may not publish an
+  # event (`ESS-COMMAND-004`, "a preserving outcome declares no assignment, event or error").
+  # The holder check reads the session's `holder` (see that field). It answers after the session
+  # is looked up, so a caller holding another session's token learns whether this one exists,
+  # which `Sessions` tells every opener anyway, and nothing of its state.
+  - name: surf.agent.Go
+    naming:
+      wire: go
+      display: Go to an address
+      summary: Start loading an address into the session's tab.
+    input:
+      - name: session_id
+        type: surf.agent.SessionId
+      - name: url
+        type: surf.url.Url
+        example: "http://example.org/"
+    outcomes:
+      - name: not-holder
+        when_subject: {predicate: holder != caller.session_id}
+        error: surf.agent.NotSessionHolder
+        payload:
+          surf.agent.NotSessionHolder:
+            session_id: input.session_id
+        summary: The caller's token is another session's.
+
+      - name: no-such-session
+        unknown_instance: true
+        error: surf.agent.SessionNotFound
+        payload:
+          surf.agent.SessionNotFound:
+            session_id: input.session_id
+        summary: No session has this identity.
+
+      - name: closed
+        when_subject_state: Closed
+        error: surf.agent.SessionStateConflict
+        payload:
+          surf.agent.SessionStateConflict:
+            state: {subject: state}
+        summary: The session is Closed; nothing was requested.
+
+      - name: requested
+        updates: surf.agent.Session
+        instance: session_id
+        emits:
+          - surf.agent.NavigationRequested
+        payload:
+          surf.agent.NavigationRequested:
+            session_id: input.session_id
+            tab_id: {subject: tab_id}
+            url: input.url
+        summary: The navigator is asked to load the address into the session's tab.
+
+  # The next two commands are the agent component's side of the navigator's events: the bindings
+  # `note-on-navigation-*` invoke them, and no actor is granted them. A navigation event names its
+  # tab and its navigation and no session, so each command changes every session its filter
+  # selects (`instances:`, ess/16, website/docs/guides/specify/selection-effects.md): at most one,
+  # because a session holds its tab alone. A navigation in a tab no session holds selects none,
+  # which is an accepted answer.
+  - name: surf.agent.NoteNavigationStarted
+    naming:
+      wire: note-navigation-started
+      display: Note a started navigation
+      summary: Record on the session holding the tab that a navigation started in it.
+    input:
+      - name: tab_id
+        type: surf.shell.TabId
+      - name: navigation_id
+        type: surf.net.RequestId
+      - name: url
+        type: surf.url.Url
+    outcomes:
+      - name: noted
+        updates: surf.agent.Session
+        instances: {where: tab_id == input.tab_id}
+        sets:
+          navigation_id: input.navigation_id
+          url: input.url
+          navigation_state: Started
+        emits:
+          - surf.agent.SessionNavigationChanged
+        payload:
+          surf.agent.SessionNavigationChanged:
+            navigation_id: input.navigation_id
+            state: Started
+            sessions: {count: changed}
+        summary: The session holding the tab, if any, shows the navigation as Started.
+
+  - name: surf.agent.NoteNavigationEnded
+    naming:
+      wire: note-navigation-ended
+      display: Note an ended navigation
+      summary: Record on the session showing a navigation how the navigation ended.
+    # Selected by the navigation, not the tab: a navigation that ends after a newer one started in
+    # the same tab changes nothing.
+    input:
+      - name: navigation_id
+        type: surf.net.RequestId
+      - name: state
+        type: surf.navigation.Navigation.State
+    outcomes:
+      - name: noted
+        updates: surf.agent.Session
+        instances: {where: navigation_id == input.navigation_id}
+        sets:
+          navigation_state: input.state
+        emits:
+          - surf.agent.SessionNavigationChanged
+        payload:
+          surf.agent.SessionNavigationChanged:
+            navigation_id: input.navigation_id
+            state: input.state
+            sessions: {count: changed}
+        summary: The session showing the navigation, if any, shows the state it ended in.
+
+  # The holder check is the one of `Go`.
+  - name: surf.agent.CloseSession
+    naming:
+      wire: close-session
+      display: Close a session
+      summary: Close a session and the tab it holds.
+    input:
+      - name: session_id
+        type: surf.agent.SessionId
+    outcomes:
+      - name: not-holder
+        when_subject: {predicate: holder != caller.session_id}
+        error: surf.agent.NotSessionHolder
+        payload:
+          surf.agent.NotSessionHolder:
+            session_id: input.session_id
+        summary: The caller's token is another session's.
+
+      - name: no-such-session
+        unknown_instance: true
+        error: surf.agent.SessionNotFound
+        payload:
+          surf.agent.SessionNotFound:
+            session_id: input.session_id
+        summary: No session has this identity.
+
+      - name: closed
+        moves: surf.agent.Session.close
+        instance: session_id
+        emits:
+          - surf.agent.SessionClosed
+        payload:
+          surf.agent.SessionClosed:
+            session_id: input.session_id
+            window_id: {subject: window_id}
+            tab_id: {subject: tab_id}
+        summary: The session is Closed and its tab is to be closed.
+
+      - name: wrong-state
+        wrong_state: true
+        error: surf.agent.SessionStateConflict
+        payload:
+          surf.agent.SessionStateConflict:
+            state: {subject: state}
+        summary: The session was already Closed.
+
+events:
+  - name: surf.agent.SessionOpened
+    fields:
+      - name: session_id
+        type: surf.agent.SessionId
+      - name: window_id
+        type: surf.shell.WindowId
+      - name: tab_id
+        type: surf.shell.TabId
+
+  - name: surf.agent.NavigationRequested
+    fields:
+      - name: session_id
+        type: surf.agent.SessionId
+      - name: tab_id
+        type: surf.shell.TabId
+      - name: url
+        type: surf.url.Url
+
+  # ESS refuses an outcome that publishes nothing (`ESS-COMMAND-007`, `empty_change`); this is
+  # what the two note commands publish. `sessions` is how many sessions changed: 0 for a
+  # navigation in a tab no session holds.
+  - name: surf.agent.SessionNavigationChanged
+    fields:
+      - name: navigation_id
+        type: surf.net.RequestId
+      - name: state
+        type: surf.navigation.Navigation.State
+      - name: sessions
+        type: Integer
+
+  - name: surf.agent.SessionClosed
+    fields:
+      - name: session_id
+        type: surf.agent.SessionId
+      - name: window_id
+        type: surf.shell.WindowId
+      - name: tab_id
+        type: surf.shell.TabId
+
+views:
+  # Every session, as the local user lists them: every stored field but `holder`, which repeats
+  # `session_id`. The token is not stored here at all.
+  - name: surf.agent.Sessions
+    source: surf.agent.Session
+    consistency: read_your_writes
+    fields:
+      - name: session_id
+        type: surf.agent.SessionId
+      - name: state
+        type: surf.agent.Session.State
+      - name: window_id
+        type: surf.shell.WindowId
+      - name: tab_id
+        type: surf.shell.TabId
+      - name: navigation_id
+        type: Optional<surf.net.RequestId>
+      - name: url
+        type: Optional<surf.url.Url>
+      - name: navigation_state
+        type: Optional<surf.navigation.Navigation.State>
+    naming:
+      wire: sessions
+      display: Sessions
+
+  # The state an agent reads back for its session (`look`): the rows of the answer that slice 1
+  # can fill. A view reads only its own component's rows (AGENTS.md); the navigation's address
+  # and state are the copy the navigator's events left on the session.
+  # Only the holder reads it, and the model cannot say so: a view's read grant names actors, not
+  # rows, and a filter reading a caller attribute (`session_id == caller.session_id`) is refused
+  # (`ESS-VIEW-003`, "`caller.session_id` reads `caller`, which is not a declared observable
+  # root", ess 0.96.0). So one session process serves one session and answers only for it.
+  # UNMAPPED: the answer's other rows: links, controls, their handles and whether each is visible.
+  # The document domain has no node tree yet. What would settle it: the slices of
+  # `docs/design/agent-interface.md`, section 9, steps 2 to 7.
+  - name: surf.agent.SessionState
+    source: surf.agent.Session
+    consistency: read_your_writes
+    params:
+      - name: session_id
+        type: surf.agent.SessionId
+    filter: session_id == param.session_id
+    fields:
+      - name: session_id
+        type: surf.agent.SessionId
+      - name: state
+        type: surf.agent.Session.State
+      - name: url
+        type: Optional<surf.url.Url>
+      - name: navigation_state
+        type: Optional<surf.navigation.Navigation.State>
+    # `code:` because the Rust target names both this view and `Session.State` `SessionState`.
+    naming:
+      code: SessionStateView
+      wire: session-state
+      display: Session state

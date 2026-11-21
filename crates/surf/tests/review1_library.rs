@@ -34,6 +34,7 @@ fn counting() -> (impl FnMut(&str) -> Answer, Rc<Cell<usize>>) {
 fn review1_a_system_whose_request_was_answered_is_not_fetched_again_by_a_new_browser() {
     let ports = ComponentPorts::new();
     let mut system = System::new(
+        ports.agent,
         ports.document,
         ports.navigator,
         ports.net,
@@ -62,7 +63,11 @@ fn review1_a_system_whose_request_was_answered_is_not_fetched_again_by_a_new_bro
     let (transport, calls) = counting();
     let mut browser = Browser::new(system, transport);
     browser.run().expect("run");
-    assert_eq!(calls.get(), 0, "an answered request was handed to the transport");
+    assert_eq!(
+        calls.get(),
+        0,
+        "an answered request was handed to the transport"
+    );
 }
 
 /// Two `Fetch` commands for one request, issued on the `net` port before a run: one request,

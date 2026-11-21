@@ -1,4 +1,4 @@
-//! The `surf` system assembled: the five generated components behind their ports, the generated
+//! The `surf` system assembled: the six generated components behind their ports, the generated
 //! bindings, and a transport for the `net` component.
 //!
 //! [`Browser`] holds the generated [`System`] and a [`Transport`]. The specification leaves one
@@ -9,7 +9,7 @@
 //! for each request that is still `Pending` in the `net` component's own `Requests` view, issues
 //! the answer on the `net` port and on no other, and pumps again, until no new request started.
 //!
-//! A [`Browser`] is built from any five component ports that meet the generated bounds:
+//! A [`Browser`] is built from any six component ports that meet the generated bounds:
 //! [`Browser::new`] takes a [`System`] the caller assembled, and [`Browser::from_ports`] the
 //! in-memory ports of `surf-ports`. [`Browser::system`] reads the views, [`System::published`] and
 //! [`System::invocations`]; the `*_mut` methods issue commands on one component's port.
@@ -27,13 +27,14 @@
 
 use std::fmt;
 
+use agent::Agent;
 use document::Document;
 use navigator::Navigator;
 use net::Net;
 use renderer::Renderer;
 use shell::Shell;
 use surf_ports::{
-    ComponentPorts, DocumentPorts, NavigatorPorts, NetPorts, RendererPorts, ShellPorts,
+    AgentPorts, ComponentPorts, DocumentPorts, NavigatorPorts, NetPorts, RendererPorts, ShellPorts,
 };
 use surf_types::behaviour::Generated;
 use surf_types::document::Documents;
@@ -271,6 +272,29 @@ pub fn exit_status(result: &Result<Report, Error>) -> u8 {
     }
 }
 
+/// The behaviours the `agent` component's port needs to be part of a [`System`].
+pub trait AgentBehaviors:
+    surf_types::agent::obligations::CloseSessionBehavior
+    + surf_types::agent::obligations::GoBehavior
+    + surf_types::agent::obligations::NoteNavigationEndedBehavior
+    + surf_types::agent::obligations::NoteNavigationStartedBehavior
+    + surf_types::agent::obligations::OpenSessionBehavior
+    + surf_types::agent::obligations::SessionStateViewQuery
+    + surf_types::agent::obligations::SessionsQuery
+{
+}
+
+impl<B> AgentBehaviors for B where
+    B: surf_types::agent::obligations::CloseSessionBehavior
+        + surf_types::agent::obligations::GoBehavior
+        + surf_types::agent::obligations::NoteNavigationEndedBehavior
+        + surf_types::agent::obligations::NoteNavigationStartedBehavior
+        + surf_types::agent::obligations::OpenSessionBehavior
+        + surf_types::agent::obligations::SessionStateViewQuery
+        + surf_types::agent::obligations::SessionsQuery
+{
+}
+
 /// The behaviours the `document` component's port needs to be part of a [`System`].
 pub trait DocumentBehaviors:
     surf_types::document::obligations::ParseDocumentBehavior
@@ -354,10 +378,10 @@ impl<B> ShellBehaviors for B where
 /// The generated [`System`] and the transport of its `net` component.
 ///
 /// The type parameters are the behaviours behind each component's port, in the order
-/// [`System::new`] takes the ports (`document`, `navigator`, `net`, `renderer`, `shell`), and the
-/// transport.
-pub struct Browser<D, N, Ne, R, S, T> {
-    system: System<D, N, Ne, R, S>,
+/// [`System::new`] takes the ports (`agent`, `document`, `navigator`, `net`, `renderer`,
+/// `shell`), and the transport.
+pub struct Browser<A, D, N, Ne, R, S, T> {
+    system: System<A, D, N, Ne, R, S>,
     transport: T,
     /// How far into [`System::published`] the run has read.
     cursor: usize,
@@ -366,6 +390,7 @@ pub struct Browser<D, N, Ne, R, S, T> {
 /// A [`Browser`] over the in-memory ports of `surf-ports` and the operating system's random
 /// source.
 pub type MemoryBrowser<T> = Browser<
+    Generated<AgentPorts>,
     Generated<DocumentPorts>,
     Generated<NavigatorPorts>,
     Generated<NetPorts>,
@@ -379,6 +404,7 @@ impl<T> MemoryBrowser<T> {
     pub fn from_ports(ports: ComponentPorts, transport: T) -> Self {
         Browser::new(
             System::new(
+                ports.agent,
                 ports.document,
                 ports.navigator,
                 ports.net,
@@ -390,9 +416,9 @@ impl<T> MemoryBrowser<T> {
     }
 }
 
-impl<D, N, Ne, R, S, T> Browser<D, N, Ne, R, S, T> {
+impl<A, D, N, Ne, R, S, T> Browser<A, D, N, Ne, R, S, T> {
     /// `system` with `transport`. The first [`Browser::run`] reads `system`'s log from its start.
-    pub fn new(system: System<D, N, Ne, R, S>, transport: T) -> Self {
+    pub fn new(system: System<A, D, N, Ne, R, S>, transport: T) -> Self {
         Self {
             system,
             transport,
@@ -401,8 +427,14 @@ impl<D, N, Ne, R, S, T> Browser<D, N, Ne, R, S, T> {
     }
 
     /// The system: its components' views, [`System::published`] and [`System::invocations`].
-    pub fn system(&self) -> &System<D, N, Ne, R, S> {
+    pub fn system(&self) -> &System<A, D, N, Ne, R, S> {
         &self.system
+    }
+
+    /// The `agent` component's port. A command issued on it is published by the next run, and
+    /// is sent as whoever the caller its ports answer with names.
+    pub fn agent_mut(&mut self) -> &mut Agent<A> {
+        &mut self.system.agent
     }
 
     /// The `document` component's port. A command issued on it is published by the next run.
@@ -431,8 +463,9 @@ impl<D, N, Ne, R, S, T> Browser<D, N, Ne, R, S, T> {
     }
 }
 
-impl<D, N, Ne, R, S, T> Browser<D, N, Ne, R, S, T>
+impl<A, D, N, Ne, R, S, T> Browser<A, D, N, Ne, R, S, T>
 where
+    A: AgentBehaviors,
     D: DocumentBehaviors,
     N: NavigatorBehaviors,
     Ne: NetBehaviors,

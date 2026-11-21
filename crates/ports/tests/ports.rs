@@ -395,6 +395,7 @@ fn failing_source_answers_identity_with_unmet_obligation_and_open_window_returns
 #[test]
 fn five_component_ports_build_and_open_window_answers_opened_then_one_windows_row() {
     let ComponentPorts {
+        agent,
         mut shell,
         navigator,
         net,
@@ -421,4 +422,5 @@ fn five_component_ports_build_and_open_window_answers_opened_then_one_windows_ro
     assert_eq!(net.requests(), Ok(Vec::new()));
     assert_eq!(document.documents(), Ok(Vec::new()));
     assert_eq!(renderer.frames(), Ok(Vec::new()));
+    assert_eq!(agent.sessions(), Ok(Vec::new()));
 }

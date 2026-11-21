@@ -49,11 +49,6 @@ components:
       domains:
         - surf.net
         - surf.url
-        # `surf.agent` declares types only: those the command line `cli/surf-agent.yaml` names.
-        # It is held here until the `agent` component has commands (`story:agent-session-spec`):
-        # a component that accepts nothing gets a generated port whose behaviours field nothing
-        # reads, which does not build with warnings denied (ess 0.96.0, measured 2026-11-21).
-        - surf.agent
     accepts:
       commands:
         - surf.net.Fetch
@@ -90,6 +85,29 @@ components:
     publishes:
       events:
         - surf.render.FramePainted
+    reached_by: in_process
+
+  # The agent's session. Its callers are AI agents at a command line; each call reaches the
+  # session's own process (`docs/design/agent-interface.md`, section 3). The grammar an agent types
+  # is the binding document `cli/surf-agent.yaml`, outside the specification inputs.
+  - component: agent
+    summary: The sessions an AI agent opens and drives from the command line.
+    owns:
+      domains:
+        - surf.agent
+    accepts:
+      commands:
+        - surf.agent.OpenSession
+        - surf.agent.Go
+        - surf.agent.CloseSession
+        - surf.agent.NoteNavigationStarted
+        - surf.agent.NoteNavigationEnded
+    publishes:
+      events:
+        - surf.agent.SessionOpened
+        - surf.agent.NavigationRequested
+        - surf.agent.SessionNavigationChanged
+        - surf.agent.SessionClosed
     reached_by: in_process
 
 # The page load, as four reactions. Every binding is one attempt inside one process
@@ -152,6 +170,93 @@ bindings:
       body: event.body
     delivery: at_most_once
     # ParseDocument refuses nothing. If it does not run at all, the tab shows no document.
+    on_failure: drop
+
+  # The agent's session, as six reactions: its actions mapped onto the commands the other
+  # components accept, and the navigator's events reported back to it. Each is one attempt inside
+  # one process, like the page load's.
+  - id: navigate-on-navigation-requested
+    summary: An agent's request for an address navigates the session's tab.
+    when:
+      event: surf.agent.NavigationRequested
+    invoke:
+      command: surf.navigation.Navigate
+    mapping:
+      tab_id: event.tab_id
+      url: event.url
+    delivery: at_most_once
+    # Navigate refuses nothing. If it does not run at all, the session keeps the navigation it
+    # had, and the agent sees that nothing started.
+    on_failure: drop
+
+  # Every navigation event is delivered, whoever started the navigation; one in a tab no session
+  # holds changes nothing.
+  - id: note-on-navigation-started
+    summary: A started navigation is shown by the session holding its tab.
+    when:
+      event: surf.navigation.NavigationStarted
+    invoke:
+      command: surf.agent.NoteNavigationStarted
+    mapping:
+      tab_id: event.tab_id
+      navigation_id: event.navigation_id
+      url: event.url
+    delivery: at_most_once
+    # NoteNavigationStarted refuses nothing. If it does not run, the session shows the navigation
+    # before this one.
+    on_failure: drop
+
+  - id: note-on-navigation-committed
+    summary: A committed navigation is shown as Committed.
+    when:
+      event: surf.navigation.NavigationCommitted
+    invoke:
+      command: surf.agent.NoteNavigationEnded
+    mapping:
+      navigation_id: event.navigation_id
+      state: Committed
+    delivery: at_most_once
+    # NoteNavigationEnded refuses nothing. If it does not run, the session shows the navigation
+    # as Started.
+    on_failure: drop
+
+  - id: note-on-navigation-failed
+    summary: A failed navigation is shown as Failed.
+    when:
+      event: surf.navigation.NavigationFailed
+    invoke:
+      command: surf.agent.NoteNavigationEnded
+    mapping:
+      navigation_id: event.navigation_id
+      state: Failed
+    delivery: at_most_once
+    # As `note-on-navigation-committed`.
+    on_failure: drop
+
+  - id: note-on-navigation-cancelled
+    summary: A cancelled navigation is shown as Cancelled.
+    when:
+      event: surf.navigation.NavigationCancelled
+    invoke:
+      command: surf.agent.NoteNavigationEnded
+    mapping:
+      navigation_id: event.navigation_id
+      state: Cancelled
+    delivery: at_most_once
+    # As `note-on-navigation-committed`.
+    on_failure: drop
+
+  - id: close-tab-on-session-closed
+    summary: A closed session closes the tab it held.
+    when:
+      event: surf.agent.SessionClosed
+    invoke:
+      command: surf.shell.CloseTab
+    mapping:
+      tab_id: event.tab_id
+    delivery: at_most_once
+    # Dropped on purpose: a tab the user already closed stays closed, and the session is Closed
+    # either way. The window stays Open (the marker at the session's `window` relation).
     on_failure: drop
 
 # UNMAPPED: nothing invokes `surf.render.PaintFrame` yet. A binding from
