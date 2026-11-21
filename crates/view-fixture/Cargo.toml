@@ -1,14 +1,20 @@
 [package]
 name = "surf-view-fixture"
-description = "Test tooling of the live view's page tests: a page server, surfd in process and sessions, driven by commands on standard input. Not shipped."
+description = "Test tooling of the live view's page tests: a page server, surfd in process and sessions, driven by commands on standard input; and a stand-in for a foreign process of its tests. Not shipped."
 version = "0.1.0"
 edition = "2024"
 publish = false
+default-run = "surf-view-fixture"
 license = "Apache-2.0"
 
 [[bin]]
 name = "surf-view-fixture"
 path = "src/main.rs"
+
+[[bin]]
+name = "surf-view-foreign"
+path = "src/bin/surf-view-foreign.rs"
+test = false
 
 [dependencies]
 surfd = { path = "../surfd" }

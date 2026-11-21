@@ -304,8 +304,11 @@ above, and the list of standards itself was written from memory.
     directory of its own in `$XDG_RUNTIME_DIR`, driven by tab-separated commands on its
     standard input (`open`, `agent`, `kill`, `stop-surfd`, `cut`, `mend`). `kill` acts only
     for a session the fixture opened and only on a `surf-session` whose environment holds the
-    fixture's own `XDG_RUNTIME_DIR`. 2 tests (`fixture` 1, `adversary_commands` 1). Depends on
-    `surfd` and `surf-view`.
+    fixture's own `XDG_RUNTIME_DIR`. A second binary, `surf-view-foreign`, waits until it is
+    killed: `tests/fixture.rs` starts it under the name `surf-session` as a process that is not
+    the fixture's and that `kill` must leave alive. A test starts no program of the system
+    under another name: on the forge's runner `tail` started as `surf-session` exited at once.
+    2 tests (`fixture` 1, `adversary_commands` 1). Depends on `surfd` and `surf-view`.
   - `crates/html` (`surf-html`): the HTML parser. Since wave 5 it decides a document's encoding
     by the sniffing algorithm and decodes UTF-8, UTF-16LE, UTF-16BE, windows-1252 and
     replacement (`src/encoding.rs`; the other 35 encodings of the label table are decoded as
