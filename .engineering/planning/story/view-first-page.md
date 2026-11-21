@@ -20,7 +20,7 @@ scope:
   path: taskfiles/view-test.yml
 - confidence: cited
   path: view-tests
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 4}
@@ -143,8 +143,15 @@ dependencies on `surfd` and `surf-view` only. A binary `surf-view-fixture`:
   and `--bytes-total <n>` setting `surfd::log::Bounds`; dropping the daemon kills its session
   processes, so the fixture leaves none;
 - one JSON line on standard output once ready:
-  `{"view":"http://127.0.0.1:<port>/#<token>","pages":"http://127.0.0.1:<port>","unreachable":"http://127.0.0.1:<port>/"}`
-  (`unreachable`: a port the fixture bound and released);
+  `{"view":"http://127.0.0.1:<port>/#<token>","piped":"http://127.0.0.1:<port>/#<token>","pages":"http://127.0.0.1:<port>","unreachable":"http://127.0.0.1:<port>/"}`
+  (`unreachable`: a port the fixture bound and released; `piped`: the same view through the
+  pipe below);
+- a pipe, so that a case can take the connection between the browser and `surfd` away: a
+  `TcpListener` on 127.0.0.1 port 0 that passes each connection's bytes to the view's port and
+  back, and writes the one `Host` line of the request head as `Host: 127.0.0.1:<the view's
+  port>` (the view answers 403 to any other `Host`, and one request per connection, so only
+  the first head of a connection is read, up to 64 KiB). The view's own port and checks are
+  unchanged: `view` is `surfd`'s address, and only cases 15 and 16 load the page from `piped`;
 - then one command per line on standard input, the words separated by a tab (no argument a case
   sends holds a tab), each answered with one JSON line, strings written with
   `surf_view::to_json`:
@@ -157,6 +164,9 @@ dependencies on `surfd` and `surf-view` only. A binary `surf-view-fixture`:
     and answers `{}`;
   - `stop-surfd`: drops the daemon and answers `{}`; every later `open` or `agent` is answered
     `{"error":"stopped"}`, so no `surf-agent` starts a `surfd` of its own;
+  - `cut`: shuts down both sides of every connection open through the pipe, closes every
+    connection it accepts from then on without reading it, and answers `{}` once the open ones
+    are shut; `mend`: the pipe passes connections again, and answers `{}`;
   - anything else: `{"error":"command"}`;
 - the end of standard input stops everything (the daemon, the page server) and removes its
   directory.
@@ -240,13 +250,13 @@ workflow (below).
     the case fails on the element count.
 14. `first stream from newest`: the first `/events` request carries `Last-Event-ID` equal to
     `newest` of the `/api/sessions` answer before it (both read from the recorded requests).
-15. `reconnect after offline`: `context.setOffline(true)`, a `go`, `context.setOffline(false)`:
-    the page requests `/events` again with `Last-Event-ID` equal to the last `id:` it read,
-    requests `/api/sessions` again after it, shows the new segment and page line without a
-    reload, and holds no segment twice.
-16. `reset after a long absence`: offline as in 15, then 25 `go` (275 entries, past the 256 a
-    replay may hold), online: the page loads `/api/sessions` and the selected session again and
-    shows 26 segments (the `open` and the 25 `go`), each once.
+15. `reconnect after a lost connection`: the page loaded from `piped`; `cut`: the live marker
+    reads `reconnecting` within 5 s; a `go`; `mend`: the page requests `/events` again with
+    `Last-Event-ID` equal to the last `id:` it read, requests `/api/sessions` again after it,
+    shows the new segment and page line without a reload, and holds no segment twice.
+16. `reset after a long absence`: the page loaded from `piped`; `cut`, then 25 `go` (275
+    entries, past the 256 a replay may hold), `mend`: the page loads `/api/sessions` and the
+    selected session again and shows 26 segments (the `open` and the 25 `go`), each once.
 17. `dropped entries are a gap`: a fixture with `--entries-per-session 30`, a session with
     `open` and four `go` (6 and 4 × 11, 50 entries, so 20 dropped): the gap reads `<dropped> dropped` with the `dropped` of
     `/api/sessions/<id>`, and the segments are as many as its kept action entries. A fixture
@@ -262,11 +272,12 @@ Before writing the page's changes, the unit runs the cases against the page of `
 reports which fail there (expected: 6, 7, 8, 9, 10, 13, 17, and 15 or 16 if the page's reconnect
 misses an entry); each new behaviour has a case that fails without it.
 
-Two things to measure first and report: whether `context.setOffline(true)` ends a `fetch`
-stream already open to 127.0.0.1 in the headless shell 1254 (cases 15 and 16 rest on it; if it
-does not, the unit stops and reports rather than choosing another mechanism), and whether the
-headless shell requests `/favicon.ico` (a 404 the page cannot avoid would fail case 1: the case
-then ignores that one console line, named in the test).
+Measured by the unit on 2026-11-21, before the page's changes (headless shell 1254, browser
+version 158.0.8127.18): `context.setOffline(true)` fails a new request to 127.0.0.1
+(`net::ERR_INTERNET_DISCONNECTED`) and does not end a `fetch` stream already open; 20 s
+offline, past one keep-alive, the stream still delivered a `go`. So cases 15 and 16 take the
+connection away with the fixture's pipe (`cut`, `mend`) and not with `setOffline`. The headless
+shell does not request `/favicon.ico`: case 1 has no exception.
 
 Surfaces written: `crates/view/web/` (the existing nine files), `crates/view/examples/prototype.rs`,
 `crates/view-fixture/`, `view-tests/`, `taskfiles/view-test.yml`. Not `crates/surfd/`: the
