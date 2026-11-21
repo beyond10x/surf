@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>surf view</title>
+<link rel="stylesheet" href="view.css">
+<script type="module" src="view.js"></script>
+</head>
+<body>
+<header class="bar">
+  <h1>surf <span class="product">view</span></h1>
+  <p id="live" class="live is-connecting" role="status" aria-live="polite"><span id="live-word">connecting</span> <time id="live-time"></time></p>
+</header>
+<nav class="sessions" aria-labelledby="sessions-heading">
+  <h2 id="sessions-heading">Sessions</h2>
+  <ul id="session-list" class="session-list"></ul>
+</nav>
+<main class="centre">
+  <p id="message" class="message" role="alert" hidden></p>
+  <h2 id="session-heading">No session selected</h2>
+  <p id="session-facts" class="facts"></p>
+  <section class="page" aria-labelledby="page-heading">
+    <h3 id="page-heading">Page</h3>
+    <div id="page-line"></div>
+  </section>
+</main>
+<aside class="detail" aria-label="Detail"></aside>
+<section class="timeline" aria-labelledby="timeline-heading">
+  <h2 id="timeline-heading">Timeline</h2>
+  <div class="track">
+    <ol id="actions" class="actions"></ol>
+  </div>
+</section>
+</body>
+</html>

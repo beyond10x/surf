@@ -8,15 +8,18 @@
 //! of [`Limits`].
 //!
 //! The data behind the routes comes from a [`Source`] the caller implements; the server keeps
-//! no data of its own.
+//! no data of its own. [`page_files`] gives the page itself, the files of `crates/view/web/`
+//! compiled in; the example `prototype` serves it over scripted sessions.
 //!
 //! What it does not do: TLS, IPv6, `HEAD`, compression, ranges, persistent connections, a
 //! request body, or any route that changes something.
 
 #![forbid(unsafe_code)]
 
+mod assets;
 mod http;
 mod sse;
 
+pub use assets::page_files;
 pub use http::{Config, Limits, PageFile, Server, Source, serve};
 pub use sse::{EventKind, Item, Next, Reader, TooOld};
