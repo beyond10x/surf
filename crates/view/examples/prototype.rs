@@ -592,14 +592,17 @@ impl Data {
             &[("session_id", &id), ("tab_id", &tab_id), ("url", url)],
         );
         self.recorded(session, at, Some(url));
-        self.event(
+        self.event_or_null(
             session,
             at,
             "surf.navigation.NavigationStarted",
             &[
-                ("navigation_id", &navigation_id),
-                ("tab_id", &tab_id),
-                ("url", url),
+                ("navigation_id", Some(&navigation_id)),
+                ("tab_id", Some(&tab_id)),
+                ("url", Some(url)),
+                ("method", Some("Get")),
+                ("body", None),
+                ("body_type", None),
             ],
         );
         self.event(
@@ -612,11 +615,17 @@ impl Data {
                 ("sessions", "1"),
             ],
         );
-        self.event(
+        self.event_or_null(
             session,
             at,
             "surf.net.RequestStarted",
-            &[("request_id", &navigation_id), ("url", url)],
+            &[
+                ("request_id", Some(&navigation_id)),
+                ("url", Some(url)),
+                ("method", Some("Get")),
+                ("body", None),
+                ("body_type", None),
+            ],
         );
         self.event(
             session,
@@ -675,21 +684,30 @@ impl Data {
         let tab_id = self.sessions[session].tab_id.clone();
         let navigation_id = self.identity();
         self.action(session, at, "go", Some(url));
-        self.event(
+        self.event_or_null(
             session,
             at,
             "surf.navigation.NavigationStarted",
             &[
-                ("navigation_id", &navigation_id),
-                ("tab_id", &tab_id),
-                ("url", url),
+                ("navigation_id", Some(&navigation_id)),
+                ("tab_id", Some(&tab_id)),
+                ("url", Some(url)),
+                ("method", Some("Get")),
+                ("body", None),
+                ("body_type", None),
             ],
         );
-        self.event(
+        self.event_or_null(
             session,
             at,
             "surf.net.RequestStarted",
-            &[("request_id", &navigation_id), ("url", url)],
+            &[
+                ("request_id", Some(&navigation_id)),
+                ("url", Some(url)),
+                ("method", Some("Get")),
+                ("body", None),
+                ("body_type", None),
+            ],
         );
         self.event(
             session,

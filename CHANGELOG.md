@@ -22,8 +22,8 @@ release; what came before it is in the git log and in `docs/plan/`.
   that address shows the sessions (below).
 - The HTML parser (`surf-html`) decides a document's encoding by the HTML Standard's sniffing
   algorithm and decodes UTF-8, UTF-16LE, UTF-16BE and windows-1252, and its tokenizer reads
-  tags, attributes, comments, DOCTYPEs, processing instructions and CDATA sections. It builds no
-  tree yet, and no command uses it.
+  tags, attributes, comments, DOCTYPEs, processing instructions and CDATA sections. No command
+  uses it.
 - The tokenizer also reads text: the RCDATA, RAWTEXT, script data and PLAINTEXT states, the
   content of elements such as `<textarea>` and `<script>`. All 328 text cases of the test data
   pass.
@@ -46,6 +46,14 @@ release; what came before it is in the git log and in `docs/plan/`.
   line of the action at the playhead, "Latest" to follow the newest action, the arrow keys to
   move one action, and the selection kept in the address's fragment. After the view refuses its
   token it stops, asks nothing again and reads `offline`.
+- The HTML parser builds a document's tree with the HTML Standard's insertion modes outside
+  tables, templates and foreign content, and a `meta` that names another encoding parses the
+  bytes again with it. No command runs the parser on a page yet.
+- The live view's page has a detail panel: the right column shows the action at the playhead or,
+  after a click on a mark of the timeline, that event with its fields, and the session's
+  requests, one row per request (the address asked for, then status, media type and size, or
+  `failed` and the reason, or `pending`). The selected event is kept in the address's fragment
+  (`&event=<number>`). The requests list and the selection scroll inside themselves.
 
 ### Changed
 
@@ -54,6 +62,10 @@ release; what came before it is in the git log and in `docs/plan/`.
   does not answer in that time is ended and listed `died`.
 - `surfd` and `surf-session` talk a changed link: install the four binaries of one release
   together, as before.
+- The events `surf.navigation.NavigationStarted` and `surf.net.RequestStarted` in a session's
+  log, and so in the live view's stream, carry three more fields: `method`, `body` (its length,
+  `<n> bytes`) and `body_type`. `go` and `open` send `GET` without a body as before, so their
+  `method` is `Get` and `body` and `body_type` have no value (`null` in the stream).
 
 ## [0.2.0] - 2026-11-21
 

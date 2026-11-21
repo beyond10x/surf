@@ -5,26 +5,26 @@ description: What surf can do after which step of the current plan, and what com
 
 # Roadmap
 
-The current plan has 58 stories in 22 steps, called waves. Waves 1 to 7 are delivered.
+The current plan has 58 stories in 22 steps, called waves. Waves 1 to 8 are delivered.
 
 Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `surf-agent`,
 `surfd` and `surf-session`, for Linux only at first. The
 [releases page](https://github.com/beyond10x/surf/releases) lists the releases. After it, work
 moves to the script engine, a
-project of its own. Waves 5 to 7 followed; the waves after them are planned, and they and the
+project of its own. Waves 5 to 8 followed; the waves after them are planned, and they and the
 list under "After the plan" have no date.
 
 | after wave | what you can do |
 |---|---|
 | 4 (delivered) | Drive a session: `surf-agent open`, `go`, `look`, `close`. A daemon keeps the sessions, one process and one token per session. |
 | 7 (delivered) | Watch every session live in a local web page: where it is and what it did, action by action. Redirects are followed. |
+| 8 (delivered) | Select an action or an event in the live view and read its fields, beside the session's requests. |
 | 11 | Read a real page's links, buttons and form fields, from an HTML parser held to the html5lib tests. |
 | 18 | Follow links, fill and submit forms, go back and forward. Each answer says what changed. |
 | 22 | Record an agent's session, turn it into a test, and replay it against the recorded network. |
 
 The next planned steps are the HTML parser on real pages (an answer shows no page content yet)
-and a detail panel in the live view for the selected action or event and the session's
-requests.
+and sending a request with a body.
 TLS and `https:` are on the list below. None of them has a date.
 
 The agent commands exist today: see [Drive surf from an agent](drive-from-an-agent.md). An

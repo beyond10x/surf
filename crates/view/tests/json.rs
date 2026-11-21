@@ -227,6 +227,9 @@ fn entries_a() -> Vec<Entry> {
                 ("navigation_id", Some(NAVIGATION)),
                 ("tab_id", Some(TAB)),
                 ("url", Some(PAGE)),
+                ("method", Some("Get")),
+                ("body", None),
+                ("body_type", None),
             ],
         ),
         event(
@@ -239,7 +242,13 @@ fn entries_a() -> Vec<Entry> {
         ),
         event(
             "surf.net.RequestStarted",
-            &[("request_id", Some(NAVIGATION)), ("url", Some(PAGE))],
+            &[
+                ("request_id", Some(NAVIGATION)),
+                ("url", Some(PAGE)),
+                ("method", Some("Get")),
+                ("body", None),
+                ("body_type", None),
+            ],
         ),
         response_received(),
         event(
@@ -326,7 +335,7 @@ fn case_02_a_detail_whose_page_is_committed_is_the_documents_example() {
     };
     let written = to_json(&detail);
     let expected = body_of(&format!("/api/sessions/{A}"));
-    assert_eq!(expected.len(), 5_237, "the document's example");
+    assert_eq!(expected.len(), 5_325, "the document's example");
     assert_eq!(text(&written), text(&expected));
 }
 
