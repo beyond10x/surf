@@ -158,8 +158,8 @@ const BLOCK_END_TAGS: &[&str] = &[
     "ul",
 ];
 
-/// The elements that may stay open at the end of the body without a parse error. Parse errors
-/// are not reported, so only the end tag rules use it to decide nothing.
+/// The heading elements, `h1` to `h6`, as in body's start tag and end tag rules for them list
+/// them.
 const HEADINGS: &[&str] = &["h1", "h2", "h3", "h4", "h5", "h6"];
 
 /// The formatting elements (13.2.4.2).

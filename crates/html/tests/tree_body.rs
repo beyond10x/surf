@@ -99,6 +99,21 @@ fn a_meta_after_the_prescan_changes_the_encoding_once() {
 }
 
 #[test]
+fn a_third_encoding_named_in_the_re_parse_keeps_the_rest_of_the_document() {
+    // The re-parse runs with the confidence certain, so the second `meta` changes nothing and
+    // the parse goes on to the end.
+    let mut bytes = b"<!--".to_vec();
+    bytes.resize(2048, b'x');
+    bytes.extend_from_slice(
+        b"--><meta charset=\"iso-8859-2\"><meta charset=\"windows-1251\"><p>tail",
+    );
+    let parsed = parse_document_bytes(&bytes, &ParseOptions::default());
+    assert_eq!(parsed.encoding, Some("ISO-8859-2"));
+    let p = element(&parsed.tree, "p");
+    assert_eq!(names(&parsed.tree, parsed.tree.children(p)), ["\"tail\""]);
+}
+
+#[test]
 fn a_deep_input_is_parsed_read_and_dropped_without_recursion() {
     // `span` is "any other start tag", which looks at no scope: each block start tag looks for
     // a `p` in button scope over the whole stack, so nested `div` elements take time quadratic
