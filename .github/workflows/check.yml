@@ -73,5 +73,15 @@ jobs:
             echo "XDG_RUNTIME_DIR=$dir" >> "$GITHUB_ENV"
           fi
 
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "22"
+
+      - name: Install the page tests' tooling
+        run: |
+          set -euo pipefail
+          npm --prefix view-tests ci --no-audit --no-fund
+          npx --prefix view-tests playwright install --with-deps --only-shell chromium
+
       - name: task check
         run: task check
