@@ -50,10 +50,16 @@
 //! each address at most four times its length once quoted; an address comes from a request of at
 //! most [`surf_agent::wire::REQUEST_MAX`] bytes, so an answer stays far below
 //! [`surfd::link::ANSWER_TEXT_MAX`]. A status record whose quoted address does not fit
-//! [`surfd::link::RECORD_MAX`] is sent without the address. The system ([`surf::Browser`]) keeps
-//! every event it published, the response bodies included (at most `surf-fetch`'s body limit,
-//! 16 MiB, per fetch); `surf::Browser` gives no way to drop what was delivered, so that grows with
-//! every `go` for the life of the session.
+//! [`surfd::link::RECORD_MAX`] is sent without the address.
+//!
+//! A response body (at most `surf-fetch`'s body limit, 16 MiB) is held only while the command
+//! that loaded it runs: the system carries it in two events and two binding invocations, and
+//! [`Session::answer`] drops everything the system delivered once the reply is made
+//! ([`surf::Browser::forget_delivered`]; [`Session::held`] counts what is left, nothing between
+//! commands). No answer needs a body: the page line is read from the `SessionState` row (status,
+//! media type, address, failure reason). What stays across commands are the components' rows,
+//! none of which holds a body: per `go` one action, one navigation, one request and, for an
+//! HTML page, one document, each with its address and identities; and the session's row.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -220,8 +226,21 @@ impl<T: Transport> Session<T> {
             .is_some_and(|row| row.state == SessionState::Closed)
     }
 
-    /// The reply to `request`.
+    /// How much of its record the system behind the session holds ([`surf::Browser::held`]).
+    /// Between commands it is nothing: [`Session::answer`] drops what the system delivered.
+    pub fn held(&self) -> surf::Held {
+        self.browser.held()
+    }
+
+    /// The reply to `request`. Once it is made, everything the system delivered is dropped
+    /// ([`surf::Browser::forget_delivered`]): the next answer reads only the views.
     pub fn answer(&mut self, request: &Request) -> Reply {
+        let reply = self.reply_to(request);
+        self.browser.forget_delivered();
+        reply
+    }
+
+    fn reply_to(&mut self, request: &Request) -> Reply {
         if request.command == "open" {
             return self.open(request);
         }

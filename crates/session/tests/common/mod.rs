@@ -490,7 +490,7 @@ pub fn path_block(text: &str) -> String {
 // --- The page server ----------------------------------------------------------------------------
 
 /// An HTTP server on `127.0.0.1` port 0 that answers every `GET` with status 200, `text/html`
-/// and a short body; stopped when dropped.
+/// and one body; stopped when dropped.
 pub struct PageServer {
     pub port: u16,
     stop: Arc<AtomicBool>,
@@ -498,7 +498,13 @@ pub struct PageServer {
 }
 
 impl PageServer {
+    /// A server of a short body.
     pub fn start() -> PageServer {
+        PageServer::with_body(b"<!doctype html><p>a page</p>".to_vec())
+    }
+
+    /// A server of `body`.
+    pub fn with_body(body: Vec<u8>) -> PageServer {
         let listener = TcpListener::bind("127.0.0.1:0").expect("a port on 127.0.0.1");
         let port = listener.local_addr().unwrap().port();
         let stop = Arc::new(AtomicBool::new(false));
@@ -509,7 +515,7 @@ impl PageServer {
                     break;
                 }
                 if let Ok(stream) = stream {
-                    answer_page(stream);
+                    answer_page(stream, &body);
                 }
             }
         });
@@ -535,7 +541,7 @@ impl Drop for PageServer {
     }
 }
 
-fn answer_page(mut stream: TcpStream) {
+fn answer_page(mut stream: TcpStream, body: &[u8]) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
     let mut head = Vec::new();
     let mut byte = [0u8; 1];
@@ -547,13 +553,13 @@ fn answer_page(mut stream: TcpStream) {
             Err(_) => return,
         }
     }
-    let body = "<!doctype html><p>a page</p>";
-    let response = format!(
+    let head = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: \
-         close\r\n\r\n{body}",
+         close\r\n\r\n",
         body.len()
     );
-    let _ = stream.write_all(response.as_bytes());
+    let _ = stream.write_all(head.as_bytes());
+    let _ = stream.write_all(body);
 }
 
 // --- Golden texts -----------------------------------------------------------------------------

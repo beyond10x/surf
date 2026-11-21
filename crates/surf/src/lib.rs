@@ -14,9 +14,16 @@
 //! in-memory ports of `surf-ports`. [`Browser::system`] reads the views, [`System::published`] and
 //! [`System::invocations`]; the `*_mut` methods issue commands on one component's port.
 //!
-//! The run reads the log through a cursor of its own over [`System::published`] and never takes
-//! it. Nothing here calls [`System::take_published`], and no method hands out the system mutably,
-//! so a request is handed to the transport once.
+//! The run reads the log through a cursor of its own over [`System::published`]. No method hands
+//! out the system mutably, and the one that takes from the log, [`Browser::forget_delivered`],
+//! takes only what the system has delivered and moves the cursor back by as many events, so a
+//! request is handed to the transport once.
+//!
+//! The system keeps every event it published and every binding invocation; a response body is
+//! in four of them (`ResponseReceived`, `NavigationCommitted`, and the invocations of
+//! `CommitNavigation` and `ParseDocument`). A browser that lives across many loads, as the agent's
+//! session does, calls [`Browser::forget_delivered`] once it has read what it needs, so that it
+//! holds no body of a load it answered; [`Browser::held`] counts what is still held.
 //!
 //! [`Browser::load`] is what the `surf` binary does: `OpenWindow`, `OpenTab`, `Navigate`, run, and
 //! the rows of the `Navigations`, `Requests` and `Documents` views with every published
@@ -46,6 +53,7 @@ use surf_types::net::{
 use surf_types::shell::{OpenTab, OpenTabOutcome, OpenWindow, OpenWindowOutcome};
 use surf_types::url::Url;
 
+use surf_system::BindingInvocation;
 pub use surf_system::{System, SystemEvent};
 pub use surf_types::obligation::UnmetObligation;
 
@@ -469,6 +477,61 @@ impl<A, D, N, Ne, R, S, T> Browser<A, D, N, Ne, R, S, T> {
     /// The `shell` component's port. A command issued on it is published by the next run.
     pub fn shell_mut(&mut self) -> &mut Shell<S> {
         &mut self.system.shell
+    }
+
+    /// Drops every event the system has delivered ([`System::take_published`]) and every binding
+    /// invocation it recorded ([`System::take_invocations`]), so that a browser that lives across
+    /// many loads does not keep each response body for its life. The views are not touched: they
+    /// read the components' rows, not the log. Events published and not delivered yet stay, and
+    /// the run's cursor moves back by what was taken, so the next [`Browser::run`] still hands
+    /// each started request to the transport once.
+    pub fn forget_delivered(&mut self) {
+        let taken = self.system.take_published().len();
+        self.cursor = self.cursor.saturating_sub(taken);
+        self.system.take_invocations();
+    }
+
+    /// How much of its record the system holds: the events on its log, the binding invocations
+    /// it recorded, and the bytes of the response bodies among them. Reads only.
+    pub fn held(&self) -> Held {
+        let published = self.system.published();
+        let invocations = self.system.invocations();
+        let body_bytes = published.iter().map(event_body).sum::<usize>()
+            + invocations.iter().map(invocation_body).sum::<usize>();
+        Held {
+            events: published.len(),
+            invocations: invocations.len(),
+            body_bytes,
+        }
+    }
+}
+
+/// What a [`Browser`]'s system holds of its record ([`Browser::held`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Held {
+    /// The events on the log, [`System::published`].
+    pub events: usize,
+    /// The binding invocations recorded, [`System::invocations`].
+    pub invocations: usize,
+    /// The bytes of the response bodies those events and invocations carry.
+    pub body_bytes: usize,
+}
+
+/// The bytes of the response body `event` carries, 0 for an event that carries none.
+fn event_body(event: &SystemEvent) -> usize {
+    match event {
+        SystemEvent::ResponseReceived(received) => received.body.len(),
+        SystemEvent::NavigationCommitted(committed) => committed.body.len(),
+        _ => 0,
+    }
+}
+
+/// The bytes of the response body `invocation` passed, 0 for one that passed none.
+fn invocation_body(invocation: &BindingInvocation) -> usize {
+    match invocation {
+        BindingInvocation::CommitOnResponse(commit) => commit.body.len(),
+        BindingInvocation::ParseOnNavigationCommitted(parse) => parse.body.len(),
+        _ => 0,
     }
 }
 
