@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T20:39:46Z",
+  "actor": "human:operator",
+  "artifact": "story:html-actionable-elements",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the coordinator's run of the package surf-page with warnings denied, with a count of each named test, of its dependency tree, of cargo fmt --check, of cargo doc with warnings denied and of the task lock-check at the unit's change (82d638e); the package, cargo fmt --check, cargo doc and cargo clippy at the change for the adversary's findings (fd96719); and slot task check in the runner's form on wave/a9-post-actionable-formatting at 943c2f5",
+    "reference": "exit 0; the new crate crates/page (surf-page), which depends on surf-html only: title, actionable_elements with ActionableElement (node, kind, target, value, hidden, disabled, checked, required) and nine kinds, is_hidden; 21 tests at the unit's change; 12 planted defects each red (the unit's runs); the unit followed the standards where the story differed: an Email input with multiple is split on commas, aria-hidden is not read on the document element and the body element; an adversary's pass: one failing test (aria-hidden TRUE did not hide), 5 findings by judgement, 21 attacks that held (actionable_elements and title linear, 100,000 nested elements in 11 to 24 ms, no panic); changed in fd96719: aria-hidden compared without ASCII case, a dialog without open and the content of a details without open but for its first summary are hidden (the paragraph of docs/design/html-parser.md says so), is_hidden asks for the document element and the body element only where aria-hidden is true (20,000 comments between head and body, a call per node: 6.7 to 9.1 s before, 5.3 to 8.4 ms after, debug build), the deep-tree test nests span in place of select; 6 planted defects each red (the fix unit's runs); 24 tests; no crate of the product depends on surf-page; left to story:html-accessible-name, story:html-tree-tables and story:html-parser-limits as sections of those stories; verdict VERIFIED"
+  }
+}

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-fetch-post
 kind: story
-status: active
+status: implemented
 title: surf-fetch sends POST with a body and changes the method on redirect
 summary: surf-fetch sends a request with a method, a body and its media type; POST sends Content-Type and Content-Length; 301 and 302 after POST, and 303 after any method but GET, continue as GET without a body.
 relations:
@@ -32,10 +32,11 @@ scope:
   path: crates/surf/src/lib.rs
 - confidence: cited
   path: crates/surf/tests/request_method.rs
-revision: 17
+revision: 18
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-21T20:39:46Z", actor: "human:operator", revision: 18, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:html-actionable-elements
 kind: story
-status: active
+status: implemented
 title: Find a document's title and actionable elements in the tree
 summary: surf-page lists links and form controls in document order with kind, target or value and the four flags, and the title.
 relations:
@@ -12,10 +12,13 @@ relations:
 scope:
 - confidence: cited
   path: crates/page
-revision: 7
+- confidence: cited
+  path: docs/design/html-parser.md
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-21T20:39:46Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 

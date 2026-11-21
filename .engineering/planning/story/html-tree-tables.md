@@ -9,7 +9,7 @@ relations:
 - decomposes: epic:html-parser
 - depends_on: story:html-parser-limits
 - depends_on: story:html-actionable-elements
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 5}
@@ -62,3 +62,22 @@ Writes: `crates/html/src/tree_builder.rs`, `crates/html/src/tree_builder/`,
 `html-tree-foreign`), option selectedness (`story:agent-form-port`). Scripts: a `script` or
 `style` in table mode is processed by the in head rules, with what story `html-tree-body` leaves
 unsupported; nothing more.
+
+## Found before this story's wave
+
+From wave 9 (`docs/plan/agent-wave-9.md`), for this story's own reading before its wave.
+
+- `surf-page` (`crates/page`) lists content of a `select` that is not an `option` (a `button`
+  in a `select`, an `a` in an `option`) as visible rows: the parser does not build a `select`
+  by its own rules yet, and the rule for "hidden" has no line for it. When this story builds
+  the `select`, say what the snapshot's rules leave inside one and whether the rule for
+  "hidden" in `docs/design/html-parser.md` needs a line.
+- The tests of `crates/page/tests/elements.rs` use a `select` only as
+  `<select …><option>o</select>`, in five tests; by the fix unit's reading of the snapshot
+  that tree is the same before and after this story. If one of them changes, the reading was
+  wrong: report it.
+- Step 4.5 of the adoption agency algorithm (the formatting element is on the stack and not
+  in scope: return, the list keeps the entry) is reached only through `table`, `select` and
+  `template` today, and a planted defect there (the entry dropped too) passes every test and
+  every conformance count. A test for it belongs to the first of the three stories that
+  makes the scope boundary real.

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T20:39:46Z",
+  "actor": "human:operator",
+  "artifact": "story:html-tree-formatting",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the coordinator's run of the packages surf-html and surf-html-conformance with warnings denied, with a count of each named test, of the task html-conformance against the base f175a84, of --list-failing for seven tags, of cargo fmt --check and of cargo doc with warnings denied at the unit's change (fbe6164); the packages, the task html-conformance, cargo fmt --check, cargo doc and cargo clippy at the change for the adversary's findings (4b4f653); and slot task check in the runner's form on wave/a9-post-actionable-formatting at 943c2f5",
+    "reference": "exit 0; the adoption agency algorithm in crates/html/src/tree_builder/formatting.rs with the snapshot's step numbers, the a and nobr start tags and the end tags of the fourteen formatting elements, Noah's Ark; NOT_YET_PARSED names tables-and-select, template, foreign-content; tag formatting 22/22/22 (8 before), tag mixed 755/1085/1085 (704), tag template 30/123/123 (29), tag body 476/476/476 unchanged; tree construction 1300 of 1809; html-conformance 8428 passed (8362 before); the 16 file lines of the expected file the reading named; 10 planted defects each red (the unit's runs), five of them after an assertion was added; an adversary's pass: no failing test (every step compared with the snapshot, 44 hostile inputs, 8,000 seeded inputs with tree invariants, 40,000 random inputs against another parser with no tree that differs), two findings by judgement; changed in 4b4f653: the template host is looked for only at a document fragment's root, step 4.26 places the new element by index, the a start tag looks from the end of the list (two 1 MiB inputs, release build: 4.387 s to 2.539 s and 50.440 s to 34.556 s; 1.23 s at the base for the second), three tests for defects no test or count caught and six assertions for defects only the counts caught; 9 planted defects each red (the fix unit's runs); the conformance lines byte for byte unchanged; 47 tests in surf-html; the parser has no bound on depth, nodes or time: left to story:html-parser-limits with the two inputs, and no crate of the product depends on surf-html; verdict VERIFIED"
+  }
+}

@@ -10,7 +10,7 @@ relations:
 - depends_on: story:agent-fetch-post
 - depends_on: story:html-document-spec
 - depends_on: story:agent-links-spec
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
@@ -103,3 +103,26 @@ D30).
 Filling the rows from a page and computing the entry list (`agent-form-port`); the session commands
 (`agent-fill-pick`, `agent-press-submit`); `multipart/form-data`, `text/plain`; file upload; a
 button that does anything without a form (scripts).
+
+## Found before this story's wave
+
+From wave 9 (`docs/plan/agent-wave-9.md`), for this story's own reading before its wave.
+
+- After a `Post` that a 301, 302 or 303 turned into a `GET`, the `Requests` row and the
+  events of the request still say `Post` with the form's media type. The comment of
+  `spec/domains/net.yaml` says a redirected request keeps its identity and its address; it
+  does not name the method. Decide what the row means (the request as started, or as last
+  sent) and say it in `spec/`.
+- A derived `Debug` prints a request body in the generated types (`Fetch`, `Navigate`,
+  `RequestStarted`, `NavigationStarted`, and the outcomes and invocations that hold them), so
+  any `{:?}` of one prints a form's values, passwords included. `surf_fetch::Request` prints
+  the body's length since wave 9; `surf_fetch::Response` and `surf::Answer` print a response
+  body, which can repeat the form. Before a form's values reach a body, say where a body may
+  be printed and how the generated types are kept from it (the session's log writes a body as
+  `<n> bytes` already).
+- No command sends a `Post` yet: `surf_fetch::send`, `surf::fetch_http` and the session's
+  transport can. The 16 MiB default of `Limits::max_request_body_bytes` is a choice no
+  measurement backs.
+- The media type check of `surf_fetch::send` takes `type/subtype` of RFC 9110 tokens and
+  refuses a parameter; `surf.net.MediaType` is specified without parameters (the finding of
+  wave 8 about `multipart/form-data` and its `boundary` stands).

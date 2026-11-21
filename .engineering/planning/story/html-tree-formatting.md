@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:html-tree-formatting
 kind: story
-status: active
+status: implemented
 title: 'Misnested formatting elements: the adoption agency algorithm'
 summary: The adoption agency algorithm and Noah's Ark; every tree case tagged body or formatting passes, and the counts of the other tags are raised to the measured ones.
 relations:
@@ -23,10 +23,11 @@ scope:
   path: crates/html/src/tree_builder/modes.rs
 - confidence: cited
   path: crates/html/tests/tree_formatting.rs
-revision: 15
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-11-21T20:39:46Z", actor: "human:operator", revision: 16, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 
