@@ -8,8 +8,7 @@ A release is a bare version tag (`0.1.0`), annotated and written by the organiza
 
 [`.github/workflows/release.yml`](../.github/workflows/release.yml) builds the binary with
 `--locked`, warnings denied, runner paths remapped and symbols stripped, runs the command-line
-tests against it, and packs it with `README.md`. No licence is chosen yet; when one is, its file
-goes into the archive at the one place the workflow marks for it.
+tests against it, and packs it with `README.md`, `LICENSE` and `NOTICE`.
 
 | target | runner | archive |
 |---|---|---|
@@ -18,7 +17,8 @@ goes into the archive at the one place the workflow marks for it.
 | `x86_64-apple-darwin` | `macos-15-intel` | `surf-<version>-x86_64-apple-darwin.tar.gz` |
 | `aarch64-apple-darwin` | `macos-15` | `surf-<version>-aarch64-apple-darwin.tar.gz` |
 
-Each archive holds one directory, `surf-<version>-<target>/`, with `surf` and `README.md`.
+Each archive holds one directory, `surf-<version>-<target>/`, with `surf`, `README.md`,
+`LICENSE` and `NOTICE`.
 `SHA256SUMS` lists the four archives. The Linux binaries are statically linked (musl): they run
 on any distribution, and they load no name service module from the host. The macOS binaries are
 neither signed nor notarised.

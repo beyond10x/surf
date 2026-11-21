@@ -1,16 +1,16 @@
 # The `surf` command
 
 `surf <url>` loads one address: it opens a window and a tab, navigates the tab to the address,
-fetches it over `http:` and runs the page load to its end. It needs a Rust toolchain with `cargo`
-(run with 1.99.1); `task build` builds it into `target/debug/surf`. A run on 2026-11-20 against a
+fetches it over `http:` and runs the page load to its end. Each release has a pre-built binary
+for Linux and macOS (see the installation steps). A run on 2026-11-20 against a
 local server:
 
 ```console
-$ target/debug/surf http://127.0.0.1:41977/index.html
+$ surf http://127.0.0.1:41977/index.html
 navigation f6eef140-16d8-458c-bdfb-8999c52d7b31 Committed http://127.0.0.1:41977/index.html
 request f6eef140-16d8-458c-bdfb-8999c52d7b31 Responded http://127.0.0.1:41977/index.html
 document 9ed741bc-a98b-428b-9585-c90c379a8e4d http://127.0.0.1:41977/index.html
-$ target/debug/surf http://127.0.0.1:1/
+$ surf http://127.0.0.1:1/
 surf: http://127.0.0.1:1/: unreachable: connecting to 127.0.0.1:1 failed: Connection refused (os error 111)
 navigation 40d80baa-c7b8-4c3e-b9b9-ef8938cf6882 Failed http://127.0.0.1:1/
 request 40d80baa-c7b8-4c3e-b9b9-ef8938cf6882 Failed http://127.0.0.1:1/
