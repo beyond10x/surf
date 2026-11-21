@@ -159,6 +159,10 @@ commands:
     input:
       - name: navigation_id
         type: surf.net.RequestId
+      # Why no response arrived, as the network component reported it. It is not stored: it
+      # travels on in `NavigationFailed` to the session's `page failed <reason>` line.
+      - name: reason
+        type: surf.net.FailureReason
     outcomes:
       - name: no-such-navigation
         unknown_instance: true
@@ -177,6 +181,7 @@ commands:
             navigation_id: input.navigation_id
             tab_id: {subject: tab_id}
             url: {subject: url}
+            reason: input.reason
         summary: The navigation is Failed.
 
       - name: wrong-state
@@ -255,6 +260,8 @@ events:
         type: surf.shell.TabId
       - name: url
         type: surf.url.Url
+      - name: reason
+        type: surf.net.FailureReason
 
   - name: surf.navigation.NavigationCancelled
     fields:

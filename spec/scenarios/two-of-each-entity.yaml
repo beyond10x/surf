@@ -1,12 +1,12 @@
 # Two of every entity the scenarios can create, each read back from its view with exactly two rows
 # and both identities present: two windows, two tabs in one window, two navigations and their two
-# requests, two documents and two frames. Every other scenario holds at most one row of an entity,
-# so a system that gives every instance the same identity, or a view that answers only its first
-# row, passes them all.
+# requests, two documents, two frames, two sessions over the two tabs and two actions of the first
+# session. Every other scenario holds at most one row of an entity, so a system that gives every
+# instance the same identity, or a view that answers only its first row, passes them all.
 type: ess-scenario/6
 domain: surf.navigation
 scenario: two-of-each-entity
-summary: Two windows, two tabs, two page loads and two frames each show as two rows.
+summary: Two windows, tabs, page loads, frames, sessions and actions each show as two rows.
 
 arrange:
   - instance: first-window
@@ -25,6 +25,14 @@ arrange:
     entity: surf.render.Frame
   - instance: second-frame
     entity: surf.render.Frame
+  - instance: first-session
+    entity: surf.agent.Session
+  - instance: second-session
+    entity: surf.agent.Session
+  - instance: first-action
+    entity: surf.agent.Action
+  - instance: second-action
+    entity: surf.agent.Action
 
 timeline:
   - at: 2026-01-06T09:00:00Z
@@ -148,6 +156,55 @@ timeline:
           height: 720
     capture: {instance: second-frame, event: surf.render.FramePainted, field: frame_id}
 
+  # Two sessions over the two tabs, and two actions in the first. The session process records
+  # actions with `RecordAction`, so they are recorded directly here.
+  - at: 2026-01-06T09:00:10Z
+    command: surf.agent.OpenSession
+    actor: surf.agent.Opener
+    input:
+      session_id: 5a7c1e00-0000-4000-8000-000000000041
+      window_id: {$instance: first-window}
+      tab_id: {$instance: first-tab}
+    outcome: opened
+    events:
+      - event: surf.agent.SessionOpened
+    capture: {instance: first-session, event: surf.agent.SessionOpened, field: session_id}
+
+  - at: 2026-01-06T09:00:11Z
+    command: surf.agent.OpenSession
+    actor: surf.agent.Opener
+    input:
+      session_id: 5a7c1e00-0000-4000-8000-000000000042
+      window_id: {$instance: first-window}
+      tab_id: {$instance: second-tab}
+    outcome: opened
+    events:
+      - event: surf.agent.SessionOpened
+    capture: {instance: second-session, event: surf.agent.SessionOpened, field: session_id}
+
+  - at: 2026-01-06T09:00:12Z
+    command: surf.agent.RecordAction
+    input:
+      session_id: {$instance: first-session}
+      sequence: 1
+      command: open
+    outcome: recorded
+    events:
+      - event: surf.agent.ActionRecorded
+    capture: {instance: first-action, event: surf.agent.ActionRecorded, field: action_id}
+
+  - at: 2026-01-06T09:00:13Z
+    command: surf.agent.RecordAction
+    input:
+      session_id: {$instance: first-session}
+      sequence: 2
+      command: go
+      url: https://example.org/first
+    outcome: recorded
+    events:
+      - event: surf.agent.ActionRecorded
+    capture: {instance: second-action, event: surf.agent.ActionRecorded, field: action_id}
+
 assert:
   - view: surf.shell.Windows
     counts: {at_least: 2, at_most: 2}
@@ -194,3 +251,25 @@ assert:
     contains: {frame_id: {$instance: first-frame}}
   - view: surf.render.Frames
     contains: {frame_id: {$instance: second-frame}}
+
+  - view: surf.agent.Sessions
+    counts: {at_least: 2, at_most: 2}
+  - view: surf.agent.Sessions
+    contains: {session_id: {$instance: first-session}, tab_id: {$instance: first-tab}, state: Open}
+  - view: surf.agent.Sessions
+    contains: {session_id: {$instance: second-session}, tab_id: {$instance: second-tab}, state: Open}
+
+  # Both actions are in the first session, so the second session's log is empty: it fails when the
+  # two sessions got one identity, and when the log ignores its session.
+  - view: surf.agent.SessionLog
+    params: {session_id: {$instance: first-session}}
+    counts: {at_least: 2, at_most: 2}
+  - view: surf.agent.SessionLog
+    params: {session_id: {$instance: first-session}}
+    contains: {action_id: {$instance: first-action}, sequence: 1, command: open, url: null}
+  - view: surf.agent.SessionLog
+    params: {session_id: {$instance: first-session}}
+    contains: {action_id: {$instance: second-action}, sequence: 2, command: go, url: https://example.org/first}
+  - view: surf.agent.SessionLog
+    params: {session_id: {$instance: second-session}}
+    counts: {at_least: 0, at_most: 0}

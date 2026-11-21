@@ -2,15 +2,19 @@
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use surf_types::agent::obligations::{NoteNavigationEndedBehavior, NoteNavigationStartedBehavior};
+use surf_types::agent::obligations::{
+    NoteNavigationCommittedBehavior, NoteNavigationEndedBehavior, NoteNavigationFailedBehavior,
+    NoteNavigationStartedBehavior,
+};
 use surf_types::agent::{
-    NoteNavigationEnded, NoteNavigationEndedOutcome, NoteNavigationStarted,
-    NoteNavigationStartedOutcome, SessionData, SessionId, SessionNavigationChanged,
-    SessionSnapshot,
+    ActionId, ActionSnapshot, NoteNavigationCommitted, NoteNavigationCommittedOutcome,
+    NoteNavigationEnded, NoteNavigationEndedOutcome, NoteNavigationFailed,
+    NoteNavigationFailedOutcome, NoteNavigationStarted, NoteNavigationStartedOutcome, SessionData,
+    SessionId, SessionNavigationChanged, SessionSnapshot,
 };
 use surf_types::behaviour::{
-    DocumentStorage, FrameStorage, NavigationStorage, RequestStorage, SessionStorage, TabStorage,
-    TryContext, WindowStorage, unmet_context,
+    ActionStorage, DocumentStorage, FrameStorage, NavigationStorage, RequestStorage,
+    SessionStorage, TabStorage, TryContext, WindowStorage, unmet_context,
 };
 use surf_types::document::{DocumentId, DocumentSnapshot};
 use surf_types::navigation::{NavigationSnapshot, NavigationState};
@@ -41,9 +45,13 @@ keyed!(RequestSnapshot, RequestId, request_id);
 keyed!(DocumentSnapshot, DocumentId, document_id);
 keyed!(FrameSnapshot, FrameId, frame_id);
 keyed!(SessionSnapshot, SessionId, session_id);
+keyed!(ActionSnapshot, ActionId, action_id);
 
 /// What a context answer about the caller names when it is unmet.
 const CALLER: &str = "the caller's session_id";
+
+/// The identity of an action, as a context answer names it.
+const ACTION_ID: &str = "surf.agent.ActionId";
 
 /// Implements one storage trait for a ports type over one of its private tables.
 macro_rules! storage {
@@ -70,16 +78,21 @@ macro_rules! storage {
 
 /// Implements `TryContext` for a ports type over its random source.
 ///
-/// `TryContext` asks for all five kinds of identity, so every ports type that answers it can
-/// assign each of them; the generated behaviours of a component ask only for their own.
+/// `TryContext` asks for all six kinds of identity. These ports assign each of the five that
+/// belong to the page load; the generated behaviours of a component ask only for their own.
 ///
-/// It also asks for the caller's `session_id`, which only the `agent` component's commands read.
-/// These ports know no caller, so they answer it as unmet rather than as a caller with none.
+/// It also asks for the caller's `session_id` and an action's identity, which only the `agent`
+/// component's commands read. These ports know no caller and record no action, so they answer
+/// both as unmet rather than as a caller with none or an identity for no action.
 macro_rules! context {
     ($ports:ident) => {
         impl<R: RandomSource> TryContext for $ports<R> {
             fn try_caller_session_id(&self) -> Result<Option<SessionId>, UnmetObligation> {
                 Err(unmet_context(CALLER))
+            }
+
+            fn try_generate_surf_agent_action_id(&mut self) -> Result<ActionId, UnmetObligation> {
+                Err(unmet_context(ACTION_ID))
             }
 
             fn try_generate_surf_document_document_id(
@@ -256,32 +269,61 @@ impl Caller {
     }
 }
 
-/// The `agent` component's ports: its sessions, and the [`Caller`] its commands are sent as.
+/// The `agent` component's ports: its sessions and their actions, the [`Caller`] its commands are
+/// sent as, and the random source an action's identity comes from.
 ///
-/// No random source: the component assigns no identity, a session carries the one its
-/// `OpenSession` names. It also meets the two obligations the generation leaves to it,
-/// `NoteNavigationStarted` and `NoteNavigationEnded`, which change every session their filter
-/// selects.
-#[derive(Debug, Default)]
-pub struct AgentPorts {
+/// A session carries the identity its `OpenSession` names; an action gets one assigned when it is
+/// recorded. It also meets the four obligations the generation leaves to it,
+/// `NoteNavigationStarted`, `NoteNavigationCommitted`, `NoteNavigationFailed` and
+/// `NoteNavigationEnded`, which change every session their filter selects.
+#[derive(Debug)]
+pub struct AgentPorts<R = OsRandom> {
     sessions: Rows<SessionSnapshot>,
+    actions: Rows<ActionSnapshot>,
     caller: Caller,
+    random: R,
 }
 
-impl AgentPorts {
-    /// An empty table, with a caller of its own that names no one.
+impl AgentPorts<OsRandom> {
+    /// Empty tables, with a caller of its own that names no one, and identities drawn from the
+    /// operating system's random source.
     pub fn new() -> Self {
-        Self::default()
+        Self::with_caller(Caller::new())
     }
 
-    /// An empty table, its commands sent as whoever `caller` names when each runs.
+    /// Empty tables, its commands sent as whoever `caller` names when each runs, and identities
+    /// drawn from the operating system's random source.
     pub fn with_caller(caller: Caller) -> Self {
+        Self::with_caller_and_source(caller, OsRandom::new())
+    }
+}
+
+impl Default for AgentPorts<OsRandom> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<R: RandomSource> AgentPorts<R> {
+    /// Empty tables, with a caller of its own that names no one, and identities drawn from
+    /// `source`.
+    pub fn with_source(source: R) -> Self {
+        Self::with_caller_and_source(Caller::new(), source)
+    }
+
+    /// Empty tables, its commands sent as whoever `caller` names when each runs, and identities
+    /// drawn from `source`.
+    pub fn with_caller_and_source(caller: Caller, source: R) -> Self {
         Self {
             sessions: Rows::default(),
+            actions: Rows::default(),
             caller,
+            random: source,
         }
     }
+}
 
+impl<R> AgentPorts<R> {
     /// A handle to the caller these ports answer with.
     pub fn caller(&self) -> Caller {
         self.caller.clone()
@@ -305,11 +347,16 @@ impl AgentPorts {
     }
 }
 
-storage!(SessionStorage for AgentPorts, sessions: SessionSnapshot, SessionId);
+storage!(SessionStorage for AgentPorts<R>, sessions: SessionSnapshot, SessionId, R);
+storage!(ActionStorage for AgentPorts<R>, actions: ActionSnapshot, ActionId, R);
 
-impl TryContext for AgentPorts {
+impl<R: RandomSource> TryContext for AgentPorts<R> {
     fn try_caller_session_id(&self) -> Result<Option<SessionId>, UnmetObligation> {
         Ok(self.caller.get())
+    }
+
+    fn try_generate_surf_agent_action_id(&mut self) -> Result<ActionId, UnmetObligation> {
+        assign(&mut self.random, ACTION_ID).map(ActionId)
     }
 
     fn try_generate_surf_document_document_id(&mut self) -> Result<DocumentId, UnmetObligation> {
@@ -333,8 +380,9 @@ impl TryContext for AgentPorts {
     }
 }
 
-/// `noted`: every session holding the tab shows the navigation as `Started`, at its address.
-impl NoteNavigationStartedBehavior for AgentPorts {
+/// `noted`: every session holding the tab shows the navigation as `Started`, at its address, and
+/// nothing of the page before it: no status, media type or failure reason.
+impl<R> NoteNavigationStartedBehavior for AgentPorts<R> {
     fn note_navigation_started(
         &mut self,
         input: NoteNavigationStarted,
@@ -345,6 +393,9 @@ impl NoteNavigationStartedBehavior for AgentPorts {
                 session.navigation_id = Some(input.navigation_id.clone());
                 session.url = Some(input.url.clone());
                 session.navigation_state = Some(NavigationState::Started);
+                session.status = None;
+                session.media_type = None;
+                session.failure_reason = None;
             },
         );
         Ok(NoteNavigationStartedOutcome::Noted {
@@ -357,8 +408,56 @@ impl NoteNavigationStartedBehavior for AgentPorts {
     }
 }
 
+/// `noted`: every session showing the navigation shows it `Committed`, with its status and media
+/// type.
+impl<R> NoteNavigationCommittedBehavior for AgentPorts<R> {
+    fn note_navigation_committed(
+        &mut self,
+        input: NoteNavigationCommitted,
+    ) -> Result<NoteNavigationCommittedOutcome, UnmetObligation> {
+        let sessions = self.change_every(
+            |session| session.navigation_id.as_ref() == Some(&input.navigation_id),
+            |session| {
+                session.navigation_state = Some(NavigationState::Committed);
+                session.status = Some(input.status.clone());
+                session.media_type = Some(input.media_type.clone());
+            },
+        );
+        Ok(NoteNavigationCommittedOutcome::Noted {
+            session_navigation_changed: SessionNavigationChanged {
+                navigation_id: input.navigation_id,
+                state: NavigationState::Committed,
+                sessions,
+            },
+        })
+    }
+}
+
+/// `noted`: every session showing the navigation shows it `Failed`, with its reason.
+impl<R> NoteNavigationFailedBehavior for AgentPorts<R> {
+    fn note_navigation_failed(
+        &mut self,
+        input: NoteNavigationFailed,
+    ) -> Result<NoteNavigationFailedOutcome, UnmetObligation> {
+        let sessions = self.change_every(
+            |session| session.navigation_id.as_ref() == Some(&input.navigation_id),
+            |session| {
+                session.navigation_state = Some(NavigationState::Failed);
+                session.failure_reason = Some(input.reason);
+            },
+        );
+        Ok(NoteNavigationFailedOutcome::Noted {
+            session_navigation_changed: SessionNavigationChanged {
+                navigation_id: input.navigation_id,
+                state: NavigationState::Failed,
+                sessions,
+            },
+        })
+    }
+}
+
 /// `noted`: every session showing the navigation shows the state it ended in.
-impl NoteNavigationEndedBehavior for AgentPorts {
+impl<R> NoteNavigationEndedBehavior for AgentPorts<R> {
     fn note_navigation_ended(
         &mut self,
         input: NoteNavigationEnded,

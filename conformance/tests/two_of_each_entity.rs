@@ -4,8 +4,9 @@
 //! identity, so a second replaces the first, or its view answers its first row only.
 //!
 //! Review 2 (F1, F2) planted both defects in every component at once, which one entity covered
-//! would catch; this holds each entity to it. `Request` takes its identity from the navigation, so
-//! it has no identity defect of its own. A defect that is not noticed names its entity.
+//! would catch; this holds each entity to it. `Request` takes its identity from the navigation,
+//! and `Session` the one its caller names, so neither has an identity defect of its own. A defect
+//! that is not noticed names its entity.
 
 use ess_conformance::target::ImplementationIdentity;
 use surf::{Browser, System};
@@ -14,10 +15,19 @@ use surf_ports::{
     DocumentPorts, NavigatorPorts, NetPorts, RendererPorts, ShellPorts, agent_port, document_port,
     navigator_port, net_port, renderer_port, shell_port,
 };
-use surf_types::agent::SessionId;
+use surf_types::agent::obligations::{
+    NoteNavigationCommittedBehavior, NoteNavigationEndedBehavior, NoteNavigationFailedBehavior,
+    NoteNavigationStartedBehavior,
+};
+use surf_types::agent::{
+    ActionId, ActionSnapshot, NoteNavigationCommitted, NoteNavigationCommittedOutcome,
+    NoteNavigationEnded, NoteNavigationEndedOutcome, NoteNavigationFailed,
+    NoteNavigationFailedOutcome, NoteNavigationStarted, NoteNavigationStartedOutcome, SessionId,
+    SessionSnapshot,
+};
 use surf_types::behaviour::{
-    DocumentStorage, FrameStorage, NavigationStorage, RequestStorage, TabStorage, TryContext,
-    WindowStorage,
+    ActionStorage, DocumentStorage, FrameStorage, NavigationStorage, RequestStorage,
+    SessionStorage, TabStorage, TryContext, WindowStorage,
 };
 use surf_types::document::{DocumentId, DocumentSnapshot};
 use surf_types::navigation::NavigationSnapshot;
@@ -41,6 +51,8 @@ enum Entity {
     Request,
     Document,
     Frame,
+    Session,
+    Action,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -110,6 +122,44 @@ planted_storage!(
     Entity::Document
 );
 planted_storage!(FrameStorage, FrameSnapshot, FrameId, Entity::Frame);
+planted_storage!(SessionStorage, SessionSnapshot, SessionId, Entity::Session);
+planted_storage!(ActionStorage, ActionSnapshot, ActionId, Entity::Action);
+
+/// The `agent` component's obligations, handed through to the ports the defect is planted in.
+macro_rules! planted_obligation {
+    ($behavior:ident, $method:ident, $input:ty, $outcome:ty) => {
+        impl<P: $behavior> $behavior for Planted<P> {
+            fn $method(&mut self, input: $input) -> Result<$outcome, UnmetObligation> {
+                self.inner.$method(input)
+            }
+        }
+    };
+}
+
+planted_obligation!(
+    NoteNavigationStartedBehavior,
+    note_navigation_started,
+    NoteNavigationStarted,
+    NoteNavigationStartedOutcome
+);
+planted_obligation!(
+    NoteNavigationCommittedBehavior,
+    note_navigation_committed,
+    NoteNavigationCommitted,
+    NoteNavigationCommittedOutcome
+);
+planted_obligation!(
+    NoteNavigationFailedBehavior,
+    note_navigation_failed,
+    NoteNavigationFailed,
+    NoteNavigationFailedOutcome
+);
+planted_obligation!(
+    NoteNavigationEndedBehavior,
+    note_navigation_ended,
+    NoteNavigationEnded,
+    NoteNavigationEndedOutcome
+);
 
 fn same() -> Uuid {
     Uuid(SAME.to_owned())
@@ -118,6 +168,13 @@ fn same() -> Uuid {
 impl<P: TryContext> TryContext for Planted<P> {
     fn try_caller_session_id(&self) -> Result<Option<SessionId>, UnmetObligation> {
         self.inner.try_caller_session_id()
+    }
+
+    fn try_generate_surf_agent_action_id(&mut self) -> Result<ActionId, UnmetObligation> {
+        if self.same(Entity::Action) {
+            return Ok(ActionId(same()));
+        }
+        self.inner.try_generate_surf_agent_action_id()
     }
 
     fn try_generate_surf_document_document_id(&mut self) -> Result<DocumentId, UnmetObligation> {
@@ -166,7 +223,10 @@ fn failed_with(defect: Defect) -> Vec<String> {
         move |setup| {
             Browser::new(
                 System::new(
-                    agent_port(setup.agent_ports()),
+                    agent_port(Planted {
+                        inner: setup.agent_ports(),
+                        defect,
+                    }),
                     document_port(Planted {
                         inner: DocumentPorts::new(),
                         defect,
@@ -239,6 +299,7 @@ fn one_identity_for_every_instance_of_an_entity_is_noticed_for_each_entity() {
         Defect::SameIdentity(Entity::Navigation),
         Defect::SameIdentity(Entity::Document),
         Defect::SameIdentity(Entity::Frame),
+        Defect::SameIdentity(Entity::Action),
     ]);
 }
 
@@ -251,5 +312,7 @@ fn a_view_cut_to_its_first_row_is_noticed_for_each_entity() {
         Defect::FirstRowOnly(Entity::Request),
         Defect::FirstRowOnly(Entity::Document),
         Defect::FirstRowOnly(Entity::Frame),
+        Defect::FirstRowOnly(Entity::Session),
+        Defect::FirstRowOnly(Entity::Action),
     ]);
 }

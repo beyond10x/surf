@@ -101,13 +101,17 @@ components:
         - surf.agent.Go
         - surf.agent.CloseSession
         - surf.agent.NoteNavigationStarted
+        - surf.agent.NoteNavigationCommitted
+        - surf.agent.NoteNavigationFailed
         - surf.agent.NoteNavigationEnded
+        - surf.agent.RecordAction
     publishes:
       events:
         - surf.agent.SessionOpened
         - surf.agent.NavigationRequested
         - surf.agent.SessionNavigationChanged
         - surf.agent.SessionClosed
+        - surf.agent.ActionRecorded
     reached_by: in_process
 
 # The page load, as four reactions. Every binding is one attempt inside one process
@@ -151,6 +155,7 @@ bindings:
       command: surf.navigation.FailNavigation
     mapping:
       navigation_id: event.request_id
+      reason: event.reason
     delivery: at_most_once
     # Dropped on purpose, for the reasons `commit-on-response` gives.
     on_failure: drop
@@ -207,28 +212,29 @@ bindings:
     on_failure: drop
 
   - id: note-on-navigation-committed
-    summary: A committed navigation is shown as Committed.
+    summary: A committed navigation is shown as Committed, with its status and media type.
     when:
       event: surf.navigation.NavigationCommitted
     invoke:
-      command: surf.agent.NoteNavigationEnded
+      command: surf.agent.NoteNavigationCommitted
     mapping:
       navigation_id: event.navigation_id
-      state: Committed
+      status: event.status
+      media_type: event.media_type
     delivery: at_most_once
-    # NoteNavigationEnded refuses nothing. If it does not run, the session shows the navigation
-    # as Started.
+    # NoteNavigationCommitted refuses nothing. If it does not run, the session shows the
+    # navigation as Started.
     on_failure: drop
 
   - id: note-on-navigation-failed
-    summary: A failed navigation is shown as Failed.
+    summary: A failed navigation is shown as Failed, with its reason.
     when:
       event: surf.navigation.NavigationFailed
     invoke:
-      command: surf.agent.NoteNavigationEnded
+      command: surf.agent.NoteNavigationFailed
     mapping:
       navigation_id: event.navigation_id
-      state: Failed
+      reason: event.reason
     delivery: at_most_once
     # As `note-on-navigation-committed`.
     on_failure: drop

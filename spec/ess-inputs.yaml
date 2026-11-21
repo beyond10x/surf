@@ -16,3 +16,5 @@ scenarios:
   - scenarios/two-of-each-entity.yaml
   - scenarios/agent-session-reads-committed-navigation.yaml
   - scenarios/agent-session-reads-started-navigation.yaml
+  - scenarios/agent-session-shows-failure-reason.yaml
+  - scenarios/agent-session-log-in-sequence-order.yaml

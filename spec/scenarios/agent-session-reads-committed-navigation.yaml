@@ -56,6 +56,9 @@ assert:
       state: Open
       url: http://example.org/
       navigation_state: Committed
+      status: 200
+      media_type: text/html
+      failure_reason: null
 
   - view: surf.navigation.Navigations
     contains: {navigation_id: {$instance: load}, state: Committed}
