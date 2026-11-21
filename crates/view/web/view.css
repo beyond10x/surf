@@ -1,7 +1,7 @@
-/* The live view's layout. One column below 720px (header, sessions, the selected session,
-   timeline); two columns from 720px; the right column, empty until the detail panel, from
-   1200px. Every text colour is at least 4.5:1 against each background it is drawn on, in both
-   schemes. */
+/* The live view's layout. One column below 720px (header, sessions, the selected session, the
+   detail panel, timeline); two columns from 720px, the detail panel under the selected session;
+   the detail panel as the right column from 1200px. Every text colour is at least 4.5:1 against
+   each background it is drawn on, in both schemes. */
 
 :root {
   color-scheme: light dark;
@@ -55,12 +55,13 @@ body {
   line-height: 1.45;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto auto auto auto;
+  grid-template-rows: auto auto auto auto auto;
   align-content: start;
   grid-template-areas:
     "bar"
     "sessions"
     "centre"
+    "detail"
     "timeline";
 }
 
@@ -373,11 +374,130 @@ h3 {
   font-weight: 600;
 }
 
-/* The right column: empty until the detail panel; shown only where it has room. */
+/* The detail panel: the selected action or event, and the session's requests. The right column
+   from 1200px; below that, after the centre. */
 
 .detail {
   grid-area: detail;
-  display: none;
+  padding: 0.85rem var(--gap) var(--gap);
+  border-top: 1px solid var(--line);
+}
+
+.detail > h2 {
+  margin-bottom: 0.5rem;
+}
+
+.selection {
+  margin-bottom: var(--gap);
+}
+
+.selection-kind {
+  margin-bottom: 0.35rem;
+}
+
+.selection .summary,
+.selection .fields {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.2rem 0.75rem;
+  margin: 0;
+}
+
+.selection .part {
+  display: contents;
+}
+
+.selection dt {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.selection dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.selection .fields dt,
+.selection .fields dd,
+.selection .argument,
+.selection .kept,
+.selection .sequence {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+}
+
+.selection .command {
+  font-weight: 600;
+}
+
+.selection .name {
+  margin: 0 0 0.4rem;
+  font-family: var(--mono);
+  font-size: 0.88rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.selection .unmapped,
+.selection .absent {
+  color: var(--muted);
+}
+
+.selection .unmapped {
+  margin: 0;
+}
+
+.requests h3 {
+  margin-bottom: 0.35rem;
+}
+
+.request-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.request {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.1rem 0.5rem;
+  padding: 0.4rem 0;
+  font-size: 0.82rem;
+}
+
+.request + .request {
+  border-top: 1px solid var(--line);
+}
+
+.request .address {
+  flex-basis: 100%;
+  min-width: 0;
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.request .status {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.request .media-type,
+.request .size,
+.request .absent {
+  color: var(--muted);
+}
+
+.request .failed,
+.request .reason {
+  color: var(--bad);
+  font-weight: 600;
+}
+
+.request .pending {
+  color: var(--warn);
 }
 
 /* The timeline: its cards scroll inside their own box. */
@@ -561,6 +681,35 @@ h3 {
   color: var(--muted);
 }
 
+/* A mark's button: the mark's look, no border or background of a button. */
+.mark-select {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.mark-select:hover {
+  text-decoration: underline;
+}
+
+.mark-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.mark-select[aria-pressed="true"] {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
 .outcome {
   margin: 0.4rem 0 0;
   font-size: 0.78rem;
@@ -576,11 +725,16 @@ h3 {
 @media (min-width: 720px) {
   body {
     grid-template-columns: minmax(15rem, 19rem) minmax(0, 1fr);
-    grid-template-rows: auto auto auto;
+    grid-template-rows: auto auto auto auto;
     grid-template-areas:
       "bar bar"
       "sessions centre"
+      "sessions detail"
       "timeline timeline";
+  }
+
+  .detail {
+    padding: 0.85rem 1.25rem 1.25rem;
   }
 
   .sessions {
@@ -622,6 +776,7 @@ h3 {
 @media (min-width: 1200px) {
   body {
     grid-template-columns: 20rem minmax(0, 1fr) 18rem;
+    grid-template-rows: auto auto auto;
     grid-template-areas:
       "bar bar bar"
       "sessions centre detail"
@@ -629,7 +784,8 @@ h3 {
   }
 
   .detail {
-    display: block;
+    padding: 0.85rem var(--gap) var(--gap);
+    border-top: 0;
     border-left: 1px solid var(--line);
   }
 }
