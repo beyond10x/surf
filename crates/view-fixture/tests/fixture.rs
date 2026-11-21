@@ -183,9 +183,11 @@ fn alive(pid: u32) -> bool {
     state.is_some() && state != Some('Z')
 }
 
-/// A process that is not the fixture's: `tail -f /dev/null <args>` started through a symbolic
-/// link named `surf-session` in a directory of this test, with an empty environment. Killed and
-/// its directory removed when dropped.
+/// A process that is not the fixture's: `surf-view-foreign <args>` of this package (it waits
+/// until it is killed, whatever its name) started through a symbolic link named `surf-session`
+/// in a directory of this test, with an empty environment. Not a program of the system: one
+/// that chooses what it does by its name would exit at once. Killed and its directory removed
+/// when dropped.
 struct Foreign {
     child: Child,
     dir: PathBuf,
@@ -197,14 +199,10 @@ impl Foreign {
             .join(format!("foreign-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("the foreign directory");
-        let tail = ["/usr/bin/tail", "/bin/tail"]
-            .into_iter()
-            .find(|path| Path::new(path).is_file())
-            .expect("tail");
         let program = dir.join("surf-session");
-        std::os::unix::fs::symlink(tail, &program).expect("the symbolic link");
+        std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_surf-view-foreign"), &program)
+            .expect("the symbolic link");
         let child = Command::new(&program)
-            .args(["-f", "/dev/null"])
             .args(args)
             .env_clear()
             .stdin(Stdio::null())

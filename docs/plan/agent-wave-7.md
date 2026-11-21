@@ -170,6 +170,32 @@ refused token is not sent again.
 | no test starts `surfd` where listening or writing `view-url` fails; the mode of `view-url` under another umask; an entry `surf_answer` refuses (from wave 6) | the readings before the wave | backlog: `story:view-surfd-start-cases`, a draft |
 | `crates/view/examples/prototype.rs` showed `DocumentParsed` after a `go` (from wave 6) | `view-first-page` | closed: the example publishes the events of a real `open` and a real `go` |
 
+## On the forge, after the merge
+
+The first run of the workflow `check` on the merged wave (`ff8d8fa`, runner image
+`ubuntu-26.04`) failed. The new steps that install Node and the headless shell passed. The
+step `task check` failed in `test`, at one test of `surf-view-fixture`
+(`tests/fixture.rs`, "the foreign process did not start"), after 89 suites had passed; the
+steps after `test`, the page tests among them, did not run.
+
+The test started `/usr/bin/tail` through a symbolic link named `surf-session`, as a process
+that is not the fixture's and that `kill` must leave alive. The process never showed a command
+line on the runner. The reading of the cause, inferred from the log and not verified on the
+image: `tail` there is one name of a program that serves many utilities and chooses by the
+name it was started under, so started as `surf-session` it exits at once. On the machine the
+gate ran on, `tail` is a program of its own (GNU coreutils 9.12), which is why the gate in the
+runner's form passed there.
+
+Fixed in a unit of its own on `main`: the package has a second binary, `surf-view-foreign`,
+which waits until it is killed whatever its name, and the test starts that. The planted
+defect of the test (a `kill` that acts on any `surf-session` with the id among its arguments)
+is red with it. No other test of the repository starts a program of the system under another
+name. The gate's numbers do not change: 118 suites, 486 passed. The run of `check` on the
+commit that holds this section is the first that reaches the page tests on a runner.
+
+What the gate in the runner's form does not hold: the programs of the runner's image. The
+forge's run of `check` on `main` holds that, after the merge.
+
 ## After this wave
 
 Wave 8 of [the wave plan](agent-waves.md): `agent-request-body-spec`, `html-tree-body` and
