@@ -2,13 +2,17 @@
 //! regular file nor a directory: each fails the check and is named `generated/rust/<path>: not a
 //! regular file`, wherever it is. Each case copies `Taskfile.yml`, `spec/` and `generated/rust`
 //! (without `target/` and `Cargo.lock`) into a directory of its own under `CARGO_TARGET_TMPDIR`,
-//! adds one symbolic link, and runs `task generated-check` there. Needs `task` and `ess` 0.96.0
-//! on `PATH`, as `task check` does.
+//! adds one symbolic link, and runs the comparison of `task generated-check` there (`task
+//! generated-compare`) against the one generation `task generated-fresh` wrote (`common`). Needs
+//! `task` and `ess` 0.96.0 on `PATH`, as `task check` does.
+
+mod common;
 
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+
+use common::check;
 
 fn repository() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -60,18 +64,6 @@ fn copy(name: &str) -> PathBuf {
     fs::write(crate_dir.join("src/lib.rs"), "").expect("write lib.rs");
     fs::write(dir.join("elsewhere/file"), "x\n").expect("write file");
     dir
-}
-
-/// `task generated-check` in `dir`: its exit status and everything it printed.
-fn check(dir: &Path) -> (Option<i32>, String) {
-    let output = Command::new("task")
-        .arg("generated-check")
-        .current_dir(dir)
-        .output()
-        .expect("run task");
-    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
-    text.push_str(&String::from_utf8_lossy(&output.stderr));
-    (output.status.code(), text)
 }
 
 /// Link `path` (relative to `generated/rust`) to `to` in a fresh copy, run the check, and assert

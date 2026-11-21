@@ -163,6 +163,15 @@ above, and the list of standards itself was written from memory.
   `generated/rust/crates/*`, so a crate joins by creating its directory. `Cargo.lock` is
   committed. `task build` and `task test` pass `--locked`, so a new crate fails them until
   `cargo generate-lockfile --offline` has run.
+- `.config/nextest.toml`: the configuration of cargo-nextest, which `task test` runs: at least
+  0.9.143, a run that does not stop at the first failure, a test ended after 60 s, and the
+  JUnit report the task reads the ten slowest tests from.
+- `.cargo/config.toml`: `debug = false` for the profiles `dev` and `test`, so no build of this
+  repository carries debug info (the folder's rule: no debug info in test builds). A setting in
+  `Cargo.toml` would not do: a cargo config file wins over the manifest, and one in a user's
+  home may set `debug`. cargo reads it from the directory it runs in and its parents, so it
+  holds for the root workspace, `conformance/` (run from the root with `--manifest-path`) and
+  `generated/rust/` alike.
 - `crates/<name>/`: one hand-written crate each. One that uses a generated crate depends on it
   by path, `../../generated/rust/crates/<name>`. cargo 1.99.1 refuses a member glob that matches
   nothing (measured 2026-11-20), so `crates/` always holds at least one crate. Format one crate
@@ -785,9 +794,26 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   it again.
 - `task generated-check`: generate into `.out/generated-check/` and fail with one line per path
   that differs from `generated/rust/`, in its bytes or its executable bit. `task --summary generated-check` names what it leaves out
-  and why.
-- `task build`, `task test`: `cargo build` and `cargo test` of the root workspace with
-  `--locked` and `RUSTFLAGS=-D warnings`.
+  and why. It is two tasks: `generated-fresh` generates `spec/` into
+  `.out/generated-check/fresh` (with `fresh.log` and a copy of `spec/` as `fresh.spec`), once per
+  run of `task`; `generated-compare FRESH=<tree>` compares and regenerates `.ess-output` in
+  place. The tests of `crates/surf/tests/*generated_check*.rs` read that one generation
+  (`crates/surf/tests/common/mod.rs`) and run `generated-compare` in their copies; they fail,
+  saying so, when it is missing or was made from another `spec/`. `cargo test -p surf` needs
+  `slot task generated-fresh` first; `task test` depends on it.
+- `task build`: `cargo build` of the root workspace with `--locked` and `RUSTFLAGS=-D warnings`.
+- `task test`: `cargo nextest run --workspace --locked` (cargo-nextest 0.9.143, installed as a
+  tool; no crate of the workspace changes) and `cargo test --doc --workspace --locked`, which
+  nextest does not run, with `RUSTFLAGS=-D warnings`. Logs `.out/test.log` and
+  `.out/test-doc.log`, JUnit report `target/nextest/default/junit.xml`. Two bounds, from the
+  rules of the folder this repository is worked in: `.config/nextest.toml` ends a test still
+  running after 60 s and counts it failed (`slow-timeout` with `terminate-after`), and the task
+  fails when its two commands together run over 120 s of wall time (`TEST_BUDGET`, not counting
+  the time `slot` queues the task), naming the time. It prints the ten slowest tests from the
+  JUnit report, nextest's `Summary` line, the count line `N tests: P passed, F failed, I ignored
+  (cargo-nextest n, doc tests d)` (a test nextest ended counts as failed, one it skips as
+  ignored), and `test step: <s> s of its budget of 120 s`. Raising either bound is not a fix: a
+  test over the budget is.
 - `task open`: every `UNMAPPED:` marker, in `spec/` and `cli/`.
 - `task cli`: check `cli/surf-agent.yaml` against `spec/` and write what `ess` reads from it into
   `.out/cli/` (`binding.json`, `help.txt`). `task test` depends on it.
@@ -843,7 +869,24 @@ drops every `put`, fails 33 of the 95. The crate's tests: `6 test suites: 28 pas
 `cli/surf-agent.yaml — valid CLI presentation binding`. `lock-check`: `Cargo.lock: 23 package(s),
 none from outside this repository`. The root workspace: `126 test suites: 555 passed, 0 failed,
 0 ignored`. At `a9532a1` it was 553; the two tests of `surf-view-fixture` came with the fix
-unit after wave 9. In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
+unit after wave 9. Since the story `gate-test-step-within-budget` `task test` runs cargo-nextest
+and prints `555 tests: 555 passed, 0 failed, 0 ignored (cargo-nextest 553, doc tests 2)`, the
+same 555, and `Summary [ … ] 553 tests run: 553 passed, 0 skipped`. Its budget: no test over
+60 s, the step within 120 s. Measured on 2026-11-22 on the shared, loaded machine, after
+`task build`: `test step: 28.8 s`, `25.9 s` and `28.7 s` of its budget in three runs (33 to 36
+s for the whole task with `cli` and `generated-fresh`); before, `cargo test --workspace` ran 177
+s, with `review1_one_changed_byte_in_any_generated_file_fails_naming_it` over 60 s. The ten
+slowest tests of the last run: `review1_one_changed_byte_in_any_generated_file_fails_naming_it`
+16.4 s (31 comparisons against one generation), `request_slower_than_its_deadline_is_closed`
+(`surf-session` `built`) 10.2 s, `adversary_an_action_recorded_after_a_session_timeout_has_its_entries_kept`
+(`surf-session` `adversary_events`) 7.2 s, `surfd_that_writes_nothing_exits_3_within_6_seconds`
+(`surf-agent` `start`) 5.1 s, `every_character_is_written_as_printable_ascii_and_reads_back`
+(`surf` `escape`) 4.8 s, then five tests of `surf-view` and `surf-session` between 2.3 and 3.7
+s. Three of them wait on purpose: `built` and `start` wait out a deadline of the product
+(`wire::REQUEST_TIMEOUT`, 10 s, and `wire::START_TIMEOUT`, 5 s, in `crates/agent/src/wire.rs`),
+and `adversary_events` waits out `surfd`'s answer timeout of 2 s, a server that answers after 4
+s and 5 s more, so that each step of the order it tests is 2 s or more apart from the next and
+the test does not depend on the runner's speed. In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
 872 passed, 32 skipped`; the 32 are hosts outside ASCII, listed in
 `crates/url/tests/data/SKIPPED`. `view-stream-check`: `view-stream-check: 19 event name(s),
 each a message of the AsyncAPI projection`. `view-test`: `38 passed (15.8s)`; 12.9 s of it are
