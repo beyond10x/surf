@@ -1,0 +1,20 @@
+[package]
+name = "surfd"
+description = "The surf daemon, one per user: the session list, one session process per session, routing on $XDG_RUNTIME_DIR/surf/surfd.sock, with the standard library only. It holds no page."
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+
+[lib]
+name = "surfd"
+path = "src/lib.rs"
+
+[[bin]]
+name = "surfd"
+path = "src/main.rs"
+
+[dependencies]
+surf-agent = { path = "../agent" }
+surf-answer = { path = "../answer" }
+surf-secret = { path = "../secret" }
