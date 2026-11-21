@@ -107,7 +107,7 @@ test("adversary: with Latest off the playhead stays after its action is dropped 
   await surf.agent(id, "go", surf.pages + "/first/a.html");
   await load(page, surf.piped);
   await expect(segments(page)).toHaveCount(2);
-  await segments(page).nth(0).click();
+  await segments(page).nth(0).locator("button.select").click();
   await expect(latest(page)).toHaveAttribute("aria-pressed", "false");
   await surf.agent(id, "go", surf.pages + "/first/b.html");
   await surf.agent(id, "go", surf.pages + "/first/a.html");
