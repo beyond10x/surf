@@ -15,9 +15,15 @@
 //!   lock on `hold`, which the test holds, then answers; `exit` writes the start of an answer
 //!   and exits with status 1; `break` writes a line that is not of the link and closes the
 //!   connection; `oversize` sends answer lines of `wire::ANSWER_TEXT_MAX` plus one byte;
-//!   `unprintable` sends an answer line holding the byte 0x01.
+//!   `unprintable` sends an answer line holding the byte 0x01; `bad-entries` sends entries
+//!   whose event line holds an address that is not quoted.
 //! - `address`, `title`: reported in the status record of every answer, exactly as the file
 //!   holds them.
+//!
+//! The entries of its link answer, for the log `surfd` keeps: for `open` with status 0 its
+//! action entry, one event entry (`surf.shell.WindowOpened`) and its answer entry without the
+//! token line; for `go` and `close` the action entry and the answer entry; none for any other
+//! request.
 //!
 //! What it records there: `alive-<pid>`, a file it holds a lock on from before it records its
 //! start to its end; `starts`, a line `<pid> <identity>` per start; `requests-<identity>`, every
@@ -32,13 +38,14 @@ use std::io::{self, BufReader, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::Duration;
 
 use surf_agent::wire;
 use surf_answer::{Did, Head, Page, RefusalReason, SessionState as HeadState};
 use surf_secret::Token;
-use surfd::link::{self, Answer, Quoted, SessionState};
+use surfd::link::{self, Answer, Entry, Quoted, SessionState};
 
 const LIFETIME: Duration = Duration::from_secs(60);
 
@@ -46,6 +53,8 @@ struct Session {
     id: String,
     token: Token,
     control: PathBuf,
+    /// The last sequence number of an action it sent an entry for.
+    sequence: AtomicU64,
 }
 
 fn main() {
@@ -101,6 +110,7 @@ fn main() {
         id: id.clone(),
         token,
         control,
+        sequence: AtomicU64::new(0),
     });
     for stream in listener.incoming().flatten() {
         let session = Arc::clone(&session);
@@ -145,6 +155,7 @@ fn serve(mut stream: UnixStream, session: &Session) {
         title: fs::read_to_string(control.join("title"))
             .ok()
             .map(|title| Quoted::new(&title)),
+        entries: Vec::new(),
         text: String::new(),
     };
     let id = &session.id;
@@ -159,12 +170,22 @@ fn serve(mut stream: UnixStream, session: &Session) {
                     session: id.clone(),
                     state: HeadState::Open,
                 });
-                open.token = Some(session.token.to_hex());
                 open.did = Some(Did::Action {
                     command: "open".to_string(),
                     argument: request.arg("url").map(str::to_string),
                 });
                 open.page = Some(Page::None);
+                let kept = surf_answer::render(&open).unwrap_or_default();
+                open.token = Some(session.token.to_hex());
+                answer.entries = entries(session, "open", None, &kept);
+                answer.entries.insert(
+                    1,
+                    Entry::line(&format!(
+                        "event surf.shell.WindowOpened window_id={}",
+                        surf_answer::quote(id)
+                    ))
+                    .unwrap(),
+                );
                 surf_answer::render(&open).unwrap_or_default()
             }
             1 => {
@@ -222,7 +243,7 @@ fn serve(mut stream: UnixStream, session: &Session) {
         "oversize" => {
             let count = wire::ANSWER_TEXT_MAX + 1;
             let head = format!(
-                "{}\nstatus 0\nstate open\nanswer {count}\n",
+                "{}\nstatus 0\nstate open\nentries 0\nanswer {count}\n",
                 link::VERSION_LINE
             );
             let _ = stream.write_all(head.as_bytes());
@@ -238,9 +259,19 @@ fn serve(mut stream: UnixStream, session: &Session) {
             }
             return;
         }
+        "bad-entries" => {
+            let entries = "action 1 go \"a\"\nevent surf.net.RequestStarted url=http://a/\n";
+            let bytes = format!(
+                "{}\nstatus 0\nstate open\nentries {}\n{entries}answer 0\n",
+                link::VERSION_LINE,
+                entries.len()
+            );
+            let _ = stream.write_all(bytes.as_bytes());
+            return;
+        }
         "unprintable" => {
             let bytes = format!(
-                "{}\nstatus 0\nstate open\nanswer 2\n\x01\n",
+                "{}\nstatus 0\nstate open\nentries 0\nanswer 2\n\x01\n",
                 link::VERSION_LINE
             );
             let _ = stream.write_all(bytes.as_bytes());
@@ -255,12 +286,27 @@ fn serve(mut stream: UnixStream, session: &Session) {
     if request.command == "close" {
         answer.state = SessionState::Closed;
         answer.text = lines(id, HeadState::Closed, did, false);
+        answer.entries = entries(session, "close", None, &answer.text);
         write(&mut stream, &answer);
         drop(stream);
         std::process::exit(0);
     }
     answer.text = lines(id, HeadState::Open, did, true);
+    if request.command == "go" {
+        answer.entries = entries(session, "go", request.arg("url"), &answer.text);
+    }
     write(&mut stream, &answer);
+}
+
+/// The entries of one recorded action: its action entry with the next sequence number, then
+/// the answer entry of `text`.
+fn entries(session: &Session, command: &str, url: Option<&str>, text: &str) -> Vec<Entry> {
+    let sequence = session.sequence.fetch_add(1, Ordering::SeqCst) + 1;
+    let line = match url {
+        Some(url) => format!("action {sequence} {command} {}", surf_answer::quote(url)),
+        None => format!("action {sequence} {command}"),
+    };
+    vec![Entry::line(&line).unwrap(), Entry::answer(text)]
 }
 
 fn write(stream: &mut UnixStream, answer: &Answer) {
