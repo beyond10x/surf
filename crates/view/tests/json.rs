@@ -262,10 +262,10 @@ fn entries_a() -> Vec<Entry> {
             ],
         ),
         event(
-            "surf.document.DocumentParsed",
+            "surf.document.ParsingStarted",
             &[
                 ("document_id", Some("d2f4b6d8-0a2c-4e4a-9b6d-8f0a2c4e6b84")),
-                ("url", Some(PAGE)),
+                ("body", Some("5000 bytes")),
             ],
         ),
         answer_17(),
@@ -326,7 +326,7 @@ fn case_02_a_detail_whose_page_is_committed_is_the_documents_example() {
     };
     let written = to_json(&detail);
     let expected = body_of(&format!("/api/sessions/{A}"));
-    assert_eq!(expected.len(), 5_255, "the document's example");
+    assert_eq!(expected.len(), 5_237, "the document's example");
     assert_eq!(text(&written), text(&expected));
 }
 

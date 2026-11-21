@@ -34,7 +34,11 @@ scope:
 - confidence: cited
   path: crates/session/tests/events.rs
 - confidence: cited
+  path: crates/session/tests/memory.rs
+- confidence: cited
   path: crates/surf/src/lib.rs
+- confidence: cited
+  path: crates/surf/tests/forget_delivered.rs
 - confidence: cited
   path: crates/surf/tests/held.rs
 - confidence: cited
@@ -55,7 +59,7 @@ scope:
   path: spec/scenarios/parsed-page-with-title-links-and-form.yaml
 - confidence: cited
   path: spec/scenarios/parsed-page-without-title.yaml
-revision: 28
+revision: 30
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 5}
