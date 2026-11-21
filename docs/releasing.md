@@ -8,8 +8,7 @@ A release is a bare version tag (`0.1.0`), annotated and written by the organiza
 
 [`.github/workflows/release.yml`](../.github/workflows/release.yml) builds the binary with
 `--locked`, warnings denied, runner paths remapped and symbols stripped, runs the command-line
-tests against it, and packs it with `README.md`. No licence is chosen yet; when one is, its file
-goes into the archive at the one place the workflow marks for it.
+tests against it, and packs it with `README.md`, `LICENSE` and `NOTICE`.
 
 | target | runner | archive |
 |---|---|---|

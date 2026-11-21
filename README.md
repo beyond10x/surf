@@ -27,20 +27,37 @@ growing into two things:
 - a fast, repeatable end-to-end test runner that replays what such an agent explored, without
   a server.
 
+## Install
+
+surf comes as one pre-built binary for Linux (x86_64 and aarch64, statically linked) and
+macOS (Apple silicon and Intel). Each [release](https://github.com/beyond10x/surf/releases)
+has the four archives and a `SHA256SUMS` file.
+
+```console
+$ version=0.1.0 target=x86_64-unknown-linux-musl
+$ base=https://github.com/beyond10x/surf/releases/download/$version
+$ curl -fsSLO $base/surf-$version-$target.tar.gz -fsSLO $base/SHA256SUMS
+$ grep " surf-$version-$target.tar.gz\$" SHA256SUMS | sha256sum --check
+$ tar -xzf surf-$version-$target.tar.gz
+$ sudo install surf-$version-$target/surf /usr/local/bin/surf
+```
+
+The other targets are `aarch64-unknown-linux-musl`, `aarch64-apple-darwin` and
+`x86_64-apple-darwin`; on macOS use `shasum -a 256 --check`. The macOS binaries are not
+signed or notarised. There is no Windows binary yet.
+
 ## A first look
 
 ```console
-$ task build
-$ target/debug/surf http://127.0.0.1:41977/index.html
+$ surf http://127.0.0.1:41977/index.html
 navigation f6eef140-16d8-458c-bdfb-8999c52d7b31 Committed http://127.0.0.1:41977/index.html
 request f6eef140-16d8-458c-bdfb-8999c52d7b31 Responded http://127.0.0.1:41977/index.html
 document 9ed741bc-a98b-428b-9585-c90c379a8e4d http://127.0.0.1:41977/index.html
 ```
 
 One line per thing that happened, in a format a script can rely on. The exit status says
-whether the page loaded. You need [`ess`](https://github.com/beyond10x/ess) 0.96.0,
-[`task`](https://taskfile.dev) and a Rust toolchain (built with 1.99.1). The full output format
-and the exit statuses are in [`docs/surf-command.md`](docs/surf-command.md).
+whether the page loaded. The full output format and the exit statuses are in
+[`docs/surf-command.md`](docs/surf-command.md).
 
 This is where it is heading. An agent's answer looks like this; the format exists
 (`crates/answer`), the command that prints it arrives with wave 4 of the roadmap:
@@ -150,6 +167,10 @@ talking to the network, keeping each component's data, and the command line.
 | `document` | parses response bodies into documents |
 | `renderer` | styles, lays out and paints a document into a frame (specified, not rendering yet) |
 
+To build surf from source you need [`ess`](https://github.com/beyond10x/ess) 0.96.0,
+[`task`](https://taskfile.dev) and a Rust toolchain (built with 1.99.1); `task build` builds
+the binary. That is for working on surf, not for using it.
+
 One command checks everything:
 
 ```console
@@ -190,3 +211,8 @@ ships depends on it.
 
 The badges at the top are files in this repository ([`docs/badges/`](docs/badges/)), written
 from the numbers `task check` prints. They are not fetched from a service.
+
+## Licence
+
+Apache-2.0: see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). You may use, change and share surf.
+If you do, keep the notice and say where it came from: beyond10x, this repository.

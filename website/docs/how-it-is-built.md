@@ -58,3 +58,20 @@ that the lock file holds no outside package, then builds and tests.
 The scenario runner in
 [`conformance/`](https://github.com/beyond10x/surf/tree/main/conformance) is the one place a
 third-party crate is used; nothing that ships depends on it.
+
+## Build from source
+
+Building is for working on surf; to use it, [install the binary](try-it.md).
+
+You need a Rust toolchain with `cargo` (surf is built with 1.99.1), [`task`](https://taskfile.dev)
+and [`ess`](https://github.com/beyond10x/ess) 0.96.0.
+
+```console
+$ git clone https://github.com/beyond10x/surf
+$ cd surf
+$ task build
+$ task check
+```
+
+`task build` builds the binary into `target/debug/surf`, and `task check` runs everything
+described above.

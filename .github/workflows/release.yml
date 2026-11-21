@@ -127,9 +127,8 @@ jobs:
           package="$BINARY-$VERSION-$TARGET"
           mkdir -p "dist/$package"
           cp "$bin" "dist/$package/"
-          # Licence: none is chosen yet. When the repository has one, add its file to this list
-          # (for example LICENSE), so every archive carries it.
-          notices=(README.md)
+          # Every archive carries the licence and the notice beside the binary.
+          notices=(README.md LICENSE NOTICE)
           cp "${notices[@]}" "dist/$package/"
           COPYFILE_DISABLE=1 tar -C dist -czf "dist/$package.tar.gz" "$package"
           # The packed binary is executable and runs: a usage error, then an unreachable address.
