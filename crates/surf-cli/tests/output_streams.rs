@@ -1,4 +1,4 @@
-//! The `surf` binary when an output stream cannot be written. README.md: exit 3 when standard
+//! The `surf` binary when an output stream cannot be written. docs/surf-command.md: exit 3 when standard
 //! output cannot be written, the reason on standard error; and a standard error that cannot be
 //! written changes no exit status. Servers run on `127.0.0.1` port 0 and end on their own.
 
@@ -102,7 +102,7 @@ fn a_failed_load_whose_rows_cannot_be_written_exits_3() {
     );
 }
 
-/// With standard error unwritable, every exit status is the one README.md gives: the binary does
+/// With standard error unwritable, every exit status is the one docs/surf-command.md gives: the binary does
 /// not panic on a diagnostic it cannot write.
 #[test]
 fn an_unwritable_standard_error_changes_no_exit_status() {
