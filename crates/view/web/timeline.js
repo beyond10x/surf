@@ -42,7 +42,7 @@ function segment(action) {
     element("span", { className: "command", text: action.action.command }),
     action.action.argument === null
       ? null
-      : element("span", { className: "argument", text: action.action.argument }),
+      : element("span", { className: "argument", address: action.action.argument }),
   ]);
   const marks = element("ol", { className: "marks" });
   const end = element("p", { className: "outcome" });

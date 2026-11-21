@@ -31,7 +31,9 @@ function item(summary, selectedId, now, onSelect) {
     },
     [
       element("span", { className: "state state-" + summary.state, text: summary.state }),
-      element("span", { className: "address", text: summary.address || "no address" }),
+      summary.address
+        ? element("span", { className: "address", address: summary.address })
+        : element("span", { className: "address absent", text: "no address" }),
       summary.title !== null && summary.title !== undefined
         ? element("span", { className: "title", text: summary.title })
         : null,

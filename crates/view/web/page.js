@@ -3,10 +3,10 @@
 
 import { clear, element } from "./dom.js";
 
-function part(name, value, className) {
+function part(name, value, className, isAddress) {
   return element("div", { className: "part " + (className || "") }, [
     element("dt", { text: name }),
-    element("dd", { text: value }),
+    element("dd", isAddress ? { address: value } : { text: value }),
   ]);
 }
 
@@ -21,7 +21,7 @@ export function renderPage(node, page) {
       element("p", { className: "line failed" }, [
         element("span", { className: "word", text: "failed" }),
         element("span", { className: "reason", text: page.reason }),
-        element("span", { className: "address", text: page.address }),
+        element("span", { className: "address", address: page.address }),
       ]),
     );
     return;
@@ -30,7 +30,7 @@ export function renderPage(node, page) {
     element("dl", { className: "line loaded" }, [
       part("status", String(page.status), "status"),
       part("media type", page.media_type),
-      part("address", page.address, "address"),
+      part("address", page.address, "address", true),
       part("title", page.title === null ? "no title" : page.title, page.title === null ? "absent" : ""),
     ]),
   );
