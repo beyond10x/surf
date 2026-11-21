@@ -34,24 +34,36 @@
 //!   Radio Button or File Upload state, or on a `select` or a `textarea`.
 //! - `hidden` and [`is_hidden`]: item 5 of the note. A node is hidden when it or an ancestor
 //!   element has `aria-hidden` with the value `true`, or matches a rule of the HTML Standard's
-//!   user-agent style sheet in 15.3.1 "Hidden elements": the elements `base, basefont, datalist,
-//!   head, link, meta, noembed, noframes, param, rp, script, style, template, title`; the
-//!   `hidden` attribute on any element but `embed`, whatever its value; an `input` whose `type`
-//!   is `hidden` compared ASCII case-insensitively. The style sheet is in the HTML namespace, so
-//!   those rules apply to HTML elements only; `aria-hidden` applies to any element. `area` is
-//!   left out of the element rule: an `area` is drawn through its image's map, and the parser
-//!   gives it no children. `noscript` is not hidden: surf parses with scripting disabled.
+//!   user-agent style sheet that needs no style computation. In 15.3.1 "Hidden elements": the
+//!   elements `base, basefont, datalist, head, link, meta, noembed, noframes, param, rp, script,
+//!   style, template, title`; the `hidden` attribute on any element but `embed`, whatever its
+//!   value; an `input` whose `type` is `hidden` compared ASCII case-insensitively. In 15.3.3
+//!   "Flow content": `dialog:not([open])`, a `dialog` without an `open` attribute. In 15.5.5
+//!   "The details and summary elements": a `details` without an `open` attribute gives
+//!   `content-visibility: hidden` to the slot that takes every child but its first `summary`
+//!   element child, so each such child is hidden and that `summary` is not (a `details` with no
+//!   `summary` child hides all its children; its default summary is not in the tree). The style
+//!   sheet is in the HTML namespace, so those rules apply to HTML elements only; `aria-hidden`
+//!   applies to any element. `area` is left out of the element rule: an `area` is drawn through
+//!   its image's map, and the parser gives it no children. `noscript` is not hidden: surf parses
+//!   with scripting disabled. The fallback content of `video`, `audio` and `object` is not
+//!   hidden: surf plays no media and loads no object, so the fallback is what is shown.
 //!   `aria-hidden` on the document element or on the body element (the first `body` or
 //!   `frameset` child of an HTML `html` document element) is not read: WAI-ARIA 1.3 says user
 //!   agents must not expose the hidden state when it is specified on the root element or on the
-//!   element that contains the contents of the primary document. The value `true` is compared
-//!   exactly: neither WAI-ARIA nor the HTML Standard says the comparison ignores case. A node not
-//!   in the document (template contents) is judged only by the ancestors it has.
+//!   element that contains the contents of the primary document. The value `true` is a keyword
+//!   (WAI-ARIA 1.3 6.3.1; its appendix A maps true/false values in HTML to keyword and
+//!   enumerated attributes) and is compared as HTML 2.3.3 says: an ASCII case-insensitive match,
+//!   the value not stripped (`TRUE` hides, ` true` does not). A node not in the document
+//!   (template contents) is judged only by the ancestors it has.
 //!
 //! No function recurses over the depth of the tree: [`actionable_elements`] and [`title`] walk
 //! with their own stack over [`Tree::children`], [`is_hidden`] walks up [`Tree::parent`].
 //! [`actionable_elements`] computes the inherited flags (hidden, inside a disabling fieldset)
-//! in that one walk, so its time is linear in the number of nodes.
+//! in that one walk, so its time is linear in the number of nodes. [`is_hidden`] costs the depth
+//! of the node; it reads the children of the root or of the document element only at an
+//! ancestor with `aria-hidden` true that may be the document element or the body element, and
+//! the children of a closed `details` only at an ancestor that is a `summary` child of it.
 //!
 //! # Deviations
 //!
@@ -169,6 +181,7 @@ pub fn actionable_elements(tree: &Tree) -> Vec<ActionableElement> {
     }
 
     let primary = Primary::of(tree);
+    let exempt = |node| primary.contains(node);
     let mut found = Vec::new();
     let mut pending = vec![Pending {
         node: tree.root(),
@@ -181,14 +194,17 @@ pub fn actionable_elements(tree: &Tree) -> Vec<ActionableElement> {
         in_disabled_fieldset,
     }) = pending.pop()
     {
-        let hidden = hidden || hides(tree, node, &primary);
         let this = element(tree, node);
+        let hidden = hidden || this.as_ref().is_some_and(|e| hides(e, node, exempt));
         if let Some(this) = &this
             && let Some(actionable) = actionable(tree, node, this, hidden, in_disabled_fieldset)
         {
             found.push(actionable);
         }
         let children = tree.children(node);
+        if children.is_empty() {
+            continue;
+        }
         let disabling = this
             .as_ref()
             .is_some_and(|e| e.is_html("fieldset") && e.has("disabled"));
@@ -200,10 +216,16 @@ pub fn actionable_elements(tree: &Tree) -> Vec<ActionableElement> {
         } else {
             None
         };
+        let closed_details = this.as_ref().is_some_and(is_closed_details);
+        let first_summary = if closed_details {
+            first_summary(tree, node)
+        } else {
+            None
+        };
         for &child in children.iter().rev() {
             pending.push(Pending {
                 node: child,
-                hidden,
+                hidden: hidden || (closed_details && Some(child) != first_summary),
                 in_disabled_fieldset: in_disabled_fieldset
                     || (disabling && Some(child) != first_legend),
             });
@@ -213,20 +235,26 @@ pub fn actionable_elements(tree: &Tree) -> Vec<ActionableElement> {
 }
 
 /// Whether `node` is hidden: it or an ancestor element has `aria-hidden="true"` (not read on
-/// the document element and the body element) or matches a rule of the HTML Standard's 15.3.1
-/// "Hidden elements" (see the crate documentation). A walk up [`Tree::parent`].
+/// the document element and the body element), or matches a rule of the HTML Standard's
+/// user-agent style sheet that needs no style computation (15.3.1 "Hidden elements", a closed
+/// `dialog`, the content of a closed `details` but its first `summary`; see the crate
+/// documentation). A walk up [`Tree::parent`]: without `aria-hidden="true"` on the path a call
+/// costs the depth of `node`.
 ///
 /// # Panics
 ///
 /// When `node` is not of `tree`.
 pub fn is_hidden(tree: &Tree, node: NodeId) -> bool {
-    let primary = Primary::of(tree);
+    let exempt = |node| is_primary(tree, node);
     let mut current = Some(node);
     while let Some(next) = current {
-        if hides(tree, next, &primary) {
+        let parent = tree.parent(next);
+        if element(tree, next).is_some_and(|e| hides(&e, next, exempt))
+            || parent.is_some_and(|p| slotted_out(tree, p, next))
+        {
             return true;
         }
-        current = tree.parent(next);
+        current = parent;
     }
     false
 }
@@ -237,7 +265,8 @@ const HIDDEN_ELEMENTS: [&str; 14] = [
     "script", "style", "template", "title",
 ];
 
-/// The document element and the body element, on which `aria-hidden` is not read.
+/// The document element and the body element, on which `aria-hidden` is not read, worked out
+/// once for a walk over the whole tree.
 struct Primary {
     document_element: Option<NodeId>,
     body: Option<NodeId>,
@@ -245,28 +274,10 @@ struct Primary {
 
 impl Primary {
     fn of(tree: &Tree) -> Primary {
-        let root = tree.root();
-        if !matches!(tree.data(root), NodeData::Document) {
-            return Primary {
-                document_element: None,
-                body: None,
-            };
-        }
-        let document_element = tree
-            .children(root)
-            .iter()
-            .copied()
-            .find(|&c| element(tree, c).is_some());
-        let body = document_element
-            .filter(|&d| element(tree, d).is_some_and(|e| e.is_html("html")))
-            .and_then(|d| {
-                tree.children(d).iter().copied().find(|&c| {
-                    element(tree, c).is_some_and(|e| e.is_html("body") || e.is_html("frameset"))
-                })
-            });
+        let document_element = document_element(tree);
         Primary {
             document_element,
-            body,
+            body: document_element.and_then(|d| body(tree, d)),
         }
     }
 
@@ -275,12 +286,56 @@ impl Primary {
     }
 }
 
-/// Whether `node` itself is hidden by `aria-hidden` or a rule of 15.3.1, ancestors not read.
-fn hides(tree: &Tree, node: NodeId, primary: &Primary) -> bool {
-    let Some(this) = element(tree, node) else {
+/// The document element: the first element child of the root, when the root is a document.
+fn document_element(tree: &Tree) -> Option<NodeId> {
+    let root = tree.root();
+    if !matches!(tree.data(root), NodeData::Document) {
+        return None;
+    }
+    tree.children(root)
+        .iter()
+        .copied()
+        .find(|&c| element(tree, c).is_some())
+}
+
+/// The body element of a document whose document element is `document_element`: its first
+/// `body` or `frameset` child, when it is an HTML `html` element.
+fn body(tree: &Tree, document_element: NodeId) -> Option<NodeId> {
+    if !element(tree, document_element).is_some_and(|e| e.is_html("html")) {
+        return None;
+    }
+    tree.children(document_element)
+        .iter()
+        .copied()
+        .find(|&c| element(tree, c).is_some_and(|e| e.is_html("body") || e.is_html("frameset")))
+}
+
+/// Whether `node` is the document element or the body element, worked out for one node: the
+/// children of the root or of the document element are read only when `node` is a child of the
+/// root, or an HTML `body` or `frameset` element whose parent is a child of the root.
+fn is_primary(tree: &Tree, node: NodeId) -> bool {
+    let root = tree.root();
+    let Some(parent) = tree.parent(node) else {
         return false;
     };
-    if this.attribute("aria-hidden") == Some("true") && !primary.contains(node) {
+    if parent == root {
+        return document_element(tree) == Some(node);
+    }
+    tree.parent(parent) == Some(root)
+        && element(tree, node).is_some_and(|e| e.is_html("body") || e.is_html("frameset"))
+        && document_element(tree) == Some(parent)
+        && body(tree, parent) == Some(node)
+}
+
+/// Whether the element `this`, the node `node`, is itself hidden by `aria-hidden` or by a rule
+/// of the style sheet on the element itself (15.3.1, a closed `dialog`), ancestors not read.
+/// `exempt` says whether `node` is the document element or the body element.
+fn hides(this: &Element<'_>, node: NodeId, exempt: impl Fn(NodeId) -> bool) -> bool {
+    if this
+        .attribute("aria-hidden")
+        .is_some_and(|v| v.eq_ignore_ascii_case("true"))
+        && !exempt(node)
+    {
         return true;
     }
     if this.namespace != Namespace::Html {
@@ -292,6 +347,29 @@ fn hides(tree: &Tree, node: NodeId, primary: &Primary) -> bool {
             && this
                 .attribute("type")
                 .is_some_and(|t| t.eq_ignore_ascii_case("hidden")))
+        || (this.local_name == "dialog" && !this.has("open"))
+}
+
+/// An HTML `details` element without an `open` attribute.
+fn is_closed_details(this: &Element<'_>) -> bool {
+    this.is_html("details") && !this.has("open")
+}
+
+/// The first HTML `summary` element child of `node`.
+fn first_summary(tree: &Tree, node: NodeId) -> Option<NodeId> {
+    tree.children(node)
+        .iter()
+        .copied()
+        .find(|&c| element(tree, c).is_some_and(|e| e.is_html("summary")))
+}
+
+/// Whether `child` of `parent` is in the second slot of a closed `details` (15.5.5): `parent`
+/// is an HTML `details` without `open` and `child` is not its first `summary` element child.
+/// The children of `parent` are read only when `child` is an HTML `summary`.
+fn slotted_out(tree: &Tree, parent: NodeId, child: NodeId) -> bool {
+    element(tree, parent).is_some_and(|d| is_closed_details(&d))
+        && (!element(tree, child).is_some_and(|e| e.is_html("summary"))
+            || first_summary(tree, parent) != Some(child))
 }
 
 /// The actionable element `node` is, if it is one.

@@ -1,6 +1,6 @@
 //! The title and the actionable elements of a parsed document. No case uses a table, a
-//! template, `svg`, `math`, an `a` inside an `a` or misnested formatting elements: the tree for
-//! those changes with the later tree stories.
+//! template, `svg`, `math`, a `select` inside a `select`, an `a` inside an `a` or misnested
+//! formatting elements: the tree for those changes with the later tree stories.
 
 use std::fmt::Write as _;
 
@@ -46,10 +46,20 @@ fn line(tree: &Tree, element: &ActionableElement) -> String {
     out
 }
 
+/// The lines of the actionable elements; each row's `hidden` flag is checked against
+/// [`is_hidden`] of its node.
 fn listing(tree: &Tree) -> Vec<String> {
     actionable_elements(tree)
         .iter()
-        .map(|element| line(tree, element))
+        .map(|element| {
+            assert_eq!(
+                is_hidden(tree, element.node),
+                element.hidden,
+                "is_hidden and the row's flag for {}",
+                line(tree, element)
+            );
+            line(tree, element)
+        })
         .collect()
 }
 
@@ -473,7 +483,7 @@ fn aria_hidden_true_on_an_ancestor_hides_an_element() {
             "button#b button",
             "button#c button",
             "a#d link target=\"d\" hidden",
-            "button#e button",
+            "button#e button hidden",
         ]
     );
     // WAI-ARIA 1.3, `aria-hidden`: user agents must not expose the hidden state when it is
@@ -483,6 +493,127 @@ fn aria_hidden_true_on_an_ancestor_hides_an_element() {
     let body = tree.parent(by_id(&tree, "x")).unwrap();
     assert_eq!(local_name(&tree, body), "body");
     assert!(!is_hidden(&tree, body));
+    assert!(!is_hidden(&tree, tree.parent(body).unwrap()));
+    // Only those two: a child of the body element is read.
+    let tree = parse(
+        "<!--c--><html aria-hidden=true><!--c--><body aria-hidden=true>\
+         <div aria-hidden=true id=dv><a href=y id=y>y</a></div>",
+    );
+    assert_eq!(listing(&tree), ["a#y link target=\"y\" hidden"]);
+    assert!(is_hidden(&tree, by_id(&tree, "dv")));
+    assert!(is_hidden(&tree, tree.children(by_id(&tree, "y"))[0]));
+}
+
+/// WAI-ARIA 1.3 6.3.1: each value is a keyword; appendix A maps true/false values in HTML to
+/// keyword and enumerated attributes (HTML 2.3.3: an ASCII case-insensitive match, the value not
+/// stripped); ARIA in HTML, "Case requirements": browsers treat `aria-*` values ASCII
+/// case-insensitively.
+#[test]
+fn aria_hidden_true_is_matched_ascii_case_insensitively() {
+    let tree = parse(
+        "<div id=u aria-hidden=TRUE><button id=a>a</button></div>\
+         <div id=m aria-hidden=True><a href=x id=b>b</a></div>\
+         <div aria-hidden=\" true\"><button id=c>c</button></div>\
+         <div aria-hidden=\"true \"><button id=d>d</button></div>\
+         <div aria-hidden=1><button id=e>e</button></div>\
+         <div aria-hidden=yes><button id=f>f</button></div>\
+         <div aria-hidden><button id=g>g</button></div>\
+         <div aria-hidden=truE><button id=h>h</button></div>",
+    );
+    assert_eq!(
+        listing(&tree),
+        [
+            "button#a button hidden",
+            "a#b link target=\"x\" hidden",
+            "button#c button",
+            "button#d button",
+            "button#e button",
+            "button#f button",
+            "button#g button",
+            "button#h button hidden",
+        ]
+    );
+    assert!(is_hidden(&tree, by_id(&tree, "u")));
+    assert!(is_hidden(&tree, by_id(&tree, "m")));
+}
+
+/// HTML 15.3.3 "Flow content": `dialog:not([open]) { display: none; }`.
+#[test]
+fn a_closed_dialog_hides_its_content() {
+    let tree = parse(
+        "<dialog id=d1><button id=a>a</button>t</dialog>\
+         <dialog open><button id=b>b</button></dialog>\
+         <dialog open=\"\"><button id=c>c</button></dialog>\
+         <dialog open=false><button id=d>d</button></dialog>\
+         <dialog><dialog open id=d2><button id=e>e</button></dialog></dialog>\
+         <dialog open><dialog id=d3><button id=f>f</button></dialog></dialog>\
+         <dialog open><dialog open><button id=g>g</button></dialog></dialog>\
+         <button id=h>h</button>",
+    );
+    assert_eq!(
+        listing(&tree),
+        [
+            "button#a button hidden",
+            "button#b button",
+            "button#c button",
+            "button#d button",
+            "button#e button hidden",
+            "button#f button hidden",
+            "button#g button",
+            "button#h button",
+        ]
+    );
+    let d1 = by_id(&tree, "d1");
+    assert!(is_hidden(&tree, d1));
+    assert!(is_hidden(&tree, tree.children(d1)[1]));
+    assert!(is_hidden(&tree, by_id(&tree, "d2")));
+    assert!(is_hidden(&tree, by_id(&tree, "d3")));
+    assert!(!is_hidden(&tree, tree.parent(by_id(&tree, "d3")).unwrap()));
+}
+
+/// HTML 15.5.5 "The details and summary elements": the second slot of the shadow tree takes
+/// every child but the first `summary` element child and has `content-visibility: hidden` while
+/// the `details` element has no `open` attribute.
+#[test]
+fn the_content_of_a_closed_details_is_hidden_but_its_first_summary() {
+    let tree = parse(
+        "<details id=d1><summary id=s1>s</summary><input id=a></details>\
+         <details open><summary>s</summary><input id=b></details>\
+         <details id=d2><summary><input id=c></summary><summary><input id=d></summary>x</details>\
+         <details><input id=e><summary><input id=f></summary></details>\
+         <details><div><summary><input id=g></summary></div></details>\
+         <details open><summary>s</summary>\
+         <details><summary><input id=h></summary><input id=i></details></details>\
+         <details><summary>s</summary>\
+         <details open><summary><input id=j></summary><input id=k></details></details>\
+         <input id=l>",
+    );
+    assert_eq!(
+        listing(&tree),
+        [
+            "input#a text value=\"\" hidden",
+            "input#b text value=\"\"",
+            "input#c text value=\"\"",
+            "input#d text value=\"\" hidden",
+            "input#e text value=\"\" hidden",
+            "input#f text value=\"\"",
+            "input#g text value=\"\" hidden",
+            "input#h text value=\"\"",
+            "input#i text value=\"\" hidden",
+            "input#j text value=\"\" hidden",
+            "input#k text value=\"\" hidden",
+            "input#l text value=\"\"",
+        ]
+    );
+    let d1 = by_id(&tree, "d1");
+    let s1 = by_id(&tree, "s1");
+    assert!(!is_hidden(&tree, d1));
+    assert!(!is_hidden(&tree, s1));
+    assert!(!is_hidden(&tree, tree.children(s1)[0]));
+    let d2 = by_id(&tree, "d2");
+    let text = *tree.children(d2).last().unwrap();
+    assert!(matches!(tree.data(text), NodeData::Text(t) if t == "x"));
+    assert!(is_hidden(&tree, text));
 }
 
 #[test]
@@ -541,6 +672,24 @@ fn a_deep_tree_is_read_without_recursion() {
     assert!(is_hidden(&tree, tree.children(link)[0]));
     assert_eq!(title(&tree), "");
 
-    let tree = parse(&"<select>".repeat(20_000));
-    assert_eq!(listing(&tree), vec!["select select".to_string(); 20_000]);
+    // 20,000 nested `span` elements, an `input` in each: 20,000 rows, the last at depth 20,000.
+    let tree = parse(&"<span><input>".repeat(20_000));
+    let rows = actionable_elements(&tree);
+    assert_eq!(rows.len(), 20_000);
+    assert!(
+        rows.iter()
+            .all(|row| row.kind == Kind::Text && !row.hidden && !row.disabled)
+    );
+    let deepest = rows.last().unwrap().node;
+    let mut spans = 0;
+    let mut current = tree.parent(deepest);
+    while let Some(node) = current {
+        if matches!(tree.data(node), NodeData::Element { local_name, .. } if local_name == "span") {
+            spans += 1;
+        }
+        current = tree.parent(node);
+    }
+    assert_eq!(spans, 20_000);
+    assert!(!is_hidden(&tree, deepest));
+    assert_eq!(title(&tree), "");
 }
