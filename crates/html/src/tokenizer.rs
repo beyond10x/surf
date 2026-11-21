@@ -1,7 +1,15 @@
 //! Tokenization (13.2.5). Written by `story:html-tokenizer-markup` and
 //! `story:html-tokenizer-text`; the character reference states by
 //! `story:html-character-references`, with the named reference lookup and the numeric
-//! replacement table of [`crate::charref`].
+//! replacement table of [`crate::charref`]. The stepping for the tree builder by
+//! `story:html-tree-body`.
+//!
+//! [`tokenize`] runs the state machine on its own from a state to the end of the input. The
+//! tree builder drives the same machine one token at a time through a crate-private tokenizer
+//! and switches its state between two tokens (to RCDATA, RAWTEXT, script data or PLAINTEXT
+//! after the start tag of an element whose text it reads); one serves a whole parse, so an
+//! end tag in a text state is appropriate when it names the start tag the machine emitted
+//! last. That tokenizer keeps no parse error.
 
 mod machine;
 
@@ -117,15 +125,45 @@ pub struct Tokenized {
 /// The character reference states are not states a caller starts in, so [`State`] does not
 /// name them.
 pub fn tokenize(input: &[u32], state: State, last_start_tag: Option<&str>) -> Tokenized {
-    let state = match state {
-        State::Data => machine::State::Data,
-        State::Rcdata => machine::State::Rcdata,
-        State::Rawtext => machine::State::Rawtext,
-        State::ScriptData => machine::State::ScriptData,
-        State::Plaintext => machine::State::Plaintext,
-        State::CdataSection => machine::State::CdataSection,
-    };
-    machine::Tokenizer::new(input, state, last_start_tag).run()
+    machine::Tokenizer::new(input, state.into(), last_start_tag).run()
+}
+
+impl From<State> for machine::State {
+    fn from(state: State) -> machine::State {
+        match state {
+            State::Data => machine::State::Data,
+            State::Rcdata => machine::State::Rcdata,
+            State::Rawtext => machine::State::Rawtext,
+            State::ScriptData => machine::State::ScriptData,
+            State::Plaintext => machine::State::Plaintext,
+            State::CdataSection => machine::State::CdataSection,
+        }
+    }
+}
+
+/// The tokenizer as the tree builder drives it: one token at a time, from the data state with
+/// no last start tag, its state switched between two tokens. One serves a whole parse, so the
+/// last start tag an appropriate end tag compares with is the last one it emitted. It keeps no
+/// parse error.
+pub(crate) struct Tokenizer(machine::Tokenizer);
+
+impl Tokenizer {
+    /// A tokenizer over the code points of the input stream, before preprocessing.
+    pub(crate) fn new(input: &[u32]) -> Tokenizer {
+        let mut machine = machine::Tokenizer::new(input, machine::State::Data, None);
+        machine.drop_errors();
+        Tokenizer(machine)
+    }
+
+    /// The next token; [`Token::EndOfFile`] at the end and after it.
+    pub(crate) fn next_token(&mut self) -> Token {
+        self.0.next_token()
+    }
+
+    /// Switches the tokenizer to `state` before the next token.
+    pub(crate) fn switch_to(&mut self, state: State) {
+        self.0.switch_state(state.into());
+    }
 }
 
 #[cfg(test)]
@@ -301,6 +339,27 @@ mod tests {
         expected.push(end_tag("script"));
         expected.push(Token::EndOfFile);
         assert_eq!(t.tokens, expected);
+    }
+
+    #[test]
+    fn the_next_input_characters_error_comes_first_after_a_named_reference_in_an_attribute() {
+        // In an attribute the named character reference state looks at the next input
+        // character before it decides, so that character's error of 13.2.3.5 comes first.
+        assert_eq!(
+            codes(&run("<a b='&amp\u{1}'>")),
+            vec![
+                "control-character-in-input-stream",
+                "missing-semicolon-after-character-reference"
+            ]
+        );
+        // In data it does not look, and the character's error comes when it is consumed.
+        assert_eq!(
+            codes(&run("&amp\u{1}")),
+            vec![
+                "missing-semicolon-after-character-reference",
+                "control-character-in-input-stream"
+            ]
+        );
     }
 
     #[test]
