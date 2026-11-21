@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T18:58:48Z",
+  "actor": "human:operator",
+  "artifact": "story:view-detail-panel",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the coordinator's run of the packages surf-view and surf-view-fixture with warnings denied, of the example build and of the tasks view-test, lock-check and view-stream-check at the unit's change (e7ca343) and again at the change for the adversary's findings (3b1c4ed), and slot task check in the runner's form on wave/a8-request-body-tree-detail at ff854ec",
+    "reference": "exit 0; the story's 6 cases in view-tests/tests/detail.spec.mjs, each red on the page before the unit; 8 planted defects each red (the unit's runs); case 6 uses another address than the story's, since a go to an address with a space ends Unreachable (filed as story:agent-go-address-parsed); an adversary's pass: three failing page cases (a click on a mark beside its name moved the playhead; a media type of 4,000 characters widened the page to 28,897 px; 300 requests pushed the timeline 16,313 px down), fixed in 3b1c4ed with 8 cases in view-tests/tests/adversary-detail.spec.mjs (6 planted defects each red); view-test 38 passed; not measured: the contrast in the dark scheme and widths below 1,000 px; verdict VERIFIED"
+  }
+}

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:html-tree-body
 kind: story
-status: active
+status: implemented
 title: Build the tree outside tables, templates and foreign content
 summary: The node arena and the insertion modes from initial to after after frameset; every tree case tagged body passes.
 relations:
@@ -34,10 +34,11 @@ scope:
   path: crates/html/tests/not_yet_parsed.rs
 - confidence: cited
   path: crates/html/tests/tree_body.rs
-revision: 19
+revision: 20
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-11-21T18:58:48Z", actor: "human:operator", revision: 20, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 

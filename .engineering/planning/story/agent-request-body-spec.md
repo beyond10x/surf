@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-request-body-spec
 kind: story
-status: active
+status: implemented
 title: Specify the request method and body from a navigation to its fetch
 summary: Navigate, NavigationStarted, Fetch and RequestStarted carry a method (GET or POST), a body and its media type; the transport receives them.
 relations:
@@ -68,10 +68,11 @@ scope:
   path: spec/scenarios/page-load-fails-without-response.yaml
 - confidence: cited
   path: spec/scenarios/two-of-each-entity.yaml
-revision: 35
+revision: 36
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-11-21T18:58:48Z", actor: "human:operator", revision: 36, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 

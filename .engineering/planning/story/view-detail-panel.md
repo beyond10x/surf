@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:view-detail-panel
 kind: story
-status: active
+status: implemented
 title: 'The detail panel: the selected action or event, and the session''s requests'
 summary: The right column shows the selected action's or event's fields and the session's requests with status, media type, size or failure reason.
 relations:
@@ -29,10 +29,11 @@ scope:
   path: view-tests/tests/adversary-page.spec.mjs
 - confidence: cited
   path: view-tests/tests/detail.spec.mjs
-revision: 15
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-21T18:58:48Z", actor: "human:operator", revision: 16, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 
