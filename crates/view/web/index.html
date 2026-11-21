@@ -26,7 +26,16 @@
     <div id="page-line"></div>
   </section>
 </main>
-<aside class="detail" aria-label="Detail"></aside>
+<aside class="detail" aria-labelledby="detail-heading">
+  <h2 id="detail-heading">Detail</h2>
+  <div id="selection" class="selection" tabindex="0" role="group" aria-labelledby="detail-heading"></div>
+  <section class="requests" aria-labelledby="requests-heading">
+    <h3 id="requests-heading">Requests</h3>
+    <div class="request-scroll" tabindex="0" role="group" aria-labelledby="requests-heading">
+      <ol id="requests" class="request-list"></ol>
+    </div>
+  </section>
+</aside>
 <section class="timeline" aria-labelledby="timeline-heading">
   <div class="timeline-bar">
     <h2 id="timeline-heading">Timeline</h2>

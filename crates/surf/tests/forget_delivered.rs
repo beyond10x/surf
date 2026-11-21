@@ -6,7 +6,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use surf::{Answer, Browser, Held, MemoryBrowser, Transport};
+use surf::{Answer, Browser, Held, MemoryBrowser, RequestStarted, Transport};
 use surf_ports::{Caller, ComponentPorts};
 use surf_types::agent::{
     ActionCommand, Go, GoOutcome, OpenSession, OpenSessionOutcome, RecordAction,
@@ -25,10 +25,10 @@ const BODY: usize = 1000;
 fn pages() -> (impl Transport, Rc<Cell<usize>>) {
     let asked = Rc::new(Cell::new(0));
     let counter = Rc::clone(&asked);
-    let transport = move |address: &str| {
+    let transport = move |request: &RequestStarted| {
         counter.set(counter.get() + 1);
         Answer::Response {
-            url: address.to_owned(),
+            url: request.url.0.clone(),
             status: 200,
             media_type: "text/html".to_owned(),
             body: vec![b'x'; BODY],

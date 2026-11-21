@@ -7,7 +7,7 @@ title: The live view's page bounds what it keeps, and adds an entry without buil
 summary: The page keeps every entry of every session it loaded and rebuilds the whole timeline on each entry; found by the adversary of wave 7, not measured.
 relations:
 - decomposes: epic:live-view
-revision: 1
+revision: 2
 ---
 ## Context
 
@@ -20,6 +20,12 @@ loaded, for as long as the page is open. `surfd` bounds what it keeps per sessio
 has no bound. On each entry of the selected session the page builds the whole timeline again
 (`crates/view/web/timeline.js`), so a session with 5,000 actions costs a rebuild of 5,000
 segments for each new entry.
+
+Added in wave 8 (`docs/plan/agent-wave-8.md`), from the adversary's pass over
+`story:view-detail-panel` and the unit that fixed its findings: each stream entry also builds
+every row of the requests list again (`crates/view/web/detail.js`), and a segment with 300
+marks makes the timeline about 7,000 px tall, since a segment's marks have no bound of their
+own. Both belong to what this story measures and bounds.
 
 ## Change
 

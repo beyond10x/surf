@@ -823,7 +823,7 @@ fn get_an_attribute(
 
 /// The HTML Standard's "algorithm for extracting a character encoding from a `meta` element",
 /// over the bytes of a `content` value: the encoding, or `None` for nothing and for failure.
-fn extract_from_meta_content(s: &[u8]) -> Option<&'static str> {
+pub(crate) fn extract_from_meta_content(s: &[u8]) -> Option<&'static str> {
     let mut position = 0;
     loop {
         // Loop: the first `charset` after position, ASCII case-insensitive.

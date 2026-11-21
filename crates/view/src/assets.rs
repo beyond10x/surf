@@ -28,6 +28,7 @@ pub fn page_files() -> Vec<PageFile> {
             JAVASCRIPT,
             include_str!("../web/timeline.js"),
         ),
+        ("detail.js", JAVASCRIPT, include_str!("../web/detail.js")),
     ]
     .into_iter()
     .map(|(name, content_type, text)| PageFile {

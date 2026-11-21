@@ -30,6 +30,7 @@ timeline:
     input:
       tab_id: 5a7c1e00-0000-4000-8000-000000000003
       url: http://example.org/
+      method: Get
     outcome: started
     events:
       - event: surf.navigation.NavigationStarted

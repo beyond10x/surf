@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest d31658889d516a083ce9bcfd2d7c0ada34c042952c11901405e00f6683235212
+// contract digest d86950609f0648d1fd4f49718d20e544490bed20fa1a6c742579023bd4f50f16
 // do not edit: regenerate with `ess synthesize`
 
 //! What the specification fully determines, generated: the behaviour of every command the plan
@@ -641,7 +641,7 @@ where
             tab_id: input.tab_id.clone(),
             url: input.url.clone(),
         };
-        let answer = crate::navigation::NavigateOutcome::Started { navigation_started: crate::navigation::NavigationStarted { navigation_id: identity.clone(), tab_id: input.tab_id.clone(), url: input.url.clone() } };
+        let answer = crate::navigation::NavigateOutcome::Started { navigation_started: crate::navigation::NavigationStarted { navigation_id: identity.clone(), tab_id: input.tab_id.clone(), url: input.url.clone(), method: input.method.clone(), body: input.body.clone(), body_type: input.body_type.clone() } };
         NavigationStorage::put(&mut self.ports, crate::navigation::AnyNavigation::Started(crate::navigation::Navigation::new(data)).snapshot());
         return Ok(answer);
     }
@@ -716,8 +716,10 @@ where
         let data = crate::net::RequestData {
             request_id: identity.clone(),
             url: input.url.clone(),
+            method: input.method.clone(),
+            body_type: input.body_type.clone(),
         };
-        let answer = crate::net::FetchOutcome::Started { request_started: crate::net::RequestStarted { request_id: identity.clone(), url: input.url.clone() } };
+        let answer = crate::net::FetchOutcome::Started { request_started: crate::net::RequestStarted { request_id: identity.clone(), url: input.url.clone(), method: input.method.clone(), body: input.body.clone(), body_type: input.body_type.clone() } };
         RequestStorage::put(&mut self.ports, crate::net::AnyRequest::Pending(crate::net::Request::new(data)).snapshot());
         return Ok(answer);
     }
@@ -988,6 +990,8 @@ where
             .map(|held| crate::net::Requests {
                 request_id: held.data.request_id,
                 url: held.data.url,
+                method: held.data.method,
+                body_type: held.data.body_type,
                 state: held.state,
             })
             .collect())

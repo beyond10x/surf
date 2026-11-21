@@ -21,9 +21,15 @@
 //!
 //! The system keeps every event it published and every binding invocation; a response body is
 //! in five of them (`ResponseReceived`, `NavigationCommitted`, `ParsingStarted`, and the
-//! invocations of `CommitNavigation` and `ParseDocument`). A browser that lives across many loads,
-//! as the agent's session does, calls [`Browser::forget_delivered`] once it has read what it needs, so that it
-//! holds no body of a load it answered; [`Browser::held`] counts what is still held.
+//! invocations of `CommitNavigation` and `ParseDocument`), and a request body in three
+//! (`NavigationStarted`, `RequestStarted` and the invocation of `Fetch`). A browser that lives
+//! across many loads, as the agent's session does, calls [`Browser::forget_delivered`] once it has
+//! read what it needs, so that it holds no body of a load it answered; [`Browser::held`] counts
+//! what is still held.
+//!
+//! The transport is handed each `surf.net.RequestStarted` itself: the address, the method, and
+//! the body with its media type. [`fetch_http`] is the transport step of the binaries: it sends a
+//! `GET` without a body through `surf-fetch` and refuses every other request before connecting.
 //!
 //! [`Browser::load`] is what the `surf` binary does: `OpenWindow`, `OpenTab`, `Navigate`, run, and
 //! the rows of the `Navigations`, `Requests` and `Documents` views with every published
@@ -47,14 +53,15 @@ use surf_types::behaviour::Generated;
 use surf_types::document::Documents;
 use surf_types::navigation::{Navigate, NavigateOutcome, NavigationState, Navigations};
 use surf_types::net::{
-    DeliverResponse, FailRequest, FailureReason, FetchFailed, MediaType, RequestId, RequestStarted,
-    RequestState, Requests, Status,
+    DeliverResponse, FailRequest, FailureReason, FetchFailed, MediaType, RequestId, RequestState,
+    Requests, Status,
 };
 use surf_types::shell::{OpenTab, OpenTabOutcome, OpenWindow, OpenWindowOutcome};
 use surf_types::url::Url;
 
 use surf_system::BindingInvocation;
 pub use surf_system::{System, SystemEvent};
+pub use surf_types::net::{Method, RequestStarted};
 pub use surf_types::obligation::UnmetObligation;
 
 /// The exit status when the navigation is `Committed`.
@@ -89,17 +96,40 @@ pub enum Answer {
     Unanswered,
 }
 
-/// Fetches the resource an address names, for the `net` component.
+/// Fetches the resource a started request names, for the `net` component.
 ///
-/// A closure `FnMut(&str) -> Answer` is a transport.
+/// It is handed the `surf.net.RequestStarted` the `net` component published: the address, the
+/// method, and the body with its media type, as the navigation asked for them. A closure
+/// `FnMut(&RequestStarted) -> Answer` is a transport.
 pub trait Transport {
-    /// Fetches `address` and answers what came of it.
-    fn fetch(&mut self, address: &str) -> Answer;
+    /// Fetches `request` and answers what came of it.
+    fn fetch(&mut self, request: &RequestStarted) -> Answer;
 }
 
-impl<F: FnMut(&str) -> Answer> Transport for F {
-    fn fetch(&mut self, address: &str) -> Answer {
-        self(address)
+impl<F: FnMut(&RequestStarted) -> Answer> Transport for F {
+    fn fetch(&mut self, request: &RequestStarted) -> Answer {
+        self(request)
+    }
+}
+
+/// Fetches `request` with `surf-fetch` within `limits`, for a transport that goes to the network.
+///
+/// `surf-fetch` sends `GET` without a body only. A request with [`Method::Get`], no body and no
+/// media type is fetched; every other request ends with [`surf_fetch::Failure::UnsupportedScheme`],
+/// whose detail names the method, before any connection is attempted (until
+/// `story:agent-fetch-post` sends bodies).
+pub fn fetch_http(
+    request: &RequestStarted,
+    limits: &surf_fetch::Limits,
+) -> Result<surf_fetch::Response, surf_fetch::Failure> {
+    match (request.method, &request.body, &request.body_type) {
+        (Method::Get, None, None) => surf_fetch::fetch(&request.url.0, limits),
+        (Method::Get, _, _) => Err(surf_fetch::Failure::UnsupportedScheme(
+            "a GET with a body or a media type is not sent yet".to_owned(),
+        )),
+        (Method::Post, _, _) => Err(surf_fetch::Failure::UnsupportedScheme(
+            "the method POST is not sent yet".to_owned(),
+        )),
     }
 }
 
@@ -505,7 +535,7 @@ impl<A, D, N, Ne, R, S, T> Browser<A, D, N, Ne, R, S, T> {
     }
 
     /// How much of its record the system holds: the events on its log, the binding invocations
-    /// it recorded, and the bytes of the response bodies among them. Reads only.
+    /// it recorded, and the bytes of the request and response bodies among them. Reads only.
     pub fn held(&self) -> Held {
         let published = self.system.published();
         let invocations = self.system.invocations();
@@ -526,13 +556,16 @@ pub struct Held {
     pub events: usize,
     /// The binding invocations recorded, [`System::invocations`].
     pub invocations: usize,
-    /// The bytes of the response bodies those events and invocations carry.
+    /// The bytes of the request and response bodies those events and invocations carry.
     pub body_bytes: usize,
 }
 
-/// The bytes of the response body `event` carries, 0 for an event that carries none.
+/// The bytes of the body `event` carries, a request's or a response's, 0 for an event that
+/// carries none.
 fn event_body(event: &SystemEvent) -> usize {
     match event {
+        SystemEvent::NavigationStarted(started) => started.body.as_ref().map_or(0, Vec::len),
+        SystemEvent::RequestStarted(started) => started.body.as_ref().map_or(0, Vec::len),
         SystemEvent::ResponseReceived(received) => received.body.len(),
         SystemEvent::NavigationCommitted(committed) => committed.body.len(),
         SystemEvent::ParsingStarted(started) => started.body.len(),
@@ -540,9 +573,13 @@ fn event_body(event: &SystemEvent) -> usize {
     }
 }
 
-/// The bytes of the response body `invocation` passed, 0 for one that passed none.
+/// The bytes of the body `invocation` passed, a request's or a response's, 0 for one that
+/// passed none.
 fn invocation_body(invocation: &BindingInvocation) -> usize {
     match invocation {
+        BindingInvocation::FetchOnNavigationStarted(fetch) => {
+            fetch.body.as_ref().map_or(0, Vec::len)
+        }
         BindingInvocation::CommitOnResponse(commit) => commit.body.len(),
         BindingInvocation::ParseOnNavigationCommitted(parse) => parse.body.len(),
         _ => 0,
@@ -597,7 +634,7 @@ where
         if !pending {
             return Ok(());
         }
-        match self.transport.fetch(&started.url.0) {
+        match self.transport.fetch(&started) {
             Answer::Response {
                 url,
                 status,
@@ -623,9 +660,9 @@ where
         Ok(())
     }
 
-    /// Issues `OpenWindow`, `OpenTab` in that window and `Navigate` that tab to `address`,
-    /// pumping after the first two, and returns the navigation's identity. The navigation is
-    /// published by the next [`Browser::run`].
+    /// Issues `OpenWindow`, `OpenTab` in that window and `Navigate` that tab to `address` with
+    /// [`Method::Get`] and no body, pumping after the first two, and returns the navigation's
+    /// identity. The navigation is published by the next [`Browser::run`].
     pub fn start(&mut self, address: &str) -> Result<RequestId, Error> {
         let window_id = match self.system.shell.open_window(OpenWindow {})? {
             OpenWindowOutcome::Opened { window_opened } => window_opened.window_id,
@@ -644,6 +681,9 @@ where
         let navigation_id = match self.system.navigator.navigate(Navigate {
             tab_id,
             url: Url(address.to_owned()),
+            method: Method::Get,
+            body: None,
+            body_type: None,
         })? {
             NavigateOutcome::Started { navigation_started } => navigation_started.navigation_id,
         };

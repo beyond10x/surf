@@ -39,23 +39,23 @@ One command checks everything:
 
 ```console
 $ task check
-surf v1 — 9 file(s), 12 scenario(s), valid
-93 scenario(s) (12 authored), 28 refusal(s), written to .out/suite.json
-  93 scenarios: 93 passed, 0 failed, 0 error, 0 unsupported
-93 scenario(s) (12 authored), 28 refusal(s), written to .out/suite.json
-  93 scenarios: 93 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 93 scenario(s) each, of suite sha256:4cd1257a06a838a1bb2779b0309c347b1b6262703ff814da340988c32ecb7a3a
+surf v1 — 9 file(s), 14 scenario(s), valid
+95 scenario(s) (14 authored), 28 refusal(s), written to .out/suite.json
+  95 scenarios: 95 passed, 0 failed, 0 error, 0 unsupported
+95 scenario(s) (14 authored), 28 refusal(s), written to .out/suite.json
+  95 scenarios: 95 passed, 0 failed, 0 error, 0 unsupported
+the interpreter and the Rust system ran 95 scenario(s) each, of suite sha256:5fe34265b01df3ccfc43f30d4ddb41759c22407845edb2e1e5e675481bd29b9f
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 Cargo.lock: 22 package(s), none from outside this repository
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.00s
-118 test suites: 486 passed, 0 failed, 0 ignored
+121 test suites: 503 passed, 0 failed, 0 ignored
 view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
-  24 passed (14.6s)
-html-conformance: 9107 cases, 9095 run, 7121 passed
+  38 passed (17.1s)
+html-conformance: 9107 cases, 9095 run, 8362 passed
 ```
 
-It validates the specification, runs the 93 scenarios against the interpreter built into `ess`
+It validates the specification, runs the 95 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
 that the lock file holds no outside package, then builds and tests, checks that every event
 name of the live view's stream is an event of the specification, runs the live view's page

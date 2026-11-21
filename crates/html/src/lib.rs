@@ -5,9 +5,11 @@
 //!
 //! # State
 //!
-//! Bytes are decoded and the decoded text can be tokenized, character references included, but
-//! no entry point builds a tree from it yet. [`parse_document`] and [`parse_fragment`] return
-//! a tree that holds only its root, and neither calls the tokenizer. Module by module:
+//! Bytes are decoded, the decoded text is tokenized, and [`parse_document`] and
+//! [`parse_document_bytes`] build a document from it with the insertion modes outside tables,
+//! templates and foreign content. [`NOT_YET_PARSED`] names each part not yet parsed as the
+//! standard does; [`parse_fragment`] returns a fragment that holds only its root. Module by
+//! module:
 //!
 //! - [`encoding`]: written. [`encoding::decode`] runs the encoding sniffing algorithm with no
 //!   transport-layer encoding: a byte order mark (confidence certain), else the prescan of the
@@ -29,10 +31,11 @@
 //!   states, and the character reference states, started in any [`tokenizer::State`], and
 //!   returns tokens and parse errors. It reads `last_start_tag` as the last start tag emitted,
 //!   which each start tag it emits replaces; an end tag in the RCDATA, RAWTEXT or script data
-//!   states ends them only when its name is that tag's. It runs from one state to the end of
-//!   the input: no tree builder switches its state between tokens. `<![CDATA[` in the data
-//!   state is a bogus comment with the parse error `cdata-in-html-content`, because there is no
-//!   tree builder to say that the adjusted current node is in a foreign namespace. A character
+//!   states ends them only when its name is that tag's. The tree builder drives the same state
+//!   machine one token at a time and switches its state between two tokens; one tokenizer
+//!   serves a whole parse, so the last start tag is the one it emitted last. `<![CDATA[` in the
+//!   data state is a bogus comment with the parse error `cdata-in-html-content`: no element in
+//!   a foreign namespace is created yet, so the adjusted current node is never one. A character
 //!   reference in data, in RCDATA and in an attribute value is read as 13.2.5.77 to 13.2.5.84
 //!   say: a named one from the table of 13.5, a numeric one with the replacements of the
 //!   numeric character reference end state.
@@ -42,21 +45,32 @@
 //!   written from the vendored `entities.json` by the binary `entities-table` of
 //!   `surf-html-conformance` and never edited by hand; it carries the BSD 3-Clause notice of
 //!   the WHATWG in its header.
-//! - [`tree`]: the types of the node arena and the accessors [`Tree::root`], [`Tree::data`] and
-//!   [`Tree::children`]. Nothing in the crate adds a node to a tree.
-//! - [`tree_builder`]: nothing yet. The module holds no item: no insertion mode.
+//! - [`tree`]: the node arena and its readers [`Tree::root`], [`Tree::data`],
+//!   [`Tree::children`], [`Tree::parent`] and [`Tree::descendants`]. Only tree construction
+//!   changes a tree; a node is never dropped from it.
+//! - [`tree_builder`]: written for the insertion modes initial, before html, before head, in
+//!   head, in head noscript, after head, in body, text, after body, in frameset, after
+//!   frameset, after after body and after after frameset, with the stack of open elements and
+//!   its scopes, the list of active formatting elements and its reconstruction, and the `meta`
+//!   rules that change the encoding. Not yet: the adoption agency algorithm and Noah's Ark,
+//!   tables and `select`, `template` and foreign content ([`NOT_YET_PARSED`]); their tokens go
+//!   to in body's "any other start tag" and "any other end tag". Parse errors are not
+//!   collected, and no script runs.
 //! - [`limits`]: nothing yet. The module holds no item: none of the limits of
-//!   `docs/design/html-parser.md` item 7 is enforced.
+//!   `docs/design/html-parser.md` item 7 is enforced, so the depth of a tree, the number of its
+//!   nodes and the length of its texts have no bound.
 //!
 //! Entry points:
 //!
-//! - [`parse_document`]: returns a document with no child, whatever the input and the options.
+//! - [`parse_document`]: the tokenizer and tree construction over decoded text. With no
+//!   confidence in an encoding, a `meta` does not change it.
 //! - [`parse_fragment`]: returns a document fragment with no child, whatever the input, the
-//!   context and the options.
-//! - [`parse_document_bytes`]: runs [`encoding::decode`] and passes the text to
-//!   [`parse_document`], so the tree has no child. [`ParsedDocument::encoding`] is the
-//!   encoding [`encoding::decode`] chose, always `Some`. Changing the encoding while parsing
-//!   is not written.
+//!   context and the options (story `html-tree-foreign`).
+//! - [`parse_document_bytes`]: runs [`encoding::decode`], then the tokenizer and tree
+//!   construction. A `meta` met while the confidence is tentative changes the encoding as
+//!   13.2.3.4 says: the same bytes are decoded again with the new encoding and the confidence
+//!   certain, and parsed again from the start. [`ParsedDocument::encoding`] is the encoding in
+//!   use at the end, always `Some`.
 //!
 //! The crate is held to the html5lib-tests and web-platform-tests data by the crate
 //! `surf-html-conformance`, which counts the cases that exist, run and pass.
@@ -73,6 +87,7 @@ pub mod tree;
 pub mod tree_builder;
 
 pub use tree::{Attribute, Namespace, NodeData, NodeId, Tree};
+pub use tree_builder::NOT_YET_PARSED;
 
 /// How a document or a fragment is parsed.
 ///
@@ -120,22 +135,47 @@ pub struct ParsedDocument {
 /// Parses an already decoded input as a document: a tree whose root is a
 /// [`NodeData::Document`].
 ///
-/// Not written yet: returns a document with no child.
+/// The tokenizer and tree construction run as [`tree_builder`] says, with the parts
+/// [`NOT_YET_PARSED`] names not yet parsed as the standard does. The text has no confidence, so
+/// a `meta` never changes the encoding.
 pub fn parse_document(input: &str, options: &ParseOptions) -> Tree {
-    let _ = (input, options);
-    Tree::document()
+    tree_builder::parse(input, options, None).tree
 }
 
 /// Parses bytes as a document: the encoding sniffing algorithm with no transport-layer
-/// encoding ([`encoding::decode`]), then [`parse_document`] over the decoded text.
+/// encoding ([`encoding::decode`]), then the tokenizer and tree construction over the decoded
+/// text, as [`parse_document`] does.
 ///
-/// The encoding is the one [`encoding::decode`] chose. Changing the encoding while parsing
-/// (13.2.3.4) is not written yet.
+/// While the confidence is tentative, a `meta` that declares another encoding changes it
+/// (13.2.3.4): the parse stops, the same bytes are decoded again with that encoding and the
+/// confidence certain ([`encoding::decode_with`]), and the document is parsed again from the
+/// start, so a parse runs at most twice. [`ParsedDocument::encoding`] is the encoding in use at
+/// the end.
 pub fn parse_document_bytes(bytes: &[u8], options: &ParseOptions) -> ParsedDocument {
     let decoded = encoding::decode(bytes);
+    let in_use = decoded.encoding.map(|name| tree_builder::InputEncoding {
+        name,
+        confidence: decoded.confidence,
+    });
+    let parsed = tree_builder::parse(&decoded.text, options, in_use);
+    let Some(new) = parsed.reparse_with else {
+        return ParsedDocument {
+            tree: parsed.tree,
+            encoding: decoded.encoding,
+        };
+    };
+    // The new encoding is a name of the label table, which `decode_with` always decodes.
+    let (text, encoding) = match encoding::decode_with(bytes, new) {
+        Some(again) => (again.text, again.encoding),
+        None => (decoded.text, decoded.encoding),
+    };
+    let certain = encoding.map(|name| tree_builder::InputEncoding {
+        name,
+        confidence: encoding::Confidence::Certain,
+    });
     ParsedDocument {
-        tree: parse_document(&decoded.text, options),
-        encoding: decoded.encoding,
+        tree: tree_builder::parse(&text, options, certain).tree,
+        encoding,
     }
 }
 
@@ -143,7 +183,7 @@ pub fn parse_document_bytes(bytes: &[u8], options: &ParseOptions) -> ParsedDocum
 /// element, with no sanitizer and no declarative shadow roots: a tree whose root is a
 /// [`NodeData::DocumentFragment`] holding the nodes the algorithm returns.
 ///
-/// Not written yet: returns a fragment with no child.
+/// Not written yet (story `html-tree-foreign`): returns a fragment with no child.
 pub fn parse_fragment(input: &str, context: &Context, options: &ParseOptions) -> Tree {
     let _ = (input, context, options);
     Tree::fragment()

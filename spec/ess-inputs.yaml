@@ -23,3 +23,5 @@ scenarios:
   - scenarios/parsed-page-with-title-links-and-form.yaml
   - scenarios/parsed-page-without-title.yaml
   - scenarios/parse-stopped-at-a-limit.yaml
+  - scenarios/navigation-post-reaches-request.yaml
+  - scenarios/navigation-get-has-no-body.yaml

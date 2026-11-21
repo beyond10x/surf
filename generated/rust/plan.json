@@ -2,8 +2,8 @@
   "provenance": {
     "system": "surf",
     "specification_version": "v1",
-    "source_digest": "fdae7831fcca13120ec354a95153ea33220ad64708085f3bcd5b24cd8420e380",
-    "contract_digest": "d31658889d516a083ce9bcfd2d7c0ada34c042952c11901405e00f6683235212"
+    "source_digest": "3ab07deece8cc6896a317bc8af3f90d29933229409744565c6f9ccfc861f2458",
+    "contract_digest": "d86950609f0648d1fd4f49718d20e544490bed20fa1a6c742579023bd4f50f16"
   },
   "scope": {
     "profile": "component-skeletons"
@@ -152,6 +152,13 @@
     {
       "kind": "domain_type",
       "source": "surf.net.MediaType",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.net.Method",
       "disposition": {
         "disposition": "generated"
       }

@@ -4,7 +4,9 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use surf::{Answer, Browser, Error, SystemEvent, Transport, UnmetObligation, exit_status};
+use surf::{
+    Answer, Browser, Error, RequestStarted, SystemEvent, Transport, UnmetObligation, exit_status,
+};
 use surf_ports::{
     AgentPorts, Caller, ComponentPorts, DocumentPorts, NavigatorPorts, NetPorts, RandomSource,
     RendererPorts, ShellPorts, agent_port, document_port, navigator_port, net_port, renderer_port,
@@ -36,7 +38,7 @@ struct Counting {
 }
 
 impl Transport for Counting {
-    fn fetch(&mut self, address: &str) -> Answer {
+    fn fetch(&mut self, request: &RequestStarted) -> Answer {
         self.calls.set(self.calls.get() + 1);
         match self.answer.clone() {
             // A response comes from the address asked for: nothing redirects here.
@@ -46,7 +48,7 @@ impl Transport for Counting {
                 body,
                 ..
             } => Answer::Response {
-                url: address.to_owned(),
+                url: request.url.0.clone(),
                 status,
                 media_type,
                 body,
@@ -178,14 +180,15 @@ fn an_unanswered_request_stays_pending_and_the_run_ends() {
 
 #[test]
 fn a_closure_is_a_transport() {
-    let mut browser = Browser::from_ports(surf_ports::ComponentPorts::new(), |address: &str| {
-        Answer::Response {
-            url: address.to_owned(),
+    let mut browser = Browser::from_ports(
+        surf_ports::ComponentPorts::new(),
+        |request: &RequestStarted| Answer::Response {
+            url: request.url.0.clone(),
             status: 404,
             media_type: "text/plain".to_owned(),
             body: Vec::new(),
-        }
-    });
+        },
+    );
     let report = browser.load("http://127.0.0.1/").expect("load");
     assert_eq!(report.navigation_state(), Some(NavigationState::Committed));
     assert_eq!(exit_status(&Ok(report)), 0);
@@ -196,10 +199,10 @@ fn a_closure_is_a_transport() {
 #[test]
 fn an_agent_session_goes_through_the_browser_and_reads_its_navigation_back() {
     let caller = Caller::new();
-    let mut browser =
-        Browser::from_ports(ComponentPorts::with_caller(caller.clone()), |_: &str| {
-            Answer::Failure(FailureReason::Unreachable)
-        });
+    let mut browser = Browser::from_ports(
+        ComponentPorts::with_caller(caller.clone()),
+        |_: &RequestStarted| Answer::Failure(FailureReason::Unreachable),
+    );
     let OpenWindowOutcome::Opened { window_opened } = browser
         .shell_mut()
         .open_window(OpenWindow {})
@@ -265,9 +268,10 @@ fn an_agent_session_goes_through_the_browser_and_reads_its_navigation_back() {
 
 #[test]
 fn an_address_with_control_characters_stays_on_one_line() {
-    let mut browser = Browser::from_ports(surf_ports::ComponentPorts::new(), |_: &str| {
-        Answer::Failure(FailureReason::Unreachable)
-    });
+    let mut browser =
+        Browser::from_ports(surf_ports::ComponentPorts::new(), |_: &RequestStarted| {
+            Answer::Failure(FailureReason::Unreachable)
+        });
     let report = browser.load("http://a b/\n\\x").expect("load");
     let lines = report.lines();
     assert_eq!(lines.len(), 3);

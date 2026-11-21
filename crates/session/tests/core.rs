@@ -1,6 +1,7 @@
 //! Cases 4, 7, 8, 9, 10 and 11 of `story:agent-session-process`, on the session core with no
 //! socket and no process, and two more on the bounds the core keeps: the path shows the last
-//! five actions, and an address too long for the status record still gets an answer.
+//! five actions, and an address too long for the status record still gets an answer. Since
+//! `story:agent-request-body-spec`, that the session's transport sends no `POST`.
 
 #![forbid(unsafe_code)]
 
@@ -19,9 +20,9 @@ const ID: &str = "0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b";
 const PORT: u16 = 8000;
 
 /// A transport that answers every address with status 200 and `text/html`.
-fn pages(address: &str) -> surf::Answer {
+fn pages(request: &surf::RequestStarted) -> surf::Answer {
     surf::Answer::Response {
-        url: address.to_string(),
+        url: request.url.0.clone(),
         status: 200,
         media_type: "text/html".to_string(),
         body: b"<p>a page</p>".to_vec(),
@@ -101,6 +102,31 @@ fn file_address_is_not_read() {
         "{text}"
     );
     assert!(lines.contains(&"  2 go \"file:///etc/passwd\""), "{text}");
+}
+
+/// Story agent-request-body-spec: the session's transport sends no `POST` until
+/// `agent-fetch-post`. The address is of a port nothing listens on, so a `POST` that is sent
+/// would end as `Unreachable`.
+#[test]
+fn fetch_refuses_post() {
+    let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = format!("http://{}/form", closed.local_addr().unwrap());
+    drop(closed);
+    let request = surf::RequestStarted {
+        request_id: surf_types::net::RequestId(surf_types::primitives::Uuid(
+            "00000000-0000-4000-8000-000000000081".to_string(),
+        )),
+        url: surf_types::url::Url(address),
+        method: surf::Method::Post,
+        body: Some(b"a=1".to_vec()),
+        body_type: Some(surf_types::net::MediaType(
+            "application/x-www-form-urlencoded".to_string(),
+        )),
+    };
+    assert_eq!(
+        surf_session::fetch(&request),
+        surf::Answer::Failure(surf_types::net::FailureReason::UnsupportedScheme)
+    );
 }
 
 #[test]

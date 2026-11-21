@@ -107,7 +107,7 @@ test("adversary: with Latest off the playhead stays after its action is dropped 
   await surf.agent(id, "go", surf.pages + "/first/a.html");
   await load(page, surf.piped);
   await expect(segments(page)).toHaveCount(2);
-  await segments(page).nth(0).click();
+  await segments(page).nth(0).locator("button.select").click();
   await expect(latest(page)).toHaveAttribute("aria-pressed", "false");
   await surf.agent(id, "go", surf.pages + "/first/b.html");
   await surf.agent(id, "go", surf.pages + "/first/a.html");
@@ -256,7 +256,7 @@ test("adversary: dom.js sets only the attributes of its list, and no other page 
     /\.(setAttribute|setAttributeNS|removeAttribute|toggleAttribute|innerHTML|outerHTML|insertAdjacentHTML|textContent|innerText|outerText|className|classList|dataset|style|srcdoc)\b/,
     /\.(src|href|hidden|title|scrollLeft|scrollTop|on[a-z]+)\s*=(?!=)/,
   ];
-  for (const name of ["view.js", "state.js", "stream.js", "sessions.js", "page.js", "timeline.js"]) {
+  for (const name of ["view.js", "state.js", "stream.js", "sessions.js", "page.js", "timeline.js", "detail.js"]) {
     const answer = await fetch(surf.origin + "/" + name);
     expect(answer.status, name).toBe(200);
     const source = await answer.text();

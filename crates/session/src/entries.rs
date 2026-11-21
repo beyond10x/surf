@@ -9,14 +9,16 @@
 //! - an `Integer` (and `surf.net.Status`) in decimal;
 //! - an enum by its variant name as `spec/` spells it: `open`, `go` and `close` for
 //!   `surf.agent.ActionCommand`, the generated variant's name for `surf.navigation.Navigation.State`,
-//!   `surf.net.FailureReason` and `surf.document.ParseLimit`, which `spec/` spells the same
-//!   (`Committed`, `Unreachable`, `Depth`), so that a variant a specification story adds is
-//!   written without a change here;
+//!   `surf.net.FailureReason`, `surf.net.Method` and `surf.document.ParseLimit`, which `spec/`
+//!   spells the same (`Committed`, `Unreachable`, `Post`, `Depth`), so that a variant a
+//!   specification story adds is written without a change here;
 //! - an identity in its text form, an address, a media type, a document's title and an encoding's
 //!   name as their text;
 //! - a field of the type `Bytes` (the `body` of `surf.net.ResponseReceived`, of
-//!   `surf.navigation.NavigationCommitted` and of `surf.document.ParsingStarted`) as its length,
-//!   the text `<n> bytes`, never the bytes (decision D22);
+//!   `surf.navigation.NavigationCommitted` and of `surf.document.ParsingStarted`) and a present
+//!   one of the type `Optional<Bytes>` (the request body of `surf.navigation.NavigationStarted`
+//!   and of `surf.net.RequestStarted`) as its length, the text `<n> bytes`, never the bytes
+//!   (decision D22);
 //! - an absent `Optional` value as the field with nothing after its `=`.
 //!
 //! An event this function does not map is written with its name, the word `unmapped` and no
@@ -76,6 +78,15 @@ impl Line {
                 self.0.push('=');
                 self
             }
+        }
+    }
+
+    /// A field of the type `Optional<Bytes>`: its length when it is present, never its bytes;
+    /// the field with no value when it is absent.
+    fn optional_bytes(self, name: &str, value: Option<&[u8]>) -> Line {
+        match value {
+            Some(value) => self.bytes(name, value),
+            None => self.optional(name, None),
         }
     }
 }
@@ -147,14 +158,26 @@ pub fn event_line(event: &SystemEvent) -> String {
         SystemEvent::NavigationStarted(e) => line
             .text("navigation_id", &e.navigation_id.0.0)
             .text("tab_id", &e.tab_id.0.0)
-            .text("url", &e.url.0),
+            .text("url", &e.url.0)
+            .text("method", &variant(e.method))
+            .optional_bytes("body", e.body.as_deref())
+            .optional(
+                "body_type",
+                e.body_type.as_ref().map(|media_type| media_type.0.as_str()),
+            ),
         SystemEvent::FetchFailed(e) => line
             .text("request_id", &e.request_id.0.0)
             .text("url", &e.url.0)
             .text("reason", &variant(e.reason)),
         SystemEvent::RequestStarted(e) => line
             .text("request_id", &e.request_id.0.0)
-            .text("url", &e.url.0),
+            .text("url", &e.url.0)
+            .text("method", &variant(e.method))
+            .optional_bytes("body", e.body.as_deref())
+            .optional(
+                "body_type",
+                e.body_type.as_ref().map(|media_type| media_type.0.as_str()),
+            ),
         SystemEvent::ResponseReceived(e) => line
             .text("request_id", &e.request_id.0.0)
             .text("url", &e.url.0)

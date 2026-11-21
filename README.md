@@ -7,12 +7,12 @@
 **A web browser written from scratch, where the specification comes first.**
 
 ![spec: ESS 0.96.0, valid](docs/badges/spec.svg)
-![conformance: 93 of 93 scenarios](docs/badges/conformance.svg)
-![tests: 486 passed](docs/badges/tests.svg)
+![conformance: 95 of 95 scenarios](docs/badges/conformance.svg)
+![tests: 503 passed](docs/badges/tests.svg)
 ![third-party crates shipped: 0](docs/badges/dependencies.svg)
 ![unsafe code: forbidden](docs/badges/unsafe.svg)
 ![standard sections marked complete: 0](docs/badges/complete.svg)
-![roadmap: 7 of 22 waves delivered](docs/badges/roadmap.svg)
+![roadmap: 8 of 22 waves delivered](docs/badges/roadmap.svg)
 
 surf is a small browser written in Rust. It does not wrap Chromium, WebKit or Gecko, and nothing
 that ships depends on a third-party crate. Every behaviour is written down as a specification
@@ -112,6 +112,11 @@ of its actions with a playhead: the page line is that of the action at the playh
 follows the newest action, and the arrow keys move the playhead one action. The selection is
 kept in the address, so a reload shows the same action.
 
+Since the eighth wave, not in a release yet, the right column shows the action at the playhead
+or, after a click on a mark of the timeline, that event with its fields, and the session's
+requests, one row per request. The selected event is kept in the address too. The requests
+list and the selection scroll inside themselves.
+
 The view only reads: nothing on the page changes a session. It listens on 127.0.0.1 only. The
 token in the address is valid until `surfd` exits, and the browser may keep that address in its
 history.
@@ -152,7 +157,7 @@ history.
 6. **Text from the web stays text.** Anything from a page, a server or an address is escaped
    before it is printed, so a page cannot forge a line of surf's output.
 7. **A passing test must be able to fail.** Tests are tried against planted defects. A storage
-   that drops every write fails 33 of the 93 scenarios.
+   that drops every write fails 33 of the 95 scenarios.
 8. **Small.** A standard is followed for what surf does, not implemented whole.
 
 ## What works today
@@ -163,10 +168,27 @@ history.
   `renderer`.
 - **Its own HTTP/1.1 client**, with one deadline for the whole exchange (40 seconds at most)
   and hard limits on header and body size.
-- **93 specified scenarios**, each passing twice: once against the specification's own
+- **95 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **486 tests**, built with warnings treated as errors, and 24 tests of the live view's page in
+- **503 tests**, built with warnings treated as errors, and 38 tests of the live view's page in
   a browser.
+
+New with the eighth wave of the current plan, not in a release yet:
+
+- **The live view's detail panel.** The right column of the page shows the action at the
+  playhead or, after a click on a mark, that event with its fields, and the session's requests,
+  one row per request: the address asked for, then status, media type and size, or `failed`
+  and the reason, or `pending`. The selected event is kept in the address (see "Watching
+  sessions live" above).
+- **A request has a method and a body, in the specification.** A navigation and a request carry
+  a method (`Get` or `Post`), an optional body and its media type, and the live view's events
+  `NavigationStarted` and `RequestStarted` show them. `go` and `open` send `GET` as before. A
+  request with any other method is refused before anything is sent, until a later wave.
+- **The HTML parser builds a document tree** with the HTML Standard's rules outside tables,
+  templates and foreign content (SVG and MathML). All 476 `body` tree cases of the test data
+  pass, and all 82 encoding cases: a `meta` that names another encoding parses the page again
+  with it. The parser has no limits yet on depth, nodes or time, and no command runs it on a
+  page, so an answer still shows no page content.
 
 New with the seventh wave of the current plan, not in a release yet:
 
@@ -210,13 +232,13 @@ New with the fifth wave of the current plan, not in a release yet. Nothing a use
   sixth wave `surfd` serves them (above).
 - **The HTML parser decides the encoding.** It sniffs a document's encoding as the HTML
   Standard says (a byte order mark, else a `meta` element in the first 1,024 bytes, else
-  windows-1252) and decodes UTF-8, UTF-16 and windows-1252. It passes 75 of the 82 encoding
-  cases.
+  windows-1252) and decodes UTF-8, UTF-16 and windows-1252. It passed 75 of the 82 encoding
+  cases; since the eighth wave it passes all 82.
 - **The tokenizer reads markup.** Tags, attributes, comments, DOCTYPEs, processing
   instructions and CDATA sections are tokenized, and all 1,979 markup cases of the test data
   pass. Text inside elements such as `<script>` and `<textarea>` is read since the sixth wave
-  and character references since the seventh; the parser builds no tree, so an answer still
-  shows no page content.
+  and character references since the seventh; the parser builds a tree since the eighth, and
+  no command runs it on a page, so an answer still shows no page content.
 
 New with the fourth wave of the current plan, shipped in release `0.2.0`:
 
@@ -233,7 +255,7 @@ New with the fourth wave of the current plan, shipped in release `0.2.0`:
 - **A gate for the HTML parser's tests.** The harness's counts are written down per file, tag
   and section, and `task check` fails when a count falls below them, when a case stops running
   without a reason, or when an expected count is lowered. The parser was empty then and passed
-  5 of 9,095 cases; after the seventh wave it passes 7,121, and the gate holds that.
+  5 of 9,095 cases; after the eighth wave it passes 8,362, and the gate holds that.
 - **Four binaries in one release.** A Linux archive holds `surf`, `surf-agent`, `surfd` and
   `surf-session`; a macOS archive holds `surf`. A smoke test runs the unpacked archive before a
   release is cut.
@@ -242,9 +264,9 @@ New with the third wave, the parts the agent commands and the live view build on
 
 - **The daemon, `surfd`.** It keeps the list of sessions (open, closed or died), passes each
   request to the session's own process and the answer back, and exits when it has been idle.
-- **The live view's page.** Nine plain files, with no framework, nothing from another origin
-  and every value shown as text, fitting screens from 360 px to 1,400 px wide. One command from
-  a source checkout, the `prototype` example of the `surf-view` crate, serves it over three
+- **The live view's page.** Nine plain files (ten since the eighth wave), with no framework,
+  nothing from another origin and every value shown as text, fitting screens from 360 px to
+  1,400 px wide. One command from a source checkout, the `prototype` example of the `surf-view` crate, serves it over three
   scripted sessions and prints an address to open in a browser on the same machine. It shows
   example data only; since the seventh wave `surfd` serves the page over real sessions (above).
 - **An agent's actions in the model.** A session keeps a log of what the agent did, in order
@@ -267,7 +289,7 @@ New with the second wave:
   reader ([`docs/view-stream.md`](docs/view-stream.md)). Its page is new with the third wave.
 - **A test harness for the HTML parser.** It holds 9,107 cases from html5lib-tests and
   web-platform-tests and counts how many a parser passes. Today it runs 9,095 of them and
-  passes 7,121: 75 encoding cases and 7,046 tokenizer cases. The parser builds no tree yet.
+  passes 8,362: 82 encoding cases, 7,046 tokenizer cases and 1,234 tree construction cases.
 
 New with the first wave:
 
@@ -282,26 +304,26 @@ New with the first wave:
 
 ## Roadmap
 
-The current plan has 58 stories in 22 steps, called waves. Waves 1 to 7 are delivered. The
+The current plan has 58 stories in 22 steps, called waves. Waves 1 to 8 are delivered. The
 plan is [`docs/plan/agent-waves.md`](docs/plan/agent-waves.md) and its design is
 [`docs/design/agent-interface.md`](docs/design/agent-interface.md).
 
 Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `surf-agent`,
 `surfd` and `surf-session`, for Linux only at first. The releases are listed at
 <https://github.com/beyond10x/surf/releases>. After it, work moves to the script engine, a
-project of its own. Waves 5 to 7 followed; the waves after them are planned and have no date.
+project of its own. Waves 5 to 8 followed; the waves after them are planned and have no date.
 
 | after wave | what you can do |
 |---|---|
 | 4 (delivered) | Drive a session: `surf-agent open`, `go`, `look`, `close`. A daemon keeps the sessions, one process and one token per session. |
 | 7 (delivered) | Watch every session live in a local web page: where it is and what it did, action by action. Redirects are followed. |
+| 8 (delivered) | Select an action or an event in the live view and read its fields, beside the session's requests. |
 | 11 | Read a real page's links, buttons and form fields, from an HTML parser held to the html5lib tests. |
 | 18 | Follow links, fill and submit forms, go back and forward. Each answer says what changed. |
 | 22 | Record an agent's session, turn it into a test, and replay it against the recorded network. |
 
 The next planned steps are the HTML parser on real pages (an answer shows no page content yet)
-and a detail panel in the live view for the selected action or event and the session's
-requests.
+and sending a request with a body.
 TLS and `https:` are on the list below. None of them has a date.
 
 Next after that, wanted and not planned in detail yet:
@@ -338,23 +360,23 @@ One command checks everything:
 
 ```console
 $ task check
-surf v1 — 9 file(s), 12 scenario(s), valid
-93 scenario(s) (12 authored), 28 refusal(s), written to .out/suite.json
-  93 scenarios: 93 passed, 0 failed, 0 error, 0 unsupported
-93 scenario(s) (12 authored), 28 refusal(s), written to .out/suite.json
-  93 scenarios: 93 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 93 scenario(s) each, of suite sha256:4cd1257a06a838a1bb2779b0309c347b1b6262703ff814da340988c32ecb7a3a
+surf v1 — 9 file(s), 14 scenario(s), valid
+95 scenario(s) (14 authored), 28 refusal(s), written to .out/suite.json
+  95 scenarios: 95 passed, 0 failed, 0 error, 0 unsupported
+95 scenario(s) (14 authored), 28 refusal(s), written to .out/suite.json
+  95 scenarios: 95 passed, 0 failed, 0 error, 0 unsupported
+the interpreter and the Rust system ran 95 scenario(s) each, of suite sha256:5fe34265b01df3ccfc43f30d4ddb41759c22407845edb2e1e5e675481bd29b9f
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 Cargo.lock: 22 package(s), none from outside this repository
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.00s
-118 test suites: 486 passed, 0 failed, 0 ignored
+121 test suites: 503 passed, 0 failed, 0 ignored
 view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
-  24 passed (14.6s)
-html-conformance: 9107 cases, 9095 run, 7121 passed
+  38 passed (17.1s)
+html-conformance: 9107 cases, 9095 run, 8362 passed
 ```
 
-It validates the specification, runs the 93 scenarios against the interpreter built into `ess`
+It validates the specification, runs the 95 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
 that the lock file holds no outside package, then builds and tests, checks that every event
 name of the live view's stream is an event of the specification, runs the live view's page

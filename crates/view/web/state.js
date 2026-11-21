@@ -1,5 +1,6 @@
 // What the page holds: the sessions in list order, the entries of the sessions it loaded, and
-// the selection: the selected session and the playhead over its actions. No DOM here.
+// the selection: the selected session, the playhead over its actions and the selected event. No
+// DOM here.
 
 const state = {
   newest: 0,
@@ -18,6 +19,9 @@ const state = {
   // number is `playhead`.
   latest: true,
   playhead: null,
+  // The selected event, by its entry's number (D23), or null. While one is selected the
+  // playhead is on its action and Latest is off.
+  event: null,
 };
 
 export function newest() {
@@ -84,11 +88,12 @@ export function session(id) {
   return state.sessions.get(id) || null;
 }
 
-// Selects a session; its playhead starts with Latest on.
+// Selects a session; its playhead starts with Latest on, and no event is selected.
 export function select(id) {
   state.selected = id;
   state.latest = true;
   state.playhead = null;
+  state.event = null;
 }
 
 export function selected() {
@@ -99,16 +104,47 @@ export function latest() {
   return state.latest;
 }
 
-// Latest on: the playhead moves to the newest action and follows it.
+// Latest on: the playhead moves to the newest action and follows it; no event is selected.
 export function followLatest() {
   state.latest = true;
   state.playhead = null;
+  state.event = null;
 }
 
-// The playhead on the action whose action entry has number `number`; Latest off.
+// The playhead on the action whose action entry has number `number`; Latest off, no event
+// selected.
 export function setPlayhead(number) {
   state.latest = false;
   state.playhead = number;
+  state.event = null;
+}
+
+// Selects the event entry `number` of the action whose action entry has number `action`: the
+// playhead moves to that action, Latest off.
+export function selectEvent(number, action) {
+  state.latest = false;
+  state.playhead = action;
+  state.event = number;
+}
+
+// The number of the selected event entry, or null.
+export function selectedEvent() {
+  return state.event;
+}
+
+// The selected event's entry among `list` (actions() of the selected session), or null when no
+// event is selected or its entry is not held there.
+export function eventEntry(list) {
+  if (state.event === null) {
+    return null;
+  }
+  for (const action of list) {
+    const found = action.events.find((entry) => entry.number === state.event);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
 }
 
 // The index of the playhead in `list` (actions() of the selected session), or -1 for none.
@@ -190,6 +226,10 @@ export function setDetail(detail) {
   state.drops.set(id, { dropped: detail.dropped || 0, log_dropped: detail.log_dropped === true });
   for (const entry of fresh) {
     setNewest(entry.number);
+  }
+  // A selected event whose entry this load no longer holds is cleared.
+  if (state.event !== null && id === state.selected && !numbers.has(state.event)) {
+    state.event = null;
   }
 }
 

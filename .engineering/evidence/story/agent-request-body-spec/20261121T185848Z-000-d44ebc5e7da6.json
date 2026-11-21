@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T18:58:48Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-request-body-spec",
+  "kind": "story",
+  "revision": 35,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the coordinator's run of the packages surf, surf-cli, surf-session and surf-ports with warnings denied, of the conformance crate's build and of the tasks open, generated-check and lock-check at the unit's change (85fac64), the unit's own whole gate in its tree, and slot task check in the runner's form on wave/a8-request-body-tree-detail at ff854ec",
+    "reference": "exit 0; surf.net.Method (Get, Post); Navigate and Fetch take method, an optional body and body_type; NavigationStarted and RequestStarted carry the three; Requests shows method and body_type; no row stores a body; 14 authored scenario files, two new (navigation-post-reaches-request, navigation-get-has-no-body); 95 scenarios on both runners, suite sha256:5fe34265b01df3ccfc43f30d4ddb41759c22407845edb2e1e5e675481bd29b9f; Transport::fetch takes the started request and surf::fetch_http ends every request that is not a Get without body with UnsupportedScheme before any connection; crates/surf/tests/request_method.rs 5 cases; 7 planted defects each red (the unit's runs), one of them caught by the two hand-written cases only, since the interpreter still passed 95; the redirect rule in the comment follows the Fetch Standard (the text last updated 2026-11-20) where the story's sentence differed; crates/ports/tests/ports.rs was outside the story's scope and added in 38f6828; no adversary's pass: the unit changes no behaviour a user of the commands can reach; verdict VERIFIED"
+  }
+}

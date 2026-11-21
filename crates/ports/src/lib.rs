@@ -38,6 +38,7 @@
 //! ```
 //! use surf_ports::{NavigatorPorts, navigator_port};
 //! use surf_types::navigation::{Navigate, NavigateOutcome};
+//! use surf_types::net::Method;
 //! use surf_types::primitives::Uuid;
 //! use surf_types::shell::TabId;
 //! use surf_types::url::Url;
@@ -46,6 +47,9 @@
 //! let outcome = navigator.navigate(Navigate {
 //!     tab_id: TabId(Uuid("6f1c2d3e-4b5a-4c6d-8e7f-001122334455".to_owned())),
 //!     url: Url("https://example.org/".to_owned()),
+//!     method: Method::Get,
+//!     body: None,
+//!     body_type: None,
 //! });
 //! assert!(matches!(outcome, Ok(NavigateOutcome::Started { .. })));
 //! ```
@@ -55,6 +59,7 @@
 //! ```compile_fail,E0277
 //! use surf_ports::{ShellPorts, navigator_port};
 //! use surf_types::navigation::{Navigate, NavigateOutcome};
+//! use surf_types::net::Method;
 //! use surf_types::primitives::Uuid;
 //! use surf_types::shell::TabId;
 //! use surf_types::url::Url;
@@ -65,6 +70,9 @@
 //! let outcome = navigator.navigate(Navigate {
 //!     tab_id: TabId(Uuid("6f1c2d3e-4b5a-4c6d-8e7f-001122334455".to_owned())),
 //!     url: Url("https://example.org/".to_owned()),
+//!     method: Method::Get,
+//!     body: None,
+//!     body_type: None,
 //! });
 //! assert!(matches!(outcome, Ok(NavigateOutcome::Started { .. })));
 //! ```

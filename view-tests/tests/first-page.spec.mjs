@@ -180,7 +180,7 @@ test("playhead stays", async ({ page, surf }) => {
   const id = await surf.open();
   await load(page, surf.view);
   await expect(segments(page)).toHaveCount(1);
-  await segments(page).nth(0).click();
+  await segments(page).nth(0).locator("button.select").click();
   await expect.poll(() => playheadAt(page)).toBe(0);
   await expect(latest(page)).toHaveAttribute("aria-pressed", "false");
   await expect(page.locator("#page-line .line.none")).toHaveText("none");
@@ -233,7 +233,7 @@ test("selection in the address", async ({ page, surf, record }) => {
   await expect(segments(page)).toHaveCount(3);
   expect(page.url()).not.toContain(surf.token);
   expect(hrefs.length).toBeGreaterThan(0);
-  await segments(page).nth(1).click();
+  await segments(page).nth(1).locator("button.select").click();
   await expect.poll(() => page.evaluate(() => location.hash)).toBe("#session=" + id + "&at=2");
   expect(await page.evaluate(() => location.href)).not.toContain(surf.token);
   await page.reload();

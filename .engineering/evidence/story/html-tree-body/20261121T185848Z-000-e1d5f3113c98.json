@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T18:58:48Z",
+  "actor": "human:operator",
+  "artifact": "story:html-tree-body",
+  "kind": "story",
+  "revision": 19,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the coordinator's run of the packages surf-html and surf-html-conformance with warnings denied, of the task html-conformance, of --list-failing for each tag, of cargo fmt --check and of cargo doc with warnings denied at the unit's change (039104d) and again at the change for the adversary's findings (d72b41d), and slot task check in the runner's form on wave/a8-request-body-tree-detail at ff854ec",
+    "reference": "exit 0; tag body 476/476/476 (0 before), tag encoding 82/82/82 (75 before), tag markup 1979/1979/1979, tag text 328/328/328, tag charref 4739/4739/4739 unchanged; html-conformance 8362 passed (7121 before); 39 tests in surf-html (17 unit, 13 encoding, 1 not_yet_parsed, 8 tree_body); 8 planted defects each red (the unit's runs); an adversary's pass: 112 trees worked out by hand, 100,000 random inputs compared with another parser (6 differences, all on search, where this parser follows the snapshot), no failing test, findings by judgement, three changed in d72b41d: the reconstruction looks from the top of the stack (1,000 nested b and 1 MiB of text 4.458 s before, 0.303 s after, debug build), one test for a third encoding named in the re-parse (red with the check planted out), one comment; the parser has no bound on depth, nodes or time: left to story:html-parser-limits, and no crate of the product depends on surf-html; verdict VERIFIED"
+  }
+}
