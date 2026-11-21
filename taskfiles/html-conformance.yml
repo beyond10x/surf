@@ -1,0 +1,34 @@
+version: '3'
+
+set: [pipefail]
+
+tasks:
+  html-conformance:
+    desc: Run the HTML parser against its conformance data and hold the counts of crates/html-conformance/expected/.
+    summary: |
+      Run the HTML parser against its conformance data and hold the counts of
+      crates/html-conformance/expected/.
+
+      Runs surf-html-conformance --check --base HTML_BASE (a git revision, default main; set it
+      on the command line, task html-conformance HTML_BASE=<revision>, or in the environment).
+      It fails when a case count differs from the html-inventory block of
+      docs/design/html-parser.md, when a run or pass count per file or per tag drops below the
+      expected file of its group, when an expected count is below its value in the same file at
+      HTML_BASE, when the sections of an expected file differ from the html-sections block, and
+      when a section marked complete has a case that does not pass or run, an open requirement
+      or a web-platform-tests test that does not run. A revision git cannot resolve fails.
+
+      The log is .out/html-conformance.log. It prints one line per section, one per tag, the
+      total, and a raise: line for each count above its expected file.
+
+      It runs from the repository root, alone (task --taskfile taskfiles/html-conformance.yml
+      html-conformance) and included from the root Taskfile.yml alike.
+    dir: '{{.TASKFILE_DIR}}/..'
+    vars:
+      HTML_BASE: '{{.HTML_BASE | default "main"}}'
+    env:
+      RUSTFLAGS: -D warnings
+    cmds:
+      - mkdir -p .out
+      - cargo run --quiet --locked -p surf-html-conformance -- --check --base '{{.HTML_BASE}}' > .out/html-conformance.log 2>&1 || { cat .out/html-conformance.log; exit 1; }
+      - grep -E '^(section|tag|raise:) |^html-conformance:' .out/html-conformance.log

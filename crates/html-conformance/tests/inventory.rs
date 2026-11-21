@@ -107,7 +107,7 @@ fn the_case_count_per_tag_equals_the_inventory() {
 }
 
 #[test]
-fn every_case_has_exactly_one_tag() {
+fn every_case_tag_is_declared_in_the_inventory() {
     let inventory = inventory();
     let declared: Vec<&str> = inventory
         .tags
