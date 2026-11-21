@@ -29,7 +29,8 @@
 //!
 //! The transport is handed each `surf.net.RequestStarted` itself: the address, the method, and
 //! the body with its media type. [`fetch_http`] is the transport step of the binaries: it sends a
-//! `GET` without a body through `surf-fetch` and refuses every other request before connecting.
+//! `GET` without a body, and a `POST` with its body and media type, through `surf-fetch`, and
+//! refuses a `GET` with a body or a media type before connecting.
 //!
 //! [`Browser::load`] is what the `surf` binary does: `OpenWindow`, `OpenTab`, `Navigate`, run, and
 //! the rows of the `Navigations`, `Requests` and `Documents` views with every published
@@ -114,23 +115,37 @@ impl<F: FnMut(&RequestStarted) -> Answer> Transport for F {
 
 /// Fetches `request` with `surf-fetch` within `limits`, for a transport that goes to the network.
 ///
-/// `surf-fetch` sends `GET` without a body only. A request with [`Method::Get`], no body and no
-/// media type is fetched; every other request ends with [`surf_fetch::Failure::UnsupportedScheme`],
-/// whose detail names the method, before any connection is attempted (until
-/// `story:agent-fetch-post` sends bodies).
+/// A request with [`Method::Get`], no body and no media type is sent as a `GET`; one with
+/// [`Method::Post`] as a `POST` with its body and media type, through [`surf_fetch::send`],
+/// whose checks, limits and redirect rule apply (a 301, 302 or 303 continues as a `GET` without
+/// the body). A [`Method::Get`] with a body or a media type ends with
+/// [`surf_fetch::Failure::UnsupportedScheme`], whose detail names the method, before any
+/// connection is attempted.
 pub fn fetch_http(
     request: &RequestStarted,
     limits: &surf_fetch::Limits,
 ) -> Result<surf_fetch::Response, surf_fetch::Failure> {
-    match (request.method, &request.body, &request.body_type) {
-        (Method::Get, None, None) => surf_fetch::fetch(&request.url.0, limits),
-        (Method::Get, _, _) => Err(surf_fetch::Failure::UnsupportedScheme(
-            "a GET with a body or a media type is not sent yet".to_owned(),
-        )),
-        (Method::Post, _, _) => Err(surf_fetch::Failure::UnsupportedScheme(
-            "the method POST is not sent yet".to_owned(),
-        )),
-    }
+    let method = match (request.method, &request.body, &request.body_type) {
+        (Method::Get, None, None) => surf_fetch::Method::Get,
+        (Method::Get, _, _) => {
+            return Err(surf_fetch::Failure::UnsupportedScheme(
+                "a GET with a body or a media type is not sent".to_owned(),
+            ));
+        }
+        (Method::Post, _, _) => surf_fetch::Method::Post,
+    };
+    surf_fetch::send(
+        &surf_fetch::Request {
+            address: &request.url.0,
+            method,
+            body: request.body.as_deref(),
+            media_type: request
+                .body_type
+                .as_ref()
+                .map(|media_type| media_type.0.as_str()),
+        },
+        limits,
+    )
 }
 
 /// The [`Answer`] for what `surf-fetch` returned: a response, or the failure reason of the same
