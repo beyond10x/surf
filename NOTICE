@@ -13,3 +13,9 @@ any shipped binary:
 - crates/url/tests/data/urltestdata.json: web-platform-tests, the 3-Clause BSD
   License, copyright web-platform-tests contributors
   (crates/url/tests/data/LICENSE.md).
+- crates/html-conformance/data/wpt: web-platform-tests, the 3-Clause BSD
+  License, copyright web-platform-tests contributors
+  (crates/html-conformance/data/wpt/LICENSE.md).
+- crates/html-conformance/data/html5lib-tests: html5lib-tests, the MIT
+  License, copyright the html5lib-tests contributors
+  (crates/html-conformance/data/html5lib-tests/LICENSE).

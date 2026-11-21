@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T02:10:31Z",
+  "actor": "human:timo",
+  "artifact": "story:agent-session-spec",
+  "kind": "story",
+  "revision": 17,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "slot task check on wave/a2-sessions at 22bb0c6",
+    "reference": "exit 0: 77 scenarios passed on both runners, 81 test suites, 280 passed, 0 failed"
+  }
+}

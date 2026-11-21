@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 19964b50f9197185811d923fbd6c3eec7ec2855a2cc03c2c60d6e4a2149578f0
+// contract digest f176714dd8b7999f1b6166f2e2d3e020c7ce9478056f6babb4bb5edef3c071ff
 // do not edit: regenerate with `ess synthesize`
 
 //! What the specification fully determines, generated: the behaviour of every command the plan
@@ -18,6 +18,24 @@
 //! or — as `entity invariant` — the declared outcome would leave an entity breaking an invariant.
 
 use crate::obligation::UnmetObligation;
+
+/// Where `surf.agent.Session` is stored — a port the implementor provides.
+///
+/// Keyed by the identity `session_id`. Generated network entries supply an ephemeral implementation; durable storage remains a port.
+pub trait SessionStorage {
+    /// The instance with this identity, or `None` where none is stored.
+    fn get(&self, identity: &crate::agent::SessionId) -> Option<crate::agent::SessionSnapshot>;
+
+    /// Stores this instance under its identity, replacing what was held.
+    fn put(&mut self, snapshot: crate::agent::SessionSnapshot);
+
+    /// Removes the instance with this identity.
+    fn delete(&mut self, identity: &crate::agent::SessionId);
+
+    /// Every stored instance, in the order the store keeps them: the order a generated query
+    /// answers an unordered view in.
+    fn list(&self) -> Vec<crate::agent::SessionSnapshot>;
+}
 
 /// Where `surf.document.Document` is stored — a port the implementor provides.
 ///
@@ -132,6 +150,9 @@ pub trait WindowStorage {
 /// The caller's attributes, the values the model says the implementation assigns, and the answer
 /// to each `external:` branch.
 pub trait Context {
+    /// The authenticated caller's `session_id`, or `None` where the caller carries none.
+    fn caller_session_id(&self) -> Option<crate::agent::SessionId>;
+
     /// A new `surf.document.DocumentId`, which the model says the implementation assigns — a created identity, a
     /// `{generated: true}` value, or an event field the model leaves undetermined.
     fn generate_surf_document_document_id(&mut self) -> crate::document::DocumentId;
@@ -156,6 +177,8 @@ pub trait Context {
 /// Context answers that may be unavailable, without fabricated values.
 /// Existing `Context` implementations receive the blanket adapter.
 pub trait TryContext {
+/// The caller's `session_id`, or a named unavailable answer.
+fn try_caller_session_id(&self) -> Result<Option<crate::agent::SessionId>, UnmetObligation>;
 /// Assigns the value, or names the unavailable answer.
 fn try_generate_surf_document_document_id(&mut self) -> Result<crate::document::DocumentId, UnmetObligation>;
 /// Assigns the value, or names the unavailable answer.
@@ -169,6 +192,7 @@ fn try_generate_surf_shell_window_id(&mut self) -> Result<crate::shell::WindowId
 }
 
 impl<T: Context + ?Sized> TryContext for T {
+fn try_caller_session_id(&self) -> Result<Option<crate::agent::SessionId>, UnmetObligation> { Ok(Context::caller_session_id(self)) }
 fn try_generate_surf_document_document_id(&mut self) -> Result<crate::document::DocumentId, UnmetObligation> { Ok(Context::generate_surf_document_document_id(self)) }
 fn try_generate_surf_net_request_id(&mut self) -> Result<crate::net::RequestId, UnmetObligation> { Ok(Context::generate_surf_net_request_id(self)) }
 fn try_generate_surf_render_frame_id(&mut self) -> Result<crate::render::FrameId, UnmetObligation> { Ok(Context::generate_surf_render_frame_id(self)) }
@@ -193,6 +217,121 @@ impl<P> Generated<P> {
     /// The generated behaviours, over `ports`.
     pub fn new(ports: P) -> Self {
         Self { ports }
+    }
+}
+
+/// `surf.agent.CloseSession`, generated: every outcome is one the specification fully determines.
+impl<P> crate::agent::obligations::CloseSessionBehavior for Generated<P>
+where
+    P: TryContext + SessionStorage,
+{
+    fn close_session(&mut self, input: crate::agent::CloseSession) -> Result<crate::agent::CloseSessionOutcome, UnmetObligation> {
+        let _ = &input;
+        // The addressed row's existence, at step 2 of the one precedence rule.
+        if SessionStorage::get(&self.ports, &input.session_id).is_none() {
+            return Ok(crate::agent::CloseSessionOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        }
+        // The addressed row, read before the branches that select by it.
+        let Some(held) = SessionStorage::get(&self.ports, &input.session_id) else {
+            return Ok(crate::agent::CloseSessionOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        };
+        let _ = &held;
+        // `not-holder`: selected by the addressed row.
+        if decided(equal(Some(&held.data.holder).map(|value| &value.0).map(|value| value.0.clone()), self.ports.try_caller_session_id()?.as_ref().map(|value| &value.0).map(|value| value.0.clone())).map(|value| !value), "surf.agent.CloseSession")? {
+            return Ok(crate::agent::CloseSessionOutcome::NotHolder { error: crate::agent::NotSessionHolder { session_id: input.session_id.clone() } });
+        }
+        // `closed`: the default.
+        let Some(held) = SessionStorage::get(&self.ports, &input.session_id) else {
+            return Ok(crate::agent::CloseSessionOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        };
+        let _ = &held;
+        let held_state = held.state;
+        let before = held.data.clone();
+        let moved = match held.refine() {
+            crate::agent::AnySession::Open(instance) => crate::agent::AnySession::Closed(instance.close()),
+            _ => return Ok(crate::agent::CloseSessionOutcome::WrongState { error: crate::agent::SessionStateConflict { state: held_state } }),
+        };
+        let next = moved.snapshot();
+        let answer = crate::agent::CloseSessionOutcome::Closed { session_closed: crate::agent::SessionClosed { session_id: input.session_id.clone(), window_id: before.window_id.clone(), tab_id: before.tab_id.clone() } };
+        SessionStorage::put(&mut self.ports, next);
+        return Ok(answer);
+    }
+}
+
+/// `surf.agent.Go`, generated: every outcome is one the specification fully determines.
+impl<P> crate::agent::obligations::GoBehavior for Generated<P>
+where
+    P: TryContext + SessionStorage,
+{
+    fn go(&mut self, input: crate::agent::Go) -> Result<crate::agent::GoOutcome, UnmetObligation> {
+        let _ = &input;
+        // The addressed row's existence, at step 2 of the one precedence rule.
+        if SessionStorage::get(&self.ports, &input.session_id).is_none() {
+            return Ok(crate::agent::GoOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        }
+        // The addressed row, read before the branches that select by it.
+        let Some(held) = SessionStorage::get(&self.ports, &input.session_id) else {
+            return Ok(crate::agent::GoOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        };
+        let _ = &held;
+        // `not-holder`: selected by the addressed row.
+        if decided(equal(Some(&held.data.holder).map(|value| &value.0).map(|value| value.0.clone()), self.ports.try_caller_session_id()?.as_ref().map(|value| &value.0).map(|value| value.0.clone())).map(|value| !value), "surf.agent.Go")? {
+            return Ok(crate::agent::GoOutcome::NotHolder { error: crate::agent::NotSessionHolder { session_id: input.session_id.clone() } });
+        }
+        // `closed`: selected by the addressed row.
+        if decided(Some(matches!(held.state, crate::agent::SessionState::Closed)), "surf.agent.Go")? {
+            return Ok(crate::agent::GoOutcome::Closed { error: crate::agent::SessionStateConflict { state: held.state } });
+        }
+        // `requested`: the default.
+        let Some(held) = SessionStorage::get(&self.ports, &input.session_id) else {
+            return Ok(crate::agent::GoOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        };
+        let _ = &held;
+        let before = held.data.clone();
+        let next = held;
+        let answer = crate::agent::GoOutcome::Requested { navigation_requested: crate::agent::NavigationRequested { session_id: input.session_id.clone(), tab_id: before.tab_id.clone(), url: input.url.clone() } };
+        SessionStorage::put(&mut self.ports, next);
+        return Ok(answer);
+    }
+}
+
+impl<P: crate::agent::obligations::NoteNavigationEndedBehavior> crate::agent::obligations::NoteNavigationEndedBehavior for Generated<P> {
+    fn note_navigation_ended(&mut self, input: crate::agent::NoteNavigationEnded) -> Result<crate::agent::NoteNavigationEndedOutcome, UnmetObligation> {
+        crate::agent::obligations::NoteNavigationEndedBehavior::note_navigation_ended(&mut self.ports, input)
+    }
+}
+
+impl<P: crate::agent::obligations::NoteNavigationStartedBehavior> crate::agent::obligations::NoteNavigationStartedBehavior for Generated<P> {
+    fn note_navigation_started(&mut self, input: crate::agent::NoteNavigationStarted) -> Result<crate::agent::NoteNavigationStartedOutcome, UnmetObligation> {
+        crate::agent::obligations::NoteNavigationStartedBehavior::note_navigation_started(&mut self.ports, input)
+    }
+}
+
+/// `surf.agent.OpenSession`, generated: every outcome is one the specification fully determines.
+impl<P> crate::agent::obligations::OpenSessionBehavior for Generated<P>
+where
+    P: SessionStorage,
+{
+    fn open_session(&mut self, input: crate::agent::OpenSession) -> Result<crate::agent::OpenSessionOutcome, UnmetObligation> {
+        let _ = &input;
+        // `exists`: an identity a record already carries, before any branch is taken.
+        if SessionStorage::get(&self.ports, &input.session_id).is_some() {
+            return Ok(crate::agent::OpenSessionOutcome::Exists { error: crate::agent::SessionExists { session_id: input.session_id.clone() } });
+        }
+        // `opened`: the default.
+        let identity: crate::agent::SessionId = input.session_id.clone();
+        let data = crate::agent::SessionData {
+            session_id: identity.clone(),
+            window_id: input.window_id.clone(),
+            tab_id: input.tab_id.clone(),
+            holder: input.session_id.clone(),
+            navigation_id: None,
+            url: None,
+            navigation_state: None,
+        };
+        let answer = crate::agent::OpenSessionOutcome::Opened { session_opened: crate::agent::SessionOpened { session_id: identity.clone(), window_id: input.window_id.clone(), tab_id: input.tab_id.clone() } };
+        SessionStorage::put(&mut self.ports, crate::agent::AnySession::Open(crate::agent::Session::new(data)).snapshot());
+        return Ok(answer);
     }
 }
 
@@ -507,6 +646,49 @@ where
     }
 }
 
+/// `surf.agent.SessionState`, generated: every row is one the specification fully determines from the stored `surf.agent.Session`s.
+impl<P> crate::agent::obligations::SessionStateViewQuery for Generated<P>
+where
+    P: SessionStorage,
+{
+    fn session_state_view(&self, param_0: crate::agent::SessionId) -> Result<Vec<crate::agent::SessionStateView>, UnmetObligation> {
+        let mut admitted = SessionStorage::list(&self.ports);
+        // `filter:` shows a row where it holds; false or unknown hides it.
+        admitted.retain(|held| equal(Some(&held.data.session_id).map(|value| &value.0).map(|value| value.0.clone()), Some(&param_0).map(|value| &value.0).map(|value| value.0.clone())) == Some(true));
+        Ok(admitted
+            .into_iter()
+            .map(|held| crate::agent::SessionStateView {
+                session_id: held.data.session_id,
+                state: held.state,
+                url: held.data.url,
+                navigation_state: held.data.navigation_state,
+            })
+            .collect())
+    }
+}
+
+/// `surf.agent.Sessions`, generated: every row is one the specification fully determines from the stored `surf.agent.Session`s.
+impl<P> crate::agent::obligations::SessionsQuery for Generated<P>
+where
+    P: SessionStorage,
+{
+    fn sessions(&self) -> Result<Vec<crate::agent::Sessions>, UnmetObligation> {
+        let admitted = SessionStorage::list(&self.ports);
+        Ok(admitted
+            .into_iter()
+            .map(|held| crate::agent::Sessions {
+                session_id: held.data.session_id,
+                state: held.state,
+                window_id: held.data.window_id,
+                tab_id: held.data.tab_id,
+                navigation_id: held.data.navigation_id,
+                url: held.data.url,
+                navigation_state: held.data.navigation_state,
+            })
+            .collect())
+    }
+}
+
 /// `surf.document.Documents`, generated: every row is one the specification fully determines from the stored `surf.document.Document`s.
 impl<P> crate::document::obligations::DocumentsQuery for Generated<P>
 where
@@ -634,6 +816,11 @@ fn any(truths: &[Option<bool>]) -> Option<bool> {
     } else {
         Some(false)
     }
+}
+
+/// Equality of two read values; an unread one is Unknown.
+fn equal<T: PartialEq>(left: Option<T>, right: Option<T>) -> Option<bool> {
+    Some(left? == right?)
 }
 
 /// A decimal rendering as its sign, its whole digits and its fraction digits, without the zeros

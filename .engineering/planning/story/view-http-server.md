@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:view-http-server
 kind: story
-status: active
+status: implemented
 title: 'The view''s HTTP server: GET only, fixed routes, Host and token checks, bounded server-sent events'
 summary: crates/view serves the fixed route table of docs/view-stream.md over a source trait, standard library and surf-secret only, with its limits, the order of its checks, the Host check, the view token, the head lines and refusal bodies byte for byte, and bounded server-sent events; 33 named cases.
 relations:
@@ -12,10 +12,11 @@ relations:
 scope:
 - confidence: cited
   path: crates/view
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-21T02:10:31Z", actor: "human:timo", revision: 11, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 

@@ -11,6 +11,7 @@
 //! | [`NetPorts`] | `net` | `Request` | no |
 //! | [`DocumentPorts`] | `document` | `Document` | yes |
 //! | [`RendererPorts`] | `renderer` | `Frame` | yes |
+//! | [`AgentPorts`] | `agent` | `Session` | the caller only |
 //!
 //! Each ports type keeps its tables private: a component's rows are reachable only through the
 //! storage traits of its own ports type, so no component's behaviours read another's.
@@ -20,9 +21,15 @@
 //! source that cannot be read is answered as an [`UnmetObligation`] through `TryContext`, never
 //! with a value of the ports type's own making.
 //!
-//! [`shell_port`], [`navigator_port`], [`net_port`], [`document_port`] and [`renderer_port`] build
-//! each component's generated port over a ports type; [`ComponentPorts::new`] builds all five
-//! with the default source.
+//! The `agent` component's commands read their caller's `session_id`. [`AgentPorts`] answers it
+//! from a [`Caller`], a handle whoever authenticates a call sets before issuing the command; the
+//! other ports types know no caller and answer that question as unmet. [`AgentPorts`] also meets
+//! the two obligations the generation leaves to the component: `NoteNavigationStarted` and
+//! `NoteNavigationEnded`, which change every session their filter selects.
+//!
+//! [`shell_port`], [`navigator_port`], [`net_port`], [`document_port`], [`renderer_port`] and
+//! [`agent_port`] build each component's generated port over a ports type;
+//! [`ComponentPorts::new`] builds all six with the default source.
 //!
 //! The navigator's port, built from its own ports type:
 //!
@@ -69,12 +76,15 @@ mod ports;
 mod random;
 mod store;
 
-pub use ports::{DocumentPorts, NavigatorPorts, NetPorts, RendererPorts, ShellPorts};
+pub use ports::{
+    AgentPorts, Caller, DocumentPorts, NavigatorPorts, NetPorts, RendererPorts, ShellPorts,
+};
 pub use random::{OsRandom, RandomSource};
 
+use surf_types::agent::obligations::{NoteNavigationEndedBehavior, NoteNavigationStartedBehavior};
 use surf_types::behaviour::{
-    DocumentStorage, FrameStorage, Generated, NavigationStorage, RequestStorage, TabStorage,
-    TryContext, WindowStorage,
+    DocumentStorage, FrameStorage, Generated, NavigationStorage, RequestStorage, SessionStorage,
+    TabStorage, TryContext, WindowStorage,
 };
 
 /// The `shell` component's generated port over [`ShellPorts`].
@@ -87,6 +97,8 @@ pub type NetPort = net::Net<Generated<NetPorts>>;
 pub type DocumentPort<R = OsRandom> = document::Document<Generated<DocumentPorts<R>>>;
 /// The `renderer` component's generated port over [`RendererPorts`].
 pub type RendererPort<R = OsRandom> = renderer::Renderer<Generated<RendererPorts<R>>>;
+/// The `agent` component's generated port over [`AgentPorts`].
+pub type AgentPort = agent::Agent<Generated<AgentPorts>>;
 
 /// The `shell` component's port, its behaviours generated over `ports`.
 pub fn shell_port<P>(ports: P) -> shell::Shell<Generated<P>>
@@ -128,9 +140,20 @@ where
     renderer::Renderer::new(Generated::new(ports))
 }
 
-/// All five component ports, each over empty tables of its own and the operating system's
-/// random source.
+/// The `agent` component's port, its behaviours generated over `ports`, and the two its
+/// generation leaves owed taken from `ports`.
+pub fn agent_port<P>(ports: P) -> agent::Agent<Generated<P>>
+where
+    P: TryContext + SessionStorage + NoteNavigationStartedBehavior + NoteNavigationEndedBehavior,
+{
+    agent::Agent::new(Generated::new(ports))
+}
+
+/// All six component ports, each over empty tables of its own and the operating system's random
+/// source, the `agent` component's sent as one [`Caller`].
 pub struct ComponentPorts {
+    /// The `agent` component's port.
+    pub agent: AgentPort,
     /// The `shell` component's port.
     pub shell: ShellPort,
     /// The `navigator` component's port.
@@ -144,9 +167,23 @@ pub struct ComponentPorts {
 }
 
 impl ComponentPorts {
-    /// The five ports, each built from its own ports type.
+    /// The six ports, each built from its own ports type, the `agent` component's with a caller
+    /// of its own that names no one.
     pub fn new() -> Self {
+        Self::with_caller(Caller::new())
+    }
+
+    /// The six ports, each built from its own ports type, the `agent` component's commands sent
+    /// as whoever `caller` names when each runs.
+    pub fn with_caller(caller: Caller) -> Self {
+        Self::with_agent(AgentPorts::with_caller(caller))
+    }
+
+    /// The six ports, the `agent` component's over `agent`, each other one built from its own
+    /// ports type.
+    pub fn with_agent(agent: AgentPorts) -> Self {
         Self {
+            agent: agent_port(agent),
             shell: shell_port(ShellPorts::new()),
             navigator: navigator_port(NavigatorPorts::new()),
             net: net_port(NetPorts::new()),

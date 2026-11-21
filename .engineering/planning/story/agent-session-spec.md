@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-session-spec
 kind: story
-status: active
+status: implemented
 title: Land the agent session domain on main with a green gate
 summary: 'The agent component and its session: surf.agent moved from net to it, the sixth port from park/agent-sixth-port (D32), and the surf.agent draft of spec/agent-session revised to caller-chosen identity, a token the session process issues, and open/go/look/close; generated, assembled, conformance-tested.'
 relations:
@@ -43,10 +43,11 @@ scope:
   path: spec/ess-inputs.yaml
 - confidence: cited
   path: spec/scenarios
-revision: 16
+revision: 18
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-11-21T02:10:31Z", actor: "human:timo", revision: 18, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 
@@ -191,10 +192,10 @@ Surfaces written: `spec/domains/agent.yaml`, `spec/components.yaml`, `spec/scena
 
 ## Acceptance
 
-`slot task check REFUSALS_MAX=<n>` exits 0 with at least 120 scenarios passed against the
+`slot task check REFUSALS_MAX=<n>` exits 0 with at least 77 scenarios passed against the
 interpreter and the same number against the Rust system (`0 failed, 0 error, 0 unsupported`),
 among them `OpenSession/outcome/opened`, `Go/outcome/requested`, `Go/outcome/not-holder`,
-`CloseSession/outcome/closed` and the two authored files named in Change, with at most 26
+`CloseSession/outcome/closed` and the two authored files named in Change, with at most 24
 `refused:` lines and `<n>` equal to that count, the unit report giving `<n>` and each new refusal
 with its cause (decision D30); and `RUSTFLAGS="-D warnings" cargo build --locked -p agent` exits
 0, the generated crate `agent` building with warnings denied and without `field 'behaviors' is
@@ -262,3 +263,12 @@ component `agent` and the six-component assembly moved here from `story:agent-cl
   - From `story:agent-cli-spec`: the domain `surf.agent` with its types, owned by `net`, `cli/surf-agent.yaml` and `taskfiles/cli.yml`.
   - From `b48bc87` and `9e43dcf`, not on `main`: the session model to revise and the assembly to apply.
 - **Confidence:** medium. The spec files, the assembly files and the test call sites are cited from the story, the parked diff and the tree. Whether `crates/surf/Cargo.toml` is needed, the agent bounds of `Browser`, and the obligation files depend on what `ess generate` writes for the component with commands, which cannot be read until it runs.
+
+## Note, 2026-11-21: the floor is 77, found in wave 2
+
+The acceptance asked for at least 120 scenarios and at most 26 refusals. Both numbers were
+measured on the draft model at `b48bc87`, whose `OpenSession` response carried the one-time
+token marker: 148 scenarios, most of them the token cells that marker creates. Change item 4
+removes the marker (decision D21). The unit measured the draft without it at 73 scenarios and
+the revised model at 77 scenarios and 24 refusals, and added no scenario to reach a number.
+The acceptance above now states 77 and 24. Record: `docs/plan/agent-wave-2.md`.

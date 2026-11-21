@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-cli-client
 kind: story
-status: active
+status: implemented
 title: 'surf-agent: an argument parser held to cli/surf-agent.yaml, the token, and the wire'
 summary: The surf-agent binary parses its arguments from the ess-cli/2 document, reads the token from SURF_TOKEN or a private file, starts surfd on open when none runs, sends one request to surfd and prints the answer.
 relations:
@@ -13,10 +13,11 @@ relations:
 scope:
 - confidence: cited
   path: crates/agent
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-11-21T02:10:31Z", actor: "human:timo", revision: 12, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 

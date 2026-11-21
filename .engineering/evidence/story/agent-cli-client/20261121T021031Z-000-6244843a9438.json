@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T02:10:31Z",
+  "actor": "human:timo",
+  "artifact": "story:agent-cli-client",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p surf-agent, run by the coordinator in the unit tree at 4d3545f; follow-up 123fb74",
+    "reference": "29 passed in 5 suites (drift 2, stand_in 8, start 6, token 9, usage 4), 0 failed; cargo tree lists surf-agent, surf-answer, surf-secret; longest socket path 55 bytes after the follow-up (the unit's number); verdict VERIFIED"
+  }
+}

@@ -1,11 +1,11 @@
 # The command line an AI agent types, as an `ess-cli/2` presentation binding over the domain
-# `surf.agent` of `spec/`, which the `net` component holds until the `agent` component has
-# commands. It sits outside the specification inputs, as the binding design prescribes
-# ("cli.yaml (outside the model directory)", docs/design/cli-presentation-binding.md in the ESS
-# repository). `task cli` checks it with `ess specify cli --path spec --binding
-# cli/surf-agent.yaml`. The client's parser is written in this repository from this document,
-# standard library only, because both ESS command-line generators write code that needs
-# third-party crates (docs/plan/agent-cli-draft-1.md, measurements A and B).
+# `surf.agent` of `spec/`, which the `agent` component owns. It sits outside the specification
+# inputs, as the binding design prescribes ("cli.yaml (outside the model directory)",
+# docs/design/cli-presentation-binding.md in the ESS repository). `task cli` checks it with
+# `ess specify cli --path spec --binding cli/surf-agent.yaml`. The client's parser is written in
+# this repository from this document, standard library only, because both ESS command-line
+# generators write code that needs third-party crates (docs/plan/agent-cli-draft-1.md,
+# measurements A and B).
 #
 # The commands are those of docs/design/agent-interface.md, section 4, slice 1: `open [<url>]`,
 # `go <url>`, `look`, `close`. Every callable is `local`: the token is a credential and not an
@@ -28,8 +28,9 @@ binary: surf-agent
 about: Drive a surf browser session from the command line, one call at a time
 # UNMAPPED: the session directory flag. `ess-cli/2` requires a `state` global, and the design names
 # no flag: the directory is `$XDG_RUNTIME_DIR/surf/`, and the client refuses to run without
-# `XDG_RUNTIME_DIR`. What would settle it: the client story deciding whether `--session-dir`
-# overrides that directory or is refused.
+# `XDG_RUNTIME_DIR`. The client refuses `--session-dir` (exit 2, no path touched;
+# `crates/agent/src/cli.rs`), so the flag stays declared only because `ess-cli/2` requires it.
+# What would settle it: a `state` global in ESS that is optional.
 globals:
   state: session-dir
 callables:

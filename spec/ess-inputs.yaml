@@ -14,3 +14,5 @@ scenarios:
   - scenarios/page-load-commits-and-parses.yaml
   - scenarios/page-load-fails-without-response.yaml
   - scenarios/two-of-each-entity.yaml
+  - scenarios/agent-session-reads-committed-navigation.yaml
+  - scenarios/agent-session-reads-started-navigation.yaml

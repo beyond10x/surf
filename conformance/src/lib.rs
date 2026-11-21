@@ -8,7 +8,9 @@
 //!
 //! [`memory_target`] is the system the `surf` binary ships, over the in-memory ports of
 //! `surf-ports`. A test assembles a system of its own with [`SurfTarget::new`], as the
-//! planted-defect test does with a `Navigation` storage that drops every `put`.
+//! planted-defect test does with a `Navigation` storage that drops every `put`. The assembly is
+//! handed the scenario's [`Setup`]: the caller the target sends each command as, and the sessions
+//! it establishes, for the `agent` component's ports ([`Setup::agent_ports`]).
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -16,18 +18,19 @@
 mod target;
 mod values;
 
-pub use target::{ConformanceBrowser, SurfTarget, Unanswered};
+pub use target::{ConformanceBrowser, Setup, SurfTarget, Unanswered};
 
 use ess_conformance::target::{ConformanceTarget, ImplementationIdentity};
 use ess_conformance::{AdmittedSuite, CountReport, ExecutedRun, Runner};
 use surf::Browser;
 use surf_ports::{
-    ComponentPorts, DocumentPorts, NavigatorPorts, NetPorts, RendererPorts, ShellPorts,
+    AgentPorts, ComponentPorts, DocumentPorts, NavigatorPorts, NetPorts, RendererPorts, ShellPorts,
 };
 use surf_types::behaviour::Generated;
 
 /// The system the `surf` binary ships, as a target: the in-memory ports of `surf-ports`.
 pub type MemoryTarget = SurfTarget<
+    Generated<AgentPorts>,
     Generated<DocumentPorts>,
     Generated<NavigatorPorts>,
     Generated<NetPorts>,
@@ -39,7 +42,7 @@ pub type MemoryTarget = SurfTarget<
 pub fn memory_target() -> MemoryTarget {
     SurfTarget::new(
         ImplementationIdentity::new("surf", "rust, in process, surf-ports in memory"),
-        || Browser::from_ports(ComponentPorts::new(), Unanswered),
+        |setup| Browser::from_ports(ComponentPorts::with_agent(setup.agent_ports()), Unanswered),
     )
 }
 

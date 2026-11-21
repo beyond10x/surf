@@ -11,9 +11,10 @@ use ess_conformance::target::ImplementationIdentity;
 use surf::{Browser, System};
 use surf_conformance::{SurfTarget, Unanswered, run};
 use surf_ports::{
-    DocumentPorts, NavigatorPorts, NetPorts, RendererPorts, ShellPorts, document_port,
+    DocumentPorts, NavigatorPorts, NetPorts, RendererPorts, ShellPorts, agent_port, document_port,
     navigator_port, net_port, renderer_port, shell_port,
 };
+use surf_types::agent::SessionId;
 use surf_types::behaviour::{
     DocumentStorage, FrameStorage, NavigationStorage, RequestStorage, TabStorage, TryContext,
     WindowStorage,
@@ -115,6 +116,10 @@ fn same() -> Uuid {
 }
 
 impl<P: TryContext> TryContext for Planted<P> {
+    fn try_caller_session_id(&self) -> Result<Option<SessionId>, UnmetObligation> {
+        self.inner.try_caller_session_id()
+    }
+
     fn try_generate_surf_document_document_id(&mut self) -> Result<DocumentId, UnmetObligation> {
         if self.same(Entity::Document) {
             return Ok(DocumentId(same()));
@@ -158,9 +163,10 @@ fn failed_with(defect: Defect) -> Vec<String> {
     let label = format!("{defect:?}");
     let target = SurfTarget::new(
         ImplementationIdentity::new("surf", label.clone()),
-        move || {
+        move |setup| {
             Browser::new(
                 System::new(
+                    agent_port(setup.agent_ports()),
                     document_port(Planted {
                         inner: DocumentPorts::new(),
                         defect,

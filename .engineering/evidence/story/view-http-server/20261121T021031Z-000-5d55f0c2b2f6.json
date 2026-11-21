@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T02:10:31Z",
+  "actor": "human:timo",
+  "artifact": "story:view-http-server",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p surf-view, run by the coordinator in the unit tree at f127a44",
+    "reference": "33 passed; 0 failed; 0 ignored; cargo tree lists surf-view and surf-secret; 4 planted defects each turn one case red and 10 runs in a row pass (the unit's runs); verdict VERIFIED"
+  }
+}

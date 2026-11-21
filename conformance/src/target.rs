@@ -27,19 +27,26 @@ use std::str::FromStr;
 
 use ess_conformance::scenario::{CommandRef, ErrorRef, EventRef, OutcomeRef};
 use ess_conformance::target::{
-    ConformanceTarget, DeclaredErrorValue, EventObservationRequest, ExternalOutcomeControl,
-    ImplementationIdentity, InvocationObservationRequest, ObservedEvent, ObservedInvocation,
-    RedeliveryRequest, ScenarioContext, SemanticCommandRequest, SemanticCommandResult,
-    SemanticViewRequest, SemanticViewResult, TargetError, ViewRow,
+    ConformanceTarget, DeclaredErrorValue, EntitySetupRequest, EventObservationRequest,
+    ExternalOutcomeControl, ImplementationIdentity, InvocationObservationRequest, ObservedEvent,
+    ObservedInvocation, RedeliveryRequest, ScenarioContext, SemanticCommandRequest,
+    SemanticCommandResult, SemanticViewRequest, SemanticViewResult, TargetError, ViewRow,
 };
 use ess_domain::command::OutcomeName;
 use ess_primitives::consistency::ConsistencyToken;
 use ess_primitives::node::Node;
 use surf::{
-    Answer, Browser, DocumentBehaviors, NavigatorBehaviors, NetBehaviors, RendererBehaviors,
-    ShellBehaviors, SystemEvent, Transport, UnmetObligation,
+    AgentBehaviors, Answer, Browser, DocumentBehaviors, NavigatorBehaviors, NetBehaviors,
+    RendererBehaviors, ShellBehaviors, SystemEvent, Transport, UnmetObligation,
 };
+use surf_ports::{AgentPorts, Caller};
 use surf_system::BindingInvocation;
+use surf_types::agent::{
+    CloseSession, CloseSessionOutcome, Go, GoOutcome, NoteNavigationEnded,
+    NoteNavigationEndedOutcome, NoteNavigationStarted, NoteNavigationStartedOutcome, OpenSession,
+    OpenSessionOutcome, SessionData, SessionId, SessionSnapshot, SessionState,
+};
+use surf_types::behaviour::SessionStorage;
 use surf_types::document::{ParseDocument, ParseDocumentOutcome};
 use surf_types::navigation::{
     CancelNavigation, CancelNavigationOutcome, CommitNavigation, CommitNavigationOutcome,
@@ -49,6 +56,7 @@ use surf_types::net::{
     DeliverResponse, DeliverResponseOutcome, FailRequest, FailRequestOutcome, FailureReason, Fetch,
     FetchOutcome, MediaType, RequestId, RequestState, Status,
 };
+use surf_types::primitives::Uuid;
 use surf_types::render::{PaintFrame, PaintFrameOutcome};
 use surf_types::shell::{
     CloseTab, CloseTabOutcome, OpenTab, OpenTabOutcome, OpenWindow, OpenWindowOutcome, TabId,
@@ -68,32 +76,64 @@ impl Transport for Unanswered {
     }
 }
 
-/// A [`Browser`] over component ports `D`, `N`, `Ne`, `R` and `S`, with the [`Unanswered`]
-/// transport.
-pub type ConformanceBrowser<D, N, Ne, R, S> = Browser<D, N, Ne, R, S, Unanswered>;
+/// A [`Browser`] over component ports `A`, `D`, `N`, `Ne`, `R` and `S`, with the
+/// [`Unanswered`] transport.
+pub type ConformanceBrowser<A, D, N, Ne, R, S> = Browser<A, D, N, Ne, R, S, Unanswered>;
 
-type Assemble<D, N, Ne, R, S> = Box<dyn Fn() -> ConformanceBrowser<D, N, Ne, R, S>>;
+type Assemble<A, D, N, Ne, R, S> = Box<dyn Fn(&Setup) -> ConformanceBrowser<A, D, N, Ne, R, S>>;
 
-type Open<D, N, Ne, R, S> = RefCell<Option<Scenario<D, N, Ne, R, S>>>;
+type Open<A, D, N, Ne, R, S> = RefCell<Option<Scenario<A, D, N, Ne, R, S>>>;
+
+/// What a scenario's system is assembled with beyond fresh ports: the [`Caller`] the target sends
+/// every command as, and the sessions the scenario establishes before its first command
+/// (`setup:` in an authored scenario).
+///
+/// Only `surf.agent.Session` can be established: the other entities are reached through commands
+/// in every scenario of the suite.
+#[derive(Debug, Default)]
+pub struct Setup {
+    caller: Caller,
+    sessions: Vec<SessionSnapshot>,
+}
+
+impl Setup {
+    /// The `agent` component's ports: answering with this setup's caller, and holding the
+    /// sessions it established, in the order they were.
+    pub fn agent_ports(&self) -> AgentPorts {
+        let mut ports = AgentPorts::with_caller(self.caller.clone());
+        for session in &self.sessions {
+            SessionStorage::put(&mut ports, session.clone());
+        }
+        ports
+    }
+}
 
 /// The `surf` system as a conformance target: a fresh [`ConformanceBrowser`] per scenario, from
 /// the function it was built with.
-pub struct SurfTarget<D, N, Ne, R, S> {
+pub struct SurfTarget<A, D, N, Ne, R, S> {
     identity: ImplementationIdentity,
-    assemble: Assemble<D, N, Ne, R, S>,
-    scenario: Open<D, N, Ne, R, S>,
+    assemble: Assemble<A, D, N, Ne, R, S>,
+    scenario: Open<A, D, N, Ne, R, S>,
 }
 
-struct Scenario<D, N, Ne, R, S> {
-    browser: ConformanceBrowser<D, N, Ne, R, S>,
+struct Scenario<A, D, N, Ne, R, S> {
+    browser: ConformanceBrowser<A, D, N, Ne, R, S>,
+    /// Who the next command is sent as, set from each command's caller before it is issued, and
+    /// the sessions established so far.
+    setup: Setup,
     writes: u64,
 }
 
-impl<D, N, Ne, R, S> SurfTarget<D, N, Ne, R, S> {
+impl<A, D, N, Ne, R, S> SurfTarget<A, D, N, Ne, R, S> {
     /// A target named `identity` that assembles each scenario's system with `assemble`.
+    ///
+    /// `assemble` is handed the scenario's [`Setup`]; the `agent` component's ports it builds
+    /// come from [`Setup::agent_ports`], so they answer the caller the target sends each command
+    /// as and hold the sessions the scenario established. A scenario that establishes a session
+    /// has its system assembled again, before its first command.
     pub fn new(
         identity: ImplementationIdentity,
-        assemble: impl Fn() -> ConformanceBrowser<D, N, Ne, R, S> + 'static,
+        assemble: impl Fn(&Setup) -> ConformanceBrowser<A, D, N, Ne, R, S> + 'static,
     ) -> Self {
         Self {
             identity,
@@ -135,9 +175,10 @@ fn refused(
     })
 }
 
-/// One of the five components, as the publisher of an event or the receiver of a command.
+/// One of the six components, as the publisher of an event or the receiver of a command.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Component {
+    Agent,
     Document,
     Navigator,
     Net,
@@ -149,6 +190,7 @@ enum Component {
 fn receiver(command: &str) -> Option<Component> {
     let domain = command.rsplit_once('.')?.0;
     Some(match domain {
+        "surf.agent" => Component::Agent,
         "surf.document" => Component::Document,
         "surf.navigation" => Component::Navigator,
         "surf.net" | "surf.url" => Component::Net,
@@ -161,6 +203,10 @@ fn receiver(command: &str) -> Option<Component> {
 /// The component whose outbox `event` came from.
 fn publisher(event: &SystemEvent) -> Component {
     match event {
+        SystemEvent::NavigationRequested(_)
+        | SystemEvent::SessionClosed(_)
+        | SystemEvent::SessionNavigationChanged(_)
+        | SystemEvent::SessionOpened(_) => Component::Agent,
         SystemEvent::DocumentParsed(_) => Component::Document,
         SystemEvent::NavigationCancelled(_)
         | SystemEvent::NavigationCommitted(_)
@@ -179,11 +225,33 @@ fn publisher(event: &SystemEvent) -> Component {
 /// The component a binding's invocation issued its command on.
 fn invoked_on(invocation: &BindingInvocation) -> Component {
     match invocation {
-        BindingInvocation::CommitOnResponse(_) | BindingInvocation::FailOnFetchFailed(_) => {
-            Component::Navigator
-        }
+        BindingInvocation::CommitOnResponse(_)
+        | BindingInvocation::FailOnFetchFailed(_)
+        | BindingInvocation::NavigateOnNavigationRequested(_) => Component::Navigator,
         BindingInvocation::FetchOnNavigationStarted(_) => Component::Net,
         BindingInvocation::ParseOnNavigationCommitted(_) => Component::Document,
+        BindingInvocation::CloseTabOnSessionClosed(_) => Component::Shell,
+        BindingInvocation::NoteOnNavigationCancelled(_)
+        | BindingInvocation::NoteOnNavigationCommitted(_)
+        | BindingInvocation::NoteOnNavigationFailed(_)
+        | BindingInvocation::NoteOnNavigationStarted(_) => Component::Agent,
+    }
+}
+
+/// The name of the event whose delivery made a binding's invocation, as `SystemEvent::name`
+/// gives it.
+fn trigger(invocation: &BindingInvocation) -> &'static str {
+    match invocation {
+        BindingInvocation::CloseTabOnSessionClosed(_) => "surf.agent.SessionClosed",
+        BindingInvocation::CommitOnResponse(_) => "surf.net.ResponseReceived",
+        BindingInvocation::FailOnFetchFailed(_) => "surf.net.FetchFailed",
+        BindingInvocation::FetchOnNavigationStarted(_)
+        | BindingInvocation::NoteOnNavigationStarted(_) => "surf.navigation.NavigationStarted",
+        BindingInvocation::NavigateOnNavigationRequested(_) => "surf.agent.NavigationRequested",
+        BindingInvocation::NoteOnNavigationCancelled(_) => "surf.navigation.NavigationCancelled",
+        BindingInvocation::NoteOnNavigationCommitted(_)
+        | BindingInvocation::ParseOnNavigationCommitted(_) => "surf.navigation.NavigationCommitted",
+        BindingInvocation::NoteOnNavigationFailed(_) => "surf.navigation.NavigationFailed",
     }
 }
 
@@ -205,9 +273,13 @@ fn names(events: &[SystemEvent]) -> String {
 /// Before the command the system was quiescent, so the pump's first collection puts exactly the
 /// commanding component's outbox on the log, and every binding delivery appends after it. The
 /// command's own events are therefore the run of the commanding component's events `gained`
-/// starts with, provided nothing later in `gained` comes from that component: no binding invoked
-/// a command on it, and no later event is its. The [`Unanswered`] transport issues no command.
-/// Where that does not hold, the log cannot be split, and the answer is an error.
+/// starts with. A later event of that component is the command's only if no binding invoked it;
+/// one a binding invoked it for is not, provided the event that binding reacted to came from
+/// another component and reached the log after that run, so the binding's events sit behind it.
+/// The `agent` component is invoked back so: `Go` publishes `NavigationRequested`, the
+/// navigator's `NavigationStarted` follows, and `note-on-navigation-started` invokes the agent
+/// again. The [`Unanswered`] transport issues no command. Where that does not hold, the log
+/// cannot be split, and the answer is an error.
 ///
 /// `Err` also when the outcome and the log disagree: an event the outcome carries that the log
 /// lacks, an event on the log behind a refusal, or other values.
@@ -219,22 +291,32 @@ fn reported_events(
 ) -> Result<Vec<SystemEvent>, String> {
     let component = receiver(command)
         .ok_or_else(|| format!("`{command}` is issued on no component of the surf system"))?;
-    if let Some(invocation) = invoked
-        .iter()
-        .find(|invocation| invoked_on(invocation) == component)
-    {
-        return Err(format!(
-            "a binding invoked {invocation:?} on the component `{command}` was issued on, so the \
-             log does not tell the command's own events from that one's"
-        ));
-    }
     let direct = gained
         .iter()
         .take_while(|event| publisher(event) == component)
         .count();
-    if let Some(later) = gained[direct..]
+    let mut back = invoked
         .iter()
-        .find(|event| publisher(event) == component)
+        .filter(|invocation| invoked_on(invocation) == component)
+        .peekable();
+    let invoked_back = back.peek().is_some();
+    for invocation in back {
+        let cause = trigger(invocation);
+        let delivered = gained[direct..]
+            .iter()
+            .any(|event| event.name() == cause && publisher(event) != component);
+        if !delivered {
+            return Err(format!(
+                "a binding invoked {invocation:?} on the component `{command}` was issued on, and \
+                 no `{cause}` of another component reached the log after the command's own \
+                 events, so the log does not tell the command's own events from that one's"
+            ));
+        }
+    }
+    if !invoked_back
+        && let Some(later) = gained[direct..]
+            .iter()
+            .find(|event| publisher(event) == component)
     {
         return Err(format!(
             "{later:?} reached the log after a binding delivery, from the component `{command}` \
@@ -278,6 +360,130 @@ fn navigation_state(state: NavigationState) -> &'static str {
     }
 }
 
+fn navigation_state_named(name: &str) -> Option<NavigationState> {
+    [
+        NavigationState::Cancelled,
+        NavigationState::Committed,
+        NavigationState::Failed,
+        NavigationState::Started,
+    ]
+    .into_iter()
+    .find(|state| navigation_state(*state) == name)
+}
+
+fn session_state(state: SessionState) -> &'static str {
+    match state {
+        SessionState::Closed => "Closed",
+        SessionState::Open => "Open",
+    }
+}
+
+/// An optional value: `null` where it is absent.
+fn optional<T>(value: Option<T>, present: impl FnOnce(T) -> Node) -> Node {
+    value.map_or(Node::Null, present)
+}
+
+/// A `surf.agent.Session` from an entity setup: its identity, every declared field and its
+/// state. A field the entity does not declare, a required field that is missing, a value of
+/// another type and a state it does not declare are each an adapter failure naming it. An
+/// optional field may be absent or `null`.
+fn session_snapshot(
+    identity: &Node,
+    fields: &BTreeMap<String, Node>,
+    state: &impl std::fmt::Display,
+) -> Result<SessionSnapshot, TargetError> {
+    let reading = "establishing a `surf.agent.Session`";
+    let wrong = |what: String| TargetError::unavailable(reading, what);
+    let text = |name: &str, node: &Node| match node {
+        Node::Text(value) => Ok(value.clone()),
+        other => Err(wrong(format!(
+            "`{name}` is not text: {}",
+            ess_conformance::report::quote(other)
+        ))),
+    };
+    let required = |name: &str| {
+        fields
+            .get(name)
+            .ok_or_else(|| wrong(format!("`{name}` is missing")))
+            .and_then(|node| text(name, node))
+    };
+    let optional = |name: &str| match fields.get(name) {
+        None | Some(Node::Null) => Ok(None),
+        Some(node) => text(name, node).map(Some),
+    };
+    const DECLARED: [&str; 6] = [
+        "window_id",
+        "tab_id",
+        "holder",
+        "navigation_id",
+        "url",
+        "navigation_state",
+    ];
+    if let Some(undeclared) = fields
+        .keys()
+        .find(|name| !DECLARED.contains(&name.as_str()))
+    {
+        return Err(wrong(format!("undeclared field `{undeclared}`")));
+    }
+    let navigation_state = match optional("navigation_state")? {
+        None => None,
+        Some(name) => Some(
+            navigation_state_named(&name)
+                .ok_or_else(|| wrong(format!("`navigation_state` is no state: {name}")))?,
+        ),
+    };
+    let state = match state.to_string().as_str() {
+        "Open" => SessionState::Open,
+        "Closed" => SessionState::Closed,
+        other => return Err(wrong(format!("`{other}` is no state of a session"))),
+    };
+    Ok(SessionSnapshot {
+        state,
+        data: SessionData {
+            session_id: SessionId(Uuid(text("identity", identity)?)),
+            window_id: WindowId(Uuid(required("window_id")?)),
+            tab_id: TabId(Uuid(required("tab_id")?)),
+            holder: SessionId(Uuid(required("holder")?)),
+            navigation_id: optional("navigation_id")?.map(|id| RequestId(Uuid(id))),
+            url: optional("url")?.map(Url),
+            navigation_state,
+        },
+    })
+}
+
+/// The `session_id` the caller of `command` carries, read from the runner's caller attributes.
+///
+/// Only `surf.agent.SessionHolder` declares an attribute, `session_id`. An attribute of another
+/// name, or one that is not text, is an adapter failure: the target cannot send the command as
+/// that caller, and does not send it as someone else.
+fn caller_session_id(
+    command: &str,
+    caller: Option<&BTreeMap<String, Node>>,
+) -> Result<Option<SessionId>, TargetError> {
+    let Some(attributes) = caller else {
+        return Ok(None);
+    };
+    let sending = || format!("sending `{command}` as its caller");
+    let mut session_id = None;
+    for (attribute, value) in attributes {
+        match (attribute.as_str(), value) {
+            ("session_id", Node::Text(text)) => {
+                session_id = Some(SessionId(Uuid(text.clone())));
+            }
+            _ => {
+                return Err(TargetError::unsupported(
+                    sending(),
+                    format!(
+                        "the surf system authenticates no caller attribute `{attribute}` = {}",
+                        ess_conformance::report::quote(value)
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(session_id)
+}
+
 fn request_state(state: RequestState) -> &'static str {
     match state {
         RequestState::Failed => "Failed",
@@ -315,6 +521,26 @@ fn failure_reason_named(name: &str) -> Option<FailureReason> {
 fn payload(event: &SystemEvent) -> Vec<(&'static str, Node)> {
     use values::{bytes, integer, text, uuid};
     match event {
+        SystemEvent::NavigationRequested(e) => vec![
+            ("session_id", uuid(&e.session_id.0)),
+            ("tab_id", uuid(&e.tab_id.0)),
+            ("url", text(&e.url.0)),
+        ],
+        SystemEvent::SessionClosed(e) => vec![
+            ("session_id", uuid(&e.session_id.0)),
+            ("window_id", uuid(&e.window_id.0)),
+            ("tab_id", uuid(&e.tab_id.0)),
+        ],
+        SystemEvent::SessionNavigationChanged(e) => vec![
+            ("navigation_id", uuid_of(&e.navigation_id)),
+            ("state", text(navigation_state(e.state))),
+            ("sessions", integer(e.sessions)),
+        ],
+        SystemEvent::SessionOpened(e) => vec![
+            ("session_id", uuid(&e.session_id.0)),
+            ("window_id", uuid(&e.window_id.0)),
+            ("tab_id", uuid(&e.tab_id.0)),
+        ],
         SystemEvent::DocumentParsed(e) => {
             vec![
                 ("document_id", uuid(&e.document_id.0)),
@@ -433,11 +659,58 @@ fn invocation(
             "surf.document.ParseDocument",
             vec![("url", text(&input.url.0)), ("body", bytes(&input.body))],
         ),
+        BindingInvocation::NavigateOnNavigationRequested(input) => (
+            "navigate-on-navigation-requested",
+            "surf.navigation.Navigate",
+            vec![
+                ("tab_id", values::uuid(&input.tab_id.0)),
+                ("url", text(&input.url.0)),
+            ],
+        ),
+        BindingInvocation::CloseTabOnSessionClosed(input) => (
+            "close-tab-on-session-closed",
+            "surf.shell.CloseTab",
+            vec![("tab_id", values::uuid(&input.tab_id.0))],
+        ),
+        BindingInvocation::NoteOnNavigationStarted(input) => (
+            "note-on-navigation-started",
+            "surf.agent.NoteNavigationStarted",
+            vec![
+                ("tab_id", values::uuid(&input.tab_id.0)),
+                ("navigation_id", uuid_of(&input.navigation_id)),
+                ("url", text(&input.url.0)),
+            ],
+        ),
+        BindingInvocation::NoteOnNavigationCommitted(input) => {
+            noted("note-on-navigation-committed", input)
+        }
+        BindingInvocation::NoteOnNavigationFailed(input) => {
+            noted("note-on-navigation-failed", input)
+        }
+        BindingInvocation::NoteOnNavigationCancelled(input) => {
+            noted("note-on-navigation-cancelled", input)
+        }
     }
 }
 
-impl<D, N, Ne, R, S> SurfTarget<D, N, Ne, R, S>
+/// An invocation of `surf.agent.NoteNavigationEnded` by `binding`.
+fn noted(
+    binding: &'static str,
+    input: &NoteNavigationEnded,
+) -> (&'static str, &'static str, Vec<(&'static str, Node)>) {
+    (
+        binding,
+        "surf.agent.NoteNavigationEnded",
+        vec![
+            ("navigation_id", uuid_of(&input.navigation_id)),
+            ("state", values::text(navigation_state(input.state))),
+        ],
+    )
+}
+
+impl<A, D, N, Ne, R, S> SurfTarget<A, D, N, Ne, R, S>
 where
+    A: AgentBehaviors,
     D: DocumentBehaviors,
     N: NavigatorBehaviors,
     Ne: NetBehaviors,
@@ -447,7 +720,7 @@ where
     /// Runs `operation` on the open scenario.
     fn with<T>(
         &self,
-        operation: impl FnOnce(&mut Scenario<D, N, Ne, R, S>) -> Result<T, TargetError>,
+        operation: impl FnOnce(&mut Scenario<A, D, N, Ne, R, S>) -> Result<T, TargetError>,
     ) -> Result<T, TargetError> {
         let mut open = self.scenario.borrow_mut();
         let scenario = open.as_mut().ok_or_else(|| {
@@ -459,7 +732,7 @@ where
     /// Issues one command on its component's port.
     #[allow(clippy::too_many_lines)]
     fn issue(
-        browser: &mut ConformanceBrowser<D, N, Ne, R, S>,
+        browser: &mut ConformanceBrowser<A, D, N, Ne, R, S>,
         command: &str,
         fields: &BTreeMap<String, Node>,
     ) -> Result<Answered, TargetError> {
@@ -468,6 +741,132 @@ where
         let invoking = format!("invoking `{command}`");
         let unmet = unmet(&invoking);
         Ok(match command {
+            "surf.agent.OpenSession" => {
+                let session_id = SessionId(input.uuid("session_id")?);
+                let window_id = WindowId(input.uuid("window_id")?);
+                let tab_id = TabId(input.uuid("tab_id")?);
+                input.finish()?;
+                match browser
+                    .agent_mut()
+                    .open_session(OpenSession {
+                        session_id,
+                        window_id,
+                        tab_id,
+                    })
+                    .map_err(unmet)?
+                {
+                    OpenSessionOutcome::Opened { session_opened } => {
+                        took("opened", SystemEvent::SessionOpened(session_opened))
+                    }
+                    OpenSessionOutcome::Exists { error } => refused(
+                        "exists",
+                        "surf.agent.SessionExists",
+                        vec![("session_id", uuid(&error.session_id.0))],
+                    )?,
+                }
+            }
+            "surf.agent.Go" => {
+                let session_id = SessionId(input.uuid("session_id")?);
+                let url = Url(input.text("url")?);
+                input.finish()?;
+                match browser
+                    .agent_mut()
+                    .go(Go { session_id, url })
+                    .map_err(unmet)?
+                {
+                    GoOutcome::Requested {
+                        navigation_requested,
+                    } => took(
+                        "requested",
+                        SystemEvent::NavigationRequested(navigation_requested),
+                    ),
+                    GoOutcome::NotHolder { error } => refused(
+                        "not-holder",
+                        "surf.agent.NotSessionHolder",
+                        vec![("session_id", uuid(&error.session_id.0))],
+                    )?,
+                    GoOutcome::NoSuchSession { error } => refused(
+                        "no-such-session",
+                        "surf.agent.SessionNotFound",
+                        vec![("session_id", uuid(&error.session_id.0))],
+                    )?,
+                    GoOutcome::Closed { error } => refused(
+                        "closed",
+                        "surf.agent.SessionStateConflict",
+                        vec![("state", values::text(session_state(error.state)))],
+                    )?,
+                }
+            }
+            "surf.agent.CloseSession" => {
+                let session_id = SessionId(input.uuid("session_id")?);
+                input.finish()?;
+                match browser
+                    .agent_mut()
+                    .close_session(CloseSession { session_id })
+                    .map_err(unmet)?
+                {
+                    CloseSessionOutcome::Closed { session_closed } => {
+                        took("closed", SystemEvent::SessionClosed(session_closed))
+                    }
+                    CloseSessionOutcome::NotHolder { error } => refused(
+                        "not-holder",
+                        "surf.agent.NotSessionHolder",
+                        vec![("session_id", uuid(&error.session_id.0))],
+                    )?,
+                    CloseSessionOutcome::NoSuchSession { error } => refused(
+                        "no-such-session",
+                        "surf.agent.SessionNotFound",
+                        vec![("session_id", uuid(&error.session_id.0))],
+                    )?,
+                    CloseSessionOutcome::WrongState { error } => refused(
+                        "wrong-state",
+                        "surf.agent.SessionStateConflict",
+                        vec![("state", values::text(session_state(error.state)))],
+                    )?,
+                }
+            }
+            "surf.agent.NoteNavigationStarted" => {
+                let tab_id = TabId(input.uuid("tab_id")?);
+                let navigation_id = RequestId(input.uuid("navigation_id")?);
+                let url = Url(input.text("url")?);
+                input.finish()?;
+                match browser
+                    .agent_mut()
+                    .note_navigation_started(NoteNavigationStarted {
+                        tab_id,
+                        navigation_id,
+                        url,
+                    })
+                    .map_err(unmet)?
+                {
+                    NoteNavigationStartedOutcome::Noted {
+                        session_navigation_changed,
+                    } => took(
+                        "noted",
+                        SystemEvent::SessionNavigationChanged(session_navigation_changed),
+                    ),
+                }
+            }
+            "surf.agent.NoteNavigationEnded" => {
+                let navigation_id = RequestId(input.uuid("navigation_id")?);
+                let state = input.variant("state", navigation_state_named)?;
+                input.finish()?;
+                match browser
+                    .agent_mut()
+                    .note_navigation_ended(NoteNavigationEnded {
+                        navigation_id,
+                        state,
+                    })
+                    .map_err(unmet)?
+                {
+                    NoteNavigationEndedOutcome::Noted {
+                        session_navigation_changed,
+                    } => took(
+                        "noted",
+                        SystemEvent::SessionNavigationChanged(session_navigation_changed),
+                    ),
+                }
+            }
             "surf.shell.OpenWindow" => {
                 input.finish()?;
                 match browser
@@ -739,16 +1138,65 @@ where
         })
     }
 
-    /// The rows of one view, by projected field name.
+    /// The rows of one view, by projected field name, for `params`, its parameters by declared
+    /// name. A parameter the view does not declare is an adapter failure naming it.
     fn rows(
-        browser: &ConformanceBrowser<D, N, Ne, R, S>,
+        browser: &ConformanceBrowser<A, D, N, Ne, R, S>,
         view: &str,
+        params: &BTreeMap<String, Node>,
     ) -> Result<Vec<ViewRow>, TargetError> {
         use values::{integer, text, uuid};
         let reading = format!("reading `{view}`");
         let unmet = unmet(&reading);
         let system = browser.system();
+        let mut params = Input::new(view, params);
+        if view == "surf.agent.SessionState" {
+            let session_id = SessionId(params.uuid("session_id")?);
+            params.finish()?;
+            let rows = system
+                .agent
+                .session_state_view(session_id)
+                .map_err(unmet)?
+                .into_iter()
+                .map(|row| {
+                    fields(vec![
+                        ("session_id", uuid(&row.session_id.0)),
+                        ("state", text(session_state(row.state))),
+                        ("url", optional(row.url.as_ref(), |url| text(&url.0))),
+                        (
+                            "navigation_state",
+                            optional(row.navigation_state, |state| text(navigation_state(state))),
+                        ),
+                    ])
+                })
+                .collect();
+            return Ok(rows);
+        }
+        params.finish()?;
         let rows: Vec<Vec<(&'static str, Node)>> = match view {
+            "surf.agent.Sessions" => system
+                .agent
+                .sessions()
+                .map_err(unmet)?
+                .into_iter()
+                .map(|row| {
+                    vec![
+                        ("session_id", uuid(&row.session_id.0)),
+                        ("state", text(session_state(row.state))),
+                        ("window_id", uuid(&row.window_id.0)),
+                        ("tab_id", uuid(&row.tab_id.0)),
+                        (
+                            "navigation_id",
+                            optional(row.navigation_id.as_ref(), uuid_of),
+                        ),
+                        ("url", optional(row.url.as_ref(), |url| text(&url.0))),
+                        (
+                            "navigation_state",
+                            optional(row.navigation_state, |state| text(navigation_state(state))),
+                        ),
+                    ]
+                })
+                .collect(),
             "surf.document.Documents" => system
                 .document
                 .documents()
@@ -833,8 +1281,9 @@ where
     }
 }
 
-impl<D, N, Ne, R, S> ConformanceTarget for SurfTarget<D, N, Ne, R, S>
+impl<A, D, N, Ne, R, S> ConformanceTarget for SurfTarget<A, D, N, Ne, R, S>
 where
+    A: AgentBehaviors,
     D: DocumentBehaviors,
     N: NavigatorBehaviors,
     Ne: NetBehaviors,
@@ -846,11 +1295,50 @@ where
     }
 
     fn begin_scenario(&self, _scenario: &ScenarioContext) -> Result<(), TargetError> {
+        let setup = Setup::default();
         *self.scenario.borrow_mut() = Some(Scenario {
-            browser: (self.assemble)(),
+            browser: (self.assemble)(&setup),
+            setup,
             writes: 0,
         });
         Ok(())
+    }
+
+    fn establish_entity(&self, request: EntitySetupRequest) -> Result<(), TargetError> {
+        self.with(|scenario| {
+            let entity = request.entity.to_string();
+            let establishing = format!("establishing a `{entity}`");
+            if entity != "surf.agent.Session" {
+                return Err(TargetError::unsupported(
+                    establishing,
+                    "the surf system establishes only `surf.agent.Session` without a command",
+                ));
+            }
+            if scenario.writes > 0 || !scenario.browser.system().published().is_empty() {
+                return Err(TargetError::unsupported(
+                    establishing,
+                    "a session is established before the scenario's first command, and one ran",
+                ));
+            }
+            let session = session_snapshot(&request.identity, &request.fields, &request.state)?;
+            if scenario
+                .setup
+                .sessions
+                .iter()
+                .any(|held| held.data.session_id == session.data.session_id)
+            {
+                return Err(TargetError::unavailable(
+                    establishing,
+                    format!(
+                        "a session `{}` is already established",
+                        session.data.session_id.0.0
+                    ),
+                ));
+            }
+            scenario.setup.sessions.push(session);
+            scenario.browser = (self.assemble)(&scenario.setup);
+            Ok(())
+        })
     }
 
     fn end_scenario(&self, _scenario: &ScenarioContext) -> Result<(), TargetError> {
@@ -866,7 +1354,11 @@ where
             let command = request.command.to_string();
             let logged = scenario.browser.system().published().len();
             let recorded = scenario.browser.system().invocations().len();
-            let answered = Self::issue(&mut scenario.browser, &command, &request.input)?;
+            let caller = &scenario.setup.caller;
+            caller.set(caller_session_id(&command, request.caller.as_ref())?);
+            let answered = Self::issue(&mut scenario.browser, &command, &request.input);
+            caller.set(None);
+            let answered = answered?;
             let delivering = format!("delivering what `{command}` published");
             scenario.browser.run().map_err(unmet(&delivering))?;
             let system = scenario.browser.system();
@@ -909,12 +1401,6 @@ where
     fn query_view(&self, request: SemanticViewRequest) -> Result<SemanticViewResult, TargetError> {
         self.with(|scenario| {
             let view = request.view.to_string();
-            if !request.params.is_empty() {
-                return Err(TargetError::unavailable(
-                    format!("reading `{view}`"),
-                    "the surf system declares no view parameter",
-                ));
-            }
             if let Some(token) = request.consistency.token() {
                 let issued = token
                     .as_str()
@@ -931,6 +1417,7 @@ where
             Ok(SemanticViewResult::of(Self::rows(
                 &scenario.browser,
                 &view,
+                &request.params,
             )?))
         })
     }
@@ -999,9 +1486,13 @@ mod tests {
     use super::reported_events;
     use surf::SystemEvent;
     use surf_system::BindingInvocation;
+    use surf_types::agent::{
+        NavigationRequested, NoteNavigationStarted, SessionId, SessionNavigationChanged,
+    };
     use surf_types::document::{DocumentId, DocumentParsed};
     use surf_types::navigation::{
-        CommitNavigation, NavigationCancelled, NavigationCommitted, NavigationStarted,
+        CommitNavigation, Navigate, NavigationCancelled, NavigationCommitted, NavigationStarted,
+        NavigationState,
     };
     use surf_types::net::{Fetch, MediaType, RequestId, RequestStarted, ResponseReceived, Status};
     use surf_types::primitives::Uuid;
@@ -1164,6 +1655,81 @@ mod tests {
     #[test]
     fn a_command_of_no_component_is_an_error() {
         let answer = reported_events("surf.elsewhere.Act", &[], &[], &[]);
+        assert!(answer.is_err(), "{answer:?}");
+    }
+
+    const SESSION: &str = "3f1d5b7e-0000-4000-8000-000000000040";
+
+    fn requested() -> SystemEvent {
+        SystemEvent::NavigationRequested(NavigationRequested {
+            session_id: SessionId(Uuid(SESSION.to_owned())),
+            tab_id: TabId(Uuid(TAB.to_owned())),
+            url: Url(ADDRESS.to_owned()),
+        })
+    }
+
+    fn noted_started() -> SystemEvent {
+        SystemEvent::SessionNavigationChanged(SessionNavigationChanged {
+            navigation_id: navigation_id(),
+            state: NavigationState::Started,
+            sessions: 1,
+        })
+    }
+
+    fn navigate() -> BindingInvocation {
+        BindingInvocation::NavigateOnNavigationRequested(Navigate {
+            tab_id: TabId(Uuid(TAB.to_owned())),
+            url: Url(ADDRESS.to_owned()),
+        })
+    }
+
+    fn note_started() -> BindingInvocation {
+        BindingInvocation::NoteOnNavigationStarted(NoteNavigationStarted {
+            tab_id: TabId(Uuid(TAB.to_owned())),
+            navigation_id: navigation_id(),
+            url: Url(ADDRESS.to_owned()),
+        })
+    }
+
+    /// Story agent-session-spec: `Go` publishes `NavigationRequested`, and the navigator's
+    /// `NavigationStarted` invokes the `agent` component again. That event is the binding's, not
+    /// the command's: it sits behind the other component's event it reacted to.
+    #[test]
+    fn an_event_a_binding_invoked_back_after_another_components_event_is_not_the_commands() {
+        assert_eq!(
+            reported_events(
+                "surf.agent.Go",
+                &[requested()],
+                &[requested(), started(), noted_started(), request_started()],
+                &[navigate(), fetch(), note_started()],
+            ),
+            Ok(vec![requested()])
+        );
+    }
+
+    /// The same invocation back into the component, with the event it reacts to missing from the
+    /// log, leaves the log unsplit.
+    #[test]
+    fn a_binding_invoked_back_without_its_cause_on_the_log_is_an_error() {
+        let answer = reported_events(
+            "surf.agent.Go",
+            &[requested()],
+            &[requested(), noted_started()],
+            &[navigate(), note_started()],
+        );
+        assert!(answer.is_err(), "{answer:?}");
+    }
+
+    /// A second event of the commanding component behind another one's, with no binding back
+    /// into it, is still an error.
+    #[test]
+    fn a_later_event_of_the_commanding_component_with_no_binding_back_is_an_error() {
+        let answer = reported_events(
+            "surf.agent.Go",
+            &[requested()],
+            &[requested(), started(), noted_started()],
+            &[navigate()],
+        );
         assert!(answer.is_err(), "{answer:?}");
     }
 }

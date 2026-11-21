@@ -7,11 +7,12 @@
 
 use ess_conformance::target::ImplementationIdentity;
 use surf::{Browser, System};
-use surf_conformance::{ConformanceBrowser, SurfTarget, Unanswered, run};
+use surf_conformance::{ConformanceBrowser, Setup, SurfTarget, Unanswered, run};
 use surf_ports::{
-    DocumentPorts, NavigatorPorts, NetPorts, RandomSource, RendererPorts, ShellPorts,
+    DocumentPorts, NavigatorPorts, NetPorts, RandomSource, RendererPorts, ShellPorts, agent_port,
     document_port, navigator_port, net_port, renderer_port, shell_port,
 };
+use surf_types::agent::SessionId;
 use surf_types::behaviour::{
     DocumentStorage, FrameStorage, NavigationStorage, RequestStorage, TabStorage, TryContext,
     WindowStorage,
@@ -30,11 +31,12 @@ use surf_types::url::Url;
 const SUITE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../.out/suite.json");
 
 /// The suite over the system `assemble` builds: (total, passed, the scenarios that did not pass).
-fn suite_over<D, N, Ne, R, S>(
+fn suite_over<A, D, N, Ne, R, S>(
     label: &str,
-    assemble: impl Fn() -> ConformanceBrowser<D, N, Ne, R, S> + 'static,
+    assemble: impl Fn(&Setup) -> ConformanceBrowser<A, D, N, Ne, R, S> + 'static,
 ) -> (usize, usize, Vec<String>)
 where
+    A: surf::AgentBehaviors + 'static,
     D: surf::DocumentBehaviors + 'static,
     N: surf::NavigatorBehaviors + 'static,
     Ne: surf::NetBehaviors + 'static,
@@ -138,6 +140,10 @@ mutant_storage!(FrameStorage, FrameSnapshot, FrameId);
 macro_rules! context_through {
     (impl$(<$param:ident: TryContext>)? for $ty:ty, $field:tt) => {
         impl$(<$param: TryContext>)? TryContext for $ty {
+            fn try_caller_session_id(&self) -> Result<Option<SessionId>, UnmetObligation> {
+                self.$field.try_caller_session_id()
+            }
+
             fn try_generate_surf_document_document_id(
                 &mut self,
             ) -> Result<DocumentId, UnmetObligation> {
@@ -166,13 +172,11 @@ macro_rules! context_through {
 context_through!(impl<P: TryContext> for Mutant<P>, inner);
 
 /// Every component's storage with `policy`, the `net` component's included.
-fn every_storage(
-    label: &'static str,
-    policy: Policy,
-) -> (usize, usize, Vec<String>) {
-    suite_over(label, move || {
+fn every_storage(label: &'static str, policy: Policy) -> (usize, usize, Vec<String>) {
+    suite_over(label, move |setup| {
         Browser::new(
             System::new(
+                agent_port(setup.agent_ports()),
                 document_port(Mutant::new(DocumentPorts::new(), policy)),
                 navigator_port(Mutant::new(NavigatorPorts::new(), policy)),
                 net_port(Mutant::new(NetPorts::new(), policy)),
@@ -197,9 +201,10 @@ fn review2_a_net_storage_that_drops_every_put_is_noticed() {
     let label = "net storage drops every put";
     assert_noticed(
         label,
-        suite_over(label, || {
+        suite_over(label, |setup| {
             Browser::new(
                 System::new(
+                    agent_port(setup.agent_ports()),
                     document_port(DocumentPorts::new()),
                     navigator_port(NavigatorPorts::new()),
                     net_port(Mutant::new(
@@ -223,9 +228,10 @@ fn review2_a_document_storage_that_drops_every_put_is_noticed() {
     let label = "document storage drops every put";
     assert_noticed(
         label,
-        suite_over(label, || {
+        suite_over(label, |setup| {
             Browser::new(
                 System::new(
+                    agent_port(setup.agent_ports()),
                     document_port(Mutant::new(
                         DocumentPorts::new(),
                         Policy {
@@ -249,9 +255,10 @@ fn review2_a_navigations_view_one_row_short_is_noticed() {
     let label = "Navigations view drops its last row";
     assert_noticed(
         label,
-        suite_over(label, || {
+        suite_over(label, |setup| {
             Browser::new(
                 System::new(
+                    agent_port(setup.agent_ports()),
                     document_port(DocumentPorts::new()),
                     navigator_port(Mutant::new(
                         NavigatorPorts::new(),
@@ -304,9 +311,10 @@ fn review2_every_assigned_identity_the_same_is_noticed() {
     let label = "every assigned identity is the same";
     assert_noticed(
         label,
-        suite_over(label, || {
+        suite_over(label, |setup| {
             Browser::new(
                 System::new(
+                    agent_port(setup.agent_ports()),
                     document_port(DocumentPorts::with_source(Zeros)),
                     navigator_port(NavigatorPorts::with_source(Zeros)),
                     net_port(NetPorts::new()),
@@ -394,9 +402,10 @@ fn navigations_over(
     label: &'static str,
     navigations: fn() -> Navigations,
 ) -> (usize, usize, Vec<String>) {
-    suite_over(label, move || {
+    suite_over(label, move |setup| {
         Browser::new(
             System::new(
+                agent_port(setup.agent_ports()),
                 document_port(DocumentPorts::new()),
                 navigator_port(navigations()),
                 net_port(NetPorts::new()),
@@ -525,9 +534,10 @@ fn review2_open_tab_into_a_window_never_opened_is_noticed() {
     let label = "every window identity is found";
     assert_noticed(
         label,
-        suite_over(label, || {
+        suite_over(label, |setup| {
             Browser::new(
                 System::new(
+                    agent_port(setup.agent_ports()),
                     document_port(DocumentPorts::new()),
                     navigator_port(NavigatorPorts::new()),
                     net_port(NetPorts::new()),

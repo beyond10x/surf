@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T02:10:31Z",
+  "actor": "human:timo",
+  "artifact": "story:release-binaries",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "release workflow run 44853106343 (manual, main at c008179) and tag run 44853252997, read by the coordinator",
+    "reference": "both runs success, 4 package jobs each; SHA256SUMS OK for 4 archives; scan-artifact valid for both Linux binaries; the x86_64 Linux binary downloaded from release 0.1.0 printed the three rows of a committed load of a local page, exit 0; verdict VERIFIED"
+  }
+}

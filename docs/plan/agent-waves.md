@@ -22,8 +22,8 @@ collision; a story that collides moves to the next wave. The table below is the 
 | wave | stories |
 |---|---|
 | 1 (delivered, [page](agent-wave-1.md)) | `agent-answer-format`, `agent-cli-spec`, `agent-secret-primitives`, `agent-url-parser`, `html-decisions`, `runner-decisions`, `view-decisions` |
-| 2 | `agent-cli-client`, `agent-session-spec`, `html-conformance-harness`, `view-http-server` |
-| 3 | `agent-page-path-spec`, `agent-surfd-supervisor`, `runner-surf-cli-package` (moved from wave 2 after D32: it shares `crates/surf/Cargo.toml` with `agent-session-spec`) |
+| 2 (delivered, [page](agent-wave-2.md)) | `agent-cli-client`, `agent-session-spec`, `html-conformance-harness`, `view-http-server` |
+| 3 | `agent-page-path-spec`, `agent-surfd-supervisor`, `runner-surf-cli-package` (moved from wave 2 after D32: it shares `crates/surf/Cargo.toml` with `agent-session-spec`), `view-page-prototype` (added in wave 2: the page on example data, so that it can be opened before `surfd` exists) |
 | 4 | `agent-redirect-spec`, `agent-session-process`, `html-conformance-gate` |
 | 5 | `agent-session-events`, `html-input-stream`, `html-tokenizer-markup` |
 | 6 | `html-document-spec`, `html-tokenizer-text`, `view-surfd-serves` |
@@ -46,6 +46,8 @@ collision; a story that collides moves to the next wave. The table below is the 
 
 ## What works after which wave
 
+- After wave 3: the view's page on example data (`story:view-page-prototype`), served by an
+  example program. The coordinator opens it in Brave.
 - After wave 4: `surf-agent open`, `go`, `look` and `close` against `surfd` and one session
   process per session. The operator gets a "to try" list here.
 - After wave 7: the first live view (`story:view-first-page`): the sessions, the page line and

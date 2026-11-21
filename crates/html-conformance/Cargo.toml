@@ -1,0 +1,12 @@
+[package]
+name = "surf-html-conformance"
+description = "Runs the vendored html5lib-tests and web-platform-tests parser data against surf-html and counts the cases that exist, run and pass."
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+
+[dependencies]
+surf-html = { path = "../html" }
+
+[dev-dependencies]

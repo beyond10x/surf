@@ -5,7 +5,7 @@ description: What surf can do after which step of the current plan, and what com
 
 # Roadmap
 
-The current plan has 58 stories in 22 steps, called waves. Wave 1 is delivered.
+The current plan has 58 stories in 22 steps, called waves. Waves 1 and 2 are delivered.
 
 | after wave | what you can do |
 |---|---|

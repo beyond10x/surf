@@ -13,3 +13,4 @@ navigator = { path = "../../generated/rust/crates/navigator" }
 net = { path = "../../generated/rust/crates/net" }
 document = { path = "../../generated/rust/crates/document" }
 renderer = { path = "../../generated/rust/crates/renderer" }
+agent = { path = "../../generated/rust/crates/agent" }

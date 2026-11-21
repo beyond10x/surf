@@ -22,6 +22,7 @@ command line.
 
 | component | what it does |
 |---|---|
+| `agent` | the sessions an AI agent opens and drives from the command line |
 | `shell` | the windows and tabs the user sees and acts on |
 | `navigator` | decides what each tab loads and tracks every load to its end |
 | `net` | fetches resources; the only component that talks to the network |
@@ -30,7 +31,7 @@ command line.
 
 Each component keeps its own data and reads no other component's. Components are coupled only by
 the bindings declared in the specification; a value another component needs travels in an event.
-Today all five run in one process. One operating-system process per component comes later.
+Today all six run in one process. One operating-system process per component comes later.
 
 ## The gate
 
@@ -38,20 +39,20 @@ One command checks everything:
 
 ```console
 $ task check
-surf v1 — 9 file(s), 3 scenario(s), valid
-51 scenario(s) (3 authored), 10 refusal(s), written to .out/suite.json
-  51 scenarios: 51 passed, 0 failed, 0 error, 0 unsupported
-51 scenario(s) (3 authored), 10 refusal(s), written to .out/suite.json
-  51 scenarios: 51 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 51 scenario(s) each, of suite sha256:8901028dc08460e1ca139c7fa8611bdfef400597e263fb0ac4f206599d5aaeb5
-generated/rust matches spec/ (28 artifact(s) and .ess-output)
+surf v1 — 9 file(s), 5 scenario(s), valid
+77 scenario(s) (5 authored), 24 refusal(s), written to .out/suite.json
+  77 scenarios: 77 passed, 0 failed, 0 error, 0 unsupported
+77 scenario(s) (5 authored), 24 refusal(s), written to .out/suite.json
+  77 scenarios: 77 passed, 0 failed, 0 error, 0 unsupported
+the interpreter and the Rust system ran 77 scenario(s) each, of suite sha256:60bd619e38e974b0040ce0b1213d8318ee53e0aa7c647339132e559b3f5038af
+generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
-Cargo.lock: 13 package(s), none from outside this repository
+Cargo.lock: 18 package(s), none from outside this repository
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.00s
-59 test suites: 201 passed, 0 failed, 0 ignored
+81 test suites: 280 passed, 0 failed, 0 ignored
 ```
 
-It validates the specification, runs the 51 scenarios against the interpreter built into `ess`
+It validates the specification, runs the 77 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
 that the lock file holds no outside package, then builds and tests.
 

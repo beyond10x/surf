@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T02:10:31Z",
+  "actor": "human:timo",
+  "artifact": "story:public-website",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "https://beyond10x.github.io/surf/ fetched by the coordinator on 2026-11-21 after the deploy of c008179",
+    "reference": "HTTP 200 on /surf/, /surf/docs, /surf/docs/try-it (with the install section), /surf/docs/reference/surf-command; workflow runs Documentation validation and Documentation site success; no b10x.docs.yaml in the tree; verdict VERIFIED"
+  }
+}
