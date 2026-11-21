@@ -2,7 +2,8 @@
 //! documentation of `surf-fetch` states ("Memory"): a server the agent was sent to redirects a
 //! short asked address to one of about 64 KiB, then serves a body at the body limit; and a
 //! redirect whose `Location` takes the whole header limit, resolved with a small body limit. And
-//! case 14 of the story that sends a `POST` (wave 9): a request body of 1 MiB is not copied.
+//! case 14 of the story that sends a `POST` (wave 9): a request body of 1 MiB is not copied; and
+//! the peak while a request body of 4 MiB is written twice.
 //!
 //! Why this file holds `unsafe`, the only `unsafe` of the repository: what a fetch holds is
 //! only seen by counting what it allocates, and a counting allocator is a `GlobalAlloc`, an
@@ -378,6 +379,61 @@ fn a_post_body_is_not_copied() {
         held <= bound,
         "crate documentation of surf-fetch, \"Memory\": a Post of {} bytes through a 307 held \
          {held} bytes while the body at the limit was read, {} bytes over {bound}",
+        body.len(),
+        held.saturating_sub(bound)
+    );
+}
+
+/// The peak while a request body is written, after the adversary's pass on the story that sends
+/// a `POST` (wave 9). A `Post` of 4 MiB goes through one 308, which repeats it, to a page of 2
+/// bytes, so no response body hides a copy made and dropped while the request is written: the
+/// peak over the whole fetch is that of the fetch without its body.
+///
+/// The bound, from the crate's limits: the addresses and the response heads are short, so the
+/// largest thing a fetch allocates is the buffer of a head being read, at most one read buffer
+/// (a head shorter than one read takes no more); everything else (the request head, the address
+/// parsed, the response URL, the fields of a head) is shorter than the header limit. So the
+/// header limit plus one read buffer, 73,728 bytes at the defaults, less than a 56th of the body:
+/// one copy of it is red.
+#[test]
+fn a_post_body_written_twice_is_not_copied_while_it_is_written() {
+    let _serial = serial();
+    let limits = Limits::default();
+    let body = vec![b'b'; 4 * 1024 * 1024];
+    let redirect: Arc<Vec<u8>> = Arc::new(
+        b"HTTP/1.1 308 Permanent Redirect\r\nLocation: /b\r\nContent-Length: 0\r\n\r\n".to_vec(),
+    );
+    let page: Arc<Vec<u8>> = Arc::new(
+        b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 2\r\n\r\nok".to_vec(),
+    );
+    let (port, server) = serve_posts(&[redirect, page]);
+    let asked = format!("http://127.0.0.1:{port}/a");
+    let request = Request {
+        address: &asked,
+        method: Method::Post,
+        body: Some(&body),
+        media_type: Some("application/octet-stream"),
+    };
+
+    let baseline = CURRENT.load(Ordering::SeqCst);
+    PEAK.store(baseline, Ordering::SeqCst);
+    let result = send(&request, &limits);
+    let held = PEAK.load(Ordering::SeqCst) - baseline;
+
+    let bodies = server.join().expect("server thread");
+    assert_eq!(bodies, [body.len(), body.len()], "the 308 repeats the body");
+    let response = result.expect("the redirect is followed and the page is a response");
+    assert_eq!(response.url, format!("http://127.0.0.1:{port}/b"));
+    assert_eq!(response.body, b"ok");
+    let bound = limits.max_header_bytes + READ_BUFFER;
+    assert_eq!(bound, 73_728);
+    eprintln!("held {held} bytes of the bound of {bound}");
+    assert!(bound * 56 <= body.len());
+    assert!(
+        held <= bound,
+        "crate documentation of surf-fetch, \"Memory\": a Post of {} bytes sent twice through a \
+         308 held {held} bytes over the whole fetch, {} bytes over the header limit plus one \
+         read buffer ({bound})",
         body.len(),
         held.saturating_sub(bound)
     );
