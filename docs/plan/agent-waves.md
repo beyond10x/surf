@@ -61,6 +61,17 @@ collision; a story that collides moves to the next wave. The table below is the 
 - After wave 18: links, forms, history and the `changed` block.
 - After wave 22: record a session, make a scenario from it, run it against the replayed network.
 
+## Accepted on 2026-11-21, behind the planned waves
+
+The operator accepted every draft on 2026-11-21 ("Accept all your drafts"). These stories
+are active in the store and are taken up after the planned waves, or earlier where a wave
+touches their files anyway: `agent-answer-paging`, `agent-close-window`,
+`agent-open-tab-caller-id`, `agent-token-hash`, `invalid-address-ending`,
+`random-source-failure-cause`, `runner-detail-option`, `runner-detailed-changes` (with
+`epic:detailed-mode`), and four from the wave records: `agent-file-open-race`,
+`agent-surfd-session-limit`, `agent-surfd-idle-exit-race`, `view-stream-string-example`.
+`release-agent-binaries` runs after wave 4, alone (the checkpoint above).
+
 ## Rules of a wave in this plan
 
 Beside `AGENTS.md` "Planning and waves" and `docs/plan/unit-invariants.md`:

@@ -2,10 +2,13 @@
 format: aep.planning-md/3
 id: epic:detailed-mode
 kind: epic
-status: draft
+status: active
 title: 'The detailed mode: every change of the node tree and of computed style'
 summary: --detail and the detailed lines of a recording; waits for a script engine, because nothing mutates a document's tree before one exists.
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-21T03:02:25Z", actor: "human:timo", revision: 3}
+- {from: "proposed", to: "active", at: "2026-11-21T03:02:26Z", actor: "human:timo", revision: 4}
 ---
 ## Context
 

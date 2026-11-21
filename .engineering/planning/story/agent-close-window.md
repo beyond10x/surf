@@ -2,14 +2,17 @@
 format: aep.planning-md/3
 id: story:agent-close-window
 kind: story
-status: draft
+status: active
 title: Close a window, and close the window of a closed session
 summary: 'Deferred: a CloseWindow command and a binding, so a closed session leaves no Open window.'
 tags:
 - deferred
 relations:
 - informed_by: epic:agent-cli-target
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-21T03:02:26Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-11-21T03:02:26Z", actor: "human:timo", revision: 3}
 ---
 ## What
 

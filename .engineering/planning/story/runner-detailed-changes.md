@@ -2,14 +2,17 @@
 format: aep.planning-md/3
 id: story:runner-detailed-changes
 kind: story
-status: draft
+status: active
 title: Compute the detailed changed lines over the node tree
 summary: Attribute, class, text and node changes between two states of one document, in the recording's grammar.
 relations:
 - depends_on: story:runner-formats
 - depends_on: story:runner-replay-transport
 - decomposes: epic:detailed-mode
-revision: 1
+revision: 3
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-21T03:02:28Z", actor: "human:timo", revision: 2}
+- {from: "proposed", to: "active", at: "2026-11-21T03:02:28Z", actor: "human:timo", revision: 3}
 ---
 ## Context
 

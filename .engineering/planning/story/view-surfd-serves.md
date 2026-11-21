@@ -13,7 +13,7 @@ relations:
 - depends_on: story:agent-session-process
 - depends_on: story:agent-secret-primitives
 - depends_on: story:view-page-prototype
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:15Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:15Z", actor: "human:timo", revision: 4}
@@ -147,10 +147,12 @@ wave 1); where this text and the document differ, the document holds.
   12. a session after `close` is still listed, with state `closed` and `ended_at` set, and a
       stream open during the `close` receives a `session` event of that session with state
       `closed`;
-  13. after `open <a>` and `go <b>`, the detail holds, in this order (D19): the `open` action
-      entry, the events of `open` in publish order, the `open` answer entry whose page line names
-      `<a>`; then the `go` action entry, the events of `go`, the `go` answer entry whose page line
-      names `<b>`; `index` consecutive from 1, `number` increasing;
+  13. after `open <a>` and `go <b>`, the detail holds, in this order (D19): the action entry `1
+      open`, its events in publish order, the action entry `2 go "<a>"`, its events in publish
+      order, then the one answer entry of `open`, whose page line names `<a>` and whose path holds
+      `1 open` and `2 go "<a>"` (an `open <address>` is two actions under one answer); then the
+      action entry `3 go "<b>"`, its events, the `go` answer entry whose page line names `<b>`;
+      `index` consecutive from 1, `number` increasing;
   14. a stream opened before a `go` receives, in this order (D19): the `go` action entry, its
       events in the order the detail lists them afterwards, its answer entry, then a `session`
       event of that session with the same `id:` as the answer entry; each `id:` is the entry's
