@@ -105,21 +105,22 @@ pub struct Tokenized {
 /// of preprocessing are reported as the tokenizer consumes the code point they are for. The
 /// tokens end with one [`Token::EndOfFile`].
 ///
-/// Written: the data state, the tag, attribute, comment, DOCTYPE, CDATA section and processing
-/// instruction states. The character reference state is a stub that leaves `&` a character
-/// (story `html-character-references`). Not written yet (story `html-tokenizer-text`): the
-/// RCDATA, RAWTEXT, script data and PLAINTEXT states; started in one of them, it returns no
-/// token and no parse error, and `last_start_tag`, which only those states read, is unused.
+/// Written: the data, RCDATA, RAWTEXT, script data and PLAINTEXT states, the tag, attribute,
+/// comment, DOCTYPE, CDATA section and processing instruction states, and the less-than sign,
+/// end tag and script data escape states the text states lead to. `last_start_tag` is the last
+/// start tag until the tokenizer emits one of its own; with none, no end tag is appropriate and
+/// every end tag in a text state is text. The character reference state is a stub that leaves
+/// `&` a character (story `html-character-references`).
 pub fn tokenize(input: &[u32], state: State, last_start_tag: Option<&str>) -> Tokenized {
-    let _ = last_start_tag;
     let state = match state {
         State::Data => machine::State::Data,
+        State::Rcdata => machine::State::Rcdata,
+        State::Rawtext => machine::State::Rawtext,
+        State::ScriptData => machine::State::ScriptData,
+        State::Plaintext => machine::State::Plaintext,
         State::CdataSection => machine::State::CdataSection,
-        State::Rcdata | State::Rawtext | State::ScriptData | State::Plaintext => {
-            return Tokenized::default();
-        }
     };
-    machine::Tokenizer::new(input, state).run()
+    machine::Tokenizer::new(input, state, last_start_tag).run()
 }
 
 #[cfg(test)]
@@ -232,12 +233,79 @@ mod tests {
         assert_eq!(codes(&t), vec!["cdata-in-html-content"]);
     }
 
+    fn run_in(input: &str, state: State, last_start_tag: Option<&str>) -> Tokenized {
+        let input: Vec<u32> = input.chars().map(u32::from).collect();
+        tokenize(&input, state, last_start_tag)
+    }
+
+    fn characters(s: &str) -> Vec<Token> {
+        s.chars().map(|c| Token::Character(u32::from(c))).collect()
+    }
+
+    fn end_tag(name: &str) -> Token {
+        Token::EndTag {
+            name: name.to_string(),
+        }
+    }
+
     #[test]
-    fn a_text_state_is_not_written_yet() {
-        let input: Vec<u32> = "a".chars().map(u32::from).collect();
+    fn an_appropriate_end_tag_ends_rcdata() {
+        let t = run_in("a<b></TITLE>c", State::Rcdata, Some("title"));
+        let mut expected = characters("a<b>");
+        expected.push(end_tag("title"));
+        expected.extend(characters("c"));
+        expected.push(Token::EndOfFile);
+        assert_eq!(t.tokens, expected);
+        assert_eq!(codes(&t), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn an_inappropriate_end_tag_in_rcdata_is_text() {
+        let mut expected = characters("a</tit></titles>");
+        expected.push(Token::EndOfFile);
         assert_eq!(
-            tokenize(&input, State::Rcdata, Some("title")),
-            Tokenized::default()
+            run_in("a</tit></titles>", State::Rcdata, Some("title")).tokens,
+            expected
         );
+        // With no last start tag, no end tag is appropriate.
+        let mut expected = characters("</title>");
+        expected.push(Token::EndOfFile);
+        assert_eq!(run_in("</title>", State::Rcdata, None).tokens, expected);
+    }
+
+    #[test]
+    fn a_script_end_tag_inside_a_double_escape_does_not_end_script_data() {
+        let t = run_in(
+            "<!--<script></script>--></script>",
+            State::ScriptData,
+            Some("script"),
+        );
+        let mut expected = characters("<!--<script></script>-->");
+        expected.push(end_tag("script"));
+        expected.push(Token::EndOfFile);
+        assert_eq!(t.tokens, expected);
+        assert_eq!(codes(&t), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn an_empty_escape_goes_back_to_script_data() {
+        // `<!-->` reaches the script data escaped dash dash state, whose `>` leaves the escape:
+        // the `<script>` after it starts no double escape.
+        let t = run_in("<!--><script></script>", State::ScriptData, Some("script"));
+        let mut expected = characters("<!--><script>");
+        expected.push(end_tag("script"));
+        expected.push(Token::EndOfFile);
+        assert_eq!(t.tokens, expected);
+    }
+
+    #[test]
+    fn eof_in_escaped_script_data_and_a_null_in_plaintext() {
+        let t = run_in("<!--x", State::ScriptData, Some("script"));
+        assert_eq!(codes(&t), vec!["eof-in-script-html-comment-like-text"]);
+        let t = run_in("<a>\u{0}", State::Plaintext, None);
+        let mut expected = characters("<a>\u{FFFD}");
+        expected.push(Token::EndOfFile);
+        assert_eq!(t.tokens, expected);
+        assert_eq!(codes(&t), vec!["unexpected-null-character"]);
     }
 }
