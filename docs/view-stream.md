@@ -277,7 +277,9 @@ read, and ignores an entry whose `number` it already holds.
 
 A stream is closed, and its reader resumes with `Last-Event-ID`, when its queue in the server
 passes 256 entries or 1 MiB, when `surfd`'s queue for it passes 1,024 entries
-(`story:agent-session-events`), or when one write takes longer than 10 s.
+(`story:agent-session-events`), or when one write takes longer than 10 s. An event over 1 MiB
+alone is no reason to close: it waits until the queue is empty and is then queued and written
+alone, so the queue holds at most 1 MiB or that one event; its size is bounded by `surfd`'s log.
 
 ## Examples
 

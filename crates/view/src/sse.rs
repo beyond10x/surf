@@ -8,9 +8,10 @@
 //!   [`Limits::write`](crate::Limits::write), and `: keep-alive` at the heartbeat;
 //! - the pump reads the source's [`Reader`] into the queue. The queue holds at most
 //!   [`Limits::queue_entries`](crate::Limits::queue_entries) entries and
-//!   [`Limits::queue_bytes`](crate::Limits::queue_bytes) bytes, the one being written included;
-//!   an entry past either closes this stream alone, and its reader resumes with
-//!   `Last-Event-ID`;
+//!   [`Limits::queue_bytes`](crate::Limits::queue_bytes) bytes, or one frame alone when that
+//!   frame is larger, the one being written included; such a frame waits until the queue is
+//!   empty. Any other entry past either bound closes this stream alone, and its reader resumes
+//!   with `Last-Event-ID`;
 //! - the watcher reads the client's side: a client sends nothing after its request, so any byte,
 //!   the end of the connection or an error closes the stream at once, and a reader that is gone
 //!   frees its stream without waiting for a write to fail.
@@ -113,25 +114,40 @@ impl Line {
     }
 }
 
+/// Where a stream starts.
+enum Start {
+    /// The replay from the reader's `Last-Event-ID`.
+    From(Box<dyn Reader>),
+    /// Live after the newest number, with `reset` first when `reset`.
+    Newest { reset: bool },
+}
+
 /// The stream, after checks 1 to 10 passed: where it starts, the head, then the queue.
 pub(crate) fn run(mut stream: TcpStream, shared: &Arc<Shared>, slot: StreamSlot, resume: Resume) {
     let _slot = slot;
     let limits = &shared.config.limits;
     let source = &shared.source;
-    let newest = source.newest();
-    let (reader, reset) = match resume {
-        Resume::After(number) if number <= newest => match source.read_from(number) {
-            Ok(reader) => (Ok(reader), false),
-            Err(TooOld) => (source.read_from(newest), true),
+    let start = match resume {
+        Resume::After(number) if number <= source.newest() => match source.read_from(number) {
+            Ok(reader) => Start::From(reader),
+            Err(TooOld) => Start::Newest { reset: true },
         },
-        Resume::Live => (source.read_from(newest), false),
-        Resume::After(_) | Resume::Reset => (source.read_from(newest), true),
+        Resume::Live => Start::Newest { reset: false },
+        Resume::After(_) | Resume::Reset => Start::Newest { reset: true },
     };
-    // A source that cannot read from its own newest number breaks its contract: no answer.
-    let Ok(reader) = reader else { return };
+    // The number of `reset` is the one the reader starts at, read with it.
+    let (reader, reset_at) = match start {
+        Start::From(reader) => (Some(reader), None),
+        Start::Newest { reset } => match source.read_newest() {
+            Ok((newest, reader)) => (Some(reader), reset.then_some(newest)),
+            // No reader even at the newest number: the head, `reset` when due, and the close
+            // after which the reader resumes with `Last-Event-ID`.
+            Err(TooOld) => (None, reset.then(|| source.newest())),
+        },
+    };
 
     let mut opening = head(Status::Ok, "text/event-stream", None);
-    if reset {
+    if let Some(newest) = reset_at {
         opening.extend_from_slice(
             format!("id: {newest}\nevent: reset\ndata: {{\"newest\":{newest}}}\n\n").as_bytes(),
         );
@@ -141,6 +157,10 @@ pub(crate) fn run(mut stream: TcpStream, shared: &Arc<Shared>, slot: StreamSlot,
     {
         return;
     }
+    let Some(reader) = reader else {
+        let _ = stream.shutdown(Shutdown::Write);
+        return;
+    };
     let (Ok(pump_socket), Ok(watch_socket)) = (stream.try_clone(), stream.try_clone()) else {
         return;
     };
@@ -188,6 +208,10 @@ fn frame(item: &Item) -> Option<Vec<u8>> {
 
 /// Reads the source's reader into the queue until the stream closes, the source ends it, the
 /// queue would pass its bound, or an item's data holds a line end.
+///
+/// A frame alone over [`Limits::queue_bytes`](crate::Limits::queue_bytes), and any frame behind
+/// one, waits until the writer has emptied the queue and then goes in alone; the wait ends when
+/// the stream closes or the server stops.
 fn pump(mut reader: Box<dyn Reader>, line: &Line, shared: &Shared, socket: &TcpStream) {
     let limits = &shared.config.limits;
     loop {
@@ -205,13 +229,23 @@ fn pump(mut reader: Box<dyn Reader>, line: &Line, shared: &Shared, socket: &TcpS
                 let Some(frame) = frame(&item) else {
                     return line.close(socket);
                 };
+                let large = frame.len() > limits.queue_bytes;
                 let mut queue = line.lock();
+                while (large || queue.bytes > limits.queue_bytes) && queue.entries > 0 {
+                    if queue.closed || shared.stopping.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    queue = line
+                        .changed
+                        .wait_timeout(queue, POLL)
+                        .map_or_else(|poisoned| poisoned.into_inner().0, |(queue, _)| queue);
+                }
                 if queue.closed {
                     return;
                 }
                 let entries = queue.entries.saturating_add(1);
                 let bytes = queue.bytes.saturating_add(frame.len());
-                if entries > limits.queue_entries || bytes > limits.queue_bytes {
+                if entries > limits.queue_entries || (bytes > limits.queue_bytes && !large) {
                     drop(queue);
                     return line.close(socket);
                 }
@@ -285,6 +319,9 @@ fn write_queue(stream: &mut TcpStream, line: &Line, shared: &Shared) {
                 let mut queue = line.lock();
                 queue.entries = queue.entries.saturating_sub(1);
                 queue.bytes = queue.bytes.saturating_sub(frame.len());
+                drop(queue);
+                // Wakes a pump that waits for an empty queue.
+                line.changed.notify_all();
                 written
             }
         };
