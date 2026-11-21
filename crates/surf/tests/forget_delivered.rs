@@ -25,9 +25,10 @@ const BODY: usize = 1000;
 fn pages() -> (impl Transport, Rc<Cell<usize>>) {
     let asked = Rc::new(Cell::new(0));
     let counter = Rc::clone(&asked);
-    let transport = move |_: &str| {
+    let transport = move |address: &str| {
         counter.set(counter.get() + 1);
         Answer::Response {
+            url: address.to_owned(),
             status: 200,
             media_type: "text/html".to_owned(),
             body: vec![b'x'; BODY],

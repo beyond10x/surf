@@ -36,9 +36,23 @@ struct Counting {
 }
 
 impl Transport for Counting {
-    fn fetch(&mut self, _address: &str) -> Answer {
+    fn fetch(&mut self, address: &str) -> Answer {
         self.calls.set(self.calls.get() + 1);
-        self.answer.clone()
+        match self.answer.clone() {
+            // A response comes from the address asked for: nothing redirects here.
+            Answer::Response {
+                status,
+                media_type,
+                body,
+                ..
+            } => Answer::Response {
+                url: address.to_owned(),
+                status,
+                media_type,
+                body,
+            },
+            other => other,
+        }
     }
 }
 
@@ -53,8 +67,10 @@ fn counting(answer: Answer) -> (Counting, Rc<Cell<usize>>) {
     )
 }
 
+/// A page; [`Counting`] gives it the address it was asked for as its `url`.
 fn html() -> Answer {
     Answer::Response {
+        url: String::new(),
         status: 200,
         media_type: "text/html".to_owned(),
         body: b"<p>surf</p>".to_vec(),
@@ -162,8 +178,9 @@ fn an_unanswered_request_stays_pending_and_the_run_ends() {
 
 #[test]
 fn a_closure_is_a_transport() {
-    let mut browser = Browser::from_ports(surf_ports::ComponentPorts::new(), |_: &str| {
+    let mut browser = Browser::from_ports(surf_ports::ComponentPorts::new(), |address: &str| {
         Answer::Response {
+            url: address.to_owned(),
             status: 404,
             media_type: "text/plain".to_owned(),
             body: Vec::new(),

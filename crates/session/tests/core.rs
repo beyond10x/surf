@@ -19,8 +19,9 @@ const ID: &str = "0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b";
 const PORT: u16 = 8000;
 
 /// A transport that answers every address with status 200 and `text/html`.
-fn pages(_: &str) -> surf::Answer {
+fn pages(address: &str) -> surf::Answer {
     surf::Answer::Response {
+        url: address.to_string(),
         status: 200,
         media_type: "text/html".to_string(),
         body: b"<p>a page</p>".to_vec(),

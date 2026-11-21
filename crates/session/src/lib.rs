@@ -48,7 +48,9 @@
 //!
 //! The answer lines hold the page line, the `did` line and at most [`PATH_SHOWN`] path lines,
 //! each address at most four times its length once quoted; an address comes from a request of at
-//! most [`surf_agent::wire::REQUEST_MAX`] bytes, so an answer stays far below
+//! most [`surf_agent::wire::REQUEST_MAX`] bytes or is the address a response came from after
+//! redirects, at most [`surf_fetch::MAX_ADDRESS_BYTES`] bytes, the same 64 KiB, so an answer
+//! stays far below
 //! [`surfd::link::ANSWER_TEXT_MAX`]. A status record whose quoted address does not fit
 //! [`surfd::link::RECORD_MAX`] is sent without the address.
 //!
@@ -74,8 +76,10 @@
 //! (`look`, a refusal) has no entry.
 //!
 //! The entries of one request through the wire stay far below [`surfd::link::ENTRIES_MAX`]: an
-//! event field holds no body, only its length, and an address, quoted at most
-//! [`surf_agent::wire::REQUEST_MAX`] bytes long, is in at most eight event and action lines of
+//! event field holds no body, only its length, and an address, at most
+//! [`surf_agent::wire::REQUEST_MAX`] bytes long when it comes from a request and at most
+//! [`surf_fetch::MAX_ADDRESS_BYTES`] bytes, the same 64 KiB, when it is the address a response
+//! came from after redirects, is in at most eight event and action lines of
 //! one `open <url>` or `go`, and the answer entry holds at most seven addresses (`did`, `page`
 //! and [`PATH_SHOWN`] path lines): about 1 MiB.
 
@@ -110,8 +114,9 @@ use surfd::link;
 pub const PATH_SHOWN: usize = 5;
 
 /// The transport of the binary: `surf-fetch` at its default limits, through [`surf::answer`].
-/// An address that is not `http:` is `UnsupportedScheme` and nothing is read; a 3xx is a
-/// response, no redirect is followed.
+/// An address that is not `http:` is `UnsupportedScheme` and nothing is read; redirects are
+/// followed inside the one fetch, up to 20, and the answer carries the address of the last
+/// response.
 pub fn fetch(address: &str) -> surf::Answer {
     surf::answer(surf_fetch::fetch(address, &surf_fetch::Limits::default()))
 }

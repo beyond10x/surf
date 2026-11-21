@@ -54,8 +54,11 @@ types:
 # with TooManyRedirects. A `Location` whose scheme is not `http:` ends the request with
 # UnsupportedScheme: the Fetch Standard follows `https:` as well, which this slice does not fetch.
 # A redirect status without a `Location` is a response like any other.
-# UNMAPPED: a `Location` that does not parse as a URL. The Fetch Standard returns a network error;
-# which reason ends the request is not decided. What would settle it: `agent-fetch-redirects`.
+# A `Location` that does not parse as a URL, is not UTF-8 or comes in more than one field, and a
+# `Location` that resolves to an address longer than 64 KiB, end the request with
+# MalformedResponse (the Fetch Standard returns a network error for each of the first three). A
+# resolved address without a fragment takes the fragment of the current one, as in the Fetch
+# Standard's "location URL".
 # UNMAPPED: request methods and bodies (with the method change a 301, 302 or 303 makes after a
 # `POST`), headers, cookies, caching and TLS. This slice fetches with one method and says nothing
 # about how.

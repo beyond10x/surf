@@ -75,9 +75,17 @@ fn limits(max_header_bytes: usize, max_body_bytes: usize) -> Limits {
     }
 }
 
+/// The fetch of `reply`. Nothing redirects, so a response's `url` is the asked address; it is
+/// checked here and then left empty, as [`ok`] leaves it.
 fn run(reply: &[u8], close: bool, limits: &Limits) -> Result<Response, Failure> {
     let server = serve(reply.to_vec(), close);
-    let result = fetch(&server.address, limits);
+    let result = fetch(&server.address, limits).map(|response| {
+        assert_eq!(response.url, server.address);
+        Response {
+            url: String::new(),
+            ..response
+        }
+    });
     server.handle.join().expect("server thread");
     result
 }
@@ -87,6 +95,7 @@ fn ok(media_type: &str, body: &[u8]) -> Result<Response, Failure> {
         status: 200,
         media_type: media_type.to_owned(),
         body: body.to_vec(),
+        url: String::new(),
     })
 }
 
