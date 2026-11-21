@@ -21,6 +21,8 @@
 //!   ([`SessionEntries::log_dropped`]) and counts them dropped; when no ended session's log is
 //!   left to drop, the oldest
 //!   entries by their number across sessions go next, each counted in its session's `dropped`;
+//!   an entry kept for a session whose log was dropped whole is dropped at once: it gets its
+//!   numbers and reaches the live readers as every entry does, and is counted, not kept;
 //! - a live reader ([`Log::subscribe_after`]) has a queue of [`READER_QUEUE`] entries and is
 //!   disconnected when it is full, so a slow reader never holds `surfd` up.
 //!
@@ -214,6 +216,13 @@ impl Log {
                 Ok(()) => true,
                 Err(TrySendError::Full(_) | TrySendError::Disconnected(_)) => false,
             });
+        if log.log_dropped {
+            // Its log was dropped whole: an entry that comes after (a `close` kept after the
+            // session ended) is dropped at once, so the log stays empty as its detail says.
+            log.dropped += 1;
+            self.dropped_above = self.dropped_above.max(number);
+            return number;
+        }
         log.entries.push_back(kept);
         log.bytes += size;
         self.bytes += size;
@@ -257,6 +266,17 @@ impl Log {
             dropped: log.dropped,
             log_dropped: log.log_dropped,
         })
+    }
+
+    /// The newest kept entry of `session` of kind `kind`, read in place, without a copy of the
+    /// session's log; `None` when none is kept.
+    pub fn newest_of(&self, session: &str, kind: EntryKind) -> Option<&Entry> {
+        self.sessions
+            .get(session)?
+            .entries
+            .iter()
+            .rev()
+            .find(|entry| entry.kind == kind)
     }
 
     /// Whether the bound over all sessions dropped the log of `session`.

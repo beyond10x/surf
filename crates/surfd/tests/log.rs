@@ -1,5 +1,6 @@
 //! Cases 9, 10 and 11 of `story:agent-session-events`: the log `surfd` keeps, driven alone
-//! (`surfd::log::Log`), and case 11 once more through `Daemon::start` with the stand-in session.
+//! (`surfd::log::Log`), and case 11 once more through `Daemon::start` with the stand-in session;
+//! case 23 of `story:view-surfd-serves`, an entry kept after its log was dropped whole.
 //! Two more on the link: entries go and come back as they were sent, and a session whose
 //! entries break the link's rules is ended and listed died.
 
@@ -9,7 +10,7 @@ use std::time::Duration;
 
 use common::*;
 use surfd::link::{self, EntryKind};
-use surfd::log::{Bounds, Log};
+use surfd::log::{Bounds, Log, OlderThanKept};
 use surfd::{Config, State};
 
 /// An action entry of exactly `size` bytes, its line feed included.
@@ -120,6 +121,42 @@ fn case_11_the_bound_over_all_sessions_drops_an_ended_log_whole() {
     );
     assert!(!listed.get(&b.id).unwrap().log_dropped);
     assert!(daemon.session_entries(&a.id).unwrap().log_dropped);
+}
+
+/// Case 23 of `story:view-surfd-serves`: an entry kept for a session whose log was dropped
+/// whole (a `close` kept after the session ended) is dropped at once.
+#[test]
+fn case_23_an_entry_kept_after_the_log_was_dropped_whole_is_dropped() {
+    let mut log = Log::new(Bounds {
+        bytes_total: 8_000,
+        ..Bounds::default()
+    });
+    for _ in 0..4 {
+        log.keep(A, entry_of(1_000), 0);
+    }
+    log.end(A);
+    for _ in 0..5 {
+        log.keep(B, entry_of(1_000), 0);
+    }
+    let a = log.session_entries(A).unwrap();
+    assert!(a.log_dropped, "B's entries dropped the log of A");
+    assert_eq!(a.dropped, 4);
+    let before = log.entries_after(9).unwrap();
+    assert!(before.is_empty(), "nothing above 9 yet");
+
+    let mut reader = log.subscribe_after(log.newest()).unwrap();
+    let number = log.keep(A, entry_of(100), 0);
+    assert_eq!(number, 10, "it is given its number");
+    let a = log.session_entries(A).unwrap();
+    assert!(a.entries.is_empty(), "{a:?}");
+    assert!(a.log_dropped);
+    assert_eq!(a.dropped, 5, "one higher");
+    assert_eq!(log.entries_after(9), Err(OlderThanKept));
+    assert_eq!(log.entries_after(10), Ok(Vec::new()));
+    let handed = reader.try_next().expect("handed to a live reader");
+    assert_eq!((handed.number, handed.session.as_str()), (10, A));
+    assert_eq!(log.newest_of(A, EntryKind::Action), None);
+    assert_eq!(log.session_entries(B).unwrap().entries.len(), 5);
 }
 
 #[test]

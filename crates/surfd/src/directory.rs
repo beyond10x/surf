@@ -8,7 +8,7 @@
 //! only the user can write, something that is not `surfd` put it there.
 
 use std::fs::{self, DirBuilder, File, Metadata, OpenOptions};
-use std::io;
+use std::io::{self, Write};
 use std::os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -20,6 +20,58 @@ pub const MODE: u32 = 0o700;
 
 /// The name of the lock file in `surf/`.
 pub const LOCK: &str = "surfd.lock";
+
+/// The name of the file in `surf/` that holds the live view's address and token, one line
+/// `http://127.0.0.1:<port>/#<token>`: mode 0600, written at the start, removed at the end.
+pub const VIEW_URL: &str = "view-url";
+
+/// The mode of [`VIEW_URL`].
+pub const VIEW_URL_MODE: u32 = 0o600;
+
+/// Write `line` to `surf/view-url`, with the lock held: a regular file of that name, left by a
+/// `surfd` that was killed, is removed first; anything else of that name (a symbolic link, a
+/// directory) refuses, and is not touched. The file is created with `create_new` and mode 0600,
+/// and its mode set to 0600 after the creation whatever the umask took off. A reason names the
+/// path, never what `line` holds.
+pub fn write_view_url(surf: &Path, line: &str) -> Result<PathBuf, String> {
+    let path = surf.join(VIEW_URL);
+    match fs::symlink_metadata(&path) {
+        Ok(metadata) if metadata.file_type().is_file() => {
+            fs::remove_file(&path).map_err(|e| format!("cannot remove {}: {e}", path.display()))?;
+        }
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(format!("{} is a symbolic link", path.display()));
+        }
+        Ok(_) => return Err(format!("{} is not a regular file", path.display())),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(looked(&path, &error)),
+    }
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(VIEW_URL_MODE)
+        .open(&path)
+        .map_err(|e| format!("cannot create {}: {e}", path.display()))?;
+    let written = file
+        .set_permissions(fs::Permissions::from_mode(VIEW_URL_MODE))
+        .and_then(|()| file.write_all(line.as_bytes()))
+        .and_then(|()| file.flush());
+    if let Err(error) = written {
+        drop(file);
+        let _ = fs::remove_file(&path);
+        return Err(format!("cannot write {}: {error}", path.display()));
+    }
+    Ok(path)
+}
+
+/// Remove `surf/view-url` if it is a regular file.
+pub fn remove_view_url(surf: &Path) -> io::Result<()> {
+    let path = surf.join(VIEW_URL);
+    match fs::symlink_metadata(&path) {
+        Ok(metadata) if metadata.file_type().is_file() => fs::remove_file(&path),
+        _ => Ok(()),
+    }
+}
 
 /// The decision on one directory `surfd` uses, `surf/` or a session directory: refused, with the
 /// reason, when it is a symbolic link, not a directory, owned by another user than `caller`, or

@@ -1,0 +1,43 @@
+version: '3'
+
+set: [pipefail]
+
+tasks:
+  view-stream-check:
+    desc: Fail, naming each, when an event name of docs/view-stream.md is no message of the AsyncAPI projection of spec/.
+    summary: |
+      Fail, naming each, when an event name of docs/view-stream.md is no message of the AsyncAPI
+      projection of spec/ (item 2 of docs/design/live-view.md).
+
+      Generates the projection with ess generate --path spec --kind asyncapi into
+      .out/view-stream-check/, reads the one fenced block under "Event names" in VIEW_STREAM_DOC
+      (default docs/view-stream.md; set it on the command line, task view-stream-check
+      VIEW_STREAM_DOC=<file>), one name per line, and prints
+      "<file>: <name>: no message in the AsyncAPI projection" for each name that no line
+      "    x-ess-event: <name>" of the projection holds, then exits 1. Passing, it prints
+      "view-stream-check: <n> event name(s), each a message of the AsyncAPI projection".
+
+      It runs from the repository root, alone (task --taskfile taskfiles/view-stream-check.yml
+      view-stream-check) and included from the root Taskfile.yml alike.
+    dir: '{{.TASKFILE_DIR}}/..'
+    vars:
+      VIEW_STREAM_DOC: '{{.VIEW_STREAM_DOC | default "docs/view-stream.md"}}'
+    cmds:
+      - rm -rf .out/view-stream-check && mkdir -p .out
+      - ess generate --path spec --kind asyncapi --out .out/view-stream-check/ > .out/view-stream-check.log 2>&1 || { cat .out/view-stream-check.log; exit 1; }
+      - |
+        doc='{{.VIEW_STREAM_DOC}}'
+        [ -f "$doc" ] || { echo "$doc: no such file"; exit 1; }
+        names=$(awk '/^#+ Event names$/ { section = 1; next } section && /^#/ { exit } section && /^```/ { if (block) exit; block = 1; next } block { print }' "$doc")
+        [ -n "$names" ] || { echo "$doc: no event name under Event names"; exit 1; }
+        count=0
+        missing=0
+        for name in $names; do
+          count=$((count + 1))
+          if ! grep -r -h -q -x -F "    x-ess-event: $name" .out/view-stream-check; then
+            echo "$doc: $name: no message in the AsyncAPI projection"
+            missing=$((missing + 1))
+          fi
+        done
+        [ "$missing" -eq 0 ] || exit 1
+        echo "view-stream-check: $count event name(s), each a message of the AsyncAPI projection"

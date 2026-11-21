@@ -14,11 +14,22 @@
 //! Everything is under `$XDG_RUNTIME_DIR/surf/` (mode 0700, owned by the caller), which `surfd`
 //! creates when absent and refuses when it is a symbolic link, of another owner or of another
 //! mode ([`directory::decide`]): `surfd.lock` (an exclusive lock held for the life of `surfd`),
-//! `surfd.sock` (the socket of [`surf_agent::wire`]) and one directory per session,
-//! `<identity>/` (mode 0700), holding the session's socket `session.sock`, which the session
-//! process binds and only `surfd` connects to ([`link`]). No `XDG_RUNTIME_DIR`: refused, with no
-//! fallback to a shared directory. A symbolic link anywhere under `surf/` refuses the start and
-//! is never followed or removed.
+//! `surfd.sock` (the socket of [`surf_agent::wire`]), `view-url` ([`directory::VIEW_URL`], mode
+//! 0600: one line `http://127.0.0.1:<port>/#<token>`, the live view's address and its token,
+//! written at the start, a file of that name left by a killed `surfd` replaced, and removed when
+//! `surfd` ends, before the lock is released) and one directory per session, `<identity>/`
+//! (mode 0700), holding the session's socket `session.sock`, which the session process binds
+//! and only `surfd` connects to ([`link`]). No `XDG_RUNTIME_DIR`: refused, with no fallback to a
+//! shared directory. A symbolic link anywhere under `surf/` refuses the start and is never
+//! followed or removed.
+//!
+//! # The live view
+//!
+//! `surfd` serves the live view (`docs/view-stream.md`) with `surf-view` on 127.0.0.1, on a
+//! port the operating system picks, with a view token drawn by `surf-secret` and compared by
+//! `surf-view`. The routes answer from the session list and the log; a session's text is read
+//! only through `surf_answer::parse` and `surf_answer::unquote`. A failure to listen or to
+//! write `view-url` refuses the start. A reader of the view is not activity for the idle exit.
 //!
 //! # The peer
 //!
@@ -66,6 +77,10 @@
 //!   and listed `died`.
 //! - The log: per session at most 10,000 entries or 16 MiB, over all sessions at most 64 MiB, a
 //!   live reader's queue 1,024 entries ([`log::Bounds`]).
+//! - The view: the limits of `surf-view` ([`Config::view_limits`], `surf_view::Limits`): 16
+//!   connections, 8 streams, a request head of 8,192 bytes and 50 lines within 5 seconds, a
+//!   stream's queue of 256 entries or 1 MiB, one write within 10 seconds; a `Last-Event-ID`
+//!   more than 256 numbers below the newest is answered with `reset`.
 //! - The list: at most [`sessions::ENDED_MAX`] (256) ended sessions. The number of open
 //!   sessions is not bounded by `surfd`: each is a process of the user, as any process the user
 //!   starts.
@@ -81,6 +96,7 @@ pub mod directory;
 pub mod link;
 pub mod log;
 pub mod sessions;
+mod view;
 
 pub use daemon::{
     CONNECTION_LIMIT, Config, Daemon, IDLE_EXIT, Identities, KILL_GRACE, LATE_ANSWER_TIMEOUT,

@@ -13,13 +13,20 @@
 //!
 //! What it does not do: TLS, IPv6, `HEAD`, compression, ranges, persistent connections, a
 //! request body, or any route that changes something.
+//!
+//! The JSON of the routes and the stream: the view's own values in [`model`] (no member for a
+//! token), and one writer for them, [`to_json`], by the string and member rules of
+//! `docs/view-stream.md`. The caller (`surfd`) fills the values; this crate reads no answer text.
 
 #![forbid(unsafe_code)]
 
 mod assets;
 mod http;
+mod json;
+pub mod model;
 mod sse;
 
 pub use assets::page_files;
 pub use http::{Config, Limits, PageFile, Server, Source, serve};
+pub use json::{ToJson, to_json};
 pub use sse::{EventKind, Item, Next, Reader, TooOld};

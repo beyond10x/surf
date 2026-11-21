@@ -160,7 +160,10 @@ fn case_05_an_identity_never_opened_is_unknown() {
         refusal(NEVER_OPENED, "unknown", "no-such-session")
     );
     assert!(dir.starts().is_empty(), "a session was started");
-    assert_eq!(names_in(&dir.surf()), ["surfd.lock", "surfd.sock"]);
+    assert_eq!(
+        names_in(&dir.surf()),
+        ["surfd.lock", "surfd.sock", "view-url"]
+    );
 }
 
 #[test]
@@ -328,7 +331,10 @@ fn case_19_a_session_socket_path_over_107_bytes_refuses_open() {
             .file_type()
             .is_socket()
     );
-    assert_eq!(names_in(&long.join("surf")), ["surfd.lock", "surfd.sock"]);
+    assert_eq!(
+        names_in(&long.join("surf")),
+        ["surfd.lock", "surfd.sock", "view-url"]
+    );
     assert!(dir.starts().is_empty(), "a session process was started");
 
     let fits = runtime_of_length(&dir, 52);
@@ -360,7 +366,10 @@ fn case_20_an_oversized_request_and_a_path_as_identity() {
 
     assert_eq!(names_in(&dir.path), before_case);
     assert_eq!(names_in(&dir.runtime()), before_runtime);
-    assert_eq!(names_in(&dir.surf()), ["surfd.lock", "surfd.sock"]);
+    assert_eq!(
+        names_in(&dir.surf()),
+        ["surfd.lock", "surfd.sock", "view-url"]
+    );
     assert!(dir.starts().is_empty());
 
     let back = raw(&dir, &raw_request("look", NEVER_OPENED, SOME_TOKEN));

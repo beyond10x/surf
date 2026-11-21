@@ -1,0 +1,542 @@
+//! The live view's data: the [`surf_view::Source`] over the session list and the log, which
+//! `surfd` serves on 127.0.0.1 (`docs/view-stream.md`). Each route reads what it needs in one
+//! hold of the daemon's lock ([`Tables::hold`]) and converts it after: an address, a title, an
+//! action's argument and an event field through [`surf_answer::unquote`], an answer entry
+//! through [`surf_answer::parse`] (decisions D20 and D26); a value they refuse is `null`, the
+//! entry is kept and counted in `unreadable`. Nothing here reads or writes a token.
+//!
+//! - `/api/sessions`: the newest number and the list, in one hold; per session its newest kept
+//!   action entry (`last_action_at`) and answer entry (`page`), read in place ([`Log::newest_of`]).
+//! - `/api/sessions/<id>`: the summary and the kept entries of a listed session.
+//! - `/events`: a reader over a [`Subscription`]. It answers [`TooOld`] when an entry above the
+//!   number was dropped, or when the number is more than [`surf_view::Limits::queue_entries`]
+//!   below the newest, so that a replay always fits the stream's queue. After each live answer
+//!   entry (not a replayed one) it yields a `session` item of its session with the same number;
+//!   and at each wait, with no
+//!   entry pending, it compares the list with the one it knows and yields a `session` item, with
+//!   the newest number, for a session listed that it did not know or one that became `closed`
+//!   or `died`. Entries are kept under the same lock, so no entry is in flight while it
+//!   compares, and the numbers on a stream never go down. A subscription that was disconnected
+//!   (its queue full) ends the stream.
+//!
+//! A reader of the view is not a connection of `surfd.sock`: it keeps `surfd` from no idle exit.
+
+use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
+use std::sync::mpsc::{RecvTimeoutError, TryRecvError};
+use std::time::{Duration, SystemTime};
+
+use surf_answer::Page;
+use surf_view::model::{
+    Action, Detail, Entry, EntryKind, PageLine, Path, SessionList, SessionState, Summary,
+};
+use surf_view::{EventKind, Item, Next, Reader, Source, TooOld, to_json};
+
+use crate::link::{self, EntryKind as Kind};
+use crate::log::{self, Log, Subscription};
+use crate::sessions::{Session, Sessions, State};
+
+/// What the view reads of `surfd`'s state: the session list and the log, together, under one
+/// hold of the lock that guards both.
+pub(crate) trait Tables: Send + Sync + 'static {
+    /// Call `read` with the list and the log while the lock is held.
+    fn hold<R>(&self, read: impl FnOnce(&Sessions, &mut Log) -> R) -> R;
+}
+
+/// The view's [`Source`] over `tables`.
+pub(crate) struct View<T> {
+    tables: Arc<T>,
+    /// [`surf_view::Limits::queue_entries`]: a replay longer than this is answered `reset`.
+    queue_entries: u64,
+}
+
+impl<T: Tables> View<T> {
+    pub(crate) fn new(tables: Arc<T>, queue_entries: usize) -> Self {
+        View {
+            tables,
+            queue_entries: u64::try_from(queue_entries).unwrap_or(u64::MAX),
+        }
+    }
+}
+
+/// What a summary needs, copied in one hold and converted after.
+struct Raw {
+    session: Session,
+    last_action_at: Option<u64>,
+    /// The lines of its newest kept answer entry.
+    answer: Option<String>,
+}
+
+impl Raw {
+    fn read(session: &Session, log: &Log) -> Raw {
+        Raw {
+            session: session.clone(),
+            last_action_at: log
+                .newest_of(&session.id, Kind::Action)
+                .map(|entry| entry.kept_at),
+            answer: log
+                .newest_of(&session.id, Kind::Answer)
+                .map(|entry| entry.text.clone()),
+        }
+    }
+
+    fn summary(&self) -> Summary {
+        let session = &self.session;
+        let value = |quoted: &Option<link::Quoted>| {
+            quoted
+                .as_ref()
+                .and_then(|quoted| surf_answer::unquote(quoted.as_str()).ok())
+        };
+        Summary {
+            id: session.id.clone(),
+            state: state(session.state),
+            address: value(&session.address),
+            title: value(&session.title),
+            opened_at: millis(session.opened),
+            last_action_at: self.last_action_at,
+            ended_at: session.ended.map(millis),
+            page: self
+                .answer
+                .as_deref()
+                .and_then(|text| surf_answer::parse(text).ok())
+                .and_then(|answer| answer.page)
+                .map(page_line),
+        }
+    }
+}
+
+fn state(state: State) -> SessionState {
+    match state {
+        State::Open => SessionState::Open,
+        State::Closed => SessionState::Closed,
+        State::Died => SessionState::Died,
+    }
+}
+
+/// Milliseconds since the Unix epoch, 0 for a time before it.
+fn millis(time: SystemTime) -> u64 {
+    time.duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |since| {
+            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+        })
+}
+
+fn page_line(page: Page) -> PageLine {
+    match page {
+        Page::None => PageLine::None,
+        Page::Loaded {
+            status,
+            media_type,
+            address,
+            title,
+        } => PageLine::Loaded {
+            status,
+            media_type,
+            address,
+            title,
+        },
+        Page::Failed { reason, address } => PageLine::Failed { reason, address },
+    }
+}
+
+/// The view's entry of a kept entry; each value it cannot read is `None` and counted in
+/// `unreadable`.
+fn entry(kept: &log::Entry, unreadable: &mut u64) -> Entry {
+    /// The exact value of a quoted field, or `None`, noted in `refused`.
+    fn unquote(field: &str, refused: &mut bool) -> Option<String> {
+        let value = surf_answer::unquote(field).ok();
+        *refused |= value.is_none();
+        value
+    }
+    let mut refused = false;
+    let kind = match kept.kind {
+        Kind::Action => match link::read_action(&kept.text) {
+            Some(read) => {
+                let sequence = read.sequence.parse().ok();
+                let argument = read.argument.and_then(|field| unquote(field, &mut refused));
+                refused |= sequence.is_none();
+                EntryKind::Action(Action {
+                    sequence,
+                    command: Some(read.command.to_string()),
+                    argument,
+                })
+            }
+            None => {
+                refused = true;
+                EntryKind::Action(Action {
+                    sequence: None,
+                    command: None,
+                    argument: None,
+                })
+            }
+        },
+        Kind::Event => match link::read_event(&kept.text) {
+            Some(read) => EntryKind::Event {
+                name: Some(read.name.to_string()),
+                unmapped: read.unmapped,
+                fields: read
+                    .fields
+                    .iter()
+                    .map(|(name, value)| {
+                        let value = value.and_then(|field| unquote(field, &mut refused));
+                        (name.to_string(), value)
+                    })
+                    .collect(),
+            },
+            None => {
+                refused = true;
+                EntryKind::Event {
+                    name: None,
+                    unmapped: false,
+                    fields: Vec::new(),
+                }
+            }
+        },
+        Kind::Answer => match surf_answer::parse(&kept.text) {
+            Ok(answer) => EntryKind::Answer {
+                page: answer.page.map(page_line),
+                path: answer.path.map(|path| Path {
+                    shown: path.entries.len() as u64,
+                    total: path.total,
+                    actions: path
+                        .entries
+                        .into_iter()
+                        .map(|action| Action {
+                            sequence: Some(action.sequence),
+                            command: Some(action.command),
+                            argument: action.argument,
+                        })
+                        .collect(),
+                }),
+            },
+            Err(_) => {
+                refused = true;
+                EntryKind::Answer {
+                    page: None,
+                    path: None,
+                }
+            }
+        },
+    };
+    if refused {
+        *unreadable += 1;
+    }
+    Entry {
+        number: kept.number,
+        session: kept.session.clone(),
+        index: kept.index,
+        kept_at: kept.kept_at,
+        kind,
+    }
+}
+
+impl<T: Tables> Source for View<T> {
+    fn sessions(&self) -> Vec<u8> {
+        let (newest, raws) = self.tables.hold(|sessions, log| {
+            let raws: Vec<Raw> = sessions
+                .iter()
+                .map(|session| Raw::read(session, log))
+                .collect();
+            (log.newest(), raws)
+        });
+        to_json(&SessionList {
+            newest,
+            sessions: raws.iter().map(Raw::summary).collect(),
+        })
+    }
+
+    fn session(&self, id: &str) -> Option<Vec<u8>> {
+        let (raw, kept) = self.tables.hold(|sessions, log| {
+            let session = sessions.get(id)?;
+            Some((
+                Raw::read(session, log),
+                log.session_entries(id).unwrap_or_default(),
+            ))
+        })?;
+        let mut unreadable = 0;
+        let entries = kept
+            .entries
+            .iter()
+            .map(|kept| entry(kept, &mut unreadable))
+            .collect();
+        Some(to_json(&Detail {
+            session: raw.summary(),
+            dropped: kept.dropped,
+            log_dropped: kept.log_dropped,
+            unreadable,
+            entries,
+        }))
+    }
+
+    fn newest(&self) -> u64 {
+        self.tables.hold(|_, log| log.newest())
+    }
+
+    fn read_from(&self, number: u64) -> Result<Box<dyn Reader>, TooOld> {
+        let most = self.queue_entries;
+        let (subscription, replay_until, known) = self.tables.hold(|sessions, log| {
+            let newest = log.newest();
+            if newest.saturating_sub(number) > most {
+                return Err(TooOld);
+            }
+            let subscription = log.subscribe_after(number).map_err(|_| TooOld)?;
+            Ok((subscription, newest, known_states(sessions)))
+        })?;
+        Ok(Box::new(Stream {
+            tables: Arc::clone(&self.tables),
+            subscription,
+            replay_until,
+            known,
+            pending: VecDeque::new(),
+        }))
+    }
+}
+
+fn known_states(sessions: &Sessions) -> HashMap<String, State> {
+    sessions
+        .iter()
+        .map(|session| (session.id.clone(), session.state))
+        .collect()
+}
+
+/// The reader of one stream.
+struct Stream<T> {
+    tables: Arc<T>,
+    subscription: Subscription,
+    /// The newest number when the stream opened: an entry up to it is replayed, and a replayed
+    /// answer entry is followed by no `session` item.
+    replay_until: u64,
+    /// The state of each session as this stream last told it, or as it was listed when the
+    /// stream opened.
+    known: HashMap<String, State>,
+    /// `session` items to yield before anything else.
+    pending: VecDeque<Item>,
+}
+
+/// What one look under the lock found.
+enum Polled {
+    /// An entry, and for an answer entry of a listed session that session's summary.
+    Entry(log::Entry, Option<Raw>),
+    /// No entry now; the sessions whose change the stream had not told, with the newest number.
+    Quiet(u64, Vec<Raw>),
+    /// The subscription was disconnected.
+    End,
+}
+
+/// The summary of `entry`'s session after a live answer entry, noted as told; `None` after a
+/// replayed one (up to `replay_until`), as `session` items are never replayed.
+fn after_answer(
+    entry: &log::Entry,
+    replay_until: u64,
+    sessions: &Sessions,
+    log: &Log,
+    known: &mut HashMap<String, State>,
+) -> Option<Raw> {
+    if entry.kind != Kind::Answer || entry.number <= replay_until {
+        return None;
+    }
+    let session = sessions.get(&entry.session)?;
+    known.insert(session.id.clone(), session.state);
+    Some(Raw::read(session, log))
+}
+
+/// The sessions listed that `known` lacks, and those that became `closed` or `died`, noted as
+/// told.
+fn changes(sessions: &Sessions, log: &Log, known: &mut HashMap<String, State>) -> Vec<Raw> {
+    let mut changed = Vec::new();
+    for session in sessions.iter() {
+        let told = known.insert(session.id.clone(), session.state);
+        let ended = matches!(session.state, State::Closed | State::Died);
+        if told.is_none() || (ended && told != Some(session.state)) {
+            changed.push(Raw::read(session, log));
+        }
+    }
+    known.retain(|id, _| sessions.get(id).is_some());
+    changed
+}
+
+fn entry_item(kept: &log::Entry) -> Item {
+    let mut unreadable = 0;
+    Item {
+        number: kept.number,
+        kind: EventKind::Entry,
+        data: to_json(&entry(kept, &mut unreadable)),
+    }
+}
+
+fn session_item(number: u64, raw: &Raw) -> Item {
+    Item {
+        number,
+        kind: EventKind::Session,
+        data: to_json(&raw.summary()),
+    }
+}
+
+impl<T: Tables> Stream<T> {
+    /// The item of `kept`, with the `session` item after an answer entry queued.
+    fn entry(&mut self, kept: &log::Entry, raw: Option<Raw>) -> Next {
+        if let Some(raw) = raw {
+            self.pending.push_back(session_item(kept.number, &raw));
+        }
+        Next::Item(entry_item(kept))
+    }
+}
+
+impl<T: Tables> Reader for Stream<T> {
+    fn next(&mut self, wait: Duration) -> Next {
+        if let Some(item) = self.pending.pop_front() {
+            return Next::Item(item);
+        }
+        let Stream {
+            tables,
+            subscription,
+            replay_until,
+            known,
+            ..
+        } = self;
+        let replay_until = *replay_until;
+        let polled = tables.hold(|sessions, log| match subscription.try_next() {
+            Ok(kept) => {
+                let raw = after_answer(&kept, replay_until, sessions, log, known);
+                Polled::Entry(kept, raw)
+            }
+            Err(TryRecvError::Empty) => Polled::Quiet(log.newest(), changes(sessions, log, known)),
+            Err(TryRecvError::Disconnected) => Polled::End,
+        });
+        match polled {
+            Polled::Entry(kept, raw) => self.entry(&kept, raw),
+            Polled::End => Next::End,
+            Polled::Quiet(newest, changed) if !changed.is_empty() => {
+                self.pending
+                    .extend(changed.iter().map(|raw| session_item(newest, raw)));
+                self.pending.pop_front().map_or(Next::Idle, Next::Item)
+            }
+            Polled::Quiet(..) => match self.subscription.next_within(wait) {
+                Ok(kept) => {
+                    let Stream { tables, known, .. } = self;
+                    let raw = tables.hold(|sessions, log| {
+                        after_answer(&kept, replay_until, sessions, log, known)
+                    });
+                    self.entry(&kept, raw)
+                }
+                Err(RecvTimeoutError::Timeout) => Next::Idle,
+                Err(RecvTimeoutError::Disconnected) => Next::End,
+            },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Mutex, PoisonError};
+    use std::time::UNIX_EPOCH;
+
+    use super::*;
+    use crate::log::Bounds;
+
+    const ID: &str = "aaaaaaaa-0000-4000-8000-000000000001";
+
+    /// The list and the log behind one lock, without a daemon.
+    struct Fixed(Mutex<(Sessions, Log)>);
+
+    impl Tables for Fixed {
+        fn hold<R>(&self, read: impl FnOnce(&Sessions, &mut Log) -> R) -> R {
+            let mut held = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+            let (sessions, log) = &mut *held;
+            read(sessions, log)
+        }
+    }
+
+    fn fixed(bounds: Bounds) -> Arc<Fixed> {
+        let at = UNIX_EPOCH + Duration::from_millis(1_795_226_400_000);
+        let session = Session {
+            id: ID.to_string(),
+            state: State::Open,
+            opened: at,
+            last_action: at,
+            ended: None,
+            pid: 1,
+            address: None,
+            title: None,
+            log_dropped: false,
+        };
+        Arc::new(Fixed(Mutex::new((
+            Sessions {
+                list: vec![session],
+            },
+            Log::new(bounds),
+        ))))
+    }
+
+    fn keep(tables: &Fixed, entry: link::Entry) {
+        tables.hold(|_, log| log.keep(ID, entry, 1));
+    }
+
+    fn action(sequence: u64) -> link::Entry {
+        link::Entry::line(&format!("action {sequence} go \"http://a.example/\"")).unwrap()
+    }
+
+    #[test]
+    fn case_25_a_disconnected_subscription_ends_the_stream() {
+        let tables = fixed(Bounds {
+            reader_queue: 2,
+            ..Bounds::default()
+        });
+        let view = View::new(Arc::clone(&tables), 256);
+        let Ok(mut reader) = view.read_from(0) else {
+            panic!("a reader from 0");
+        };
+        for sequence in 1..=3 {
+            keep(&tables, action(sequence));
+        }
+        let mut numbers = Vec::new();
+        loop {
+            match reader.next(Duration::from_millis(10)) {
+                Next::Item(item) => {
+                    assert_eq!(item.kind, EventKind::Entry);
+                    numbers.push(item.number);
+                }
+                Next::Idle => panic!("idle after {numbers:?}: the stream did not end"),
+                Next::End => break,
+            }
+        }
+        assert_eq!(numbers, [1, 2], "two entry items, then the end");
+    }
+
+    #[test]
+    fn case_26_what_parse_or_unquote_refuses_is_null_and_counted() {
+        let tables = fixed(Bounds::default());
+        keep(&tables, action(1));
+        keep(
+            &tables,
+            link::Entry::line("event surf.agent.ActionRecorded action_id=\"x\" url=").unwrap(),
+        );
+        keep(
+            &tables,
+            link::Entry::line("event surf.render.FramePainted unmapped").unwrap(),
+        );
+        keep(&tables, link::Entry::answer("not an answer\n"));
+        let view = View::new(Arc::clone(&tables), 256);
+        let detail = String::from_utf8(view.session(ID).expect("listed")).unwrap();
+        assert!(detail.contains(r#""unreadable":1,"#), "{detail}");
+        assert!(
+            detail.contains(r#""fields":{"action_id":"x","url":null}"#),
+            "{detail}"
+        );
+        assert!(
+            detail.contains(r#""name":"surf.render.FramePainted","unmapped":true,"fields":{}"#),
+            "{detail}"
+        );
+        assert!(
+            detail.contains(r#""index":4,"kept_at":1,"kind":"answer","page":null,"path":null}"#),
+            "{detail}"
+        );
+        let entries = tables.hold(|_, log| log.session_entries(ID).unwrap());
+        assert_eq!(entries.entries.len(), 4, "the refused answer entry is kept");
+        assert!(
+            detail.contains(r#""page":null},"dropped""#),
+            "the summary's page of an answer parse refuses: {detail}"
+        );
+        assert_eq!(view.session("bbbbbbbb-0000-4000-8000-000000000002"), None);
+    }
+}

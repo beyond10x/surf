@@ -1,5 +1,6 @@
 //! The binary `surfd`: [`surfd::Daemon::start`] with this process's `XDG_RUNTIME_DIR` and the
-//! one option `--idle-exit <seconds>`, its start line on standard output. Exit status 0 after
+//! one option `--idle-exit <seconds>`, its start line on standard output and the live view's
+//! line, `http://127.0.0.1:<port>/#<token>`, on standard error. Exit status 0 after
 //! the idle exit or when another `surfd` serves; 1 when it refuses to start; 2 for any other
 //! argument.
 
@@ -31,6 +32,7 @@ fn main() -> ExitCode {
         config.idle_exit = idle_exit;
     }
     config.start_line = Some(Box::new(io::stdout()));
+    config.view_line = Some(Box::new(io::stderr()));
     match Daemon::start(config) {
         Ok(Started::Daemon(daemon)) => {
             daemon.wait();
