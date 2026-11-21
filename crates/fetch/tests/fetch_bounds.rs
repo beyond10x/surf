@@ -165,8 +165,12 @@ fn a_server_that_never_reads_the_request_ends_at_the_read_timeout() {
     let elapsed = start.elapsed();
     let _ = done.send(());
     server.join().expect("server");
+    // The fetch must end at the read timeout, not when the server lets go after `BOUND`: of
+    // about 0.7 s measured alone, 0.2 s is the read timeout and 0.5 s the fetch's work on the
+    // 16 MiB address before it connects, in a debug build (measured 2026-11-22), so the bound is
+    // half of `BOUND` and not a multiple of the read timeout.
     assert!(
-        elapsed < READ_TIMEOUT * 5,
+        elapsed < BOUND / 2,
         "one fetch took {elapsed:?} with a read timeout of {READ_TIMEOUT:?} and ended {result:?}"
     );
     assert!(

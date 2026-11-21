@@ -48,8 +48,9 @@ the interpreter and the Rust system ran 95 scenario(s) each, of suite sha256:5fe
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 Cargo.lock: 23 package(s), none from outside this repository
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.00s
-126 test suites: 555 passed, 0 failed, 0 ignored
+    Finished `dev` profile [unoptimized] target(s) in 0.00s
+555 tests: 555 passed, 0 failed, 0 ignored (cargo-nextest 553, doc tests 2)
+test step: 27.0 s of its budget of 120 s
 view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
   38 passed (15.8s)
 html-conformance: 9107 cases, 9095 run, 8428 passed
@@ -60,7 +61,9 @@ and against the Rust code, checks that the generated code still matches the spec
 that the lock file holds no outside package, then builds and tests, checks that every event
 name of the live view's stream is an event of the specification, runs the live view's page
 tests in a browser (Playwright and Chromium's headless shell), and last holds the HTML parser's
-test counts where they are.
+test counts where they are. The tests run under cargo-nextest; a test still running after 60
+seconds is ended and fails, the test step fails when it takes over 120 seconds, and the block
+leaves out the ten slowest tests the step also prints.
 
 The scenario runner in
 [`conformance/`](https://github.com/beyond10x/surf/tree/main/conformance) is the one place a
@@ -71,7 +74,8 @@ third-party crate is used; nothing that ships depends on it.
 Building is for working on surf; to use it, [install the binary](try-it.md).
 
 You need a Rust toolchain with `cargo` (surf is built with 1.99.1), [`task`](https://taskfile.dev)
-and [`ess`](https://github.com/beyond10x/ess) 0.96.0.
+and [`ess`](https://github.com/beyond10x/ess) 0.96.0. `task check` also needs
+[`cargo-nextest`](https://nexte.st) 0.9.143 or later.
 
 ```console
 $ git clone https://github.com/beyond10x/surf

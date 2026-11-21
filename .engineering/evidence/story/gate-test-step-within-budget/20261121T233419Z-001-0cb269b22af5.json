@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T23:34:19Z",
+  "actor": "human:operator",
+  "artifact": "story:gate-test-step-within-budget",
+  "kind": "story",
+  "revision": 19,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "slot task check in the runner's form on impl/gate-test-step-within-budget at 6cf0f0d",
+    "reference": "exit 0: 95 scenarios passed on both runners (14 authored, 28 refusals); Cargo.lock 23 packages; 555 tests: 555 passed, 0 failed, 0 ignored (cargo-nextest 553, doc tests 2); test step: 27.0 s of its budget of 120 s, the slowest test 13.0 s; view-stream-check 19 event names; view-test 38 passed; html-conformance 9107 cases, 9095 run, 8428 passed"
+  }
+}

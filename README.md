@@ -372,7 +372,8 @@ talking to the network, keeping each component's data, the command lines and the
 
 To build surf from source you need [`ess`](https://github.com/beyond10x/ess) 0.96.0,
 [`task`](https://taskfile.dev) and a Rust toolchain (built with 1.99.1); `task build` builds
-the four binaries. That is for working on surf, not for using it.
+the four binaries. `task check` also needs [`cargo-nextest`](https://nexte.st) 0.9.143 or later.
+That is for working on surf, not for using it.
 
 One command checks everything:
 
@@ -387,8 +388,9 @@ the interpreter and the Rust system ran 95 scenario(s) each, of suite sha256:5fe
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 Cargo.lock: 23 package(s), none from outside this repository
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.00s
-126 test suites: 555 passed, 0 failed, 0 ignored
+    Finished `dev` profile [unoptimized] target(s) in 0.00s
+555 tests: 555 passed, 0 failed, 0 ignored (cargo-nextest 553, doc tests 2)
+test step: 27.0 s of its budget of 120 s
 view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
   38 passed (15.8s)
 html-conformance: 9107 cases, 9095 run, 8428 passed
@@ -398,10 +400,12 @@ It validates the specification, runs the 95 scenarios against the interpreter bu
 and against the Rust code, checks that the generated code still matches the specification and
 that the lock file holds no outside package, then builds and tests, checks that every event
 name of the live view's stream is an event of the specification, runs the live view's page
-tests in a browser, and last holds the HTML parser's test counts where they are. The page
-tests need Node and Chromium's headless shell; with Node there, install the shell once with
-`npm --prefix view-tests ci`, then `npx --prefix view-tests playwright install --only-shell
-chromium`. The scenario runner in
+tests in a browser, and last holds the HTML parser's test counts where they are. The tests run
+under cargo-nextest; a test still running after 60 seconds is ended and fails, the test step
+fails when it takes over 120 seconds, and the block leaves out the ten slowest tests the step
+also prints. The page tests need Node and Chromium's headless shell; with Node there, install
+the shell once with `npm --prefix view-tests ci`, then `npx --prefix view-tests playwright
+install --only-shell chromium`. The scenario runner in
 [`conformance/`](conformance/) is the one place a third-party crate is used; nothing that
 ships depends on it.
 

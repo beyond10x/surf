@@ -199,9 +199,28 @@ tasks:
       when it is a symbolic link.
 
       Step 2 covers state.json. It copies generated/rust without the two cargo paths into
-      .out/generated-check/in-place and regenerates there, as task generate would. ess refuses
-      when state.json cannot be read or does not record the bytes beside it, and the task then
-      names state.json. Afterwards .ess-output must be byte for byte the committed one.
+      .out/generated-check/compare/in-place and regenerates there, as task generate would. ess
+      refuses when state.json cannot be read or does not record the bytes beside it, and the task
+      then names state.json. Afterwards .ess-output must be byte for byte the committed one.
+
+      The generation of step 1 is task generated-fresh; the comparison and step 2 are task
+      generated-compare. This task runs both, in that order.
+    cmds:
+      - task: generated-fresh
+      - task: generated-compare
+
+  generated-fresh:
+    desc: Generate spec/ into .out/generated-check/fresh, once per run of task.
+    summary: |
+      Generate spec/ into .out/generated-check/fresh, once per run of task.
+
+      Writes the tree, ess's output into fresh.log beside it, and a copy of the spec/ it read
+      into fresh.spec. It runs once per run of task: task check runs it for generated-check, and
+      task test, which depends on it, then finds it done. The tests of generated-check in
+      crates/surf/tests read this one generation, check that fresh.spec is the spec/ of the
+      checkout, and run task generated-compare FRESH=<this tree> in their copies, so no test
+      generates the tree again.
+    run: once
     silent: true
     vars:
       DIR: .out/generated-check
@@ -209,10 +228,29 @@ tasks:
       - rm -rf {{.DIR}}
       - mkdir -p {{.DIR}}
       - '{{.SYNTHESIZE}} --out {{.DIR}}/fresh > {{.DIR}}/fresh.log 2>&1 || { cat {{.DIR}}/fresh.log; exit 1; }'
+      - cp -R spec {{.DIR}}/fresh.spec
+
+  generated-compare:
+    desc: Compare generated/rust with the tree task generated-fresh wrote (FRESH, a directory).
+    summary: |
+      Compare generated/rust with the tree task generated-fresh wrote (FRESH, a directory).
+
+      Steps 1 and 2 of task generated-check without the generation: FRESH (default
+      .out/generated-check/fresh) is the fresh tree and FRESH.log the output ess printed for it.
+      Its own files go to .out/generated-check/compare, which it removes first. Step 2 still runs
+      ess, over a copy of the committed generated/rust.
+    silent: true
+    vars:
+      FRESH: '{{.FRESH | default ".out/generated-check/fresh"}}'
+      DIR: .out/generated-check/compare
+    cmds:
+      - rm -rf {{.DIR}}
+      - mkdir -p {{.DIR}}
       - |
+        test -d "{{.FRESH}}" && test -f "{{.FRESH}}.log" || { echo "{{.FRESH}}: no generation; run task generated-fresh"; exit 1; }
         export LC_ALL=C
-        (cd {{.DIR}}/fresh && find . -path ./.ess-output -prune -o -type f -print) | sed 's|^\./||' | sort > {{.DIR}}/fresh.list
-        reported=$(sed -n 's/^\([0-9][0-9]*\) artifact(s), written to .*/\1/p' {{.DIR}}/fresh.log)
+        (cd "{{.FRESH}}" && find . -path ./.ess-output -prune -o -type f -print) | sed 's|^\./||' | sort > {{.DIR}}/fresh.list
+        reported=$(sed -n 's/^\([0-9][0-9]*\) artifact(s), written to .*/\1/p' "{{.FRESH}}.log")
         found=$(wc -l < {{.DIR}}/fresh.list)
         if [ "$found" -ne "${reported:-0}" ]; then
           echo "ess reports ${reported:-no} artifact(s) and wrote $found file(s) besides .ess-output; the check would not cover what ess reports"
@@ -222,8 +260,8 @@ tasks:
         if [ -L generated/rust ]; then
           echo "generated/rust: a symbolic link, not a directory" >> {{.DIR}}/drift.txt
         fi
-        (cd {{.DIR}}/fresh && find . -type f -print) | sed 's|^\./||' | sort > {{.DIR}}/fresh.all
-        (cd {{.DIR}}/fresh && find . -type f -perm /111 -print) | sed 's|^\./||' | sort > {{.DIR}}/fresh.executable
+        (cd "{{.FRESH}}" && find . -type f -print) | sed 's|^\./||' | sort > {{.DIR}}/fresh.all
+        (cd "{{.FRESH}}" && find . -type f -perm /111 -print) | sed 's|^\./||' | sort > {{.DIR}}/fresh.executable
         if [ -d generated/rust ]; then
           (cd generated/rust && find . \( -path ./.ess-output -o -path ./target -o -path ./Cargo.lock \) -prune -o -type f -print) | sed 's|^\./||' | sort > {{.DIR}}/committed.list
           (cd generated/rust && find . \( -path ./target -type d \) -prune -o ! -type f ! -type d -print) | sed 's|^\./||' | sort | sed 's|^|generated/rust/|; s|$|: not a regular file|' >> {{.DIR}}/drift.txt
@@ -237,7 +275,7 @@ tasks:
         comm -23 {{.DIR}}/fresh.list {{.DIR}}/committed.list | sed 's|^|generated/rust/|; s|$|: missing|' >> {{.DIR}}/drift.txt
         comm -13 {{.DIR}}/fresh.list {{.DIR}}/committed.list | sed 's|^|generated/rust/|; s|$|: not written by ess|' >> {{.DIR}}/drift.txt
         comm -12 {{.DIR}}/fresh.list {{.DIR}}/committed.list | while read -r path; do
-          cmp -s "{{.DIR}}/fresh/$path" "generated/rust/$path" || echo "generated/rust/$path: differs from what ess generates"
+          cmp -s "{{.FRESH}}/$path" "generated/rust/$path" || echo "generated/rust/$path: differs from what ess generates"
         done >> {{.DIR}}/drift.txt
         comm -12 {{.DIR}}/fresh.all {{.DIR}}/committed.all > {{.DIR}}/both.all
         comm -13 {{.DIR}}/fresh.executable {{.DIR}}/committed.executable | comm -12 - {{.DIR}}/both.all | sed 's|^|generated/rust/|; s|$|: executable, and ess writes it not executable|' >> {{.DIR}}/drift.txt
@@ -270,15 +308,65 @@ tasks:
       - tail -n 1 .out/build.log
 
   test:
-    desc: Test the root workspace, hand-written and generated crates, with warnings denied.
-    deps: [cli]
+    desc: Test the root workspace with cargo-nextest and its doc tests with cargo test, warnings denied, within 120 s.
+    summary: |
+      Test the root workspace with cargo-nextest and its doc tests with cargo test, warnings denied, within 120 s.
+
+      cargo nextest run --workspace runs every test but the doc tests, one process per test, as
+      .config/nextest.toml sets it: a test still running after 60 s is ended and fails, and a
+      failure does not stop the run. Its log is .out/test.log, its JUnit report
+      target/nextest/default/junit.xml. cargo test --doc --workspace runs the doc tests, which
+      nextest does not run, into .out/test-doc.log.
+
+      It prints the ten slowest tests from the JUnit report, nextest's summary line, and one
+      count line for the whole workspace: "N tests: P passed, F failed, I ignored", where N is
+      what nextest ran and skipped plus every doc test, a test nextest ended counts as failed and
+      a test nextest skips (#[ignore]) as ignored; after it how many came from each runner.
+      Then the wall time of the two commands together, without the time before the task
+      started. It fails when a test failed, and when that time is over TEST_BUDGET seconds
+      (120), naming the time.
+
+      It depends on task cli (.out/cli/) and on task generated-fresh, the one generation the
+      tests of generated-check compare against.
+    deps: [cli, generated-fresh]
     env:
       RUSTFLAGS: -D warnings
+    vars:
+      TEST_BUDGET: '{{.TEST_BUDGET | default "120"}}'
+    silent: true
     cmds:
       - mkdir -p .out
-      - cargo test --workspace --locked > .out/test.log 2>&1 || { cat .out/test.log; exit 1; }
       - |
-        awk '/^test result:/ { n++; p += $4; f += $6; i += $8 } END { printf "%d test suites: %d passed, %d failed, %d ignored\n", n, p, f, i }' .out/test.log
+        junit=target/nextest/default/junit.xml
+        rm -f "$junit"
+        start=$(date +%s%N)
+        tests=0
+        cargo nextest run --workspace --locked --color never > .out/test.log 2>&1 || tests=1
+        docs=0
+        cargo test --doc --workspace --locked --color never > .out/test-doc.log 2>&1 || docs=1
+        elapsed=$(( ($(date +%s%N) - start) / 1000000 ))
+        if [ "$tests" -ne 0 ]; then cat .out/test.log; fi
+        if [ "$docs" -ne 0 ]; then cat .out/test-doc.log; fi
+        if [ -f "$junit" ]; then
+          echo "the ten slowest tests:"
+          tr '\n' ' ' < "$junit" | sed 's/<testcase /\n<testcase /g' | sed -n 's/^<testcase name="\([^"]*\)" classname="\([^"]*\)"[^>]*time="\([0-9.]*\)".*/\3 \2 \1/p' | sort -rn | head -n 10 | awk '{ printf "  %8.3fs %s %s\n", $1, $2, $3 }'
+        fi
+        summary=$(grep -E '^ *Summary \[' .out/test.log | tail -n 1)
+        test -n "$summary" && echo "$summary" | sed 's/^ *//'
+        printf '%s\n' "$summary" | sed 's/([^)]*)//g; s/.* run: //' | tr ',' '\n' | awk -v doc="$(awk '/^test result:/ { p += $4; f += $6; i += $8 } END { print p + 0, f + 0, i + 0 }' .out/test-doc.log)" '
+          $1 ~ /^[0-9]+$/ { if ($2 == "passed") p += $1; else if ($2 == "skipped") i += $1; else f += $1 }
+          END {
+            split(doc, d, " ")
+            n = p + f + i
+            printf "%d tests: %d passed, %d failed, %d ignored (cargo-nextest %d, doc tests %d)\n", n + d[1] + d[2] + d[3], p + d[1], f + d[2], i + d[3], n, d[1] + d[2] + d[3]
+          }'
+        seconds=$(( elapsed / 1000 )).$(( elapsed % 1000 / 100 ))
+        if [ "$elapsed" -gt $(( {{.TEST_BUDGET}} * 1000 )) ]; then
+          echo "test step: ${seconds} s, over its budget of {{.TEST_BUDGET}} s"
+          exit 1
+        fi
+        echo "test step: ${seconds} s of its budget of {{.TEST_BUDGET}} s"
+        test "$tests" -eq 0 && test "$docs" -eq 0
 
   open:
     desc: List every open question the specification marks.

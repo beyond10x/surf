@@ -2,13 +2,17 @@
 //! `task generate` writes and that the check of review 1 may still pass. Its summary: it fails
 //! "when generated/rust is not what task generate writes", and `.ess-output/` "holds only
 //! state.json". Each case copies `Taskfile.yml`, `spec/` and `generated/rust` into a directory of
-//! its own under `CARGO_TARGET_TMPDIR`, makes one change, and runs the check there. Needs `task`
-//! and `ess` 0.96.0 on `PATH`, as `task check` does.
+//! its own under `CARGO_TARGET_TMPDIR`, makes one change, and runs the comparison of the check
+//! there (`task generated-compare`) against the one generation `task generated-fresh` wrote
+//! (`common`). Needs `task` and `ess` 0.96.0 on `PATH`, as `task check` does.
+
+mod common;
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+
+use common::check;
 
 fn repository() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -49,17 +53,6 @@ fn copy(name: &str) -> PathBuf {
         &["target", "Cargo.lock"],
     );
     dir
-}
-
-fn check(dir: &Path) -> (Option<i32>, String) {
-    let output = Command::new("task")
-        .arg("generated-check")
-        .current_dir(dir)
-        .output()
-        .expect("run task");
-    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
-    text.push_str(&String::from_utf8_lossy(&output.stderr));
-    (output.status.code(), text)
 }
 
 /// A file in `.ess-output/` beside `state.json`, which ess does not write.

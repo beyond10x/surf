@@ -2,13 +2,18 @@
 //! bit is not the one ess writes: the check fails and names the path, for a generated artifact and
 //! for ess's record `.ess-output/state.json` alike. Each case copies `Taskfile.yml`, `spec/` and
 //! `generated/rust` (without `target/` and `Cargo.lock`) into a directory of its own under
-//! `CARGO_TARGET_TMPDIR`, makes one file executable, and runs `task generated-check` there. Needs
-//! `task` and `ess` 0.96.0 on `PATH`, as `task check` does.
+//! `CARGO_TARGET_TMPDIR`, makes one file executable, and runs the comparison of `task
+//! generated-check` there (`task generated-compare`) against the one generation `task
+//! generated-fresh` wrote (`common`). Needs `task` and `ess` 0.96.0 on `PATH`, as `task check`
+//! does.
+
+mod common;
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+
+use common::check;
 
 fn repository() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -49,17 +54,6 @@ fn copy(name: &str) -> PathBuf {
         &["target", "Cargo.lock"],
     );
     dir
-}
-
-fn check(dir: &Path) -> (Option<i32>, String) {
-    let output = Command::new("task")
-        .arg("generated-check")
-        .current_dir(dir)
-        .output()
-        .expect("run task");
-    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
-    text.push_str(&String::from_utf8_lossy(&output.stderr));
-    (output.status.code(), text)
 }
 
 /// Makes `path` (relative to `generated/rust`) executable in a fresh copy, runs the check and

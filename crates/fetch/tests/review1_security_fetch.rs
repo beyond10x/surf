@@ -179,13 +179,16 @@ fn review1_request_bytes_are_exactly_the_three_lines_and_printable() {
 
 /// RFC 3986 section 3.2.2: an IP-literal in brackets is an IPv6 address or IPvFuture. A
 /// bracketed IPv4 address or name is not a host, so the address is refused before connecting
-/// and is never sent as `Host`.
+/// and is never sent as `Host`. After the fetch the test connects once itself and sends nothing,
+/// so the server does not wait out `BOUND` for a connection: a connection the fetch made is
+/// accepted first, and its request is what the server returns.
 #[test]
 fn review1_bracketed_host_that_is_not_ipv6_is_refused_without_connecting() {
     for host in ["[127.0.0.1]", "[localhost]"] {
         let server = reply(b"HTTP/1.1 204 No Content\r\n\r\n".to_vec());
         let address = format!("http://{host}:{}/", server.port);
         let result = fetch(&address, &limits());
+        drop(TcpStream::connect(("127.0.0.1", server.port)).expect("connect to wake the server"));
         let request = server.handle.join().expect("server");
         assert!(
             matches!(&result, Err(Failure::Unreachable(_))) && request.is_empty(),

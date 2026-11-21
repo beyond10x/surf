@@ -1,13 +1,17 @@
 //! Review 1 (adversary): `task generated-check` (Taskfile.yml) against its own summary and the
 //! acceptance of story `generated-rust-workspace`. Each case copies `Taskfile.yml`, `spec/` and
 //! `generated/rust` (without `target/` and `Cargo.lock`) into a directory of its own under
-//! `CARGO_TARGET_TMPDIR`, changes the copy, and runs `task generated-check` there. Needs `task`
-//! and `ess` 0.96.0 on `PATH`, as `task check` does.
+//! `CARGO_TARGET_TMPDIR`, changes the copy, and runs the comparison of `task generated-check`
+//! there (`task generated-compare`) against the one generation `task generated-fresh` wrote
+//! (`common`). Needs `task` and `ess` 0.96.0 on `PATH`, as `task check` does.
+
+mod common;
 
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+
+use common::check;
 
 fn repository() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -47,18 +51,6 @@ fn copy(name: &str) -> PathBuf {
         &["target", "Cargo.lock"],
     );
     dir
-}
-
-/// `task generated-check` in `dir`: its exit status and everything it printed.
-fn check(dir: &Path) -> (Option<i32>, String) {
-    let output = Command::new("task")
-        .arg("generated-check")
-        .current_dir(dir)
-        .output()
-        .expect("run task");
-    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
-    text.push_str(&String::from_utf8_lossy(&output.stderr));
-    (output.status.code(), text)
 }
 
 fn files(dir: &Path, prefix: &Path, out: &mut Vec<PathBuf>) {

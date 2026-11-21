@@ -197,8 +197,10 @@ pub fn bin_dir() -> &'static Path {
     })
 }
 
+/// Copies `from` to `to` through a partial file of this process: nextest runs each test in a
+/// process of its own, so several processes copy the same program at once.
 fn copy(from: &Path, to: &Path) {
-    let part = to.with_extension("part");
+    let part = to.with_extension(format!("part-{}", std::process::id()));
     fs::copy(from, &part).unwrap();
     fs::rename(&part, to).unwrap();
 }

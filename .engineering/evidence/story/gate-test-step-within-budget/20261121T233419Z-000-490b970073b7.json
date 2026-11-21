@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T23:34:19Z",
+  "actor": "human:operator",
+  "artifact": "story:gate-test-step-within-budget",
+  "kind": "story",
+  "revision": 19,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the coordinator's reading of the unit's change (6cf0f0d) and of the unit's logs: three runs of the task test, a test that sleeps 61 seconds added and taken back, a run with TEST_BUDGET=10, readelf -S on one test binary before and after, eight planted defects in generated/rust; and slot task check in the runner's form on impl/gate-test-step-within-budget at 6cf0f0d",
+    "reference": "exit 0; task test runs cargo nextest run --workspace --locked (cargo-nextest 0.9.143) and cargo test --doc --workspace --locked; task generated-check is generated-fresh (one generation per run of task) and generated-compare, and the tests of crates/surf/tests/*generated_check*.rs compare against that one generation; the unit's three runs of the step: 28.8, 25.9 and 28.7 seconds (177 seconds before, one test 78.5 seconds), 555 tests: 555 passed, 0 failed, 0 ignored (cargo-nextest 553, doc tests 2), the slowest test 16.4 seconds; the 61-second test was ended at 60.003 seconds and the step failed; with TEST_BUDGET=10 the step printed 32.9 s, over its budget of 10 s and failed; .debug_ sections of a test binary 7 before, 0 after; 8 planted defects, 8 red; no test and no assertion removed; the workflow installs cargo-nextest 0.9.143 checked against its SHA-256, read on the forge after the merge; verdict VERIFIED"
+  }
+}
