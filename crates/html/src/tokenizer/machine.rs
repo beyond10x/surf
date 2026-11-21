@@ -1,11 +1,12 @@
-//! The state machine of 13.2.5: the markup states, written by `story:html-tokenizer-markup`.
+//! The state machine of 13.2.5: the markup states, written by `story:html-tokenizer-markup`,
+//! and the RCDATA, RAWTEXT, script data and PLAINTEXT states with the states they lead to
+//! (13.2.5.2 to 13.2.5.5 and 13.2.5.9 to 13.2.5.31), written by `story:html-tokenizer-text`.
 //! Each state is written from its subsection of the standard, with the standard's name and its
-//! parse error codes, in the standard's order.
+//! parse error codes, in the standard's order. The appropriate end tag check compares with the
+//! last start tag the tokenizer was created with, replaced by each start tag it emits.
 //!
-//! Not written here: the RCDATA, RAWTEXT, script data and PLAINTEXT states and the states they
-//! lead to (story `html-tokenizer-text`), and the character reference states (story
-//! `html-character-references`), of which only the character reference state's "anything else"
-//! entry stands, as a stub.
+//! Not written here: the character reference states (story `html-character-references`), of
+//! which only the character reference state's "anything else" entry stands, as a stub.
 
 use super::{ParseError, Token, TokenAttribute, Tokenized};
 use crate::input::{self, InputStream};
@@ -34,9 +35,36 @@ const REPLACEMENT_CHARACTER: u32 = 0xFFFD;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum State {
     Data,
+    Rcdata,
+    Rawtext,
+    ScriptData,
+    Plaintext,
     TagOpen,
     EndTagOpen,
     TagName,
+    RcdataLessThanSign,
+    RcdataEndTagOpen,
+    RcdataEndTagName,
+    RawtextLessThanSign,
+    RawtextEndTagOpen,
+    RawtextEndTagName,
+    ScriptDataLessThanSign,
+    ScriptDataEndTagOpen,
+    ScriptDataEndTagName,
+    ScriptDataEscapeStart,
+    ScriptDataEscapeStartDash,
+    ScriptDataEscaped,
+    ScriptDataEscapedDash,
+    ScriptDataEscapedDashDash,
+    ScriptDataEscapedLessThanSign,
+    ScriptDataEscapedEndTagOpen,
+    ScriptDataEscapedEndTagName,
+    ScriptDataDoubleEscapeStart,
+    ScriptDataDoubleEscaped,
+    ScriptDataDoubleEscapedDash,
+    ScriptDataDoubleEscapedDashDash,
+    ScriptDataDoubleEscapedLessThanSign,
+    ScriptDataDoubleEscapeEnd,
     BeforeAttributeName,
     AttributeName,
     AfterAttributeName,
@@ -154,6 +182,9 @@ pub(super) struct Tokenizer {
     /// reported.
     examined: usize,
     temporary_buffer: Vec<u32>,
+    /// The tag name of the last start tag to have been emitted from this tokenizer, or the one
+    /// the tokenizer was created with; `None` when there is none.
+    last_start_tag: Option<String>,
     tag: TagToken,
     comment: String,
     doctype: DoctypeToken,
@@ -163,7 +194,9 @@ pub(super) struct Tokenizer {
 }
 
 impl Tokenizer {
-    pub(super) fn new(input: &[u32], state: State) -> Tokenizer {
+    /// A tokenizer over `input` that starts in `state`, with `last_start_tag` as the tag name of
+    /// the last start tag emitted.
+    pub(super) fn new(input: &[u32], state: State, last_start_tag: Option<&str>) -> Tokenizer {
         Tokenizer {
             input: InputStream::new(input),
             state,
@@ -172,6 +205,7 @@ impl Tokenizer {
             reconsume: false,
             examined: 0,
             temporary_buffer: Vec::new(),
+            last_start_tag: last_start_tag.map(str::to_string),
             tag: TagToken::default(),
             comment: String::new(),
             doctype: DoctypeToken::default(),
@@ -309,6 +343,7 @@ impl Tokenizer {
             }
             self.emit(Token::EndTag { name: tag.name });
         } else {
+            self.last_start_tag = Some(tag.name.clone());
             self.emit(Token::StartTag {
                 name: tag.name,
                 attributes: tag.attributes,
@@ -413,6 +448,49 @@ impl Tokenizer {
                 None => self.emit_end_of_file(),
                 Some(c) => self.emit_character(c),
             },
+            // 13.2.5.2 RCDATA state
+            State::Rcdata => match self.consume() {
+                Some(AMPERSAND) => {
+                    self.return_state = State::Rcdata;
+                    self.switch_to(State::CharacterReference);
+                }
+                Some(LESS_THAN_SIGN) => self.switch_to(State::RcdataLessThanSign),
+                Some(NULL) => {
+                    self.error("unexpected-null-character");
+                    self.emit_character(REPLACEMENT_CHARACTER);
+                }
+                None => self.emit_end_of_file(),
+                Some(c) => self.emit_character(c),
+            },
+            // 13.2.5.3 RAWTEXT state
+            State::Rawtext => match self.consume() {
+                Some(LESS_THAN_SIGN) => self.switch_to(State::RawtextLessThanSign),
+                Some(NULL) => {
+                    self.error("unexpected-null-character");
+                    self.emit_character(REPLACEMENT_CHARACTER);
+                }
+                None => self.emit_end_of_file(),
+                Some(c) => self.emit_character(c),
+            },
+            // 13.2.5.4 Script data state
+            State::ScriptData => match self.consume() {
+                Some(LESS_THAN_SIGN) => self.switch_to(State::ScriptDataLessThanSign),
+                Some(NULL) => {
+                    self.error("unexpected-null-character");
+                    self.emit_character(REPLACEMENT_CHARACTER);
+                }
+                None => self.emit_end_of_file(),
+                Some(c) => self.emit_character(c),
+            },
+            // 13.2.5.5 PLAINTEXT state
+            State::Plaintext => match self.consume() {
+                Some(NULL) => {
+                    self.error("unexpected-null-character");
+                    self.emit_character(REPLACEMENT_CHARACTER);
+                }
+                None => self.emit_end_of_file(),
+                Some(c) => self.emit_character(c),
+            },
             // 13.2.5.6 Tag open state
             State::TagOpen => match self.consume() {
                 Some(EXCLAMATION_MARK) => self.switch_to(State::MarkupDeclarationOpen),
@@ -477,6 +555,230 @@ impl Tokenizer {
                 }
                 Some(c) => push(&mut self.tag.name, c),
             },
+            // 13.2.5.9 RCDATA less-than sign state
+            State::RcdataLessThanSign => match self.consume() {
+                Some(SOLIDUS) => {
+                    self.temporary_buffer.clear();
+                    self.switch_to(State::RcdataEndTagOpen);
+                }
+                _ => {
+                    self.emit_character(LESS_THAN_SIGN);
+                    self.reconsume_in(State::Rcdata);
+                }
+            },
+            // 13.2.5.10 RCDATA end tag open state
+            State::RcdataEndTagOpen => {
+                self.text_end_tag_open(State::RcdataEndTagName, State::Rcdata)
+            }
+            // 13.2.5.11 RCDATA end tag name state
+            State::RcdataEndTagName => self.text_end_tag_name(State::Rcdata),
+            // 13.2.5.12 RAWTEXT less-than sign state
+            State::RawtextLessThanSign => match self.consume() {
+                Some(SOLIDUS) => {
+                    self.temporary_buffer.clear();
+                    self.switch_to(State::RawtextEndTagOpen);
+                }
+                _ => {
+                    self.emit_character(LESS_THAN_SIGN);
+                    self.reconsume_in(State::Rawtext);
+                }
+            },
+            // 13.2.5.13 RAWTEXT end tag open state
+            State::RawtextEndTagOpen => {
+                self.text_end_tag_open(State::RawtextEndTagName, State::Rawtext)
+            }
+            // 13.2.5.14 RAWTEXT end tag name state
+            State::RawtextEndTagName => self.text_end_tag_name(State::Rawtext),
+            // 13.2.5.15 Script data less-than sign state
+            State::ScriptDataLessThanSign => match self.consume() {
+                Some(SOLIDUS) => {
+                    self.temporary_buffer.clear();
+                    self.switch_to(State::ScriptDataEndTagOpen);
+                }
+                Some(EXCLAMATION_MARK) => {
+                    self.switch_to(State::ScriptDataEscapeStart);
+                    self.emit_character(LESS_THAN_SIGN);
+                    self.emit_character(EXCLAMATION_MARK);
+                }
+                _ => {
+                    self.emit_character(LESS_THAN_SIGN);
+                    self.reconsume_in(State::ScriptData);
+                }
+            },
+            // 13.2.5.16 Script data end tag open state
+            State::ScriptDataEndTagOpen => {
+                self.text_end_tag_open(State::ScriptDataEndTagName, State::ScriptData)
+            }
+            // 13.2.5.17 Script data end tag name state
+            State::ScriptDataEndTagName => self.text_end_tag_name(State::ScriptData),
+            // 13.2.5.18 Script data escape start state
+            State::ScriptDataEscapeStart => match self.consume() {
+                Some(HYPHEN_MINUS) => {
+                    self.switch_to(State::ScriptDataEscapeStartDash);
+                    self.emit_character(HYPHEN_MINUS);
+                }
+                _ => self.reconsume_in(State::ScriptData),
+            },
+            // 13.2.5.19 Script data escape start dash state
+            State::ScriptDataEscapeStartDash => match self.consume() {
+                Some(HYPHEN_MINUS) => {
+                    self.switch_to(State::ScriptDataEscapedDashDash);
+                    self.emit_character(HYPHEN_MINUS);
+                }
+                _ => self.reconsume_in(State::ScriptData),
+            },
+            // 13.2.5.20 Script data escaped state
+            State::ScriptDataEscaped => match self.consume() {
+                Some(HYPHEN_MINUS) => {
+                    self.switch_to(State::ScriptDataEscapedDash);
+                    self.emit_character(HYPHEN_MINUS);
+                }
+                Some(LESS_THAN_SIGN) => self.switch_to(State::ScriptDataEscapedLessThanSign),
+                Some(NULL) => {
+                    self.error("unexpected-null-character");
+                    self.emit_character(REPLACEMENT_CHARACTER);
+                }
+                None => self.eof_in_script_html_comment_like_text(),
+                Some(c) => self.emit_character(c),
+            },
+            // 13.2.5.21 Script data escaped dash state
+            State::ScriptDataEscapedDash => match self.consume() {
+                Some(HYPHEN_MINUS) => {
+                    self.switch_to(State::ScriptDataEscapedDashDash);
+                    self.emit_character(HYPHEN_MINUS);
+                }
+                Some(LESS_THAN_SIGN) => self.switch_to(State::ScriptDataEscapedLessThanSign),
+                Some(NULL) => {
+                    self.error("unexpected-null-character");
+                    self.switch_to(State::ScriptDataEscaped);
+                    self.emit_character(REPLACEMENT_CHARACTER);
+                }
+                None => self.eof_in_script_html_comment_like_text(),
+                Some(c) => {
+                    self.switch_to(State::ScriptDataEscaped);
+                    self.emit_character(c);
+                }
+            },
+            // 13.2.5.22 Script data escaped dash dash state
+            State::ScriptDataEscapedDashDash => match self.consume() {
+                Some(HYPHEN_MINUS) => self.emit_character(HYPHEN_MINUS),
+                Some(LESS_THAN_SIGN) => self.switch_to(State::ScriptDataEscapedLessThanSign),
+                Some(GREATER_THAN_SIGN) => {
+                    self.switch_to(State::ScriptData);
+                    self.emit_character(GREATER_THAN_SIGN);
+                }
+                Some(NULL) => {
+                    self.error("unexpected-null-character");
+                    self.switch_to(State::ScriptDataEscaped);
+                    self.emit_character(REPLACEMENT_CHARACTER);
+                }
+                None => self.eof_in_script_html_comment_like_text(),
+                Some(c) => {
+                    self.switch_to(State::ScriptDataEscaped);
+                    self.emit_character(c);
+                }
+            },
+            // 13.2.5.23 Script data escaped less-than sign state
+            State::ScriptDataEscapedLessThanSign => match self.consume() {
+                Some(SOLIDUS) => {
+                    self.temporary_buffer.clear();
+                    self.switch_to(State::ScriptDataEscapedEndTagOpen);
+                }
+                Some(c) if is_ascii_alpha(c) => {
+                    self.temporary_buffer.clear();
+                    self.emit_character(LESS_THAN_SIGN);
+                    self.reconsume_in(State::ScriptDataDoubleEscapeStart);
+                }
+                _ => {
+                    self.emit_character(LESS_THAN_SIGN);
+                    self.reconsume_in(State::ScriptDataEscaped);
+                }
+            },
+            // 13.2.5.24 Script data escaped end tag open state
+            State::ScriptDataEscapedEndTagOpen => {
+                self.text_end_tag_open(State::ScriptDataEscapedEndTagName, State::ScriptDataEscaped)
+            }
+            // 13.2.5.25 Script data escaped end tag name state
+            State::ScriptDataEscapedEndTagName => self.text_end_tag_name(State::ScriptDataEscaped),
+            // 13.2.5.26 Script data double escape start state
+            State::ScriptDataDoubleEscapeStart => self.script_data_double_escape_boundary(
+                State::ScriptDataDoubleEscaped,
+                State::ScriptDataEscaped,
+            ),
+            // 13.2.5.27 Script data double escaped state
+            State::ScriptDataDoubleEscaped => match self.consume() {
+                Some(HYPHEN_MINUS) => {
+                    self.switch_to(State::ScriptDataDoubleEscapedDash);
+                    self.emit_character(HYPHEN_MINUS);
+                }
+                Some(LESS_THAN_SIGN) => {
+                    self.switch_to(State::ScriptDataDoubleEscapedLessThanSign);
+                    self.emit_character(LESS_THAN_SIGN);
+                }
+                Some(NULL) => {
+                    self.error("unexpected-null-character");
+                    self.emit_character(REPLACEMENT_CHARACTER);
+                }
+                None => self.eof_in_script_html_comment_like_text(),
+                Some(c) => self.emit_character(c),
+            },
+            // 13.2.5.28 Script data double escaped dash state
+            State::ScriptDataDoubleEscapedDash => match self.consume() {
+                Some(HYPHEN_MINUS) => {
+                    self.switch_to(State::ScriptDataDoubleEscapedDashDash);
+                    self.emit_character(HYPHEN_MINUS);
+                }
+                Some(LESS_THAN_SIGN) => {
+                    self.switch_to(State::ScriptDataDoubleEscapedLessThanSign);
+                    self.emit_character(LESS_THAN_SIGN);
+                }
+                Some(NULL) => {
+                    self.error("unexpected-null-character");
+                    self.switch_to(State::ScriptDataDoubleEscaped);
+                    self.emit_character(REPLACEMENT_CHARACTER);
+                }
+                None => self.eof_in_script_html_comment_like_text(),
+                Some(c) => {
+                    self.switch_to(State::ScriptDataDoubleEscaped);
+                    self.emit_character(c);
+                }
+            },
+            // 13.2.5.29 Script data double escaped dash dash state
+            State::ScriptDataDoubleEscapedDashDash => match self.consume() {
+                Some(HYPHEN_MINUS) => self.emit_character(HYPHEN_MINUS),
+                Some(LESS_THAN_SIGN) => {
+                    self.switch_to(State::ScriptDataDoubleEscapedLessThanSign);
+                    self.emit_character(LESS_THAN_SIGN);
+                }
+                Some(GREATER_THAN_SIGN) => {
+                    self.switch_to(State::ScriptData);
+                    self.emit_character(GREATER_THAN_SIGN);
+                }
+                Some(NULL) => {
+                    self.error("unexpected-null-character");
+                    self.switch_to(State::ScriptDataDoubleEscaped);
+                    self.emit_character(REPLACEMENT_CHARACTER);
+                }
+                None => self.eof_in_script_html_comment_like_text(),
+                Some(c) => {
+                    self.switch_to(State::ScriptDataDoubleEscaped);
+                    self.emit_character(c);
+                }
+            },
+            // 13.2.5.30 Script data double escaped less-than sign state
+            State::ScriptDataDoubleEscapedLessThanSign => match self.consume() {
+                Some(SOLIDUS) => {
+                    self.temporary_buffer.clear();
+                    self.switch_to(State::ScriptDataDoubleEscapeEnd);
+                    self.emit_character(SOLIDUS);
+                }
+                _ => self.reconsume_in(State::ScriptDataDoubleEscaped),
+            },
+            // 13.2.5.31 Script data double escape end state
+            State::ScriptDataDoubleEscapeEnd => self.script_data_double_escape_boundary(
+                State::ScriptDataEscaped,
+                State::ScriptDataDoubleEscaped,
+            ),
             // 13.2.5.32 Before attribute name state
             State::BeforeAttributeName => match self.consume() {
                 Some(TAB | LF | FF | SPACE) => {}
@@ -1190,6 +1492,97 @@ impl Tokenizer {
                 self.reconsume_in(self.return_state);
             }
         }
+    }
+
+    /// "An appropriate end tag token": the current tag token's name is the tag name of the last
+    /// start tag to have been emitted from this tokenizer. With none, no end tag is appropriate.
+    fn is_appropriate_end_tag(&self) -> bool {
+        self.last_start_tag.as_deref() == Some(self.tag.name.as_str())
+    }
+
+    /// The RCDATA (13.2.5.10), RAWTEXT (13.2.5.13), script data (13.2.5.16) and script data
+    /// escaped (13.2.5.24) end tag open states, which differ only in the end tag name state they
+    /// go to and the state they go back to.
+    fn text_end_tag_open(&mut self, end_tag_name: State, text: State) {
+        match self.consume() {
+            Some(c) if is_ascii_alpha(c) => {
+                self.create_tag(true);
+                self.reconsume_in(end_tag_name);
+            }
+            _ => {
+                self.emit_character(LESS_THAN_SIGN);
+                self.emit_character(SOLIDUS);
+                self.reconsume_in(text);
+            }
+        }
+    }
+
+    /// The RCDATA (13.2.5.11), RAWTEXT (13.2.5.14), script data (13.2.5.17) and script data
+    /// escaped (13.2.5.25) end tag name states, which differ only in the state they go back to.
+    fn text_end_tag_name(&mut self, text: State) {
+        match self.consume() {
+            Some(TAB | LF | FF | SPACE) if self.is_appropriate_end_tag() => {
+                self.switch_to(State::BeforeAttributeName)
+            }
+            Some(SOLIDUS) if self.is_appropriate_end_tag() => {
+                self.switch_to(State::SelfClosingStartTag)
+            }
+            Some(GREATER_THAN_SIGN) if self.is_appropriate_end_tag() => {
+                self.switch_to(State::Data);
+                self.emit_tag();
+            }
+            Some(c) if is_ascii_upper_alpha(c) => {
+                push(&mut self.tag.name, to_lowercase(c));
+                self.temporary_buffer.push(c);
+            }
+            Some(c) if is_ascii_alpha(c) => {
+                push(&mut self.tag.name, c);
+                self.temporary_buffer.push(c);
+            }
+            _ => {
+                self.emit_character(LESS_THAN_SIGN);
+                self.emit_character(SOLIDUS);
+                let buffer = std::mem::take(&mut self.temporary_buffer);
+                for c in buffer {
+                    self.emit_character(c);
+                }
+                self.reconsume_in(text);
+            }
+        }
+    }
+
+    /// The script data double escape start (13.2.5.26) and double escape end (13.2.5.31)
+    /// states: at whitespace, `/` or `>` they switch to `if_script` when the temporary buffer
+    /// is "script" and to `otherwise` when not; anything else that is not an ASCII alpha is
+    /// reconsumed in `otherwise`.
+    fn script_data_double_escape_boundary(&mut self, if_script: State, otherwise: State) {
+        match self.consume() {
+            Some(c @ (TAB | LF | FF | SPACE | SOLIDUS | GREATER_THAN_SIGN)) => {
+                let script = self
+                    .temporary_buffer
+                    .iter()
+                    .copied()
+                    .eq("script".chars().map(u32::from));
+                self.switch_to(if script { if_script } else { otherwise });
+                self.emit_character(c);
+            }
+            Some(c) if is_ascii_upper_alpha(c) => {
+                self.temporary_buffer.push(to_lowercase(c));
+                self.emit_character(c);
+            }
+            Some(c) if is_ascii_alpha(c) => {
+                self.temporary_buffer.push(c);
+                self.emit_character(c);
+            }
+            _ => self.reconsume_in(otherwise),
+        }
+    }
+
+    /// The EOF entry of the script data escaped and double escaped states: an
+    /// `eof-in-script-html-comment-like-text` parse error and an end-of-file token emitted.
+    fn eof_in_script_html_comment_like_text(&mut self) {
+        self.error("eof-in-script-html-comment-like-text");
+        self.emit_end_of_file();
     }
 
     /// 13.2.5.42 Markup declaration open state: it looks at the next few characters and
