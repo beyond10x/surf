@@ -1,0 +1,15 @@
+surf
+Copyright 2026 beyond10x
+
+This product includes software developed by beyond10x
+(https://github.com/beyond10x/surf).
+
+If you use surf, or a part of it, in a product or a publication, say so and
+name beyond10x and this repository.
+
+Third-party material in this repository, used for tests only and not part of
+any shipped binary:
+
+- crates/url/tests/data/urltestdata.json: web-platform-tests, the 3-Clause BSD
+  License, copyright web-platform-tests contributors
+  (crates/url/tests/data/LICENSE.md).

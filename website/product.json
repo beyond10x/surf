@@ -1,0 +1,47 @@
+{
+  "format": "b10x-product-landing/1",
+  "product": {
+    "name": "surf",
+    "mark": "S",
+    "eyebrow": "Web browser · written from scratch · early",
+    "promise": ["A web browser written from scratch,", "where the specification comes first."],
+    "lede": "surf is a small browser written in Rust. It does not wrap Chromium, WebKit or Gecko, and nothing that ships depends on a third-party crate. Every behaviour is written down as a specification before any code exists, and a test suite generated from that specification runs against the real code on every change.",
+    "actions": [
+      {"label": "Try it", "href": "/docs/try-it", "kind": "primary"},
+      {"label": "What surf is", "href": "/docs/"},
+      {"label": "Roadmap", "href": "/docs/roadmap"}
+    ],
+    "meta": "Rust · ESS specification · headless command line · not a browser for daily use",
+    "art": {
+      "kind": "terminal",
+      "session": "data/surf.terminal.json",
+      "caption": "surf loads one address and prints one line per thing that happened. The exit status says whether the page loaded."
+    }
+  },
+  "sections": [
+    {
+      "kind": "features",
+      "eyebrow": "What it is",
+      "title": "A browser built from first principles.",
+      "lede": "surf is young. Today it loads a page from the command line and tells you what happened. There is no window, no rendering, no JavaScript and no https: yet.",
+      "items": [
+        {"title": "Written here", "description": "URL parsing, HTTP, HTML parsing and everything after them are written in this repository, each against its standard.", "href": "/docs/"},
+        {"title": "Components that share no state", "description": "Each component keeps its own data, accepts commands and publishes events. Nothing reaches into another component's memory.", "href": "/docs/principles"},
+        {"title": "Headless first", "description": "Its first interface is a command line, for people and for agents.", "href": "/docs/reference/surf-command"},
+        {"title": "No runtime dependencies", "description": "An experiment: how far does a browser get with no third-party code in what ships?", "href": "/docs/principles"}
+      ]
+    },
+    {
+      "kind": "flow",
+      "eyebrow": "How it is built",
+      "title": "From a specification to code that is held to it.",
+      "lede": "The design lives in spec/ as an ESS specification. One command, task check, checks every step.",
+      "steps": [
+        {"label": "Specify", "title": "spec/", "description": "Every behaviour is stated before any code for it exists."},
+        {"label": "Generate", "title": "generated/rust/", "description": "ess generates the components and the scenarios that hold the code to the specification."},
+        {"label": "Supply", "title": "crates/", "description": "Hand-written crates add the network, each component's storage and the command line."},
+        {"label": "Check", "title": "task check", "description": "The scenarios run against the specification's interpreter and against the Rust code, then the build and the tests."}
+      ]
+    }
+  ]
+}

@@ -2,3 +2,6 @@
 target/
 /generated/rust/Cargo.lock
 /.engineering/drafts/
+/website/build/
+/website/node_modules/
+/website/.docusaurus/

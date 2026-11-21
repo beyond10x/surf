@@ -280,8 +280,21 @@ is on that old history too, and stays local.
   start with pre-built binaries for Linux and Mac, maybe, and Windows, I don't know."
   `story:release-binaries` is the release workflow for Linux and macOS. Windows waits: the
   code reads `/dev/urandom` and the agent command line uses a Unix socket.
-- No licence is chosen yet. Until the operator names one, the repository is public and all
-  rights are reserved; no file may claim a licence.
+- Examples in `README.md`, `docs/surf-command.md` and the website show the installed binary
+  (`surf http://…`), never a build command or a path under `target/`. The operator,
+  2026-11-21: "make sure that examples in the docs [...] do not contain cargo run stuff.
+  Instead they should just reference the [surf] binary, which now should then also come with
+  just the pre-built". Building from source is described once, for people who change surf.
+- If the workflow "Documentation site" fails at "Resolve the build run that holds the
+  artifact" right after a push, the build run was not listed yet (seen on 2026-11-21, 11
+  seconds after the build ended): start it again as the bot,
+  `b10x-gates ... gh -- workflow run b10x-docs-site.yml --ref main --repo beyond10x/surf`.
+- The licence is Apache-2.0 (`LICENSE`, `NOTICE`), chosen by the coordinating agent on
+  2026-11-21 at the operator's word: "choose whatever license makes sense here. I'm not caring
+  about IP. We're open source. I want to share stuff. People can use it. They should mention
+  me or us." Apache-2.0 because it lets anyone use and change surf, keeps the attribution in
+  `NOTICE` with every copy, and is what the organization's other open repositories use. Every
+  hand-written crate declares it; vendored test data keeps its own licence beside it.
 
 An issue for ESS is filed as the organization bot, from the `ess` checkout, with the body scanned
 first. `b10x-gates gh` has no `issue` command, so it goes through `api`:
