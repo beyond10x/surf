@@ -2,12 +2,54 @@
 format: aep.planning-md/3
 id: story:local-gate-equals-forge
 kind: story
-status: draft
+status: active
 title: The local gate runs as the forge's runner does, and a red forge run fails the watch script
 summary: On 2026-11-21 the forge's check went red twice after a green local gate, both in a test that decides from one read whether another process has ended. One pinned rustc read by both, a task that runs the gate in the runner's form on a clean export, one tested helper with a bounded wait for an ended process, and a watch script in the repository that exits non-zero on a red run.
 relations:
 - decomposes: epic:headless-rust-target
-revision: 1
+scope:
+- confidence: cited
+  path: .github/workflows/check.yml
+- confidence: cited
+  path: .github/workflows/release.yml
+- confidence: cited
+  path: AGENTS.md
+- confidence: cited
+  path: Cargo.lock
+- confidence: cited
+  path: Cargo.toml
+- confidence: cited
+  path: Taskfile.yml
+- confidence: cited
+  path: crates/agent/Cargo.toml
+- confidence: cited
+  path: crates/agent/tests
+- confidence: cited
+  path: crates/session/Cargo.toml
+- confidence: cited
+  path: crates/session/tests
+- confidence: cited
+  path: crates/surfd/Cargo.toml
+- confidence: cited
+  path: crates/surfd/tests
+- confidence: cited
+  path: crates/test-process
+- confidence: cited
+  path: crates/view-fixture/Cargo.toml
+- confidence: cited
+  path: crates/view-fixture/src/main.rs
+- confidence: cited
+  path: crates/view-fixture/tests
+- confidence: cited
+  path: rust-toolchain.toml
+- confidence: cited
+  path: taskfiles/forge-watch.sh
+- confidence: cited
+  path: taskfiles/planning-only.sh
+revision: 22
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-21T23:35:07Z", actor: "human:operator", revision: 21}
+- {from: "proposed", to: "active", at: "2026-11-21T23:35:08Z", actor: "human:operator", revision: 22}
 ---
 ## Context
 
