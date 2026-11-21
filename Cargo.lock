@@ -73,6 +73,15 @@ name = "surf-answer"
 version = "0.1.0"
 
 [[package]]
+name = "surf-cli"
+version = "0.1.0"
+dependencies = [
+ "surf",
+ "surf-fetch",
+ "surf-ports",
+]
+
+[[package]]
 name = "surf-fetch"
 version = "0.1.0"
 
