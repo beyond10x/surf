@@ -1,7 +1,7 @@
 # Agent interface plan, wave 5 of 22: the entries of a session, and the first of the parser
 
 One wave of the [wave plan](agent-waves.md). Three stories, each in its own worktree, each
-implemented by a sub-agent on Opus; two small units beside them. The coordinating session wrote
+implemented by a sub-agent on Opus; three small units beside them. The coordinating session wrote
 no code. Every commit is the organization bot's.
 
 After this wave a session process sends, with every answer, what it did for it (the action,
@@ -19,6 +19,7 @@ prints anything it did not print before.
 | `html-tokenizer-markup` | `crates/html/src/input.rs` and `crates/html/src/tokenizer/machine.rs`: the input stream and the states of tags, attributes, comments, DOCTYPE, processing instructions and CDATA sections | 8 unit tests; `tag markup 1979/1979/1979` (was 1), `tag text 57/328/328` (was 4), `tag charref 2053/4739/4739` (was 0); 4 planted defects, each red | `24df933` |
 | the fixtures of the conformance check (before the wave's units, alone) | `crates/html-conformance/tests/check.rs`: the two fixture cases that are meant to fail now fail for any parser | 17 tests before and after, no assertion changed | `c73d0f5` |
 | the crate documentation (after the HTML merges, alone) | the section "State" of `crates/html/src/lib.rs` | `cargo doc` with warnings denied; the crate's tests keep their counts | `9685efa` |
+| a racing test of `surf-cli` (after the gate failed on it, alone) | `crates/surf-cli/tests/review2_output.rs`: the broken-pipe test closes the pipe's reader before `surf` starts | 200 of 200 runs in a row; with a sleep before the old drop the old test fails every time; expecting 1 instead of 3 is red | `c1fde97` |
 
 Each unit's claim was checked by the coordinator before its commit: the unit's packages were
 tested again with warnings denied, and for the two HTML units the conformance task and
@@ -73,11 +74,19 @@ Decided before the wave:
   input character, and a look-ahead does not report it.
 - **`worktree finish --discard-cache` refuses a tree whose build output holds fixture
   repositories** (`target/tmp/check`). The trees were finished with `--archive` as well.
+- **The gate failed once on a test no unit of the wave touched.** The broken-pipe test of
+  `surf-cli` started `surf` with a pipe as standard output and dropped the read end after the
+  spawn; when the child wrote first, it exited 1 where the test expects 3. The run at `d437dc6`
+  passed; the run after the documents, at `3cce7be`, failed on it, on a loaded machine. The
+  test now drops the reader before the spawn. It was fixed in this wave, as a unit of its own,
+  because `main` does not move on a gate that fails.
 
 ## The gate on the wave branch
 
 `slot task check` in the runner's form (`CI=true GITHUB_ACTIONS=true CARGO_INCREMENTAL=0
-RUSTC_WRAPPER=""`), exit 0, on `wave/a5-events-html` after the five units:
+RUSTC_WRAPPER=""`), exit 0, on `wave/a5-events-html` after the five units, at `d437dc6`. It
+was run again after the unit of the racing test and this page; the store's evidence for the
+three stories names that run.
 
 ```
 surf v1 — 9 file(s), 9 scenario(s), valid
@@ -106,6 +115,7 @@ The scenarios, the refusals and the suite digest are unchanged: no unit of this 
 | encoding cases 48 to 54 of `encoding/tests1.dat` need the encoding changed while parsing | `html-input-stream` | `story:html-tree-body`; `encoding::decode_with` is its entry |
 | a surrogate inside a name, a value, a comment or an identifier becomes U+FFFD, because those token fields are strings; no case covers it | `html-tokenizer-markup` | accepted, marked by a comment at the place |
 | the RCDATA, RAWTEXT, script data and PLAINTEXT states return no token; `&` comes out as a character | `html-tokenizer-markup` | `story:html-tokenizer-text` (wave 6) and `story:html-character-references` (wave 7) |
+| `cargo fmt --check -p surf-cli` reports two test files of `surf-cli`, and `cargo clippy` with warnings denied stops in `generated/rust/crates/surf-types` (28 lints); the gate has no formatter and no linter step. Reported by the unit, not run again by the coordinator | the unit of the racing test | backlog: whether `task check` holds formatting and lints, and for generated code where |
 | the planning store's transition lines carry a person's name as the actor, in a public tree | the coordinator | open: the store writes the actor it is given; a question for the operator, not changed in this wave |
 
 ## After this wave
