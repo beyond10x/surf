@@ -137,7 +137,9 @@ pub fn kill(pid: u32) {
     }
 }
 
-/// Whether `pid` runs, as `kill -0` says. A zombie counts as gone.
+/// Whether `pid` runs, as `kill -0` says. A process whose `/proc/<pid>/stat` state is `Z`
+/// (zombie), `X` or `x` (dead, `proc_pid_stat(5)`) counts as gone: `X` is read while the parent
+/// reaps the zombie, before the process leaves `/proc`.
 pub fn alive(pid: u32) -> bool {
     let status = fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
     let state = status
@@ -153,7 +155,7 @@ pub fn alive(pid: u32) -> bool {
         .stderr(Stdio::null())
         .status()
         .is_ok_and(|s| s.success())
-        && state != Some('Z')
+        && !matches!(state, Some('Z' | 'X' | 'x'))
 }
 
 /// The stand-in `surfd` that `cargo test` built.

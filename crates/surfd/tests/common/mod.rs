@@ -232,7 +232,9 @@ pub fn signal_kill(pid: u32) {
         .status();
 }
 
-/// Whether `pid` runs; a zombie counts as gone.
+/// Whether `pid` runs. A process gone from `/proc` and one whose `stat` state is `Z` (zombie),
+/// `X` or `x` (dead, `proc_pid_stat(5)`) count as gone: `X` is read while the parent reaps the
+/// zombie, before the process leaves `/proc`.
 pub fn alive(pid: u32) -> bool {
     let Ok(stat) = fs::read_to_string(format!("/proc/{pid}/stat")) else {
         return false;
@@ -244,7 +246,7 @@ pub fn alive(pid: u32) -> bool {
         .trim_start()
         .chars()
         .next();
-    state.is_some() && state != Some('Z')
+    state.is_some_and(|state| !matches!(state, 'Z' | 'X' | 'x'))
 }
 
 /// The directory `cargo test` builds the examples into.

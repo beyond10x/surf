@@ -174,13 +174,28 @@ fn get(port: u16, target: &str, token: &str) -> Option<(u16, String)> {
     Some((status, body))
 }
 
-/// Whether `pid` runs; a zombie counts as ended.
+/// The text of `/proc/<pid>/stat`, or why it could not be read.
+fn stat(pid: u32) -> Result<String, String> {
+    fs::read_to_string(format!("/proc/{pid}/stat"))
+        .map_err(|error| format!("the read failed: {error}"))
+}
+
+/// Whether a `/proc/<pid>/stat` line is that of a process that runs: its state, the first
+/// character after the last `)` (the command name may hold `)` and spaces), is there and is not
+/// one that `proc_pid_stat(5)` gives an ended process: `Z` (zombie), `X` (dead) or `x` (dead,
+/// Linux 2.6.33 to 3.13). `X` is read while the parent reaps the zombie, before the process
+/// leaves `/proc`.
+fn runs(stat: &str) -> bool {
+    let state = stat
+        .rsplit_once(')')
+        .and_then(|(_, rest)| rest.trim_start().chars().next());
+    state.is_some_and(|state| !matches!(state, 'Z' | 'X' | 'x'))
+}
+
+/// Whether `pid` runs: its `stat` reads and [`runs`] says so. A process gone from `/proc`, a
+/// zombie and a dead process being reaped count as ended.
 fn alive(pid: u32) -> bool {
-    let Ok(stat) = fs::read_to_string(format!("/proc/{pid}/stat")) else {
-        return false;
-    };
-    let state = stat.rsplit(')').next().unwrap_or("").trim_start().chars().next();
-    state.is_some() && state != Some('Z')
+    stat(pid).is_ok_and(|text| runs(&text))
 }
 
 /// A process that is not the fixture's: `surf-view-foreign <args>` of this package (it waits
@@ -259,7 +274,7 @@ fn session_pid_in(id: &str, keep: impl Fn(u32) -> bool) -> u32 {
         let cmdline = fs::read(entry.path().join("cmdline")).unwrap_or_default();
         let args: Vec<&[u8]> = cmdline.split(|&b| b == 0).collect();
         if args.first().is_some_and(|p| p.ends_with(b"surf-session"))
-            && args.iter().any(|arg| *arg == id.as_bytes())
+            && args.contains(&id.as_bytes())
         {
             return pid;
         }
@@ -337,7 +352,11 @@ fn a_session_is_listed_the_pipe_cuts_and_mends_and_the_end_of_input_stops_everyt
     let foreign = Foreign::start(&[&second, never]);
     let second_pid = session_pid_in(&second, |pid| pid != foreign.child.id());
     assert_eq!(fixture.command(&["kill", &second]), "{}");
-    assert!(!alive(second_pid), "the fixture's own session {second} is killed");
+    let read = stat(second_pid);
+    assert!(
+        !read.as_deref().is_ok_and(runs),
+        "the fixture's own session {second} is killed: /proc/{second_pid}/stat read {read:?}"
+    );
     assert!(foreign.alive(), "a foreign surf-session survives kill of an opened id");
     assert_eq!(fixture.command(&["kill", never]), "{\"error\":\"session\"}");
     assert!(foreign.alive(), "a foreign surf-session survives kill of an id never opened");
@@ -365,4 +384,20 @@ fn a_session_is_listed_the_pipe_cuts_and_mends_and_the_end_of_input_stops_everyt
         "the session's process {session} is gone"
     );
     assert!(directories_of(pid).is_empty(), "the fixture's directory is removed");
+}
+
+#[test]
+fn a_stat_line_of_a_zombie_or_a_dead_process_is_one_of_an_ended_process() {
+    for (line, running) in [
+        ("4242 (surf-session) S 1 4242 4242 0 -1", true),
+        ("4242 (surf-session) R 1 4242 4242 0 -1", true),
+        ("4242 (surf-session) Z 1 4242 4242 0 -1", false),
+        ("4242 (surf-session) X 1 4242 4242 0 -1", false),
+        ("4242 (surf-session) x 1 4242 4242 0 -1", false),
+        ("4242 (a) b) R 1 4242 4242 0 -1", true),
+        ("4242 (a) b) Z 1 4242 4242 0 -1", false),
+        ("", false),
+    ] {
+        assert_eq!(runs(line), running, "runs({line:?})");
+    }
 }

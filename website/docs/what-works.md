@@ -13,7 +13,7 @@ description: What surf does today, and what it does not do yet.
   hard limits on header and body size.
 - **95 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **553 tests**, built with warnings treated as errors, and 38 tests of the live view's page in a
+- **555 tests**, built with warnings treated as errors, and 38 tests of the live view's page in a
   browser.
 
 New with the ninth wave of the current plan, not in a release yet. Nothing a `surf-agent`
