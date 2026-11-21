@@ -69,8 +69,10 @@ pub struct Context {
 pub struct ParsedDocument {
     /// The document.
     pub tree: Tree,
-    /// The name, as the Encoding Standard writes it, of the encoding the document was decoded
-    /// with at the end of parsing; `None` when none was chosen.
+    /// The name, as the Encoding Standard writes it, of the encoding chosen for the document at
+    /// the end of parsing: the one the encoding sniffing algorithm chose
+    /// ([`encoding::Decoded::encoding`]), also when it has no decoder and the text was decoded
+    /// as windows-1252 ([`encoding::Decoded::decoded_with`]); `None` when none was chosen.
     pub encoding: Option<&'static str>,
 }
 
