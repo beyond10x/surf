@@ -1,12 +1,12 @@
-//! What the tests of `surf-agent` share: a directory per test under cargo's temporary directory
-//! of the target, the stand-in `surfd`, and copies of the built `surf-agent` with the stand-in
+//! What the tests of `surf-agent` share: a directory per test under a short base
+//! ([`test_base`]), the stand-in `surfd`, and copies of the built `surf-agent` with the stand-in
 //! beside it as `surfd`, so that no test can start a real `surfd`.
 
 #![allow(dead_code)]
 
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, ErrorKind, Write};
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::OnceLock;
@@ -30,22 +30,32 @@ pub struct TestDir {
 }
 
 impl TestDir {
+    /// A new directory under [`test_base`], named `sat-<process id>-<counter>-<8 random
+    /// hexadecimal digits>` and created anew, so that two test processes of any checkouts cannot
+    /// share one.
     pub fn new() -> TestDir {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
-        let path = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
-            "t{}-{}",
+        let mut random = [0u8; 4];
+        surf_secret::fill_random(&mut random).expect("the random source");
+        let name = format!(
+            "sat-{}-{}-{:08x}",
             std::process::id(),
-            NEXT.fetch_add(1, Ordering::SeqCst)
-        ));
-        let _ = fs::remove_dir_all(&path);
-        fs::create_dir_all(path.join("r")).expect("the runtime directory");
-        fs::create_dir_all(path.join("c")).expect("the control directory");
-        fs::set_permissions(path.join("r"), fs::Permissions::from_mode(0o700)).unwrap();
+            NEXT.fetch_add(1, Ordering::SeqCst),
+            u32::from_be_bytes(random)
+        );
+        let path = test_base().join(name);
+        fs::create_dir(&path).expect("a new test directory");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+        // From here on the drop guard removes the directory, also when a test panics.
         let dir = TestDir { path };
+        fs::create_dir(dir.runtime()).expect("the runtime directory");
+        fs::create_dir(dir.control()).expect("the control directory");
+        fs::set_permissions(dir.runtime(), fs::Permissions::from_mode(0o700)).unwrap();
         let socket = dir.runtime().join("surf/surfd.sock");
         assert!(
             socket.as_os_str().len() <= 107,
-            "the test's socket path is {} bytes; check the tree out at a shorter path",
+            "the test's socket path is {} bytes; set XDG_RUNTIME_DIR to a short directory of \
+             yours, or check the tree out at a shorter path",
             socket.as_os_str().len()
         );
         dir
@@ -99,6 +109,26 @@ impl Drop for TestDir {
         }
         let _ = fs::remove_dir_all(&self.path);
     }
+}
+
+/// Where the test directories go: the test process's own `XDG_RUNTIME_DIR` when it is set,
+/// absolute, and an existing directory owned by the caller (a short per-user directory, so
+/// that the socket paths do not depend on where the tree is checked out); otherwise cargo's
+/// temporary directory of the target. Never `/tmp`. The tests give `surf-agent` an
+/// `XDG_RUNTIME_DIR` inside their own directory, so nothing touches the real
+/// `$XDG_RUNTIME_DIR/surf`.
+pub fn test_base() -> &'static Path {
+    static BASE: OnceLock<PathBuf> = OnceLock::new();
+    BASE.get_or_init(|| {
+        let caller = fs::metadata("/proc/self").map(|m| m.uid()).ok();
+        std::env::var_os("XDG_RUNTIME_DIR")
+            .map(PathBuf::from)
+            .filter(|dir| dir.is_absolute())
+            .filter(|dir| {
+                fs::symlink_metadata(dir).is_ok_and(|m| m.is_dir() && Some(m.uid()) == caller)
+            })
+            .unwrap_or_else(|| PathBuf::from(env!("CARGO_TARGET_TMPDIR")))
+    })
 }
 
 /// Send SIGKILL to `pid` and wait until it is gone, at most 2 seconds, if it is still a stand-in
