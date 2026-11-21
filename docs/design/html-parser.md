@@ -282,14 +282,20 @@ format's job.
 "Hidden" in the step "Hidden Not Referenced": accname's own note counts "Nodes with CSS
 properties display:none, visibility:hidden, visibility:collapse or content-visibility:hidden" as
 hidden. Without CSS, surf reads a node as hidden when it or an ancestor has
-`aria-hidden="true"` or matches a rule of the HTML Standard's user-agent style sheet in 15.3.1
-"Hidden elements" (`rendering.html#hidden-elements`), which needs no style computation: the
+`aria-hidden="true"` or matches a rule of the HTML Standard's user-agent style sheet that needs
+no style computation. In 15.3.1 "Hidden elements" (`rendering.html#hidden-elements`): the
 elements `area, base, basefont, datalist, head, link, meta, noembed, noframes, param, rp, script,
 style, template, title`; `[hidden]` on any element but `embed`, whatever its value (the
 `until-found` value gives `content-visibility: hidden`, which accname also counts);
-`input[type=hidden i]`. `noscript` is not hidden, because surf parses with scripting disabled. An
-`area` is not hidden for its own name: it is drawn through its image's map. This is wider than
-the story's "the `hidden` attribute or `aria-hidden="true"`".
+`input[type=hidden i]`. In 15.3.3 "Flow content": `dialog:not([open])`, a `dialog` without an
+`open` attribute. In 15.5.5 "The details and summary elements": a `details` element without an
+`open` attribute gives `content-visibility: hidden` to the slot that takes every child but its
+first `summary` element child, so only that `summary` is shown (a `details` with no `summary`
+child shows its default summary, which is not in the tree, and none of its children).
+`noscript` is not hidden, because surf parses with scripting disabled. The fallback content of
+`video`, `audio` and `object` is not hidden: surf plays no media and loads no object, so the
+fallback is what is shown. An `area` is not hidden for its own name: it is drawn through its
+image's map. This is wider than the story's "the `hidden` attribute or `aria-hidden="true"`".
 
 Steps not taken, because they need rendering or a part of the DOM surf does not have: "Name From
 Generated Content" (`::before`, `::after`, `::marker`); hidden by author CSS (`display`,
