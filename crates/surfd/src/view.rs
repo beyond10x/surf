@@ -10,7 +10,9 @@
 //! - `/api/sessions/<id>`: the summary and the kept entries of a listed session.
 //! - `/events`: a reader over a [`Subscription`]. It answers [`TooOld`] when an entry above the
 //!   number was dropped, or when the number is more than [`surf_view::Limits::queue_entries`]
-//!   below the newest, so that a replay always fits the stream's queue. After each live answer
+//!   below the newest, so that a replay always fits the stream's queue. A stream from the newest
+//!   number reads that number and subscribes in one hold ([`Source::read_newest`]), so no entry
+//!   kept meanwhile makes it `TooOld`. After each live answer
 //!   entry (not a replayed one) it yields a `session` item of its session with the same number;
 //!   and at each wait, with no
 //!   entry pending, it compares the list with the one it knows and yields a `session` item, with
@@ -273,22 +275,35 @@ impl<T: Tables> Source for View<T> {
     }
 
     fn read_from(&self, number: u64) -> Result<Box<dyn Reader>, TooOld> {
+        self.open(Some(number)).map(|(_, reader)| reader)
+    }
+
+    fn read_newest(&self) -> Result<(u64, Box<dyn Reader>), TooOld> {
+        self.open(None)
+    }
+}
+
+impl<T: Tables> View<T> {
+    /// A reader from `from`, or from the newest number read in the same hold, with that number.
+    fn open(&self, from: Option<u64>) -> Result<(u64, Box<dyn Reader>), TooOld> {
         let most = self.queue_entries;
-        let (subscription, replay_until, known) = self.tables.hold(|sessions, log| {
+        let (number, subscription, replay_until, known) = self.tables.hold(|sessions, log| {
             let newest = log.newest();
+            let number = from.unwrap_or(newest);
             if newest.saturating_sub(number) > most {
                 return Err(TooOld);
             }
             let subscription = log.subscribe_after(number).map_err(|_| TooOld)?;
-            Ok((subscription, newest, known_states(sessions)))
+            Ok((number, subscription, newest, known_states(sessions)))
         })?;
-        Ok(Box::new(Stream {
+        let reader: Box<dyn Reader> = Box::new(Stream {
             tables: Arc::clone(&self.tables),
             subscription,
             replay_until,
             known,
             pending: VecDeque::new(),
-        }))
+        });
+        Ok((number, reader))
     }
 }
 
@@ -501,6 +516,32 @@ mod tests {
             }
         }
         assert_eq!(numbers, [1, 2], "two entry items, then the end");
+    }
+
+    /// F1: with more than `queue_entries` entries kept after a number, `read_from` that number
+    /// is `TooOld`, and `read_newest` gives the newest number with a reader live after it.
+    #[test]
+    fn read_newest_reads_the_number_and_subscribes_in_one_hold() {
+        let tables = fixed(Bounds::default());
+        let view = View::new(Arc::clone(&tables), 256);
+        let before = view.newest();
+        for sequence in 1..=300 {
+            keep(&tables, action(sequence));
+        }
+        assert!(view.read_from(before).is_err(), "300 kept after {before}");
+        let Ok((newest, mut reader)) = view.read_newest() else {
+            panic!("a reader from the newest number");
+        };
+        assert_eq!(newest, before + 300);
+        assert!(matches!(
+            reader.next(Duration::from_millis(10)),
+            Next::Idle
+        ));
+        keep(&tables, action(301));
+        match reader.next(Duration::from_secs(10)) {
+            Next::Item(item) => assert_eq!(item.number, newest + 1),
+            other => panic!("the next entry live, not {other:?}"),
+        }
     }
 
     #[test]
