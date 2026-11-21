@@ -63,6 +63,10 @@ fn the_inner_loop_clones_at_most_three_elements() {
     assert_eq!(elements(&tree, "a"), (14, 2));
     // The `div` keeps its place under the clone of `em`; its children go to the new `a`.
     assert_eq!(ancestors_of_text(&tree, "x"), ["a", "div", "em"]);
+    // Step 4.9: the common ancestor is the element above the `a`, the outer `div`, and the
+    // inner `div` goes there (4.22, 4.23), not into `body`.
+    let tree = parse("<div><a><div>x</a>");
+    assert_eq!(ancestors_of_text(&tree, "x"), ["a", "div", "div"]);
 }
 
 #[test]
@@ -89,11 +93,7 @@ fn the_outer_loop_runs_at_most_eight_times() {
 
 /// The names of the parent, grandparent and great-grandparent of the one text node `text`.
 fn ancestors_of_text(tree: &Tree, text: &str) -> Vec<String> {
-    let quoted = format!("{text:?}");
-    let mut node = all(tree)
-        .into_iter()
-        .find(|&n| name(tree, n) == quoted)
-        .expect("the text");
+    let mut node = text_node(tree, text);
     let mut out = Vec::new();
     for _ in 0..3 {
         node = tree.parent(node).expect("a parent");
@@ -119,6 +119,14 @@ fn noahs_ark_keeps_three_identical_formatting_elements() {
         ancestors_of_text(&closed, "x"),
         ["body", "html", "document"]
     );
+    // Step 4.4: `</div>` popped the `b`, and `</b>` removes its entry, so the `x` reconstructs
+    // nothing.
+    let gone = parse("<div><b></div></b>x");
+    assert_eq!(ancestors_of_text(&gone, "x"), ["body", "html", "document"]);
+    // The scan stops at the last marker: the fourth `b`, after the `marquee`'s marker, removes
+    // none of the three before it, and the `x` reconstructs all three.
+    let marker = parse("<p><b><b><b><marquee><b></marquee></p>x");
+    assert_eq!(elements(&marker, "b").1, 7);
     // The fourth `b` removes the earliest of the three before it, the one before the `i`: the
     // reconstruction after `</p>` creates `i` first.
     let earliest = parse("<p><b><i><b><b><b></p>x");
@@ -130,6 +138,75 @@ fn noahs_ark_keeps_three_identical_formatting_elements() {
         node = last_child(&earliest, next);
     }
     assert_eq!(chain, ["i", "b", "b", "b", "\"x\""]);
+}
+
+#[test]
+fn noahs_ark_compares_attributes_in_any_order() {
+    // 13.2.4.3, push onto the list of active formatting elements, step 1: two elements have
+    // the same attributes when they pair up by name, namespace and value, "the relative order
+    // of the attributes does not matter". The fourth `b` finds three identical ones before it
+    // and removes the earliest; `</p>` closes all four, and the `x` reconstructs the three left:
+    // 7 `b` elements, 8 when the order counted.
+    let tree = parse("<p><b id=1 class=c><b class=c id=1><b id=1 class=c><b class=c id=1></p>x");
+    assert_eq!(elements(&tree, "b"), (11, 7));
+    assert_eq!(ancestors_of_text(&tree, "x"), ["b", "b", "b"]);
+}
+
+#[test]
+fn a_node_not_in_the_list_leaves_the_stack() {
+    // Step 4.18.5: the inner loop meets the `span`, which is not in the list of active
+    // formatting elements, and removes it from the stack of open elements. The `div` moves to
+    // `body` (4.22, 4.23), the new `a` into the `div` (4.24 to 4.30), and the second outer
+    // iteration pops that `a` (4.8). `</div>` leaves `body` the current node, so the `z` is a
+    // child of `body`; with the `span` left on the stack the `z` would go into the `span`.
+    let tree = parse("<a><span><div>x</a></div>z");
+    assert_eq!(ancestors_of_text(&tree, "x"), ["a", "div", "body"]);
+    assert_eq!(ancestors_of_text(&tree, "z"), ["body", "html", "document"]);
+}
+
+#[test]
+fn an_inner_loop_element_is_created_for_the_token_of_its_node() {
+    // Step 4.18.6: the new element for the `b` is created "for the token for which the element
+    // node was created", so it has the `id` of `<b id=1>`. It takes the `div` (4.18.11), goes
+    // into `body` (4.22, 4.23), and the new `a` goes into the `div` (4.24 to 4.30).
+    let tree = parse("<a><b id=1><div>x</a>");
+    let mut node = text_node(&tree, "x");
+    for _ in 0..3 {
+        node = tree.parent(node).expect("a parent");
+    }
+    assert_eq!(name(&tree, node), "b");
+    assert_eq!(
+        attributes(&tree, node),
+        [("id".to_string(), "1".to_string())]
+    );
+    assert_eq!(ancestors_of_text(&tree, "x"), ["a", "div", "b"]);
+    // Step 4.24: the new `a` is created for the token the `a` was created for.
+    let tree = parse("<a href=h><div>x</a>");
+    let a = tree.parent(text_node(&tree, "x")).expect("a parent");
+    assert_eq!(
+        attributes(&tree, a),
+        [("href".to_string(), "h".to_string())]
+    );
+}
+
+/// The one text node `text`.
+fn text_node(tree: &Tree, text: &str) -> NodeId {
+    let quoted = format!("{text:?}");
+    all(tree)
+        .into_iter()
+        .find(|&n| name(tree, n) == quoted)
+        .expect("the text")
+}
+
+/// The attributes of the element `node`, as name and value.
+fn attributes(tree: &Tree, node: NodeId) -> Vec<(String, String)> {
+    match tree.data(node) {
+        NodeData::Element { attributes, .. } => attributes
+            .iter()
+            .map(|a| (a.local_name.clone(), a.value.clone()))
+            .collect(),
+        _ => panic!("an element"),
+    }
 }
 
 /// The last child of `node`, if any.
@@ -155,6 +232,9 @@ fn an_a_start_tag_closes_an_open_a() {
     // An `a` before the last marker is not looked at: it stays open, and the `y` goes into it.
     let tree = parse("<a><marquee><a>x</marquee>y");
     assert_eq!(ancestors_of_text(&tree, "y"), ["a", "body", "html"]);
+    // Step 2 of the `a` rule reconstructs the `b` that `</p>` closed, and the `a` goes into it.
+    let tree = parse("<p><b></p><a>x");
+    assert_eq!(ancestors_of_text(&tree, "x"), ["a", "b", "body"]);
 }
 
 #[test]
@@ -173,4 +253,8 @@ fn a_nobr_start_tag_closes_an_open_nobr() {
     let children = tree.children(body);
     assert_eq!(names(&tree, children), ["nobr", "b"]);
     assert_eq!(names(&tree, tree.children(children[1])), ["nobr"]);
+    // The `nobr` rule reconstructs first, with no `nobr` in scope: the `b` that `</p>` closed is
+    // created again, and the `nobr` goes into it.
+    let tree = parse("<p><b></p><nobr>x");
+    assert_eq!(ancestors_of_text(&tree, "x"), ["nobr", "b", "body"]);
 }

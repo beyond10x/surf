@@ -102,6 +102,8 @@ impl TreeBuilder {
             let mut inner_loop_counter = 0;
             // 4.17.
             let mut bookmark_moved = false;
+            // The nodes step 4.18.5 removes, all of them above the formatting element.
+            let mut removed_from_stack = 0;
             // 4.18. The inner loop.
             loop {
                 // 4.18.1.
@@ -127,6 +129,7 @@ impl TreeBuilder {
                 // 4.18.5. A node not in the list leaves the stack.
                 let Some(at) = node_entry else {
                     self.open.remove(node_stack);
+                    removed_from_stack += 1;
                     continue;
                 };
                 // 4.18.6. A new element for `node`'s token takes `node`'s place in the list and
@@ -190,13 +193,14 @@ impl TreeBuilder {
                     token: formatting_token,
                 },
             );
-            // 4.26. It goes on the stack just below the furthest block.
-            self.remove_from_stack(formatting_element);
-            let furthest_block_stack = self
-                .open
-                .iter()
-                .rposition(|&n| n == furthest_block)
-                .expect("the furthest block is on the stack");
+            // 4.26. It goes on the stack just below the furthest block. No scan finds either: the
+            // inner loop removed only nodes above the formatting element, so it is still at
+            // `formatting_stack`, and the furthest block is lower by those nodes and by the
+            // formatting element. Finishing the parsing of its children changes no tree.
+            debug_assert_eq!(self.open[formatting_stack], formatting_element);
+            self.open.remove(formatting_stack);
+            let furthest_block_stack = furthest_block_stack - removed_from_stack - 1;
+            debug_assert_eq!(self.open[furthest_block_stack], furthest_block);
             self.open.insert(furthest_block_stack + 1, new_element);
             // 4.27, 4.28. The action is "Keep".
             // 4.29. The adjusted insertion location given (furthest block, null).
@@ -220,23 +224,31 @@ impl TreeBuilder {
     }
 
     /// Whether `ancestor` is a host-including inclusive ancestor of `node` (DOM): `node`'s
-    /// parents are followed up, and from a template's contents to the template. The arena keeps
-    /// no link from a template's contents to the template, so the template is looked for on the
-    /// stack of open elements.
+    /// parents are followed up to its root, and from a root that has a host to that host. Only
+    /// a document fragment has a host, and here only a template's contents is one; a Document
+    /// or an element without a parent has none, and the walk ends there. The arena keeps no link
+    /// from a template's contents to the template, so the template is looked for on the stack
+    /// of open elements.
     fn is_host_including_inclusive_ancestor(&self, ancestor: NodeId, node: NodeId) -> bool {
         let mut next = Some(node);
         while let Some(at) = next {
             if at == ancestor {
                 return true;
             }
-            next = self.tree.parent(at).or_else(|| self.template_host(at));
+            next = match self.tree.parent(at) {
+                Some(parent) => Some(parent),
+                None if *self.tree.data(at) == NodeData::DocumentFragment => self.template_host(at),
+                None => None,
+            };
         }
         false
     }
 
     /// The template element on the stack of open elements whose template contents is `fragment`.
+    /// A fragment is the contents of one template, so the scan starts at the current node, where
+    /// the innermost open template is.
     fn template_host(&self, fragment: NodeId) -> Option<NodeId> {
-        self.open.iter().copied().find(|&n| {
+        self.open.iter().rev().copied().find(|&n| {
             matches!(
                 self.tree.data(n),
                 NodeData::Element { template_contents: Some(contents), .. } if *contents == fragment
