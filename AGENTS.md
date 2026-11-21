@@ -349,11 +349,15 @@ above, and the list of standards itself was written from memory.
     directory of its own in `$XDG_RUNTIME_DIR`, driven by tab-separated commands on its
     standard input (`open`, `agent`, `kill`, `stop-surfd`, `cut`, `mend`). `kill` acts only
     for a session the fixture opened and only on a `surf-session` whose environment holds the
-    fixture's own `XDG_RUNTIME_DIR`. A second binary, `surf-view-foreign`, waits until it is
-    killed: `tests/fixture.rs` starts it under the name `surf-session` as a process that is not
-    the fixture's and that `kill` must leave alive. A test starts no program of the system
-    under another name: on the forge's runner `tail` started as `surf-session` exited at once.
-    2 tests (`fixture` 1, `adversary_commands` 1). Depends on `surfd` and `surf-view`.
+    fixture's own `XDG_RUNTIME_DIR`. `alive` (in the binary and in `tests/fixture.rs`) counts
+    the `/proc/<pid>/stat` states `Z`, `X` and `x` as ended: a killed session reads `X` while
+    `surfd` reaps it, before it leaves `/proc`; the same holds for `alive` in
+    `tests/common/mod.rs` of `surf-agent`, `surfd` and `surf-session`. A second binary,
+    `surf-view-foreign`, waits until it is killed: `tests/fixture.rs` starts it under the name
+    `surf-session` as a process that is not the fixture's and that `kill` must leave alive. A
+    test starts no program of the system under another name: on the forge's runner `tail`
+    started as `surf-session` exited at once. 4 tests (`fixture` 2, `adversary_commands` 1,
+    the binary's own 1). Depends on `surfd` and `surf-view`.
   - `crates/html` (`surf-html`): the HTML parser. Since wave 5 it decides a document's encoding
     by the sniffing algorithm and decodes UTF-8, UTF-16LE, UTF-16BE, windows-1252 and
     replacement (`src/encoding.rs`; the other 35 encodings of the label table are decoded as
@@ -730,6 +734,12 @@ the others were written to a scratch directory and not compiled:
 
 Run everything through the build pool: `slot task <name>`.
 
+On a machine whose installed `ess` is newer than the pin of `spec/ess-inputs.yaml`, set
+`ESS_TOOLCHAIN=0.96.0` for every task that runs `ess`: the tasks run it from the repository's
+root, where the pin under `spec/` is not found, and `--strict-requires` then refuses the newer
+release (`ess toolchain which` says which release runs and why; seen with ess 0.97.1 on
+2026-11-21). The forge's workflow installs 0.96.0.
+
 - `task check`: the gate. Validates (a warning fails it), synthesizes the suite and runs it
   against the interpreter built into `ess`, then against the Rust system (`conform-rust`),
   compares the two runs' suite and total (`conform-totals`), checks `generated/rust/` against
@@ -831,14 +841,16 @@ unknown coverage. The gate reads the counts. The planted defect, a `Navigation` 
 drops every `put`, fails 33 of the 95. The crate's tests: `6 test suites: 28 passed`.
 `generated-check`: `generated/rust matches spec/ (30 artifact(s) and .ess-output)`. `cli`:
 `cli/surf-agent.yaml — valid CLI presentation binding`. `lock-check`: `Cargo.lock: 23 package(s),
-none from outside this repository`. The root workspace: `126 test suites: 553 passed, 0 failed,
-0 ignored`. In it, `surf-url` prints `urltestdata: 904 cases, 872 run, 872 passed, 32 skipped`;
-the 32 are hosts outside ASCII, listed in `crates/url/tests/data/SKIPPED`. `view-stream-check`:
-`view-stream-check: 19 event name(s), each a message of the AsyncAPI projection`. `view-test`:
-`38 passed (15.8s)`; 12.9 s of it are the case that waits to see that a refused token is not
-sent again. `html-conformance`, the last step of `check`: `html-conformance: 9107 cases, 9095
-run, 8428 passed` (82 encoding cases, 7,046 tokenizer cases and 1,300 tree construction
-cases), with `tag markup 1979/1979/1979`, `tag text 328/328/328`, `tag charref
+none from outside this repository`. The root workspace: `126 test suites: 555 passed, 0 failed,
+0 ignored`. At `a9532a1` it was 553; the two tests of `surf-view-fixture` came with the fix
+unit after wave 9. In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
+872 passed, 32 skipped`; the 32 are hosts outside ASCII, listed in
+`crates/url/tests/data/SKIPPED`. `view-stream-check`: `view-stream-check: 19 event name(s),
+each a message of the AsyncAPI projection`. `view-test`: `38 passed (15.8s)`; 12.9 s of it are
+the case that waits to see that a refused token is not sent again. `html-conformance`, the last
+step of `check`: `html-conformance: 9107 cases, 9095 run, 8428 passed` (82 encoding cases,
+7,046 tokenizer cases and 1,300 tree construction cases), with `tag markup 1979/1979/1979`,
+`tag text 328/328/328`, `tag charref
 4739/4739/4739`, `tag body 476/476/476`, `tag formatting 22/22/22`, `tag tables 11/39/39`, `tag
 template 30/123/123`, `tag foreign 6/222/222`, `tag mixed 755/1085/1085` and `tag encoding
 82/82/82`; the section `tree-construction` passes 1300 of 1809 (503 failing, 6 not run). The

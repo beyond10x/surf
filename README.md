@@ -8,7 +8,7 @@
 
 ![spec: ESS 0.96.0, valid](docs/badges/spec.svg)
 ![conformance: 95 of 95 scenarios](docs/badges/conformance.svg)
-![tests: 553 passed](docs/badges/tests.svg)
+![tests: 555 passed](docs/badges/tests.svg)
 ![third-party crates shipped: 0](docs/badges/dependencies.svg)
 ![unsafe code: forbidden](docs/badges/unsafe.svg)
 ![standard sections marked complete: 0](docs/badges/complete.svg)
@@ -170,7 +170,7 @@ history.
   and hard limits on header and body size.
 - **95 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **553 tests**, built with warnings treated as errors, and 38 tests of the live view's page in
+- **555 tests**, built with warnings treated as errors, and 38 tests of the live view's page in
   a browser.
 
 New with the ninth wave of the current plan, not in a release yet. Nothing a `surf-agent`
@@ -388,7 +388,7 @@ generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 Cargo.lock: 23 package(s), none from outside this repository
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.00s
-126 test suites: 553 passed, 0 failed, 0 ignored
+126 test suites: 555 passed, 0 failed, 0 ignored
 view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
   38 passed (15.8s)
 html-conformance: 9107 cases, 9095 run, 8428 passed

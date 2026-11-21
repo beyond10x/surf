@@ -521,19 +521,22 @@ fn signal_kill(pid: u32) {
         .status();
 }
 
-/// Whether `pid` runs; a zombie counts as ended.
+/// Whether `pid` runs: its `/proc/<pid>/stat` reads and [`runs`] says so. A process gone from
+/// `/proc`, a zombie and a dead process being reaped count as ended.
 fn alive(pid: u32) -> bool {
-    let Ok(stat) = fs::read_to_string(format!("/proc/{pid}/stat")) else {
-        return false;
-    };
+    fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| runs(&stat))
+}
+
+/// Whether a `/proc/<pid>/stat` line is that of a process that runs: its state, the first
+/// character after the last `)` (the command name may hold `)` and spaces), is there and is not
+/// one that `proc_pid_stat(5)` gives an ended process: `Z` (zombie), `X` (dead) or `x` (dead,
+/// Linux 2.6.33 to 3.13). `X` is read while the parent (of a session: `surfd` in this process)
+/// reaps the zombie, before the process leaves `/proc`.
+fn runs(stat: &str) -> bool {
     let state = stat
-        .rsplit(')')
-        .next()
-        .unwrap_or("")
-        .trim_start()
-        .chars()
-        .next();
-    state.is_some() && state != Some('Z')
+        .rsplit_once(')')
+        .and_then(|(_, rest)| rest.trim_start().chars().next());
+    state.is_some_and(|state| !matches!(state, 'Z' | 'X' | 'x'))
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -810,5 +813,29 @@ fn pass(state: &Mutex<PipeState>, number: u64, mut client: TcpStream, view_port:
     let _ = upstream.shutdown(Shutdown::Write);
     if let Ok(back) = back {
         let _ = back.join();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::runs;
+
+    /// The binary's own copy of the decision `alive` takes, given lines without a process: the
+    /// same lines as `a_stat_line_of_a_zombie_or_a_dead_process_is_one_of_an_ended_process` of
+    /// `tests/fixture.rs`.
+    #[test]
+    fn a_stat_line_of_a_zombie_or_a_dead_process_is_one_of_an_ended_process() {
+        for (line, running) in [
+            ("4242 (surf-session) S 1 4242 4242 0 -1", true),
+            ("4242 (surf-session) R 1 4242 4242 0 -1", true),
+            ("4242 (surf-session) Z 1 4242 4242 0 -1", false),
+            ("4242 (surf-session) X 1 4242 4242 0 -1", false),
+            ("4242 (surf-session) x 1 4242 4242 0 -1", false),
+            ("4242 (a) b) R 1 4242 4242 0 -1", true),
+            ("4242 (a) b) Z 1 4242 4242 0 -1", false),
+            ("", false),
+        ] {
+            assert_eq!(runs(line), running, "runs({line:?})");
+        }
     }
 }
