@@ -598,11 +598,12 @@ impl TreeBuilder {
         });
     }
 
-    /// Reconstruct the active formatting elements, if any.
+    /// Reconstruct the active formatting elements, if any. "Is in the stack of open elements"
+    /// is asked from the current node down: an entry that is open is almost always near it.
     fn reconstruct_active_formatting_elements(&mut self) {
         let is_open_or_marker = |b: &Self, entry: &Entry| match entry {
             Entry::Marker => true,
-            Entry::Element { node, .. } => b.open.contains(node),
+            Entry::Element { node, .. } => b.open.iter().rev().any(|n| n == node),
         };
         match self.active.last() {
             None => return,
@@ -633,11 +634,13 @@ impl TreeBuilder {
         }
     }
 
-    /// The index in the list of active formatting elements of `node`, if it is there.
+    /// The index in the list of active formatting elements of `node`, if it is there. The list
+    /// holds a node at most once; the scan starts at the end of the list, where the standard's
+    /// rules look ("the last element in the list").
     fn active_position(&self, node: NodeId) -> Option<usize> {
         self.active
             .iter()
-            .position(|e| matches!(e, Entry::Element { node: n, .. } if *n == node))
+            .rposition(|e| matches!(e, Entry::Element { node: n, .. } if *n == node))
     }
 
     // 13.2.3.4 Changing the encoding while parsing.
