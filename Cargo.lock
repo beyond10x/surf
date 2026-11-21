@@ -114,6 +114,20 @@ name = "surf-secret"
 version = "0.1.0"
 
 [[package]]
+name = "surf-session"
+version = "0.1.0"
+dependencies = [
+ "surf",
+ "surf-agent",
+ "surf-answer",
+ "surf-fetch",
+ "surf-ports",
+ "surf-secret",
+ "surf-types",
+ "surfd",
+]
+
+[[package]]
 name = "surf-system"
 version = "1.0.0"
 dependencies = [
