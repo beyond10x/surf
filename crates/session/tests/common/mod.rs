@@ -23,7 +23,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use surf_agent::wire::{Arg, Request};
+use surf_agent::wire::{self, Arg, Request};
 use surf_secret::Token;
 use surfd::link;
 
@@ -485,6 +485,52 @@ pub fn path_block(text: &str) -> String {
         .take_while(|line| line.starts_with("path ") || line.starts_with("  "))
         .map(|line| format!("{line}\n"))
         .collect()
+}
+
+// --- A surfd in the test process ---------------------------------------------------------------
+
+/// `surfd` started in the test process through `Daemon::start` (decision D29), with the built
+/// `surf-session` as its session program and the case's `XDG_RUNTIME_DIR` in the session's
+/// environment, so that the case's guard finds every session process; `adjust` changes the
+/// config first. Stopped when the returned value is dropped.
+pub fn surfd_in_process(dir: &TestDir, adjust: impl FnOnce(&mut surfd::Config)) -> surfd::Daemon {
+    let mut config = surfd::Config::new(Some(dir.runtime()));
+    config.session_program = session_program();
+    config.session_env = vec![("XDG_RUNTIME_DIR".into(), dir.runtime().into())];
+    adjust(&mut config);
+    match surfd::Daemon::start(config) {
+        Ok(surfd::Started::Daemon(daemon)) => daemon,
+        Ok(surfd::Started::Another) => panic!("another surfd holds the lock"),
+        Err(refused) => panic!("surfd refused: {refused}"),
+    }
+}
+
+/// One request of the wire to the case's `surfd` and its answer.
+pub fn wire_call(dir: &TestDir, request: &Request) -> wire::Answer {
+    let mut stream = UnixStream::connect(dir.surf().join("surfd.sock")).expect("surfd listens");
+    stream.write_all(&request.encode().unwrap()).unwrap();
+    wire::read_answer(&mut stream, wire::ANSWER_TIMEOUT).expect("an answer of the wire")
+}
+
+/// `open [<url>]` over the wire, which must answer status 0.
+pub fn wire_open(dir: &TestDir, url: Option<&str>) -> Opened {
+    let args: Vec<(&str, &str)> = url.map(|url| ("url", url)).into_iter().collect();
+    let answer = wire_call(dir, &request("open", None, None, &args));
+    assert_eq!(answer.status, 0, "open: {answer:?}");
+    opened(&answer.text)
+}
+
+/// `<command>` with `args` over the wire, as the holder of `session`.
+pub fn wire_as(
+    dir: &TestDir,
+    session: &Opened,
+    command: &str,
+    args: &[(&str, &str)],
+) -> wire::Answer {
+    wire_call(
+        dir,
+        &request(command, Some(&session.id), Some(&session.token), args),
+    )
 }
 
 // --- The page server ----------------------------------------------------------------------------

@@ -60,10 +60,29 @@
 //! media type, address, failure reason). What stays across commands are the components' rows,
 //! none of which holds a body: per `go` one action, one navigation, one request and, for an
 //! HTML page, one document, each with its address and identities; and the session's row.
+//!
+//! # The entries
+//!
+//! Each reply carries the entries `surfd` keeps in its log (`surfd::link`, "The entries";
+//! `story:agent-session-events`), read inside [`Session::answer`] before its
+//! `forget_delivered`. For each action the request recorded: the action entry, from the view
+//! `SessionLog`; then one event entry ([`entries::event_line`]) for every event the system
+//! published for it, in the order `System::published` lists them. An action's events end at
+//! the run after its `RecordAction`, so `open <url>` gives action `open`, the events up to and
+//! including that run, action `go`, the remaining events. Then one answer entry, the rendered
+//! lines without the `token` line ([`Reply::to_link`]). A request that records no action
+//! (`look`, a refusal) has no entry.
+//!
+//! The entries of one request through the wire stay far below [`surfd::link::ENTRIES_MAX`]: an
+//! event field holds no body, only its length, and an address, quoted at most
+//! [`surf_agent::wire::REQUEST_MAX`] bytes long, is in at most eight event and action lines of
+//! one `open <url>` or `go`, and the answer entry holds at most seven addresses (`did`, `page`
+//! and [`PATH_SHOWN`] path lines): about 1 MiB.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod entries;
 pub mod process;
 
 use std::fmt;
@@ -111,12 +130,17 @@ pub struct Reply {
     pub state: link::SessionState,
     /// The address of the page the session shows, if any.
     pub address: Option<String>,
+    /// The action and event entries of the request, in their order ("The entries" above);
+    /// [`Reply::to_link`] adds the answer entry after them. None when it recorded no action.
+    pub entries: Vec<link::Entry>,
 }
 
 impl Reply {
-    /// The answer of the link: the rendered lines and the status record. The address is left
-    /// out of the record when the record would not fit [`link::RECORD_MAX`] with it; an answer
-    /// the renderer refuses becomes status 3 with the head line alone.
+    /// The answer of the link: the rendered lines, the status record and the entries, the last
+    /// of them the answer entry, which is the rendered lines without the `token` line. The
+    /// address is left out of the record when the answer would not fit the link with it; an
+    /// answer the renderer refuses becomes status 3 with the head line alone, which is then its
+    /// answer entry too.
     pub fn to_link(&self) -> link::Answer {
         let (status, reason, text) = match surf_answer::render(&self.answer) {
             Ok(text) => (self.status, self.reason.clone(), text),
@@ -126,12 +150,22 @@ impl Reply {
                 surf_answer::render(&Answer::new(self.answer.head.clone())).unwrap_or_default(),
             ),
         };
+        let mut entries = self.entries.clone();
+        if !entries.is_empty() {
+            let kept = link::without_token(&text);
+            if kept.is_empty() {
+                entries.clear();
+            } else {
+                entries.push(link::Entry::answer(&kept));
+            }
+        }
         let answer = link::Answer {
             status,
             reason,
             state: self.state,
             address: self.address.as_deref().map(link::Quoted::new),
             title: None,
+            entries,
             text,
         };
         match answer.encode() {
@@ -175,6 +209,11 @@ pub struct Session<T> {
     browser: MemoryBrowser<T>,
     sequence: i64,
     opened: bool,
+    /// The sequence numbers the request being answered recorded, in order.
+    recorded: Vec<i64>,
+    /// For each of them, how many events `System::published` held after the run that followed
+    /// its `RecordAction`: where its events end.
+    marks: Vec<usize>,
 }
 
 impl<T> fmt::Debug for Session<T> {
@@ -212,6 +251,8 @@ impl<T: Transport> Session<T> {
             browser,
             sequence: 0,
             opened: false,
+            recorded: Vec::new(),
+            marks: Vec::new(),
         })
     }
 
@@ -232,12 +273,60 @@ impl<T: Transport> Session<T> {
         self.browser.held()
     }
 
-    /// The reply to `request`. Once it is made, everything the system delivered is dropped
-    /// ([`surf::Browser::forget_delivered`]): the next answer reads only the views.
+    /// The reply to `request`, with its entries ("The entries" above), which are read from what
+    /// the system published while it was answered. Then everything the system delivered is
+    /// dropped ([`surf::Browser::forget_delivered`]): the next answer reads only the views.
     pub fn answer(&mut self, request: &Request) -> Reply {
-        let reply = self.reply_to(request);
+        let start = self.browser.system().published().len();
+        self.recorded.clear();
+        self.marks.clear();
+        let mut reply = self.reply_to(request);
+        reply.entries = self.entries(start);
         self.browser.forget_delivered();
         reply
+    }
+
+    /// The action and event entries of the request being answered: for each action it
+    /// recorded, the action entry from the view `SessionLog`, then one event entry per event
+    /// the system published from `start` up to the action's mark; the last action takes every
+    /// event published after the mark before it. None when it recorded no action, or when an
+    /// action it recorded is not in the view.
+    fn entries(&self, start: usize) -> Vec<link::Entry> {
+        if self.recorded.is_empty() {
+            return Vec::new();
+        }
+        let system = self.browser.system();
+        let published = system.published();
+        let log = system
+            .agent
+            .session_log(self.session_id.clone())
+            .unwrap_or_default();
+        let mut out = Vec::new();
+        let mut from = start.min(published.len());
+        for (at, sequence) in self.recorded.iter().enumerate() {
+            let row = log.iter().find(|row| row.sequence == *sequence);
+            let Some(action) = row.and_then(|row| link::Entry::line(&entries::action_line(row)))
+            else {
+                return Vec::new();
+            };
+            out.push(action);
+            let end = if at + 1 == self.recorded.len() {
+                published.len()
+            } else {
+                self.marks
+                    .get(at)
+                    .copied()
+                    .unwrap_or(published.len())
+                    .clamp(from, published.len())
+            };
+            out.extend(
+                published[from..end]
+                    .iter()
+                    .filter_map(|event| link::Entry::line(&entries::event_line(event))),
+            );
+            from = end;
+        }
+        out
     }
 
     fn reply_to(&mut self, request: &Request) -> Reply {
@@ -329,8 +418,7 @@ impl<T: Transport> Session<T> {
             }
         }
         self.opened = true;
-        self.record(ActionCommand::Open, None)?;
-        self.browser.run()?;
+        self.record_and_run(ActionCommand::Open, None)?;
         self.caller.set(Some(self.session_id.clone()));
         if let Some(url) = url {
             match self.request_go(url)? {
@@ -348,8 +436,7 @@ impl<T: Transport> Session<T> {
             url: Url(url.to_string()),
         })?;
         if let GoOutcome::Requested { .. } = outcome {
-            self.record(ActionCommand::Go, Some(url))?;
-            self.browser.run()?;
+            self.record_and_run(ActionCommand::Go, Some(url))?;
         }
         Ok(outcome)
     }
@@ -377,8 +464,7 @@ impl<T: Transport> Session<T> {
         })?;
         match outcome {
             CloseSessionOutcome::Closed { .. } => {
-                self.record(ActionCommand::Close, None)?;
-                self.browser.run()?;
+                self.record_and_run(ActionCommand::Close, None)?;
                 Ok(self.state_reply(
                     0,
                     Some(Did::Action {
@@ -397,6 +483,15 @@ impl<T: Transport> Session<T> {
         }
     }
 
+    /// [`Session::record`], then the run that delivers what the command published, then the
+    /// mark of where the action's events end.
+    fn record_and_run(&mut self, command: ActionCommand, url: Option<&str>) -> Result<(), Stop> {
+        self.record(command, url)?;
+        self.browser.run()?;
+        self.marks.push(self.browser.system().published().len());
+        Ok(())
+    }
+
     /// `RecordAction` with the next sequence number, on the `agent` port.
     fn record(&mut self, command: ActionCommand, url: Option<&str>) -> Result<(), Stop> {
         let sequence = self.sequence + 1;
@@ -409,6 +504,7 @@ impl<T: Transport> Session<T> {
         match outcome {
             RecordActionOutcome::Recorded { .. } => {
                 self.sequence = sequence;
+                self.recorded.push(sequence);
                 Ok(())
             }
             RecordActionOutcome::NoSuchSession { .. } => Err(Stop::Unexpected(
@@ -464,6 +560,7 @@ impl<T: Transport> Session<T> {
             answer,
             state,
             address,
+            entries: Vec::new(),
         }
     }
 
@@ -486,6 +583,7 @@ impl<T: Transport> Session<T> {
             answer,
             state,
             address,
+            entries: Vec::new(),
         }
     }
 
@@ -523,6 +621,7 @@ impl<T: Transport> Session<T> {
             answer: Answer::new(self.head()),
             state,
             address,
+            entries: Vec::new(),
         }
     }
 }
@@ -538,7 +637,7 @@ fn refusal_status(reason: RefusalReason) -> u8 {
     }
 }
 
-/// The word of an action's command on a path line.
+/// The word of an action's command on a path line, and its variant name in `spec/`.
 fn command_word(command: ActionCommand) -> &'static str {
     match command {
         ActionCommand::Open => "open",
