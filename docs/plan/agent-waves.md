@@ -72,6 +72,41 @@ touches their files anyway: `agent-answer-paging`, `agent-close-window`,
 `agent-surfd-session-limit`, `agent-surfd-idle-exit-race`, `view-stream-string-example`.
 `release-agent-binaries` runs after wave 4, alone (the checkpoint above).
 
+## ESS findings, settled on 2026-11-21
+
+The wave records list findings "for ESS" that waited for the operator's word. He gave it on
+2026-11-21, with the limit that only defects are filed: a documented boundary of ESS is not
+an issue. Each of the 15 collected findings (12 from this repository, 3 from the script
+engine's) was reduced to a model written for it and run on ess 0.96.0.
+
+Filed in `beyond10x/ess` by the organization bot, each reproduction run a second time by the
+coordinator:
+
+- [#793](https://github.com/beyond10x/ess/issues/793): the Rust target writes a `behaviors`
+  field that nothing reads for a component with no command and no view.
+- [#794](https://github.com/beyond10x/ess/issues/794): synthesis sends the step that arranges
+  a state as a caller that the command's caller guard refuses, and the interpreter fails the
+  scenario.
+- [#795](https://github.com/beyond10x/ess/issues/795): ESS-SYNTH-014 names a scenario the
+  suite holds and passes, and a `when_related` refusal drops the order check.
+
+Defects that ESS already tracks as active stories in its own planning store, not filed again:
+a binding that maps a required event field into an `Optional` command input is refused by the
+Rust target (`rust-binding-wraps-a-plain-copy-into-an-optional-member`), and the generated
+Rust fails `cargo clippy -- -D warnings`
+(`the-rust-crate-layout-is-rustfmt-and-clippy-clean`).
+
+Limits, each documented or refused with a clear text, not filed: the `ess-cli/2` sources and
+argument types, `ess-http/1` with in-process components, a one-time secret type deriving
+`Debug` (ESS has no construct that marks a type secret), a caller without the attribute a
+guard reads (refused at validation as `ESS-AUTHOR-014`), no scenario for a new enum variant
+that no branch reads, `refs:` with a provider name ESS does not resolve, and from the script
+engine: ESS-SYNTH-023 on records the system creates, `refs:` refusing a URL, and `Binary64`
+on the Rust target.
+
+Not reproduced: the refusal of a command applied per element. The `via:` form synthesizes
+(8 scenarios, 0 refusals); only the row-set form of `when_related` gives ESS-SYNTH-001.
+
 ## Rules of a wave in this plan
 
 Beside `AGENTS.md` "Planning and waves" and `docs/plan/unit-invariants.md`:
