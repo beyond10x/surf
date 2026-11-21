@@ -1,12 +1,29 @@
-// The only module that creates elements. Every value is written with textContent, never as
-// markup, and no attribute that starts with "on" is ever set.
+// The only module that creates elements and the only one that sets an attribute or a property of
+// an element. A value from a session is set only as textContent or as the value of an attribute
+// of ATTRIBUTES below, never as markup; attribute() refuses any other name with an error, so
+// href, src, style, srcdoc and on... cannot be set from anywhere. The one other property set
+// here is scrollLeft (scroll), a number.
 
-// options.text is written with textContent; options.address the same way, in pieces that wrap
-// at the address's boundaries (see address below).
+// Every attribute name the page sets.
+const ATTRIBUTES = new Set([
+  "class",
+  "title",
+  "type",
+  "hidden",
+  "aria-current",
+  "aria-pressed",
+  "data-at",
+  "data-domain",
+  "data-number",
+]);
+
+// options.className is the class attribute; options.text is written with textContent;
+// options.address the same way, in pieces that wrap at the address's boundaries (see address
+// below); options.attributes through attribute().
 export function element(tag, options = {}, children = []) {
   const node = document.createElement(tag);
   if (options.className) {
-    node.className = options.className;
+    attribute(node, "class", options.className);
   }
   if (options.text !== undefined && options.text !== null) {
     node.textContent = String(options.text);
@@ -63,9 +80,11 @@ export function address(node, value) {
   return node;
 }
 
+// Sets the attribute `name`, one of ATTRIBUTES, to `value` as text; null, undefined or false
+// removes it. Any other name is refused with an error.
 export function attribute(node, name, value) {
-  if (/^on/i.test(name)) {
-    throw new Error("an event attribute is never set");
+  if (!ATTRIBUTES.has(name)) {
+    throw new Error("the page sets no attribute " + JSON.stringify(String(name)));
   }
   if (value === null || value === undefined || value === false) {
     node.removeAttribute(name);
@@ -76,6 +95,11 @@ export function attribute(node, name, value) {
 
 export function text(node, value) {
   node.textContent = value === null || value === undefined ? "" : String(value);
+}
+
+// Scrolls `node` sideways to `left` pixels.
+export function scroll(node, left) {
+  node.scrollLeft = Number(left);
 }
 
 export function clear(node) {

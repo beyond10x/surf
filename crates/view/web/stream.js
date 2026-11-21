@@ -27,6 +27,12 @@ export class Refused extends Error {
   }
 }
 
+// Whether `error` is the view refusing the token (401) or the request (403): asking again with
+// the same token cannot help, and the program now on that port may not be surfd.
+export function refusal(error) {
+  return error instanceof Refused && (error.status === 401 || error.status === 403);
+}
+
 // GET of a route under /api/, with the token; the parsed JSON body.
 export async function api(token, path) {
   const answer = await fetch(path, {
@@ -70,7 +76,8 @@ function parseBlock(lines) {
 // only, so one sent before this stream opened is not replayed), handlers.event({id, name,
 // data}) for each entry, session and reset event, handlers.alive() on a comment line, and
 // handlers.closed() when a stream ends. A new stream follows after a delay that grows to 5 s,
-// with Last-Event-ID set to the last id read.
+// with Last-Event-ID set to the last id read. A stream answered 401 or 403 is not asked again:
+// following stops and handlers.refused(error) is called instead of handlers.closed().
 export function follow(token, from, handlers) {
   let last = from;
   let delay = FIRST_DELAY;
@@ -139,8 +146,19 @@ export function follow(token, from, handlers) {
       first = false;
       try {
         await once();
+        if (stopped) {
+          return;
+        }
         handlers.closed(null);
       } catch (error) {
+        if (stopped) {
+          return;
+        }
+        if (refusal(error)) {
+          stopped = true;
+          handlers.refused(error);
+          return;
+        }
         handlers.closed(error);
       }
     }

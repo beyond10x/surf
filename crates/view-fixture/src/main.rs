@@ -33,7 +33,8 @@
 //!   connection it accepts from then on without reading it, and answers `{}` once the open ones
 //!   are shut;
 //! - `mend`: the pipe passes connections again, answered `{}`;
-//! - anything else: `{"error":"command"}`.
+//! - anything else, a line that is not UTF-8 too: `{"error":"command"}`; only the end of
+//!   standard input or a read error ends the loop.
 //!
 //! The pipe passes each connection's bytes to the view's port and back, with the one `Host`
 //! line of the request head written as `Host: 127.0.0.1:<the view's port>`; the view answers
@@ -76,6 +77,9 @@ const SESSION_SOCKET_ADDS: usize = 55;
 
 /// The most bytes of a Unix socket path.
 const SOCKET_PATH_MAX: usize = 107;
+
+/// The answer to a command line this fixture does not know, a line that is not UTF-8 too.
+const UNKNOWN: &str = "{\"error\":\"command\"}";
 
 /// How long `kill` waits for the session's process to end.
 const KILL_WAIT: Duration = Duration::from_secs(10);
@@ -179,8 +183,27 @@ fn serve(dir: &Directory, bin: &Path, bounds: surfd::log::Bounds) -> Result<(), 
         runtime,
         tokens: HashMap::new(),
     };
-    for command in io::stdin().lock().lines() {
-        let Ok(command) = command else { break };
+    let mut input = io::stdin().lock();
+    let mut bytes = Vec::new();
+    loop {
+        bytes.clear();
+        match input.read_until(b'\n', &mut bytes) {
+            Ok(0) => break,
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(_) => break,
+        }
+        if bytes.last() == Some(&b'\n') {
+            bytes.pop();
+            if bytes.last() == Some(&b'\r') {
+                bytes.pop();
+            }
+        }
+        // A line that is not UTF-8 is a command like any other this loop does not know.
+        let Ok(command) = std::str::from_utf8(&bytes) else {
+            say(UNKNOWN);
+            continue;
+        };
         let words: Vec<&str> = command.split('\t').collect();
         let answer = match words.as_slice() {
             ["open"] | ["open", _] if daemon.is_none() => stopped(),
@@ -201,7 +224,7 @@ fn serve(dir: &Directory, bin: &Path, bounds: surfd::log::Bounds) -> Result<(), 
                 pipe.mend();
                 "{}".to_string()
             }
-            _ => "{\"error\":\"command\"}".to_string(),
+            _ => UNKNOWN.to_string(),
         };
         say(&answer);
     }
