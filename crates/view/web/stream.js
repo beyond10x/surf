@@ -1,21 +1,20 @@
 // The token, the API requests and the event stream of docs/view-stream.md.
 //
 // The token arrives in the address's fragment, is kept in sessionStorage and removed from the
-// address. /events is read with fetch and a stream reader, because EventSource sends no
-// Authorization header.
+// address; a fragment that is not a token (the selection, #session=<id>&at=<sequence>) is kept.
+// /events is read with fetch and a stream reader, because EventSource sends no Authorization
+// header.
 
 const KEY = "surf-view-token";
 const FIRST_DELAY = 500;
 const LAST_DELAY = 5000;
 
-// Moves a token from the fragment into sessionStorage and removes the fragment; returns the
-// token kept, or null.
+// Moves a token from the fragment into sessionStorage and removes it from the address; any
+// other fragment stays. Returns the token kept, or null.
 export function takeToken() {
   const fragment = window.location.hash.replace(/^#/, "");
   if (/^[0-9a-f]{64}$/.test(fragment)) {
     window.sessionStorage.setItem(KEY, fragment);
-  }
-  if (window.location.hash) {
     window.history.replaceState(null, "", window.location.pathname);
   }
   return window.sessionStorage.getItem(KEY);

@@ -28,7 +28,11 @@
 </main>
 <aside class="detail" aria-label="Detail"></aside>
 <section class="timeline" aria-labelledby="timeline-heading">
-  <h2 id="timeline-heading">Timeline</h2>
+  <div class="timeline-bar">
+    <h2 id="timeline-heading">Timeline</h2>
+    <button id="latest" class="latest" type="button" aria-pressed="true">Latest</button>
+    <p id="newer" class="newer" role="status" hidden></p>
+  </div>
   <div class="track">
     <ol id="actions" class="actions"></ol>
   </div>

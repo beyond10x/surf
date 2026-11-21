@@ -1,25 +1,72 @@
-// The selected session's actions in order: each a segment labelled with its command and
-// argument, under it one mark per event of that action, named by its event name. The newest
-// action is marked; new actions and events are appended as they arrive.
+// The selected session's actions in order: each a segment labelled with its sequence, command
+// and argument, under it one mark per event of that action, grouped by domain. One segment
+// carries the playhead (aria-current="step"); a click on a segment moves the playhead there.
+// A gap in front of the first segment counts the entries dropped. Nothing here throws on a
+// null member of docs/view-stream.md: a null sequence or command is written "?", a null event
+// name is a mark in the group "other".
 
 import { attribute, clear, element, text } from "./dom.js";
 
-const shown = { session: null, segments: [] };
+// The groups of marks, in this order, then OTHER for any other prefix and for a null name.
+export const DOMAINS = ["surf.shell", "surf.agent", "surf.navigation", "surf.net", "surf.document", "surf.render"];
+const OTHER = "other";
+
+function domainOf(name) {
+  if (typeof name === "string") {
+    for (const domain of DOMAINS) {
+      if (name.startsWith(domain + ".")) {
+        return domain;
+      }
+    }
+  }
+  return OTHER;
+}
 
 function shortName(name) {
+  if (typeof name !== "string") {
+    return "?";
+  }
   const dot = name.lastIndexOf(".");
   return dot < 0 ? name : name.slice(dot + 1);
 }
 
+// A value of the timeline that may be null: "?".
+function written(value) {
+  return value === null || value === undefined ? "?" : String(value);
+}
+
 function mark(event) {
   const fields = Object.entries(event.fields || {})
-    .map(([name, value]) => name + " " + value)
+    .map(([name, value]) => name + " " + written(value))
     .join("\n");
+  const name = typeof event.name === "string" ? event.name : "unreadable event";
   return element("li", {
     className: "mark" + (event.unmapped ? " unmapped" : ""),
     text: shortName(event.name),
-    attributes: { title: event.name + (fields ? "\n" + fields : "") },
+    attributes: { title: name + (fields ? "\n" + fields : "") },
   });
+}
+
+function groups(events) {
+  const byDomain = new Map();
+  for (const event of events) {
+    const domain = domainOf(event.name);
+    if (!byDomain.has(domain)) {
+      byDomain.set(domain, []);
+    }
+    byDomain.get(domain).push(event);
+  }
+  const shown = [...DOMAINS, OTHER].filter((domain) => byDomain.has(domain));
+  return element(
+    "div",
+    { className: "groups" },
+    shown.map((domain) =>
+      element("div", { className: "group", attributes: { "data-domain": domain } }, [
+        element("p", { className: "group-label", text: domain }),
+        element("ol", { className: "marks" }, byDomain.get(domain).map(mark)),
+      ]),
+    ),
+  );
 }
 
 function outcome(answer) {
@@ -31,81 +78,96 @@ function outcome(answer) {
     return "page none";
   }
   if (page.kind === "failed") {
-    return "failed " + page.reason;
+    return "failed " + written(page.reason);
   }
-  return String(page.status);
+  return written(page.status);
 }
 
-function segment(action) {
-  const label = element("p", { className: "label" }, [
-    element("span", { className: "sequence", text: action.action.sequence }),
-    element("span", { className: "command", text: action.action.command }),
-    action.action.argument === null
-      ? null
-      : element("span", { className: "argument", address: action.action.argument }),
-  ]);
-  const marks = element("ol", { className: "marks" });
-  const end = element("p", { className: "outcome" });
-  const node = element("li", { className: "segment" }, [label, marks, end]);
-  const rendered = { node, marks, end, events: 0, answered: false };
-  update(rendered, action);
-  return rendered;
+function segment(action, current, onSelect) {
+  const entry = action.action;
+  const button = element(
+    "button",
+    {
+      className: "select",
+      attributes: { type: "button", "data-number": entry.number, "aria-pressed": current ? "true" : "false" },
+    },
+    [
+      element("span", { className: "label" }, [
+        element("span", { className: "sequence", text: written(entry.sequence) }),
+        element("span", { className: "command", text: written(entry.command) }),
+        entry.argument === null || entry.argument === undefined
+          ? null
+          : element("span", { className: "argument", address: entry.argument }),
+      ]),
+    ],
+  );
+  const end = element("p", {
+    className: "outcome" + (action.answer ? "" : " running"),
+    text: outcome(action.answer),
+  });
+  const node = element("li", { className: "segment" }, [button, groups(action.events), end]);
+  attribute(node, "aria-current", current ? "step" : null);
+  node.addEventListener("click", () => onSelect(entry.number));
+  return node;
 }
 
-function update(rendered, action) {
-  for (const event of action.events.slice(rendered.events)) {
-    rendered.marks.append(mark(event));
-  }
-  rendered.events = action.events.length;
-  const answered = action.answer !== null;
-  if (rendered.answered !== answered || rendered.end.textContent === "") {
-    text(rendered.end, outcome(action.answer));
-    rendered.end.className = "outcome" + (answered ? "" : " running");
-    rendered.answered = answered;
-  }
+function gap(words) {
+  return element("li", { className: "gap", text: words });
 }
 
-// `actions` as state.js groups them. Only what changed since the last call is written.
-export function renderTimeline(list, sessionId, actions) {
-  const scroller = list.parentElement;
-  const atEnd = !scroller || scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 8;
-  if (shown.session !== sessionId || actions.length < shown.segments.length) {
-    clear(list);
-    shown.session = sessionId;
-    shown.segments = [];
-  }
-  if (actions.length === 0) {
-    clear(list);
-    list.append(element("li", { className: "empty", text: "no actions" }));
-    shown.segments = [];
+// `actions` as state.js groups them, `at` the index of the playhead (-1 for none), `drops` the
+// session detail's {dropped, log_dropped}, `follow` whether the playhead follows the newest.
+export function renderTimeline(list, actions, at, drops, follow, onSelect) {
+  const track = list.parentElement;
+  const focused = document.activeElement;
+  const focusedNumber =
+    focused && list.contains(focused) ? focused.getAttribute("data-number") : null;
+  clear(list);
+  if (drops.log_dropped) {
+    list.append(gap("log dropped"));
     return;
   }
-  const empty = list.querySelector(".empty");
-  if (empty) {
-    empty.remove();
+  if (drops.dropped > 0) {
+    list.append(gap(drops.dropped + " dropped"));
+  } else if (actions.length === 0) {
+    list.append(element("li", { className: "empty", text: "no actions" }));
+    return;
   }
-  actions.forEach((action, at) => {
-    const rendered = shown.segments[at];
-    if (rendered) {
-      update(rendered, action);
-    } else {
-      const fresh = segment(action);
-      shown.segments.push(fresh);
-      list.append(fresh.node);
+  let current = null;
+  actions.forEach((action, index) => {
+    const node = segment(action, index === at, onSelect);
+    if (index === at) {
+      current = node;
     }
+    list.append(node);
   });
-  shown.segments.forEach((rendered, at) => {
-    const newest = at === shown.segments.length - 1;
-    rendered.node.classList.toggle("newest", newest);
-    attribute(rendered.node, "aria-current", newest ? "step" : null);
-  });
-  if (scroller && atEnd) {
-    scroller.scrollLeft = scroller.scrollWidth;
+  if (focusedNumber !== null) {
+    const again = list.querySelector('button[data-number="' + focusedNumber + '"]');
+    if (again) {
+      again.focus({ preventScroll: true });
+    }
+  }
+  if (!track || !current) {
+    return;
+  }
+  if (follow) {
+    track.scrollLeft = track.scrollWidth;
+  } else if (
+    current.offsetLeft < track.scrollLeft ||
+    current.offsetLeft + current.offsetWidth > track.scrollLeft + track.clientWidth
+  ) {
+    track.scrollLeft = Math.max(0, current.offsetLeft - (track.clientWidth - current.offsetWidth) / 2);
   }
 }
 
 export function resetTimeline(list) {
   clear(list);
-  shown.session = null;
-  shown.segments = [];
+}
+
+// The "Latest" control and the marker of actions newer than the playhead.
+export function renderControls(latestButton, newerNode, follow, newer) {
+  attribute(latestButton, "aria-pressed", follow ? "true" : "false");
+  const words = !follow && newer > 0 ? newer + " newer" : "";
+  text(newerNode, words);
+  attribute(newerNode, "hidden", words ? null : "");
 }
