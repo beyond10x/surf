@@ -73,6 +73,9 @@ pub const EXIT_STOPPED: u8 = 3;
 pub enum Answer {
     /// A response: issued as `surf.net.DeliverResponse`.
     Response {
+        /// The address the response came from: the address asked for when nothing redirected,
+        /// else the address after the last redirect. Issued as `DeliverResponse.url`.
+        url: String,
         /// The status code, such as 200 or 404.
         status: u16,
         /// The type and subtype of the response's media type in lower case, such as `text/html`.
@@ -105,6 +108,7 @@ impl<F: FnMut(&str) -> Answer> Transport for F {
 pub fn answer(result: Result<surf_fetch::Response, surf_fetch::Failure>) -> Answer {
     match result {
         Ok(response) => Answer::Response {
+            url: response.url,
             status: response.status,
             media_type: response.media_type,
             body: response.body,
@@ -115,6 +119,9 @@ pub fn answer(result: Result<surf_fetch::Response, surf_fetch::Failure>) -> Answ
         }
         Err(surf_fetch::Failure::MalformedResponse(_)) => {
             Answer::Failure(FailureReason::MalformedResponse)
+        }
+        Err(surf_fetch::Failure::TooManyRedirects(_)) => {
+            Answer::Failure(FailureReason::TooManyRedirects)
         }
     }
 }
@@ -592,15 +599,14 @@ where
         }
         match self.transport.fetch(&started.url.0) {
             Answer::Response {
+                url,
                 status,
                 media_type,
                 body,
             } => {
-                // The transport follows no redirect yet (`story:agent-fetch-redirects`), so the
-                // response comes from the address that was asked for.
                 self.system.net.deliver_response(DeliverResponse {
                     request_id: started.request_id,
-                    url: started.url,
+                    url: Url(url),
                     status: Status(i64::from(status)),
                     media_type: MediaType(media_type),
                     body,

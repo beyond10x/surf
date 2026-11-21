@@ -34,8 +34,11 @@ fetch-failed <request-id> <reason> <address>
 - Fields are separated by one space. An identity is a UUID in lower-case 8-4-4-4-12 form. A
   navigation and its request have the same identity.
 - `<state>` is `Started`, `Committed`, `Failed` or `Cancelled` for a navigation and `Pending`,
-  `Responded` or `Failed` for a request. `<reason>` is `Unreachable`, `UnsupportedScheme` or
-  `MalformedResponse`. A document has one state, and its line has no state field.
+  `Responded` or `Failed` for a request. `<reason>` is `Unreachable`, `UnsupportedScheme`,
+  `MalformedResponse` or `TooManyRedirects`. A document has one state, and its line has no state
+  field.
+- After redirects, the `navigation` and `document` lines hold the address of the last response,
+  and the `request` and `fetch-failed` lines the address asked for.
 - `<address>` is the rest of the line. Printable ASCII (U+0020 to U+007E) other than the
   backslash is written as itself. The backslash and every other character, control characters,
   line feeds, Unicode line and paragraph separators and bidirectional controls included, are
@@ -64,4 +67,5 @@ Telling the two apart would take unsafe code.
 
 The fetch takes its limits from `surf-fetch`'s defaults: 10 s to resolve the host and connect,
 30 s to send the request and receive the whole response, so at most 40 s for one fetch; 64 KiB of
-header and 16 MiB of body ([`crates/fetch`](../crates/fetch/src/lib.rs)).
+header and 16 MiB of body ([`crates/fetch`](../crates/fetch/src/lib.rs)). It follows at most 20
+redirects (301, 302, 303, 307, 308 with a `Location`) inside the one fetch, within the same 40 s.

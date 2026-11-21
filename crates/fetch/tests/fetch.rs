@@ -101,11 +101,13 @@ fn quick() -> Limits {
     }
 }
 
-fn response(status: u16, media_type: &str, body: &[u8]) -> Result<Response, Failure> {
+/// The response to `asked`, which nothing redirected: its `url` is `asked`.
+fn response(asked: &str, status: u16, media_type: &str, body: &[u8]) -> Result<Response, Failure> {
     Ok(Response {
         status,
         media_type: media_type.to_string(),
         body: body.to_vec(),
+        url: asked.to_string(),
     })
 }
 
@@ -133,9 +135,10 @@ fn case_01_content_length_response() {
         wait_for_close(s);
     });
     let port = server.port;
-    let result = fetch(&format!("{}/path/x?q=1#frag", server.address), &quick());
+    let asked = format!("{}/path/x?q=1#frag", server.address);
+    let result = fetch(&asked, &quick());
     let request = String::from_utf8(finish(server)).expect("request is text");
-    assert_eq!(result, response(200, "text/plain", b"hello"));
+    assert_eq!(result, response(&asked, 200, "text/plain", b"hello"));
     assert!(
         request.starts_with("GET /path/x?q=1 HTTP/1.1\r\n"),
         "request line: {request:?}"
@@ -162,11 +165,12 @@ fn case_02_chunked_response() {
         send(s, b"A\r\n0123456789\r\n0\r\n\r\n");
         wait_for_close(s);
     });
-    let result = fetch(&server.address, &quick());
+    let asked = server.address.clone();
+    let result = fetch(&asked, &quick());
     let request = String::from_utf8(finish(server)).expect("request is text");
     assert_eq!(
         result,
-        response(200, "text/plain", b"hello, world0123456789")
+        response(&asked, 200, "text/plain", b"hello, world0123456789")
     );
     assert!(request.starts_with("GET / HTTP/1.1\r\n"), "{request:?}");
 }
@@ -179,11 +183,12 @@ fn case_03_response_ended_by_close() {
             b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nuntil the connection closes",
         );
     });
-    let result = fetch(&server.address, &quick());
+    let asked = server.address.clone();
+    let result = fetch(&asked, &quick());
     finish(server);
     assert_eq!(
         result,
-        response(200, "text/plain", b"until the connection closes")
+        response(&asked, 200, "text/plain", b"until the connection closes")
     );
 }
 
@@ -196,9 +201,10 @@ fn case_04_content_type_with_parameters_and_mixed_case() {
         );
         wait_for_close(s);
     });
-    let result = fetch(&server.address, &quick());
+    let asked = server.address.clone();
+    let result = fetch(&asked, &quick());
     finish(server);
-    assert_eq!(result, response(200, "text/html", b"hi"));
+    assert_eq!(result, response(&asked, 200, "text/html", b"hi"));
 }
 
 #[test]
@@ -210,11 +216,12 @@ fn case_05_no_content_type() {
         );
         wait_for_close(s);
     });
-    let result = fetch(&server.address, &quick());
+    let asked = server.address.clone();
+    let result = fetch(&asked, &quick());
     finish(server);
     assert_eq!(
         result,
-        response(200, "application/octet-stream", b"\x00\x01\x02")
+        response(&asked, 200, "application/octet-stream", b"\x00\x01\x02")
     );
 }
 
@@ -227,9 +234,10 @@ fn case_06_not_found_is_a_response() {
         );
         wait_for_close(s);
     });
-    let result = fetch(&format!("{}/missing", server.address), &quick());
+    let asked = format!("{}/missing", server.address);
+    let result = fetch(&asked, &quick());
     finish(server);
-    assert_eq!(result, response(404, "text/plain", b"not found"));
+    assert_eq!(result, response(&asked, 404, "text/plain", b"not found"));
 }
 
 #[test]
@@ -410,7 +418,7 @@ fn scheme_is_case_insensitive() {
     let address = server.address.replacen("http:", "HTTP:", 1);
     let result = fetch(&address, &quick());
     finish(server);
-    assert_eq!(result, response(200, "application/octet-stream", b"ok"));
+    assert_eq!(result, response(&address, 200, "application/octet-stream", b"ok"));
 }
 
 #[test]
@@ -422,9 +430,10 @@ fn interim_response_is_skipped() {
         );
         wait_for_close(s);
     });
-    let result = fetch(&server.address, &quick());
+    let asked = server.address.clone();
+    let result = fetch(&asked, &quick());
     finish(server);
-    assert_eq!(result, response(200, "application/octet-stream", b"ok"));
+    assert_eq!(result, response(&asked, 200, "application/octet-stream", b"ok"));
 }
 
 #[test]
@@ -438,10 +447,11 @@ fn no_content_has_no_body_and_does_not_wait() {
         ..quick()
     };
     let started = Instant::now();
-    let result = fetch(&server.address, &limits);
+    let asked = server.address.clone();
+    let result = fetch(&asked, &limits);
     let elapsed = started.elapsed();
     finish(server);
-    assert_eq!(result, response(204, "application/octet-stream", b""));
+    assert_eq!(result, response(&asked, 204, "application/octet-stream", b""));
     assert!(elapsed < Duration::from_secs(5), "took {elapsed:?}");
 }
 
