@@ -37,7 +37,7 @@ use ess_primitives::consistency::ConsistencyToken;
 use ess_primitives::node::Node;
 use surf::{
     AgentBehaviors, Answer, Browser, DocumentBehaviors, NavigatorBehaviors, NetBehaviors,
-    RendererBehaviors, ShellBehaviors, SystemEvent, Transport, UnmetObligation,
+    RendererBehaviors, RequestStarted, ShellBehaviors, SystemEvent, Transport, UnmetObligation,
 };
 use surf_ports::{AgentPorts, Caller};
 use surf_system::BindingInvocation;
@@ -59,7 +59,7 @@ use surf_types::navigation::{
 };
 use surf_types::net::{
     DeliverResponse, DeliverResponseOutcome, FailRequest, FailRequestOutcome, FailureReason, Fetch,
-    FetchOutcome, MediaType, RequestId, RequestState, Status,
+    FetchOutcome, MediaType, Method, RequestId, RequestState, Status,
 };
 use surf_types::primitives::Uuid;
 use surf_types::render::{PaintFrame, PaintFrameOutcome};
@@ -76,7 +76,7 @@ use crate::values::{self, Input};
 pub struct Unanswered;
 
 impl Transport for Unanswered {
-    fn fetch(&mut self, _address: &str) -> Answer {
+    fn fetch(&mut self, _request: &RequestStarted) -> Answer {
         Answer::Unanswered
     }
 }
@@ -544,6 +544,57 @@ fn caller_session_id(
     Ok(session_id)
 }
 
+fn method(method: Method) -> &'static str {
+    match method {
+        Method::Get => "Get",
+        Method::Post => "Post",
+    }
+}
+
+fn method_named(name: &str) -> Option<Method> {
+    [Method::Get, Method::Post]
+        .into_iter()
+        .find(|candidate| method(*candidate) == name)
+}
+
+/// The method, the body and its media type of a request, by declared field name; `null` for an
+/// absent body or media type.
+fn request_fields(
+    request_method: Method,
+    body: Option<&Vec<u8>>,
+    body_type: Option<&MediaType>,
+) -> [(&'static str, Node); 3] {
+    [
+        ("method", values::text(method(request_method))),
+        ("body", optional(body, |body| values::bytes(body))),
+        (
+            "body_type",
+            optional(body_type, |media_type| values::text(&media_type.0)),
+        ),
+    ]
+}
+
+/// The method, the body and its media type of the input of `Navigate` or `Fetch`, whose fields
+/// without `null` are `present`: an absent body or media type and one sent as `null` read the
+/// same.
+fn request_input(
+    input: &mut Input<'_>,
+    present: &BTreeMap<String, Node>,
+) -> Result<(Method, Option<Vec<u8>>, Option<MediaType>), TargetError> {
+    let request_method = input.variant("method", method_named)?;
+    let body = if present.contains_key("body") {
+        Some(input.bytes("body")?)
+    } else {
+        None
+    };
+    let body_type = if present.contains_key("body_type") {
+        Some(MediaType(input.text("body_type")?))
+    } else {
+        None
+    };
+    Ok((request_method, body, body_type))
+}
+
 fn request_state(state: RequestState) -> &'static str {
     match state {
         RequestState::Failed => "Failed",
@@ -712,21 +763,35 @@ fn payload(event: &SystemEvent) -> Vec<(&'static str, Node)> {
             ("url", text(&e.url.0)),
             ("reason", text(failure_reason(e.reason))),
         ],
-        SystemEvent::NavigationStarted(e) => vec![
-            ("navigation_id", uuid_of(&e.navigation_id)),
-            ("tab_id", uuid(&e.tab_id.0)),
-            ("url", text(&e.url.0)),
-        ],
+        SystemEvent::NavigationStarted(e) => {
+            let mut fields = vec![
+                ("navigation_id", uuid_of(&e.navigation_id)),
+                ("tab_id", uuid(&e.tab_id.0)),
+                ("url", text(&e.url.0)),
+            ];
+            fields.extend(request_fields(
+                e.method,
+                e.body.as_ref(),
+                e.body_type.as_ref(),
+            ));
+            fields
+        }
         SystemEvent::FetchFailed(e) => vec![
             ("request_id", uuid_of(&e.request_id)),
             ("url", text(&e.url.0)),
             ("reason", text(failure_reason(e.reason))),
         ],
         SystemEvent::RequestStarted(e) => {
-            vec![
+            let mut fields = vec![
                 ("request_id", uuid_of(&e.request_id)),
                 ("url", text(&e.url.0)),
-            ]
+            ];
+            fields.extend(request_fields(
+                e.method,
+                e.body.as_ref(),
+                e.body_type.as_ref(),
+            ));
+            fields
         }
         SystemEvent::ResponseReceived(e) => vec![
             ("request_id", uuid_of(&e.request_id)),
@@ -798,14 +863,20 @@ fn invocation(
                 ("reason", text(failure_reason(input.reason))),
             ],
         ),
-        BindingInvocation::FetchOnNavigationStarted(input) => (
-            "fetch-on-navigation-started",
-            "surf.net.Fetch",
-            vec![
-                ("request_id", uuid_of(&input.request_id)),
-                ("url", text(&input.url.0)),
-            ],
-        ),
+        BindingInvocation::FetchOnNavigationStarted(input) => {
+            ("fetch-on-navigation-started", "surf.net.Fetch", {
+                let mut fields = vec![
+                    ("request_id", uuid_of(&input.request_id)),
+                    ("url", text(&input.url.0)),
+                ];
+                fields.extend(request_fields(
+                    input.method,
+                    input.body.as_ref(),
+                    input.body_type.as_ref(),
+                ));
+                fields
+            })
+        }
         BindingInvocation::ParseOnNavigationCommitted(input) => (
             "parse-on-navigation-committed",
             "surf.document.ParseDocument",
@@ -818,10 +889,18 @@ fn invocation(
         BindingInvocation::NavigateOnNavigationRequested(input) => (
             "navigate-on-navigation-requested",
             "surf.navigation.Navigate",
-            vec![
-                ("tab_id", values::uuid(&input.tab_id.0)),
-                ("url", text(&input.url.0)),
-            ],
+            {
+                let mut fields = vec![
+                    ("tab_id", values::uuid(&input.tab_id.0)),
+                    ("url", text(&input.url.0)),
+                ];
+                fields.extend(request_fields(
+                    input.method,
+                    input.body.as_ref(),
+                    input.body_type.as_ref(),
+                ));
+                fields
+            },
         ),
         BindingInvocation::CloseTabOnSessionClosed(input) => (
             "close-tab-on-session-closed",
@@ -1155,12 +1234,21 @@ where
                 }
             }
             "surf.navigation.Navigate" => {
+                let present = present(fields);
+                let mut input = Input::new(command, &present);
                 let tab_id = TabId(input.uuid("tab_id")?);
                 let url = Url(input.text("url")?);
+                let (method, body, body_type) = request_input(&mut input, &present)?;
                 input.finish()?;
                 match browser
                     .navigator_mut()
-                    .navigate(Navigate { tab_id, url })
+                    .navigate(Navigate {
+                        tab_id,
+                        url,
+                        method,
+                        body,
+                        body_type,
+                    })
                     .map_err(unmet)?
                 {
                     NavigateOutcome::Started { navigation_started } => took(
@@ -1259,12 +1347,21 @@ where
                 }
             }
             "surf.net.Fetch" => {
+                let present = present(fields);
+                let mut input = Input::new(command, &present);
                 let request_id = RequestId(input.uuid("request_id")?);
                 let url = Url(input.text("url")?);
+                let (method, body, body_type) = request_input(&mut input, &present)?;
                 input.finish()?;
                 match browser
                     .net_mut()
-                    .fetch(Fetch { request_id, url })
+                    .fetch(Fetch {
+                        request_id,
+                        url,
+                        method,
+                        body,
+                        body_type,
+                    })
                     .map_err(unmet)?
                 {
                     FetchOutcome::Started { request_started } => {
@@ -1657,6 +1754,11 @@ where
                     vec![
                         ("request_id", uuid_of(&row.request_id)),
                         ("url", text(&row.url.0)),
+                        ("method", text(method(row.method))),
+                        (
+                            "body_type",
+                            optional(row.body_type.as_ref(), |media_type| text(&media_type.0)),
+                        ),
                         ("state", text(request_state(row.state))),
                     ]
                 })
@@ -1908,18 +2010,28 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::reported_events;
-    use surf::SystemEvent;
+    use ess_primitives::node::Node;
+    use surf::{Browser, SystemEvent};
+    use surf_ports::{
+        AgentPorts, ComponentPorts, DocumentPorts, NavigatorPorts, NetPorts, RendererPorts,
+        ShellPorts,
+    };
     use surf_system::BindingInvocation;
     use surf_types::agent::{
         NavigationRequested, NoteNavigationStarted, SessionId, SessionNavigationChanged,
     };
+    use surf_types::behaviour::Generated;
     use surf_types::document::{DocumentId, ParsingStarted};
     use surf_types::navigation::{
         CommitNavigation, Navigate, NavigationCancelled, NavigationCommitted, NavigationStarted,
         NavigationState,
     };
-    use surf_types::net::{Fetch, MediaType, RequestId, RequestStarted, ResponseReceived, Status};
+    use surf_types::net::{
+        Fetch, MediaType, Method, RequestId, RequestStarted, ResponseReceived, Status,
+    };
     use surf_types::primitives::Uuid;
     use surf_types::shell::TabId;
     use surf_types::url::Url;
@@ -1944,6 +2056,9 @@ mod tests {
             navigation_id: navigation_id(),
             tab_id: TabId(Uuid(TAB.to_owned())),
             url: Url(ADDRESS.to_owned()),
+            method: Method::Get,
+            body: None,
+            body_type: None,
         })
     }
 
@@ -1951,6 +2066,9 @@ mod tests {
         SystemEvent::RequestStarted(RequestStarted {
             request_id: navigation_id(),
             url: Url(ADDRESS.to_owned()),
+            method: Method::Get,
+            body: None,
+            body_type: None,
         })
     }
 
@@ -1958,6 +2076,9 @@ mod tests {
         BindingInvocation::FetchOnNavigationStarted(Fetch {
             request_id: navigation_id(),
             url: Url(ADDRESS.to_owned()),
+            method: Method::Get,
+            body: None,
+            body_type: None,
         })
     }
 
@@ -2106,6 +2227,9 @@ mod tests {
         BindingInvocation::NavigateOnNavigationRequested(Navigate {
             tab_id: TabId(Uuid(TAB.to_owned())),
             url: Url(ADDRESS.to_owned()),
+            method: Method::Get,
+            body: None,
+            body_type: None,
         })
     }
 
@@ -2144,6 +2268,96 @@ mod tests {
             &[navigate(), note_started()],
         );
         assert!(answer.is_err(), "{answer:?}");
+    }
+
+    type MemoryTarget = super::SurfTarget<
+        Generated<AgentPorts>,
+        Generated<DocumentPorts>,
+        Generated<NavigatorPorts>,
+        Generated<NetPorts>,
+        Generated<RendererPorts>,
+        Generated<ShellPorts>,
+    >;
+
+    /// The `NavigationStarted` and the `Fetch` invocation of `Navigate` with `fields`, over a
+    /// fresh system.
+    fn navigated(fields: &[(&str, Node)]) -> (NavigationStarted, Fetch) {
+        let mut browser = Browser::from_ports(ComponentPorts::new(), super::Unanswered);
+        let fields: BTreeMap<String, Node> = fields
+            .iter()
+            .map(|(name, node)| ((*name).to_owned(), node.clone()))
+            .collect();
+        let answered = MemoryTarget::issue(&mut browser, "surf.navigation.Navigate", &fields)
+            .unwrap_or_else(|error| panic!("{error:?}"));
+        browser.run().expect("run");
+        let [SystemEvent::NavigationStarted(started)] = answered.events.as_slice() else {
+            panic!("{:?}", answered.events);
+        };
+        let fetches: Vec<Fetch> = browser
+            .system()
+            .invocations()
+            .iter()
+            .filter_map(|invocation| match invocation {
+                BindingInvocation::FetchOnNavigationStarted(fetch) => Some(fetch.clone()),
+                _ => None,
+            })
+            .collect();
+        let [fetch] = fetches.as_slice() else {
+            panic!("{fetches:?}");
+        };
+        (started.clone(), fetch.clone())
+    }
+
+    /// Story agent-request-body-spec: an optional input the suite sends as `null` reads as one it
+    /// leaves out, for the body and the media type of `Navigate`; a present one is passed on.
+    #[test]
+    fn a_navigate_body_sent_as_null_reads_as_one_left_out() {
+        let required = [
+            ("tab_id", Node::Text(TAB.to_owned())),
+            ("url", Node::Text(ADDRESS.to_owned())),
+        ];
+        let absent = navigated(&[
+            required[0].clone(),
+            required[1].clone(),
+            ("method", Node::Text("Get".to_owned())),
+        ]);
+        let null = navigated(&[
+            required[0].clone(),
+            required[1].clone(),
+            ("method", Node::Text("Get".to_owned())),
+            ("body", Node::Null),
+            ("body_type", Node::Null),
+        ]);
+        let present = navigated(&[
+            required[0].clone(),
+            required[1].clone(),
+            ("method", Node::Text("Post".to_owned())),
+            ("body", Node::Text("YT0x".to_owned())),
+            (
+                "body_type",
+                Node::Text("application/x-www-form-urlencoded".to_owned()),
+            ),
+        ]);
+        for (started, fetch) in [&absent, &null] {
+            assert_eq!(
+                (started.method, &started.body, &started.body_type),
+                (Method::Get, &None, &None)
+            );
+            assert_eq!(
+                (fetch.method, &fetch.body, &fetch.body_type),
+                (Method::Get, &None, &None)
+            );
+        }
+        let (started, fetch) = &present;
+        let form = Some(MediaType("application/x-www-form-urlencoded".to_owned()));
+        assert_eq!(
+            (started.method, &started.body, &started.body_type),
+            (Method::Post, &Some(b"a=1".to_vec()), &form)
+        );
+        assert_eq!(
+            (fetch.method, &fetch.body, &fetch.body_type),
+            (Method::Post, &Some(b"a=1".to_vec()), &form)
+        );
     }
 
     /// A second event of the commanding component behind another one's, with no binding back

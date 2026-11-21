@@ -21,7 +21,7 @@ use surf_types::document::{
     ElementSnapshot, ElementState, EncodingName, ParseLimit,
 };
 use surf_types::navigation::{NavigationData, NavigationSnapshot, NavigationState};
-use surf_types::net::{RequestData, RequestId, RequestSnapshot, RequestState};
+use surf_types::net::{Method, RequestData, RequestId, RequestSnapshot, RequestState};
 use surf_types::obligation::UnmetObligation;
 use surf_types::primitives::Uuid;
 use surf_types::render::{FrameData, FrameId, FrameSnapshot, FrameState};
@@ -187,6 +187,8 @@ fn storage_request_put_get_list_in_insertion_order_replace_in_place_delete() {
         data: RequestData {
             request_id,
             url: url("a"),
+            method: Method::Get,
+            body_type: None,
         },
     });
     let replacement = RequestSnapshot {

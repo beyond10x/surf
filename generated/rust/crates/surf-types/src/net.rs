@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest d31658889d516a083ce9bcfd2d7c0ada34c042952c11901405e00f6683235212
+// contract digest d86950609f0648d1fd4f49718d20e544490bed20fa1a6c742579023bd4f50f16
 // do not edit: regenerate with `ess synthesize`
 
 //! Network — `surf.net`.
@@ -28,6 +28,17 @@ pub enum FailureReason {
 /// What a response body is: the type and subtype of its Content-Type header in lower case, without parameters, such as text/html.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MediaType(pub String);
+
+/// Method — `surf.net.Method`: one of a closed set of names.
+///
+/// The request method.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Method {
+    /// `Get`.
+    Get,
+    /// `Post`.
+    Post,
+}
 
 /// The states of `surf.net.Request`, as runtime values.
 ///
@@ -63,6 +74,10 @@ pub struct RequestData {
     pub request_id: RequestId,
     /// `url` — `surf.url.Url`.
     pub url: crate::url::Url,
+    /// `method` — `surf.net.Method`.
+    pub method: Method,
+    /// `body_type` — `Optional<surf.net.MediaType>`.
+    pub body_type: Option<MediaType>,
 }
 
 /// The states of `surf.net.Request`, at the type level.
@@ -336,6 +351,12 @@ pub struct Fetch {
     pub request_id: RequestId,
     /// `url` — `surf.url.Url`.
     pub url: crate::url::Url,
+    /// `method` — `surf.net.Method`.
+    pub method: Method,
+    /// `body` — `Optional<Bytes>`.
+    pub body: Option<Vec<u8>>,
+    /// `body_type` — `Optional<surf.net.MediaType>`.
+    pub body_type: Option<MediaType>,
 }
 
 /// Everything `surf.net.Fetch` can result in — one variant per declared outcome.
@@ -372,6 +393,12 @@ pub struct RequestStarted {
     pub request_id: RequestId,
     /// `url` — `surf.url.Url`.
     pub url: crate::url::Url,
+    /// `method` — `surf.net.Method`.
+    pub method: Method,
+    /// `body` — `Optional<Bytes>`.
+    pub body: Option<Vec<u8>>,
+    /// `body_type` — `Optional<surf.net.MediaType>`.
+    pub body_type: Option<MediaType>,
 }
 
 /// ResponseReceived — the event `surf.net.ResponseReceived`.
@@ -418,6 +445,10 @@ pub struct Requests {
     pub request_id: RequestId,
     /// `url` — `surf.url.Url`.
     pub url: crate::url::Url,
+    /// `method` — `surf.net.Method`.
+    pub method: Method,
+    /// `body_type` — `Optional<surf.net.MediaType>`.
+    pub body_type: Option<MediaType>,
     /// `state` — `surf.net.Request.State`.
     pub state: RequestState,
 }

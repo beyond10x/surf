@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest d31658889d516a083ce9bcfd2d7c0ada34c042952c11901405e00f6683235212
+// contract digest d86950609f0648d1fd4f49718d20e544490bed20fa1a6c742579023bd4f50f16
 // do not edit: regenerate with `ess synthesize`
 
 //! The `surf` system, v1: its components assembled, its bindings wired, and its one transport.
@@ -224,6 +224,9 @@ pub fn fetch_on_navigation_started(event: &surf_types::navigation::NavigationSta
     surf_types::net::Fetch {
         request_id: event.navigation_id.clone(),
         url: event.url.clone(),
+        method: event.method.clone(),
+        body: event.body.clone(),
+        body_type: event.body_type.clone(),
     }
 }
 
@@ -236,6 +239,9 @@ pub fn navigate_on_navigation_requested(event: &surf_types::agent::NavigationReq
     surf_types::navigation::Navigate {
         tab_id: event.tab_id.clone(),
         url: event.url.clone(),
+        method: surf_types::net::Method::Get,
+        body: None,
+        body_type: None,
     }
 }
 

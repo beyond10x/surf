@@ -1,0 +1,30 @@
+# A navigation with `Get` and no body: the request `fetch-on-navigation-started` makes has `Get`
+# and no media type.
+type: ess-scenario/6
+domain: surf.navigation
+scenario: navigation-get-has-no-body
+summary: A Navigate with Get and no body starts a request with Get and no media type.
+
+arrange:
+  - instance: load
+    entity: surf.navigation.Navigation
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 3f1d5b7e-0000-4000-8000-000000000042
+      url: http://example.org/
+      method: Get
+    outcome: started
+    events:
+      - event: surf.navigation.NavigationStarted
+        payload:
+          url: http://example.org/
+          method: Get
+    capture: {instance: load, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+assert:
+  - view: surf.net.Requests
+    contains: {request_id: {$instance: load}, url: http://example.org/, method: Get, body_type: null, state: Pending}

@@ -130,6 +130,9 @@ bindings:
     mapping:
       request_id: event.navigation_id
       url: event.url
+      method: event.method
+      body: event.body
+      body_type: event.body_type
     delivery: at_most_once
     # Fetch refuses nothing. If it does not run at all, the navigation stays Started until the
     # user cancels it.
@@ -193,9 +196,11 @@ bindings:
       event: surf.agent.NavigationRequested
     invoke:
       command: surf.navigation.Navigate
+    # An agent's `go` loads an address: `Get`, without a body.
     mapping:
       tab_id: event.tab_id
       url: event.url
+      method: Get
     delivery: at_most_once
     # Navigate refuses nothing. If it does not run at all, the session keeps the navigation it
     # had, and the agent sees that nothing started.

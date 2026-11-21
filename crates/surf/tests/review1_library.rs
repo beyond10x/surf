@@ -6,7 +6,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use surf::{Answer, Browser, System, escape};
+use surf::{Answer, Browser, Method, RequestStarted, System, escape};
 use surf_ports::ComponentPorts;
 use surf_types::navigation::{Navigate, NavigateOutcome};
 use surf_types::net::{DeliverResponse, Fetch, MediaType, RequestId, RequestState, Status};
@@ -14,13 +14,13 @@ use surf_types::primitives::Uuid;
 use surf_types::shell::TabId;
 use surf_types::url::Url;
 
-fn counting() -> (impl FnMut(&str) -> Answer, Rc<Cell<usize>>) {
+fn counting() -> (impl FnMut(&RequestStarted) -> Answer, Rc<Cell<usize>>) {
     let calls = Rc::new(Cell::new(0));
     let seen = Rc::clone(&calls);
-    let transport = move |address: &str| {
+    let transport = move |request: &RequestStarted| {
         seen.set(seen.get() + 1);
         Answer::Response {
-            url: address.to_owned(),
+            url: request.url.0.clone(),
             status: 200,
             media_type: "text/plain".to_owned(),
             body: Vec::new(),
@@ -47,6 +47,9 @@ fn review1_a_system_whose_request_was_answered_is_not_fetched_again_by_a_new_bro
         .navigate(Navigate {
             tab_id: TabId(Uuid("6f1c2d3e-4b5a-4c6d-8e7f-001122334455".to_owned())),
             url: Url("http://127.0.0.1/".to_owned()),
+            method: Method::Get,
+            body: None,
+            body_type: None,
         })
         .expect("navigate");
     system.pump().expect("pump");
@@ -85,6 +88,9 @@ fn review1_two_fetches_of_one_request_reach_the_transport_once() {
             .fetch(Fetch {
                 request_id: id.clone(),
                 url: Url("http://127.0.0.1/".to_owned()),
+                method: Method::Get,
+                body: None,
+                body_type: None,
             })
             .expect("fetch");
     }

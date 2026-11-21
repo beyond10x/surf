@@ -1,0 +1,36 @@
+# A navigation with a method, a body and its media type: `NavigationStarted` carries the three,
+# and the request `fetch-on-navigation-started` makes has the same method and media type. The
+# body is not stored, so `Requests` shows the method and the media type only.
+type: ess-scenario/6
+domain: surf.navigation
+scenario: navigation-post-reaches-request
+summary: A Navigate with Post, a body and its media type starts a request with the same method and media type.
+
+arrange:
+  - instance: load
+    entity: surf.navigation.Navigation
+
+timeline:
+  # The body is `a=1`.
+  - at: 2026-01-06T09:00:00Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 3f1d5b7e-0000-4000-8000-000000000041
+      url: http://example.org/form
+      method: Post
+      body: YT0x
+      body_type: application/x-www-form-urlencoded
+    outcome: started
+    events:
+      - event: surf.navigation.NavigationStarted
+        payload:
+          url: http://example.org/form
+          method: Post
+          body: YT0x
+          body_type: application/x-www-form-urlencoded
+    capture: {instance: load, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+assert:
+  - view: surf.net.Requests
+    contains: {request_id: {$instance: load}, url: http://example.org/form, method: Post, body_type: application/x-www-form-urlencoded, state: Pending}

@@ -3,7 +3,7 @@
 
 #![forbid(unsafe_code)]
 
-use surf::{Answer, Browser, Held, SystemEvent};
+use surf::{Answer, Browser, Held, RequestStarted, SystemEvent};
 use surf_ports::ComponentPorts;
 use surf_types::document::DocumentState;
 
@@ -14,8 +14,8 @@ const BODY: usize = 777;
 fn a_parsed_body_is_held_five_times_until_delivered() {
     let body = vec![b'x'; BODY];
     let answered = body.clone();
-    let transport = move |address: &str| Answer::Response {
-        url: address.to_owned(),
+    let transport = move |request: &RequestStarted| Answer::Response {
+        url: request.url.0.clone(),
         status: 200,
         media_type: "text/html".to_owned(),
         body: answered.clone(),

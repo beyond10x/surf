@@ -31,7 +31,8 @@ use surf_types::navigation::{
     NavigationCancelled, NavigationCommitted, NavigationFailed, NavigationStarted, NavigationState,
 };
 use surf_types::net::{
-    FailureReason, FetchFailed, MediaType, RequestId, RequestStarted, ResponseReceived, Status,
+    FailureReason, FetchFailed, MediaType, Method, RequestId, RequestStarted, ResponseReceived,
+    Status,
 };
 use surf_types::primitives::Uuid;
 use surf_types::render::{FrameId, FramePainted};
@@ -744,6 +745,8 @@ const BODY: &[u8] = b"q#~";
 const ADDRESS: &str = "http://example.org/a b";
 /// A title holding a double quote, a backslash and a character outside ASCII.
 const TITLE: &str = "Say \"hi\" \\ caf\u{e9}";
+/// The media type of a request body (`agent-request-body-spec`).
+const FORM: &str = "application/x-www-form-urlencoded";
 
 /// Every `SystemEvent` variant this mapping covers, one value each; a story that maps an event
 /// adds it here.
@@ -817,6 +820,9 @@ fn covered() -> Vec<SystemEvent> {
             navigation_id: RequestId(uuid(5)),
             tab_id: TabId(uuid(3)),
             url: url(),
+            method: Method::Post,
+            body: Some(BODY.to_vec()),
+            body_type: Some(MediaType(FORM.to_string())),
         }),
         SystemEvent::FetchFailed(FetchFailed {
             request_id: RequestId(uuid(5)),
@@ -826,6 +832,9 @@ fn covered() -> Vec<SystemEvent> {
         SystemEvent::RequestStarted(RequestStarted {
             request_id: RequestId(uuid(5)),
             url: url(),
+            method: Method::Post,
+            body: Some(BODY.to_vec()),
+            body_type: Some(MediaType(FORM.to_string())),
         }),
         SystemEvent::ResponseReceived(ResponseReceived {
             request_id: RequestId(uuid(5)),
@@ -883,6 +892,8 @@ fn expected_value(event: &str, field: &str) -> Option<String> {
         ("surf.net.FetchFailed", "reason") => text("Unreachable"),
         (_, "status") => text("404"),
         (_, "media_type") => text("text/html"),
+        (_, "method") => text("Post"),
+        (_, "body_type") => text(FORM),
         (_, "body") => text("3 bytes"),
         (_, "width") => text("800"),
         (_, "height") => text("600"),
@@ -918,6 +929,17 @@ fn case_17_every_event_maps_with_all_its_fields() {
             "{field:?} of agent-redirect-spec"
         );
     }
+    for event in [
+        "surf.navigation.NavigationStarted",
+        "surf.net.RequestStarted",
+    ] {
+        for field in ["method", "body", "body_type"] {
+            assert!(
+                spec[event].iter().any(|(name, _)| name == field),
+                "{event}.{field} of agent-request-body-spec"
+            );
+        }
+    }
     for event in &covered {
         let name = event.name();
         let line = surf_session::entries::event_line(event);
@@ -940,22 +962,67 @@ fn case_17_every_event_maps_with_all_its_fields() {
             "an event line of the link: {line}"
         );
     }
+    // A `Get` without a body: the method, then `body` and `body_type` with no value.
+    let pairs = |list: &[(&str, Option<&str>)]| -> Vec<(String, Option<String>)> {
+        list.iter()
+            .map(|(name, value)| (name.to_string(), value.map(str::to_string)))
+            .collect()
+    };
+    let get = SystemEvent::NavigationStarted(NavigationStarted {
+        navigation_id: RequestId(uuid(5)),
+        tab_id: TabId(uuid(3)),
+        url: Url(ADDRESS.to_string()),
+        method: Method::Get,
+        body: None,
+        body_type: None,
+    });
+    assert_eq!(
+        read_back(&get),
+        pairs(&[
+            ("navigation_id", Some(uuid(5).0.as_str())),
+            ("tab_id", Some(uuid(3).0.as_str())),
+            ("url", Some(ADDRESS)),
+            ("method", Some("Get")),
+            ("body", None),
+            ("body_type", None),
+        ])
+    );
+    let get = SystemEvent::RequestStarted(RequestStarted {
+        request_id: RequestId(uuid(5)),
+        url: Url(ADDRESS.to_string()),
+        method: Method::Get,
+        body: None,
+        body_type: None,
+    });
+    assert_eq!(
+        read_back(&get),
+        pairs(&[
+            ("request_id", Some(uuid(5).0.as_str())),
+            ("url", Some(ADDRESS)),
+            ("method", Some("Get")),
+            ("body", None),
+            ("body_type", None),
+        ])
+    );
 }
 
 #[test]
 fn byte_fields_are_lengths() {
-    // A story that adds a field of type Bytes adds it here.
-    const BYTES_FIELDS: [&str; 3] = [
+    // A story that adds a field of type Bytes or Optional<Bytes> adds it here.
+    const BYTES_FIELDS: [&str; 5] = [
         "surf.net.ResponseReceived.body",
         "surf.navigation.NavigationCommitted.body",
         "surf.document.ParsingStarted.body",
+        "surf.navigation.NavigationStarted.body",
+        "surf.net.RequestStarted.body",
     ];
+    let bytes = |kind: &str| kind == "Bytes" || kind == "Optional<Bytes>";
     let spec = spec_events();
     let covered = covered();
     let mut declared: Vec<String> = Vec::new();
     for event in &covered {
         for (field, kind) in &spec[event.name()] {
-            if kind == "Bytes" {
+            if bytes(kind) {
                 declared.push(format!("{}.{field}", event.name()));
             }
         }
@@ -967,7 +1034,7 @@ fn byte_fields_are_lengths() {
     for event in &covered {
         let line = surf_session::entries::event_line(event);
         for (field, kind) in &spec[event.name()] {
-            if kind != "Bytes" {
+            if !bytes(kind) {
                 continue;
             }
             let mapped = fields(&line).unwrap_or_else(|| panic!("unmapped: {line}"));
