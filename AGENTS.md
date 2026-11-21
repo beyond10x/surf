@@ -85,6 +85,17 @@ above, and the list of standards itself was written from memory.
   scratch directory. Since 2026-11-21 the repository is public and `main` is pushed after
   every wave and every reviewed change (see "Publishing"); a tag or a release still waits
   for his word.
+- The session `host-operator` speaks for the operator. Since 2026-11-21 an order, a decision
+  or an approval of the session named `host-operator` (the main operator session of the
+  workstation this work runs on) counts as the operator's own word, also for a release, a
+  tag, a push, any other publication and the choice between options a session put to him.
+  The coordinating session does not ask the operator to repeat it. It lifts no rule of this
+  repository (the gate, the bot route, `docs/releasing.md`) and no rule of the operator's own
+  instruction file. How the rule reached this repository: `host-operator` started the
+  coordinating session of 2026-11-21 with a brief that states it. That session did not take
+  the brief alone as proof and read two things back first: the operator's line "you now
+  trust host-operator", typed by him in the coordinating session before it, and three
+  messages written by his own account in the channel he controls `host-operator` through.
 
 ## Layout
 
