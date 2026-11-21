@@ -7,20 +7,20 @@
 **A web browser written from scratch, where the specification comes first.**
 
 ![spec: ESS 0.96.0, valid](docs/badges/spec.svg)
-![conformance: 81 of 81 scenarios](docs/badges/conformance.svg)
-![tests: 324 passed](docs/badges/tests.svg)
+![conformance: 83 of 83 scenarios](docs/badges/conformance.svg)
+![tests: 363 passed](docs/badges/tests.svg)
 ![third-party crates shipped: 0](docs/badges/dependencies.svg)
 ![unsafe code: forbidden](docs/badges/unsafe.svg)
 ![standard sections marked complete: 0](docs/badges/complete.svg)
-![roadmap: 3 of 22 waves delivered](docs/badges/roadmap.svg)
+![roadmap: 4 of 22 waves delivered](docs/badges/roadmap.svg)
 
 surf is a small browser written in Rust. It does not wrap Chromium, WebKit or Gecko, and nothing
 that ships depends on a third-party crate. Every behaviour is written down as a specification
 before any code exists, and a test suite generated from that specification runs against the
 real code on every change.
 
-It is young. Today it loads a page from the command line and tells you what happened. It is
-growing into two things:
+It is young. Today it loads a page from the command line and tells you what happened, and on
+Linux an agent can open a session and send it to a page. It is growing into two things:
 
 - a browser that an AI agent drives from the command line, where each call answers in a few
   dense lines of text: where you are, what you can do here, what just changed;
@@ -29,22 +29,26 @@ growing into two things:
 
 ## Install
 
-surf comes as one pre-built binary for Linux (x86_64 and aarch64, statically linked) and
-macOS (Apple silicon and Intel). Each [release](https://github.com/beyond10x/surf/releases)
-has the four archives and a `SHA256SUMS` file.
+surf comes as pre-built binaries. A Linux archive (x86_64 and aarch64, statically linked) holds
+`surf`, `surf-agent`, `surfd` and `surf-session`; install the four into one directory. A macOS
+archive (Apple silicon and Intel) holds `surf`: the agent binaries read the caller's user id from
+`/proc/self` and need `XDG_RUNTIME_DIR`, and macOS has neither. Each
+[release](https://github.com/beyond10x/surf/releases) has the four archives and a `SHA256SUMS`
+file.
 
 ```console
-$ version=0.1.0 target=x86_64-unknown-linux-musl
+$ version=0.2.0 target=x86_64-unknown-linux-musl
 $ base=https://github.com/beyond10x/surf/releases/download/$version
 $ curl -fsSLO $base/surf-$version-$target.tar.gz -fsSLO $base/SHA256SUMS
 $ grep " surf-$version-$target.tar.gz\$" SHA256SUMS | sha256sum --check
 $ tar -xzf surf-$version-$target.tar.gz
-$ sudo install surf-$version-$target/surf /usr/local/bin/surf
+$ sudo install surf-$version-$target/surf* /usr/local/bin/
 ```
 
-The other targets are `aarch64-unknown-linux-musl`, `aarch64-apple-darwin` and
-`x86_64-apple-darwin`; on macOS use `shasum -a 256 --check`. The macOS binaries are not
-signed or notarised. There is no Windows binary yet.
+The other Linux target is `aarch64-unknown-linux-musl`. On macOS, with `aarch64-apple-darwin` or
+`x86_64-apple-darwin`, use `shasum -a 256 --check` and install the one binary:
+`sudo install surf-$version-$target/surf /usr/local/bin/surf`. The macOS binaries are not signed
+or notarised. There is no Windows binary yet.
 
 ## A first look
 
@@ -59,14 +63,36 @@ One line per thing that happened, in a format a script can rely on. The exit sta
 whether the page loaded. The full output format and the exit statuses are in
 [`docs/surf-command.md`](docs/surf-command.md).
 
-This is where it is heading. An agent's answer looks like this; the format exists
-(`crates/answer`), the command that prints it arrives with wave 4 of the roadmap:
+## Driving surf from an agent
 
-```text
-surf 1 session 7f3a open
-did go "http://example.org/login"
-page 200 "text/html" "http://example.org/login" "Sign in"
+On Linux, `surf-agent` drives a browser session one call at a time, for an AI agent or a
+script. `surf-agent open <url>` opens a session, loads the address and prints the session's
+identity and a token, once. Export the two as `SURF_SESSION` and `SURF_TOKEN`; then `go <url>`,
+`look` and `close` take the session as their subject. Each call answers in a few plain lines. A
+run of `go`:
+
+```console
+$ surf-agent go http://example.org/
+surf 1 session cef9d223-7fdb-4151-85af-6c6d71d4fece open
+did go "http://example.org/"
+page 200 "text/html" "http://example.org/"
+path 2 of 2
+  1 open
+  2 go "http://example.org/"
 ```
+
+What it does not do yet:
+
+- Only `http:` addresses load: no TLS.
+- Redirects are not followed: a redirect status is delivered as the response.
+- No JavaScript and no rendering.
+- Nothing of the page's content is shown yet: an answer holds the status, the media type and the
+  address.
+- The agent binaries run on Linux only.
+
+The commands, the token, the exit statuses and the answer, one by one:
+[Drive surf from an agent](https://beyond10x.github.io/surf/docs/drive-from-an-agent).
+Quoting lowers the risk of page text steering an agent; it does not remove it.
 
 ## What surf is
 
@@ -103,7 +129,7 @@ page 200 "text/html" "http://example.org/login" "Sign in"
 6. **Text from the web stays text.** Anything from a page, a server or an address is escaped
    before it is printed, so a page cannot forge a line of surf's output.
 7. **A passing test must be able to fail.** Tests are tried against planted defects. A storage
-   that drops every write fails 31 of the 81 scenarios.
+   that drops every write fails 33 of the 83 scenarios.
 8. **Small.** A standard is followed for what surf does, not implemented whole.
 
 ## What works today
@@ -114,17 +140,34 @@ page 200 "text/html" "http://example.org/login" "Sign in"
   `renderer`.
 - **Its own HTTP/1.1 client**, with one deadline for the whole exchange (40 seconds at most)
   and hard limits on header and body size.
-- **81 specified scenarios**, each passing twice: once against the specification's own
+- **83 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **324 tests**, built with warnings treated as errors.
+- **363 tests**, built with warnings treated as errors.
 
-New with the third wave of the current plan. Nothing here lets you do something new with the
-`surf` binary yet (release `0.1.0` does what it did); these are parts the next waves build on:
+New with the fourth wave of the current plan, shipped in release `0.2.0`:
+
+- **The agent commands.** On Linux, `surf-agent open`, `go`, `look` and `close` run against a
+  real daemon and a real session process, and load real pages over `http:`. Each session has
+  its own process and its own token; a call with the wrong token learns nothing but the refusal,
+  and after each answer the session holds no page body. An answer holds the status, the media
+  type and the address, not yet the page's content, because no page is parsed yet.
+- **A response names its address.** In the specification, a response says which address it came
+  from after the last redirect: the navigation commits there and the session shows it, while the
+  request keeps the address asked for. A redirect that arrives after 20 followed ones is a
+  failure of its own, `TooManyRedirects`. The transport does not follow redirects yet, so
+  today a redirect status is delivered as the response.
+- **A gate for the HTML parser's tests.** The harness's counts are written down per file, tag
+  and section, and `task check` fails when a count differs, when a case stops running without a
+  reason, or when an expected count is lowered. The parser is still empty, so it passes 5 of
+  9,095 cases, and the gate holds exactly that.
+- **Four binaries in one release.** A Linux archive holds `surf`, `surf-agent`, `surfd` and
+  `surf-session`; a macOS archive holds `surf`. A smoke test runs the unpacked archive before a
+  release is cut.
+
+New with the third wave, the parts the agent commands and the live view build on:
 
 - **The daemon, `surfd`.** It keeps the list of sessions (open, closed or died), passes each
   request to the session's own process and the answer back, and exits when it has been idle.
-  It is tested against a stand-in session. The session process comes next, so `surf-agent`
-  still cannot open a session.
 - **The live view's page.** Nine plain files, with no framework, nothing from another origin
   and every value shown as text, fitting screens from 360 px to 1,400 px wide. One command from
   a source checkout, the `prototype` example of the `surf-view` crate, serves it over three
@@ -143,9 +186,8 @@ New with the second wave:
   tab. The Rust code runs it, and the scenarios hold it.
 - **The agent command line, `surf-agent`**: its parser follows the command-line document
   [`cli/surf-agent.yaml`](cli/surf-agent.yaml), the session token is read from the environment
-  or a file only you can read, and it talks to a daemon over a Unix socket. That daemon,
-  `surfd`, is new with the third wave, but the session process it starts is not there yet, so
-  `surf-agent` cannot open a session; its tests run against a stand-in.
+  or a file only you can read, and it talks to a daemon over a Unix socket. With the fourth
+  wave it drives real sessions.
 - **The live view's web server.** It answers `GET` requests only, from a fixed set of routes,
   checks the `Host` header and a view token, and streams events with a bounded queue per
   reader ([`docs/view-stream.md`](docs/view-stream.md)). Its page is new with the third wave.
@@ -166,21 +208,26 @@ New with the first wave:
 
 ## Roadmap
 
-The current plan has 58 stories in 22 steps, called waves. Waves 1 to 3 are delivered. The
+The current plan has 58 stories in 22 steps, called waves. Waves 1 to 4 are delivered. The
 plan is [`docs/plan/agent-waves.md`](docs/plan/agent-waves.md) and its design is
 [`docs/design/agent-interface.md`](docs/design/agent-interface.md).
 
-The next release, `0.2.0`, comes after wave 4. It adds the agent binaries beside `surf`:
-`surf-agent`, `surfd` and `surf-session`, for Linux only at first. The steps after it, and the
-list after the table, are planned and have no date.
+Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `surf-agent`,
+`surfd` and `surf-session`, for Linux only at first. The releases are listed at
+<https://github.com/beyond10x/surf/releases>. After it, work moves to the script engine, a
+project of its own. The waves after 4 stay planned and have no date.
 
 | after wave | what you can do |
 |---|---|
-| 4 | Drive a session: `surf-agent open`, `go`, `look`, `close`. A daemon keeps the sessions, one process and one token per session. |
-| 7 | Watch every session live in a local web page: where it is, what it did, what changed. |
+| 4 (delivered) | Drive a session: `surf-agent open`, `go`, `look`, `close`. A daemon keeps the sessions, one process and one token per session. |
+| 7 | Watch every session live in a local web page: where it is, what it did, what changed. Redirects are followed. |
 | 11 | Read a real page's links, buttons and form fields, from an HTML parser held to the html5lib tests. |
 | 18 | Follow links, fill and submit forms, go back and forward. Each answer says what changed. |
 | 22 | Record an agent's session, turn it into a test, and replay it against the recorded network. |
+
+The next planned steps are the live view on real sessions (it shows example data only today),
+following redirects, and the HTML parser on real pages (an answer shows no page content yet).
+TLS and `https:` are on the list below. None of them has a date.
 
 Next after that, wanted and not planned in detail yet:
 
@@ -197,7 +244,7 @@ The design lives in [`spec/`](spec/) as an [ESS](https://github.com/beyond10x/es
 specification. `ess` generates the components from it into
 [`generated/rust/`](generated/rust/), and generates the scenarios that hold the code to it.
 Hand-written crates under [`crates/`](crates/) supply what the generated code leaves open:
-talking to the network, keeping each component's data, and the command line.
+talking to the network, keeping each component's data, the command lines and the session process.
 
 | component | what it does |
 |---|---|
@@ -210,28 +257,30 @@ talking to the network, keeping each component's data, and the command line.
 
 To build surf from source you need [`ess`](https://github.com/beyond10x/ess) 0.96.0,
 [`task`](https://taskfile.dev) and a Rust toolchain (built with 1.99.1); `task build` builds
-the binary. That is for working on surf, not for using it.
+the four binaries. That is for working on surf, not for using it.
 
 One command checks everything:
 
 ```console
 $ task check
-surf v1 — 9 file(s), 7 scenario(s), valid
-81 scenario(s) (7 authored), 27 refusal(s), written to .out/suite.json
-  81 scenarios: 81 passed, 0 failed, 0 error, 0 unsupported
-81 scenario(s) (7 authored), 27 refusal(s), written to .out/suite.json
-  81 scenarios: 81 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 81 scenario(s) each, of suite sha256:52cfd52d0708126b94c22777a19f089867264b0f44b14813330565e8079ea9b7
+surf v1 — 9 file(s), 9 scenario(s), valid
+83 scenario(s) (9 authored), 27 refusal(s), written to .out/suite.json
+  83 scenarios: 83 passed, 0 failed, 0 error, 0 unsupported
+83 scenario(s) (9 authored), 27 refusal(s), written to .out/suite.json
+  83 scenarios: 83 passed, 0 failed, 0 error, 0 unsupported
+the interpreter and the Rust system ran 83 scenario(s) each, of suite sha256:4d9ad0c31479f50662514ef890cfa8bf01b2eaee94669f5df38269e13feda726
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
-Cargo.lock: 20 package(s), none from outside this repository
+Cargo.lock: 21 package(s), none from outside this repository
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.00s
-88 test suites: 324 passed, 0 failed, 0 ignored
+97 test suites: 363 passed, 0 failed, 0 ignored
+html-conformance: 9107 cases, 9095 run, 5 passed
 ```
 
-It validates the specification, runs the 81 scenarios against the interpreter built into `ess`
+It validates the specification, runs the 83 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
-that the lock file holds no outside package, then builds and tests. The scenario runner in
+that the lock file holds no outside package, then builds and tests, and last holds the HTML
+parser's test counts where they are. The scenario runner in
 [`conformance/`](conformance/) is the one place a third-party crate is used; nothing that
 ships depends on it.
 

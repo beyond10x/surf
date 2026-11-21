@@ -4,7 +4,8 @@ import {withProductSite} from '@beyond10x/docs-system/product-site';
 
 // The landing page is `product.json`, rendered by the shared docs-system product-site template.
 // The pages live in `docs/` and are written by hand from the repository's README.md,
-// docs/surf-command.md and AGENTS.md. A page states only what those files state.
+// docs/surf-command.md and AGENTS.md; the page drive-from-an-agent from docs/agent-answer.md,
+// cli/surf-agent.yaml and a run of the binaries. A page states only what those sources state.
 
 const config: Config = {
   title: 'surf',
@@ -47,6 +48,7 @@ const config: Config = {
       items: [
         {to: '/docs/', label: 'Docs', position: 'left', activeBaseRegex: '^/surf/docs/(?!reference/|roadmap|status)'},
         {to: '/docs/try-it', label: 'Try it', position: 'left'},
+        {to: '/docs/drive-from-an-agent', label: 'Agents', position: 'left'},
         {to: '/docs/reference/surf-command', label: 'Command', position: 'left'},
         {to: '/docs/roadmap', label: 'Roadmap', position: 'left'},
         {to: '/docs/status', label: 'Status', position: 'left'},
@@ -60,6 +62,7 @@ const config: Config = {
           items: [
             {label: 'What surf is', to: '/docs/'},
             {label: 'Try it', to: '/docs/try-it'},
+            {label: 'Drive surf from an agent', to: '/docs/drive-from-an-agent'},
             {label: 'Principles', to: '/docs/principles'},
             {label: 'How it is built', to: '/docs/how-it-is-built'},
             {label: 'The surf command', to: '/docs/reference/surf-command'},

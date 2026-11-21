@@ -15,8 +15,8 @@ event or binding in the specification, and a green check, before any code for it
 [`generated/rust/`](https://github.com/beyond10x/surf/tree/main/generated/rust), and generates the
 scenarios that hold the code to it. The generated code is never edited by hand. Hand-written
 crates under [`crates/`](https://github.com/beyond10x/surf/tree/main/crates) supply what the
-generated code leaves open: talking to the network, keeping each component's data, and the
-command line.
+generated code leaves open: talking to the network, keeping each component's data, the
+command lines and the session process.
 
 ## Components
 
@@ -39,22 +39,24 @@ One command checks everything:
 
 ```console
 $ task check
-surf v1 — 9 file(s), 7 scenario(s), valid
-81 scenario(s) (7 authored), 27 refusal(s), written to .out/suite.json
-  81 scenarios: 81 passed, 0 failed, 0 error, 0 unsupported
-81 scenario(s) (7 authored), 27 refusal(s), written to .out/suite.json
-  81 scenarios: 81 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 81 scenario(s) each, of suite sha256:52cfd52d0708126b94c22777a19f089867264b0f44b14813330565e8079ea9b7
+surf v1 — 9 file(s), 9 scenario(s), valid
+83 scenario(s) (9 authored), 27 refusal(s), written to .out/suite.json
+  83 scenarios: 83 passed, 0 failed, 0 error, 0 unsupported
+83 scenario(s) (9 authored), 27 refusal(s), written to .out/suite.json
+  83 scenarios: 83 passed, 0 failed, 0 error, 0 unsupported
+the interpreter and the Rust system ran 83 scenario(s) each, of suite sha256:4d9ad0c31479f50662514ef890cfa8bf01b2eaee94669f5df38269e13feda726
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
-Cargo.lock: 20 package(s), none from outside this repository
+Cargo.lock: 21 package(s), none from outside this repository
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.00s
-88 test suites: 324 passed, 0 failed, 0 ignored
+97 test suites: 363 passed, 0 failed, 0 ignored
+html-conformance: 9107 cases, 9095 run, 5 passed
 ```
 
-It validates the specification, runs the 81 scenarios against the interpreter built into `ess`
+It validates the specification, runs the 83 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
-that the lock file holds no outside package, then builds and tests.
+that the lock file holds no outside package, then builds and tests, and last holds the HTML
+parser's test counts where they are.
 
 The scenario runner in
 [`conformance/`](https://github.com/beyond10x/surf/tree/main/conformance) is the one place a
@@ -74,5 +76,5 @@ $ task build
 $ task check
 ```
 
-`task build` builds the binary into `target/debug/surf`, and `task check` runs everything
+`task build` builds the four binaries into `target/debug/`, and `task check` runs everything
 described above.

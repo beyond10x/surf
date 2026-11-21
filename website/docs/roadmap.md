@@ -5,28 +5,41 @@ description: What surf can do after which step of the current plan, and what com
 
 # Roadmap
 
-The current plan has 58 stories in 22 steps, called waves. Waves 1 to 3 are delivered.
+The current plan has 58 stories in 22 steps, called waves. Waves 1 to 4 are delivered.
 
-The next release, `0.2.0`, comes after wave 4. It adds the agent binaries beside `surf`:
-`surf-agent`, `surfd` and `surf-session`, for Linux only at first. The steps after it, and the
-list under "After the plan", are planned and have no date.
+Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `surf-agent`,
+`surfd` and `surf-session`, for Linux only at first. The
+[releases page](https://github.com/beyond10x/surf/releases) lists the releases. After it, work
+moves to the script engine, a
+project of its own. The waves after 4 stay planned, and the steps after it, and the list under
+"After the plan", have no date.
 
 | after wave | what you can do |
 |---|---|
-| 4 | Drive a session: `surf-agent open`, `go`, `look`, `close`. A daemon keeps the sessions, one process and one token per session. |
-| 7 | Watch every session live in a local web page: where it is, what it did, what changed. |
+| 4 (delivered) | Drive a session: `surf-agent open`, `go`, `look`, `close`. A daemon keeps the sessions, one process and one token per session. |
+| 7 | Watch every session live in a local web page: where it is, what it did, what changed. Redirects are followed. |
 | 11 | Read a real page's links, buttons and form fields, from an HTML parser held to the html5lib tests. |
 | 18 | Follow links, fill and submit forms, go back and forward. Each answer says what changed. |
 | 22 | Record an agent's session, turn it into a test, and replay it against the recorded network. |
 
-This is where the agent command line is heading. An agent's answer looks like this; the format
-exists today, the command that prints it arrives with wave 4:
+The next planned steps are the live view on real sessions (it shows example data only today),
+following redirects, and the HTML parser on real pages (an answer shows no page content yet).
+TLS and `https:` are on the list below. None of them has a date.
+
+The agent commands exist today: see [Drive surf from an agent](drive-from-an-agent.md). An
+agent's answer looks like this today:
 
 ```text
-surf 1 session 7f3a open
-did go "http://example.org/login"
-page 200 "text/html" "http://example.org/login" "Sign in"
+surf 1 session cef9d223-7fdb-4151-85af-6c6d71d4fece open
+did go "http://example.org/"
+page 200 "text/html" "http://example.org/"
+path 2 of 2
+  1 open
+  2 go "http://example.org/"
 ```
+
+Once the HTML parser reads real pages, the `page` line gains the page's title, and the answer
+gains what you can do on the page.
 
 ## After the plan
 

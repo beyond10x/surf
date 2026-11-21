@@ -6,23 +6,24 @@ description: Where surf stands, in the numbers its gate prints.
 # Project status
 
 surf is young, and not a browser for daily use. It loads one `http:` address from the command
-line and prints what happened. It has no window, no rendering, no JavaScript and no `https:` yet.
+line and prints what happened, and on Linux `surf-agent` drives a session over `http:`. It has no
+window, no rendering, no JavaScript and no `https:` yet.
 
 ## Numbers
 
-On 2026-11-21, with ess 0.96.0, after wave 3 of the current plan:
+On 2026-11-21, with ess 0.96.0, after wave 4 of the current plan:
 
 | what | value |
 |---|---|
 | specification | ESS 0.96.0, valid |
-| conformance scenarios | 81 of 81 pass, against the interpreter and against the Rust code |
-| tests | 324 passed |
+| conformance scenarios | 83 of 83 pass, against the interpreter and against the Rust code |
+| tests | 363 passed |
 | URL test data | 872 of 904 cases pass; 32 skipped, listed by name |
-| HTML parser test data | 9,107 cases counted, 9,095 run, 5 pass; the parser is still empty |
+| HTML parser test data | 9,107 cases counted, 9,095 run, 5 pass; the parser is still empty, and `task check` holds these counts |
 | third-party crates in what ships | 0 |
 | unsafe code | forbidden in every hand-written crate |
 | standard sections marked complete | 0 |
-| roadmap | 3 of 22 waves delivered; the next release, `0.2.0`, comes after wave 4 |
+| roadmap | 4 of 22 waves delivered; release `0.2.0` follows wave 4 ([releases](https://github.com/beyond10x/surf/releases)) |
 
 ## What is not checked yet
 
