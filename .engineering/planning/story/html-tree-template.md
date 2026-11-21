@@ -9,7 +9,7 @@ relations:
 - decomposes: epic:html-parser
 - depends_on: story:html-tree-tables
 - depends_on: story:html-actionable-elements
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 5}
@@ -59,3 +59,20 @@ Writes: `crates/html/src/tree.rs`, `crates/html/src/tree_builder.rs`,
 
 Declarative shadow roots unless the note takes them on. Scripts: template contents are inert;
 nothing in them is run. Custom elements inside a template are not upgraded.
+
+## Found before this story's wave
+
+Two findings of waves 8 and 9 that this story's reading takes up
+(`docs/plan/agent-wave-8.md`, and the reading of `story:html-actionable-elements` before
+wave 9):
+
+- A `template` start tag in the head goes through the generic rules, and the rule that
+  leaves the head then pops the current node, which is the `template` and not the `head`
+  (`crates/html/src/tree_builder/modes.rs`, the in head rules). `body` becomes a child of
+  `head`. Measured by a probe on the tree after wave 8. For `surf-page` every element of
+  such a page is hidden by the `head` rule, until this story.
+- `tag template` was 30 half-way through `story:html-tree-body` and 29 after it; inferred,
+  not proven: `template.dat` case 6, whose end tag `template` goes to "any other end tag",
+  which stops at a special element where the standard's own rule pops until the `template`.
+  The reading of `story:html-tree-formatting` measured that the adoption agency algorithm
+  brings the tag to 30 again (`template.dat` case 84).
