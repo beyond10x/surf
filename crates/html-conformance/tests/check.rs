@@ -44,8 +44,10 @@ const XML_DATA: &str = r#"{"xmlViolationTests": [
 ]}
 "#;
 
+/// The expected tree holds a `q` where the input has a `p`, so the case fails for any tree
+/// builder, not only an empty one.
 const TREE_DATA: &str =
-    "#data\n<p>\n#errors\n#document\n| <html>\n|   <head>\n|   <body>\n|     <p>\n";
+    "#data\n<p>\n#errors\n#document\n| <html>\n|   <head>\n|   <body>\n|     <q>\n";
 
 /// The expected label is no encoding name, so the case fails for any sniffer, not only an empty
 /// one.

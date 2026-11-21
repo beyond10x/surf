@@ -7,9 +7,16 @@
 //! appropriate end tag check compares with the last start tag the tokenizer was created with,
 //! replaced by each start tag it emits.
 //!
+//! The machine runs one step at a time: [`Tokenizer::run`] to the end of the input, or
+//! [`Tokenizer::next_token`] until it has emitted a token, with [`Tokenizer::switch_state`]
+//! between two tokens for the tree builder. A step that emits a start tag emits nothing after
+//! it, so the state the tree builder sets applies from the character after the tag's `>`.
+//!
 //! A character reference keeps every value it needs in fields of [`Tokenizer`]: the return
 //! state, the temporary buffer and the character reference code. The code saturates at
 //! 0x110000, above 0x10FFFF, so that a run of digits of any length cannot overflow it.
+
+use std::collections::VecDeque;
 
 use super::{ParseError, Token, TokenAttribute, Tokenized};
 use crate::charref;
@@ -231,7 +238,12 @@ pub(super) struct Tokenizer {
     comment: String,
     doctype: DoctypeToken,
     processing_instruction: ProcessingInstructionToken,
-    out: Tokenized,
+    /// The tokens emitted and not yet taken, in the order they were emitted.
+    emitted: VecDeque<Token>,
+    /// Whether parse errors are kept: by [`Tokenizer::run`], not when a tree builder takes one
+    /// token at a time and reads no error.
+    keep_errors: bool,
+    errors: Vec<ParseError>,
     done: bool,
 }
 
@@ -253,21 +265,51 @@ impl Tokenizer {
             comment: String::new(),
             doctype: DoctypeToken::default(),
             processing_instruction: ProcessingInstructionToken::default(),
-            out: Tokenized::default(),
+            emitted: VecDeque::new(),
+            keep_errors: true,
+            errors: Vec::new(),
             done: false,
         }
     }
 
     /// Runs the state machine until it emits the end-of-file token.
     pub(super) fn run(mut self) -> Tokenized {
+        let mut tokens = Vec::new();
         while !self.done {
             self.step();
+            tokens.extend(self.emitted.drain(..));
         }
-        self.out
+        Tokenized {
+            tokens,
+            errors: self.errors,
+        }
+    }
+
+    /// Stops keeping parse errors: a tree builder reads none.
+    pub(super) fn drop_errors(&mut self) {
+        self.keep_errors = false;
+        self.errors = Vec::new();
+    }
+
+    /// The next token: the state machine runs until it has emitted one. After the end-of-file
+    /// token, each call gives the end-of-file token again.
+    pub(super) fn next_token(&mut self) -> Token {
+        while self.emitted.is_empty() && !self.done {
+            self.step();
+        }
+        self.emitted.pop_front().unwrap_or(Token::EndOfFile)
+    }
+
+    /// Switches the state between two tokens, as the tree builder does (13.2.6). The last start
+    /// tag stays the one the machine emitted last.
+    pub(super) fn switch_state(&mut self, state: State) {
+        self.state = state;
     }
 
     fn error(&mut self, code: &'static str) {
-        self.out.errors.push(ParseError { code });
+        if self.keep_errors {
+            self.errors.push(ParseError { code });
+        }
     }
 
     /// Reports the parse errors of 13.2.3.5 for the code points before `end` that were not
@@ -318,7 +360,7 @@ impl Tokenizer {
     }
 
     fn emit(&mut self, token: Token) {
-        self.out.tokens.push(token);
+        self.emitted.push_back(token);
     }
 
     fn emit_character(&mut self, c: u32) {
@@ -1647,8 +1689,14 @@ impl Tokenizer {
             }
         }
         let last_is_semicolon = self.temporary_buffer.last() == Some(&SEMICOLON);
+        let in_attribute = self.consumed_as_part_of_an_attribute();
+        if in_attribute && !last_is_semicolon {
+            // The state looks at the next input character: its parse error of 13.2.3.5 is
+            // reported first, as for every other lookahead (`next_characters_are`).
+            self.examine(self.input.position() + 1);
+        }
         let next_input_character = self.input.get(self.input.position());
-        if self.consumed_as_part_of_an_attribute()
+        if in_attribute
             && !last_is_semicolon
             && next_input_character.is_some_and(|c| c == EQUALS_SIGN || is_ascii_alphanumeric(c))
         {
