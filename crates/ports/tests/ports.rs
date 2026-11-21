@@ -6,12 +6,15 @@ use std::fmt::Debug;
 use std::io;
 
 use surf_ports::{
-    ComponentPorts, DocumentPorts, NavigatorPorts, NetPorts, RandomSource, RendererPorts,
-    ShellPorts, shell_port,
+    AgentPorts, ComponentPorts, DocumentPorts, NavigatorPorts, NetPorts, RandomSource,
+    RendererPorts, ShellPorts, shell_port,
+};
+use surf_types::agent::{
+    ActionCommand, ActionData, ActionId, ActionSnapshot, ActionState, SessionId,
 };
 use surf_types::behaviour::{
-    DocumentStorage, FrameStorage, NavigationStorage, RequestStorage, TabStorage, TryContext,
-    WindowStorage,
+    ActionStorage, DocumentStorage, FrameStorage, NavigationStorage, RequestStorage, TabStorage,
+    TryContext, WindowStorage,
 };
 use surf_types::document::{DocumentData, DocumentId, DocumentSnapshot, DocumentState};
 use surf_types::navigation::{NavigationData, NavigationSnapshot, NavigationState};
@@ -248,6 +251,36 @@ fn storage_frame_put_get_list_in_insertion_order_replace_in_place_delete() {
             put: <RendererPorts as FrameStorage>::put,
             delete: <RendererPorts as FrameStorage>::delete,
             list: <RendererPorts as FrameStorage>::list,
+        },
+        keys,
+        rows,
+        replacement,
+    );
+}
+
+#[test]
+fn storage_action_put_get_list_in_insertion_order_replace_in_place_delete() {
+    let keys = [1, 2, 3].map(|n| ActionId(uuid(n)));
+    let rows = keys.clone().map(|action_id| ActionSnapshot {
+        state: ActionState::Recorded,
+        data: ActionData {
+            action_id,
+            session_id: SessionId(uuid(9)),
+            sequence: 1,
+            command: ActionCommand::Open,
+            url: None,
+        },
+    });
+    let mut replacement = rows[1].clone();
+    replacement.data.command = ActionCommand::Go;
+    replacement.data.url = Some(url("next"));
+    exercise(
+        AgentPorts::new(),
+        Table {
+            get: <AgentPorts as ActionStorage>::get,
+            put: <AgentPorts as ActionStorage>::put,
+            delete: <AgentPorts as ActionStorage>::delete,
+            list: <AgentPorts as ActionStorage>::list,
         },
         keys,
         rows,

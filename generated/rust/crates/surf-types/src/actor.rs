@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest f176714dd8b7999f1b6166f2e2d3e020c7ce9478056f6babb4bb5edef3c071ff
+// contract digest 5042a1110c657521cdce7556f33cbda05f4df3fdd350ca1ac5dfafd26db14a63
 // do not edit: regenerate with `ess synthesize`
 
 //! Every actor the specification declares, and the commands each may invoke — as data.
@@ -92,6 +92,7 @@ pub fn may_read(actor: Actor) -> &'static [&'static str] {
             "surf.agent.Sessions",
         ],
         Actor::AgentSessionHolder => &[
+            "surf.agent.SessionLog",
             "surf.agent.SessionState",
         ],
         Actor::NavigationUser => &[],

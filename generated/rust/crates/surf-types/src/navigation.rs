@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest f176714dd8b7999f1b6166f2e2d3e020c7ce9478056f6babb4bb5edef3c071ff
+// contract digest 5042a1110c657521cdce7556f33cbda05f4df3fdd350ca1ac5dfafd26db14a63
 // do not edit: regenerate with `ess synthesize`
 
 //! Navigation — `surf.navigation`.
@@ -332,6 +332,8 @@ pub enum CommitNavigationOutcome {
 pub struct FailNavigation {
     /// `navigation_id` — `surf.net.RequestId`.
     pub navigation_id: crate::net::RequestId,
+    /// `reason` — `surf.net.FailureReason`.
+    pub reason: crate::net::FailureReason,
 }
 
 /// Everything `surf.navigation.FailNavigation` can result in — one variant per declared outcome.
@@ -426,6 +428,8 @@ pub struct NavigationFailed {
     pub tab_id: crate::shell::TabId,
     /// `url` — `surf.url.Url`.
     pub url: crate::url::Url,
+    /// `reason` — `surf.net.FailureReason`.
+    pub reason: crate::net::FailureReason,
 }
 
 /// NavigationStarted — the event `surf.navigation.NavigationStarted`.

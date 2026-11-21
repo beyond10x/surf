@@ -43,6 +43,9 @@ assert:
       state: Open
       url: http://example.org/
       navigation_state: Started
+      status: null
+      media_type: null
+      failure_reason: null
 
   - view: surf.navigation.Navigations
     contains: {tab_id: 5a7c1e00-0000-4000-8000-000000000013, url: http://example.org/, state: Started}

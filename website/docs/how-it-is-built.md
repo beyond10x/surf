@@ -39,20 +39,20 @@ One command checks everything:
 
 ```console
 $ task check
-surf v1 — 9 file(s), 5 scenario(s), valid
-77 scenario(s) (5 authored), 24 refusal(s), written to .out/suite.json
-  77 scenarios: 77 passed, 0 failed, 0 error, 0 unsupported
-77 scenario(s) (5 authored), 24 refusal(s), written to .out/suite.json
-  77 scenarios: 77 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 77 scenario(s) each, of suite sha256:60bd619e38e974b0040ce0b1213d8318ee53e0aa7c647339132e559b3f5038af
+surf v1 — 9 file(s), 7 scenario(s), valid
+81 scenario(s) (7 authored), 27 refusal(s), written to .out/suite.json
+  81 scenarios: 81 passed, 0 failed, 0 error, 0 unsupported
+81 scenario(s) (7 authored), 27 refusal(s), written to .out/suite.json
+  81 scenarios: 81 passed, 0 failed, 0 error, 0 unsupported
+the interpreter and the Rust system ran 81 scenario(s) each, of suite sha256:52cfd52d0708126b94c22777a19f089867264b0f44b14813330565e8079ea9b7
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
-Cargo.lock: 18 package(s), none from outside this repository
+Cargo.lock: 20 package(s), none from outside this repository
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.00s
-81 test suites: 280 passed, 0 failed, 0 ignored
+88 test suites: 324 passed, 0 failed, 0 ignored
 ```
 
-It validates the specification, runs the 77 scenarios against the interpreter built into `ess`
+It validates the specification, runs the 81 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
 that the lock file holds no outside package, then builds and tests.
 

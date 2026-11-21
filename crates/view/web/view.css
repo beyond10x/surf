@@ -1,0 +1,551 @@
+/* The live view's layout. One column below 720px (header, sessions, the selected session,
+   timeline); two columns from 720px; the right column, empty until the detail panel, from
+   1200px. Every text colour is at least 4.5:1 against each background it is drawn on, in both
+   schemes. */
+
+:root {
+  color-scheme: light dark;
+  --bg: #f6f6f4;
+  --panel: #ffffff;
+  --text: #1d1f21;
+  --muted: #565b60;
+  --line: #d6d8da;
+  --accent: #1f5fbf;
+  --accent-soft: #e6edf8;
+  --ok: #1a6e38;
+  --bad: #a8231b;
+  --warn: #7a4f00;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Liberation Sans", sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
+  --gap: 1rem;
+  --radius: 6px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15171a;
+    --panel: #1c1f23;
+    --text: #e6e7e8;
+    --muted: #a3a9b0;
+    --line: #353a40;
+    --accent: #7fb0ff;
+    --accent-soft: #22304a;
+    --ok: #74d394;
+    --bad: #ff9a90;
+    --warn: #e8bc62;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.45;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto;
+  align-content: start;
+  grid-template-areas:
+    "bar"
+    "sessions"
+    "centre"
+    "timeline";
+}
+
+body > * {
+  min-width: 0;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 600;
+}
+
+h2,
+h3 {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* The header. */
+
+.bar {
+  grid-area: bar;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem var(--gap);
+  padding: 0.65rem var(--gap);
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.bar h1 {
+  font-size: 1.05rem;
+}
+
+.product {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.live {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.live::before {
+  content: "";
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-right: 0.4rem;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.live.is-live {
+  color: var(--text);
+}
+
+.live.is-live::before {
+  background: var(--ok);
+}
+
+.live.is-reconnecting::before {
+  background: var(--warn);
+}
+
+.live.is-offline::before {
+  background: var(--bad);
+}
+
+.live time {
+  font-family: var(--mono);
+  margin-left: 0.3rem;
+}
+
+/* The session list. */
+
+.sessions {
+  grid-area: sessions;
+  padding: 0.75rem var(--gap) 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.sessions h2 {
+  margin-bottom: 0.4rem;
+}
+
+.session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.session-list li + li {
+  margin-top: 0.25rem;
+}
+
+.session {
+  display: grid;
+  grid-template-columns: 3.6rem minmax(0, 1fr) auto;
+  grid-template-areas:
+    "state address since"
+    ".     title   title";
+  align-items: baseline;
+  gap: 0.1rem 0.5rem;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.session:hover {
+  border-color: var(--line);
+}
+
+.session:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.session[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.session .state {
+  grid-area: state;
+  justify-self: start;
+  font-size: 0.72rem;
+  line-height: 1.3;
+  padding: 0.05rem 0.4rem;
+  border-radius: 4px;
+  border: 1px solid currentColor;
+}
+
+.state-open {
+  color: var(--ok);
+}
+
+.state-closed {
+  color: var(--muted);
+}
+
+.state-died {
+  color: var(--bad);
+}
+
+.session .address,
+.session .title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* One line in the compact list: a <wbr> would still break it under nowrap. */
+@media (max-width: 719.98px) {
+  .session .address wbr {
+    display: none;
+  }
+}
+
+.session .address {
+  grid-area: address;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+}
+
+.session .title {
+  grid-area: title;
+}
+
+.session .since {
+  grid-area: since;
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.ended .session .address,
+.ended .session .title,
+.absent {
+  color: var(--muted);
+}
+
+.empty {
+  color: var(--muted);
+  padding: 0.4rem 0;
+}
+
+/* The selected session. */
+
+.centre {
+  grid-area: centre;
+  padding: var(--gap);
+}
+
+.centre > h2 {
+  font-size: 1.2rem;
+  line-height: 1.3;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text);
+  overflow-wrap: break-word;
+}
+
+.facts {
+  margin: 0.25rem 0 var(--gap);
+  color: var(--muted);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.message {
+  margin: 0 0 var(--gap);
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--bad);
+  border-radius: var(--radius);
+  color: var(--bad);
+}
+
+.message[hidden] {
+  display: none;
+}
+
+.page {
+  max-width: 52rem;
+  padding: 0.75rem var(--gap) 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.page h3 {
+  margin-bottom: 0.5rem;
+}
+
+.line {
+  margin: 0;
+}
+
+.line.loaded {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.3rem var(--gap);
+}
+
+.line .part {
+  display: contents;
+}
+
+.line dt {
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.7;
+}
+
+.line dd {
+  margin: 0;
+  overflow-wrap: break-word;
+}
+
+.line .status dd {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.line .address dd,
+.line.failed .address {
+  font-family: var(--mono);
+  font-size: 0.88rem;
+}
+
+.line .absent dd,
+.line.none {
+  color: var(--muted);
+}
+
+.line.failed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.6rem;
+}
+
+.line.failed .address {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.line.failed .word,
+.line.failed .reason {
+  color: var(--bad);
+  font-weight: 600;
+}
+
+/* The right column: empty until the detail panel; shown only where it has room. */
+
+.detail {
+  grid-area: detail;
+  display: none;
+}
+
+/* The timeline: its cards scroll inside their own box. */
+
+.timeline {
+  grid-area: timeline;
+  min-width: 0;
+  padding: 0.75rem var(--gap) var(--gap);
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.timeline h2 {
+  margin-bottom: 0.5rem;
+}
+
+.track {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+}
+
+.actions {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0 0 0.5rem;
+  list-style: none;
+}
+
+.actions .empty {
+  padding: 0;
+}
+
+.segment {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  width: 14rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--line);
+  border-top-width: 3px;
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.segment.newest {
+  border-color: var(--accent);
+}
+
+.segment .label {
+  margin: 0 0 0.4rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.1rem 0.4rem;
+  align-items: baseline;
+}
+
+.segment .sequence {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-family: var(--mono);
+}
+
+.segment .command {
+  font-weight: 600;
+}
+
+.segment .argument {
+  flex-basis: 100%;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  overflow-wrap: break-word;
+}
+
+.marks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  flex: 1;
+}
+
+.mark {
+  font-size: 0.8rem;
+  padding: 0.05rem 0 0.05rem 0.6rem;
+  border-left: 2px solid var(--accent);
+}
+
+.mark + .mark {
+  margin-top: 0.15rem;
+}
+
+.mark.unmapped {
+  border-left-style: dashed;
+  color: var(--muted);
+}
+
+.outcome {
+  margin: 0.4rem 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.outcome.running {
+  color: var(--warn);
+}
+
+/* Two columns: the session list beside the selected session. */
+
+@media (min-width: 720px) {
+  body {
+    grid-template-columns: minmax(15rem, 19rem) minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    grid-template-areas:
+      "bar bar"
+      "sessions centre"
+      "timeline timeline";
+  }
+
+  .sessions {
+    padding: 0.85rem 0.6rem;
+    border-bottom: 0;
+    border-right: 1px solid var(--line);
+  }
+
+  .sessions h2 {
+    padding: 0 0.6rem;
+  }
+
+  .session-list {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .session {
+    grid-template-columns: 3.6rem minmax(0, 1fr);
+    grid-template-areas:
+      "state address"
+      ".     title"
+      ".     since";
+  }
+
+  .session .address,
+  .session .title {
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
+
+  .centre {
+    padding: 0.85rem 1.25rem 1.25rem;
+  }
+}
+
+/* Three columns: the right column joins. */
+
+@media (min-width: 1200px) {
+  body {
+    grid-template-columns: 20rem minmax(0, 1fr) 18rem;
+    grid-template-areas:
+      "bar bar bar"
+      "sessions centre detail"
+      "timeline timeline timeline";
+  }
+
+  .detail {
+    display: block;
+    border-left: 1px solid var(--line);
+  }
+}

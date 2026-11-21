@@ -42,9 +42,11 @@ use surf::{
 use surf_ports::{AgentPorts, Caller};
 use surf_system::BindingInvocation;
 use surf_types::agent::{
-    CloseSession, CloseSessionOutcome, Go, GoOutcome, NoteNavigationEnded,
-    NoteNavigationEndedOutcome, NoteNavigationStarted, NoteNavigationStartedOutcome, OpenSession,
-    OpenSessionOutcome, SessionData, SessionId, SessionSnapshot, SessionState,
+    ActionCommand, CloseSession, CloseSessionOutcome, Go, GoOutcome, NoteNavigationCommitted,
+    NoteNavigationCommittedOutcome, NoteNavigationEnded, NoteNavigationEndedOutcome,
+    NoteNavigationFailed, NoteNavigationFailedOutcome, NoteNavigationStarted,
+    NoteNavigationStartedOutcome, OpenSession, OpenSessionOutcome, RecordAction,
+    RecordActionOutcome, SessionData, SessionId, SessionSnapshot, SessionState,
 };
 use surf_types::behaviour::SessionStorage;
 use surf_types::document::{ParseDocument, ParseDocumentOutcome};
@@ -203,7 +205,8 @@ fn receiver(command: &str) -> Option<Component> {
 /// The component whose outbox `event` came from.
 fn publisher(event: &SystemEvent) -> Component {
     match event {
-        SystemEvent::NavigationRequested(_)
+        SystemEvent::ActionRecorded(_)
+        | SystemEvent::NavigationRequested(_)
         | SystemEvent::SessionClosed(_)
         | SystemEvent::SessionNavigationChanged(_)
         | SystemEvent::SessionOpened(_) => Component::Agent,
@@ -378,9 +381,33 @@ fn session_state(state: SessionState) -> &'static str {
     }
 }
 
+fn action_command(command: ActionCommand) -> &'static str {
+    match command {
+        ActionCommand::Open => "open",
+        ActionCommand::Go => "go",
+        ActionCommand::Close => "close",
+    }
+}
+
+fn action_command_named(name: &str) -> Option<ActionCommand> {
+    [ActionCommand::Open, ActionCommand::Go, ActionCommand::Close]
+        .into_iter()
+        .find(|command| action_command(*command) == name)
+}
+
 /// An optional value: `null` where it is absent.
 fn optional<T>(value: Option<T>, present: impl FnOnce(T) -> Node) -> Node {
     value.map_or(Node::Null, present)
+}
+
+/// `fields` without the ones whose value is `null`: an optional input the suite sends as `null`
+/// is read as absent, the same as one it leaves out.
+fn present(fields: &BTreeMap<String, Node>) -> BTreeMap<String, Node> {
+    fields
+        .iter()
+        .filter(|(_, node)| !matches!(node, Node::Null))
+        .map(|(field, node)| (field.clone(), node.clone()))
+        .collect()
 }
 
 /// A `surf.agent.Session` from an entity setup: its identity, every declared field and its
@@ -411,13 +438,16 @@ fn session_snapshot(
         None | Some(Node::Null) => Ok(None),
         Some(node) => text(name, node).map(Some),
     };
-    const DECLARED: [&str; 6] = [
+    const DECLARED: [&str; 9] = [
         "window_id",
         "tab_id",
         "holder",
         "navigation_id",
         "url",
         "navigation_state",
+        "status",
+        "media_type",
+        "failure_reason",
     ];
     if let Some(undeclared) = fields
         .keys()
@@ -430,6 +460,28 @@ fn session_snapshot(
         Some(name) => Some(
             navigation_state_named(&name)
                 .ok_or_else(|| wrong(format!("`navigation_state` is no state: {name}")))?,
+        ),
+    };
+    let status = match fields.get("status") {
+        None | Some(Node::Null) => None,
+        Some(node @ Node::Number(number)) => Some(Status(number.as_i64().ok_or_else(|| {
+            wrong(format!(
+                "`status` is not an integer: {}",
+                ess_conformance::report::quote(node)
+            ))
+        })?)),
+        Some(other) => {
+            return Err(wrong(format!(
+                "`status` is not an integer: {}",
+                ess_conformance::report::quote(other)
+            )));
+        }
+    };
+    let failure_reason = match optional("failure_reason")? {
+        None => None,
+        Some(name) => Some(
+            failure_reason_named(&name)
+                .ok_or_else(|| wrong(format!("`failure_reason` is no reason: {name}")))?,
         ),
     };
     let state = match state.to_string().as_str() {
@@ -447,6 +499,9 @@ fn session_snapshot(
             navigation_id: optional("navigation_id")?.map(|id| RequestId(Uuid(id))),
             url: optional("url")?.map(Url),
             navigation_state,
+            status,
+            media_type: optional("media_type")?.map(MediaType),
+            failure_reason,
         },
     })
 }
@@ -521,6 +576,13 @@ fn failure_reason_named(name: &str) -> Option<FailureReason> {
 fn payload(event: &SystemEvent) -> Vec<(&'static str, Node)> {
     use values::{bytes, integer, text, uuid};
     match event {
+        SystemEvent::ActionRecorded(e) => vec![
+            ("action_id", uuid(&e.action_id.0)),
+            ("session_id", uuid(&e.session_id.0)),
+            ("sequence", integer(e.sequence)),
+            ("command", text(action_command(e.command))),
+            ("url", optional(e.url.as_ref(), |url| text(&url.0))),
+        ],
         SystemEvent::NavigationRequested(e) => vec![
             ("session_id", uuid(&e.session_id.0)),
             ("tab_id", uuid(&e.tab_id.0)),
@@ -563,6 +625,7 @@ fn payload(event: &SystemEvent) -> Vec<(&'static str, Node)> {
             ("navigation_id", uuid_of(&e.navigation_id)),
             ("tab_id", uuid(&e.tab_id.0)),
             ("url", text(&e.url.0)),
+            ("reason", text(failure_reason(e.reason))),
         ],
         SystemEvent::NavigationStarted(e) => vec![
             ("navigation_id", uuid_of(&e.navigation_id)),
@@ -644,7 +707,10 @@ fn invocation(
         BindingInvocation::FailOnFetchFailed(input) => (
             "fail-on-fetch-failed",
             "surf.navigation.FailNavigation",
-            vec![("navigation_id", uuid_of(&input.navigation_id))],
+            vec![
+                ("navigation_id", uuid_of(&input.navigation_id)),
+                ("reason", text(failure_reason(input.reason))),
+            ],
         ),
         BindingInvocation::FetchOnNavigationStarted(input) => (
             "fetch-on-navigation-started",
@@ -681,31 +747,32 @@ fn invocation(
                 ("url", text(&input.url.0)),
             ],
         ),
-        BindingInvocation::NoteOnNavigationCommitted(input) => {
-            noted("note-on-navigation-committed", input)
-        }
-        BindingInvocation::NoteOnNavigationFailed(input) => {
-            noted("note-on-navigation-failed", input)
-        }
-        BindingInvocation::NoteOnNavigationCancelled(input) => {
-            noted("note-on-navigation-cancelled", input)
-        }
+        BindingInvocation::NoteOnNavigationCommitted(input) => (
+            "note-on-navigation-committed",
+            "surf.agent.NoteNavigationCommitted",
+            vec![
+                ("navigation_id", uuid_of(&input.navigation_id)),
+                ("status", integer(input.status.0)),
+                ("media_type", text(&input.media_type.0)),
+            ],
+        ),
+        BindingInvocation::NoteOnNavigationFailed(input) => (
+            "note-on-navigation-failed",
+            "surf.agent.NoteNavigationFailed",
+            vec![
+                ("navigation_id", uuid_of(&input.navigation_id)),
+                ("reason", text(failure_reason(input.reason))),
+            ],
+        ),
+        BindingInvocation::NoteOnNavigationCancelled(input) => (
+            "note-on-navigation-cancelled",
+            "surf.agent.NoteNavigationEnded",
+            vec![
+                ("navigation_id", uuid_of(&input.navigation_id)),
+                ("state", text(navigation_state(input.state))),
+            ],
+        ),
     }
-}
-
-/// An invocation of `surf.agent.NoteNavigationEnded` by `binding`.
-fn noted(
-    binding: &'static str,
-    input: &NoteNavigationEnded,
-) -> (&'static str, &'static str, Vec<(&'static str, Node)>) {
-    (
-        binding,
-        "surf.agent.NoteNavigationEnded",
-        vec![
-            ("navigation_id", uuid_of(&input.navigation_id)),
-            ("state", values::text(navigation_state(input.state))),
-        ],
-    )
 }
 
 impl<A, D, N, Ne, R, S> SurfTarget<A, D, N, Ne, R, S>
@@ -845,6 +912,80 @@ where
                         "noted",
                         SystemEvent::SessionNavigationChanged(session_navigation_changed),
                     ),
+                }
+            }
+            "surf.agent.NoteNavigationCommitted" => {
+                let navigation_id = RequestId(input.uuid("navigation_id")?);
+                let status = Status(input.integer("status")?);
+                let media_type = MediaType(input.text("media_type")?);
+                input.finish()?;
+                match browser
+                    .agent_mut()
+                    .note_navigation_committed(NoteNavigationCommitted {
+                        navigation_id,
+                        status,
+                        media_type,
+                    })
+                    .map_err(unmet)?
+                {
+                    NoteNavigationCommittedOutcome::Noted {
+                        session_navigation_changed,
+                    } => took(
+                        "noted",
+                        SystemEvent::SessionNavigationChanged(session_navigation_changed),
+                    ),
+                }
+            }
+            "surf.agent.NoteNavigationFailed" => {
+                let navigation_id = RequestId(input.uuid("navigation_id")?);
+                let reason = input.variant("reason", failure_reason_named)?;
+                input.finish()?;
+                match browser
+                    .agent_mut()
+                    .note_navigation_failed(NoteNavigationFailed {
+                        navigation_id,
+                        reason,
+                    })
+                    .map_err(unmet)?
+                {
+                    NoteNavigationFailedOutcome::Noted {
+                        session_navigation_changed,
+                    } => took(
+                        "noted",
+                        SystemEvent::SessionNavigationChanged(session_navigation_changed),
+                    ),
+                }
+            }
+            "surf.agent.RecordAction" => {
+                let present = present(fields);
+                let mut input = Input::new(command, &present);
+                let session_id = SessionId(input.uuid("session_id")?);
+                let sequence = input.integer("sequence")?;
+                let command = input.variant("command", action_command_named)?;
+                let url = if present.contains_key("url") {
+                    Some(Url(input.text("url")?))
+                } else {
+                    None
+                };
+                input.finish()?;
+                match browser
+                    .agent_mut()
+                    .record_action(RecordAction {
+                        session_id,
+                        sequence,
+                        command,
+                        url,
+                    })
+                    .map_err(unmet)?
+                {
+                    RecordActionOutcome::Recorded { action_recorded } => {
+                        took("recorded", SystemEvent::ActionRecorded(action_recorded))
+                    }
+                    RecordActionOutcome::NoSuchSession { error } => refused(
+                        "no-such-session",
+                        "surf.agent.SessionNotFound",
+                        vec![("session_id", uuid(&error.session_id.0))],
+                    )?,
                 }
             }
             "surf.agent.NoteNavigationEnded" => {
@@ -997,10 +1138,14 @@ where
             }
             "surf.navigation.FailNavigation" => {
                 let navigation_id = RequestId(input.uuid("navigation_id")?);
+                let reason = input.variant("reason", failure_reason_named)?;
                 input.finish()?;
                 match browser
                     .navigator_mut()
-                    .fail_navigation(FailNavigation { navigation_id })
+                    .fail_navigation(FailNavigation {
+                        navigation_id,
+                        reason,
+                    })
                     .map_err(unmet)?
                 {
                     FailNavigationOutcome::Failed { navigation_failed } => {
@@ -1167,6 +1312,35 @@ where
                             "navigation_state",
                             optional(row.navigation_state, |state| text(navigation_state(state))),
                         ),
+                        ("status", optional(row.status, |status| integer(status.0))),
+                        (
+                            "media_type",
+                            optional(row.media_type.as_ref(), |media_type| text(&media_type.0)),
+                        ),
+                        (
+                            "failure_reason",
+                            optional(row.failure_reason, |reason| text(failure_reason(reason))),
+                        ),
+                    ])
+                })
+                .collect();
+            return Ok(rows);
+        }
+        if view == "surf.agent.SessionLog" {
+            let session_id = SessionId(params.uuid("session_id")?);
+            params.finish()?;
+            let rows = system
+                .agent
+                .session_log(session_id)
+                .map_err(unmet)?
+                .into_iter()
+                .map(|row| {
+                    fields(vec![
+                        ("action_id", uuid(&row.action_id.0)),
+                        ("session_id", uuid(&row.session_id.0)),
+                        ("sequence", integer(row.sequence)),
+                        ("command", text(action_command(row.command))),
+                        ("url", optional(row.url.as_ref(), |url| text(&url.0))),
                     ])
                 })
                 .collect();
@@ -1193,6 +1367,15 @@ where
                         (
                             "navigation_state",
                             optional(row.navigation_state, |state| text(navigation_state(state))),
+                        ),
+                        ("status", optional(row.status, |status| integer(status.0))),
+                        (
+                            "media_type",
+                            optional(row.media_type.as_ref(), |media_type| text(&media_type.0)),
+                        ),
+                        (
+                            "failure_reason",
+                            optional(row.failure_reason, |reason| text(failure_reason(reason))),
                         ),
                     ]
                 })

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T02:59:46Z",
+  "actor": "human:timo",
+  "artifact": "story:agent-page-path-spec",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "slot task check on wave/a3-surfd at a295152, run by the coordinator",
+    "reference": "exit 0; 7 scenario files; 81 scenarios (7 authored) passed on both runners; 27 refusals; 30 artifacts; the planted defect fails 31 of 81 (the unit's run); the numbers equal the draft measured before the unit; verdict VERIFIED"
+  }
+}

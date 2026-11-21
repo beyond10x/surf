@@ -1,0 +1,86 @@
+# A navigation in a session's tab commits, and the next one fails: the session shows the failure
+# with its reason, and nothing of the committed page is left. Synthesis cannot arrange it, for the
+# reasons `agent-session-reads-committed-navigation.yaml` gives, and refuses
+# `NoteNavigationFailed/noted` ("no three rows the filter selects that the arranging commands can
+# produce"). Covers the `reason` that `fail-on-fetch-failed` and `note-on-navigation-failed`
+# carry, and `NoteNavigationStarted` clearing what the committed navigation set.
+type: ess-scenario/6
+domain: surf.agent
+scenario: agent-session-shows-failure-reason
+summary: A failed navigation shows its reason on the session, and the committed page before it is gone.
+
+arrange:
+  - instance: session
+    entity: surf.agent.Session
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-000000000021
+      fields:
+        window_id: 5a7c1e00-0000-4000-8000-000000000022
+        tab_id: 5a7c1e00-0000-4000-8000-000000000023
+        holder: 5a7c1e00-0000-4000-8000-000000000021
+      state: Open
+  - instance: first-load
+    entity: surf.navigation.Navigation
+  - instance: second-load
+    entity: surf.navigation.Navigation
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 5a7c1e00-0000-4000-8000-000000000023
+      url: http://example.org/
+    outcome: started
+    events:
+      - event: surf.navigation.NavigationStarted
+        payload:
+          tab_id: 5a7c1e00-0000-4000-8000-000000000023
+          url: http://example.org/
+    capture: {instance: first-load, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  # The body is `<html></html>`.
+  - at: 2026-01-06T09:00:01Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: first-load}
+      status: 200
+      media_type: text/html
+      body: PGh0bWw+PC9odG1sPg==
+    outcome: responded
+
+  - at: 2026-01-06T09:00:02Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 5a7c1e00-0000-4000-8000-000000000023
+      url: http://127.0.0.1:9/
+    outcome: started
+    events:
+      - event: surf.navigation.NavigationStarted
+        payload:
+          tab_id: 5a7c1e00-0000-4000-8000-000000000023
+          url: http://127.0.0.1:9/
+    capture: {instance: second-load, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:03Z
+    command: surf.net.FailRequest
+    input:
+      request_id: {$instance: second-load}
+      reason: Unreachable
+    outcome: failed
+
+assert:
+  - view: surf.agent.SessionState
+    params: {session_id: {$instance: session}}
+    contains:
+      session_id: {$instance: session}
+      state: Open
+      url: http://127.0.0.1:9/
+      navigation_state: Failed
+      status: null
+      media_type: null
+      failure_reason: Unreachable
+
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: second-load}, state: Failed}

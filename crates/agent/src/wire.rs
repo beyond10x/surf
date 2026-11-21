@@ -70,7 +70,9 @@
 //! [`START_TIMEOUT`]; a `surfd` that writes nothing in time is killed and `open` exits 3.
 
 use std::fmt;
+use std::fs;
 use std::io::{self, BufRead, Read};
+use std::os::unix::fs::MetadataExt;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -562,6 +564,16 @@ pub fn read_answer(stream: &mut UnixStream, timeout: Duration) -> Result<Answer,
 }
 
 // --- Identities and paths -----------------------------------------------------------------------
+
+/// The caller's user id: the owner of `/proc/self`, which Linux gives the process's effective
+/// user id. The standard library has no call for it, and this crate uses no `unsafe` code.
+///
+/// Linux only: on a system without `/proc` it returns the error of reading `/proc/self`. One
+/// definition for the client (the owner check of a token file) and `surfd` (the owner check of
+/// its directory).
+pub fn caller_uid() -> std::io::Result<u32> {
+    fs::metadata("/proc/self").map(|metadata| metadata.uid())
+}
 
 /// The session identity in `text` if it is a UUID in text form (8, 4, 4, 4 and 12 hexadecimal
 /// digits joined by `-`, of either case), written in lower case, the only form the answer

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T02:59:46Z",
+  "actor": "human:timo",
+  "artifact": "story:agent-surfd-supervisor",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "slot task check on wave/a3-surfd at a295152",
+    "reference": "exit 0: 81 scenarios passed on both runners, 88 test suites, 324 passed, 0 failed"
+  }
+}

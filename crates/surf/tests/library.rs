@@ -235,6 +235,9 @@ fn an_agent_session_goes_through_the_browser_and_reads_its_navigation_back() {
             state: SessionState::Open,
             url: Some(Url("http://127.0.0.1/".to_owned())),
             navigation_state: Some(NavigationState::Failed),
+            status: None,
+            media_type: None,
+            failure_reason: Some(FailureReason::Unreachable),
         }]
     );
     let navigations = browser.system().navigator.navigations().expect("view");

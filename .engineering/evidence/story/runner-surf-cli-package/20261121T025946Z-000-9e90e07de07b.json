@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T02:59:46Z",
+  "actor": "human:timo",
+  "artifact": "story:runner-surf-cli-package",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p surf-cli and cargo metadata, run by the coordinator in the unit tree at 434b77f",
+    "reference": "6 suites, 19 passed, 0 failed; the binary surf is listed under surf-cli and none under surf; none of the five files left in crates/surf/tests; verdict VERIFIED"
+  }
+}

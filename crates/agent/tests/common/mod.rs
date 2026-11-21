@@ -4,9 +4,13 @@
 
 #![allow(dead_code)]
 
+mod base;
+
+pub use base::test_base;
+
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, ErrorKind, Write};
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::OnceLock;
@@ -109,26 +113,6 @@ impl Drop for TestDir {
         }
         let _ = fs::remove_dir_all(&self.path);
     }
-}
-
-/// Where the test directories go: the test process's own `XDG_RUNTIME_DIR` when it is set,
-/// absolute, and an existing directory owned by the caller (a short per-user directory, so
-/// that the socket paths do not depend on where the tree is checked out); otherwise cargo's
-/// temporary directory of the target. Never `/tmp`. The tests give `surf-agent` an
-/// `XDG_RUNTIME_DIR` inside their own directory, so nothing touches the real
-/// `$XDG_RUNTIME_DIR/surf`.
-pub fn test_base() -> &'static Path {
-    static BASE: OnceLock<PathBuf> = OnceLock::new();
-    BASE.get_or_init(|| {
-        let caller = fs::metadata("/proc/self").map(|m| m.uid()).ok();
-        std::env::var_os("XDG_RUNTIME_DIR")
-            .map(PathBuf::from)
-            .filter(|dir| dir.is_absolute())
-            .filter(|dir| {
-                fs::symlink_metadata(dir).is_ok_and(|m| m.is_dir() && Some(m.uid()) == caller)
-            })
-            .unwrap_or_else(|| PathBuf::from(env!("CARGO_TARGET_TMPDIR")))
-    })
 }
 
 /// Send SIGKILL to `pid` and wait until it is gone, at most 2 seconds, if it is still a stand-in

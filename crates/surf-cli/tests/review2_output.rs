@@ -1,5 +1,5 @@
 //! Review 2: the `surf` binary's exit status when standard output is closed rather than full, and
-//! when its reader has gone. README.md: exit 3 "when writing to standard output reports an error,
+//! when its reader has gone. docs/surf-command.md: exit 3 "when writing to standard output reports an error,
 //! whatever the navigation's state", and a closed standard output behaves like one redirected to
 //! `/dev/null`, because the Rust runtime opens `/dev/null` on a closed descriptor 1 before `main`
 //! runs. The descriptor is closed by `/bin/sh` (`>&-`) before `surf` starts.
@@ -98,7 +98,7 @@ fn surf_with_standard_output_closed(address: &str) -> (Option<i32>, Vec<u8>, Str
     )
 }
 
-/// A committed load with standard output closed behaves as with `>/dev/null`, as README.md says:
+/// A committed load with standard output closed behaves as with `>/dev/null`, as docs/surf-command.md says:
 /// exit 0, the rows lost, nothing on standard error.
 #[test]
 fn review2_a_committed_load_with_standard_output_closed_exits_0_and_its_rows_are_lost() {
@@ -118,7 +118,7 @@ fn review2_a_committed_load_with_standard_output_closed_exits_0_and_its_rows_are
     assert_eq!(stderr, "", "standard output closed, committed load");
 }
 
-/// A failed load with standard output closed behaves as with `>/dev/null`, as README.md says:
+/// A failed load with standard output closed behaves as with `>/dev/null`, as docs/surf-command.md says:
 /// exit 1, the rows lost, the reason on standard error.
 #[test]
 fn review2_a_failed_load_with_standard_output_closed_exits_1_and_its_rows_are_lost() {
