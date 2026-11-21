@@ -1,15 +1,18 @@
 # Releasing surf
 
-A release is a bare version tag (`0.1.0`), annotated and written by the organization bot, on a
+A release is a bare version tag (`0.2.0`), annotated and written by the organization bot, on a
 `main` commit whose `task check` is green. The tag is the version of the package that ships the
 `surf` binary, `surf-cli` (`crates/surf-cli/Cargo.toml`); the release workflow fails on a tag
-that differs.
+that differs. The three packages of the agent binaries, `surf-agent` (`crates/agent`), `surfd`
+(`crates/surfd`) and `surf-session` (`crates/session`), carry the same version.
 
 ## What a release holds
 
-[`.github/workflows/release.yml`](../.github/workflows/release.yml) builds the binary with
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) builds the binaries with
 `--locked`, warnings denied, runner paths remapped and symbols stripped, runs the command-line
-tests against it, and packs it with `README.md`, `LICENSE` and `NOTICE`.
+tests of `surf` against them, packs them with `README.md`, `LICENSE` and `NOTICE`, and
+smoke-tests the unpacked archive with
+[`taskfiles/release-smoke.sh`](../taskfiles/release-smoke.sh).
 
 | target | runner | archive |
 |---|---|---|
@@ -18,11 +21,29 @@ tests against it, and packs it with `README.md`, `LICENSE` and `NOTICE`.
 | `x86_64-apple-darwin` | `macos-15-intel` | `surf-<version>-x86_64-apple-darwin.tar.gz` |
 | `aarch64-apple-darwin` | `macos-15` | `surf-<version>-aarch64-apple-darwin.tar.gz` |
 
-Each archive holds one directory, `surf-<version>-<target>/`, with `surf`, `README.md`,
-`LICENSE` and `NOTICE`.
+Each archive holds one directory, `surf-<version>-<target>/`:
+
+- a Linux archive: `surf`, `surf-agent`, `surfd`, `surf-session`, `README.md`, `LICENSE` and
+  `NOTICE`;
+- a macOS archive: `surf`, `README.md`, `LICENSE` and `NOTICE`. The agent binaries run on Linux
+  only: they read the caller's user id from `/proc/self` and need `XDG_RUNTIME_DIR`, and macOS
+  has neither.
+
+The four binaries of a Linux archive stay in one directory, also when installed: `surf-agent`
+starts `surfd` from the directory it runs from, and `surfd` starts `surf-session` from its own.
 `SHA256SUMS` lists the four archives. The Linux binaries are statically linked (musl): they run
 on any distribution, and they load no name service module from the host. The macOS binaries are
 neither signed nor notarised.
+
+The smoke test runs on the unpacked directory of every archive: it checks the list of files
+above, that `surf` exits 2 without an argument and 1 on `http://127.0.0.1:1/`, and on Linux, in a
+private `XDG_RUNTIME_DIR`, runs the end-to-end case of the session process
+(`crates/session/tests/e2e.rs`) on the directory's own `surf-agent`, `surfd` and
+`surf-session`: `open`, `go`, `look` and `close` against a page server inside the test, each
+answer compared with its golden text. It then fails if a process from the directory still runs.
+It runs unchanged on a Linux workstation, from a checkout, on an unpacked archive:
+
+    sh taskfiles/release-smoke.sh <dir>/surf-<version>-x86_64-unknown-linux-musl
 
 The workflow publishes nothing and writes nothing to the repository: on a tag and on a manual
 run alike, the four archives and `SHA256SUMS` are the run's artifacts (`release-<target>` and
@@ -37,7 +58,9 @@ The commands use the gates as the bot, from a checkout of this repository:
 
     gates="b10x-gates --policy ../gates-policy/policy.json --repository beyond10x/surf"
 
-1. **Version.** Set `version` in `crates/surf-cli/Cargo.toml` to the new version, then
+1. **Version.** Set `version` to the new version in the four manifests of the shipped
+   binaries, `crates/surf-cli/Cargo.toml`, `crates/agent/Cargo.toml`,
+   `crates/surfd/Cargo.toml` and `crates/session/Cargo.toml`, then
    `cargo generate-lockfile --offline`. Release `0.1.0` shipped the binary from the package
    `surf`; `surf-cli` starts at that version, so the next release is above it.
 2. **Changelog.** In `CHANGELOG.md`, rename `## [Unreleased]` to `## [<version>] - <date>` and
@@ -61,20 +84,35 @@ The commands use the gates as the bot, from a checkout of this repository:
        $gates gh -- run watch <run-id> --exit-status
 
 6. **Download and verify.** Download the tag run's artifacts by run id into an empty directory,
-   check that the four archives are there, and check them against `SHA256SUMS`:
+   check that the four archives are there, check them against `SHA256SUMS`, and list them: each
+   Linux archive lists `surf`, `surf-agent`, `surfd`, `surf-session` and the three files, each
+   macOS archive `surf` and the three files:
 
        $gates gh -- run download <run-id> --dir <dir>
        mv <dir>/release-*/* <dir>/
        ls <dir>/surf-<version>-{x86_64,aarch64}-unknown-linux-musl.tar.gz \
           <dir>/surf-<version>-{x86_64,aarch64}-apple-darwin.tar.gz <dir>/SHA256SUMS
        (cd <dir> && sha256sum --check SHA256SUMS)
+       for archive in <dir>/surf-<version>-*.tar.gz; do tar -tzf "$archive"; done
 
-7. **Scan.** Unpack the two Linux archives and scan their executables:
+7. **Scan.** Unpack the two Linux archives and scan their eight executables, four per archive:
 
        tar -C <dir> -xzf <dir>/surf-<version>-x86_64-unknown-linux-musl.tar.gz
        tar -C <dir> -xzf <dir>/surf-<version>-aarch64-unknown-linux-musl.tar.gz
        $gates scan-artifact <dir>/surf-<version>-x86_64-unknown-linux-musl/surf
+       $gates scan-artifact <dir>/surf-<version>-x86_64-unknown-linux-musl/surf-agent
+       $gates scan-artifact <dir>/surf-<version>-x86_64-unknown-linux-musl/surfd
+       $gates scan-artifact <dir>/surf-<version>-x86_64-unknown-linux-musl/surf-session
        $gates scan-artifact <dir>/surf-<version>-aarch64-unknown-linux-musl/surf
+       $gates scan-artifact <dir>/surf-<version>-aarch64-unknown-linux-musl/surf-agent
+       $gates scan-artifact <dir>/surf-<version>-aarch64-unknown-linux-musl/surfd
+       $gates scan-artifact <dir>/surf-<version>-aarch64-unknown-linux-musl/surf-session
+
+   Then run the smoke test on the downloaded x86_64 archive on a Linux x86_64 machine, from a
+   checkout of the commit the run built (see "What a release holds"). It ends with
+   `release-smoke: ok, surf, surf-agent, surfd and surf-session on Linux`:
+
+       sh taskfiles/release-smoke.sh <dir>/surf-<version>-x86_64-unknown-linux-musl
 
    `scan-artifact` reads ELF only, so the macOS binaries are covered by the workflow's own
    home-path check and not by it; whether that is accepted for surf is open, the operator's to

@@ -1,5 +1,6 @@
-# Pre-built `surf` binaries for every release (docs/releasing.md). `task check` runs on `main`
-# before the tag is written; this workflow builds, smoke-tests and packages the tagged commit.
+# Pre-built binaries of surf for every release (docs/releasing.md): `surf`, `surf-agent`, `surfd`
+# and `surf-session` for Linux, `surf` for macOS. `task check` runs on `main` before the tag is
+# written; this workflow builds, smoke-tests and packages the tagged commit.
 # It publishes nothing, on a tag or a manual run: the archives and SHA256SUMS are the run's
 # artifacts, and the organization bot creates the release from them after the artifact scan.
 # No job writes to the repository.
@@ -19,10 +20,11 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # The package that holds the shipped binary (`crates/surf-cli`); the release tag is its
-  # version. The binary is `surf`.
+  # The package of the binary `surf` (`crates/surf-cli`); the release tag is its version. The
+  # agent packages `surf-agent`, `surfd` and `surf-session` carry the same version.
   PACKAGE: surf-cli
-  BINARY: surf
+  # The archives are `surf-<version>-<target>.tar.gz`.
+  ARCHIVE: surf
   # The toolchain `task check` is measured with; a newer stable can add a lint that
   # `-D warnings` turns into a failed release.
   RUST_TOOLCHAIN: 1.99.1
@@ -99,52 +101,74 @@ jobs:
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           targets: ${{ matrix.target }}
+      - name: Set the build flags
+        run: |
+          set -euo pipefail
+          # Warnings denied as in `task check`; runner paths kept out of the executables; symbols
+          # stripped. The smoke test builds its case with the same flags, so it reuses this build.
+          echo "RUSTFLAGS=-D warnings --remap-path-prefix=$HOME=/build --remap-path-prefix=$GITHUB_WORKSPACE=/src -C strip=symbols" >> "$GITHUB_ENV"
       - name: Build, test and package
         env:
           TARGET: ${{ matrix.target }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          # Warnings denied as in `task check`; runner paths kept out of the executable; symbols
-          # stripped.
-          export RUSTFLAGS="-D warnings --remap-path-prefix=$HOME=/build --remap-path-prefix=$GITHUB_WORKSPACE=/src -C strip=symbols"
-          cargo build --locked --release --package "$PACKAGE" --bin "$BINARY" --target "$TARGET"
-          # The command-line cases run the binary built above against servers started by the test.
-          cargo test --locked --release --package "$PACKAGE" --target "$TARGET" --test cli
-          bin="target/$TARGET/release/$BINARY"
           case "$TARGET" in
             *-linux-*)
-              if readelf -lW "$bin" | grep INTERP; then
-                echo "::error::$bin is dynamically linked" >&2
-                exit 1
-              fi
+              # The agent binaries find each other in one directory: `surf-agent` starts `surfd`
+              # from its own, and `surfd` starts `surf-session` from its own.
+              binaries=(surf surf-agent surfd surf-session)
+              cargo build --locked --release -p surf-cli -p surf-agent -p surfd -p surf-session --bins --target "$TARGET"
+              ;;
+            *)
+              # macOS gets `surf` only. The agent binaries build there and cannot run there:
+              # `surf_agent::wire::caller_uid` reads the owner of /proc/self, which macOS does
+              # not have, and `surf-agent` and `surfd` require XDG_RUNTIME_DIR, which macOS does
+              # not set.
+              binaries=(surf)
+              cargo build --locked --release --package "$PACKAGE" --bin surf --target "$TARGET"
               ;;
           esac
-          if strings -a "$bin" | grep -E '/(home|Users)/'; then
-            echo "::error::$bin holds a home directory path" >&2
-            exit 1
-          fi
-          package="$BINARY-$VERSION-$TARGET"
+          # The command-line cases run `surf` built above against servers started by the test.
+          cargo test --locked --release --package "$PACKAGE" --target "$TARGET" --test cli
+          package="$ARCHIVE-$VERSION-$TARGET"
           mkdir -p "dist/$package"
-          cp "$bin" "dist/$package/"
-          # Every archive carries the licence and the notice beside the binary.
+          for binary in "${binaries[@]}"; do
+            bin="target/$TARGET/release/$binary"
+            case "$TARGET" in
+              *-linux-*)
+                if readelf -lW "$bin" | grep INTERP; then
+                  echo "::error::$bin is dynamically linked" >&2
+                  exit 1
+                fi
+                ;;
+            esac
+            if strings -a "$bin" | grep -E '/(home|Users)/'; then
+              echo "::error::$bin holds a home directory path" >&2
+              exit 1
+            fi
+            cp "$bin" "dist/$package/"
+          done
+          # Every archive carries the licence and the notice beside the binaries.
           notices=(README.md LICENSE NOTICE)
           cp "${notices[@]}" "dist/$package/"
           COPYFILE_DISABLE=1 tar -C dist -czf "dist/$package.tar.gz" "$package"
-          # The packed binary is executable and runs: a usage error, then an unreachable address.
+          tar -tzvf "dist/$package.tar.gz"
+      - name: Smoke-test the unpacked archive
+        env:
+          TARGET: ${{ matrix.target }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
           check="$RUNNER_TEMP/unpacked"
           mkdir -p "$check"
-          tar -C "$check" -xzf "dist/$package.tar.gz"
-          unpacked="$check/$package/$BINARY"
-          test -x "$unpacked"
-          status=0
-          "$unpacked" 2>/dev/null || status=$?
-          [ "$status" = 2 ] || { echo "::error::$BINARY without an argument exited $status, not 2" >&2; exit 1; }
-          status=0
-          out=$("$unpacked" http://127.0.0.1:1/ 2>/dev/null) || status=$?
-          [ "$status" = 1 ] || { echo "::error::$BINARY http://127.0.0.1:1/ exited $status, not 1" >&2; exit 1; }
-          grep -q '^fetch-failed .* Unreachable http://127.0.0.1:1/$' <<<"$out"
-          tar -tzvf "dist/$package.tar.gz"
+          tar -C "$check" -xzf "dist/$ARCHIVE-$VERSION-$TARGET.tar.gz"
+          # What the directory holds; `surf` on a usage error and an unreachable address; on
+          # Linux, in a private XDG_RUNTIME_DIR, `surf-agent open`, `go`, `look` and `close` on
+          # a local page through the unpacked `surfd` and `surf-session`
+          # (crates/session/tests/e2e.rs), then no process left from the directory. The same
+          # script runs on a workstation.
+          sh taskfiles/release-smoke.sh "$check/$ARCHIVE-$VERSION-$TARGET" "$TARGET"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-${{ matrix.target }}
@@ -169,10 +193,10 @@ jobs:
           set -euo pipefail
           cd dist
           for target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-apple-darwin aarch64-apple-darwin; do
-            archive="$BINARY-$VERSION-$target.tar.gz"
+            archive="$ARCHIVE-$VERSION-$target.tar.gz"
             test -f "$archive" || { echo "::error::missing $archive" >&2; exit 1; }
           done
-          sha256sum "$BINARY"-*.tar.gz > SHA256SUMS
+          sha256sum "$ARCHIVE"-*.tar.gz > SHA256SUMS
           sha256sum --check SHA256SUMS
           cat SHA256SUMS
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
