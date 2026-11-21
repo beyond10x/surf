@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:html-conformance-gate
 kind: story
-status: active
+status: implemented
 title: Hold the parser's conformance counts in the gate
 summary: task check prints the counts per section and fails when one drops or a section marked complete has a case not passing.
 relations:
@@ -17,10 +17,11 @@ scope:
   path: crates/html-conformance
 - confidence: cited
   path: taskfiles/html-conformance.yml
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-11-21T04:50:54Z", actor: "human:timo", revision: 10, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 

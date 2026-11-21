@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-session-process
 kind: story
-status: active
+status: implemented
 title: 'The session process: one browser session that surfd starts and alone connects to'
 summary: surf-session, started and supervised by surfd, issues the token from surf-secret, checks it in constant time and answers open, go, look and close over the link; the session core is a library usable without a socket.
 relations:
@@ -17,10 +17,11 @@ scope:
   path: crates/session
 - confidence: inferred
   path: docs/agent-answer.md
-revision: 15
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 7}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 8}
+- {from: "active", to: "implemented", at: "2026-11-21T04:50:54Z", actor: "human:timo", revision: 16, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 

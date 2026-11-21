@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-redirect-spec
 kind: story
-status: active
+status: implemented
 title: Specify redirects inside one request and the response address
 summary: surf.net delivers the address after the last redirect and fails with TooManyRedirects; the navigation commits at the response address; nothing here needs the node tree.
 relations:
@@ -33,10 +33,11 @@ scope:
   path: spec/ess-inputs.yaml
 - confidence: cited
   path: spec/scenarios
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-21T04:50:54Z", actor: "human:timo", revision: 8, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T04:50:53Z",
+  "actor": "human:timo",
+  "artifact": "story:agent-redirect-spec",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "slot task check on wave/a4-session at d1571b4",
+    "reference": "exit 0: 83 scenarios passed on both runners, 97 test suites, 363 passed, 0 failed; html-conformance 9107 cases, 9095 run, 5 passed"
+  }
+}
