@@ -29,7 +29,7 @@ collision; a story that collides moves to the next wave. The table below is the 
 | 6 (delivered, [page](agent-wave-6.md)) | `html-document-spec`, `html-tokenizer-text`, `view-surfd-serves` |
 | 7 (delivered, [page](agent-wave-7.md)) | `agent-fetch-redirects`, `html-character-references`, `view-first-page` |
 | 8 (delivered, [page](agent-wave-8.md)) | `agent-request-body-spec`, `html-tree-body`, `view-detail-panel` |
-| 9 | `agent-fetch-post`, `html-actionable-elements`, `html-tree-formatting` |
+| 9 (delivered, [page](agent-wave-9.md)) | `agent-fetch-post`, `html-actionable-elements`, `html-tree-formatting` |
 | 10 | `html-accessible-name`, `html-parser-limits` |
 | 11 | `html-document-port`, `html-tree-tables` |
 | 12 | `agent-links-spec`, `html-tree-template` |

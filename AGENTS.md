@@ -169,8 +169,10 @@ above, and the list of standards itself was written from memory.
   with `cargo fmt -p <package>`: `cargo fmt --all` rewrites `generated/rust/`. `cargo fmt -p
   surf` also reformats a test file that is not rustfmt-clean (`review1_generated_check.rs`),
   `cargo fmt -p surf-cli` two others (`review1_cli.rs`, `review1_output.rs`) and `cargo fmt -p
-  surf-ports` one more (`review1_ports.rs`; `cargo fmt -p <package> -- --check` lists them,
-  measured 2026-11-21); a unit that formats restores the files it does not own.
+  surf-ports` one more (`review1_ports.rs`), and `cargo fmt -p surf-fetch` five (`fetch.rs`,
+  `redirects.rs`, `review1_fetch.rs`, `review1_security_fetch.rs`, `review2_fetch_limits.rs`;
+  `cargo fmt -p <package> -- --check` lists them, measured 2026-11-21); a unit that formats
+  restores the files it does not own.
   - `crates/answer` (`surf-answer`): renders an agent answer in the grammar of
     `docs/agent-answer.md` and reads it back (`parse`, `unquote`); every value from a page, a
     server or an address goes through one quoting function. No dependency.
@@ -185,11 +187,25 @@ above, and the list of standards itself was written from memory.
     Since wave 7 it follows up to 20 redirects (301, 302, 303, 307, 308 with a `Location`, for
     `GET`) inside one fetch, returns the address it ended at (`Response.url`, at most 64 KiB) and
     `TooManyRedirects` for a redirect after the twentieth; a redirect to an address that is not
-    `http:` ends as `UnsupportedScheme`. The crate documentation's section "Memory" states what
-    a fetch holds: 16,917,505 bytes at the defaults while a body is read; no bound is stated
-    while a head is read. Tests of the redirects: `redirects` 20 and
-    `adversary_redirect_memory` 2. That second file holds the only `unsafe` of the repository,
-    a counting allocator, test only; no file under a `src/` holds any. Depends on `surf-url`.
+    `http:` ends as `UnsupportedScheme`. Since wave 9 `surf_fetch::send(&Request, &Limits)`
+    stands beside `fetch(address, limits)`, which stays the `Get` without a body: a `Request`
+    holds the address, the method (`Method`: `Get`, `Post`), an optional body and an optional
+    media type, borrowed from the caller. A `Post` sends `Content-Length` always and
+    `Content-Type` when it has a media type. After a `Post` a 301, 302 or 303 continues as `Get`
+    without the body, for the rest of the chain; a 307 or 308 repeats method, body and media
+    type. A body over `Limits::max_request_body_bytes` (16,777,216 by default), a media type
+    that is not `type/subtype` of tokens, and a `Get` with a body or a media type end
+    `Unreachable` before the host is resolved. `Debug` of `Request` prints the body's length,
+    not the body. The crate documentation's section "Memory" states what a fetch holds:
+    16,917,505 bytes at the defaults while a response body is read; the request body is
+    borrowed, not copied, and while it is written the fetch holds at most the header limit and
+    one read buffer (73,728 bytes at the defaults for the whole fetch of a 4 MiB body sent twice
+    through a 308, with short addresses and a 2-byte response); no bound is stated while a head
+    is read. 109 tests: 13 unit tests, `adversary_redirect_memory` 4, `fetch` 24, `fetch_bounds`
+    7, `post` 16, `redirects` 20, `review1_fetch` 5, `review1_security_fetch` 13 and
+    `review2_fetch_limits` 7. `adversary_redirect_memory` holds the only `unsafe` of the
+    repository, a counting allocator, test only; no file under a `src/` holds any. Depends on
+    `surf-url`.
   - `crates/ports` (`surf-ports`): in-memory storage and version 4 identities for the generated
     components, one ports type per component. `AgentPorts<R = OsRandom>` stores `Session` and
     `Action`, assigns a version 4 `ActionId` from its random source (`with_source`,
@@ -216,9 +232,11 @@ above, and the list of standards itself was written from memory.
     Since wave 8 the transport takes the started request,
     `Transport::fetch(&mut self, request: &RequestStarted)` (`surf::RequestStarted` and
     `surf::Method` are re-exported), and `surf::fetch_http` is the transport of `surf-cli` and
-    `surf-session`: it sends a `Get` without body and media type through `surf-fetch` and ends
-    every other request with `UnsupportedScheme` before any connection, until
-    `story:agent-fetch-post`. `Browser::held` also counts the request bodies of
+    `surf-session`: it sends a `Get` without body and media type through `surf-fetch`. Since
+    wave 9 it sends a `Post` with its body and media type through `surf_fetch::send`, and still
+    ends a `Get` with a body or a media type with `UnsupportedScheme` before any connection. No
+    command sends a `Post` yet: `go` and `open` navigate with `Get`, and the form stories bring
+    the first `Post`. `Browser::held` also counts the request bodies of
     `NavigationStarted`, `RequestStarted` and the `Fetch` invocation. `Browser::start` and
     `Browser::load` keep their signatures. `tests/request_method.rs` 5.
     Depends on the generated crates, `surf-ports` and `surf-fetch`.
@@ -281,10 +299,11 @@ above, and the list of standards itself was written from memory.
     its address; the crate documentation writes out the bounds with a quoted address of at
     most four times its length plus two bytes. Since wave 8 the entries of
     `NavigationStarted` and `RequestStarted` carry `method`, `body` as `<n> bytes` and
-    `body_type`, an absent one as the field with no value; its transport is `surf::fetch_http`.
-    46 tests: `adversary_events` 1,
-    `adversary_view` 1, `built` 9, `core` 10, `e2e` 1 (runs the three built binaries, or those in `SURF_BIN_DIR`), `events` 16,
-    `memory` 1, `redirect` 2 and `view` 5 (the live view of `surfd` over the real session).
+    `body_type`, an absent one as the field with no value; its transport is `surf::fetch_http`,
+    which since wave 9 sends a `Post` (no command of the session sends one yet). 46 tests:
+    `adversary_events` 1, `adversary_view` 1, `built` 9, `core` 10, `e2e` 1 (runs the three
+    built binaries, or those in `SURF_BIN_DIR`), `events` 16, `memory` 1, `redirect` 2 and
+    `view` 5 (the live view of `surfd` over the real session).
     `cargo clippy -p surf-session` needs `--no-deps`: the generated `surf-types` fails clippy.
     Depends on the `surf` library, `surf-ports`, `surf-fetch`, `surf-answer`, `surf-secret`, the
     generated `surf-types`, and on `surf-agent` and `surfd` (the packages of the other two
@@ -356,21 +375,32 @@ above, and the list of standards itself was written from memory.
     scopes, implied end tags, the list of active formatting elements and its reconstruction,
     and the quirks decision. A token whose rule a later story owns goes to in body's "any other
     start tag" or "any other end tag". A `meta` met while the confidence is tentative re-parses
-    the bytes once with the new encoding. `NOT_YET_PARSED` names `misnested-formatting`,
-    `tables-and-select`, `template` and `foreign-content`; `parse_fragment` returns only its
-    root. `Tree::parent` and `Tree::descendants` read the tree without recursion. Parse errors
-    of tree construction are not collected. The section "State" of `src/lib.rs` says it module
-    by module. The parser has no limits yet (depth, nodes, time) until
-    `story:html-parser-limits` (wave 10), and no crate of the product depends on `surf-html`
-    until `story:html-document-port` (wave 11): only the conformance harness runs the tree
-    builder. 39 tests: 17 unit tests, 13 in `tests/encoding.rs`, 1 in
-    `tests/not_yet_parsed.rs` and 8 in `tests/tree_body.rs`.
+    the bytes once with the new encoding. Since wave 9 the tree builder runs the adoption agency
+    algorithm (`src/tree_builder/formatting.rs`, with the step numbers of the snapshot the
+    design note names) for the end tags of the fourteen formatting elements and for the `a` and
+    `nobr` start tags, and Noah's Ark when a formatting element enters the list of active
+    formatting elements. `NOT_YET_PARSED` names `tables-and-select`, `template` and
+    `foreign-content`; `parse_fragment` returns only its root. `Tree::parent` and
+    `Tree::descendants` read the tree without recursion. Parse errors of tree construction are
+    not collected. The section "State" of `src/lib.rs` says it module by module. The parser has
+    no limits yet (depth, nodes, time) until `story:html-parser-limits` (wave 10), and no crate
+    of the product depends on `surf-html` until `story:html-document-port` (wave 11): only the
+    conformance harness and the tests of `surf-page` run the tree builder. 47 tests: 17 unit
+    tests, 13 in `tests/encoding.rs`, 1 in `tests/not_yet_parsed.rs`, 8 in `tests/tree_body.rs`
+    and 8 in `tests/tree_formatting.rs`.
+  - `crates/page` (`surf-page`): since wave 9, the title and the actionable elements of a
+    `surf-html` tree (`title`, `actionable_elements`), with their kind, target or value and the
+    flags `hidden`, `disabled`, `checked` and `required`. `is_hidden` is the rule of
+    `docs/design/html-parser.md` for "hidden": `aria-hidden` true in any ASCII case, the hidden
+    elements of the HTML Standard's style sheet, a closed `dialog`, the content of a closed
+    `details` but for its first `summary`. No crate of the product depends on it yet. 24 tests
+    in `tests/elements.rs`. Depends on `surf-html` only.
   - `crates/html-conformance` (`surf-html-conformance`): the vendored html5lib-tests (commit
     `c5495c5`, 19 files, 7,134 cases, MIT) and web-platform-tests parser data (commit `13f8051`,
     62 files, 1,973 cases, 3-Clause BSD) under `data/`, each source with a `SOURCE` file of
     checksums, and a harness that prints the cases that exist, run and pass per file, per tag and
     in total. `cargo run -p surf-html-conformance` prints
-    `html-conformance: 9107 cases, 9095 run, 8362 passed` after wave 8. Nobody edits a
+    `html-conformance: 9107 cases, 9095 run, 8428 passed` after wave 9. Nobody edits a
     file under `data/`; `data/.gitattributes` (`* -text`) keeps the CR bytes of the data.
     Since wave 7 `data/whatwg/entities.json` (the HTML Standard's, 2231 names, CC BY 4.0, with
     its `SOURCE` file) is vendored too, and the crate has a second binary, `entities-table`,
@@ -452,10 +482,11 @@ fetch and returns the address it ended at; a redirect adds no event.
 A request has a method (wave 8). `Navigate` and `Fetch` carry a method (`surf.net.Method`:
 `Get`, `Post`), an optional body and its media type, and `NavigationStarted` and
 `RequestStarted` carry the three on; `Requests` shows the method and the media type, and no row
-stores a body. The agent's `Go` navigates with `Get`. Until `story:agent-fetch-post` the
-transports of `surf` and `surf-session` end any other request with `UnsupportedScheme`, before
-connecting. The marker of `spec/domains/net.yaml` is `UNMAPPED: request headers, cookies,
-caching and TLS.`
+stores a body. The agent's `Go` navigates with `Get`. Since wave 9 the transports of `surf`
+and `surf-session` send a `Post` with its body and media type through `surf_fetch::send`, and
+end a `Get` with a body or a media type with `UnsupportedScheme`, before connecting. No command
+sends a `Post` yet; the form stories bring it. The marker of `spec/domains/net.yaml` is
+`UNMAPPED: request headers, cookies, caching and TLS.`
 
 The agent's session: `Go` publishes `NavigationRequested`, which invokes `Navigate`.
 `NavigationStarted` also invokes `NoteNavigationStarted`; `NavigationCommitted` invokes
@@ -487,7 +518,9 @@ fills yet. Since wave 7 `surf-fetch` follows redirects, the tokenizer reads char
 references, and the live view's page shows real sessions, tested in a browser by `view-tests/`.
 Since wave 8 a request has a method and a body in the specification, `surf-html` builds a
 document outside tables, templates and foreign content (run by the conformance harness only),
-and the live view's page has a detail panel.
+and the live view's page has a detail panel. Since wave 9 `surf-fetch` sends a `POST` (no
+command sends one yet), the tree builder handles misnested formatting, and `surf-page` reads
+the title and the actionable elements out of a tree (run by its tests only).
 
 - First target, chosen by the operator on 2026-11-20: Rust, all six components in one process (five
   until wave 2 added `agent`), a headless command line. No isolation in this target.
@@ -663,12 +696,12 @@ the others were written to a scratch directory and not compiled:
   release `0.2.0` that ships `surf`, `surf-agent`, `surfd` and `surf-session` (the agent
   binaries for Linux only at first). Work then moves to the script engine, which is its own
   repository. The waves after 4 stay in the plan; they are planned and not scheduled.
-- Present state: wave 8 is delivered (8 of 22); release `0.2.0` follows wave 4 (the releases
+- Present state: wave 9 is delivered (9 of 22); release `0.2.0` follows wave 4 (the releases
   are listed at https://github.com/beyond10x/surf/releases). The session `host-operator`
   ordered the continuation after the checkpoint on 2026-11-21, for the operator: "continue as
-  its `AGENTS.md` says". The next is wave 9 of
-  `docs/plan/agent-waves.md` (`agent-fetch-post`, `html-actionable-elements`,
-  `html-tree-formatting`). The stories accepted behind the planned waves are listed in
+  its `AGENTS.md` says". The next is wave 10 of
+  `docs/plan/agent-waves.md` (`html-accessible-name`, `html-parser-limits`). The stories
+  accepted behind the planned waves are listed in
   that file, in "Accepted on 2026-11-21, behind the planned waves". Open for the next steps:
   the HTML parser on real pages, and TLS.
 - Branches: `wave/<n>-<name>` for a wave, `impl/<story-slug>` for a unit. Every checkout is a
@@ -785,7 +818,7 @@ Run everything through the build pool: `slot task <name>`.
 
 ## The gate's numbers
 
-On 2026-11-21 with ess 0.96.0, after wave 8 of the agent interface plan, at `9e1b18c`:
+On 2026-11-21 with ess 0.96.0, after wave 9 of the agent interface plan, at `a9532a1`:
 `surf v1 — 9 file(s), 14 scenario(s), valid` and `95 scenario(s) (14 authored), 28
 refusal(s)`. Against the interpreter: `95 scenarios: 95 passed, 0 failed, 0 error, 0
 unsupported`. Against the Rust system (`conform-rust`): `95 scenarios: 95 passed, 0 failed, 0
@@ -797,20 +830,26 @@ coverage inventory (`coverage.knowledge: unknown`), and ess 0.96.0 never qualifi
 unknown coverage. The gate reads the counts. The planted defect, a `Navigation` storage that
 drops every `put`, fails 33 of the 95. The crate's tests: `6 test suites: 28 passed`.
 `generated-check`: `generated/rust matches spec/ (30 artifact(s) and .ess-output)`. `cli`:
-`cli/surf-agent.yaml — valid CLI presentation binding`. `lock-check`: `Cargo.lock: 22 package(s),
-none from outside this repository`. The root workspace: `121 test suites: 503 passed, 0 failed,
+`cli/surf-agent.yaml — valid CLI presentation binding`. `lock-check`: `Cargo.lock: 23 package(s),
+none from outside this repository`. The root workspace: `126 test suites: 553 passed, 0 failed,
 0 ignored`. In it, `surf-url` prints `urltestdata: 904 cases, 872 run, 872 passed, 32 skipped`;
 the 32 are hosts outside ASCII, listed in `crates/url/tests/data/SKIPPED`. `view-stream-check`:
 `view-stream-check: 19 event name(s), each a message of the AsyncAPI projection`. `view-test`:
-`38 passed (17.1s)`; 13.0 s of it are the case that waits to see that a refused token is not
+`38 passed (15.8s)`; 12.9 s of it are the case that waits to see that a refused token is not
 sent again. `html-conformance`, the last step of `check`: `html-conformance: 9107 cases, 9095
-run, 8362 passed` (82 encoding cases, 7,046 tokenizer cases and 1,234 tree construction
+run, 8428 passed` (82 encoding cases, 7,046 tokenizer cases and 1,300 tree construction
 cases), with `tag markup 1979/1979/1979`, `tag text 328/328/328`, `tag charref
-4739/4739/4739`, `tag body 476/476/476`, `tag formatting 8/22/22`, `tag tables 11/39/39`, `tag
-template 29/123/123`, `tag foreign 6/222/222`, `tag mixed 704/1085/1085` and `tag encoding
-82/82/82`. The cases of the tags `formatting`, `tables`, `template` and `foreign` that pass,
-pass through the generic rules; each later tree story measures its tag again. Before wave 8
-these were 12 authored scenarios, 93 scenarios, the suite
+4739/4739/4739`, `tag body 476/476/476`, `tag formatting 22/22/22`, `tag tables 11/39/39`, `tag
+template 30/123/123`, `tag foreign 6/222/222`, `tag mixed 755/1085/1085` and `tag encoding
+82/82/82`; the section `tree-construction` passes 1300 of 1809 (503 failing, 6 not run). The
+cases of the tags `tables`, `template` and `foreign` that pass, pass without rules of their own
+(through the generic rules, and `template.dat` case 84 through the adoption agency algorithm);
+each later tree story measures its tag again. Before wave 9 these were 22 packages, 121
+suites, 503 passed, `38 passed (17.1s)`, 8362 passed cases (1,234 tree construction cases),
+`tag formatting 8/22/22`, `tag template 29/123/123` and `tag mixed 704/1085/1085`; the
+scenarios, the refusals, the suite's digest, the planted defect's 33 of the 95, the
+conformance crate's tests, the 30 artifacts and the page tests' count did not change. Before
+wave 8 these were 12 authored scenarios, 93 scenarios, the suite
 `sha256:4cd1257a06a838a1bb2779b0309c347b1b6262703ff814da340988c32ecb7a3a`, 33 of the 93 failed
 by the planted defect, `6 test suites: 27 passed` in the conformance crate, 118 suites, 486
 passed, `24 passed (14.6s)`, 7121 passed cases (75 encoding cases and 7,046 tokenizer cases)
@@ -830,7 +869,7 @@ not change, and the HTML conformance gate was not part of `check`.
 away; raise it only with the new refusal listed here. The list is `grep '^refused:'
 .out/synthesize.log` (read on 2026-11-21 after wave 6: 28 lines, the same as below; the gate
 after wave 7 printed `28 refusal(s)`; in wave 8 the unit of `agent-request-body-spec` read the
-same 28 lines).
+same 28 lines; the gate after wave 9 printed `28 refusal(s)`).
 Twenty-two are `ESS-SYNTH-010`:
 
 - 10 × `<binding>/binding/delivery`: every binding is `at_most_once`, which has no second
