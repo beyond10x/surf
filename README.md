@@ -8,11 +8,11 @@
 
 ![spec: ESS 0.96.0, valid](docs/badges/spec.svg)
 ![conformance: 83 of 83 scenarios](docs/badges/conformance.svg)
-![tests: 363 passed](docs/badges/tests.svg)
+![tests: 407 passed](docs/badges/tests.svg)
 ![third-party crates shipped: 0](docs/badges/dependencies.svg)
 ![unsafe code: forbidden](docs/badges/unsafe.svg)
 ![standard sections marked complete: 0](docs/badges/complete.svg)
-![roadmap: 4 of 22 waves delivered](docs/badges/roadmap.svg)
+![roadmap: 5 of 22 waves delivered](docs/badges/roadmap.svg)
 
 surf is a small browser written in Rust. It does not wrap Chromium, WebKit or Gecko, and nothing
 that ships depends on a third-party crate. Every behaviour is written down as a specification
@@ -142,7 +142,23 @@ Quoting lowers the risk of page text steering an agent; it does not remove it.
   and hard limits on header and body size.
 - **83 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **363 tests**, built with warnings treated as errors.
+- **407 tests**, built with warnings treated as errors.
+
+New with the fifth wave of the current plan, not in a release yet. Nothing a user of
+`surf-agent` sees has changed:
+
+- **What a session did, kept for the live view.** With each answer, a session's process sends
+  the daemon what it did: the actions, the events they caused and the answer, without the token.
+  `surfd` keeps these in memory only, bounded per session and over all sessions. Nothing shows
+  them yet; the live view reads them in a later wave.
+- **The HTML parser decides the encoding.** It sniffs a document's encoding as the HTML
+  Standard says (a byte order mark, else a `meta` element in the first 1,024 bytes, else
+  windows-1252) and decodes UTF-8, UTF-16 and windows-1252. It passes 75 of the 82 encoding
+  cases.
+- **The tokenizer reads markup.** Tags, attributes, comments, DOCTYPEs, processing
+  instructions and CDATA sections are tokenized, and all 1,979 markup cases of the test data
+  pass. Text inside elements such as `<script>` and `<textarea>` and character references are
+  not read yet, and the parser builds no tree, so an answer still shows no page content.
 
 New with the fourth wave of the current plan, shipped in release `0.2.0`:
 
@@ -157,9 +173,9 @@ New with the fourth wave of the current plan, shipped in release `0.2.0`:
   failure of its own, `TooManyRedirects`. The transport does not follow redirects yet, so
   today a redirect status is delivered as the response.
 - **A gate for the HTML parser's tests.** The harness's counts are written down per file, tag
-  and section, and `task check` fails when a count differs, when a case stops running without a
-  reason, or when an expected count is lowered. The parser is still empty, so it passes 5 of
-  9,095 cases, and the gate holds exactly that.
+  and section, and `task check` fails when a count falls below them, when a case stops running
+  without a reason, or when an expected count is lowered. The parser was empty then and passed
+  5 of 9,095 cases; after the fifth wave it passes 4,164, and the gate holds that.
 - **Four binaries in one release.** A Linux archive holds `surf`, `surf-agent`, `surfd` and
   `surf-session`; a macOS archive holds `surf`. A smoke test runs the unpacked archive before a
   release is cut.
@@ -192,8 +208,8 @@ New with the second wave:
   checks the `Host` header and a view token, and streams events with a bounded queue per
   reader ([`docs/view-stream.md`](docs/view-stream.md)). Its page is new with the third wave.
 - **A test harness for the HTML parser.** It holds 9,107 cases from html5lib-tests and
-  web-platform-tests and counts how many a parser passes. The parser is still empty, so today
-  it runs 9,095 of them and passes 5, which is one tokenizer test with an empty input.
+  web-platform-tests and counts how many a parser passes. Today it runs 9,095 of them and
+  passes 4,164: 75 encoding cases and 4,089 tokenizer cases. The parser builds no tree yet.
 
 New with the first wave:
 
@@ -208,14 +224,14 @@ New with the first wave:
 
 ## Roadmap
 
-The current plan has 58 stories in 22 steps, called waves. Waves 1 to 4 are delivered. The
+The current plan has 58 stories in 22 steps, called waves. Waves 1 to 5 are delivered. The
 plan is [`docs/plan/agent-waves.md`](docs/plan/agent-waves.md) and its design is
 [`docs/design/agent-interface.md`](docs/design/agent-interface.md).
 
 Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `surf-agent`,
 `surfd` and `surf-session`, for Linux only at first. The releases are listed at
 <https://github.com/beyond10x/surf/releases>. After it, work moves to the script engine, a
-project of its own. The waves after 4 stay planned and have no date.
+project of its own. Wave 5 followed; the waves after it are planned and have no date.
 
 | after wave | what you can do |
 |---|---|
@@ -273,8 +289,8 @@ generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 Cargo.lock: 21 package(s), none from outside this repository
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.00s
-97 test suites: 363 passed, 0 failed, 0 ignored
-html-conformance: 9107 cases, 9095 run, 5 passed
+102 test suites: 407 passed, 0 failed, 0 ignored
+html-conformance: 9107 cases, 9095 run, 4164 passed
 ```
 
 It validates the specification, runs the 83 scenarios against the interpreter built into `ess`

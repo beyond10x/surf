@@ -203,14 +203,20 @@ above, and the list of standards itself was written from memory.
     talks to. Lock and socket in `$XDG_RUNTIME_DIR/surf`, one session process per session in a
     directory of mode 0700, each request passed unchanged to the session and the answer back,
     sessions listed as open, closed or died, exit when idle (`--idle-exit <seconds>`). It keeps
-    no token and writes no log. It makes no peer check (`UnixStream::peer_cred` is unstable in
-    rustc 1.99.1): the directory's mode and owner and the token carry it. A symbolic link under
-    its directory makes it refuse to start. Bounds: 64 connections, a request of 64 KiB within
-    10 s, an answer of 4 MiB, one call per session at a time within 60 s, 256 ended sessions
-    listed; open sessions are not bounded. It starts `surf-session` from the directory of its
-    own executable. Its 26 tests (`built` 12, `in_process` 14) run a stand-in session; the real
-    one is run by the `e2e` test of `surf-session`. Depends on `surf-agent` (for `wire`),
-    `surf-answer` and `surf-secret`.
+    no token and writes no log file. Since wave 5 it keeps, in memory only, a log of the entries
+    its sessions send with each answer (`src/log.rs`), for the live view; nothing serves it yet.
+    It makes no peer check (`UnixStream::peer_cred` is unstable in rustc 1.99.1): the
+    directory's mode and owner and the token carry it. A symbolic link under its directory makes
+    it refuse to start. Bounds: 64 connections, a request of 64 KiB within 10 s, an answer of
+    4 MiB, the entries of one answer in a counted block of at most 8 MiB (`link::ENTRIES_MAX`),
+    one call per session at a time within 60 s, a late answer read for at most 600 s
+    (`LATE_ANSWER_TIMEOUT`) while the session's turn stays taken, a log of at most 10,000
+    entries and 16 MiB per session and 64 MiB over all sessions, a reader queue of 1,024
+    entries, 256 ended sessions listed; open sessions are not bounded. It starts `surf-session`
+    from the directory of its own executable. Its 33 tests (`adversary_link` 2, `built` 12,
+    `in_process` 14, `log` 5) run a stand-in session or none; the real one is run by the `e2e`,
+    `events` and `adversary_events` tests of `surf-session`. Depends on `surf-agent` (for
+    `wire`), `surf-answer` and `surf-secret`.
   - `crates/session` (`surf-session`): one agent session. A library core over any transport
     and the binary `surf-session`, which `surfd` starts, one process per session. It draws the
     session token, answers `open`, `go`, `look` and `close` in the format of
@@ -220,8 +226,11 @@ above, and the list of standards itself was written from memory.
     line, environment or file; a request with a wrong token or for another identity gets the
     head line and the refusal only. A request is at most 64 KiB and must arrive within 10 s;
     one connection is served at a time. After each answer the session calls
-    `Browser::forget_delivered` and holds no response body. 20 tests: `built` 9, `core` 9,
-    `e2e` 1 (runs the three built binaries, or those in `SURF_BIN_DIR`) and `memory` 1.
+    `Browser::forget_delivered` and holds no response body. Since wave 5 each answer to `surfd`
+    carries the entries of its request: each action, the events the system published for it,
+    and the answer without its token line (`src/entries.rs`). 36 tests: `adversary_events` 1,
+    `built` 9, `core` 9, `e2e` 1 (runs the three built binaries, or those in `SURF_BIN_DIR`),
+    `events` 15 and `memory` 1.
     `cargo clippy -p surf-session` needs `--no-deps`: the generated `surf-types` fails clippy.
     Depends on the `surf` library, `surf-ports`, `surf-fetch`, `surf-answer`, `surf-secret`, the
     generated `surf-types`, and on `surf-agent` and `surfd` (the packages of the other two
@@ -235,25 +244,34 @@ above, and the list of standards itself was written from memory.
     shows example data only: real sessions come with `story:view-surfd-serves` and
     `story:view-first-page`. 43 tests (`http` 33, `prototype` 8, `web` 2). Depends on
     `surf-secret`.
-  - `crates/html` (`surf-html`): the HTML parser's interface. Every entry point returns an empty
-    result until the parser stories fill one module each.
+  - `crates/html` (`surf-html`): the HTML parser. Since wave 5 it decides a document's encoding
+    by the sniffing algorithm and decodes UTF-8, UTF-16LE, UTF-16BE, windows-1252 and
+    replacement (`src/encoding.rs`; the other 35 encodings of the label table are decoded as
+    windows-1252), holds the input stream (`src/input.rs`), and tokenizes the data state and the
+    states of tags, attributes, comments, DOCTYPE, processing instructions and CDATA sections.
+    The RCDATA, RAWTEXT, script data and PLAINTEXT states return no token, a character reference
+    is not read (`&` is a character), and `parse_document` and `parse_fragment` return a tree
+    that holds only its root; the section "State" of `src/lib.rs` says it module by module. 21
+    tests: 8 unit tests and 13 in `tests/encoding.rs`.
   - `crates/html-conformance` (`surf-html-conformance`): the vendored html5lib-tests (commit
     `c5495c5`, 19 files, 7,134 cases, MIT) and web-platform-tests parser data (commit `13f8051`,
     62 files, 1,973 cases, 3-Clause BSD) under `data/`, each source with a `SOURCE` file of
     checksums, and a harness that prints the cases that exist, run and pass per file, per tag and
     in total. `cargo run -p surf-html-conformance` prints
-    `html-conformance: 9107 cases, 9095 run, 5 passed` while the parser is empty. Nobody edits a
+    `html-conformance: 9107 cases, 9095 run, 4164 passed` after wave 5. Nobody edits a
     file under `data/`; `data/.gitattributes` (`* -text`) keeps the CR bytes of the data.
     Since wave 4 `expected/` holds, for three groups (tokenizer, tree construction, encoding),
     the counts per file, per tag and per section of the HTML Standard, and
-    `surf-html-conformance --check --base <revision>` holds a run to them. It fails on a count
-    that differs, a file without a line, a data file in no section, a case not run without a
-    reason, and an expected count lowered against the base revision (`HTML_BASE`, `main` by
-    default; a revision git cannot resolve fails). A count above the expected one fails too and
-    prints the line to raise: a parser story raises the numbers in the change that makes the
-    cases pass. The task `html-conformance` (`taskfiles/html-conformance.yml`) runs it and is
-    part of `task check`; `.github/workflows/check.yml` fetches the full history and sets
-    `HTML_BASE: origin/main`. 25 tests in `surf-html` and `surf-html-conformance` together.
+    `surf-html-conformance --check --base <revision>` holds a run to them. It fails on a case
+    count that differs from the inventory, a run or pass count below the expected one, a file
+    without a line, a data file in no section, a case not run without a reason, and an expected
+    count lowered against the base revision (`HTML_BASE`, `main` by default; a revision git
+    cannot resolve fails). A count above the expected one does not fail: the check prints a
+    `raise:` line for it. A parser story raises the numbers in the change that makes the cases
+    pass. The task `html-conformance` (`taskfiles/html-conformance.yml`) runs it and is part of
+    `task check`; `.github/workflows/check.yml` fetches the full history and sets
+    `HTML_BASE: origin/main`. 25 tests in `surf-html-conformance` (`check` 17, `inventory` 4,
+    `readers` 2, `tree_format` 2).
 - `conformance/` (`surf-conformance`): runs `.out/suite.json` against the Rust system in process,
   with the runner of `ess-conformance`. A Cargo workspace of its own, outside the root one, with
   its own committed `Cargo.lock` and its own `target/`. It depends on `surf`, `surf-ports` and the
@@ -325,7 +343,8 @@ code: its generated workspace and, since wave 3 of `docs/plan/waves.md`, the han
 conformance harness (`surf-html`, `surf-html-conformance`) exist beside it. Since wave 3 the
 binary `surf` is the package `surf-cli`, and the daemon `surfd` exists beside the others. Since
 wave 4 of `docs/plan/agent-waves.md` the session process `surf-session` exists too, and the
-agent target has code (below).
+agent target has code (below). Since wave 5 `surfd` keeps in memory the entries each session
+sends with its answers, and `surf-html` decides a document's encoding and tokenizes its markup.
 
 - First target, chosen by the operator on 2026-11-20: Rust, all six components in one process (five
   until wave 2 added `agent`), a headless command line. No isolation in this target.
@@ -501,9 +520,12 @@ the others were written to a scratch directory and not compiled:
   release `0.2.0` that ships `surf`, `surf-agent`, `surfd` and `surf-session` (the agent
   binaries for Linux only at first). Work then moves to the script engine, which is its own
   repository. The waves after 4 stay in the plan; they are planned and not scheduled.
-- Present state: wave 4 is delivered (4 of 22), and release `0.2.0` follows it (the releases
-  are listed at https://github.com/beyond10x/surf/releases). To resume surf, start with wave 5
-  of `docs/plan/agent-waves.md`. The stories accepted behind the planned waves are listed in
+- Present state: wave 5 is delivered (5 of 22); release `0.2.0` follows wave 4 (the releases
+  are listed at https://github.com/beyond10x/surf/releases). The session `host-operator`
+  ordered the continuation after the checkpoint on 2026-11-21, for the operator: "continue as
+  its `AGENTS.md` says". The next is wave 6 of
+  `docs/plan/agent-waves.md` (`html-document-spec`, `html-tokenizer-text`,
+  `view-surfd-serves`). The stories accepted behind the planned waves are listed in
   that file, in "Accepted on 2026-11-21, behind the planned waves". Open for the next steps:
   the live view on real sessions, the HTML parser on real pages, TLS, and following redirects
   in `crates/fetch` (`story:agent-fetch-redirects`).
@@ -603,7 +625,7 @@ Run everything through the build pool: `slot task <name>`.
 
 ## The gate's numbers
 
-On 2026-11-21 with ess 0.96.0, after wave 4 of the agent interface plan: `surf v1 — 9 file(s), 9
+On 2026-11-21 with ess 0.96.0, after wave 5 of the agent interface plan: `surf v1 — 9 file(s), 9
 scenario(s), valid` and `83 scenario(s) (9 authored), 27 refusal(s)`. Against the interpreter:
 `83 scenarios: 83 passed, 0 failed, 0 error, 0 unsupported`. Against the Rust system
 (`conform-rust`): `83 scenarios: 83 passed, 0 failed, 0 error, 0 unsupported`. `conform-totals`:
@@ -615,13 +637,14 @@ unknown coverage. The gate reads the counts. The planted defect, a `Navigation` 
 drops every `put`, fails 33 of the 83. The crate's tests: `6 test suites: 27 passed`.
 `generated-check`: `generated/rust matches spec/ (30 artifact(s) and .ess-output)`. `cli`:
 `cli/surf-agent.yaml — valid CLI presentation binding`. `lock-check`: `Cargo.lock: 21 package(s),
-none from outside this repository`. The root workspace: `97 test suites: 363 passed, 0 failed, 0
-ignored`. In it, `surf-url` prints `urltestdata: 904 cases, 872 run, 872 passed, 32 skipped`; the
-32 are hosts outside ASCII, listed in `crates/url/tests/data/SKIPPED`. `html-conformance`, the
-last step of `check`: `html-conformance: 9107 cases, 9095 run, 5 passed`. Before wave 4 these
-were 7 authored scenarios, 81 scenarios, 31 failed by the planted defect, 20 packages, 88
-suites and 324 passed; the refusals (27, the same lines) and the 30 artifacts did not change,
-and the HTML conformance gate was not part of `check`.
+none from outside this repository`. The root workspace: `102 test suites: 407 passed, 0 failed,
+0 ignored`. In it, `surf-url` prints `urltestdata: 904 cases, 872 run, 872 passed, 32 skipped`;
+the 32 are hosts outside ASCII, listed in `crates/url/tests/data/SKIPPED`. `html-conformance`,
+the last step of `check`: `html-conformance: 9107 cases, 9095 run, 4164 passed`. Before wave 5
+these were 97 suites, 363 passed, and 5 passed cases; the other numbers did not change. Before
+wave 4 they were 7 authored scenarios, 81 scenarios, 31 failed by the planted defect, 20
+packages, 88 suites and 324 passed; the refusals (27, the same lines) and the 30 artifacts did
+not change, and the HTML conformance gate was not part of `check`.
 
 `REFUSALS_MAX` in `Taskfile.yml` is 27. `task suite` fails above it. Lower it when a refusal goes
 away; raise it only with the new refusal listed here. The list is `grep '^refused:'

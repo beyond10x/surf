@@ -7,6 +7,25 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ## [Unreleased]
 
+### Added
+
+- `surfd` keeps, in memory only, a log of what each session did: each action, the events it
+  caused and the answer, without the token. It is bounded (10,000 entries and 16 MiB per
+  session, 64 MiB over all sessions) and is for the live view, which does not serve it yet. No
+  `surf-agent` command prints anything new.
+- The HTML parser (`surf-html`) decides a document's encoding by the HTML Standard's sniffing
+  algorithm and decodes UTF-8, UTF-16LE, UTF-16BE and windows-1252, and its tokenizer reads
+  tags, attributes, comments, DOCTYPEs, processing instructions and CDATA sections. It builds no
+  tree yet, and no command uses it.
+
+### Changed
+
+- After a call ends with `did refused session-timeout`, `surfd` goes on reading that session's
+  answer for up to 10 minutes, and a further call to the session waits for it. A session that
+  does not answer in that time is ended and listed `died`.
+- `surfd` and `surf-session` talk a changed link: install the four binaries of one release
+  together, as before.
+
 ## [0.2.0] - 2026-11-21
 
 ### Added
