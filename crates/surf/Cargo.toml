@@ -1,6 +1,6 @@
 [package]
 name = "surf"
-description = "The surf system assembled with a transport for the net component, and the surf command line."
+description = "The surf system assembled with a transport for the net component."
 version = "0.1.0"
 edition = "2024"
 publish = false

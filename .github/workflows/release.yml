@@ -19,9 +19,9 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # The package that holds the shipped binary. Story `runner-surf-cli-package` moves it to
-  # `surf-cli`; the binary stays `surf`.
-  PACKAGE: surf
+  # The package that holds the shipped binary (`crates/surf-cli`); the release tag is its
+  # version. The binary is `surf`.
+  PACKAGE: surf-cli
   BINARY: surf
   # The toolchain `task check` is measured with; a newer stable can add a lint that
   # `-D warnings` turns into a failed release.

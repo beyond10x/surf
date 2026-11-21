@@ -2,7 +2,8 @@
 
 A release is a bare version tag (`0.1.0`), annotated and written by the organization bot, on a
 `main` commit whose `task check` is green. The tag is the version of the package that ships the
-`surf` binary (`crates/surf/Cargo.toml`); the release workflow fails on a tag that differs.
+`surf` binary, `surf-cli` (`crates/surf-cli/Cargo.toml`); the release workflow fails on a tag
+that differs.
 
 ## What a release holds
 
@@ -36,8 +37,9 @@ The commands use the gates as the bot, from a checkout of this repository:
 
     gates="b10x-gates --policy ../gates-policy/policy.json --repository beyond10x/surf"
 
-1. **Version.** Set `version` in `crates/surf/Cargo.toml` to the new version (the first release
-   is `0.1.0`, the version it has), then `cargo generate-lockfile --offline`.
+1. **Version.** Set `version` in `crates/surf-cli/Cargo.toml` to the new version, then
+   `cargo generate-lockfile --offline`. Release `0.1.0` shipped the binary from the package
+   `surf`; `surf-cli` starts at that version, so the next release is above it.
 2. **Changelog.** In `CHANGELOG.md`, rename `## [Unreleased]` to `## [<version>] - <date>` and
    put an empty `## [Unreleased]` above it. Commit both on `main`; `slot task check` is green on
    that commit.

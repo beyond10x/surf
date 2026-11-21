@@ -1,4 +1,4 @@
-//! Review 1 (adversary): the `surf` binary against README.md. A `Content-Type` spelled the way
+//! Review 1 (adversary): the `surf` binary against docs/surf-command.md. A `Content-Type` spelled the way
 //! servers spell it reaches the `text/html` binding; usage errors; and the exit status when the
 //! rows cannot be written. Servers run on `127.0.0.1` port 0 and end on their own.
 
@@ -74,7 +74,7 @@ fn review1_html_with_upper_case_parameters_and_trailing_space_is_parsed_into_a_d
     assert!(documents[0].ends_with(&format!(" {address}")), "{stdout:?}");
 }
 
-/// README.md: exit 2 for "not exactly one argument, or an argument that is not UTF-8; a usage
+/// docs/surf-command.md: exit 2 for "not exactly one argument, or an argument that is not UTF-8; a usage
 /// line on standard error".
 #[test]
 fn review1_two_arguments_and_a_non_utf8_argument_are_usage_errors_with_nothing_on_stdout() {

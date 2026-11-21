@@ -1,6 +1,6 @@
 //! `surf <url>`: load one address and print the rows it ends with.
 //!
-//! The output format and the exit statuses are documented in the repository's `README.md`.
+//! The output format and the exit statuses are documented in `docs/surf-command.md`.
 
 #![forbid(unsafe_code)]
 

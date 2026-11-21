@@ -1,0 +1,16 @@
+[package]
+name = "surf-cli"
+description = "The surf command line: load one address and print the rows it ends with."
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+
+[[bin]]
+name = "surf"
+path = "src/main.rs"
+
+[dependencies]
+surf = { path = "../surf" }
+surf-fetch = { path = "../fetch" }
+surf-ports = { path = "../ports" }
