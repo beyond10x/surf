@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 055477f7d70d2837ffe9e39fee6cbc6130c982cf9d0650a28bb00f7c8ca52d2c
+// contract digest d31658889d516a083ce9bcfd2d7c0ada34c042952c11901405e00f6683235212
 // do not edit: regenerate with `ess synthesize`
 
 //! What the specification fully determines, generated: the behaviour of every command the plan
@@ -71,6 +71,24 @@ pub trait DocumentStorage {
     /// Every stored instance, in the order the store keeps them: the order a generated query
     /// answers an unordered view in.
     fn list(&self) -> Vec<crate::document::DocumentSnapshot>;
+}
+
+/// Where `surf.document.Element` is stored — a port the implementor provides.
+///
+/// Keyed by the identity `element_id`. Generated network entries supply an ephemeral implementation; durable storage remains a port.
+pub trait ElementStorage {
+    /// The instance with this identity, or `None` where none is stored.
+    fn get(&self, identity: &crate::document::ElementId) -> Option<crate::document::ElementSnapshot>;
+
+    /// Stores this instance under its identity, replacing what was held.
+    fn put(&mut self, snapshot: crate::document::ElementSnapshot);
+
+    /// Removes the instance with this identity.
+    fn delete(&mut self, identity: &crate::document::ElementId);
+
+    /// Every stored instance, in the order the store keeps them: the order a generated query
+    /// answers an unordered view in.
+    fn list(&self) -> Vec<crate::document::ElementSnapshot>;
 }
 
 /// Where `surf.navigation.Navigation` is stored — a port the implementor provides.
@@ -179,6 +197,10 @@ pub trait Context {
     /// `{generated: true}` value, or an event field the model leaves undetermined.
     fn generate_surf_document_document_id(&mut self) -> crate::document::DocumentId;
 
+    /// A new `surf.document.ElementId`, which the model says the implementation assigns — a created identity, a
+    /// `{generated: true}` value, or an event field the model leaves undetermined.
+    fn generate_surf_document_element_id(&mut self) -> crate::document::ElementId;
+
     /// A new `surf.net.RequestId`, which the model says the implementation assigns — a created identity, a
     /// `{generated: true}` value, or an event field the model leaves undetermined.
     fn generate_surf_net_request_id(&mut self) -> crate::net::RequestId;
@@ -206,6 +228,8 @@ fn try_generate_surf_agent_action_id(&mut self) -> Result<crate::agent::ActionId
 /// Assigns the value, or names the unavailable answer.
 fn try_generate_surf_document_document_id(&mut self) -> Result<crate::document::DocumentId, UnmetObligation>;
 /// Assigns the value, or names the unavailable answer.
+fn try_generate_surf_document_element_id(&mut self) -> Result<crate::document::ElementId, UnmetObligation>;
+/// Assigns the value, or names the unavailable answer.
 fn try_generate_surf_net_request_id(&mut self) -> Result<crate::net::RequestId, UnmetObligation>;
 /// Assigns the value, or names the unavailable answer.
 fn try_generate_surf_render_frame_id(&mut self) -> Result<crate::render::FrameId, UnmetObligation>;
@@ -219,6 +243,7 @@ impl<T: Context + ?Sized> TryContext for T {
 fn try_caller_session_id(&self) -> Result<Option<crate::agent::SessionId>, UnmetObligation> { Ok(Context::caller_session_id(self)) }
 fn try_generate_surf_agent_action_id(&mut self) -> Result<crate::agent::ActionId, UnmetObligation> { Ok(Context::generate_surf_agent_action_id(self)) }
 fn try_generate_surf_document_document_id(&mut self) -> Result<crate::document::DocumentId, UnmetObligation> { Ok(Context::generate_surf_document_document_id(self)) }
+fn try_generate_surf_document_element_id(&mut self) -> Result<crate::document::ElementId, UnmetObligation> { Ok(Context::generate_surf_document_element_id(self)) }
 fn try_generate_surf_net_request_id(&mut self) -> Result<crate::net::RequestId, UnmetObligation> { Ok(Context::generate_surf_net_request_id(self)) }
 fn try_generate_surf_render_frame_id(&mut self) -> Result<crate::render::FrameId, UnmetObligation> { Ok(Context::generate_surf_render_frame_id(self)) }
 fn try_generate_surf_shell_tab_id(&mut self) -> Result<crate::shell::TabId, UnmetObligation> { Ok(Context::generate_surf_shell_tab_id(self)) }
@@ -410,6 +435,86 @@ where
     }
 }
 
+/// `surf.document.AddElement`, generated: every outcome is one the specification fully determines.
+impl<P> crate::document::obligations::AddElementBehavior for Generated<P>
+where
+    P: TryContext + DocumentStorage + ElementStorage,
+{
+    fn add_element(&mut self, input: crate::document::AddElement) -> Result<crate::document::AddElementOutcome, UnmetObligation> {
+        let _ = &input;
+        // `when_related:` reads the `surf.document.Document` row `input.document_id` names, through its storage port; an absent
+        // reference reads no row and selects no related branch.
+        let reference = Some(&input.document_id);
+        let related = reference.and_then(|identity| DocumentStorage::get(&self.ports, identity));
+        let _ = &related;
+        // The addressed row's existence and held state, for the branch the request selects
+        // before any present related row's refusal.
+        {
+        }
+        // `no-such-document`: the reference names an identity no row carries.
+        if reference.is_some() && related.is_none() {
+            return Ok(crate::document::AddElementOutcome::NoSuchDocument { error: crate::document::DocumentNotFound { document_id: input.document_id.clone() } });
+        }
+        // `already-parsed`: a present related row's refusal, before every accepting branch.
+        if let Some(related) = &related {
+        if decided(equal(Some(&related.state).map(|value| match value { crate::document::DocumentState::Parsed => "Parsed", crate::document::DocumentState::Parsing => "Parsing" }.to_owned()), Some("Parsed".to_owned())), "surf.document.AddElement")? {
+            return Ok(crate::document::AddElementOutcome::AlreadyParsed { error: crate::document::DocumentStateConflict { state: crate::document::DocumentState::Parsed } });
+        }
+        }
+        // `added`: the default.
+        let identity: crate::document::ElementId = self.ports.try_generate_surf_document_element_id()?;
+        let data = crate::document::ElementData {
+            element_id: identity.clone(),
+            document_id: input.document_id.clone(),
+            position: input.position.clone(),
+            kind: input.kind.clone(),
+            label: input.label.clone(),
+            target: input.target.clone(),
+            value: input.value.clone(),
+            hidden: input.hidden.clone(),
+            disabled: input.disabled.clone(),
+            checked: input.checked.clone(),
+            required: input.required.clone(),
+        };
+        let answer = crate::document::AddElementOutcome::Added { element_added: crate::document::ElementAdded { element_id: identity.clone(), document_id: input.document_id.clone(), position: input.position.clone() } };
+        ElementStorage::put(&mut self.ports, crate::document::AnyElement::Added(crate::document::Element::new(data)).snapshot());
+        return Ok(answer);
+    }
+}
+
+/// `surf.document.FinishParsing`, generated: every outcome is one the specification fully determines.
+impl<P> crate::document::obligations::FinishParsingBehavior for Generated<P>
+where
+    P: DocumentStorage,
+{
+    fn finish_parsing(&mut self, input: crate::document::FinishParsing) -> Result<crate::document::FinishParsingOutcome, UnmetObligation> {
+        let _ = &input;
+        // The addressed row's existence, at step 2 of the one precedence rule.
+        if DocumentStorage::get(&self.ports, &input.document_id).is_none() {
+            return Ok(crate::document::FinishParsingOutcome::NoSuchDocument { error: crate::document::DocumentNotFound { document_id: input.document_id.clone() } });
+        }
+        // `parsed`: the default.
+        let Some(held) = DocumentStorage::get(&self.ports, &input.document_id) else {
+            return Ok(crate::document::FinishParsingOutcome::NoSuchDocument { error: crate::document::DocumentNotFound { document_id: input.document_id.clone() } });
+        };
+        let _ = &held;
+        let held_state = held.state;
+        let before = held.data.clone();
+        let moved = match held.refine() {
+            crate::document::AnyDocument::Parsing(instance) => crate::document::AnyDocument::Parsed(instance.finish()),
+            _ => return Ok(crate::document::FinishParsingOutcome::WrongState { error: crate::document::DocumentStateConflict { state: held_state } }),
+        };
+        let mut next = moved.snapshot();
+        next.data.title = Some(input.title.clone());
+        next.data.encoding = Some(input.encoding.clone());
+        next.data.unsupported_encoding = input.unsupported_encoding.clone();
+        next.data.stopped_by = input.stopped_by.clone();
+        let answer = crate::document::FinishParsingOutcome::Parsed { document_parsed: crate::document::DocumentParsed { document_id: input.document_id.clone(), url: before.url.clone(), navigation_id: before.navigation_id.clone(), title: input.title.clone(), encoding: input.encoding.clone(), unsupported_encoding: input.unsupported_encoding.clone(), stopped_by: input.stopped_by.clone() } };
+        DocumentStorage::put(&mut self.ports, next);
+        return Ok(answer);
+    }
+}
+
 /// `surf.document.ParseDocument`, generated: every outcome is one the specification fully determines.
 impl<P> crate::document::obligations::ParseDocumentBehavior for Generated<P>
 where
@@ -417,14 +522,19 @@ where
 {
     fn parse_document(&mut self, input: crate::document::ParseDocument) -> Result<crate::document::ParseDocumentOutcome, UnmetObligation> {
         let _ = &input;
-        // `parsed`: the default.
+        // `started`: the default.
         let identity: crate::document::DocumentId = self.ports.try_generate_surf_document_document_id()?;
         let data = crate::document::DocumentData {
             document_id: identity.clone(),
             url: input.url.clone(),
+            navigation_id: input.navigation_id.clone(),
+            title: None,
+            encoding: None,
+            unsupported_encoding: None,
+            stopped_by: None,
         };
-        let answer = crate::document::ParseDocumentOutcome::Parsed { document_parsed: crate::document::DocumentParsed { document_id: identity.clone(), url: input.url.clone() } };
-        DocumentStorage::put(&mut self.ports, crate::document::AnyDocument::Parsed(crate::document::Document::new(data)).snapshot());
+        let answer = crate::document::ParseDocumentOutcome::Started { parsing_started: crate::document::ParsingStarted { document_id: identity.clone(), body: input.body.clone() } };
+        DocumentStorage::put(&mut self.ports, crate::document::AnyDocument::Parsing(crate::document::Document::new(data)).snapshot());
         return Ok(answer);
     }
 }
@@ -806,6 +916,42 @@ where
             .map(|held| crate::document::Documents {
                 document_id: held.data.document_id,
                 url: held.data.url,
+                navigation_id: held.data.navigation_id,
+                state: held.state,
+                title: held.data.title,
+                encoding: held.data.encoding,
+                unsupported_encoding: held.data.unsupported_encoding,
+                stopped_by: held.data.stopped_by,
+            })
+            .collect())
+    }
+}
+
+/// `surf.document.Elements`, generated: every row is one the specification fully determines from the stored `surf.document.Element`s.
+impl<P> crate::document::obligations::ElementsQuery for Generated<P>
+where
+    P: ElementStorage,
+{
+    fn elements(&self, param_0: crate::document::DocumentId) -> Result<Vec<crate::document::Elements>, UnmetObligation> {
+        let mut admitted = ElementStorage::list(&self.ports);
+        // `filter:` shows a row where it holds; false or unknown hides it.
+        admitted.retain(|held| equal(Some(&held.data.document_id).map(|value| &value.0).map(|value| value.0.clone()), Some(&param_0).map(|value| &value.0).map(|value| value.0.clone())) == Some(true));
+        // `order_by:`, stably: rows equal on every key keep the port's order.
+        admitted.sort_by(|left, right| number_order(&Some(&left.data.position).map(|value| value.to_string()).unwrap_or_default(), &Some(&right.data.position).map(|value| value.to_string()).unwrap_or_default()));
+        Ok(admitted
+            .into_iter()
+            .map(|held| crate::document::Elements {
+                element_id: held.data.element_id,
+                document_id: held.data.document_id,
+                position: held.data.position,
+                kind: held.data.kind,
+                label: held.data.label,
+                target: held.data.target,
+                value: held.data.value,
+                hidden: held.data.hidden,
+                disabled: held.data.disabled,
+                checked: held.data.checked,
+                required: held.data.required,
             })
             .collect())
     }

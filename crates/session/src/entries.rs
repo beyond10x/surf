@@ -8,13 +8,15 @@
 //!
 //! - an `Integer` (and `surf.net.Status`) in decimal;
 //! - an enum by its variant name as `spec/` spells it: `open`, `go` and `close` for
-//!   `surf.agent.ActionCommand`, the generated variant's name for `surf.navigation.Navigation.State`
-//!   and `surf.net.FailureReason`, which `spec/` spells the same (`Committed`, `Unreachable`), so
-//!   that a variant a specification story adds is written without a change here;
-//! - an identity in its text form, an address and a media type as their text;
-//! - a field of the type `Bytes` (on `main` the `body` of `surf.net.ResponseReceived` and of
-//!   `surf.navigation.NavigationCommitted`) as its length, the text `<n> bytes`, never the bytes
-//!   (decision D22);
+//!   `surf.agent.ActionCommand`, the generated variant's name for `surf.navigation.Navigation.State`,
+//!   `surf.net.FailureReason` and `surf.document.ParseLimit`, which `spec/` spells the same
+//!   (`Committed`, `Unreachable`, `Depth`), so that a variant a specification story adds is
+//!   written without a change here;
+//! - an identity in its text form, an address, a media type, a document's title and an encoding's
+//!   name as their text;
+//! - a field of the type `Bytes` (the `body` of `surf.net.ResponseReceived`, of
+//!   `surf.navigation.NavigationCommitted` and of `surf.document.ParsingStarted`) as its length,
+//!   the text `<n> bytes`, never the bytes (decision D22);
 //! - an absent `Optional` value as the field with nothing after its `=`.
 //!
 //! An event this function does not map is written with its name, the word `unmapped` and no
@@ -111,7 +113,22 @@ pub fn event_line(event: &SystemEvent) -> String {
             .text("tab_id", &e.tab_id.0.0),
         SystemEvent::DocumentParsed(e) => line
             .text("document_id", &e.document_id.0.0)
-            .text("url", &e.url.0),
+            .text("url", &e.url.0)
+            .text("navigation_id", &e.navigation_id.0.0)
+            .text("title", &e.title)
+            .text("encoding", &e.encoding.0)
+            .optional(
+                "unsupported_encoding",
+                e.unsupported_encoding.as_ref().map(|name| name.0.as_str()),
+            )
+            .optional("stopped_by", e.stopped_by.map(variant).as_deref()),
+        SystemEvent::ElementAdded(e) => line
+            .text("element_id", &e.element_id.0.0)
+            .text("document_id", &e.document_id.0.0)
+            .integer("position", e.position),
+        SystemEvent::ParsingStarted(e) => line
+            .text("document_id", &e.document_id.0.0)
+            .bytes("body", &e.body),
         SystemEvent::NavigationCancelled(e) => line
             .text("navigation_id", &e.navigation_id.0.0)
             .text("tab_id", &e.tab_id.0.0),

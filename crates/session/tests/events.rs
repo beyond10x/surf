@@ -24,7 +24,9 @@ use surf_types::agent::{
     ActionCommand, ActionId, ActionRecorded, Go, NavigationRequested, OpenSession, RecordAction,
     SessionClosed, SessionId, SessionNavigationChanged, SessionOpened,
 };
-use surf_types::document::{DocumentId, DocumentParsed};
+use surf_types::document::{
+    DocumentId, DocumentParsed, ElementAdded, ElementId, EncodingName, ParseLimit, ParsingStarted,
+};
 use surf_types::navigation::{
     NavigationCancelled, NavigationCommitted, NavigationFailed, NavigationStarted, NavigationState,
 };
@@ -740,6 +742,8 @@ fn uuid(n: u8) -> Uuid {
 
 const BODY: &[u8] = b"q#~";
 const ADDRESS: &str = "http://example.org/a b";
+/// A title holding a double quote, a backslash and a character outside ASCII.
+const TITLE: &str = "Say \"hi\" \\ caf\u{e9}";
 
 /// Every `SystemEvent` variant this mapping covers, one value each; a story that maps an event
 /// adds it here.
@@ -776,6 +780,20 @@ fn covered() -> Vec<SystemEvent> {
         SystemEvent::DocumentParsed(DocumentParsed {
             document_id: DocumentId(uuid(6)),
             url: url(),
+            navigation_id: RequestId(uuid(5)),
+            title: TITLE.to_string(),
+            encoding: EncodingName("windows-1252".to_string()),
+            unsupported_encoding: Some(EncodingName("EUC-KR".to_string())),
+            stopped_by: Some(ParseLimit::Depth),
+        }),
+        SystemEvent::ElementAdded(ElementAdded {
+            element_id: ElementId(uuid(8)),
+            document_id: DocumentId(uuid(6)),
+            position: 3,
+        }),
+        SystemEvent::ParsingStarted(ParsingStarted {
+            document_id: DocumentId(uuid(6)),
+            body: BODY.to_vec(),
         }),
         SystemEvent::NavigationCancelled(NavigationCancelled {
             navigation_id: RequestId(uuid(5)),
@@ -849,6 +867,12 @@ fn expected_value(event: &str, field: &str) -> Option<String> {
         (_, "navigation_id" | "request_id") => id(5),
         (_, "document_id") => id(6),
         (_, "frame_id") => id(7),
+        (_, "element_id") => id(8),
+        ("surf.document.ElementAdded", "position") => text("3"),
+        ("surf.document.DocumentParsed", "title") => text(TITLE),
+        ("surf.document.DocumentParsed", "encoding") => text("windows-1252"),
+        ("surf.document.DocumentParsed", "unsupported_encoding") => text("EUC-KR"),
+        ("surf.document.DocumentParsed", "stopped_by") => text("Depth"),
         ("surf.agent.ActionRecorded", "sequence") => text("7"),
         ("surf.agent.ActionRecorded", "command") => text("go"),
         ("surf.agent.ActionRecorded", "url") => None,
@@ -882,8 +906,8 @@ fn case_17_every_event_maps_with_all_its_fields() {
     );
     assert_eq!(
         names.len(),
-        17,
-        "the events on main when this story started"
+        19,
+        "the events of spec/ after story:html-document-spec"
     );
     for field in [
         ("surf.net.ResponseReceived", "url"),
@@ -921,9 +945,10 @@ fn case_17_every_event_maps_with_all_its_fields() {
 #[test]
 fn byte_fields_are_lengths() {
     // A story that adds a field of type Bytes adds it here.
-    const BYTES_FIELDS: [&str; 2] = [
+    const BYTES_FIELDS: [&str; 3] = [
         "surf.net.ResponseReceived.body",
         "surf.navigation.NavigationCommitted.body",
+        "surf.document.ParsingStarted.body",
     ];
     let spec = spec_events();
     let covered = covered();
@@ -955,4 +980,100 @@ fn byte_fields_are_lengths() {
             assert!(!line.contains("q#~"), "the bytes are in {line}");
         }
     }
+}
+
+/// The fields of the event line of `event`, each read back through `surf_answer::unquote`.
+fn read_back(event: &SystemEvent) -> Vec<(String, Option<String>)> {
+    let line = surf_session::entries::event_line(event);
+    assert!(
+        surfd::link::Entry::line(&line).is_some(),
+        "an event line of the link: {line}"
+    );
+    fields(&line)
+        .unwrap_or_else(|| panic!("unmapped: {line}"))
+        .into_iter()
+        .map(|(name, value)| {
+            let read = value.map(|quoted| surf_answer::unquote(&quoted).expect("a quoted field"));
+            (name, read)
+        })
+        .collect()
+}
+
+/// Named case of `story:html-document-spec`: the three events of the document, each field read
+/// back as written, the optional ones present and absent.
+#[test]
+fn document_events_map_with_their_fields() {
+    let pairs = |list: &[(&str, Option<&str>)]| -> Vec<(String, Option<String>)> {
+        list.iter()
+            .map(|(name, value)| (name.to_string(), value.map(str::to_string)))
+            .collect()
+    };
+    let document = "6a1b2c3d-0000-4000-8000-000000000001";
+    let navigation = "6a1b2c3d-0000-4000-8000-000000000002";
+    let element = "6a1b2c3d-0000-4000-8000-000000000003";
+    let id = |text: &str| Uuid(text.to_string());
+
+    let started = SystemEvent::ParsingStarted(ParsingStarted {
+        document_id: DocumentId(id(document)),
+        body: b"<title>x</title>".to_vec(),
+    });
+    assert_eq!(
+        read_back(&started),
+        pairs(&[("document_id", Some(document)), ("body", Some("16 bytes"))])
+    );
+
+    let added = SystemEvent::ElementAdded(ElementAdded {
+        element_id: ElementId(id(element)),
+        document_id: DocumentId(id(document)),
+        position: 11,
+    });
+    assert_eq!(
+        read_back(&added),
+        pairs(&[
+            ("element_id", Some(element)),
+            ("document_id", Some(document)),
+            ("position", Some("11")),
+        ])
+    );
+
+    let parsed = |title: &str, unsupported: Option<&str>, stopped_by: Option<ParseLimit>| {
+        SystemEvent::DocumentParsed(DocumentParsed {
+            document_id: DocumentId(id(document)),
+            url: Url(ADDRESS.to_string()),
+            navigation_id: RequestId(id(navigation)),
+            title: title.to_string(),
+            encoding: EncodingName("UTF-8".to_string()),
+            unsupported_encoding: unsupported.map(|name| EncodingName(name.to_string())),
+            stopped_by,
+        })
+    };
+    let line = surf_session::entries::event_line(&parsed(TITLE, None, None));
+    assert!(
+        line.contains(&surf_answer::quote(TITLE)) && !line.contains(TITLE),
+        "the title is quoted: {line}"
+    );
+    assert_eq!(
+        read_back(&parsed(TITLE, Some("EUC-KR"), Some(ParseLimit::Depth))),
+        pairs(&[
+            ("document_id", Some(document)),
+            ("url", Some(ADDRESS)),
+            ("navigation_id", Some(navigation)),
+            ("title", Some(TITLE)),
+            ("encoding", Some("UTF-8")),
+            ("unsupported_encoding", Some("EUC-KR")),
+            ("stopped_by", Some("Depth")),
+        ])
+    );
+    assert_eq!(
+        read_back(&parsed("", None, None)),
+        pairs(&[
+            ("document_id", Some(document)),
+            ("url", Some(ADDRESS)),
+            ("navigation_id", Some(navigation)),
+            ("title", Some("")),
+            ("encoding", Some("UTF-8")),
+            ("unsupported_encoding", None),
+            ("stopped_by", None),
+        ])
+    );
 }

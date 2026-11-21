@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 055477f7d70d2837ffe9e39fee6cbc6130c982cf9d0650a28bb00f7c8ca52d2c
+// contract digest d31658889d516a083ce9bcfd2d7c0ada34c042952c11901405e00f6683235212
 // do not edit: regenerate with `ess synthesize`
 
 //! The `surf` system, v1: its components assembled, its bindings wired, and its one transport.
@@ -32,6 +32,10 @@ pub enum SystemEvent {
     SessionOpened(surf_types::agent::SessionOpened),
     /// `surf.document.DocumentParsed`.
     DocumentParsed(surf_types::document::DocumentParsed),
+    /// `surf.document.ElementAdded`.
+    ElementAdded(surf_types::document::ElementAdded),
+    /// `surf.document.ParsingStarted`.
+    ParsingStarted(surf_types::document::ParsingStarted),
     /// `surf.navigation.NavigationCancelled`.
     NavigationCancelled(surf_types::navigation::NavigationCancelled),
     /// `surf.navigation.NavigationCommitted`.
@@ -66,6 +70,8 @@ impl SystemEvent {
             Self::SessionNavigationChanged(_) => "surf.agent.SessionNavigationChanged",
             Self::SessionOpened(_) => "surf.agent.SessionOpened",
             Self::DocumentParsed(_) => "surf.document.DocumentParsed",
+            Self::ElementAdded(_) => "surf.document.ElementAdded",
+            Self::ParsingStarted(_) => "surf.document.ParsingStarted",
             Self::NavigationCancelled(_) => "surf.navigation.NavigationCancelled",
             Self::NavigationCommitted(_) => "surf.navigation.NavigationCommitted",
             Self::NavigationFailed(_) => "surf.navigation.NavigationFailed",
@@ -97,6 +103,8 @@ impl From<document::PublishedEvent> for SystemEvent {
     fn from(event: document::PublishedEvent) -> Self {
         match event {
             document::PublishedEvent::DocumentParsed(event) => Self::DocumentParsed(event),
+            document::PublishedEvent::ElementAdded(event) => Self::ElementAdded(event),
+            document::PublishedEvent::ParsingStarted(event) => Self::ParsingStarted(event),
         }
     }
 }
@@ -291,6 +299,7 @@ pub fn parse_on_navigation_committed(event: &surf_types::navigation::NavigationC
     surf_types::document::ParseDocument {
         url: event.url.clone(),
         body: event.body.clone(),
+        navigation_id: event.navigation_id.clone(),
     }
 }
 
@@ -380,7 +389,7 @@ impl<AgentBehaviors, DocumentBehaviors, NavigatorBehaviors, NetBehaviors, Render
 impl<AgentBehaviors, DocumentBehaviors, NavigatorBehaviors, NetBehaviors, RendererBehaviors, ShellBehaviors> System<AgentBehaviors, DocumentBehaviors, NavigatorBehaviors, NetBehaviors, RendererBehaviors, ShellBehaviors>
 where
     AgentBehaviors: surf_types::agent::obligations::CloseSessionBehavior + surf_types::agent::obligations::GoBehavior + surf_types::agent::obligations::NoteNavigationCommittedBehavior + surf_types::agent::obligations::NoteNavigationEndedBehavior + surf_types::agent::obligations::NoteNavigationFailedBehavior + surf_types::agent::obligations::NoteNavigationStartedBehavior + surf_types::agent::obligations::OpenSessionBehavior + surf_types::agent::obligations::RecordActionBehavior + surf_types::agent::obligations::SessionLogQuery + surf_types::agent::obligations::SessionStateViewQuery + surf_types::agent::obligations::SessionsQuery,
-    DocumentBehaviors: surf_types::document::obligations::ParseDocumentBehavior + surf_types::document::obligations::DocumentsQuery,
+    DocumentBehaviors: surf_types::document::obligations::AddElementBehavior + surf_types::document::obligations::FinishParsingBehavior + surf_types::document::obligations::ParseDocumentBehavior + surf_types::document::obligations::DocumentsQuery + surf_types::document::obligations::ElementsQuery,
     NavigatorBehaviors: surf_types::navigation::obligations::CancelNavigationBehavior + surf_types::navigation::obligations::CommitNavigationBehavior + surf_types::navigation::obligations::FailNavigationBehavior + surf_types::navigation::obligations::NavigateBehavior + surf_types::navigation::obligations::NavigationsQuery,
     NetBehaviors: surf_types::net::obligations::DeliverResponseBehavior + surf_types::net::obligations::FailRequestBehavior + surf_types::net::obligations::FetchBehavior + surf_types::net::obligations::RequestsQuery,
     RendererBehaviors: surf_types::render::obligations::PaintFrameBehavior + surf_types::render::obligations::FramesQuery,
@@ -480,6 +489,8 @@ where
             SystemEvent::SessionNavigationChanged(_) => {}
             SystemEvent::SessionOpened(_) => {}
             SystemEvent::DocumentParsed(_) => {}
+            SystemEvent::ElementAdded(_) => {}
+            SystemEvent::ParsingStarted(_) => {}
             SystemEvent::NavigationCancelled(event) => {
                 if let Err(failure) = self.deliver_note_on_navigation_cancelled(event) {
                     failed = failed.or(Some(failure));

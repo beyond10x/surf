@@ -129,10 +129,11 @@ fn forget_delivered_drops_the_bodies_and_keeps_every_view() {
     let (mut browser, _caller, session_id) = opened(transport);
     go(&mut browser, &session_id, 2, "http://127.0.0.1/a");
 
-    // One committed HTML page holds its body four times: in the events `ResponseReceived` and
-    // `NavigationCommitted`, and in the invocations of `CommitNavigation` and `ParseDocument`.
+    // One committed HTML page holds its body five times: in the events `ResponseReceived`,
+    // `NavigationCommitted` and `ParsingStarted`, and in the invocations of `CommitNavigation` and
+    // `ParseDocument`.
     let held = browser.held();
-    assert_eq!(held.body_bytes, 4 * 1000, "{held:?}");
+    assert_eq!(held.body_bytes, 5 * 1000, "{held:?}");
     assert!(held.events > 0 && held.invocations > 0, "{held:?}");
     let before = views(&browser, &session_id);
     assert!(before.contains("Committed"), "{before}");
@@ -179,7 +180,7 @@ fn forget_delivered_drops_the_bodies_and_keeps_every_view() {
             .len(),
         3
     );
-    assert_eq!(browser.held().body_bytes, 4 * 1000);
+    assert_eq!(browser.held().body_bytes, 5 * 1000);
 }
 
 #[test]

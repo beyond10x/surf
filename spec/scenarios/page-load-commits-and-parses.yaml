@@ -4,7 +4,7 @@
 type: ess-scenario/6
 domain: surf.navigation
 scenario: page-load-commits-and-parses
-summary: A navigation whose request gets an HTML response is Committed and has a document.
+summary: A navigation whose request gets an HTML response is Committed and has a document being parsed for it.
 
 arrange:
   - instance: load
@@ -44,4 +44,4 @@ assert:
     contains: {navigation_id: {$instance: load}, state: Committed}
 
   - view: surf.document.Documents
-    contains: {url: https://example.org/}
+    contains: {url: https://example.org/, navigation_id: {$instance: load}, state: Parsing, title: null}

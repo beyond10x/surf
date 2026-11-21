@@ -1,6 +1,6 @@
 domain: surf.document
 
-summary: Turning the bytes of a response into a document.
+summary: Turning the bytes of a response into a document, its title and its actionable elements.
 
 naming:
   wire: document
@@ -11,58 +11,380 @@ types:
     kind: newtype
     of: Uuid
 
+  # Minted by the component when the element's row is written, as `surf.agent.ActionId` is: the
+  # parser step learns it from `ElementAdded` and keeps it with the element's node for the life of
+  # the document (`docs/design/html-parser.md`, item 1).
+  - name: surf.document.ElementId
+    kind: newtype
+    of: Uuid
+    naming:
+      summary: The identity of one actionable element of a document.
+
+  # The kinds of `docs/design/agent-interface.md` section 5.2, by element and by the `input`
+  # element's type state (`docs/design/html-parser.md`, item 6). Number, Range, Color and the date
+  # and time states are `text`; the Hidden state is not listed.
+  - name: surf.document.ElementKind
+    kind: enum
+    variants:
+      - name: link
+        summary: An `a` or `area` element with an `href` attribute.
+      - name: button
+        summary: A `button` element, or an `input` in the Submit Button, Image Button, Reset Button or Button state.
+      - name: text
+        summary: An `input` in a text-like state.
+      - name: password
+        summary: An `input` in the Password state.
+      - name: checkbox
+        summary: An `input` in the Checkbox state.
+      - name: radio
+        summary: An `input` in the Radio Button state.
+      - name: file
+        summary: An `input` in the File Upload state.
+      - name: select
+        summary: A `select` element.
+      - name: textarea
+        summary: A `textarea` element.
+    naming:
+      summary: What an actionable element is, as the agent's answer names it.
+
+  # The name of an encoding as the Encoding Standard writes it, such as `UTF-8` or `windows-1252`.
+  - name: surf.document.EncodingName
+    kind: newtype
+    of: String
+    naming:
+      summary: The name of an encoding, as the Encoding Standard writes it.
+
+  # The limits of `docs/design/html-parser.md` item 7. The standard places none of them (13.2.6);
+  # reaching one stops parsing as "stop parsing" does, a deliberate deviation.
+  - name: surf.document.ParseLimit
+    kind: enum
+    variants:
+      - name: InputBytes
+        summary: The input was longer than the input limit.
+      - name: Depth
+        summary: The stack of open elements was as deep as the depth limit.
+      - name: Nodes
+        summary: The tree held as many nodes as the node limit.
+      - name: Attributes
+        summary: One element had as many attributes as the attribute limit.
+      - name: StoredBytes
+        summary: The tree held as many bytes of text and attribute values as the stored-byte limit.
+    naming:
+      summary: The limit that stopped parsing.
+
 entities:
-  # UNMAPPED: the tree of nodes. A document here is its identity and its address; elements, text
-  # and attributes have no typed home yet, and neither have parse errors or the character encoding.
+  # The node tree is not modelled: it is built by the parser step of `crates/surf`, kept by
+  # `Browser` per document and read only by the session process through
+  # `Browser::document_tree` (`docs/design/html-parser.md`, item 1). No component's port receives
+  # it, so no relation is written for it or for the link from an element to its node.
+  # UNMAPPED: parse errors. No reader needs them yet, and 13.2.2 "Parse errors" obliges only
+  # conformance checkers to report them.
   - name: surf.document.Document
     naming:
-      summary: A parsed HTML document.
+      summary: An HTML document, from the start of its parsing to its end.
     identity:
       name: document_id
       type: surf.document.DocumentId
     fields:
       - name: url
         type: surf.url.Url
+      # The navigation this document was parsed for, which shares its identity with the request.
+      - name: navigation_id
+        type: surf.net.RequestId
+      # What `document.title` returns: the text of the first `title` element in tree order,
+      # ASCII whitespace stripped and collapsed; the empty string when there is none. Absent
+      # while `Parsing`, set by `FinishParsing`.
+      - name: title
+        type: Optional<String>
+      # The document's encoding (DOM Standard): the one its text was decoded with. Absent while
+      # `Parsing`.
+      - name: encoding
+        type: Optional<surf.document.EncodingName>
+      # The encoding the encoding sniffing algorithm chose when surf has no decoder for it; the
+      # text was then decoded as windows-1252. A deliberate deviation: 13.2.3.3 says user agents
+      # must support every encoding of the Encoding Standard (`docs/design/html-parser.md`, item 4).
+      - name: unsupported_encoding
+        type: Optional<surf.document.EncodingName>
+      # The limit that stopped parsing, if one did; the rows hold what was parsed before it.
+      - name: stopped_by
+        type: Optional<surf.document.ParseLimit>
+    relations:
+      - name: navigation
+        kind: references
+        target: surf.navigation.Navigation
+        cardinality: one
+        via: navigation_id
     lifecycle:
-      initial: Parsed
-      states: [Parsed]
+      initial: Parsing
+      states:
+        - name: Parsing
+          summary: The body is being parsed; its elements are being added.
+        - name: Parsed
+          summary: Parsing ended; the title and the elements are final.
       terminal: [Parsed]
+      transitions:
+        - name: finish
+          from: [Parsing]
+          to: Parsed
+
+  # One link or form control of a document (`docs/design/agent-interface.md`, section 6). A row is
+  # written once, while its document is `Parsing`, and never changes or goes: no command deletes
+  # one, and the document has no state that removes its rows.
+  - name: surf.document.Element
+    naming:
+      summary: One actionable element of a document, a link or a form control.
+    identity:
+      name: element_id
+      type: surf.document.ElementId
+    fields:
+      - name: document_id
+        type: surf.document.DocumentId
+      # The element's place among its document's actionable elements in tree order, from 1.
+      - name: position
+        type: Integer
+      - name: kind
+        type: surf.document.ElementKind
+      # The accessible name (`docs/design/html-parser.md`, item 5), whole.
+      - name: label
+        type: String
+      # A link's `href` attribute as written; resolving it is `story:agent-follow-links`'s (D10).
+      - name: target
+        type: Optional<String>
+      # The value of a `text`, `password`, `textarea` or `file` control; none for a `select` (D11),
+      # whose options' selectedness is `story:agent-forms-spec`'s.
+      - name: value
+        type: Optional<String>
+      - name: hidden
+        type: Boolean
+      - name: disabled
+        type: Boolean
+      - name: checked
+        type: Boolean
+      - name: required
+        type: Boolean
+    relations:
+      - name: document
+        kind: references
+        target: surf.document.Document
+        cardinality: one
+        via: document_id
+    lifecycle:
+      initial: Added
+      states:
+        - name: Added
+          summary: The element is a row of its document; it never changes.
+      terminal: [Added]
+
+errors:
+  - name: surf.document.DocumentNotFound
+    summary: No document has this identity.
+    fields:
+      - name: document_id
+        type: surf.document.DocumentId
+
+  - name: surf.document.DocumentStateConflict
+    summary: The document is not being parsed, so nothing moved.
+    fields:
+      - name: state
+        type: surf.document.Document.State
 
 commands:
-  # One outcome: an HTML parser makes a document of any bytes, so nothing is refused here.
-  # Whether a body is HTML at all is decided before the command, by the binding that invokes it.
+  # Parsing takes time, so it is a command that starts it, one per actionable element, and one
+  # that ends it (`AGENTS.md`, "Rules"; `docs/design/html-parser.md`, item 2). An HTML parser makes
+  # a document of any bytes, so nothing is refused here. Whether a body is HTML at all is decided
+  # before the command, by the binding that invokes it.
   - name: surf.document.ParseDocument
     naming:
       wire: parse-document
       display: Parse a document
-      summary: Parse an HTML response body into a document.
+      summary: Start parsing an HTML response body into a document.
     input:
       - name: url
         type: surf.url.Url
         example: "https://example.org/"
       - name: body
         type: Bytes
+      - name: navigation_id
+        type: surf.net.RequestId
     outcomes:
-      - name: parsed
+      - name: started
         creates: surf.document.Document
         instance: document_id
         sets:
           url: input.url
+          navigation_id: input.navigation_id
+        emits:
+          - surf.document.ParsingStarted
+        payload:
+          surf.document.ParsingStarted:
+            document_id: {generated: true}
+            body: input.body
+        summary: The document is Parsing.
+
+  # The next two commands are the component's own steps: its parser step issues them, one
+  # `AddElement` per actionable element in tree order and then `FinishParsing`. No actor is
+  # granted them.
+  # `AddElement` refuses an unknown document and one already `Parsed` by guards over the row its
+  # `document_id` names (`via:`), which ess 0.96.0 generates and synthesizes; the row-set form
+  # (`when_related: {entity:, where:}`) of `docs/design/html-parser.md` item 2 kept it an
+  # obligation. A second element at a position already taken is not refused: the parser step
+  # numbers the elements once, in tree order.
+  - name: surf.document.AddElement
+    naming:
+      wire: add-element
+      display: Add an element
+      summary: Record one actionable element of a document being parsed.
+    input:
+      - name: document_id
+        type: surf.document.DocumentId
+      - name: position
+        type: Integer
+      - name: kind
+        type: surf.document.ElementKind
+      - name: label
+        type: String
+      - name: target
+        type: Optional<String>
+      - name: value
+        type: Optional<String>
+      - name: hidden
+        type: Boolean
+      - name: disabled
+        type: Boolean
+      - name: checked
+        type: Boolean
+      - name: required
+        type: Boolean
+    outcomes:
+      - name: no-such-document
+        when_related: {via: input.document_id, exists: false}
+        error: surf.document.DocumentNotFound
+        payload:
+          surf.document.DocumentNotFound:
+            document_id: input.document_id
+        summary: No document has this identity; nothing is added.
+
+      - name: already-parsed
+        when_related: {via: input.document_id, predicate: state == Parsed}
+        error: surf.document.DocumentStateConflict
+        payload:
+          surf.document.DocumentStateConflict:
+            state: Parsed
+        summary: The document was already Parsed; nothing is added.
+
+      - name: added
+        creates: surf.document.Element
+        instance: element_id
+        sets:
+          document_id: input.document_id
+          position: input.position
+          kind: input.kind
+          label: input.label
+          target: input.target
+          value: input.value
+          hidden: input.hidden
+          disabled: input.disabled
+          checked: input.checked
+          required: input.required
+        emits:
+          - surf.document.ElementAdded
+        payload:
+          surf.document.ElementAdded:
+            element_id: {generated: true}
+            document_id: input.document_id
+            position: input.position
+        summary: The element is a row of its document.
+
+  - name: surf.document.FinishParsing
+    naming:
+      wire: finish-parsing
+      display: Finish parsing
+      summary: End a document's parsing with its title, its encoding and the limit that stopped it.
+    refs: ["whatwg-html:stop-parsing", "whatwg-html:document.title"]
+    input:
+      - name: document_id
+        type: surf.document.DocumentId
+      - name: title
+        type: String
+      - name: encoding
+        type: surf.document.EncodingName
+        example: "UTF-8"
+      - name: unsupported_encoding
+        type: Optional<surf.document.EncodingName>
+      - name: stopped_by
+        type: Optional<surf.document.ParseLimit>
+    outcomes:
+      - name: no-such-document
+        unknown_instance: true
+        error: surf.document.DocumentNotFound
+        payload:
+          surf.document.DocumentNotFound:
+            document_id: input.document_id
+
+      - name: parsed
+        moves: surf.document.Document.finish
+        instance: document_id
+        sets:
+          title: input.title
+          encoding: input.encoding
+          unsupported_encoding: input.unsupported_encoding
+          stopped_by: input.stopped_by
         emits:
           - surf.document.DocumentParsed
         payload:
           surf.document.DocumentParsed:
-            document_id: {generated: true}
-            url: input.url
-        summary: The document exists.
+            document_id: input.document_id
+            url: {subject: url}
+            navigation_id: {subject: navigation_id}
+            title: input.title
+            encoding: input.encoding
+            unsupported_encoding: input.unsupported_encoding
+            stopped_by: input.stopped_by
+        summary: The document is Parsed.
+
+      - name: wrong-state
+        wrong_state: true
+        error: surf.document.DocumentStateConflict
+        payload:
+          surf.document.DocumentStateConflict:
+            state: {subject: state}
+        summary: The document's parsing had already ended.
 
 events:
+  # Carries the body to the parser step, as `surf.net.RequestStarted` carries the address to the
+  # transport.
+  - name: surf.document.ParsingStarted
+    fields:
+      - name: document_id
+        type: surf.document.DocumentId
+      - name: body
+        type: Bytes
+
+  - name: surf.document.ElementAdded
+    fields:
+      - name: element_id
+        type: surf.document.ElementId
+      - name: document_id
+        type: surf.document.DocumentId
+      - name: position
+        type: Integer
+
   - name: surf.document.DocumentParsed
     fields:
       - name: document_id
         type: surf.document.DocumentId
       - name: url
         type: surf.url.Url
+      - name: navigation_id
+        type: surf.net.RequestId
+      - name: title
+        type: String
+      - name: encoding
+        type: surf.document.EncodingName
+      - name: unsupported_encoding
+        type: Optional<surf.document.EncodingName>
+      - name: stopped_by
+        type: Optional<surf.document.ParseLimit>
 
 views:
   - name: surf.document.Documents
@@ -73,6 +395,54 @@ views:
         type: surf.document.DocumentId
       - name: url
         type: surf.url.Url
+      - name: navigation_id
+        type: surf.net.RequestId
+      - name: state
+        type: surf.document.Document.State
+      - name: title
+        type: Optional<String>
+      - name: encoding
+        type: Optional<surf.document.EncodingName>
+      - name: unsupported_encoding
+        type: Optional<surf.document.EncodingName>
+      - name: stopped_by
+        type: Optional<surf.document.ParseLimit>
     naming:
       wire: documents
       display: Documents
+
+  # The actionable elements of one document, in tree order.
+  - name: surf.document.Elements
+    source: surf.document.Element
+    consistency: read_your_writes
+    params:
+      - name: document_id
+        type: surf.document.DocumentId
+    filter: document_id == param.document_id
+    order_by: [position asc]
+    fields:
+      - name: element_id
+        type: surf.document.ElementId
+      - name: document_id
+        type: surf.document.DocumentId
+      - name: position
+        type: Integer
+      - name: kind
+        type: surf.document.ElementKind
+      - name: label
+        type: String
+      - name: target
+        type: Optional<String>
+      - name: value
+        type: Optional<String>
+      - name: hidden
+        type: Boolean
+      - name: disabled
+        type: Boolean
+      - name: checked
+        type: Boolean
+      - name: required
+        type: Boolean
+    naming:
+      wire: elements
+      display: Elements

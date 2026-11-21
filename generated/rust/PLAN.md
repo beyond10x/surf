@@ -1,13 +1,13 @@
 <!--
   generated from surf v1
-  contract digest 055477f7d70d2837ffe9e39fee6cbc6130c982cf9d0650a28bb00f7c8ca52d2c
+  contract digest d31658889d516a083ce9bcfd2d7c0ada34c042952c11901405e00f6683235212
   do not edit: regenerate with `ess synthesize`
 -->
 # Synthesis plan — surf v1
 
 Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synthesize`.
 
-151 capabilities: **143 generated**, **4 obligations**, **4 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
+167 capabilities: **159 generated**, **4 obligations**, **4 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
 
 ## Generated
 
@@ -26,6 +26,11 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | domain type | `surf.agent.SessionToken` |
 | domain type | `surf.document.Document.State` |
 | domain type | `surf.document.DocumentId` |
+| domain type | `surf.document.Element.State` |
+| domain type | `surf.document.ElementId` |
+| domain type | `surf.document.ElementKind` |
+| domain type | `surf.document.EncodingName` |
+| domain type | `surf.document.ParseLimit` |
 | domain type | `surf.navigation.Navigation.State` |
 | domain type | `surf.net.FailureReason` |
 | domain type | `surf.net.MediaType` |
@@ -42,6 +47,7 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | entity lifecycle | `surf.agent.Action` |
 | entity lifecycle | `surf.agent.Session` |
 | entity lifecycle | `surf.document.Document` |
+| entity lifecycle | `surf.document.Element` |
 | entity lifecycle | `surf.navigation.Navigation` |
 | entity lifecycle | `surf.net.Request` |
 | entity lifecycle | `surf.render.Frame` |
@@ -59,6 +65,10 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | command behaviour | `surf.agent.OpenSession` |
 | command contract | `surf.agent.RecordAction` |
 | command behaviour | `surf.agent.RecordAction` |
+| command contract | `surf.document.AddElement` |
+| command behaviour | `surf.document.AddElement` |
+| command contract | `surf.document.FinishParsing` |
+| command behaviour | `surf.document.FinishParsing` |
 | command contract | `surf.document.ParseDocument` |
 | command behaviour | `surf.document.ParseDocument` |
 | command contract | `surf.navigation.CancelNavigation` |
@@ -89,6 +99,8 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | event type | `surf.agent.SessionNavigationChanged` |
 | event type | `surf.agent.SessionOpened` |
 | event type | `surf.document.DocumentParsed` |
+| event type | `surf.document.ElementAdded` |
+| event type | `surf.document.ParsingStarted` |
 | event type | `surf.navigation.NavigationCancelled` |
 | event type | `surf.navigation.NavigationCommitted` |
 | event type | `surf.navigation.NavigationFailed` |
@@ -104,6 +116,8 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | error type | `surf.agent.SessionExists` |
 | error type | `surf.agent.SessionNotFound` |
 | error type | `surf.agent.SessionStateConflict` |
+| error type | `surf.document.DocumentNotFound` |
+| error type | `surf.document.DocumentStateConflict` |
 | error type | `surf.navigation.NavigationNotFound` |
 | error type | `surf.navigation.NavigationStateConflict` |
 | error type | `surf.net.RequestNotFound` |
@@ -120,6 +134,8 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | view query | `surf.agent.Sessions` |
 | view type | `surf.document.Documents` |
 | view query | `surf.document.Documents` |
+| view type | `surf.document.Elements` |
+| view query | `surf.document.Elements` |
 | view type | `surf.navigation.Navigations` |
 | view query | `surf.navigation.Navigations` |
 | view type | `surf.net.Requests` |

@@ -1,0 +1,155 @@
+# Parsing that a limit stopped (`docs/design/html-parser.md`, item 7): the document is Parsed,
+# names the limit, and keeps the element added before it. One document per limit, so that every
+# variant of `surf.document.ParseLimit` is written and read back on both runners. The first was
+# also decoded as windows-1252 because surf has no decoder for the encoding its `meta` named
+# (item 4), and records that name.
+type: ess-scenario/6
+domain: surf.document
+scenario: parse-stopped-at-a-limit
+summary: Five documents each stopped by another limit are Parsed and name it; the first keeps its element and its unsupported encoding.
+
+arrange:
+  - instance: deep
+    entity: surf.document.Document
+  - instance: long
+    entity: surf.document.Document
+  - instance: many
+    entity: surf.document.Document
+  - instance: wide
+    entity: surf.document.Document
+  - instance: large
+    entity: surf.document.Document
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.document.ParseDocument
+    input:
+      url: https://example.org/deep
+      body: PGRpdj4=
+      navigation_id: 3f1d5b7e-0000-4000-8000-000000000111
+    outcome: started
+    capture: {instance: deep, event: surf.document.ParsingStarted, field: document_id}
+
+  - at: 2026-01-06T09:00:01Z
+    command: surf.document.AddElement
+    input:
+      document_id: {$instance: deep}
+      position: 1
+      kind: link
+      label: Top
+      target: "#top"
+      hidden: false
+      disabled: false
+      checked: false
+      required: false
+    outcome: added
+
+  - at: 2026-01-06T09:00:02Z
+    command: surf.document.FinishParsing
+    input:
+      document_id: {$instance: deep}
+      title: Deep
+      encoding: windows-1252
+      unsupported_encoding: EUC-KR
+      stopped_by: Depth
+    outcome: parsed
+    events:
+      - event: surf.document.DocumentParsed
+        payload:
+          document_id: {$instance: deep}
+          title: Deep
+          encoding: windows-1252
+          unsupported_encoding: EUC-KR
+          stopped_by: Depth
+
+  - at: 2026-01-06T09:00:03Z
+    command: surf.document.ParseDocument
+    input:
+      url: https://example.org/long
+      body: PGRpdj4=
+      navigation_id: 3f1d5b7e-0000-4000-8000-000000000112
+    outcome: started
+    capture: {instance: long, event: surf.document.ParsingStarted, field: document_id}
+
+  - at: 2026-01-06T09:00:04Z
+    command: surf.document.FinishParsing
+    input:
+      document_id: {$instance: long}
+      title: ""
+      encoding: UTF-8
+      stopped_by: InputBytes
+    outcome: parsed
+
+  - at: 2026-01-06T09:00:05Z
+    command: surf.document.ParseDocument
+    input:
+      url: https://example.org/many
+      body: PGRpdj4=
+      navigation_id: 3f1d5b7e-0000-4000-8000-000000000113
+    outcome: started
+    capture: {instance: many, event: surf.document.ParsingStarted, field: document_id}
+
+  - at: 2026-01-06T09:00:06Z
+    command: surf.document.FinishParsing
+    input:
+      document_id: {$instance: many}
+      title: ""
+      encoding: UTF-8
+      stopped_by: Nodes
+    outcome: parsed
+
+  - at: 2026-01-06T09:00:07Z
+    command: surf.document.ParseDocument
+    input:
+      url: https://example.org/wide
+      body: PGRpdj4=
+      navigation_id: 3f1d5b7e-0000-4000-8000-000000000114
+    outcome: started
+    capture: {instance: wide, event: surf.document.ParsingStarted, field: document_id}
+
+  - at: 2026-01-06T09:00:08Z
+    command: surf.document.FinishParsing
+    input:
+      document_id: {$instance: wide}
+      title: ""
+      encoding: UTF-8
+      stopped_by: Attributes
+    outcome: parsed
+
+  - at: 2026-01-06T09:00:09Z
+    command: surf.document.ParseDocument
+    input:
+      url: https://example.org/large
+      body: PGRpdj4=
+      navigation_id: 3f1d5b7e-0000-4000-8000-000000000115
+    outcome: started
+    capture: {instance: large, event: surf.document.ParsingStarted, field: document_id}
+
+  - at: 2026-01-06T09:00:10Z
+    command: surf.document.FinishParsing
+    input:
+      document_id: {$instance: large}
+      title: ""
+      encoding: UTF-8
+      stopped_by: StoredBytes
+    outcome: parsed
+
+assert:
+  - view: surf.document.Documents
+    counts: {at_least: 5, at_most: 5}
+  - view: surf.document.Documents
+    contains: {document_id: {$instance: deep}, state: Parsed, title: Deep, encoding: windows-1252, unsupported_encoding: EUC-KR, stopped_by: Depth}
+  - view: surf.document.Documents
+    contains: {document_id: {$instance: long}, state: Parsed, unsupported_encoding: null, stopped_by: InputBytes}
+  - view: surf.document.Documents
+    contains: {document_id: {$instance: many}, state: Parsed, stopped_by: Nodes}
+  - view: surf.document.Documents
+    contains: {document_id: {$instance: wide}, state: Parsed, stopped_by: Attributes}
+  - view: surf.document.Documents
+    contains: {document_id: {$instance: large}, state: Parsed, stopped_by: StoredBytes}
+  - view: surf.document.Elements
+    params: {document_id: {$instance: deep}}
+    counts: {at_least: 1, at_most: 1}
+  - view: surf.document.Elements
+    params: {document_id: {$instance: deep}}
+    contains: {position: 1, kind: link, label: Top, target: "#top"}

@@ -14,10 +14,10 @@ use surf_ports::{
 };
 use surf_types::agent::{ActionId, SessionId};
 use surf_types::behaviour::{
-    DocumentStorage, FrameStorage, NavigationStorage, RequestStorage, TabStorage, TryContext,
-    WindowStorage,
+    DocumentStorage, ElementStorage, FrameStorage, NavigationStorage, RequestStorage, TabStorage,
+    TryContext, WindowStorage,
 };
-use surf_types::document::{DocumentId, DocumentSnapshot};
+use surf_types::document::{DocumentId, DocumentSnapshot, ElementId, ElementSnapshot};
 use surf_types::navigation::{NavigationSnapshot, NavigationState};
 use surf_types::net::{RequestId, RequestSnapshot};
 use surf_types::obligation::UnmetObligation;
@@ -134,6 +134,7 @@ mutant_storage!(TabStorage, TabSnapshot, TabId);
 mutant_storage!(NavigationStorage, NavigationSnapshot, RequestId);
 mutant_storage!(RequestStorage, RequestSnapshot, RequestId);
 mutant_storage!(DocumentStorage, DocumentSnapshot, DocumentId);
+mutant_storage!(ElementStorage, ElementSnapshot, ElementId);
 mutant_storage!(FrameStorage, FrameSnapshot, FrameId);
 
 /// `TryContext` handed through to `$field` of `$ty`.
@@ -152,6 +153,12 @@ macro_rules! context_through {
                 &mut self,
             ) -> Result<DocumentId, UnmetObligation> {
                 self.$field.try_generate_surf_document_document_id()
+            }
+
+            fn try_generate_surf_document_element_id(
+                &mut self,
+            ) -> Result<ElementId, UnmetObligation> {
+                self.$field.try_generate_surf_document_element_id()
             }
 
             fn try_generate_surf_net_request_id(&mut self) -> Result<RequestId, UnmetObligation> {
