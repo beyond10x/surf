@@ -1,0 +1,9 @@
+[package]
+name = "surf-view"
+description = "The live view's HTTP server: GET only, a fixed route table, the Host and view-token checks and bounded server-sent events, with the standard library only."
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+surf-secret = { path = "../secret" }
