@@ -477,7 +477,7 @@ fn read_token_file(path: &Path) -> Result<Token, UsageError> {
     if opened.dev() != looked.dev() || opened.ino() != looked.ino() || !opened.is_file() {
         return Err(usage("the token file changed while it was read"));
     }
-    let caller = caller_uid().map_err(|error| {
+    let caller = wire::caller_uid().map_err(|error| {
         usage(format!(
             "the caller's user id cannot be read: {}",
             error.kind()
@@ -501,10 +501,4 @@ fn read_token_file(path: &Path) -> Result<Token, UsageError> {
         .ok()
         .and_then(Token::from_hex)
         .ok_or_else(|| usage("the token file does not hold 64 lower-case hexadecimal digits"))
-}
-
-/// The caller's user id: the owner of `/proc/self`, which Linux gives the process's effective
-/// user id. The standard library has no call for it, and this crate uses no `unsafe` code.
-fn caller_uid() -> std::io::Result<u32> {
-    fs::metadata("/proc/self").map(|metadata| metadata.uid())
 }
