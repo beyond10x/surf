@@ -229,6 +229,17 @@ impl Tree {
         }
     }
 
+    /// Moves every child of `from` to the end of `to`'s children, in order, in one pass (the
+    /// adoption agency algorithm's "take all of the child nodes of furthestBlock and append them
+    /// to newElement"). `to` is not `from` and not under it.
+    pub(crate) fn move_children(&mut self, from: NodeId, to: NodeId) {
+        let children = std::mem::take(&mut self.nodes[from.0].children);
+        for &child in &children {
+            self.nodes[child.0].parent = Some(to);
+        }
+        self.nodes[to.0].children.extend(children);
+    }
+
     /// Whether `node` has a child that is an element.
     pub(crate) fn has_element_child(&self, node: NodeId) -> bool {
         self.children(node)
