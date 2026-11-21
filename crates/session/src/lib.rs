@@ -47,12 +47,26 @@
 //! # What it keeps
 //!
 //! The answer lines hold the page line, the `did` line and at most [`PATH_SHOWN`] path lines,
-//! each address at most four times its length once quoted; an address comes from a request of at
-//! most [`surf_agent::wire::REQUEST_MAX`] bytes or is the address a response came from after
-//! redirects, at most [`surf_fetch::MAX_ADDRESS_BYTES`] bytes, the same 64 KiB, so an answer
-//! stays far below
-//! [`surfd::link::ANSWER_TEXT_MAX`]. A status record whose quoted address does not fit
-//! [`surfd::link::RECORD_MAX`] is sent without the address.
+//! seven addresses. An address comes from a request of at most
+//! [`surf_agent::wire::REQUEST_MAX`] bytes, which quotes it as the answer does, or is the
+//! address a response came from after redirects, at most [`surf_fetch::MAX_ADDRESS_BYTES`]
+//! bytes, the same 64 KiB, before quoting. Quoting writes a `"`, a `\` and each byte outside
+//! printable ASCII as four bytes (`\x5c` for a `\`), so a quoted address is at most four times
+//! its length and its two quotes; `surf-url` leaves a `\` in the query or fragment of a
+//! response URL as it is, so the quoted form of one comes to up to four times
+//! [`surf_fetch::MAX_ADDRESS_BYTES`], at most 262,146 bytes. Seven addresses of at most 262,146
+//! bytes each are 1,835,022 bytes, so an answer stays below [`surfd::link::ANSWER_TEXT_MAX`],
+//! 4,194,304 bytes.
+//!
+//! A status record whose quoted address does not fit [`surfd::link::RECORD_MAX`] (65,536 bytes,
+//! with the record's other lines) is sent without the address, and `surfd` lists the session
+//! without it; the page line of the answer still holds it. An address asked through the wire
+//! comes to about that limit at most, as the request that carries it is at most 64 KiB and
+//! quotes it the same way; the address a response came from after redirects comes to up to
+//! four times it, so a server can cause a record without an address: a redirect to an address
+//! of about 65,500 bytes or more, or to a shorter one whose query holds backslashes (case 24 of
+//! `tests/redirect.rs`: an address of 65,536 bytes whose query is backslashes quotes to 262,071
+//! bytes).
 //!
 //! A response body (at most `surf-fetch`'s body limit, 16 MiB) is held only while the command
 //! that loaded it runs: the system carries it in two events and two binding invocations, and
@@ -75,13 +89,15 @@
 //! lines without the `token` line ([`Reply::to_link`]). A request that records no action
 //! (`look`, a refusal) has no entry.
 //!
-//! The entries of one request through the wire stay far below [`surfd::link::ENTRIES_MAX`]: an
-//! event field holds no body, only its length, and an address, at most
+//! The entries of one request through the wire stay below [`surfd::link::ENTRIES_MAX`],
+//! 8,388,608 bytes: an event field holds no body, only its length, and an address, at most
 //! [`surf_agent::wire::REQUEST_MAX`] bytes long when it comes from a request and at most
 //! [`surf_fetch::MAX_ADDRESS_BYTES`] bytes, the same 64 KiB, when it is the address a response
-//! came from after redirects, is in at most eight event and action lines of
-//! one `open <url>` or `go`, and the answer entry holds at most seven addresses (`did`, `page`
-//! and [`PATH_SHOWN`] path lines): about 1 MiB.
+//! came from after redirects, is in at most eight event and action lines of one `open <url>`
+//! or `go`, and the answer entry holds at most seven addresses (`did`, `page` and
+//! [`PATH_SHOWN`] path lines). Each address is at most 262,146 bytes once quoted ("What it
+//! keeps"), so the fifteen come to at most 3,932,190 bytes, with a few hundred bytes of other
+//! fields per line.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
