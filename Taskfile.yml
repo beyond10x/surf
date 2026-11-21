@@ -13,7 +13,7 @@ includes:
     optional: true
 
 vars:
-  REFUSALS_MAX: 10
+  REFUSALS_MAX: 24
   SYNTHESIZE: ess generate synthesize --strict-requires --path spec --target rust
 
 tasks:

@@ -3,6 +3,13 @@
 version = 4
 
 [[package]]
+name = "agent"
+version = "1.0.0"
+dependencies = [
+ "surf-types",
+]
+
+[[package]]
 name = "document"
 version = "1.0.0"
 dependencies = [
@@ -41,6 +48,7 @@ dependencies = [
 name = "surf"
 version = "0.1.0"
 dependencies = [
+ "agent",
  "document",
  "navigator",
  "net",
@@ -53,6 +61,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "surf-agent"
+version = "0.1.0"
+dependencies = [
+ "surf-answer",
+ "surf-secret",
+]
+
+[[package]]
 name = "surf-answer"
 version = "0.1.0"
 
@@ -61,9 +77,21 @@ name = "surf-fetch"
 version = "0.1.0"
 
 [[package]]
+name = "surf-html"
+version = "0.1.0"
+
+[[package]]
+name = "surf-html-conformance"
+version = "0.1.0"
+dependencies = [
+ "surf-html",
+]
+
+[[package]]
 name = "surf-ports"
 version = "0.1.0"
 dependencies = [
+ "agent",
  "document",
  "navigator",
  "net",
@@ -80,6 +108,7 @@ version = "0.1.0"
 name = "surf-system"
 version = "1.0.0"
 dependencies = [
+ "agent",
  "document",
  "navigator",
  "net",
@@ -95,3 +124,10 @@ version = "1.0.0"
 [[package]]
 name = "surf-url"
 version = "0.1.0"
+
+[[package]]
+name = "surf-view"
+version = "0.1.0"
+dependencies = [
+ "surf-secret",
+]

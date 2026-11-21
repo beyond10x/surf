@@ -10,18 +10,19 @@ line and prints what happened. It has no window, no rendering, no JavaScript and
 
 ## Numbers
 
-On 2026-11-21, with ess 0.96.0, after wave 1 of the current plan:
+On 2026-11-21, with ess 0.96.0, after wave 2 of the current plan:
 
 | what | value |
 |---|---|
 | specification | ESS 0.96.0, valid |
-| conformance scenarios | 51 of 51 pass, against the interpreter and against the Rust code |
-| tests | 201 passed |
+| conformance scenarios | 77 of 77 pass, against the interpreter and against the Rust code |
+| tests | 280 passed |
 | URL test data | 872 of 904 cases pass; 32 skipped, listed by name |
+| HTML parser test data | 9,107 cases counted, 9,095 run, 5 pass; the parser is still empty |
 | third-party crates in what ships | 0 |
 | unsafe code | forbidden in every hand-written crate |
 | standard sections marked complete | 0 |
-| roadmap | 1 of 22 waves delivered |
+| roadmap | 2 of 22 waves delivered |
 
 ## What is not checked yet
 

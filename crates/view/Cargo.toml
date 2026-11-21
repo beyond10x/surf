@@ -4,6 +4,7 @@ description = "The live view's HTTP server: GET only, a fixed route table, the H
 version = "0.1.0"
 edition = "2024"
 publish = false
+license = "Apache-2.0"
 
 [dependencies]
 surf-secret = { path = "../secret" }

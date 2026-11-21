@@ -132,7 +132,7 @@ nothing depends on it); nothing converts it.
 
 Why two sources: the tree-construction data at the last html5lib-tests commit that has it
 (`9329e64`) is 60 `.dat` files with 1,713 cases; at the pinned wpt commit it is 62 files with
-1,870 cases, among them `processing-instructions.dat` (124 cases) and `scripted_foster01.dat`.
+1,973 cases, among them `processing-instructions.dat` (124 cases) and `scripted_foster01.dat`.
 wpt is where the standard's own suite keeps it now, and the completeness rule of `AGENTS.md`
 counts wpt's tests. The tokenizer and encoding data stay in html5lib-tests, which still
 maintains them (`c777c40` added processing instruction tokenizer tests on 2026-10-01).
