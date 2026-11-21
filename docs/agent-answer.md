@@ -232,6 +232,8 @@ or stopped. The table of `did refused` gives the status of each reason.
 
 A refusal still prints the answer: the head line, then `did refused <reason>`, then the current
 state of the session as far as the one answering knows it (`page`, `path`, the notes).
+A `token` refusal prints the head line and the `did` line only: a caller without the token
+learns nothing of the session.
 
 ## Parsing
 
