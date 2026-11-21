@@ -1,18 +1,21 @@
 <!--
   generated from surf v1
-  contract digest f176714dd8b7999f1b6166f2e2d3e020c7ce9478056f6babb4bb5edef3c071ff
+  contract digest 5042a1110c657521cdce7556f33cbda05f4df3fdd350ca1ac5dfafd26db14a63
   do not edit: regenerate with `ess synthesize`
 -->
 # Synthesis plan — surf v1
 
 Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synthesize`.
 
-138 capabilities: **132 generated**, **2 obligations**, **4 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
+151 capabilities: **143 generated**, **4 obligations**, **4 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
 
 ## Generated
 
 | capability | source |
 | --- | --- |
+| domain type | `surf.agent.Action.State` |
+| domain type | `surf.agent.ActionCommand` |
+| domain type | `surf.agent.ActionId` |
 | domain type | `surf.agent.GoCall` |
 | domain type | `surf.agent.OpenCall` |
 | domain type | `surf.agent.OpenedSession` |
@@ -36,6 +39,7 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | domain type | `surf.shell.Window.State` |
 | domain type | `surf.shell.WindowId` |
 | domain type | `surf.url.Url` |
+| entity lifecycle | `surf.agent.Action` |
 | entity lifecycle | `surf.agent.Session` |
 | entity lifecycle | `surf.document.Document` |
 | entity lifecycle | `surf.navigation.Navigation` |
@@ -47,10 +51,14 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | command behaviour | `surf.agent.CloseSession` |
 | command contract | `surf.agent.Go` |
 | command behaviour | `surf.agent.Go` |
+| command contract | `surf.agent.NoteNavigationCommitted` |
 | command contract | `surf.agent.NoteNavigationEnded` |
+| command contract | `surf.agent.NoteNavigationFailed` |
 | command contract | `surf.agent.NoteNavigationStarted` |
 | command contract | `surf.agent.OpenSession` |
 | command behaviour | `surf.agent.OpenSession` |
+| command contract | `surf.agent.RecordAction` |
+| command behaviour | `surf.agent.RecordAction` |
 | command contract | `surf.document.ParseDocument` |
 | command behaviour | `surf.document.ParseDocument` |
 | command contract | `surf.navigation.CancelNavigation` |
@@ -75,6 +83,7 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | command behaviour | `surf.shell.OpenTab` |
 | command contract | `surf.shell.OpenWindow` |
 | command behaviour | `surf.shell.OpenWindow` |
+| event type | `surf.agent.ActionRecorded` |
 | event type | `surf.agent.NavigationRequested` |
 | event type | `surf.agent.SessionClosed` |
 | event type | `surf.agent.SessionNavigationChanged` |
@@ -103,6 +112,8 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | error type | `surf.shell.TabNotFound` |
 | error type | `surf.shell.TabStateConflict` |
 | error type | `surf.shell.WindowNotFound` |
+| view type | `surf.agent.SessionLog` |
+| view query | `surf.agent.SessionLog` |
 | view type | `surf.agent.SessionState` |
 | view query | `surf.agent.SessionState` |
 | view type | `surf.agent.Sessions` |
@@ -159,8 +170,10 @@ What the specification fully determines is generated; what it cannot determine i
 
 | capability | source | why not generated | contract |
 | --- | --- | --- | --- |
+| command behaviour | `surf.agent.NoteNavigationCommitted` | kept an obligation by a set outcome over filtered rows (`instances:`), in `noted` | given `surf.agent.NoteNavigationCommitted` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `navigation_id == input.navigation_id`, setting `navigation_state`, `status`, `media_type`, emits `surf.agent.SessionNavigationChanged` |
 | command behaviour | `surf.agent.NoteNavigationEnded` | kept an obligation by a set outcome over filtered rows (`instances:`), in `noted` | given `surf.agent.NoteNavigationEnded` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `navigation_id == input.navigation_id`, setting `navigation_state`, emits `surf.agent.SessionNavigationChanged` |
-| command behaviour | `surf.agent.NoteNavigationStarted` | kept an obligation by a set outcome over filtered rows (`instances:`), in `noted` | given `surf.agent.NoteNavigationStarted` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `tab_id == input.tab_id`, setting `navigation_id`, `url`, `navigation_state`, emits `surf.agent.SessionNavigationChanged` |
+| command behaviour | `surf.agent.NoteNavigationFailed` | kept an obligation by a set outcome over filtered rows (`instances:`), in `noted` | given `surf.agent.NoteNavigationFailed` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `navigation_id == input.navigation_id`, setting `navigation_state`, `failure_reason`, emits `surf.agent.SessionNavigationChanged` |
+| command behaviour | `surf.agent.NoteNavigationStarted` | kept an obligation by a set outcome over filtered rows (`instances:`), in `noted` | given `surf.agent.NoteNavigationStarted` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `tab_id == input.tab_id`, setting `navigation_id`, `url`, `navigation_state`, `status`, `media_type`, `failure_reason`, emits `surf.agent.SessionNavigationChanged` |
 
 ## Refused — not represented by this synthesis
 

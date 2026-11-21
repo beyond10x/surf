@@ -12,7 +12,7 @@ use surf_ports::{
     DocumentPorts, NavigatorPorts, NetPorts, RandomSource, RendererPorts, ShellPorts, agent_port,
     document_port, navigator_port, net_port, renderer_port, shell_port,
 };
-use surf_types::agent::SessionId;
+use surf_types::agent::{ActionId, SessionId};
 use surf_types::behaviour::{
     DocumentStorage, FrameStorage, NavigationStorage, RequestStorage, TabStorage, TryContext,
     WindowStorage,
@@ -142,6 +142,10 @@ macro_rules! context_through {
         impl$(<$param: TryContext>)? TryContext for $ty {
             fn try_caller_session_id(&self) -> Result<Option<SessionId>, UnmetObligation> {
                 self.$field.try_caller_session_id()
+            }
+
+            fn try_generate_surf_agent_action_id(&mut self) -> Result<ActionId, UnmetObligation> {
+                self.$field.try_generate_surf_agent_action_id()
             }
 
             fn try_generate_surf_document_document_id(

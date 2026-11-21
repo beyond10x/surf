@@ -11,7 +11,7 @@
 //! | [`NetPorts`] | `net` | `Request` | no |
 //! | [`DocumentPorts`] | `document` | `Document` | yes |
 //! | [`RendererPorts`] | `renderer` | `Frame` | yes |
-//! | [`AgentPorts`] | `agent` | `Session` | the caller only |
+//! | [`AgentPorts`] | `agent` | `Session`, `Action` | the caller and an action's identity |
 //!
 //! Each ports type keeps its tables private: a component's rows are reachable only through the
 //! storage traits of its own ports type, so no component's behaviours read another's.
@@ -23,8 +23,10 @@
 //!
 //! The `agent` component's commands read their caller's `session_id`. [`AgentPorts`] answers it
 //! from a [`Caller`], a handle whoever authenticates a call sets before issuing the command; the
-//! other ports types know no caller and answer that question as unmet. [`AgentPorts`] also meets
-//! the two obligations the generation leaves to the component: `NoteNavigationStarted` and
+//! other ports types know no caller and answer that question as unmet. Only [`AgentPorts`]
+//! assigns an action's identity; the other ports types answer that as unmet too. [`AgentPorts`]
+//! also meets the four obligations the generation leaves to the component:
+//! `NoteNavigationStarted`, `NoteNavigationCommitted`, `NoteNavigationFailed` and
 //! `NoteNavigationEnded`, which change every session their filter selects.
 //!
 //! [`shell_port`], [`navigator_port`], [`net_port`], [`document_port`], [`renderer_port`] and
@@ -81,10 +83,13 @@ pub use ports::{
 };
 pub use random::{OsRandom, RandomSource};
 
-use surf_types::agent::obligations::{NoteNavigationEndedBehavior, NoteNavigationStartedBehavior};
+use surf_types::agent::obligations::{
+    NoteNavigationCommittedBehavior, NoteNavigationEndedBehavior, NoteNavigationFailedBehavior,
+    NoteNavigationStartedBehavior,
+};
 use surf_types::behaviour::{
-    DocumentStorage, FrameStorage, Generated, NavigationStorage, RequestStorage, SessionStorage,
-    TabStorage, TryContext, WindowStorage,
+    ActionStorage, DocumentStorage, FrameStorage, Generated, NavigationStorage, RequestStorage,
+    SessionStorage, TabStorage, TryContext, WindowStorage,
 };
 
 /// The `shell` component's generated port over [`ShellPorts`].
@@ -98,7 +103,7 @@ pub type DocumentPort<R = OsRandom> = document::Document<Generated<DocumentPorts
 /// The `renderer` component's generated port over [`RendererPorts`].
 pub type RendererPort<R = OsRandom> = renderer::Renderer<Generated<RendererPorts<R>>>;
 /// The `agent` component's generated port over [`AgentPorts`].
-pub type AgentPort = agent::Agent<Generated<AgentPorts>>;
+pub type AgentPort<R = OsRandom> = agent::Agent<Generated<AgentPorts<R>>>;
 
 /// The `shell` component's port, its behaviours generated over `ports`.
 pub fn shell_port<P>(ports: P) -> shell::Shell<Generated<P>>
@@ -140,11 +145,17 @@ where
     renderer::Renderer::new(Generated::new(ports))
 }
 
-/// The `agent` component's port, its behaviours generated over `ports`, and the two its
+/// The `agent` component's port, its behaviours generated over `ports`, and the four its
 /// generation leaves owed taken from `ports`.
 pub fn agent_port<P>(ports: P) -> agent::Agent<Generated<P>>
 where
-    P: TryContext + SessionStorage + NoteNavigationStartedBehavior + NoteNavigationEndedBehavior,
+    P: TryContext
+        + SessionStorage
+        + ActionStorage
+        + NoteNavigationStartedBehavior
+        + NoteNavigationCommittedBehavior
+        + NoteNavigationFailedBehavior
+        + NoteNavigationEndedBehavior,
 {
     agent::Agent::new(Generated::new(ports))
 }

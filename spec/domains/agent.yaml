@@ -17,6 +17,29 @@ types:
     naming:
       summary: The identity of a session, drawn by `open`; not secret, it appears in listings.
 
+  # Minted by the component when the action is recorded: no command addresses an action after
+  # that, so no caller needs to name one in advance. Unique across every session, which the
+  # sequence number alone is not.
+  - name: surf.agent.ActionId
+    kind: newtype
+    of: Uuid
+    naming:
+      summary: The identity of one recorded action.
+
+  # The command word of an action as the `path` and `did` lines print it (`docs/agent-answer.md`).
+  # `agent-links-spec`, `agent-forms-spec` and `agent-history-spec` add their commands here.
+  - name: surf.agent.ActionCommand
+    kind: enum
+    variants:
+      - name: open
+        summary: The session was opened (`OpenSession`).
+      - name: go
+        summary: An address was requested (`Go`).
+      - name: close
+        summary: The session was closed (`CloseSession`).
+    naming:
+      summary: Which command of the agent an action was.
+
   # The token is a credential, not a name: whoever holds it drives the session, so it is distinct
   # from `SessionId`. Its form is 32 bytes from the operating system's random source, written as
   # 64 lower-case hexadecimal digits. It is not declared as an `alphabet:` or a length: the
@@ -100,6 +123,12 @@ types:
         type: Optional<surf.url.Url>
       - name: navigation_state
         type: Optional<surf.navigation.Navigation.State>
+      - name: status
+        type: Optional<surf.net.Status>
+      - name: media_type
+        type: Optional<surf.net.MediaType>
+      - name: failure_reason
+        type: Optional<surf.net.FailureReason>
 
 entities:
   - name: surf.agent.Session
@@ -126,14 +155,23 @@ entities:
         type: surf.agent.SessionId
       # What the agent reads back about its current navigation. The navigator holds the
       # navigation; this component reads none of its rows and keeps the copy its events report
-      # (`NoteNavigationStarted`, `NoteNavigationEnded`). All three are absent until the first
-      # navigation of the session started.
+      # (`NoteNavigationStarted` and the three commands that note its end). All three are absent
+      # until the first navigation of the session started.
       - name: navigation_id
         type: Optional<surf.net.RequestId>
       - name: url
         type: Optional<surf.url.Url>
       - name: navigation_state
         type: Optional<surf.navigation.Navigation.State>
+      # The rest of the `page` line (design section 5.1): the status and media type of a
+      # committed navigation, the reason of a failed one. `NoteNavigationStarted` clears all
+      # three; `NoteNavigationCommitted` sets the first two, `NoteNavigationFailed` the third.
+      - name: status
+        type: Optional<surf.net.Status>
+      - name: media_type
+        type: Optional<surf.net.MediaType>
+      - name: failure_reason
+        type: Optional<surf.net.FailureReason>
     relations:
       # The shell holds the window. A closed session leaves it Open: nothing closes a window yet.
       # UNMAPPED: closing the session's window with the session. What would settle it: a command
@@ -164,6 +202,13 @@ entities:
         target: surf.agent.Session
         cardinality: one
         via: holder
+      # The session's action log (design section 6, accepted with the design): zero actions
+      # before the first, and an action never outlives its session.
+      - name: actions
+        kind: owns
+        target: surf.agent.Action
+        cardinality: many
+        via: session_id
       # UNMAPPED: the session's document. `surf.document.DocumentParsed` carries the document's
       # identity and address and names no navigation or tab, so nothing can tell which session a
       # parsed document belongs to. What would settle it: a document that carries its navigation
@@ -181,6 +226,35 @@ entities:
         - name: close
           from: [Open]
           to: Closed
+
+  # One accepted action of a session: a row of its log, which the `path` line and `log` print
+  # (design sections 5.1 and 6). A refused command records nothing, so every row was accepted;
+  # what came of it is the state of the navigation, which the session shows on the `page` line,
+  # so the design's "outcome" is not stored a second time.
+  # The value the agent gave is stored as the specification types it, never as text the session
+  # process rendered: `url` is the address of `go`, absent for `open` and `close`. A later action
+  # with another kind of argument (a handle, a control value) adds its own optional field.
+  - name: surf.agent.Action
+    naming:
+      summary: One accepted action of a session, in the order the session took them.
+    identity:
+      name: action_id
+      type: surf.agent.ActionId
+    fields:
+      - name: session_id
+        type: surf.agent.SessionId
+      - name: sequence
+        type: Integer
+      - name: command
+        type: surf.agent.ActionCommand
+      - name: url
+        type: Optional<surf.url.Url>
+    lifecycle:
+      initial: Recorded
+      states:
+        - name: Recorded
+          summary: The action was taken; a row of the log never changes.
+      terminal: [Recorded]
 
 # Two callers. Whoever can reach the session directory opens a session; afterwards only a caller
 # whose credential carries the session acts on it. An actor's `attributes:` are what its
@@ -207,6 +281,7 @@ actors:
       - surf.agent.Go
       - surf.agent.CloseSession
       - surf.agent.SessionState
+      - surf.agent.SessionLog
     naming:
       display: Session holder
       summary: An agent that presented the token of one session.
@@ -337,7 +412,7 @@ commands:
             url: input.url
         summary: The navigator is asked to load the address into the session's tab.
 
-  # The next two commands are the agent component's side of the navigator's events: the bindings
+  # The next four commands are the agent component's side of the navigator's events: the bindings
   # `note-on-navigation-*` invoke them, and no actor is granted them. A navigation event names its
   # tab and its navigation and no session, so each command changes every session its filter
   # selects (`instances:`, ess/16, website/docs/guides/specify/selection-effects.md): at most one,
@@ -363,6 +438,9 @@ commands:
           navigation_id: input.navigation_id
           url: input.url
           navigation_state: Started
+          status: {cleared: true}
+          media_type: {cleared: true}
+          failure_reason: {cleared: true}
         emits:
           - surf.agent.SessionNavigationChanged
         payload:
@@ -372,13 +450,74 @@ commands:
             sessions: {count: changed}
         summary: The session holding the tab, if any, shows the navigation as Started.
 
+  # The three commands that note a navigation's end are selected by the navigation, not the tab: a
+  # navigation that ends after a newer one started in the same tab changes nothing.
+  # A committed and a failed navigation each have a command of their own, because each carries
+  # what the other does not. One command with `Optional` inputs validates and runs on the
+  # interpreter, but ess 0.96.0 refuses Rust for a binding that maps a required event field into
+  # an `Optional` input ("emits a plain clone of `surf.net.Status` for `status` of type
+  # `Optional<surf.net.Status>`; this assignment needs an explicit target representation").
+  # `NoteNavigationEnded` keeps the cancelled end, which carries nothing more.
+  - name: surf.agent.NoteNavigationCommitted
+    naming:
+      wire: note-navigation-committed
+      display: Note a committed navigation
+      summary: Record on the session showing a navigation that it committed, with its status and media type.
+    input:
+      - name: navigation_id
+        type: surf.net.RequestId
+      - name: status
+        type: surf.net.Status
+      - name: media_type
+        type: surf.net.MediaType
+    outcomes:
+      - name: noted
+        updates: surf.agent.Session
+        instances: {where: navigation_id == input.navigation_id}
+        sets:
+          navigation_state: Committed
+          status: input.status
+          media_type: input.media_type
+        emits:
+          - surf.agent.SessionNavigationChanged
+        payload:
+          surf.agent.SessionNavigationChanged:
+            navigation_id: input.navigation_id
+            state: Committed
+            sessions: {count: changed}
+        summary: The session showing the navigation, if any, shows it Committed with its status and media type.
+
+  - name: surf.agent.NoteNavigationFailed
+    naming:
+      wire: note-navigation-failed
+      display: Note a failed navigation
+      summary: Record on the session showing a navigation that it failed, and why.
+    input:
+      - name: navigation_id
+        type: surf.net.RequestId
+      - name: reason
+        type: surf.net.FailureReason
+    outcomes:
+      - name: noted
+        updates: surf.agent.Session
+        instances: {where: navigation_id == input.navigation_id}
+        sets:
+          navigation_state: Failed
+          failure_reason: input.reason
+        emits:
+          - surf.agent.SessionNavigationChanged
+        payload:
+          surf.agent.SessionNavigationChanged:
+            navigation_id: input.navigation_id
+            state: Failed
+            sessions: {count: changed}
+        summary: The session showing the navigation, if any, shows it Failed with its reason.
+
   - name: surf.agent.NoteNavigationEnded
     naming:
       wire: note-navigation-ended
       display: Note an ended navigation
       summary: Record on the session showing a navigation how the navigation ended.
-    # Selected by the navigation, not the tab: a navigation that ends after a newer one started in
-    # the same tab changes nothing.
     input:
       - name: navigation_id
         type: surf.net.RequestId
@@ -445,6 +584,57 @@ commands:
             state: {subject: state}
         summary: The session was already Closed.
 
+  # The session process records each action it took, after the agent's command was accepted and
+  # before it answers: `OpenSession/opened` records `open`, `Go/requested` records `go` with its
+  # address, `CloseSession/closed` records `close`. `open <url>` is two actions, `open` and then
+  # `go` with the address, because it is `OpenSession` and then `Go` (design section 4). The
+  # session process holds one session and is the only writer of its log, so it supplies the
+  # sequence number, from 1. A refused command records nothing. No actor is granted it: like
+  # `surf.net.DeliverResponse`, it is the component's own step.
+  - name: surf.agent.RecordAction
+    naming:
+      wire: record-action
+      display: Record an action
+      summary: Add an accepted action to its session's log.
+    input:
+      - name: session_id
+        type: surf.agent.SessionId
+      - name: sequence
+        type: Integer
+      - name: command
+        type: surf.agent.ActionCommand
+      - name: url
+        type: Optional<surf.url.Url>
+    outcomes:
+      # An action belongs to a session (`Session.actions`, `owns`), so one for a session that does
+      # not exist is refused.
+      - name: no-such-session
+        when_related: {via: input.session_id, exists: false}
+        error: surf.agent.SessionNotFound
+        payload:
+          surf.agent.SessionNotFound:
+            session_id: input.session_id
+        summary: No session has this identity; nothing is recorded.
+
+      - name: recorded
+        creates: surf.agent.Action
+        instance: action_id
+        sets:
+          session_id: input.session_id
+          sequence: input.sequence
+          command: input.command
+          url: input.url
+        emits:
+          - surf.agent.ActionRecorded
+        payload:
+          surf.agent.ActionRecorded:
+            action_id: {generated: true}
+            session_id: input.session_id
+            sequence: input.sequence
+            command: input.command
+            url: input.url
+        summary: The action is a row of its session's log.
+
 events:
   - name: surf.agent.SessionOpened
     fields:
@@ -465,7 +655,7 @@ events:
         type: surf.url.Url
 
   # ESS refuses an outcome that publishes nothing (`ESS-COMMAND-007`, `empty_change`); this is
-  # what the two note commands publish. `sessions` is how many sessions changed: 0 for a
+  # what the four note commands publish. `sessions` is how many sessions changed: 0 for a
   # navigation in a tab no session holds.
   - name: surf.agent.SessionNavigationChanged
     fields:
@@ -484,6 +674,19 @@ events:
         type: surf.shell.WindowId
       - name: tab_id
         type: surf.shell.TabId
+
+  - name: surf.agent.ActionRecorded
+    fields:
+      - name: action_id
+        type: surf.agent.ActionId
+      - name: session_id
+        type: surf.agent.SessionId
+      - name: sequence
+        type: Integer
+      - name: command
+        type: surf.agent.ActionCommand
+      - name: url
+        type: Optional<surf.url.Url>
 
 views:
   # Every session, as the local user lists them: every stored field but `holder`, which repeats
@@ -506,13 +709,20 @@ views:
         type: Optional<surf.url.Url>
       - name: navigation_state
         type: Optional<surf.navigation.Navigation.State>
+      - name: status
+        type: Optional<surf.net.Status>
+      - name: media_type
+        type: Optional<surf.net.MediaType>
+      - name: failure_reason
+        type: Optional<surf.net.FailureReason>
     naming:
       wire: sessions
       display: Sessions
 
   # The state an agent reads back for its session (`look`): the rows of the answer that slice 1
-  # can fill. A view reads only its own component's rows (AGENTS.md); the navigation's address
-  # and state are the copy the navigator's events left on the session.
+  # can fill. A view reads only its own component's rows (AGENTS.md); the navigation's address,
+  # state, status, media type and failure reason are the copy the navigator's events left on the
+  # session.
   # Only the holder reads it, and the model cannot say so: a view's read grant names actors, not
   # rows, and a filter reading a caller attribute (`session_id == caller.session_id`) is refused
   # (`ESS-VIEW-003`, "`caller.session_id` reads `caller`, which is not a declared observable
@@ -536,8 +746,39 @@ views:
         type: Optional<surf.url.Url>
       - name: navigation_state
         type: Optional<surf.navigation.Navigation.State>
+      - name: status
+        type: Optional<surf.net.Status>
+      - name: media_type
+        type: Optional<surf.net.MediaType>
+      - name: failure_reason
+        type: Optional<surf.net.FailureReason>
     # `code:` because the Rust target names both this view and `Session.State` `SessionState`.
     naming:
       code: SessionStateView
       wire: session-state
       display: Session state
+
+  # The log of one session (`path`, and `log` in a later story), oldest first. Read by the holder,
+  # as `SessionState` is; the same marker holds: one session process serves one session.
+  - name: surf.agent.SessionLog
+    source: surf.agent.Action
+    consistency: read_your_writes
+    params:
+      - name: session_id
+        type: surf.agent.SessionId
+    filter: session_id == param.session_id
+    order_by: [sequence asc]
+    fields:
+      - name: action_id
+        type: surf.agent.ActionId
+      - name: session_id
+        type: surf.agent.SessionId
+      - name: sequence
+        type: Integer
+      - name: command
+        type: surf.agent.ActionCommand
+      - name: url
+        type: Optional<surf.url.Url>
+    naming:
+      wire: session-log
+      display: Session log

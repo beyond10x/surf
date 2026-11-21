@@ -2,13 +2,34 @@
   "provenance": {
     "system": "surf",
     "specification_version": "v1",
-    "source_digest": "19aec15967be544493e0922d52bbea2fdc861ee693ddf17ca8373309d105c18d",
-    "contract_digest": "f176714dd8b7999f1b6166f2e2d3e020c7ce9478056f6babb4bb5edef3c071ff"
+    "source_digest": "26a46de4c43e653b856b856eff2d1bdebd9e4941d2bb5c803186f6d32151f804",
+    "contract_digest": "5042a1110c657521cdce7556f33cbda05f4df3fdd350ca1ac5dfafd26db14a63"
   },
   "scope": {
     "profile": "component-skeletons"
   },
   "capabilities": [
+    {
+      "kind": "domain_type",
+      "source": "surf.agent.Action.State",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.agent.ActionCommand",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.agent.ActionId",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
     {
       "kind": "domain_type",
       "source": "surf.agent.GoCall",
@@ -172,6 +193,13 @@
     },
     {
       "kind": "entity_lifecycle",
+      "source": "surf.agent.Action",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "entity_lifecycle",
       "source": "surf.agent.Session",
       "disposition": {
         "disposition": "generated"
@@ -249,6 +277,25 @@
     },
     {
       "kind": "command_contract",
+      "source": "surf.agent.NoteNavigationCommitted",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "surf.agent.NoteNavigationCommitted",
+      "disposition": {
+        "disposition": "obligation",
+        "reason": {
+          "class": "undetermined",
+          "construct": "a set outcome over filtered rows (`instances:`), in `noted`"
+        },
+        "contract": "given `surf.agent.NoteNavigationCommitted` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `navigation_id == input.navigation_id`, setting `navigation_state`, `status`, `media_type`, emits `surf.agent.SessionNavigationChanged`"
+      }
+    },
+    {
+      "kind": "command_contract",
       "source": "surf.agent.NoteNavigationEnded",
       "disposition": {
         "disposition": "generated"
@@ -268,6 +315,25 @@
     },
     {
       "kind": "command_contract",
+      "source": "surf.agent.NoteNavigationFailed",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "surf.agent.NoteNavigationFailed",
+      "disposition": {
+        "disposition": "obligation",
+        "reason": {
+          "class": "undetermined",
+          "construct": "a set outcome over filtered rows (`instances:`), in `noted`"
+        },
+        "contract": "given `surf.agent.NoteNavigationFailed` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `navigation_id == input.navigation_id`, setting `navigation_state`, `failure_reason`, emits `surf.agent.SessionNavigationChanged`"
+      }
+    },
+    {
+      "kind": "command_contract",
       "source": "surf.agent.NoteNavigationStarted",
       "disposition": {
         "disposition": "generated"
@@ -282,7 +348,7 @@
           "class": "undetermined",
           "construct": "a set outcome over filtered rows (`instances:`), in `noted`"
         },
-        "contract": "given `surf.agent.NoteNavigationStarted` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `tab_id == input.tab_id`, setting `navigation_id`, `url`, `navigation_state`, emits `surf.agent.SessionNavigationChanged`"
+        "contract": "given `surf.agent.NoteNavigationStarted` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `tab_id == input.tab_id`, setting `navigation_id`, `url`, `navigation_state`, `status`, `media_type`, `failure_reason`, emits `surf.agent.SessionNavigationChanged`"
       }
     },
     {
@@ -295,6 +361,20 @@
     {
       "kind": "command_behavior",
       "source": "surf.agent.OpenSession",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_contract",
+      "source": "surf.agent.RecordAction",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "surf.agent.RecordAction",
       "disposition": {
         "disposition": "generated"
       }
@@ -463,6 +543,13 @@
     {
       "kind": "command_behavior",
       "source": "surf.shell.OpenWindow",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "event_type",
+      "source": "surf.agent.ActionRecorded",
       "disposition": {
         "disposition": "generated"
       }
@@ -659,6 +746,20 @@
     {
       "kind": "error_type",
       "source": "surf.shell.WindowNotFound",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "view_type",
+      "source": "surf.agent.SessionLog",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "view_query",
+      "source": "surf.agent.SessionLog",
       "disposition": {
         "disposition": "generated"
       }

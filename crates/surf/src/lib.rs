@@ -276,9 +276,13 @@ pub fn exit_status(result: &Result<Report, Error>) -> u8 {
 pub trait AgentBehaviors:
     surf_types::agent::obligations::CloseSessionBehavior
     + surf_types::agent::obligations::GoBehavior
+    + surf_types::agent::obligations::NoteNavigationCommittedBehavior
     + surf_types::agent::obligations::NoteNavigationEndedBehavior
+    + surf_types::agent::obligations::NoteNavigationFailedBehavior
     + surf_types::agent::obligations::NoteNavigationStartedBehavior
     + surf_types::agent::obligations::OpenSessionBehavior
+    + surf_types::agent::obligations::RecordActionBehavior
+    + surf_types::agent::obligations::SessionLogQuery
     + surf_types::agent::obligations::SessionStateViewQuery
     + surf_types::agent::obligations::SessionsQuery
 {
@@ -287,9 +291,13 @@ pub trait AgentBehaviors:
 impl<B> AgentBehaviors for B where
     B: surf_types::agent::obligations::CloseSessionBehavior
         + surf_types::agent::obligations::GoBehavior
+        + surf_types::agent::obligations::NoteNavigationCommittedBehavior
         + surf_types::agent::obligations::NoteNavigationEndedBehavior
+        + surf_types::agent::obligations::NoteNavigationFailedBehavior
         + surf_types::agent::obligations::NoteNavigationStartedBehavior
         + surf_types::agent::obligations::OpenSessionBehavior
+        + surf_types::agent::obligations::RecordActionBehavior
+        + surf_types::agent::obligations::SessionLogQuery
         + surf_types::agent::obligations::SessionStateViewQuery
         + surf_types::agent::obligations::SessionsQuery
 {

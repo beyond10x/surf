@@ -1,0 +1,57 @@
+# A session's log is read back in sequence order, whatever order its rows were written in.
+# Synthesis refuses the order for `RecordAction/outcome/recorded` (`ESS-SYNTH-014`: "comparing two
+# rows needs two `surf.agent.Action`s"), because the `no-such-session` guard leaves it one action
+# per scenario. The second action is recorded first, so a log that answers rows in the order they
+# were written fails. The first row has no address and the second has one, as the session process
+# records `open` and `go`.
+type: ess-scenario/6
+domain: surf.agent
+scenario: agent-session-log-in-sequence-order
+summary: Two actions recorded out of order are read back oldest first, without and with an address.
+
+arrange:
+  - instance: session
+    entity: surf.agent.Session
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-000000000031
+      fields:
+        window_id: 5a7c1e00-0000-4000-8000-000000000032
+        tab_id: 5a7c1e00-0000-4000-8000-000000000033
+        holder: 5a7c1e00-0000-4000-8000-000000000031
+      state: Open
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.agent.RecordAction
+    input:
+      session_id: {$instance: session}
+      sequence: 2
+      command: go
+      url: http://example.org/
+    outcome: recorded
+
+  - at: 2026-01-06T09:00:01Z
+    command: surf.agent.RecordAction
+    input:
+      session_id: {$instance: session}
+      sequence: 1
+      command: open
+    outcome: recorded
+
+assert:
+  - view: surf.agent.SessionLog
+    params: {session_id: {$instance: session}}
+    counts: {at_least: 2, at_most: 2}
+  - view: surf.agent.SessionLog
+    params: {session_id: {$instance: session}}
+    ranked: true
+  - view: surf.agent.SessionLog
+    params: {session_id: {$instance: session}}
+    at:
+      row: first
+      fields: {session_id: {$instance: session}, sequence: 1, command: open, url: null}
+  - view: surf.agent.SessionLog
+    params: {session_id: {$instance: session}}
+    at:
+      row: last
+      fields: {session_id: {$instance: session}, sequence: 2, command: go, url: http://example.org/}
