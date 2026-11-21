@@ -159,6 +159,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "surf-view-fixture"
+version = "0.1.0"
+dependencies = [
+ "surf-view",
+ "surfd",
+]
+
+[[package]]
 name = "surfd"
 version = "0.2.0"
 dependencies = [

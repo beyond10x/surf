@@ -1,5 +1,5 @@
 // What the page holds: the sessions in list order, the entries of the sessions it loaded, and
-// the selection. No DOM here.
+// the selection: the selected session and the playhead over its actions. No DOM here.
 
 const state = {
   newest: 0,
@@ -7,7 +7,13 @@ const state = {
   sessions: new Map(),
   entries: new Map(),
   numbers: new Map(),
+  // Per loaded session, what its last detail said of dropped entries: {dropped, log_dropped}.
+  drops: new Map(),
   selected: null,
+  // Latest on: the playhead follows the newest action. Off: it stays on the action entry whose
+  // number is `playhead`.
+  latest: true,
+  playhead: null,
 };
 
 export function newest() {
@@ -45,7 +51,7 @@ export function setSessions(list) {
   );
   setNewest(list.newest);
   if (state.selected !== null && !state.sessions.has(state.selected)) {
-    state.selected = null;
+    select(null);
   }
 }
 
@@ -69,12 +75,57 @@ export function session(id) {
   return state.sessions.get(id) || null;
 }
 
+// Selects a session; its playhead starts with Latest on.
 export function select(id) {
   state.selected = id;
+  state.latest = true;
+  state.playhead = null;
 }
 
 export function selected() {
   return state.selected;
+}
+
+export function latest() {
+  return state.latest;
+}
+
+// Latest on: the playhead moves to the newest action and follows it.
+export function followLatest() {
+  state.latest = true;
+  state.playhead = null;
+}
+
+// The playhead on the action whose action entry has number `number`; Latest off.
+export function setPlayhead(number) {
+  state.latest = false;
+  state.playhead = number;
+}
+
+// The index of the playhead in `list` (actions() of the selected session), or -1 for none.
+export function playheadIndex(list) {
+  if (list.length === 0) {
+    return -1;
+  }
+  if (!state.latest) {
+    const at = list.findIndex((action) => action.action.number === state.playhead);
+    if (at >= 0) {
+      return at;
+    }
+  }
+  return list.length - 1;
+}
+
+// Moves the playhead `step` actions (-1 or 1) and turns Latest off; at either end it does
+// nothing. Whether it moved.
+export function stepPlayhead(list, step) {
+  const at = playheadIndex(list);
+  const to = at + step;
+  if (at < 0 || to < 0 || to >= list.length) {
+    return false;
+  }
+  setPlayhead(list[to].action.number);
+  return true;
 }
 
 // The detail of /api/sessions/<id>: its summary and its entries. Entries already held above the
@@ -92,9 +143,15 @@ export function setDetail(detail) {
   }
   state.entries.set(id, fresh);
   state.numbers.set(id, new Set(fresh.map((entry) => entry.number)));
+  state.drops.set(id, { dropped: detail.dropped || 0, log_dropped: detail.log_dropped === true });
   for (const entry of fresh) {
     setNewest(entry.number);
   }
+}
+
+// What the last detail of the session said of dropped entries.
+export function drops(id) {
+  return state.drops.get(id) || { dropped: 0, log_dropped: false };
 }
 
 export function loaded(id) {
@@ -125,6 +182,7 @@ export function entries(id) {
 export function forget() {
   state.entries = new Map();
   state.numbers = new Map();
+  state.drops = new Map();
 }
 
 // The entries of a session as actions: each action entry with the events after it and the
@@ -146,13 +204,14 @@ export function actions(id) {
   return result;
 }
 
-// The page line of the session's newest answer entry, or null when none is held.
-export function pageLine(id) {
-  const list = entries(id);
-  for (let at = list.length - 1; at >= 0; at -= 1) {
-    if (list[at].kind === "answer") {
-      return list[at].page;
-    }
+// The page line at the playhead of the session: its action's answer entry's page line, the
+// word "running" when that answer is not held, or null when the session has no action held.
+export function pageAt(id) {
+  const list = actions(id);
+  const at = playheadIndex(list);
+  if (at < 0) {
+    return null;
   }
-  return null;
+  const answer = list[at].answer;
+  return answer ? answer.page : "running";
 }

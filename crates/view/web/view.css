@@ -390,11 +390,49 @@ h3 {
   background: var(--panel);
 }
 
-.timeline h2 {
+.timeline-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem var(--gap);
   margin-bottom: 0.5rem;
 }
 
+.latest {
+  min-height: 32px;
+  padding: 0.2rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.latest[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.latest:focus-visible,
+.segment .select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.newer {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--warn);
+}
+
+.newer[hidden] {
+  display: none;
+}
+
 .track {
+  position: relative;
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
@@ -425,12 +463,40 @@ h3 {
   background: var(--bg);
 }
 
-.segment.newest {
+.segment {
+  cursor: pointer;
+}
+
+.segment[aria-current="step"] {
   border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.gap {
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 0.4rem 0.65rem;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.segment .select {
+  display: block;
+  width: 100%;
+  margin: 0 0 0.4rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .segment .label {
-  margin: 0 0 0.4rem;
   display: flex;
   flex-wrap: wrap;
   gap: 0.1rem 0.4rem;
@@ -455,11 +521,29 @@ h3 {
   overflow-wrap: break-word;
 }
 
+.groups {
+  flex: 1;
+}
+
+.group + .group {
+  margin-top: 0.35rem;
+}
+
+.group-label {
+  margin: 0 0 0.1rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
 .marks {
   margin: 0;
   padding: 0;
   list-style: none;
-  flex: 1;
+}
+
+.line.running {
+  color: var(--warn);
 }
 
 .mark {
