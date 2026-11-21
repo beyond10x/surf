@@ -1,7 +1,7 @@
 // The page: loads /api/sessions, selects the first session, loads it, follows /events, and keeps
 // the live marker (live and the time of the last update, or reconnecting).
 
-import { attribute, byId, text } from "./dom.js";
+import { address, attribute, byId, text } from "./dom.js";
 import * as state from "./state.js";
 import { api, follow, Refused, takeToken } from "./stream.js";
 import { renderSessions, tick } from "./sessions.js";
@@ -55,7 +55,13 @@ function renderSelected() {
     resetTimeline(nodes.timeline);
     return;
   }
-  text(nodes.heading, summary.title || summary.address || "session " + summary.id.slice(0, 8));
+  if (summary.title) {
+    text(nodes.heading, summary.title);
+  } else if (summary.address) {
+    address(nodes.heading, summary.address);
+  } else {
+    text(nodes.heading, "session " + summary.id.slice(0, 8));
+  }
   const facts = [summary.state, "session " + summary.id];
   if (summary.opened_at !== null) {
     facts.push("opened " + clock(summary.opened_at));
