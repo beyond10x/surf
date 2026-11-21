@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="surf">
+  <title>surf</title>
+  <rect width="128" height="128" rx="28" fill="#0d2b45"/>
+  <path d="M18 86 C42 86 46 42 74 42 C96 42 104 62 93 72 C86 78 75 75 76 66" fill="none" stroke="#ffffff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M18 104 C40 104 54 96 72 96 C90 96 98 104 110 104" fill="none" stroke="#4fc3f7" stroke-width="7" stroke-linecap="round"/>
+</svg>

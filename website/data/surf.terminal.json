@@ -1,0 +1,23 @@
+{
+  "format": "b10x-terminal/1",
+  "title": "surf / repository root",
+  "entries": [
+    {
+      "command": "target/debug/surf http://127.0.0.1:41977/index.html",
+      "output": "navigation f6eef140-16d8-458c-bdfb-8999c52d7b31 Committed http://127.0.0.1:41977/index.html\nrequest f6eef140-16d8-458c-bdfb-8999c52d7b31 Responded http://127.0.0.1:41977/index.html\ndocument 9ed741bc-a98b-428b-9585-c90c379a8e4d http://127.0.0.1:41977/index.html",
+      "exitCode": 0
+    },
+    {
+      "command": "target/debug/surf http://127.0.0.1:1/",
+      "output": "surf: http://127.0.0.1:1/: unreachable: connecting to 127.0.0.1:1 failed: Connection refused (os error 111)\nnavigation 40d80baa-c7b8-4c3e-b9b9-ef8938cf6882 Failed http://127.0.0.1:1/\nrequest 40d80baa-c7b8-4c3e-b9b9-ef8938cf6882 Failed http://127.0.0.1:1/\nfetch-failed 40d80baa-c7b8-4c3e-b9b9-ef8938cf6882 Unreachable http://127.0.0.1:1/",
+      "exitCode": 1
+    }
+  ],
+  "recordedWith": "surf, a run on 2026-11-20 against a local server, from docs/surf-command.md",
+  "tones": {
+    "Committed": "true",
+    "Responded": "true",
+    "Failed": "false",
+    "Unreachable": "false"
+  }
+}
