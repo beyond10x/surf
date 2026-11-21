@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 19964b50f9197185811d923fbd6c3eec7ec2855a2cc03c2c60d6e4a2149578f0
+// contract digest f176714dd8b7999f1b6166f2e2d3e020c7ce9478056f6babb4bb5edef3c071ff
 // do not edit: regenerate with `ess synthesize`
 
 //! Every actor the specification declares, and the commands each may invoke — as data.
@@ -12,6 +12,10 @@
 /// An actor the specification declares.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Actor {
+    /// `surf.agent.Opener`.
+    AgentOpener,
+    /// `surf.agent.SessionHolder`.
+    AgentSessionHolder,
     /// `surf.navigation.User`.
     NavigationUser,
     /// `surf.shell.User`.
@@ -21,6 +25,8 @@ pub enum Actor {
 impl Actor {
     /// Every declared actor, ordered by qualified name.
     pub const ALL: &'static [Actor] = &[
+        Actor::AgentOpener,
+        Actor::AgentSessionHolder,
         Actor::NavigationUser,
         Actor::ShellUser,
     ];
@@ -28,6 +34,8 @@ impl Actor {
     /// The actor's qualified name, as the specification spells it.
     pub const fn name(self) -> &'static str {
         match self {
+            Actor::AgentOpener => "surf.agent.Opener",
+            Actor::AgentSessionHolder => "surf.agent.SessionHolder",
             Actor::NavigationUser => "surf.navigation.User",
             Actor::ShellUser => "surf.shell.User",
         }
@@ -38,6 +46,13 @@ impl Actor {
 /// actor that only observes.
 pub fn may(actor: Actor) -> &'static [&'static str] {
     match actor {
+        Actor::AgentOpener => &[
+            "surf.agent.OpenSession",
+        ],
+        Actor::AgentSessionHolder => &[
+            "surf.agent.CloseSession",
+            "surf.agent.Go",
+        ],
         Actor::NavigationUser => &[
             "surf.navigation.CancelNavigation",
             "surf.navigation.Navigate",
@@ -66,5 +81,28 @@ impl Caller {
     /// `true` when this caller may invoke `command`, named by its qualified name.
     pub fn may(&self, command: &str) -> bool {
         may(self.actor).contains(&command)
+    }
+}
+
+/// The qualified names of the views `actor` may read, ordered by name: the views its grant
+/// names. A view no actor's grant names is open to every caller and listed for none.
+pub fn may_read(actor: Actor) -> &'static [&'static str] {
+    match actor {
+        Actor::AgentOpener => &[
+            "surf.agent.Sessions",
+        ],
+        Actor::AgentSessionHolder => &[
+            "surf.agent.SessionState",
+        ],
+        Actor::NavigationUser => &[],
+        Actor::ShellUser => &[],
+    }
+}
+
+impl Caller {
+    /// `true` when this caller may read `view`, a view some actor's grant names, named by
+    /// its qualified name.
+    pub fn may_read(&self, view: &str) -> bool {
+        may_read(self.actor).contains(&view)
     }
 }

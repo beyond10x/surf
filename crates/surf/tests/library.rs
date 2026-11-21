@@ -4,14 +4,21 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use surf::{Answer, Browser, Error, Transport, UnmetObligation, exit_status};
+use surf::{Answer, Browser, Error, SystemEvent, Transport, UnmetObligation, exit_status};
 use surf_ports::{
-    DocumentPorts, NavigatorPorts, NetPorts, RandomSource, RendererPorts, ShellPorts,
-    document_port, navigator_port, net_port, renderer_port, shell_port,
+    AgentPorts, Caller, ComponentPorts, DocumentPorts, NavigatorPorts, NetPorts, RandomSource,
+    RendererPorts, ShellPorts, agent_port, document_port, navigator_port, net_port, renderer_port,
+    shell_port,
 };
 use surf_system::System;
+use surf_types::agent::{
+    Go, GoOutcome, OpenSession, OpenSessionOutcome, SessionId, SessionState, SessionStateView,
+};
 use surf_types::navigation::NavigationState;
 use surf_types::net::{FailureReason, RequestState};
+use surf_types::primitives::Uuid;
+use surf_types::shell::{OpenTab, OpenTabOutcome, OpenWindow, OpenWindowOutcome};
+use surf_types::url::Url;
 
 /// A random source that can never be read.
 struct Failing;
@@ -58,6 +65,7 @@ fn html() -> Answer {
 fn case_7_failing_random_source_returns_the_unmet_obligation_and_exit_status_3() {
     let (transport, calls) = counting(html());
     let system = System::new(
+        agent_port(AgentPorts::new()),
         document_port(DocumentPorts::with_source(Failing)),
         navigator_port(NavigatorPorts::with_source(Failing)),
         net_port(NetPorts::new()),
@@ -81,6 +89,7 @@ fn case_7_failing_random_source_returns_the_unmet_obligation_and_exit_status_3()
 fn case_7_unmet_obligation_inside_a_pump_is_returned_and_not_a_failed_navigation() {
     let (transport, calls) = counting(html());
     let system = System::new(
+        agent_port(AgentPorts::new()),
         document_port(DocumentPorts::with_source(Failing)),
         navigator_port(NavigatorPorts::new()),
         net_port(NetPorts::new()),
@@ -117,7 +126,24 @@ fn each_started_request_is_handed_to_the_transport_once() {
     browser.run().expect("second run");
     browser.run().expect("third run");
     assert_eq!(calls.get(), 1);
-    assert_eq!(browser.system().published().len(), 6);
+    // Six events of the page load, and since story agent-session-spec the two the `agent`
+    // component publishes for the navigation's start and end (`note-on-navigation-started`,
+    // `note-on-navigation-failed`), each changing no session.
+    let published = browser.system().published();
+    assert_eq!(published.len(), 8);
+    let noted: Vec<_> = published
+        .iter()
+        .filter_map(|event| match event {
+            SystemEvent::SessionNavigationChanged(changed) => {
+                Some((changed.state, changed.sessions))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        noted,
+        vec![(NavigationState::Started, 0), (NavigationState::Failed, 0)]
+    );
 }
 
 #[test]
@@ -146,6 +172,75 @@ fn a_closure_is_a_transport() {
     let report = browser.load("http://127.0.0.1/").expect("load");
     assert_eq!(report.navigation_state(), Some(NavigationState::Committed));
     assert_eq!(exit_status(&Ok(report)), 0);
+}
+
+/// Story agent-session-spec: an agent's session, driven through the `agent` port the browser
+/// hands out, reads back the navigation `Go` started and the state the transport ended it in.
+#[test]
+fn an_agent_session_goes_through_the_browser_and_reads_its_navigation_back() {
+    let caller = Caller::new();
+    let mut browser =
+        Browser::from_ports(ComponentPorts::with_caller(caller.clone()), |_: &str| {
+            Answer::Failure(FailureReason::Unreachable)
+        });
+    let OpenWindowOutcome::Opened { window_opened } = browser
+        .shell_mut()
+        .open_window(OpenWindow {})
+        .expect("window");
+    let window_id = window_opened.window_id;
+    let OpenTabOutcome::Opened { tab_opened } = browser
+        .shell_mut()
+        .open_tab(OpenTab {
+            window_id: window_id.clone(),
+        })
+        .expect("tab")
+    else {
+        panic!("the tab was refused");
+    };
+    let session_id = SessionId(Uuid("5a7c1e00-0000-4000-8000-000000000001".to_owned()));
+    let opened = browser
+        .agent_mut()
+        .open_session(OpenSession {
+            session_id: session_id.clone(),
+            window_id,
+            tab_id: tab_opened.tab_id.clone(),
+        })
+        .expect("session");
+    assert!(
+        matches!(opened, OpenSessionOutcome::Opened { .. }),
+        "{opened:?}"
+    );
+    browser.run().expect("run");
+
+    caller.set(Some(session_id.clone()));
+    let went = browser
+        .agent_mut()
+        .go(Go {
+            session_id: session_id.clone(),
+            url: Url("http://127.0.0.1/".to_owned()),
+        })
+        .expect("go");
+    assert!(matches!(went, GoOutcome::Requested { .. }), "{went:?}");
+    browser.run().expect("run");
+
+    let rows = browser
+        .system()
+        .agent
+        .session_state_view(session_id.clone())
+        .expect("view");
+    assert_eq!(
+        rows,
+        vec![SessionStateView {
+            session_id,
+            state: SessionState::Open,
+            url: Some(Url("http://127.0.0.1/".to_owned())),
+            navigation_state: Some(NavigationState::Failed),
+        }]
+    );
+    let navigations = browser.system().navigator.navigations().expect("view");
+    assert_eq!(navigations.len(), 1);
+    assert_eq!(navigations[0].tab_id, tab_opened.tab_id);
+    assert_eq!(navigations[0].state, NavigationState::Failed);
 }
 
 #[test]

@@ -1,11 +1,19 @@
 //! One ports type per component, each holding that component's rows and nothing else.
 
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+
+use surf_types::agent::obligations::{NoteNavigationEndedBehavior, NoteNavigationStartedBehavior};
+use surf_types::agent::{
+    NoteNavigationEnded, NoteNavigationEndedOutcome, NoteNavigationStarted,
+    NoteNavigationStartedOutcome, SessionData, SessionId, SessionNavigationChanged,
+    SessionSnapshot,
+};
 use surf_types::behaviour::{
-    DocumentStorage, FrameStorage, NavigationStorage, RequestStorage, TabStorage, TryContext,
-    WindowStorage,
+    DocumentStorage, FrameStorage, NavigationStorage, RequestStorage, SessionStorage, TabStorage,
+    TryContext, WindowStorage, unmet_context,
 };
 use surf_types::document::{DocumentId, DocumentSnapshot};
-use surf_types::navigation::NavigationSnapshot;
+use surf_types::navigation::{NavigationSnapshot, NavigationState};
 use surf_types::net::{RequestId, RequestSnapshot};
 use surf_types::obligation::UnmetObligation;
 use surf_types::render::{FrameId, FrameSnapshot};
@@ -32,6 +40,10 @@ keyed!(NavigationSnapshot, RequestId, navigation_id);
 keyed!(RequestSnapshot, RequestId, request_id);
 keyed!(DocumentSnapshot, DocumentId, document_id);
 keyed!(FrameSnapshot, FrameId, frame_id);
+keyed!(SessionSnapshot, SessionId, session_id);
+
+/// What a context answer about the caller names when it is unmet.
+const CALLER: &str = "the caller's session_id";
 
 /// Implements one storage trait for a ports type over one of its private tables.
 macro_rules! storage {
@@ -60,9 +72,16 @@ macro_rules! storage {
 ///
 /// `TryContext` asks for all five kinds of identity, so every ports type that answers it can
 /// assign each of them; the generated behaviours of a component ask only for their own.
+///
+/// It also asks for the caller's `session_id`, which only the `agent` component's commands read.
+/// These ports know no caller, so they answer it as unmet rather than as a caller with none.
 macro_rules! context {
     ($ports:ident) => {
         impl<R: RandomSource> TryContext for $ports<R> {
+            fn try_caller_session_id(&self) -> Result<Option<SessionId>, UnmetObligation> {
+                Err(unmet_context(CALLER))
+            }
+
             fn try_generate_surf_document_document_id(
                 &mut self,
             ) -> Result<DocumentId, UnmetObligation> {
@@ -205,3 +224,155 @@ impl<R: RandomSource> RendererPorts<R> {
 
 storage!(FrameStorage for RendererPorts<R>, frames: FrameSnapshot, FrameId, R);
 context!(RendererPorts);
+
+/// Who the `agent` component's commands are sent as: the `session_id` the caller's credential
+/// carries, or none.
+///
+/// A handle: every clone reads and writes the same answer. [`AgentPorts`] keeps one and answers
+/// the generated holder check from it; whoever authenticates a call keeps another and sets it
+/// before issuing the command. The specification leaves the authentication to the session
+/// process (`spec/domains/agent.yaml`, the marker at the token's type).
+#[derive(Debug, Clone, Default)]
+pub struct Caller(Arc<Mutex<Option<SessionId>>>);
+
+impl Caller {
+    /// A handle that names no caller yet.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sends every later command as a caller carrying `session_id`, or as one carrying none.
+    pub fn set(&self, session_id: Option<SessionId>) {
+        *self.held() = session_id;
+    }
+
+    /// The `session_id` the caller carries, if any.
+    pub fn get(&self) -> Option<SessionId> {
+        self.held().clone()
+    }
+
+    fn held(&self) -> MutexGuard<'_, Option<SessionId>> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// The `agent` component's ports: its sessions, and the [`Caller`] its commands are sent as.
+///
+/// No random source: the component assigns no identity, a session carries the one its
+/// `OpenSession` names. It also meets the two obligations the generation leaves to it,
+/// `NoteNavigationStarted` and `NoteNavigationEnded`, which change every session their filter
+/// selects.
+#[derive(Debug, Default)]
+pub struct AgentPorts {
+    sessions: Rows<SessionSnapshot>,
+    caller: Caller,
+}
+
+impl AgentPorts {
+    /// An empty table, with a caller of its own that names no one.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// An empty table, its commands sent as whoever `caller` names when each runs.
+    pub fn with_caller(caller: Caller) -> Self {
+        Self {
+            sessions: Rows::default(),
+            caller,
+        }
+    }
+
+    /// A handle to the caller these ports answer with.
+    pub fn caller(&self) -> Caller {
+        self.caller.clone()
+    }
+
+    /// Writes `change` into every stored session `selects` picks, and answers how many it changed.
+    fn change_every(
+        &mut self,
+        selects: impl Fn(&SessionData) -> bool,
+        change: impl Fn(&mut SessionData),
+    ) -> i64 {
+        let mut changed = 0;
+        for mut snapshot in self.sessions.list() {
+            if selects(&snapshot.data) {
+                change(&mut snapshot.data);
+                self.sessions.put(snapshot);
+                changed += 1;
+            }
+        }
+        changed
+    }
+}
+
+storage!(SessionStorage for AgentPorts, sessions: SessionSnapshot, SessionId);
+
+impl TryContext for AgentPorts {
+    fn try_caller_session_id(&self) -> Result<Option<SessionId>, UnmetObligation> {
+        Ok(self.caller.get())
+    }
+
+    fn try_generate_surf_document_document_id(&mut self) -> Result<DocumentId, UnmetObligation> {
+        Err(unmet_context("surf.document.DocumentId"))
+    }
+
+    fn try_generate_surf_net_request_id(&mut self) -> Result<RequestId, UnmetObligation> {
+        Err(unmet_context("surf.net.RequestId"))
+    }
+
+    fn try_generate_surf_render_frame_id(&mut self) -> Result<FrameId, UnmetObligation> {
+        Err(unmet_context("surf.render.FrameId"))
+    }
+
+    fn try_generate_surf_shell_tab_id(&mut self) -> Result<TabId, UnmetObligation> {
+        Err(unmet_context("surf.shell.TabId"))
+    }
+
+    fn try_generate_surf_shell_window_id(&mut self) -> Result<WindowId, UnmetObligation> {
+        Err(unmet_context("surf.shell.WindowId"))
+    }
+}
+
+/// `noted`: every session holding the tab shows the navigation as `Started`, at its address.
+impl NoteNavigationStartedBehavior for AgentPorts {
+    fn note_navigation_started(
+        &mut self,
+        input: NoteNavigationStarted,
+    ) -> Result<NoteNavigationStartedOutcome, UnmetObligation> {
+        let sessions = self.change_every(
+            |session| session.tab_id == input.tab_id,
+            |session| {
+                session.navigation_id = Some(input.navigation_id.clone());
+                session.url = Some(input.url.clone());
+                session.navigation_state = Some(NavigationState::Started);
+            },
+        );
+        Ok(NoteNavigationStartedOutcome::Noted {
+            session_navigation_changed: SessionNavigationChanged {
+                navigation_id: input.navigation_id,
+                state: NavigationState::Started,
+                sessions,
+            },
+        })
+    }
+}
+
+/// `noted`: every session showing the navigation shows the state it ended in.
+impl NoteNavigationEndedBehavior for AgentPorts {
+    fn note_navigation_ended(
+        &mut self,
+        input: NoteNavigationEnded,
+    ) -> Result<NoteNavigationEndedOutcome, UnmetObligation> {
+        let sessions = self.change_every(
+            |session| session.navigation_id.as_ref() == Some(&input.navigation_id),
+            |session| session.navigation_state = Some(input.state),
+        );
+        Ok(NoteNavigationEndedOutcome::Noted {
+            session_navigation_changed: SessionNavigationChanged {
+                navigation_id: input.navigation_id,
+                state: input.state,
+                sessions,
+            },
+        })
+    }
+}

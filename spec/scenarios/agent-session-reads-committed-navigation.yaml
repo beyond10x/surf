@@ -1,0 +1,61 @@
+# A navigation in a session's tab that commits is read back on the session as Committed, which
+# synthesis cannot arrange: it refuses `NoteNavigationStarted/noted` and `NoteNavigationEnded/noted`
+# ("no three rows the filter selects that the arranging commands can produce"), and the request
+# shares the navigation's identity, which only `fetch-on-navigation-started` makes. The navigation
+# is started with `Navigate` itself, not through `surf.agent.Go`, because an act captures only the
+# events its own command publishes, and the request has to be named to be answered.
+# `agent-session-reads-started-navigation.yaml` covers `Go`.
+type: ess-scenario/6
+domain: surf.agent
+scenario: agent-session-reads-committed-navigation
+summary: A navigation in a session's tab commits, and the session shows it Committed.
+
+arrange:
+  - instance: session
+    entity: surf.agent.Session
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-000000000001
+      fields:
+        window_id: 5a7c1e00-0000-4000-8000-000000000002
+        tab_id: 5a7c1e00-0000-4000-8000-000000000003
+        holder: 5a7c1e00-0000-4000-8000-000000000001
+      state: Open
+  - instance: load
+    entity: surf.navigation.Navigation
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 5a7c1e00-0000-4000-8000-000000000003
+      url: http://example.org/
+    outcome: started
+    events:
+      - event: surf.navigation.NavigationStarted
+        payload:
+          tab_id: 5a7c1e00-0000-4000-8000-000000000003
+          url: http://example.org/
+    capture: {instance: load, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  # The body is `<html></html>`.
+  - at: 2026-01-06T09:00:01Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: load}
+      status: 200
+      media_type: text/html
+      body: PGh0bWw+PC9odG1sPg==
+    outcome: responded
+
+assert:
+  - view: surf.agent.SessionState
+    params: {session_id: {$instance: session}}
+    contains:
+      session_id: {$instance: session}
+      state: Open
+      url: http://example.org/
+      navigation_state: Committed
+
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: load}, state: Committed}

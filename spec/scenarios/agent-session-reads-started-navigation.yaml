@@ -1,0 +1,48 @@
+# An agent goes to an address and reads its session back, which synthesis does not show: it
+# refuses `NoteNavigationStarted/noted` (see `agent-session-reads-committed-navigation.yaml`), and
+# its own `surf.agent.Go/outcome/requested` reads no view after the navigation started. The
+# session is set up with a stated identity, which a caller value may name (`caller:`,
+# website/docs/guides/verify/author-scenarios.md).
+type: ess-scenario/6
+domain: surf.agent
+scenario: agent-session-reads-started-navigation
+summary: An agent goes to an address, and its session shows the navigation Started.
+
+arrange:
+  - instance: session
+    entity: surf.agent.Session
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-000000000011
+      fields:
+        window_id: 5a7c1e00-0000-4000-8000-000000000012
+        tab_id: 5a7c1e00-0000-4000-8000-000000000013
+        holder: 5a7c1e00-0000-4000-8000-000000000011
+      state: Open
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.agent.Go
+    actor: surf.agent.SessionHolder
+    caller: {session_id: {$instance: session}}
+    input:
+      session_id: {$instance: session}
+      url: http://example.org/
+    outcome: requested
+    events:
+      - event: surf.agent.NavigationRequested
+        payload:
+          session_id: {$instance: session}
+          tab_id: 5a7c1e00-0000-4000-8000-000000000013
+          url: http://example.org/
+
+assert:
+  - view: surf.agent.SessionState
+    params: {session_id: {$instance: session}}
+    contains:
+      session_id: {$instance: session}
+      state: Open
+      url: http://example.org/
+      navigation_state: Started
+
+  - view: surf.navigation.Navigations
+    contains: {tab_id: 5a7c1e00-0000-4000-8000-000000000013, url: http://example.org/, state: Started}

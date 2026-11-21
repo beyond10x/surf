@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 19964b50f9197185811d923fbd6c3eec7ec2855a2cc03c2c60d6e4a2149578f0
+// contract digest f176714dd8b7999f1b6166f2e2d3e020c7ce9478056f6babb4bb5edef3c071ff
 // do not edit: regenerate with `ess synthesize`
 
 //! The `surf` system, v1: its components assembled, its bindings wired, and its one transport.
@@ -20,6 +20,14 @@
 /// escalates into.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SystemEvent {
+    /// `surf.agent.NavigationRequested`.
+    NavigationRequested(surf_types::agent::NavigationRequested),
+    /// `surf.agent.SessionClosed`.
+    SessionClosed(surf_types::agent::SessionClosed),
+    /// `surf.agent.SessionNavigationChanged`.
+    SessionNavigationChanged(surf_types::agent::SessionNavigationChanged),
+    /// `surf.agent.SessionOpened`.
+    SessionOpened(surf_types::agent::SessionOpened),
     /// `surf.document.DocumentParsed`.
     DocumentParsed(surf_types::document::DocumentParsed),
     /// `surf.navigation.NavigationCancelled`.
@@ -50,6 +58,10 @@ impl SystemEvent {
     /// The qualified name the specification declares this event under.
     pub fn name(&self) -> &'static str {
         match self {
+            Self::NavigationRequested(_) => "surf.agent.NavigationRequested",
+            Self::SessionClosed(_) => "surf.agent.SessionClosed",
+            Self::SessionNavigationChanged(_) => "surf.agent.SessionNavigationChanged",
+            Self::SessionOpened(_) => "surf.agent.SessionOpened",
             Self::DocumentParsed(_) => "surf.document.DocumentParsed",
             Self::NavigationCancelled(_) => "surf.navigation.NavigationCancelled",
             Self::NavigationCommitted(_) => "surf.navigation.NavigationCommitted",
@@ -62,6 +74,17 @@ impl SystemEvent {
             Self::TabClosed(_) => "surf.shell.TabClosed",
             Self::TabOpened(_) => "surf.shell.TabOpened",
             Self::WindowOpened(_) => "surf.shell.WindowOpened",
+        }
+    }
+}
+
+impl From<agent::PublishedEvent> for SystemEvent {
+    fn from(event: agent::PublishedEvent) -> Self {
+        match event {
+            agent::PublishedEvent::NavigationRequested(event) => Self::NavigationRequested(event),
+            agent::PublishedEvent::SessionClosed(event) => Self::SessionClosed(event),
+            agent::PublishedEvent::SessionNavigationChanged(event) => Self::SessionNavigationChanged(event),
+            agent::PublishedEvent::SessionOpened(event) => Self::SessionOpened(event),
         }
     }
 }
@@ -120,14 +143,37 @@ impl From<shell::PublishedEvent> for SystemEvent {
 /// without instrumenting the component underneath.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BindingInvocation {
+    /// `close-tab-on-session-closed` invoked `surf.shell.CloseTab`.
+    CloseTabOnSessionClosed(surf_types::shell::CloseTab),
     /// `commit-on-response` invoked `surf.navigation.CommitNavigation`.
     CommitOnResponse(surf_types::navigation::CommitNavigation),
     /// `fail-on-fetch-failed` invoked `surf.navigation.FailNavigation`.
     FailOnFetchFailed(surf_types::navigation::FailNavigation),
     /// `fetch-on-navigation-started` invoked `surf.net.Fetch`.
     FetchOnNavigationStarted(surf_types::net::Fetch),
+    /// `navigate-on-navigation-requested` invoked `surf.navigation.Navigate`.
+    NavigateOnNavigationRequested(surf_types::navigation::Navigate),
+    /// `note-on-navigation-cancelled` invoked `surf.agent.NoteNavigationEnded`.
+    NoteOnNavigationCancelled(surf_types::agent::NoteNavigationEnded),
+    /// `note-on-navigation-committed` invoked `surf.agent.NoteNavigationEnded`.
+    NoteOnNavigationCommitted(surf_types::agent::NoteNavigationEnded),
+    /// `note-on-navigation-failed` invoked `surf.agent.NoteNavigationEnded`.
+    NoteOnNavigationFailed(surf_types::agent::NoteNavigationEnded),
+    /// `note-on-navigation-started` invoked `surf.agent.NoteNavigationStarted`.
+    NoteOnNavigationStarted(surf_types::agent::NoteNavigationStarted),
     /// `parse-on-navigation-committed` invoked `surf.document.ParseDocument`.
     ParseOnNavigationCommitted(surf_types::document::ParseDocument),
+}
+
+/// The binding `close-tab-on-session-closed`: `surf.agent.SessionClosed`, read as `surf.shell.CloseTab` input.
+///
+/// Fully determined by the specification: every input is filled from an event field — through the
+/// declared crossing where one is named — from a literal the target admits, or left absent
+/// where the input is optional and the binding says nothing.
+pub fn close_tab_on_session_closed(event: &surf_types::agent::SessionClosed) -> surf_types::shell::CloseTab {
+    surf_types::shell::CloseTab {
+        tab_id: event.tab_id.clone(),
+    }
 }
 
 /// The binding `commit-on-response`: `surf.net.ResponseReceived`, read as `surf.navigation.CommitNavigation` input.
@@ -167,6 +213,67 @@ pub fn fetch_on_navigation_started(event: &surf_types::navigation::NavigationSta
     }
 }
 
+/// The binding `navigate-on-navigation-requested`: `surf.agent.NavigationRequested`, read as `surf.navigation.Navigate` input.
+///
+/// Fully determined by the specification: every input is filled from an event field — through the
+/// declared crossing where one is named — from a literal the target admits, or left absent
+/// where the input is optional and the binding says nothing.
+pub fn navigate_on_navigation_requested(event: &surf_types::agent::NavigationRequested) -> surf_types::navigation::Navigate {
+    surf_types::navigation::Navigate {
+        tab_id: event.tab_id.clone(),
+        url: event.url.clone(),
+    }
+}
+
+/// The binding `note-on-navigation-cancelled`: `surf.navigation.NavigationCancelled`, read as `surf.agent.NoteNavigationEnded` input.
+///
+/// Fully determined by the specification: every input is filled from an event field — through the
+/// declared crossing where one is named — from a literal the target admits, or left absent
+/// where the input is optional and the binding says nothing.
+pub fn note_on_navigation_cancelled(event: &surf_types::navigation::NavigationCancelled) -> surf_types::agent::NoteNavigationEnded {
+    surf_types::agent::NoteNavigationEnded {
+        navigation_id: event.navigation_id.clone(),
+        state: surf_types::navigation::NavigationState::Cancelled,
+    }
+}
+
+/// The binding `note-on-navigation-committed`: `surf.navigation.NavigationCommitted`, read as `surf.agent.NoteNavigationEnded` input.
+///
+/// Fully determined by the specification: every input is filled from an event field — through the
+/// declared crossing where one is named — from a literal the target admits, or left absent
+/// where the input is optional and the binding says nothing.
+pub fn note_on_navigation_committed(event: &surf_types::navigation::NavigationCommitted) -> surf_types::agent::NoteNavigationEnded {
+    surf_types::agent::NoteNavigationEnded {
+        navigation_id: event.navigation_id.clone(),
+        state: surf_types::navigation::NavigationState::Committed,
+    }
+}
+
+/// The binding `note-on-navigation-failed`: `surf.navigation.NavigationFailed`, read as `surf.agent.NoteNavigationEnded` input.
+///
+/// Fully determined by the specification: every input is filled from an event field — through the
+/// declared crossing where one is named — from a literal the target admits, or left absent
+/// where the input is optional and the binding says nothing.
+pub fn note_on_navigation_failed(event: &surf_types::navigation::NavigationFailed) -> surf_types::agent::NoteNavigationEnded {
+    surf_types::agent::NoteNavigationEnded {
+        navigation_id: event.navigation_id.clone(),
+        state: surf_types::navigation::NavigationState::Failed,
+    }
+}
+
+/// The binding `note-on-navigation-started`: `surf.navigation.NavigationStarted`, read as `surf.agent.NoteNavigationStarted` input.
+///
+/// Fully determined by the specification: every input is filled from an event field — through the
+/// declared crossing where one is named — from a literal the target admits, or left absent
+/// where the input is optional and the binding says nothing.
+pub fn note_on_navigation_started(event: &surf_types::navigation::NavigationStarted) -> surf_types::agent::NoteNavigationStarted {
+    surf_types::agent::NoteNavigationStarted {
+        tab_id: event.tab_id.clone(),
+        navigation_id: event.navigation_id.clone(),
+        url: event.url.clone(),
+    }
+}
+
 /// The binding `parse-on-navigation-committed`: `surf.navigation.NavigationCommitted`, read as `surf.document.ParseDocument` input.
 ///
 /// Fully determined by the specification: every input is filled from an event field — through the
@@ -197,7 +304,9 @@ pub mod conditions {
 /// The component fields are public because commands enter the system through a component's own
 /// port; the log and its delivery cursor are not, because publishing happens by pumping, not by
 /// writing history directly.
-pub struct System<DocumentBehaviors, NavigatorBehaviors, NetBehaviors, RendererBehaviors, ShellBehaviors> {
+pub struct System<AgentBehaviors, DocumentBehaviors, NavigatorBehaviors, NetBehaviors, RendererBehaviors, ShellBehaviors> {
+    /// The `agent` component.
+    pub agent: agent::Agent<AgentBehaviors>,
     /// The `document` component.
     pub document: document::Document<DocumentBehaviors>,
     /// The `navigator` component.
@@ -213,10 +322,11 @@ pub struct System<DocumentBehaviors, NavigatorBehaviors, NetBehaviors, RendererB
     cursor: usize,
 }
 
-impl<DocumentBehaviors, NavigatorBehaviors, NetBehaviors, RendererBehaviors, ShellBehaviors> System<DocumentBehaviors, NavigatorBehaviors, NetBehaviors, RendererBehaviors, ShellBehaviors> {
+impl<AgentBehaviors, DocumentBehaviors, NavigatorBehaviors, NetBehaviors, RendererBehaviors, ShellBehaviors> System<AgentBehaviors, DocumentBehaviors, NavigatorBehaviors, NetBehaviors, RendererBehaviors, ShellBehaviors> {
     /// Assembles the system from its components.
-    pub fn new(document: document::Document<DocumentBehaviors>, navigator: navigator::Navigator<NavigatorBehaviors>, net: net::Net<NetBehaviors>, renderer: renderer::Renderer<RendererBehaviors>, shell: shell::Shell<ShellBehaviors>) -> Self {
+    pub fn new(agent: agent::Agent<AgentBehaviors>, document: document::Document<DocumentBehaviors>, navigator: navigator::Navigator<NavigatorBehaviors>, net: net::Net<NetBehaviors>, renderer: renderer::Renderer<RendererBehaviors>, shell: shell::Shell<ShellBehaviors>) -> Self {
         Self {
+            agent,
             document,
             navigator,
             net,
@@ -259,8 +369,9 @@ impl<DocumentBehaviors, NavigatorBehaviors, NetBehaviors, RendererBehaviors, She
     }
 }
 
-impl<DocumentBehaviors, NavigatorBehaviors, NetBehaviors, RendererBehaviors, ShellBehaviors> System<DocumentBehaviors, NavigatorBehaviors, NetBehaviors, RendererBehaviors, ShellBehaviors>
+impl<AgentBehaviors, DocumentBehaviors, NavigatorBehaviors, NetBehaviors, RendererBehaviors, ShellBehaviors> System<AgentBehaviors, DocumentBehaviors, NavigatorBehaviors, NetBehaviors, RendererBehaviors, ShellBehaviors>
 where
+    AgentBehaviors: surf_types::agent::obligations::CloseSessionBehavior + surf_types::agent::obligations::GoBehavior + surf_types::agent::obligations::NoteNavigationEndedBehavior + surf_types::agent::obligations::NoteNavigationStartedBehavior + surf_types::agent::obligations::OpenSessionBehavior + surf_types::agent::obligations::SessionStateViewQuery + surf_types::agent::obligations::SessionsQuery,
     DocumentBehaviors: surf_types::document::obligations::ParseDocumentBehavior + surf_types::document::obligations::DocumentsQuery,
     NavigatorBehaviors: surf_types::navigation::obligations::CancelNavigationBehavior + surf_types::navigation::obligations::CommitNavigationBehavior + surf_types::navigation::obligations::FailNavigationBehavior + surf_types::navigation::obligations::NavigateBehavior + surf_types::navigation::obligations::NavigationsQuery,
     NetBehaviors: surf_types::net::obligations::DeliverResponseBehavior + surf_types::net::obligations::FailRequestBehavior + surf_types::net::obligations::FetchBehavior + surf_types::net::obligations::RequestsQuery,
@@ -319,6 +430,9 @@ where
 
     /// Moves every component's outbox onto the log, in component order.
     fn collect(&mut self) {
+        for event in self.agent.drain_outbox() {
+            self.published.push(SystemEvent::from(event));
+        }
         for event in self.document.drain_outbox() {
             self.published.push(SystemEvent::from(event));
         }
@@ -344,16 +458,42 @@ where
     fn deliver(&mut self, event: &SystemEvent) -> Result<(), surf_types::obligation::UnmetObligation> {
         let mut failed = None;
         match event {
+            SystemEvent::NavigationRequested(event) => {
+                if let Err(failure) = self.deliver_navigate_on_navigation_requested(event) {
+                    failed = failed.or(Some(failure));
+                }
+            }
+            SystemEvent::SessionClosed(event) => {
+                if let Err(failure) = self.deliver_close_tab_on_session_closed(event) {
+                    failed = failed.or(Some(failure));
+                }
+            }
+            SystemEvent::SessionNavigationChanged(_) => {}
+            SystemEvent::SessionOpened(_) => {}
             SystemEvent::DocumentParsed(_) => {}
-            SystemEvent::NavigationCancelled(_) => {}
+            SystemEvent::NavigationCancelled(event) => {
+                if let Err(failure) = self.deliver_note_on_navigation_cancelled(event) {
+                    failed = failed.or(Some(failure));
+                }
+            }
             SystemEvent::NavigationCommitted(event) => {
+                if let Err(failure) = self.deliver_note_on_navigation_committed(event) {
+                    failed = failed.or(Some(failure));
+                }
                 if let Err(failure) = self.deliver_parse_on_navigation_committed(event) {
                     failed = failed.or(Some(failure));
                 }
             }
-            SystemEvent::NavigationFailed(_) => {}
+            SystemEvent::NavigationFailed(event) => {
+                if let Err(failure) = self.deliver_note_on_navigation_failed(event) {
+                    failed = failed.or(Some(failure));
+                }
+            }
             SystemEvent::NavigationStarted(event) => {
                 if let Err(failure) = self.deliver_fetch_on_navigation_started(event) {
+                    failed = failed.or(Some(failure));
+                }
+                if let Err(failure) = self.deliver_note_on_navigation_started(event) {
                     failed = failed.or(Some(failure));
                 }
             }
@@ -381,6 +521,18 @@ where
     /// is left out.
     fn redeliver_occurrence(&mut self, event: &SystemEvent) -> Result<(), surf_types::obligation::UnmetObligation> {
         let _ = event;
+        Ok(())
+    }
+
+    /// `close-tab-on-session-closed`'s attempt at one `surf.agent.SessionClosed`: transform, record the invocation, invoke the
+    /// acceptor's port, and answer a declared refusal with the declared policy.
+    fn deliver_close_tab_on_session_closed(&mut self, event: &surf_types::agent::SessionClosed) -> Result<(), surf_types::obligation::UnmetObligation> {
+        // `close-tab-on-session-closed`: at_most_once, on failure drop.
+        let input = close_tab_on_session_closed(event);
+        self.invocations.push(BindingInvocation::CloseTabOnSessionClosed(input.clone()));
+        // `drop`: a declared refusal is given up silently, because that is what the author
+        // wrote; an unmet obligation still propagates.
+        let _ = self.shell.close_tab(input)?;
         Ok(())
     }
 
@@ -416,6 +568,61 @@ where
         self.invocations.push(BindingInvocation::FetchOnNavigationStarted(input.clone()));
         // No declared refusal exists, so this invocation cannot fail.
         let _ = self.net.fetch(input)?;
+        Ok(())
+    }
+
+    /// `navigate-on-navigation-requested`'s attempt at one `surf.agent.NavigationRequested`: transform, record the invocation, invoke the
+    /// acceptor's port, and answer a declared refusal with the declared policy.
+    fn deliver_navigate_on_navigation_requested(&mut self, event: &surf_types::agent::NavigationRequested) -> Result<(), surf_types::obligation::UnmetObligation> {
+        // `navigate-on-navigation-requested`: at_most_once, on failure drop.
+        let input = navigate_on_navigation_requested(event);
+        self.invocations.push(BindingInvocation::NavigateOnNavigationRequested(input.clone()));
+        // No declared refusal exists, so this invocation cannot fail.
+        let _ = self.navigator.navigate(input)?;
+        Ok(())
+    }
+
+    /// `note-on-navigation-cancelled`'s attempt at one `surf.navigation.NavigationCancelled`: transform, record the invocation, invoke the
+    /// acceptor's port, and answer a declared refusal with the declared policy.
+    fn deliver_note_on_navigation_cancelled(&mut self, event: &surf_types::navigation::NavigationCancelled) -> Result<(), surf_types::obligation::UnmetObligation> {
+        // `note-on-navigation-cancelled`: at_most_once, on failure drop.
+        let input = note_on_navigation_cancelled(event);
+        self.invocations.push(BindingInvocation::NoteOnNavigationCancelled(input.clone()));
+        // No declared refusal exists, so this invocation cannot fail.
+        let _ = self.agent.note_navigation_ended(input)?;
+        Ok(())
+    }
+
+    /// `note-on-navigation-committed`'s attempt at one `surf.navigation.NavigationCommitted`: transform, record the invocation, invoke the
+    /// acceptor's port, and answer a declared refusal with the declared policy.
+    fn deliver_note_on_navigation_committed(&mut self, event: &surf_types::navigation::NavigationCommitted) -> Result<(), surf_types::obligation::UnmetObligation> {
+        // `note-on-navigation-committed`: at_most_once, on failure drop.
+        let input = note_on_navigation_committed(event);
+        self.invocations.push(BindingInvocation::NoteOnNavigationCommitted(input.clone()));
+        // No declared refusal exists, so this invocation cannot fail.
+        let _ = self.agent.note_navigation_ended(input)?;
+        Ok(())
+    }
+
+    /// `note-on-navigation-failed`'s attempt at one `surf.navigation.NavigationFailed`: transform, record the invocation, invoke the
+    /// acceptor's port, and answer a declared refusal with the declared policy.
+    fn deliver_note_on_navigation_failed(&mut self, event: &surf_types::navigation::NavigationFailed) -> Result<(), surf_types::obligation::UnmetObligation> {
+        // `note-on-navigation-failed`: at_most_once, on failure drop.
+        let input = note_on_navigation_failed(event);
+        self.invocations.push(BindingInvocation::NoteOnNavigationFailed(input.clone()));
+        // No declared refusal exists, so this invocation cannot fail.
+        let _ = self.agent.note_navigation_ended(input)?;
+        Ok(())
+    }
+
+    /// `note-on-navigation-started`'s attempt at one `surf.navigation.NavigationStarted`: transform, record the invocation, invoke the
+    /// acceptor's port, and answer a declared refusal with the declared policy.
+    fn deliver_note_on_navigation_started(&mut self, event: &surf_types::navigation::NavigationStarted) -> Result<(), surf_types::obligation::UnmetObligation> {
+        // `note-on-navigation-started`: at_most_once, on failure drop.
+        let input = note_on_navigation_started(event);
+        self.invocations.push(BindingInvocation::NoteOnNavigationStarted(input.clone()));
+        // No declared refusal exists, so this invocation cannot fail.
+        let _ = self.agent.note_navigation_started(input)?;
         Ok(())
     }
 

@@ -1,13 +1,13 @@
 <!--
   generated from surf v1
-  contract digest 19964b50f9197185811d923fbd6c3eec7ec2855a2cc03c2c60d6e4a2149578f0
+  contract digest f176714dd8b7999f1b6166f2e2d3e020c7ce9478056f6babb4bb5edef3c071ff
   do not edit: regenerate with `ess synthesize`
 -->
 # Synthesis plan — surf v1
 
 Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synthesize`.
 
-99 capabilities: **97 generated**, **0 obligations**, **2 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
+138 capabilities: **132 generated**, **2 obligations**, **4 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
 
 ## Generated
 
@@ -16,6 +16,7 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | domain type | `surf.agent.GoCall` |
 | domain type | `surf.agent.OpenCall` |
 | domain type | `surf.agent.OpenedSession` |
+| domain type | `surf.agent.Session.State` |
 | domain type | `surf.agent.SessionCall` |
 | domain type | `surf.agent.SessionId` |
 | domain type | `surf.agent.SessionReadout` |
@@ -35,12 +36,21 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | domain type | `surf.shell.Window.State` |
 | domain type | `surf.shell.WindowId` |
 | domain type | `surf.url.Url` |
+| entity lifecycle | `surf.agent.Session` |
 | entity lifecycle | `surf.document.Document` |
 | entity lifecycle | `surf.navigation.Navigation` |
 | entity lifecycle | `surf.net.Request` |
 | entity lifecycle | `surf.render.Frame` |
 | entity lifecycle | `surf.shell.Tab` |
 | entity lifecycle | `surf.shell.Window` |
+| command contract | `surf.agent.CloseSession` |
+| command behaviour | `surf.agent.CloseSession` |
+| command contract | `surf.agent.Go` |
+| command behaviour | `surf.agent.Go` |
+| command contract | `surf.agent.NoteNavigationEnded` |
+| command contract | `surf.agent.NoteNavigationStarted` |
+| command contract | `surf.agent.OpenSession` |
+| command behaviour | `surf.agent.OpenSession` |
 | command contract | `surf.document.ParseDocument` |
 | command behaviour | `surf.document.ParseDocument` |
 | command contract | `surf.navigation.CancelNavigation` |
@@ -65,6 +75,10 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | command behaviour | `surf.shell.OpenTab` |
 | command contract | `surf.shell.OpenWindow` |
 | command behaviour | `surf.shell.OpenWindow` |
+| event type | `surf.agent.NavigationRequested` |
+| event type | `surf.agent.SessionClosed` |
+| event type | `surf.agent.SessionNavigationChanged` |
+| event type | `surf.agent.SessionOpened` |
 | event type | `surf.document.DocumentParsed` |
 | event type | `surf.navigation.NavigationCancelled` |
 | event type | `surf.navigation.NavigationCommitted` |
@@ -77,6 +91,10 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | event type | `surf.shell.TabClosed` |
 | event type | `surf.shell.TabOpened` |
 | event type | `surf.shell.WindowOpened` |
+| error type | `surf.agent.NotSessionHolder` |
+| error type | `surf.agent.SessionExists` |
+| error type | `surf.agent.SessionNotFound` |
+| error type | `surf.agent.SessionStateConflict` |
 | error type | `surf.navigation.NavigationNotFound` |
 | error type | `surf.navigation.NavigationStateConflict` |
 | error type | `surf.net.RequestNotFound` |
@@ -85,6 +103,10 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | error type | `surf.shell.TabNotFound` |
 | error type | `surf.shell.TabStateConflict` |
 | error type | `surf.shell.WindowNotFound` |
+| view type | `surf.agent.SessionState` |
+| view query | `surf.agent.SessionState` |
+| view type | `surf.agent.Sessions` |
+| view query | `surf.agent.Sessions` |
 | view type | `surf.document.Documents` |
 | view query | `surf.document.Documents` |
 | view type | `surf.navigation.Navigations` |
@@ -97,14 +119,27 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | view query | `surf.shell.Tabs` |
 | view type | `surf.shell.Windows` |
 | view query | `surf.shell.Windows` |
+| binding transformation | `close-tab-on-session-closed` |
+| binding delivery | `close-tab-on-session-closed` |
 | binding transformation | `commit-on-response` |
 | binding delivery | `commit-on-response` |
 | binding transformation | `fail-on-fetch-failed` |
 | binding delivery | `fail-on-fetch-failed` |
 | binding transformation | `fetch-on-navigation-started` |
 | binding delivery | `fetch-on-navigation-started` |
+| binding transformation | `navigate-on-navigation-requested` |
+| binding delivery | `navigate-on-navigation-requested` |
+| binding transformation | `note-on-navigation-cancelled` |
+| binding delivery | `note-on-navigation-cancelled` |
+| binding transformation | `note-on-navigation-committed` |
+| binding delivery | `note-on-navigation-committed` |
+| binding transformation | `note-on-navigation-failed` |
+| binding delivery | `note-on-navigation-failed` |
+| binding transformation | `note-on-navigation-started` |
+| binding delivery | `note-on-navigation-started` |
 | binding transformation | `parse-on-navigation-committed` |
 | binding delivery | `parse-on-navigation-committed` |
+| component port | `agent` |
 | component port | `document` |
 | component port | `navigator` |
 | component port | `net` |
@@ -124,10 +159,14 @@ What the specification fully determines is generated; what it cannot determine i
 
 | capability | source | why not generated | contract |
 | --- | --- | --- | --- |
+| command behaviour | `surf.agent.NoteNavigationEnded` | kept an obligation by a set outcome over filtered rows (`instances:`), in `noted` | given `surf.agent.NoteNavigationEnded` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `navigation_id == input.navigation_id`, setting `navigation_state`, emits `surf.agent.SessionNavigationChanged` |
+| command behaviour | `surf.agent.NoteNavigationStarted` | kept an obligation by a set outcome over filtered rows (`instances:`), in `noted` | given `surf.agent.NoteNavigationStarted` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `tab_id == input.tab_id`, setting `navigation_id`, `url`, `navigation_state`, emits `surf.agent.SessionNavigationChanged` |
 
 ## Refused — not represented by this synthesis
 
 | capability | source | stage | why |
 | --- | --- | --- | --- |
+| actor grants | `surf.agent.Opener` | planning | may invoke `surf.agent.OpenSession`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry |
+| actor grants | `surf.agent.SessionHolder` | planning | may invoke `surf.agent.CloseSession`, `surf.agent.Go`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry |
 | actor grants | `surf.navigation.User` | planning | may invoke `surf.navigation.CancelNavigation`, `surf.navigation.Navigate`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry |
 | actor grants | `surf.shell.User` | planning | may invoke `surf.shell.CloseTab`, `surf.shell.OpenTab`, `surf.shell.OpenWindow`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry |
