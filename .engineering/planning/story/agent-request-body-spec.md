@@ -17,6 +17,8 @@ scope:
 - confidence: cited
   path: crates/ports/src/lib.rs
 - confidence: cited
+  path: crates/ports/tests/ports.rs
+- confidence: cited
   path: crates/session/src/entries.rs
 - confidence: cited
   path: crates/session/src/lib.rs
@@ -66,7 +68,7 @@ scope:
   path: spec/scenarios/page-load-fails-without-response.yaml
 - confidence: cited
   path: spec/scenarios/two-of-each-entity.yaml
-revision: 34
+revision: 35
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 5}
