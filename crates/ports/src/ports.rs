@@ -13,10 +13,10 @@ use surf_types::agent::{
     SessionId, SessionNavigationChanged, SessionSnapshot,
 };
 use surf_types::behaviour::{
-    ActionStorage, DocumentStorage, FrameStorage, NavigationStorage, RequestStorage,
-    SessionStorage, TabStorage, TryContext, WindowStorage, unmet_context,
+    ActionStorage, DocumentStorage, ElementStorage, FrameStorage, NavigationStorage,
+    RequestStorage, SessionStorage, TabStorage, TryContext, WindowStorage, unmet_context,
 };
-use surf_types::document::{DocumentId, DocumentSnapshot};
+use surf_types::document::{DocumentId, DocumentSnapshot, ElementId, ElementSnapshot};
 use surf_types::navigation::{NavigationSnapshot, NavigationState};
 use surf_types::net::{RequestId, RequestSnapshot};
 use surf_types::obligation::UnmetObligation;
@@ -43,6 +43,7 @@ keyed!(TabSnapshot, TabId, tab_id);
 keyed!(NavigationSnapshot, RequestId, navigation_id);
 keyed!(RequestSnapshot, RequestId, request_id);
 keyed!(DocumentSnapshot, DocumentId, document_id);
+keyed!(ElementSnapshot, ElementId, element_id);
 keyed!(FrameSnapshot, FrameId, frame_id);
 keyed!(SessionSnapshot, SessionId, session_id);
 keyed!(ActionSnapshot, ActionId, action_id);
@@ -78,8 +79,9 @@ macro_rules! storage {
 
 /// Implements `TryContext` for a ports type over its random source.
 ///
-/// `TryContext` asks for all six kinds of identity. These ports assign each of the five that
-/// belong to the page load; the generated behaviours of a component ask only for their own.
+/// `TryContext` asks for all seven kinds of identity. These ports assign each of the six that
+/// belong to the page load, a document's element included; the generated behaviours of a
+/// component ask only for their own.
 ///
 /// It also asks for the caller's `session_id` and an action's identity, which only the `agent`
 /// component's commands read. These ports know no caller and record no action, so they answer
@@ -99,6 +101,12 @@ macro_rules! context {
                 &mut self,
             ) -> Result<DocumentId, UnmetObligation> {
                 assign(&mut self.random, "surf.document.DocumentId").map(DocumentId)
+            }
+
+            fn try_generate_surf_document_element_id(
+                &mut self,
+            ) -> Result<ElementId, UnmetObligation> {
+                assign(&mut self.random, "surf.document.ElementId").map(ElementId)
             }
 
             fn try_generate_surf_net_request_id(&mut self) -> Result<RequestId, UnmetObligation> {
@@ -196,25 +204,28 @@ impl NetPorts {
 
 storage!(RequestStorage for NetPorts, requests: RequestSnapshot, RequestId);
 
-/// The `document` component's ports: its documents, and the random source its identities come
-/// from.
+/// The `document` component's ports: its documents and their elements, and the random source
+/// their identities come from.
 #[derive(Debug)]
 pub struct DocumentPorts<R = OsRandom> {
     documents: Rows<DocumentSnapshot>,
+    elements: Rows<ElementSnapshot>,
     random: R,
 }
 
 impl<R: RandomSource> DocumentPorts<R> {
-    /// An empty table, with identities drawn from `source`.
+    /// Empty tables, with identities drawn from `source`.
     pub fn with_source(source: R) -> Self {
         Self {
             documents: Rows::default(),
+            elements: Rows::default(),
             random: source,
         }
     }
 }
 
 storage!(DocumentStorage for DocumentPorts<R>, documents: DocumentSnapshot, DocumentId, R);
+storage!(ElementStorage for DocumentPorts<R>, elements: ElementSnapshot, ElementId, R);
 context!(DocumentPorts);
 
 /// The `renderer` component's ports: its frames, and the random source its identities come
@@ -361,6 +372,10 @@ impl<R: RandomSource> TryContext for AgentPorts<R> {
 
     fn try_generate_surf_document_document_id(&mut self) -> Result<DocumentId, UnmetObligation> {
         Err(unmet_context("surf.document.DocumentId"))
+    }
+
+    fn try_generate_surf_document_element_id(&mut self) -> Result<ElementId, UnmetObligation> {
+        Err(unmet_context("surf.document.ElementId"))
     }
 
     fn try_generate_surf_net_request_id(&mut self) -> Result<RequestId, UnmetObligation> {

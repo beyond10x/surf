@@ -211,11 +211,11 @@ entities:
         target: surf.agent.Action
         cardinality: many
         via: session_id
-      # UNMAPPED: the session's document. `surf.document.DocumentParsed` carries the document's
-      # identity and address and names no navigation or tab, so nothing can tell which session a
-      # parsed document belongs to. What would settle it: a document that carries its navigation
-      # (`story:html-document-spec`, `epic:html-parser`). Until then the agent reads the
-      # navigation's address, which is the document's for a committed HTML response.
+      # UNMAPPED: the session's document. A document carries the navigation it was parsed for
+      # (`surf.document.Document.navigation_id`, in `Documents` and `DocumentParsed`), and this
+      # component stores no document: the session process finds the current one in `Documents` by
+      # the session's `navigation_id`. What would settle it: the first command of this component
+      # that needs the document (`story:agent-follow-links`).
     lifecycle:
       initial: Open
       states:

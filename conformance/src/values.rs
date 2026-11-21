@@ -1,8 +1,8 @@
 //! The runner's values and the generated types' values, both ways.
 //!
 //! A suite carries a value as an ESS [`Node`]: a `Uuid` and every newtype over one as its text, a
-//! `String` as text, an `Integer` as a number, `Bytes` as padded standard base64 text (RFC 4648,
-//! section 4), and an enum as the name of its variant.
+//! `String` as text, an `Integer` as a number, a `Boolean` as a boolean, `Bytes` as padded
+//! standard base64 text (RFC 4648, section 4), and an enum as the name of its variant.
 
 use std::collections::BTreeMap;
 
@@ -14,6 +14,11 @@ use surf_types::primitives::Uuid;
 /// The value of an `Integer`.
 pub fn integer(value: i64) -> Node {
     Node::Number(Number::from(value))
+}
+
+/// The value of a `Boolean`.
+pub fn boolean(value: bool) -> Node {
+    Node::Bool(value)
 }
 
 /// The value of a `String`, a `Uuid` or an enum variant.
@@ -141,6 +146,14 @@ impl<'a> Input<'a> {
                 .as_i64()
                 .ok_or_else(|| self.wrong(name, "an integer", value)),
             other => Err(self.wrong(name, "an integer", other)),
+        }
+    }
+
+    /// A `Boolean` field.
+    pub fn boolean(&mut self, name: &'static str) -> Result<bool, TargetError> {
+        match self.field(name, "a boolean")? {
+            Node::Bool(value) => Ok(*value),
+            other => Err(self.wrong(name, "a boolean", other)),
         }
     }
 

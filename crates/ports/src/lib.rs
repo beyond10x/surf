@@ -9,7 +9,7 @@
 //! | [`ShellPorts`] | `shell` | `Window`, `Tab` | yes |
 //! | [`NavigatorPorts`] | `navigator` | `Navigation` | yes |
 //! | [`NetPorts`] | `net` | `Request` | no |
-//! | [`DocumentPorts`] | `document` | `Document` | yes |
+//! | [`DocumentPorts`] | `document` | `Document`, `Element` | yes |
 //! | [`RendererPorts`] | `renderer` | `Frame` | yes |
 //! | [`AgentPorts`] | `agent` | `Session`, `Action` | the caller and an action's identity |
 //!
@@ -88,8 +88,8 @@ use surf_types::agent::obligations::{
     NoteNavigationStartedBehavior,
 };
 use surf_types::behaviour::{
-    ActionStorage, DocumentStorage, FrameStorage, Generated, NavigationStorage, RequestStorage,
-    SessionStorage, TabStorage, TryContext, WindowStorage,
+    ActionStorage, DocumentStorage, ElementStorage, FrameStorage, Generated, NavigationStorage,
+    RequestStorage, SessionStorage, TabStorage, TryContext, WindowStorage,
 };
 
 /// The `shell` component's generated port over [`ShellPorts`].
@@ -132,7 +132,7 @@ where
 /// The `document` component's port, its behaviours generated over `ports`.
 pub fn document_port<P>(ports: P) -> document::Document<Generated<P>>
 where
-    P: TryContext + DocumentStorage,
+    P: TryContext + DocumentStorage + ElementStorage,
 {
     document::Document::new(Generated::new(ports))
 }

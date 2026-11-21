@@ -10,7 +10,7 @@ use surf_ports::{
 };
 use surf_types::agent::{ActionId, SessionId};
 use surf_types::behaviour::{NavigationStorage, TryContext};
-use surf_types::document::DocumentId;
+use surf_types::document::{DocumentId, ElementId};
 use surf_types::navigation::NavigationSnapshot;
 use surf_types::net::RequestId;
 use surf_types::obligation::UnmetObligation;
@@ -50,6 +50,10 @@ impl TryContext for DropsEveryPut {
 
     fn try_generate_surf_document_document_id(&mut self) -> Result<DocumentId, UnmetObligation> {
         self.0.try_generate_surf_document_document_id()
+    }
+
+    fn try_generate_surf_document_element_id(&mut self) -> Result<ElementId, UnmetObligation> {
+        self.0.try_generate_surf_document_element_id()
     }
 
     fn try_generate_surf_net_request_id(&mut self) -> Result<RequestId, UnmetObligation> {

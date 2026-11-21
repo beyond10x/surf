@@ -1,0 +1,55 @@
+# A page with no `title` element and no actionable element: `document.title` is then the empty
+# string, and the document has no element rows. While it is parsed it is `Parsing` with no title
+# and no encoding.
+type: ess-scenario/6
+domain: surf.document
+scenario: parsed-page-without-title
+summary: A page without a title element is Parsed with the empty title and no elements.
+
+arrange:
+  - instance: page
+    entity: surf.document.Document
+
+timeline:
+  # The body is `<p>Hi`.
+  - at: 2026-01-06T09:00:00Z
+    command: surf.document.ParseDocument
+    input:
+      url: https://example.org/plain
+      body: PHA+SGk=
+      navigation_id: 3f1d5b7e-0000-4000-8000-000000000102
+    outcome: started
+    events:
+      - event: surf.document.ParsingStarted
+        payload:
+          body: PHA+SGk=
+    capture: {instance: page, event: surf.document.ParsingStarted, field: document_id}
+
+  - at: 2026-01-06T09:00:01Z
+    command: surf.document.FinishParsing
+    input:
+      document_id: {$instance: page}
+      title: ""
+      encoding: windows-1252
+    outcome: parsed
+    events:
+      - event: surf.document.DocumentParsed
+        payload:
+          document_id: {$instance: page}
+          title: ""
+          encoding: windows-1252
+
+assert:
+  - view: surf.document.Documents
+    contains:
+      document_id: {$instance: page}
+      url: https://example.org/plain
+      navigation_id: 3f1d5b7e-0000-4000-8000-000000000102
+      state: Parsed
+      title: ""
+      encoding: windows-1252
+      unsupported_encoding: null
+      stopped_by: null
+  - view: surf.document.Elements
+    params: {document_id: {$instance: page}}
+    counts: {at_least: 0, at_most: 0}
