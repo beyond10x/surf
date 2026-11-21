@@ -1,6 +1,7 @@
 //! Tokenization (13.2.5). Written by `story:html-tokenizer-markup` and
 //! `story:html-tokenizer-text`; the character reference states by
-//! `story:html-character-references`.
+//! `story:html-character-references`, with the named reference lookup and the numeric
+//! replacement table of [`crate::charref`].
 
 mod machine;
 
@@ -106,11 +107,15 @@ pub struct Tokenized {
 /// tokens end with one [`Token::EndOfFile`].
 ///
 /// Written: the data, RCDATA, RAWTEXT, script data and PLAINTEXT states, the tag, attribute,
-/// comment, DOCTYPE, CDATA section and processing instruction states, and the less-than sign,
-/// end tag and script data escape states the text states lead to. `last_start_tag` is the last
-/// start tag until the tokenizer emits one of its own; with none, no end tag is appropriate and
-/// every end tag in a text state is text. The character reference state is a stub that leaves
-/// `&` a character (story `html-character-references`).
+/// comment, DOCTYPE, CDATA section and processing instruction states, the less-than sign, end
+/// tag and script data escape states the text states lead to, and the character reference
+/// states (13.2.5.77 to 13.2.5.84) of data, RCDATA and attribute values. `last_start_tag` is
+/// the last start tag until the tokenizer emits one of its own; with none, no end tag is
+/// appropriate and every end tag in a text state is text. A character reference becomes
+/// character tokens, or code points of the attribute value; a numeric one that names no
+/// allowed code point becomes U+FFFD or the code point the standard's table puts in its place.
+/// The character reference states are not states a caller starts in, so [`State`] does not
+/// name them.
 pub fn tokenize(input: &[u32], state: State, last_start_tag: Option<&str>) -> Tokenized {
     let state = match state {
         State::Data => machine::State::Data,

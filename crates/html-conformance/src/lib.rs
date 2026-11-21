@@ -24,6 +24,11 @@
 //! block whose data files are in that group. `--check --base <revision>` ([`check`]) fails
 //! when a count drops below them, when one of them is below its value at `<revision>`, or when
 //! a `complete` mark is not allowed; `--root <dir>` reads another repository.
+//!
+//! `data/whatwg/entities.json`, the table of 13.5 "Named character references" (CC BY 4.0, see
+//! its `SOURCE`), holds no case. The second binary, `entities-table`, writes from it the named
+//! reference table of `surf-html`, `crates/html/src/charref_table.rs` ([`entities_table`]);
+//! `cargo run -p surf-html-conformance` runs the harness (`default-run`).
 
 #![forbid(unsafe_code)]
 
@@ -31,6 +36,7 @@ pub mod cases;
 pub mod check;
 pub mod dat;
 pub mod dump;
+pub mod entities_table;
 pub mod inventory;
 pub mod json;
 pub mod runner;

@@ -5,9 +5,9 @@
 //!
 //! # State
 //!
-//! Bytes are decoded and the decoded text can be tokenized, but no entry point builds a tree
-//! from it yet. [`parse_document`] and [`parse_fragment`] return a tree that holds only its
-//! root, and neither calls the tokenizer. Module by module:
+//! Bytes are decoded and the decoded text can be tokenized, character references included, but
+//! no entry point builds a tree from it yet. [`parse_document`] and [`parse_fragment`] return
+//! a tree that holds only its root, and neither calls the tokenizer. Module by module:
 //!
 //! - [`encoding`]: written. [`encoding::decode`] runs the encoding sniffing algorithm with no
 //!   transport-layer encoding: a byte order mark (confidence certain), else the prescan of the
@@ -23,20 +23,25 @@
 //! - [`input`]: written. [`input::InputStream`] holds the code points of the input with every
 //!   CR LF and every CR on its own turned into one LF, and [`input::parse_error`] names the
 //!   three parse errors of the input stream (surrogate, noncharacter, control character).
-//! - [`tokenizer`]: written but for the character reference states. [`tokenizer::tokenize`]
-//!   runs the data, RCDATA, RAWTEXT, script data and PLAINTEXT states, the less-than sign, end
-//!   tag and script data escape states they lead to, and the tag, attribute, comment, DOCTYPE,
-//!   CDATA section and processing instruction states, started in any [`tokenizer::State`], and
+//! - [`tokenizer`]: written. [`tokenizer::tokenize`] runs the data, RCDATA, RAWTEXT, script
+//!   data and PLAINTEXT states, the less-than sign, end tag and script data escape states they
+//!   lead to, the tag, attribute, comment, DOCTYPE, CDATA section and processing instruction
+//!   states, and the character reference states, started in any [`tokenizer::State`], and
 //!   returns tokens and parse errors. It reads `last_start_tag` as the last start tag emitted,
 //!   which each start tag it emits replaces; an end tag in the RCDATA, RAWTEXT or script data
 //!   states ends them only when its name is that tag's. It runs from one state to the end of
 //!   the input: no tree builder switches its state between tokens. `<![CDATA[` in the data
 //!   state is a bogus comment with the parse error `cdata-in-html-content`, because there is no
-//!   tree builder to say that the adjusted current node is in a foreign namespace. The
-//!   character reference state is a stub: `&` is emitted as a character, or appended to the
-//!   attribute value, and the characters after it are read in the state it came from.
-//! - [`charref`]: nothing yet. The module holds no item: no named reference table, no
-//!   character reference states.
+//!   tree builder to say that the adjusted current node is in a foreign namespace. A character
+//!   reference in data, in RCDATA and in an attribute value is read as 13.2.5.77 to 13.2.5.84
+//!   say: a named one from the table of 13.5, a numeric one with the replacements of the
+//!   numeric character reference end state.
+//! - [`charref`]: written, with no public item. It holds the named reference lookup, longest
+//!   name first and at most 32 code points after `&`, and the numeric replacement table that
+//!   the tokenizer's character reference states use. The named table is a private module
+//!   written from the vendored `entities.json` by the binary `entities-table` of
+//!   `surf-html-conformance` and never edited by hand; it carries the BSD 3-Clause notice of
+//!   the WHATWG in its header.
 //! - [`tree`]: the types of the node arena and the accessors [`Tree::root`], [`Tree::data`] and
 //!   [`Tree::children`]. Nothing in the crate adds a node to a tree.
 //! - [`tree_builder`]: nothing yet. The module holds no item: no insertion mode.
@@ -59,6 +64,7 @@
 #![forbid(unsafe_code)]
 
 pub mod charref;
+mod charref_table;
 pub mod encoding;
 pub mod input;
 pub mod limits;
