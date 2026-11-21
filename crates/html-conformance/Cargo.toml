@@ -4,6 +4,7 @@ description = "Runs the vendored html5lib-tests and web-platform-tests parser da
 version = "0.1.0"
 edition = "2024"
 publish = false
+default-run = "surf-html-conformance"
 license = "Apache-2.0"
 
 [dependencies]

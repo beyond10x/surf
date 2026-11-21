@@ -1,0 +1,14 @@
+The file below is copied unchanged from the HTML Standard: the table of 13.5 "Named character
+references", which that section links as "a JSON file".
+
+address: https://html.spec.whatwg.org/entities.json
+fetched: 2026-11-21
+standard: the HTML Living Standard, Last Updated 20 November 2026 (https://html.spec.whatwg.org/)
+licence: CC BY 4.0, Creative Commons Attribution 4.0 International (WHATWG IPR policy, https://whatwg.org/ipr-policy)
+copyright: Copyright © WHATWG (Apple, Google, Mozilla, Microsoft).
+generated: crates/html/src/charref_table.rs is written from this file by `cargo run -p surf-html-conformance --bin entities-table`; as a portion of the standard incorporated into source code it is licensed under the BSD 3-Clause License instead, under the WHATWG IPR policy, and carries that notice in its header.
+names: 2231
+
+sha256 of each file, path relative to this directory:
+
+d741d877ac77c4194c4ad526b5b4a19aef8dfe411ab840a466891cdbb9f362e6  entities.json
