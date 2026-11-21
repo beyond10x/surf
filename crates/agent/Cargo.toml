@@ -1,0 +1,18 @@
+[package]
+name = "surf-agent"
+description = "The agent command line of surf: a parser held to cli/surf-agent.yaml, the token, and the wire to surfd, with the standard library only."
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+name = "surf_agent"
+path = "src/lib.rs"
+
+[[bin]]
+name = "surf-agent"
+path = "src/main.rs"
+
+[dependencies]
+surf-answer = { path = "../answer" }
+surf-secret = { path = "../secret" }
