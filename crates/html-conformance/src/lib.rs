@@ -15,10 +15,20 @@
 //! total, `html-conformance: <exist> cases, <run> run, <pass> passed`. With
 //! `--list-failing <tag>` it prints instead `<path> <case number>` for each case of that tag
 //! that runs and does not pass.
+//!
+//! The expected counts are held in `expected/<group>.txt`, one file per group of the
+//! inventory (`tokenizer`, `tree-construction`, `encoding`): the `file` lines of that group's
+//! data files as the binary prints them, one `tag <name> <pass>/<run>/<exist>` line per tag
+//! that has a case in that group, counted over that group's cases, and one `section <name>
+//! complete` or `section <name> incomplete` line per section of the note's `html-sections`
+//! block whose data files are in that group. `--check --base <revision>` ([`check`]) fails
+//! when a count drops below them, when one of them is below its value at `<revision>`, or when
+//! a `complete` mark is not allowed; `--root <dir>` reads another repository.
 
 #![forbid(unsafe_code)]
 
 pub mod cases;
+pub mod check;
 pub mod dat;
 pub mod dump;
 pub mod inventory;
@@ -35,6 +45,11 @@ pub mod paths {
     /// The crate's directory.
     pub fn crate_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    }
+
+    /// The repository root, two directories above the crate's.
+    pub fn root() -> PathBuf {
+        crate_dir().join("../..")
     }
 
     /// `crates/html-conformance/data/`, the root every data path is relative to.

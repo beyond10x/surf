@@ -18,6 +18,10 @@ pub enum Group {
 }
 
 impl Group {
+    /// The three groups, in the order of their expected files: `tokenizer`,
+    /// `tree-construction`, `encoding`.
+    pub const ALL: [Group; 3] = [Group::Tokenizer, Group::TreeConstruction, Group::Encoding];
+
     /// The group's name in the block.
     pub fn name(self) -> &'static str {
         match self {
