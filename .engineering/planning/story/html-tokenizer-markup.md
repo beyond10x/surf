@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:html-tokenizer-markup
 kind: story
-status: active
+status: implemented
 title: Tokenize tags, attributes, comments and doctypes
 summary: Input preprocessing and the markup states of the tokenizer; every tokenizer case tagged markup passes.
 relations:
@@ -17,10 +17,11 @@ scope:
   path: crates/html/src/tokenizer
 - confidence: cited
   path: crates/html/src/tokenizer.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-21T13:40:36Z", actor: "human:operator", revision: 8, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 

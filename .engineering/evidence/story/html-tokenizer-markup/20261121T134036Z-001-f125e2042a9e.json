@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T13:40:36Z",
+  "actor": "human:operator",
+  "artifact": "story:html-tokenizer-markup",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "slot task check in the runner's form on wave/a5-events-html at 799eeab",
+    "reference": "exit 0: 83 scenarios passed on both runners, 102 test suites, 407 passed, 0 failed; html-conformance 9107 cases, 9095 run, 4164 passed"
+  }
+}

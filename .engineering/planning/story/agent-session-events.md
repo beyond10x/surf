@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-session-events
 kind: story
-status: active
+status: implemented
 title: Session processes publish their actions, events and answers to surfd, which keeps a bounded log
 summary: Each session process sends, per action, its action, events and answer lines to surfd, which stamps them with a per-session number and one across sessions, keeps at most 10,000 entries or 16 MiB per session and 64 MiB over all, and hands them to in-process readers from a number.
 relations:
@@ -18,10 +18,11 @@ scope:
   path: crates/surfd
 - confidence: cited
   path: docs/view-stream.md
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-11-21T13:40:36Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 

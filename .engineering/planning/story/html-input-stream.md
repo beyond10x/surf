@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:html-input-stream
 kind: story
-status: active
+status: implemented
 title: Decode a response body by the encoding sniffing algorithm
 summary: BOM, prescan and default decide the encoding; UTF-8, UTF-16 and windows-1252 are decoded; every encoding case passes but encoding/tests1.dat 48 to 54, which need the encoding changed while parsing (story html-tree-body).
 relations:
@@ -17,10 +17,11 @@ scope:
   path: crates/html/src/lib.rs
 - confidence: cited
   path: crates/html/tests/encoding.rs
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-21T13:40:36Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 
