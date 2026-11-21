@@ -1,0 +1,10 @@
+[package]
+name = "surf-html"
+description = "The HTML parser of surf: encoding sniffing, tokenizer and tree construction of the WHATWG HTML Standard."
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
