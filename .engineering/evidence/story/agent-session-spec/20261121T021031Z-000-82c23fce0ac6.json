@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T02:10:31Z",
+  "actor": "human:timo",
+  "artifact": "story:agent-session-spec",
+  "kind": "story",
+  "revision": 17,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "slot task check on wave/a2-sessions at 22bb0c6, run by the coordinator",
+    "reference": "exit 0; 9 files valid, 5 authored scenarios; 77 scenarios passed on both runners; 24 refusals; 30 artifacts; cargo build --locked -p agent exit 0 (the unit's run); floor corrected from 120 to 77 (docs/plan/agent-wave-2.md); verdict VERIFIED"
+  }
+}

@@ -8,7 +8,19 @@ summary: The page compiled into surfd shows every session, the selected session'
 relations:
 - decomposes: epic:live-view
 - depends_on: story:view-surfd-serves
-revision: 5
+- depends_on: story:view-page-prototype
+scope:
+- confidence: cited
+  path: crates/surfd/src/view.rs
+- confidence: cited
+  path: crates/view-fixture
+- confidence: cited
+  path: crates/view/web
+- confidence: cited
+  path: taskfiles/view-test.yml
+- confidence: cited
+  path: view-tests
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 4}
@@ -16,10 +28,12 @@ transitions:
 ## Context
 
 The operator asked to have the first version of the view open in his browser as soon as it
-exists. This story is that version, and the last story before a person can open the page: after
-it, `surf-agent open <url>` and the address in `$XDG_RUNTIME_DIR/surf/view-url` show every session
-live. It shows what exists before the parser: sessions, their page line, their actions and the
-components' events. The panels for links, controls and changes come later
+exists. `story:view-page-prototype` gives that first version over example data: the page's
+files under `crates/view/web/`, `surf_view::page_files()` in `crates/view/src/assets.rs`, and the
+example program `prototype`. This story puts real sessions behind those files and holds them in
+the gate: after it, `surf-agent open <url>` and the address in `$XDG_RUNTIME_DIR/surf/view-url`
+show every session live. It shows what exists before the parser: sessions, their page line, their
+actions and the components' events. The panels for links, controls and changes come later
 (`story:view-now-panel`, `story:view-controls-and-changes`), the detail panel after it
 (`story:view-detail-panel`).
 
@@ -45,42 +59,27 @@ sessions, navigations, requests, documents and actions in the specification's te
 
 ## Change
 
-- `crates/view/web/`, plain modules, no framework, no build step, nothing from another origin:
-  - `index.html`: the regions, and one `<script type="module">` with a `src`. No inline script or
-    style.
-  - `view.css`: system font stacks, no font file, no image.
-  - `dom.js`: the only place the page creates elements; it writes every value with
-    `textContent`, never as markup.
-  - `stream.js`, as `docs/view-stream.md` ("The stream") and item 6 of `docs/design/live-view.md`
-    say: the token taken from the fragment into `sessionStorage` and the fragment removed with
-    `history.replaceState`; every `/api/` request with `Authorization: Bearer`; `/events` read
-    with `fetch` and a stream reader that parses the event-stream framing (`id:`, `event:` of
-    `entry`, `session` or `reset`, `data:`, and the `: keep-alive` comment). The first stream is
-    opened with `Last-Event-ID` set to `newest` of the `/api/sessions` answer loaded before it.
-    When the stream ends, it reconnects after a delay that grows to 5 s, with `Last-Event-ID` set
-    to the last `id:` it read, and loads `/api/sessions` (and the selected session) again after
-    each reconnect, because `session` events are live only and never replayed; an `entry` whose
-    `number` it already holds is ignored. On `reset` it loads the session list and the selected
-    session again and goes on from the `newest` the `reset` carries.
-  - `state.js`: sessions, their entries, the selection and the playhead; no DOM, so its rules are
-    in one place.
-  - `sessions.js`: the session list: state, address, title when the session has one, the time
-    since its last action (counting up), a closed session greyed and marked closed.
-  - `page.js`: the page line of the selected session at the playhead: status, media type,
-    address, title; `failed <reason> <address>`; or `none`.
-  - `timeline.js`: the selected session's actions in order, each a segment labelled with its
-    command and argument; under each, the events between its action entry and its answer entry
-    (D19), one mark per event, named by its event name and grouped by domain (`surf.navigation`,
-    `surf.net`, `surf.document`, `surf.agent`); a playhead: selecting an action shows the page
-    line of that action's answer entry; "Latest" follows live and moves the playhead to each new
-    action; with an earlier action selected it stays and the marker says how many actions are newer; the left
-    and right arrow keys move the playhead; entries the log dropped are shown as one gap with its
-    count.
-  - `view.js`: loads `/api/sessions` and the selected session, then follows the stream from
-    `newest`; `?session=<id>&at=<sequence>` in the address, never the token.
-- `crates/view/src/assets.rs`: each file by `include_str!`, with its path and content type;
-  `crates/view/src/lib.rs`: the module line; `crates/surfd/src/view.rs`: one line passing the
-  assets to the server.
+- `crates/view/web/`, completing the files `story:view-page-prototype` wrote (no new file, so
+  `crates/view/src/assets.rs` and `crates/view/src/lib.rs` are not changed); plain modules, no
+  framework, no build step, nothing from another origin, every value through `dom.js` and
+  `textContent`:
+  - `state.js`: the playhead: the selected action of the selected session, "Latest" on or off,
+    and the count of newer actions.
+  - `timeline.js`: selecting an action moves the playhead to it and shows the page line of that
+    action's answer entry; "Latest" follows live and moves the playhead to each new action; with
+    an earlier action selected the playhead stays and the marker says how many actions are newer;
+    the left and right arrow keys move the playhead one action; the entries the log dropped
+    (the detail's `dropped`, and `log_dropped`) are shown as one gap with its count; the event
+    marks under a segment grouped by domain (`surf.navigation`, `surf.net`, `surf.document`,
+    `surf.agent`).
+  - `page.js`: the page line at the playhead, not only of the newest answer entry.
+  - `view.js`: `?session=<id>&at=<sequence>` in the address, written as the selection changes and
+    read at load; never the token.
+  - `stream.js`, `sessions.js`, `index.html`, `view.css`, `dom.js`: changed only where the cases
+    below need it; the stream rules stay those of `docs/view-stream.md` ("The stream") and item 6
+    of `docs/design/live-view.md` as the prototype has them (first stream from `newest`,
+    reconnect from the last `id:` with `/api/sessions` loaded again, `reset`).
+- `crates/surfd/src/view.rs`: one line: the server's `Config.files` is `surf_view::page_files()`.
 - The test tooling of item 4:
   - `view-tests/`: `package.json` pinning `@playwright/test` at `1.65.0`, the committed
     `package-lock.json`, `playwright.config.mjs` (Chromium's headless shell, revision 1254, which
@@ -99,11 +98,6 @@ sessions, navigations, requests, documents and actions in the specification's te
     task: the task runs under `slot task check`, already in a job of the pool, and a `slot` inside
     it would take a second job (measured, item 4). Decision D16; the root `Taskfile.yml` lines are
     handed to the coordinator (below).
-- `crates/view/tests/web.rs`:
-  1. each served file is byte for byte the file under `crates/view/web/`;
-  2. no file under `crates/view/web/` contains `innerHTML`, `outerHTML`, `insertAdjacentHTML`,
-     `document.write`, `eval(`, `new Function`, `setAttribute("on`, `javascript:`, `http://` or
-     `https://`.
 - `view-tests/tests/first-page.spec.mjs`, each case against the fixture:
   1. the page loads with no console error and no `securitypolicyviolation` event;
   2. two sessions are listed with state, address and the time since their last action;
@@ -134,9 +128,8 @@ sessions, navigations, requests, documents and actions in the specification's te
       had read, requests `/api/sessions` again after the reconnect, shows the new action's
       segment and page line without a reload, and holds no segment twice.
 
-Surfaces written: `crates/view/web/`, `crates/view/src/assets.rs`, `crates/view/src/lib.rs`
-(module line), `crates/view/tests/web.rs`, `crates/surfd/src/view.rs` (one line),
-`crates/view-fixture/`, `view-tests/`, `taskfiles/view-test.yml`.
+Surfaces written: `crates/view/web/` (the files of `story:view-page-prototype`), `crates/surfd/src/view.rs`
+(one line), `crates/view-fixture/`, `view-tests/`, `taskfiles/view-test.yml`.
 
 ## For Taskfile.yml (decisions D16 and D30, written by the coordinator)
 
@@ -159,12 +152,12 @@ Surfaces written: `crates/view/web/`, `crates/view/src/assets.rs`, `crates/view/
 ## Acceptance
 
 `slot task view-test` passes with the 14 cases of `view-tests/tests/first-page.spec.mjs`, each a
-test named after its case, `cargo test -p surf-view --test web` passes with its 2 cases, and
-`slot task check` exits 0 with `view-test` among its steps once the coordinator has added its
-include.
+test named after its case, and `slot task check` exits 0 with `view-test` among its steps once the
+coordinator has added its include.
 
 ## Out of scope
 
-The detail panel and the requests (`story:view-detail-panel`); links, controls and changes; the
+The page's first files and the example program (`story:view-page-prototype`); the detail panel and
+the requests (`story:view-detail-panel`); links, controls and changes; the
 title as hostile input (no session has a title before `story:agent-follow-links`; its case is in
 `story:view-now-panel`); screenshots; more than one viewport.

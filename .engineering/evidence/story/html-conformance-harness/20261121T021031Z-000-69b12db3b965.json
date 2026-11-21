@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T02:10:31Z",
+  "actor": "human:timo",
+  "artifact": "story:html-conformance-harness",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test and cargo run -p surf-html-conformance, run by the coordinator in the unit tree at 91354b9",
+    "reference": "8 tests passed in 3 suites; 81 file lines; html-conformance: 9107 cases, 9095 run, 5 passed; cargo tree lists surf-html-conformance and surf-html; checksums of the 83 vendored files hold on the committed bytes; verdict VERIFIED"
+  }
+}

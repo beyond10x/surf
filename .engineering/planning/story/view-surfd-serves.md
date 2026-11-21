@@ -12,6 +12,7 @@ relations:
 - depends_on: story:agent-session-events
 - depends_on: story:agent-session-process
 - depends_on: story:agent-secret-primitives
+- depends_on: story:view-page-prototype
 revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:15Z", actor: "human:timo", revision: 3}

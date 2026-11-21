@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:html-conformance-harness
 kind: story
-status: active
+status: implemented
 title: Vendor the parser's conformance data and count it against a parser skeleton
 summary: html5lib-tests (tokenizer, encoding) and web-platform-tests (tree construction) at pinned commits with their licences; a std-only harness reads 81 files, 9,107 cases, and prints cases that exist, run and pass.
 relations:
@@ -13,10 +13,11 @@ scope:
   path: crates/html
 - confidence: cited
   path: crates/html-conformance
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-21T02:10:31Z", actor: "human:timo", revision: 9, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 
