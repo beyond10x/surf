@@ -33,7 +33,9 @@
 //!   write and each read on the socket is given the time that is left, through
 //!   [`std::net::TcpStream::set_write_timeout`] and [`std::net::TcpStream::set_read_timeout`].
 //!   Running out is [`Failure::Unreachable`], the same failure a server that sends nothing
-//!   gives.
+//!   gives. For a redirect, the time from sending its request to the end of resolving its
+//!   `Location` (the parse of the `Location` and of the address it resolves to) counts against
+//!   it, so the next request gets only what is left.
 //! - **Header bytes** ([`Limits::max_header_bytes`], default 64 KiB): every byte of the status
 //!   line and the header field lines, line terminators and interim (1xx) responses included, is
 //!   counted against it, and a line is never read past what is left of it. Each response of a
@@ -63,16 +65,44 @@
 //!
 //! So one fetch lasts at most the connect timeout plus the read timeout, whatever the number of
 //! redirects: 40 s at the defaults.
-//! Memory held at once is at most the header limit plus the body limit plus a few KiB (one read
-//! buffer of 8 KiB and one chunk-size line). The buffers grow by doubling, as a [`Vec`] does,
-//! but never past their limit: the body buffer's capacity stays within the body limit plus one
-//! read, and the buffer of bytes read and not yet consumed within the larger of the header limit
-//! and one read buffer, plus one read.
 //!
 //! A zero [`Duration`] for either timeout leaves no time and fails every fetch with
 //! [`Failure::Unreachable`]. A duration too large to add to the current [`Instant`] sets no
 //! deadline, and each read, write and connect waits that duration as the standard library
 //! allows.
+//!
+//! # Memory
+//!
+//! What a fetch holds at once depends on the moment; a body is held only in the first.
+//!
+//! - **While the body of the last response is read**, at most the sum of these, 16,917,505
+//!   bytes at the defaults:
+//!   - the header limit, 64 KiB: of the head only the media type is kept, at most the header
+//!     limit; the head itself is dropped before the first body byte is read;
+//!   - the body limit and one byte, 16 MiB + 1: the body buffer grows by doubling, as a
+//!     [`Vec`] does, but never past the declared length or the body limit, and a body read
+//!     until the connection closes takes one byte more to tell it is too long;
+//!   - one read buffer, 8 KiB: the bytes read and not yet consumed, a buffer cut back to one
+//!     read once the head is read;
+//!   - one chunk-size line, 1 KiB;
+//!   - after a redirect, the address of the response, at most [`MAX_ADDRESS_BYTES`], 64 KiB.
+//!     Without a redirect the response's address is a copy of the address passed to [`fetch`],
+//!     made once the body is complete. The address parsed with `surf-url`, its fragment and
+//!     the request target are dropped before the body is read.
+//! - **While a `Location` is resolved**, no body is held: the head of the redirect, the URL it
+//!   is resolved against parsed with `surf-url` (its path takes 24 bytes for each segment
+//!   besides its bytes), and what parsing the `Location` takes (4 bytes for each code point of
+//!   it, 24 bytes for each path segment). Measured by counting allocations, for a `Location` at
+//!   the default header limit of the costliest shape found, a path of empty segments
+//!   (`/a////…`): at most 30 times the header limit, 1,966,080 bytes, when it is resolved
+//!   against a short address passed to [`fetch`] (29.003 times measured); at most 54 times,
+//!   3,538,944 bytes, when it is resolved against a URL of 64 KiB of that shape that the
+//!   redirect before led to (53.003 times measured).
+//! - **While a head is read**, no body is held: the bytes read and not yet consumed, at most
+//!   the larger of the header limit and one read buffer, plus one read; the fields parsed so
+//!   far, each taking 48 bytes besides its name and value; and after a redirect the address of
+//!   the response, the request target and the URL parsed as above. No bound is stated for
+//!   this moment: a header section of many short fields holds many times the header limit.
 //!
 //! # What it does not do
 //!
@@ -222,19 +252,25 @@ pub fn fetch(address: &str, limits: &Limits) -> Result<Response, Failure> {
         let stream = connect(&target, connect_left)?;
         connect_left = connect_left.saturating_sub(connecting.elapsed());
         let exchanging = Instant::now();
-        let (head, mut wire) = exchange(&target, stream, read_left, limits)?;
+        let (head, wire) = exchange(&target, stream, read_left, limits)?;
+        // The request is sent: of the address, only what a response needs is kept from here
+        // (the crate documentation, "Memory").
+        drop(target);
         let Some(location) = redirect_location(&head)? else {
-            let body = read_body(&mut wire, &head, limits.max_body_bytes)?;
+            drop(current);
+            let (status, media_type, body) = read_rest(wire, head, limits.max_body_bytes)?;
             return Ok(Response {
-                status: head.status,
-                media_type: media_type(&head),
+                status,
+                media_type,
                 body,
                 url: url.unwrap_or_else(|| address.to_owned()),
             });
         };
         // The body of a redirect is not read: the connection closes here.
         drop(wire);
-        read_left = read_left.saturating_sub(exchanging.elapsed());
+        // The address of the redirect is no response's: it is needed only parsed, as `current`
+        // or, at the first redirect, the address passed.
+        drop(url.take());
         let (base, fragment) = match current.take() {
             Some(current) => current,
             None => {
@@ -249,6 +285,9 @@ pub fn fetch(address: &str, limits: &Limits) -> Result<Response, Failure> {
         };
         let (next, next_url, next_fragment) = resolve_location(location, &base, fragment)?;
         target = Target::parse(&next_url)?;
+        // The exchange is charged up to here, so resolving the Location counts against the
+        // read timeout too.
+        read_left = read_left.saturating_sub(exchanging.elapsed());
         // A redirect after the twentieth: the Fetch Standard, "HTTP-redirect fetch", step 8.
         if redirects == MAX_REDIRECTS {
             return Err(Failure::TooManyRedirects(format!(
@@ -344,6 +383,8 @@ fn resolve_location(
             href.len()
         )));
     }
+    // The response URL holds no more than its bytes: the crate documentation, "Memory".
+    href.shrink_to_fit();
     Ok((resolved, href, fragment))
 }
 
@@ -619,6 +660,16 @@ impl<R: Read> Wire<R> {
         self.start = self.start.saturating_add(n).min(self.buf.len());
     }
 
+    /// Drop the bytes consumed and keep at most one read buffer of capacity, for the body: a
+    /// body is read at most one read buffer at a time, and what the head left unconsumed came
+    /// in the read that ended it.
+    fn release(&mut self) {
+        self.buf.drain(..self.start);
+        self.start = 0;
+        self.ceiling = READ_CHUNK_BYTES;
+        self.buf.shrink_to(READ_CHUNK_BYTES);
+    }
+
     /// Read once from the connection, adding between 1 and `max` bytes (at most one read
     /// buffer). Returns 0 when the connection has ended.
     fn fill(&mut self, max: usize) -> Result<usize, Failure> {
@@ -726,13 +777,30 @@ impl Head {
 fn read_response<R: Read>(inner: R, limits: &Limits) -> Result<Response, Failure> {
     let mut wire = Wire::new(inner, limits.max_header_bytes.max(READ_CHUNK_BYTES));
     let head = read_final_head(&mut wire, limits)?;
-    let body = read_body(&mut wire, &head, limits.max_body_bytes)?;
+    let (status, media_type, body) = read_rest(wire, head, limits.max_body_bytes)?;
     Ok(Response {
-        status: head.status,
-        media_type: media_type(&head),
+        status,
+        media_type,
         body,
         url: String::new(),
     })
+}
+
+/// The status, the media type and the body of the response whose head is `head`. What the body
+/// needs of the head is taken first; the head is dropped and the connection's buffer released
+/// before a body byte is read (the crate documentation, "Memory").
+fn read_rest<R: Read>(
+    mut wire: Wire<R>,
+    head: Head,
+    max: usize,
+) -> Result<(u16, String, Vec<u8>), Failure> {
+    let status = head.status;
+    let media_type = media_type(&head);
+    let framing = framing(&head, max)?;
+    drop(head);
+    wire.release();
+    let body = read_body(&mut wire, framing, max)?;
+    Ok((status, media_type, body))
 }
 
 /// Read heads until one is not interim (1xx), within one header budget.
@@ -872,11 +940,25 @@ fn parse_status_line(line: &[u8]) -> Result<(u8, u16), Failure> {
     Ok((minor, status))
 }
 
-/// Read the body by the rules of RFC 9112 section 6.3, for the response to a `GET`.
-fn read_body<R: Read>(wire: &mut Wire<R>, head: &Head, max: usize) -> Result<Vec<u8>, Failure> {
+/// How the body of a response ends, read from its head.
+enum Framing {
+    /// No body.
+    None,
+    /// The chunked coding.
+    Chunked,
+    /// A `Content-Length` of at most the body limit.
+    Length(usize),
+    /// When the server closes the connection.
+    UntilClose,
+}
+
+/// The framing of the body by the rules of RFC 9112 section 6.3, for the response to a `GET`.
+/// A framing this crate refuses, and a declared length over `max`, fail here, before any body
+/// byte is read.
+fn framing(head: &Head, max: usize) -> Result<Framing, Failure> {
     // 204 and 304 never have a body (rule 1; 1xx was skipped and HEAD is never sent).
     if head.status == 204 || head.status == 304 {
-        return Ok(Vec::new());
+        return Ok(Framing::None);
     }
     let mut transfer_codings = head
         .values(b"transfer-encoding")
@@ -898,7 +980,7 @@ fn read_body<R: Read>(wire: &mut Wire<R>, head: &Head, max: usize) -> Result<Vec
         if !only_chunked {
             return Err(malformed("a transfer coding other than chunked alone"));
         }
-        return read_chunked(wire, max);
+        return Ok(Framing::Chunked);
     }
     if head.values(b"content-length").next().is_some() {
         let length = content_length(head)?;
@@ -907,13 +989,34 @@ fn read_body<R: Read>(wire: &mut Wire<R>, head: &Head, max: usize) -> Result<Vec
             return Err(body_limit(max));
         }
         let length = usize::try_from(length).map_err(|_| body_limit(max))?;
-        let mut body = Vec::with_capacity(length.min(READ_CHUNK_BYTES));
-        wire.read_exact_into(&mut body, length, length, "body")?;
-        // Bytes after the declared length are discarded: RFC 9112 section 6.3.
-        return Ok(body);
+        return Ok(Framing::Length(length));
     }
-    // No declared length: the body ends when the server closes the connection (rule 8). The
-    // body takes at most one byte more than the limit, which is enough to tell it is too long.
+    // No declared length: the body ends when the server closes the connection (rule 8).
+    Ok(Framing::UntilClose)
+}
+
+/// Read the body as `framing` says it ends, within the body limit `max`.
+fn read_body<R: Read>(
+    wire: &mut Wire<R>,
+    framing: Framing,
+    max: usize,
+) -> Result<Vec<u8>, Failure> {
+    match framing {
+        Framing::None => Ok(Vec::new()),
+        Framing::Chunked => read_chunked(wire, max),
+        Framing::Length(length) => {
+            let mut body = Vec::with_capacity(length.min(READ_CHUNK_BYTES));
+            wire.read_exact_into(&mut body, length, length, "body")?;
+            // Bytes after the declared length are discarded: RFC 9112 section 6.3.
+            Ok(body)
+        }
+        Framing::UntilClose => read_until_close(wire, max),
+    }
+}
+
+/// Read a body that ends when the server closes the connection. It takes at most one byte more
+/// than the limit `max`, which is enough to tell it is too long.
+fn read_until_close<R: Read>(wire: &mut Wire<R>, max: usize) -> Result<Vec<u8>, Failure> {
     let ceiling = max.saturating_add(1);
     let mut body = Vec::new();
     loop {
