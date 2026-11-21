@@ -7,6 +7,17 @@
 //! [`Failure::UnsupportedScheme`], [`Failure::MalformedResponse`] or
 //! [`Failure::TooManyRedirects`].
 //!
+//! [`send`] does the same for a [`Request`]: an address, a [`Method`] (`GET` or `POST`), and for
+//! a `POST` an optional body and its media type. [`fetch`] is [`send`] of a `GET` without a body.
+//! A `POST` sends `Host`, `Connection: close`, `Content-Type: <media type>` when the request has
+//! one, and `Content-Length` always (`0` without a body, as RFC 9110 section 8.6 says a user agent
+//! normally does), then the body bytes unchanged. A `GET` sends neither field and no body.
+//!
+//! A redirect changes the method as the Fetch Standard's "HTTP-redirect fetch" does: after a 301,
+//! 302 or 303 to a `POST`, the next request is a `GET` without a body, `Content-Type` or
+//! `Content-Length`, and stays one for the rest of the chain; a 307 or 308 repeats the method, the
+//! body and the media type. A 303 after a `GET` stays a `GET`.
+//!
 //! The wire format follows HTTP/1.1 (RFC 9112, message syntax; RFC 9110, semantics) for what
 //! this crate does. No section of either is claimed complete. Where a rule is followed, the
 //! comment beside the code names the section it was checked against.
@@ -33,7 +44,8 @@
 //!   write and each read on the socket is given the time that is left, through
 //!   [`std::net::TcpStream::set_write_timeout`] and [`std::net::TcpStream::set_read_timeout`].
 //!   Running out is [`Failure::Unreachable`], the same failure a server that sends nothing
-//!   gives. For a redirect, the time from sending its request to the end of resolving its
+//!   gives. Sending a request body, again after a 307 or 308 that repeats it, counts against it
+//!   as every write does. For a redirect, the time from sending its request to the end of resolving its
 //!   `Location` (the parse of the `Location` and of the address it resolves to) counts against
 //!   it, so the next request gets only what is left.
 //! - **Header bytes** ([`Limits::max_header_bytes`], default 64 KiB): every byte of the status
@@ -45,6 +57,15 @@
 //!   the limit fails before any body byte is read; a chunk whose size would take the body past
 //!   the limit fails before the chunk is read; a body read until the connection closes fails as
 //!   soon as it holds one byte more than the limit. Each is [`Failure::MalformedResponse`].
+//! - **Request body bytes** ([`Limits::max_request_body_bytes`], default 16 MiB): a request body
+//!   longer than the limit is [`Failure::Unreachable`] before the host is resolved, with no
+//!   connection.
+//! - **Request checks**: after the address checks and before the host is resolved, each with no
+//!   connection and [`Failure::Unreachable`] whose detail names the check (as for an address
+//!   this crate cannot use: the specification has no reason for a request that cannot be sent):
+//!   a `GET` with a body or a media type; a media type that is not `type "/" subtype`, each a
+//!   token (RFC 9110 section 5.6.2) of at most 127 bytes (RFC 6838 section 4.2), which refuses
+//!   CR, LF, `;` and so any parameter and any header injection; and the request body limit above.
 //! - **Chunk-size line**: a chunk-size line, extensions included, longer than 1024 bytes is
 //!   [`Failure::MalformedResponse`]. Chunk sizes are parsed with checked arithmetic.
 //! - **Redirects**: a response with a redirect status (301, 302, 303, 307 or 308) and a
@@ -57,8 +78,9 @@
 //!   A `Location` that is not UTF-8, does not parse (a host outside ASCII included: no IDNA), or
 //!   comes in more than one field, and a resolved address longer than [`MAX_ADDRESS_BYTES`]
 //!   (64 KiB), are [`Failure::MalformedResponse`]. The resolved address then goes through the
-//!   same checks as the address passed to [`fetch`] (see "Addresses"). Each of these failures
-//!   ends the fetch without a further connection, and so does a redirect after the twentieth.
+//!   same checks as the address passed to [`fetch`] or [`send`] (see "Addresses"). Each of
+//!   these failures ends the fetch without a further connection, and so does a redirect after
+//!   the twentieth.
 //!   The order of the checks: the `Location` and the address bound, then the address, then the
 //!   number of redirects, as the Fetch Standard's "HTTP-redirect fetch" checks the location URL,
 //!   then its scheme, then the redirect count.
@@ -75,6 +97,13 @@
 //!
 //! What a fetch holds at once depends on the moment; a body is held only in the first.
 //!
+//! A request body is the caller's: [`send`] borrows it and writes it from the caller's slice,
+//! after the head, and allocates no copy of it, also when a 307 or 308 repeats it. None of the
+//! sums below counts it. So while it is written the fetch holds what it holds without it: a
+//! `POST` of 4 MiB sent twice through a 308, with short addresses and a response of 2 bytes,
+//! holds at most the header limit and one read buffer over the whole fetch, 73,728 bytes at the
+//! defaults (8,761 measured).
+//!
 //! - **While the body of the last response is read**, at most the sum of these, 16,917,505
 //!   bytes at the defaults:
 //!   - the header limit, 64 KiB: of the head only the media type is kept, at most the header
@@ -86,9 +115,9 @@
 //!     read once the head is read;
 //!   - one chunk-size line, 1 KiB;
 //!   - after a redirect, the address of the response, at most [`MAX_ADDRESS_BYTES`], 64 KiB.
-//!     Without a redirect the response's address is a copy of the address passed to [`fetch`],
-//!     made once the body is complete. The address parsed with `surf-url`, its fragment and
-//!     the request target are dropped before the body is read.
+//!     Without a redirect the response's address is a copy of the address passed to [`fetch`]
+//!     or [`send`], made once the body is complete. The address parsed with `surf-url`, its
+//!     fragment, the request target and the request head are dropped before the body is read.
 //! - **While a `Location` is resolved**, no body is held: the head of the redirect, the URL it
 //!   is resolved against parsed with `surf-url` (its path takes 24 bytes for each segment
 //!   besides its bytes), and what parsing the `Location` takes (4 bytes for each code point of
@@ -107,12 +136,22 @@
 //! # What it does not do
 //!
 //! It is not a complete HTTP client. It does not do HTTPS or any scheme other than `http:` (a
-//! redirect to one is [`Failure::UnsupportedScheme`]), methods other than `GET`, request bodies,
-//! persistent connections (every fetch opens and closes one connection), content codings (the
+//! redirect to one is [`Failure::UnsupportedScheme`]), methods other than `GET` and `POST`,
+//! `Expect: 100-continue` (a `POST` sends its body at once, after the head), chunked request
+//! bodies, a request media type with parameters, request header fields other than `Host`,
+//! `Connection`, `Content-Type` and `Content-Length` (no `Origin`, no `Referer`), persistent
+//! connections (every fetch opens and closes one connection), content codings (the
 //! body is returned as sent; no `Accept-Encoding` is sent, and no `Content-Encoding` is decoded),
 //! transfer codings other than `chunked`, trailers (the chunked body ends at its last chunk; the
 //! trailer section is not read), proxies, cookies, caching, `Refresh`, or URL parsing beyond
 //! splitting an `http:` address into host, port and request target and resolving a `Location`.
+//!
+//! A server that answers and closes before it read a request body ends the fetch in one of two
+//! ways, and a caller may rely on neither. What decides is whether the write of the request met
+//! the closed connection. When it did not (as a rule, a body small enough for the socket's
+//! buffers: it is written without an error), the answer is read and returned as a [`Response`].
+//! When it did (as a rule, a body larger than those buffers), the write fails: that is
+//! [`Failure::Unreachable`], as every failure to send the request is, and the answer is not read.
 //!
 //! # Addresses
 //!
@@ -123,7 +162,7 @@
 //! brackets that is not an IPv6 address, a bad port, user information, or a byte that is not
 //! printable ASCII) is [`Failure::Unreachable`], also without a connection: the specification
 //! has no reason for an address that is not one. When a redirect arrives, the address passed to
-//! [`fetch`] is parsed with `surf_url::Url::parse` to resolve the `Location` against; one that
+//! [`fetch`] or [`send`] is parsed with `surf_url::Url::parse` to resolve the `Location` against; one that
 //! does not parse is [`Failure::Unreachable`] for the same reason.
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -159,6 +198,8 @@ pub struct Limits {
     pub max_header_bytes: usize,
     /// The most bytes the body may take after the chunked coding is removed. Default 16 MiB.
     pub max_body_bytes: usize,
+    /// The most bytes the body of a request may take. A longer one is not sent. Default 16 MiB.
+    pub max_request_body_bytes: usize,
 }
 
 impl Default for Limits {
@@ -168,7 +209,66 @@ impl Default for Limits {
             read_timeout: Duration::from_secs(30),
             max_header_bytes: 64 * 1024,
             max_body_bytes: 16 * 1024 * 1024,
+            max_request_body_bytes: 16 * 1024 * 1024,
         }
+    }
+}
+
+/// The method of a [`Request`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Method {
+    /// `GET`, without a body.
+    Get,
+    /// `POST`, with an optional body and its media type.
+    Post,
+}
+
+impl Method {
+    fn name(self) -> &'static str {
+        match self {
+            Method::Get => "GET",
+            Method::Post => "POST",
+        }
+    }
+}
+
+/// A request to send, borrowed from the caller: nothing of it is copied, the body least of all.
+///
+/// Its [`Debug`](fmt::Debug) text shows the address, the method and the media type, and the body
+/// by its length only, never its bytes, since a form's body can carry a password:
+/// `Request { address: "http://example.org/login", method: Post, body: Some(16 bytes),
+/// media_type: Some("application/x-www-form-urlencoded") }`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Request<'a> {
+    /// The address, as for [`fetch`].
+    pub address: &'a str,
+    /// The method.
+    pub method: Method,
+    /// The body, sent as it is. Only a [`Method::Post`] may have one.
+    pub body: Option<&'a [u8]>,
+    /// The media type of the body, `type/subtype` without parameters, sent as `Content-Type`.
+    /// Only a [`Method::Post`] may have one.
+    pub media_type: Option<&'a str>,
+}
+
+impl fmt::Debug for Request<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Request")
+            .field("address", &self.address)
+            .field("method", &self.method)
+            .field("body", &self.body.map(|body| BodyLength(body.len())))
+            .field("media_type", &self.media_type)
+            .finish()
+    }
+}
+
+/// The length of a request body, which is all the [`Debug`](fmt::Debug) text of a [`Request`]
+/// shows of it: `<n> bytes`.
+struct BodyLength(usize);
+
+impl fmt::Debug for BodyLength {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} bytes", self.0)
     }
 }
 
@@ -182,9 +282,9 @@ pub struct Response {
     pub media_type: String,
     /// The body bytes, with the chunked coding removed and nothing else decoded.
     pub body: Vec<u8>,
-    /// The address the response came from: the address passed to [`fetch`], byte for byte,
-    /// when nothing redirected, else the serialization of the URL the last redirect led to. At
-    /// most [`MAX_ADDRESS_BYTES`] bytes after a redirect.
+    /// The address the response came from: the address passed to [`fetch`] or [`send`], byte
+    /// for byte, when nothing redirected, else the serialization of the URL the last redirect
+    /// led to. At most [`MAX_ADDRESS_BYTES`] bytes after a redirect.
     pub url: String,
 }
 
@@ -233,12 +333,37 @@ impl fmt::Display for Failure {
 impl std::error::Error for Failure {}
 
 /// Fetch `address` with `GET` requests, following redirects, and return the response, or why
-/// there is none.
+/// there is none: [`send`] of a [`Method::Get`] without a body.
 ///
 /// Blocks the calling thread for as long as the [`Limits`] allow; see the crate documentation
 /// for how each is enforced.
 pub fn fetch(address: &str, limits: &Limits) -> Result<Response, Failure> {
+    send(
+        &Request {
+            address,
+            method: Method::Get,
+            body: None,
+            media_type: None,
+        },
+        limits,
+    )
+}
+
+/// Send `request`, following redirects, and return the response, or why there is none.
+///
+/// The checks of the request come after those of the address and before the host is resolved;
+/// a redirect changes the method as the crate documentation says. Blocks the calling thread for
+/// as long as the [`Limits`] allow.
+pub fn send(request: &Request<'_>, limits: &Limits) -> Result<Response, Failure> {
+    let address = request.address;
     let mut target = Target::parse(address)?;
+    check(request, limits)?;
+    // What the next request sends; a redirect may turn it into a GET without a body.
+    let mut outgoing = Outgoing {
+        method: request.method,
+        body: request.body,
+        media_type: request.media_type,
+    };
     // The response URL once a redirect is followed; until then the asked address byte for byte,
     // copied only into a response.
     let mut url: Option<String> = None;
@@ -252,7 +377,8 @@ pub fn fetch(address: &str, limits: &Limits) -> Result<Response, Failure> {
         let stream = connect(&target, connect_left)?;
         connect_left = connect_left.saturating_sub(connecting.elapsed());
         let exchanging = Instant::now();
-        let (head, wire) = exchange(&target, stream, read_left, limits)?;
+        let (head, wire) = exchange(&target, &outgoing, stream, read_left, limits)?;
+        let status = head.status;
         // The request is sent: of the address, only what a response needs is kept from here
         // (the crate documentation, "Memory").
         drop(target);
@@ -295,9 +421,63 @@ pub fn fetch(address: &str, limits: &Limits) -> Result<Response, Failure> {
             )));
         }
         redirects += 1;
+        // The Fetch Standard, "HTTP-redirect fetch", step 12: a 301 or 302 after a POST, and a
+        // 303 after any method but GET (or HEAD), continue as GET with a null body and without
+        // the request-body-header names, Content-Type among them. With GET and POST only, that
+        // is every 301, 302 and 303 after a POST.
+        if outgoing.method == Method::Post && matches!(status, 301..=303) {
+            outgoing = Outgoing {
+                method: Method::Get,
+                body: None,
+                media_type: None,
+            };
+        }
         url = Some(next_url);
         current = Some((next, next_fragment));
     }
+}
+
+/// What one request of a fetch sends besides its target: the method, the body, its media type.
+struct Outgoing<'a> {
+    method: Method,
+    body: Option<&'a [u8]>,
+    media_type: Option<&'a str>,
+}
+
+/// The longest type or subtype of a request's media type: RFC 6838 section 4.2.
+const MAX_MEDIA_TYPE_NAME_BYTES: usize = 127;
+
+/// The checks of `request` before its host is resolved; each failure names its check.
+fn check(request: &Request<'_>, limits: &Limits) -> Result<(), Failure> {
+    if request.method == Method::Get && (request.body.is_some() || request.media_type.is_some()) {
+        return Err(unreachable(
+            "the request is a GET with a body or a media type, which is not sent",
+        ));
+    }
+    if let Some(media_type) = request.media_type {
+        let parts = media_type.split_once('/');
+        let usable = parts.is_some_and(|(kind, subtype)| {
+            [kind, subtype]
+                .iter()
+                .all(|name| is_token(name.as_bytes()) && name.len() <= MAX_MEDIA_TYPE_NAME_BYTES)
+        });
+        if !usable {
+            return Err(unreachable(format!(
+                "the media type of the request is not type/subtype, each a token of at most \
+                 {MAX_MEDIA_TYPE_NAME_BYTES} bytes"
+            )));
+        }
+    }
+    if let Some(body) = request.body {
+        if body.len() > limits.max_request_body_bytes {
+            return Err(unreachable(format!(
+                "the request body of {} bytes is longer than the limit of {} bytes",
+                body.len(),
+                limits.max_request_body_bytes
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// The most redirects one fetch follows: the Fetch Standard, "HTTP-redirect fetch".
@@ -312,6 +492,7 @@ pub const MAX_ADDRESS_BYTES: usize = 65_536;
 /// response, all within `timeout`. Returns the head and the connection with what is left of it.
 fn exchange(
     target: &Target,
+    outgoing: &Outgoing<'_>,
     stream: TcpStream,
     timeout: Duration,
     limits: &Limits,
@@ -319,12 +500,29 @@ fn exchange(
     let mut stream = Timed::new(stream, timeout);
     // Request target in origin-form and Host as the address's authority: RFC 9112 section
     // 3.2.1 and RFC 9110 section 7.2.
-    let request = format!(
-        "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
-        target.request_target, target.authority
+    let mut head = format!(
+        "{} {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n",
+        outgoing.method.name(),
+        target.request_target,
+        target.authority
     );
+    if let Some(media_type) = outgoing.media_type {
+        head.push_str("Content-Type: ");
+        head.push_str(media_type);
+        head.push_str("\r\n");
+    }
+    // A POST sends Content-Length even for no body, a GET never: RFC 9110 section 8.6, and the
+    // Fetch Standard, "HTTP-network-or-cache fetch", steps 5 to 9.
+    if outgoing.method == Method::Post {
+        let length = outgoing.body.map_or(0, <[u8]>::len);
+        head.push_str(&format!("Content-Length: {length}\r\n"));
+    }
+    head.push_str("\r\n");
+    // The body is written from the caller's slice, after the head: no copy of it is made.
+    let body = outgoing.body.unwrap_or(&[]);
     stream
-        .write_all(request.as_bytes())
+        .write_all(head.as_bytes())
+        .and_then(|()| stream.write_all(body))
         .and_then(|()| stream.flush())
         .map_err(|e| match e.kind() {
             ErrorKind::WouldBlock | ErrorKind::TimedOut => unreachable(TIMED_OUT),
@@ -952,7 +1150,8 @@ enum Framing {
     UntilClose,
 }
 
-/// The framing of the body by the rules of RFC 9112 section 6.3, for the response to a `GET`.
+/// The framing of the body by the rules of RFC 9112 section 6.3, for the response to a `GET` or
+/// a `POST` (rule 2 is for `HEAD` and `CONNECT`, never sent).
 /// A framing this crate refuses, and a declared length over `max`, fail here, before any body
 /// byte is read.
 fn framing(head: &Head, max: usize) -> Result<Framing, Failure> {

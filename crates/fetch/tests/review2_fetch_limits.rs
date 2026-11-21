@@ -59,6 +59,7 @@ fn limits(max_header_bytes: usize, max_body_bytes: usize) -> Limits {
         read_timeout: Duration::from_secs(5),
         max_header_bytes,
         max_body_bytes,
+        max_request_body_bytes: 16 * 1024 * 1024,
     }
 }
 

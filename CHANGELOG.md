@@ -54,6 +54,12 @@ release; what came before it is in the git log and in `docs/plan/`.
   requests, one row per request (the address asked for, then status, media type and size, or
   `failed` and the reason, or `pending`). The selected event is kept in the address's fragment
   (`&event=<number>`). The requests list and the selection scroll inside themselves.
+- The HTML parser handles misnested formatting tags with the HTML Standard's adoption agency
+  algorithm. All 22 `formatting` tree cases of the test data pass. No command runs the parser
+  on a page yet.
+- A new crate, `surf-page`, reads a document's title and its links, buttons and form fields out
+  of the parser's tree, each with its kind, its target or value, and whether it is hidden,
+  disabled, checked or required. No command uses it yet.
 
 ### Changed
 

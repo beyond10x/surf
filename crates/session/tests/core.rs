@@ -1,7 +1,7 @@
 //! Cases 4, 7, 8, 9, 10 and 11 of `story:agent-session-process`, on the session core with no
 //! socket and no process, and two more on the bounds the core keeps: the path shows the last
 //! five actions, and an address too long for the status record still gets an answer. Since
-//! `story:agent-request-body-spec`, that the session's transport sends no `POST`.
+//! the story that sends a `POST` (wave 9), that the session's transport sends one.
 
 #![forbid(unsafe_code)]
 
@@ -104,28 +104,76 @@ fn file_address_is_not_read() {
     assert!(lines.contains(&"  2 go \"file:///etc/passwd\""), "{text}");
 }
 
-/// Story agent-request-body-spec: the session's transport sends no `POST` until
-/// `agent-fetch-post`. The address is of a port nothing listens on, so a `POST` that is sent
-/// would end as `Unreachable`.
+/// The story that sends a `POST` (wave 9): the session's transport sends a `Post` with its body
+/// and media type. The server reads the head and the `Content-Length` bytes of the body before it
+/// answers 200.
 #[test]
-fn fetch_refuses_post() {
-    let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = format!("http://{}/form", closed.local_addr().unwrap());
-    drop(closed);
+fn fetch_sends_post() {
+    use std::io::{Read, Write};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let local = listener.local_addr().unwrap();
+    let address = format!("http://{local}/form");
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        let mut bytes = Vec::new();
+        let mut buf = [0u8; 4096];
+        let end = loop {
+            if let Some(end) = bytes.windows(4).position(|w| w == b"\r\n\r\n") {
+                break end + 4;
+            }
+            match stream.read(&mut buf) {
+                Ok(0) | Err(_) => panic!("the request ended inside its head"),
+                Ok(n) => bytes.extend_from_slice(&buf[..n]),
+            }
+        };
+        let mut body = bytes.split_off(end);
+        let head = String::from_utf8(bytes).unwrap();
+        let length: usize = head
+            .lines()
+            .find_map(|line| line.strip_prefix("Content-Length: "))
+            .map_or(0, |value| value.parse().unwrap());
+        while body.len() < length {
+            match stream.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => body.extend_from_slice(&buf[..n]),
+            }
+        }
+        let _ = stream.write_all(
+            b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 2\r\n\r\nok",
+        );
+        let _ = stream.shutdown(std::net::Shutdown::Write);
+        (head, body)
+    });
     let request = surf::RequestStarted {
         request_id: surf_types::net::RequestId(surf_types::primitives::Uuid(
             "00000000-0000-4000-8000-000000000081".to_string(),
         )),
-        url: surf_types::url::Url(address),
+        url: surf_types::url::Url(address.clone()),
         method: surf::Method::Post,
         body: Some(b"a=1".to_vec()),
         body_type: Some(surf_types::net::MediaType(
             "application/x-www-form-urlencoded".to_string(),
         )),
     };
+    let answer = surf_session::fetch(&request);
+    // A transport that sent nothing would leave the server in `accept`: this connection, queued
+    // after any the fetch made and closed at once, ends it with an empty head instead.
+    let _ = std::net::TcpStream::connect(local);
+    let (head, body) = server.join().expect("the server read one request");
+    assert!(head.starts_with("POST /form HTTP/1.1\r\n"), "{head:?}");
+    assert_eq!(body, b"a=1");
     assert_eq!(
-        surf_session::fetch(&request),
-        surf::Answer::Failure(surf_types::net::FailureReason::UnsupportedScheme)
+        answer,
+        surf::Answer::Response {
+            url: address,
+            status: 200,
+            media_type: "text/plain".to_string(),
+            body: b"ok".to_vec(),
+        }
     );
 }
 

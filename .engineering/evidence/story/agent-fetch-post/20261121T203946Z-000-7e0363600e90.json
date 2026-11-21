@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T20:39:46Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-fetch-post",
+  "kind": "story",
+  "revision": 17,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the coordinator's run of the packages surf-fetch, surf, surf-session and surf-cli with warnings denied, with a count of each named test, of cargo doc with warnings denied and of the task lock-check at the unit's change (fa2b756); the same packages without surf-cli, cargo doc and cargo clippy at the change for the adversary's findings (6ea5a5c); and slot task check in the runner's form on wave/a9-post-actionable-formatting at 943c2f5",
+    "reference": "exit 0; surf_fetch::send(&Request, &Limits) beside fetch; Request, Method (Get, Post), Limits::max_request_body_bytes 16,777,216; a Post writes Content-Length always and Content-Type with a media type; a 301, 302 or 303 after a Post continues as Get without the body, a 307 or 308 repeats it; a body over the limit, a media type that is not type/subtype of tokens and a Get with a body end Unreachable before the host is resolved; surf::fetch_http and the session send a Post; 13 cases in crates/fetch/tests/post.rs at the unit's change, the memory case measured 16,785,434 bytes against the stated 16,917,505; 10 planted defects, 9 red (the unit's runs), the tenth (the Get check of send removed) reported by the unit and given to the adversary; an adversary's pass: one failing test (the documentation said a server that answers and closes ends the fetch Unreachable; with a 7-byte body the answer was returned in 50 of 50 runs), 6 findings by judgement, 14 attacks that held (the request byte for byte for bodies of 0 bytes to 16 MiB, every byte 0x00 to 0xff in a media type, redirects to another port, a refused request makes no connection); changed in 6ea5a5c: the documentation states both outcomes, a case for the Get check through send, a case that bounds the whole fetch of a 4 MiB body sent twice at 73,728 bytes (8,761 measured), Debug of Request prints the body's length; 4 planted defects each red (the fix unit's runs), the four new cases green 20 times each; 109 tests in surf-fetch; no command sends a Post yet; left: story:fetch-early-answer (a draft), two points for story:agent-forms-spec; verdict VERIFIED"
+  }
+}

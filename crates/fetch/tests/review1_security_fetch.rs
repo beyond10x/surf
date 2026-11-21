@@ -72,6 +72,7 @@ fn limits() -> Limits {
         read_timeout: Duration::from_millis(500),
         max_header_bytes: 1024,
         max_body_bytes: 64,
+        max_request_body_bytes: 16 * 1024 * 1024,
     }
 }
 

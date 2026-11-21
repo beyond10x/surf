@@ -131,10 +131,9 @@ pub const PATH_SHOWN: usize = 5;
 
 /// The transport of the binary: [`surf::fetch_http`] at `surf-fetch`'s default limits, through
 /// [`surf::answer`]. An address that is not `http:` is `UnsupportedScheme` and nothing is read;
-/// so is a request other than a `Get` without a body and without a media type, before any
-/// connection, until `story:agent-fetch-post` (an agent's `go` navigates with `Get`). Redirects
-/// are followed inside the one fetch, up to 20, and the answer carries the address of the last
-/// response.
+/// so is a `Get` with a body or a media type, before any connection. A `Post` is sent with its
+/// body and media type (an agent's `go` navigates with `Get`). Redirects are followed inside the
+/// one fetch, up to 20, and the answer carries the address of the last response.
 pub fn fetch(request: &surf::RequestStarted) -> surf::Answer {
     surf::answer(surf::fetch_http(request, &surf_fetch::Limits::default()))
 }

@@ -79,6 +79,7 @@ fn limits() -> Limits {
         read_timeout: READ_TIMEOUT,
         max_header_bytes: 1024,
         max_body_bytes: 1024,
+        max_request_body_bytes: 16 * 1024 * 1024,
     }
 }
 

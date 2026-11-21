@@ -8,7 +8,7 @@ summary: The accessible name computation over the tree, with the rendering-depen
 relations:
 - decomposes: epic:html-parser
 - depends_on: story:html-actionable-elements
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 4}
@@ -63,3 +63,26 @@ Names that depend on CSS (generated content, `display: none`, `visibility`), ARI
 what the nine kinds need, descriptions. A completeness claim: the computation is marked
 incomplete, because web-platform-tests checks it in a running browser with script. Scripts:
 none.
+
+## Found before this story's wave
+
+From wave 9 (`docs/plan/agent-wave-9.md`), for this story's own reading before its wave.
+
+- `surf_page::is_hidden` (`crates/page/src/lib.rs`) walks up from its node on each call: a
+  caller that asks for every node of a deep tree pays the depth each time.
+  `actionable_elements` carries the flag down in one walk; a name computation that asks per
+  referenced node should do the same or say what bounds its calls.
+- Two shapes cost a call more than its node's depth, stated in the crate documentation: a
+  `body` with `aria-hidden` true after many comments (the `html` element's children are
+  scanned to find the body element), and a `summary` after many children of a closed
+  `details` (the children are scanned to find the first `summary`).
+- "Hidden" since wave 9 (`docs/design/html-parser.md`, the paragraph on "Hidden Not
+  Referenced"): `aria-hidden` true in any ASCII case, not read on the document element and
+  the body element; the hidden elements of 15.3.1; a `dialog` without `open` (15.3.3); the
+  content of a `details` without `open` but for its first `summary` child (15.5.5). The
+  fallback content of `video`, `audio` and `object` is not hidden.
+- Not stated by any standard the unit found: whether a node outside the document (the
+  contents of a `template`) is hidden. `is_hidden` judges it by the ancestors it has.
+- `aria-hidden` content can be visibly rendered; its rows are flagged hidden and kept. The
+  name computation's rule for a hidden node that is referenced by `aria-labelledby` is this
+  story's.

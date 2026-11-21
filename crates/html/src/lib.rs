@@ -51,11 +51,11 @@
 //! - [`tree_builder`]: written for the insertion modes initial, before html, before head, in
 //!   head, in head noscript, after head, in body, text, after body, in frameset, after
 //!   frameset, after after body and after after frameset, with the stack of open elements and
-//!   its scopes, the list of active formatting elements and its reconstruction, and the `meta`
-//!   rules that change the encoding. Not yet: the adoption agency algorithm and Noah's Ark,
-//!   tables and `select`, `template` and foreign content ([`NOT_YET_PARSED`]); their tokens go
-//!   to in body's "any other start tag" and "any other end tag". Parse errors are not
-//!   collected, and no script runs.
+//!   its scopes, the list of active formatting elements with its Noah's Ark clause and its
+//!   reconstruction, the adoption agency algorithm, and the `meta` rules that change the
+//!   encoding. Not yet: tables and `select`, `template` and foreign content
+//!   ([`NOT_YET_PARSED`]); their tokens go to in body's "any other start tag" and "any other end
+//!   tag". Parse errors are not collected, and no script runs.
 //! - [`limits`]: nothing yet. The module holds no item: none of the limits of
 //!   `docs/design/html-parser.md` item 7 is enforced, so the depth of a tree, the number of its
 //!   nodes and the length of its texts have no bound.

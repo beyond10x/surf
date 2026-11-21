@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T20:39:46Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-fetch-post",
+  "kind": "story",
+  "revision": 17,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "slot task check in the runner's form on wave/a9-post-actionable-formatting at 943c2f5",
+    "reference": "exit 0: 95 scenarios passed on both runners (14 authored, 28 refusals), 126 test suites, 553 passed, 0 failed; Cargo.lock 23 packages; view-stream-check 19 event names; view-test 38 passed; html-conformance 9107 cases, 9095 run, 8428 passed"
+  }
+}

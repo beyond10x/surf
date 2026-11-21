@@ -13,8 +13,25 @@ description: What surf does today, and what it does not do yet.
   hard limits on header and body size.
 - **95 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **503 tests**, built with warnings treated as errors, and 38 tests of the live view's page in a
+- **553 tests**, built with warnings treated as errors, and 38 tests of the live view's page in a
   browser.
+
+New with the ninth wave of the current plan, not in a release yet. Nothing a `surf-agent`
+command prints has changed:
+
+- **The HTTP client can send a `POST`** with a body and its media type, and after a redirect it
+  does what the Fetch Standard says: a 301, 302 or 303 continues as `GET` without the body, a
+  307 or 308 sends the method and the body again. A body over 16 MiB, or a media type with
+  parameters, is refused before anything is sent. No command sends a `POST` yet: `go` and
+  `open` send `GET`. The form stories of the plan bring the first command that does.
+- **Misnested formatting tags give the standard's tree.** The HTML parser runs the HTML
+  Standard's adoption agency algorithm. All 22 `formatting` tree cases of the test data pass,
+  and 1,300 of the 1,809 tree construction cases.
+- **A page's links and form fields, read from the tree.** A new crate, `surf-page`, reads a
+  document's title and its links, buttons and form fields out of the parser's tree, each with
+  its kind, its target or value, and whether it is hidden, disabled, checked or required. Only
+  its tests run it: no command runs the parser on a page yet, so an answer still shows no page
+  content.
 
 New with the eighth wave of the current plan, not in a release yet:
 
@@ -26,7 +43,8 @@ New with the eighth wave of the current plan, not in a release yet:
 - **A request has a method and a body, in the specification.** A navigation and a request carry
   a method (`Get` or `Post`), an optional body and its media type, and the live view's events
   `NavigationStarted` and `RequestStarted` show them. `go` and `open` send `GET` as before. A
-  request with any other method is refused before anything is sent, until a later wave.
+  request with any other method was refused before anything was sent; since the ninth wave the
+  client sends a `POST` (above), and no command sends one yet.
 - **The HTML parser builds a document tree** with the HTML Standard's rules outside tables,
   templates and foreign content (SVG and MathML). All 476 `body` tree cases of the test data
   pass, and all 82 encoding cases: a `meta` that names another encoding parses the page again
@@ -104,7 +122,7 @@ New with the fourth wave of the current plan, shipped in release `0.2.0` (the
 - **A gate for the HTML parser's tests.** The harness's counts are written down per file, tag and
   section, and `task check` fails when a count falls below them, when a case stops running
   without a reason, or when an expected count is lowered. The parser was empty then and passed 5
-  of 9,095 cases; after the eighth wave it passes 8,362, and the gate holds that.
+  of 9,095 cases; after the ninth wave it passes 8,428, and the gate holds that.
 - **Four binaries in one release.** A Linux archive holds `surf`, `surf-agent`, `surfd` and
   `surf-session`; a macOS archive holds `surf`. A smoke test runs the unpacked archive before a
   release is cut. See [Try it](try-it.md#install).
@@ -139,7 +157,7 @@ New with the second wave:
   page is new with the third wave.
 - **A test harness for the HTML parser.** It holds 9,107 cases from html5lib-tests and
   web-platform-tests and counts how many a parser passes. Today it runs 9,095 of them and passes
-  8,362: 82 encoding cases, 7,046 tokenizer cases and 1,234 tree construction cases.
+  8,428: 82 encoding cases, 7,046 tokenizer cases and 1,300 tree construction cases.
 
 New with the first wave:
 

@@ -9,7 +9,7 @@ relations:
 - decomposes: epic:html-parser
 - depends_on: story:html-tree-formatting
 - depends_on: story:html-input-stream
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 4}
@@ -87,3 +87,29 @@ HTML_BASE=<this story's base commit>` exits 0.
 A clock-based limit inside the parser (time is bounded by input, nodes and stored bytes; the
 tests measure it); limits in `surf-fetch`, which already has its own. Scripts: no script runs,
 so no script can grow the tree after parsing.
+
+## Found before this story's wave
+
+From wave 9 (`docs/plan/agent-wave-9.md`), for this story's own reading before its wave. Each
+is measured; none is bounded.
+
+- The adoption agency algorithm (`crates/html/src/tree_builder/formatting.rs`): each
+  formatting end tag walks up to eight times from the common ancestor to the Document (the
+  step that asks whether the last node is an ancestor of the place it is inserted at), and
+  its steps 4.4 and 4.5 scan, and 4.26 shifts, a stack that is long above the formatting
+  element. Two inputs of 1 MiB, release build, after the fix unit of wave 9: 60,000 nested
+  `<object>`, then `<a>` + 8 `<div>` + `</a>` + 8 `</div>` repeated: 34.6 s (1.23 s before the
+  algorithm existed); `<a>` + 20,000 `<div>`, then `</a>` repeated: 2.5 s (0.75 s). Both need
+  a stack far deeper than 512, so the depth limit bounds them; neither is one of this
+  story's five adversarial inputs. The tree can be deeper than the stack by a constant
+  factor: the `a` start tag takes an element off the stack and leaves it as an ancestor.
+- The list of active formatting elements has no bound when the tags differ in attributes,
+  and Noah's Ark scans it back to the last marker for each formatting start tag: 30,000
+  nested `b` with different ids took 7.9 s in a prototype's release build. The depth limit
+  bounds this too, as long as each entry is an open element; say whether an entry can outlive
+  its element on the stack in a number that matters.
+- Each formatting end tag adds at most 32 elements (8 outer iterations, 3 clones of the inner
+  loop and one new element each).
+- Nested block start tags parse quadratically: 5,000 and 10,000 nested `fieldset` took 1.25 s
+  and 5.09 s, 20,000 `<fieldset disabled><legend>` 55.4 s, in a debug build (the adversary of
+  `surf-page`); 100,000 nested `div` took 545 s (wave 8).

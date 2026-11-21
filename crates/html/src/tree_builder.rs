@@ -8,22 +8,23 @@
 //! RCDATA element parsing algorithms (13.2.6.2), generating implied end tags (13.2.6.3), and the
 //! insertion modes initial, before html, before head, in head, in head noscript, after head, in
 //! body, text, after body, in frameset, after frameset, after after body and after after
-//! frameset (13.2.6.4), in the submodule `modes`, each rule in the standard's order. The tree
-//! construction dispatcher always takes the rules of the current insertion mode: no element in
-//! a foreign namespace is created.
+//! frameset (13.2.6.4), in the submodule `modes`, each rule in the standard's order; the Noah's
+//! Ark clause of the list of active formatting elements, and the adoption agency algorithm of
+//! in body in the submodule `formatting` (story `html-tree-formatting`). The tree construction
+//! dispatcher always takes the rules of the current insertion mode: no element in a foreign
+//! namespace is created.
 //!
-//! Not yet written, each by a later story, and named by [`NOT_YET_PARSED`]: the adoption
-//! agency algorithm and the Noah's Ark clause (`html-tree-formatting`; an end tag of a formatting
-//! element does what "any other end tag" does and removes the element from the list of active
-//! formatting elements); the table and select modes and foster parenting (`html-tree-tables`);
-//! the in template mode (`html-tree-template`); foreign content and the fragment case
-//! (`html-tree-foreign`). Until then a token whose rule one of them writes is processed by in
-//! body's "any other start tag" or "any other end tag", so that every input ends.
+//! Not yet written, each by a later story, and named by [`NOT_YET_PARSED`]: the table and select
+//! modes and foster parenting (`html-tree-tables`); the in template mode (`html-tree-template`);
+//! foreign content and the fragment case (`html-tree-foreign`). Until then a token whose rule
+//! one of them writes is processed by in body's "any other start tag" or "any other end tag",
+//! so that every input ends.
 //!
 //! Parse errors are not collected: neither the tokenizer's nor the tree builder's reach a
 //! caller. Scripts do not run: at a `script` end tag the text mode pops the element and returns
 //! to the original insertion mode.
 
+mod formatting;
 mod modes;
 
 use crate::ParseOptions;
@@ -32,15 +33,9 @@ use crate::tokenizer::{self, Token, TokenAttribute, Tokenizer};
 use crate::tree::{Attribute, Namespace, NodeData, NodeId, Tree};
 
 /// Each part of tree construction that the tree builder does not yet parse as the standard
-/// does, named in `[a-z-]+`: misnested formatting elements (the adoption agency algorithm),
-/// tables and `select`, `template`, and foreign content (SVG, MathML and fragments). Each
-/// later tree story removes its entry.
-pub const NOT_YET_PARSED: &[&str] = &[
-    "misnested-formatting",
-    "tables-and-select",
-    "template",
-    "foreign-content",
-];
+/// does, named in `[a-z-]+`: tables and `select`, `template`, and foreign content (SVG, MathML
+/// and fragments). Each later tree story removes its entry.
+pub const NOT_YET_PARSED: &[&str] = &["tables-and-select", "template", "foreign-content"];
 
 /// The mode of a document (DOM, "mode"), which the initial insertion mode decides from the
 /// DOCTYPE.
@@ -86,6 +81,22 @@ enum Flow {
 struct TagToken {
     name: String,
     attributes: Vec<TokenAttribute>,
+}
+
+impl TagToken {
+    /// The Noah's Ark comparison: the same tag name, and attributes that pair up with the same
+    /// names and values, in any order. A token holds an attribute name at most once (the
+    /// tokenizer drops a duplicate), so equal counts and a match for each attribute pair them.
+    fn is_identical(&self, other: &TagToken) -> bool {
+        self.name == other.name
+            && self.attributes.len() == other.attributes.len()
+            && self.attributes.iter().all(|a| {
+                other
+                    .attributes
+                    .iter()
+                    .any(|b| b.name == a.name && b.value == a.value)
+            })
+    }
 }
 
 /// An entry of the list of active formatting elements (13.2.4.3).
@@ -572,7 +583,7 @@ impl TreeBuilder {
         }
     }
 
-    /// Removes `element` from the stack of open elements.
+    /// Removes `element` from the stack of open elements, scanning from the current node.
     fn remove_from_stack(&mut self, element: NodeId) {
         if let Some(at) = self.open.iter().rposition(|&n| n == element) {
             self.open.remove(at);
@@ -581,21 +592,40 @@ impl TreeBuilder {
 
     // 13.2.4.3 The list of active formatting elements.
 
-    /// Push onto the list of active formatting elements, without the Noah's Ark clause (story
-    /// `html-tree-formatting`).
+    /// Push onto the list of active formatting elements, with the Noah's Ark clause. The scan
+    /// runs from the end of the list to the last marker.
     fn push_active_formatting_element(
         &mut self,
         node: NodeId,
         name: &str,
         attributes: &[TokenAttribute],
     ) {
-        self.active.push(Entry::Element {
-            node,
-            token: TagToken {
-                name: name.to_string(),
-                attributes: attributes.to_vec(),
-            },
-        });
+        let token = TagToken {
+            name: name.to_string(),
+            attributes: attributes.to_vec(),
+        };
+        // 1. Three elements after the last marker with the same tag name, namespace (every
+        // element of the list is in the HTML namespace) and attributes as the token's: the
+        // earliest of them is removed.
+        let mut identical = 0;
+        let mut earliest = None;
+        for (index, entry) in self.active.iter().enumerate().rev() {
+            match entry {
+                Entry::Marker => break,
+                Entry::Element { token: other, .. } if other.is_identical(&token) => {
+                    identical += 1;
+                    earliest = Some(index);
+                }
+                Entry::Element { .. } => {}
+            }
+        }
+        if identical >= 3
+            && let Some(index) = earliest
+        {
+            self.active.remove(index);
+        }
+        // 2.
+        self.active.push(Entry::Element { node, token });
     }
 
     /// Reconstruct the active formatting elements, if any. "Is in the stack of open elements"
@@ -641,6 +671,19 @@ impl TreeBuilder {
         self.active
             .iter()
             .rposition(|e| matches!(e, Entry::Element { node: n, .. } if *n == node))
+    }
+
+    /// The index of `node` in the list of active formatting elements after the last marker (or
+    /// in the whole list when there is none), if it is there: the scan ends at the marker.
+    fn active_position_after_last_marker(&self, node: NodeId) -> Option<usize> {
+        for (index, entry) in self.active.iter().enumerate().rev() {
+            match entry {
+                Entry::Marker => return None,
+                Entry::Element { node: n, .. } if *n == node => return Some(index),
+                Entry::Element { .. } => {}
+            }
+        }
+        None
     }
 
     // 13.2.3.4 Changing the encoding while parsing.

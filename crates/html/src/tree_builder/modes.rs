@@ -488,8 +488,9 @@ impl TreeBuilder {
     }
 
     /// 13.2.6.4.7 The "in body" insertion mode, bounded as `NOT_YET_PARSED` says: the `table`,
-    /// `select`, `svg` and `math` start tags are processed by "any other start tag", and the
-    /// end tags of the formatting elements by "any other end tag" (the adoption agency hook).
+    /// `select`, `svg` and `math` start tags are processed by "any other start tag". The end
+    /// tags of the formatting elements, an `a` start tag with an `a` in the list and a `nobr`
+    /// start tag with a `nobr` in scope run the adoption agency algorithm (`formatting`).
     pub(super) fn in_body(&mut self, token: &Token) -> Flow {
         match token {
             Token::Character(0) => Flow::Done,
@@ -767,16 +768,54 @@ impl TreeBuilder {
             }
             Token::StartTag {
                 name, attributes, ..
+            } if name == "a" => {
+                // 1. An `a` in the list after the last marker: a parse error, the adoption
+                // agency algorithm, then that `a` out of the list and the stack if still there.
+                if let Some((_, existing_a, _)) = self.last_active_named("a") {
+                    self.adoption_agency("a");
+                    // "If existingA is in the list", it is after the last marker: the algorithm
+                    // adds no marker and moves no entry, it only removes and replaces. It takes
+                    // existingA off the stack only with its entry (steps 4.8, 4.25 and 4.26),
+                    // and at step 4.4 it was not on the stack; so "if existingA is in the stack
+                    // of open elements" can hold only while its entry is left (the algorithm
+                    // returned at step 2 or 4.5), and only then is the stack scanned, from the
+                    // top.
+                    if let Some(at) = self.active_position_after_last_marker(existing_a) {
+                        self.active.remove(at);
+                        self.remove_from_stack(existing_a);
+                    }
+                }
+                // 2.
+                self.reconstruct_active_formatting_elements();
+                // 3.
+                let element = self.insert_html_element(name, attributes);
+                self.push_active_formatting_element(element, name, attributes);
+                Flow::Done
+            }
+            Token::StartTag {
+                name, attributes, ..
+            } if name == "nobr" => {
+                self.reconstruct_active_formatting_elements();
+                // A `nobr` in scope: a parse error, the adoption agency algorithm, and the
+                // reconstruction once again.
+                if self.has_named_in_scope("nobr", Scope::Default) {
+                    self.adoption_agency("nobr");
+                    self.reconstruct_active_formatting_elements();
+                }
+                let element = self.insert_html_element(name, attributes);
+                self.push_active_formatting_element(element, name, attributes);
+                Flow::Done
+            }
+            Token::StartTag {
+                name, attributes, ..
             } if FORMATTING.contains(&name.as_str()) => {
-                // The `a` step for an `a` already in the list and the `nobr` step for a `nobr`
-                // in scope run the adoption agency algorithm: story `html-tree-formatting`.
                 self.reconstruct_active_formatting_elements();
                 let element = self.insert_html_element(name, attributes);
                 self.push_active_formatting_element(element, name, attributes);
                 Flow::Done
             }
             Token::EndTag { name } if FORMATTING.contains(&name.as_str()) => {
-                self.adoption_agency_hook(name);
+                self.adoption_agency(name);
                 Flow::Done
             }
             Token::StartTag {
@@ -964,9 +1003,9 @@ impl TreeBuilder {
         self.insert_html_element(name, attributes);
     }
 
-    /// In body's "any other end tag": the element it popped down to, `None` when it ignored the
-    /// token.
-    fn any_other_end_tag(&mut self, name: &str) -> Option<NodeId> {
+    /// In body's "any other end tag", which step 4.3 of the adoption agency algorithm also runs:
+    /// the element it popped down to, `None` when it ignored the token.
+    pub(super) fn any_other_end_tag(&mut self, name: &str) -> Option<NodeId> {
         for index in (0..self.open.len()).rev() {
             let node = self.open[index];
             if self.html_name(node) == Some(name) {
@@ -979,17 +1018,6 @@ impl TreeBuilder {
             }
         }
         None
-    }
-
-    /// The end tag of a formatting element, where the standard runs the adoption agency
-    /// algorithm (story `html-tree-formatting`): until then "any other end tag", and the element
-    /// it popped removed from the list of active formatting elements.
-    fn adoption_agency_hook(&mut self, name: &str) {
-        if let Some(node) = self.any_other_end_tag(name)
-            && let Some(at) = self.active_position(node)
-        {
-            self.active.remove(at);
-        }
     }
 
     /// "If the stack of open elements has a `p` element in button scope, then close a `p`
