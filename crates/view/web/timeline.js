@@ -1,6 +1,7 @@
 // The selected session's actions in order: each a segment labelled with its sequence, command
 // and argument, under it one mark per event of that action, grouped by domain. One segment
-// carries the playhead (aria-current="step"); a click on a segment moves the playhead there.
+// carries the playhead (aria-current="step"); a click on a segment moves the playhead there. Each
+// mark holds a button that selects its event (aria-pressed for the selected one).
 // A gap in front of the first segment counts the entries dropped. Nothing here throws on a
 // null member of docs/view-stream.md: a null sequence or command is written "?", a null event
 // name is a mark in the group "other".
@@ -35,19 +36,37 @@ function written(value) {
   return value === null || value === undefined ? "?" : String(value);
 }
 
-function mark(event) {
+// A mark: the li keeps its class and title; its button, with the short name as its text,
+// selects the event. The click stops there, so the segment's handler does not clear it.
+function mark(event, selected, onEvent) {
   const fields = Object.entries(event.fields || {})
     .map(([name, value]) => name + " " + written(value))
     .join("\n");
   const name = typeof event.name === "string" ? event.name : "unreadable event";
-  return element("li", {
-    className: "mark" + (event.unmapped ? " unmapped" : ""),
+  const button = element("button", {
+    className: "mark-select",
     text: shortName(event.name),
-    attributes: { title: name + (fields ? "\n" + fields : "") },
+    attributes: {
+      type: "button",
+      "data-number": event.number,
+      "aria-pressed": selected !== null && event.number === selected ? "true" : "false",
+    },
   });
+  button.addEventListener("click", (click) => {
+    click.stopPropagation();
+    onEvent(event.number);
+  });
+  return element(
+    "li",
+    {
+      className: "mark" + (event.unmapped ? " unmapped" : ""),
+      attributes: { title: name + (fields ? "\n" + fields : "") },
+    },
+    [button],
+  );
 }
 
-function groups(events) {
+function groups(events, selected, onEvent) {
   const byDomain = new Map();
   for (const event of events) {
     const domain = domainOf(event.name);
@@ -63,7 +82,11 @@ function groups(events) {
     shown.map((domain) =>
       element("div", { className: "group", attributes: { "data-domain": domain } }, [
         element("p", { className: "group-label", text: domain }),
-        element("ol", { className: "marks" }, byDomain.get(domain).map(mark)),
+        element(
+          "ol",
+          { className: "marks" },
+          byDomain.get(domain).map((event) => mark(event, selected, onEvent)),
+        ),
       ]),
     ),
   );
@@ -83,7 +106,7 @@ function outcome(answer) {
   return written(page.status);
 }
 
-function segment(action, current, onSelect) {
+function segment(action, current, onSelect, selected, onEvent) {
   const entry = action.action;
   const button = element(
     "button",
@@ -105,7 +128,7 @@ function segment(action, current, onSelect) {
     className: "outcome" + (action.answer ? "" : " running"),
     text: outcome(action.answer),
   });
-  const node = element("li", { className: "segment" }, [button, groups(action.events), end]);
+  const node = element("li", { className: "segment" }, [button, groups(action.events, selected, onEvent), end]);
   attribute(node, "aria-current", current ? "step" : null);
   node.addEventListener("click", () => onSelect(entry.number));
   return node;
@@ -116,8 +139,10 @@ function gap(words) {
 }
 
 // `actions` as state.js groups them, `at` the index of the playhead (-1 for none), `drops` the
-// session detail's {dropped, log_dropped}, `follow` whether the playhead follows the newest.
-export function renderTimeline(list, actions, at, drops, follow, onSelect) {
+// session detail's {dropped, log_dropped}, `follow` whether the playhead follows the newest,
+// `onSelect` called with a segment's action entry number, `selected` the number of the selected
+// event entry (or null), `onEvent` called with a mark's event entry number.
+export function renderTimeline(list, actions, at, drops, follow, onSelect, selected, onEvent) {
   const track = list.parentElement;
   const focused = document.activeElement;
   const focusedNumber =
@@ -135,7 +160,7 @@ export function renderTimeline(list, actions, at, drops, follow, onSelect) {
   }
   let current = null;
   actions.forEach((action, index) => {
-    const node = segment(action, index === at, onSelect);
+    const node = segment(action, index === at, onSelect, selected, onEvent);
     if (index === at) {
       current = node;
     }

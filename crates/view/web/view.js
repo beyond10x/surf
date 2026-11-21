@@ -1,8 +1,11 @@
 // The page: loads /api/sessions, selects a session (the one the address's fragment names, or the
 // first), loads it, follows /events, and keeps the live marker (live and the time of the last
-// update, or reconnecting). The selection is written into the fragment,
-// #session=<id>&at=<sequence>, with history.replaceState, and read at load: never the query,
-// which the route table answers 404. When /events or an /api/ route answers 401 or 403 after the
+// update, or reconnecting), and renders the detail panel. The selection is written into the
+// fragment, #session=<id>&at=<sequence>, or #session=<id>&at=<sequence>&event=<number> while an
+// event is selected (the event entry's number across all sessions), with history.replaceState,
+// and read at load: never the query, which the route table answers 404. An event named at load
+// whose entry the named session holds is selected and the playhead put on its action; one not
+// held is ignored and `at` applies. When /events or an /api/ route answers 401 or 403 after the
 // page loaded, the page stops: no stream, no request, "offline" and the refused token's text. A
 // lost connection and any other status are retried.
 
@@ -12,6 +15,7 @@ import { api, follow, refusal, takeToken } from "./stream.js";
 import { renderSessions, tick } from "./sessions.js";
 import { renderPage } from "./page.js";
 import { renderControls, renderTimeline, resetTimeline } from "./timeline.js";
+import { renderDetail } from "./detail.js";
 
 const nodes = {
   live: byId("live"),
@@ -25,10 +29,12 @@ const nodes = {
   latest: byId("latest"),
   newer: byId("newer"),
   message: byId("message"),
+  selection: byId("selection"),
+  requests: byId("requests"),
 };
 
 let token = null;
-// The selection the address named at load, {session, at}; applied by the first load only.
+// The selection the address named at load, {session, at, event}; applied by the first load only.
 let wanted = null;
 // The fragment last written.
 let written = null;
@@ -67,9 +73,9 @@ async function ask(path) {
   return api(token, path);
 }
 
-// `#session=<id>&at=<sequence>` read from `hash`; null when it names no session.
+// `#session=<id>&at=<sequence>&event=<number>` read from `hash`; null when it names no session.
 function readSelection(hash) {
-  const result = { session: null, at: null };
+  const result = { session: null, at: null, event: null };
   for (const pair of hash.replace(/^#/, "").split("&")) {
     const equals = pair.indexOf("=");
     const name = equals < 0 ? pair : pair.slice(0, equals);
@@ -78,13 +84,15 @@ function readSelection(hash) {
       result.session = value;
     } else if (name === "at" && /^[0-9]{1,15}$/.test(value)) {
       result.at = Number(value);
+    } else if (name === "event" && /^[0-9]{1,15}$/.test(value)) {
+      result.event = Number(value);
     }
   }
   return result.session === null ? null : result;
 }
 
 // The selection into the fragment: `at` only while Latest is off and the selected action has a
-// sequence.
+// sequence; `event` only while an event is selected and its entry is held.
 function writeSelection() {
   const id = state.selected();
   let fragment = "";
@@ -96,6 +104,10 @@ function writeSelection() {
       const sequence = at >= 0 ? list[at].action.sequence : null;
       if (typeof sequence === "number") {
         fragment += "&at=" + sequence;
+      }
+      const event = state.eventEntry(list);
+      if (event) {
+        fragment += "&event=" + event.number;
       }
     }
   }
@@ -118,6 +130,7 @@ function renderSelected() {
     renderPage(nodes.page, null);
     resetTimeline(nodes.timeline);
     renderControls(nodes.latest, nodes.newer, true, 0);
+    renderDetail(nodes.selection, nodes.requests, null, null, []);
     writeSelection();
     return;
   }
@@ -138,9 +151,11 @@ function renderSelected() {
   text(nodes.facts, facts.join(" · "));
   const list = state.actions(id);
   const at = state.playheadIndex(list);
+  const event = state.eventEntry(list);
   renderPage(nodes.page, state.pageAt(id));
-  renderTimeline(nodes.timeline, list, at, state.drops(id), state.latest(), moveTo);
+  renderTimeline(nodes.timeline, list, at, state.drops(id), state.latest(), moveTo, event ? event.number : null, pick);
   renderControls(nodes.latest, nodes.newer, state.latest(), at < 0 ? 0 : list.length - 1 - at);
+  renderDetail(nodes.selection, nodes.requests, at < 0 ? null : list[at], event, state.entries(id));
   writeSelection();
 }
 
@@ -148,6 +163,17 @@ function renderSelected() {
 function moveTo(number) {
   state.setPlayhead(number);
   renderSelected();
+}
+
+// Selects the event entry `number` of the selected session and moves the playhead to its
+// action; Latest off.
+function pick(number) {
+  const id = state.selected();
+  const owner = id ? state.actions(id).find((action) => action.events.some((entry) => entry.number === number)) : null;
+  if (owner) {
+    state.selectEvent(number, owner.action.number);
+    renderSelected();
+  }
 }
 
 function onLatest() {
@@ -201,7 +227,14 @@ async function loadAll() {
     state.select(list.sessions[0].id);
   }
   await loadSelected();
-  if (named && named.at !== null && state.selected() === named.session) {
+  const owner =
+    named && named.event !== null && state.selected() === named.session
+      ? state.actions(named.session).find((action) => action.events.some((entry) => entry.number === named.event))
+      : null;
+  if (owner) {
+    // An event held in the named session: selected, the playhead on its action.
+    state.selectEvent(named.event, owner.action.number);
+  } else if (named && named.at !== null && state.selected() === named.session) {
     const action = state.actions(named.session).find((held) => held.action.sequence === named.at);
     if (action) {
       state.setPlayhead(action.action.number);
