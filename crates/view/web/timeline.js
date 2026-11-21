@@ -5,7 +5,7 @@
 // null member of docs/view-stream.md: a null sequence or command is written "?", a null event
 // name is a mark in the group "other".
 
-import { attribute, clear, element, text } from "./dom.js";
+import { attribute, clear, element, scroll, text } from "./dom.js";
 
 // The groups of marks, in this order, then OTHER for any other prefix and for a null name.
 export const DOMAINS = ["surf.shell", "surf.agent", "surf.navigation", "surf.net", "surf.document", "surf.render"];
@@ -151,12 +151,12 @@ export function renderTimeline(list, actions, at, drops, follow, onSelect) {
     return;
   }
   if (follow) {
-    track.scrollLeft = track.scrollWidth;
+    scroll(track, track.scrollWidth);
   } else if (
     current.offsetLeft < track.scrollLeft ||
     current.offsetLeft + current.offsetWidth > track.scrollLeft + track.clientWidth
   ) {
-    track.scrollLeft = Math.max(0, current.offsetLeft - (track.clientWidth - current.offsetWidth) / 2);
+    scroll(track, Math.max(0, current.offsetLeft - (track.clientWidth - current.offsetWidth) / 2));
   }
 }
 

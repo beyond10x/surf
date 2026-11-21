@@ -2,11 +2,13 @@
 // first), loads it, follows /events, and keeps the live marker (live and the time of the last
 // update, or reconnecting). The selection is written into the fragment,
 // #session=<id>&at=<sequence>, with history.replaceState, and read at load: never the query,
-// which the route table answers 404.
+// which the route table answers 404. When /events or an /api/ route answers 401 or 403 after the
+// page loaded, the page stops: no stream, no request, "offline" and the refused token's text. A
+// lost connection and any other status are retried.
 
-import { address, byId, text } from "./dom.js";
+import { address, attribute, byId, text } from "./dom.js";
 import * as state from "./state.js";
-import { api, follow, Refused, takeToken } from "./stream.js";
+import { api, follow, refusal, takeToken } from "./stream.js";
 import { renderSessions, tick } from "./sessions.js";
 import { renderPage } from "./page.js";
 import { renderControls, renderTimeline, resetTimeline } from "./timeline.js";
@@ -30,13 +32,20 @@ let token = null;
 let wanted = null;
 // The fragment last written.
 let written = null;
+// The stream followed, once the page loaded.
+let stream = null;
+// Whether the view refused the token after the page loaded: nothing is asked again.
+let refused = false;
 
 function clock(ms) {
   return new Date(ms).toLocaleTimeString([], { hour12: false });
 }
 
 function setLive(kind, at) {
-  nodes.live.className = "live is-" + kind;
+  if (refused && kind !== "offline") {
+    return;
+  }
+  attribute(nodes.live, "class", "live is-" + kind);
   text(nodes.liveWord, kind === "live" ? "live" : kind);
   text(nodes.liveTime, at ? clock(at) : "");
 }
@@ -47,11 +56,15 @@ function updated() {
 
 function say(message) {
   text(nodes.message, message);
-  if (message) {
-    nodes.message.removeAttribute("hidden");
-  } else {
-    nodes.message.setAttribute("hidden", "");
+  attribute(nodes.message, "hidden", message ? null : "");
+}
+
+// GET of an /api/ route with the token; refused without a request once the view refused it.
+async function ask(path) {
+  if (refused) {
+    throw new Error("the view refused the token");
   }
+  return api(token, path);
 }
 
 // `#session=<id>&at=<sequence>` read from `hash`; null when it names no session.
@@ -164,12 +177,19 @@ async function loadSelected() {
   if (!id) {
     return;
   }
-  const detail = await api(token, "/api/sessions/" + id);
+  const asked = state.expectDetail(id);
+  let detail;
+  try {
+    detail = await ask("/api/sessions/" + id);
+  } catch (error) {
+    state.giveUp(asked);
+    throw error;
+  }
   state.setDetail(detail);
 }
 
 async function loadAll() {
-  const list = await api(token, "/api/sessions");
+  const list = await ask("/api/sessions");
   state.setSessions(list);
   const named = wanted;
   wanted = null;
@@ -211,16 +231,32 @@ async function choose(id) {
       renderList();
     }
   } catch (error) {
-    fail(error);
+    failed(error);
   }
 }
 
 function fail(error) {
-  if (error instanceof Refused && error.status === 401) {
+  if (refusal(error)) {
     say("The view refused the token. Open the address the program printed, with its #token.");
   } else {
     say("The view did not answer: " + error.message);
   }
+}
+
+// A request after the page loaded failed. A refusal (401 or 403) stops the page: the stream
+// stops, nothing is asked again, the live marker reads offline. After it, nothing more is said.
+function failed(error) {
+  if (refused) {
+    return;
+  }
+  if (refusal(error)) {
+    if (stream) {
+      stream.stop();
+    }
+    setLive("offline", null);
+    refused = true;
+  }
+  fail(error);
 }
 
 function onEvent(event) {
@@ -238,7 +274,7 @@ function onEvent(event) {
     }
   } else if (event.name === "reset") {
     state.forget();
-    loadAll().catch(fail);
+    loadAll().catch(failed);
   }
 }
 
@@ -262,11 +298,11 @@ async function start() {
   }
   say("");
   updated();
-  follow(token, newest, {
+  stream = follow(token, newest, {
     open() {
       say("");
       updated();
-      loadAll().catch(fail);
+      loadAll().catch(failed);
     },
     alive() {
       updated();
@@ -275,6 +311,7 @@ async function start() {
     closed() {
       setLive("reconnecting", null);
     },
+    refused: failed,
   });
   setInterval(() => tick(nodes.list), 1000);
 }
