@@ -583,7 +583,7 @@ impl TreeBuilder {
         }
     }
 
-    /// Removes `element` from the stack of open elements.
+    /// Removes `element` from the stack of open elements, scanning from the current node.
     fn remove_from_stack(&mut self, element: NodeId) {
         if let Some(at) = self.open.iter().rposition(|&n| n == element) {
             self.open.remove(at);
@@ -671,6 +671,19 @@ impl TreeBuilder {
         self.active
             .iter()
             .rposition(|e| matches!(e, Entry::Element { node: n, .. } if *n == node))
+    }
+
+    /// The index of `node` in the list of active formatting elements after the last marker (or
+    /// in the whole list when there is none), if it is there: the scan ends at the marker.
+    fn active_position_after_last_marker(&self, node: NodeId) -> Option<usize> {
+        for (index, entry) in self.active.iter().enumerate().rev() {
+            match entry {
+                Entry::Marker => return None,
+                Entry::Element { node: n, .. } if *n == node => return Some(index),
+                Entry::Element { .. } => {}
+            }
+        }
+        None
     }
 
     // 13.2.3.4 Changing the encoding while parsing.

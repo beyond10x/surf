@@ -773,10 +773,17 @@ impl TreeBuilder {
                 // agency algorithm, then that `a` out of the list and the stack if still there.
                 if let Some((_, existing_a, _)) = self.last_active_named("a") {
                     self.adoption_agency("a");
-                    if let Some(at) = self.active_position(existing_a) {
+                    // "If existingA is in the list", it is after the last marker: the algorithm
+                    // adds no marker and moves no entry, it only removes and replaces. It takes
+                    // existingA off the stack only with its entry (steps 4.8, 4.25 and 4.26),
+                    // and at step 4.4 it was not on the stack; so "if existingA is in the stack
+                    // of open elements" can hold only while its entry is left (the algorithm
+                    // returned at step 2 or 4.5), and only then is the stack scanned, from the
+                    // top.
+                    if let Some(at) = self.active_position_after_last_marker(existing_a) {
                         self.active.remove(at);
+                        self.remove_from_stack(existing_a);
                     }
-                    self.remove_from_stack(existing_a);
                 }
                 // 2.
                 self.reconstruct_active_formatting_elements();
