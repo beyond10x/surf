@@ -17,7 +17,8 @@ tests against it, and packs it with `README.md`, `LICENSE` and `NOTICE`.
 | `x86_64-apple-darwin` | `macos-15-intel` | `surf-<version>-x86_64-apple-darwin.tar.gz` |
 | `aarch64-apple-darwin` | `macos-15` | `surf-<version>-aarch64-apple-darwin.tar.gz` |
 
-Each archive holds one directory, `surf-<version>-<target>/`, with `surf` and `README.md`.
+Each archive holds one directory, `surf-<version>-<target>/`, with `surf`, `README.md`,
+`LICENSE` and `NOTICE`.
 `SHA256SUMS` lists the four archives. The Linux binaries are statically linked (musl): they run
 on any distribution, and they load no name service module from the host. The macOS binaries are
 neither signed nor notarised.

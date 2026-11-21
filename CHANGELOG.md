@@ -7,6 +7,8 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-21
+
 The first release.
 
 ### Added
@@ -15,5 +17,6 @@ The first release.
   and failed fetch, with exit status 0 when the navigation commits. Output format, exit statuses
   and limits: [`docs/surf-command.md`](docs/surf-command.md).
 - Pre-built `surf` binaries for Linux (x86_64 and aarch64, statically linked) and macOS (x86_64
-  and aarch64), each archive with `README.md`, and a `SHA256SUMS` file. How a release is cut:
+  and aarch64), each archive with `README.md`, `LICENSE` and `NOTICE`, and a `SHA256SUMS`
+  file. How a release is cut:
   [`docs/releasing.md`](docs/releasing.md).
