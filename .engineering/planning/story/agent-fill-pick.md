@@ -11,7 +11,7 @@ relations:
 - depends_on: story:agent-form-port
 - depends_on: story:html-document-port
 - depends_on: story:agent-session-events
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 6}
@@ -51,6 +51,12 @@ argument word", and `README.md` says to use `fill <handle> -` for one.
   in its mapping function and its mapping list (decision D27). Decision D22: the value of a
   password control is written as `<n> characters`, never the value; every other control value is
   kept as the answer prints it, quoted by `surf-answer`.
+- The `did` and `path` lines of `fill` and `pick`, as `docs/agent-answer.md` and
+  `crates/answer` write them: `did fill "<handle>"`, `did pick "<handle>"`, and `<n> fill
+  "<handle>"`, `<n> pick "<handle>"`, the handle a quoted field and never the value typed or
+  picked. The reasons `hidden` (if `agent-follow-links` has not added it), `disabled`,
+  `wrong-kind` and `unknown-option` go into the reason table with exit status 1, into
+  `RefusalReason` and into a test.
 - `cli/surf-agent.yaml`, `crates/agent`: `fill` and `pick`, together, so the drift test holds.
 - `crates/session/tests/`, the counted cases, against a server the test starts:
   1. the `now` block of a form with a text field, a password, a checkbox, a radio group, a select,

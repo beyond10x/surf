@@ -10,7 +10,7 @@ relations:
 - depends_on: story:agent-press-submit
 - depends_on: story:agent-back-forward
 - depends_on: story:html-document-port
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 7}
@@ -48,6 +48,9 @@ shows; at most 10, each cut at 120 characters, and `+ text more <n>` for the res
   in order, or the last `n`.
 - `crates/answer`, `docs/agent-answer.md`: the `changed` block and the `log` answer, each with its
   `parse` beside its rendering (decision D20 of `docs/plan/agent-plan-revision-2.md`).
+- `log` is a read: it records no action and its answer has no `did` line. The lines it lists are
+  `path` entries in the form of `docs/agent-answer.md`: `<n> <command>`, and the argument as a
+  quoted field only when the action had one.
 - `cli/surf-agent.yaml`, `crates/agent`: `log`, together, so the drift test holds.
 - `crates/session/tests/`, the counted cases, against a server the test starts:
   1. `fill` a field: `~ f1 value "" -> "ada"`; 2. `fill` a password: `(empty) -> (set)`;

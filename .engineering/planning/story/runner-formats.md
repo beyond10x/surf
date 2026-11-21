@@ -12,7 +12,7 @@ relations:
 - depends_on: story:html-document-port
 - depends_on: story:agent-request-body-spec
 - depends_on: story:agent-change-and-log
-revision: 5
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 5}
@@ -28,21 +28,41 @@ detailed line defined (D13). The epic requires both formats to be specified befo
 writes and reads them, with golden files. This story is that specification and the one library
 that reads and writes both, so every later story uses one parser and one writer.
 
-The grammars embed lines of the agent answer and do not redefine them. They refer to
-`docs/agent-answer.md` as it stands after story `agent-change-and-log`: the `page` line, the
-lines of the `changed` block and the element line are written into a recording exactly as that
-document defines them, each on its own line after a fixed indentation, and read back by its
-rules. A scenario's `expect` and `seen` lines are those same lines with every handle replaced by
-its locator; this story defines that substitution and the locator, not the lines.
+**How a recording holds an answer, decided here once** (the note, Q1: answer lines are "the
+answer's own lines, read with `surf_answer::parse`", and D20 of
+`docs/plan/agent-plan-revision-2.md`). `surf_answer::parse` (`crates/answer/src/lib.rs`) reads a
+whole answer: it refuses a text that does not start with the head line `surf 1 session <id>
+<state>`. A recording cannot keep whole answers: the head line repeats the session identity, which
+the note (D7) allows once, in the recording's header, and the answer of `open` holds the `token`
+line, which a recording never holds (D7). So each `action` block keeps the answer as the session
+rendered it **without its head line and its token line**, and this story adds to `crates/answer`
+the entry point that reads such lines back:
 
-Reading those lines back is `surf-answer`'s (`docs/plan/agent-plan-revision-2.md`, D20):
-`surf_answer::parse` turns answer lines into the typed answer and `surf_answer::unquote` reads one
-quoted value; `agent-answer-format` writes both and every story that adds a block extends them.
-The reader of `surf-scenario` calls them for every answer line of a recording and for every
-quoted value of both formats (a locator's accessible name, an address, a body line), and writes
-no parser of the answer grammar of its own. A line `surf_answer::parse` refuses is refused with
-its line number in the recording. The writer writes answer lines as the session rendered them and
-quotes with `surf-answer`'s quoting function.
+- `surf_answer::parse_blocks(text) -> Result<Blocks, ParseError>`: the lines that follow the head
+  and token lines of an answer, every block optional and in the grammar's order, read by the same
+  per-block functions `parse` uses (the list `BLOCKS` without `parse_token`), so a block a later
+  story adds to `parse` is read here too; a line outside the grammar is refused with its number.
+  `Blocks` holds the fields of `Answer` other than `head` and `token`.
+- `surf_answer::render_blocks(&Blocks) -> Result<String, RenderError>`, the inverse, by the same
+  per-block render functions.
+- A round-trip case in `crates/answer`: for every golden answer under
+  `crates/answer/tests/golden/`, its lines after the head and token lines parse with
+  `parse_blocks` to the blocks of `parse` of the whole file, and `render_blocks` of them gives the
+  same lines back.
+
+The reader of `surf-scenario` calls `parse_blocks` for the answer lines of a recording and
+`surf_answer::unquote` for every other quoted value of both formats (a locator's accessible name,
+an address, a body line), and writes no parser of the answer grammar of its own. The writer
+writes the lines `render_blocks` gives and quotes with `surf-answer`'s quoting function.
+
+A scenario's `expect` and `seen` lines are answer lines with every handle replaced by its
+locator. This story defines that replacement once, as one function of `surf-scenario`,
+`expected_lines(blocks, locators)`: it renders the `page` line and the `changed` lines of a
+`Blocks` with `render_blocks` and writes each handle as the locator the map gives it.
+`runner-scenario-from` calls it on the recorded blocks to write `expect` lines, and `runner-run`
+calls it on the blocks of the actual answer before it compares, so the two sides of a comparison
+are made by one function. Scenario lines are kept and compared as text; nothing parses them as
+answer lines.
 
 The `exchange` block needs what the transport carries after story `agent-request-body-spec`: the
 method and request body, and the address the response was served from after redirects inside
@@ -55,8 +75,13 @@ one request (`docs/plan/agent-plan-revision-1.md`, D14). Both stories are edges 
   happened:
   - `action <seq> <command> ...` blocks, one per row of the action log, `open` and `close`
     included: the command, the handle and locator (kind, quoted accessible name, tree path) of the
-    element it acted on, its input with secrets as references, the answer's `page` line and its
-    `changed` lines;
+    element it acted on, its input with secrets as references, the answer without its head and
+    token lines as `render_blocks` writes it, and one line `at <handle> <tree path>` per handle of
+    that answer's `now` block, so that every handle the action's lines name has a locator (kind
+    and name from the `now` line, tree path from the `at` line; a handle that left the document is
+    found in the latest earlier answer that listed it). When one command adds two rows (`open <url>`:
+    `open`, then `go`), its answer is in the block of the last of them and the other block holds no
+    answer lines;
   - `exchange <seq> during <action-seq> <method> "<request address>"` blocks: the request body
     if any, then either `response <status> <media type> "<response address>"` with the body, or
     `failed <reason>`, or `unanswered`;
@@ -73,9 +98,15 @@ one request (`docs/plan/agent-plan-revision-1.md`, D14). Both stories are edges 
   (`/html/body/form[1]/button[1]`; a notation of this repository, modelled on XPath from memory,
   not a claim of following it). A variable reference is `${NAME}`, `NAME` upper-case letters,
   digits and `_`.
+- `crates/answer/src/lib.rs`: `Blocks`, `parse_blocks` and `render_blocks` as decided above.
+  `crates/answer/tests/blocks.rs`: the round-trip case, as
+  `parse_blocks_round_trips_every_golden_answer`. `docs/agent-answer.md`: one paragraph saying
+  that the lines after the head and token lines are read and written alone by these two
+  functions, for recordings.
 - A new library crate `crates/scenario` (package `surf-scenario`), standard library only,
   `#![forbid(unsafe_code)]`, depending on `surf-answer` only: typed values for a recording, a scenario, a
-  locator and a variable reference; `parse` and `write` for both formats. A malformed file is
+  locator and a variable reference; `parse` and `write` for both formats; `expected_lines` as
+  decided above. A malformed file is
   refused with its line number and what was expected, never a panic. `write(parse(x)) == x` for
   every golden file.
 - Golden files under `crates/scenario/tests/golden/`: one recording and one scenario that each
@@ -89,17 +120,23 @@ one request (`docs/plan/agent-plan-revision-1.md`, D14). Both stories are edges 
   grammar document's list of block and line kinds and fails when the matching golden file lacks
   one of them.
 
-Surfaces: `docs/formats/` (new), `crates/scenario/` (new). The root `Cargo.lock` gains
+Surfaces: `docs/formats/` (new), `crates/scenario/` (new), `crates/answer/src/lib.rs`,
+`crates/answer/tests/blocks.rs` (new), `docs/agent-answer.md` (one paragraph). Every earlier writer
+of `crates/answer` and `docs/agent-answer.md` (`agent-answer-format`, `agent-cli-client`,
+`agent-follow-links`, `agent-fill-pick`, `agent-press-submit`, `agent-back-forward`,
+`agent-change-and-log`) is an ancestor of this story; no later runner story writes them. The root `Cargo.lock` gains
 `surf-scenario` (the coordinator's file in a wave). Later writers of `crates/scenario`:
 `runner-replay-transport` and `runner-record-session`, both ordered after this story.
 
 ## For AGENTS.md
 
 "Layout": "`crates/scenario` (`surf-scenario`): reads and writes the recording and scenario
-formats of `docs/formats/`. Standard library only."
+formats of `docs/formats/`. Standard library only; reads and writes answer lines through
+`surf-answer`."
 
 ## Acceptance
 
+`cargo test -p surf-answer` passes with `parse_blocks_round_trips_every_golden_answer`, and
 `cargo test -p surf-scenario` passes with one round-trip test per golden file, one refusal test
 per malformed golden file naming the line it refuses, and the coverage test showing that the
 golden recording contains every block and line kind `docs/formats/surf-recording.md` defines and

@@ -10,7 +10,7 @@ relations:
 - depends_on: story:view-now-panel
 - depends_on: story:agent-fill-pick
 - depends_on: story:agent-change-and-log
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 4}
@@ -45,10 +45,11 @@ only a length for a password (cases 2 and 3).
 
 ## Change
 
-- `docs/view-stream.md`: the `answer` entry gains control and button elements (kind; the value as
-  the answer prints it, and for a password its length as the answer prints it, never the value;
-  checked, the chosen option, disabled, required; a button's form, method and action) and the
-  `changed` block (`page` from and to; `+`, `-` and `~` element lines with what changed, before and
+- `docs/view-stream.md`: in the `answer` entry, the `now` member gains control and button elements
+  (kind; the value as the answer prints it, and for a password its length as the answer prints
+  it, never the value; checked, the chosen option, disabled, required; a button's form, method
+  and action), and the entry gains the member `changed` after `now`, as that document reserves it
+  (`page` from and to; `+`, `-` and `~` element lines with what changed, before and
   after, a password's before and after as lengths; `+ text` lines); one example each. The rule of
   D22 restated there in its words.
 - `crates/view/src/model.rs`, `json.rs`, `crates/view/tests/golden/`, `crates/view/tests/json.rs`;

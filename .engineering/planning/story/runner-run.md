@@ -11,7 +11,7 @@ relations:
 - depends_on: story:runner-replay-transport
 - depends_on: story:runner-surf-cli-package
 - depends_on: story:agent-change-and-log
-revision: 6
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 6}
@@ -31,8 +31,8 @@ detailed line is compared: none exists in this epic (D13).
 Stands on `epic:agent-cli-target` (through `agent-change-and-log`): the session core of
 `crates/session` (`agent-session-process`), a library that opens a session over a
 caller-supplied `Transport` with no socket and no process, and executes `Go`, `Follow`, `Back`,
-`Forward`, `Fill`, `Pick`, `Press` and `CloseSession`, returning the answer's `page` line,
-`changed` lines and `now` element lines. On `epic:html-parser` (through `html-document-port`):
+`Forward`, `Fill`, `Pick`, `Press` and `CloseSession`, returning the typed answer
+(`surf_answer::Answer`), whose `page`, `changed` and `now` blocks the run reads. On `epic:html-parser` (through `html-document-port`):
 for each element in `now`, its node in the tree read through `Browser::document_tree`, for the
 tiebreak by tree path.
 
@@ -42,13 +42,18 @@ tiebreak by tree path.
   unless `--live`, its recording; reads every `${NAME}` from `SURF_VAR_<NAME>` before the first
   step and refuses a missing one (exit 2, naming it); builds the session core over the
   `ReplayTransport`, or over the `surf-fetch` transport with `--live`; then for each step resolves
-  the locator against the current `now` (Q2), takes the action, rewrites handles in the actual
-  lines to locators, and compares: `expect` lines must equal the actual block, `seen` lines are
-  not compared; an unrecorded request fails the step (Q3). The actual lines are the session core's
-  typed answer rendered by `surf-answer`; the scenario and its recording are read by the reader of
-  `surf-scenario`, which reads answer lines with `surf_answer::parse` and quoted values with
-  `surf_answer::unquote` (`docs/plan/agent-plan-revision-2.md`, D20). This story writes no parser
-  of the answer grammar of its own.
+  the locator against the current `now` (Q2), takes the action, and compares: the actual lines
+  are `surf_scenario::expected_lines` (`runner-formats`) of the blocks of the core's typed answer,
+  with the locator map of the current `now` and the elements' tree paths, the same function
+  `surf scenario from` wrote the `expect` lines with; the step's `expect` lines must equal those
+  lines with the lines equal to one of its `seen` lines left out, and `seen` lines are not
+  checked (D9). An unrecorded request ends through `FailRequest` and
+  `FailNavigation` and fails the step with its `unrecorded` line (Q3). The scenario and its
+  recording are read by the reader of `surf-scenario`, which reads recorded answer lines with
+  `surf_answer::parse_blocks` and quoted values with `surf_answer::unquote`
+  (`docs/plan/agent-plan-revision-2.md`, D20). This story writes no parser of the answer grammar
+  and no handle replacement of its own. The first failing step stops the run; every later step is
+  printed `skip` (D8).
 - Output, specified in `docs/formats/surf-run.md`: a first line naming the scenario and
   `replayed` or `live`; `pass <n> <command> <locator>`; for a failure `fail <n> ...` then
   indented `expected` and `actual` lines (for an unresolved locator: the locator, and the

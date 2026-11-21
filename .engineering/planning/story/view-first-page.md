@@ -8,7 +8,7 @@ summary: The page compiled into surfd shows every session, the selected session'
 relations:
 - decomposes: epic:live-view
 - depends_on: story:view-surfd-serves
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 4}
@@ -51,10 +51,17 @@ sessions, navigations, requests, documents and actions in the specification's te
   - `view.css`: system font stacks, no font file, no image.
   - `dom.js`: the only place the page creates elements; it writes every value with
     `textContent`, never as markup.
-  - `stream.js`: the token taken from the fragment into `sessionStorage` and the fragment removed
-    with `history.replaceState`; every `/api/` request with `Authorization: Bearer`; `/events` read
-    with `fetch` and a stream reader that parses the event-stream framing, reconnects with
-    `Last-Event-ID` after a delay that grows to 5 s, and loads everything again on `reset`.
+  - `stream.js`, as `docs/view-stream.md` ("The stream") and item 6 of `docs/design/live-view.md`
+    say: the token taken from the fragment into `sessionStorage` and the fragment removed with
+    `history.replaceState`; every `/api/` request with `Authorization: Bearer`; `/events` read
+    with `fetch` and a stream reader that parses the event-stream framing (`id:`, `event:` of
+    `entry`, `session` or `reset`, `data:`, and the `: keep-alive` comment). The first stream is
+    opened with `Last-Event-ID` set to `newest` of the `/api/sessions` answer loaded before it.
+    When the stream ends, it reconnects after a delay that grows to 5 s, with `Last-Event-ID` set
+    to the last `id:` it read, and loads `/api/sessions` (and the selected session) again after
+    each reconnect, because `session` events are live only and never replayed; an `entry` whose
+    `number` it already holds is ignored. On `reset` it loads the session list and the selected
+    session again and goes on from the `newest` the `reset` carries.
   - `state.js`: sessions, their entries, the selection and the playhead; no DOM, so its rules are
     in one place.
   - `sessions.js`: the session list: state, address, title when the session has one, the time
@@ -69,14 +76,15 @@ sessions, navigations, requests, documents and actions in the specification's te
     action; with an earlier action selected it stays and the marker says how many actions are newer; the left
     and right arrow keys move the playhead; entries the log dropped are shown as one gap with its
     count.
-  - `view.js`: loads the session list and the selected session once, then follows the stream;
-    `?session=<id>&at=<sequence>` in the address, never the token.
+  - `view.js`: loads `/api/sessions` and the selected session, then follows the stream from
+    `newest`; `?session=<id>&at=<sequence>` in the address, never the token.
 - `crates/view/src/assets.rs`: each file by `include_str!`, with its path and content type;
   `crates/view/src/lib.rs`: the module line; `crates/surfd/src/view.rs`: one line passing the
   assets to the server.
 - The test tooling of item 4:
-  - `view-tests/`: `package.json` pinning `@playwright/test`, the committed `package-lock.json`,
-    `playwright.config.mjs` (Chromium, one wide viewport), `.gitignore` for `node_modules`, and
+  - `view-tests/`: `package.json` pinning `@playwright/test` at `1.65.0`, the committed
+    `package-lock.json`, `playwright.config.mjs` (Chromium's headless shell, revision 1254, which
+    that version names; one wide viewport), `.gitignore` for `node_modules`, and
     `tests/first-page.spec.mjs`;
   - `crates/view-fixture` (package `surf-view-fixture`, `publish = false`, standard library only):
     a binary that starts a page server over `crates/view-fixture/pages/` on
@@ -85,8 +93,12 @@ sessions, navigations, requests, documents and actions in the specification's te
     line (the view address with its token, each session's identity and token, the page server's
     address, the path of `surf-agent`), and stops everything when its standard input closes;
   - `crates/view-fixture/pages/first/`: the pages the cases load;
-  - `taskfiles/view-test.yml`: a task `view-test` (build, `npm ci`, the Playwright run of item
-    4), decision D16; the root `Taskfile.yml` lines are handed to the coordinator (below).
+  - `taskfiles/view-test.yml`: a task `view-test` as item 4 of `docs/design/live-view.md` decides:
+    it builds the binaries the fixture starts, then runs `npm ci --prefer-offline --no-audit
+    --no-fund` and `npx playwright test --workers=2` in `view-tests/`, with no `slot` inside the
+    task: the task runs under `slot task check`, already in a job of the pool, and a `slot` inside
+    it would take a second job (measured, item 4). Decision D16; the root `Taskfile.yml` lines are
+    handed to the coordinator (below).
 - `crates/view/tests/web.rs`:
   1. each served file is byte for byte the file under `crates/view/web/`;
   2. no file under `crates/view/web/` contains `innerHTML`, `outerHTML`, `insertAdjacentHTML`,
@@ -113,7 +125,14 @@ sessions, navigations, requests, documents and actions in the specification's te
       that it is reconnecting;
   12. an address holding `"`, `<script>alert(1)</script>` and `<img src=x onerror=alert(1)>`, sent
       with `go`, is shown as text in the session list, the page line and the timeline segment: the
-      number of `script` and `img` elements in the page is unchanged and no dialog opens.
+      number of `script` and `img` elements in the page is unchanged and no dialog opens;
+  13. the first `/events` request of the page carries `Last-Event-ID` equal to `newest` of the
+      `/api/sessions` answer the page loaded before it (both read from the requests the test
+      records);
+  14. with the browser context set offline (`context.setOffline(true)`), a `go` issued, and the
+      context set online again: the page reconnects with `Last-Event-ID` set to the last `id:` it
+      had read, requests `/api/sessions` again after the reconnect, shows the new action's
+      segment and page line without a reload, and holds no segment twice.
 
 Surfaces written: `crates/view/web/`, `crates/view/src/assets.rs`, `crates/view/src/lib.rs`
 (module line), `crates/view/tests/web.rs`, `crates/surfd/src/view.rs` (one line),
@@ -139,7 +158,7 @@ Surfaces written: `crates/view/web/`, `crates/view/src/assets.rs`, `crates/view/
 
 ## Acceptance
 
-`slot task view-test` passes with the 12 cases of `view-tests/tests/first-page.spec.mjs`, each a
+`slot task view-test` passes with the 14 cases of `view-tests/tests/first-page.spec.mjs`, each a
 test named after its case, `cargo test -p surf-view --test web` passes with its 2 cases, and
 `slot task check` exits 0 with `view-test` among its steps once the coordinator has added its
 include.

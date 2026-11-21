@@ -9,7 +9,7 @@ relations:
 - decomposes: epic:agent-cli-target
 - depends_on: story:agent-fill-pick
 - depends_on: story:agent-session-events
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 6}
@@ -33,6 +33,10 @@ Design section 5.1 shows a button line naming what it submits: `submits F1 post 
 - `crates/session`: the event entries of `agent-session-events` for the events of `Press` and the
   submission, in its mapping function and its mapping list (decision D27); a request body is
   written as `<n> bytes`, never the body (decision D22).
+- The `did` and `path` lines of `press`, as `docs/agent-answer.md` and `crates/answer` write
+  them: `did press "<handle>"` and `<n> press "<handle>"`. The reasons `no-default-action`,
+  `disabled` (if `agent-fill-pick` has not added it) and the reasons a submission ends without a
+  body go into the reason table with exit status 1, into `RefusalReason` and into a test.
 - `cli/surf-agent.yaml`, `crates/agent`: `press`, together, so the drift test holds.
 - `crates/session/tests/`, the counted cases, against a server the test starts:
   1. a login form filled and pressed: the server reads `POST /session HTTP/1.1` with

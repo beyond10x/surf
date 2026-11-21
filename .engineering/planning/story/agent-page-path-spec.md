@@ -8,7 +8,7 @@ summary: Action rows owned by a session give path and log their lines; the sessi
 relations:
 - decomposes: epic:agent-cli-target
 - depends_on: story:agent-session-spec
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 5}
@@ -49,8 +49,13 @@ on the `page` line, and a second copy would have a second writer.
 
 - `spec/domains/agent.yaml`: entity `Action`, its identity chosen by the caller (the session
   process draws the next sequence number: deterministic, nothing random), with the session, the
-  sequence number, the command (`Open`, `Go`, `Close` for now) and its argument as the path line
-  prints it. An action never stores a value the agent typed (design section 8). Only an accepted
+  sequence number, the command (`Open`, `Go`, `Close` for now) and an optional argument
+  (`Optional<String>`): the address for `go` and for `open` with an address, none for `open`
+  without one and for `close`. The `path` line writes `<n> <command>`, and the argument as a
+  quoted field only when there is one, as `docs/agent-answer.md` and `crates/answer` do (`2 go
+  "http://example.org/"`, `3 close`); the `did` line the same (`did go "<address>"`, `did
+  close`).
+  An action never stores a value the agent typed (design section 8). Only an accepted
   command is recorded. If one outcome cannot both act and create the action, a binding from the
   agent event to a recording command does. View `SessionLog(session_id)`: the actions of a
   session in sequence order.
@@ -60,7 +65,8 @@ on the `page` line, and a second copy would have a second writer.
   `SessionState` publishes the new fields.
 - Authored scenarios: `spec/scenarios/agent-action-recorded-for-go.yaml`,
   `agent-action-none-for-refused-go.yaml`, `agent-session-shows-committed-status.yaml`,
-  `agent-session-shows-failure-reason.yaml`.
+  `agent-session-shows-failure-reason.yaml`, `agent-action-without-argument-for-close.yaml` (an
+  `open` without an address and a `close` record actions with no argument).
 - `task generate`; `crates/ports` stores `Action`; `conformance/src/`; `crates/surf/src/lib.rs`
   only where the regenerated interface forces it. `REFUSALS_MAX` is not written here (decision D30): the unit runs its gate as `slot task check REFUSALS_MAX=<n>`, `<n>` the measured `refused:` count, and its report gives `<n>` and each new refusal with its cause; the coordinator writes the number on the wave branch.
 
@@ -76,9 +82,9 @@ Surfaces written: `spec/domains/agent.yaml`, `spec/domains/navigation.yaml`,
 
 ## Acceptance
 
-`slot task check REFUSALS_MAX=<n>` exits 0 with the scenario total at least 8 above the total
+`slot task check REFUSALS_MAX=<n>` exits 0 with the scenario total at least 9 above the total
 `agent-session-spec` recorded in `AGENTS.md` and equal on both runners with `0 failed, 0 error,
-0 unsupported`, the four authored files of Change among the passed, and the `refused:` count at
+0 unsupported`, the five authored files of Change among the passed, and the `refused:` count at
 most 8 above the count `agent-session-spec` recorded, `<n>` equal to it, the unit report giving `<n>` and each new refusal with its cause (decision
 D30).
 

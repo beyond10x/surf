@@ -43,7 +43,7 @@ scope:
   path: spec/ess-inputs.yaml
 - confidence: cited
   path: spec/scenarios
-revision: 15
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 6}
@@ -124,7 +124,14 @@ with ess 0.96.0), entity `surf.agent.Session`:
    and revise them into the `spec/domains/agent.yaml` that `agent-cli-spec` landed:
    `OpenSession(session_id, window_id, tab_id)` refusing an existing identity and answering no
    token; the markers rewritten to their decisions; the `SessionReadout` state typed
-   `Session.State`; `surf.agent.OpenCall` kept under that name.
+   `Session.State`; `surf.agent.OpenCall` kept under that name. `surf.agent.SessionToken` stays
+   in the three command-line types that hold it today (`SessionCall`, `GoCall`, `OpenedSession`)
+   and in no entity, command, event or view (marker 4), so no generated row or event carries the
+   secret. The generated type derives `Debug` (a finding of wave 1, `docs/plan/agent-wave-1.md`,
+   for ESS); the stories that hold a token keep it out of every generated type and every debug
+   print: `story:agent-session-process` (case `token_held_only_as_surf_secret_token`) and
+   `story:agent-cli-client` (case `token_not_in_debug_output`) hold it only as
+   `surf_secret::Token`, which prints `Token(..)`.
 3. An authored scenario for each case the 5 remaining failures showed synthesis cannot arrange,
    named in the file after the case.
 4. `task generate`: `generated/rust/` gains the crate `agent` and `System::new` takes six ports.
@@ -191,7 +198,8 @@ among them `OpenSession/outcome/opened`, `Go/outcome/requested`, `Go/outcome/not
 `refused:` lines and `<n>` equal to that count, the unit report giving `<n>` and each new refusal
 with its cause (decision D30); and `RUSTFLAGS="-D warnings" cargo build --locked -p agent` exits
 0, the generated crate `agent` building with warnings denied and without `field 'behaviors' is
-never read` (decision D32).
+never read` (decision D32); and `grep -n SessionToken spec/domains/agent.yaml` names the type only
+at its definition and in `SessionCall`, `GoCall` and `OpenedSession`.
 
 ## Out of scope
 

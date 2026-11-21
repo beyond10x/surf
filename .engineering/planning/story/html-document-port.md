@@ -13,7 +13,7 @@ relations:
 - depends_on: story:agent-session-process
 - depends_on: story:runner-surf-cli-package
 - depends_on: story:agent-fetch-post
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 5}
@@ -60,8 +60,9 @@ for them.
 
 - `crates/surf/src/lib.rs`: a parser step, a trait parameter of `Browser` like `Transport`,
   whose default decodes the body, parses it with the default limits, computes title and
-  elements with labels, and issues the ending command or commands of item 2 on the `document`
-  port only. `Browser` keeps the tree of each document, keyed by the document's identity, with
+  elements with labels, and issues, on the `document` port only, the commands of
+  `docs/design/html-parser.md` item 2 as `story:html-document-spec` names them: one per
+  actionable element in document order, then the ending command. `Browser` keeps the tree of each document, keyed by the document's identity, with
   read-only access `Browser::document_tree`, the map from each element row's identity to its
   node, and `Browser::parser_not_yet_parsed` returning `surf_html::NOT_YET_PARSED`.
 - `Report`: one `title` line per document, one `element` line per actionable element in
@@ -93,7 +94,8 @@ For `AGENTS.md`, handed over in the report (D7):
 - "Layout", the `crates/surf` entry gains: "The library also runs the `document` component's
   parser step, a parameter of `Browser` like the transport: it decodes and parses each committed
   HTML body with `surf-html`, computes the title and the actionable elements with `surf-page`,
-  and issues the ending command on the `document` port. `Browser` keeps each document's tree,
+  and issues one command per actionable element and then the ending command on the `document`
+  port. `Browser` keeps each document's tree,
   read only through `Browser::document_tree`; no component's port receives it."
 - "Layout", a new entry: "`crates/page` (`surf-page`): the title, the actionable elements and
   their labels, computed from a `surf-html` tree. Standard library and `surf-html` only."

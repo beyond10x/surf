@@ -76,8 +76,9 @@ above, and the list of standards itself was written from memory.
   agent's reading): a specification draft is committed on its branch when it validates, also
   when the gate would not pass with it yet; finished work is merged into `main` once
   `task check` is green on the merge; nothing worth keeping stays only in a working tree or a
-  scratch directory. The sentence does not mention a remote: this repository has none, and
-  pushing, tagging or releasing still waits for his word.
+  scratch directory. Since 2026-11-21 the repository is public and `main` is pushed after
+  every wave and every reviewed change (see "Publishing"); a tag or a release still waits
+  for his word.
 
 ## Layout
 
@@ -243,6 +244,45 @@ code: its generated workspace and, since wave 3 of `docs/plan/waves.md`, the han
   beyond10x super documentation". He also asked for a logo (`docs/logo.svg`) and called the
   README good.
 
+## Publishing
+
+The repository is public at `https://github.com/beyond10x/surf` since 2026-11-21. The
+operator chose a fresh first commit of a cleaned tree: `main` starts at `9a858e0`, made by
+the bot. The history before it exists only in the local repository this work started in,
+as the branch `archive/pre-public`; it is never pushed. The branch `park/agent-sixth-port`
+is on that old history too, and stays local.
+
+- Nothing personal goes into the tree: no person's name (write "the operator"), no home
+  directory path (write `$HOME`), no machine name. The gates scan for secrets, private
+  identifiers, home paths, unpinned workflow actions and workflows without `permissions`,
+  and refuse without printing the match.
+- The repository is enrolled in the common gates (`beyond10x/gates`); its hooks are
+  installed in the repository (`b10x-gates ... install`). To publish `main`:
+
+      b10x-gates --repo . --repository beyond10x/surf --policy ../gates-policy/policy.json \
+        --gitleaks "$XDG_CONFIG_HOME/b10x/gates/bin/gitleaks" check --receipt <receipt.json>
+      b10x-gates ... verify --receipt <receipt.json>
+      b10x-gates ... publish --receipt <receipt.json> --remote-ref refs/heads/main
+
+  The receipt file lives in the session's scratch directory. `main` is published after
+  `task check` is green on it, never before.
+- `crates/url/tests/data/urltestdata.json` is vendored test data whose inputs hold
+  a `file:` address with a home directory path; the policy carries six exceptions for it. Replacing the file with a
+  newer copy needs the exceptions made again (`b10x-gates ... policy except`).
+- Every GitHub write (a release, an issue, a setting) goes through `b10x-gates api` or
+  `b10x-gates gh --`, as the bot. Never raw `gh`.
+- The documentation website is the repository's own (`website/`, published at
+  `https://beyond10x.github.io/surf/`). It is not part of the organization's shared
+  documentation: no `b10x.docs.yaml`, no shared bundle or pages workflow, no generated
+  `b10x-docs:` block. The operator, 2026-11-21: "Do not integrate it into the beyond10x
+  super documentation".
+- Pre-built binaries, the operator, 2026-11-21: "Make sure surf comes basically from the
+  start with pre-built binaries for Linux and Mac, maybe, and Windows, I don't know."
+  `story:release-binaries` is the release workflow for Linux and macOS. Windows waits: the
+  code reads `/dev/urandom` and the agent command line uses a Unix socket.
+- No licence is chosen yet. Until the operator names one, the repository is public and all
+  rights are reserved; no file may claim a licence.
+
 An issue for ESS is filed as the organization bot, from the `ess` checkout, with the body scanned
 first. `b10x-gates gh` has no `issue` command, so it goes through `api`:
 
@@ -280,7 +320,11 @@ the others were written to a scratch directory and not compiled:
   managed worktree (`worktree create`); nothing is edited in the primary checkout during a wave.
 - An implementor leaves its changes uncommitted; the coordinator commits, merges and owns every
   store write. `Cargo.lock` is the coordinator's too: regenerated on the wave branch.
-- A commit has a body and no attribution line, and is made with `git commit -F <file>`.
+- A commit has a body and no attribution line. Every commit is the organization bot's:
+  `b10x-gates --repo <tree> --repository beyond10x/surf --policy ../gates-policy/policy.json
+  bot -- commit -F <file>`. The gates refuse a pushed commit with another author or
+  committer, so a plain `git commit` is never used, also not for a merge:
+  `... bot -- merge --no-ff <branch> -F <file>`.
 - The model of a sub-agent is named in every dispatch and is never the coordinating session's
   own. The operator, 2026-11-21: "subagents should not be fabled, they should be Opus, Sonnet, or Haiku,
   depending on the task". Read as (the coordinating agent's reading): `model: opus` for an

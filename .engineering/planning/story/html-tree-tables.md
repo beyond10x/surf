@@ -9,7 +9,7 @@ relations:
 - decomposes: epic:html-parser
 - depends_on: story:html-parser-limits
 - depends_on: story:html-actionable-elements
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 5}
@@ -23,8 +23,8 @@ for inserting a node" with foster parenting enabled; from memory, to be confirme
 story). `select` has its own parsing rules, which the standard changed for the customizable
 `select` element (from memory, 2025, to be confirmed against the standard and the data at the
 pinned commit); this story takes whatever the standard says at the version the note pins. Cases
-tagged `tables` by `docs/design/html-parser.md` (item 8) are this story's; from memory
-`tables01.dat` and `quirks01.dat` are among them. Stories `html-tree-body`,
+tagged `tables` by `docs/design/html-parser.md` (item 8) are this story's; by the inventory
+`tables01.dat` (17) and `quirks01.dat` (4) hold most of them. Stories `html-tree-body`,
 `html-tree-formatting` and `html-parser-limits` wrote the files this one changes.
 
 The test of `crates/page` that reads `select` parsing is here, where the parsing is
@@ -52,7 +52,7 @@ Writes: `crates/html/src/tree_builder.rs`, `crates/html/src/tree_builder/`,
 ## Acceptance
 
 `slot task html-conformance HTML_BASE=<this story's base commit>` exits 0 printing `tag body
-n/n/n`, `tag formatting m/m/m` and `tag tables t/t/t` with the counts of `html-inventory`, and
+476/476/476`, `tag formatting 22/22/22` and `tag tables 39/39/39` with the counts of `html-inventory`, and
 `cargo test -p surf-html -p surf-page` passes, with
 `a_select_in_a_table_is_listed_once_with_kind_select_and_no_value` among the tests run.
 

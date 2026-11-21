@@ -8,7 +8,7 @@ summary: The accessible name computation over the tree, with the rendering-depen
 relations:
 - decomposes: epic:html-parser
 - depends_on: story:html-actionable-elements
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 4}
@@ -16,13 +16,16 @@ transitions:
 ## Context
 
 The label of an actionable element is its accessible name (`docs/design/agent-interface.md`
-section 5.2): the W3C Accessible Name and Description Computation with the HTML Accessibility
-API Mappings for HTML elements, from memory, to be confirmed by this story. Parts of the
-computation depend on rendering, and surf has no CSS. `docs/design/html-parser.md` (story
-`html-decisions`, item 5) fixes what label is before CSS: proposed, the computation over the
-tree with "hidden" read as the `hidden` attribute or `aria-hidden="true"`, no generated content,
-the rendering-dependent steps listed as not taken, and the whole name kept (the answer format
-cuts it at 60 characters). Story `html-actionable-elements` wrote the crate this story adds to.
+section 5.2): Accessible Name and Description Computation 1.2 ("Computation steps", 4.3.2) with the HTML
+Accessibility API Mappings for each element (the versions `docs/design/html-parser.md` names).
+Parts of the computation depend on rendering, and surf has no CSS. The note (story
+`html-decisions`, item 5) fixes what label is before CSS: the computation over the tree, with
+"hidden" in "Hidden Not Referenced" read by the rule of item 5 (`aria-hidden="true"` or a rule of
+the HTML Standard's 15.3.1 "Hidden elements", on the node or an ancestor), which is
+`is_hidden(tree, node)` of story `html-actionable-elements`; the steps not taken are "Name From
+Generated Content", hiding by author CSS, "Determine Child Nodes" for shadow roots and slots, the
+spaces joined by CSS `display`, and an explicit `role` attribute; the whole name is kept (the
+answer format cuts it at 60 characters). Story `html-actionable-elements` wrote the crate this story adds to.
 
 ## Change
 

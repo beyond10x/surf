@@ -10,7 +10,7 @@ relations:
 - depends_on: story:agent-history-spec
 - depends_on: story:agent-press-submit
 - depends_on: story:agent-session-events
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 5}
@@ -47,6 +47,10 @@ so the agent gets the reason and status 1 instead of a navigation that never sta
 - `crates/session`: the event entries of the `GoBack` and `GoForward` events of
   `agent-history-spec`, with their fields, in the mapping function of `agent-session-events` and
   its mapping list (decision D27).
+- The `did` and `path` lines of `back` and `forward` take no argument, as `docs/agent-answer.md`
+  and `crates/answer` write a command without one: `did back`, `did forward`, `<n> back`,
+  `<n> forward`. The reasons `at-start`, `at-end` and `post-entry` go into the reason table with
+  exit status 1, into `RefusalReason` and into a test.
 - `cli/surf-agent.yaml`, `crates/agent`: `back` and `forward`, written together so the drift test
   holds.
 - `crates/session/tests/`, the counted cases, against a server the test starts:

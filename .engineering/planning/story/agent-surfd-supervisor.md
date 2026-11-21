@@ -11,7 +11,7 @@ relations:
 - depends_on: story:agent-answer-format
 - informed_by: epic:live-view
 - depends_on: story:agent-secret-primitives
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 4}
@@ -105,7 +105,14 @@ Decided here, where the design does not say:
     answer lines and a status record (state, address, title); at most 4 MiB, printable ASCII
     only. A session that breaks a rule of the link is killed and listed `died`.
   - routing: one thread per connection; a request names its session (none for `open`); an
-    identity that is not a UUID in text form is answered with status 2 and touches no path;
+    identity that is not a UUID in text form is answered with status 2, no answer lines and a
+    reason for standard error (an answer needs a head line, and the head line takes only a
+    session identity), and touches no path. A UUID is read in lower case and every answer `surfd`
+    writes names the session in lower case, the `unknown` head line included: the renderer of
+    `crates/answer` takes an identity of `[0-9a-z-]+` only. The answers `surfd` writes itself carry
+    the exit status the reason table of `docs/agent-answer.md` gives: `closed` 1,
+    `no-such-session`, `session-died` and
+    `session-timeout` 3;
     requests to one session go one at a time.
   - supervision: a thread per session waits on its process; at its end the session socket and
     directory are removed and the state set. A call that finds the session socket gone waits up
@@ -162,7 +169,8 @@ Decided here, where the design does not say:
   19. (built) an `XDG_RUNTIME_DIR` long enough that a session socket path exceeds 107 bytes:
       `open` exits 3 with a reason and no process starts;
   20. (built) a request of over 64 KiB, and one naming the session `../x`, sent raw to
-      `surfd.sock`: the first is closed unanswered, the second answered with status 2, nothing
+      `surfd.sock`: the first is closed unanswered, the second answered with status 2, no answer
+      line and a reason, nothing
       outside `$XDG_RUNTIME_DIR/surf/` touched, and the next request is answered;
   21. (built) 64 calls held by stalling stand-ins: a 65th connection is closed unanswered and its
       client exits 3; the 64 are answered when the stand-ins go on;
@@ -177,7 +185,10 @@ Decided here, where the design does not say:
       seconds, its directory is gone, and the list holds no entry for either;
   25. (in process) a stand-in that reports the address `a"b` followed by a line feed: the list
       holds it quoted, printable ASCII only, and `surf_answer::unquote` of it gives that address
-      exactly.
+      exactly;
+  26. (built) `look` naming an identity never opened, written in upper case: exit 3 and the head
+      line `surf 1 session <the identity in lower case> unknown`; and a `look` naming an open
+      session in upper case reaches it, its head line in lower case.
 
 Surfaces written: `crates/surfd/`.
 
@@ -193,7 +204,7 @@ Surfaces written: `crates/surfd/`.
 
 ## Acceptance
 
-`cargo test -p surfd` passes with the 25 numbered cases, each a test named after its case, and
+`cargo test -p surfd` passes with the 26 numbered cases, each a test named after its case, and
 `cargo tree -p surfd -e normal` prints `surfd`, `surf-agent`, `surf-answer` and `surf-secret` and
 no other package.
 

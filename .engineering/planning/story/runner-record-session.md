@@ -10,7 +10,7 @@ relations:
 - depends_on: story:runner-record-option
 - depends_on: story:runner-replay-transport
 - depends_on: story:agent-change-and-log
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 5}
@@ -49,14 +49,19 @@ ancestors in the tree read through `Browser::document_tree`, for its tree path.
 - `crates/session`: with a recording open, the transport is wrapped in the `RecordingTransport`
   of `crates/scenario` (`runner-replay-transport`), told the sequence number of the current
   action. After each action an `action` block is appended: command, handle and locator (kind,
-  accessible name, tree path) of the element it acted on, its input, the answer's `page` line
-  and `changed` lines. Reads (`look`, `log`) are not actions and are not written. The block is
+  accessible name, tree path) of the element it acted on, its input, the answer without its head
+  and token lines as `surf_answer::render_blocks` writes it, and one `at <handle> <tree path>`
+  line per handle of that answer's `now` block, all through the writer of `surf-scenario` in the
+  grammar `runner-formats` gives (`docs/formats/surf-recording.md`). When one command adds two
+  action rows (`open <url>`: `open`, then `go`), the answer is written once, in the block of the
+  last of them. Reads (`look`, `log`) are not actions and are not written. The block is
   flushed before the answer is sent, so a recording of a session that is killed holds every
   answered action.
 - A value typed into a `password` control is registered as a secret: the action writes
   `${PASSWORD_<n>}`, numbered by first appearance, and the transport writes the reference in
   bodies. The value is never written to the file.
-- No token is written; the session identity only in the header (D7).
+- No token is written (the `token` line of `open`'s answer is left out with the head line); the
+  session identity only in the header (D7).
 - `crates/session/tests/`, against a server the test starts on `127.0.0.1` with a home page
   linking to a login form, the form posting to a path the server answers with 303 to a landing
   page:
@@ -66,7 +71,7 @@ ancestors in the tree read through `Browser::document_tree`, for its tree path.
      blocks `open`, `go`, `follow`, `fill`, `fill`, `press`, `close` in that order, one exchange
      per request with its `during` number, the `POST` exchange with the landing page as its
      response address, and `${PASSWORD_1}`; its bytes contain neither `s3cret &pass=1` nor
-     `s3cret+%26pass%3D1`.
+     `s3cret+%26pass%3D1`, nor the token `open` printed, nor a line starting `surf 1 session`.
   2. `killed_session_leaves_its_answered_actions`: the session process killed right after the
      answer to `follow` leaves a recording that parses and holds the action blocks `open`, `go`
      and `follow`.
@@ -78,7 +83,8 @@ Surfaces: `crates/session/`, possibly `crates/scenario/src/` for a writer helper
 
 `cargo test -p surf-session` passes with `recording_of_a_login_session`, whose recording holds
 the seven action blocks in order and `${PASSWORD_1}` and contains neither `s3cret &pass=1` nor
-`s3cret+%26pass%3D1` in its bytes, and with `killed_session_leaves_its_answered_actions`.
+`s3cret+%26pass%3D1` in its bytes, nor the token `open` printed, nor a line starting
+`surf 1 session`, and with `killed_session_leaves_its_answered_actions`.
 
 ## Out of scope
 

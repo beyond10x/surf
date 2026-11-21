@@ -12,7 +12,7 @@ relations:
 - depends_on: story:agent-cli-client
 - depends_on: story:agent-surfd-supervisor
 - depends_on: story:agent-secret-primitives
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 7}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 8}
@@ -49,8 +49,13 @@ the process, the peer check on the user-facing socket, the socket path length.
   - the core: a session over any `surf::Transport`, opened with a caller-chosen identity, that
     executes `open` (`OpenWindow`, `OpenTab`, `OpenSession`, then `Go` when an address was given),
     `go`, `look` (`SessionState`, `SessionLog`) and `close` (`CloseSession`), each through
-    `Browser::run`, and returns the typed answer and the page state it compared. A refusal answers
-    `did refused <reason>` with the current state and status 1. The next action sequence number is
+    `Browser::run`, and returns the typed answer and the page state it compared. The `did` and
+    `path` lines are those of `docs/agent-answer.md`: the argument quoted and left out when the
+    command had none (`did open "<address>"` or `did open`, `did go "<address>"`, `did close`;
+    `look` takes no action and prints no `did` line; path lines `1 open "<address>"`, `2 go
+    "<address>"`, `3 close`). A refusal answers
+    `did refused <reason>` with the current state and the exit status the reason table of
+    `docs/agent-answer.md` gives (`token` and `closed` 1, `usage` 2). The next action sequence number is
     drawn here.
   - the process: `surf-session` takes the identity and the socket path from `surfd`, binds the
     socket inside the directory `surfd` created, writes `ready`, and answers one link request at a
@@ -85,7 +90,15 @@ the process, the peer check on the user-facing socket, the socket path length.
   8. an address holding `"`, a backslash and a byte outside ASCII is printed quoted and escaped
      on the `page` and the `path` lines;
   9. the core without a socket: the calls of case 1 over a transport the test supplies give the
-     same answers.
+     same answers;
+  10. `open` without an address, then `close`: the answers hold `did open` and `did close` with no
+      argument, and the `path` of the second holds `1 open` and `2 close`;
+  11. `token_held_only_as_surf_secret_token`: the `Debug` output of the session core after `open`
+      holds none of the 64 digits of the token, and no file under `crates/session/src/` names the
+      generated `SessionToken` (it derives `Debug`, a finding of wave 1);
+  12. a `look` request with an argument name the session does not know (`arg colour "x"`), sent
+      over the link: status 2 and `did refused usage` under the head line of the session, and the
+      session acts on nothing.
 
 The golden texts of case 1 hold no `note parser` line: `Browser::parser_not_yet_parsed` does not
 exist yet. Once it does (`html-document-port`), every test of this crate that expects a
@@ -110,7 +123,7 @@ Surfaces written: `crates/session/`.
 
 ## Acceptance
 
-`cargo test -p surf-session` passes with the 9 numbered cases, each a test named after its case,
+`cargo test -p surf-session` passes with the 12 numbered cases, each a test named after its case,
 and `cargo tree -p surf-session -e normal` prints no package from outside this repository.
 
 ## Out of scope

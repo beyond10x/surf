@@ -8,7 +8,7 @@ summary: MathML and SVG in the tree, integration points, CDATA, and fragments fo
 relations:
 - decomposes: epic:html-parser
 - depends_on: story:html-tree-template
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 5}
@@ -22,8 +22,8 @@ CDATA sections allowed only inside foreign content (tree construction: the rules
 tokens in foreign content; from memory, to be confirmed by this story). The fragment parsing
 algorithm parses markup for a context element, and the data uses it in every
 `#document-fragment` case. Both are tagged `foreign` by `docs/design/html-parser.md` (item 8):
-from memory `math.dat`, `svg.dat`, `namespace-sensitivity.dat`, `foreign-fragment.dat` and
-`tests_innerHTML_1.dat` are among them. surf never parses a fragment at run time; the algorithm
+by the inventory `math.dat` (8), `svg.dat` (8), `namespace-sensitivity.dat` (1),
+`foreign-fragment.dat` (66) and `tests_innerHTML_1.dat` (81) are all `foreign`. surf never parses a fragment at run time; the algorithm
 is taken because the standard's data tests the tree builder through it.
 
 With this story every tag of the thematic files is claimed. The mixed files (tag `mixed`) are
@@ -51,8 +51,8 @@ Writes: `crates/html/src/lib.rs`, `crates/html/src/tree_builder.rs`,
 ## Acceptance
 
 `slot task html-conformance HTML_BASE=<this story's base commit>` exits 0 printing `tag body
-n/n/n`, `tag formatting m/m/m`, `tag tables t/t/t`, `tag template p/p/p` and `tag foreign
-f/f/f` with the counts of `html-inventory`, and `cargo test -p surf-html` passes.
+476/476/476`, `tag formatting 22/22/22`, `tag tables 39/39/39`, `tag template 123/123/123` and `tag foreign
+222/222/222` with the counts of `html-inventory`, and `cargo test -p surf-html` passes.
 
 ## Out of scope
 

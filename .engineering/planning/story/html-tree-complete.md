@@ -8,7 +8,7 @@ summary: The remaining failing cases fixed; each tree-construction section marke
 relations:
 - decomposes: epic:html-parser
 - depends_on: story:html-tree-foreign
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 5}
@@ -16,9 +16,9 @@ transitions:
 ## Context
 
 After story `html-tree-foreign` every case of the thematic files passes, by tag. The mixed files
-of `docs/design/html-parser.md` (item 8: from memory `tests1.dat` to `tests26.dat`,
-`webkit01.dat`, `webkit02.dat`, `tricky01.dat`, `html5test-com.dat`,
-`pending-spec-changes.dat`) hold cases that exercise several parts at once; they are tagged
+of `docs/design/html-parser.md` (item 8, rule 4: the 30 files `tests1.dat` to `tests26.dat`,
+there being no `tests13.dat`, and `webkit01.dat`, `webkit02.dat`, `tricky01.dat`,
+`html5test-com.dat`, `pending-spec-changes.dat`, 1,085 cases) hold cases that exercise several parts at once; they are tagged
 `mixed` and are this story's. Its count after `html-tree-foreign` is whatever those stories
 reached by the way; this story raises it to the run count. And no tree-construction section has
 its mark decided yet: `AGENTS.md` ("Goals") allows `complete` only when every requirement of the
@@ -45,12 +45,16 @@ Writes: `crates/html/src/`, `crates/html-conformance/expected/tree-construction.
 ## Acceptance
 
 `slot task html-conformance HTML_BASE=<this story's base commit>` exits 0 printing `tag mixed
-x/x/x` with x the `mixed` count of `html-inventory`, every other tree-construction `tag` line at
-`n/n/n`, pass equal to run for every file under `tree-construction/`, and each tree-construction
-section printed either `complete n/n` or `incomplete` with a reason that is not a failing case.
+1085/1085/1085` and every other tag that runs at pass = run = exist (`markup 1979`, `text 328`,
+`charref 4739`, `body 476`, `formatting 22`, `tables 39`, `template 123`, `foreign 222`,
+`encoding 82`), the 12 `not-run` cases left out by their reasons (`tag not-run 0/0/12`:
+`xml-infoset` 4, `needs-script` 7, `autodetect` 1), the total line `html-conformance: 9107
+cases, 9095 run, 9095 passed`, and each section of `html-sections` printed either `complete n/n`
+or `incomplete` with a reason that is not a failing case.
 
 ## Out of scope
 
-The cases tagged `not-run` (`scripted/`, and any feature the note excludes): they stay counted as
+The 12 cases tagged `not-run` (`scripted_*.dat`, `encoding/scripted/`, `xmlViolation.test`,
+`encoding/chardet/test_big5.txt`): they stay counted as
 not run, and the sections they belong to stay incomplete. Scripts: as in the earlier tree
 stories, nothing runs.

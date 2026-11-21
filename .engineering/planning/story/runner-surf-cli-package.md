@@ -9,6 +9,7 @@ relations:
 - depends_on: story:runner-decisions
 - decomposes: epic:agent-cli-target
 - depends_on: story:agent-cli-spec
+- depends_on: story:agent-session-spec
 scope:
 - confidence: cited
   path: crates/surf-cli
@@ -26,7 +27,7 @@ scope:
   path: crates/surf/tests/review1_output.rs
 - confidence: cited
   path: crates/surf/tests/review2_output.rs
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 5}
@@ -54,12 +55,24 @@ package cannot name that binary, so they move with it. A test file that runs the
 on `main` before this story moves with them; the implementor runs the same `grep` at the start
 and reports the list.
 
+The output format and the exit statuses of `surf` are documented in `docs/surf-command.md` since
+wave 1; `README.md` is a page for people. The binary and the moved tests still name `README.md`
+for them in comments, so the move corrects those comments.
+
+`story:agent-session-spec` may add the generated `agent` crate to `crates/surf/Cargo.toml`,
+which this story edits too; this story depends on it, so the order is stated.
+
 ## Change
 
 - A new package `crates/surf-cli` (package `surf-cli`), holding the binary `surf` (`[[bin]]
   name = "surf"`), its `src/main.rs` moved from `crates/surf/src/main.rs` unchanged apart from
-  paths, and the five binary tests above moved to `crates/surf-cli/tests/` under the same file
-  and test names. It depends on `surf`, `surf-fetch` and `surf-ports` by path
+  paths and comments, and the five binary tests above moved to `crates/surf-cli/tests/` under the
+  same file and test names. Every comment of the moved files that names `README.md` for the output
+  format or an exit status names `docs/surf-command.md` instead; on the wave branch these are
+  `main.rs:3`, `output_streams.rs:1` and `:105`, `review1_cli.rs:1` and `:77`, and
+  `review2_output.rs:2`, `:101` and `:121` (`grep -n README` over the five files and `main.rs`;
+  the implementor runs it again and reports the lines). After the move that `grep` over
+  `crates/surf-cli/` finds no line. It depends on `surf`, `surf-fetch` and `surf-ports` by path
   (`main.rs` imports `surf_ports::ComponentPorts`, `main:crates/surf/src/main.rs:14`).
 - `crates/surf`: `src/main.rs` removed, the package description no longer names a command line,
   and the library tests (on `main`: `conform_totals.rs`, `escape.rs`, `generated_check_links.rs`,
@@ -88,7 +101,7 @@ more than one unit; written by the unit itself otherwise.
 
 `slot task check` exits 0, `cargo test -p surf-cli` runs and passes the five test binaries `cli`,
 `output_streams`, `review1_cli`, `review1_output` and `review2_output`, `crates/surf/tests/` holds
-none of those five files, and `cargo metadata --no-deps
+none of those five files, `grep -rn README crates/surf-cli/` prints no line, and `cargo metadata --no-deps
 --format-version 1` lists the binary target `surf` under package `surf-cli` and no binary target
 under package `surf`.
 

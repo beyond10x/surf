@@ -9,7 +9,7 @@ relations:
 - decomposes: epic:e2e-scenario-runner
 - depends_on: story:runner-formats
 - depends_on: story:runner-surf-cli-package
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 5}
@@ -24,10 +24,13 @@ lines, marked `expect` (`story:runner-decisions`, D9). `open` and `close` become
 recording holds no detailed line in this epic (D13); a `detail` block, if a later recording has
 one, is not copied. The conversion is a function from one parsed recording to one scenario, both
 in the formats of `story:runner-formats`, so it is tested on golden recordings and needs no
-session. The answer lines a recording holds are read with `surf_answer::parse` and quoted values
-with `surf_answer::unquote` (`docs/plan/agent-plan-revision-2.md`, D20: written by
-`agent-answer-format` and extended by each story that adds a block), through the reader of
-`surf-scenario`; this story writes no parser of the answer grammar of its own.
+session. The answer lines a recording holds are read by the reader of `surf-scenario`, which calls
+`surf_answer::parse_blocks` (added by `runner-formats`: an answer's lines without its head and
+token lines, read by the per-block functions of `surf_answer::parse`) and `surf_answer::unquote`
+for every other quoted value (`docs/plan/agent-plan-revision-2.md`, D20). The `expect` lines are
+written by `surf_scenario::expected_lines`, the one function `runner-run` also calls on the
+actual answer, so the two sides of a later comparison are made alike. This story writes no
+parser of the answer grammar and no handle replacement of its own.
 
 The `surf` binary is in `crates/surf-cli` (`story:runner-surf-cli-package`).
 
@@ -35,9 +38,10 @@ The `surf` binary is in `crates/surf-cli` (`story:runner-surf-cli-package`).
 
 - `crates/surf-cli`: the subcommand `surf scenario from <recording> [--out <file>]`. Default
   output path: the recording's path with its extension replaced by `.scenario`. The scenario
-  names the recording by a path relative to the scenario's directory (D5). Every handle in a
-  copied line is replaced by the locator of the element it named in that action's answer; a
-  handle the recording cannot map is refused, naming the action. Variable references are copied
+  names the recording by a path relative to the scenario's directory (D5). Each step's `expect` lines are
+  `surf_scenario::expected_lines` of the recorded blocks of its action, with the locator map the
+  recording's `now` and `at` lines give (`docs/formats/surf-recording.md`); a handle the
+  recording cannot map is refused, naming the action. No `seen` line is written (D9). Variable references are copied
   as they are. The file is created with mode 0600 and never overwrites (D7).
 - Exit 0 written; 2 usage, an unreadable or malformed recording (the parser's line number in the
   message) or an existing output file; 3 a write that failed. The usage text of `surf` names the

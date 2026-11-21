@@ -8,7 +8,7 @@ summary: The adoption agency algorithm and Noah's Ark; every tree case tagged bo
 relations:
 - decomposes: epic:html-parser
 - depends_on: story:html-tree-body
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 5}
@@ -20,8 +20,8 @@ agency algorithm, with the "Noah's Ark" clause bounding duplicates in the list o
 formatting elements and the rule that a new `a` first closes an open one (tree construction, in
 body, from memory, to be confirmed by this story). Story `html-tree-body` left the algorithm as a
 hook that pops to the matching element. Cases tagged `formatting` by
-`docs/design/html-parser.md` (item 8) are this story's; from memory `adoption01.dat` and
-`adoption02.dat` are among them. Links are `a` elements, so a page with links parses as the
+`docs/design/html-parser.md` (item 8) are this story's; by the inventory `adoption01.dat` (13)
+and `adoption02.dat` (2) hold most of them. Links are `a` elements, so a page with links parses as the
 standard says only after this story.
 
 ## Change
@@ -40,7 +40,7 @@ Writes: `crates/html/src/tree_builder.rs`, `crates/html/src/tree_builder/`,
 ## Acceptance
 
 `slot task html-conformance HTML_BASE=<this story's base commit>` exits 0 printing `tag body
-n/n/n` and `tag formatting m/m/m` with the counts of `html-inventory`.
+476/476/476` and `tag formatting 22/22/22` with the counts of `html-inventory`.
 
 ## Out of scope
 

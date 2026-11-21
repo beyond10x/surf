@@ -11,7 +11,7 @@ relations:
 - depends_on: story:agent-session-process
 - informed_by: epic:live-view
 - depends_on: story:agent-redirect-spec
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 6}
@@ -44,7 +44,9 @@ The decisions of `docs/plan/agent-plan-revision-1.md` (D17) and `docs/plan/agent
   them and does not read them when it keeps them; the view routes call `surf_answer::parse`
   (`story:agent-answer-format`) to write JSON.
 - **The token is not kept** (D21): the answer entry of `open` omits the `token` line.
-- **What the log holds of a value** (D22): a field of bytes (a response body, a request body) is
+- **What the log holds of a value** (D22): a field of bytes (a field of the specification type
+  `Bytes`: today `surf.net.ResponseReceived.body` and `surf.navigation.NavigationCommitted.body`;
+  later a request body) is
   written by the session process as its length, `<n> bytes`, never as the bytes. A password
   value is its length, `<n> characters`. Every other control value is kept as the answer prints
   it.
@@ -77,8 +79,10 @@ The decisions of `docs/plan/agent-plan-revision-1.md` (D17) and `docs/plan/agent
   the action entry from the view `SessionLog`; one event entry for every event its system
   published since the last command, read in order through `Browser::system().published()` with a
   cursor of its own; the answer entry, the rendered lines without a `token` line. One function
-  maps a `SystemEvent` to an event entry, each field value quoted by `surf-answer`, a `Vec<u8>`
-  field (the `body` of `surf.net.ResponseReceived`) as the text `<n> bytes`, which reaches the log
+  maps a `SystemEvent` to an event entry, each field value quoted by `surf-answer`; the rule is by
+  field type: every field of the specification type `Bytes` (generated `Vec<u8>`; on `main` the
+  `body` of `surf.net.ResponseReceived` and the `body` of `surf.navigation.NavigationCommitted`)
+  is written as the text `<n> bytes`, which reaches the log
   quoted by `surf-answer`'s quoting function like every other event field (D26); an event it does not map is
   written with `SystemEvent::name()` (generated), the mark `unmapped` and no field. The mapping
   test (case 17) holds a list of the variants it covers; each story that maps an event adds it.
@@ -112,10 +116,11 @@ The decisions of `docs/plan/agent-plan-revision-1.md` (D17) and `docs/plan/agent
      the numbers across sessions increase with none used twice;
   5. `look` adds no entry;
   6. a command refused for a wrong token adds no entry;
-  7. `go` to a page of 5,000 bytes: the `surf.net.ResponseReceived` entry has `body` as
-     `5000 bytes` and no byte of the page;
-  8. `go` to a page of 6 MiB: the session answers and stays `open`, and its entry has `body` as
-     `6291456 bytes`;
+  7. `go` to a page of 5,000 bytes: the `surf.net.ResponseReceived` entry and the
+     `surf.navigation.NavigationCommitted` entry each have `body` as `5000 bytes`, and no entry
+     holds a byte of the page;
+  8. `go` to a page of 6 MiB: the session answers and stays `open`, and both entries have `body`
+     as `6291456 bytes`;
   9. the entry bound per session set to 10, after 25 entries: 10 kept, the first kept is
      per-session number 16, dropped 15;
   10. the log alone, with entries of exactly 1,000 bytes and the byte bound per session set to
@@ -137,7 +142,11 @@ The decisions of `docs/plan/agent-plan-revision-1.md` (D17) and `docs/plan/agent
   17. every `SystemEvent` variant on `main` when this story starts, `url` of
       `surf.net.ResponseReceived` and of `surf.navigation.NavigationCommitted`
       (`agent-redirect-spec`) among the fields, maps to an event entry with all its fields, none
-      `unmapped`.
+      `unmapped`;
+  18. `byte_fields_are_lengths`: the mapping test lists the fields of type `Bytes` of the variants
+      it covers, exactly `surf.net.ResponseReceived.body` and
+      `surf.navigation.NavigationCommitted.body` on `main`, and each maps to `<n> bytes` for a body
+      of 3 bytes, never to the bytes; a story that adds a `Bytes` field adds it to the list.
 
 Surfaces written: `crates/session/`, `crates/surfd/`.
 
@@ -149,7 +158,7 @@ Surfaces written: `crates/session/`, `crates/surfd/`.
 
 ## Acceptance
 
-`cargo test -p surf-session -p surfd` passes with the 17 numbered cases, each a test named after
+`cargo test -p surf-session -p surfd` passes with the 18 numbered cases, each a test named after
 its case (case 3 named `token_in_no_entry`), case 1 comparing the event names with
 `System::published()` of the in-process core, case 8 leaving the session `open`, and case 11
 reporting the log of A dropped and 6 entries kept for B.

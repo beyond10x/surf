@@ -8,7 +8,7 @@ summary: BOM, prescan and default decide the encoding; UTF-8, UTF-16 and windows
 relations:
 - decomposes: epic:html-parser
 - depends_on: story:html-conformance-gate
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 4}
@@ -16,10 +16,10 @@ transitions:
 ## Context
 
 A response body reaches the `document` component as bytes (`surf.document.ParseDocument`,
-input `body`). The parser reads characters. The HTML Standard's input byte stream section
-(determining the character encoding: the byte order mark, the transport layer, the prescan of
-`meta`, the default) and the Encoding Standard's decoders turn one into the other. Named from
-memory, to be confirmed by this story. The preprocessing of the decoded stream (newlines,
+input `body`). The parser reads characters. The HTML Standard's 13.2.3 "The input byte stream"
+(the encoding sniffing algorithm: the byte order mark, the transport layer, the prescan of
+`meta` with its "get an XML encoding" step, the default) and the Encoding Standard's decoders
+turn one into the other (the snapshots `docs/design/html-parser.md` names). The preprocessing of the decoded stream (newlines,
 parse errors for surrogates, noncharacters and controls) is the tokenizer's input and belongs to
 story `html-tokenizer-markup`, so the two stories write different files and can run at once.
 
@@ -35,14 +35,18 @@ those tagged `encoding` in the note's `html-inventory` block.
 
 - `crates/html/src/encoding.rs`: the label table (every label to its encoding name, from the
   standard's table, kept as data with its source named), the decoders listed above with the
-  standard's error handling (U+FFFD replacement), BOM sniffing, the prescan algorithm, and the
-  result: the decoded text, the encoding used, its confidence, and the name not honoured if any.
+  standard's error handling (U+FFFD replacement), BOM sniffing, the prescan algorithm over the
+  first 1,024 bytes with its "get an XML encoding" step, and the result: the decoded text, the
+  encoding used, its confidence (tentative or certain), and the name not honoured if any. Also
+  the entry that `html-tree-body` calls to change the encoding: decode the same bytes again with
+  a given encoding and the confidence certain.
 - Tests in `crates/html/tests/encoding.rs`: `utf8_truncated_sequence_is_replaced`,
   `utf8_overlong_form_is_replaced`, `utf8_encoded_surrogate_is_replaced`,
   `utf16le_unpaired_surrogate_is_replaced`, `utf16be_unpaired_surrogate_is_replaced`,
   `windows_1252_maps_0x80_to_0x9f_as_the_standard_table`, `replacement_decodes_to_one_u_fffd`,
   `bom_wins_over_meta`, `unsupported_encoding_is_decoded_as_windows_1252_and_named`,
-  `every_label_of_the_source_table_is_known`.
+  `prescan_reads_the_encoding_of_an_xml_declaration`,
+  `every_one_of_the_228_labels_names_one_of_the_40_encodings`.
 - `crates/html-conformance/expected/encoding.txt`: the counts raised. The mark of the section is
   whatever the gate's rule gives; this story does not set it in advance.
 
@@ -52,13 +56,15 @@ Writes: `crates/html/src/encoding.rs`, `crates/html/tests/encoding.rs`,
 ## Acceptance
 
 `slot task html-conformance HTML_BASE=<this story's base commit>` exits 0 printing `tag encoding
-n/n/n` with n the `encoding` count of `html-inventory`, and the encoding section printed either
-`complete n/n` or `incomplete` with a reason that is not a failing case, and `cargo test -p
-surf-html` passes the ten tests of `tests/encoding.rs` named in Change.
+75/82/82`, the seven cases not passing being `encoding/tests1.dat` cases 48 to 54 and no other,
+that is, `cargo run -p surf-html-conformance -- --list-failing encoding` printing exactly the
+seven lines `html5lib-tests/encoding/tests1.dat 48` to `html5lib-tests/encoding/tests1.dat 54`, and `cargo test -p surf-html` passes the
+eleven tests of `tests/encoding.rs` named in Change.
 
 ## Out of scope
 
 Decoders for the other encodings of the Encoding Standard; carrying `charset` through
 `surf.net` (a change to another component, reported, not drafted here); changing the encoding
-after parsing began. Scripts: the encoding tests under `scripted/` need `document.write`; they
+after parsing began (13.2.3.4, story `html-tree-body`, with the seven cases it brings).
+Scripts: the encoding tests under `scripted/` need `document.write`; they
 are tagged `not-run`.

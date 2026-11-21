@@ -9,7 +9,7 @@ relations:
 - decomposes: epic:html-parser
 - depends_on: story:html-tree-tables
 - depends_on: story:html-actionable-elements
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 5}
@@ -21,8 +21,8 @@ mode with a stack of template insertion modes decides how the tokens inside it a
 (tree construction: in template, and the `template` rules of in head; from memory, to be
 confirmed by this story). The data writes template contents as a `content` line in the tree
 format, which the harness already writes (story `html-conformance-harness`). Cases tagged
-`template` by `docs/design/html-parser.md` (item 8) are this story's; from memory `template.dat`
-is among them. Whether declarative shadow roots (the `shadowrootmode` attribute) are taken on
+`template` by `docs/design/html-parser.md` (item 8) are this story's; by the inventory `template.dat`
+holds 121 of them. Whether declarative shadow roots (the `shadowrootmode` attribute) are taken on
 is item 3 of the note: proposed, not taken on, and their cases tagged `not-run`.
 
 The test of `crates/page` that reads template parsing is here, where the parsing is
@@ -51,8 +51,8 @@ Writes: `crates/html/src/tree.rs`, `crates/html/src/tree_builder.rs`,
 ## Acceptance
 
 `slot task html-conformance HTML_BASE=<this story's base commit>` exits 0 printing `tag body
-n/n/n`, `tag formatting m/m/m`, `tag tables t/t/t` and `tag template p/p/p` with the counts of
-`html-inventory`, and `cargo test -p surf-html -p surf-page` passes, with
+476/476/476`, `tag formatting 22/22/22`, `tag tables 39/39/39` and `tag template 123/123/123` (the counts of
+`html-inventory`), and `cargo test -p surf-html -p surf-page` passes, with
 `template_contents_are_not_listed` among the tests run.
 
 ## Out of scope

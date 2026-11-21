@@ -13,7 +13,7 @@ relations:
 - depends_on: story:html-document-port
 - depends_on: story:html-accessible-name
 - depends_on: story:agent-session-events
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 6}
@@ -77,6 +77,10 @@ and `html-tree-template` add test files there and touch neither.
   `surf_html::NOT_YET_PARSED` joined by `,`; a golden file holds the placeholder line
   `note parser: {NOT_YET_PARSED}`, which the test replaces before comparing, or no such line when
   the constant is empty; no test names a literal list (decision D31).
+- The `did` and `path` lines of `follow`, as `docs/agent-answer.md` and `crates/answer` write
+  them: `did follow "<handle>"` and `<n> follow "<handle>"`, the handle a quoted field. The
+  reasons `unknown-handle`, `hidden` and `unresolved` go into the reason table of
+  `docs/agent-answer.md` with exit status 1, into `RefusalReason` and into a test.
 - `cli/surf-agent.yaml` and `crates/agent`: `follow <handle>`, together, so the drift test holds.
 - The counted cases, in `crates/page/tests/base_url.rs` and `crates/session/tests/`, against a
   server the test starts:

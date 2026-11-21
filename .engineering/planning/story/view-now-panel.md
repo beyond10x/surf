@@ -9,7 +9,7 @@ relations:
 - decomposes: epic:live-view
 - depends_on: story:view-detail-panel
 - depends_on: story:agent-follow-links
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:15Z", actor: "human:timo", revision: 4}
@@ -40,9 +40,11 @@ link and come out of `surf_answer::parse` as exact values (D26).
 
 ## Change
 
-- `docs/view-stream.md`: the `answer` entry gains the title and the `now` elements (handle, kind,
-  visibility `vis`, `hid` or `?`, label, target or unresolved target) and the note that visibility
-  is the `hidden` attribute only; one example each.
+- `docs/view-stream.md`: the `answer` entry gains the member `now` after `path`, as that document
+  reserves it (no member removed or renamed): the elements, each with handle, kind, visibility
+  `vis`, `hid` or `?`, label, and target or unresolved target, and the note that visibility is the
+  `hidden` attribute only; the page line's `title`, a member already, holds the title instead of
+  `null`; one example each, in the document's JSON rules.
 - `crates/view/src/model.rs`, `json.rs`: the element; `crates/view/tests/golden/` and
   `crates/view/tests/json.rs`: case 1 below.
 - `crates/surfd/src/view.rs`: the JSON of the title and of the `now` block that

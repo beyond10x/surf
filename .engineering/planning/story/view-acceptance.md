@@ -8,7 +8,7 @@ summary: Seven tests named after the epic's acceptance sentences, three over HTT
 relations:
 - decomposes: epic:live-view
 - depends_on: story:view-now-panel
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 4}
@@ -28,6 +28,13 @@ stories test their own parts; this one runs the epic's sentence as one scenario 
 fixture of `story:view-first-page`, with the panels of `story:view-now-panel`. It needs links
 and titles, so `story:agent-follow-links` (through `story:view-now-panel`).
 
+The page tests run in `task view-test` of `story:view-first-page`, with the tooling item 4 of
+`docs/design/live-view.md` decides: `@playwright/test` 1.65.0 with Chromium's headless shell,
+`npm ci --prefer-offline --no-audit --no-fund`, and no `slot` inside the task (a `slot` inside a
+task takes a second job in the pool). The page opens the stream from `newest` of `/api/sessions`
+and loads `/api/sessions` again after each reconnect (`docs/view-stream.md`, "The stream"); the
+answers the HTTP tests read are the ones that document gives.
+
 ## Change
 
 - `crates/view-fixture/pages/acceptance/`: a page with three links and a title holding
@@ -35,9 +42,11 @@ and titles, so `story:agent-follow-links` (through `story:view-now-panel`).
 - `crates/view-fixture/tests/acceptance.rs` (the HTTP part, over `std::net::TcpStream`, against
   the fixture started by the test; it uses the binaries `task build` leaves in the target
   directory, which `check` builds before `test`):
-  1. `api_sessions_lists_both_with_token_and_401_without`;
-  2. `request_with_another_host_is_refused`;
-  3. `events_deliver_a_go_in_order`: the stream opened, a `go` issued: the stream delivers, in
+  1. `api_sessions_lists_both_with_token_and_401_without`: with the token, `sessions` holds both;
+     without it, 401 with `WWW-Authenticate: Bearer` and `{"error":"unauthorized"}`;
+  2. `request_with_another_host_is_refused`: 403 with `{"error":"host"}`;
+  3. `events_deliver_a_go_in_order`: the stream opened without `Last-Event-ID` (live after the
+     newest number), a `go` issued: the stream delivers, in
      the order of decision D19 of `docs/plan/agent-plan-revision-2.md`, the `go`'s action entry,
      its events in the order `/api/sessions/<id>` lists them afterwards between that action entry
      and its answer entry, and the answer entry; each `id:` larger than the one before (D23).

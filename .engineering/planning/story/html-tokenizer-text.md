@@ -8,7 +8,7 @@ summary: The text states and the appropriate end tag check; every tokenizer case
 relations:
 - decomposes: epic:html-parser
 - depends_on: story:html-tokenizer-markup
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 4}
@@ -37,7 +37,7 @@ Writes: `crates/html/src/tokenizer.rs`, `crates/html/src/tokenizer/`,
 ## Acceptance
 
 `slot task html-conformance HTML_BASE=<this story's base commit>` exits 0 printing `tag markup
-n/n/n` and `tag text m/m/m`, with n and m the `markup` and `text` counts of `html-inventory`,
+1979/1979/1979` and `tag text 328/328/328` (the `markup` and `text` counts of `html-inventory`),
 tokens and parse error codes both compared.
 
 ## Out of scope
