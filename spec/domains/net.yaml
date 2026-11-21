@@ -1,0 +1,244 @@
+domain: surf.net
+
+summary: Fetching the resource an address names.
+
+naming:
+  wire: net
+  display: Network
+
+types:
+  # The caller chooses the identity, so it can match the answer to what it asked for.
+  - name: surf.net.RequestId
+    kind: newtype
+    of: Uuid
+
+  - name: surf.net.Status
+    kind: newtype
+    of: Integer
+    naming:
+      summary: The status code of a response, such as 200 or 404.
+
+  - name: surf.net.MediaType
+    kind: newtype
+    of: String
+    naming:
+      summary: >-
+        What a response body is: the type and subtype of its Content-Type header in lower case,
+        without parameters, such as text/html.
+
+  - name: surf.net.FailureReason
+    kind: enum
+    variants:
+      - name: Unreachable
+        summary: No connection could be made, or it ended before a response was complete.
+      - name: UnsupportedScheme
+        summary: The address has a scheme this slice does not fetch.
+      - name: MalformedResponse
+        summary: Bytes arrived that are not an HTTP response.
+    naming:
+      summary: Why a request ended without a response.
+
+# http is the only scheme fetched. Every other scheme ends the request with UnsupportedScheme.
+# UNMAPPED: redirects, request methods and bodies, headers, cookies, caching and TLS. This slice
+# fetches one address once and says nothing about how.
+entities:
+  - name: surf.net.Request
+    naming:
+      summary: One fetch of one address, from the asking to the answer.
+    identity:
+      name: request_id
+      type: surf.net.RequestId
+    fields:
+      - name: url
+        type: surf.url.Url
+    lifecycle:
+      initial: Pending
+      states:
+        - name: Pending
+          summary: Sent, and nothing has come back.
+        - name: Responded
+          summary: A response arrived, whatever its status.
+        - name: Failed
+          summary: It ended without a response.
+      terminal: [Responded, Failed]
+      transitions:
+        - name: respond
+          from: [Pending]
+          to: Responded
+        - name: fail
+          from: [Pending]
+          to: Failed
+
+errors:
+  - name: surf.net.RequestNotFound
+    summary: No request has this identity.
+    fields:
+      - name: request_id
+        type: surf.net.RequestId
+
+  - name: surf.net.RequestStateConflict
+    summary: The request already ended, so nothing moved.
+    fields:
+      - name: state
+        type: surf.net.Request.State
+
+commands:
+  # Fetching takes time, so it is three commands: one asks, and one of the other two reports how
+  # it ended. The asker gets no answer from `Fetch` beyond the request being Pending.
+  - name: surf.net.Fetch
+    naming:
+      wire: fetch
+      display: Fetch
+      summary: Start fetching the resource at an address.
+    input:
+      - name: request_id
+        type: surf.net.RequestId
+      - name: url
+        type: surf.url.Url
+        example: "https://example.org/"
+    outcomes:
+      - name: started
+        creates: surf.net.Request
+        instance: request_id
+        sets:
+          url: input.url
+        emits:
+          - surf.net.RequestStarted
+        payload:
+          surf.net.RequestStarted:
+            request_id: input.request_id
+            url: input.url
+        summary: The request is Pending.
+
+  # The next two commands are the component's own steps: its transport issues them when the
+  # network answers or gives up. No actor is granted them.
+  # UNMAPPED: declaring them system-issued (`system: true` on an actor) makes a conformance suite
+  # await them where it now sends them, and that needs a network the suite controls.
+  - name: surf.net.DeliverResponse
+    naming:
+      wire: deliver-response
+      display: Deliver a response
+      summary: Record the response to a request and publish it.
+    input:
+      - name: request_id
+        type: surf.net.RequestId
+      - name: status
+        type: surf.net.Status
+        example: 200
+      - name: media_type
+        type: surf.net.MediaType
+      - name: body
+        type: Bytes
+    outcomes:
+      - name: no-such-request
+        unknown_instance: true
+        error: surf.net.RequestNotFound
+        payload:
+          surf.net.RequestNotFound:
+            request_id: input.request_id
+
+      # Any response is an answer, a 404 included: only a request that got none has failed.
+      - name: responded
+        moves: surf.net.Request.respond
+        instance: request_id
+        emits:
+          - surf.net.ResponseReceived
+        payload:
+          surf.net.ResponseReceived:
+            request_id: input.request_id
+            url: {subject: url}
+            status: input.status
+            media_type: input.media_type
+            body: input.body
+        summary: The request is Responded.
+
+      - name: wrong-state
+        wrong_state: true
+        error: surf.net.RequestStateConflict
+        payload:
+          surf.net.RequestStateConflict:
+            state: {subject: state}
+        summary: The request had already ended.
+
+  - name: surf.net.FailRequest
+    naming:
+      wire: fail-request
+      display: Fail a request
+      summary: Record that a request ended without a response and publish that.
+    input:
+      - name: request_id
+        type: surf.net.RequestId
+      - name: reason
+        type: surf.net.FailureReason
+    outcomes:
+      - name: no-such-request
+        unknown_instance: true
+        error: surf.net.RequestNotFound
+        payload:
+          surf.net.RequestNotFound:
+            request_id: input.request_id
+
+      - name: failed
+        moves: surf.net.Request.fail
+        instance: request_id
+        emits:
+          - surf.net.FetchFailed
+        payload:
+          surf.net.FetchFailed:
+            request_id: input.request_id
+            url: {subject: url}
+            reason: input.reason
+        summary: The request is Failed.
+
+      - name: wrong-state
+        wrong_state: true
+        error: surf.net.RequestStateConflict
+        payload:
+          surf.net.RequestStateConflict:
+            state: {subject: state}
+        summary: The request had already ended.
+
+events:
+  - name: surf.net.RequestStarted
+    fields:
+      - name: request_id
+        type: surf.net.RequestId
+      - name: url
+        type: surf.url.Url
+
+  - name: surf.net.ResponseReceived
+    fields:
+      - name: request_id
+        type: surf.net.RequestId
+      - name: url
+        type: surf.url.Url
+      - name: status
+        type: surf.net.Status
+      - name: media_type
+        type: surf.net.MediaType
+      - name: body
+        type: Bytes
+
+  - name: surf.net.FetchFailed
+    fields:
+      - name: request_id
+        type: surf.net.RequestId
+      - name: url
+        type: surf.url.Url
+      - name: reason
+        type: surf.net.FailureReason
+
+views:
+  - name: surf.net.Requests
+    source: surf.net.Request
+    consistency: read_your_writes
+    fields:
+      - name: request_id
+        type: surf.net.RequestId
+      - name: url
+        type: surf.url.Url
+      - name: state
+        type: surf.net.Request.State
+    naming:
+      wire: requests
+      display: Requests

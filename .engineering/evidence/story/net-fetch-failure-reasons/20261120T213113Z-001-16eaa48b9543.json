@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-20T21:31:13Z",
+  "actor": "human:timo",
+  "artifact": "story:net-fetch-failure-reasons",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "slot task check",
+    "reference": "merge ee4c775 on wave/1-fetch-failure-reasons: exit 0; surf v1, 8 file(s), 2 scenario(s), valid; 50 scenario(s) (2 authored), 10 refusal(s); 50 passed, 0 failed, 0 error, 0 unsupported"
+  }
+}

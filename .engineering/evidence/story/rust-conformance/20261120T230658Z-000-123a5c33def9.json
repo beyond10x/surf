@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-20T23:06:58Z",
+  "actor": "human:timo",
+  "artifact": "story:rust-conformance",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "slot task conform-rust; git diff --quiet -- Cargo.lock",
+    "reference": "unit tree at 4fa980c, run by the coordinator: exit 0; 50 scenarios: 50 passed, 0 failed, 0 error, 0 unsupported; planted-defect test ok with 21 of 50 failed over the broken storage; root Cargo.lock unchanged; the task does not exist on the base ecd9ed8; verdict VERIFIED"
+  }
+}

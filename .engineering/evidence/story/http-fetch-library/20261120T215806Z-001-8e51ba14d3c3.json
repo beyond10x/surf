@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-20T21:58:06Z",
+  "actor": "human:timo",
+  "artifact": "story:http-fetch-library",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "slot task check",
+    "reference": "commit aa52c47 on wave/3-fetch-and-ports (both units merged, lock file regenerated): exit 0; five steps, none skipped: valid; 50 scenario(s), 10 refusal(s); 50 passed; generated/rust matches spec/; cargo build Finished; 21 test suites: 48 passed, 0 failed, 0 ignored"
+  }
+}

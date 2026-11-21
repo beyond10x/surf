@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T01:25:57Z",
+  "actor": "human:timo",
+  "artifact": "story:html-decisions",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "docs/design/html-parser.md read against the acceptance by the coordinator, unit commit d9cb16f",
+    "reference": "9 numbered sections; blocks html-inventory and html-sections; 81 data files, 9107 cases, tag lines sum 9107 (the unit's check script); tree-construction data read from web-platform-tests; verdict VERIFIED"
+  }
+}

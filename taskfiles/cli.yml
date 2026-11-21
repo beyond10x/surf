@@ -1,0 +1,29 @@
+version: '3'
+
+set: [pipefail]
+
+tasks:
+  cli:
+    desc: Check cli/surf-agent.yaml against spec/ and write what ess reads from it into .out/cli/.
+    summary: |
+      Check cli/surf-agent.yaml against spec/ and write what ess reads from it into .out/cli/.
+
+      Step 1 runs ess specify cli: the ess-cli/2 document must name only types spec/ declares, in
+      shapes the binding admits. It prints "cli/surf-agent.yaml — valid CLI presentation
+      binding", and fails with ess's refusal otherwise. The log is .out/cli-specify.log.
+
+      Step 2 runs ess generate cli into a fresh .out/cli/. Of what it writes, binding.json (the
+      resolved binding) and help.txt are what the client's parser is held to. The package beside
+      them needs third-party crates and is never built. The log is .out/cli-generate.log.
+
+      It runs from the repository root, alone (task --taskfile taskfiles/cli.yml cli) and
+      included from the root Taskfile.yml alike.
+    dir: '{{.TASKFILE_DIR}}/..'
+    cmds:
+      - mkdir -p .out
+      - ess --strict-requires specify cli --path spec --binding cli/surf-agent.yaml > .out/cli-specify.log 2>&1 || { cat .out/cli-specify.log; exit 1; }
+      - tail -n 1 .out/cli-specify.log
+      - rm -rf .out/cli
+      - ess --strict-requires generate cli --path spec --binding cli/surf-agent.yaml --out .out/cli > .out/cli-generate.log 2>&1 || { cat .out/cli-generate.log; exit 1; }
+      - 'test -f .out/cli/binding.json && test -f .out/cli/help.txt || { cat .out/cli-generate.log; echo ".out/cli: binding.json or help.txt not written"; exit 1; }'
+      - tail -n 1 .out/cli-generate.log

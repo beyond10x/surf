@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-20T22:18:28Z",
+  "actor": "human:timo",
+  "artifact": "story:headless-cli",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "slot task check",
+    "reference": "merge 8867e2a on wave/4-headless-cli: exit 0; five steps, none skipped: valid; 50 scenario(s), 10 refusal(s); 50 passed; generated/rust matches spec/; cargo build Finished; 26 test suites: 60 passed, 0 failed, 0 ignored"
+  }
+}

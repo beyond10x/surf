@@ -1,0 +1,5 @@
+surf 1 session 7f3a closed
+path 3 of 4
+  2 go "http://example.org/"
+  3 go "http://example.org/login"
+  4 close

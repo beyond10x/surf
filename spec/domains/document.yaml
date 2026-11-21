@@ -1,0 +1,78 @@
+domain: surf.document
+
+summary: Turning the bytes of a response into a document.
+
+naming:
+  wire: document
+  display: Document
+
+types:
+  - name: surf.document.DocumentId
+    kind: newtype
+    of: Uuid
+
+entities:
+  # UNMAPPED: the tree of nodes. A document here is its identity and its address; elements, text
+  # and attributes have no typed home yet, and neither have parse errors or the character encoding.
+  - name: surf.document.Document
+    naming:
+      summary: A parsed HTML document.
+    identity:
+      name: document_id
+      type: surf.document.DocumentId
+    fields:
+      - name: url
+        type: surf.url.Url
+    lifecycle:
+      initial: Parsed
+      states: [Parsed]
+      terminal: [Parsed]
+
+commands:
+  # One outcome: an HTML parser makes a document of any bytes, so nothing is refused here.
+  # Whether a body is HTML at all is decided before the command, by the binding that invokes it.
+  - name: surf.document.ParseDocument
+    naming:
+      wire: parse-document
+      display: Parse a document
+      summary: Parse an HTML response body into a document.
+    input:
+      - name: url
+        type: surf.url.Url
+        example: "https://example.org/"
+      - name: body
+        type: Bytes
+    outcomes:
+      - name: parsed
+        creates: surf.document.Document
+        instance: document_id
+        sets:
+          url: input.url
+        emits:
+          - surf.document.DocumentParsed
+        payload:
+          surf.document.DocumentParsed:
+            document_id: {generated: true}
+            url: input.url
+        summary: The document exists.
+
+events:
+  - name: surf.document.DocumentParsed
+    fields:
+      - name: document_id
+        type: surf.document.DocumentId
+      - name: url
+        type: surf.url.Url
+
+views:
+  - name: surf.document.Documents
+    source: surf.document.Document
+    consistency: read_your_writes
+    fields:
+      - name: document_id
+        type: surf.document.DocumentId
+      - name: url
+        type: surf.url.Url
+    naming:
+      wire: documents
+      display: Documents

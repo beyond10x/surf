@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T01:25:57Z",
+  "actor": "human:timo",
+  "artifact": "story:agent-url-parser",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "slot task check on wave/a1-foundations at c4ae09e",
+    "reference": "exit 0: 51 scenarios passed on both runners, 59 test suites, 201 passed, 0 failed"
+  }
+}

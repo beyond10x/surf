@@ -1,0 +1,18 @@
+[package]
+name = "surf-conformance"
+description = "Runs the synthesized ESS conformance suite against the Rust surf system, in process."
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+resolver = "3"
+
+[dependencies]
+surf = { path = "../crates/surf" }
+surf-ports = { path = "../crates/ports" }
+surf-types = { path = "../generated/rust/crates/surf-types" }
+surf-system = { path = "../generated/rust/crates/surf-system" }
+ess-conformance = { git = "https://github.com/beyond10x/ess", tag = "0.96.0" }
+ess-primitives = { git = "https://github.com/beyond10x/ess", tag = "0.96.0" }
+ess-domain = { git = "https://github.com/beyond10x/ess", tag = "0.96.0" }

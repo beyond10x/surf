@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T01:25:57Z",
+  "actor": "human:timo",
+  "artifact": "story:view-decisions",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "docs/design/live-view.md and docs/view-stream.md read against the acceptance by the coordinator, unit commit 4a54d19",
+    "reference": "10 numbered items; 6 requests, 3 entry kinds, 3 stream events (the unit's counts); only the two documents written; verdict VERIFIED"
+  }
+}

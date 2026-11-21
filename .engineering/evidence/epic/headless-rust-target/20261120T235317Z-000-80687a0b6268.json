@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-20T23:53:17Z",
+  "actor": "human:timo",
+  "artifact": "epic:headless-rust-target",
+  "kind": "epic",
+  "revision": 3,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "slot task check",
+    "reference": "merge a3ffda4 on wave/review-2, after both adversary passes: exit 0; valid; 51 scenario(s) (3 authored), 10 refusal(s); interpreter 51 passed; Rust system 51 passed, 0 failed, 0 error, 0 unsupported; the two runs of one suite digest; generated/rust matches spec/; Cargo.lock 10 package(s), none from outside; 43 test suites: 138 passed, 0 failed, 0 ignored"
+  }
+}

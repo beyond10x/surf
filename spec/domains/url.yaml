@@ -1,0 +1,19 @@
+domain: surf.url
+
+summary: The address of a resource, as every other domain carries it.
+
+naming:
+  wire: url
+  display: URL
+
+types:
+  # One type for an address in every domain, so an address crosses a component boundary without a
+  # conversion. It holds the serialized form; nothing here says yet which strings are addresses.
+  # UNMAPPED: parsing and serializing (the WHATWG URL Standard) have no command yet, so a `Url`
+  # is checked by nobody. Open question: is URL parsing a component of its own or a library every
+  # component links?
+  - name: surf.url.Url
+    kind: newtype
+    of: String
+    naming:
+      summary: An absolute URL in its serialized form.

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-20T21:42:55Z",
+  "actor": "human:timo",
+  "artifact": "story:generated-rust-workspace",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "slot task check",
+    "reference": "merge 209f5ff on wave/2-generated-workspace: exit 0; five steps, none skipped: valid; 50 scenario(s), 10 refusal(s); 50 passed, 0 failed; generated/rust matches spec/ (27 artifact(s) and .ess-output); cargo build Finished; 14 test suites, 0 tests"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-20T21:31:13Z",
+  "actor": "human:timo",
+  "artifact": "story:net-fetch-failure-reasons",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "ess specify inspect --path spec surf.net.FailureReason",
+    "reference": "baseline wave/1 at 6e11dcd: 1 variant, no variant summary; treatment impl/net-fetch-failure-reasons at cb18a34: 3 variants, 3 summaries; verdict VERIFIED"
+  }
+}

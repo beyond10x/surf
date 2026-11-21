@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-20T21:58:06Z",
+  "actor": "human:timo",
+  "artifact": "story:http-fetch-library",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "RUSTFLAGS=\"-D warnings\" cargo test -p surf-fetch; cargo tree -p surf-fetch",
+    "reference": "unit tree at 2652165: exit 0, 12 + 24 passed, a test for each of cases 01 to 14, cargo tree prints surf-fetch alone; baseline wave/3 at f86ef25 has no such package; verdict VERIFIED"
+  }
+}

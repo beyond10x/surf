@@ -1,0 +1,15 @@
+{
+  "at": "2026-11-21T01:27:07Z",
+  "actor": "human:timo",
+  "artifact": "epic:live-view",
+  "kind": "epic",
+  "revision": 5,
+  "change": {
+    "change": "redaction",
+    "literal_sha256": "30d48b632681e0b5450004169eb8e2b437f6964bc0a1df0cddaa7538c2ee9b8a",
+    "literal_chars": 6,
+    "replacement": "The operator, ",
+    "count": 1,
+    "reason": "The repository becomes public; the operator is not named in it."
+  }
+}

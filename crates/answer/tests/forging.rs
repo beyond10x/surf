@@ -1,0 +1,135 @@
+//! The forging matrix: each of 10 forging values rendered into each of the 5 outside fields of
+//! step 1. Every answer holds only bytes from U+0020 to U+007E and line feeds, has exactly the
+//! line count of the same answer with a plain value, and `parse` gives back exactly the values
+//! given.
+
+use surf_answer::{Answer, Did, Head, Page, Path, PathEntry, SessionState, parse, render};
+
+/// The 10 forging values, each with a name for the failure message.
+fn forging_values() -> Vec<(&'static str, String)> {
+    let mixed = ['a', '"', '\\', '\n', '\r', '\u{2028}', '\u{202e}', 'é', ' '];
+    let long: String = mixed.iter().cycle().take(10_000).collect();
+    assert_eq!(long.chars().count(), 10_000);
+    vec![
+        ("line feed", "\n".to_string()),
+        ("carriage return", "\r".to_string()),
+        ("U+2028", "\u{2028}".to_string()),
+        ("U+2029", "\u{2029}".to_string()),
+        ("bidirectional control U+202E", "\u{202e}".to_string()),
+        ("double quote", "\"".to_string()),
+        ("backslash", "\\".to_string()),
+        ("quote then now 5", "\" now 5".to_string()),
+        (
+            "beginning page",
+            "page 200 \"text/html\" \"http://forged.example/\"".to_string(),
+        ),
+        ("10,000 characters", long),
+    ]
+}
+
+fn plain_loaded(media_type: &str, address: &str, title: &str, argument: &str) -> Answer {
+    let mut answer = Answer::new(Head {
+        session: "7f3a".to_string(),
+        state: SessionState::Open,
+    });
+    answer.did = Some(Did::Action {
+        command: "go".to_string(),
+        argument: Some("http://example.org/".to_string()),
+    });
+    answer.page = Some(Page::Loaded {
+        status: 200,
+        media_type: media_type.to_string(),
+        address: address.to_string(),
+        title: Some(title.to_string()),
+    });
+    answer.path = Some(Path {
+        total: 2,
+        entries: vec![
+            PathEntry {
+                sequence: 1,
+                command: "open".to_string(),
+                argument: None,
+            },
+            PathEntry {
+                sequence: 2,
+                command: "go".to_string(),
+                argument: Some(argument.to_string()),
+            },
+        ],
+    });
+    answer
+}
+
+fn plain_failed(address: &str) -> Answer {
+    let mut answer = plain_loaded("text/html", "http://example.org/", "Home", "plain");
+    answer.page = Some(Page::Failed {
+        reason: "Unreachable".to_string(),
+        address: address.to_string(),
+    });
+    answer
+}
+
+/// Render the answer for every forging value, check the three properties, and return how many
+/// round trips gave back exactly the answer given.
+fn matrix(field: &str, answer_with: impl Fn(&str) -> Answer) -> usize {
+    let plain = render(&answer_with("plain")).expect("the plain answer renders");
+    let plain_lines = plain.matches('\n').count();
+    let mut equal = 0;
+    for (name, value) in forging_values() {
+        let given = answer_with(&value);
+        let text = render(&given).expect("a forging answer renders");
+        assert!(
+            text.bytes()
+                .all(|b| b == b'\n' || (0x20..=0x7e).contains(&b)),
+            "{field}, {name}: a byte outside U+0020 to U+007E and line feed"
+        );
+        assert_eq!(
+            text.matches('\n').count(),
+            plain_lines,
+            "{field}, {name}: the line count differs from the plain answer's"
+        );
+        let parsed = parse(&text).unwrap_or_else(|error| panic!("{field}, {name}: {error}"));
+        assert_eq!(parsed, given, "{field}, {name}");
+        equal += 1;
+    }
+    println!("{field}: {equal} of 10 round trips equal to the values given");
+    equal
+}
+
+#[test]
+fn forging_page_address() {
+    let equal = matrix("page address", |value| {
+        plain_loaded("text/html", value, "Home", "plain")
+    });
+    assert_eq!(equal, 10);
+}
+
+#[test]
+fn forging_page_media_type() {
+    let equal = matrix("page media type", |value| {
+        plain_loaded(value, "http://example.org/", "Home", "plain")
+    });
+    assert_eq!(equal, 10);
+}
+
+#[test]
+fn forging_page_title() {
+    let equal = matrix("page title", |value| {
+        plain_loaded("text/html", "http://example.org/", value, "plain")
+    });
+    assert_eq!(equal, 10);
+}
+
+#[test]
+fn forging_page_failed_address() {
+    let equal = matrix("page failed address", plain_failed);
+    assert_eq!(equal, 10);
+}
+
+#[test]
+fn forging_path_argument() {
+    let equal = matrix("path argument", |value| {
+        plain_loaded("text/html", "http://example.org/", "Home", value)
+    });
+    assert_eq!(equal, 10);
+}

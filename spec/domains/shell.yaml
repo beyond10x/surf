@@ -1,0 +1,216 @@
+domain: surf.shell
+
+summary: The windows a user has open and the tabs inside them.
+
+naming:
+  wire: shell
+  display: Shell
+
+types:
+  - name: surf.shell.WindowId
+    kind: newtype
+    of: Uuid
+
+  - name: surf.shell.TabId
+    kind: newtype
+    of: Uuid
+
+entities:
+  - name: surf.shell.Window
+    naming:
+      summary: A top-level browser window; it owns the tabs opened in it.
+    identity:
+      name: window_id
+      type: surf.shell.WindowId
+    fields: []
+    relations:
+      - name: tabs
+        kind: owns
+        target: surf.shell.Tab
+        cardinality: many
+        via: window_id
+    # UNMAPPED: closing a window. It has to say what happens to the tabs the window owns and to
+    # the navigations running in them, and no command here says it yet.
+    lifecycle:
+      initial: Open
+      states: [Open]
+      terminal: [Open]
+
+  - name: surf.shell.Tab
+    naming:
+      summary: One browsing session inside a window.
+    identity:
+      name: tab_id
+      type: surf.shell.TabId
+    fields:
+      - name: window_id
+        type: surf.shell.WindowId
+    lifecycle:
+      initial: Open
+      states:
+        - Open
+        - name: Closed
+          summary: The user closed the tab; it accepts nothing more.
+      terminal: [Closed]
+      transitions:
+        - name: close
+          from: [Open]
+          to: Closed
+
+actors:
+  - name: surf.shell.User
+    may:
+      - surf.shell.OpenWindow
+      - surf.shell.OpenTab
+      - surf.shell.CloseTab
+    naming:
+      display: User
+      summary: The person at the keyboard.
+
+errors:
+  - name: surf.shell.WindowNotFound
+    summary: No window has this identity.
+    fields:
+      - name: window_id
+        type: surf.shell.WindowId
+
+  - name: surf.shell.TabNotFound
+    summary: No tab has this identity.
+    fields:
+      - name: tab_id
+        type: surf.shell.TabId
+
+  - name: surf.shell.TabStateConflict
+    summary: The tab is not in a state this command acts from, so nothing moved.
+    fields:
+      - name: state
+        type: surf.shell.Tab.State
+
+commands:
+  - name: surf.shell.OpenWindow
+    naming:
+      wire: open-window
+      display: Open a window
+      summary: Open a window that holds no tabs yet.
+    input: []
+    outcomes:
+      - name: opened
+        creates: surf.shell.Window
+        instance: window_id
+        emits:
+          - surf.shell.WindowOpened
+        payload:
+          surf.shell.WindowOpened:
+            window_id: {generated: true}
+        summary: The window exists and holds no tabs.
+
+  - name: surf.shell.OpenTab
+    naming:
+      wire: open-tab
+      display: Open a tab
+      summary: Open an empty tab in a window.
+    input:
+      - name: window_id
+        type: surf.shell.WindowId
+    outcomes:
+      - name: no-such-window
+        when_related:
+          via: input.window_id
+          exists: false
+        error: surf.shell.WindowNotFound
+        payload:
+          surf.shell.WindowNotFound:
+            window_id: input.window_id
+        summary: The window does not exist, so no tab was opened.
+
+      - name: opened
+        creates: surf.shell.Tab
+        instance: tab_id
+        sets:
+          window_id: input.window_id
+        emits:
+          - surf.shell.TabOpened
+        payload:
+          surf.shell.TabOpened:
+            tab_id: {generated: true}
+            window_id: input.window_id
+        summary: The tab is Open and shows nothing.
+
+  - name: surf.shell.CloseTab
+    naming:
+      wire: close-tab
+      display: Close a tab
+    input:
+      - name: tab_id
+        type: surf.shell.TabId
+    outcomes:
+      - name: no-such-tab
+        unknown_instance: true
+        error: surf.shell.TabNotFound
+        payload:
+          surf.shell.TabNotFound:
+            tab_id: input.tab_id
+
+      - name: closed
+        moves: surf.shell.Tab.close
+        instance: tab_id
+        emits:
+          - surf.shell.TabClosed
+        payload:
+          surf.shell.TabClosed:
+            tab_id: input.tab_id
+            window_id: {subject: window_id}
+        summary: The tab is Closed.
+
+      - name: wrong-state
+        wrong_state: true
+        error: surf.shell.TabStateConflict
+        payload:
+          surf.shell.TabStateConflict:
+            state: {subject: state}
+        summary: The tab was already Closed.
+
+events:
+  - name: surf.shell.WindowOpened
+    fields:
+      - name: window_id
+        type: surf.shell.WindowId
+
+  - name: surf.shell.TabOpened
+    fields:
+      - name: tab_id
+        type: surf.shell.TabId
+      - name: window_id
+        type: surf.shell.WindowId
+
+  - name: surf.shell.TabClosed
+    fields:
+      - name: tab_id
+        type: surf.shell.TabId
+      - name: window_id
+        type: surf.shell.WindowId
+
+views:
+  - name: surf.shell.Windows
+    source: surf.shell.Window
+    consistency: read_your_writes
+    fields:
+      - name: window_id
+        type: surf.shell.WindowId
+    naming:
+      wire: windows
+      display: Windows
+
+  - name: surf.shell.Tabs
+    source: surf.shell.Tab
+    consistency: read_your_writes
+    fields:
+      - name: tab_id
+        type: surf.shell.TabId
+      - name: window_id
+        type: surf.shell.WindowId
+      - name: state
+        type: surf.shell.Tab.State
+    naming:
+      wire: tabs
+      display: Tabs

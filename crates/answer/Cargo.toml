@@ -1,0 +1,10 @@
+[package]
+name = "surf-answer"
+description = "The agent answer of surf: typed blocks, one renderer, one quoting function, and the parser that reads the lines back."
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+
+[dev-dependencies]

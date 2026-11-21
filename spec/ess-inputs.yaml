@@ -1,0 +1,16 @@
+format: ess-inputs/2
+requires: ess 0.96.0
+specification:
+  - system.yaml
+  - components.yaml
+  - domains/url.yaml
+  - domains/shell.yaml
+  - domains/navigation.yaml
+  - domains/net.yaml
+  - domains/document.yaml
+  - domains/render.yaml
+  - domains/agent.yaml
+scenarios:
+  - scenarios/page-load-commits-and-parses.yaml
+  - scenarios/page-load-fails-without-response.yaml
+  - scenarios/two-of-each-entity.yaml

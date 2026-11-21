@@ -1,0 +1,17 @@
+urltestdata.json and LICENSE.md are copied unchanged from web-platform-tests.
+
+repository: https://github.com/web-platform-tests/wpt
+commit: 065d99ab62bf0b6ca04907f423625801c350edb2
+commit date: 2026-11-12T00:02:44Z
+fetched: 2026-11-21
+urltestdata.json: https://raw.githubusercontent.com/web-platform-tests/wpt/065d99ab62bf0b6ca04907f423625801c350edb2/url/resources/urltestdata.json
+urltestdata.json sha256: f11f7dc444cc9dcb01fd5c1de13720cdc55e579d0f0412e760c081403e3c4684
+LICENSE.md: https://raw.githubusercontent.com/web-platform-tests/wpt/065d99ab62bf0b6ca04907f423625801c350edb2/LICENSE.md
+licence: the 3-Clause BSD License, copyright web-platform-tests contributors
+commit choice: the latest commit that changed url/resources/urltestdata.json on the day it was fetched
+
+The number of test cases in urltestdata.json, counted as its objects with an "input" member
+when it was vendored. tests/urltestdata.rs reads this line and fails when the file holds another
+number.
+
+cases: 904

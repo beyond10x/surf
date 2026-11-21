@@ -1,0 +1,163 @@
+# Software decomposition. Every component holds its own state and reads no other component's
+# rows. The bindings below are the only coupling between them. Types cross the boundaries
+# unconverted: a component names another domain's type where it carries that domain's value.
+
+# UNMAPPED: the isolation boundary. Every component is `reached_by: in_process`, which says its
+# callers share its process. The goal is the strongest isolation available (a process, a sandbox
+# or a micro VM per component, or per site inside one), and nothing here says which component
+# runs in which, what crosses the boundary, or which component may reach the network or disk.
+components:
+  - component: shell
+    summary: The windows and tabs the user sees and acts on.
+    owns:
+      domains:
+        - surf.shell
+    accepts:
+      commands:
+        - surf.shell.OpenWindow
+        - surf.shell.OpenTab
+        - surf.shell.CloseTab
+    publishes:
+      events:
+        - surf.shell.WindowOpened
+        - surf.shell.TabOpened
+        - surf.shell.TabClosed
+    reached_by: in_process
+
+  - component: navigator
+    summary: Decides what each tab loads and tracks every load to its end.
+    owns:
+      domains:
+        - surf.navigation
+    accepts:
+      commands:
+        - surf.navigation.Navigate
+        - surf.navigation.CommitNavigation
+        - surf.navigation.FailNavigation
+        - surf.navigation.CancelNavigation
+    publishes:
+      events:
+        - surf.navigation.NavigationStarted
+        - surf.navigation.NavigationCommitted
+        - surf.navigation.NavigationFailed
+        - surf.navigation.NavigationCancelled
+    reached_by: in_process
+
+  - component: net
+    summary: Fetches resources; the only component that talks to the network.
+    owns:
+      domains:
+        - surf.net
+        - surf.url
+        # `surf.agent` declares types only: those the command line `cli/surf-agent.yaml` names.
+        # It is held here until the `agent` component has commands (`story:agent-session-spec`):
+        # a component that accepts nothing gets a generated port whose behaviours field nothing
+        # reads, which does not build with warnings denied (ess 0.96.0, measured 2026-11-21).
+        - surf.agent
+    accepts:
+      commands:
+        - surf.net.Fetch
+        - surf.net.DeliverResponse
+        - surf.net.FailRequest
+    publishes:
+      events:
+        - surf.net.RequestStarted
+        - surf.net.ResponseReceived
+        - surf.net.FetchFailed
+    reached_by: in_process
+
+  - component: document
+    summary: Parses response bodies into documents.
+    owns:
+      domains:
+        - surf.document
+    accepts:
+      commands:
+        - surf.document.ParseDocument
+    publishes:
+      events:
+        - surf.document.DocumentParsed
+    reached_by: in_process
+
+  - component: renderer
+    summary: Styles, lays out and paints a document into a frame.
+    owns:
+      domains:
+        - surf.render
+    accepts:
+      commands:
+        - surf.render.PaintFrame
+    publishes:
+      events:
+        - surf.render.FramePainted
+    reached_by: in_process
+
+# The page load, as four reactions. Every binding is one attempt inside one process
+# (`at_most_once`), and each says what is lost when its command does not run.
+bindings:
+  - id: fetch-on-navigation-started
+    summary: A started navigation fetches its address.
+    when:
+      event: surf.navigation.NavigationStarted
+    invoke:
+      command: surf.net.Fetch
+    mapping:
+      request_id: event.navigation_id
+      url: event.url
+    delivery: at_most_once
+    # Fetch refuses nothing. If it does not run at all, the navigation stays Started until the
+    # user cancels it.
+    on_failure: drop
+
+  - id: commit-on-response
+    summary: A response commits the navigation that asked for it.
+    when:
+      event: surf.net.ResponseReceived
+    invoke:
+      command: surf.navigation.CommitNavigation
+    mapping:
+      navigation_id: event.request_id
+      status: event.status
+      media_type: event.media_type
+      body: event.body
+    delivery: at_most_once
+    # Dropped on purpose: a response for a navigation that was cancelled, or for a request no
+    # navigation issued, changes nothing.
+    on_failure: drop
+
+  - id: fail-on-fetch-failed
+    summary: A fetch without a response fails the navigation that asked for it.
+    when:
+      event: surf.net.FetchFailed
+    invoke:
+      command: surf.navigation.FailNavigation
+    mapping:
+      navigation_id: event.request_id
+    delivery: at_most_once
+    # Dropped on purpose, for the reasons `commit-on-response` gives.
+    on_failure: drop
+
+  - id: parse-on-navigation-committed
+    summary: A committed navigation's response is parsed into a document.
+    # Only HTML is parsed. A response of any other media type invokes nothing.
+    # UNMAPPED: what a tab shows for a response that is not HTML (an image, plain text, a
+    # download) and for a failed navigation (an error page).
+    when:
+      event: surf.navigation.NavigationCommitted
+      where: [event.media_type == "text/html"]
+    invoke:
+      command: surf.document.ParseDocument
+    mapping:
+      url: event.url
+      body: event.body
+    delivery: at_most_once
+    # ParseDocument refuses nothing. If it does not run at all, the tab shows no document.
+    on_failure: drop
+
+# UNMAPPED: nothing invokes `surf.render.PaintFrame` yet. A binding from
+# `surf.document.DocumentParsed` needs a viewport size, which no event carries: the size belongs
+# to the tab or its window, and neither declares one. The renderer also needs the document's
+# nodes, and a component reads no other component's rows, so how the tree reaches it is open.
+#
+# UNMAPPED: no component for script execution, storage (cookies, cache, history) or input
+# events. None is declared until its first command is.

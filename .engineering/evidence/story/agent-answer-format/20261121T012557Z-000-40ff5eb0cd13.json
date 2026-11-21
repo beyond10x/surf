@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T01:25:57Z",
+  "actor": "human:timo",
+  "artifact": "story:agent-answer-format",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "cargo test -p surf-answer, run by the coordinator in the unit tree at 83f6625",
+    "reference": "38 passed in 8 suites, 0 failed; forging 5 passed (50 of 50 round trips, the unit's line); cargo tree lists the crate alone; verdict VERIFIED"
+  }
+}

@@ -1,0 +1,10 @@
+[package]
+name = "surf-url"
+description = "The WHATWG URL parser surf resolves addresses with, without IDNA."
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+
+[dev-dependencies]

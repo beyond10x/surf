@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-21T01:25:57Z",
+  "actor": "human:timo",
+  "artifact": "story:runner-decisions",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "docs/design/scenario-runner.md read against the acceptance by the coordinator, unit commit 23f2069",
+    "reference": "13 sections Q1 to Q3 and D4 to D13, each with one Answer and its rejected alternatives; ESS-AUTHOR-001 and ess-scenario/7 measured again by the unit; verdict VERIFIED"
+  }
+}

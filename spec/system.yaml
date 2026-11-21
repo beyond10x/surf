@@ -1,0 +1,19 @@
+format: ess/37
+system: surf
+version: v1
+
+summary: >-
+  A web browser built from scratch as a set of components that share no state: each holds its own
+  rows, accepts commands and publishes events, and the bindings in `components.yaml` are the only
+  coupling between them. This first slice is the page load: a tab is opened, a navigation is
+  started, its address is fetched, and an HTML response is parsed into a document. Painting a
+  frame is specified and nothing invokes it yet.
+
+domains:
+  - surf.url
+  - surf.shell
+  - surf.navigation
+  - surf.net
+  - surf.document
+  - surf.render
+  - surf.agent

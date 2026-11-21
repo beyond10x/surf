@@ -1,0 +1,279 @@
+version: '3'
+
+set: [pipefail]
+
+includes:
+  cli:
+    taskfile: taskfiles/cli.yml
+    flatten: true
+    optional: true
+
+vars:
+  REFUSALS_MAX: 10
+  SYNTHESIZE: ess generate synthesize --strict-requires --path spec --target rust
+
+tasks:
+  validate:
+    desc: Validate the specification; a warning fails it.
+    cmds:
+      - mkdir -p .out
+      - ess --strict-requires specify validate --path spec > .out/validate.log 2>&1 || { cat .out/validate.log; exit 1; }
+      - if grep '^warning' .out/validate.log; then exit 1; fi
+      - tail -n 1 .out/validate.log
+
+  suite:
+    desc: Synthesize the conformance suite, with the authored scenarios, into .out/suite.json.
+    cmds:
+      - mkdir -p .out
+      - ess verify conform synthesize --path spec --scenarios spec --out .out/suite.json > .out/synthesize.log 2>&1 || { cat .out/synthesize.log; exit 1; }
+      - tail -n 1 .out/synthesize.log
+      - test "$(grep -c '^refused:' .out/synthesize.log)" -le {{.REFUSALS_MAX}}
+
+  conform:
+    desc: Run the suite against the interpreter built into ess.
+    deps: [suite]
+    cmds:
+      - ess verify conform run --path spec --suite .out/suite.json --target interpreted --report-format 2 --report-out .out/report.json > .out/conform.log 2>&1 || { grep -E '^  (failed|error)' .out/conform.log; tail -n 1 .out/conform.log; exit 1; }
+      - tail -n 1 .out/conform.log
+
+  conform-rust:
+    desc: Run the suite against the Rust system in process, and the planted-defect test beside it.
+    summary: |
+      Run the suite against the Rust system in process, and the planted-defect test beside it.
+
+      Both live in the crate conformance/ (surf-conformance), a Cargo workspace of its own with
+      its own Cargo.lock and target/: it is the one place third-party crates are allowed, the
+      ess-conformance runner from github.com/beyond10x/ess at tag 0.96.0 and what it brings. The
+      root workspace, and so task build and task test, do not reach it. cargo fetches the tag
+      when its cache does not hold it.
+
+      Step 1 runs the crate's tests with warnings denied, into .out/conform-rust-test.log. It
+      fails unless the planted-defect test ran and passed: the suite over a system whose
+      Navigation storage drops every put must report at least one failed scenario. It fails too
+      unless the two per-entity tests of tests/two_of_each_entity.rs ran and passed: for each
+      entity alone, a system that gives every instance one identity, and one whose view answers
+      its first row only, must each fail at least one scenario.
+
+      Step 2 runs .out/suite.json against the system the surf binary ships, each scenario over
+      fresh in-memory ports and a transport that never answers, because the suite ends each
+      request itself with DeliverResponse or FailRequest. The log is .out/conform-rust.log and
+      the ess-conformance-report/2 is .out/conform-rust.json. It fails when any scenario failed,
+      errored or was unsupported, and prints the runner's summary line.
+    deps: [suite]
+    env:
+      RUSTFLAGS: -D warnings
+    cmds:
+      - mkdir -p .out
+      - cargo test --locked --manifest-path conformance/Cargo.toml -- --nocapture > .out/conform-rust-test.log 2>&1 || { cat .out/conform-rust-test.log; exit 1; }
+      - grep -q '^test a_navigation_storage_that_drops_every_put_fails_at_least_one_scenario \.\.\. ok$' .out/conform-rust-test.log || { cat .out/conform-rust-test.log; echo "the planted-defect test did not run"; exit 1; }
+      - grep -q '^test one_identity_for_every_instance_of_an_entity_is_noticed_for_each_entity \.\.\. ok$' .out/conform-rust-test.log && grep -q '^test a_view_cut_to_its_first_row_is_noticed_for_each_entity \.\.\. ok$' .out/conform-rust-test.log || { cat .out/conform-rust-test.log; echo "the per-entity planted-defect tests did not run"; exit 1; }
+      - cargo run --locked --manifest-path conformance/Cargo.toml -- .out/suite.json .out/conform-rust.json > .out/conform-rust.log 2>&1 || { grep -E '^  (failed|error|unsupported) ' .out/conform-rust.log || cat .out/conform-rust.log; tail -n 1 .out/conform-rust.log; exit 1; }
+      - tail -n 1 .out/conform-rust.log
+
+  conform-totals:
+    desc: Fail when the Rust run and the interpreter's run are of different suites or totals.
+    summary: |
+      Fail when the Rust run and the interpreter's run are of different suites or totals.
+
+      Reads the two ess-conformance-report/2 files: .out/report.json, which task conform writes,
+      and .out/conform-rust.json, which task conform-rust writes. Each names the suite it ran by
+      its digest, the sha256 of the suite's bytes, and counts its scenarios in counts.total. It
+      prints both and fails when either report is missing or holds no digest or total, when the
+      digests differ, or when the totals differ. Synthesis writes the same bytes for the same
+      spec/, so the two runs of one task check carry one digest.
+
+      Each run fails on its own when a scenario did not pass; this catches a runner or a suite
+      change that drops scenarios on one side only. task check runs it after both.
+    silent: true
+    cmds:
+      - |
+        for report in .out/report.json .out/conform-rust.json; do
+          test -f "$report" || { echo "$report: missing; run task conform and task conform-rust first"; exit 1; }
+        done
+        interpreter=$(tr -d ' \n' < .out/report.json)
+        rust=$(tr -d ' \n' < .out/conform-rust.json)
+        interpreter_total=$(printf '%s\n' "$interpreter" | sed -n 's/.*"counts":{[^}]*"total":\([0-9][0-9]*\).*/\1/p')
+        rust_total=$(printf '%s\n' "$rust" | sed -n 's/.*"counts":{[^}]*"total":\([0-9][0-9]*\).*/\1/p')
+        interpreter_suite=$(printf '%s\n' "$interpreter" | sed -n 's/.*"suite":{"digest":"\([^"]*\)".*/\1/p')
+        rust_suite=$(printf '%s\n' "$rust" | sed -n 's/.*"suite":{"digest":"\([^"]*\)".*/\1/p')
+        if [ -n "$interpreter_total" ] && [ -n "$interpreter_suite" ] && [ "$interpreter_total" = "$rust_total" ] && [ "$interpreter_suite" = "$rust_suite" ]; then
+          echo "the interpreter and the Rust system ran $rust_total scenario(s) each, of suite $rust_suite"
+          exit 0
+        fi
+        echo "interpreter: ${interpreter_total:-no} scenario(s) of suite ${interpreter_suite:-unknown} (.out/report.json)"
+        echo "rust: ${rust_total:-no} scenario(s) of suite ${rust_suite:-unknown} (.out/conform-rust.json)"
+        echo "the two runs differ; each must run every scenario of the same suite"
+        exit 1
+
+  lock-check:
+    desc: Fail, naming each package, when the root Cargo.lock holds one from outside this repository.
+    summary: |
+      Fail, naming each package, when the root Cargo.lock holds one from outside this repository.
+
+      Nothing that ships uses a third-party crate (AGENTS.md, Goals), and the root Cargo.lock
+      proves it. cargo writes a source line for every package it takes from a registry or a git
+      repository, and none for a crate it reaches by path. Each package with a source line is
+      named as "Cargo.lock: <name> <version> from <source>". A missing Cargo.lock fails too.
+
+      conformance/ has a lock of its own, which this does not read: it is the one place a
+      third-party crate is allowed. A path dependency on a directory outside this repository has
+      no source line either, and is not caught here.
+    silent: true
+    cmds:
+      - |
+        test -f Cargo.lock || { echo "Cargo.lock: missing; the root workspace's lock is committed"; exit 1; }
+        awk '
+          /^\[\[package\]\]$/ { packages++; name = ""; version = "" }
+          /^name = / { name = $3; gsub(/"/, "", name) }
+          /^version = / { version = $3; gsub(/"/, "", version) }
+          /^source = / { source = $3; gsub(/"/, "", source); print "Cargo.lock: " name " " version " from " source; outside++ }
+          END {
+            if (outside) { print outside " package(s) from outside this repository; nothing that ships may use a third-party crate"; exit 1 }
+            print "Cargo.lock: " packages " package(s), none from outside this repository"
+          }
+        ' Cargo.lock
+
+  generate:
+    desc: Rewrite generated/rust from spec/ with ess, in place.
+    summary: |
+      Rewrite generated/rust from spec/ with ess, in place.
+
+      ess keeps the record of what it wrote in generated/rust/.ess-output/state.json, which is
+      committed. With it, ess regenerates a checkout or an older generation in place: it replaces
+      the files it recorded, removes the ones it no longer writes, and leaves a tree it would not
+      change byte for byte untouched, state.json included. Without generated/rust it writes a
+      fresh tree.
+
+      ess refuses, naming the file, when a file it recorded was edited by hand. Delete that file,
+      or restore it from git, and run this again.
+    cmds:
+      - mkdir -p .out
+      - '{{.SYNTHESIZE}} --out generated/rust > .out/generate.log 2>&1 || { cat .out/generate.log; exit 1; }'
+      - tail -n 1 .out/generate.log
+
+  generated-check:
+    desc: Fail, naming each path, when generated/rust is not what task generate writes.
+    summary: |
+      Fail, naming each path, when generated/rust is not what task generate writes.
+
+      Step 1 generates spec/ into .out/generated-check/fresh and compares every file ess writes
+      there, byte for byte, with generated/rust. The number of files compared must equal the
+      artifact count ess prints. A path ess writes that generated/rust lacks or holds with other
+      bytes fails, and so does any other file in generated/rust. Three paths are left out of step
+      1:
+      - .ess-output/, which holds only state.json, is ess's record and not an artifact. ess
+        mints a new anchor_id for every fresh output root (ess 0.96.0, measured 2026-11-20), so
+        a fresh generation never matches the committed record.
+      - target/ and Cargo.lock directly under generated/rust are written by cargo when it is run
+        inside generated/rust, not by ess. git ignores both.
+
+      Step 1 also compares the executable bits of every file in both trees, .ess-output/state.json
+      included: a file executable in one and not in the other fails as "generated/rust/<path>:
+      executable, and ess writes it not executable", or the reverse. Only the executable bits are
+      compared, because git records no other mode and the rest follows the umask.
+
+      Every entry under generated/rust that is neither a regular file nor a directory, such as a
+      symbolic link to a file or to a directory, fails step 1 as "generated/rust/<path>: not a
+      regular file", wherever it is: inside .ess-output, and named target or Cargo.lock, too.
+      Only the contents of a target directory are not looked at. generated/rust itself fails
+      when it is a symbolic link.
+
+      Step 2 covers state.json. It copies generated/rust without the two cargo paths into
+      .out/generated-check/in-place and regenerates there, as task generate would. ess refuses
+      when state.json cannot be read or does not record the bytes beside it, and the task then
+      names state.json. Afterwards .ess-output must be byte for byte the committed one.
+    silent: true
+    vars:
+      DIR: .out/generated-check
+    cmds:
+      - rm -rf {{.DIR}}
+      - mkdir -p {{.DIR}}
+      - '{{.SYNTHESIZE}} --out {{.DIR}}/fresh > {{.DIR}}/fresh.log 2>&1 || { cat {{.DIR}}/fresh.log; exit 1; }'
+      - |
+        export LC_ALL=C
+        (cd {{.DIR}}/fresh && find . -path ./.ess-output -prune -o -type f -print) | sed 's|^\./||' | sort > {{.DIR}}/fresh.list
+        reported=$(sed -n 's/^\([0-9][0-9]*\) artifact(s), written to .*/\1/p' {{.DIR}}/fresh.log)
+        found=$(wc -l < {{.DIR}}/fresh.list)
+        if [ "$found" -ne "${reported:-0}" ]; then
+          echo "ess reports ${reported:-no} artifact(s) and wrote $found file(s) besides .ess-output; the check would not cover what ess reports"
+          exit 1
+        fi
+        : > {{.DIR}}/drift.txt
+        if [ -L generated/rust ]; then
+          echo "generated/rust: a symbolic link, not a directory" >> {{.DIR}}/drift.txt
+        fi
+        (cd {{.DIR}}/fresh && find . -type f -print) | sed 's|^\./||' | sort > {{.DIR}}/fresh.all
+        (cd {{.DIR}}/fresh && find . -type f -perm /111 -print) | sed 's|^\./||' | sort > {{.DIR}}/fresh.executable
+        if [ -d generated/rust ]; then
+          (cd generated/rust && find . \( -path ./.ess-output -o -path ./target -o -path ./Cargo.lock \) -prune -o -type f -print) | sed 's|^\./||' | sort > {{.DIR}}/committed.list
+          (cd generated/rust && find . \( -path ./target -type d \) -prune -o ! -type f ! -type d -print) | sed 's|^\./||' | sort | sed 's|^|generated/rust/|; s|$|: not a regular file|' >> {{.DIR}}/drift.txt
+          (cd generated/rust && find . \( -path ./target -o -path ./Cargo.lock \) -prune -o -type f -print) | sed 's|^\./||' | sort > {{.DIR}}/committed.all
+          (cd generated/rust && find . \( -path ./target -o -path ./Cargo.lock \) -prune -o -type f -perm /111 -print) | sed 's|^\./||' | sort > {{.DIR}}/committed.executable
+        else
+          : > {{.DIR}}/committed.list
+          : > {{.DIR}}/committed.all
+          : > {{.DIR}}/committed.executable
+        fi
+        comm -23 {{.DIR}}/fresh.list {{.DIR}}/committed.list | sed 's|^|generated/rust/|; s|$|: missing|' >> {{.DIR}}/drift.txt
+        comm -13 {{.DIR}}/fresh.list {{.DIR}}/committed.list | sed 's|^|generated/rust/|; s|$|: not written by ess|' >> {{.DIR}}/drift.txt
+        comm -12 {{.DIR}}/fresh.list {{.DIR}}/committed.list | while read -r path; do
+          cmp -s "{{.DIR}}/fresh/$path" "generated/rust/$path" || echo "generated/rust/$path: differs from what ess generates"
+        done >> {{.DIR}}/drift.txt
+        comm -12 {{.DIR}}/fresh.all {{.DIR}}/committed.all > {{.DIR}}/both.all
+        comm -13 {{.DIR}}/fresh.executable {{.DIR}}/committed.executable | comm -12 - {{.DIR}}/both.all | sed 's|^|generated/rust/|; s|$|: executable, and ess writes it not executable|' >> {{.DIR}}/drift.txt
+        comm -23 {{.DIR}}/fresh.executable {{.DIR}}/committed.executable | comm -12 - {{.DIR}}/both.all | sed 's|^|generated/rust/|; s|$|: not executable, and ess writes it executable|' >> {{.DIR}}/drift.txt
+        if [ -s {{.DIR}}/drift.txt ]; then
+          cat {{.DIR}}/drift.txt
+          echo "$(wc -l < {{.DIR}}/drift.txt) path(s) differ from spec/; run task generate"
+          exit 1
+        fi
+      - |
+        test -f generated/rust/.ess-output/state.json || { echo "generated/rust/.ess-output/state.json: missing; restore it from git, or remove generated/rust and run task generate"; exit 1; }
+        mkdir -p {{.DIR}}/in-place
+        { echo .ess-output; cat {{.DIR}}/committed.list; } > {{.DIR}}/copy.list
+        tar -cf - -C generated/rust -T {{.DIR}}/copy.list | tar -xf - -C {{.DIR}}/in-place
+        {{.SYNTHESIZE}} --out {{.DIR}}/in-place > {{.DIR}}/in-place.log 2>&1 || {
+          cat {{.DIR}}/in-place.log
+          echo "generated/rust/.ess-output/state.json: ess refuses to regenerate over this record; restore it from git, or remove generated/rust and run task generate"
+          exit 1
+        }
+        diff -rq generated/rust/.ess-output {{.DIR}}/in-place/.ess-output || { echo "generated/rust/.ess-output: regeneration rewrites it; run task generate"; exit 1; }
+      - echo "generated/rust matches spec/ ($(wc -l < {{.DIR}}/fresh.list) artifact(s) and .ess-output)"
+
+  build:
+    desc: Build the root workspace, hand-written and generated crates, with warnings denied.
+    env:
+      RUSTFLAGS: -D warnings
+    cmds:
+      - mkdir -p .out
+      - cargo build --workspace --all-targets --locked > .out/build.log 2>&1 || { cat .out/build.log; exit 1; }
+      - tail -n 1 .out/build.log
+
+  test:
+    desc: Test the root workspace, hand-written and generated crates, with warnings denied.
+    deps: [cli]
+    env:
+      RUSTFLAGS: -D warnings
+    cmds:
+      - mkdir -p .out
+      - cargo test --workspace --locked > .out/test.log 2>&1 || { cat .out/test.log; exit 1; }
+      - |
+        awk '/^test result:/ { n++; p += $4; f += $6; i += $8 } END { printf "%d test suites: %d passed, %d failed, %d ignored\n", n, p, f, i }' .out/test.log
+
+  open:
+    desc: List every open question the specification marks.
+    cmds:
+      - grep -rn 'UNMAPPED:' spec cli
+
+  check:
+    desc: Run the complete repository gate.
+    cmds:
+      - task: validate
+      - task: conform
+      - task: conform-rust
+      - task: conform-totals
+      - task: generated-check
+      - task: cli
+      - task: lock-check
+      - task: build
+      - task: test

@@ -1,0 +1,95 @@
+domain: surf.agent
+
+summary: >-
+  A browser session an AI agent drives from a command line: opened once, acted on with a token,
+  read back as text, closed. This slice holds only the types the command line
+  `cli/surf-agent.yaml` names; the session itself, its commands and its views come with the
+  session model. The `net` component holds this domain until the `agent` component has commands
+  (`story:agent-session-spec`).
+
+naming:
+  wire: agent
+  display: Agent
+
+# UNMAPPED: the session entity, its lifecycle, its commands and its views. The types below are
+# what `cli/surf-agent.yaml` takes and answers, so that `ess specify cli` can check it before the
+# session model exists. What would settle it: the session model (`story:agent-session-spec`).
+types:
+  - name: surf.agent.SessionId
+    kind: newtype
+    of: Uuid
+    naming:
+      summary: The identity of a session, drawn by `open`; not secret, it appears in listings.
+
+  # The token is a credential, not a name: whoever holds it drives the session, so it is distinct
+  # from `SessionId` and no view or event carries it. Its form is 32 bytes from the operating
+  # system's random source, written as 64 lower-case hexadecimal digits. It is not declared as an
+  # `alphabet:` or a length: the command-line binding refuses a constrained type ("invariants are
+  # explicit refusals", ess-cli/2), so the form is checked by the code that issues and reads it.
+  - name: surf.agent.SessionToken
+    kind: newtype
+    of: String
+    naming:
+      summary: The secret an agent presents to act on its session, 64 lower-case hexadecimal digits.
+
+  # The shapes the command-line binding reads and answers. An `ess-cli/2` callable names a declared
+  # struct as its input and a declared type as its result; a command's input, a command's response
+  # and a view's row are not types it can name. `session_id` is `String` in each, not `SessionId`:
+  # the binding refuses a `Uuid` underneath ("unsupported CLI primitive `Uuid`", ess 0.96.0), so
+  # the client parses the text into the identity and answers a malformed one as an invalid input.
+  - name: surf.agent.OpenCall
+    kind: struct
+    naming:
+      summary: The input of `open`, the address to load first if one is given.
+    fields:
+      - name: url
+        type: Optional<surf.url.Url>
+
+  - name: surf.agent.SessionCall
+    kind: struct
+    naming:
+      summary: Which session a call acts on, and the token that proves the caller holds it.
+    fields:
+      - name: session_id
+        type: String
+      - name: token
+        type: surf.agent.SessionToken
+
+  - name: surf.agent.GoCall
+    kind: struct
+    naming:
+      summary: The address to load into a session, and the token that proves the caller holds it.
+    fields:
+      - name: session_id
+        type: String
+      - name: token
+        type: surf.agent.SessionToken
+      - name: url
+        type: surf.url.Url
+
+  - name: surf.agent.OpenedSession
+    kind: struct
+    naming:
+      summary: The answer of `open`; the only answer that carries the token.
+    fields:
+      - name: session_id
+        type: String
+      - name: token
+        type: surf.agent.SessionToken
+
+  # `state` is text: the session's lifecycle state is declared with the session entity, which
+  # this slice does not have.
+  # UNMAPPED: `state` as `surf.agent.Session.State`. What would settle it: the session entity.
+  - name: surf.agent.SessionReadout
+    kind: struct
+    naming:
+      summary: The state of a session, as every call but `open` answers it.
+    fields:
+      - name: session_id
+        type: String
+      - name: state
+        type: String
+      - name: url
+        type: Optional<surf.url.Url>
+      - name: navigation_state
+        type: Optional<surf.navigation.Navigation.State>

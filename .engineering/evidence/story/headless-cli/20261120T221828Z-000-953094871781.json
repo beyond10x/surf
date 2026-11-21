@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-20T22:18:28Z",
+  "actor": "human:timo",
+  "artifact": "story:headless-cli",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "RUSTFLAGS=\"-D warnings\" cargo test -p surf; cargo tree -p surf --edges normal; target/debug/surf ftp://example.org/x",
+    "reference": "unit tree at dd32b9c: exit 0, 6 + 6 passed with a test for each of cases 1 to 7; cargo tree lists only paths inside the tree; the binary printed navigation, request and fetch-failed UnsupportedScheme rows and exited 1; no such package on the base ae794d1; verdict VERIFIED"
+  }
+}

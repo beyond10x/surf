@@ -1,0 +1,1196 @@
+//! Fetch one `http:` address over HTTP/1.1, with the Rust standard library only.
+//!
+//! [`fetch`] takes an address as text and a set of [`Limits`], sends one `GET` request with
+//! `Host` and `Connection: close`, and returns a [`Response`] (status code, media type, body
+//! bytes) or a [`Failure`] with one of three reasons: [`Failure::Unreachable`],
+//! [`Failure::UnsupportedScheme`] or [`Failure::MalformedResponse`].
+//!
+//! The wire format follows HTTP/1.1 (RFC 9112, message syntax; RFC 9110, semantics) for what
+//! this crate does. No section of either is claimed complete. Where a rule is followed, the
+//! comment beside the code names the section it was checked against.
+//!
+//! # Limits and how each is enforced
+//!
+//! The bytes come from an untrusted server. Every limit below ends the fetch with a [`Failure`];
+//! none of them is a hang or an unbounded allocation, and no input makes this crate panic.
+//!
+//! - **Connect timeout** ([`Limits::connect_timeout`], default 10 s): bounds name resolution
+//!   and connecting together, over every address the host resolves to. Each
+//!   [`std::net::TcpStream::connect_timeout`] gets the time that is left. A host that is not an
+//!   IP address is resolved by the operating system's resolver through
+//!   [`std::net::ToSocketAddrs`] on a thread of its own, waited for through a channel with
+//!   [`std::sync::mpsc::Receiver::recv_timeout`]. When the time runs out first, that thread is
+//!   abandoned, not stopped: it ends when the resolver returns, and its answer is dropped.
+//!   Running out is [`Failure::Unreachable`]. This limit has no test: no address and no name on
+//!   the local machine stalls a connect or a resolution reliably, and a test may not reach
+//!   outside the machine.
+//! - **Read timeout** ([`Limits::read_timeout`], default 30 s): bounds the whole exchange after
+//!   the connection is made, from sending the request to the last byte of the response. Each
+//!   write and each read on the socket is given the time that is left, through
+//!   [`std::net::TcpStream::set_write_timeout`] and [`std::net::TcpStream::set_read_timeout`].
+//!   Running out is [`Failure::Unreachable`], the same failure a server that sends nothing
+//!   gives.
+//! - **Header bytes** ([`Limits::max_header_bytes`], default 64 KiB): every byte of the status
+//!   line and the header field lines, line terminators and interim (1xx) responses included, is
+//!   counted against it, and a line is never read past what is left of it. Exceeding it is
+//!   [`Failure::MalformedResponse`].
+//! - **Body bytes** ([`Limits::max_body_bytes`], default 16 MiB): a `Content-Length` larger than
+//!   the limit fails before any body byte is read; a chunk whose size would take the body past
+//!   the limit fails before the chunk is read; a body read until the connection closes fails as
+//!   soon as it holds one byte more than the limit. Each is [`Failure::MalformedResponse`].
+//! - **Chunk-size line**: a chunk-size line, extensions included, longer than 1024 bytes is
+//!   [`Failure::MalformedResponse`]. Chunk sizes are parsed with checked arithmetic.
+//!
+//! So one fetch lasts at most the connect timeout plus the read timeout: 40 s at the defaults.
+//! Memory held at once is at most the header limit plus the body limit plus a few KiB (one read
+//! buffer of 8 KiB and one chunk-size line). The buffers grow by doubling, as a [`Vec`] does,
+//! but never past their limit: the body buffer's capacity stays within the body limit plus one
+//! read, and the buffer of bytes read and not yet consumed within the larger of the header limit
+//! and one read buffer, plus one read.
+//!
+//! A zero [`Duration`] for either timeout leaves no time and fails every fetch with
+//! [`Failure::Unreachable`]. A duration too large to add to the current [`Instant`] sets no
+//! deadline, and each read, write and connect waits that duration as the standard library
+//! allows.
+//!
+//! # What it does not do
+//!
+//! It is not a complete HTTP client. It does not do HTTPS or any scheme other than `http:`,
+//! redirects (a 3xx is returned as a response), methods other than `GET`, request bodies,
+//! persistent connections (every fetch opens and closes one connection), content codings (the
+//! body is returned as sent; no `Accept-Encoding` is sent, and no `Content-Encoding` is decoded),
+//! transfer codings other than `chunked`, trailers (the chunked body ends at its last chunk; the
+//! trailer section is not read), proxies, cookies, caching, or URL parsing beyond splitting an
+//! `http:` address into host, port and request target.
+//!
+//! # Addresses
+//!
+//! An address is `http://host[:port][/path][?query][#fragment]`, the scheme in any case. The
+//! port defaults to 80, the fragment is not sent, and an empty path is sent as `/`. An address
+//! that does not start with `http:` is [`Failure::UnsupportedScheme`] and no connection is
+//! attempted. An `http:` address this crate cannot use (no `//`, an empty host, a host in
+//! brackets that is not an IPv6 address, a bad port, user information, or a byte that is not
+//! printable ASCII) is [`Failure::Unreachable`], also without a connection: the specification
+//! has no reason for an address that is not one.
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
+
+use std::fmt;
+use std::io::{ErrorKind, Read, Write};
+use std::net::{IpAddr, Ipv6Addr, SocketAddr, TcpStream, ToSocketAddrs};
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::thread;
+use std::time::{Duration, Instant};
+
+/// The media type of a response without a usable `Content-Type`.
+const DEFAULT_MEDIA_TYPE: &str = "application/octet-stream";
+
+/// The longest chunk-size line, extensions and line terminator included.
+const MAX_CHUNK_LINE_BYTES: usize = 1024;
+
+/// The most bytes one read from the connection asks for.
+const READ_CHUNK_BYTES: usize = 8 * 1024;
+
+/// The bounds a fetch stays within. Every field is public so a caller, or a test, can shorten
+/// one and keep the [`Default`] of the others.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limits {
+    /// How long resolving the host and connecting to one of its addresses may take together.
+    /// Default 10 s.
+    pub connect_timeout: Duration,
+    /// How long sending the request and receiving the whole response may take together, once
+    /// the connection is made. Default 30 s.
+    pub read_timeout: Duration,
+    /// The most bytes the status line and header section may take, interim (1xx) responses
+    /// included. Default 64 KiB.
+    pub max_header_bytes: usize,
+    /// The most bytes the body may take after the chunked coding is removed. Default 16 MiB.
+    pub max_body_bytes: usize,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Limits {
+            connect_timeout: Duration::from_secs(10),
+            read_timeout: Duration::from_secs(30),
+            max_header_bytes: 64 * 1024,
+            max_body_bytes: 16 * 1024 * 1024,
+        }
+    }
+}
+
+/// A complete response, whatever its status.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Response {
+    /// The status code, from 100 to 599. Never a 1xx: interim responses are skipped.
+    pub status: u16,
+    /// The type and subtype of `Content-Type` in lower case without parameters, such as
+    /// `text/html`; `application/octet-stream` when the field is absent or not a media type.
+    pub media_type: String,
+    /// The body bytes, with the chunked coding removed and nothing else decoded.
+    pub body: Vec<u8>,
+}
+
+/// Why a fetch ended without a response. Each variant carries a human-readable detail.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Failure {
+    /// No connection could be made, or it ended before the response was complete: the address
+    /// is unusable, the host does not resolve, the connection is refused or times out, the
+    /// server sends nothing for longer than the read timeout, or the connection closes early.
+    Unreachable(String),
+    /// The address does not start with the `http:` scheme. No connection was attempted.
+    UnsupportedScheme(String),
+    /// Bytes arrived that are not an HTTP/1.1 response, or the header or body limit was
+    /// exceeded.
+    MalformedResponse(String),
+}
+
+impl Failure {
+    /// The human-readable detail the failure carries.
+    pub fn detail(&self) -> &str {
+        match self {
+            Failure::Unreachable(detail)
+            | Failure::UnsupportedScheme(detail)
+            | Failure::MalformedResponse(detail) => detail,
+        }
+    }
+}
+
+impl fmt::Display for Failure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let reason = match self {
+            Failure::Unreachable(_) => "unreachable",
+            Failure::UnsupportedScheme(_) => "unsupported scheme",
+            Failure::MalformedResponse(_) => "malformed response",
+        };
+        write!(f, "{reason}: {}", self.detail())
+    }
+}
+
+impl std::error::Error for Failure {}
+
+/// Fetch `address` with one `GET` request and return the response, or why there is none.
+///
+/// Blocks the calling thread for as long as the [`Limits`] allow; see the crate documentation
+/// for how each is enforced.
+pub fn fetch(address: &str, limits: &Limits) -> Result<Response, Failure> {
+    let target = Target::parse(address)?;
+    let stream = connect(&target, limits.connect_timeout)?;
+    let mut stream = Timed::new(stream, limits.read_timeout);
+    // Request target in origin-form and Host as the address's authority: RFC 9112 section
+    // 3.2.1 and RFC 9110 section 7.2.
+    let request = format!(
+        "GET {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+        target.request_target, target.authority
+    );
+    stream
+        .write_all(request.as_bytes())
+        .and_then(|()| stream.flush())
+        .map_err(|e| match e.kind() {
+            ErrorKind::WouldBlock | ErrorKind::TimedOut => unreachable(TIMED_OUT),
+            _ => unreachable(format!("sending the request failed: {e}")),
+        })?;
+    read_response(stream, limits)
+}
+
+/// The detail of a fetch whose read timeout ran out after the connection was made.
+const TIMED_OUT: &str = "the server did not complete the exchange within the read timeout";
+
+/// The time from now until `deadline`, or `fallback` when there is no deadline.
+fn time_left(deadline: Option<Instant>, fallback: Duration) -> Duration {
+    deadline.map_or(fallback, |deadline| {
+        deadline.saturating_duration_since(Instant::now())
+    })
+}
+
+/// A connection whose writes and reads share one deadline: each waits at most the time left.
+struct Timed {
+    stream: TcpStream,
+    deadline: Option<Instant>,
+    timeout: Duration,
+}
+
+impl Timed {
+    fn new(stream: TcpStream, timeout: Duration) -> Self {
+        Timed {
+            stream,
+            deadline: Instant::now().checked_add(timeout),
+            timeout,
+        }
+    }
+
+    /// The time left, or a `TimedOut` error when there is none.
+    fn left(&self) -> std::io::Result<Duration> {
+        let left = time_left(self.deadline, self.timeout);
+        if left.is_zero() {
+            Err(std::io::Error::from(ErrorKind::TimedOut))
+        } else {
+            Ok(left)
+        }
+    }
+}
+
+impl Read for Timed {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let left = self.left()?;
+        self.stream.set_read_timeout(Some(left))?;
+        self.stream.read(buf)
+    }
+}
+
+impl Write for Timed {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let left = self.left()?;
+        self.stream.set_write_timeout(Some(left))?;
+        self.stream.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.stream.flush()
+    }
+}
+
+fn unreachable(detail: impl Into<String>) -> Failure {
+    Failure::Unreachable(detail.into())
+}
+
+fn malformed(detail: impl Into<String>) -> Failure {
+    Failure::MalformedResponse(detail.into())
+}
+
+/// An `http:` address split into what the request needs.
+#[derive(Debug, PartialEq, Eq)]
+struct Target {
+    /// The host to resolve, without the brackets of an IPv6 literal.
+    host: String,
+    port: u16,
+    /// The authority as written in the address, sent as `Host`.
+    authority: String,
+    /// Path and query, never empty.
+    request_target: String,
+}
+
+impl Target {
+    fn parse(address: &str) -> Result<Target, Failure> {
+        let rest = match address.get(..5) {
+            Some(scheme) if scheme.eq_ignore_ascii_case("http:") => address.get(5..).unwrap_or(""),
+            _ => {
+                return Err(Failure::UnsupportedScheme(match address.split_once(':') {
+                    Some((scheme, _)) if scheme.len() <= 32 => {
+                        format!("the scheme {scheme:?} is not fetched; only http is")
+                    }
+                    _ => "the address does not start with the http: scheme".to_string(),
+                }))
+            }
+        };
+        if let Some(byte) = rest.bytes().find(|b| !(0x21..=0x7e).contains(b)) {
+            return Err(unreachable(format!(
+                "the address holds the byte 0x{byte:02x}, which is not printable ASCII"
+            )));
+        }
+        let Some(rest) = rest.strip_prefix("//") else {
+            return Err(unreachable(
+                "the address is not of the form http://host/path",
+            ));
+        };
+        let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+        let (authority, path_and_more) = rest.split_at_checked(authority_end).unwrap_or((rest, ""));
+        // User information is treated as an error: RFC 9110 section 4.2.4.
+        if authority.contains('@') {
+            return Err(unreachable(
+                "the address carries user information, which is refused",
+            ));
+        }
+        let (host, port) = if let Some(bracketed) = authority.strip_prefix('[') {
+            let Some((host, after)) = bracketed.split_once(']') else {
+                return Err(unreachable("the address has an unclosed [ in its host"));
+            };
+            // Only an IPv6 address stands in brackets here: RFC 3986 section 3.2.2 allows
+            // IPv6 or IPvFuture, and no IPvFuture form is used.
+            if host.parse::<Ipv6Addr>().is_err() {
+                return Err(unreachable(
+                    "the address has a host in brackets that is not an IPv6 address",
+                ));
+            }
+            match after {
+                "" => (host, None),
+                _ => match after.strip_prefix(':') {
+                    Some(port) => (host, Some(port)),
+                    None => return Err(unreachable("the address has text after its ] host")),
+                },
+            }
+        } else {
+            match authority.split_once(':') {
+                Some((host, port)) => (host, Some(port)),
+                None => (authority, None),
+            }
+        };
+        // An empty host is invalid: RFC 9110 section 4.2.1.
+        if host.is_empty() {
+            return Err(unreachable("the address has an empty host"));
+        }
+        // An empty or absent port is 80: RFC 9110 section 4.2.1.
+        let port = match port {
+            None | Some("") => 80,
+            Some(text) => match text.parse::<u16>() {
+                Ok(port) if port != 0 && text.bytes().all(|b| b.is_ascii_digit()) => port,
+                _ => return Err(unreachable(format!("the address has the port {text:?}"))),
+            },
+        };
+        let path_and_query = path_and_more.split('#').next().unwrap_or("");
+        let request_target = if path_and_query.starts_with('/') {
+            path_and_query.to_string()
+        } else {
+            // An empty path is sent as "/": RFC 9112 section 3.2.1.
+            format!("/{path_and_query}")
+        };
+        Ok(Target {
+            host: host.to_string(),
+            port,
+            authority: authority.to_string(),
+            request_target,
+        })
+    }
+}
+
+/// Resolve and connect, both within `timeout`.
+fn connect(target: &Target, timeout: Duration) -> Result<TcpStream, Failure> {
+    let deadline = Instant::now().checked_add(timeout);
+    let addresses = resolve(target, timeout)?;
+    let mut last_error = None;
+    for address in &addresses {
+        let left = time_left(deadline, timeout);
+        if left.is_zero() {
+            last_error = Some(format!(
+                "the connect timeout ran out before connecting to {address}"
+            ));
+            break;
+        }
+        match TcpStream::connect_timeout(address, left) {
+            Ok(stream) => return Ok(stream),
+            Err(e) => last_error = Some(format!("connecting to {address} failed: {e}")),
+        }
+    }
+    Err(unreachable(last_error.unwrap_or_else(|| {
+        format!("{} resolves to no address", target.host)
+    })))
+}
+
+/// The addresses of `target`'s host. An IP address is its own; a name is resolved on a thread of
+/// its own, waited for at most `timeout`. A resolution that takes longer is abandoned: its
+/// thread ends when the resolver returns, and its answer is dropped.
+fn resolve(target: &Target, timeout: Duration) -> Result<Vec<SocketAddr>, Failure> {
+    if let Ok(ip) = target.host.parse::<IpAddr>() {
+        return Ok(vec![SocketAddr::new(ip, target.port)]);
+    }
+    let (sender, receiver) = mpsc::channel();
+    let (host, port) = (target.host.clone(), target.port);
+    thread::Builder::new()
+        .name("surf-fetch-resolve".to_string())
+        .spawn(move || {
+            let addresses = (host.as_str(), port)
+                .to_socket_addrs()
+                .map(Iterator::collect::<Vec<SocketAddr>>);
+            // The receiver is gone when the fetch stopped waiting; the answer is not needed.
+            let _ = sender.send(addresses);
+        })
+        .map_err(|e| unreachable(format!("{} cannot be resolved: {e}", target.host)))?;
+    match receiver.recv_timeout(timeout) {
+        Ok(Ok(addresses)) => Ok(addresses),
+        Ok(Err(e)) => Err(unreachable(format!(
+            "{} does not resolve: {e}",
+            target.host
+        ))),
+        Err(RecvTimeoutError::Timeout) => Err(unreachable(format!(
+            "{} did not resolve within the connect timeout",
+            target.host
+        ))),
+        Err(RecvTimeoutError::Disconnected) => Err(unreachable(format!(
+            "resolving {} ended without an answer",
+            target.host
+        ))),
+    }
+}
+
+/// The outcome of reading one line.
+enum LineRead {
+    /// The line without its terminator, and the bytes it took, terminator included.
+    Line(Vec<u8>, usize),
+    /// No line terminator within the budget.
+    TooLong,
+    /// The connection ended before a line terminator.
+    Closed,
+}
+
+/// Make room in `buf` for `additional` more bytes. The capacity doubles, as a [`Vec`]'s does,
+/// but not past `ceiling`, unless the bytes themselves need more.
+fn reserve_within(buf: &mut Vec<u8>, additional: usize, ceiling: usize) {
+    let needed = buf.len().saturating_add(additional);
+    if needed <= buf.capacity() {
+        return;
+    }
+    let target = buf
+        .capacity()
+        .saturating_mul(2)
+        .max(READ_CHUNK_BYTES)
+        .min(ceiling)
+        .max(needed);
+    buf.reserve_exact(target - buf.len());
+}
+
+/// A connection with the bytes read from it and not yet consumed.
+struct Wire<R> {
+    inner: R,
+    buf: Vec<u8>,
+    start: usize,
+    /// The capacity `buf` doubles up to; past it, it grows by what a read needs only.
+    ceiling: usize,
+}
+
+impl<R: Read> Wire<R> {
+    fn new(inner: R, ceiling: usize) -> Self {
+        Wire {
+            inner,
+            buf: Vec::new(),
+            start: 0,
+            ceiling,
+        }
+    }
+
+    fn available(&self) -> &[u8] {
+        self.buf.get(self.start..).unwrap_or(&[])
+    }
+
+    fn consume(&mut self, n: usize) {
+        self.start = self.start.saturating_add(n).min(self.buf.len());
+    }
+
+    /// Read once from the connection, adding between 1 and `max` bytes (at most one read
+    /// buffer). Returns 0 when the connection has ended.
+    fn fill(&mut self, max: usize) -> Result<usize, Failure> {
+        if self.start > 0 {
+            self.buf.drain(..self.start);
+            self.start = 0;
+        }
+        let mut chunk = [0u8; READ_CHUNK_BYTES];
+        let want = max.clamp(1, READ_CHUNK_BYTES);
+        let window = chunk.get_mut(..want).unwrap_or(&mut []);
+        loop {
+            match self.inner.read(window) {
+                Ok(n) => {
+                    let got = window.get(..n).unwrap_or(&*window);
+                    reserve_within(&mut self.buf, got.len(), self.ceiling);
+                    self.buf.extend_from_slice(got);
+                    return Ok(got.len());
+                }
+                Err(e) if e.kind() == ErrorKind::Interrupted => continue,
+                Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                    return Err(unreachable(TIMED_OUT))
+                }
+                Err(e) => return Err(unreachable(format!("reading the response failed: {e}"))),
+            }
+        }
+    }
+
+    /// Read one line ended by LF, an optional CR before it removed, taking at most `budget`
+    /// bytes. A single LF is accepted as a line terminator: RFC 9112 section 2.2.
+    fn read_line(&mut self, budget: usize) -> Result<LineRead, Failure> {
+        let mut scanned = 0;
+        loop {
+            let available = self.available();
+            let window = available.len().min(budget);
+            let found = available
+                .get(scanned..window)
+                .and_then(|w| w.iter().position(|&b| b == b'\n'));
+            if let Some(offset) = found {
+                let end = scanned.saturating_add(offset);
+                let mut line = available.get(..end).unwrap_or(&[]).to_vec();
+                if line.last() == Some(&b'\r') {
+                    line.pop();
+                }
+                let used = end.saturating_add(1);
+                self.consume(used);
+                return Ok(LineRead::Line(line, used));
+            }
+            if available.len() >= budget {
+                return Ok(LineRead::TooLong);
+            }
+            let room = budget - available.len();
+            scanned = window;
+            if self.fill(room)? == 0 {
+                return Ok(LineRead::Closed);
+            }
+        }
+    }
+
+    /// Move exactly `n` bytes into `out`, growing it past `ceiling` only as far as the bytes
+    /// need.
+    fn read_exact_into(
+        &mut self,
+        out: &mut Vec<u8>,
+        n: usize,
+        ceiling: usize,
+        what: &str,
+    ) -> Result<(), Failure> {
+        let mut left = n;
+        while left > 0 {
+            if self.available().is_empty() && self.fill(left)? == 0 {
+                return Err(unreachable(format!(
+                    "the connection ended {left} bytes before the end of the {what}"
+                )));
+            }
+            let available = self.available();
+            let take = left.min(available.len());
+            reserve_within(out, take, ceiling);
+            out.extend_from_slice(available.get(..take).unwrap_or(&[]));
+            self.consume(take);
+            left -= take;
+        }
+        Ok(())
+    }
+}
+
+/// A status line and its header fields, names in lower case.
+struct Head {
+    minor_version: u8,
+    status: u16,
+    fields: Vec<(Vec<u8>, Vec<u8>)>,
+}
+
+impl Head {
+    fn values<'a>(&'a self, name: &'a [u8]) -> impl Iterator<Item = &'a [u8]> + 'a {
+        self.fields
+            .iter()
+            .filter(move |(n, _)| n.as_slice() == name)
+            .map(|(_, v)| v.as_slice())
+    }
+}
+
+fn read_response<R: Read>(inner: R, limits: &Limits) -> Result<Response, Failure> {
+    let mut wire = Wire::new(inner, limits.max_header_bytes.max(READ_CHUNK_BYTES));
+    let mut budget = limits.max_header_bytes;
+    let head = loop {
+        let head = read_head(&mut wire, &mut budget, limits.max_header_bytes)?;
+        match head.status {
+            // 101 switches to a protocol this crate never asked for.
+            101 => {
+                return Err(malformed(
+                    "101 Switching Protocols without an upgrade request",
+                ))
+            }
+            // Interim responses are parsed and ignored: RFC 9110 section 15.2.
+            100..=199 => continue,
+            _ => break head,
+        }
+    };
+    let body = read_body(&mut wire, &head, limits.max_body_bytes)?;
+    Ok(Response {
+        status: head.status,
+        media_type: media_type(&head),
+        body,
+    })
+}
+
+fn header_limit(max: usize) -> Failure {
+    malformed(format!("the header section is larger than {max} bytes"))
+}
+
+fn read_head<R: Read>(wire: &mut Wire<R>, budget: &mut usize, max: usize) -> Result<Head, Failure> {
+    expect_http_name(wire)?;
+    let (line, used) = match wire.read_line(*budget)? {
+        LineRead::Line(line, used) => (line, used),
+        LineRead::TooLong => return Err(header_limit(max)),
+        LineRead::Closed => return Err(unreachable("the connection ended inside the status line")),
+    };
+    *budget = budget.saturating_sub(used);
+    let (minor_version, status) = parse_status_line(&line)?;
+    let mut fields: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
+    loop {
+        let (line, used) = match wire.read_line(*budget)? {
+            LineRead::Line(line, used) => (line, used),
+            LineRead::TooLong => return Err(header_limit(max)),
+            LineRead::Closed => {
+                return Err(unreachable(
+                    "the connection ended inside the header section",
+                ))
+            }
+        };
+        *budget = budget.saturating_sub(used);
+        let Some(&first) = line.first() else {
+            break;
+        };
+        // A bare CR makes the element invalid: RFC 9112 section 2.2.
+        if line.contains(&b'\r') {
+            return Err(malformed("a header field line holds a bare CR"));
+        }
+        if first == b' ' || first == b'\t' {
+            // Obsolete line folding is replaced by SP: RFC 9112 section 5.2. Whitespace before
+            // the first field line is rejected: RFC 9112 section 2.2.
+            let Some((_, value)) = fields.last_mut() else {
+                return Err(malformed(
+                    "whitespace between the status line and the first field",
+                ));
+            };
+            value.push(b' ');
+            value.extend_from_slice(trim_ows(&line));
+            continue;
+        }
+        let Some(colon) = line.iter().position(|&b| b == b':') else {
+            return Err(malformed("a header field line has no colon"));
+        };
+        let (name, rest) = line.split_at(colon);
+        // Field names are tokens, so whitespace before the colon is invalid: RFC 9110 section
+        // 5.6.2 and RFC 9112 section 5.1.
+        if name.is_empty() || !name.iter().all(|&b| is_tchar(b)) {
+            return Err(malformed("a header field name is not a token"));
+        }
+        let value = trim_ows(rest.get(1..).unwrap_or(&[]));
+        fields.push((name.to_ascii_lowercase(), value.to_vec()));
+    }
+    Ok(Head {
+        minor_version,
+        status,
+        fields,
+    })
+}
+
+/// Fail as soon as the first bytes cannot begin `HTTP/`, so a server that speaks another
+/// protocol is told apart from one that is slow.
+fn expect_http_name<R: Read>(wire: &mut Wire<R>) -> Result<(), Failure> {
+    const NAME: &[u8] = b"HTTP/";
+    loop {
+        let available = wire.available();
+        let have = available.len().min(NAME.len());
+        if available.get(..have) != NAME.get(..have) {
+            return Err(malformed("the reply does not start with HTTP/"));
+        }
+        if have == NAME.len() {
+            return Ok(());
+        }
+        if wire.fill(NAME.len() - have)? == 0 {
+            return Err(unreachable(if have == 0 {
+                "the connection ended before any response"
+            } else {
+                "the connection ended inside the status line"
+            }));
+        }
+    }
+}
+
+/// Parse `HTTP/1.x SP 3DIGIT [SP reason-phrase]` into the minor version and the status code:
+/// RFC 9112 sections 2.3 and 4. A missing SP after the code is accepted.
+fn parse_status_line(line: &[u8]) -> Result<(u8, u16), Failure> {
+    if line.contains(&b'\r') {
+        return Err(malformed("the status line holds a bare CR"));
+    }
+    let (minor, digits) = match line {
+        [b'H', b'T', b'T', b'P', b'/', b'1', b'.', minor, b' ', a, b, c, rest @ ..]
+            if minor.is_ascii_digit()
+                && [a, b, c].iter().all(|d| d.is_ascii_digit())
+                && matches!(rest.first(), None | Some(b' ')) =>
+        {
+            (minor - b'0', [a - b'0', b - b'0', c - b'0'])
+        }
+        [b'H', b'T', b'T', b'P', b'/', major, b'.', minor, ..]
+            if major.is_ascii_digit() && minor.is_ascii_digit() && *major != b'1' =>
+        {
+            return Err(malformed("the response is not HTTP/1.x"));
+        }
+        _ => return Err(malformed("the status line is not HTTP/1.x SP 3DIGIT")),
+    };
+    let status = u16::from(digits[0]) * 100 + u16::from(digits[1]) * 10 + u16::from(digits[2]);
+    // Values outside 100..599 are invalid: RFC 9110 section 15.
+    if !(100..=599).contains(&status) {
+        return Err(malformed(format!(
+            "the status code {status} is outside 100..599"
+        )));
+    }
+    Ok((minor, status))
+}
+
+/// Read the body by the rules of RFC 9112 section 6.3, for the response to a `GET`.
+fn read_body<R: Read>(wire: &mut Wire<R>, head: &Head, max: usize) -> Result<Vec<u8>, Failure> {
+    // 204 and 304 never have a body (rule 1; 1xx was skipped and HEAD is never sent).
+    if head.status == 204 || head.status == 304 {
+        return Ok(Vec::new());
+    }
+    let mut transfer_codings = head
+        .values(b"transfer-encoding")
+        .flat_map(|v| v.split(|&b| b == b','))
+        .map(trim_ows)
+        .filter(|c| !c.is_empty())
+        .peekable();
+    if head.values(b"transfer-encoding").next().is_some() {
+        // An HTTP/1.0 message with Transfer-Encoding has faulty framing: RFC 9112 section 6.1.
+        if head.minor_version == 0 {
+            return Err(malformed("an HTTP/1.0 response carries Transfer-Encoding"));
+        }
+        // Transfer-Encoding overrides Content-Length (rule 3). Only chunked alone is decoded;
+        // any other coding would leave the body encoded, so it is refused (rule 4).
+        let only_chunked = transfer_codings
+            .next()
+            .is_some_and(|c| c.eq_ignore_ascii_case(b"chunked"))
+            && transfer_codings.peek().is_none();
+        if !only_chunked {
+            return Err(malformed("a transfer coding other than chunked alone"));
+        }
+        return read_chunked(wire, max);
+    }
+    if head.values(b"content-length").next().is_some() {
+        let length = content_length(head)?;
+        // Fail before reading: the limit is checked against the declared length.
+        if length > max as u64 {
+            return Err(body_limit(max));
+        }
+        let length = usize::try_from(length).map_err(|_| body_limit(max))?;
+        let mut body = Vec::with_capacity(length.min(READ_CHUNK_BYTES));
+        wire.read_exact_into(&mut body, length, length, "body")?;
+        // Bytes after the declared length are discarded: RFC 9112 section 6.3.
+        return Ok(body);
+    }
+    // No declared length: the body ends when the server closes the connection (rule 8). The
+    // body takes at most one byte more than the limit, which is enough to tell it is too long.
+    let ceiling = max.saturating_add(1);
+    let mut body = Vec::new();
+    loop {
+        let available = wire.available();
+        let taken = available.len().min(ceiling.saturating_sub(body.len()));
+        reserve_within(&mut body, taken, ceiling);
+        body.extend_from_slice(available.get(..taken).unwrap_or(&[]));
+        wire.consume(taken);
+        if body.len() > max {
+            return Err(body_limit(max));
+        }
+        if wire.fill(ceiling.saturating_sub(body.len()))? == 0 {
+            return Ok(body);
+        }
+    }
+}
+
+fn body_limit(max: usize) -> Failure {
+    malformed(format!("the body is larger than {max} bytes"))
+}
+
+/// The value of `Content-Length`: every field and every list member must be the same decimal
+/// number, else the framing is invalid (RFC 9112 section 6.3, rule 5). Overflow is invalid.
+fn content_length(head: &Head) -> Result<u64, Failure> {
+    let mut found: Option<u64> = None;
+    for member in head
+        .values(b"content-length")
+        .flat_map(|v| v.split(|&b| b == b','))
+        .map(trim_ows)
+        .filter(|m| !m.is_empty())
+    {
+        let value = parse_decimal(member)
+            .ok_or_else(|| malformed("Content-Length is not a decimal number of bytes"))?;
+        match found {
+            Some(previous) if previous != value => {
+                return Err(malformed("Content-Length has differing values"))
+            }
+            _ => found = Some(value),
+        }
+    }
+    found.ok_or_else(|| malformed("Content-Length is empty"))
+}
+
+fn parse_decimal(text: &[u8]) -> Option<u64> {
+    if text.is_empty() {
+        return None;
+    }
+    text.iter().try_fold(0u64, |acc, &b| {
+        let digit = b.is_ascii_digit().then(|| u64::from(b - b'0'))?;
+        acc.checked_mul(10)?.checked_add(digit)
+    })
+}
+
+/// Remove the chunked coding: RFC 9112 section 7.1. The body is complete at the zero-size
+/// chunk (RFC 9112 section 8); the trailer section after it is not read.
+fn read_chunked<R: Read>(wire: &mut Wire<R>, max: usize) -> Result<Vec<u8>, Failure> {
+    let mut body = Vec::new();
+    loop {
+        let line = match wire.read_line(MAX_CHUNK_LINE_BYTES)? {
+            LineRead::Line(line, _) => line,
+            LineRead::TooLong => {
+                return Err(malformed(format!(
+                    "a chunk-size line is longer than {MAX_CHUNK_LINE_BYTES} bytes"
+                )))
+            }
+            LineRead::Closed => {
+                return Err(unreachable("the connection ended inside the chunked body"))
+            }
+        };
+        let size = parse_chunk_size(&line)?;
+        if size == 0 {
+            return Ok(body);
+        }
+        let room = max.saturating_sub(body.len());
+        if size > room as u64 {
+            return Err(body_limit(max));
+        }
+        let size = usize::try_from(size).map_err(|_| body_limit(max))?;
+        wire.read_exact_into(&mut body, size, max, "chunk")?;
+        match wire.read_line(2)? {
+            LineRead::Line(line, _) if line.is_empty() => {}
+            LineRead::Line(..) | LineRead::TooLong => {
+                return Err(malformed("chunk data is not followed by CRLF"))
+            }
+            LineRead::Closed => {
+                return Err(unreachable("the connection ended inside the chunked body"))
+            }
+        }
+    }
+}
+
+/// Parse `chunk-size [chunk-ext]`; extensions are ignored (RFC 9112 section 7.1.1) and the
+/// size is parsed with checked arithmetic (RFC 9112 section 7.1).
+fn parse_chunk_size(line: &[u8]) -> Result<u64, Failure> {
+    if line.contains(&b'\r') {
+        return Err(malformed("a chunk-size line holds a bare CR"));
+    }
+    if line.first().is_some_and(|&b| b == b' ' || b == b'\t') {
+        return Err(malformed("a chunk-size line starts with whitespace"));
+    }
+    // Whitespace may stand between the size and a ";" (BWS in chunk-ext).
+    let size = trim_ows(line.split(|&b| b == b';').next().unwrap_or(&[]));
+    if size.is_empty() {
+        return Err(malformed("a chunk-size line has no size"));
+    }
+    size.iter()
+        .try_fold(0u64, |acc, &b| {
+            let digit = char::from(b).to_digit(16)?;
+            acc.checked_mul(16)?.checked_add(u64::from(digit))
+        })
+        .ok_or_else(|| malformed("a chunk size is not a hexadecimal number that fits 64 bits"))
+}
+
+/// The media type of `Content-Type` (RFC 9110 section 8.3.1): `type/subtype` in lower case,
+/// parameters dropped. The last `Content-Type` field is used. A missing field, or one that is
+/// not `token/token`, is `application/octet-stream` (RFC 9110 section 8.3).
+fn media_type(head: &Head) -> String {
+    let Some(value) = head.values(b"content-type").last() else {
+        return DEFAULT_MEDIA_TYPE.to_string();
+    };
+    let essence = trim_ows(value.split(|&b| b == b';').next().unwrap_or(&[]));
+    let mut parts = essence.splitn(2, |&b| b == b'/');
+    match (parts.next(), parts.next()) {
+        (Some(kind), Some(subtype)) if is_token(kind) && is_token(subtype) => {
+            let mut text = String::with_capacity(essence.len());
+            for &b in essence {
+                text.push(char::from(b.to_ascii_lowercase()));
+            }
+            text
+        }
+        _ => DEFAULT_MEDIA_TYPE.to_string(),
+    }
+}
+
+fn is_token(text: &[u8]) -> bool {
+    !text.is_empty() && text.iter().all(|&b| is_tchar(b))
+}
+
+/// `tchar`: RFC 9110 section 5.6.2.
+fn is_tchar(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b)
+}
+
+/// Remove leading and trailing SP and HTAB (OWS): RFC 9110 section 5.6.3.
+fn trim_ows(text: &[u8]) -> &[u8] {
+    let is_ows = |b: &u8| *b == b' ' || *b == b'\t';
+    let start = text.iter().position(|b| !is_ows(b)).unwrap_or(text.len());
+    let end = text
+        .iter()
+        .rposition(|b| !is_ows(b))
+        .map_or(start, |i| i + 1);
+    text.get(start..end).unwrap_or(&[])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Hands out its bytes `step` at a time, to show the result does not depend on how the
+    /// network splits them.
+    struct Trickle<'a> {
+        bytes: &'a [u8],
+        step: usize,
+    }
+
+    impl Read for Trickle<'_> {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            let n = self.step.min(buf.len()).min(self.bytes.len());
+            let (head, tail) = self.bytes.split_at(n);
+            buf[..n].copy_from_slice(head);
+            self.bytes = tail;
+            Ok(n)
+        }
+    }
+
+    fn small() -> Limits {
+        Limits {
+            max_header_bytes: 256,
+            max_body_bytes: 512,
+            ..Limits::default()
+        }
+    }
+
+    fn parse(bytes: &[u8], limits: &Limits) -> Result<Response, Failure> {
+        read_response(bytes, limits)
+    }
+
+    #[test]
+    fn target_splits_host_port_and_request_target() {
+        let t = Target::parse("http://Example.org:8080/a/b?c=d#e").expect("parses");
+        assert_eq!(t.host, "Example.org");
+        assert_eq!(t.port, 8080);
+        assert_eq!(t.authority, "Example.org:8080");
+        assert_eq!(t.request_target, "/a/b?c=d");
+        let t = Target::parse("http://[::1]?q").expect("parses");
+        assert_eq!((t.host.as_str(), t.port), ("::1", 80));
+        assert_eq!(t.authority, "[::1]");
+        assert_eq!(t.request_target, "/?q");
+        let t = Target::parse("http://h:").expect("parses");
+        assert_eq!(t.port, 80);
+    }
+
+    #[test]
+    fn target_refuses_what_it_cannot_use() {
+        for address in [
+            "http:h/x",
+            "http://",
+            "http://:80/",
+            "http://h:+80/",
+            "http://h:0/",
+            "http://[::1/",
+            "http://[::1]x/",
+            "http://u@h/",
+            "http://h/\u{e9}",
+        ] {
+            assert!(
+                matches!(Target::parse(address), Err(Failure::Unreachable(_))),
+                "{address:?}"
+            );
+        }
+        for address in ["", "htt", "https://h/", "\u{e9}ttp://h/", "mailto:a@b"] {
+            assert!(
+                matches!(Target::parse(address), Err(Failure::UnsupportedScheme(_))),
+                "{address:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn bare_lf_and_obs_fold_are_accepted() {
+        let result = parse(
+            b"HTTP/1.0 200 OK\nContent-Type: text/\n plain\nContent-Length: 2\n\nok",
+            &small(),
+        );
+        // The folded value "text/ plain" is not a media type, so the default applies.
+        assert_eq!(
+            result,
+            Ok(Response {
+                status: 200,
+                media_type: DEFAULT_MEDIA_TYPE.to_string(),
+                body: b"ok".to_vec(),
+            })
+        );
+    }
+
+    #[test]
+    fn repeated_equal_content_lengths_are_one() {
+        let result = parse(
+            b"HTTP/1.1 200 OK\r\nContent-Length: 2, 2\r\nContent-Length: 2\r\n\r\nokEXTRA",
+            &small(),
+        );
+        assert_eq!(result.map(|r| r.body), Ok(b"ok".to_vec()));
+    }
+
+    #[test]
+    fn content_length_overflow_is_malformed() {
+        let result = parse(
+            b"HTTP/1.1 200 OK\r\nContent-Length: 99999999999999999999999\r\n\r\n",
+            &small(),
+        );
+        assert!(
+            matches!(result, Err(Failure::MalformedResponse(_))),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn whitespace_before_colon_is_malformed() {
+        let result = parse(b"HTTP/1.1 200 OK\r\nContent-Length : 0\r\n\r\n", &small());
+        assert!(
+            matches!(result, Err(Failure::MalformedResponse(_))),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn long_chunk_line_is_malformed() {
+        let mut reply = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n1;".to_vec();
+        reply.extend(std::iter::repeat_n(b'x', 2 * MAX_CHUNK_LINE_BYTES));
+        let result = parse(&reply, &small());
+        assert!(
+            matches!(result, Err(Failure::MalformedResponse(_))),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn chunk_without_crlf_is_malformed() {
+        let result = parse(
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nokX\r\n0\r\n\r\n",
+            &small(),
+        );
+        assert!(
+            matches!(result, Err(Failure::MalformedResponse(_))),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn transfer_encoding_in_http_1_0_is_malformed() {
+        let result = parse(
+            b"HTTP/1.0 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
+            &small(),
+        );
+        assert!(
+            matches!(result, Err(Failure::MalformedResponse(_))),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn switching_protocols_is_malformed() {
+        let result = parse(b"HTTP/1.1 101 Switching Protocols\r\n\r\n", &small());
+        assert!(
+            matches!(result, Err(Failure::MalformedResponse(_))),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn header_budget_spans_interim_responses() {
+        let mut reply = Vec::new();
+        for _ in 0..20 {
+            reply.extend_from_slice(b"HTTP/1.1 100 Continue\r\n\r\n");
+        }
+        reply.extend_from_slice(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+        let result = parse(&reply, &small());
+        assert!(
+            matches!(result, Err(Failure::MalformedResponse(_))),
+            "{result:?}"
+        );
+    }
+
+    /// The buffer of bytes read and not yet consumed doubles only up to its ceiling (the header
+    /// limit), plus what one read needs: a header line of 40,000 bytes read in pieces of 4095
+    /// would otherwise double the buffer to 65,520 bytes.
+    #[test]
+    fn the_read_buffer_grows_within_the_header_limit_plus_one_read() {
+        let limit = 40_100;
+        let mut bytes = vec![b'a'; 40_000];
+        bytes.extend_from_slice(b"\r\n");
+        let mut wire = Wire::new(
+            Trickle {
+                bytes: &bytes,
+                step: 4095,
+            },
+            limit,
+        );
+        assert!(matches!(wire.read_line(limit), Ok(LineRead::Line(..))));
+        assert!(
+            wire.buf.capacity() <= limit + READ_CHUNK_BYTES,
+            "header limit {limit} bytes, read buffer allocated {} bytes",
+            wire.buf.capacity()
+        );
+    }
+
+    /// Generated inputs: none panics, and every one gives the same result whether it arrives
+    /// at once or one byte at a time.
+    #[test]
+    fn generated_inputs_never_panic_and_ignore_fragmentation() {
+        const PIECES: &[&[u8]] = &[
+            b"HTTP/1.1 ",
+            b"HTTP/1.0 ",
+            b"200",
+            b"404 ",
+            b"100 ",
+            b"OK",
+            b"\r\n",
+            b"\n",
+            b"\r",
+            b" ",
+            b":",
+            b";",
+            b",",
+            b"Content-Length: ",
+            b"Transfer-Encoding: chunked",
+            b"Content-Type: text/HTML; q=1",
+            b"0",
+            b"5",
+            b"FFFFFFFFFFFFFFFFFFFF",
+            b"hello",
+            b"\x00\xff",
+        ];
+        let mut state: u64 = 0x9e37_79b9_7f4a_7c15;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let limits = Limits {
+            max_header_bytes: 128,
+            max_body_bytes: 64,
+            ..Limits::default()
+        };
+        const SEEDS: &[&[u8]] = &[
+            b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 5\r\n\r\nhello",
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5;x=y\r\nhello\r\n0\r\n\r\n",
+            b"HTTP/1.0 404 Not Found\r\nContent-Type: Text/Plain; a=b\r\n\r\nuntil close",
+            b"HTTP/1.1 103 Early\r\nLink: x\r\n\r\nHTTP/1.1 204 No Content\r\n\r\n",
+        ];
+        let mut seen = [0usize; 3];
+        for _ in 0..5000 {
+            let pick = |n: u64, len: usize| (n % (len as u64).max(1)) as usize;
+            let mut input = SEEDS[pick(next(), SEEDS.len())].to_vec();
+            for _ in 0..next() % 4 {
+                let at = pick(next(), input.len() + 1);
+                match next() % 3 {
+                    0 => input.truncate(at),
+                    1 => {
+                        if let Some(byte) = input.get_mut(at) {
+                            *byte = next() as u8;
+                        }
+                    }
+                    _ => {
+                        let piece = PIECES[pick(next(), PIECES.len())];
+                        input.splice(at..at, piece.iter().copied());
+                    }
+                }
+            }
+            let whole = read_response(input.as_slice(), &limits);
+            seen[match &whole {
+                Ok(_) => 0,
+                Err(Failure::MalformedResponse(_)) => 1,
+                Err(_) => 2,
+            }] += 1;
+            let trickled = read_response(
+                Trickle {
+                    bytes: &input,
+                    step: 1,
+                },
+                &limits,
+            );
+            assert_eq!(
+                whole,
+                trickled,
+                "input {:?}",
+                String::from_utf8_lossy(&input)
+            );
+        }
+        // Each outcome was reached, so the inputs exercised more than the first byte.
+        assert!(seen.iter().all(|&n| n > 0), "outcomes {seen:?}");
+    }
+}

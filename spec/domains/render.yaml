@@ -1,0 +1,126 @@
+domain: surf.render
+
+summary: Turning a document into the pixels of one frame.
+
+naming:
+  wire: render
+  display: Rendering
+
+types:
+  - name: surf.render.FrameId
+    kind: newtype
+    of: Uuid
+
+entities:
+  # UNMAPPED: style, layout and paint are one step here. Each has its own inputs and outputs
+  # (a style sheet, a box tree, a display list) and none of them has a typed home yet.
+  - name: surf.render.Frame
+    naming:
+      summary: One painted picture of a document at a viewport size.
+    identity:
+      name: frame_id
+      type: surf.render.FrameId
+    fields:
+      # The document is held by the document component; this component stores its identity.
+      - name: document_id
+        type: surf.document.DocumentId
+      - name: width
+        type: Integer
+      - name: height
+        type: Integer
+    relations:
+      - name: document
+        kind: references
+        target: surf.document.Document
+        cardinality: one
+        via: document_id
+    invariants:
+      - width > 0
+      - height > 0
+    lifecycle:
+      initial: Painted
+      states: [Painted]
+      terminal: [Painted]
+
+errors:
+  - name: surf.render.InvalidViewport
+    summary: The viewport has no area, so nothing was painted.
+    fields:
+      - name: width
+        type: Integer
+      - name: height
+        type: Integer
+
+commands:
+  - name: surf.render.PaintFrame
+    naming:
+      wire: paint-frame
+      display: Paint a frame
+      summary: Paint a document at a viewport size given in pixels.
+    input:
+      - name: document_id
+        type: surf.document.DocumentId
+      - name: width
+        type: Integer
+        example: 1280
+      - name: height
+        type: Integer
+        example: 720
+    outcomes:
+      - name: invalid-viewport
+        when:
+          any:
+            - width <= 0
+            - height <= 0
+        error: surf.render.InvalidViewport
+        payload:
+          surf.render.InvalidViewport:
+            width: input.width
+            height: input.height
+        summary: The viewport has no area.
+
+      - name: painted
+        creates: surf.render.Frame
+        instance: frame_id
+        sets:
+          document_id: input.document_id
+          width: input.width
+          height: input.height
+        emits:
+          - surf.render.FramePainted
+        payload:
+          surf.render.FramePainted:
+            frame_id: {generated: true}
+            document_id: input.document_id
+            width: input.width
+            height: input.height
+        summary: The frame exists.
+
+events:
+  - name: surf.render.FramePainted
+    fields:
+      - name: frame_id
+        type: surf.render.FrameId
+      - name: document_id
+        type: surf.document.DocumentId
+      - name: width
+        type: Integer
+      - name: height
+        type: Integer
+
+views:
+  - name: surf.render.Frames
+    source: surf.render.Frame
+    consistency: read_your_writes
+    fields:
+      - name: frame_id
+        type: surf.render.FrameId
+      - name: document_id
+        type: surf.document.DocumentId
+      - name: width
+        type: Integer
+      - name: height
+        type: Integer
+    naming:
+      wire: frames
+      display: Frames

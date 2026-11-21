@@ -1,0 +1,196 @@
+# Two of every entity the scenarios can create, each read back from its view with exactly two rows
+# and both identities present: two windows, two tabs in one window, two navigations and their two
+# requests, two documents and two frames. Every other scenario holds at most one row of an entity,
+# so a system that gives every instance the same identity, or a view that answers only its first
+# row, passes them all.
+type: ess-scenario/6
+domain: surf.navigation
+scenario: two-of-each-entity
+summary: Two windows, two tabs, two page loads and two frames each show as two rows.
+
+arrange:
+  - instance: first-window
+    entity: surf.shell.Window
+  - instance: second-window
+    entity: surf.shell.Window
+  - instance: first-tab
+    entity: surf.shell.Tab
+  - instance: second-tab
+    entity: surf.shell.Tab
+  - instance: first-load
+    entity: surf.navigation.Navigation
+  - instance: second-load
+    entity: surf.navigation.Navigation
+  - instance: first-frame
+    entity: surf.render.Frame
+  - instance: second-frame
+    entity: surf.render.Frame
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.shell.OpenWindow
+    actor: surf.shell.User
+    input: {}
+    outcome: opened
+    events:
+      - event: surf.shell.WindowOpened
+    capture: {instance: first-window, event: surf.shell.WindowOpened, field: window_id}
+
+  - at: 2026-01-06T09:00:01Z
+    command: surf.shell.OpenWindow
+    actor: surf.shell.User
+    input: {}
+    outcome: opened
+    events:
+      - event: surf.shell.WindowOpened
+    capture: {instance: second-window, event: surf.shell.WindowOpened, field: window_id}
+
+  - at: 2026-01-06T09:00:02Z
+    command: surf.shell.OpenTab
+    actor: surf.shell.User
+    input:
+      window_id: {$instance: first-window}
+    outcome: opened
+    events:
+      - event: surf.shell.TabOpened
+        payload:
+          window_id: {$instance: first-window}
+    capture: {instance: first-tab, event: surf.shell.TabOpened, field: tab_id}
+
+  - at: 2026-01-06T09:00:03Z
+    command: surf.shell.OpenTab
+    actor: surf.shell.User
+    input:
+      window_id: {$instance: first-window}
+    outcome: opened
+    events:
+      - event: surf.shell.TabOpened
+        payload:
+          window_id: {$instance: first-window}
+    capture: {instance: second-tab, event: surf.shell.TabOpened, field: tab_id}
+
+  - at: 2026-01-06T09:00:04Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: {$instance: first-tab}
+      url: https://example.org/first
+    outcome: started
+    events:
+      - event: surf.navigation.NavigationStarted
+        payload:
+          tab_id: {$instance: first-tab}
+          url: https://example.org/first
+    capture: {instance: first-load, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:05Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: {$instance: second-tab}
+      url: https://example.org/second
+    outcome: started
+    events:
+      - event: surf.navigation.NavigationStarted
+        payload:
+          tab_id: {$instance: second-tab}
+          url: https://example.org/second
+    capture: {instance: second-load, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  # The body is `<html></html>`.
+  - at: 2026-01-06T09:00:06Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: first-load}
+      status: 200
+      media_type: text/html
+      body: PGh0bWw+PC9odG1sPg==
+    outcome: responded
+
+  - at: 2026-01-06T09:00:07Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: second-load}
+      status: 200
+      media_type: text/html
+      body: PGh0bWw+PC9odG1sPg==
+    outcome: responded
+
+  # Nothing invokes PaintFrame yet, so the frames are painted directly, for documents the
+  # renderer does not look up.
+  - at: 2026-01-06T09:00:08Z
+    command: surf.render.PaintFrame
+    input:
+      document_id: 3f1d5b7e-0000-4000-8000-000000000002
+      width: 1280
+      height: 720
+    outcome: painted
+    events:
+      - event: surf.render.FramePainted
+        payload:
+          document_id: 3f1d5b7e-0000-4000-8000-000000000002
+          width: 1280
+          height: 720
+    capture: {instance: first-frame, event: surf.render.FramePainted, field: frame_id}
+
+  - at: 2026-01-06T09:00:09Z
+    command: surf.render.PaintFrame
+    input:
+      document_id: 3f1d5b7e-0000-4000-8000-000000000002
+      width: 1280
+      height: 720
+    outcome: painted
+    events:
+      - event: surf.render.FramePainted
+        payload:
+          document_id: 3f1d5b7e-0000-4000-8000-000000000002
+          width: 1280
+          height: 720
+    capture: {instance: second-frame, event: surf.render.FramePainted, field: frame_id}
+
+assert:
+  - view: surf.shell.Windows
+    counts: {at_least: 2, at_most: 2}
+  - view: surf.shell.Windows
+    contains: {window_id: {$instance: first-window}}
+  - view: surf.shell.Windows
+    contains: {window_id: {$instance: second-window}}
+
+  - view: surf.shell.Tabs
+    counts: {at_least: 2, at_most: 2}
+  - view: surf.shell.Tabs
+    contains: {tab_id: {$instance: first-tab}, window_id: {$instance: first-window}, state: Open}
+  - view: surf.shell.Tabs
+    contains: {tab_id: {$instance: second-tab}, window_id: {$instance: first-window}, state: Open}
+  # Both tabs are in the first window, so no tab names the second: it fails when the two windows
+  # got one identity.
+  - view: surf.shell.Tabs
+    excludes: {window_id: {$instance: second-window}}
+
+  - view: surf.navigation.Navigations
+    counts: {at_least: 2, at_most: 2}
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: first-load}, tab_id: {$instance: first-tab}, url: https://example.org/first, state: Committed}
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: second-load}, tab_id: {$instance: second-tab}, url: https://example.org/second, state: Committed}
+
+  - view: surf.net.Requests
+    counts: {at_least: 2, at_most: 2}
+  - view: surf.net.Requests
+    contains: {request_id: {$instance: first-load}, url: https://example.org/first, state: Responded}
+  - view: surf.net.Requests
+    contains: {request_id: {$instance: second-load}, url: https://example.org/second, state: Responded}
+
+  - view: surf.document.Documents
+    counts: {at_least: 2, at_most: 2}
+  - view: surf.document.Documents
+    contains: {url: https://example.org/first}
+  - view: surf.document.Documents
+    contains: {url: https://example.org/second}
+
+  - view: surf.render.Frames
+    counts: {at_least: 2, at_most: 2}
+  - view: surf.render.Frames
+    contains: {frame_id: {$instance: first-frame}}
+  - view: surf.render.Frames
+    contains: {frame_id: {$instance: second-frame}}

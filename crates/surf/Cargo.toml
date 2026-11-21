@@ -1,0 +1,17 @@
+[package]
+name = "surf"
+description = "The surf system assembled with a transport for the net component, and the surf command line."
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+surf-types = { path = "../../generated/rust/crates/surf-types" }
+surf-system = { path = "../../generated/rust/crates/surf-system" }
+shell = { path = "../../generated/rust/crates/shell" }
+navigator = { path = "../../generated/rust/crates/navigator" }
+net = { path = "../../generated/rust/crates/net" }
+document = { path = "../../generated/rust/crates/document" }
+renderer = { path = "../../generated/rust/crates/renderer" }
+surf-ports = { path = "../ports" }
+surf-fetch = { path = "../fetch" }

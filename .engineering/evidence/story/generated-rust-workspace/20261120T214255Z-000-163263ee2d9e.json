@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-20T21:42:55Z",
+  "actor": "human:timo",
+  "artifact": "story:generated-rust-workspace",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "slot task check, before and after changing one byte of generated/rust/crates/surf-types/src/net.rs",
+    "reference": "unit tree at 7d2bb5d contents: unchanged exit 0; one byte changed exit 201 with 'generated/rust/crates/surf-types/src/net.rs: differs from what ess generates'; baseline wave/2 at c66fdbd has no generated/rust and no generated-check; verdict VERIFIED"
+  }
+}

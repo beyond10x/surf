@@ -1,0 +1,12 @@
+# generated from surf v1
+# contract digest 19964b50f9197185811d923fbd6c3eec7ec2855a2cc03c2c60d6e4a2149578f0
+# do not edit: regenerate with `ess synthesize`
+
+[package]
+name = "navigator"
+description = "The `navigator` component of the `surf` specification, v1: its port, generated."
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+surf-types = { path = "../surf-types" }

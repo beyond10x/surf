@@ -1,0 +1,10 @@
+[package]
+name = "surf-fetch"
+description = "Fetch an http address over HTTP/1.1 with the Rust standard library only."
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+
+[dev-dependencies]

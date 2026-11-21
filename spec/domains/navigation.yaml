@@ -1,0 +1,281 @@
+domain: surf.navigation
+
+summary: Taking a tab from one address to another, from the request to the committed page.
+
+naming:
+  wire: navigation
+  display: Navigation
+
+entities:
+  - name: surf.navigation.Navigation
+    naming:
+      summary: One attempt to load an address into a tab.
+    # A navigation issues exactly one request and is identified by it, so the answer to the
+    # request names its navigation without the network component knowing what a navigation is.
+    # UNMAPPED: a redirect makes one navigation issue several requests; nothing here follows one.
+    identity:
+      name: navigation_id
+      type: surf.net.RequestId
+    fields:
+      # The tab is held by the shell component. This component stores its identity and reads
+      # nothing of it, so a navigation can name a tab the shell has closed.
+      # UNMAPPED: what a navigation does when its tab closes. `surf.shell.TabClosed` is published
+      # and no binding cancels the tab's navigations yet.
+      - name: tab_id
+        type: surf.shell.TabId
+      - name: url
+        type: surf.url.Url
+    relations:
+      - name: tab
+        kind: references
+        target: surf.shell.Tab
+        cardinality: one
+        via: tab_id
+    lifecycle:
+      initial: Started
+      states:
+        - name: Started
+          summary: The address is being fetched.
+        - name: Committed
+          summary: A response arrived and the tab shows its document.
+        - name: Failed
+          summary: No response arrived.
+        - name: Cancelled
+          summary: The user stopped it before a response arrived.
+      terminal: [Committed, Failed, Cancelled]
+      transitions:
+        - name: commit
+          from: [Started]
+          to: Committed
+        - name: fail
+          from: [Started]
+          to: Failed
+        - name: cancel
+          from: [Started]
+          to: Cancelled
+
+actors:
+  - name: surf.navigation.User
+    may:
+      - surf.navigation.Navigate
+      - surf.navigation.CancelNavigation
+    naming:
+      display: User
+      summary: The person at the keyboard.
+
+errors:
+  - name: surf.navigation.NavigationNotFound
+    summary: No navigation has this identity.
+    fields:
+      - name: navigation_id
+        type: surf.net.RequestId
+
+  - name: surf.navigation.NavigationStateConflict
+    summary: The navigation already ended, so nothing moved.
+    fields:
+      - name: state
+        type: surf.navigation.Navigation.State
+
+commands:
+  - name: surf.navigation.Navigate
+    naming:
+      wire: navigate
+      display: Navigate
+      summary: Start loading an address into a tab.
+    input:
+      - name: tab_id
+        type: surf.shell.TabId
+      - name: url
+        type: surf.url.Url
+        example: "https://example.org/"
+    outcomes:
+      - name: started
+        creates: surf.navigation.Navigation
+        instance: navigation_id
+        sets:
+          tab_id: input.tab_id
+          url: input.url
+        emits:
+          - surf.navigation.NavigationStarted
+        payload:
+          surf.navigation.NavigationStarted:
+            navigation_id: {generated: true}
+            tab_id: input.tab_id
+            url: input.url
+        summary: The navigation is Started and its address is to be fetched.
+
+  - name: surf.navigation.CommitNavigation
+    naming:
+      wire: commit-navigation
+      display: Commit a navigation
+      summary: Record that a response arrived for the navigation, and hand it on.
+    # The response travels through the commit, so only a navigation that was still Started when
+    # its response arrived gets a document: a cancelled one publishes nothing to parse.
+    input:
+      - name: navigation_id
+        type: surf.net.RequestId
+      - name: status
+        type: surf.net.Status
+      - name: media_type
+        type: surf.net.MediaType
+      - name: body
+        type: Bytes
+    outcomes:
+      - name: no-such-navigation
+        unknown_instance: true
+        error: surf.navigation.NavigationNotFound
+        payload:
+          surf.navigation.NavigationNotFound:
+            navigation_id: input.navigation_id
+
+      - name: committed
+        moves: surf.navigation.Navigation.commit
+        instance: navigation_id
+        emits:
+          - surf.navigation.NavigationCommitted
+        payload:
+          surf.navigation.NavigationCommitted:
+            navigation_id: input.navigation_id
+            tab_id: {subject: tab_id}
+            url: {subject: url}
+            status: input.status
+            media_type: input.media_type
+            body: input.body
+        summary: The navigation is Committed.
+
+      - name: wrong-state
+        wrong_state: true
+        error: surf.navigation.NavigationStateConflict
+        payload:
+          surf.navigation.NavigationStateConflict:
+            state: {subject: state}
+        summary: The navigation had already ended; a late response changes nothing.
+
+  - name: surf.navigation.FailNavigation
+    naming:
+      wire: fail-navigation
+      display: Fail a navigation
+      summary: Record that no response arrived for the navigation.
+    input:
+      - name: navigation_id
+        type: surf.net.RequestId
+    outcomes:
+      - name: no-such-navigation
+        unknown_instance: true
+        error: surf.navigation.NavigationNotFound
+        payload:
+          surf.navigation.NavigationNotFound:
+            navigation_id: input.navigation_id
+
+      - name: failed
+        moves: surf.navigation.Navigation.fail
+        instance: navigation_id
+        emits:
+          - surf.navigation.NavigationFailed
+        payload:
+          surf.navigation.NavigationFailed:
+            navigation_id: input.navigation_id
+            tab_id: {subject: tab_id}
+            url: {subject: url}
+        summary: The navigation is Failed.
+
+      - name: wrong-state
+        wrong_state: true
+        error: surf.navigation.NavigationStateConflict
+        payload:
+          surf.navigation.NavigationStateConflict:
+            state: {subject: state}
+        summary: The navigation had already ended; a late failure changes nothing.
+
+  - name: surf.navigation.CancelNavigation
+    naming:
+      wire: cancel-navigation
+      display: Cancel a navigation
+      summary: Stop a navigation before a response arrives.
+    input:
+      - name: navigation_id
+        type: surf.net.RequestId
+    outcomes:
+      - name: no-such-navigation
+        unknown_instance: true
+        error: surf.navigation.NavigationNotFound
+        payload:
+          surf.navigation.NavigationNotFound:
+            navigation_id: input.navigation_id
+
+      - name: cancelled
+        moves: surf.navigation.Navigation.cancel
+        instance: navigation_id
+        emits:
+          - surf.navigation.NavigationCancelled
+        payload:
+          surf.navigation.NavigationCancelled:
+            navigation_id: input.navigation_id
+            tab_id: {subject: tab_id}
+        summary: The navigation is Cancelled.
+
+      - name: wrong-state
+        wrong_state: true
+        error: surf.navigation.NavigationStateConflict
+        payload:
+          surf.navigation.NavigationStateConflict:
+            state: {subject: state}
+        summary: The navigation had already ended.
+
+events:
+  - name: surf.navigation.NavigationStarted
+    fields:
+      - name: navigation_id
+        type: surf.net.RequestId
+      - name: tab_id
+        type: surf.shell.TabId
+      - name: url
+        type: surf.url.Url
+
+  - name: surf.navigation.NavigationCommitted
+    fields:
+      - name: navigation_id
+        type: surf.net.RequestId
+      - name: tab_id
+        type: surf.shell.TabId
+      - name: url
+        type: surf.url.Url
+      - name: status
+        type: surf.net.Status
+      - name: media_type
+        type: surf.net.MediaType
+      - name: body
+        type: Bytes
+
+  - name: surf.navigation.NavigationFailed
+    fields:
+      - name: navigation_id
+        type: surf.net.RequestId
+      - name: tab_id
+        type: surf.shell.TabId
+      - name: url
+        type: surf.url.Url
+
+  - name: surf.navigation.NavigationCancelled
+    fields:
+      - name: navigation_id
+        type: surf.net.RequestId
+      - name: tab_id
+        type: surf.shell.TabId
+
+views:
+  - name: surf.navigation.Navigations
+    source: surf.navigation.Navigation
+    consistency: read_your_writes
+    fields:
+      - name: navigation_id
+        type: surf.net.RequestId
+      - name: tab_id
+        type: surf.shell.TabId
+      - name: url
+        type: surf.url.Url
+      - name: state
+        type: surf.navigation.Navigation.State
+    naming:
+      wire: navigations
+      display: Navigations

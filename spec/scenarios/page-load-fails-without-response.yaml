@@ -1,0 +1,39 @@
+# The failing page load, which synthesis cannot arrange for the reason
+# `page-load-commits-and-parses.yaml` gives. Covers the flow of `fail-on-fetch-failed`.
+type: ess-scenario/6
+domain: surf.navigation
+scenario: page-load-fails-without-response
+summary: A navigation whose request ends without a response is Failed.
+
+arrange:
+  - instance: load
+    entity: surf.navigation.Navigation
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 3f1d5b7e-0000-4000-8000-000000000001
+      url: https://example.org/
+    outcome: started
+    events:
+      - event: surf.navigation.NavigationStarted
+        payload:
+          url: https://example.org/
+    capture: {instance: load, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:01Z
+    command: surf.net.FailRequest
+    input:
+      request_id: {$instance: load}
+      reason: Unreachable
+    outcome: failed
+
+assert:
+  # The request `fetch-on-navigation-started` made is for the address navigated to.
+  - view: surf.net.Requests
+    contains: {request_id: {$instance: load}, url: https://example.org/, state: Failed}
+
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: load}, state: Failed}

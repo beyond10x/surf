@@ -1,0 +1,35 @@
+# The cases of urltestdata.json that tests/urltestdata.rs skips, one per line: the input and the
+# base (null when the case has none), each as a JSON string, separated by a tab. Each is skipped
+# because parsing its input or its base needs domain to ASCII (IDNA), which surf-url does not do.
+"http://é@é"	null
+"http://GOO 　goo.com"	"http://other.com/"
+"http://GOO​⁠﻿goo.com"	"http://other.com/"
+"http://www.foo。bar.com"	"http://other.com/"
+"http://﷐zyx.com"	"http://other.com/"
+"http://%ef%b7%90zyx.com"	"http://other.com/"
+"https://�"	null
+"https://%EF%BF%BD"	null
+"http://Ｇｏ.com"	"http://other.com/"
+"http://％４１.com"	"http://other.com/"
+"http://%ef%bc%85%ef%bc%94%ef%bc%91.com"	"http://other.com/"
+"http://％００.com"	"http://other.com/"
+"http://%ef%bc%85%ef%bc%90%ef%bc%90.com"	"http://other.com/"
+"http://你好你好"	"http://other.com/"
+"https://faß.ExAmPlE/"	null
+"http://０Ｘｃ０．０２５０．０１"	"http://other.com/"
+"ftp://example.com%80/"	null
+"ftp://example.com%A0/"	null
+"https://example.com%80/"	null
+"https://example.com%A0/"	null
+"ftp://%e2%98%83"	null
+"https://%e2%98%83"	null
+"file://a­b/p"	null
+"file://a%C2%ADb/p"	null
+"file://loC𝐀𝐋𝐇𝐨𝐬𝐭/usr/bin"	null
+"file://­/p"	null
+"file://%C2%AD/p"	null
+"http://💩.123/"	null
+"https://￿y"	null
+"https://a%C2%ADb/"	null
+"https://­/"	null
+"https://%C2%AD/"	null

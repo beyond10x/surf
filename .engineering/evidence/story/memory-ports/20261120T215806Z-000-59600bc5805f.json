@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-20T21:58:06Z",
+  "actor": "human:timo",
+  "artifact": "story:memory-ports",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "RUSTFLAGS=\"-D warnings\" cargo test -p surf-ports",
+    "reference": "unit tree at b7686c3: exit 0, 10 integration tests and 2 documentation tests passed, one of them compile_fail,E0277; baseline wave/3 at f86ef25 has no such package; verdict VERIFIED"
+  }
+}

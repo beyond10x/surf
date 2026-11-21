@@ -1,0 +1,7 @@
+# generated from surf v1
+# contract digest 19964b50f9197185811d923fbd6c3eec7ec2855a2cc03c2c60d6e4a2149578f0
+# do not edit: regenerate with `ess synthesize`
+
+[workspace]
+resolver = "2"
+members = ["crates/document", "crates/navigator", "crates/net", "crates/renderer", "crates/shell", "crates/surf-system", "crates/surf-types"]

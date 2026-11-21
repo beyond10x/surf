@@ -1,0 +1,2 @@
+surf 1 session 7f3a open
+page 200 "text/html" "http://example.org/login" "Sign in"

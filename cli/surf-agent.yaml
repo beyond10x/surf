@@ -1,0 +1,89 @@
+# The command line an AI agent types, as an `ess-cli/2` presentation binding over the domain
+# `surf.agent` of `spec/`, which the `net` component holds until the `agent` component has
+# commands. It sits outside the specification inputs, as the binding design prescribes
+# ("cli.yaml (outside the model directory)", docs/design/cli-presentation-binding.md in the ESS
+# repository). `task cli` checks it with `ess specify cli --path spec --binding
+# cli/surf-agent.yaml`. The client's parser is written in this repository from this document,
+# standard library only, because both ESS command-line generators write code that needs
+# third-party crates (docs/plan/agent-cli-draft-1.md, measurements A and B).
+#
+# The commands are those of docs/design/agent-interface.md, section 4, slice 1: `open [<url>]`,
+# `go <url>`, `look`, `close`. Every callable is `local`: the token is a credential and not an
+# input of any specification command, so a `service_forward` callable could not carry it. Each
+# command's `about` names what the client asks the session for.
+#
+# The answer is not the JSON `ess-cli/2` writes. Every command, `open` included, prints the
+# line-oriented text of docs/agent-answer.md (design, sections 5 and 6). The result types below
+# say what an answer carries, not how it is spelt.
+#
+# The token is never an argument word, because every local user can read a process's arguments.
+# It comes from a file named by `--token-file`, or from the environment (below).
+# UNMAPPED: `--token-stdin` and `--token-prompt`. The design drops both, because an agent has no
+# terminal, and the client does not accept them. `ess-cli/2` requires all three flag names of a
+# `protected` source ("missing field `stdin`", ess 0.96.0, measured 2026-11-21 with `file` alone),
+# so they stay declared here. What would settle it: a `protected` source in ESS that declares
+# `file` alone.
+format: ess-cli/2
+binary: surf-agent
+about: Drive a surf browser session from the command line, one call at a time
+# UNMAPPED: the session directory flag. `ess-cli/2` requires a `state` global, and the design names
+# no flag: the directory is `$XDG_RUNTIME_DIR/surf/`, and the client refuses to run without
+# `XDG_RUNTIME_DIR`. What would settle it: the client story deciding whether `--session-dir`
+# overrides that directory or is refused.
+globals:
+  state: session-dir
+callables:
+  open:
+    target: {kind: local, owner: surf.agent.cli, action: open}
+    input: surf.agent.OpenCall
+    result: surf.agent.OpenedSession
+  go:
+    target: {kind: local, owner: surf.agent.cli, action: go}
+    input: surf.agent.GoCall
+    result: surf.agent.SessionReadout
+  look:
+    target: {kind: local, owner: surf.agent.cli, action: look}
+    input: surf.agent.SessionCall
+    result: surf.agent.SessionReadout
+  close:
+    target: {kind: local, owner: surf.agent.cli, action: close}
+    input: surf.agent.SessionCall
+    result: surf.agent.SessionReadout
+# UNMAPPED: the environment sources. `ess-cli/2` has no source that reads the environment, so the
+# binding declares only `--session <id>` and `--token-file <path>`. The client reads the session
+# from `SURF_SESSION` when `--session` is absent, and the token from `SURF_TOKEN` when
+# `--token-file` is absent; an option given wins over the environment. What would settle it: an
+# environment source in an ESS command-line binding.
+commands:
+  - path: [open]
+    callable: open
+    about: Open a session, load the address if one is given, and print its identity and token once
+    arguments:
+      - field: url
+        source: {kind: positional, index: 1}
+  - path: [go]
+    callable: go
+    about: Load an address into the session's tab and print the session's state
+    arguments:
+      - field: url
+        source: {kind: positional, index: 1}
+      - field: session_id
+        source: {kind: option, long: session}
+      - field: token
+        source: {kind: protected, file: token-file, stdin: token-stdin, hidden_tty: token-prompt}
+  - path: [look]
+    callable: look
+    about: Print the session's state
+    arguments:
+      - field: session_id
+        source: {kind: option, long: session}
+      - field: token
+        source: {kind: protected, file: token-file, stdin: token-stdin, hidden_tty: token-prompt}
+  - path: [close]
+    callable: close
+    about: Close the session and its tab and print its final state
+    arguments:
+      - field: session_id
+        source: {kind: option, long: session}
+      - field: token
+        source: {kind: protected, file: token-file, stdin: token-stdin, hidden_tty: token-prompt}

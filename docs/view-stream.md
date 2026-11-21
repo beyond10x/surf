@@ -1,0 +1,490 @@
+# The live view's routes and event stream
+
+What `surfd` answers on its view port: the routes, the status codes, the headers, the JSON of each
+route and the server-sent events of `/events`. `story:view-http-server` and
+`story:view-surfd-serves` are held to this document byte for byte; each fenced example below is
+meant to be copied into a golden file. The decisions behind it, and the measurements they rest
+on, are in `docs/design/live-view.md`.
+
+Written 2026-11-21 by `story:view-decisions`, before any of it is implemented. It follows the
+decisions of `docs/plan/agent-plan-revision-1.md` (D17, D18) and
+`docs/plan/agent-plan-revision-2.md` (D19 to D24, D26) in their words where it repeats them.
+Standards are cited from memory: RFC 9110 and RFC 9112 (HTTP), the HTML Standard's server-sent
+events section, Content Security Policy Level 3, Referrer Policy. surf claims no section of them
+complete.
+
+## Rules over every answer
+
+- `surfd` listens on 127.0.0.1 only, on a port the operating system picks (item 6 of the design
+  note). In this document the port is 41873.
+- HTTP/1.1, `GET` only. One request per connection; every answer carries `Connection: close`, the
+  stream included. The stream's body ends when the connection closes (RFC 9112, message body
+  length, from memory), so it has no `Content-Length` and no chunked coding.
+- Every line of an answer's head ends in CR LF and the head ends with an empty line. The examples
+  show each line without its CR. A request's head is read the same way: a line that ends in a
+  bare LF is answered 400.
+- The head of every answer holds these lines, in this order, and no other:
+  1. the status line, `HTTP/1.1 <code> <reason>`, with the reason of the table below;
+  2. `Content-Type`;
+  3. `Content-Length`, the body's length in bytes (absent on the stream only);
+  4. `Allow: GET` on a 405 only; `WWW-Authenticate: Bearer` on a 401 only (RFC 9110 requires
+     the challenge on every 401);
+  5. the five security lines, exactly:
+
+     ```text
+     Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+     X-Content-Type-Options: nosniff
+     Referrer-Policy: no-referrer
+     Cache-Control: no-store
+     Cross-Origin-Resource-Policy: same-origin
+     ```
+
+  6. `Date: <IMF-fixdate>`, the time the answer was written (RFC 9110 requires it of a server
+     with a clock). A test compares every byte of an answer except the 29 bytes of this value;
+  7. `Connection: close`.
+- No answer carries an `Access-Control-` line, a `Set-Cookie` line or a `Server` line.
+- The token: every route under `/api/` and `/events` requires the view token, sent as exactly
+  `Authorization: Bearer <64 hexadecimal digits, lower case>`, compared by `surf-secret`'s
+  comparison in constant time. The token is never read from the query, a cookie or another
+  header. The page's own files are served without it: they hold no data (D18).
+- No session's token is in any answer or any event (D21): the answer entry of `open` omits the
+  `token` line, and no JSON shape below has a member for it.
+
+## The route table
+
+A request's target is matched byte for byte against these paths: no percent-decoding, no `.` or
+`..` resolution, and no route takes a query, so a target holding `?` matches none.
+
+| path | token | answers | content type of the 200 |
+|---|---|---|---|
+| `/` | no | 200 | `text/html; charset=utf-8` |
+| each page file, `/<name>.js` and `/<name>.css` | no | 200 | `text/javascript; charset=utf-8`, `text/css; charset=utf-8` |
+| `/api/sessions` | yes | 200, 401 | `application/json` |
+| `/api/sessions/<id>` | yes | 200, 401, 404 | `application/json` |
+| `/events` | yes | 200, 401, 503 | `text/event-stream` |
+| any other target | | 404 | |
+
+- The page files are the list `crates/view/src/assets.rs` holds (`story:view-first-page`): `/`
+  answers `index.html`; `/view.css`, `/view.js` and the other modules answer under their own
+  names. `/index.html` is not a route.
+- `<id>` is a session identity in its text form: 36 characters, lower-case hexadecimal digits in
+  groups of 8, 4, 4, 4 and 12 joined by `-`. A target with anything else there matches no route.
+
+## Status codes and their order
+
+Every refusal has a JSON body `{"error":"<word>"}` with `Content-Type: application/json`, and
+names no session.
+
+| code | reason | word | when |
+|---|---|---|---|
+| 200 | `OK` | | the route answers |
+| 400 | `Bad Request` | `bad-request` | the request is not well-formed (below) |
+| 401 | `Unauthorized` | `unauthorized` | a route that needs the token and the token is missing, malformed or wrong |
+| 403 | `Forbidden` | `host` | `Host` is not `127.0.0.1:<port>` |
+| 404 | `Not Found` | `not-found` | no route matches, or `<id>` names no listed session |
+| 405 | `Method Not Allowed` | `method` | any method but `GET` |
+| 431 | `Request Header Fields Too Large` | `too-large` | the request line and headers are over 8 KiB or 50 lines |
+| 503 | `Service Unavailable` | `busy` | past the connection limit, or past the stream limit on `/events` |
+| 505 | `HTTP Version Not Supported` | `version` | a version `HTTP/<digit>.<digit>` other than `HTTP/1.1` |
+
+The checks run in this order; the first that fails answers, and nothing after it runs:
+
+1. Connection limit: past 16 open connections, the new one is answered 503 without its request
+   being read, then closed.
+2. Receive limit: a request line and headers not complete within 5 s close the connection with
+   no answer.
+3. Size: request line and headers over 8,192 bytes (from the first byte through the empty line)
+   or over 50 header lines: 431, then the connection closes.
+4. Syntax: the request line is not `<method> SP <target> SP <version>`: 400. The version is
+   `HTTP/<digit>.<digit>` and not `HTTP/1.1`: 505; any other version text: 400. A header line
+   without `:`, or starting with a space or a tab: 400. A target not starting with `/` (absolute
+   form, `*`): 400. `Content-Length` or `Transfer-Encoding` present: 400. `Host` absent or given
+   twice: 400. `Authorization` given twice: 400.
+5. Method: anything but `GET`, `HEAD` included: 405 with `Allow: GET`. A deliberate deviation:
+   RFC 9110 asks a general-purpose server to support `HEAD`; this one serves one page to one
+   reader and supports `GET` alone.
+6. `Host`: not exactly `127.0.0.1:<port>` (`localhost`, another port, any name): 403. This is
+   the guard against DNS rebinding.
+7. Route: no route matches the target: 404. The table above is public, so a 404 before the
+   token says nothing a reader of this document does not know.
+8. Token, on `/api/` and `/events`: 401 with `WWW-Authenticate: Bearer`.
+9. Session: `/api/sessions/<id>` naming no listed session: 404.
+10. Stream limit: past 8 open streams, `/events` answers 503.
+
+Other limits, each a field of the server's limits value so a test can shorten it: an answer or
+one stream write not finished within 10 s closes the connection; per stream at most 256 queued
+entries or 1 MiB, past which that stream is closed (below).
+
+## The JSON
+
+### Writing
+
+- No whitespace outside strings. Members in the order this document gives them. Numbers in
+  decimal without a sign, a fraction or an exponent. Absent values are `null`, never left out.
+- A string is the exact value: an address, a title, an action's argument and an event field
+  arrive quoted by `surf-answer` and are read through `surf_answer::unquote` before they are
+  written (D26); no `\x` escape of the link is left in them. Then these are written as `\u` and
+  four lower-case hexadecimal digits: `"`, `\`, every character below U+0020, U+007F to U+009F,
+  U+2028, U+2029, `<`, `>` and `&`. Every other character is written as itself in UTF-8. So no
+  line feed, carriage return, line or paragraph separator ever breaks a `data:` line, and no
+  body holds a raw `<`, `>` or `&`.
+- A value that `surf_answer::unquote` or `surf_answer::parse` refuses is written as `null`, the
+  entry is kept, and the session detail counts it in `unreadable`.
+- Times are milliseconds since the Unix epoch, as `surfd` stamped them.
+
+The string rule on one value, a title holding `a"b\c<d>&e`, a line feed, U+2028 and `é`:
+
+```json
+"a"b\c<d>&e\u000a é"
+```
+
+### The page line
+
+The `page` line of an answer, as `surf_answer::parse` reads it (`docs/agent-answer.md`), in one
+of three forms:
+
+- `{"kind":"none"}` for `page none`;
+- `{"kind":"loaded","status":<n>,"media_type":"<text>","address":"<text>","title":"<text>"}`,
+  `title` `null` when the answer has none;
+- `{"kind":"failed","reason":"<reason>","address":"<text>"}`.
+
+### A session summary
+
+`{"id","state","address","title","opened_at","last_action_at","ended_at","page"}`:
+
+- `id`: the session identity;
+- `state`: `open`, `closed` or `died`;
+- `address`, `title`: as the session last reported them to `surfd`, or `null`;
+- `opened_at`; `last_action_at`, the `kept_at` of its newest action entry, or `null`; `ended_at`,
+  or `null` while it is `open`;
+- `page`: the page line of its newest kept answer entry, or `null` when none is kept.
+
+### The session list, the 200 of `/api/sessions`
+
+`{"newest":<n>,"sessions":[<summary>,…]}`: `newest` is the highest number across sessions kept
+so far (0 before the first entry), and `sessions` every session `surfd` lists, oldest `opened_at`
+first.
+
+### The session detail, the 200 of `/api/sessions/<id>`
+
+`{"session":<summary>,"dropped":<n>,"log_dropped":<bool>,"unreadable":<n>,"entries":[<entry>,…]}`:
+
+- `dropped`: entries of this session dropped by the bound per session, the oldest first;
+- `log_dropped`: `true` when the bound over all sessions dropped this session's log whole
+  (D24); `entries` is then empty;
+- `entries`: the kept entries in their order (below).
+
+### The entries
+
+The order (D19): for each action, the action entry, then the events of that action in the order
+the components published them, then the answer entry. An entry belongs to the action entry it
+follows. A command that records no action (`look`, a refused command) has no entry.
+
+Every entry starts with the same five members:
+`{"number","session","index","kept_at","kind",…}`: `number` is the entry's number across all
+sessions (D23), from 1 for each run of `surfd`, the `id:` of the stream; `session` the session
+identity; `index` its number within the session, from 1; `kept_at` the time `surfd` kept it;
+`kind` one of the three below.
+
+- `action`: then `"sequence"` (the action's sequence number), `"command"` and `"argument"` (the
+  exact text, or `null` when the action has none).
+- `event`: then `"name"`, the qualified event name of `spec/`; `"unmapped"`, `true` when the
+  session process does not map this event yet (`story:agent-session-events`), its `fields` then
+  `{}`; and `"fields"`, an object with every field of the event by its `spec/` name, in the order
+  the `ess/1` document declares them. Each value is a string: the exact value
+  `surf_answer::unquote` reads from the quoted text the log keeps (D26). A field of bytes is the
+  text `<n> bytes`, never the bytes (D22).
+- `answer`: then `"page"`, the page line, and `"path"`,
+  `{"shown":<n>,"total":<n>,"actions":[{"sequence","command","argument"},…]}`, both as
+  `surf_answer::parse` reads them from the answer's lines (D20). A later story adds a member after
+  `path` (`now` by `story:view-now-panel`, `changed` by `story:view-controls-and-changes`); no
+  member is removed or renamed.
+
+What the view holds of a value, in the words of D22 and D21: a field of bytes (a response body, a
+request body) is written by the session process as its length, `<n> bytes`, never as the bytes;
+a password's value is its length, as the answer prints it; every other control value is kept as
+the answer prints it, which is what the `changed` panel shows. The token is not kept: the answer
+entry of `open` omits the `token` line, and no route and no stream event holds a session's token.
+
+### Event names
+
+The event names this document and the stream use, one per line. `task view-stream-check` (item 2
+of the design note) reads this block and fails naming each name the AsyncAPI projection of
+`spec/` lacks. A story that maps a new event adds its name here.
+
+```text
+surf.shell.WindowOpened
+surf.shell.TabOpened
+surf.shell.TabClosed
+surf.navigation.NavigationStarted
+surf.navigation.NavigationCommitted
+surf.navigation.NavigationFailed
+surf.navigation.NavigationCancelled
+surf.net.RequestStarted
+surf.net.ResponseReceived
+surf.net.FetchFailed
+surf.document.DocumentParsed
+surf.render.FramePainted
+```
+
+## The stream, `GET /events`
+
+The body is server-sent events (HTML Standard, event stream format). Each line ends in LF; each
+event ends with an empty line. An event is three lines:
+
+```text
+id: <the number across all sessions>
+event: entry | session | reset
+data: <one JSON line>
+```
+
+- `entry`: `data` is the entry exactly as the session detail writes it, `id` its `number`.
+- `session`: `data` is a session summary; `id` is the number of the entry that changed it, or,
+  for a change without an entry (a session listed for the first time, or `closed` or `died` when
+  its process ends), the newest number at that moment.
+- `reset`: `data` is `{"newest":<n>}` and `id` that same number: the reader's `Last-Event-ID` is
+  older than anything kept, so the reader loads the session list and its selected session again
+  and goes on from `<n>`.
+- A comment line, `: keep-alive` and an empty line, every 15 s.
+
+Where a stream starts:
+
+- Without `Last-Event-ID`: after the newest number at the time it opens, live only.
+- With `Last-Event-ID: <n>`, `<n>` decimal digits of at most 20, not above the newest number, and
+  no entry above `<n>` dropped: every kept entry above `<n>` in number order (the reader from a
+  number, D23), then live.
+- With any other `Last-Event-ID` (older than what is kept, above the newest, which is what a
+  restarted `surfd` sees, or not a number): `reset` first, then live after the newest number.
+
+Live, in number order: each entry as it is kept, in the order of D19, and after each answer entry
+the `session` event of its session with the same `id`. `session` events are sent live only and
+are not replayed from a number, so a page loads `/api/sessions` again after each reconnect; it
+opens the stream with `Last-Event-ID` set to `newest` of `/api/sessions` or the last `id:` it
+read, and ignores an entry whose `number` it already holds.
+
+A stream is closed, and its reader resumes with `Last-Event-ID`, when its queue in the server
+passes 256 entries or 1 MiB, when `surfd`'s queue for it passes 1,024 entries
+(`story:agent-session-events`), or when one write takes longer than 10 s.
+
+## Examples
+
+The run behind every example: view port 41873, view token
+`0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`, a page server on
+127.0.0.1:41000 that serves `/a.html` with 5,000 bytes of `text/html`. Session `5f0c2a9e-…`
+ran `open` without an address and then `go http://127.0.0.1:41000/a.html` (numbers 1 to 11).
+Session `0b7d4e21-…` then ran `open`, `go http://127.0.0.1:9/`, where nothing listens, and
+`close` (numbers 12 to 24). A request shows the lines the server reads; a browser sends more
+headers, which the server ignores within the limits. A body is shown as its bytes: a JSON body
+has no line feed at its end, and a page file ends where the file does. The `Content-Length` of
+each example was counted with `wc -c` over the body, not by hand.
+
+### `GET /`
+
+The page files are the ones the server is configured with; in this example `index.html` is the
+36 bytes `<!doctype html>`, a line feed, `<title>surf</title>` and a line feed.
+
+```http
+GET / HTTP/1.1
+Host: 127.0.0.1:41873
+```
+
+```http
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+Content-Length: 36
+Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+Cache-Control: no-store
+Cross-Origin-Resource-Policy: same-origin
+Date: Sat, 21 Nov 2026 02:00:00 GMT
+Connection: close
+
+<!doctype html>
+<title>surf</title>
+```
+
+### `GET /view.js`
+
+`view.js` configured as the 11 bytes `export {};` and a line feed.
+
+```http
+GET /view.js HTTP/1.1
+Host: 127.0.0.1:41873
+```
+
+```http
+HTTP/1.1 200 OK
+Content-Type: text/javascript; charset=utf-8
+Content-Length: 11
+Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+Cache-Control: no-store
+Cross-Origin-Resource-Policy: same-origin
+Date: Sat, 21 Nov 2026 02:00:00 GMT
+Connection: close
+
+export {};
+```
+
+### `GET /api/sessions`
+
+```http
+GET /api/sessions HTTP/1.1
+Host: 127.0.0.1:41873
+Authorization: Bearer 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+```
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+Content-Length: 603
+Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+Cache-Control: no-store
+Cross-Origin-Resource-Policy: same-origin
+Date: Sat, 21 Nov 2026 02:00:00 GMT
+Connection: close
+
+{"newest":24,"sessions":[{"id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","state":"open","address":"http://127.0.0.1:41000/a.html","title":null,"opened_at":1795226400000,"last_action_at":1795226401500,"ended_at":null,"page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/a.html","title":null}},{"id":"0b7d4e21-9c3a-4f58-b6e2-7a1d9c8e5f30","state":"closed","address":"http://127.0.0.1:9/","title":null,"opened_at":1795226401990,"last_action_at":1795226403000,"ended_at":1795226403010,"page":{"kind":"failed","reason":"Unreachable","address":"http://127.0.0.1:9/"}}]}
+```
+
+### `GET /api/sessions/<id>`
+
+The first session: its `open` (entries 1 to 4, the page line `page none`) and its `go` (entries
+5 to 11).
+
+```http
+GET /api/sessions/5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69 HTTP/1.1
+Host: 127.0.0.1:41873
+Authorization: Bearer 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+```
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+Content-Length: 3391
+Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+Cache-Control: no-store
+Cross-Origin-Resource-Policy: same-origin
+Date: Sat, 21 Nov 2026 02:00:00 GMT
+Connection: close
+
+{"session":{"id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","state":"open","address":"http://127.0.0.1:41000/a.html","title":null,"opened_at":1795226400000,"last_action_at":1795226401500,"ended_at":null,"page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/a.html","title":null}},"dropped":0,"log_dropped":false,"unreadable":0,"entries":[{"number":1,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":1,"kept_at":1795226400010,"kind":"action","sequence":1,"command":"open","argument":null},{"number":2,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":2,"kept_at":1795226400011,"kind":"event","name":"surf.shell.WindowOpened","unmapped":false,"fields":{"window_id":"2c4e6a80-1b3d-4f57-9a2c-4e6a8b0d2f41"}},{"number":3,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":3,"kept_at":1795226400012,"kind":"event","name":"surf.shell.TabOpened","unmapped":false,"fields":{"tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","window_id":"2c4e6a80-1b3d-4f57-9a2c-4e6a8b0d2f41"}},{"number":4,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":4,"kept_at":1795226400013,"kind":"answer","page":{"kind":"none"},"path":{"shown":1,"total":1,"actions":[{"sequence":1,"command":"open","argument":null}]}},{"number":5,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":5,"kept_at":1795226401500,"kind":"action","sequence":2,"command":"go","argument":"http://127.0.0.1:41000/a.html"},{"number":6,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":6,"kept_at":1795226401501,"kind":"event","name":"surf.navigation.NavigationStarted","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","url":"http://127.0.0.1:41000/a.html"}},{"number":7,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":7,"kept_at":1795226401502,"kind":"event","name":"surf.net.RequestStarted","unmapped":false,"fields":{"request_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","url":"http://127.0.0.1:41000/a.html"}},{"number":8,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":8,"kept_at":1795226401503,"kind":"event","name":"surf.net.ResponseReceived","unmapped":false,"fields":{"request_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","url":"http://127.0.0.1:41000/a.html","status":"200","media_type":"text/html","body":"5000 bytes"}},{"number":9,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":9,"kept_at":1795226401504,"kind":"event","name":"surf.navigation.NavigationCommitted","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","url":"http://127.0.0.1:41000/a.html","status":"200","media_type":"text/html","body":"5000 bytes"}},{"number":10,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":10,"kept_at":1795226401505,"kind":"event","name":"surf.document.DocumentParsed","unmapped":false,"fields":{"document_id":"d2f4b6d8-0a2c-4e4a-9b6d-8f0a2c4e6b84","url":"http://127.0.0.1:41000/a.html"}},{"number":11,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":11,"kept_at":1795226401506,"kind":"answer","page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/a.html","title":null},"path":{"shown":2,"total":2,"actions":[{"sequence":1,"command":"open","argument":null},{"sequence":2,"command":"go","argument":"http://127.0.0.1:41000/a.html"}]}}]}
+```
+
+The second session after the bound over all sessions dropped its log (D24), body only (341
+bytes):
+
+```json
+{"session":{"id":"0b7d4e21-9c3a-4f58-b6e2-7a1d9c8e5f30","state":"closed","address":"http://127.0.0.1:9/","title":null,"opened_at":1795226401990,"last_action_at":1795226403000,"ended_at":1795226403010,"page":{"kind":"failed","reason":"Unreachable","address":"http://127.0.0.1:9/"}},"dropped":13,"log_dropped":true,"unreadable":0,"entries":[]}
+```
+
+### `GET /events`
+
+A reader that last read number 23 reconnects; entry 24, the answer of the second session's
+`close`, is replayed, and 15 s later the comment line follows.
+
+```http
+GET /events HTTP/1.1
+Host: 127.0.0.1:41873
+Authorization: Bearer 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+Last-Event-ID: 23
+```
+
+```http
+HTTP/1.1 200 OK
+Content-Type: text/event-stream
+Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+Cache-Control: no-store
+Cross-Origin-Resource-Policy: same-origin
+Date: Sat, 21 Nov 2026 02:00:00 GMT
+Connection: close
+
+id: 24
+event: entry
+data: {"number":24,"session":"0b7d4e21-9c3a-4f58-b6e2-7a1d9c8e5f30","index":13,"kept_at":1795226403002,"kind":"answer","page":{"kind":"failed","reason":"Unreachable","address":"http://127.0.0.1:9/"},"path":{"shown":3,"total":3,"actions":[{"sequence":1,"command":"open","argument":null},{"sequence":2,"command":"go","argument":"http://127.0.0.1:9/"},{"sequence":3,"command":"close","argument":null}]}}
+
+: keep-alive
+
+```
+
+### `GET /api/sessions` without the token
+
+```http
+GET /api/sessions HTTP/1.1
+Host: 127.0.0.1:41873
+```
+
+```http
+HTTP/1.1 401 Unauthorized
+Content-Type: application/json
+Content-Length: 24
+WWW-Authenticate: Bearer
+Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+Cache-Control: no-store
+Cross-Origin-Resource-Policy: same-origin
+Date: Sat, 21 Nov 2026 02:00:00 GMT
+Connection: close
+
+{"error":"unauthorized"}
+```
+
+### The three entry kinds
+
+`action`, entry 5 (182 bytes):
+
+```json
+{"number":5,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":5,"kept_at":1795226401500,"kind":"action","sequence":2,"command":"go","argument":"http://127.0.0.1:41000/a.html"}
+```
+
+`event`, entry 8, with `body` as its length (323 bytes):
+
+```json
+{"number":8,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":8,"kept_at":1795226401503,"kind":"event","name":"surf.net.ResponseReceived","unmapped":false,"fields":{"request_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","url":"http://127.0.0.1:41000/a.html","status":"200","media_type":"text/html","body":"5000 bytes"}}
+```
+
+`answer`, entry 11 (393 bytes):
+
+```json
+{"number":11,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":11,"kept_at":1795226401506,"kind":"answer","page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/a.html","title":null},"path":{"shown":2,"total":2,"actions":[{"sequence":1,"command":"open","argument":null},{"sequence":2,"command":"go","argument":"http://127.0.0.1:41000/a.html"}]}}
+```
+
+### The three stream events
+
+`entry`, as it arrives live after the second session's `close` (422 bytes, the empty line
+included):
+
+```text
+id: 24
+event: entry
+data: {"number":24,"session":"0b7d4e21-9c3a-4f58-b6e2-7a1d9c8e5f30","index":13,"kept_at":1795226403002,"kind":"answer","page":{"kind":"failed","reason":"Unreachable","address":"http://127.0.0.1:9/"},"path":{"shown":3,"total":3,"actions":[{"sequence":1,"command":"open","argument":null},{"sequence":2,"command":"go","argument":"http://127.0.0.1:9/"},{"sequence":3,"command":"close","argument":null}]}}
+
+```
+
+`session`, when the second session's process has ended after `close` and it is listed `closed`
+(299 bytes):
+
+```text
+id: 24
+event: session
+data: {"id":"0b7d4e21-9c3a-4f58-b6e2-7a1d9c8e5f30","state":"closed","address":"http://127.0.0.1:9/","title":null,"opened_at":1795226401990,"last_action_at":1795226403000,"ended_at":1795226403010,"page":{"kind":"failed","reason":"Unreachable","address":"http://127.0.0.1:9/"}}
+
+```
+
+`reset`, to a reader that sends `Last-Event-ID: 99` while the newest number is 24 (41 bytes):
+
+```text
+id: 24
+event: reset
+data: {"newest":24}
+
+```
