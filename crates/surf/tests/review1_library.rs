@@ -53,6 +53,7 @@ fn review1_a_system_whose_request_was_answered_is_not_fetched_again_by_a_new_bro
         .net
         .deliver_response(DeliverResponse {
             request_id: navigation_started.navigation_id.clone(),
+            url: Url("http://127.0.0.1/".to_owned()),
             status: Status(200),
             media_type: MediaType("text/plain".to_owned()),
             body: Vec::new(),

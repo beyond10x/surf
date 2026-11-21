@@ -12,7 +12,12 @@ entities:
       summary: One attempt to load an address into a tab.
     # A navigation issues exactly one request and is identified by it, so the answer to the
     # request names its navigation without the network component knowing what a navigation is.
-    # UNMAPPED: a redirect makes one navigation issue several requests; nothing here follows one.
+    # A redirect does not change that: the network component follows it inside the one request
+    # (`surf.net`), and the response names the address it came from, where the navigation
+    # commits. The HTML Standard navigates otherwise: it fetches with the redirect mode "manual",
+    # follows each redirect itself ("create navigation params by fetching"), and hands a redirect
+    # to a scheme it does not fetch (`mailto:`) on instead of failing it. Here every redirect stays
+    # inside the request, and one that leaves `http:` fails it with UnsupportedScheme.
     identity:
       name: navigation_id
       type: surf.net.RequestId
@@ -111,9 +116,15 @@ commands:
       summary: Record that a response arrived for the navigation, and hand it on.
     # The response travels through the commit, so only a navigation that was still Started when
     # its response arrived gets a document: a cancelled one publishes nothing to parse.
+    refs: ["whatwg-html:create-navigation-params-by-fetching", "whatwg-html:initialise-the-document-object"]
     input:
       - name: navigation_id
         type: surf.net.RequestId
+      # The response's address, after the last redirect. The navigation commits there: the HTML
+      # Standard creates the document with the response's URL.
+      - name: url
+        type: surf.url.Url
+        example: "http://example.org/"
       - name: status
         type: surf.net.Status
       - name: media_type
@@ -128,16 +139,20 @@ commands:
           surf.navigation.NavigationNotFound:
             navigation_id: input.navigation_id
 
+      # The navigation's address becomes the response's: after redirects it is where the page is.
+      # The address asked for stays on the request (`surf.net.Requests`).
       - name: committed
         moves: surf.navigation.Navigation.commit
         instance: navigation_id
+        sets:
+          url: input.url
         emits:
           - surf.navigation.NavigationCommitted
         payload:
           surf.navigation.NavigationCommitted:
             navigation_id: input.navigation_id
             tab_id: {subject: tab_id}
-            url: {subject: url}
+            url: input.url
             status: input.status
             media_type: input.media_type
             body: input.body
@@ -237,6 +252,7 @@ events:
       - name: url
         type: surf.url.Url
 
+  # `url` is the response's address, where the navigation committed.
   - name: surf.navigation.NavigationCommitted
     fields:
       - name: navigation_id

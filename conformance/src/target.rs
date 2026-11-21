@@ -559,6 +559,7 @@ fn failure_reason(reason: FailureReason) -> &'static str {
         FailureReason::Unreachable => "Unreachable",
         FailureReason::UnsupportedScheme => "UnsupportedScheme",
         FailureReason::MalformedResponse => "MalformedResponse",
+        FailureReason::TooManyRedirects => "TooManyRedirects",
     }
 }
 
@@ -567,6 +568,7 @@ fn failure_reason_named(name: &str) -> Option<FailureReason> {
         FailureReason::Unreachable,
         FailureReason::UnsupportedScheme,
         FailureReason::MalformedResponse,
+        FailureReason::TooManyRedirects,
     ]
     .into_iter()
     .find(|reason| failure_reason(*reason) == name)
@@ -699,6 +701,7 @@ fn invocation(
             "surf.navigation.CommitNavigation",
             vec![
                 ("navigation_id", uuid_of(&input.navigation_id)),
+                ("url", text(&input.url.0)),
                 ("status", integer(input.status.0)),
                 ("media_type", text(&input.media_type.0)),
                 ("body", bytes(&input.body)),
@@ -752,6 +755,7 @@ fn invocation(
             "surf.agent.NoteNavigationCommitted",
             vec![
                 ("navigation_id", uuid_of(&input.navigation_id)),
+                ("url", text(&input.url.0)),
                 ("status", integer(input.status.0)),
                 ("media_type", text(&input.media_type.0)),
             ],
@@ -916,6 +920,7 @@ where
             }
             "surf.agent.NoteNavigationCommitted" => {
                 let navigation_id = RequestId(input.uuid("navigation_id")?);
+                let url = Url(input.text("url")?);
                 let status = Status(input.integer("status")?);
                 let media_type = MediaType(input.text("media_type")?);
                 input.finish()?;
@@ -923,6 +928,7 @@ where
                     .agent_mut()
                     .note_navigation_committed(NoteNavigationCommitted {
                         navigation_id,
+                        url,
                         status,
                         media_type,
                     })
@@ -1104,6 +1110,7 @@ where
             }
             "surf.navigation.CommitNavigation" => {
                 let navigation_id = RequestId(input.uuid("navigation_id")?);
+                let url = Url(input.text("url")?);
                 let status = Status(input.integer("status")?);
                 let media_type = MediaType(input.text("media_type")?);
                 let body = input.bytes("body")?;
@@ -1112,6 +1119,7 @@ where
                     .navigator_mut()
                     .commit_navigation(CommitNavigation {
                         navigation_id,
+                        url,
                         status,
                         media_type,
                         body,
@@ -1179,6 +1187,7 @@ where
             }
             "surf.net.DeliverResponse" => {
                 let request_id = RequestId(input.uuid("request_id")?);
+                let url = Url(input.text("url")?);
                 let status = Status(input.integer("status")?);
                 let media_type = MediaType(input.text("media_type")?);
                 let body = input.bytes("body")?;
@@ -1187,6 +1196,7 @@ where
                     .net_mut()
                     .deliver_response(DeliverResponse {
                         request_id,
+                        url,
                         status,
                         media_type,
                         body,
@@ -1743,6 +1753,7 @@ mod tests {
     fn commit() -> BindingInvocation {
         BindingInvocation::CommitOnResponse(CommitNavigation {
             navigation_id: navigation_id(),
+            url: Url(ADDRESS.to_owned()),
             status: Status(200),
             media_type: MediaType("text/html".to_owned()),
             body: Vec::new(),

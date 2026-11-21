@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 5042a1110c657521cdce7556f33cbda05f4df3fdd350ca1ac5dfafd26db14a63
+// contract digest 055477f7d70d2837ffe9e39fee6cbc6130c982cf9d0650a28bb00f7c8ca52d2c
 // do not edit: regenerate with `ess synthesize`
 
 //! Agent — `surf.agent`.
@@ -543,13 +543,15 @@ pub enum GoOutcome {
 
 /// Note a committed navigation — the input of `surf.agent.NoteNavigationCommitted`.
 ///
-/// Record on the session showing a navigation that it committed, with its status and media type.
+/// Record on the session showing a navigation that it committed, with its address, status and media type.
 ///
 /// Everything it can result in is [`NoteNavigationCommittedOutcome`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NoteNavigationCommitted {
     /// `navigation_id` — `surf.net.RequestId`.
     pub navigation_id: crate::net::RequestId,
+    /// `url` — `surf.url.Url`.
+    pub url: crate::url::Url,
     /// `status` — `surf.net.Status`.
     pub status: crate::net::Status,
     /// `media_type` — `surf.net.MediaType`.
@@ -565,7 +567,7 @@ pub struct NoteNavigationCommitted {
 pub enum NoteNavigationCommittedOutcome {
     /// `noted` — otherwise.
     ///
-    /// The session showing the navigation, if any, shows it Committed with its status and media type.
+    /// The session showing the navigation, if any, shows it Committed at its address with its status and media type.
     Noted {
         /// The `surf.agent.SessionNavigationChanged` this outcome publishes.
         session_navigation_changed: SessionNavigationChanged,
@@ -937,7 +939,7 @@ pub mod obligations {
     ///
     /// Why it is not generated: kept an obligation by a set outcome over filtered rows (`instances:`), in `noted`.
     ///
-    /// Contract: given `surf.agent.NoteNavigationCommitted` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `navigation_id == input.navigation_id`, setting `navigation_state`, `status`, `media_type`, emits `surf.agent.SessionNavigationChanged`.
+    /// Contract: given `surf.agent.NoteNavigationCommitted` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `navigation_id == input.navigation_id`, setting `url`, `navigation_state`, `status`, `media_type`, emits `surf.agent.SessionNavigationChanged`.
     pub trait NoteNavigationCommittedBehavior {
         /// Decides and enacts exactly one declared outcome of `surf.agent.NoteNavigationCommitted`.
         ///

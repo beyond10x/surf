@@ -18,3 +18,5 @@ scenarios:
   - scenarios/agent-session-reads-started-navigation.yaml
   - scenarios/agent-session-shows-failure-reason.yaml
   - scenarios/agent-session-log-in-sequence-order.yaml
+  - scenarios/navigation-commits-at-response-url.yaml
+  - scenarios/agent-session-shows-response-url.yaml

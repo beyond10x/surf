@@ -2,8 +2,8 @@
   "provenance": {
     "system": "surf",
     "specification_version": "v1",
-    "source_digest": "26a46de4c43e653b856b856eff2d1bdebd9e4941d2bb5c803186f6d32151f804",
-    "contract_digest": "5042a1110c657521cdce7556f33cbda05f4df3fdd350ca1ac5dfafd26db14a63"
+    "source_digest": "9c60a0c9c105fe9b80f59952e1b645c323414c54f720e5927cebc717e6653849",
+    "contract_digest": "055477f7d70d2837ffe9e39fee6cbc6130c982cf9d0650a28bb00f7c8ca52d2c"
   },
   "scope": {
     "profile": "component-skeletons"
@@ -291,7 +291,7 @@
           "class": "undetermined",
           "construct": "a set outcome over filtered rows (`instances:`), in `noted`"
         },
-        "contract": "given `surf.agent.NoteNavigationCommitted` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `navigation_id == input.navigation_id`, setting `navigation_state`, `status`, `media_type`, emits `surf.agent.SessionNavigationChanged`"
+        "contract": "given `surf.agent.NoteNavigationCommitted` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `navigation_id == input.navigation_id`, setting `url`, `navigation_state`, `status`, `media_type`, emits `surf.agent.SessionNavigationChanged`"
       }
     },
     {
