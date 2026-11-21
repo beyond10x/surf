@@ -11,24 +11,42 @@ description: What surf does today, and what it does not do yet.
   `renderer`.
 - **Its own HTTP/1.1 client**, with one deadline for the whole exchange (40 seconds at most) and
   hard limits on header and body size.
-- **83 specified scenarios**, each passing twice: once against the specification's own
+- **93 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **407 tests**, built with warnings treated as errors.
+- **453 tests**, built with warnings treated as errors.
+
+New with the sixth wave of the current plan, not in a release yet. Nothing a `surf-agent`
+command prints has changed:
+
+- **What sessions do, served live.** `surfd` serves a read-only stream of what its sessions do:
+  the list of sessions, each session's actions, events and answers, and each new one as it
+  happens. It listens on 127.0.0.1 only; while it runs, the address and the token to use are in
+  `$XDG_RUNTIME_DIR/surf/view-url`. The routes are in
+  [`docs/view-stream.md`](https://github.com/beyond10x/surf/blob/main/docs/view-stream.md). The
+  page that shows real sessions is planned for wave 7.
+- **The tokenizer reads text.** Text inside elements such as `<script>` and `<textarea>` is
+  tokenized (the RCDATA, RAWTEXT, script data and PLAINTEXT states), and all 328 text cases of
+  the test data pass. Character references are not read yet.
+- **A document's elements in the specification.** The specification holds the elements of a page
+  an agent can act on (links, buttons and form fields) and parses a document in steps: started,
+  one element at a time in tree order, then finished with its title. The scenarios hold it. No
+  parser fills it yet, so a real page's document stays unfinished and an answer still shows no
+  page content.
 
 New with the fifth wave of the current plan, not in a release yet. Nothing a user of
 `surf-agent` sees has changed:
 
 - **What a session did, kept for the live view.** With each answer, a session's process sends
   the daemon what it did: the actions, the events they caused and the answer, without the token.
-  `surfd` keeps these in memory only, bounded per session and over all sessions. Nothing shows
-  them yet; the live view reads them in a later wave.
+  `surfd` keeps these in memory only, bounded per session and over all sessions. Since the sixth
+  wave `surfd` serves them (above).
 - **The HTML parser decides the encoding.** It sniffs a document's encoding as the HTML Standard
   says (a byte order mark, else a `meta` element in the first 1,024 bytes, else windows-1252) and
   decodes UTF-8, UTF-16 and windows-1252. It passes 75 of the 82 encoding cases.
 - **The tokenizer reads markup.** Tags, attributes, comments, DOCTYPEs, processing instructions
   and CDATA sections are tokenized, and all 1,979 markup cases of the test data pass. Text inside
-  elements such as `<script>` and `<textarea>` and character references are not read yet, and
-  the parser builds no tree, so an answer still shows no page content.
+  elements such as `<script>` and `<textarea>` is read since the sixth wave; character references
+  are not read yet, and the parser builds no tree, so an answer still shows no page content.
 
 New with the fourth wave of the current plan, shipped in release `0.2.0` (the
 [releases page](https://github.com/beyond10x/surf/releases) lists them):
@@ -47,7 +65,7 @@ New with the fourth wave of the current plan, shipped in release `0.2.0` (the
 - **A gate for the HTML parser's tests.** The harness's counts are written down per file, tag and
   section, and `task check` fails when a count falls below them, when a case stops running
   without a reason, or when an expected count is lowered. The parser was empty then and passed 5
-  of 9,095 cases; after the fifth wave it passes 4,164, and the gate holds that.
+  of 9,095 cases; after the sixth wave it passes 4,442, and the gate holds that.
 - **Four binaries in one release.** A Linux archive holds `surf`, `surf-agent`, `surfd` and
   `surf-session`; a macOS archive holds `surf`. A smoke test runs the unpacked archive before a
   release is cut. See [Try it](try-it.md#install).
@@ -82,7 +100,7 @@ New with the second wave:
   page is new with the third wave.
 - **A test harness for the HTML parser.** It holds 9,107 cases from html5lib-tests and
   web-platform-tests and counts how many a parser passes. Today it runs 9,095 of them and passes
-  4,164: 75 encoding cases and 4,089 tokenizer cases. The parser builds no tree yet.
+  4,442: 75 encoding cases and 4,367 tokenizer cases. The parser builds no tree yet.
 
 New with the first wave:
 

@@ -11,19 +11,19 @@ window, no rendering, no JavaScript and no `https:` yet.
 
 ## Numbers
 
-On 2026-11-21, with ess 0.96.0, after wave 5 of the current plan:
+On 2026-11-21, with ess 0.96.0, after wave 6 of the current plan:
 
 | what | value |
 |---|---|
 | specification | ESS 0.96.0, valid |
-| conformance scenarios | 83 of 83 pass, against the interpreter and against the Rust code |
-| tests | 407 passed |
+| conformance scenarios | 93 of 93 pass, against the interpreter and against the Rust code |
+| tests | 453 passed |
 | URL test data | 872 of 904 cases pass; 32 skipped, listed by name |
-| HTML parser test data | 9,107 cases counted, 9,095 run, 4,164 pass; the parser decides the encoding and tokenizes markup but builds no tree yet; `task check` holds these counts |
+| HTML parser test data | 9,107 cases counted, 9,095 run, 4,442 pass; the parser decides the encoding and tokenizes markup and text but reads no character reference and builds no tree yet; `task check` holds these counts |
 | third-party crates in what ships | 0 |
 | unsafe code | forbidden in every hand-written crate |
 | standard sections marked complete | 0 |
-| roadmap | 5 of 22 waves delivered; release `0.2.0` follows wave 4 ([releases](https://github.com/beyond10x/surf/releases)) |
+| roadmap | 6 of 22 waves delivered; release `0.2.0` follows wave 4 ([releases](https://github.com/beyond10x/surf/releases)) |
 
 ## What is not checked yet
 

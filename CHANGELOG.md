@@ -11,12 +11,27 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 - `surfd` keeps, in memory only, a log of what each session did: each action, the events it
   caused and the answer, without the token. It is bounded (10,000 entries and 16 MiB per
-  session, 64 MiB over all sessions) and is for the live view, which does not serve it yet. No
+  session, 64 MiB over all sessions) and is what the live view's stream serves (below). No
   `surf-agent` command prints anything new.
+- `surfd` serves the live view's stream: the list of its sessions, each session's kept log, and
+  server-sent events as the sessions act, in the routes of
+  [`docs/view-stream.md`](docs/view-stream.md). It is read-only (`GET` only, no route changes
+  anything) and listens on 127.0.0.1 only, on a port the system picks. The address and a token
+  drawn at start are in `$XDG_RUNTIME_DIR/surf/view-url` (mode 0600), removed when `surfd`
+  exits; the routes of data need the token. No session's token is in the stream. The page that
+  shows real sessions is planned for a later wave.
 - The HTML parser (`surf-html`) decides a document's encoding by the HTML Standard's sniffing
   algorithm and decodes UTF-8, UTF-16LE, UTF-16BE and windows-1252, and its tokenizer reads
   tags, attributes, comments, DOCTYPEs, processing instructions and CDATA sections. It builds no
   tree yet, and no command uses it.
+- The tokenizer also reads text: the RCDATA, RAWTEXT, script data and PLAINTEXT states, the
+  content of elements such as `<textarea>` and `<script>`. All 328 text cases of the test data
+  pass. Character references are not read yet.
+- The specification holds the elements of a document an agent can act on: the entity
+  `Element`, the commands `AddElement` and `FinishParsing`, and the view `Elements`. A document
+  is now parsed in steps: `ParseDocument` leaves it `Parsing`, and `FinishParsing` sets its
+  title and moves it to `Parsed`. No parser fills them yet: a real page's document stays
+  `Parsing`.
 
 ### Changed
 

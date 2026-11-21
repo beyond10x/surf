@@ -26,7 +26,7 @@ collision; a story that collides moves to the next wave. The table below is the 
 | 3 (delivered, [page](agent-wave-3.md)) | `agent-page-path-spec`, `agent-surfd-supervisor`, `runner-surf-cli-package` (moved from wave 2 after D32: it shares `crates/surf/Cargo.toml` with `agent-session-spec`), `view-page-prototype` (added in wave 2: the page on example data, so that it can be opened before `surfd` exists) |
 | 4 (delivered, [page](agent-wave-4.md)) | `agent-redirect-spec`, `agent-session-process`, `html-conformance-gate`; then `release-agent-binaries`, alone |
 | 5 (delivered, [page](agent-wave-5.md)) | `agent-session-events`, `html-input-stream`, `html-tokenizer-markup` |
-| 6 | `html-document-spec`, `html-tokenizer-text`, `view-surfd-serves` |
+| 6 (delivered, [page](agent-wave-6.md)) | `html-document-spec`, `html-tokenizer-text`, `view-surfd-serves` |
 | 7 | `agent-fetch-redirects`, `html-character-references`, `view-first-page` |
 | 8 | `agent-request-body-spec`, `html-tree-body`, `view-detail-panel` |
 | 9 | `agent-fetch-post`, `html-actionable-elements`, `html-tree-formatting` |
