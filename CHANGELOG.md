@@ -7,6 +7,21 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ## [Unreleased]
 
+### Added
+
+- `surf-agent open [<url>]`, `go <url>`, `look` and `close` drive a browser session from the
+  command line, one call at a time, for an AI agent or a script. `open` prints the session's
+  identity and its token once; later calls name them in `SURF_SESSION` and `SURF_TOKEN`. Each
+  session runs in a process of its own, `surf-session`, under the daemon `surfd`, which
+  `surf-agent open` starts. Every call answers in the line format of
+  [`docs/agent-answer.md`](docs/agent-answer.md). How to use it:
+  [Drive surf from an agent](https://beyond10x.github.io/surf/docs/drive-from-an-agent).
+- The Linux archives hold `surf`, `surf-agent`, `surfd` and `surf-session`. Install the four
+  into one directory: `surf-agent` starts `surfd` from its own directory, and `surfd` starts
+  `surf-session` from its own.
+- The agent binaries are for Linux only: they read the caller's user id from `/proc/self` and
+  need `XDG_RUNTIME_DIR`, and macOS has neither. The macOS archives hold `surf`, as before.
+
 ## [0.1.0] - 2026-11-21
 
 The first release.

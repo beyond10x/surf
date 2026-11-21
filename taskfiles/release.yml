@@ -1,0 +1,25 @@
+version: '3'
+
+set: [pipefail]
+
+tasks:
+  release-smoke:
+    desc: Smoke-test an unpacked release archive, as the release workflow does (DIR=<dir> [TARGET=<target>]).
+    summary: |
+      Smoke-test an unpacked release archive, as the release workflow does.
+
+      Runs taskfiles/release-smoke.sh on DIR, the unpacked directory surf-<version>-<target>/ of
+      a release archive or of a manual run of .github/workflows/release.yml. TARGET, when set,
+      is the cargo target the end-to-end case is built for. The script checks the files of the
+      directory, runs surf on a usage error and an unreachable address, and on Linux runs the
+      end-to-end case of crates/session/tests/e2e.rs on the directory's surf-agent, surfd and
+      surf-session, then fails if a process from the directory still runs. docs/releasing.md
+      says when it runs.
+
+      It runs from the repository root, alone (task --taskfile taskfiles/release.yml
+      release-smoke DIR=<dir>) and included from the root Taskfile.yml alike.
+    dir: '{{.TASKFILE_DIR}}/..'
+    requires:
+      vars: [DIR]
+    cmds:
+      - sh taskfiles/release-smoke.sh '{{.DIR}}' {{if .TARGET}}'{{.TARGET}}'{{end}}
