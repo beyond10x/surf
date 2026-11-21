@@ -1,6 +1,6 @@
 <!--
   generated from surf v1
-  contract digest 5042a1110c657521cdce7556f33cbda05f4df3fdd350ca1ac5dfafd26db14a63
+  contract digest 055477f7d70d2837ffe9e39fee6cbc6130c982cf9d0650a28bb00f7c8ca52d2c
   do not edit: regenerate with `ess synthesize`
 -->
 # Synthesis plan — surf v1
@@ -170,7 +170,7 @@ What the specification fully determines is generated; what it cannot determine i
 
 | capability | source | why not generated | contract |
 | --- | --- | --- | --- |
-| command behaviour | `surf.agent.NoteNavigationCommitted` | kept an obligation by a set outcome over filtered rows (`instances:`), in `noted` | given `surf.agent.NoteNavigationCommitted` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `navigation_id == input.navigation_id`, setting `navigation_state`, `status`, `media_type`, emits `surf.agent.SessionNavigationChanged` |
+| command behaviour | `surf.agent.NoteNavigationCommitted` | kept an obligation by a set outcome over filtered rows (`instances:`), in `noted` | given `surf.agent.NoteNavigationCommitted` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `navigation_id == input.navigation_id`, setting `url`, `navigation_state`, `status`, `media_type`, emits `surf.agent.SessionNavigationChanged` |
 | command behaviour | `surf.agent.NoteNavigationEnded` | kept an obligation by a set outcome over filtered rows (`instances:`), in `noted` | given `surf.agent.NoteNavigationEnded` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `navigation_id == input.navigation_id`, setting `navigation_state`, emits `surf.agent.SessionNavigationChanged` |
 | command behaviour | `surf.agent.NoteNavigationFailed` | kept an obligation by a set outcome over filtered rows (`instances:`), in `noted` | given `surf.agent.NoteNavigationFailed` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `navigation_id == input.navigation_id`, setting `navigation_state`, `failure_reason`, emits `surf.agent.SessionNavigationChanged` |
 | command behaviour | `surf.agent.NoteNavigationStarted` | kept an obligation by a set outcome over filtered rows (`instances:`), in `noted` | given `surf.agent.NoteNavigationStarted` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `tab_id == input.tab_id`, setting `navigation_id`, `url`, `navigation_state`, `status`, `media_type`, `failure_reason`, emits `surf.agent.SessionNavigationChanged` |

@@ -408,8 +408,8 @@ impl<R> NoteNavigationStartedBehavior for AgentPorts<R> {
     }
 }
 
-/// `noted`: every session showing the navigation shows it `Committed`, with its status and media
-/// type.
+/// `noted`: every session showing the navigation shows it `Committed` at the response's address
+/// (the one after the last redirect), with its status and media type.
 impl<R> NoteNavigationCommittedBehavior for AgentPorts<R> {
     fn note_navigation_committed(
         &mut self,
@@ -418,6 +418,7 @@ impl<R> NoteNavigationCommittedBehavior for AgentPorts<R> {
         let sessions = self.change_every(
             |session| session.navigation_id.as_ref() == Some(&input.navigation_id),
             |session| {
+                session.url = Some(input.url.clone());
                 session.navigation_state = Some(NavigationState::Committed);
                 session.status = Some(input.status.clone());
                 session.media_type = Some(input.media_type.clone());

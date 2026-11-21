@@ -242,7 +242,7 @@ fn note_navigation_started_clears_the_status_media_type_and_failure_reason() {
 }
 
 #[test]
-fn note_navigation_committed_sets_committed_status_and_media_type_on_the_session_showing_it() {
+fn note_navigation_committed_sets_the_response_address_and_committed_on_the_session_showing_it() {
     let mut agent = agent_port(with_session(with_session(AgentPorts::new(), 0x10), 0x20));
     for (tab_id, navigation_id) in [(0x12, 0x30), (0x22, 0x40)] {
         agent
@@ -259,6 +259,7 @@ fn note_navigation_committed_sets_committed_status_and_media_type_on_the_session
     } = agent
         .note_navigation_committed(NoteNavigationCommitted {
             navigation_id: navigation(0x40),
+            url: Url("http://example.org/after-redirect".to_owned()),
             status: Status(404),
             media_type: html(),
         })
@@ -269,11 +270,17 @@ fn note_navigation_committed_sets_committed_status_and_media_type_on_the_session
 
     let rows = agent.sessions().expect("the view answers");
     let committed = row(&rows, 0x20);
+    // The session shows the address the response came from, not the one asked for.
+    assert_eq!(
+        committed.url,
+        Some(Url("http://example.org/after-redirect".to_owned()))
+    );
     assert_eq!(committed.navigation_state, Some(NavigationState::Committed));
     assert_eq!(committed.status, Some(Status(404)));
     assert_eq!(committed.media_type, Some(html()));
     assert_eq!(committed.failure_reason, None);
     let other = row(&rows, 0x10);
+    assert_eq!(other.url, Some(address()));
     assert_eq!(other.navigation_state, Some(NavigationState::Started));
     assert_eq!(other.status, None);
     assert_eq!(other.media_type, None);
@@ -283,6 +290,7 @@ fn note_navigation_committed_sets_committed_status_and_media_type_on_the_session
     } = agent
         .note_navigation_committed(NoteNavigationCommitted {
             navigation_id: navigation(0x99),
+            url: Url("http://example.org/elsewhere".to_owned()),
             status: ok(),
             media_type: html(),
         })

@@ -256,6 +256,7 @@ fn failure_reason(reason: FailureReason) -> &'static str {
         FailureReason::Unreachable => "Unreachable",
         FailureReason::UnsupportedScheme => "UnsupportedScheme",
         FailureReason::MalformedResponse => "MalformedResponse",
+        FailureReason::TooManyRedirects => "TooManyRedirects",
     }
 }
 
@@ -525,8 +526,11 @@ where
                 media_type,
                 body,
             } => {
+                // The transport follows no redirect yet (`story:agent-fetch-redirects`), so the
+                // response comes from the address that was asked for.
                 self.system.net.deliver_response(DeliverResponse {
                     request_id: started.request_id,
+                    url: started.url,
                     status: Status(i64::from(status)),
                     media_type: MediaType(media_type),
                     body,

@@ -1,0 +1,58 @@
+# A navigation in a session's tab whose response comes from another address is read back on the
+# session at that address, the one its page now has. Arranged as
+# `agent-session-reads-committed-navigation.yaml` is, for the reasons it gives.
+type: ess-scenario/6
+domain: surf.agent
+scenario: agent-session-shows-response-url
+summary: A navigation in a session's tab commits at another address, and the session shows that address.
+
+arrange:
+  - instance: session
+    entity: surf.agent.Session
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-000000000031
+      fields:
+        window_id: 5a7c1e00-0000-4000-8000-000000000032
+        tab_id: 5a7c1e00-0000-4000-8000-000000000033
+        holder: 5a7c1e00-0000-4000-8000-000000000031
+      state: Open
+  - instance: load
+    entity: surf.navigation.Navigation
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 5a7c1e00-0000-4000-8000-000000000033
+      url: http://example.org/old
+    outcome: started
+    events:
+      - event: surf.navigation.NavigationStarted
+        payload:
+          tab_id: 5a7c1e00-0000-4000-8000-000000000033
+          url: http://example.org/old
+    capture: {instance: load, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  # The body is `<html></html>`.
+  - at: 2026-01-06T09:00:01Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: load}
+      url: http://example.org/new
+      status: 200
+      media_type: text/html
+      body: PGh0bWw+PC9odG1sPg==
+    outcome: responded
+
+assert:
+  - view: surf.agent.SessionState
+    params: {session_id: {$instance: session}}
+    contains:
+      session_id: {$instance: session}
+      state: Open
+      url: http://example.org/new
+      navigation_state: Committed
+      status: 200
+      media_type: text/html
+      failure_reason: null

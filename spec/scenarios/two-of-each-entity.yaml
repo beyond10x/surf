@@ -110,6 +110,7 @@ timeline:
     command: surf.net.DeliverResponse
     input:
       request_id: {$instance: first-load}
+      url: https://example.org/first
       status: 200
       media_type: text/html
       body: PGh0bWw+PC9odG1sPg==
@@ -119,6 +120,7 @@ timeline:
     command: surf.net.DeliverResponse
     input:
       request_id: {$instance: second-load}
+      url: https://example.org/second
       status: 200
       media_type: text/html
       body: PGh0bWw+PC9odG1sPg==

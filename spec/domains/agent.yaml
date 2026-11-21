@@ -156,7 +156,9 @@ entities:
       # What the agent reads back about its current navigation. The navigator holds the
       # navigation; this component reads none of its rows and keeps the copy its events report
       # (`NoteNavigationStarted` and the three commands that note its end). All three are absent
-      # until the first navigation of the session started.
+      # until the first navigation of the session started. `url` is the address asked for until
+      # the navigation commits, then the response's, after the last redirect
+      # (`NoteNavigationCommitted`).
       - name: navigation_id
         type: Optional<surf.net.RequestId>
       - name: url
@@ -462,10 +464,14 @@ commands:
     naming:
       wire: note-navigation-committed
       display: Note a committed navigation
-      summary: Record on the session showing a navigation that it committed, with its status and media type.
+      summary: Record on the session showing a navigation that it committed, with its address, status and media type.
     input:
       - name: navigation_id
         type: surf.net.RequestId
+      # The address the navigation committed at: the response's, after the last redirect. It
+      # replaces the address the session showed since the navigation started.
+      - name: url
+        type: surf.url.Url
       - name: status
         type: surf.net.Status
       - name: media_type
@@ -475,6 +481,7 @@ commands:
         updates: surf.agent.Session
         instances: {where: navigation_id == input.navigation_id}
         sets:
+          url: input.url
           navigation_state: Committed
           status: input.status
           media_type: input.media_type
@@ -485,7 +492,7 @@ commands:
             navigation_id: input.navigation_id
             state: Committed
             sessions: {count: changed}
-        summary: The session showing the navigation, if any, shows it Committed with its status and media type.
+        summary: The session showing the navigation, if any, shows it Committed at its address with its status and media type.
 
   - name: surf.agent.NoteNavigationFailed
     naming:

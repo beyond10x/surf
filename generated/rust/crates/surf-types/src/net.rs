@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 5042a1110c657521cdce7556f33cbda05f4df3fdd350ca1ac5dfafd26db14a63
+// contract digest 055477f7d70d2837ffe9e39fee6cbc6130c982cf9d0650a28bb00f7c8ca52d2c
 // do not edit: regenerate with `ess synthesize`
 
 //! Network — `surf.net`.
@@ -19,6 +19,8 @@ pub enum FailureReason {
     UnsupportedScheme,
     /// `MalformedResponse`.
     MalformedResponse,
+    /// `TooManyRedirects`.
+    TooManyRedirects,
 }
 
 /// MediaType — `surf.net.MediaType`: a distinct wrapper around `String`.
@@ -244,6 +246,8 @@ impl AnyRequest {
 pub struct DeliverResponse {
     /// `request_id` — `surf.net.RequestId`.
     pub request_id: RequestId,
+    /// `url` — `surf.url.Url`.
+    pub url: crate::url::Url,
     /// `status` — `surf.net.Status`.
     pub status: Status,
     /// `media_type` — `surf.net.MediaType`.

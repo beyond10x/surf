@@ -44,6 +44,7 @@ timeline:
     command: surf.net.DeliverResponse
     input:
       request_id: {$instance: first-load}
+      url: http://example.org/
       status: 200
       media_type: text/html
       body: PGh0bWw+PC9odG1sPg==

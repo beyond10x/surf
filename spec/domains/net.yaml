@@ -35,12 +35,30 @@ types:
         summary: The address has a scheme this slice does not fetch.
       - name: MalformedResponse
         summary: Bytes arrived that are not an HTTP response.
+      # The Fetch Standard ("HTTP-redirect fetch") returns a network error when a redirect
+      # arrives and the request's redirect count is already 20; it gives that network error no
+      # name of its own. This one has a name, so that an agent can tell it from a host that
+      # cannot be reached.
+      - name: TooManyRedirects
+        summary: A redirect arrived after 20 redirects of the same request were followed.
     naming:
       summary: Why a request ended without a response.
 
 # http is the only scheme fetched. Every other scheme ends the request with UnsupportedScheme.
-# UNMAPPED: redirects, request methods and bodies, headers, cookies, caching and TLS. This slice
-# fetches one address once and says nothing about how.
+# A redirect is followed inside the one request, as the Fetch Standard's "HTTP-redirect fetch"
+# follows it inside one fetch: the request keeps its identity and its address (the one asked
+# for), and its asker gets one answer, the response after the last redirect together with the
+# address that response came from (`DeliverResponse`, `ResponseReceived`). The transport follows
+# a response whose status is a redirect status (301, 302, 303, 307 or 308) and that has a
+# `Location`, at most 20 times in one request; a redirect after the twentieth ends the request
+# with TooManyRedirects. A `Location` whose scheme is not `http:` ends the request with
+# UnsupportedScheme: the Fetch Standard follows `https:` as well, which this slice does not fetch.
+# A redirect status without a `Location` is a response like any other.
+# UNMAPPED: a `Location` that does not parse as a URL. The Fetch Standard returns a network error;
+# which reason ends the request is not decided. What would settle it: `agent-fetch-redirects`.
+# UNMAPPED: request methods and bodies (with the method change a 301, 302 or 303 makes after a
+# `POST`), headers, cookies, caching and TLS. This slice fetches with one method and says nothing
+# about how.
 entities:
   - name: surf.net.Request
     naming:
@@ -119,9 +137,15 @@ commands:
       wire: deliver-response
       display: Deliver a response
       summary: Record the response to a request and publish it.
+    refs: ["whatwg-fetch:http-redirect-fetch", "whatwg-fetch:concept-response-url"]
     input:
       - name: request_id
         type: surf.net.RequestId
+      # The response's URL in the Fetch Standard's sense: the address after the last redirect,
+      # which is the request's own address when nothing redirected.
+      - name: url
+        type: surf.url.Url
+        example: "http://example.org/"
       - name: status
         type: surf.net.Status
         example: 200
@@ -146,7 +170,7 @@ commands:
         payload:
           surf.net.ResponseReceived:
             request_id: input.request_id
-            url: {subject: url}
+            url: input.url
             status: input.status
             media_type: input.media_type
             body: input.body
@@ -181,6 +205,7 @@ commands:
       - name: failed
         moves: surf.net.Request.fail
         instance: request_id
+        refs: ["whatwg-fetch:http-redirect-fetch"]
         emits:
           - surf.net.FetchFailed
         payload:
@@ -206,6 +231,8 @@ events:
       - name: url
         type: surf.url.Url
 
+  # `url` is the response's address, after the last redirect; the address asked for is the
+  # request's (`RequestStarted`, `Requests`).
   - name: surf.net.ResponseReceived
     fields:
       - name: request_id
