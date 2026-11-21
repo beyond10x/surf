@@ -28,10 +28,12 @@
 </main>
 <aside class="detail" aria-labelledby="detail-heading">
   <h2 id="detail-heading">Detail</h2>
-  <div id="selection" class="selection"></div>
+  <div id="selection" class="selection" tabindex="0" role="group" aria-labelledby="detail-heading"></div>
   <section class="requests" aria-labelledby="requests-heading">
     <h3 id="requests-heading">Requests</h3>
-    <ol id="requests" class="request-list"></ol>
+    <div class="request-scroll" tabindex="0" role="group" aria-labelledby="requests-heading">
+      <ol id="requests" class="request-list"></ol>
+    </div>
   </section>
 </aside>
 <section class="timeline" aria-labelledby="timeline-heading">

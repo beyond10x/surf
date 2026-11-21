@@ -1,7 +1,8 @@
 // The selected session's actions in order: each a segment labelled with its sequence, command
 // and argument, under it one mark per event of that action, grouped by domain. One segment
-// carries the playhead (aria-current="step"); a click on a segment moves the playhead there. Each
-// mark holds a button that selects its event (aria-pressed for the selected one).
+// carries the playhead (aria-current="step"); a click on a segment outside its marks moves the
+// playhead there. A click anywhere on a mark selects its event; each mark holds a button for the
+// keyboard (aria-pressed for the selected one).
 // A gap in front of the first segment counts the entries dropped. Nothing here throws on a
 // null member of docs/view-stream.md: a null sequence or command is written "?", a null event
 // name is a mark in the group "other".
@@ -36,8 +37,10 @@ function written(value) {
   return value === null || value === undefined ? "?" : String(value);
 }
 
-// A mark: the li keeps its class and title; its button, with the short name as its text,
-// selects the event. The click stops there, so the segment's handler does not clear it.
+// A mark: the li keeps its class and title and holds a button with the short name as its text,
+// for the keyboard. A click anywhere on the li, its button included (Enter and Space on the
+// focused button are a click on it), selects the event once: the one listener is the li's, and
+// the click stops there, so the segment's handler does not clear it.
 function mark(event, selected, onEvent) {
   const fields = Object.entries(event.fields || {})
     .map(([name, value]) => name + " " + written(value))
@@ -52,11 +55,7 @@ function mark(event, selected, onEvent) {
       "aria-pressed": selected !== null && event.number === selected ? "true" : "false",
     },
   });
-  button.addEventListener("click", (click) => {
-    click.stopPropagation();
-    onEvent(event.number);
-  });
-  return element(
+  const node = element(
     "li",
     {
       className: "mark" + (event.unmapped ? " unmapped" : ""),
@@ -64,6 +63,11 @@ function mark(event, selected, onEvent) {
     },
     [button],
   );
+  node.addEventListener("click", (click) => {
+    click.stopPropagation();
+    onEvent(event.number);
+  });
+  return node;
 }
 
 function groups(events, selected, onEvent) {
