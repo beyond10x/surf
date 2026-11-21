@@ -23,7 +23,7 @@ collision; a story that collides moves to the next wave. The table below is the 
 |---|---|
 | 1 (delivered, [page](agent-wave-1.md)) | `agent-answer-format`, `agent-cli-spec`, `agent-secret-primitives`, `agent-url-parser`, `html-decisions`, `runner-decisions`, `view-decisions` |
 | 2 (delivered, [page](agent-wave-2.md)) | `agent-cli-client`, `agent-session-spec`, `html-conformance-harness`, `view-http-server` |
-| 3 | `agent-page-path-spec`, `agent-surfd-supervisor`, `runner-surf-cli-package` (moved from wave 2 after D32: it shares `crates/surf/Cargo.toml` with `agent-session-spec`), `view-page-prototype` (added in wave 2: the page on example data, so that it can be opened before `surfd` exists) |
+| 3 (delivered, [page](agent-wave-3.md)) | `agent-page-path-spec`, `agent-surfd-supervisor`, `runner-surf-cli-package` (moved from wave 2 after D32: it shares `crates/surf/Cargo.toml` with `agent-session-spec`), `view-page-prototype` (added in wave 2: the page on example data, so that it can be opened before `surfd` exists) |
 | 4 | `agent-redirect-spec`, `agent-session-process`, `html-conformance-gate` |
 | 5 | `agent-session-events`, `html-input-stream`, `html-tokenizer-markup` |
 | 6 | `html-document-spec`, `html-tokenizer-text`, `view-surfd-serves` |
@@ -50,6 +50,10 @@ collision; a story that collides moves to the next wave. The table below is the 
   example program. The coordinator opens it in Brave.
 - After wave 4: `surf-agent open`, `go`, `look` and `close` against `surfd` and one session
   process per session. The operator gets a "to try" list here.
+  **Checkpoint** (the operator, 2026-11-21): release `0.2.0` follows this wave, with `surf`,
+  `surf-agent`, `surfd` and `surf-session` (`story:release-agent-binaries`, after
+  `agent-session-process`). Work then moves to the script engine, its own repository; the waves
+  after 4 stay planned here and are not scheduled.
 - After wave 7: the first live view (`story:view-first-page`): the sessions, the page line and
   the timeline, following live. The coordinator opens it in Brave with the address in
   `$XDG_RUNTIME_DIR/surf/view-url`.

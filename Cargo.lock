@@ -140,3 +140,12 @@ version = "0.1.0"
 dependencies = [
  "surf-secret",
 ]
+
+[[package]]
+name = "surfd"
+version = "0.1.0"
+dependencies = [
+ "surf-agent",
+ "surf-answer",
+ "surf-secret",
+]

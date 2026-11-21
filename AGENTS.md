@@ -74,7 +74,8 @@ above, and the list of standards itself was written from memory.
   fails under `-D warnings`. Use `try_update`.
 - A test that binds a Unix socket puts its directory under `$XDG_RUNTIME_DIR` when that is
   usable, never under `/tmp` and never under the checkout: a socket path may have 107 bytes, and
-  a checkout path of unknown length uses them up. `crates/agent/tests/common/mod.rs` shows how.
+  a checkout path of unknown length uses them up. `crates/agent/tests/common/base.rs` shows how
+  (`test_base()`); the tests of `surfd` include that file with `#[path]`.
 - Commit everything. The operator, 2026-11-21: "yes, we commit all the specs, always. We commit
   everything, we integrate everything, we keep the valuable stuff." This is the standing
   exception to "commit only when asked" for this repository. Read as a rule (the coordinating
@@ -92,9 +93,16 @@ above, and the list of standards itself was written from memory.
   the six of the agent's session. The `agent` component owns `surf.agent`; `net` owns `surf.net`
   and `surf.url` only (decision D32, `docs/plan/agent-plan-revision-2.md`, is carried out).
 - `spec/domains/<name>.yaml`: one file per domain. `spec/domains/agent.yaml` is the domain
-  `surf.agent`: the entity `Session`, the commands `OpenSession`, `Go`, `CloseSession`,
-  `NoteNavigationStarted` and `NoteNavigationEnded`, their events, the view `Sessions`, and the
-  types `cli/surf-agent.yaml` names.
+  `surf.agent`: the entities `Session` and `Action` (owned by its session), the commands
+  `OpenSession`, `Go`, `CloseSession`, `NoteNavigationStarted`, `NoteNavigationCommitted`,
+  `NoteNavigationFailed`, `NoteNavigationEnded` and `RecordAction`, their events, the views
+  `Sessions` and `SessionLog` (the log, in sequence order), and the types `cli/surf-agent.yaml`
+  names. `Session` has `status`, `media_type` and `failure_reason`, set by the note commands.
+  `RecordAction` is issued by the session process, which supplies the sequence number; an `open`
+  with an address is two actions, `open` and `go`. There are two commands for a committed and a
+  failed navigation because Rust generation refuses a binding that maps a required event field
+  into an optional command input, so one note command with optional inputs is not possible.
+  `FailNavigation` (`spec/domains/navigation.yaml`) and `NavigationFailed` carry `reason`.
 - `cli/surf-agent.yaml`: the `ess-cli/2` document of the agent command line, checked by
   `task cli`; the client parser is held to it.
 - `taskfiles/<name>.yml`: one file per task added since the agent interface plan, included by
@@ -105,13 +113,16 @@ above, and the list of standards itself was written from memory.
 - `spec/scenarios/*.yaml`: authored scenarios (`ess-scenario/6`), for what synthesis does not
   write. Two cover the flows synthesis refuses (the page load that commits and the one that
   fails); both also read the request's address back from `Requests`. The third,
-  `two-of-each-entity.yaml`, creates two windows, two tabs in one window, two page loads and two
-  frames, and reads each view back with exactly two rows and both identities. Every synthesized
-  scenario holds at most one row of an entity, so without it a system that gives every instance
-  one identity, or a view that answers only its first row, passes the suite. The last two,
-  `agent-session-reads-started-navigation.yaml` and
-  `agent-session-reads-committed-navigation.yaml`, cover the outcomes `NoteNavigationStarted/noted`
-  and `NoteNavigationEnded/noted`, which synthesis refuses (`ESS-SYNTH-001`, below).
+  `two-of-each-entity.yaml`, creates two windows, two tabs in one window, two page loads, two
+  frames and, since wave 3, two actions, and reads each view back with exactly two rows and both
+  identities. Every synthesized scenario holds at most one row of an entity, so without it a
+  system that gives every instance one identity, or a view that answers only its first row,
+  passes the suite. The other four cover what synthesis refuses (`ESS-SYNTH-001` and
+  `ESS-SYNTH-014`, below): `agent-session-reads-started-navigation.yaml` and
+  `agent-session-reads-committed-navigation.yaml` the outcomes `NoteNavigationStarted/noted`,
+  `NoteNavigationEnded/noted` and `NoteNavigationCommitted/noted`;
+  `agent-session-shows-failure-reason.yaml` the outcome `NoteNavigationFailed/noted`;
+  `agent-session-log-in-sequence-order.yaml` the outcome `RecordAction/recorded`.
 - `spec/ess-inputs.yaml`: the list of every file above, and the pin `requires: ess 0.96.0`. A new
   file under `spec/` is not read until it is listed there.
 - `generated/rust/`: the workspace `ess generate synthesize` writes, its own `Cargo.toml`
@@ -126,9 +137,10 @@ above, and the list of standards itself was written from memory.
   by path, `../../generated/rust/crates/<name>`. cargo 1.99.1 refuses a member glob that matches
   nothing (measured 2026-11-20), so `crates/` always holds at least one crate. Format one crate
   with `cargo fmt -p <package>`: `cargo fmt --all` rewrites `generated/rust/`. `cargo fmt -p
-  surf` also reformats four test files that are not rustfmt-clean (`review1_cli.rs`,
-  `review1_output.rs`, `review1_generated_check.rs`, `review1_ports.rs`); a unit that formats
-  restores the files it does not own.
+  surf` also reformats a test file that is not rustfmt-clean (`review1_generated_check.rs`),
+  `cargo fmt -p surf-cli` two others (`review1_cli.rs`, `review1_output.rs`) and `cargo fmt -p
+  surf-ports` one more (`review1_ports.rs`; `cargo fmt -p <package> -- --check` lists them,
+  measured 2026-11-21); a unit that formats restores the files it does not own.
   - `crates/answer` (`surf-answer`): renders an agent answer in the grammar of
     `docs/agent-answer.md` and reads it back (`parse`, `unquote`); every value from a page, a
     server or an address goes through one quoting function. No dependency.
@@ -141,24 +153,48 @@ above, and the list of standards itself was written from memory.
     returns status, media type and body, or `Unreachable`, `UnsupportedScheme` or
     `MalformedResponse`. No dependency. Its documentation lists what it does not do.
   - `crates/ports` (`surf-ports`): in-memory storage and version 4 identities for the generated
-    components, one ports type per component. `AgentPorts` also meets the obligations
-    `NoteNavigationStarted` and `NoteNavigationEnded`, and answers the caller's `session_id` from
-    a `Caller` handle. Depends on the generated crates only.
-  - `crates/surf` (`surf`): a library and the binary `surf`. The library builds the generated
-    `System` from six component ports the caller supplies and adds the `net` component's
-    transport, a trait with one method, as a parameter. `Browser::run` hands each
+    components, one ports type per component. `AgentPorts<R = OsRandom>` stores `Session` and
+    `Action`, assigns a version 4 `ActionId` from its random source (`with_source`,
+    `with_caller_and_source`), meets the four obligations `NoteNavigationStarted`,
+    `NoteNavigationCommitted`, `NoteNavigationFailed` and `NoteNavigationEnded`, and answers the
+    caller's `session_id` from a `Caller` handle; the other ports types answer
+    `try_generate_surf_agent_action_id` as unmet. Depends on the generated crates only.
+  - `crates/surf` (`surf`): a library only since wave 3 of the agent plan. It builds the
+    generated `System` from six component ports the caller supplies and adds the `net`
+    component's transport, a trait with one method, as a parameter. `Browser::run` hands each
     `surf.net.RequestStarted` to the transport once and issues `DeliverResponse` or `FailRequest`
-    on the `net` port only; `Browser::agent_mut` issues the agent's commands. The binary uses
-    `surf-fetch` as the transport and still loads one `http:` address. Depends on the
+    on the `net` port only; `Browser::agent_mut` issues the agent's commands. Depends on the
     generated crates, `surf-ports` and `surf-fetch`.
+  - `crates/surf-cli` (`surf-cli`): the binary `surf` and its five tests, moved out of
+    `crates/surf`. It loads one `http:` address, with `surf-fetch` as the transport. A package of
+    its own so that it can depend on crates that depend on the `surf` library. Depends on `surf`,
+    `surf-fetch` and `surf-ports`. The release workflow builds and versions `surf-cli`
+    (`crates/surf-cli/Cargo.toml`).
   - `crates/agent` (`surf-agent`): the agent command line and the binary `surf-agent`. A parser
     held to `cli/surf-agent.yaml` by a test, the token read from `SURF_TOKEN` or from a token file
-    the caller owns, and the wire to `surfd` over a Unix socket in `$XDG_RUNTIME_DIR/surf`. There
-    is no `surfd` yet (wave 3), so it cannot open a session; its tests run against a stand-in.
-    Depends on `surf-answer` and `surf-secret`.
+    the caller owns, and the wire to `surfd` over a Unix socket in `$XDG_RUNTIME_DIR/surf`.
+    `wire::caller_uid()` is the one definition of the caller's user id (Linux only). There is no
+    session process yet (wave 4), so `surf-agent open` cannot open a session; its tests run
+    against a stand-in. Depends on `surf-answer` and `surf-secret`.
+  - `crates/surfd` (`surfd`): a library and the binary `surfd`, the daemon the agent command line
+    talks to. Lock and socket in `$XDG_RUNTIME_DIR/surf`, one session process per session in a
+    directory of mode 0700, each request passed unchanged to the session and the answer back,
+    sessions listed as open, closed or died, exit when idle (`--idle-exit <seconds>`). It keeps
+    no token and writes no log. It makes no peer check (`UnixStream::peer_cred` is unstable in
+    rustc 1.99.1): the directory's mode and owner and the token carry it. A symbolic link under
+    its directory makes it refuse to start. Bounds: 64 connections, a request of 64 KiB within
+    10 s, an answer of 4 MiB, one call per session at a time within 60 s, 256 ended sessions
+    listed; open sessions are not bounded. There is no session process yet (wave 4); its 26
+    tests (`built` 12, `in_process` 14) run a stand-in session. Depends on `surf-agent` (for
+    `wire`), `surf-answer` and `surf-secret`.
   - `crates/view` (`surf-view`): the live view's HTTP server, standard library only: `GET` only, a
     fixed route table, the `Host` and view-token checks, and server-sent events with a bound per
-    reader. `docs/view-stream.md` is what it answers. It serves no page yet. Depends on
+    reader. `docs/view-stream.md` is what it answers. `web/` holds the page's nine files (no
+    framework, no build step, nothing from another origin, no inline script or style, every value
+    written with `textContent`), compiled in by `page_files()` in `src/assets.rs`; the page fits
+    360 px to 1,400 px. The example `prototype` serves them over three scripted sessions. It
+    shows example data only: real sessions come with `story:view-surfd-serves` and
+    `story:view-first-page`. 43 tests (`http` 33, `prototype` 8, `web` 2). Depends on
     `surf-secret`.
   - `crates/html` (`surf-html`): the HTML parser's interface. Every entry point returns an empty
     result until the parser stories fill one module each.
@@ -189,13 +225,15 @@ above, and the list of standards itself was written from memory.
   - `src/main.rs`: the binary `conform-rust` runs. `tests/planted_defect.rs`: the same suite over
     a `Navigation` storage that drops every `put` must fail at least one scenario.
     `tests/two_of_each_entity.rs`: for each entity alone, one identity for every instance, and
-    a view cut to its first row, must each fail at least one scenario.
+    a view cut to its first row, must each fail at least one scenario; since wave 3 it plants
+    `SameIdentity(Action)` (3 scenarios fail), `FirstRowOnly(Session)` (15) and
+    `FirstRowOnly(Action)` (2), as the unit reported.
 
 ## Components
 
 | component | domain | holds | accepts |
 |---|---|---|---|
-| `agent` | `surf.agent` | `Session` | `OpenSession`, `Go`, `CloseSession`, `NoteNavigationStarted`, `NoteNavigationEnded` |
+| `agent` | `surf.agent` | `Session`, `Action` | `OpenSession`, `Go`, `CloseSession`, `NoteNavigationStarted`, `NoteNavigationCommitted`, `NoteNavigationFailed`, `NoteNavigationEnded`, `RecordAction` |
 | `shell` | `surf.shell` | `Window`, `Tab` | `OpenWindow`, `OpenTab`, `CloseTab` |
 | `navigator` | `surf.navigation` | `Navigation` | `Navigate`, `CommitNavigation`, `FailNavigation`, `CancelNavigation` |
 | `net` | `surf.net`, `surf.url` | `Request` | `Fetch`, `DeliverResponse`, `FailRequest` |
@@ -208,9 +246,13 @@ publishes `ResponseReceived`, which invokes `CommitNavigation`. `NavigationCommi
 invokes `FailNavigation`. Nothing invokes `PaintFrame` yet.
 
 The agent's session: `Go` publishes `NavigationRequested`, which invokes `Navigate`.
-`NavigationStarted` also invokes `NoteNavigationStarted`; `NavigationCommitted`,
-`NavigationFailed` and `NavigationCancelled` each invoke `NoteNavigationEnded` with that state.
-`SessionClosed` invokes `CloseTab`. The `Sessions` view shows each session's navigation.
+`NavigationStarted` also invokes `NoteNavigationStarted`; `NavigationCommitted` invokes
+`NoteNavigationCommitted` (status and media type), `NavigationFailed` invokes
+`NoteNavigationFailed` (the reason) and `NavigationCancelled` invokes `NoteNavigationEnded` with
+the state `Cancelled`. `SessionClosed` invokes `CloseTab`. The `Sessions` view shows each
+session's navigation, status, media type and failure reason. `RecordAction` is no binding's
+target: the session process issues it, one action per accepted call, and the `SessionLog` view
+reads a session's actions in sequence order.
 
 A navigation is identified by the `surf.net.RequestId` of its one request.
 
@@ -219,10 +261,12 @@ A navigation is identified by the `surf.net.RequestId` of its one request.
 There will be more than one (the operator, 2026-11-20: "there should be multiple"). Only the first has
 code: its generated workspace and, since wave 3 of `docs/plan/waves.md`, the hand-written crates
 `surf-fetch` and `surf-ports`, all built and tested by `task check`. Since wave 4, the crate
-`surf` assembles them into the `surf` command line. Since wave 2 of
+`surf` assembles them into the library the `surf` command line is built on. Since wave 2 of
 `docs/plan/agent-waves.md`, it assembles six component ports, and the agent command line
 (`surf-agent`), the live view's server (`surf-view`) and the HTML parser's interface and
-conformance harness (`surf-html`, `surf-html-conformance`) exist beside it.
+conformance harness (`surf-html`, `surf-html-conformance`) exist beside it. Since wave 3 the
+binary `surf` is the package `surf-cli`, and the daemon `surfd` exists beside the others; no
+session process exists yet.
 
 - First target, chosen by the operator on 2026-11-20: Rust, all six components in one process (five
   until wave 2 added `agent`), a headless command line. No isolation in this target.
@@ -378,6 +422,12 @@ the others were written to a scratch directory and not compiled:
   Draft bodies for `--from` go in `.engineering/drafts/`, which git ignores.
 - Accepted stories are implemented in waves. The plan is `docs/plan/waves.md`; each wave has a
   page beside it. A unit's brief starts from `docs/plan/unit-invariants.md`.
+- Checkpoint, decided by the operator on 2026-11-21: surf reaches a checkpoint after wave 4
+  (`surf-agent open`, `go`, `look`, `close` against a real `surfd` and session process), with a
+  release `0.2.0` that ships `surf`, `surf-agent`, `surfd` and `surf-session` (the agent
+  binaries for Linux only at first). Work then moves to the script engine, which is its own
+  repository. The waves after 4 stay in the plan; they are planned and not scheduled. Wave 3 is
+  delivered (3 of 22); wave 4 and release `0.2.0` do not exist yet.
 - Branches: `wave/<n>-<name>` for a wave, `impl/<story-slug>` for a unit. Every checkout is a
   managed worktree (`worktree create`); nothing is edited in the primary checkout during a wave.
 - An implementor leaves its changes uncommitted; the coordinator commits, merges and owns every
@@ -438,6 +488,13 @@ Run everything through the build pool: `slot task <name>`.
   `agent-interface.md`, `scenario-runner.md`, `live-view.md`, `html-parser.md`).
 - `target/debug/surf <url>`, after `task build`: load one address and print one line per row.
   `docs/surf-command.md` gives the output format and the exit statuses.
+- `cargo run -p surf-view --example prototype`: serve the live view's page over three scripted
+  sessions (open, closed, died) and print one address; open it in a browser on the same machine.
+  It shows example data only.
+- `cargo test -p <package> --test <name>` does not build the package's examples. The tests of
+  `surfd` and `surf-agent` that run an example need the whole package run (`cargo test -p
+  surfd`); `crates/view/tests/prototype.rs` builds its example itself.
+- `cargo test -p surf-agent` needs `.out/cli/binding.json`: run `slot task cli` first.
 - `README.md` is for people: what surf is and is not, its principles, what works, the roadmap.
   It is the first thing a visitor reads; keep reference material out of it and in `docs/`.
   Its badges are files under `docs/badges/`, written by `sh docs/badges/make.sh .` from the
@@ -448,26 +505,27 @@ Run everything through the build pool: `slot task <name>`.
 
 ## The gate's numbers
 
-On 2026-11-21 with ess 0.96.0, after wave 2 of the agent interface plan: `surf v1 — 9 file(s), 5
-scenario(s), valid` and `77 scenario(s) (5 authored), 24 refusal(s)`. Against the interpreter:
-`77 scenarios: 77 passed, 0 failed, 0 error, 0 unsupported`. Against the Rust system
-(`conform-rust`): `77 scenarios: 77 passed, 0 failed, 0 error, 0 unsupported`. `conform-totals`:
-`the interpreter and the Rust system ran 77 scenario(s) each`. Both reports say
+On 2026-11-21 with ess 0.96.0, after wave 3 of the agent interface plan: `surf v1 — 9 file(s), 7
+scenario(s), valid` and `81 scenario(s) (7 authored), 27 refusal(s)`. Against the interpreter:
+`81 scenarios: 81 passed, 0 failed, 0 error, 0 unsupported`. Against the Rust system
+(`conform-rust`): `81 scenarios: 81 passed, 0 failed, 0 error, 0 unsupported`. `conform-totals`:
+`the interpreter and the Rust system ran 81 scenario(s) each`. Both reports say
 `conformance_status: inconclusive`, with `execution_status: passed`: the suite carries no
 coverage inventory (`coverage.knowledge: unknown`), and ess 0.96.0 never qualifies a run over
 unknown coverage. The gate reads the counts. The planted defect, a `Navigation` storage that
-drops every `put`, fails 30 of the 77. The crate's tests: `6 test suites: 27 passed`.
+drops every `put`, fails 31 of the 81. The crate's tests: `6 test suites: 27 passed`.
 `generated-check`: `generated/rust matches spec/ (30 artifact(s) and .ess-output)`. `cli`:
-`cli/surf-agent.yaml — valid CLI presentation binding`. `lock-check`: `Cargo.lock: 18 package(s),
-none from outside this repository`. The root workspace: `81 test suites: 280 passed, 0 failed, 0
+`cli/surf-agent.yaml — valid CLI presentation binding`. `lock-check`: `Cargo.lock: 20 package(s),
+none from outside this repository`. The root workspace: `88 test suites: 324 passed, 0 failed, 0
 ignored`. In it, `surf-url` prints `urltestdata: 904 cases, 872 run, 872 passed, 32 skipped`; the
-32 are hosts outside ASCII, listed in `crates/url/tests/data/SKIPPED`. Before wave 2 these were
-3 authored scenarios, 51 scenarios, 10 refusals, 22 failed by the planted defect, 28
-artifacts, 13 packages, 59 suites and 201 passed.
+32 are hosts outside ASCII, listed in `crates/url/tests/data/SKIPPED`. Before wave 3 these were
+5 authored scenarios, 77 scenarios, 24 refusals, 30 failed by the planted defect, 30
+artifacts, 18 packages, 81 suites and 280 passed.
 
-`REFUSALS_MAX` in `Taskfile.yml` is 24. `task suite` fails above it. Lower it when a refusal goes
+`REFUSALS_MAX` in `Taskfile.yml` is 27. `task suite` fails above it. Lower it when a refusal goes
 away; raise it only with the new refusal listed here. The list is `grep '^refused:'
-.out/synthesize.log`. Twenty-two are `ESS-SYNTH-010`:
+.out/synthesize.log` (read on 2026-11-21: 27 lines, the same as below). Twenty-two are
+`ESS-SYNTH-010`:
 
 - 10 × `<binding>/binding/delivery`: every binding is `at_most_once`, which has no second
   delivery to observe.
@@ -477,9 +535,15 @@ away; raise it only with the new refusal listed here. The list is `grep '^refuse
   cannot arrange a navigation and a request that share one identity. The two page-load files
   under `spec/scenarios/` cover these flows.
 
-Two are `ESS-SYNTH-001`: the outcomes `NoteNavigationStarted/noted` and
-`NoteNavigationEnded/noted` have "no three rows the filter selects that the arranging commands
-can produce". The two `agent-session-reads-*` files under `spec/scenarios/` cover them.
+Four are `ESS-SYNTH-001`: the outcomes `NoteNavigationStarted/noted`, `NoteNavigationEnded/noted`,
+`NoteNavigationCommitted/noted` and `NoteNavigationFailed/noted` have "no three rows the filter
+selects that the arranging commands can produce". `agent-session-reads-started-navigation.yaml`,
+`agent-session-reads-committed-navigation.yaml` and `agent-session-shows-failure-reason.yaml`
+under `spec/scenarios/` cover them.
+
+One is `ESS-SYNTH-014`: the outcome `surf.agent.RecordAction/outcome/recorded`. The view
+`SessionLog` declares an order and synthesis can put one row in it; an order over one row is a
+claim no implementation can fail. `agent-session-log-in-sequence-order.yaml` covers it.
 
 One note is printed with them: the specification declares actors and no component is served over
 a network, so no `<command>/grant/denied` scenario is generated.
