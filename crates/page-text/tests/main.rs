@@ -6,6 +6,8 @@
 
 #[path = "cases/adversary_text.rs"]
 mod adversary_text;
+#[path = "cases/adversary_values.rs"]
+mod adversary_values;
 mod common;
 #[path = "cases/markdown.rs"]
 mod markdown;
