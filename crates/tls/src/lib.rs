@@ -16,6 +16,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod anchors;
 mod base64;
 pub mod crypto;
 pub mod der;

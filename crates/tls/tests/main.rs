@@ -12,6 +12,8 @@ mod adversary_layer;
 mod adversary_x509;
 #[path = "tls/alloc.rs"]
 mod alloc;
+#[path = "tls/anchors.rs"]
+mod anchors;
 #[path = "tls/der.rs"]
 mod der;
 #[path = "tls/limbo_parse.rs"]
