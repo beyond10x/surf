@@ -21,7 +21,7 @@ scope:
   path: conformance/tests/main.rs
 - confidence: cited
   path: taskfiles/slowest-tests.sh
-revision: 11
+revision: 12
 ---
 ## Why
 
@@ -141,6 +141,11 @@ Statement 1 comes first; the others follow in any order.
    - The task `conform-slow`, not part of `check`, runs every planted defect over the whole
      suite, writes `.out/noticed.txt` and compares its bytes with the committed file. It is a
      subtask of the lane `slow` (statement 6).
+   - Who regenerates the file. Whichever change alters one of the four sources runs `task
+     conform-slow` and commits `noticed.txt` in the same commit. `story:tls-spec` changes
+     `conformance/src/target.rs` and, through `spec/`, `.out/suite.json` on `wave/tls-1`; at the
+     merge of `wave/tls-1` and `wave/round-2` the merge commit does it. The fast check's failure
+     line names the task.
    - The two controls keep the whole suite. Expected: the 29 planted runs fall to 3 scenarios each;
      the step costs about 3 runs of the suite (two controls and step 2). A narrowed suite is the
      probe's question: `SuiteInput::select` of 0.97.4 (`coverage.rs`:964) needs a coverage block
