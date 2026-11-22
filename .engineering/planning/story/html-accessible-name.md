@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:html-accessible-name
 kind: story
-status: active
+status: implemented
 title: Compute an actionable element's label without CSS
 summary: The accessible name of each actionable element, computed over the tree by the standards' steps, cut at 1,024 bytes and within a work bound per page; the rendering-dependent steps are listed as not taken.
 relations:
@@ -15,10 +15,11 @@ scope:
   path: crates/page/src/lib.rs
 - confidence: cited
   path: crates/page/tests/label.rs
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-22T10:53:03Z", actor: "human:operator", revision: 14, decided_on: {"recorded":{"test_result":2,"verification":1}}}
 ---
 ## Context
 

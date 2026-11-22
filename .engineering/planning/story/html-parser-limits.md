@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:html-parser-limits
 kind: story
-status: active
+status: implemented
 title: Bound the parser on untrusted input
 summary: Input, depth, node, attribute, stored-byte and step limits stop parsing with a named result; adversarial and 10,000 seeded inputs end within stated times and without a panic.
 relations:
@@ -42,10 +42,11 @@ scope:
   path: spec/domains/document.yaml
 - confidence: cited
   path: spec/scenarios/parse-stopped-at-a-limit.yaml
-revision: 23
+revision: 24
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-22T10:53:02Z", actor: "human:operator", revision: 24, decided_on: {"recorded":{"test_result":2,"verification":2}}}
 ---
 ## Context
 

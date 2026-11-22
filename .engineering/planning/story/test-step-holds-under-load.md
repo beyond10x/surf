@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:test-step-holds-under-load
 kind: story
-status: active
+status: implemented
 title: Three tests with a time bound close to their run time hold under load
 summary: 'Wave 10''s gate on a loaded machine: 2 of 661 tests failed on a time bound close to their run time and a third was close; the test step took 156.3 s there and 46 to 52 s of nextest when measured back to back'
 relations:
@@ -17,10 +17,11 @@ scope:
   path: crates/page/tests/label.rs
 - confidence: cited
   path: crates/view/tests/http.rs
-revision: 23
+revision: 24
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T09:57:05Z", actor: "human:operator", revision: 20, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T09:57:05Z", actor: "human:operator", revision: 21, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-22T10:53:08Z", actor: "human:operator", revision: 24, decided_on: {"recorded":{"test_result":3,"verification":3}}}
 ---
 ## Context
 

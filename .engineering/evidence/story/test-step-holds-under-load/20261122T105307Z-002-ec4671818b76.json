@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T10:53:07Z",
+  "actor": "human:operator",
+  "artifact": "story:test-step-holds-under-load",
+  "kind": "story",
+  "revision": 23,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "planted defects, each removed again with cmp of the full diff equal",
+    "reference": "listener dropped: red with the refused connection; no write timeout on the send: red at 11.2 s on the test's assertion; answer and stream never closed and closed at once: red, four plants; is_hidden once per reference: red on the count, 8000 and 4000 more comparisons for 2000 references; receive limit plus 60 s and heartbeat plus 60 s: red at 10.2 and 10.4 s"
+  }
+}

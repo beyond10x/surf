@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T10:53:03Z",
+  "actor": "human:operator",
+  "artifact": "story:html-accessible-name",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "adversary on the unit, its fix a6ca450, and the adversary's recheck",
+    "reference": "no failing case at the recheck; open: the test of the work bound counts through the code under test; U+2028 and U+000B pass through a label unchanged and no test covers it"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T10:53:02Z",
+  "actor": "human:operator",
+  "artifact": "story:html-parser-limits",
+  "kind": "story",
+  "revision": 23,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "nesting probe on a4fa398",
+    "reference": "nested input is stopped at depth 512 in under 16 ms (dev build); the worst page measured within all default limits parses in 12.1 s (dev) and 0.75 s (release) at 2^27 steps"
+  }
+}
