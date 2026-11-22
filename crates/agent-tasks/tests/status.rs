@@ -44,15 +44,17 @@ fn modified(path: &PathBuf) -> Option<SystemTime> {
     fs::metadata(path).and_then(|m| m.modified()).ok()
 }
 
+/// A `status.txt` with the row `article` given and every other task listed pending, so that
+/// what a case asserts does not hang on the rows the real `status.txt` holds today.
 fn status_with(article: &str) -> String {
-    fs::read_to_string(status_file())
+    read_tasks(&fs::read_to_string(tasks_file()).unwrap())
         .unwrap()
-        .lines()
-        .map(|line| {
-            if line.starts_with("article ") {
+        .iter()
+        .map(|task| {
+            if task.name == "article" {
                 format!("{article}\n")
             } else {
-                format!("{line}\n")
+                format!("{} pending story:agent-tasks\n", task.name)
             }
         })
         .collect()

@@ -11,9 +11,10 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use surf_agent_tasks::agent::CALL_BOUND;
+use surf_agent_tasks::format::{Listed, read_status, read_tasks};
 use surf_agent_tasks::lane::{self, Config, LaneRun};
 use surf_agent_tasks::report::Lane;
-use surf_agent_tasks::root_report_file;
+use surf_agent_tasks::{root_report_file, status_file, tasks_file};
 
 use crate::status::binaries_field;
 
@@ -155,8 +156,52 @@ fn a_call_that_never_answers_ends_at_its_bound() {
     let run = lane::run(&config);
     let written = fs::read_to_string(&out).expect("the report is written");
     assert_clean(&run);
-    assert_eq!(run.outcome, Ok(()), "{written}");
+
+    // What the hanging look causes, whatever the real surf-agent makes of the other tasks.
+    let tasks = read_tasks(&fs::read_to_string(tasks_file()).unwrap()).unwrap();
+    let status = read_status(&fs::read_to_string(status_file()).unwrap(), &tasks).unwrap();
     let lines: Vec<&str> = written.lines().collect();
+    assert!(lines.len() > tasks.len(), "{written}");
+    let task_lines = &lines[1..=tasks.len()];
+    for (line, task) in task_lines.iter().zip(&tasks) {
+        assert!(
+            line.starts_with(&format!("task {} ", task.name)),
+            "{line:?} is not the line of {}",
+            task.name
+        );
+    }
+    assert!(
+        lines[1 + tasks.len()..]
+            .iter()
+            .all(|line| line.starts_with("raise: ")),
+        "{written}"
+    );
+    assert_eq!(
+        task_lines[0],
+        "task article fail 3 calls 1 connections: no answer within 1 s on look"
+    );
+    assert!(
+        !task_lines[1..]
+            .iter()
+            .any(|line| line.contains("no answer within")),
+        "only the first look hangs: {written}"
+    );
+
+    // The first line's counts, from the task lines of the same report.
+    let state = |line: &str| line.split(' ').nth(2).unwrap_or_default().to_string();
+    let pass = task_lines
+        .iter()
+        .filter(|line| state(line) == "pass")
+        .count();
+    let fail = task_lines
+        .iter()
+        .filter(|line| state(line) == "fail")
+        .count();
+    let skipped = task_lines
+        .iter()
+        .filter(|line| state(line) == "skipped")
+        .count();
+    assert_eq!(pass + fail + skipped, tasks.len(), "{written}");
     let shown = binaries_field(lines[0]);
     assert!(
         !shown.starts_with('/'),
@@ -169,18 +214,28 @@ fn a_call_that_never_answers_ends_at_its_bound() {
     );
     assert_eq!(
         lines[0],
-        format!("agent-tasks: 4 tasks, 0 pass, 4 fail, 0 skipped, lane gate, binaries {shown}")
+        format!(
+            "agent-tasks: {} tasks, {pass} pass, {fail} fail, {skipped} skipped, lane gate, \
+             binaries {shown}",
+            tasks.len()
+        )
     );
-    assert_eq!(
-        lines[1],
-        "task article fail 3 calls 1 connections: no answer within 1 s on look"
-    );
-    assert!(
-        !lines[2..]
-            .iter()
-            .any(|line| line.contains("no answer within")),
-        "only the first look hangs: {written}"
-    );
+
+    // The outcome: the error of the first task listed pass whose line is a failure, if any.
+    let measuring = std::env::var_os("SURF_AGENT_TASKS").is_some_and(|value| value == "measure");
+    let expected = status
+        .iter()
+        .zip(task_lines)
+        .find(|(row, line)| row.listed == Listed::Pass && state(line) == "fail")
+        .filter(|_| !measuring)
+        .map(|(row, line)| {
+            let (_, reason) = line.split_once(" connections: ").unwrap();
+            format!(
+                "agent-tasks: task {} is listed pass and failed: {reason}",
+                row.task
+            )
+        });
+    assert_eq!(run.outcome, expected.map_or(Ok(()), Err), "{written}");
     let _ = fs::remove_file(&out);
     let _ = fs::remove_dir_all(&bin);
 }
