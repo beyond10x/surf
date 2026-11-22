@@ -5,7 +5,7 @@ kind: epic
 status: draft
 title: 'surf loads https: addresses'
 summary: 'TLS 1.3 client written here over one audited source of primitives; X.509 path validation, host names, trust anchors; https: and redirects between schemes in surf-fetch, with TLS failure reasons in the answer.'
-revision: 3
+revision: 9
 ---
 ## Context
 
@@ -40,8 +40,10 @@ What binds this epic:
 - The folder's test budget (`$HOME/beyond10x/AGENTS.md`, "Tests stay fast"): no test over 60 s,
   the gate's test step within 120 s (22 to 29 s on 2026-11-22, `AGENTS.md`, "The gate's
   numbers"), no network request and no model call in the test step; an expensive product
-  (a generated certificate set, a recorded handshake) is made once and committed with the digest
-  of its sources, and regenerated in a lane named `slow`.
+  (a generated certificate set) is made once and committed with the digest of its sources, and
+  regenerated in a lane named `slow` that compares bytes; a recorded handshake is recorded data,
+  pinned by its sha256, and the lane `slow` records it again and compares outcomes, since the
+  independent server draws its own randomness.
 - RFC 8446 section 9.1, read 2026-11-22 at https://www.rfc-editor.org/rfc/rfc8446.html: a
   compliant application MUST implement TLS_AES_128_GCM_SHA256 and SHOULD implement
   TLS_AES_256_GCM_SHA384 and TLS_CHACHA20_POLY1305_SHA256; MUST support the signatures
@@ -179,25 +181,33 @@ starts on 127.0.0.1. What exists, read 2026-11-22:
   their names.
 
 The plan, default of this draft: known-answer tests of the seam from Wycheproof vectors (a
-vendored subset with its `SOURCE` file, as `crates/html-conformance/data/` holds its data); the
-RFC 8448 traces for the key schedule, the record layer and the parsing of every server message
-(the client random and key share injected; our ClientHello is held by a golden file of its own,
-since it differs from the trace's); x509-limbo vendored at a pinned commit, its counts held in the
-gate as `surf-html-conformance --check` holds the parser's, so that RFC 5280 sections are claimed
+vendored subset with its `SOURCE` file, as `crates/html-conformance/data/` holds its data; the
+AES-192 vectors are a named skip, ring has no AES-192); the RFC 8448 traces for the key schedule,
+the record layer and the parsing of every server message (in a test mode that takes the trace
+ClientHello as given; our ClientHello is held by a golden file of its own, since it differs from
+the trace); x509-limbo vendored at a pinned commit, its counts held in the gate as
+`surf-html-conformance --check` holds the parser counts, so that RFC 5280 sections are claimed
 complete only when it passes them; a negative suite of certificates (expired, not yet valid,
 wrong host, untrusted root, bad signature, an intermediate that is no CA, a path too long, an
-unknown critical extension, RSA 1024, SHA-1, a wildcard across two labels), generated once in the
-`slow` lane and committed with the digest of the generator; a TLS 1.3 test server written here as
-test tooling (`crates/tls-test-server`, not shipped, sharing the record layer and key schedule)
-for the end-to-end tests and agent task 5; and recorded server flights of an independent
-implementation (recorded in the `slow` lane on 127.0.0.1, replayed in the gate with the injected
-randomness), so that a defect the client and the test server share is still caught. A replay
-needs the client's key share to be the recorded one; whether the chosen source makes an ephemeral
-key from given bytes is not checked (story 1 checks it; if it does not, the replay runs the seam's
-key agreement through a test double, and the recording keeps the shared secret). Every one of
-these runs in milliseconds; the first story measures one RSA-2048 and one P-384 verification in
-the test profile (opt-level 0) and, if one is over 50 ms, sets an `opt-level` for the primitive
-packages in `.cargo/config.toml`.
+unknown critical extension, RSA 1024, SHA-1, a wildcard across two labels), generated once in
+the `slow` lane and committed with the digest of the generator, the SHA-1 and RSA-1024 cases made
+by `openssl` there because ring cannot sign them, the gate never running `openssl`; a TLS 1.3
+test server written here as test tooling (`crates/tls-test-server`, not shipped, sharing the
+record layer and key schedule) for the end-to-end tests and agent task 5; and recorded server
+flights of an independent implementation (recorded in the `slow` lane on 127.0.0.1, replayed in
+the gate), so that a defect the client and the test server share is still caught. The
+recordings are recorded data pinned by their sha256; the `slow` lane records again and compares
+outcomes, not bytes.
+
+Read on 2026-11-22 in ring 0.17.14 (`story:tls-decisions`, item 5): key generation takes the
+caller random source (`src/agreement.rs:106-109`), and ring exports fixed sources
+(`ring::test::rand::FixedSliceRandom`, deprecated, `src/lib.rs:171-177`); so a replay and the
+RFC 8448 trace make the client key from its recorded bytes, and the Wycheproof agreement vectors
+compare shared secrets. ECDSA signing is reproducible under a fixed source
+(`src/ec/suite_b/ecdsa/signing.rs:163`, `:172-190`), so every generated certificate is compared
+byte for byte. Every one of these runs in milliseconds; the first story measures one RSA-2048
+and one P-384 verification in the test profile (opt-level 0) and, if one is over 50 ms, sets an
+`opt-level` for the primitive packages in `.cargo/config.toml`.
 
 ## Decisions (the first story settles them, or records the operator's answer)
 
@@ -281,31 +291,24 @@ The failure reasons above; the extra anchor file; the crate layout (`surf-tls`, 
 
 ## Candidate stories, in the order a unit could build them
 
-1. `tls-decisions`: decides U1 to U3 (or records the operator's answers), the reasons above, the
-   extra anchor option, the test design and the crate layout, and ends in a design note
-   `docs/design/tls.md`. Measures: the chosen source building `--locked` for the four targets on
-   a branch of the forge's runners, the packages it adds to the lock, the debug-build timings.
-   Needs nothing.
-2. `tls-lock-allow`: the allow-list and its second rule with their tests, principle 4 and
-   "Goals" reworded, `crates/tls` with the seam module only and its known-answer tests. The first
-   outside package enters the lock here. Needs 1.
-3. `tls-spec`: `net.yaml` (scheme, reasons, redirects between schemes), scenarios for the new
-   reasons, `docs/agent-answer.md` and `docs/surf-command.md`; `task generate`. Needs 1; beside 2.
-4. `tls-x509`: DER, X.509, path validation, host names, PEM; x509-limbo with counts in the
-   gate; the negative suite and its `slow` generator. Needs 2.
-5. `tls-anchors`: the anchors of U2 and the extra anchor file, with a test per source. Needs 4.
-6. `tls-handshake`: record layer, key schedule, handshake, the RFC 8448 tests, the test server,
-   the recorded flights and their `slow` lane. Needs 2 and 4.
-7. `tls-fetch-https`: `surf-fetch` fetches `https:` (port 443, SNI, ALPN, the TLS stream over
-   `Timed`, both timeouts over the handshake), the failure mapping, redirects between schemes,
-   `surf::fetch_http` and the session; end-to-end tests through `surf` and `surf-agent` against
-   the test server. Needs 3, 5, 6 and `story:security-review-fixes` (same loop in
-   `crates/fetch/src/lib.rs`).
-8. `tls-release`: the release workflow on the four runners, the smoke test, README, website and
-   changelog. Needs 7.
+Drafted on 2026-11-22 as thirteen stories (`decomposes` this epic); the eight candidates of the
+first draft, with `tls-x509` split into `tls-x509`, `tls-test-certs` and `tls-x509-path`,
+`tls-handshake` into `tls-record`, `tls-handshake` and `tls-test-server`, and `tls-fetch-https`
+into `tls-fetch-https` and `tls-session-anchors`. Order, by the coordinator (2026-11-22):
 
-Stories 3, 4 and 5 touch different files (`spec/` and `docs/`; `crates/tls/src/x509*`;
-`crates/tls/src/anchors*`); 4 and 6 share `crates/tls/src/lib.rs`, so 6 starts after 4 merges.
+1. Nine stories write only `crates/tls*`, `taskfiles/tls-*`, `docs/design/tls.md`, the lock
+   check and its test, and are built beside the rounds 1 and 2 of surf: `tls-decisions` alone
+   first; then `tls-lock-allow`; then `tls-x509`, `tls-test-certs` and `tls-record` side by side;
+   then `tls-x509-path`, `tls-anchors` and `tls-handshake` side by side; then `tls-test-server`.
+2. Four are one unit, in the order `tls-spec`, `tls-fetch-https`, `tls-session-anchors`,
+   `tls-release`. It starts at the first boundary between two rounds after the nine are merged,
+   never beside a unit that writes `spec/`, `generated/`, `crates/session`, `crates/agent`,
+   `crates/surfd`, `crates/surf/src/lib.rs`, `conformance/src/target.rs` or
+   `docs/agent-answer.md`. `tls-fetch-https` also needs `story:one-test-binary-per-crate` and the
+   merge of `impl/security-review-fixes` (the destination rule, `story:security-review-fixes`).
+
+The `mod` lines of `crates/tls/src/lib.rs` and `crates/tls/tests/main.rs` are the coordinator in
+a wave of more than one unit, so the stories of one step can share the crate.
 
 ## Risks
 
@@ -315,20 +318,29 @@ Stories 3, 4 and 5 touch different files (`spec/` and `docs/`; `crates/tls/src/x
   recorded flights of an independent implementation and x509-limbo are the answer.
 - RSA and P-384 verification in an unoptimised test build may cost tens of milliseconds per call
   (not measured); many handshakes per test file add up against the 120 s step.
-- A stale bundled anchor list (if U2 bundles) trusts a removed CA until the next release.
-- TLS 1.2-only servers fail with `TlsVersionUnsupported` while U3 stays at its default.
-- The certificate set and recorded flights expire: generated with validity far in the future and
-  checked against an injected clock, never the wall clock.
+- A stale bundled anchor list trusts a removed CA until the next release.
+- TLS 1.2-only servers fail with `TlsVersionUnsupported` until the TLS 1.2 epic.
+- Revocation is not checked: a revoked certificate that has not expired loads. The documents say
+  so where `https:` is described.
+- The clock: validity is checked against a time the caller passes. `surf` and the session pass the
+  system clock. Library tests pass a fixed time (2026-11-22) and never read the wall clock; tests
+  through a binary run on the system clock, with certificates valid until 2125 and an expired one
+  whose end lies in 2001, so they hold until 2125.
 
 ## Acceptance
 
-`slot task check` exits 0 on `main` after story 8 and, in that run: the lock check prints the
-allow-list line and fails a planted outside package (its test); the end-to-end test `surf-agent go
-https://localhost:<port>/` against the test server prints `page 200 "text/html"
+`slot task check` exits 0 on `main` after `story:tls-release` and, in that run: the lock check
+prints the allow-list line and fails a planted outside package (its test); the end-to-end test
+`surf-agent go https://localhost:<port>/` against the test server prints `page 200 "text/html"
 "https://localhost:<port>/"`; one test per reason of the negative suite prints `page failed
-<reason>` with the reason the suite names; the x509-limbo and RFC 8448 counts are held; agent task
-5 of `story:agent-tasks` is `pass`; the test step stays within 120 s. The release smoke test of the
-next release passes on the four targets.
+<reason>` with the reason the suite names (`story:tls-session-anchors`); the x509-limbo and RFC
+8448 counts are held; the test step stays within 120 s. The release smoke test of the next
+release passes on the four targets.
+
+Agent task 5 of `story:agent-tasks` turning `pass` needs `story:agent-tasks` (draft,
+`epic:agent-cli-target`) and the page text of round 1 (`look --as markdown`), neither of this
+epic. That line belongs to whichever of the two lands last; this epic gives it the test server
+and `surf-agent open --ca-file`.
 
 ## Decisions taken
 
@@ -338,3 +350,5 @@ Taken by the coordinating agent on 2026-11-22, each reported to the operator, wh
 
 - U2, trust anchors: option B, the bundled list of Mozilla as curl publishes it, built into the binary and refreshed before each release, plus an extra anchor file per session. Reason: the same list on Linux and macOS, and reading the macOS keychain needs unsafe calls, which principle 5 forbids.
 - U3, TLS 1.2: option C, out of this epic and drafted as the epic after it. Reason: this epic stays the size of one protocol version, and about one trusted site in four offers TLS 1.2 as its best protocol (SSL Pulse, 2025-06-01: 24.7 %), so the gap is closed next and not left open. Until then such a server fails with `TlsVersionUnsupported`.
+
+- TLS 1.2 suites in the ClientHello, taken by the coordinating agent on 2026-11-22 and reported to the operator: beside the three TLS 1.3 suites the ClientHello offers the six TLS 1.2 ECDHE AEAD suites of RFC 5289 and RFC 7905 (TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384, TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256, TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256), for one purpose: a server limited to TLS 1.2 then answers with a ServerHello that selects 1.2, and surf ends the handshake with a `protocol_version` alert and the reason `TlsVersionUnsupported`. surf never continues a TLS 1.2 handshake in this epic. A `handshake_failure` alert before any ServerHello stays `TlsHandshakeFailed`, with a detail that names the alert. Reason: about one site in four offers TLS 1.2 as its best, and an agent must be told which failure it met. `story:tls-decisions` checks it with two recordings (a server limited to TLS 1.2 against a hello with and without those suites) and may overturn it with the evidence.

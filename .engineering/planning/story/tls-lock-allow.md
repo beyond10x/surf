@@ -22,6 +22,8 @@ scope:
 - confidence: cited
   path: crates/tls/src/lib.rs
 - confidence: cited
+  path: crates/tls/tests/alloc.rs
+- confidence: cited
   path: crates/tls/tests/data/wycheproof
 - confidence: cited
   path: crates/tls/tests/main.rs
@@ -31,7 +33,7 @@ scope:
   path: taskfiles/lock-allow.txt
 - confidence: cited
   path: taskfiles/lock-check.sh
-revision: 3
+revision: 5
 ---
 ## Context
 
@@ -49,9 +51,19 @@ other crate of this repository depends on an allowed package. `AGENTS.md`, "Goal
 is not chosen yet." `README.md` line 154, principle 4: "planned: audited cryptographic
 primitives for TLS." Principle 5: no unsafe code in a hand-written crate.
 
-`docs/design/tls.md` (`story:tls-decisions`): item 2 (the packages and checksums), item 4 (the
-`opt-level` line, if any), item 6 (the operations of the seam, the error kinds), item 10 (the
-Wycheproof files).
+`docs/design/tls.md` (`story:tls-decisions`): item 2 (the packages and checksums; more than 8,
+by the manifests of ring and getrandom), item 4 (the `opt-level` line, if any), item 5 (random
+sources), item 6 (the operations of the seam, the refused algorithms, the feature
+`test-tooling`, the `Error` kinds), item 10 (the Wycheproof files, the AES-192 skip). ring has
+no AES-192 (`ring-0.17.14/src/aead/algorithm.rs:149-163`).
+
+`crates/fetch/tests/adversary_redirect_memory.rs` holds a counting allocator (a `GlobalAlloc`
+that passes every call to `System` and counts sizes, the only `unsafe` of the repository, test
+only, its cases serialised by a lock); the hostile cases of `story:tls-x509` and
+`story:tls-record` need one in the test binary of `surf-tls`.
+
+Placement: the second of the nine stories that write only `crates/tls*`, `taskfiles/tls-*`, the
+lock check and its test; built alone, after `tls-decisions`, beside the rounds of surf.
 
 ## Change
 
@@ -64,42 +76,51 @@ Wycheproof files).
     `dependencies` is `surf-tls`, else `Cargo.lock: <package> depends on <allowed>; only
     surf-tls may`; an allowed package may depend on another allowed package;
   - a line of the allow-list that no package matches fails (`taskfiles/lock-allow.txt: <name>
-    <version> is in no package of Cargo.lock`), so the list never outgrows the lock;
+    <version> is in no package of Cargo.lock`);
   - a missing lock fails as today; the summary is `Cargo.lock: <n> package(s), <m> from outside
     this repository, each on the allow-list`, and the line of today when `<m>` is 0.
 - `taskfiles/lock-allow.txt` (new): one line per package of item 2, `<name> <version> <source>
   <checksum>`, sorted, no comment lines; the format is stated at the head of the script.
 - The task `lock-check` stays in the root `Taskfile.yml`, so the copies of the test keep
   working; its body becomes `sh taskfiles/lock-check.sh Cargo.lock taskfiles/lock-allow.txt`
-  and its summary says what the two rules are. In a wave of more than one unit this edit is the
-  coordinator (handed over in the report); alone, the unit writes it.
+  and its summary says what the two rules are. The coordinator writes this edit when the wave
+  has more than one unit; alone, the unit writes it.
 - `crates/surf/tests/lock_check.rs`: each copy also holds `taskfiles/lock-check.sh` and
   `taskfiles/lock-allow.txt`; the four cases stay (the registry case appends `serde 1.0.0`,
   which is on no list) and the cases below are added.
 - `crates/tls` (`surf-tls`, new, Apache-2.0, `#![forbid(unsafe_code)]`, `#![deny(missing_docs)]`):
-  - `Cargo.toml`: `ring = "=0.17.14"`; `surf-secret` by path; as a dev-dependency
-    `surf-html-conformance` by path, for its JSON reader (`pub mod json`), so that no later
-    story of the epic changes this manifest;
-  - `src/crypto.rs`, the one file that names ring: the operations of item 6, AEAD seal and open
-    for the three suites, SHA-256 and SHA-384 (one-shot and running), HKDF extract and expand,
-    X25519 and P-256 agreement behind a trait the tests replace, signature checks for
-    rsa_pkcs1_sha256/384/512, rsa_pss_rsae_sha256/384/512, ecdsa_secp256r1_sha256,
-    ecdsa_secp384r1_sha384 and ed25519 behind a trait the tests replace, and signing from
-    PKCS#8 for test tooling;
-  - `src/error.rs`: the public error kinds of item 6; later stories add their detailed errors in
-    their own modules and do not change this file (a needed change is a finding);
+  - `Cargo.toml`: `ring = "=0.17.14"`; `surf-secret` by path; the feature `test-tooling` (off by
+    default); as dev-dependencies `surf-tls` itself by path with `test-tooling`, and
+    `surf-html-conformance` by path for its JSON reader (`pub mod json`), so that no later story
+    of the epic changes this manifest;
+  - `src/crypto.rs`, the one file that names ring: AEAD seal and open for AES-128-GCM,
+    AES-256-GCM and ChaCha20-Poly1305; SHA-256 and SHA-384, one-shot and running; HKDF extract
+    and expand; X25519 and P-256 agreement with a key made from a random source; signature
+    checks for rsa_pkcs1_sha256/384/512, rsa_pss_rsae_sha256/384/512, ecdsa_secp256r1_sha256,
+    ecdsa_secp384r1_sha384 and ed25519, each behind a trait the tests can replace; `REFUSED`,
+    the algorithms it refuses by name (every SHA-1 signature, RSA keys under 2048 bits), with a
+    function that names the refusal for a signature algorithm and key before any verification;
+    the shipped random source `ring::rand::SystemRandom`; behind `test-tooling` the signing
+    from PKCS#8 (ECDSA P-256 and P-384, Ed25519, RSA PKCS#1 and PSS from 2048 bits) and the
+    fixed random sources of `ring::test::rand`, given buffers of their exact length, under
+    `#[allow(deprecated)]`;
+  - `src/error.rs`: the public `Error` of item 6 without its `Certificate` variant, which
+    `story:tls-x509` adds; no other story changes this file (a needed change is a finding);
   - `src/lib.rs`: the crate documentation (what it is, that `crypto.rs` alone names ring, TLS
-    1.2 not done) and the `mod` lines.
+    1.2 not done, revocation not checked) and the `mod` lines.
 - `.cargo/config.toml`: the `opt-level` line of item 4, when item 4 has one.
-- Tests in `crates/tls/tests/main.rs` (the one integration-test binary of the crate), module
-  `seam`, over `crates/tls/tests/data/wycheproof/` (the files of item 10, unchanged, with
-  `LICENSE` and `SOURCE`: `https://github.com/C2SP/wycheproof`, commit, date, Apache-2.0,
-  sha256 of each file).
+- Tests in `crates/tls/tests/main.rs` (the one integration-test binary of the crate): module
+  `alloc` (the counting allocator in the form of the one of `crates/fetch`, with its lock and a
+  peak reading, the only `unsafe` under `crates/tls`, test only) and module `seam`, over
+  `crates/tls/tests/data/wycheproof/` (the files of item 10, unchanged, with `LICENSE` and
+  `SOURCE`: `https://github.com/C2SP/wycheproof`, commit, date, Apache-2.0, sha256 of each
+  file, the AES-192 count).
 - For the coordinator: `README.md` principle 4 (ring 0.17.14, "reviewed as a dependency in the
   rustls audit of Cure53, 2020", https://cure53.de/pentest-report_rustls.pdf, in place of
   "planned"); `AGENTS.md` "Goals" (the crate, its version, used by `surf-tls` alone, allowed by
   `taskfiles/lock-allow.txt`; "The root `Cargo.lock` proves the rest" reworded), "Layout" (the
-  `crates/tls` entry), "Commands" (`task lock-check`); the root `Cargo.lock`.
+  `crates/tls` entry, and that the counting allocator of `crates/tls/tests` is the second
+  `unsafe` of the repository), "Commands" (`task lock-check`); the root `Cargo.lock`.
 
 ## Acceptance
 
@@ -124,16 +145,27 @@ Seam (`crates/tls/tests/main.rs`, module `seam`):
 
 9. One test per Wycheproof file: every vector of result `valid` passes, every `invalid` one is
    refused, `acceptable` ones are counted; each prints `wycheproof <file>: <n> vectors, <v>
-   valid passed, <i> invalid refused, <a> acceptable, <s> skipped` with the reason of each skip
-   (an AES-GCM nonce other than 96 bits; for agreement, every vector that needs a given private
-   key, item 5). No invalid vector is accepted.
-10. Hostile: an AES-128-GCM record with one flipped tag bit does not open; a P-256 public key
-    off the curve is refused by agreement; an RSA-1024 key is refused by every RSA check.
-11. `sources_match_their_digests`: the sha256 of each vendored file, through the seam, equals
+   valid passed, <i> invalid refused, <a> acceptable, <s> skipped`, and the only skips are the
+   AES-192 vectors of `aes_gcm_test` and AES-GCM nonces other than 96 bits, each counted by
+   name and the AES-192 count equal to `SOURCE`. The `x25519` and `ecdh_secp256r1` vectors run
+   with their private keys through a fixed source and compare the shared secret. No invalid
+   vector is accepted.
+10. SHA-384 of `abc` equals the FIPS 180-4 example value; a running SHA-256 and SHA-384 fed
+    in three uneven parts equals the one-shot hash.
+11. Signing under `test-tooling`: for each of ECDSA P-256, P-384, Ed25519, RSA PKCS#1 SHA-256
+    and PSS SHA-256, a key from PKCS#8 signs a message and the check of the seam accepts it
+    and refuses it with one byte flipped; ECDSA under one fixed source signs one message twice
+    to equal bytes.
+12. Refused by name: the seam names an RSA-1024 key `WeakKey` and a sha1WithRSAEncryption
+    signature `WeakAlgorithm` before any verification; an AES-128-GCM record with one flipped
+    tag bit does not open; a P-256 public key off the curve is refused by agreement.
+13. `sources_match_their_digests`: the sha256 of each vendored file, through the seam, equals
     its `SOURCE` line; with one byte changed in a copy under `CARGO_TARGET_TMPDIR` it fails
     naming the file.
-12. `only_crypto_names_ring`: no file under `crates/tls/src` but `crypto.rs` holds `ring::`;
+14. `only_crypto_names_ring`: no file under `crates/tls/src` but `crypto.rs` holds `ring::`;
     the report shows it failing once with a planted `use ring::digest;` in `src/lib.rs`.
+15. `alloc`: a test that allocates 1 MiB reads a peak of at least 1 MiB, and one that
+    allocates nothing reads a peak under 64 KiB.
 
 Budget (`$HOME/beyond10x/AGENTS.md`, "Tests stay fast"): no test over 60 s, the test step
 within 120 s (`task test` prints it; the report gives it before and after, and the build time
@@ -149,9 +181,9 @@ of primitives.
 
 `taskfiles/lock-check.sh`, `taskfiles/lock-allow.txt`, `crates/surf/tests/lock_check.rs`,
 `crates/tls/` (`Cargo.toml`, `src/lib.rs`, `src/crypto.rs`, `src/error.rs`, `tests/main.rs`,
-`tests/seam.rs`, `tests/data/wycheproof/`), `.cargo/config.toml` when item 4 asks. Coordinator:
-the root `Taskfile.yml` (task body), `Cargo.lock`, `README.md`, `AGENTS.md`.
-`crates/tls/Cargo.toml`, `src/crypto.rs` and `src/error.rs` are written by this story alone;
-`crates/tls/src/lib.rs` and `tests/main.rs` gain `mod` lines from `tls-x509`, `tls-record`,
-`tls-x509-path`, `tls-anchors`, `tls-handshake` and `tls-fetch-https`. `story:tls-spec` (beside
-this one) writes `crates/surf/src/lib.rs`, not the test file here.
+`tests/alloc.rs`, `tests/seam.rs`, `tests/data/wycheproof/`), `.cargo/config.toml` when item 4
+asks. Coordinator: the root `Taskfile.yml` (task body), `Cargo.lock`, `README.md`, `AGENTS.md`.
+`crates/tls/Cargo.toml` and `src/crypto.rs` are written by this story alone; `src/error.rs`
+gains one variant from `tls-x509`; `crates/tls/src/lib.rs` and `tests/main.rs` gain `mod` lines
+from `tls-x509`, `tls-record`, `tls-x509-path`, `tls-anchors` and `tls-handshake`. Nothing runs
+beside it in the epic.

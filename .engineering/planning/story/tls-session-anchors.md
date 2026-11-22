@@ -15,26 +15,42 @@ scope:
 - confidence: cited
   path: cli/surf-agent.yaml
 - confidence: cited
-  path: crates/agent
+  path: crates/agent/src/cli.rs
 - confidence: cited
-  path: crates/session
+  path: crates/agent/src/client.rs
 - confidence: cited
-  path: crates/surfd
+  path: crates/agent/src/wire.rs
+- confidence: cited
+  path: crates/agent/tests/ca_file.rs
+- confidence: cited
+  path: crates/agent/tests/main.rs
+- confidence: cited
+  path: crates/session/src/lib.rs
+- confidence: cited
+  path: crates/session/src/process.rs
+- confidence: cited
+  path: crates/session/tests/https.rs
+- confidence: cited
+  path: crates/session/tests/main.rs
+- confidence: cited
+  path: crates/surfd/src/daemon.rs
+- confidence: cited
+  path: crates/surfd/src/link.rs
 - confidence: cited
   path: docs/agent-answer.md
 - confidence: cited
   path: generated/rust
 - confidence: cited
   path: spec/domains/agent.yaml
-revision: 3
+revision: 5
 ---
 ## Context
 
 Split from the candidate `tls-fetch-https` of `epic:tls-https`: that story makes `surf-fetch`
 and the `surf` command load `https:` addresses; this one gives a session of `surf-agent` its
 extra anchors, which travel from the client through `surfd` to the session process. The two
-touch different crates and are checked apart (`surf` against `surf-agent`); together they were
-too large for one unit.
+touch different files and are checked apart (`surf` against `surf-agent`); together they were
+too large for one unit of work.
 
 U2 (`epic:tls-https`, "Decisions taken"): "plus an extra anchor file per session".
 `docs/design/tls.md` item 8: `surf-agent open --ca-file <path> [<url>]`; the client reads the
@@ -45,11 +61,18 @@ CA, so that the request stays within `surf_agent::wire::REQUEST_MAX` (64 KiB,
 (`spec/domains/agent.yaml:73-79`, field `url` only), bound by `cli/surf-agent.yaml` (`open`,
 lines 37-40); the client parser is held to that document (`task cli`). The session transport
 is `surf_session::fetch` (`crates/session/src/lib.rs:137`) over `surf::fetch_http`, which takes
-the trust to use since `story:tls-fetch-https`. The end-to-end test of the three binaries is
-`crates/session/tests/e2e.rs` (`SURF_BIN_DIR`).
+the anchors to use since `story:tls-fetch-https`. `surfd` starts the session process in
+`crates/surfd/src/daemon.rs` and talks to it over the link of `crates/surfd/src/link.rs`. The
+end-to-end test of the three binaries is `crates/session/tests/e2e.rs` (`SURF_BIN_DIR`).
 
 The epic, "Acceptance": "the end-to-end test `surf-agent go https://localhost:<port>/` against
-the test server prints `page 200 "text/html" "https://localhost:<port>/"`".
+the test server prints `page 200 "text/html" "https://localhost:<port>/"`; one test per reason
+of the negative suite prints `page failed <reason>`".
+
+Placement: the third of the four stories built as one unit (`tls-spec`, `tls-fetch-https`,
+`tls-session-anchors`, `tls-release`), at a boundary between two rounds of surf, never beside a
+unit that writes `spec/`, `generated/`, `crates/session`, `crates/agent`, `crates/surfd` or
+`docs/agent-answer.md`.
 
 ## Domain relations
 
@@ -66,60 +89,71 @@ the test server prints `page 200 "text/html" "https://localhost:<port>/"`".
 - `spec/domains/agent.yaml`: `surf.agent.OpenCall` gains `ca_file: Optional<String>`, with a
   comment that the client reads the file and sends its bytes; `task generate`
   (`generated/rust/`). `cli/surf-agent.yaml`: `open` gains `--ca-file <path>`; `task cli`.
-- `crates/agent` (the client): reads the file before it connects, refuses it with the
-  `AnchorError` of `surf-tls` as an invalid input (the exit status and answer
-  `docs/agent-answer.md` gives for one), and sends its bytes in the `open` request.
-- `crates/surfd`: hands the bytes to the session process it starts, over its link, never on a
-  command line.
-- `crates/session`: builds the trust from the bundled anchors and the bytes, and fetches with it
-  for the life of the session; an `open` without the option uses the bundled anchors.
+- `crates/agent/src/cli.rs` and `src/client.rs`: the client reads the file before it connects,
+  refuses it with the `AnchorError` of `surf-tls` as an invalid input (the exit status and
+  answer `docs/agent-answer.md` gives for one); `crates/agent/src/wire.rs`: the bytes travel in
+  the `open` request.
+- `crates/surfd/src/daemon.rs` and `src/link.rs`: `surfd` hands the bytes to the session
+  process it starts over its link, never as an argument or an environment variable.
+- `crates/session/src/lib.rs` and `src/process.rs`: the session builds its anchors from the
+  bundled set and the bytes, and fetches with them for its life; an `open` without the option
+  uses the bundled set.
 - `docs/agent-answer.md`: `open --ca-file` and the answer to a refused file.
-- Tests in `crates/session/tests/main.rs` and `crates/agent/tests/main.rs`, as modules (both
-  crates have several files today; `story:one-test-binary-per-crate` is before this one).
+- Tests: `crates/session/tests/main.rs` module `https` and `crates/agent/tests/main.rs` module
+  `ca_file` (both crates have one test binary since `story:one-test-binary-per-crate`).
 
 ## Acceptance
 
 The end-to-end test runs `surf-agent open --ca-file <root.pem>` and `surf-agent go
 https://localhost:<port>/` against `surf-tls-test-server` and prints `page 200 "text/html"
-"https://localhost:<port>/"`, and a session opened without the file prints `page failed
-CertificateNotTrusted "https://localhost:<port>/"`.
+"https://localhost:<port>/"`, and one test per reason of the negative suite prints `page failed
+<reason> "https://localhost:<port>/"`.
 
 Each on the built `surf-agent`, `surfd` and `surf-session` (or those of `SURF_BIN_DIR`) in a
 private `XDG_RUNTIME_DIR`, the server on 127.0.0.1 port 0 with the certificates of
-`crates/tls-test-certs/certs/`:
+`crates/tls-test-certs/certs/`, on the system clock (the certificates run to 2125, `expired`
+ended in 2001):
 
 1. `open --ca-file <ok-ecdsa-p256 root.pem>`, then `go https://localhost:<port>/` (the server
    answers 200 `text/html`): the answer holds `page 200 "text/html"
    "https://localhost:<port>/"`.
-2. A session opened without `--ca-file`: `go` gives `page failed CertificateNotTrusted
+2. A session opened without `--ca-file`: `page failed CertificateNotTrusted
    "https://localhost:<port>/"`.
-3. Two sessions of one `surfd`, A with the file and B without: A loads, B fails
+3. With the root of each case as the file: `expired`: `page failed CertificateExpired ...`;
+   `wrong-host`: `page failed CertificateNameMismatch ...`; mode `Tls12Only`: `page failed
+   TlsVersionUnsupported ...`; mode `BadFinished`: `page failed TlsHandshakeFailed ...`.
+4. Two sessions of one `surfd`, A with the file and B without: A loads, B fails
    `CertificateNotTrusted` (the anchors belong to the session, not to the daemon).
-4. With the file, the server of the case `expired`: `page failed CertificateExpired ...`; mode
-   `Tls12Only`: `page failed TlsVersionUnsupported ...`.
 5. Hostile: `--ca-file` naming a missing file, a file of 32 KiB plus one byte, a file holding a
    leaf that is no CA, a file holding a `PRIVATE KEY` block: each refused before any connection
    to `surfd`, with the exit status of an invalid input, and no session is created
    (`$XDG_RUNTIME_DIR/surf/` holds none).
-6. The session log of case 2 holds a `surf.net.FetchFailed` entry with the reason
+6. While the session of case 1 runs, `/proc/<pid>/cmdline` and `/proc/<pid>/environ` of its
+   `surf-session` process hold no byte sequence of the PEM file (its first 64 base64 characters
+   searched).
+7. The session log of case 2 holds a `surf.net.FetchFailed` entry with the reason
    `CertificateNotTrusted`.
-7. `slot task cli` passes with the new option, and `slot task generated-check` prints that
+8. `slot task cli` passes with the new option, and `slot task generated-check` prints that
    `generated/rust` matches `spec/`.
 
-Budget: each test under 10 s and all of them under 15 s together (times in the report); no test
+Budget: each test under 10 s and all of them under 20 s together (times in the report); no test
 over 60 s, the test step within 120 s; 127.0.0.1 only, no network, no model call.
 
 ## Out of scope
 
 Anchors per `go` or per daemon; trust settings beyond one extra file (pinning, allow-lists);
-`surf-agent` on macOS. Task 5 of `story:agent-tasks` (it needs that story and the page text of
-round 1, neither of this epic): it can use `open --ca-file` and the test server once they exist.
+`surf-agent` on macOS; task 5 of `story:agent-tasks` (it needs that story and the page text of
+round 1; it belongs to whichever of the two lands last, and can use `open --ca-file` and the test
+server).
 
 ## Writes
 
-`spec/domains/agent.yaml`, `cli/surf-agent.yaml`, `generated/rust/`, `crates/agent/`,
-`crates/surfd/`, `crates/session/`, `docs/agent-answer.md`. `spec/`, `generated/` and
-`docs/agent-answer.md` are written by `story:tls-spec` before this one. In the rest of the plan
-the agent crates, `spec/` and `docs/agent-answer.md` are written by many agent stories
-(`story:agent-cookie-jar`, `story:agent-fill-pick`, `story:agent-answer-format` and others):
-never in the same wave. Coordinator: `AGENTS.md`, `README.md`, the website pages.
+`spec/domains/agent.yaml`, `cli/surf-agent.yaml`, `generated/rust/`, `crates/agent/src/cli.rs`,
+`crates/agent/src/client.rs`, `crates/agent/src/wire.rs`, `crates/agent/tests/ca_file.rs`,
+`crates/surfd/src/daemon.rs`, `crates/surfd/src/link.rs`, `crates/session/src/lib.rs`,
+`crates/session/src/process.rs`, `crates/session/tests/https.rs`, the `mod` lines of the two
+`tests/main.rs`, `docs/agent-answer.md`. In the same unit before it: `spec/`, `generated/`,
+`docs/agent-answer.md` (`tls-spec`) and `crates/session/src/lib.rs` (`tls-fetch-https`). Outside
+the epic the same files are written by many agent and view stories (`story:agent-cookie-jar`,
+`story:agent-fill-pick`, `story:agent-answer-format`, `story:view-now-panel` on `surfd`): kept
+apart by the placement. Coordinator: `AGENTS.md`, `README.md`, the website pages.

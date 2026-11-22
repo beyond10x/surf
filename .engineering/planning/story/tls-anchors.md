@@ -19,7 +19,7 @@ scope:
   path: taskfiles/tls-anchors.sh
 - confidence: cited
   path: taskfiles/tls-anchors.yml
-revision: 3
+revision: 4
 ---
 ## Context
 
@@ -28,22 +28,27 @@ publishes it, built into the binary and refreshed before each release, plus an e
 file per session". The epic: curl publishes it as PEM (https://curl.se/docs/caextract.html,
 2026-11-05, 118 certificates, with a `.sha256`); a task outside the gate refreshes it and writes
 a `SOURCE` with its checksum, as the vendored test data has; the release procedure refreshes a
-list older than 90 days. `docs/design/tls.md` items 8 (the extra file: at most 32 KiB and 64
-certificates, every one a CA) and 11 (the file read, its licence, how a root the X.509 reader
-refuses is taken). The PEM reader and the certificate reader are those of `story:tls-x509`.
+list older than 90 days. `docs/design/tls.md` items 6 (the type `TrustAnchor` and the PEM and
+certificate readers are owned by `story:tls-x509`; this story makes values of that type), 8
+(the extra file: at most 32 KiB and 64 certificates, every one a CA) and 11 (the file read, its
+licence, a root the certificate reader refuses taken as name and key).
+
+Placement: one of the nine stories that write only `crates/tls*` and `taskfiles/tls-*`; built
+after `tls-x509` and `tls-test-certs`, beside `tls-x509-path` and `tls-handshake`, beside the
+rounds of surf.
 
 ## Change
 
 - `crates/tls/src/anchors/cacert.pem` (the curl file, unchanged) and `SOURCE` (its URL, the date
   of the list, the date fetched, the sha256 from the `.sha256`, the count, the licence of the
   list).
-- `crates/tls/src/anchors/mod.rs`: `Anchors::bundled()` reads the included file once into trust
-  anchors (subject, public key, nameConstraints); a root the certificate reader refuses is taken
-  as subject and key only, as item 11 says; `count()`, `bundled_date()` and `bundled_sha256()`
-  for `surf --anchors`. `Anchors::with_extra_pem(&[u8])` adds the extra file, or refuses it with
-  an `AnchorError` that names the block: `NoCertificate`, `NotACertificate { index, label }`,
-  `BadPem { index }`, `BadCertificate { index, error }`, `NotACa { index }`, `TooLarge`,
-  `TooMany`.
+- `crates/tls/src/anchors/mod.rs`: `Anchors::bundled()` reads the included file once into
+  `TrustAnchor`s; a root the certificate reader refuses is taken as subject and key only, as
+  item 11 says; `count()`, `bundled_date()` and `bundled_sha256()` for `surf --anchors`.
+  `Anchors::with_extra_pem(&[u8])` adds the extra file, or refuses it with an `AnchorError`
+  that names the block: `NoCertificate`, `NotACertificate { index, label }`, `BadPem { index
+  }`, `BadCertificate { index, error }`, `NotACa { index }`, `TooLarge`, `TooMany`.
+  `Anchors::as_slice()` hands the set to `PathVerifier` (`story:tls-x509-path`).
 - `taskfiles/tls-anchors.sh` and `taskfiles/tls-anchors.yml`: `anchors-refresh` fetches
   `cacert.pem` and its `.sha256` from curl.se with `curl`, refuses a file whose sha256 differs,
   and writes `cacert.pem` and `SOURCE`; `FILE=<pem> SHA256=<file>` takes local files instead (the
@@ -59,13 +64,15 @@ count in `crates/tls/src/anchors/SOURCE`, and `slot task anchors-age` prints the
 and exits 0.
 
 1. The bundled count equals `SOURCE`, and the sha256 of the included bytes, through the seam,
-   equals `SOURCE`.
+   equals `SOURCE`; the roots taken as name and key only are counted and named in the report.
 2. The extra file `crates/tls-test-certs/certs/ok-rsa2048/root.pem`: accepted, count plus 1.
 3. Hostile extra files, each refused with the error named: 1 KiB of random bytes:
    `NoCertificate`; a `PRIVATE KEY` block: `NotACertificate { index: 0, label: "PRIVATE KEY" }`
-   (the key is not kept); the leaf of `ok-rsa2048` (no CA): `NotACa { index: 0 }`; base64 cut
-   in the middle: `BadPem { index: 0 }`; 32 KiB plus one byte: `TooLarge`, before any block is
-   read; 65 small certificates: `TooMany`.
+   (the key is not kept); a `CERTIFICATE` block whose DER is cut after 100 bytes:
+   `BadCertificate { index: 0, error: Truncated }`; the leaf of `ok-rsa2048` (no CA): `NotACa {
+   index: 0 }`; base64 cut in the middle: `BadPem { index: 0 }`; 32 KiB plus one byte:
+   `TooLarge`, before any block is read; 65 small CA certificates: `TooMany`; a good root then a
+   bad block: refused with `index: 1`, nothing added.
 4. `anchors-refresh` with `FILE` and a `SHA256` file that does not match (a test running the
    script under `CARGO_TARGET_TMPDIR`): exit 1, `cacert.pem` and `SOURCE` unchanged; with a
    matching pair: both written, `SOURCE` naming the new sha256.
@@ -86,6 +93,6 @@ file reaches a fetch (`story:tls-fetch-https`, `story:tls-session-anchors`); the
 
 `crates/tls/src/anchors/`, `crates/tls/tests/anchors.rs`, `taskfiles/tls-anchors.sh`,
 `taskfiles/tls-anchors.yml`. Coordinator: `mod` lines in a wave of more than one unit, the root
-`Taskfile.yml` include, `AGENTS.md`. Beside it can run `story:tls-x509-path` and
+`Taskfile.yml` include, `AGENTS.md`. Beside it run `story:tls-x509-path` and
 `story:tls-handshake`. `story:tls-release` adds the age check to `docs/releasing.md` and the
 licence of the list to `NOTICE`.

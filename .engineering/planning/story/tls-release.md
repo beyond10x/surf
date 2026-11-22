@@ -22,7 +22,7 @@ scope:
   path: taskfiles/release-smoke.sh
 - confidence: cited
   path: website/docs
-revision: 3
+revision: 4
 ---
 ## Context
 
@@ -41,10 +41,15 @@ compiler on every build; `docs/design/tls.md` item 3 gives the step per runner, 
 probe of `story:tls-decisions`; item 11 the licences of ring and of the list. `task
 anchors-age` and `anchors-refresh`: `story:tls-anchors`.
 
+Placement: the last of the four stories built as one unit (`tls-spec`, `tls-fetch-https`,
+`tls-session-anchors`, `tls-release`), at a boundary between two rounds of surf.
+
 ## Change
 
 - `.github/workflows/release.yml`: the compiler step of item 3 for each target that needs it, in
-  the job `package` before the build, with a comment saying why.
+  the job `package` before the build, with a comment saying why; and after the build one line
+  `cargo tree -p surf-cli -e normal,build,features --target "$TARGET"` that fails the job when it
+  lists `test-tooling`.
 - `taskfiles/release-smoke.sh` step 2: also `surf https://127.0.0.1:1/` exits 1 and prints
   `fetch-failed <id> Unreachable https://127.0.0.1:1/`; `surf --anchors` exits 0 and prints
   `anchors <n> bundled <date> sha256:<hex>` with the count and date of
@@ -59,7 +64,9 @@ anchors-age` and `anchors-refresh`: `story:tls-anchors`.
   `TlsVersionUnsupported`.
 - The website: `website/docs/what-works.md`, `status.md`, `roadmap.md`, `principles.md`,
   `how-it-is-built.md`, `try-it.md`, `drive-from-an-agent.md`, and
-  `website/docs/reference/surf-command.md` (the hand copy of `docs/surf-command.md`).
+  `website/docs/reference/surf-command.md` (the hand copy of `docs/surf-command.md`); where
+  `what-works.md` and `try-it.md` describe `https:`, the sentence "surf does not check
+  revocation: a revoked certificate that has not expired loads."
 - For the coordinator: `README.md` ("What works", "What surf is not", the roadmap, principle 4 if
   not done), `AGENTS.md` ("Publishing", "Commands": only `http:` loads goes), the badges.
 
@@ -77,7 +84,11 @@ A manual run of the release workflow on the story branch, started and watched by
 3. Hostile: the same script on the unpacked x86_64 musl archive of release 0.3.0, whose `surf`
    answers `UnsupportedScheme` for `https:`: exit 1 naming that line.
 4. `slot task anchors-age` exits 0 on the story commit.
-5. `grep -c ring NOTICE` prints at least 1.
+5. `grep -c ring NOTICE` prints at least 1; `grep -c "does not check revocation"` prints at least
+   1 in `website/docs/what-works.md` and in `website/docs/reference/surf-command.md`.
+6. In that run, the release build of `surf-cli` compiles `surf-tls` without its feature
+   `test-tooling` (`cargo tree -p surf-cli -e normal,build,features --target <t>` in the job
+   log).
 
 Budget: no test of the root workspace is added; the smoke test runs in the release workflow and
 by hand, never in `task test`; no model call.

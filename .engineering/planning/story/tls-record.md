@@ -22,7 +22,7 @@ scope:
   path: crates/tls/tests/record.rs
 - confidence: cited
   path: crates/tls/tests/rfc8448.rs
-revision: 3
+revision: 4
 ---
 ## Context
 
@@ -36,11 +36,16 @@ The epic, "What surf writes itself": "The record layer (plaintext at most 2^14 b
 record, sequence numbers, alerts, `close_notify`, `KeyUpdate` received), the key schedule
 (HKDF-Extract and HKDF-Expand-Label over the transcript hash)". RFC 8448 (Informational,
 January 2019, https://www.rfc-editor.org/rfc/rfc8448.txt): sections 3 (a simple 1-RTT
-handshake), 5 (HelloRetryRequest) and 7 (compatibility mode) are in scope; its client key share
-is an X25519 key whose shared secret the trace prints, so the key agreement of the seam is
-replaced by a test double that answers it (`docs/design/tls.md` item 5). Items 6 and 9 of the
-note: the seams, the bound of a handshake message. RFC 8446 sections 5 (record protocol), 7 (key
-schedule) and 4.4.1 (transcript hash, `message_hash` after a HelloRetryRequest).
+handshake), 5 (HelloRetryRequest) and 7 (compatibility mode) are in scope; the trace prints the
+client X25519 private key, and ring makes a key from given bytes through a fixed random source
+(`ring-0.17.14/src/agreement.rs:106-109`; `docs/design/tls.md` item 5), so the shared secret is
+derived, not supplied. Items 6 (the `Error` kinds of `error.rs`) and 9 (the bound of a
+handshake message). RFC 8446 sections 5 (record protocol), 7 (key schedule) and 4.4.1
+(transcript hash, `message_hash` after a HelloRetryRequest). The counting allocator of
+`crates/tls/tests/alloc.rs` (`story:tls-lock-allow`) observes what a refusal allocates.
+
+Placement: one of the nine stories that write only `crates/tls*`; built after
+`tls-lock-allow`, beside `tls-x509` and `tls-test-certs`, beside the rounds of surf.
 
 ## Change
 
@@ -65,23 +70,27 @@ schedule) and 4.4.1 (transcript hash, `message_hash` after a HelloRetryRequest).
 
 `cargo test -p surf-tls` passes with every secret, key, IV and protected record of RFC 8448
 sections 3, 5 and 7 reproduced byte for byte, and each hostile record below refused with the
-alert named.
+`Error` named.
 
-1. Section 3: from the shared secret of the trace, each derived secret, traffic key and IV
-   equals the trace; the server records of the trace open into the EncryptedExtensions,
+1. Section 3: the client X25519 key made from the private key bytes of the trace and the server
+   share of the trace give the shared secret the trace prints; each derived secret, traffic key
+   and IV equals the trace; the server records of the trace open into the EncryptedExtensions,
    Certificate, CertificateVerify and Finished the trace prints; our protection of the client
    Finished and of the application data records gives the bytes of the trace.
 2. Section 5: the transcript after the HelloRetryRequest (with `message_hash`) and every secret
    after it equal the trace.
 3. Section 7: the `change_cipher_spec` records of the trace are handed up, and the rest equals
    the trace.
-4. Hostile: a record cut after 3 of its 5 header bytes and then end of stream: `Truncated`, the
-   kind item 7 maps to; a ciphertext of 2^14 + 257 bytes: `record_overflow`, refused before it
-   is read whole; a plaintext of 2^14 + 1 bytes after opening: `record_overflow`; one flipped
-   bit of a tag: `bad_record_mac`; inner content type 0x19: `unexpected_message`; a record of
-   zero padding only: `unexpected_message`; a handshake header declaring 2^24 - 1 bytes:
-   refused after its 4 bytes with the bound of item 9, no buffer of that size; a sequence number
-   at 2^64 - 1: no further record is protected.
+4. Hostile, each from bytes in memory: a record cut after 3 of its 5 header bytes and then end of
+   stream: `ConnectionClosed`; a ciphertext of 2^14 + 257 bytes: `AlertSent { record_overflow,
+   RecordOverflow }`, refused at its header, the peak of the counting allocator under 64 KiB; a
+   plaintext of 2^14 + 1 bytes after opening: `AlertSent { record_overflow, RecordOverflow }`;
+   one flipped bit of a tag: `AlertSent { bad_record_mac, BadRecordMac }`; inner content type
+   0x19: `AlertSent { unexpected_message, UnknownContentType }`; a record of zero padding only:
+   `AlertSent { unexpected_message, EmptyInnerPlaintext }`; a handshake header declaring 2^24 - 1
+   bytes: `AlertSent { illegal_parameter, MessageTooLarge { declared: 16777215, bound } }` after
+   its 4 bytes, the peak of the counting allocator under 64 KiB; a sequence number at 2^64 - 1:
+   `SequenceExhausted`, no record written.
 5. `sources_match_their_digests` for `rfc8448.txt`.
 
 Budget: each test under 1 s; no test over 60 s, the test step within 120 s, no network, no model
@@ -96,4 +105,4 @@ The client state machine, extensions and certificates (`story:tls-handshake`); R
 
 `crates/tls/src/record.rs`, `src/key_schedule.rs`, `src/transcript.rs`, `tests/rfc8448.rs`,
 `tests/record.rs`, `tests/data/rfc8448/`. Coordinator: the `mod` lines in a wave of more than one
-unit. Beside it can run `story:tls-x509`, `story:tls-test-certs` and `story:tls-spec`.
+unit. Beside it run `story:tls-x509` and `story:tls-test-certs`.
