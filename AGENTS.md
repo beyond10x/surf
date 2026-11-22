@@ -133,7 +133,9 @@ above, and the list of standards itself was written from memory.
   tests copy the root `Taskfile.yml` alone into a temporary directory and run one task there;
   a missing include must not stop them. `check` still fails when an included task is missing.
   `taskfiles/cli.yml` holds the task `cli`, `taskfiles/site.yml` the task `site-build`,
-  `taskfiles/html-conformance.yml` the task `html-conformance`, `taskfiles/view-stream-check.yml`
+  `taskfiles/html-conformance.yml` the task `html-conformance`,
+  `taskfiles/tls-x509-conformance.yml` the task `tls-x509-conformance`,
+  `taskfiles/view-stream-check.yml`
   the task `view-stream-check`, `taskfiles/view-test.yml` the task `view-test`, and
   `taskfiles/release.yml` the task `release-smoke`
   (`DIR=<unpacked archive>`, optional `TARGET`), which runs `taskfiles/release-smoke.sh`; the
@@ -146,8 +148,15 @@ above, and the list of standards itself was written from memory.
   paths, which `.github/workflows/check.yml` calls; `taskfiles/test-layout.yml` the tasks
   `test-layout` and `test-layout-test` over `taskfiles/test-layout.sh`;
   `taskfiles/agent-tasks.yml` the tasks `agent-tasks-report`, `agent-tasks-archive` and
-  `agent-tasks-model` (over `taskfiles/agent-tasks-model.sh`). `taskfiles/slowest-tests.sh` is
-  no task's own: `task test` calls it.
+  `agent-tasks-model` (over `taskfiles/agent-tasks-model.sh`);
+  `taskfiles/tls-anchors.yml` the tasks `anchors-refresh` (fetches curl's `cacert.pem` and
+  its `.sha256` with curl, or takes `FILE=<pem> SHA256=<file>`, refuses a sha256 that
+  differs, writes `cacert.pem` and `SOURCE`; it reaches the network and is never a step of
+  `check`) and `anchors-age` (`DATE`, default today; fails when the list is older than 90
+  days) over `taskfiles/tls-anchors.sh`, POSIX sh; `taskfiles/tls-flights.yml` the tasks
+  `tls-flights-check` (over `taskfiles/tls-flights-check.sh`, a step of `check`) and
+  `tls-flights-slow` (records the flights again and replays them; `WRITE=1` writes them; no
+  task calls it). `taskfiles/slowest-tests.sh` is no task's own: `task test` calls it.
 - `rust-toolchain.toml`: the one pinned rustc, `1.99.1`, with the components `rustfmt` and
   `clippy` (the gate uses neither; units run `cargo fmt -p` and `cargo clippy`), profile
   `minimal`. rustup reads it in every directory of the checkout, so `rustc --version` there
@@ -616,6 +625,16 @@ above, and the list of standards itself was written from memory.
     `task check`; `.github/workflows/check.yml` fetches the full history and sets
     `HTML_BASE: origin/main`. 27 tests in `surf-html-conformance` (`check` 17,
     `entities_table` 2, `inventory` 4, `readers` 2, `tree_format` 2).
+  - `crates/tls-conformance` (`surf-tls-conformance`, test tooling, not shipped): runs the
+    x509-limbo cases of `crates/tls/tests/data/x509-limbo/` through `surf_tls::path::PathVerifier`
+    at each case's `validation_time` or at `LIMBO_TIME` (the limbo commit date), never at the
+    clock. `expected/limbo.txt` holds the counts (`x509-limbo: 5143 cases, 5089 run, 5060
+    passed`, per group, per RFC 5280 section) and one `open <id> <reason>` line per case that
+    runs and does not pass; `expected/limbo-kinds.txt` the kind each FAILURE case must end
+    with. `surf-tls-conformance --check --base <revision>` holds a run to them with the rules
+    of `surf-html-conformance --check`; the task `tls-x509-conformance` runs it (`TLS_BASE`,
+    default `HTML_BASE`) and is part of `task check`. A case not run is printed with its
+    reason (`client`, `crl`, `pedantic`, `policy`, `no-peer-name`). 16 tests (`check`).
   - `crates/tls` (`surf-tls`): TLS 1.3 for `https:`, being built (`epic:tls-https`, design
     note `docs/design/tls.md`). Its one dependency is ring 0.17.14, the one third-party crate in
     what ships, and `src/crypto.rs`, the seam, is the one file that names it: AEAD seal and
@@ -634,10 +653,37 @@ above, and the list of standards itself was written from memory.
     `hmac::verify`) or `hmac_verify`. `src/error.rs` holds the public `Error` of item 6 of the note. The feature
     `test-tooling`, off by default and never in a release, adds signing from PKCS#8, ring's
     fixed random sources (a fixed sequence dropped before every slice was drawn does not
-    panic) and `TEST_TOOLING_MARKER`; the crate's dev-dependency on itself turns it on for its
-    tests. `.cargo/config.toml` compiles ring at `opt-level = 3` in the dev and test profiles
-    (item 4 of the note). Tests: one binary, `tests/main.rs` declaring each module of
-    `tests/tls/` with `#[path]`: `alloc` (a counting allocator, per thread, in the form of
+    panic), `TEST_TOOLING_MARKER`, `Anchors::from_list`, the module `handshake` with its trace
+    mode `handshake::trace::GivenClientHello`, and `Connection::set_write_sequence`; the
+    crate's dev-dependency on itself turns it on for its tests. `.cargo/config.toml` compiles
+    ring at `opt-level = 3` in the dev and test profiles (item 4 of the note).
+    Since `story:tls-x509-path` `src/path.rs` and `src/names.rs`: `PathVerifier`, the one
+    implementation of the trait `ServerCertVerifier` of `src/verify.rs`, `verify(certificates,
+    host, now) -> Result<LeafKey, CertificateRejection>`, the certificates as the server sent
+    them, leaf first; path building within the bounds of item 9 of the note
+    (`INTERMEDIATES_MAX` 6, `SIGNATURE_CHECKS_MAX` 100, `CANDIDATES_MAX` 25,000,
+    `NAME_CONSTRAINT_COMPARISONS_MAX` 250,000); `add_root` makes an anchor of a root
+    certificate and keeps the certificate, so its own extensions are checked as an issuer's;
+    `names::host` is the reference identifier of a host. When no path is found and
+    certificates after the leaf were left out as unreadable, the refusal is `Unreadable`
+    naming the first of them and how many were left out (`left_out`).
+    Since `story:tls-anchors` it carries the root list of Mozilla as curl publishes it:
+    `src/anchors/cacert.pem`, unchanged, and its record `src/anchors/SOURCE` (address, date of
+    the list, sha256, count, licence MPL-2.0), both written only by `task anchors-refresh`.
+    `Anchors::bundled()` reads it once per process; `with_extra_pem` adds an extra file of at
+    most 32 KiB and 64 blocks, every one a CA certificate, or refuses it whole with an
+    `AnchorError` naming the block. One root of the list of 2026-11-05, e-Szigno TLS Root CA
+    2023 (P-521), gives no anchor: 117 anchors of 118 certificates.
+    Since `story:tls-handshake` `src/handshake/` (the client's state machine; private, public
+    under `test-tooling` for its trace mode) and `src/connection.rs`: `Connection` over any
+    `Read + Write`, given a host, a `&dyn ServerCertVerifier` and the time, runs the whole
+    handshake in `Connection::new` and calls the verifier once, for the server's Certificate
+    message. `crates/tls/tests/data/flights/`: recorded flights of `openssl s_server` on
+    127.0.0.1, pinned by `SOURCE` (sha256 per file) and `DIGEST` (sha256 of
+    `crates/tls/examples/record-flights.rs`); `task tls-flights-check` in `check`, `task
+    tls-flights-slow` records them again and replays the new files (`WRITE=1` writes them).
+    Tests: one binary, `tests/main.rs` declaring each module of `tests/tls/` with `#[path]`,
+    among them `alloc` (a counting allocator, per thread, in the form of
     `crates/html/tests/common/mod.rs`, the third `unsafe` of the repository, test only; one
     case of `seam`, `adversary_the_seam_allocates_at_most_its_output`, reads it: AEAD seal and
     open of a 16 KiB record, a hash and an HKDF expand allocate nothing, an agreement at most
@@ -646,8 +692,13 @@ above, and the list of standards itself was written from memory.
     nonces other than 96 bits skipped by name; the hashes, signing under `test-tooling`, the
     refusals, the lengths and code points, the digests of the vendored files; and, read with
     comments and strings left out, that no file under `src/` but `crypto.rs` holds `ring` as
-    an identifier). Depends on `ring`; its tests on `surf-html-conformance` for its JSON
-    reader.
+    an identifier); `anchors` (40 tests) and `adversary_anchors` (9: the bundle against
+    `SOURCE`, the extra file and its refusals, the two tasks run with `sh` on local files under
+    `CARGO_TARGET_TMPDIR`); `names` (11), `path` (71) and `adversary_path` (11); `handshake`
+    (16, among them `handshake_through_the_path_verifier`, a whole handshake through
+    `PathVerifier` over a test root of `crates/tls-test-certs`), `handshake_hostile` (73),
+    `flights` (3) and `adversary_handshake` (8). Depends on `ring`; its tests on
+    `surf-html-conformance` for its JSON reader.
 - `view-tests/`: the Playwright tests of the live view's page (`@playwright/test` 1.65.0,
   Chromium's headless shell, a committed `package-lock.json`), each case with its own
   `surf-view-fixture`: 38 cases, 18 in `tests/first-page.spec.mjs`, 6 in
@@ -994,7 +1045,9 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `planning-only-test`. Since `story:one-test-binary-per-crate` it runs `test-layout` after
   `lock-check` and `test-layout-test` after `planning-only-test`. Since `story:agent-tasks`
   `test` runs `task build` first and sets `SURF_BIN_DIR` to `target/debug` for its tests, and
-  `check` runs `agent-tasks-report` after `test`.
+  `check` runs `agent-tasks-report` after `test`. Since the stories `tls-handshake` and
+  `tls-x509-path` it runs `tls-flights-check` after `test-layout` and `tls-x509-conformance`
+  after `html-conformance`.
 - `task check-runner`: the gate to run before a merge, `task check` as the forge's runner runs
   it (`taskfiles/check-runner.sh`; `slot task check-runner`). What it does differently from
   `task check`: it runs in `.out/runner/tree`, a clean export of `HEAD` (a clone sharing this

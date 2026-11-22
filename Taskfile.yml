@@ -15,6 +15,10 @@ includes:
     taskfile: taskfiles/html-conformance.yml
     flatten: true
     optional: true
+  tls-x509-conformance:
+    taskfile: taskfiles/tls-x509-conformance.yml
+    flatten: true
+    optional: true
   release:
     taskfile: taskfiles/release.yml
     flatten: true
@@ -41,6 +45,14 @@ includes:
     optional: true
   test-layout:
     taskfile: taskfiles/test-layout.yml
+    flatten: true
+    optional: true
+  tls-anchors:
+    taskfile: taskfiles/tls-anchors.yml
+    flatten: true
+    optional: true
+  tls-flights:
+    taskfile: taskfiles/tls-flights.yml
     flatten: true
     optional: true
   agent-tasks:
@@ -402,12 +414,14 @@ tasks:
       - task: cli
       - task: lock-check
       - task: test-layout
+      - task: tls-flights-check
       - task: build
       - task: test
       - task: agent-tasks-report
       - task: view-stream-check
       - task: view-test
       - task: html-conformance
+      - task: tls-x509-conformance
       - task: forge-watch-test
       - task: planning-only-test
       - task: test-layout-test
