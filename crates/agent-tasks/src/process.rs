@@ -74,6 +74,11 @@ impl RuntimeDir {
         with_runtime(&self.runtime())
     }
 
+    /// Whether process `pid` has this directory's `XDG_RUNTIME_DIR` in its environment.
+    pub fn holds(&self, pid: u32) -> bool {
+        holds(pid, &needle(&self.runtime()))
+    }
+
     /// Those of [`RuntimeDir::processes`] whose `comm` is `name`; the `comm` is read first, so
     /// only those processes have their environment read.
     pub fn processes_named(&self, name: &str) -> Vec<u32> {
@@ -118,10 +123,21 @@ fn base_dir(fallback: &Path) -> PathBuf {
 pub fn with_runtime(runtime: &Path) -> Vec<u32> {
     let needle = needle(runtime);
     let own = std::process::id();
+    // A process that holds the directory started after this one, which made it: only those
+    // have their environment read (an environment is the dearest file of /proc to read).
+    let since = started(own).unwrap_or(0);
     pids()
         .into_iter()
-        .filter(|&pid| pid != own && holds(pid, &needle))
+        .filter(|&pid| pid != own && started(pid).is_some_and(|start| start >= since))
+        .filter(|&pid| holds(pid, &needle))
         .collect()
+}
+
+/// When a process started, in clock ticks since boot: field 22 of `/proc/<pid>/stat`.
+fn started(pid: u32) -> Option<u64> {
+    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let (_, rest) = stat.rsplit_once(')')?;
+    rest.split_whitespace().nth(19)?.parse().ok()
 }
 
 /// `XDG_RUNTIME_DIR=<runtime>`, as it stands in an `environ` file.
@@ -163,6 +179,20 @@ pub fn parent(pid: u32) -> Option<u32> {
     let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     let (_, rest) = stat.rsplit_once(')')?;
     rest.split_whitespace().nth(1)?.parse().ok()
+}
+
+/// Whether process `pid` is below `root` in the tree of parents: its chain of parents is read,
+/// and no other process's.
+pub fn descends_from(pid: u32, root: u32) -> bool {
+    let mut at = pid;
+    for _ in 0..64 {
+        match parent(at) {
+            Some(above) if above == root => return true,
+            Some(above) if above > 1 => at = above,
+            _ => return false,
+        }
+    }
+    false
 }
 
 /// Every process below `root` in the tree of parents.

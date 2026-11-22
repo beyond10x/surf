@@ -7,8 +7,10 @@
 //! every `more` line, until the text block ends; then `close`, also after a failed step. Every
 //! call runs `surf-agent` of one directory with an environment of nothing but `PATH` (that
 //! directory alone), the private `XDG_RUNTIME_DIR`, and after `open` the session and its token.
-//! A call that runs past its bound ([`CALL_BOUND`] unless [`Agent::with_call_bound`] sets
-//! another) is killed with its process group, and its step fails.
+//! A call ends within its bound ([`CALL_BOUND`] unless [`Agent::with_call_bound`] sets
+//! another), its output read to the end included: at the bound its process group is killed,
+//! the reading stops and its step fails. A call whose output passes [`OUTPUT_CAP`] (unless
+//! [`Agent::with_output_cap`] sets another) is killed the same way and its step fails.
 
 use std::ffi::OsString;
 use std::io::{Read, Write};
@@ -31,6 +33,11 @@ const PAGES_MAX: usize = 1_000;
 /// fails with `no answer within 10 s on <command>`. It ends a hung call; no test asserts a time
 /// with it.
 pub const CALL_BOUND: Duration = Duration::from_secs(10);
+
+/// The most bytes of a call's standard output and standard error together that are kept: a
+/// call that writes more is killed and its step fails with `output over 1048576 bytes on
+/// <command>`.
+pub const OUTPUT_CAP: usize = 1 << 20;
 
 /// The pause between two looks at a running call.
 const POLL: Duration = Duration::from_millis(10);
@@ -102,6 +109,7 @@ pub struct Agent {
     bin: PathBuf,
     runtime: PathBuf,
     bound: Duration,
+    cap: usize,
 }
 
 /// The session `open` gave.
@@ -112,23 +120,46 @@ struct Session {
 
 /// How a `surf-agent` call ended.
 enum Called {
-    /// It exited.
+    /// It exited and its output was read to the end.
     Exited(Output),
-    /// It ran past the bound and was killed.
+    /// It, or the reading of its output, ran past the bound, and it was killed.
     TimedOut,
+    /// Its output passed the cap, and it was killed.
+    TooLarge,
 }
 
-/// Read a pipe to its end in a thread; the receiver gets the bytes.
-fn drain(pipe: Option<impl Read + Send + 'static>) -> mpsc::Receiver<Vec<u8>> {
-    let (sender, receiver) = mpsc::channel();
-    if let Some(mut pipe) = pipe {
-        thread::spawn(move || {
-            let mut bytes = Vec::new();
-            let _ = pipe.read_to_end(&mut bytes);
-            let _ = sender.send(bytes);
-        });
-    }
-    receiver
+/// A piece of a call's output, from the thread that reads one of its pipes.
+enum Piece {
+    /// Bytes of standard output (`true`) or standard error (`false`).
+    Bytes(bool, Vec<u8>),
+    /// The end of one pipe.
+    End,
+}
+
+/// Read a pipe in a thread, sending each piece as it comes and [`Piece::End`] at its end. The
+/// thread ends when the pipe ends or the receiver is gone.
+fn drain(pipe: Option<impl Read + Send + 'static>, stdout: bool, sender: mpsc::Sender<Piece>) {
+    let Some(mut pipe) = pipe else {
+        let _ = sender.send(Piece::End);
+        return;
+    };
+    thread::spawn(move || {
+        let mut buffer = [0u8; 8192];
+        loop {
+            match pipe.read(&mut buffer) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    if sender
+                        .send(Piece::Bytes(stdout, buffer[..n].to_vec()))
+                        .is_err()
+                    {
+                        return;
+                    }
+                }
+            }
+        }
+        let _ = sender.send(Piece::End);
+    });
 }
 
 impl Agent {
@@ -139,6 +170,7 @@ impl Agent {
             bin,
             runtime,
             bound: CALL_BOUND,
+            cap: OUTPUT_CAP,
         }
     }
 
@@ -147,8 +179,15 @@ impl Agent {
         Agent { bound, ..self }
     }
 
+    /// The same agent with another cap on what is kept of a call's output.
+    pub fn with_output_cap(self, cap: usize) -> Agent {
+        Agent { cap, ..self }
+    }
+
     /// One `surf-agent` call, in a process group of its own; `after_call` runs when it has
-    /// ended. A call still running after the bound is sent SIGKILL, its whole group with it.
+    /// ended. The call is done when the process has exited and both its pipes have ended. A
+    /// call not done at the bound, or whose output passes the cap, is sent SIGKILL, its whole
+    /// group with it, and the reading stops: what was read is dropped.
     fn call(
         &self,
         words: &[&str],
@@ -179,31 +218,46 @@ impl Agent {
         if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
             let _ = stdin.write_all(input.as_bytes());
         }
-        let stdout = drain(child.stdout.take());
-        let stderr = drain(child.stderr.take());
-        let started = Instant::now();
-        let status = loop {
-            if let Some(status) = child.try_wait().expect("surf-agent is waited for") {
-                break Some(status);
+        let deadline = Instant::now() + self.bound;
+        let (sender, pieces) = mpsc::channel();
+        drain(child.stdout.take(), true, sender.clone());
+        drain(child.stderr.take(), false, sender);
+        let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+        let mut ends = 0;
+        let mut status = None;
+        let called = loop {
+            if status.is_none() {
+                status = child.try_wait().expect("surf-agent is waited for");
             }
-            if started.elapsed() >= self.bound {
-                break None;
+            if let (Some(status), 2) = (status, ends) {
+                break Called::Exited(Output {
+                    status,
+                    stdout,
+                    stderr,
+                });
             }
-            thread::sleep(POLL);
+            let now = Instant::now();
+            if now >= deadline {
+                break Called::TimedOut;
+            }
+            match pieces.recv_timeout(POLL.min(deadline - now)) {
+                Ok(Piece::Bytes(out, bytes)) => {
+                    if stdout.len() + stderr.len() + bytes.len() > self.cap {
+                        break Called::TooLarge;
+                    }
+                    if out { &mut stdout } else { &mut stderr }.extend_from_slice(&bytes);
+                }
+                Ok(Piece::End) => ends += 1,
+                Err(_) => {}
+            }
         };
-        let called = match status {
-            Some(status) => Called::Exited(Output {
-                status,
-                stdout: stdout.recv().unwrap_or_default(),
-                stderr: stderr.recv().unwrap_or_default(),
-            }),
-            None => {
-                signal_kill_group(child.id());
-                let _ = child.kill();
-                let _ = child.wait();
-                Called::TimedOut
-            }
-        };
+        if !matches!(called, Called::Exited(_)) {
+            // The group may outlive its first process: a child that holds a pipe is in it.
+            signal_kill_group(child.id());
+            let _ = child.kill();
+        }
+        // Waited for on every path; after an exit `try_wait` saw, this returns at once.
+        let _ = child.wait();
         after_call();
         called
     }
@@ -228,6 +282,10 @@ impl Agent {
             },
             Called::TimedOut => StepFailure::Timeout {
                 bound: self.bound,
+                command,
+            },
+            Called::TooLarge => StepFailure::TooLarge {
+                cap: self.cap,
                 command,
             },
         };

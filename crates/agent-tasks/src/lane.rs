@@ -78,15 +78,22 @@ pub fn run(config: &Config) -> LaneRun {
     for task in &tasks {
         let steps = steps(&task.name).unwrap_or_else(|| panic!("no steps for {}", task.name));
         let before = server.accepted();
+        // One pass over /proc that reads each `comm` only: the environment of a surfd, and the
+        // parents of a cargo, are read for those alone (reading every process's stat after each
+        // call took most of the run's time on a loaded host).
         let mut sample = || {
-            let surfd = dir.processes_named("surfd");
+            let mut surfd = Vec::new();
+            for pid in process::pids() {
+                match process::comm(pid).as_deref() {
+                    Some("surfd") if dir.holds(pid) => surfd.push(pid),
+                    Some("cargo") if process::descends_from(pid, own) => {
+                        cargo_seen.insert(pid);
+                    }
+                    _ => {}
+                }
+            }
             if !surfd.is_empty() || !surfd_samples.is_empty() {
                 surfd_samples.push(surfd);
-            }
-            for pid in process::descendants(own) {
-                if process::comm(pid).as_deref() == Some("cargo") {
-                    cargo_seen.insert(pid);
-                }
             }
         };
         let mut run = agent.run(

@@ -106,18 +106,25 @@ fn every_task() {
     }
 }
 
-/// A directory of the programs of `SURF_BIN_DIR` whose `surf-agent` never answers a `look
-/// --as`: every other call goes to the real one.
+/// A directory of the programs of `SURF_BIN_DIR` whose `surf-agent` never answers its first
+/// `look --as` (that of the first task, article): every other call goes to the real one, so
+/// the test waits for one bound only.
 fn hanging_bin(real: &Path) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
         .join(format!("agent-tasks-hanging-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
+    let hung = dir.join("hung");
     let script = format!(
         "#!/bin/sh\n\
-         # A surf-agent whose look --as never answers.\n\
-         if [ \"$1\" = look ] && [ \"$2\" = --as ]; then exec /bin/sleep 120; fi\n\
+         # A surf-agent whose first look --as never answers.\n\
+         if [ \"$1\" = look ] && [ \"$2\" = --as ] && [ ! -e '{}' ]; then\n\
+         \x20 : > '{}'\n\
+         \x20 exec /bin/sleep 120\n\
+         fi\n\
          exec '{}' \"$@\"\n",
+        hung.display(),
+        hung.display(),
         real.join("surf-agent").display()
     );
     fs::write(dir.join("surf-agent"), script).unwrap();
@@ -168,9 +175,11 @@ fn a_call_that_never_answers_ends_at_its_bound() {
         lines[1],
         "task article fail 3 calls 1 connections: no answer within 1 s on look"
     );
-    assert_eq!(
-        lines[2],
-        "task table fail 3 calls 1 connections: no answer within 1 s on look"
+    assert!(
+        !lines[2..]
+            .iter()
+            .any(|line| line.contains("no answer within")),
+        "only the first look hangs: {written}"
     );
     let _ = fs::remove_file(&out);
     let _ = fs::remove_dir_all(&bin);

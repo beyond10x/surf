@@ -158,6 +158,33 @@ fn a_model_that_exits_non_zero_fails_the_lane() {
 }
 
 #[test]
+fn a_model_that_exits_124_by_itself_is_not_over_its_bound() {
+    let model = stand_in("exit-124-model", "exit 124\n");
+    let (output, written) = drive(&model, "exit-124", &[]);
+    assert_ne!(output.status.code(), Some(0), "{}", describe(&output));
+    assert_eq!(written, None, "no count line is written");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("exited 124") && !stderr.contains("did not end"),
+        "{stderr}"
+    );
+    let _ = fs::remove_file(&model);
+}
+
+#[test]
+fn a_control_character_in_an_answer_is_written_as_hex() {
+    let model = stand_in("esc-model", "printf 'ANSWER: 19\\03332\\t\\177\\n'\n");
+    let (output, written) = drive(&model, "esc", &[]);
+    assert_eq!(output.status.code(), Some(0), "{}", describe(&output));
+    let written = written.expect("the out file is written");
+    assert!(
+        written.contains("\ntask article fail 0 calls\n  answered \"19\\x1b32\\x09\\x7f\"\n"),
+        "{written:?}"
+    );
+    let _ = fs::remove_file(&model);
+}
+
+#[test]
 fn a_carriage_return_in_an_answer_is_escaped() {
     let model = stand_in("cr-model", "printf 'ANSWER: 19\\r32\\\\x\\n'\n");
     let (output, written) = drive(&model, "cr", &[]);

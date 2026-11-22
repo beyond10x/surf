@@ -13,7 +13,7 @@
 //! (`pending`, fail) add nothing. With `SURF_AGENT_TASKS=measure` the listed states are not
 //! enforced and no `raise:` line is written.
 //!
-//! The file is written whole at the end of a run (to `<file>.part`, then renamed), and a run
+//! The file is written whole at the end of a run (to `<file>.part.<pid>`, then renamed), and a run
 //! removes it before it starts ([`crate::lane::run`]), so a file left by an earlier run is
 //! never read as this run's.
 
@@ -54,26 +54,31 @@ fn repository_root() -> Option<PathBuf> {
 }
 
 /// How the first line names the directory of the binaries, so that it holds no path of this
-/// machine (the line goes into release notes): a relative directory as given; an absolute one
-/// inside the repository relative to its root (`target/debug`); any other absolute one by its
-/// last two components.
+/// machine and no user's name (the line goes into release notes): a relative directory as
+/// given; an absolute one inside the repository relative to its root (`target/debug`); the
+/// home directory itself and `/` as `-`; any other absolute one by its last component.
 pub fn shown_binaries(dir: &Path) -> String {
     if !dir.is_absolute() {
         return dir.display().to_string();
     }
-    if let (Some(root), Ok(real)) = (repository_root(), dir.canonicalize())
+    let real = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+    if let Some(root) = repository_root()
         && let Ok(relative) = real.strip_prefix(&root)
     {
-        return relative.display().to_string();
+        return match relative.as_os_str().is_empty() {
+            true => ".".to_string(),
+            false => relative.display().to_string(),
+        };
     }
-    let names: Vec<_> = dir
-        .components()
-        .filter_map(|component| match component {
-            std::path::Component::Normal(name) => Some(name.to_string_lossy()),
-            _ => None,
-        })
-        .collect();
-    names[names.len().saturating_sub(2)..].join("/")
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let is_home = home.is_some_and(|home| {
+        let home_real = home.canonicalize().unwrap_or_else(|_| home.clone());
+        real == home_real || dir.components().eq(home.components())
+    });
+    match real.file_name() {
+        Some(name) if !is_home => name.to_string_lossy().into_owned(),
+        _ => "-".to_string(),
+    }
 }
 
 /// Whether `SURF_AGENT_TASKS=measure` is set: the listed states play no part.
@@ -133,7 +138,8 @@ pub fn report(
             .map_err(|error| format!("agent-tasks: cannot make {}: {error}", dir.display()))?;
     }
     let mut part = out.as_os_str().to_owned();
-    part.push(".part");
+    // Two runs at once write two part files; the last rename wins.
+    part.push(format!(".part.{}", std::process::id()));
     let part = PathBuf::from(part);
     fs::write(&part, text)
         .and_then(|()| fs::rename(&part, out))

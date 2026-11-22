@@ -76,7 +76,7 @@ fn a_listed_pass_that_fails_fails() {
     let written = fs::read_to_string(&out).expect("the file is written");
     assert_eq!(
         written,
-        "agent-tasks: 4 tasks, 0 pass, 4 fail, 0 skipped, lane gate, binaries surf/bin\n\
+        "agent-tasks: 4 tasks, 0 pass, 4 fail, 0 skipped, lane gate, binaries bin\n\
          task article fail 3 calls 1 connections: exit 2 on look\n\
          task table fail 3 calls 1 connections: exit 2 on look\n\
          task link fail 3 calls 1 connections: no now line labelled \"Opening hours\"\n\
@@ -103,7 +103,7 @@ fn a_pending_task_that_passes_is_raised() {
     let written = fs::read_to_string(&out).expect("the file is written");
     assert!(
         written.starts_with(
-            "agent-tasks: 4 tasks, 1 pass, 3 fail, 0 skipped, lane gate, binaries surf/bin\n"
+            "agent-tasks: 4 tasks, 1 pass, 3 fail, 0 skipped, lane gate, binaries bin\n"
         ),
         "{written}"
     );
@@ -155,10 +155,17 @@ fn the_gate_lane_names_its_binaries_from_the_root() {
 #[test]
 fn the_archive_lane_names_its_dir_as_typed() {
     let unpacked = "archive-0.3.0/surf-0.3.0-x86_64-unknown-linux-musl";
+    let home = std::env::var("HOME").expect("HOME is set");
     for (given, shown) in [
-        (format!("/srv/unpacked/{unpacked}"), unpacked),
+        (
+            format!("/srv/unpacked/{unpacked}"),
+            "surf-0.3.0-x86_64-unknown-linux-musl",
+        ),
         (unpacked.to_string(), unpacked),
         ("./surf-0.3.0/".to_string(), "./surf-0.3.0/"),
+        (home.clone(), "-"),
+        (format!("{home}/"), "-"),
+        ("/".to_string(), "-"),
     ] {
         let lane = Lane {
             name: "archive".to_string(),

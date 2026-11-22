@@ -18,7 +18,7 @@
 #   and waited for, at most 5 s each, and the scratch directory is removed.
 # - The scratch directory holds a surf-agent wrapper (sh) that appends its argument words to a
 #   log, one line per call (a backslash, a line feed and a carriage return in a word written
-#   \\, \n and \r), and runs the real one. The model runs in the scratch directory, which holds
+#   \\, \n and \r, every other byte below 0x20 and 0x7F written \xNN), and runs the real one. The model runs in the scratch directory, which holds
 #   no checkout, with PATH set to the wrapper's directory, <bin dir>, /usr/bin and /bin.
 # - Per task the command AGENT_TASKS_MODEL_COMMAND runs with one argument, the prompt: the
 #   standard output of `surf-agent help --for-agent` (the section "Driving surf from an agent"
@@ -26,9 +26,14 @@
 #   the lines of the lane's rule. The default command is claude -p on the model
 #   AGENT_TASKS_MODEL, with the one tool Bash allowed only for commands that start with
 #   surf-agent. The command is looked for before the first task. Each run is bounded by
-#   AGENT_TASKS_MODEL_TIMEOUT seconds (default 300; coreutils timeout, SIGKILL). A command that
-#   cannot be started, exits other than 0 or passes its bound ends the lane with exit 1 and one
-#   line naming the command, the task and the status.
+#   AGENT_TASKS_MODEL_TIMEOUT seconds (default 300). A command that cannot be started, exits
+#   other than 0 or passes its bound ends the lane with exit 1 and one line naming the command,
+#   the task and the status; one that exits 124 by itself is told apart from one this script
+#   killed at its bound.
+# - The model command runs in a process group of its own (set -m, which this script needs from
+#   its sh). At the end of each task and at the bound the whole group is sent SIGKILL, so no
+#   child it started is left. A process that leaves the group by a new session (setsid) is not
+#   found: POSIX sh has no way to find it.
 # - A task passes when the text after the last "ANSWER: " line, with spaces at both ends and
 #   one final "." removed, equals the expected answer, both lower-cased. Rows whose server is
 #   not http are written "task <name> skipped: server <server>".
@@ -37,10 +42,11 @@
 #   agent-tasks-model: <n> tasks, <p> pass, <f> fail, <s> skipped, command <name>, model <model>, lane model, binaries <bin dir>, <YYYY-MM-DD>
 # then per task "task <name> pass <c> calls" or "task <name> fail <c> calls", one line
 # "  surf-agent <words>" per call, and "  answered "<text>"" (the text escaped as the log is)
-# or "  answered nothing". <bin dir> on the first line is never a path of this machine (it
-# goes into release notes): a relative <bin dir> as given, an absolute one inside the
-# repository relative to its root (target/debug), any other absolute one by its last two
-# components.
+# or "  answered nothing". <bin dir> on the first line is never a path of this machine nor a
+# user's name (it goes into release notes): a relative <bin dir> as given, an absolute one
+# inside the repository relative to its root (target/debug), the home directory itself and /
+# as -, any other absolute one by its last component. The file is written to
+# <out file>.part.<pid> and renamed.
 
 set -u
 
@@ -57,13 +63,12 @@ case $bin in
   /*)
     real=$(cd "$bin" 2> /dev/null && pwd -P) || real=$bin
     real_root=$(cd "$root" && pwd -P) || real_root=$root
+    real_home=$(cd "${HOME:-/}" 2> /dev/null && pwd -P) || real_home=${HOME:-/}
     case $real in
+      "$real_root") shown=. ;;
       "$real_root"/*) shown=${real#"$real_root"/} ;;
-      *) shown=$(printf '%s\n' "$bin" | awk -F/ '{
-           n = 0
-           for (i = 1; i <= NF; i++) if ($i != "" && $i != ".") c[++n] = $i
-           if (n >= 2) print c[n - 1] "/" c[n]; else if (n == 1) print c[1]
-         }') ;;
+      "$real_home" | "$real_home"/ | / | //) shown=- ;;
+      *) shown=$(basename "$real") ;;
     esac
     ;;
   *) shown=$bin; bin=$(pwd)/$bin ;;
@@ -85,7 +90,7 @@ rm -f "$out" || fail "cannot remove $out"
 [ -x "$serve" ] || fail "$serve is not there; task build builds it"
 [ -f "$tasks" ] || fail "$tasks is not there"
 case $bound in '' | *[!0-9]* | 0*) fail "AGENT_TASKS_MODEL_TIMEOUT is $bound, not a number of seconds of at least 1" ;; esac
-command -v timeout > /dev/null || fail 'timeout (coreutils) is not on PATH'
+(set -m) 2> /dev/null || fail 'this sh has no job control (set -m); run the script with sh (bash or dash)'
 
 if [ -n "${AGENT_TASKS_MODEL_COMMAND:-}" ]; then
   command=$AGENT_TASKS_MODEL_COMMAND
@@ -114,6 +119,8 @@ runtime=$scratch/r
 mkdir -m 700 "$runtime" "$scratch/bin" "$scratch/work" || fail "cannot make directories in $scratch"
 log=$scratch/calls.log
 serve_pid=
+model_pid=
+timer_pid=
 
 # The state of a process from /proc/<pid>/stat, the first word after the last ")".
 state() {
@@ -138,8 +145,18 @@ wait_ended() {
   done
 }
 
+# SIGKILL to the process group $1 (none when $1 is empty), and its leader waited for.
+end_group() {
+  [ -n "$1" ] || return 0
+  kill -s KILL -- "-$1" 2> /dev/null
+  wait "$1" 2> /dev/null
+  return 0
+}
+
 cleanup() {
   status=$?
+  end_group "$timer_pid"
+  end_group "$model_pid"
   if [ -n "$serve_pid" ]; then
     kill "$serve_pid" 2> /dev/null
     wait "$serve_pid" 2> /dev/null
@@ -164,13 +181,47 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 1' INT TERM HUP
 
-# A value on one line: a backslash, a carriage return and a line feed written \\, \r and \n.
-# The wrapper below holds the same function.
-escape() {
-  cr=$(printf '\r')
-  printf '%s\n' "$1" | sed -e 's/\\/\\\\/g' -e "s/$cr/\\\\r/g" |
-    awk 'NR > 1 { printf "\\n" } { printf "%s", $0 } END { printf "\n" }'
+# The awk function esc: a backslash and a carriage return written \\ and \r, every other byte
+# below 0x20 and 0x7F written \xNN. Run with LC_ALL=C, so that a byte is a character.
+esc_fn='function esc(s,  out, i, c, k) {
+  out = ""
+  for (i = 1; i <= length(s); i++) {
+    c = substr(s, i, 1)
+    k = (c in code) ? code[c] : 128
+    if (c == "\\") out = out "\\\\"
+    else if (k == 13) out = out "\\r"
+    else if (k < 32 || k == 127) out = out sprintf("\\x%02x", k)
+    else out = out c
+  }
+  return out
 }
+BEGIN { for (i = 1; i < 256; i++) code[sprintf("%c", i)] = i }'
+
+# The awk program the wrapper below runs: its input on one line, each line through esc and the
+# line feeds between them written \n.
+one_line="$esc_fn"'
+{ printf "%s%s", (NR > 1 ? "\\n" : ""), esc($0) }
+END { printf "\n" }'
+
+# The awk program that judges one task, in one process: the log (first file) and the reply
+# (second file) in, the task's lines of the out file out. The answer is the text after the last
+# "ANSWER: " line, through esc; the verdict compares it, with spaces at both ends and one final
+# "." removed, with EXPECTED, both lower-cased. Exit 10 for pass, 11 for fail.
+judge_prog="$esc_fn"'
+FILENAME == ARGV[1] { calls++; logged[calls] = $0; next }
+/^ANSWER: / { got = 1; answered = substr($0, 9) }
+END {
+  given = answered
+  sub(/^ */, "", given)
+  sub(/ *$/, "", given)
+  sub(/\.$/, "", given)
+  pass = got && tolower(given) == tolower(ENVIRON["EXPECTED"])
+  printf "task %s %s %d calls\n", ENVIRON["TASK"], (pass ? "pass" : "fail"), calls
+  for (i = 1; i <= calls; i++) print "  surf-agent " logged[i]
+  if (got) print "  answered \"" esc(answered) "\""
+  else print "  answered nothing"
+  exit pass ? 10 : 11
+}'
 
 # The wrapper: its argument words to the log, one line per call, then the real surf-agent.
 quote() {
@@ -180,10 +231,9 @@ quote() {
   echo '#!/bin/sh'
   echo "log=$(quote "$log")"
   echo "real=$(quote "$bin/surf-agent")"
+  echo "one_line=$(quote "$one_line")"
   cat << 'WRAPPER'
-cr=$(printf '\r')
-printf '%s\n' "$*" | sed -e 's/\\/\\\\/g' -e "s/$cr/\\\\r/g" |
-  awk 'NR > 1 { printf "\\n" } { printf "%s", $0 } END { printf "\n" }' >> "$log"
+printf '%s\n' "$*" | LC_ALL=C awk "$one_line" >> "$log"
 exec "$real" "$@"
 WRAPPER
 } > "$scratch/bin/surf-agent"
@@ -194,7 +244,8 @@ serve_pid=$!
 tries=0
 origin=
 while [ -z "$origin" ]; do
-  origin=$(head -n 1 "$scratch/serve.out" 2> /dev/null)
+  # A whole first line only: read exits 0 when it has read up to a line feed.
+  { read -r origin < "$scratch/serve.out"; } 2> /dev/null || origin=
   case $origin in http://*) ;; *) origin= ;; esac
   [ -n "$origin" ] && break
   ended "$serve_pid" && fail 'agent-tasks-serve ended before it printed its address'
@@ -206,10 +257,6 @@ done
 help=$(XDG_RUNTIME_DIR=$runtime "$bin/surf-agent" help --for-agent 2> /dev/null) || help=$(
   awk '/^## Driving surf from an agent$/ { on = 1; print; next } on && /^## / { exit } on' "$root/README.md"
 )
-
-lower() {
-  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
-}
 
 # The blocks of tasks.txt, read once: one line per task with its task, server, start,
 # question and answer, separated by tabs.
@@ -244,44 +291,46 @@ while IFS=$tab read -r task server start question answer; do
   : > "$log"
   reply=$scratch/reply
   if [ -n "${AGENT_TASKS_MODEL_COMMAND:-}" ]; then
-    (cd "$scratch/work" && PATH=$scratch/bin:$bin:/usr/bin:/bin XDG_RUNTIME_DIR=$runtime \
-      exec timeout -s KILL "$bound" "$command" "$prompt") > "$reply" 2> "$scratch/stderr" < /dev/null
+    set -- "$command" "$prompt"
   else
-    (cd "$scratch/work" && PATH=$scratch/bin:$bin:/usr/bin:/bin XDG_RUNTIME_DIR=$runtime \
-      exec timeout -s KILL "$bound" "$command" -p --model "$model" --tools Bash \
+    set -- "$command" -p --model "$model" --tools Bash \
       --allowedTools 'Bash(surf-agent *)' --permission-prompts none --strict-mcp-config \
-      --safe-mode --output-format text "$prompt") > "$reply" 2> "$scratch/stderr" < /dev/null
+      --safe-mode --output-format text "$prompt"
   fi
+  killed=$scratch/killed.$n
+  # The model and its timer each in a process group of their own (set -m): the timer sends
+  # SIGKILL to the model's whole group at the bound and leaves the file killed.
+  set -m
+  (cd "$scratch/work" && PATH=$scratch/bin:$bin:/usr/bin:/bin XDG_RUNTIME_DIR=$runtime \
+    exec "$@") > "$reply" 2> "$scratch/stderr" < /dev/null &
+  model_pid=$!
+  (sleep "$bound" && : > "$killed" && kill -s KILL -- "-$model_pid") > /dev/null 2>&1 < /dev/null &
+  timer_pid=$!
+  set +m
+  wait "$model_pid" 2> /dev/null
   status=$?
+  end_group "$timer_pid"
+  timer_pid=
+  # A child the model left in its group ends with the task.
+  end_group "$model_pid"
+  model_pid=
+  if [ -f "$killed" ]; then
+    fail "the model command $name did not end within $bound s on task $task (killed); no count is written"
+  fi
   case $status in
     0) ;;
-    124 | 137) fail "the model command $name did not end within $bound s on task $task (exit $status); no count is written" ;;
     *) fail "the model command $name exited $status on task $task; no count is written" ;;
   esac
-  calls=$(wc -l < "$log" | tr -d ' ')
-  if grep -q '^ANSWER: ' "$reply"; then
-    answered=$(grep '^ANSWER: ' "$reply" | tail -n 1 | sed 's/^ANSWER: //')
-    given=$(printf '%s' "$answered" | sed 's/^ *//; s/ *$//; s/\.$//')
-    if [ "$(lower "$given")" = "$(lower "$answer")" ]; then
-      verdict=pass
-      p=$((p + 1))
-    else
-      verdict=fail
-      f=$((f + 1))
-    fi
-    said="  answered \"$(escape "$answered")\""
-  else
-    verdict=fail
-    f=$((f + 1))
-    said='  answered nothing'
-  fi
-  echo "task $task $verdict $calls calls" >> "$body"
-  sed 's/^/  surf-agent /' "$log" >> "$body"
-  echo "$said" >> "$body"
+  TASK=$task EXPECTED=$answer LC_ALL=C awk "$judge_prog" "$log" "$reply" >> "$body"
+  case $? in
+    10) p=$((p + 1)) ;;
+    11) f=$((f + 1)) ;;
+    *) fail "cannot judge task $task from $reply" ;;
+  esac
 done < "$rows"
 
 mkdir -p "$(dirname "$out")" || fail "cannot make the directory of $out"
 {
   echo "agent-tasks-model: $n tasks, $p pass, $f fail, $s skipped, command $name, model $model, lane model, binaries $shown, $(date +%Y-%m-%d)"
   cat "$body"
-} > "$out.part" && mv "$out.part" "$out" || fail "cannot write $out"
+} > "$out.part.$$" && mv "$out.part.$$" "$out" || fail "cannot write $out"
