@@ -527,9 +527,10 @@ above, and the list of standards itself was written from memory.
     one token before the step check, end tags in the public `tokenizer::tokenize`, and the
     decoded text of `parse_document_bytes` (up to 3 bytes per input byte). Since
     `story:html-document-port` (round 1) `surf` depends on `surf-html` and parses every
-    committed HTML body with it. 96 tests: 18 unit
+    committed HTML body with it. 123 tests: 18 unit
     tests, 13 in `tests/encoding.rs`, 1 in `tests/not_yet_parsed.rs`, 8 in `tests/tree_body.rs`,
-    8 in `tests/tree_formatting.rs`, 37 in `tests/limits.rs` and 11 in
+    8 in `tests/tree_formatting.rs`, 11 in `tests/tree_costs.rs`, 16 in
+    `tests/adversary_tree.rs`, 37 in `tests/limits.rs` and 11 in
     `tests/adversary_limits.rs`. The last two share `tests/common/mod.rs`, a counting allocator
     per thread, and assert the limit that stopped a parse, its steps and the bytes it allocated,
     no wall time. A test of a limit sets a small limit, the default values are asserted as
@@ -1153,7 +1154,15 @@ binary each` (files under `tests/cases/` are checked but not counted; 106 before
 `crates/surf/tests/slowest_tests.rs`, 3 tests). The text unit's four
 stories and their two fix rounds add 81 tests to the root workspace (`surf-answer` 38 to 55,
 `surf-page` 58 to 65 with the parser unit's two, `surf-page-text` 0 to 57), counted from the
-runner's summary lines; the whole count is the gate's to print.
+runner's summary lines; the whole count is the gate's to print. The gate's first run on the
+wave branch, `task check-runner` on `6b2e3a6`, printed `877 tests: 876 passed, 1 failed, 0
+ignored (cargo-nextest 875, doc tests 2)` and `test step: 48.5 s of its budget of 120 s`;
+`264c962` fixed the one failure (`surf-agent-tasks`,
+`tasks::a_call_that_never_answers_ends_at_its_bound`) without adding or removing a test, so
+the count is 877 tests (cargo-nextest 875, doc tests 2). The same run: `surf v1 — 9 file(s),
+24 scenario(s), valid`, `Cargo.lock: 26 package(s), none from outside this repository`.
+`agent-tasks: 4 tasks, 2 pass, 2 fail, 0 skipped, lane gate, binaries target/debug`: `article`
+and `table` pass, `link` and `search` are pending on later stories.
 
 With `story:ess-0-97-3` (2026-11-22, on `896c64d`), surf builds on ess 0.97.3: `surf v1 — 9
 file(s), 15 scenario(s), valid` and `96 scenario(s) (15 authored), 28 refusal(s)`, as with

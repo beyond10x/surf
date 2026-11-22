@@ -11,9 +11,9 @@ description: What surf does today, and what it does not do yet.
   `renderer`.
 - **Its own HTTP/1.1 client**, with one deadline for the whole exchange (40 seconds at most) and
   hard limits on header and body size.
-- **96 specified scenarios**, each passing twice: once against the specification's own
+- **169 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **661 tests**, built with warnings treated as errors, and 38 tests of the live view's page in a
+- **877 tests**, built with warnings treated as errors, and 38 tests of the live view's page in a
   browser.
 
 Fixed after a security review, shipped in release `0.3.0`:
@@ -187,7 +187,7 @@ New with the second wave:
   page is new with the third wave.
 - **A test harness for the HTML parser.** It holds 9,107 cases from html5lib-tests and
   web-platform-tests and counts how many a parser passes. Today it runs 9,095 of them and passes
-  8,428: 82 encoding cases, 7,046 tokenizer cases and 1,300 tree construction cases.
+  9,095: 82 encoding cases, 7,046 tokenizer cases and 1,967 tree construction cases.
 
 New with the first wave:
 

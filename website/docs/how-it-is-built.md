@@ -39,31 +39,33 @@ One command checks everything:
 
 ```console
 $ task check
-surf v1 — 9 file(s), 15 scenario(s), valid
-96 scenario(s) (15 authored), 28 refusal(s), written to .out/suite.json
-  96 scenarios: 96 passed, 0 failed, 0 error, 0 unsupported
-96 scenario(s) (15 authored), 28 refusal(s), written to .out/suite.json
-  96 scenarios: 96 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 96 scenario(s) each, of suite sha256:3041446cb0234779316d887f5a96d127f60fc03893977e2b341f92e69af28b81
+surf v1 — 9 file(s), 24 scenario(s), valid
+169 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
+  169 scenarios: 169 passed, 0 failed, 0 error, 0 unsupported
+169 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
+  169 scenarios: 169 passed, 0 failed, 0 error, 0 unsupported
+the interpreter and the Rust system ran 169 scenario(s) each, of suite sha256:0aead5f74409f8c561f544df8056b9e6b6fe146c13ba2e5e3a3fbf0ffdea733c
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
-Cargo.lock: 24 package(s), none from outside this repository
+Cargo.lock: 26 package(s), none from outside this repository
     Finished `dev` profile [unoptimized] target(s) in 0.00s
-661 tests: 661 passed, 0 failed, 0 ignored (cargo-nextest 659, doc tests 2)
-test step: 61.9 s of its budget of 120 s
+877 tests: 877 passed, 0 failed, 0 ignored (cargo-nextest 875, doc tests 2)
+test step: 48.5 s of its budget of 120 s
+agent-tasks: 4 tasks, 2 pass, 2 fail, 0 skipped, lane gate, binaries target/debug
 view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
   38 passed (15.8s)
-html-conformance: 9107 cases, 9095 run, 8428 passed
+html-conformance: 9107 cases, 9095 run, 9095 passed
 ```
 
-It validates the specification, runs the 96 scenarios against the interpreter built into `ess`
+It validates the specification, runs the 169 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
 that the lock file holds no outside package, then builds and tests, checks that every event
 name of the live view's stream is an event of the specification, runs the live view's page
 tests in a browser (Playwright and Chromium's headless shell), and last holds the HTML parser's
 test counts where they are. The tests run under cargo-nextest; a test still running after 60
 seconds is ended and fails, the test step fails when it takes over 120 seconds, and the block
-leaves out the ten slowest tests the step also prints.
+leaves out the ten slowest tests the step also prints and the agent tasks' rows after their
+counts.
 
 The scenario runner in
 [`conformance/`](https://github.com/beyond10x/surf/tree/main/conformance) is the one place a

@@ -7,8 +7,8 @@
 **A web browser written from scratch, where the specification comes first.**
 
 ![spec: ESS 0.97.3, valid](docs/badges/spec.svg)
-![conformance: 96 of 96 scenarios](docs/badges/conformance.svg)
-![tests: 661 passed](docs/badges/tests.svg)
+![conformance: 169 of 169 scenarios](docs/badges/conformance.svg)
+![tests: 877 passed](docs/badges/tests.svg)
 ![third-party crates shipped: 0](docs/badges/dependencies.svg)
 ![unsafe code: forbidden](docs/badges/unsafe.svg)
 ![standard sections marked complete: 0](docs/badges/complete.svg)
@@ -192,9 +192,9 @@ there instead.
   `renderer`.
 - **Its own HTTP/1.1 client**, with one deadline for the whole exchange (40 seconds at most)
   and hard limits on header and body size.
-- **96 specified scenarios**, each passing twice: once against the specification's own
+- **169 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **661 tests**, built with warnings treated as errors, and 38 tests of the live view's page in
+- **877 tests**, built with warnings treated as errors, and 38 tests of the live view's page in
   a browser.
 
 New with round 1 after the tenth wave of the current plan, not released yet:
@@ -373,7 +373,7 @@ New with the second wave:
   reader ([`docs/view-stream.md`](docs/view-stream.md)). Its page is new with the third wave.
 - **A test harness for the HTML parser.** It holds 9,107 cases from html5lib-tests and
   web-platform-tests and counts how many a parser passes. Today it runs 9,095 of them and
-  passes 8,428: 82 encoding cases, 7,046 tokenizer cases and 1,300 tree construction cases.
+  passes 9,095: 82 encoding cases, 7,046 tokenizer cases and 1,967 tree construction cases.
 
 New with the first wave:
 
@@ -445,32 +445,33 @@ One command checks everything:
 
 ```console
 $ task check
-surf v1 — 9 file(s), 15 scenario(s), valid
-96 scenario(s) (15 authored), 28 refusal(s), written to .out/suite.json
-  96 scenarios: 96 passed, 0 failed, 0 error, 0 unsupported
-96 scenario(s) (15 authored), 28 refusal(s), written to .out/suite.json
-  96 scenarios: 96 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 96 scenario(s) each, of suite sha256:3041446cb0234779316d887f5a96d127f60fc03893977e2b341f92e69af28b81
+surf v1 — 9 file(s), 24 scenario(s), valid
+169 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
+  169 scenarios: 169 passed, 0 failed, 0 error, 0 unsupported
+169 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
+  169 scenarios: 169 passed, 0 failed, 0 error, 0 unsupported
+the interpreter and the Rust system ran 169 scenario(s) each, of suite sha256:0aead5f74409f8c561f544df8056b9e6b6fe146c13ba2e5e3a3fbf0ffdea733c
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
-Cargo.lock: 24 package(s), none from outside this repository
+Cargo.lock: 26 package(s), none from outside this repository
     Finished `dev` profile [unoptimized] target(s) in 0.00s
-661 tests: 661 passed, 0 failed, 0 ignored (cargo-nextest 659, doc tests 2)
-test step: 61.9 s of its budget of 120 s
+877 tests: 877 passed, 0 failed, 0 ignored (cargo-nextest 875, doc tests 2)
+test step: 48.5 s of its budget of 120 s
+agent-tasks: 4 tasks, 2 pass, 2 fail, 0 skipped, lane gate, binaries target/debug
 view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
   38 passed (15.8s)
-html-conformance: 9107 cases, 9095 run, 8428 passed
+html-conformance: 9107 cases, 9095 run, 9095 passed
 ```
 
-It validates the specification, runs the 96 scenarios against the interpreter built into `ess`
+It validates the specification, runs the 169 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
 that the lock file holds no outside package, then builds and tests, checks that every event
 name of the live view's stream is an event of the specification, runs the live view's page
 tests in a browser, and last holds the HTML parser's test counts where they are. The tests run
 under cargo-nextest; a test still running after 60 seconds is ended and fails, the test step
 fails when it takes over 120 seconds, and the block leaves out the ten slowest tests the step
-also prints. The page tests need Node and Chromium's headless shell; with Node there, install
-the shell once with `npm --prefix view-tests ci`, then `npx --prefix view-tests playwright
+also prints and the agent tasks' rows after their counts. The page tests need Node and
+Chromium's headless shell; with Node there, install the shell once with `npm --prefix view-tests ci`, then `npx --prefix view-tests playwright
 install --only-shell chromium`. The scenario runner in
 [`conformance/`](conformance/) is the one place a third-party crate is used; nothing that
 ships depends on it.

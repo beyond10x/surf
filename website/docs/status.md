@@ -11,17 +11,17 @@ window, no rendering, no JavaScript and no `https:` yet.
 
 ## Numbers
 
-On 2026-11-22, with ess 0.96.0, after wave 10 of the current plan and the fixes of a security
-review:
+On 2026-11-22, with ess 0.97.3, after round 1, which follows wave 10 of the current plan:
 
 | what | value |
 |---|---|
-| specification | ESS 0.96.0, valid |
-| conformance scenarios | 96 of 96 pass, against the interpreter and against the Rust code |
-| tests | 661 passed |
+| specification | ESS 0.97.3, valid |
+| conformance scenarios | 169 of 169 pass, against the interpreter and against the Rust code |
+| tests | 877 passed |
+| agent tasks | 2 of 4 pass (`article`, `table`); `link` and `search` wait for later stories |
 | live view's page tests | 38 passed, in Chromium's headless shell |
 | URL test data | 872 of 904 cases pass; 32 skipped, listed by name |
-| HTML parser test data | 9,107 cases counted, 9,095 run, 8,428 pass (82 encoding, 7,046 tokenizer and 1,300 tree construction cases); the parser decides the encoding, tokenizes, and builds a tree outside tables, templates and foreign content, misnested formatting included, within six limits on untrusted input, but no command runs it on a page yet; `task check` holds these counts |
+| HTML parser test data | 9,107 cases counted, 9,095 run, 9,095 pass (82 encoding, 7,046 tokenizer and 1,967 tree construction cases); the parser decides the encoding, tokenizes, and builds a tree in every insertion mode, foreign content and fragments included, within six limits on untrusted input, and `surf` parses every `text/html` response with it; `task check` holds these counts |
 | third-party crates in what ships | 0 |
 | unsafe code | forbidden in every hand-written crate; two test files hold a counting allocator |
 | standard sections marked complete | 0 |
