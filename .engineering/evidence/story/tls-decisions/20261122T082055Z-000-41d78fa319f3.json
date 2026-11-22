@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T08:20:55Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-decisions",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "forge run 45000324518 of workflow tls-probe on probe/tls-ring at a82e690",
+    "reference": "five build jobs success, each prints probe ok; both negative controls fail with the cc-rs error"
+  }
+}

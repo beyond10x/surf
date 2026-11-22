@@ -11,14 +11,18 @@ What was read, all on 2026-11-22:
 
 | text | version read |
 |---|---|
-| RFC 8446 (TLS 1.3) | `rfc8446.txt`, August 2018 |
-| RFC 8448 (example handshake traces) | `rfc8448.txt`, January 2019 |
+| RFC 8446 (TLS 1.3) | `https://www.rfc-editor.org/rfc/rfc8446.txt`, August 2018, 337,736 bytes, sha256 `47871bc8820a2c3b6ea89f061055577058862cf543686b82d10131239702b3bd` |
+| RFC 8448 (example handshake traces) | `https://www.rfc-editor.org/rfc/rfc8448.txt`, January 2019, 159,343 bytes, sha256 `6564d1376d1ec744fc7a9993da15ebc1b9be361908b166091f47ef605c537fba` |
 | ring | 0.17.14, the crates.io package (checksum in item 2) |
 | cc | 1.11.1, the crates.io package (checksum in item 2) |
 | rustls, rustls-webpki | 0.23.46 and 0.103.17, the crates.io packages, for the bounds of item 9 only |
 | OpenSSL | 3.6.5 of 29 September 2026, the `openssl` command of the workstation |
 
-Line numbers below are those of these versions. The workstation is the shared build machine the
+Line numbers below are those of these versions. Every `rfc8446.txt:` and `rfc8448.txt:` line
+cited was checked against the copies fetched from the RFC Editor on 2026-11-22 with the bytes and
+sha256 above (the section 9.3 sentence quoted in items 1 and 12, "A client sending a ClientHello
+MUST support all parameters advertised in it", stands on lines 5834-5835; its bullet runs on to
+5836). The workstation is the shared build machine the
 coordinating agent works on (x86_64 Linux, GCC 16.2.1, musl 1.2.6); its builds and tests run
 through the machine's build pool (`slot`), which queues a job until a slot is free; the times
 below are wall times of the running job, not of the queue.
@@ -26,8 +30,9 @@ below are wall times of the running job, not of the queue.
 ## 1. The decisions U1, U2 and U3, and the TLS 1.2 suites
 
 1. **U1, the source of the primitives: `ring` 0.17.14.** The operator, 2026-11-22 05:47 CET,
-   relayed by the session `host-operator`: "A: ring 0.17.14". Of the four options of the epic
-   it adds the fewest packages (item 2), covers every primitive TLS 1.3 needs, and is the source
+   relayed by the session `host-operator`: "A: ring 0.17.14". Of the three options of the epic
+   that take an outside crate it adds the fewest packages (item 2; option D, primitives written
+   here, adds none and was refused for the timing risk decision C names), covers every primitive TLS 1.3 needs, and is the source
    rustls calls easier to build. Its cost is a C compiler that also builds assembly on every
    build (item 3), and principle 4's word "audited" means what exists: ring was reviewed as a
    dependency in Cure53's audit of rustls of May to June 2020 (work package WP2), with 4 minor
@@ -73,7 +78,7 @@ Every source is `registry+https://github.com/rust-lang/crates.io-index`.
 | cfg-if | 1.0.5 | `4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600` | getrandom, ring | yes |
 | find-msvc-tools | 0.1.15 | `1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48` | cc | yes, for the build machine |
 | getrandom | 0.2.17 | `ff2abc00be7fca6ebc474524697ae276ad847ad0a6b3faa4bcb027e9a4614ad0` | ring | yes |
-| libc | 0.2.191 | `65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a` | getrandom (Unix), ring (aarch64 Apple only) | yes |
+| libc | 0.2.191 | `65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a` | getrandom (Unix); ring for aarch64 Apple (`Cargo.toml:263`) and for aarch64 and arm Linux and Android (`Cargo.toml:267`), so for `aarch64-unknown-linux-musl` and `aarch64-apple-darwin` directly | yes |
 | ring | 0.17.14 | `a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7` | surf-tls | yes |
 | shlex | 2.0.1 | `f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba` | cc | yes, for the build machine |
 | untrusted | 0.9.0 | `8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1` | ring | yes |
@@ -153,8 +158,8 @@ each step, whole seconds.
 |---|---|---|---|---|---|---|---|
 | `release x86_64-unknown-linux-musl` (`ubuntu-22.04`, Linux 6.8.0-1070-azure) | `success` | `cc`, `gcc`: GCC 11.4.0; `clang` 14.0.0; after the step `musl-gcc` and `x86_64-linux-musl-gcc` (musl-tools 1.2.2-4, wrappers of the GCC 11.4.0) | `[ring 0.17.14] CC_x86_64_unknown_linux_musl = Some(musl-gcc)`, `running: "musl-gcc" "-O3" …` | `ring build: exit 0, 14 s` | `probe build: 1 s` | `ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, … stripped`; `readelf -lW: no program interpreter, the binary is static` | `probe ok` |
 | `release aarch64-unknown-linux-musl` (`ubuntu-22.04-arm`, Linux 6.8.0-1070-azure, aarch64) | `success` | `cc`, `gcc`: GCC 11.4.0; `clang` 14.0.0; after the step `musl-gcc` and `aarch64-linux-musl-gcc` (musl-tools) | `CC_aarch64_unknown_linux_musl = Some(musl-gcc)`, `running: "musl-gcc" "-O3" …` | `ring build: exit 0, 8 s` | `probe build: 0 s` | `ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, … stripped`; `readelf -lW: no program interpreter, the binary is static` | `probe ok` |
-| `release x86_64-apple-darwin` (`macos-15-intel`, Darwin 24.6.0 x86_64) | `success` | `cc`, `gcc`, `clang`: Apple clang 17.0.0 (clang-1700.0.13.5); no musl compiler; no `CC` variable | `CC_x86_64_apple_darwin = None`, `running: "cc" …` | `ring build: exit 0, 16 s` | `probe build: 0 s` | `Mach-O 64-bit executable x86_64`, linked to `/usr/lib/libSystem.B.dylib` alone | `probe ok` |
-| `release aarch64-apple-darwin` (`macos-15`, Darwin 24.6.0 arm64) | `success` | the same Apple clang 17.0.0 | `CC_aarch64_apple_darwin = None`, `running: "cc" …` | `ring build: exit 0, 12 s` | `probe build: 0 s` | `Mach-O 64-bit executable arm64`, linked to `/usr/lib/libSystem.B.dylib` alone | `probe ok` |
+| `release x86_64-apple-darwin` (`macos-15-intel`, Darwin 24.6.0 x86_64) | `success` | `cc`, `gcc`, `clang`: Apple clang 17.0.0 (clang-1700.0.13.5); no musl compiler; no `CC` variable | `CC_x86_64_apple_darwin = None`, `running: "cc" …` | `ring build: exit 0, 16 s` | `probe build: 0 s` | `Mach-O 64-bit executable x86_64`; `otool -L`: `/usr/lib/libSystem.B.dylib` and `/usr/lib/libiconv.2.dylib` | `probe ok` |
+| `release aarch64-apple-darwin` (`macos-15`, Darwin 24.6.0 arm64) | `success` | the same Apple clang 17.0.0 | `CC_aarch64_apple_darwin = None`, `running: "cc" …` | `ring build: exit 0, 12 s` | `probe build: 0 s` | `Mach-O 64-bit executable arm64`; `otool -L`: `/usr/lib/libSystem.B.dylib` and `/usr/lib/libiconv.2.dylib` | `probe ok` |
 | `gate x86_64-unknown-linux-gnu` (`ubuntu-latest`, Linux 7.0.0-1020-azure) | `success` | `cc`, `gcc`: GCC 15.2.0; `clang` 21.1.8; no musl compiler | `CC_x86_64_unknown_linux_gnu = None`, `running: "cc" "-O0" …` | `ring build: exit 0, 13 s` | `probe build: 0 s` | `ELF 64-bit LSB pie executable, x86-64, … dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2`, as every gate binary | `probe ok` |
 | `negative control x86_64-unknown-linux-musl without the compiler step` (`ubuntu-22.04`) | `failure` | GCC 11.4.0, clang 14.0.0; `musl-gcc: not found`, `x86_64-linux-musl-gcc: not found`; no `CC` variable | `CC_x86_64_unknown_linux_musl = None`, `TARGET_CC = None`, `running: "x86_64-linux-musl-gcc" …` | `ring build: exit 101, 3 s` | not run | none | none |
 | `negative control aarch64-unknown-linux-musl without the compiler step` (`ubuntu-22.04-arm`) | `failure` | GCC 11.4.0, clang 14.0.0; `musl-gcc: not found`, `aarch64-linux-musl-gcc: not found`; no `CC` variable | `CC_aarch64_unknown_linux_musl = None`, `TARGET_CC = None`, `running: "aarch64-linux-musl-gcc" …` | `ring build: exit 101, 1 s` | not run | none | none |
@@ -186,7 +191,11 @@ What follows, per runner:
    names the compiler instead of leaving it to cc's search. The result is static, as the release
    requires.
 2. **The two macOS targets need no step**: Apple clang 17.0.0 of the image builds ring's C and
-   assembly, and the binary links to `libSystem` alone, as surf's binary does today.
+   assembly. The probe links to two libraries, `/usr/lib/libSystem.B.dylib` and
+   `/usr/lib/libiconv.2.dylib`, both system libraries that every macOS installs, so the binary
+   runs without anything installed beside it. Whether the `surf` binary of `main` already links
+   `libiconv` was not compared: no `otool` record of an earlier release run was at hand.
+   `story:tls-release` compares it in its first release run.
 3. **`ubuntu-latest` of the gate needs no step**: its GCC 15.2.0 builds ring at opt-level 0 in
    13 s.
 
@@ -224,8 +233,10 @@ not counted. The machine was loaded, so the times vary by a factor of about 4 be
 the same work (59.6 s and 12.6 s above).
 
 What the third build shows: ring's C and assembly need no musl headers; the glibc GCC makes the
-same objects, and the binary is byte for byte the one `musl-gcc` makes (`cmp` of the two
-binaries). So on x86_64, setting
+same objects. The kept evidence is the equal BuildID of the two binaries, which the build log
+records (`file` printed `BuildID[sha1]=1ecc998b…` for both). The unit also ran `cmp` on the two
+binaries before it removed the build output; it reported them identical, but that output was not
+kept in a log. So on x86_64, setting
 `CC_x86_64_unknown_linux_musl=gcc` without installing anything is a candidate step beside
 `musl-tools`; the probe tests `musl-tools`, and the negative controls show what cc does with
 neither.
@@ -271,15 +282,25 @@ the pool, the verifications only (medians of 5, ms):
 
 What the numbers say. RSA-2048, ECDSA P-256 and Ed25519 verification cost about 0.1 to 0.4 ms
 at opt-level 0, steady across runs; the AEAD seals and HKDF are below 0.01 ms. P-384 is the one
-slow operation: its median at opt-level 0 was 58.9 ms in the first run, over the bound of 50 ms,
-and 18.1, 24.3 and 5.6 ms in the three after; its smallest call fell to 2.7 ms when the machine
-was quieter. Its spread is the machine's load, not the code (the agreements of the first run
-show single calls of about 50 ms too); on the loaded machine the gate runs on, those numbers are
-what the test step pays. With ring at opt-level 3 P-384 costs 1.1 ms on a quiet machine and its
-medians were 1.1 to 16.7 ms, RSA verification about a third of its opt-level 0 time.
+slow operation, and the one whose numbers vary with the machine's load (the agreements of the
+first run show single calls of about 50 ms too, so a call can lose a time slice of that size).
+Over the four runs, P-384 verification:
 
-So, as the story's rule asks for a verification over 50 ms, the line for `.cargo/config.toml`
-(`story:tls-lock-allow` writes it):
+| | medians of the 4 runs | smallest call | largest call | 100 checks, the bound of item 9.4, at the largest median | at the largest call |
+|---|---|---|---|---|---|
+| opt-level 0 | 5.6 to 58.9 ms | 2.7 ms | 76.0 ms | 5.9 s | 7.6 s |
+| ring at opt-level 3 | 1.1 to 16.7 ms | 1.1 ms | 29.9 ms | 1.7 s | 3.0 s |
+
+Only one of the four opt-level 0 medians, the first, is over the story's 50 ms; the other three
+are 18.1, 24.3 and 5.6 ms. So the rule of the story alone does not carry the line. The ratio
+does: run by run the opt-level 0 median is 1.5 to 6.4 times the opt-level 3 median (3.5, 6.4,
+1.5, 5.0), the smallest calls 2.5 times (2.7 against 1.1 ms), and RSA verification about 3
+times (0.09 to 0.12 against 0.03 to 0.04 ms). The worst case of the path bound falls from 5.9 s
+to 1.7 s at the largest medians, and the Wycheproof P-384 file of item 10 (504 vectors) from at
+most 29.7 s, half of the 60 s a test may run, to at most 8.4 s (estimates, each vector counted as
+one verification at the largest median).
+
+So the line for `.cargo/config.toml` (`story:tls-lock-allow` writes it):
 
 ```toml
 [profile.dev.package.ring]
@@ -292,6 +313,10 @@ given as `--config 'profile.dev.package.ring.opt-level=3'` to `cargo test`. Its 
 build at opt-level 3 in the gate's build: on the loaded machine the first build of the scratch
 tests (the 8 packages and the tests, opt-level 0) ran 50 s in the pool, and the rebuild with the
 line, which compiles ring and its build script again and nothing else, ran 61 s.
+
+The line changes no shipped binary: it sets the `dev` profile, which `cargo build`, `cargo test`
+and `cargo nextest` of the gate use; the release binaries are built with `--release`, whose
+profile compiles every package, ring included, at opt-level 3 already.
 
 ## 5. Random sources
 
@@ -490,7 +515,7 @@ The checks of `NotTrusted(check)`, a closed list; `INDEX` of `story:tls-test-cer
 | `BadSignature` | a signature on the path does not verify | `bad_certificate` | `BadSignature: the signature of certificate <n> does not verify` |
 | `IssuerNotCa` | an issuer without basicConstraints cA | `bad_certificate` | `IssuerNotCa: certificate <n> issues but is no CA` |
 | `PathTooLong` | more intermediates than item 9 allows, or a pathLenConstraint broken | `bad_certificate` | `PathTooLong: <k> intermediates, at most <bound>` or `PathTooLong: pathLenConstraint of certificate <n> broken` |
-| `CandidateLimit` | the most path candidates of item 9 tried | `bad_certificate` | `CandidateLimit: <bound> candidates tried` |
+| `CandidateLimit` | a limit of the path search of item 9.4 reached: 100 signature checks or 25,000 candidates considered | `bad_certificate` | `CandidateLimit: <bound> <signature checks or candidates considered>` |
 | `KeyUsage` | keyUsage without keyCertSign on an issuer, or without digitalSignature on the leaf | `bad_certificate` | `KeyUsage: certificate <n> lacks <keyCertSign or digitalSignature>` |
 | `UnknownCriticalExtension` | a critical extension the reader does not know | `bad_certificate` | `UnknownCriticalExtension: <OID> in certificate <n>` |
 | `NameConstraint` | a name outside a nameConstraints of an issuer or of the anchor | `bad_certificate` | `NameConstraint: <name> outside the constraints of certificate <n>` |
@@ -552,25 +577,70 @@ the count, date and sha256 of the bundled list of item 11, and with a file a sec
    `story:tls-test-certs`, `candidate-limit` with 50 certificates, must fit too, so that the
    path bound below and not this one stops it. A message that declares more is refused at its
    4-byte header (`story:tls-record`): `illegal_parameter`, `MessageTooLarge { declared,
-   bound }`.
+   bound }`. Why `illegal_parameter` and not `decode_error`, which rustls sends for the same
+   case (`rustls-0.23.46/src/error.rs:213-219`, every `InvalidMessage` but three maps to
+   `DecodeError`): RFC 8446 section 6.2 gives `decode_error` "for errors where the message does
+   not conform to the formal protocol syntax" (`rfc8446.txt:4959-4962`) and `illegal_parameter`
+   "for errors which conform to the formal protocol syntax but are otherwise incorrect"
+   (`:4945-4948`). A declared length up to 2^24 - 1 conforms to the syntax (the length is a
+   `uint24`); it is wrong only against surf's own bound, so `illegal_parameter`.
 2. **The most certificates in a Certificate message: 64.** Reason: more than the 50 of
-   `candidate-limit`, so that the path builder sees that case whole; the length bound above
-   alone would let some 13,000 near-empty entries be parsed one by one. One more is
-   `bad_certificate`, `TooManyCertificates`.
+   `candidate-limit`, so that the path builder sees that case whole. The length bound above alone
+   would not bound the count usefully: a `CertificateEntry` is at least 6 bytes (3 bytes of
+   `cert_data` length, at least 1 byte of data, 2 bytes of `extensions` length), and the message
+   body has 4 bytes before the list (a 1-byte empty `certificate_request_context` and the 3-byte
+   list length), so (65,535 - 4) / 6 gives at most 10,921 entries, each to be parsed. One more
+   than 64 is `bad_certificate`, `TooManyCertificates`.
 3. **The most intermediates on a path: 6**, rustls-webpki's `MAX_SUB_CA_COUNT`
    (`src/verify_cert.rs:873` of 0.103.17). Reason: the web's chains have one or two
    intermediates; a longer path is either an attack on the search or a mistake. `path-too-long`
    of `story:tls-test-certs` has 7. More is `NotTrusted(PathTooLong)`.
-4. **The most path candidates tried: 100**, counted as signature verifications of a candidate
-   issuer over a certificate in one validation, the budget rustls-webpki keeps
-   (`signatures: 100`, `src/verify_cert.rs:355-360`, taken there from the remedy of Go's
-   CVE-2018-16875). Reason: the search over issuers with one subject and different keys is
-   exponential in the depth; the bound makes its cost at most 100 verifications, which item 4
-   prices in the test profile, with the line of item 4, at about 10 ms for RSA-2048 or P-256
-   keys (100 × 0.03 to 0.09 ms) and 0.1 to 1.7 s for P-384 keys (100 × the medians 1.1 to
-   16.7 ms). So the hostile case `candidate-limit` of `story:tls-test-certs`, which must end in
-   under 1 s (`story:tls-x509-path` acceptance 5), uses P-256 or RSA keys for its 48
-   intermediates. Reaching it is `NotTrusted(CandidateLimit)`.
+4. **The path search and its two limits: 100 signature checks and 25,000 candidates
+   considered**, per validation. The search (`story:tls-x509-path`, `path.rs`) is depth-first
+   from the leaf. At each step, for the certificate at the end of the path, its candidate issuers
+   are the trust anchors and then the certificates the server sent, in the order sent, whose
+   subject equals the certificate's issuer name (byte for byte after the reader's
+   normalisation) and, when both carry one, whose subjectKeyIdentifier equals its
+   authorityKeyIdentifier; a certificate already on the path is no candidate.
+   - **Each candidate looked at charges the counter `considered`**, one per name comparison,
+     whether the names match or not. Limit 25,000.
+   - **Before the search descends into a candidate, surf verifies the candidate's signature
+     over the certificate** (after the policy of `REFUSED`, which costs no verification). Each
+     verification charges the counter `signatures`, whether it succeeds or not. Limit 100, the
+     number rustls-webpki keeps (`signatures: 100`, `rustls-webpki-0.103.17/src/verify_cert.rs:355-360`,
+     taken there from the remedy of Go's CVE-2018-16875).
+   - A candidate whose signature does not verify is not descended into. A candidate that is an
+     anchor and verifies ends the path: the other checks of item 7 run on it (validity,
+     basicConstraints and pathLenConstraint, keyUsage, extKeyUsage, nameConstraints); if they
+     pass, the path is the answer, else the search goes on with the next candidate. A candidate
+     that would be the 7th intermediate is not descended into (item 9.3).
+
+   Why this order, the other one than rustls-webpki's: webpki descends into every name match and
+   verifies the signatures only when a path reaches an anchor
+   (`rustls-webpki-0.103.17/src/verify_cert.rs:94`), so it needs a second budget for the descents
+   themselves (`build_chain_calls: 200_000`, `:143`, `:364`). Verifying first cuts every branch
+   whose link is false at its first step, so a descent happens only after a successful
+   verification: at most 100 descents, and with at most 6 intermediates and at most 118 bundled
+   anchors, 64 anchors of an extra file and 64 certificates sent, at most 101 steps of at most 246
+   comparisons each, 24,846. So `considered` cannot reach its limit with today's sets; it bounds
+   the work if a set grows.
+
+   What the search answers when it ends without a path, in this order: a limit reached (either
+   counter): `NotTrusted(CandidateLimit)`; else a candidate cut by item 9.3:
+   `NotTrusted(PathTooLong)`; else a candidate refused by `REFUSED`: `NotTrusted(WeakAlgorithm)`
+   or `NotTrusted(WeakKey)`; else a name match whose signature failed: `NotTrusted(BadSignature)`;
+   else a complete path that failed a check of item 7: the check of the last such path; else
+   `NotTrusted(NoPathToAnchor)`. No check name is added to the 12 of item 7.
+
+   The worst time, from the costs of item 4 with the line of item 4: 100 verifications at the
+   largest median, 16.7 ms for P-384, 1.7 s (3.0 s at the largest single call, 29.9 ms); with
+   RSA-2048 or P-256 keys about 10 ms (100 × 0.03 to 0.09 ms); 25,000 name comparisons of a few
+   hundred bytes each, not measured, estimated under 25 ms (under 1 µs each). So the hostile cases
+   of the limit, which must end in under 1 s (`story:tls-x509-path` acceptance 5), use P-256 or
+   RSA keys: `candidate-limit` of `story:tls-test-certs` (48 intermediates with one subject and
+   different keys: every candidate matches by name and one or two verify, so ending the
+   search would need more than 47 verifications at each of its levels and the limit of 100 is
+   reached before it ends) and the case of item 10 that never reaches an anchor.
 5. **One HelloRetryRequest.** RFC 8446 section 4.1.4: "If a client receives a second
    HelloRetryRequest in the same connection [...] it MUST abort the handshake with an
    "unexpected_message" alert" (`rfc8446.txt:1837-1840`): `unexpected_message`,
@@ -581,29 +651,76 @@ the count, date and sha256 of the bundled list of item 11, and with a file a sec
 Every material is vendored with a `SOURCE` file of the form of
 `crates/html-conformance/data/*/SOURCE` (where it came from, the commit or date, the licence,
 the files and their sha256), and a fast check in the gate compares each file with its digest.
-The sizes of the upstream files were not measured for this note (the unit that wrote it had no
-network); the story that vendors a material records the size in its `SOURCE` and in its
-report.
+The sizes below were read on 2026-11-22: each file fetched once with `curl` into the scratch
+directory of the unit that wrote this note, counted with `wc -c` and hashed with `sha256sum`;
+the vector and case counts read from the files with `jq`. The vendoring story pins the same
+commit or takes a newer one and writes its own numbers into `SOURCE`. The times are estimates
+from the costs of item 4, not runs.
 
 1. **Wycheproof** (C2SP, Apache-2.0): a subset in `crates/tls/tests/data/wycheproof/`, vendored
-   by `story:tls-lock-allow`: `aes_gcm_test`, `chacha20_poly1305_test`, `x25519_test`,
-   `ecdh_secp256r1_test`, `ecdsa_secp256r1_sha256_test`, `ecdsa_secp384r1_sha384_test`,
-   `ed25519_test`, `hkdf_sha256_test`, `hkdf_sha384_test`, and the RSA files for 2048 bits,
-   `rsa_pss_2048_sha256_mgf1_32_test.json` among them. The AES-192 vectors of `aes_gcm_test`
-   are a named skip, ring has no AES-192 (item 6); the test prints their count.
-2. **RFC 8448** in `crates/tls/tests/data/rfc8448/`: sections 3, 5 and 7, replayed with their
-   private keys (item 5). Its RSA server key is 1024 bits, so ring cannot check its
-   CertificateVerify; the trace tests the key schedule, the record layer and the parsing.
-3. **x509-limbo** (C2SP, Apache-2.0) in `crates/tls/tests/data/x509-limbo/`, at a pinned
-   commit; 9,807 cases on 2026-11-22 (epic, "Testing within the budget"). When `limbo.json` at
-   the pinned commit is over 20 MiB, `story:tls-x509` keeps every case not of the `bettertls`
-   family and the `bettertls` cases in file order up to 20 MiB, and states in `SOURCE` the size,
-   the count kept and the count left out.
+   by `story:tls-lock-allow`, from
+   `https://raw.githubusercontent.com/C2SP/wycheproof/<commit>/testvectors_v1/<file>`, commit
+   `65ca494727a52944c204441c860b039e6786b99b` (2026-11-11, the head of `main` on 2026-11-22).
+   Fourteen files, 3,027,947 bytes, 4,163 vectors:
+
+   | file | bytes | vectors | sha256 |
+   |---|---|---|---|
+   | `aes_gcm_test.json` | 213,177 | 316 (103 of them AES-192) | `985e5ecc172e181eaf49e89508b9470dcf478002eb7e8559c707eb42dc97dfe7` |
+   | `chacha20_poly1305_test.json` | 241,127 | 325 | `fe61d25f90e1bde4461d00eafe61049e5f29bd999f36b766df9cda90906ad53d` |
+   | `x25519_test.json` | 253,890 | 518 | `35c3f5231cf25cc640b524d403461deee9e49441d5d915a3a25b2c8ff5adbe7d` |
+   | `ecdh_secp256r1_test.json` | 418,368 | 612 | `cdb8bd5d1206fddb6618c69ffa18f303b4752caba321d348d4aacae3f20cbec4` |
+   | `ecdsa_secp256r1_sha256_test.json` | 327,156 | 484 | `182db4f3e230f6f9fa9f800d2a614dede30284b8e8438bbfe1171905402e9332` |
+   | `ecdsa_secp384r1_sha384_test.json` | 375,442 | 504 | `8a5b3ae1760975143414811f13588c24d951d9d8c904195087ba327591dfe9cc` |
+   | `ed25519_test.json` | 172,628 | 210 | `ea80ffebac085e21cb9d3e903e7fa2b448d96702da5b31f061d0b83b430b74b3` |
+   | `hkdf_sha256_test.json` | 92,505 | 86 | `bb2b462a38b251cb52a2aede706d6d4b62b26864f4e80c95497507ddb07c5f1e` |
+   | `hkdf_sha384_test.json` | 116,155 | 83 | `69ff6ea3657bb9c1b8cdffbbb4e7832353d08fd15c0d9997b03f7a6b180e3678` |
+   | `rsa_signature_2048_sha256_test.json` | 211,075 | 259 | `94a917b01ff50fb874cfc05bf29b4af44868d944a6558201cf18380da93fb393` |
+   | `rsa_signature_2048_sha384_test.json` | 203,297 | 258 | `c571c105d261c0ff588a2888a529f152563fb3b77894b7620d4e4f8f934f2c1d` |
+   | `rsa_signature_2048_sha512_test.json` | 207,663 | 259 | `16ea24b039905d054bdb6004f5fd179374e150b7b6d73a7ba654b6d00eab12ef` |
+   | `rsa_pss_2048_sha256_mgf1_32_test.json` | 85,280 | 108 | `7f6efafc160f4816b96cbf1c12188a31051d7e3f001e27505d9edb5f2a0e325c` |
+   | `rsa_pss_2048_sha384_mgf1_48_test.json` | 110,184 | 141 | `66d464778b0b2f683a1d1a20e94f77e9472b8cc393b45f423fa08a48e677063c` |
+
+   The `testvectors_v1` directory holds no RSA-PSS file for 2048 bits with SHA-512 and a salt
+   of 64 bytes; rsa_pss_rsae_sha512 is covered by `ok-rsa-pss-sha512` of
+   `story:tls-test-certs` alone. The 103 AES-192 vectors of `aes_gcm_test` are a named skip,
+   ring has no AES-192 (item 6); the test prints their count. Within the budget (estimate):
+   the P-384 file is the costly one, 504 verifications, at most 8.4 s at the largest median of
+   item 4 with its line (29.7 s without it); the other 3,659 vectors at most 0.42 ms each, the
+   costliest operation of item 4 but P-384 at opt-level 0, at most 1.6 s. Each file is one test,
+   all under 60 s, and the whole set under 10 s of the 120 s step.
+2. **RFC 8448** in `crates/tls/tests/data/rfc8448/`: `https://www.rfc-editor.org/rfc/rfc8448.txt`,
+   159,343 bytes, sha256 `6564d1376d1ec744fc7a9993da15ebc1b9be361908b166091f47ef605c537fba`;
+   sections 3, 5 and 7, replayed with their private keys (item 5). Its RSA server key is 1024
+   bits, so ring cannot check its CertificateVerify; the trace tests the key schedule, the record
+   layer and the parsing.
+3. **x509-limbo** (C2SP, Apache-2.0) in `crates/tls/tests/data/x509-limbo/`:
+   `https://raw.githubusercontent.com/C2SP/x509-limbo/<commit>/limbo.json`, commit
+   `b12423782a88abead01141fa6582254e3eb49e74` (2026-11-17, the head of `main` on 2026-11-22),
+   41,805,636 bytes, sha256 `56799cefd65fc9e0bdb9cb0f97fce6734533b45df3de4fc17fdc7b7b79654fca`,
+   `version` 1, 9,807 cases (935 `SUCCESS`, 8,872 `FAILURE`; 9,797 `SERVER`, 10 `CLIENT`; by
+   family bettertls 9,572, rfc5280 109, webpki 56, crl 22, online 14, pathlen 13, pathological
+   11, rfc9881 6, cve 3, invalid 1). It is over 20 MiB, so `story:tls-x509` keeps every case not
+   of the `bettertls` family (235 cases, 2,000,133 bytes as compact JSON) and the `bettertls`
+   cases in file order up to 20 MiB in all: at this commit the first 4,907 (18,968,694 bytes),
+   so 5,142 cases kept and 4,665 left out, and states in `SOURCE` the size, the count kept and
+   the count left out. Within the budget (estimate): the file holds 39,975 certificates for its
+   9,807 cases, about 4 per case; of 400 leaf certificates sampled (200 of each part), 392 hold
+   P-256 keys, 2 RSA-2048 and 4 ML-DSA-44. So a case costs a few verifications at about 0.1 ms
+   each, and the 5,142 cases about 2.5 s at opt-level 0 (5,142 × 4 × 0.12 ms); the 11
+   `pathological` cases are held to the limits of item 9.4, at most 100 verifications each, 0.1
+   s for P-256 keys. Reading 21 MB of JSON and its PEM is not estimated here; `story:tls-x509`
+   measures it, and the case runner fits the 60 s and the 120 s with it.
 4. **The generated certificates** in `crates/tls-test-certs/certs/`: made by
    `surf-tls-test-certs` through ring under a fixed source (reproducible, item 5), committed
    with the digest of their sources; the cases ring cannot make (a SHA-1 signature, an MD5
    signature, an RSA-1024 key, item 6) made once by `openssl` in the lane `slow` and committed
-   as bytes. The gate never runs `openssl`.
+   as bytes. The gate never runs `openssl`. Beside `candidate-limit`, one more case for the
+   limits of item 9.4: `candidate-limit-no-anchor`, 48 intermediates with one subject and one
+   P-256 key, each issued by that subject and signed with that key, and a leaf issued by the
+   same subject; neither that key's root nor any of the 48 is an anchor. Every candidate
+   matches and verifies, no path reaches an anchor, the search descends to 6 intermediates and
+   back, and the limit of 100 signature checks ends it: `NotTrusted(CandidateLimit)`, in about
+   9 ms of verification with the line of item 4 (100 × 0.09 ms), far under its 1 s.
 5. **The recorded flights** in `crates/tls/tests/data/flights/`: server flights of an
    independent implementation recorded on 127.0.0.1, pinned by sha256; recorded data, not a
    generated product. The lane `slow` records again and compares outcomes, not bytes, since the
@@ -629,10 +746,18 @@ and `tls-flights-check` in `check`, `tls-certs-slow` and `tls-flights-slow` in `
 
 The file is curl's extract of Mozilla's root store, the `cacert.pem` that
 `https://curl.se/docs/caextract.html` publishes: PEM, checked daily, converted when Mozilla's store
-changes, with a `.sha256` beside it. On 2026-11-22 the coordinating agent read its date as
-2026-11-05 and its count as 118 certificates (epic, U2). It lives in `crates/tls/src/anchors/`
-with a `SOURCE` that holds its date, its count and the sha256 of its `.sha256` file, written by
-`story:tls-anchors` when it takes the file; `surf --anchors` prints those three (item 8). A root
+changes, with a `.sha256` beside it. Read on 2026-11-22 from `https://curl.se/ca/cacert.pem`:
+200,116 bytes, `Last-Modified: Thu, 05 Nov 2026 04:12:01 GMT`, its header line "Certificate data
+from Mozilla as of: Thu Nov  5 04:12:01 2026 GMT", 118 `BEGIN CERTIFICATE` blocks, sha256
+`427c064216761a1e72a8b30f0d954d08cb6e4435a82091fb865afd20c8497285`, the value
+`https://curl.se/ca/cacert.pem.sha256` publishes for it (that file is one line,
+`<sha256>  cacert.pem`, 77 bytes; the `SHA256:` line in the list's own header is the hash of
+Mozilla's `certdata.txt` it was converted from, not of the list). It lives in
+`crates/tls/src/anchors/` with a `SOURCE`, written by `story:tls-anchors` when it takes the
+file, that holds the address, the date of the header line, the count, and the sha256 of the list
+itself (`sha256sum cacert.pem`), checked equal to the published `.sha256` line when the file is
+taken and by the gate's digest check after; `surf --anchors` prints the date, the count and
+that sha256 (item 8). A root
 the certificate reader refuses (a version 1 root, for one) is taken as its name and key, as RFC
 5280 section 6.1.1 (d) defines a trust anchor. A list older than 90 days is refreshed before a
 release (`docs/releasing.md`).

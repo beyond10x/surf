@@ -10,7 +10,7 @@ relations:
 scope:
 - confidence: cited
   path: docs/design/tls.md
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:23Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:24Z", actor: "human:operator", revision: 11, decided_on: {"recorded":{"verification":1}}}
@@ -282,7 +282,7 @@ and `story:tls-lock-allow` waits for nothing but this story.
        No requirement of sections 9.1 to 9.3 is deviated from. A deviation found later is a
        line here, named, and goes to the coordinator for `host-operator`.
 2. The probe, on a branch `probe/tls-ring` that is never merged into `main`:
-   `.github/workflows/tls-probe.yml` (`on: push` to that branch only, `permissions: contents:
+   `.github/workflows/tls-probe.yml` (`on: push` to that branch, and `workflow_dispatch` on it, `permissions: contents:
    read`, every action pinned by commit as `release.yml` pins them, the toolchain read from
    `rust-toolchain.toml`) and `probe/tls-ring/`, a crate outside the root workspace with its own
    `Cargo.lock`, whose `main` verifies one fixed ECDSA P-256 signature, runs one X25519
