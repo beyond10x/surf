@@ -68,7 +68,8 @@ seconds is ended and fails, the test step fails when it takes over 120 seconds, 
 leaves out the ten slowest tests the step also prints and the agent tasks' rows after their
 counts. The page tests' line, `54 passed (2.7m)`, was measured at a load average of about 55
 to 81 on 20 CPUs, its slowest test (`an entry over 1 MiB`) 29.7 s; `53 passed` took 1.1m at a
-load average of 55 to 65, `47 passed` 2.5m at a load average of 110 to 140, and the 38 of before took 15.8 s.
+load average of 55 to 65, `47 passed` 2.5m at a load average of 110 to 140, and the 38 of
+before took 15.8 s.
 
 The scenario runner in
 [`conformance/`](https://github.com/beyond10x/surf/tree/main/conformance) is the one place a

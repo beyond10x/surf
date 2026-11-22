@@ -487,8 +487,9 @@ under cargo-nextest; a test still running after 60 seconds is ended and fails, t
 fails when it takes over 120 seconds, and the block leaves out the ten slowest tests the step
 also prints and the agent tasks' rows after their counts. The page tests' line, `54 passed
 (2.7m)`, was measured at a load average of about 55 to 81 on 20 CPUs, its slowest test (`an
-entry over 1 MiB`) 29.7 s; `53 passed` took 1.1m at a load average of 55 to 65; `47 passed` took 2.5m at a load average of 110 to 140, and the 38
-of before took 15.8 s. The page tests need Node and
+entry over 1 MiB`) 29.7 s; `53 passed` took 1.1m at a load average of 55 to 65; `47 passed`
+took 2.5m at a load average of 110 to 140, and the 38 of before took 15.8 s. The page tests
+need Node and
 Chromium's headless shell; with Node there, install the shell once with `npm --prefix view-tests ci`, then `npx --prefix view-tests playwright
 install --only-shell chromium`. The scenario runner in
 [`conformance/`](conformance/) is the one place a third-party crate is used; nothing that
