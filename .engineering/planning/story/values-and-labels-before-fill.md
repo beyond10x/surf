@@ -12,6 +12,8 @@ scope:
   path: AGENTS.md
 - confidence: inferred
   path: README.md
+- confidence: inferred
+  path: Taskfile.yml
 - confidence: cited
   path: conformance/src/target.rs
 - confidence: cited
@@ -50,7 +52,7 @@ scope:
   path: website/docs/status.md
 - confidence: inferred
   path: website/docs/what-works.md
-revision: 11
+revision: 14
 ---
 ## Why
 
@@ -132,8 +134,10 @@ under `#[cfg(test)]` (line 448).
 4. `spec/domains/agent.yaml`: the five inputs stay. The story adds what carries them toward the
    record: the request event each `requested` outcome emits holds the input, `NavigationRequested`
    (from `Follow`) gains `handle` and `label` as `Optional<String>`, `FillRequested`,
-   `PickRequested` and `PressRequested` gain `handle`; the session stories then record the action
-   with the values of that event. `generated/rust/` is regenerated; `conformance/src/target.rs`
+   `PickRequested` and `PressRequested` gain `handle`. The session process keeps supplying
+   `RecordAction`'s `handle` and `label` itself; whether it reads them from the event instead is
+   the session stories' choice, and this story does not require it. `generated/rust/` is
+   regenerated; `conformance/src/target.rs`
    and `crates/session/src/entries.rs` map the new fields (a label cut as in 3). The refusal
    `unknown-handle` stays in the session stories (`story:agent-follow-links` case 6,
    `story:agent-fill-pick` case 13): handles are not modelled (`spec/domains/agent.yaml:476-479`).
@@ -156,7 +160,8 @@ When the story is implemented:
    value="pw-marker">`, `<input type=password>` and `<input type=text value="tx-marker">`:
    `Report::lines` has an `element` line of kind `password` ending in `(set)`, one ending in
    `(empty)`, no line containing `pw-marker`, and a `text` line ending in `"tx-marker"`. Today the
-   first password line ends in `"pw-marker"`.
+   first password line ends in `"pw-marker"`. `docs/surf-command.md:44` says a `password`
+   element's last field is `(set)` or `(empty)`, never the value (read in the diff).
 2. Change 2. A test in `crates/page/tests/label.rs`: the name of
    `<button>Code <input type=password value="pw-marker"></button>` holds `Code` and no
    `pw-marker`; with `type=text` it holds `pw-marker`. Today both hold `pw-marker`.
@@ -165,8 +170,10 @@ When the story is implemented:
    label of 10,000 bytes, a line feed, a `"` and a bidirectional control among its first 100,
    gives a line whose `label` field quotes the first 1,024 bytes (cut at a character boundary)
    and is followed by `label_bytes="10000"`; a label of 1,024 bytes has no `label_bytes`. Today
-   the whole label is written and no `label_bytes` exists. The two rewritten sentences name the
-   label, `TITLE_ENTRY_BYTES` and `label_bytes` (read in the diff).
+   the whole label is written and no `label_bytes` exists. The same holds for
+   `entries::event_line` of a constructed `NavigationRequested` with the same 10,000-byte label:
+   `label` quotes the first 1,024 bytes, then `label_bytes="10000"`. The two rewritten sentences
+   name the label, `TITLE_ENTRY_BYTES` and `label_bytes` (read in the diff).
 4. Change 4. For each of the five inputs, its named scenario fails when
    `conformance/src/target.rs` passes another value of it to the command
    (`agent-follow-navigates` for `Follow.handle` and `Follow.label`, `agent-fill-sets-value`,
@@ -180,7 +187,8 @@ When the story is implemented:
    authored), 48 refusal(s)`. After, as change 4 adds no scenario file: 169 scenarios, 24
    authored, 48 refused; `REFUSALS_MAX` (`Taskfile.yml:56`) is 48, the refused count after. A
    different reading of `slot task suite` is restated in every file that states the counts and
-   named in the unit report with its cause. The gate holds the refused count as an upper bound
+   named in the unit report with its cause; `Taskfile.yml` (`REFUSALS_MAX: 48`, line 56) is
+   written only if the refused count changes. The gate holds the refused count as an upper bound
    only (`Taskfile.yml:74`); nothing checks the scenario counts but these files.
 
 ## Left open
@@ -188,6 +196,11 @@ When the story is implemented:
 - `readonly`, `select multiple` and the radio group of a button with no form owner or no name
   (`spec/domains/document.yaml:735`, `306`, `798`): `story:agent-fill-pick` refuses `fill` of a
   `readonly` control and names the other two as open.
+- Open reading, no claim: whether `ess` compares an event payload exactly; if it does,
+  `agent-session-reads-started-navigation.yaml` and `agent-pick-unchecks-radio-group.yaml`
+  change too (still inside `spec/scenarios/`).
+- Open reading, no claim: `spec/components.yaml` is expected to need no change for optional
+  event fields.
 
 ## Scope
 
@@ -199,4 +212,5 @@ Surfaces written: `crates/surf/src/lib.rs`, `crates/page/src/label.rs`,
 `crates/session/tests/`, and, if the counts change, the files that state them: `AGENTS.md`
 ("The gate's numbers"), `README.md`, `docs/badges/make.sh` and `docs/badges/conformance.svg`,
 `website/docs/status.md`, `website/docs/what-works.md`, `website/docs/principles.md`,
-`website/docs/how-it-is-built.md`. `spec/domains/document.yaml` is not written.
+`website/docs/how-it-is-built.md`, and `Taskfile.yml` only if the refused count changes.
+`spec/domains/document.yaml` is not written.
