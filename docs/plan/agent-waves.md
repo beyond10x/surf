@@ -81,6 +81,12 @@ Rules of a round, beside the rules of a wave:
   120 s, a unit times its tests before it reports.
 - A release can follow each round: the list "What works after which wave" names the same
   three points (after wave 11, 18 and 22).
+- The website plays a recorded agent session (`website/data/surf-agent.terminal.json`, on
+  "Drive surf from an agent"). The recording of release `0.3.0` shows no title and no content,
+  because no command parses a page. The operator, 2026-11-22 (D79, option A): keep it for
+  `0.3.0` and record it again when `html-document-port` has landed. Round 1 ends with that
+  recording, made with the binaries of the round's last commit, and with the caption under the
+  terminal changed to what an answer then holds.
 
 ## What works after which wave
 
