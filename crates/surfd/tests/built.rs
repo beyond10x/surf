@@ -13,6 +13,7 @@ use std::thread;
 use common::*;
 use surf_agent::wire::{self, Answer, Request};
 use surf_secret::Token;
+use surf_test_process::alive;
 
 /// The process ids of the case whose command name is `name`.
 fn pids_named(dir: &TestDir, name: &str) -> Vec<u32> {

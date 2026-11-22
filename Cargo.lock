@@ -66,6 +66,7 @@ version = "0.2.0"
 dependencies = [
  "surf-answer",
  "surf-secret",
+ "surf-test-process",
 ]
 
 [[package]]
@@ -133,6 +134,7 @@ dependencies = [
  "surf-fetch",
  "surf-ports",
  "surf-secret",
+ "surf-test-process",
  "surf-types",
  "surfd",
 ]
@@ -149,6 +151,10 @@ dependencies = [
  "shell",
  "surf-types",
 ]
+
+[[package]]
+name = "surf-test-process"
+version = "0.1.0"
 
 [[package]]
 name = "surf-types"
@@ -169,6 +175,7 @@ dependencies = [
 name = "surf-view-fixture"
 version = "0.1.0"
 dependencies = [
+ "surf-test-process",
  "surf-view",
  "surfd",
 ]
@@ -180,5 +187,6 @@ dependencies = [
  "surf-agent",
  "surf-answer",
  "surf-secret",
+ "surf-test-process",
  "surf-view",
 ]

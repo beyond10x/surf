@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use common::*;
 use surf_agent::wire;
+use surf_test_process::{alive, ended_within};
 
 const OPENED: &str = "surf 1 session 01234567-0123-4012-8012-012345678901 open\n\
 token fedcbafedcbafedcbafedcbafedcbafedcbafedcbafedcbafedcbafedcbafedc\n\
@@ -127,6 +128,10 @@ fn surfd_that_writes_nothing_exits_3_within_6_seconds() {
     );
     let starts = dir.starts();
     assert_eq!(starts.len(), 1);
-    assert!(!alive(starts[0]), "the silent surfd was left running");
+    // 2 s: surf-agent killed and waited for the silent surfd before it exited, so the first read
+    // decides; the bound only ends a defect.
+    if let Err(error) = ended_within(starts[0], Duration::from_secs(2)) {
+        panic!("the silent surfd was left running: {error}");
+    }
     assert!(!Path::new(&dir.runtime().join("surf/surfd.sock")).exists());
 }

@@ -15,6 +15,8 @@ use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use surf_test_process::{alive, ended_within};
+
 const WAIT: Duration = Duration::from_secs(10);
 
 /// `target/<profile>/` of this test, where `surf-agent` and `surf-session` are built with the
@@ -174,30 +176,6 @@ fn get(port: u16, target: &str, token: &str) -> Option<(u16, String)> {
     Some((status, body))
 }
 
-/// The text of `/proc/<pid>/stat`, or why it could not be read.
-fn stat(pid: u32) -> Result<String, String> {
-    fs::read_to_string(format!("/proc/{pid}/stat"))
-        .map_err(|error| format!("the read failed: {error}"))
-}
-
-/// Whether a `/proc/<pid>/stat` line is that of a process that runs: its state, the first
-/// character after the last `)` (the command name may hold `)` and spaces), is there and is not
-/// one that `proc_pid_stat(5)` gives an ended process: `Z` (zombie), `X` (dead) or `x` (dead,
-/// Linux 2.6.33 to 3.13). `X` is read while the parent reaps the zombie, before the process
-/// leaves `/proc`.
-fn runs(stat: &str) -> bool {
-    let state = stat
-        .rsplit_once(')')
-        .and_then(|(_, rest)| rest.trim_start().chars().next());
-    state.is_some_and(|state| !matches!(state, 'Z' | 'X' | 'x'))
-}
-
-/// Whether `pid` runs: its `stat` reads and [`runs`] says so. A process gone from `/proc`, a
-/// zombie and a dead process being reaped count as ended.
-fn alive(pid: u32) -> bool {
-    stat(pid).is_ok_and(|text| runs(&text))
-}
-
 /// A process that is not the fixture's: `surf-view-foreign <args>` of this package (it waits
 /// until it is killed, whatever its name) started through a symbolic link named `surf-session`
 /// in a directory of this test, with an empty environment. Not a program of the system: one
@@ -352,11 +330,11 @@ fn a_session_is_listed_the_pipe_cuts_and_mends_and_the_end_of_input_stops_everyt
     let foreign = Foreign::start(&[&second, never]);
     let second_pid = session_pid_in(&second, |pid| pid != foreign.child.id());
     assert_eq!(fixture.command(&["kill", &second]), "{}");
-    let read = stat(second_pid);
-    assert!(
-        !read.as_deref().is_ok_and(runs),
-        "the fixture's own session {second} is killed: /proc/{second_pid}/stat read {read:?}"
-    );
+    // WAIT: the fixture's `kill` answered once its own read said ended; the session's parent,
+    // surfd in the fixture, reaps it after that (a read of `X` failed the forge's run of 61fb7a9).
+    if let Err(error) = ended_within(second_pid, WAIT) {
+        panic!("the fixture's own session {second} is killed: {error}");
+    }
     assert!(foreign.alive(), "a foreign surf-session survives kill of an opened id");
     assert_eq!(fixture.command(&["kill", never]), "{\"error\":\"session\"}");
     assert!(foreign.alive(), "a foreign surf-session survives kill of an id never opened");
@@ -376,28 +354,10 @@ fn a_session_is_listed_the_pipe_cuts_and_mends_and_the_end_of_input_stops_everyt
         thread::sleep(Duration::from_millis(20));
     };
     assert!(exit.success(), "the fixture exited with {exit}");
-    while Path::new(&format!("/proc/{session}")).exists() && Instant::now() < deadline {
-        thread::sleep(Duration::from_millis(20));
+    // The rest of WAIT: the fixture stopped its surfd, which kills its sessions, before it
+    // exited; a session left as a zombie is reaped by whoever inherited it.
+    if let Err(error) = ended_within(session, deadline.saturating_duration_since(Instant::now())) {
+        panic!("the session's process {session} is gone: {error}");
     }
-    assert!(
-        !Path::new(&format!("/proc/{session}")).exists(),
-        "the session's process {session} is gone"
-    );
     assert!(directories_of(pid).is_empty(), "the fixture's directory is removed");
-}
-
-#[test]
-fn a_stat_line_of_a_zombie_or_a_dead_process_is_one_of_an_ended_process() {
-    for (line, running) in [
-        ("4242 (surf-session) S 1 4242 4242 0 -1", true),
-        ("4242 (surf-session) R 1 4242 4242 0 -1", true),
-        ("4242 (surf-session) Z 1 4242 4242 0 -1", false),
-        ("4242 (surf-session) X 1 4242 4242 0 -1", false),
-        ("4242 (surf-session) x 1 4242 4242 0 -1", false),
-        ("4242 (a) b) R 1 4242 4242 0 -1", true),
-        ("4242 (a) b) Z 1 4242 4242 0 -1", false),
-        ("", false),
-    ] {
-        assert_eq!(runs(line), running, "runs({line:?})");
-    }
 }
