@@ -1,14 +1,17 @@
 //! Clients hostile toward the server (story `tls-test-server`, acceptance 4): garbage, silence,
-//! and a server dropped while a connection stalls.
+//! and a server dropped while a connection stalls; and a hello the server must refuse, made
+//! from the hello the client of `surf-tls` sends.
 
 use std::io::{ErrorKind, Read, Write};
-use std::net::TcpStream;
+use std::net::{TcpListener, TcpStream};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use surf_tls::connection::Connection;
+use surf_tls::error::AlertDescription;
 use surf_tls_test_server::{Config, IDLE, TestServer};
 
-use crate::common;
+use crate::common::{self, HOST};
 
 /// Reads `stream` until the server closes it: `Ok` with the bytes read at the end of the
 /// stream or a reset, `Err` with the kind of any other end (a timeout among them).
@@ -39,6 +42,84 @@ fn accepted(server: &TestServer, count: usize) {
         assert!(Instant::now() < deadline, "the server accepted {count}");
         thread::sleep(Duration::from_millis(5));
     }
+}
+
+/// The first record the client of `surf-tls` writes, its ClientHello, taken off a listener of
+/// the test's own that answers nothing.
+fn client_hello_record() -> Vec<u8> {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    let client = thread::spawn(move || {
+        let stream = TcpStream::connect(addr).expect("connect");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .expect("read timeout");
+        let _ = Connection::new(
+            stream,
+            HOST,
+            &common::accepting("ok-ecdsa-p256"),
+            common::now(),
+        );
+    });
+    let (mut stream, _) = listener.accept().expect("accept");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .expect("read timeout");
+    let mut record = vec![0u8; 5];
+    stream.read_exact(&mut record).expect("a record header");
+    let len = usize::from(u16::from_be_bytes([record[3], record[4]]));
+    record.resize(5 + len, 0);
+    stream.read_exact(&mut record[5..]).expect("the record");
+    drop(stream);
+    client.join().expect("the client ends");
+    assert_eq!(
+        (record[0], record[5]),
+        (22, 1),
+        "a ClientHello in one record"
+    );
+    record
+}
+
+/// `byte` inserted at `at` of a record holding one handshake message: both lengths raised.
+fn insert(record: &mut Vec<u8>, at: usize, byte: u8) {
+    record.insert(at, byte);
+    let len = u16::from_be_bytes([record[3], record[4]]) + 1;
+    record[3..5].copy_from_slice(&len.to_be_bytes());
+    let body = u32::from_be_bytes([0, record[6], record[7], record[8]]) + 1;
+    record[6..9].copy_from_slice(&body.to_be_bytes()[1..]);
+}
+
+/// The first record the server answers `record` with.
+fn answer(server: &TestServer, record: &[u8]) -> (u8, Vec<u8>) {
+    let mut stream = common::socket(server, Duration::from_secs(10));
+    stream.write_all(record).expect("write the hello");
+    let mut header = [0u8; 5];
+    stream.read_exact(&mut header).expect("a record header");
+    let mut body = vec![0u8; usize::from(u16::from_be_bytes([header[3], header[4]]))];
+    stream.read_exact(&mut body).expect("the record");
+    (header[0], body)
+}
+
+/// RFC 8446 section 4.1.2: `legacy_session_id<0..32>`. The client's own hello is answered
+/// with a ServerHello; the same hello with a session id of 33 bytes with `decode_error`.
+#[test]
+fn hello_with_a_session_id_over_32_bytes_gets_decode_error() {
+    let server = TestServer::start(Config::default()).expect("the server starts");
+    let mut hello = client_hello_record();
+    // Record header 5, handshake header 4, legacy_version 2, random 32: the session id's length.
+    let at = 5 + 4 + 2 + 32;
+    assert_eq!(hello[at], 32, "the client sends a session id of 32 bytes");
+    assert_eq!(
+        answer(&server, &hello).0,
+        22,
+        "a ServerHello to the hello as sent"
+    );
+    hello[at] = 33;
+    insert(&mut hello, at + 1, 0x33);
+    assert_eq!(
+        answer(&server, &hello),
+        (21, vec![2, AlertDescription::DECODE_ERROR.0])
+    );
 }
 
 #[test]

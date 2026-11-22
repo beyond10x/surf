@@ -252,6 +252,9 @@ impl Server<'_> {
         if !hello.versions.contains(&wire::TLS13) {
             return Err(self.abort(AlertDescription::PROTOCOL_VERSION));
         }
+        if !null_compression(&hello) {
+            return Err(self.abort(AlertDescription::ILLEGAL_PARAMETER));
+        }
         let suite = config
             .suites
             .iter()
@@ -427,10 +430,14 @@ impl Server<'_> {
         }
         let second = self.handshake_message()?;
         transcript.add(&second);
-        let share = wire::client_hello(&second)
-            .ok()
-            .and_then(|h| share_of(&h, group));
-        match share {
+        let second = match wire::client_hello(&second) {
+            Ok(second) => second,
+            Err(_) => return Err(self.abort(AlertDescription::DECODE_ERROR)),
+        };
+        if !null_compression(&second) {
+            return Err(self.abort(AlertDescription::ILLEGAL_PARAMETER));
+        }
+        match share_of(&second, group) {
             Some(found) => Ok(found),
             None => Err(self.abort(AlertDescription::ILLEGAL_PARAMETER)),
         }
@@ -492,6 +499,13 @@ pub(crate) fn group_code(group: Group) -> u16 {
         Group::X25519 => 0x001d,
         Group::Secp256r1 => 0x0017,
     }
+}
+
+/// RFC 8446 section 4.1.2: the `legacy_compression_methods` of a TLS 1.3 ClientHello are
+/// exactly one byte, 0; any other value is `illegal_parameter`. The modes of a server limited
+/// to TLS 1.2 do not ask it.
+fn null_compression(hello: &ClientHello) -> bool {
+    hello.compression == [0]
 }
 
 /// The share of `group` in `hello`, if it holds one.

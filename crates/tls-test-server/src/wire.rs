@@ -146,8 +146,10 @@ pub fn put_extension(out: &mut Vec<u8>, extension_type: u16, data: &[u8]) {
 pub struct ClientHello {
     /// `legacy_version`.
     pub legacy_version: u16,
-    /// `legacy_session_id`, echoed.
+    /// `legacy_session_id`, echoed; at most 32 bytes (RFC 8446 section 4.1.2).
     pub session_id: Vec<u8>,
+    /// `legacy_compression_methods`, as sent; a TLS 1.3 hello holds the one byte 0.
+    pub compression: Vec<u8>,
     /// The cipher suites, in order.
     pub suites: Vec<u16>,
     /// The `server_name` of type `host_name`, if sent.
@@ -186,8 +188,11 @@ pub fn client_hello(message: &[u8]) -> Result<ClientHello, Malformed> {
     };
     r.take(32)?;
     hello.session_id = r.vec8()?.to_vec();
+    if hello.session_id.len() > 32 {
+        return Err(Malformed);
+    }
     hello.suites = u16_list(r.vec16()?)?;
-    r.vec8()?;
+    hello.compression = r.vec8()?.to_vec();
     let mut extensions = Reader::new(r.vec16()?);
     if !r.is_empty() {
         return Err(Malformed);
