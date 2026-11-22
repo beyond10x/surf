@@ -6,7 +6,7 @@
 type: ess-scenario/6
 domain: surf.document
 scenario: parse-stopped-at-a-limit
-summary: Five documents each stopped by another limit are Parsed and name it; the first keeps its element and its unsupported encoding.
+summary: Six documents each stopped by another limit are Parsed and name it; the first keeps its element and its unsupported encoding.
 
 arrange:
   - instance: deep
@@ -18,6 +18,8 @@ arrange:
   - instance: wide
     entity: surf.document.Document
   - instance: large
+    entity: surf.document.Document
+  - instance: busy
     entity: surf.document.Document
 
 timeline:
@@ -134,9 +136,27 @@ timeline:
       stopped_by: StoredBytes
     outcome: parsed
 
+  - at: 2026-01-06T09:00:11Z
+    command: surf.document.ParseDocument
+    input:
+      url: https://example.org/busy
+      body: PGRpdj4=
+      navigation_id: 3f1d5b7e-0000-4000-8000-000000000116
+    outcome: started
+    capture: {instance: busy, event: surf.document.ParsingStarted, field: document_id}
+
+  - at: 2026-01-06T09:00:12Z
+    command: surf.document.FinishParsing
+    input:
+      document_id: {$instance: busy}
+      title: ""
+      encoding: UTF-8
+      stopped_by: Steps
+    outcome: parsed
+
 assert:
   - view: surf.document.Documents
-    counts: {at_least: 5, at_most: 5}
+    counts: {at_least: 6, at_most: 6}
   - view: surf.document.Documents
     contains: {document_id: {$instance: deep}, state: Parsed, title: Deep, encoding: windows-1252, unsupported_encoding: EUC-KR, stopped_by: Depth}
   - view: surf.document.Documents
@@ -147,6 +167,8 @@ assert:
     contains: {document_id: {$instance: wide}, state: Parsed, stopped_by: Attributes}
   - view: surf.document.Documents
     contains: {document_id: {$instance: large}, state: Parsed, stopped_by: StoredBytes}
+  - view: surf.document.Documents
+    contains: {document_id: {$instance: busy}, state: Parsed, stopped_by: Steps}
   - view: surf.document.Elements
     params: {document_id: {$instance: deep}}
     counts: {at_least: 1, at_most: 1}

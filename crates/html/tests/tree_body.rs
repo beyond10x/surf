@@ -1,6 +1,7 @@
 //! Tree construction outside tables, templates and foreign content: behaviour of the standard
 //! that the later tree stories keep.
 
+use surf_html::limits::Limits;
 use surf_html::{NodeData, NodeId, ParseOptions, Tree, parse_document, parse_document_bytes};
 
 /// A node as the tests name it: `document`, an element's local name, or text in quotes.
@@ -116,10 +117,18 @@ fn a_third_encoding_named_in_the_re_parse_keeps_the_rest_of_the_document() {
 #[test]
 fn a_deep_input_is_parsed_read_and_dropped_without_recursion() {
     // `span` is "any other start tag", which looks at no scope: each block start tag looks for
-    // a `p` in button scope over the whole stack, so nested `div` elements take time quadratic
-    // in their depth until story `html-parser-limits` bounds the depth.
+    // a `p` in button scope over the whole stack, so nested `div` elements would cost visits
+    // quadratic in their depth. The depth limit is raised above the 100,002 open elements.
     let depth = 100_000;
-    let tree = parse(&"<span>".repeat(depth));
+    let options = ParseOptions {
+        limits: Limits {
+            max_depth: depth + 10,
+            ..Limits::default()
+        },
+        ..ParseOptions::default()
+    };
+    let tree = parse_document(&"<span>".repeat(depth), &options);
+    assert_eq!(tree.stopped_by(), None);
     let all = tree.descendants(tree.root());
     // The document, `html`, `head`, `body` and the `span` elements.
     assert_eq!(all.len(), depth + 4);

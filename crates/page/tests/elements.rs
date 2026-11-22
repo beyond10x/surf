@@ -666,14 +666,21 @@ fn a_deep_tree_is_read_without_recursion() {
     let mut input = String::from("<div hidden>");
     input.push_str(&"<span>".repeat(100_000));
     input.push_str("<a href=deep id=deep>x</a>");
-    let tree = parse(&input);
+    let deep = ParseOptions {
+        limits: surf_html::limits::Limits {
+            max_depth: 100_010,
+            ..surf_html::limits::Limits::default()
+        },
+        ..ParseOptions::default()
+    };
+    let tree = parse_document(&input, &deep);
     assert_eq!(listing(&tree), ["a#deep link target=\"deep\" hidden"]);
     let link = by_id(&tree, "deep");
     assert!(is_hidden(&tree, tree.children(link)[0]));
     assert_eq!(title(&tree), "");
 
     // 20,000 nested `span` elements, an `input` in each: 20,000 rows, the last at depth 20,000.
-    let tree = parse(&"<span><input>".repeat(20_000));
+    let tree = parse_document(&"<span><input>".repeat(20_000), &deep);
     let rows = actionable_elements(&tree);
     assert_eq!(rows.len(), 20_000);
     assert!(

@@ -79,7 +79,8 @@ fn the_outer_loop_runs_at_most_eight_times() {
     for n in [8, 9, 20] {
         assert_eq!(a_elements(n).0, 9, "n = {n}");
     }
-    assert_eq!(a_elements(1_000), (9, 1_013));
+    // 500 `div` keep the stack inside the depth limit (503 open elements).
+    assert_eq!(a_elements(500), (9, 513));
     // With nine `div` the loop stops with the last new `a` still in the list. The first outer
     // iteration moved the bookmark after the new `b`, so that `a` is after the `b` in the list:
     // once the `div` elements are closed, the `y` goes into an `a` created inside the `b`.
