@@ -195,10 +195,11 @@ above, and the list of standards itself was written from memory.
   `crates/html`, whose counting allocators are `unsafe`; each stays in its module file) and one
   sorted `mod <file>;` line per file of `tests/`, `mod common;` included. A file reaches the
   shared helpers with `use crate::common;`. A new test file gets its `mod` line in
-  `tests/main.rs`: cargo builds no file that is not declared there. A module may also lie one
-  directory down, declared by `#[path = "<dir>/<stem>.rs"]` and `mod <stem>;` (the form of
-  `crates/tls/tests/tls/`). A new crate starts with `autotests = false`, `[[test]] name =
-  "main"` and `tests/main.rs`. A test is named `<file>::<name>` (`e2e::e2e_open_go_look_close`)
+  `tests/main.rs`: cargo builds no file that is not declared there. A module file may also lie
+  one directory down, `tests/<dir>/<stem>.rs`, declared in `tests/main.rs` by the line
+  `#[path = "<dir>/<stem>.rs"]` and the line `mod <stem>;` (`common/` and `data/` are not such
+  directories). A new crate starts with `autotests = false`, `[[test]] name = "main"` and
+  `tests/main.rs`. A test is named `<file>::<name>` (`e2e::e2e_open_go_look_close`)
   in the binary `<package>::main`. One file's tests are selected with `--test main <file>::`;
   the filter matches a substring of the name, so where another module's name ends in `<file>`
   the selection adds `-- --skip <other>::` (`cargo test -p surf-cli --test main cli:: --
@@ -919,19 +920,30 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   only. On a pull request whose files are all such, the workflow `check` skips every step after
   the listing and ends green; a push to `main` always runs the whole gate.
 - `task test-layout`: `sh taskfiles/test-layout.sh .`, the form of the integration tests
-  (Layout). For each `crates/*/tests` and `conformance/tests` it fails, naming the path or the
-  module, when `tests/main.rs` is missing; when the manifest beside it lacks `autotests = false`
-  or exactly one `[[test]]` entry of exactly `name = "main"` and `path = "tests/main.rs"`; when a
-  line of `tests/main.rs` is not blank, a comment, an inner attribute without `cfg`, a `use`
-  line or a module declaration (`mod <name>;`, or a `#[path]` line and `mod <name>;`); when a
-  test file, or one a directory down (`common/` and `data/` skipped), is not declared; when a
-  declared file has a line that starts `#![cfg`; and when a module, or an inline `mod <name> {`,
-  ends with the name a selection of its `SELECTIONS` list selects and is not skipped there. It
-  calls no cargo and prints `test-layout: <d> test directories, <f> test files, one test binary
-  each`.
-- `task test-layout-test`: that script on a copy of the manifests and test files under
-  `.out/test-layout/`, fifteen cases: the copy as it is passes, and each of fourteen planted
-  defects fails naming its path or module. `SCRIPT=<path>` runs a copy of the script.
+  (Layout). It visits every directory that holds a `Cargo.toml` and a `tests/` directory
+  (`target`, `node_modules`, `.out`, `.git` and directories whose name starts with a dot not
+  entered) and fails, naming the path or the module: when `tests/main.rs` is missing; when the
+  manifest lacks `autotests = false` in its `[package]` table, or exactly one `[[test]]` entry
+  of exactly `name = "main"` and `path = "tests/main.rs"` (a table header is compared without
+  its spaces and quotes, so `[[ test ]]` and `[["test"]]` count), or holds `test = true` in an
+  `[[example]]` or `[[bench]]` entry; when a line of `tests/main.rs` is not blank, a comment, an
+  inner attribute without `cfg`, a `use` line or a module declaration (`mod <name>;`, or a
+  `#[path]` line and `mod <name>;`); when a test file, or one a directory down (`common/` and
+  `data/` skipped), is not declared; when a file of the binary has `#![cfg` or `#![cfg_attr`
+  anywhere in a line (the files of the binary: those `tests/main.rs` declares and every child
+  module they declare out of line, with or without `#[path]`, followed to its file; a child whose
+  file it cannot read fails: today `crates/secret/tests/secret.rs` declares `src/compare.rs` and
+  the `common/mod.rs` of `surf-agent`, `surfd` and `surf-session` declare
+  `crates/agent/tests/common/base.rs`); and, in a crate of its `SELECTIONS` list, when a module
+  of `tests/main.rs` other than the selected or a skipped one, or any module declared inside a
+  file of the binary (inline or out of line, any visibility, any attribute before it on its line,
+  the selected module's own file included), has a name that ends with the selected or a skipped
+  name, so that the selection's filter or its `--skip` would match its tests. It calls no cargo
+  and prints `test-layout: <d> test directories, <f> test files, one test binary each`.
+- `task test-layout-test`: that script on a copy of the manifests, the `src/*.rs` and the test
+  files under `.out/test-layout/`, twenty-six cases: the copy as it is passes, and each of
+  twenty-five planted defects fails naming its path or module. `SCRIPT=<path>` runs a copy of
+  the script.
 - `task view-test`: the page tests in a browser (`taskfiles/view-test.yml`). It builds
   `surf-agent`, `surf-session` and `surf-view-fixture`, installs `view-tests/` from its
   `package-lock.json` with `npm ci`, and runs `npx playwright test --workers=2` in
@@ -1011,9 +1023,11 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
 - `cargo run -p surf-view --example prototype`: serve the live view's page over three scripted
   sessions (open, closed, died) and print one address; open it in a browser on the same machine.
   It shows example data only.
-- `cargo test -p <package> --test <name>` does not build the package's examples. The tests of
-  `surfd` and `surf-agent` that run an example need the whole package run (`cargo test -p
-  surfd`); `crates/view/tests/prototype.rs` builds its example itself.
+- `cargo test -p <package> --test main` does not build the package's examples, nor does
+  `cargo test -p <package> --test main <module>::`, which selects one module of the package's
+  one test binary. The tests of `surfd` and `surf-agent` that run an example need the whole
+  package run (`cargo test -p surfd`); `crates/view/tests/prototype.rs` builds its example
+  itself.
 - `cargo test -p surf-agent` needs `.out/cli/binding.json`: run `slot task cli` first.
 - `crates/session/tests/e2e.rs` runs `surf-agent`, `surfd` and `surf-session` built from this
   tree, or those in the directory `SURF_BIN_DIR` names (the release smoke test sets it to an

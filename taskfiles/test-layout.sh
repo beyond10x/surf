@@ -3,29 +3,36 @@
 #
 # Usage: sh taskfiles/test-layout.sh <root>
 #
-# For each directory crates/*/tests and conformance/tests under <root> it fails, naming the path
-# or the module, when:
+# It visits every directory under <root> that holds a Cargo.toml and a tests/ directory
+# (target, node_modules, .out, .git and every directory whose name starts with a dot are not
+# entered). For each it fails, naming the path or the module, when:
 # - tests/main.rs is missing;
-# - the Cargo.toml beside the directory has no line `autotests = false`, or not exactly one
+# - the Cargo.toml has no line `autotests = false` in its [package] table, or not exactly one
 #   [[test]] entry, or that entry holds other than exactly `name = "main"` and
-#   `path = "tests/main.rs"`;
+#   `path = "tests/main.rs"`, or an [[example]] or [[bench]] entry holds `test = true`; a table
+#   header is compared with its spaces and quotes removed, so `[[ test ]]` and `[["test"]]` are
+#   [[test]];
 # - a line of main.rs is not blank, a `//` comment, an inner attribute `#![...]` without `cfg`,
 #   a `use ...;` line, `mod <name>;`, or `#[path = "<stem>.rs"]` or
 #   `#[path = "<dir>/<stem>.rs"]` followed by `mod <name>;` on the same or the next line;
-# - a *.rs file directly in the directory, other than main.rs, is not declared in main.rs;
-# - a file main.rs declares has a line that starts with `#![cfg`;
+# - a *.rs file directly in tests/, other than main.rs, is not declared in main.rs;
 # - a *.rs file one directory down (common/ and data/ skipped) is not declared by
 #   `#[path = "<dir>/<stem>.rs"]` and `mod <stem>;`;
-# - a module would join a selection by accident: SELECTIONS below lists, for each test
-#   selection of the repository, the crate directory, the module it selects and the modules it
-#   skips. cargo matches a filter as a substring, so `--test main cli::` also runs a module
-#   whose name ends in `cli`, and an inline `mod cli {` inside another module. A module name on
-#   a `mod` line of that crate's main.rs, or an inline `mod <name> {` of a file it declares,
-#   that ends with the selected name fails unless it is the selected module or a skipped one.
-#   A stem added to the skipped list gets its `--skip <stem>::` in the selection itself.
+# - a file of the binary has `#![cfg` or `#![cfg_attr` anywhere in a line, which can drop its
+#   module. The files of the binary are those main.rs declares and, from each, every child
+#   module declared out of line (`mod <name>;`, with or without `#[path]`), followed to its
+#   file; a child module whose file this check cannot read fails;
+# - a module would change a selection: SELECTIONS below lists, for each test selection of the
+#   repository, the crate directory, the module it selects and the modules it skips. cargo
+#   matches a filter as a substring of a test's path, so `--test main cli::` also runs a module
+#   whose name ends in `cli`, and `--skip review1_cli::` also drops one whose name ends in
+#   `review1_cli`. In such a crate a module of main.rs whose name ends with a selected or skipped
+#   name fails unless it is that module, and so does every module declared inside a file of the
+#   binary (inline or out of line, with any visibility or attribute before it on its line),
+#   whose name ends with one of them, the selected module's own file included. A stem added to
+#   the skipped list gets its `--skip <stem>::` in the selection itself.
 #
-# It calls no cargo and reads every file in one awk run. Else it prints one line with the
-# counts and exits 0.
+# It calls no cargo. Else it prints one line with the counts and exits 0.
 
 set -u
 
@@ -40,43 +47,117 @@ crates/view prototype'
 root=${1:?usage: test-layout.sh <root>}
 cd "$root" || exit 1
 
-# The test directories and their files: the manifests and the main.rs files are read whole,
-# the other files only for their lines that start `#![cfg` or an inline `mod <name> {`, which
-# one grep picks out. A path is <crate>/tests/... of word characters and `-`, so it holds no
-# white space and no `=`.
+# The test directories, and their manifests and files. A path is of word characters, `-`, `.`
+# and `/`, so it holds no white space and no `=`.
+dirs=$(find . \( -name target -o -name node_modules -o -name '.?*' \) -prune -o -type d -name tests -print |
+  sed 's|^\./||' | LC_ALL=C sort)
 nl='
 '
-dirs=
-for tests in crates/*/tests conformance/tests; do
-  if [ -d "$tests" ]; then dirs="$dirs $tests"; fi
-done
 set --
 files=
-others=
+testdirs=
 for tests in $dirs; do
-  for file in "${tests%/tests}/Cargo.toml" "$tests"/*.rs "$tests"/*/*.rs; do
-    [ -f "$file" ] || continue
-    files="$files$file$nl"
-    case "$file" in
-      */Cargo.toml | */tests/main.rs) set -- "$@" "$file" ;;
-      *) others="$others $file" ;;
-    esac
+  [ -f "${tests%/tests}/Cargo.toml" ] || continue
+  testdirs="$testdirs $tests"
+  set -- "$@" "${tests%/tests}/Cargo.toml"
+  if [ -f "$tests/main.rs" ]; then set -- "$@" "$tests/main.rs"; fi
+  for file in "$tests"/*.rs "$tests"/*/*.rs; do
+    if [ -f "$file" ]; then files="$files$file$nl"; fi
   done
 done
 
-grep -H -E '^#!\[cfg|^[[:blank:]]*(pub )?mod [A-Za-z_][A-Za-z0-9_]* *\{' /dev/null $others |
-  FILES=$files SELECTIONS=$SELECTIONS awk -v dirs="$dirs" '
+# The lines of the test files that hold `mod`, `path` or `cfg`, for the rules on the files of
+# the binary; /dev/null so that grep never reads its standard input.
+# shellcheck disable=SC2086
+grep -n -H -E 'mod|path|cfg' /dev/null $files |
+  FILES=$files SELECTIONS=$SELECTIONS awk -v dirs="$testdirs" '
   function problem(text) { print "test-layout: " text; problems++ }
   function module_of(s) { sub(/^.*mod /, "", s); sub(/;$/, "", s); return s }
   function path_of(s) { sub(/^#\[path = "/, "", s); sub(/"\].*$/, "", s); return s }
-  function declare(main, rel, module) {
-    decls[main] = decls[main] " " rel "=" module
-  }
+  function dir_of(s) { if (s !~ /\//) return "."; sub(/\/[^\/]*$/, "", s); return s }
+  function ends_with(s, t) { return length(s) >= length(t) && substr(s, length(s) - length(t) + 1) == t }
+  function declare(main, rel, module) { decls[main] = decls[main] " " rel "=" module }
   function close_main() {
     if (current != "" && pending != "")
       problem(current ":" pending_line ": a #[path] line not followed by mod <name>;")
     current = ""
     pending = ""
+  }
+  # A name of a module of a selected crate, at any depth below the modules of main.rs.
+  function nested(crate, file, name,   n, k, names) {
+    if (!(crate in selected)) return
+    n = split(watched[crate], names, " ")
+    for (k = 1; k <= n; k++)
+      if (ends_with(name, names[k]))
+        problem(file ": module " name " ends with " names[k] ": the selection `" skipped_text[crate] "` of " crate " would match its tests")
+  }
+  # The lines of a file that hold `mod`, `path` or `cfg`, as kept[file, i] with their numbers
+  # at[file, i]: from grep for the files of tests/, read here for any other file. Returns 0
+  # when the file cannot be read.
+  function load(file,   line, number, status) {
+    if (file in kept_count) return 1
+    if (file in exists) { kept_count[file] = 0; return 1 }
+    number = 0
+    kept_count[file] = 0
+    while ((status = (getline line < file)) > 0) {
+      number++
+      if (index(line, "mod") || index(line, "path") || index(line, "cfg")) {
+        kept_count[file]++
+        kept[file, kept_count[file]] = line
+        at[file, kept_count[file]] = number
+      }
+    }
+    close(file)
+    if (status < 0) { delete kept_count[file]; return 0 }
+    return 1
+  }
+  # Read one file of the binary: its cfg lines, and every module it declares; follow each child
+  # module declared out of line to its file.
+  function visit(crate, file,   i, line, number, attr, attr_at, name, rest, end, child, dir, moddir, base) {
+    if ((crate SUBSEP file) in visited) return
+    visited[crate SUBSEP file] = 1
+    dir = dir_of(file)
+    base = file
+    sub(/^.*\//, "", base)
+    moddir = (base == "mod.rs") ? dir : dir "/" substr(base, 1, length(base) - 3)
+    attr = ""
+    attr_at = -1
+    for (i = 1; i <= kept_count[file]; i++) {
+      line = kept[file, i]
+      number = at[file, i]
+      if (line ~ /#[ \t]*![ \t]*\[[ \t]*cfg/)
+        problem(file ":" number ": " line ": #![cfg can drop this module from the binary")
+      if (line ~ /^[ \t]*\/\//) continue
+      if (line ~ /^[ \t]*#\[[ \t]*path[ \t]*=[ \t]*"[^"]*"[ \t]*\][ \t]*$/) {
+        attr = line
+        sub(/^[^"]*"/, "", attr)
+        sub(/".*$/, "", attr)
+        attr_at = number
+        continue
+      }
+      if (match(line, /(^|[^A-Za-z0-9_])mod[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]*[;{]/)) {
+        rest = substr(line, RSTART, RLENGTH)
+        end = substr(rest, length(rest), 1)
+        name = rest
+        sub(/^.*mod[ \t]+/, "", name)
+        sub(/[^A-Za-z0-9_].*$/, "", name)
+        nested(crate, file, name)
+        if (end == ";") {
+          if (attr_at != number - 1) attr = ""
+          if (match(line, /#\[[ \t]*path[ \t]*=[ \t]*"[^"]*"/)) {
+            attr = substr(line, RSTART, RLENGTH)
+            sub(/^[^"]*"/, "", attr)
+            sub(/"$/, "", attr)
+          }
+          if (attr != "") child = dir "/" attr
+          else if (load(moddir "/" name ".rs")) child = moddir "/" name ".rs"
+          else child = moddir "/" name "/mod.rs"
+          if (load(child)) visit(crate, child)
+          else problem(file ":" number ": mod " name "; names " child ", which this check cannot read")
+        }
+      }
+      attr = ""
+    }
   }
   BEGIN {
     nfiles = split(ENVIRON["FILES"], all, "\n")
@@ -84,25 +165,43 @@ grep -H -E '^#!\[cfg|^[[:blank:]]*(pub )?mod [A-Za-z_][A-Za-z0-9_]* *\{' /dev/nu
   }
   FNR == 1 {
     close_main()
-    kind = "grep"
     if (FILENAME ~ /\/Cargo\.toml$/) kind = "manifest"
-    else if (FILENAME ~ /\/tests\/main\.rs$/) { kind = "main"; current = FILENAME }
-    entry = 0
+    else if (FILENAME ~ /\/tests\/main\.rs$/) kind = "main"
+    else kind = "grep"
+    if (kind == "main") current = FILENAME
+    table = ""
+    if (kind != "grep") exists[FILENAME] = 1
+  }
+  kind == "grep" {
+    # A line of grep: <file>:<number>:<line>.
+    colon = index($0, ":")
+    file = substr($0, 1, colon - 1)
+    rest = substr($0, colon + 1)
+    colon = index(rest, ":")
+    kept_count[file]++
+    at[file, kept_count[file]] = substr(rest, 1, colon - 1) + 0
+    kept[file, kept_count[file]] = substr(rest, colon + 1)
+    next
   }
   kind == "manifest" {
-    if ($0 == "autotests = false") autotests[FILENAME] = 1
-    if ($0 ~ /^[ \t]*\[/) {
-      entry = ($0 ~ /^[ \t]*\[\[test\]\][ \t]*(#.*)?$/)
-      if (entry) entries[FILENAME]++
+    line = $0
+    sub(/[ \t]*#.*$/, "", line)
+    if (line ~ /^[ \t]*\[/) {
+      table = line
+      gsub(/[ \t"\047]/, "", table)
+      if (table == "[[test]]") entries[FILENAME]++
       next
     }
-    if (entry && $0 !~ /^[ \t]*(#.*)?$/) {
-      line = $0
-      sub(/^[ \t]+/, "", line)
-      sub(/[ \t]+$/, "", line)
-      if (line == "name = \"main\"") names[FILENAME]++
-      else if (line == "path = \"tests/main.rs\"") paths[FILENAME]++
-      else others[FILENAME] = others[FILENAME] " `" line "`"
+    gsub(/[ \t]/, "", line)
+    gsub(/\047/, "\"", line)
+    if (line == "") next
+    if (table == "[package]" && line == "autotests=false") autotests[FILENAME] = 1
+    if ((table == "[[example]]" || table == "[[bench]]") && line == "test=true")
+      problem(FILENAME ":" FNR ": test = true in an entry " table ", which cargo builds as a test binary of its own")
+    if (table == "[[test]]") {
+      if (line == "name=\"main\"") names[FILENAME]++
+      else if (line == "path=\"tests/main.rs\"") paths[FILENAME]++
+      else others[FILENAME] = others[FILENAME] " `" $0 "`"
     }
     next
   }
@@ -139,28 +238,19 @@ grep -H -E '^#!\[cfg|^[[:blank:]]*(pub )?mod [A-Za-z_][A-Za-z0-9_]* *\{' /dev/nu
     problem(FILENAME ":" FNR ": " line ": not a blank line, a comment, an inner attribute without cfg, a use line or a module declaration")
     next
   }
-  {
-    # A line of grep: <file>:<line>.
-    colon = index($0, ":")
-    file = substr($0, 1, colon - 1)
-    line = substr($0, colon + 1)
-    if (line ~ /^#!\[cfg/) cfg[file] = 1
-    if (line ~ /^[ \t]*(pub )?mod [A-Za-z_][A-Za-z0-9_]* *\{/) {
-      name = line
-      sub(/^[ \t]*(pub )?mod /, "", name)
-      sub(/[^A-Za-z0-9_].*$/, "", name)
-      inline[file] = inline[file] " " name
-    }
-  }
   END {
     close_main()
     count = split(ENVIRON["SELECTIONS"], rows, "\n")
     for (r = 1; r <= count; r++) {
       n = split(rows[r], words, " ")
+      if (n < 2) continue
       selected[words[1]] = words[2]
-      skipped[words[1]] = " " words[2]
-      for (w = 3; w <= n; w++) skipped[words[1]] = skipped[words[1]] " " words[w]
-      skipped[words[1]] = skipped[words[1]] " "
+      watched[words[1]] = words[2]
+      skipped_text[words[1]] = "--test main " words[2] "::"
+      for (w = 3; w <= n; w++) {
+        watched[words[1]] = watched[words[1]] " " words[w]
+        skipped_text[words[1]] = skipped_text[words[1]] " --skip " words[w] "::"
+      }
     }
     ndirs = split(dirs, list, " ")
     for (d = 1; d <= ndirs; d++) {
@@ -169,19 +259,15 @@ grep -H -E '^#!\[cfg|^[[:blank:]]*(pub )?mod [A-Za-z_][A-Za-z0-9_]* *\{' /dev/nu
       sub(/\/tests$/, "", crate)
       manifest = crate "/Cargo.toml"
       main = tests "/main.rs"
-      if (!(manifest in exists)) problem(manifest ": missing")
-      else {
-        if (!(manifest in autotests)) problem(manifest ": no line autotests = false")
-        if (entries[manifest] != 1)
-          problem(manifest ": " entries[manifest] + 0 " [[test]] entries, expected exactly one")
-        else if (names[manifest] != 1 || paths[manifest] != 1 || others[manifest] != "")
-          problem(manifest ": its [[test]] entry must hold exactly name = \"main\" and path = \"tests/main.rs\"" (others[manifest] != "" ? ", it holds" others[manifest] : ""))
-      }
+      if (!(manifest in autotests)) problem(manifest ": no line autotests = false in its [package] table")
+      if (entries[manifest] != 1)
+        problem(manifest ": " entries[manifest] + 0 " [[test]] entries, expected exactly one")
+      else if (names[manifest] != 1 || paths[manifest] != 1 || others[manifest] != "")
+        problem(manifest ": its [[test]] entry must hold exactly name = \"main\" and path = \"tests/main.rs\"" (others[manifest] != "" ? ", it holds" others[manifest] : ""))
       if (!(main in exists)) problem(main ": missing; the tests of " crate " are one binary over tests/main.rs")
 
-      # The declarations: rel=module, rel under tests/.
+      # The declarations of main.rs: rel=module, rel under tests/.
       delete declared
-      delete module_file
       nd = split(decls[main], pairs, " ")
       for (p = 1; p <= nd; p++) {
         eq = index(pairs[p], "=")
@@ -194,17 +280,22 @@ grep -H -E '^#!\[cfg|^[[:blank:]]*(pub )?mod [A-Za-z_][A-Za-z0-9_]* *\{' /dev/nu
           alt = tests "/" substr(rel, 1, length(rel) - 3) "/mod.rs"
           if (alt in exists) file = alt
         }
+        if ((crate in selected) && index(" " watched[crate] " ", " " module " ") == 0) {
+          n = split(watched[crate], names_watched, " ")
+          for (k = 1; k <= n; k++)
+            if (ends_with(module, names_watched[k]))
+              problem(main ": module " module " ends with " names_watched[k] ": the selection `" skipped_text[crate] "` of " crate " would match its tests")
+        }
         if (!(file in exists)) {
           problem(main ": mod " module "; names " tests "/" rel ", which does not exist")
           continue
         }
-        module_file[module] = file
-        if (file in cfg) problem(file ": a line starts with #![cfg, which can drop the module from the binary")
+        visit(crate, file)
       }
 
       for (i = 1; i <= nfiles; i++) {
         file = all[i]
-        if (index(file, tests "/") != 1) continue
+        if (file == "" || index(file, tests "/") != 1) continue
         rel = substr(file, length(tests) + 2)
         if (rel == "main.rs") continue
         if (rel !~ /\//) {
@@ -217,24 +308,6 @@ grep -H -E '^#!\[cfg|^[[:blank:]]*(pub )?mod [A-Za-z_][A-Za-z0-9_]* *\{' /dev/nu
           sub(/\.rs$/, "", stem)
           if ((main in exists) && !((rel "=" stem) in declared))
             problem(file ": not declared in " main " (#[path = \"" rel "\"] and mod " stem ";)")
-        }
-      }
-
-      if (!(crate in selected) || !(main in exists)) continue
-      sel = selected[crate]
-      for (p = 1; p <= nd; p++) {
-        eq = index(pairs[p], "=")
-        module = substr(pairs[p], eq + 1)
-        if (index(skipped[crate], " " module " ")) continue
-        if (length(module) > length(sel) && substr(module, length(module) - length(sel) + 1) == sel)
-          problem(main ": module " module " ends with " sel ", so the selection " sel ":: of " crate " runs it")
-        if (!(module in module_file)) continue
-        file = module_file[module]
-        ni = split(inline[file], names_in, " ")
-        for (k = 1; k <= ni; k++) {
-          name = names_in[k]
-          if (length(name) >= length(sel) && substr(name, length(name) - length(sel) + 1) == sel)
-            problem(file ": inline module " name " ends with " sel ", so the selection " sel ":: of " crate " runs it")
         }
       }
     }

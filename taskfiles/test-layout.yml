@@ -4,35 +4,43 @@ set: [pipefail]
 
 tasks:
   test-layout:
-    desc: Fail, naming the path, when a crate's integration tests are not one test binary over tests/main.rs.
+    desc: Fail, naming the path, when the integration tests of a package are not one test binary over tests/main.rs.
     summary: |
-      Fail, naming the path, when a crate's integration tests are not one test binary over tests/main.rs.
+      Fail, naming the path, when the integration tests of a package are not one test binary over tests/main.rs.
 
-      Runs taskfiles/test-layout.sh on the repository. For each directory crates/*/tests and
-      conformance/tests it checks the manifest beside it (autotests = false, exactly one [[test]]
-      entry of name = "main" and path = "tests/main.rs"), the lines of tests/main.rs, that every
-      test file is declared there, that no declared file starts a line with #![cfg, and that no
-      module joins a selection of a test target by accident (the list SELECTIONS in the script).
-      It calls no cargo. The head of the script says each rule.
+      Runs taskfiles/test-layout.sh on the repository. For each directory that holds a Cargo.toml
+      and a tests/ directory (target, node_modules, .out, .git and dot directories not entered) it
+      checks the manifest (autotests = false in [package], exactly one [[test]] entry of name =
+      "main" and path = "tests/main.rs", headers compared without spaces and quotes, no test =
+      true in an [[example]] or [[bench]] entry), the lines of tests/main.rs, that every test file
+      is declared there, that no file of the binary (those main.rs declares and their child
+      modules, followed to their files) holds #![cfg or #![cfg_attr in a line, and that no module
+      at any depth joins a selection or its --skip by accident (the list SELECTIONS in the
+      script). It calls no cargo. The head of the script says each rule.
     dir: '{{.TASKFILE_DIR}}/..'
     silent: true
     cmds:
       - sh taskfiles/test-layout.sh .
 
   test-layout-test:
-    desc: Give taskfiles/test-layout.sh a copy of the test layout as it is and fourteen planted defects.
+    desc: Give taskfiles/test-layout.sh a copy of the test layout as it is and twenty-five planted defects.
     summary: |
-      Give taskfiles/test-layout.sh a copy of the test layout as it is and fourteen planted defects.
+      Give taskfiles/test-layout.sh a copy of the test layout as it is and twenty-five planted defects.
 
-      Copies the Cargo.toml files, the tests/*.rs files and the tests/<dir>/*.rs files of
-      crates/* and conformance into .out/test-layout/copy, then runs the script on a fresh copy
-      fifteen times: the copy as it is must pass; each planted defect must fail and name the
-      path or the module. The defects: a test file no mod line names, autotests = false taken
-      out, tests/main.rs removed, the [[test]] entry taken out, a second [[test]] entry, a third
-      key harness = false, a mod line commented out, #[cfg(any())] before a mod line, before a
-      #[path] line, #![cfg(any())] in main.rs and in a module file, a file one directory down that
-      no #[path] line names, and a module zz_cli and an inline mod zz_cli { that the selection
-      cli:: of surf-cli would run.
+      Copies the Cargo.toml files, the src/*.rs files, the tests/*.rs files and the tests/<dir>/*.rs
+      files of crates/* and conformance into .out/test-layout/copy, then runs the script on a
+      fresh copy twenty-six times: the copy as it is must pass; each planted defect must fail and
+      name the path or the module. The defects: a test file no mod line names, autotests = false
+      taken out, tests/main.rs removed, the [[test]] entry taken out, a second [[test]] entry, a
+      third key harness = false, a mod line commented out, #[cfg(any())] before a mod line, before
+      a #[path] line, #![cfg(any())] in main.rs and in a module file, a file one directory down
+      that no #[path] line names, and a module zz_cli and an inline mod zz_cli { that the
+      selection cli:: of surf-cli would run; then a second entry headed [[ test ]] and one headed
+      [["test"]], autotests = false under [lib] instead of [package], #![cfg(any())] after another
+      attribute on its line and one indented, pub(crate) mod zz_cli { and #[cfg(test)] mod zz_cli {
+      on one line, an inline mod review1_cli { inside cli.rs, a child module zz_cli of
+      output_streams.rs in a file of its own, a package under generated/rust/crates with two test
+      files and no tests/main.rs, and an [[example]] with test = true.
 
       SCRIPT names the script under test (default taskfiles/test-layout.sh), so that a planted
       defect can be run in a copy. It prints one line per case that is decided otherwise and fails,
@@ -48,7 +56,7 @@ tasks:
         out=.out/test-layout
         rm -rf "$out"
         mkdir -p "$out/copy"
-        for file in crates/*/Cargo.toml conformance/Cargo.toml crates/*/tests/*.rs conformance/tests/*.rs crates/*/tests/*/*.rs conformance/tests/*/*.rs; do
+        for file in crates/*/Cargo.toml conformance/Cargo.toml crates/*/src/*.rs crates/*/tests/*.rs conformance/tests/*.rs crates/*/tests/*/*.rs conformance/tests/*/*.rs; do
           if [ -f "$file" ]; then printf '%s\n' "$file"; fi
         done > "$out/files"
         tar -cf - -T "$out/files" | tar -xf - -C "$out/copy"
@@ -127,6 +135,45 @@ tasks:
         fresh
         printf '\nmod zz_cli {\n    #[test]\n    fn planted() {}\n}\n' >> "$cli/tests/output_streams.rs"
         check 1 "an inline mod zz_cli {, which the selection cli:: would run" zz_cli
+        fresh
+        printf '\n[[ test ]]\nname = "other"\npath = "it/other.rs"\n' >> "$page/Cargo.toml"
+        check 1 "a second entry headed [[ test ]]" crates/page/Cargo.toml
+        fresh
+        printf '\n[["test"]]\nname = "other"\npath = "it/other.rs"\n' >> "$page/Cargo.toml"
+        check 1 "a second entry headed [[\"test\"]]" crates/page/Cargo.toml
+        fresh
+        edit "$page/Cargo.toml" '$0 != "autotests = false"'
+        printf '\n[lib]\nautotests = false\n' >> "$page/Cargo.toml"
+        check 1 "autotests = false under [lib], not [package]" crates/page/Cargo.toml
+        fresh
+        edit "$page/tests/elements.rs" 'NR == 1 { print "#![allow(unused)] #![cfg(any())]" } { print }'
+        check 1 "#![cfg(any())] after another attribute on the first line of a module file" crates/page/tests/elements.rs
+        fresh
+        edit "$page/tests/elements.rs" 'NR == 1 { print " #![cfg(any())]" } { print }'
+        check 1 "#![cfg(any())] indented in a module file" crates/page/tests/elements.rs
+        fresh
+        printf '\npub(crate) mod zz_cli {\n    #[test]\n    fn planted() {}\n}\n' >> "$cli/tests/output_streams.rs"
+        check 1 "pub(crate) mod zz_cli {, which the selection cli:: would run" zz_cli
+        fresh
+        printf '\n#[cfg(test)] mod zz_cli {\n    #[test]\n    fn planted() {}\n}\n' >> "$cli/tests/output_streams.rs"
+        check 1 "#[cfg(test)] mod zz_cli { on one line, which the selection cli:: would run" zz_cli
+        fresh
+        printf '\nmod review1_cli {\n    #[test]\n    fn planted() {}\n}\n' >> "$cli/tests/cli.rs"
+        check 1 "mod review1_cli { inside cli.rs, which --skip review1_cli:: would drop" "crates/surf-cli/tests/cli.rs: module review1_cli"
+        fresh
+        mkdir -p "$cli/tests/common"
+        printf '#[test]\nfn planted() {}\n' > "$cli/tests/common/zz_cli.rs"
+        printf '\n#[path = "common/zz_cli.rs"]\nmod zz_cli;\n' >> "$cli/tests/output_streams.rs"
+        check 1 "a child module zz_cli of output_streams.rs in a file of its own" zz_cli
+        fresh
+        mkdir -p "$case_dir/generated/rust/crates/zz/tests"
+        printf '[package]\nname = "zz"\nversion = "0.1.0"\nedition = "2024"\n' > "$case_dir/generated/rust/crates/zz/Cargo.toml"
+        printf '#[test]\nfn a() {}\n' > "$case_dir/generated/rust/crates/zz/tests/a.rs"
+        printf '#[test]\nfn b() {}\n' > "$case_dir/generated/rust/crates/zz/tests/b.rs"
+        check 1 "a package under generated/rust/crates with two test files and no tests/main.rs" generated/rust/crates/zz/tests/main.rs
+        fresh
+        printf '\n[[example]]\nname = "ex"\npath = "it/ex.rs"\ntest = true\n' >> "$page/Cargo.toml"
+        check 1 "an [[example]] with test = true" crates/page/Cargo.toml
         if [ "$wrong" -ne 0 ]; then
           echo "test-layout-test: $wrong of $cases case(s) decided otherwise by $script"
           exit 1

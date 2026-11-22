@@ -5,22 +5,24 @@
 //! case 14 of the story that sends a `POST` (wave 9): a request body of 1 MiB is not copied; and
 //! the peak while a request body of 4 MiB is written twice.
 //!
-//! Why this file holds `unsafe`, the only `unsafe` of the repository: what a fetch holds is
+//! Why this file holds `unsafe` (as does `crates/html/tests/common/mod.rs`): what a fetch holds is
 //! only seen by counting what it allocates, and a counting allocator is a `GlobalAlloc`, an
 //! `unsafe` trait whose methods are `unsafe fn`. The allocator passes every call on to the
 //! system allocator unchanged and only counts sizes. No file under any `src/` holds `unsafe`;
 //! every hand-written crate forbids it.
 //!
-//! The allocator is the global allocator of the one test binary of `surf-fetch` and counts every
-//! thread of it. cargo-nextest, which the gate runs, starts each test in its own process, so a
-//! case counts only its own allocations; the cases still hold `SERIAL`. Without cargo-nextest,
-//! run `cargo test -p surf-fetch -- --test-threads=1`.
+//! The allocator is the global allocator of the one test binary of `surf-fetch`, and it counts
+//! for each thread: a case reads what the thread that calls the fetch allocated. The fetches of
+//! these cases go to `127.0.0.1`, an IP address, so the fetch resolves no name on a thread of its
+//! own and allocates only on the calling thread; the test's server runs on another thread and is
+//! not counted. So a case counts only its own fetch, also when `cargo test` runs the tests of the
+//! binary side by side in one process.
 
 use std::alloc::{GlobalAlloc, Layout, System};
+use std::cell::Cell;
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -28,16 +30,23 @@ use surf_fetch::{fetch, send, Failure, Limits, Method, Request, Response, MAX_AD
 
 struct Counting;
 
-static CURRENT: AtomicUsize = AtomicUsize::new(0);
-static PEAK: AtomicUsize = AtomicUsize::new(0);
+thread_local! {
+    /// The bytes allocated and not yet freed by this thread.
+    static LIVE: Cell<isize> = const { Cell::new(0) };
+    /// The most of [`LIVE`] since the last [`held_while`] began.
+    static PEAK: Cell<isize> = const { Cell::new(0) };
+}
 
 fn grow(n: usize) {
-    let now = CURRENT.fetch_add(n, Ordering::SeqCst) + n;
-    PEAK.fetch_max(now, Ordering::SeqCst);
+    let _ = LIVE.try_with(|live| {
+        let now = live.get() + n as isize;
+        live.set(now);
+        let _ = PEAK.try_with(|peak| peak.set(peak.get().max(now)));
+    });
 }
 
 fn shrink(n: usize) {
-    CURRENT.fetch_sub(n, Ordering::SeqCst);
+    let _ = LIVE.try_with(|live| live.set(live.get() - n as isize));
 }
 
 // SAFETY: every call is passed on to the system allocator unchanged; only sizes are counted.
@@ -79,13 +88,14 @@ unsafe impl GlobalAlloc for Counting {
 #[global_allocator]
 static ALLOCATOR: Counting = Counting;
 
-/// Held by each case while it runs, so no other case allocates during its measurement.
-static SERIAL: Mutex<()> = Mutex::new(());
-
-fn serial() -> MutexGuard<'static, ()> {
-    SERIAL
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+/// The value of `f` and the most bytes this thread held while `f` ran, beyond what it held
+/// before.
+fn held_while<T>(f: impl FnOnce() -> T) -> (T, usize) {
+    let before = LIVE.with(Cell::get);
+    PEAK.with(|peak| peak.set(before));
+    let out = f();
+    let held = (PEAK.with(Cell::get) - before).max(0) as usize;
+    (out, held)
 }
 
 /// The bytes one read from the connection asks for: `READ_CHUNK_BYTES` of the crate, 8 KiB.
@@ -147,11 +157,7 @@ fn serve(replies: &[Arc<Vec<u8>>]) -> (u16, JoinHandle<()>) {
 
 /// The fetch of `asked` and the most bytes it held at once beyond what was held before it.
 fn measure(asked: &str, limits: &Limits) -> (Result<Response, Failure>, usize) {
-    let baseline = CURRENT.load(Ordering::SeqCst);
-    PEAK.store(baseline, Ordering::SeqCst);
-    let result = fetch(asked, limits);
-    let held = PEAK.load(Ordering::SeqCst) - baseline;
-    (result, held)
+    held_while(|| fetch(asked, limits))
 }
 
 /// A 302 whose `Location` is `location`.
@@ -162,7 +168,6 @@ fn redirect(location: &str) -> Vec<u8> {
 #[test]
 fn adversary_a_redirect_to_a_64_kib_address_holds_at_most_the_documented_sum_while_the_body_is_read(
 ) {
-    let _serial = serial();
     let limits = Limits::default();
     // The Location fits the header limit; the address it resolves to is at most 64 KiB.
     let location = format!("/{}", "p".repeat(65_000));
@@ -224,7 +229,6 @@ fn adversary_a_redirect_to_a_64_kib_address_holds_at_most_the_documented_sum_whi
 /// address asked, once against a URL that is itself the 64 KiB result of such a `Location`.
 #[test]
 fn resolving_a_location_at_the_header_limit_holds_at_most_30_or_54_times_the_header_limit() {
-    let _serial = serial();
     let limits = Limits {
         max_body_bytes: 16,
         ..Limits::default()
@@ -344,7 +348,6 @@ fn serve_posts(replies: &[Arc<Vec<u8>>]) -> (u16, JoinHandle<Vec<usize>>) {
 /// as a `Get`, though the request body is 1 MiB.
 #[test]
 fn a_post_body_is_not_copied() {
-    let _serial = serial();
     let limits = Limits::default();
     let body = vec![b'b'; 1024 * 1024];
     let redirect: Arc<Vec<u8>> = Arc::new(
@@ -366,10 +369,7 @@ fn a_post_body_is_not_copied() {
         media_type: Some("application/octet-stream"),
     };
 
-    let baseline = CURRENT.load(Ordering::SeqCst);
-    PEAK.store(baseline, Ordering::SeqCst);
-    let result = send(&request, &limits);
-    let held = PEAK.load(Ordering::SeqCst) - baseline;
+    let (result, held) = held_while(|| send(&request, &limits));
 
     let bodies = server.join().expect("server thread");
     assert_eq!(bodies, [body.len(), body.len()], "the 307 repeats the body");
@@ -399,7 +399,6 @@ fn a_post_body_is_not_copied() {
 /// one copy of it is red.
 #[test]
 fn a_post_body_written_twice_is_not_copied_while_it_is_written() {
-    let _serial = serial();
     let limits = Limits::default();
     let body = vec![b'b'; 4 * 1024 * 1024];
     let redirect: Arc<Vec<u8>> = Arc::new(
@@ -417,10 +416,7 @@ fn a_post_body_written_twice_is_not_copied_while_it_is_written() {
         media_type: Some("application/octet-stream"),
     };
 
-    let baseline = CURRENT.load(Ordering::SeqCst);
-    PEAK.store(baseline, Ordering::SeqCst);
-    let result = send(&request, &limits);
-    let held = PEAK.load(Ordering::SeqCst) - baseline;
+    let (result, held) = held_while(|| send(&request, &limits));
 
     let bodies = server.join().expect("server thread");
     assert_eq!(bodies, [body.len(), body.len()], "the 308 repeats the body");
