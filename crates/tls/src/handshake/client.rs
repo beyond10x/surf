@@ -232,14 +232,16 @@ impl<S: Read + Write> Client<'_, S> {
         }
         let mut flight = Vec::new();
         if certificate_requested {
-            let empty = super::codec::handshake_message(kind::CERTIFICATE, &[0, 0, 0, 0]);
+            let empty = super::codec::handshake_message(kind::CERTIFICATE, &[0, 0, 0, 0])
+                .map_err(|_| invalid_input())?;
             self.transcript.add(&empty);
             flight.extend_from_slice(&empty);
         }
         let hash = self.transcript_hash()?;
         let verify_data = key_schedule::verify_data(&handshake.client, hash.as_ref())
             .map_err(|_| invalid_input())?;
-        let finished = super::codec::handshake_message(kind::FINISHED, verify_data.as_ref());
+        let finished = super::codec::handshake_message(kind::FINISHED, verify_data.as_ref())
+            .map_err(|_| invalid_input())?;
         self.transcript.add(&finished);
         flight.extend_from_slice(&finished);
         self.layer.write_handshake(&flight)?;
@@ -256,7 +258,7 @@ impl<S: Read + Write> Client<'_, S> {
                 let session_id = random_bytes(self.settings.random)?;
                 let share = key(crypto::Group::X25519, self.settings.random)?;
                 let name = messages::server_name(self.settings.host);
-                if name.is_some_and(|n| n.len() > 255) {
+                if name.is_some_and(|n| n.len() > messages::MAX_SERVER_NAME) {
                     return Err(invalid_input());
                 }
                 let hello = messages::client_hello(&HelloParts {
@@ -265,7 +267,8 @@ impl<S: Read + Write> Client<'_, S> {
                     server_name: name,
                     shares: &[(share.group(), share.public_key())],
                     cookie: None,
-                });
+                })
+                .map_err(|_| invalid_input())?;
                 self.keys = vec![share];
                 Ok((hello, Some((random, session_id))))
             }
@@ -317,13 +320,14 @@ impl<S: Read + Write> Client<'_, S> {
                     .iter()
                     .map(|k| (k.group(), k.public_key()))
                     .collect();
-                Ok(messages::client_hello(&HelloParts {
+                messages::client_hello(&HelloParts {
                     random,
                     session_id,
                     server_name: messages::server_name(self.settings.host),
                     shares: &shares,
                     cookie: retry.cookie.as_deref(),
-                }))
+                })
+                .map_err(|_| invalid_input())
             }
             (None, None) => Err(invalid_input()),
         }
@@ -429,7 +433,17 @@ impl<S: Read + Write> Client<'_, S> {
             None => None,
         };
         let cookie = match hello.extension(ext::COOKIE) {
-            Some(data) => Some(messages::cookie(data)?.to_vec()),
+            Some(data) => {
+                let cookie = messages::cookie(data)?;
+                if cookie.len() > messages::MAX_COOKIE {
+                    return Err(Abort::illegal(Violation::MessageTooLarge {
+                        declared: cookie.len(),
+                        bound: messages::MAX_COOKIE,
+                    })
+                    .into());
+                }
+                Some(cookie.to_vec())
+            }
             None => None,
         };
         if group.is_none() && cookie.is_none() {

@@ -5,9 +5,11 @@
 //! data, and the `std::io` traits do the same.
 //!
 //! After the handshake the server may send application data, NewSessionTickets (read whole and
-//! dropped: no resumption), KeyUpdates (an `update_requested` is answered before the next
-//! data), `user_canceled` (ignored) and `close_notify` (the end of the stream; data after it
-//! is never read). Every other handshake message is `unexpected_message`, a
+//! dropped: no resumption), KeyUpdates (an `update_requested` is answered by one KeyUpdate
+//! before the next record of data the client writes, however many came; a read writes
+//! nothing), `user_canceled` (ignored) and `close_notify` (the end of the stream; data after it
+//! is never read). At most [`MAX_RECORDS_WITHOUT_DATA`] records in a row may give the caller
+//! no application data. Every other handshake message is `unexpected_message`, a
 //! `change_cipher_spec` is `UnexpectedChangeCipherSpec`, any other alert ends the connection
 //! with `AlertReceived`. The end of the stream without `close_notify` is `Truncated`; a read
 //! that times out is `TimedOut`. After an error the connection reads and writes nothing more
@@ -44,7 +46,19 @@ pub struct Connection<S: Read + Write> {
     /// Application data received and not yet returned, from `pending_at` on.
     pending: Vec<u8>,
     pending_at: usize,
+    /// A KeyUpdate of `update_requested` came and is not answered yet: one answer goes before
+    /// the next record of application data, however many requests came.
+    update_owed: bool,
+    /// Records read in a row that gave the caller no application data.
+    idle_records: u64,
 }
+
+/// The most records in a row that give the caller no application data (empty application
+/// data, `user_canceled`, NewSessionTicket, KeyUpdate; docs/design/tls.md item 9): the next one
+/// ends the connection with `unexpected_message`, `TooManyRecordsWithoutData`. A record with at
+/// least one byte of application data starts the count again. The bound counts records, never
+/// time.
+pub const MAX_RECORDS_WITHOUT_DATA: u64 = 32;
 
 /// The error of the stream as the connection reports it: a read that timed out is `TimedOut`.
 fn reported(error: Error) -> Error {
@@ -99,6 +113,8 @@ impl<S: Read + Write> Connection<S> {
             sent_close: false,
             pending: Vec::new(),
             pending_at: 0,
+            update_owed: false,
+            idle_records: 0,
         }
     }
 
@@ -173,16 +189,28 @@ impl<S: Read + Write> Connection<S> {
             if self.received_close {
                 return Ok(0);
             }
+            let before = self.layer().read_sequence().unwrap_or(0);
             let message = self.layer_mut().read_message();
+            // The records this message took; 0 for a message from a record already read.
+            let records = self
+                .layer()
+                .read_sequence()
+                .unwrap_or(0)
+                .saturating_sub(before);
             match message {
+                Ok(Message::ApplicationData(data)) if data.is_empty() => self.idle(records)?,
                 Ok(Message::ApplicationData(data)) => {
+                    self.idle_records = 0;
                     self.pending = data;
                     self.pending_at = 0;
                 }
-                Ok(Message::Handshake(message)) => self.post_handshake(&message)?,
+                Ok(Message::Handshake(message)) => {
+                    self.idle(records)?;
+                    self.post_handshake(&message)?;
+                }
                 Ok(Message::Alert { description, .. }) => match description {
                     AlertDescription::CLOSE_NOTIFY => self.received_close = true,
-                    AlertDescription::USER_CANCELED => {}
+                    AlertDescription::USER_CANCELED => self.idle(records)?,
                     _ => {
                         return Err(self.fail(Error::AlertReceived {
                             description,
@@ -203,8 +231,24 @@ impl<S: Read + Write> Connection<S> {
         }
     }
 
+    /// Counts `records` that gave the caller no application data; past
+    /// [`MAX_RECORDS_WITHOUT_DATA`] in a row the connection ends.
+    fn idle(&mut self, records: u64) -> Result<(), Error> {
+        self.idle_records = self.idle_records.saturating_add(records);
+        if self.idle_records > MAX_RECORDS_WITHOUT_DATA {
+            return Err(self.abort(
+                AlertDescription::UNEXPECTED_MESSAGE,
+                Violation::TooManyRecordsWithoutData {
+                    bound: MAX_RECORDS_WITHOUT_DATA,
+                },
+            ));
+        }
+        Ok(())
+    }
+
     /// A handshake message after the handshake: a NewSessionTicket read and dropped, a
-    /// KeyUpdate taken (and answered when it asks for it), any other refused.
+    /// KeyUpdate taken (the read keys change at once; an `update_requested` leaves one answer
+    /// owed, written by the next write of data, never here), any other refused.
     fn post_handshake(&mut self, message: &[u8]) -> Result<(), Error> {
         let body = &message[4..];
         let outcome = match message[0] {
@@ -229,7 +273,7 @@ impl<S: Read + Write> Connection<S> {
                 return Err(self.fail(error));
             }
             if requested && !self.sent_close {
-                self.send_key_update()?;
+                self.update_owed = true;
             }
         }
         Ok(())
@@ -254,12 +298,18 @@ impl<S: Read + Write> Connection<S> {
         sent.map_err(|e| self.fail(e))
     }
 
-    /// Writes `data` as application data, in records of at most 2^14 bytes. Before the record
-    /// that would leave no record of an AES-GCM key for a KeyUpdate, a KeyUpdate is sent.
+    /// Writes `data` as application data, in records of at most 2^14 bytes. An answer owed to
+    /// the server's `update_requested` goes first: one KeyUpdate of `update_not_requested`,
+    /// however many requests came since the last write (RFC 8446 section 4.6.3). Before the
+    /// record that would leave no record of an AES-GCM key for a KeyUpdate, a KeyUpdate is sent.
     pub fn write_data(&mut self, data: &[u8]) -> Result<(), Error> {
         self.check()?;
         if self.sent_close {
             return Err(Error::Io(ErrorKind::BrokenPipe));
+        }
+        if self.update_owed && !data.is_empty() {
+            self.send_key_update()?;
+            self.update_owed = false;
         }
         for chunk in data.chunks(MAX_PLAINTEXT) {
             let limit = record::write_limit(self.suite);
@@ -274,9 +324,10 @@ impl<S: Read + Write> Connection<S> {
         Ok(())
     }
 
-    /// Writes one `close_notify` under the application key and shuts the write side: every
-    /// later write is refused. Reads go on until the server's `close_notify`. A second call
-    /// writes nothing.
+    /// Writes one `close_notify` under the current write key and shuts the write side: every
+    /// later write is refused. An answer owed to an `update_requested` is not sent: no data
+    /// follows, so the `close_notify` goes under the key the server reads now. Reads go on
+    /// until the server's `close_notify`. A second call writes nothing.
     pub fn close(&mut self) -> Result<(), Error> {
         self.check()?;
         if self.sent_close {

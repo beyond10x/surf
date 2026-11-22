@@ -1366,7 +1366,10 @@ fn key_update_requested() {
         .expect("data under the new key");
     assert_eq!(&buf[..n], b"ok");
     let answered = connection.get_ref().output.len();
-    assert!(answered > start, "answered before the data was returned");
+    assert_eq!(
+        answered, start,
+        "a read writes nothing; the answer waits for a write"
+    );
     connection.write_data(b"hi").expect("write");
     connection.into_inner();
     let app = server.application.as_ref().expect("app");
@@ -1744,25 +1747,31 @@ fn memory_bound_certificate() {
 }
 
 /// The client holds nothing of the tickets it drops, nor of the extensions it ignores: the peak
-/// of live heap after the handshake is the same for 500 and 1,000 tickets, and for a
+/// of live heap after the handshake is the same for 500 and 1,000 tickets (each followed by one
+/// byte of data, under the bound of records without data), and for a
 /// CertificateRequest of 1,000 and of 2,000 unknown extensions in a message of one size it
 /// differs by less than one byte per extension added.
 #[test]
 fn memory_bound_tickets_and_extensions() {
     let peak_for = |tickets: usize| {
         let mut server = Server::handshake(SUITE);
+        // One byte of data after each ticket: the bound of records without data stays far.
         for _ in 0..tickets {
             server.protected(22, &ticket(&[0x5a; 64], &[(0x1234, vec![1])]));
+            server.data(b"x");
         }
-        server.data(b"ok");
         let mut pipe = Pipe::with_input(server.input.clone());
         let verifier = ecdsa();
         let mut connection = connect(&mut pipe, &verifier).expect("handshake");
         let (read, peak) = peak_while(|| {
+            let mut read = 0;
             let mut buf = [0u8; 4];
-            connection.read_data(&mut buf).map(|n| buf[..n].to_vec())
+            while let Ok(n @ 1..) = connection.read_data(&mut buf) {
+                read += n;
+            }
+            read
         });
-        assert_eq!(read, Ok(b"ok".to_vec()));
+        assert_eq!(read, tickets);
         connection.into_inner();
         peak
     };
@@ -1793,6 +1802,194 @@ fn memory_bound_tickets_and_extensions() {
         n.abs_diff(two_n) < 1_000,
         "extensions held: {n} and {two_n} bytes"
     );
+}
+
+// ---------------------------------------------------------------------------------------------
+// KeyUpdate answers, records without data, the cookie bound.
+
+/// RFC 8446 section 4.6.3: a server that sends 1,000 KeyUpdates of `update_requested` (each
+/// followed by one byte of data) and reads nothing makes the client write no byte inside
+/// `read_data`; the next write sends one KeyUpdate of `update_not_requested` under the old key
+/// and the data under the next one: two records.
+#[test]
+fn key_update_flood_writes_nothing_in_read() {
+    let mut server = Server::handshake(SUITE);
+    for _ in 0..1_000 {
+        server.key_update(1);
+        server.data(b"x");
+    }
+    let mut pipe = Pipe::with_input(server.input.clone());
+    let verifier = ecdsa();
+    let mut connection = connect(&mut pipe, &verifier).expect("handshake");
+    let start = connection.get_ref().output.len();
+    let mut read = 0;
+    let mut buf = [0u8; 64];
+    while read < 1_000 {
+        read += connection.read_data(&mut buf).expect("data");
+    }
+    assert_eq!(read, 1_000);
+    assert_eq!(
+        connection.get_ref().output.len(),
+        start,
+        "nothing written by the reads"
+    );
+    connection.write_data(b"hi").expect("write");
+    connection.into_inner();
+    let app = server.application.as_ref().expect("app");
+    let raw = records_raw(&pipe.output[start..]);
+    assert_eq!(raw.len(), 2, "one KeyUpdate and one record of data");
+    let update = crate::handshake::open(SUITE, &app.client, 0, &raw[0]).expect("old key");
+    assert_eq!(update, vec![24, 0, 0, 1, 0, 22]);
+    let next = key_schedule::next_traffic_secret(&app.client).expect("next");
+    let data = crate::handshake::open(SUITE, &next, 0, &raw[1]).expect("new key");
+    assert_eq!(data, b"hi\x17");
+}
+
+/// `close` with an answer owed: one `close_notify` under the current (old) write key, no
+/// KeyUpdate.
+#[test]
+fn close_with_key_update_owed() {
+    let mut server = Server::handshake(SUITE);
+    server.key_update(1);
+    server.data(b"ok");
+    let mut pipe = Pipe::with_input(server.input.clone());
+    let verifier = ecdsa();
+    let mut connection = connect(&mut pipe, &verifier).expect("handshake");
+    let start = connection.get_ref().output.len();
+    let mut buf = [0u8; 8];
+    assert_eq!(connection.read_data(&mut buf), Ok(2));
+    connection.close().expect("close");
+    connection.into_inner();
+    let app = server.application.as_ref().expect("app");
+    let raw = records_raw(&pipe.output[start..]);
+    assert_eq!(raw.len(), 1, "close_notify alone");
+    let alert = crate::handshake::open(SUITE, &app.client, 0, &raw[0]).expect("old key");
+    assert_eq!(alert, vec![1, 0, 21]);
+}
+
+/// One record of the kinds that give the caller no data, by `i`: a NewSessionTicket, empty
+/// application data, a warning `user_canceled`, a KeyUpdate of `update_not_requested`.
+fn idle_record(server: &mut Server, i: usize) {
+    match i % 4 {
+        0 => server.protected(22, &ticket(&[0x5a; 16], &[])),
+        1 => server.protected(23, &[]),
+        2 => server.alert(1, 90),
+        _ => server.key_update(0),
+    }
+}
+
+/// The bound of records in a row without application data (`MAX_RECORDS_WITHOUT_DATA`, 32):
+/// 32 of the four kinds and then data are read; 33 end with `unexpected_message`,
+/// `TooManyRecordsWithoutData { bound: 32 }`; a byte of data starts the count again; 40
+/// tickets in one record count as one record.
+#[test]
+fn records_without_data_bound() {
+    assert_eq!(surf_tls::connection::MAX_RECORDS_WITHOUT_DATA, 32);
+    let reads = |server: &Server, count: usize| after_handshake(server, count).0;
+    let mut server = Server::handshake(SUITE);
+    (0..32).for_each(|i| idle_record(&mut server, i));
+    server.data(b"ok");
+    assert_eq!(reads(&server, 1), vec![Ok(b"ok".to_vec())]);
+
+    let mut server = Server::handshake(SUITE);
+    (0..33).for_each(|i| idle_record(&mut server, i));
+    server.data(b"ok");
+    let (reads33, after) = after_handshake(&server, 1);
+    assert_eq!(
+        reads33,
+        vec![Err(sent(
+            A::UNEXPECTED_MESSAGE,
+            Violation::TooManyRecordsWithoutData { bound: 32 }
+        ))]
+    );
+    assert!(!after.is_empty(), "the alert is written");
+
+    let mut server = Server::handshake(SUITE);
+    (0..32).for_each(|i| idle_record(&mut server, i));
+    server.data(b"a");
+    (0..32).for_each(|i| idle_record(&mut server, i));
+    server.data(b"b");
+    assert_eq!(
+        reads(&server, 2),
+        vec![Ok(b"a".to_vec()), Ok(b"b".to_vec())]
+    );
+
+    let mut server = Server::handshake(SUITE);
+    let mut tickets = Vec::new();
+    for _ in 0..40 {
+        tickets.extend_from_slice(&ticket(&[0x5a; 16], &[]));
+    }
+    server.protected(22, &tickets);
+    (0..31).for_each(|i| idle_record(&mut server, i));
+    server.data(b"ok");
+    assert_eq!(reads(&server, 1), vec![Ok(b"ok".to_vec())]);
+}
+
+/// `messages::MAX_COOKIE`: 65,535 - 413 (the other extensions of a second ClientHello at
+/// their largest) - 6.
+const MAX_COOKIE: usize = 65_116;
+
+/// A server for a host of 255 bytes (the longest `server_name`) whose first answer is a
+/// HelloRetryRequest for secp256r1 with a cookie of `len` bytes, in records of 2^14 bytes.
+fn long_cookie(len: usize) -> (Server, String, Vec<u8>) {
+    let host = format!("{0}.{0}.{0}.{0}", "a".repeat(63));
+    assert_eq!(host.len(), 255);
+    let mut server = Server::for_host(SUITE, "ok-ecdsa-p256", &host);
+    let cookie = vec![0x5a; len];
+    let hrr = server
+        .hello_retry_request(Some(0x0017), Some(&cookie))
+        .encode();
+    assert!(hrr.len() - 4 <= 65_535, "inside item 9.1");
+    for fragment in hrr.chunks(16_384) {
+        server.plain(22, fragment);
+    }
+    (server, host, cookie)
+}
+
+/// A HelloRetryRequest cookie at the bound fits the second ClientHello of the longest host,
+/// which echoes it; one byte over is `illegal_parameter`, `MessageTooLarge` naming the bound,
+/// and no second hello is written.
+#[test]
+fn retry_cookie_bound() {
+    let (server, host, cookie) = long_cookie(MAX_COOKIE);
+    let (result, written) = outcome_to(&host, &server.input, &ecdsa());
+    assert_eq!(
+        result,
+        Err(Error::ConnectionClosed),
+        "waits for the ServerHello"
+    );
+    let stream: Vec<u8> = crate::handshake::records(&written)
+        .into_iter()
+        .filter(|(t, _)| *t == 22)
+        .flat_map(|(_, body)| body)
+        .collect();
+    let first =
+        4 + (usize::from(stream[1]) << 16 | usize::from(stream[2]) << 8 | usize::from(stream[3]));
+    let second = crate::handshake::Hello::parse(&stream[first..]);
+    assert_eq!(
+        second.extension(44),
+        Some(&v16(&cookie)[..]),
+        "the cookie echoed"
+    );
+
+    let (server, host, _) = long_cookie(MAX_COOKIE + 1);
+    let (result, written) = outcome_to(&host, &server.input, &ecdsa());
+    assert_eq!(
+        result,
+        Err(sent(
+            A::ILLEGAL_PARAMETER,
+            Violation::MessageTooLarge {
+                declared: MAX_COOKIE + 1,
+                bound: MAX_COOKIE
+            }
+        ))
+    );
+    let hellos = crate::handshake::records(&written)
+        .into_iter()
+        .filter(|(t, _)| *t == 22)
+        .count();
+    assert_eq!(hellos, 1, "the first hello alone");
+    assert_eq!(last_alert(&server, &written), Some((2, 47)));
 }
 
 // ---------------------------------------------------------------------------------------------

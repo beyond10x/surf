@@ -9,7 +9,7 @@
 4.1.4 | the HelloRetryRequest changes the hello | illegal_parameter, HelloRetryRequestNoChange | tests/tls/handshake_hostile.rs::retry_without_change
 4.1.4 | a second HelloRetryRequest | unexpected_message, SecondHelloRetryRequest | tests/tls/handshake_hostile.rs::second_retry
 4.1.4 | HelloRetryRequest extensions offered, or cookie | unsupported_extension, UnofferedExtension (new case) | tests/tls/handshake_hostile.rs::retry_unoffered_extension
-4.1.4 | the ServerHello keeps the suite of the HelloRetryRequest | illegal_parameter, SuiteChangedAfterRetry | tests/tls/handshake_hostile.rs::suite_changed_after_retry
+4.1.4 | the ServerHello keeps the suite of the HelloRetryRequest | illegal_parameter, SuiteChangedAfterRetry | tests/tls/handshake_hostile.rs::suite_changed_after_retry, tests/tls/adversary_handshake.rs::adversary_suite_changed_to_same_hash_after_retry
 4.1.4 | supported_versions in the HelloRetryRequest, kept in the ServerHello | missing_extension, MissingExtension; UnofferedVersion | tests/tls/handshake_hostile.rs::retry_without_supported_versions, tests/tls/handshake_hostile.rs::retry_version_tls12
 4.2 | no extension in an answer that was not requested | unsupported_extension, UnofferedExtension | tests/tls/handshake_hostile.rs::encrypted_extensions_unoffered
 4.2 | an extension only in the messages of the table | illegal_parameter, ExtensionNotAllowedHere (new) | tests/tls/handshake_hostile.rs::extension_not_allowed_here
@@ -52,7 +52,7 @@
 4.6.3 | no KeyUpdate before the server Finished | unexpected_message, UnexpectedMessage (new case) | tests/tls/handshake_hostile.rs::key_update_before_finished
 4.6.3 | request_update 0 or 1 | illegal_parameter, BadKeyUpdate (new) | tests/tls/handshake_hostile.rs::key_update_bad_value
 4.6.3 | answer update_requested before the next data; the old key ends with the KeyUpdate | answered; a record under the old key after the KeyUpdate is bad_record_mac, BadRecordMac (round 5) | tests/tls/handshake_hostile.rs::key_update_requested, tests/tls/handshake_hostile.rs::old_key_after_key_update
-5 | one change_cipher_spec 0x01 dropped before the peer Finished | ignored; else UnexpectedChangeCipherSpec | tests/tls/handshake.rs::rfc8448_section_7, tests/tls/handshake_hostile.rs::change_cipher_spec_after_finished
+5 | one change_cipher_spec 0x01 dropped before the peer Finished | ignored; else UnexpectedChangeCipherSpec | tests/tls/handshake.rs::rfc8448_section_7, tests/tls/handshake_hostile.rs::change_cipher_spec_after_finished, tests/tls/handshake_hostile.rs::change_cipher_spec_bound
 6 | no data after an error alert, the keys forgotten | the Connection ends (new case) | tests/tls/handshake_hostile.rs::no_data_after_alert
 6 | the alerts of 6.2 fatal whatever the level; unknown alerts are errors | AlertReceived: a warning-level handshake_failure (not close_notify nor user_canceled) and a fatal alert of the unknown description 0xfe (round 5: inputs named) | tests/tls/handshake_hostile.rs::alert_levels
 6 | a message that does not parse | decode_error, Malformed (new) | tests/tls/handshake_hostile.rs::malformed_server_hello

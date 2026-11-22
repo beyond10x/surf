@@ -1,7 +1,10 @@
 //! The public error of a TLS connection: a closed list (docs/design/tls.md, item 6). Each kind
 //! maps to one failure reason of item 7; the alert a kind sends travels with it.
 //!
-//! `story:tls-x509` adds the variant `Certificate`, and no other story changes this file.
+//! The stories that change it: `story:tls-record` adds the violations of the record layer and
+//! `KeyLimitReached`; `story:tls-x509` adds the variant `Certificate`; `story:tls-handshake`
+//! adds the violation `TooManyRecordsWithoutData` and gives `AlertReceived` before the
+//! ServerHello the words of item 7. No other story changes this file.
 
 use std::fmt;
 use std::io::ErrorKind;
@@ -204,6 +207,12 @@ pub enum Violation {
     BadCertificateVerify,
     /// A Finished whose `verify_data` is not the expected one.
     BadFinished,
+    /// More records in a row than the bound that gave the caller no application data (empty
+    /// application data, `user_canceled`, NewSessionTicket, KeyUpdate; item 9).
+    TooManyRecordsWithoutData {
+        /// The most such records surf reads in a row.
+        bound: u64,
+    },
 }
 
 /// Why a TLS connection ended (item 6).

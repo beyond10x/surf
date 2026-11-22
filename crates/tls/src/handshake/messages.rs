@@ -9,7 +9,7 @@ use crate::crypto::{self, Group, HashAlgorithm};
 use crate::error::{AlertDescription, Violation};
 use crate::key_schedule::CipherSuite;
 
-use super::codec::{self, Malformed, Reader};
+use super::codec::{self, Malformed, Reader, TooLong};
 
 /// The handshake types of RFC 8446 section 4 the client meets.
 pub(crate) mod kind {
@@ -208,6 +208,27 @@ pub(crate) const SIGNATURE_ALGORITHMS_CERT: [u16; 9] = [
 /// The one ALPN protocol offered.
 pub(crate) const HTTP11: &[u8] = b"http/1.1";
 
+/// The longest name surf sends in `server_name`: a DNS name is at most 255 bytes.
+pub(crate) const MAX_SERVER_NAME: usize = 255;
+
+/// The most bytes the extensions of a second ClientHello other than `cookie` take, each with
+/// its 4-byte header: `server_name` of the longest name (264), `supported_groups` (10),
+/// `signature_algorithms` (18), `signature_algorithms_cert` (24), ALPN (15),
+/// `supported_versions` (7) and `key_share` of one secp256r1 share of 65 bytes (75): 413.
+const MAX_OTHER_EXTENSIONS: usize = (4 + 2 + 1 + 2 + MAX_SERVER_NAME)
+    + (4 + 2 + 2 * GROUPS.len())
+    + (4 + 2 + 2 * SIGNATURE_ALGORITHMS.len())
+    + (4 + 2 + 2 * SIGNATURE_ALGORITHMS_CERT.len())
+    + (4 + 2 + 1 + HTTP11.len())
+    + (4 + 1 + 2)
+    + (4 + 2 + 2 + 2 + 65);
+
+/// The longest cookie of a HelloRetryRequest surf takes: the second ClientHello echoes it in a
+/// `cookie` extension (4 + 2 bytes around it) beside the other extensions, all inside
+/// `extensions<8..2^16-1>`, so 65,535 - 413 - 6 = 65,116 bytes. A longer one is refused with
+/// `illegal_parameter` before any second hello is built.
+pub(crate) const MAX_COOKIE: usize = 0xffff - MAX_OTHER_EXTENSIONS - (4 + 2);
+
 /// Whether `host` is an IP literal (RFC 6066 section 3 allows none in `server_name`): an IPv4
 /// or IPv6 address, the latter also in brackets.
 pub(crate) fn is_ip_literal(host: &str) -> bool {
@@ -243,9 +264,9 @@ pub(crate) struct HelloParts<'a> {
     pub cookie: Option<&'a [u8]>,
 }
 
-fn extension(out: &mut Vec<u8>, extension_type: u16, data: &[u8]) {
+fn extension(out: &mut Vec<u8>, extension_type: u16, data: &[u8]) -> Result<(), TooLong> {
     out.extend_from_slice(&extension_type.to_be_bytes());
-    codec::put_vec16(out, data);
+    codec::put_vec16(out, data)
 }
 
 /// The ClientHello of RFC 8446 section 4.1.2 with its 4-byte header: `legacy_version`
@@ -253,33 +274,33 @@ fn extension(out: &mut Vec<u8>, extension_type: u16, data: &[u8]) {
 /// extensions `server_name` (when given), `supported_groups`, `signature_algorithms`,
 /// `signature_algorithms_cert`, ALPN `http/1.1`, `supported_versions` 0x0304, `key_share`, and
 /// `cookie` (when given), in this order.
-pub(crate) fn client_hello(parts: &HelloParts<'_>) -> Vec<u8> {
+pub(crate) fn client_hello(parts: &HelloParts<'_>) -> Result<Vec<u8>, TooLong> {
     let mut body = Vec::with_capacity(512);
     body.extend_from_slice(&TLS12.to_be_bytes());
     body.extend_from_slice(parts.random);
-    codec::put_vec8(&mut body, parts.session_id);
+    codec::put_vec8(&mut body, parts.session_id)?;
     let mut suites = Vec::with_capacity(6);
     for suite in CipherSuite::ALL {
         suites.extend_from_slice(&suite.code().to_be_bytes());
     }
-    codec::put_vec16(&mut body, &suites);
-    codec::put_vec8(&mut body, &[0]);
+    codec::put_vec16(&mut body, &suites)?;
+    codec::put_vec8(&mut body, &[0])?;
 
     let mut extensions = Vec::with_capacity(400);
     if let Some(name) = parts.server_name {
         let mut entry = vec![0u8];
-        codec::put_vec16(&mut entry, name.as_bytes());
+        codec::put_vec16(&mut entry, name.as_bytes())?;
         let mut list = Vec::with_capacity(entry.len() + 2);
-        codec::put_vec16(&mut list, &entry);
-        extension(&mut extensions, ext::SERVER_NAME, &list);
+        codec::put_vec16(&mut list, &entry)?;
+        extension(&mut extensions, ext::SERVER_NAME, &list)?;
     }
     let mut groups = Vec::new();
     for group in GROUPS {
         groups.extend_from_slice(&group_code(group).to_be_bytes());
     }
     let mut list = Vec::new();
-    codec::put_vec16(&mut list, &groups);
-    extension(&mut extensions, ext::SUPPORTED_GROUPS, &list);
+    codec::put_vec16(&mut list, &groups)?;
+    extension(&mut extensions, ext::SUPPORTED_GROUPS, &list)?;
     for (extension_type, schemes) in [
         (ext::SIGNATURE_ALGORITHMS, &SIGNATURE_ALGORITHMS[..]),
         (
@@ -292,31 +313,31 @@ pub(crate) fn client_hello(parts: &HelloParts<'_>) -> Vec<u8> {
             codes.extend_from_slice(&scheme.to_be_bytes());
         }
         let mut list = Vec::new();
-        codec::put_vec16(&mut list, &codes);
-        extension(&mut extensions, extension_type, &list);
+        codec::put_vec16(&mut list, &codes)?;
+        extension(&mut extensions, extension_type, &list)?;
     }
     let mut name = Vec::new();
-    codec::put_vec8(&mut name, HTTP11);
+    codec::put_vec8(&mut name, HTTP11)?;
     let mut list = Vec::new();
-    codec::put_vec16(&mut list, &name);
-    extension(&mut extensions, ext::ALPN, &list);
+    codec::put_vec16(&mut list, &name)?;
+    extension(&mut extensions, ext::ALPN, &list)?;
     let mut versions = Vec::new();
-    codec::put_vec8(&mut versions, &TLS13.to_be_bytes());
-    extension(&mut extensions, ext::SUPPORTED_VERSIONS, &versions);
+    codec::put_vec8(&mut versions, &TLS13.to_be_bytes())?;
+    extension(&mut extensions, ext::SUPPORTED_VERSIONS, &versions)?;
     let mut shares = Vec::new();
     for (group, public) in parts.shares {
         shares.extend_from_slice(&group_code(*group).to_be_bytes());
-        codec::put_vec16(&mut shares, public);
+        codec::put_vec16(&mut shares, public)?;
     }
     let mut list = Vec::new();
-    codec::put_vec16(&mut list, &shares);
-    extension(&mut extensions, ext::KEY_SHARE, &list);
+    codec::put_vec16(&mut list, &shares)?;
+    extension(&mut extensions, ext::KEY_SHARE, &list)?;
     if let Some(cookie) = parts.cookie {
         let mut value = Vec::new();
-        codec::put_vec16(&mut value, cookie);
-        extension(&mut extensions, ext::COOKIE, &value);
+        codec::put_vec16(&mut value, cookie)?;
+        extension(&mut extensions, ext::COOKIE, &value)?;
     }
-    codec::put_vec16(&mut body, &extensions);
+    codec::put_vec16(&mut body, &extensions)?;
     codec::handshake_message(kind::CLIENT_HELLO, &body)
 }
 
@@ -498,6 +519,23 @@ pub(crate) fn extensions_of<'a>(
     })
 }
 
+/// Whether the table of RFC 8446 section 4.2 lets `extension_type` stand in `place`: a type
+/// it names only where it names it; a type it does not name (an unknown one) anywhere.
+fn allowed_here(extension_type: u16, place: Place) -> bool {
+    allowed_in(extension_type).is_none_or(|places| places.contains(&place))
+}
+
+/// The first half of the rule of RFC 8446 section 4.2, for a message whose unknown and
+/// unrequested extensions are ignored (CertificateRequest, NewSessionTicket): a type the table
+/// names but does not allow in `place` is `illegal_parameter`, `ExtensionNotAllowedHere`.
+pub(crate) fn check_allowed(extensions: Extensions<'_>, place: Place) -> Result<(), Abort> {
+    if extensions.iter().all(|(t, _)| allowed_here(t, place)) {
+        Ok(())
+    } else {
+        Err(Abort::illegal(Violation::ExtensionNotAllowedHere))
+    }
+}
+
 /// The rule of RFC 8446 section 4.2 for the extensions of a message the server sent in
 /// `place`: a type the table names but does not allow there is `illegal_parameter`,
 /// `ExtensionNotAllowedHere`, checked first; then one the hello did not offer is
@@ -508,9 +546,7 @@ pub(crate) fn check_extensions(
     offered: &dyn Fn(u16) -> bool,
 ) -> Result<(), Abort> {
     for (extension_type, _) in extensions.iter() {
-        if let Some(places) = allowed_in(extension_type)
-            && !places.contains(&place)
-        {
+        if !allowed_here(extension_type, place) {
             return Err(Abort::illegal(Violation::ExtensionNotAllowedHere));
         }
         if !offered(extension_type) {
@@ -705,8 +741,10 @@ pub(crate) fn certificate_verify_content(transcript_hash: &[u8]) -> Vec<u8> {
 }
 
 /// A CertificateRequest body: refused with `NonEmptyRequestContext` for a context that is not
-/// empty, `MissingExtension` without `signature_algorithms`; its other extensions are read and
-/// ignored (RFC 8446 sections 4.3.2 and 9.3).
+/// empty, `ExtensionNotAllowedHere` for an extension the table of section 4.2 names and does
+/// not allow here, `MissingExtension` without `signature_algorithms`, `Malformed` when that
+/// does not parse; unknown extensions are read and ignored (RFC 8446 sections 4.2, 4.3.2,
+/// 9.3).
 pub(crate) fn certificate_request(body: &[u8]) -> Result<(), Abort> {
     let malformed = |_| Abort::malformed("CertificateRequest");
     let mut reader = Reader::new(body);
@@ -717,17 +755,34 @@ pub(crate) fn certificate_request(body: &[u8]) -> Result<(), Abort> {
     if !context.is_empty() {
         return Err(Abort::illegal(Violation::NonEmptyRequestContext));
     }
-    if extensions.get(ext::SIGNATURE_ALGORITHMS).is_none() {
+    check_allowed(extensions, Place::CertificateRequest)?;
+    let Some(schemes) = extensions.get(ext::SIGNATURE_ALGORITHMS) else {
         return Err(Abort::new(
             AlertDescription::MISSING_EXTENSION,
             Violation::MissingExtension,
         ));
-    }
+    };
+    scheme_list(schemes).map_err(malformed)?;
     Ok(())
 }
 
+/// Checks `SignatureScheme supported_signature_algorithms<2..2^16-2>` (RFC 8446 section
+/// 4.2.3) to the end of `data`, without collecting it: surf answers no CertificateRequest with a
+/// signature, so the schemes are read and not kept.
+fn scheme_list(data: &[u8]) -> Result<(), Malformed> {
+    let mut reader = Reader::new(data);
+    let list = reader.vec16(2, 0xfffe)?;
+    reader.finish()?;
+    if list.len() % 2 == 0 {
+        Ok(())
+    } else {
+        Err(Malformed)
+    }
+}
+
 /// A NewSessionTicket body (RFC 8446 section 4.6.1), read whole and dropped: lifetime, age
-/// add, nonce, a ticket of at least one byte, extensions read and ignored.
+/// add, nonce, a ticket of at least one byte; an extension the table of section 4.2 names and
+/// does not allow here is `ExtensionNotAllowedHere`, unknown ones are read and ignored.
 pub(crate) fn new_session_ticket(body: &[u8]) -> Result<(), Abort> {
     let malformed = |_| Abort::malformed("NewSessionTicket");
     let mut reader = Reader::new(body);
@@ -737,11 +792,8 @@ pub(crate) fn new_session_ticket(body: &[u8]) -> Result<(), Abort> {
     reader.vec16(1, 0xffff).map_err(malformed)?;
     let block = reader.vec16(0, 0xfffe).map_err(malformed)?;
     reader.finish().map_err(malformed)?;
-    extension_block(block).map_err(|e| match e {
-        BlockError::Malformed => Abort::malformed("NewSessionTicket"),
-        BlockError::Repeated => Abort::illegal(Violation::RepeatedExtension),
-    })?;
-    Ok(())
+    let extensions = extensions_of(block, "NewSessionTicket")?;
+    check_allowed(extensions, Place::NewSessionTicket)
 }
 
 /// A KeyUpdate body: one byte, 0 (`update_not_requested`) or 1 (`update_requested`).
@@ -756,5 +808,5 @@ pub(crate) fn key_update(body: &[u8]) -> Result<bool, Abort> {
 
 /// The KeyUpdate message surf writes.
 pub(crate) fn key_update_message(update_requested: bool) -> Vec<u8> {
-    codec::handshake_message(kind::KEY_UPDATE, &[u8::from(update_requested)])
+    vec![kind::KEY_UPDATE, 0, 0, 1, u8::from(update_requested)]
 }

@@ -6,6 +6,8 @@
 
 #![deny(unsafe_code)]
 
+#[path = "tls/adversary_handshake.rs"]
+mod adversary_handshake;
 #[path = "tls/adversary_layer.rs"]
 mod adversary_layer;
 #[path = "tls/adversary_x509.rs"]

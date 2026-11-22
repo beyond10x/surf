@@ -446,7 +446,9 @@ The public `Error` of `error.rs`, a closed list:
   `BadAlertRecord` (an alert record that is not one alert of two bytes), `UnprotectedRecord`
   (a record without protection where protection is required: application data before the
   read keys are set, a handshake or alert record after), `Downgrade`,
-  `UnexpectedChangeCipherSpec`, `BadCertificateVerify`, `BadFinished`.
+  `UnexpectedChangeCipherSpec`, `BadCertificateVerify`, `BadFinished`, and from
+  `story:tls-handshake` `TooManyRecordsWithoutData { bound }` (more records in a row than item
+  9 allows that give the caller no application data; alert `unexpected_message`).
 - `SequenceExhausted`, and from `story:tls-record` `KeyLimitReached` (item 9.6).
 - `Certificate(CertificateRejection)`, which `story:tls-x509` adds. A `CertificateRejection`
   sends `unknown_ca` (`NoPathToAnchor`), `certificate_expired` (`Expired`) or `bad_certificate`

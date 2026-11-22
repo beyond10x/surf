@@ -101,26 +101,45 @@ impl<'a> Reader<'a> {
     }
 }
 
-/// Appends `value` as a vector of a 1-byte length; `value` is at most 255 bytes by the caller's
-/// construction.
-pub(crate) fn put_vec8(out: &mut Vec<u8>, value: &[u8]) {
-    out.push(value.len() as u8);
+/// A value longer than the length field it is written with can count: nothing is truncated,
+/// the caller refuses.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TooLong;
+
+/// Appends `value` as a vector of a 1-byte length; [`TooLong`] past 255 bytes, `out` unchanged.
+pub(crate) fn put_vec8(out: &mut Vec<u8>, value: &[u8]) -> Result<(), TooLong> {
+    let len = u8::try_from(value.len()).map_err(|_| TooLong)?;
+    out.push(len);
     out.extend_from_slice(value);
+    Ok(())
 }
 
-/// Appends `value` as a vector of a 2-byte length; at most 65,535 bytes by the caller's
-/// construction.
-pub(crate) fn put_vec16(out: &mut Vec<u8>, value: &[u8]) {
-    out.extend_from_slice(&(value.len() as u16).to_be_bytes());
+/// Appends `value` as a vector of a 2-byte length; [`TooLong`] past 65,535 bytes, `out`
+/// unchanged.
+pub(crate) fn put_vec16(out: &mut Vec<u8>, value: &[u8]) -> Result<(), TooLong> {
+    let len = u16::try_from(value.len()).map_err(|_| TooLong)?;
+    out.extend_from_slice(&len.to_be_bytes());
     out.extend_from_slice(value);
+    Ok(())
 }
 
-/// A handshake message of `msg_type` around `body`: the type and the 3-byte length first.
-pub(crate) fn handshake_message(msg_type: u8, body: &[u8]) -> Vec<u8> {
-    let len = body.len();
-    let mut out = Vec::with_capacity(4 + len);
+/// Appends `value` as a vector of a 3-byte length; [`TooLong`] past 2^24 - 1 bytes, `out`
+/// unchanged.
+pub(crate) fn put_vec24(out: &mut Vec<u8>, value: &[u8]) -> Result<(), TooLong> {
+    let len = u32::try_from(value.len()).map_err(|_| TooLong)?;
+    if len > 0x00ff_ffff {
+        return Err(TooLong);
+    }
+    out.extend_from_slice(&len.to_be_bytes()[1..]);
+    out.extend_from_slice(value);
+    Ok(())
+}
+
+/// A handshake message of `msg_type` around `body`: the type and the 3-byte length first;
+/// [`TooLong`] for a body of 2^24 bytes or more.
+pub(crate) fn handshake_message(msg_type: u8, body: &[u8]) -> Result<Vec<u8>, TooLong> {
+    let mut out = Vec::with_capacity(4 + body.len());
     out.push(msg_type);
-    out.extend_from_slice(&[(len >> 16) as u8, (len >> 8) as u8, len as u8]);
-    out.extend_from_slice(body);
-    out
+    put_vec24(&mut out, body)?;
+    Ok(out)
 }

@@ -330,12 +330,13 @@ fn record(
     let (draws, client, server, outcome) = result?;
     let mut bytes = MAGIC.to_vec();
     bytes.push(VERSION);
-    bytes.push(draws.len() as u8);
+    bytes.push(u8::try_from(draws.len()).map_err(|_| "too many draws")?);
     for draw in &draws {
         bytes.extend_from_slice(draw);
     }
     for side in [&client, &server] {
-        bytes.extend_from_slice(&(side.len() as u32).to_be_bytes());
+        let len = u32::try_from(side.len()).map_err(|_| "a side over 4 GiB")?;
+        bytes.extend_from_slice(&len.to_be_bytes());
         bytes.extend_from_slice(side);
     }
     Ok((bytes, command, outcome))
