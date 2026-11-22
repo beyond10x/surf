@@ -23,7 +23,7 @@ scope:
   path: view-tests/tests/acceptance.spec.mjs
 - confidence: inferred
   path: website/docs/status.md
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 4}
@@ -45,7 +45,9 @@ and titles, so `story:agent-follow-links` (through `story:view-now-panel`). On `
 `c5c2895` no answer carries a title or links (`title: None`, `crates/session/src/lib.rs:258` and
 `:999`; no `now` block in `surf_answer::Answer`, `crates/answer/src/lib.rs:42-59`), so cases 5
 and 7 can pass only once that story is in the base. The count of page tests stated in
-`AGENTS.md:621`, `README.md:463` and `website/docs/status.md:22` (38 today) is restated.
+`AGENTS.md:621`, `README.md:463`, `README.md:197` and `website/docs/status.md:22` (38 today) is
+restated. On `README.md:197` this story changes the page-test number only; the test count on
+that line belongs to the command story that lands last before the wave gate.
 
 The page tests run in `task view-test` of `story:view-first-page`, with the tooling item 4 of
 `docs/design/live-view.md` decides: `@playwright/test` 1.65.0 with Chromium's headless shell,

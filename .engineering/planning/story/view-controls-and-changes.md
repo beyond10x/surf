@@ -10,7 +10,7 @@ relations:
 - depends_on: story:view-now-panel
 - depends_on: story:agent-fill-pick
 - depends_on: story:agent-change-and-log
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 4}
@@ -51,7 +51,8 @@ only a length for a password (cases 2 and 3).
   and action), and the entry gains the member `changed` after `now`, as that document reserves it
   (`page` from and to; `+`, `-` and `~` element lines with what changed, before and
   after, a password's before and after as lengths; `+ text` lines); one example each. The rule of
-  D22 restated there in its words.
+  D22 restated there in its words. The length comes from the `FillRequested` entry, not from the
+  answer.
 - `crates/view/src/model.rs`, `json.rs`, `crates/view/tests/golden/`, `crates/view/tests/json.rs`;
   `crates/surfd/src/view.rs`: the JSON of the `now` controls and the `changed` block that
   `surf_answer::parse` returns; no parsing of answer text here (D20).

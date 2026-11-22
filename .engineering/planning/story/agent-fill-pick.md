@@ -71,7 +71,7 @@ scope:
   path: website/docs/status.md
 - confidence: inferred
   path: website/docs/what-works.md
-revision: 18
+revision: 19
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 6}
@@ -148,13 +148,16 @@ argument word", and `README.md` says to use `fill <handle> -` for one.
   `arg form`, `arg line` at `:31-34`) gain the argument that carries it.
 - `crates/session/tests/`, the counted cases, against a server the test starts:
   1. the `now` block of a form with a text field, a password, a checkbox, a radio group, a select,
-     a textarea, a file control, a disabled field and a required field equals its golden text;
+     a textarea, a file control, a disabled field and a required field equals its golden text,
+     which holds the whole answer of `look`, as the files of `crates/session/tests/golden/` do
+     (head line to `path` block, `<id>` and `<port>` placeholders, compared through `golden()`,
+     `crates/session/tests/core.rs:240`);
   2. `fill` a text field: its line shows the value; 3. `fill <h> -` a password from standard
      input: no answer, no `path` line and no action row holds it; 4. `fill` a password as a word:
      its line shows `(set)`; 5. `pick` a select option by label; 6. by value; 7. `pick` a checkbox
      `on` then `off`; 8. `pick` a radio: the others of its group show unchecked;
   9. `fill` a hidden control: `hidden`; 10. a disabled control: `disabled`; 11. `fill` a checkbox:
-     `wrong-kind`; 12. `pick` an unknown option: `unknown-option`; 13. an unknown handle;
+     `wrong-kind`; 12. `pick` an unknown option: `unknown-option`; 13. `fill f99`: status 1, `did refused unknown-handle`;
   forging, each quoted and escaped with no extra line: 14. a value filled with a line feed, `"` and
   a bidirectional control; 15. a label; 16. an option label from the page; each with the same
   three characters;
@@ -181,7 +184,12 @@ files named above.
 
 `cargo nextest run -p surf-session -p surf-answer -p surf-agent` passes with the 19 numbered
 cases, each a test named after its case, case 1 equal to its golden text and no answer of case 3
-containing the password. No test runs over 60 s, and the test step ends within 120 s.
+containing the password. For the `readonly` field of the specification: `slot task validate`,
+`slot task suite`, `slot task conform`, `slot task conform-rust` and `slot task
+generated-check` pass, and the scenario, authored and refused counts after the change stand
+beside the counts at its base (169 scenarios, 24 authored, 48 refused on `main` after round 1,
+`AGENTS.md` "The gate's numbers") in every file that states them, `REFUSALS_MAX` equal to the
+refused count after. No test runs over 60 s, and the test step ends within 120 s.
 
 ## Out of scope
 

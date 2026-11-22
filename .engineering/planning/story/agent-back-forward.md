@@ -19,6 +19,8 @@ scope:
   path: cli/surf-agent.yaml
 - confidence: cited
   path: crates/agent/src/cli.rs
+- confidence: cited
+  path: crates/agent/src/wire.rs
 - confidence: inferred
   path: crates/agent/tests/drift.rs
 - confidence: cited
@@ -35,11 +37,13 @@ scope:
   path: crates/surfd/src/daemon.rs
 - confidence: cited
   path: docs/agent-answer.md
+- confidence: cited
+  path: docs/view-stream.md
 - confidence: inferred
   path: generated/rust
 - confidence: inferred
   path: spec/domains/agent.yaml
-revision: 10
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 5}
@@ -76,7 +80,13 @@ so the agent gets the reason and status 1 instead of a navigation that never sta
 - `crates/session`: the event entries of the `GoBack` and `GoForward` events of
   `agent-history-spec`, with their fields, in the mapping function `entries::event_line`
   (`crates/session/src/entries.rs:141`, whose last arm, `:287`, writes `unmapped`) and in the
-  mapping list `covered()` of `crates/session/tests/events.rs:858` (decision D27).
+  mapping list `covered()` of `crates/session/tests/events.rs:858` (decision D27). Each new
+  event name goes into the "Event names" block of `docs/view-stream.md` (`:219-239`), which
+  `task view-stream-check` reads (`docs/view-stream.md:215-217`: "A story that maps a new event
+  adds its name here"); no other part of that document is written.
+- `crates/agent/src/wire.rs`: its module documentation lists the commands of a request
+  (`command <name>`, `:24`, "`open`, `go`, `look`, `close`"); `back` and `forward` join that list.
+  They take no `arg`.
 - The `did` and `path` lines of `back` and `forward` take no argument, as `docs/agent-answer.md`
   and `crates/answer` write a command without one: `did back`, `did forward`, `<n> back`,
   `<n> forward`. The reasons `at-start`, `at-end` and `post-entry` go into the reason table with
@@ -91,7 +101,9 @@ so the agent gets the reason and status 1 instead of a navigation that never sta
   5. `go` C after `back` drops B: `forward` refused `at-end`;
   6. after a form `POST` answered 200, `back` and then `forward` to the `POST` entry: status 1,
      `post-entry`;
-  7. the server down when the agent goes back: `page failed`, and `forward` still lands on B;
+  7. the server down when the agent goes back: `page failed`; with the server up again, `back`
+     lands on A (a failed traversal leaves the current entry where it was,
+     `story:agent-history-spec`);
   8. handles start at 1 on the page `back` lands on;
   9. the calls of cases 1 and 2 through the core with a transport the test supplies give the same
      answers;
@@ -109,7 +121,8 @@ so the agent gets the reason and status 1 instead of a navigation that never sta
   `story:agent-fill-pick`, where its form has a field); cases 3 and 4 need neither.
 
 Surfaces written: `crates/session/`, `crates/answer/`, `docs/agent-answer.md`,
-`cli/surf-agent.yaml`, `crates/agent/`, `crates/surfd/src/daemon.rs`.
+`cli/surf-agent.yaml`, `crates/agent/` (`src/wire.rs` included), `crates/surfd/src/daemon.rs`,
+`docs/view-stream.md` ("Event names" block only).
 
 ## For README.md (handed over in the unit report, decision D7)
 

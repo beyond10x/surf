@@ -18,7 +18,7 @@ scope:
   path: README.md
 - confidence: cited
   path: cli/surf-agent.yaml
-- confidence: inferred
+- confidence: cited
   path: crates/agent-tasks/status.txt
 - confidence: cited
   path: crates/agent/src/cli.rs
@@ -46,7 +46,7 @@ scope:
   path: spec/domains/agent.yaml
 - confidence: inferred
   path: website/docs/drive-from-an-agent.md
-revision: 12
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 6}
@@ -65,8 +65,9 @@ it, like every page-derived field, and corrects that line.
 
 - `crates/session`: `press <handle>` on a submit button issues `Press`; the answer shows the page
   the navigation committed at. The line of each submit button names what it submits:
-  `submits F1 post "/session"`, the form's handle as `surf_page::handles` gives it (`F<n>`, added
-  by `story:agent-form-port`; this story only prints it), the method, and the resolved action
+  `submits F1 post "/session"`, the form's handle as `surf_page::form_handles` gives it (`F<n>`,
+  a function `story:agent-form-port` adds beside `surf_page::handles`, which stays unchanged;
+  this story only prints it, and page text prints no `@F<n>`), the method, and the resolved action
   quoted like every page-derived field. `docs/design/agent-interface.md:231` writes the action
   unquoted; this story corrects that line to `submits F1 post "/session"`.
 - `no-default-action` is the session's refusal, before any command is issued, for a button of
@@ -102,7 +103,10 @@ it, like every page-derived field, and corrects that line.
   1. a login form filled and pressed: the server reads `POST /session HTTP/1.1` with
      `Content-Type: application/x-www-form-urlencoded` and the body `user=ada&password=s3cret`,
      answers 303 to `/home`, and the answer shows the page at `/home`;
-  2. a `GET` form lands on its action with the entries in the query;
+  2. the `GET` form of the `search` site (`crates/agent-tasks/sites/search/search.html:10-13`:
+     `action="results"`, a field `q`, a button `Find`), `q` filled with `lighthouse` and pressed:
+     the server reads `GET /results?q=lighthouse HTTP/1.1`, and the answer's `page` line ends in
+     `/results?q=lighthouse"`;
   3. the button line of a form reads `submits F1 post "/session"`;
   4. `press` on a `type=button`: `no-default-action`; 5. on a `reset`: `no-default-action`;
   6. on a disabled submit button: `disabled`; 7. a `multipart/form-data` form:
@@ -119,9 +123,13 @@ it, like every page-derived field, and corrects that line.
       `invalid-controls`; 14. an action that does not parse as a URL: `invalid-action`;
   15. a form with `method="dialog"`: `dialog-method`.
 
+- `crates/agent-tasks/status.txt`, the round's measure: `search pass` (line 4). A task listed
+  `pending` that passes makes the report print `raise: search` (`crates/agent-tasks/src/report.rs:9-14`),
+  so the line is changed in this story.
+
 Surfaces written: `crates/session/`, `crates/answer/`, `docs/agent-answer.md`,
 `cli/surf-agent.yaml`, `crates/agent/`, `crates/surfd/src/daemon.rs`,
-`docs/design/agent-interface.md` (line 231).
+`docs/design/agent-interface.md` (line 231), `crates/agent-tasks/status.txt`.
 
 ## For README.md (handed over in the unit report, decision D7)
 
@@ -132,8 +140,13 @@ Surfaces written: `crates/session/`, `crates/answer/`, `docs/agent-answer.md`,
 
 `cargo nextest run -p surf-session` passes with the 15 numbered cases, each a test named after its
 case, case 1 reading the request line `POST /session HTTP/1.1` and the body
-`user=ada&password=s3cret` and answering with the page at `/home`. No test runs over 60 s, and the
-test step ends within 120 s.
+`user=ada&password=s3cret` and answering with the page at `/home`. The round's measure:
+`crates/agent-tasks/status.txt` reads `search pass` (line 4 reads `search pending
+story:agent-fill-pick story:agent-press-submit` today), `tasks::every_task`
+(`crates/agent-tasks/tests/tasks.rs:74`) passes, and `slot task agent-tasks-report` prints
+`task search pass` with `2 connections` (`crates/agent-tasks/tasks.txt`, task `search`) and no
+`raise:` line (`crates/agent-tasks/src/report.rs:9-14`); today `search` fails. No test runs over
+60 s, and the test step ends within 120 s.
 
 ## Out of scope
 
