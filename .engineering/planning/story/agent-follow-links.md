@@ -66,7 +66,7 @@ scope:
   path: spec/domains/agent.yaml
 - confidence: inferred
   path: website/docs/drive-from-an-agent.md
-revision: 19
+revision: 20
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 6}
@@ -239,3 +239,30 @@ within 120 s.
 
 `back` and `forward` (`agent-history-spec`, `agent-back-forward`); controls; the `changed` block;
 visibility from CSS; paging a long `now` block (backlog `story:agent-answer-paging`).
+
+## As decided after the adversary's pass
+
+Decided by the coordinator after the adversary's pass and sent to the commands unit as fixes of
+`follow`, so the story's text matches what is built. Each refusal is decided by the session
+before any navigation starts, with no request, exit status 1:
+
+- A resolved target over `surf_fetch::MAX_ADDRESS_BYTES` (65,536 bytes, 64 KiB,
+  `crates/fetch/src/lib.rs:572`) is refused: `did refused address-too-long`.
+- A target whose scheme surf does not fetch (surf fetches `http:` only,
+  `crates/fetch/src/lib.rs:165-166`) is refused and the page stays: `did refused
+  unsupported-scheme`.
+- The destination rule of a redirect (`crates/fetch/src/lib.rs:100-116`) applies to a target:
+  from a page on a public address, a target on a loopback, private, link-local, unique-local,
+  shared or unspecified address is refused before any connection: `did refused
+  forbidden-destination`; from a page on a local address it goes on as before.
+- A shown target never holds a userinfo; its scheme, host and port are shown whole and the cut
+  of 1,024 characters applies after them; a same-origin target whose path starts with `//` is
+  shown absolute, not as its path.
+
+The three words `address-too-long`, `unsupported-scheme` and `forbidden-destination` join
+`unknown-handle`, `hidden` and `unresolved` in the reason table of `docs/agent-answer.md` with
+exit status 1, in `RefusalReason` and its `RefusalReason::ALL` (`crates/answer/src/lib.rs:150`),
+in `refusal_status` (`crates/session/src/lib.rs:924`), in the exhaustive `match` of
+`crates/surfd/src/daemon.rs:815-821`, and in a test. `story:agent-press-submit` applies the same
+three refusals to a submission's address and uses these words; it adds no `RefusalReason` for
+them.

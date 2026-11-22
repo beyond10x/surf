@@ -40,9 +40,17 @@ scope:
 - confidence: inferred
   path: crates/answer/tests
 - confidence: cited
+  path: crates/page/src/forms.rs
+- confidence: cited
+  path: crates/page/src/lib.rs
+- confidence: cited
+  path: crates/page/tests
+- confidence: cited
   path: crates/session/src/lib.rs
 - confidence: cited
   path: crates/session/tests
+- confidence: cited
+  path: crates/surf/tests
 - confidence: cited
   path: crates/surfd/src/daemon.rs
 - confidence: cited
@@ -71,7 +79,7 @@ scope:
   path: website/docs/status.md
 - confidence: inferred
   path: website/docs/what-works.md
-revision: 20
+revision: 22
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 6}
@@ -95,6 +103,16 @@ coordinating agent on 2026-11-21, scope critic, round 1, finding 2): `fill` also
 from standard input (`fill <handle> -`). A value given as an argument word is readable by other
 local users, as the token would be; the epic gains the constraint "a secret value is never an
 argument word", and `README.md` says to use `fill <handle> -` for one.
+
+`agent-form-port` is built (`58ed9b4`). Its bound as built: the session's bound of 256 row
+entries per request (`ELEMENT_ENTRIES_MAX`, `crates/session/src/lib.rs:246` at `58ed9b4`)
+counts `FormAdded` and `OptionAdded` with `ElementAdded` and bounds only the entries written into
+the session log; the rows past it are left out of the log and counted by one `EventsLeftOut`
+line, not out of the document. A page with more rows than the bound still has every control row
+and option row: every control has its `f<n>` or `b<n>` line and handle in `now`
+(`surf_page::handles` over the whole tree), and `pick` finds every option. A Hidden `input` has
+no row, no line and no handle (`crates/page/src/lib.rs:14-16` at `58ed9b4`); its `value`
+attribute goes into a submission's entry list all the same.
 
 ## Change
 
@@ -144,6 +162,21 @@ argument word", and `README.md` says to use `fill <handle> -` for one.
   `REFUSALS_MAX`) join the surfaces written. A `select` with `multiple` and the radio group of
   a button with no form owner or no name stay open (`spec/domains/document.yaml:306`, `798`;
   `story:agent-forms-spec`, As built, line 215).
+- The radio button group rule at parse time, which `agent-form-port` left out
+  (`crates/page/src/lib.rs:162-166` at `58ed9b4`, "Not yet taken": "every radio button with a
+  `checked` attribute is `checked`, and a submission gives each of them as an entry"), is taken
+  by this story in `crates/page`: of the radio buttons of one group that carry the `checked`
+  attribute, only the last in tree order is `checked`, the others are not. The group is the one
+  `Check` uses (`spec/domains/document.yaml:796-797`: the radio buttons of the document with the
+  same form owner and the same `name`), with the two groups that line's `UNMAPPED` note leaves
+  to `Check` (`:798-800`) taken here as the note states the HTML Standard's: a radio button with
+  no form owner groups with the radio buttons of its tree with no form owner and the same name,
+  and one with no name is alone. The form owner is the one `surf_page::forms::forms` computes
+  (`crates/page/src/forms.rs:14-18` at `58ed9b4`); the `checked` of `actionable_elements`
+  (`crates/page/src/lib.rs:611` at `58ed9b4`) is what the `AddElement` of the parser step carries,
+  so the row, the `now` line and the submission's entry list (which reads the row,
+  `crates/surf/src/lib.rs:74-76` at `58ed9b4`) all follow. The "Not yet taken" paragraph of
+  `crates/page/src/lib.rs` is removed. Cases 20 and 21.
 - `cli/surf-agent.yaml`, `crates/agent`: `fill` and `pick`, together, so the drift test holds.
   `fill <handle> -` reads the value from standard input, which the command line has no source
   for today (`crates/agent/src/cli.rs` declares standard input for the token only,
@@ -171,12 +204,20 @@ argument word", and `README.md` says to use `fill <handle> -` for one.
       `<n> bytes` too; neither is `unmapped`;
   18. round trip: `surf_answer::parse` of the answer of case 1 and of each answer of cases 14 to
       16 gives the typed answer, and rendering that gives the same lines byte for byte;
-  19. `fill` a `readonly` text field: status 1, `readonly`.
+  19. `fill` a `readonly` text field: status 1, `readonly`;
+  20. `radio_group_two_checked_shows_the_last`: a page with a form holding two radio buttons
+      `size` of values `s` and `m`, both with `checked`, in that order: the `now` line of `m`
+      shows `checked` and the line of `s` does not;
+  21. in `crates/surf/tests/forms.rs`, beside `agent-form-port`'s cases and with its helpers
+      (`load` and `press`, `:131`, `:207` at `58ed9b4`): the same form with a submit button
+      `Save` and `action="/save" method="post"`, pressed: the request's body is `size=m`, one
+      entry of the group.
 
 Surfaces written: `crates/session/`, `crates/answer/`, `docs/agent-answer.md`,
 `cli/surf-agent.yaml`, `crates/agent/`, `crates/surfd/src/daemon.rs`,
-`docs/design/agent-interface.md` (line 218), and for `readonly` the specification files and count
-files named above.
+`docs/design/agent-interface.md` (line 218), `crates/page/src/lib.rs` and
+`crates/page/src/forms.rs` (the radio group rule), `crates/surf/tests/forms.rs` (case 21), and
+for `readonly` the specification files and count files named above.
 
 ## For README.md (handed over in the unit report, decision D7)
 
@@ -186,7 +227,8 @@ files named above.
 
 ## Acceptance
 
-`cargo nextest run -p surf-session -p surf-answer -p surf-agent` passes with the 19 numbered
+`cargo nextest run -p surf-session -p surf-answer -p surf-agent -p surf-page -p surf` passes with
+the 21 numbered
 cases, each a test named after its case, case 1 equal to its golden text and no answer of case 3
 containing the password. For the `readonly` field of the specification: `slot task validate`,
 `slot task suite`, `slot task conform`, `slot task conform-rust` and `slot task
