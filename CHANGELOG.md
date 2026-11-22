@@ -21,8 +21,9 @@ release; what came before it is in the git log and in `docs/plan/`.
   anything) and listens on 127.0.0.1 only, on a port the system picks. The address and a token
   drawn at start are in `$XDG_RUNTIME_DIR/surf/view-url` (mode 0600), removed when `surfd`
   exits; the routes of data need the token. No session's token is in the stream. The page at
-  that address shows the sessions (below). A `surfd` started from a shell also prints that
-  address, with the token, on standard error.
+  that address shows the sessions (below). A `surfd` started from a shell prints the path of
+  that file on standard error, not the token; `surfd --print-view-url` prints the address with
+  its token there instead.
 - The HTML parser (`surf-html`) decides a document's encoding by the HTML Standard's sniffing
   algorithm and decodes UTF-8, UTF-16LE, UTF-16BE and windows-1252, and its tokenizer reads
   tags, attributes, comments, DOCTYPEs, processing instructions and CDATA sections. No command
@@ -80,6 +81,41 @@ release; what came before it is in the git log and in `docs/plan/`.
   log, and so in the live view's stream, carry three more fields: `method`, `body` (its length,
   `<n> bytes`) and `body_type`. `go` and `open` send `GET` without a body as before, so their
   `method` is `Get` and `body` and `body_type` have no value (`null` in the stream).
+
+### Security
+
+- A call refused for its token, and a request the session process cannot read, no longer
+  carries the session's address. In `0.2.0` such a refusal on the session process's own socket
+  held the address of the session's page, which can hold a secret in its query or fragment;
+  `surfd` did not pass it on, so only another process of the same user could read it. Now the
+  refusal holds the head line, with the state `unknown`, and the `did` line, nothing else, and
+  `surfd` keeps what it knew of the session.
+- A redirect cannot send a request into the machine's own network. Redirects are followed since
+  this release (above); before this fix, which came before the release, a public site could
+  redirect a `go` or a `surf` load to a loopback or private address, and surf connected there.
+  When a load starts at a public address, a redirect to a loopback, private, link-local,
+  unique-local, shared (100.64.0.0/10) or unspecified address, or to an IPv6 address that
+  embeds one (IPv4-mapped, IPv4-compatible, NAT64 `64:ff9b::/96`, 6to4 `2002::/16`), also
+  through a name, fails with the new reason
+  `ForbiddenDestination` (`page failed ForbiddenDestination`, `fetch-failed … ForbiddenDestination`,
+  exit status 1), with no connection to it. The name is resolved once per request and the
+  address checked is the one connected to. A load that starts at a local address, and its
+  redirects, work as before.
+- `surf-agent` no longer sends its token to a socket it has not checked. In `0.2.0` it
+  connected to `$XDG_RUNTIME_DIR/surf/surfd.sock` and wrote the request, token included, with no
+  check of who owned the directories or the socket. Now every command first checks that
+  `$XDG_RUNTIME_DIR` and `surf/` in it are directories of the caller, not symbolic links, with
+  no access for group and others, and that the socket is a socket of the caller; otherwise it
+  exits 3, names the path and what is wrong, and sends nothing. A link is refused in every
+  spelling of the path: a trailing `/`, a doubled `/` and a `.` component are removed before the
+  check, and a `..` component or a relative path is refused. The peer of the connection is not
+  checked: the standard library offers no stable way to read its credentials.
+- `surfd` started by hand does not write the live view's token on standard error. The live view
+  is new in this release (above); before this fix, which came before the release, `surfd`
+  printed the address with its token, so a log of it gave every session's view to whoever read
+  the log. It prints the path of `$XDG_RUNTIME_DIR/surf/view-url`, which holds the address
+  (mode 0600); `surfd --print-view-url` prints the address with its token for a person who asks
+  for it.
 
 ## [0.2.0] - 2026-11-21
 

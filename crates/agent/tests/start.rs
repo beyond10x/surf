@@ -1,9 +1,13 @@
 //! Cases 19 to 24: the runtime directory, and `open` starting `surfd`, with a copy of the built
-//! `surf-agent` in a directory of the test and the stand-in beside it as `surfd`.
+//! `surf-agent` in a directory of the test and the stand-in beside it as `surfd`. Since the
+//! story `security-review-fixes`, the checks of the runtime directory, `surf/` and the socket
+//! before any connection, each against a listener of the test that must receive nothing.
 
 mod common;
 
 use std::fs;
+use std::os::unix::fs::{PermissionsExt, symlink};
+use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -134,4 +138,223 @@ fn surfd_that_writes_nothing_exits_3_within_6_seconds() {
         panic!("the silent surfd was left running: {error}");
     }
     assert!(!Path::new(&dir.runtime().join("surf/surfd.sock")).exists());
+}
+
+// --- The checks before a connection (story `security-review-fixes`) ---------------------------
+
+/// A listener of the test at `path`, which must receive no connection.
+fn listener_at(path: &Path) -> UnixListener {
+    let listener = UnixListener::bind(path).expect("the test's listener");
+    listener.set_nonblocking(true).unwrap();
+    listener
+}
+
+/// `surf-agent look` with a session and its token; it must exit 3 naming `path` and `what`, and
+/// `listener` must have received no connection, so no byte. `surf-agent` has ended when this
+/// reads the listener, so one read decides.
+fn look_is_refused(dir: &TestDir, path: &Path, what: &str, listener: &UnixListener) {
+    let output = run(agent(dir)
+        .arg("look")
+        .env("SURF_SESSION", SESSION)
+        .env("SURF_TOKEN", TOKEN));
+    assert_eq!(output.status.code(), Some(3), "{}", stderr(&output));
+    let expected = format!("{} {what}", path.display());
+    assert!(stderr(&output).contains(&expected), "{}", stderr(&output));
+    assert!(stdout(&output).is_empty(), "{}", stdout(&output));
+    match listener.accept() {
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+        Err(error) => panic!("the test's listener: {error}"),
+        Ok(_) => panic!("surf-agent connected to the listener"),
+    }
+    assert!(dir.starts().is_empty(), "surfd was started");
+}
+
+#[test]
+fn a_runtime_dir_of_mode_0755_is_refused_before_any_byte() {
+    let dir = TestDir::new();
+    let surf = dir.runtime().join(wire::DIRECTORY);
+    fs::create_dir(&surf).unwrap();
+    fs::set_permissions(&surf, fs::Permissions::from_mode(0o700)).unwrap();
+    let listener = listener_at(&surf.join(wire::SOCKET));
+    fs::set_permissions(dir.runtime(), fs::Permissions::from_mode(0o755)).unwrap();
+    look_is_refused(&dir, &dir.runtime(), "has mode 0755", &listener);
+}
+
+#[test]
+fn surfs_directory_behind_a_symbolic_link_is_refused_before_any_byte() {
+    let dir = TestDir::new();
+    let target = dir.path.join("t");
+    fs::create_dir(&target).unwrap();
+    fs::set_permissions(&target, fs::Permissions::from_mode(0o700)).unwrap();
+    let listener = listener_at(&target.join(wire::SOCKET));
+    let surf = dir.runtime().join(wire::DIRECTORY);
+    symlink(&target, &surf).unwrap();
+    look_is_refused(&dir, &surf, "is a symbolic link", &listener);
+}
+
+#[test]
+fn a_socket_path_that_is_no_socket_is_refused_before_any_byte() {
+    let dir = TestDir::new();
+    let surf = dir.runtime().join(wire::DIRECTORY);
+    fs::create_dir(&surf).unwrap();
+    fs::set_permissions(&surf, fs::Permissions::from_mode(0o700)).unwrap();
+    let behind = dir.path.join("l.sock");
+    let listener = listener_at(&behind);
+    let socket = surf.join(wire::SOCKET);
+    symlink(&behind, &socket).unwrap();
+    look_is_refused(&dir, &socket, "is a symbolic link", &listener);
+    fs::remove_file(&socket).unwrap();
+    fs::write(&socket, "a regular file").unwrap();
+    look_is_refused(&dir, &socket, "is not a socket", &listener);
+}
+
+#[test]
+fn a_directory_of_another_user_is_refused() {
+    let dir = TestDir::new();
+    let caller = wire::caller_uid().unwrap();
+    let other = caller.wrapping_add(1);
+    let refusal = wire::check_socket_path(&dir.runtime(), other).unwrap_err();
+    assert_eq!(
+        refusal,
+        format!(
+            "{} is owned by user {caller}, not by the caller, user {other}",
+            dir.runtime().display()
+        )
+    );
+    assert_eq!(
+        wire::check_socket_path(&dir.runtime(), caller),
+        Ok(wire::SocketCheck::Absent)
+    );
+}
+
+/// Security review of `security-review-fixes`: `XDG_RUNTIME_DIR` naming a symbolic link with a
+/// trailing `/` (or `/.`) is still a runtime directory reached through a symbolic link, which the
+/// design says is refused; `symlink_metadata` follows a link whose path ends in `/`. The client
+/// must exit 3 naming the link, and the test's listener behind it must receive no byte.
+#[test]
+fn review_a_runtime_dir_that_is_a_symbolic_link_written_with_a_trailing_slash_is_refused() {
+    use std::io::Read as _;
+    use std::process::Stdio;
+
+    let dir = TestDir::new();
+    let surf = dir.runtime().join(wire::DIRECTORY);
+    fs::create_dir(&surf).unwrap();
+    fs::set_permissions(&surf, fs::Permissions::from_mode(0o700)).unwrap();
+    let listener = listener_at(&surf.join(wire::SOCKET));
+    let link = dir.path.join("l");
+    symlink(dir.runtime(), &link).unwrap();
+    let caller = wire::caller_uid().unwrap();
+    for spelled in [format!("{}/", link.display()), format!("{}/.", link.display())] {
+        let library = wire::check_socket_path(Path::new(&spelled), caller);
+        let mut child = None;
+        for _ in 0..50 {
+            match agent(&dir)
+                .env("XDG_RUNTIME_DIR", &spelled)
+                .env("SURF_SESSION", SESSION)
+                .env("SURF_TOKEN", TOKEN)
+                .arg("look")
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+            {
+                Err(error) if error.kind() == std::io::ErrorKind::ExecutableFileBusy => {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                started => {
+                    child = Some(started.expect("surf-agent runs"));
+                    break;
+                }
+            }
+        }
+        let mut child = child.expect("the copied surf-agent stayed busy");
+        // Accept what the client sends, at most 5 s, and close it so the client ends.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut received = Vec::new();
+        let mut connected = false;
+        while Instant::now() < deadline {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    connected = true;
+                    stream.set_nonblocking(false).unwrap();
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(2)))
+                        .unwrap();
+                    let mut buffer = [0u8; 4096];
+                    while let Ok(n) = stream.read(&mut buffer) {
+                        if n == 0 {
+                            break;
+                        }
+                        received.extend_from_slice(&buffer[..n]);
+                        if received.ends_with(b"end\n") {
+                            break;
+                        }
+                    }
+                    break;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    if child.try_wait().unwrap().is_some() {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => panic!("the test's listener: {error}"),
+            }
+        }
+        let output = child.wait_with_output().unwrap();
+        let received = String::from_utf8_lossy(&received).into_owned();
+        assert!(
+            !connected,
+            "XDG_RUNTIME_DIR={spelled:?}: check_socket_path gave {library:?}; surf-agent \
+             connected through the symbolic link and wrote {} bytes, the token among them: {}",
+            received.len(),
+            received.contains(TOKEN)
+        );
+        assert_eq!(output.status.code(), Some(3), "{}", stderr(&output));
+        assert!(
+            stderr(&output).contains("is a symbolic link"),
+            "{}",
+            stderr(&output)
+        );
+    }
+}
+
+/// Every spelling of a runtime directory that is a symbolic link is refused naming the link, a
+/// `..` component and a relative path are refused, and the real directory is accepted with a
+/// trailing `/`, as some logins set `XDG_RUNTIME_DIR`.
+#[test]
+fn every_spelling_of_a_runtime_dir_behind_a_symbolic_link_is_refused() {
+    let dir = TestDir::new();
+    let surf = dir.runtime().join(wire::DIRECTORY);
+    fs::create_dir(&surf).unwrap();
+    fs::set_permissions(&surf, fs::Permissions::from_mode(0o700)).unwrap();
+    let _listener = listener_at(&surf.join(wire::SOCKET));
+    let link = dir.path.join("l");
+    symlink(dir.runtime(), &link).unwrap();
+    let caller = wire::caller_uid().unwrap();
+    let named = format!("{} is a symbolic link", link.display());
+    for suffix in ["", "/", "//", "/.", "/./", "/.//."] {
+        let spelled = format!("{}{suffix}", link.display());
+        assert_eq!(
+            wire::check_socket_path(Path::new(&spelled), caller),
+            Err(named.clone()),
+            "{spelled}"
+        );
+    }
+    let up = format!("{}/../{}", link.display(), "l");
+    assert_eq!(
+        wire::check_socket_path(Path::new(&up), caller),
+        Err(format!("{up} has a .. component"))
+    );
+    assert_eq!(
+        wire::check_socket_path(Path::new("run/user"), caller),
+        Err("run/user is not an absolute path".to_string())
+    );
+    for suffix in ["", "/", "//", "/."] {
+        let spelled = format!("{}{suffix}", dir.runtime().display());
+        assert_eq!(
+            wire::check_socket_path(Path::new(&spelled), caller),
+            Ok(wire::SocketCheck::Present),
+            "{spelled}"
+        );
+    }
 }

@@ -41,6 +41,12 @@ types:
       # cannot be reached.
       - name: TooManyRedirects
         summary: A redirect arrived after 20 redirects of the same request were followed.
+      # surf's own rule, not one of the standards this specification follows: no standard of
+      # that list names a network error for it. The rule is in the comment above `entities`.
+      - name: ForbiddenDestination
+        summary: >-
+          A redirect led from a public address to a loopback, private, link-local,
+          unique-local, shared or unspecified one.
     naming:
       summary: Why a request ended without a response.
 
@@ -73,6 +79,18 @@ types:
 # fetch" does: a 301 or 302 after a `Post`, and a 303 after any method other than `Get` (or
 # `HEAD`, which this slice does not have), continue as `Get` without a body; every other redirect,
 # a 307 and a 308 among them, keeps the method and the body.
+# The destination rule, applied to the address the transport dials: the host of each request of
+# a redirect chain is resolved once, and the addresses resolved are the ones checked and dialed.
+# An address is local when it is loopback (127.0.0.0/8, ::1), private (10.0.0.0/8,
+# 172.16.0.0/12, 192.168.0.0/16), link-local (169.254.0.0/16, fe80::/10), unique-local
+# (fc00::/7), shared (100.64.0.0/10) or unspecified (0.0.0.0, ::), or an IPv6 address that
+# embeds an IPv4 address of one of these: IPv4-mapped (::ffff:a.b.c.d), IPv4-compatible
+# (::a.b.c.d), NAT64 (64:ff9b::/96) or 6to4 (2002::/16); every other address is public. When the first request of a chain connected
+# to a public address, a request that follows a redirect and whose host resolves to any local
+# address ends the request with ForbiddenDestination, before any connection to it. A chain whose
+# first request connected to a local address follows its redirects as before, and the first
+# request itself is never refused by this rule: going to a local address on purpose is a use of
+# surf.
 # UNMAPPED: request headers, cookies, caching and TLS.
 entities:
   - name: surf.net.Request

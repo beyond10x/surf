@@ -19,7 +19,7 @@
 //! surf-link 1
 //! status <0, 1, 2 or 3>
 //! reason "<text>"
-//! state <open or closed>
+//! state <open, closed or unknown>
 //! address "<the address, quoted>"
 //! title "<the title, quoted>"
 //! entries <n>
@@ -33,7 +33,10 @@
 //! - `state`, `address` and `title` are the status record: `closed` after the session was
 //!   closed, `open` otherwise; the address and the title of the page as the session reports
 //!   them, each a field of [`surf_answer::quote`], each absent when there is none. `surfd` keeps
-//!   them quoted ([`Quoted`]) and does not read them.
+//!   them quoted ([`Quoted`]) and does not read them. `unknown`, with no address and no title,
+//!   is the record of a request the session refused without acting on it (a wrong token, a
+//!   request that does not decode): it says nothing of the session, and `surfd` keeps what it
+//!   knew before the request: the address, the title and the time of the last action.
 //! - `entries <n>`, always there, `entries 0` for none: the entries of the request for the log
 //!   `surfd` keeps ([`crate::log`]), at most [`ENTRIES_MAX`] bytes ([`Entry`], below).
 //! - The answer lines are at most [`ANSWER_TEXT_MAX`] bytes; the lines of the record (every line
@@ -120,6 +123,9 @@ pub enum SessionState {
     Open,
     /// `closed`: the session was closed by this request and ends.
     Closed,
+    /// `unknown`: the request was refused before it was acted on, and the record holds nothing
+    /// of the session; `surfd` keeps what it knew of it.
+    Unknown,
 }
 
 /// A quoted field of [`surf_answer::quote`], kept as it arrived: printable ASCII, read back only
@@ -545,6 +551,7 @@ impl Answer {
         record.push_str(match self.state {
             SessionState::Open => "state open\n",
             SessionState::Closed => "state closed\n",
+            SessionState::Unknown => "state unknown\n",
         });
         if let Some(address) = &self.address {
             record.push_str(&format!("address {}\n", address.as_str()));
@@ -596,7 +603,8 @@ impl Answer {
         let state = match line {
             "state open" => SessionState::Open,
             "state closed" => SessionState::Closed,
-            _ => return Err(LinkError::Malformed("no state of open or closed")),
+            "state unknown" => SessionState::Unknown,
+            _ => return Err(LinkError::Malformed("no state of open, closed or unknown")),
         };
         line = next_line(&mut rest)?;
         let mut address = None;

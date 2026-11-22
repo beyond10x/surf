@@ -65,14 +65,14 @@ fn token_differing_in_one_byte_is_refused() {
             assert_eq!(status, 1, "{command} with {other}");
             assert_eq!(
                 text,
-                format!("surf 1 session {ID} open\ndid refused token\n")
+                format!("surf 1 session {ID} unknown\ndid refused token\n")
             );
         }
         let (status, text) = call(&mut session, &holder("go", other, &[("url", &url("/x"))]));
         assert_eq!(status, 1);
         assert_eq!(
             text,
-            format!("surf 1 session {ID} open\ndid refused token\n")
+            format!("surf 1 session {ID} unknown\ndid refused token\n")
         );
     }
 
@@ -328,7 +328,7 @@ fn path_shows_the_last_five_actions() {
     let (_, text) = call(&mut session, &request("open", None, None, &[]));
     assert_eq!(
         text,
-        format!("surf 1 session {ID} open\ndid refused usage\n")
+        format!("surf 1 session {ID} unknown\ndid refused usage\n")
     );
 }
 
@@ -379,7 +379,7 @@ fn another_identity_with_the_token_is_refused() {
         assert_eq!(status, 1, "{named:?}");
         assert_eq!(
             text,
-            format!("surf 1 session {ID} open\ndid refused token\n")
+            format!("surf 1 session {ID} unknown\ndid refused token\n")
         );
     }
     let upper = ID.to_ascii_uppercase();

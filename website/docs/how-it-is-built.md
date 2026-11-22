@@ -39,24 +39,24 @@ One command checks everything:
 
 ```console
 $ task check
-surf v1 — 9 file(s), 14 scenario(s), valid
-95 scenario(s) (14 authored), 28 refusal(s), written to .out/suite.json
-  95 scenarios: 95 passed, 0 failed, 0 error, 0 unsupported
-95 scenario(s) (14 authored), 28 refusal(s), written to .out/suite.json
-  95 scenarios: 95 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 95 scenario(s) each, of suite sha256:5fe34265b01df3ccfc43f30d4ddb41759c22407845edb2e1e5e675481bd29b9f
+surf v1 — 9 file(s), 15 scenario(s), valid
+96 scenario(s) (15 authored), 28 refusal(s), written to .out/suite.json
+  96 scenarios: 96 passed, 0 failed, 0 error, 0 unsupported
+96 scenario(s) (15 authored), 28 refusal(s), written to .out/suite.json
+  96 scenarios: 96 passed, 0 failed, 0 error, 0 unsupported
+the interpreter and the Rust system ran 96 scenario(s) each, of suite sha256:579a46b3389c56bb67b8fc3174268f525b8568ee47446e67d2a1cca936660ba8
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 Cargo.lock: 24 package(s), none from outside this repository
     Finished `dev` profile [unoptimized] target(s) in 0.00s
-561 tests: 561 passed, 0 failed, 0 ignored (cargo-nextest 559, doc tests 2)
+579 tests: 579 passed, 0 failed, 0 ignored (cargo-nextest 577, doc tests 2)
 test step: 22.2 s of its budget of 120 s
 view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
   38 passed (15.8s)
 html-conformance: 9107 cases, 9095 run, 8428 passed
 ```
 
-It validates the specification, runs the 95 scenarios against the interpreter built into `ess`
+It validates the specification, runs the 96 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
 that the lock file holds no outside package, then builds and tests, checks that every event
 name of the live view's stream is an event of the specification, runs the live view's page

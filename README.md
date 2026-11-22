@@ -7,8 +7,8 @@
 **A web browser written from scratch, where the specification comes first.**
 
 ![spec: ESS 0.96.0, valid](docs/badges/spec.svg)
-![conformance: 95 of 95 scenarios](docs/badges/conformance.svg)
-![tests: 561 passed](docs/badges/tests.svg)
+![conformance: 96 of 96 scenarios](docs/badges/conformance.svg)
+![tests: 579 passed](docs/badges/tests.svg)
 ![third-party crates shipped: 0](docs/badges/dependencies.svg)
 ![unsafe code: forbidden](docs/badges/unsafe.svg)
 ![standard sections marked complete: 0](docs/badges/complete.svg)
@@ -124,7 +124,9 @@ list and the selection scroll inside themselves.
 
 The view only reads: nothing on the page changes a session. It listens on 127.0.0.1 only. The
 token in the address is valid until `surfd` exits, and the browser may keep that address in its
-history.
+history. A `surfd` you start yourself writes one line on standard error, the path of
+`view-url`, and not the token; `surfd --print-view-url` writes the address with its token
+there instead.
 
 ## What surf is
 
@@ -162,7 +164,7 @@ history.
 6. **Text from the web stays text.** Anything from a page, a server or an address is escaped
    before it is printed, so a page cannot forge a line of surf's output.
 7. **A passing test must be able to fail.** Tests are tried against planted defects. A storage
-   that drops every write fails 33 of the 95 scenarios.
+   that drops every write fails 34 of the 96 scenarios.
 8. **Small.** A standard is followed for what surf does, not implemented whole.
 
 ## What works today
@@ -173,10 +175,30 @@ history.
   `renderer`.
 - **Its own HTTP/1.1 client**, with one deadline for the whole exchange (40 seconds at most)
   and hard limits on header and body size.
-- **95 specified scenarios**, each passing twice: once against the specification's own
+- **96 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **561 tests**, built with warnings treated as errors, and 38 tests of the live view's page in
+- **579 tests**, built with warnings treated as errors, and 38 tests of the live view's page in
   a browser.
+
+Fixed after a security review, shipped in release `0.3.0`:
+
+- **A redirect cannot lead into your network.** When a load starts at a public address, a
+  redirect to a loopback, private, link-local, unique-local, shared (100.64.0.0/10) or
+  unspecified address, or to an IPv6 address that embeds one (IPv4-mapped, IPv4-compatible,
+  NAT64 or 6to4), also one reached through a name, fails with `ForbiddenDestination` before any
+  connection to it. The name is resolved once per request, and the address checked is the one
+  connected to. Loading a local address on purpose works as before, and so do the redirects of a
+  load that starts there.
+- **A refused call learns nothing of the session.** A request without the right token, or one
+  that cannot be read, gets the refusal alone: the head line says `unknown`, and no address or
+  title of the session is in the reply, also on the session's own socket.
+- **`surf-agent` checks where it sends the token.** Before it connects, it checks that
+  `$XDG_RUNTIME_DIR` and `surf/` in it are directories of yours, not symbolic links in any
+  spelling of the path, with no access for group and others, and that `surfd.sock` is a socket
+  of yours; otherwise it exits 3, names the path and sends nothing.
+- **`surfd` keeps the view's token off its standard error.** Started by hand, it prints where the
+  live view's address is kept (`$XDG_RUNTIME_DIR/surf/view-url`), not the address with its
+  token; `surfd --print-view-url` prints the address for a person who asks for it.
 
 New with the ninth wave of the current plan, shipped in release `0.3.0`. Nothing a `surf-agent`
 command prints has changed:
@@ -219,7 +241,8 @@ New with the seventh wave of the current plan, shipped in release `0.3.0`:
   307 and 308 with a `Location`) inside one fetch. The `page` line shows the address the fetch
   ended at, and the `did go` line the address asked for. One more redirect after the twentieth
   fails the load with `TooManyRedirects`. Only `http:` loads: a redirect to `https:` fails with
-  `UnsupportedScheme`.
+  `UnsupportedScheme`. A redirect from a public address to a loopback or private one fails with
+  `ForbiddenDestination` (above).
 - **The live view's page shows real sessions**, with a playhead over each session's actions
   (see "Watching sessions live" above). After a refused token the page stops and reads
   `offline`. It is tested in a browser as a step of `task check`.
@@ -384,24 +407,24 @@ One command checks everything:
 
 ```console
 $ task check
-surf v1 — 9 file(s), 14 scenario(s), valid
-95 scenario(s) (14 authored), 28 refusal(s), written to .out/suite.json
-  95 scenarios: 95 passed, 0 failed, 0 error, 0 unsupported
-95 scenario(s) (14 authored), 28 refusal(s), written to .out/suite.json
-  95 scenarios: 95 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 95 scenario(s) each, of suite sha256:5fe34265b01df3ccfc43f30d4ddb41759c22407845edb2e1e5e675481bd29b9f
+surf v1 — 9 file(s), 15 scenario(s), valid
+96 scenario(s) (15 authored), 28 refusal(s), written to .out/suite.json
+  96 scenarios: 96 passed, 0 failed, 0 error, 0 unsupported
+96 scenario(s) (15 authored), 28 refusal(s), written to .out/suite.json
+  96 scenarios: 96 passed, 0 failed, 0 error, 0 unsupported
+the interpreter and the Rust system ran 96 scenario(s) each, of suite sha256:579a46b3389c56bb67b8fc3174268f525b8568ee47446e67d2a1cca936660ba8
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 Cargo.lock: 24 package(s), none from outside this repository
     Finished `dev` profile [unoptimized] target(s) in 0.00s
-561 tests: 561 passed, 0 failed, 0 ignored (cargo-nextest 559, doc tests 2)
+579 tests: 579 passed, 0 failed, 0 ignored (cargo-nextest 577, doc tests 2)
 test step: 22.2 s of its budget of 120 s
 view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
   38 passed (15.8s)
 html-conformance: 9107 cases, 9095 run, 8428 passed
 ```
 
-It validates the specification, runs the 95 scenarios against the interpreter built into `ess`
+It validates the specification, runs the 96 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
 that the lock file holds no outside package, then builds and tests, checks that every event
 name of the live view's stream is an event of the specification, runs the live view's page

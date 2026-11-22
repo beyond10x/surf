@@ -36,6 +36,12 @@
 //! - `open` after the first, `open` with a session, a token or an argument but `url`, and a
 //!   request that does not decode ([`Session::malformed`]): `did refused usage`, status 2, the
 //!   head line and the `did` line only, because it carries no token.
+//!
+//! The refusals that carry no proof of the token (the first and the third above) are the same
+//! in every state of the session: the head line says `unknown`, and the status record holds the
+//! state `unknown` ([`link::SessionState::Unknown`]) with no address and no title. So a process
+//! that reaches the session's socket without the token reads nothing of the session, not even
+//! the address of its page, and `surfd` keeps what it knew of the session before the request.
 //! - `go` or `close` on a closed session: `did refused closed`, status 1, with the state.
 //!
 //! # The token
@@ -148,7 +154,8 @@ pub struct Reply {
     pub reason: Option<String>,
     /// The answer, in the grammar of `docs/agent-answer.md`.
     pub answer: Answer,
-    /// `closed` once the session is closed, `open` otherwise.
+    /// `closed` once the session is closed, `unknown` for a refusal that carries no proof of
+    /// the token ("Refusals" above), `open` otherwise.
     pub state: link::SessionState,
     /// The address of the page the session shows, if any.
     pub address: Option<String>,
@@ -571,17 +578,22 @@ impl<T: Transport> Session<T> {
         }
     }
 
-    /// The head line and `did refused <reason>` and nothing else; the status of the reason.
+    /// The head line with the state `unknown`, `did refused <reason>` and nothing else; the
+    /// status of the reason. The status record holds nothing of the session either: the state
+    /// [`link::SessionState::Unknown`], no address and no title, so that `surfd` keeps what it
+    /// knew before the request ("Refusals" above).
     fn bare(&self, reason: RefusalReason) -> Reply {
-        let mut answer = Answer::new(self.head());
+        let mut answer = Answer::new(Head {
+            session: self.id.clone(),
+            state: HeadState::Unknown,
+        });
         answer.did = Some(Did::Refused(reason));
-        let (state, address) = self.record_fields();
         Reply {
             status: refusal_status(reason),
             reason: None,
             answer,
-            state,
-            address,
+            state: link::SessionState::Unknown,
+            address: None,
             entries: Vec::new(),
         }
     }

@@ -166,8 +166,10 @@ page failed <reason> "<address>"
 
 `page none` before the first load. A loaded page: its status, a number from 0 to 65535; its
 media type, from the server; its address; and its title when it has one. A failed load: the
-reason, a word of `[A-Za-z]+` (the variants of `surf.net.FailureReason`, such as
-`Unreachable`, `UnsupportedScheme`, `MalformedResponse`), and the address. The media type, the
+reason, a word of `[A-Za-z]+` (the variants of `surf.net.FailureReason`: `Unreachable`,
+`UnsupportedScheme`, `MalformedResponse`, `TooManyRedirects` and `ForbiddenDestination`, a
+redirect from a public address to a loopback or private one, as `docs/surf-command.md`, "Limits",
+says), and the address. The media type, the
 address and the title are quoted fields.
 
 ### Path
@@ -264,7 +266,9 @@ state of the session as far as the one answering knows it (`page`, `path`, the n
 A `token` refusal prints the head line and the `did` line only: a caller without the token
 learns nothing of the session. So does a `usage` refusal of `open` (such as a second `open`
 to the same session process) and of a request that is not in the format of the wire: neither carries
-the session's token.
+the session's token. The head line of these three has the state `unknown`, whatever the state of
+the session, and the session process sends `surfd` no address and no title with them, so that
+`surfd` keeps what it knew of the session.
 
 ## Parsing
 
