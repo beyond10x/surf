@@ -18,7 +18,7 @@ scope:
   path: taskfiles/doc-tests-check.sh
 - confidence: cited
   path: taskfiles/doc-tests.yml
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T23:00:33Z", actor: "human:operator", revision: 10}
 - {from: "proposed", to: "active", at: "2026-11-22T23:00:33Z", actor: "human:operator", revision: 11}
@@ -154,15 +154,19 @@ otherwise.
    120 s`, a count line that ends `doc tests 2)` and `tls test step: N s of its budget of
    120 s`. The evidence names N and the load beside the 121.9 s of the base `9f83444`.
 3. `task doc-tests-check` prints `doc-tests-check: no doc test outside crates/ports` and exits
-   0. `task doc-tests-check-test` prints `doc-tests-check-test: 7 case(s), each decided as
-   expected by taskfiles/doc-tests-check.sh` (7 or the number of cases built, each of statement
-   2 among them). With the script planted to accept every mark (by hand, removed after, `git
+   0. `task doc-tests-check-test` prints `doc-tests-check-test: 13 case(s), each decided as
+   expected by taskfiles/doc-tests-check.sh`. As built: 13 cases, the 7 of statement 2 and six
+   more (`#![doc =`; a `//!` fence under `generated/`; a failing form under a `target`
+   directory, under a dot directory and in a `////` comment, each of which passes; a root
+   without `crates/` and `generated/`, which exits 2). With the script planted to accept every mark (by hand, removed after, `git
    diff --stat` equal before and after) `task doc-tests-check-test` exits non-zero and names the
    cases it expected to fail.
 4. A doc test of `surf-ports` planted to fail (`assert!(false)` in the block at
    `crates/ports/src/lib.rs`:40, by hand, removed after) makes `slot task test` exit non-zero,
    and `.out/test-doc.log` shows `FAILED`.
-5. `task --dry check` lists `doc-tests-check` before `build`, and `doc-tests-check-test`.
+5. `task --dry --verbose check` lists `doc-tests-check` before `build`, and
+   `doc-tests-check-test`. As built: both tasks are `silent` like the other checks, and `task
+   --dry check` alone does not list a silent task.
 6. `grep -n 'cargo test --doc' Taskfile.yml` shows `-p surf-ports` and no `--workspace`.
 7. `grep -n 'doc-tests' AGENTS.md` shows the bullet of `task doc-tests-check`, the paragraph of
    `task check` and the list of `taskfiles/`; `grep -n 'surf-ports' AGENTS.md` shows the bullet
