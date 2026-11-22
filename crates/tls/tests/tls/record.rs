@@ -15,7 +15,7 @@ use surf_tls::error::{AlertDescription, Error, Violation};
 use surf_tls::key_schedule::{self, CipherSuite, Secret};
 use surf_tls::record::{
     AES_GCM_RECORD_LIMIT, AlertLevel, ContentType, MAX_CIPHERTEXT, MAX_HANDSHAKE_MESSAGE,
-    MAX_PLAINTEXT, Message, RecordLayer, write_limit,
+    MAX_INNER_PLAINTEXT, MAX_PLAINTEXT, Message, RECORD_VERSION, RecordLayer, write_limit,
 };
 use surf_tls::transcript::Transcript;
 
@@ -343,6 +343,23 @@ fn oversized_plaintext_record() {
     let exact = message(11, MAX_PLAINTEXT - 4);
     let mut layer = reader(plain(22, &exact), false);
     assert_eq!(handshake(&mut layer), exact);
+}
+
+/// The record limits of RFC 8446 sections 5.1, 5.2 and 5.4 as literals, not as expressions of
+/// one another: the test server of `crates/tls-test-server` frames its records with the same
+/// layer, so a limit that moved would move on both sides of every end-to-end test unseen.
+/// The handshake message bound is item 9.1 of docs/design/tls.md.
+#[test]
+fn record_limits_are_the_literals_of_rfc8446() {
+    assert_eq!(MAX_PLAINTEXT, 16_384, "2^14, section 5.1");
+    assert_eq!(MAX_INNER_PLAINTEXT, 16_385, "2^14 + 1, section 5.4");
+    assert_eq!(MAX_CIPHERTEXT, 16_640, "2^14 + 256, section 5.2");
+    assert_eq!(
+        RECORD_VERSION,
+        [3, 3],
+        "legacy_record_version 0x0303, section 5.1"
+    );
+    assert_eq!(MAX_HANDSHAKE_MESSAGE, 65_535, "item 9.1");
 }
 
 /// Application data is never unprotected: an application data record before any key is

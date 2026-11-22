@@ -754,6 +754,29 @@ above, and the list of standards itself was written from memory.
     fails `task tls-certs-check` until `task tls-certs-slow WRITE=1` has made `certs/`,
     `openssl/SOURCE` and `certs/DIGEST` again. 18 tests (`adversary` 4, `certs` 6, `check`
     8). Depends on `surf-tls`.
+  - `crates/tls-test-server` (`surf-tls-test-server`): test tooling, not shipped
+    (`story:tls-test-server`): a TLS 1.3 server on 127.0.0.1 port 0 that the client of
+    `surf-tls` is tested against end to end. The server side of RFC 8446 section 4 as far as
+    the tests need it, over the public `record`, `key_schedule` and `transcript` of `surf-tls`
+    and the signing of its `crypto` (feature `test-tooling`); the server's messages are
+    written in `src/wire.rs`, a connection runs in `src/conn.rs`, with the certificates and
+    keys of `crates/tls-test-certs/certs/`. `TestServer::start(Config)` serves one HTTP/1.1
+    response per connection from a map of paths, counts the connections it accepts
+    (`accepted`) and gives back what it saw on each (`wait_seen`, `Seen`: server name, ALPN,
+    suite, group, scheme, ticket, request line, the records after the handshake, the
+    alerts, how it ended). A client silent for `IDLE` (2 s) is closed. A drop stops every
+    connection and joins its threads; when the connection that wakes the accepting thread
+    cannot be made, it returns without joining. It refuses a TLS 1.3 hello whose compression
+    methods are not `[0]` (`illegal_parameter`), a session id over 32 bytes
+    (`decode_error`) and a `change_cipher_spec` RFC 8446 section 5 does not let it drop
+    (`unexpected_message`). Modes: `Normal` (one `NewSessionTicket` after its Finished),
+    `Tls12ReadsSupportedVersions`, `Tls12IgnoresSupportedVersions` and `SelectsTls12` (kinds
+    (a), (b) and (c) of item 7 of the design note), `StallAfterServerHello` (the ServerHello,
+    and the compatibility `change_cipher_spec` to a hello with a session id), `NeverAnswer`
+    (reads raw bytes, writes nothing), `OversizedCertificate`, `BadFinished` and
+    `NoCloseNotify`. The tests assert outcomes and counts, never an upper bound on wall
+    time; each prints its time. 46 tests (`adversary_server` 17, `handshake` 12, `hostile`
+    7, `hundred` 1, `modes` 9). Depends on `surf-tls` with `test-tooling`.
 - `view-tests/`: the Playwright tests of the live view's page (`@playwright/test` 1.65.0,
   Chromium's headless shell, a committed `package-lock.json`), each case with its own
   `surf-view-fixture`: 38 cases, 18 in `tests/first-page.spec.mjs`, 6 in
