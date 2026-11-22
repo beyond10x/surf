@@ -153,7 +153,10 @@ above, and the list of standards itself was written from memory.
   its `.sha256` with curl, or takes `FILE=<pem> SHA256=<file>`, refuses a sha256 that
   differs, writes `cacert.pem` and `SOURCE`; it reaches the network and is never a step of
   `check`) and `anchors-age` (`DATE`, default today; fails when the list is older than 90
-  days) over `taskfiles/tls-anchors.sh`, POSIX sh; `taskfiles/tls-flights.yml` the tasks
+  days) over `taskfiles/tls-anchors.sh`, POSIX sh; `taskfiles/tls-certs.yml` the tasks
+  `tls-certs-check` (over `taskfiles/tls-certs-check.sh`, a step of `check`) and
+  `tls-certs-slow` (makes the test certificates again into `.out/tls-certs/` and compares
+  every file with the committed ones; `WRITE=1` writes them); `taskfiles/tls-flights.yml` the tasks
   `tls-flights-check` (over `taskfiles/tls-flights-check.sh`, a step of `check`) and
   `tls-flights-slow` (records the flights again and replays them; `WRITE=1` writes them; no
   task calls it). `taskfiles/slowest-tests.sh` is no task's own: `task test` calls it.
@@ -657,6 +660,19 @@ above, and the list of standards itself was written from memory.
     mode `handshake::trace::GivenClientHello`, and `Connection::set_write_sequence`; the
     crate's dev-dependency on itself turns it on for its tests. `.cargo/config.toml` compiles
     ring at `opt-level = 3` in the dev and test profiles (item 4 of the note).
+    Since `story:tls-record` `src/record.rs`, `src/key_schedule.rs` and `src/transcript.rs`
+    are the record layer over any `Read + Write` (keys given by the caller for each
+    direction, sequence numbers that refuse to wrap, handshake messages reassembled up to
+    65,535 bytes, the record rules of RFC 8446 section 5 each refused with its alert, at most
+    23,726,566 records under one AES-GCM write key), the key schedule for SHA-256 and SHA-384
+    and the transcript hash with `message_hash`, replaced once.
+    Since `story:tls-x509` it reads certificates: `src/der.rs` (a DER reader over a slice,
+    never past it and never allocating by a declared length; `DEPTH_MAX` 32,
+    `LENGTH_BYTES_MAX` 4), `src/x509/` (`Certificate::from_der`, version 3 only,
+    `SERIAL_BYTES_MAX` 20, `LeafKey`, and `TrustAnchor`, which a root the reader refuses still
+    gives as name and key when it holds no nameConstraints), `src/pem.rs` and the private
+    `src/base64.rs`, and `src/verify.rs` (the trait `ServerCertVerifier`,
+    `CertificateRejection`, `Check` with the twelve checks of item 7); `Error::Certificate`.
     Since `story:tls-x509-path` `src/path.rs` and `src/names.rs`: `PathVerifier`, the one
     implementation of the trait `ServerCertVerifier` of `src/verify.rs`, `verify(certificates,
     host, now) -> Result<LeafKey, CertificateRejection>`, the certificates as the server sent
@@ -692,13 +708,38 @@ above, and the list of standards itself was written from memory.
     nonces other than 96 bits skipped by name; the hashes, signing under `test-tooling`, the
     refusals, the lengths and code points, the digests of the vendored files; and, read with
     comments and strings left out, that no file under `src/` but `crypto.rs` holds `ring` as
-    an identifier); `anchors` (40 tests) and `adversary_anchors` (9: the bundle against
+    an identifier); `record` (28: hostile records built in memory, one test per row of
+    `tests/tls/rfc8446-record-musts.txt`, which `record::musts_rows_name_tests` holds to its
+    tests), `rfc8448` (6: RFC 8448 sections 3, 5 and 7 replayed as the client and as the
+    server from the RFC's text in `tests/data/rfc8448/`, with `SOURCE`) and `adversary_layer`
+    (10); `der` (34), `pem` (13), `x509_parse` (30: the DER writer of the tests and the checks
+    of item 7, `check_names` read against the table of item 7), `limbo_parse` (7: the vendored
+    x509-limbo subset of `tests/data/x509-limbo/`, five files by case group, one test per
+    file, each read once; `parse-counts.txt`) and `adversary_x509` (24); `anchors` (40 tests) and `adversary_anchors` (9: the bundle against
     `SOURCE`, the extra file and its refusals, the two tasks run with `sh` on local files under
     `CARGO_TARGET_TMPDIR`); `names` (11), `path` (71) and `adversary_path` (11); `handshake`
     (16, among them `handshake_through_the_path_verifier`, a whole handshake through
     `PathVerifier` over a test root of `crates/tls-test-certs`), `handshake_hostile` (73),
     `flights` (3) and `adversary_handshake` (8). Depends on `ring`; its tests on
     `surf-html-conformance` for its JSON reader.
+  - `crates/tls-test-certs` (`surf-tls-test-certs`): test tooling, not shipped: the test
+    certificates of `epic:tls-https` (`story:tls-test-certs`). A DER writer and a certificate
+    builder that sign through the seam of `surf-tls` (feature `test-tooling`) under a fixed
+    random source, so every certificate is reproducible byte for byte; the cases in
+    `src/cases.rs`; the private keys in `keys/` (PKCS#8 DER, made once by `openssl genpkey`,
+    `keys/SOURCE`, never regenerated: a certificate made from them is reproducible only while
+    they stay); `openssl/make.sh`, which makes `sha1`, `md5` and `rsa-1024` (ring cannot sign
+    them) with `openssl` 3.4 or later, with `openssl/SOURCE` (the version that made them and
+    the sha256 of each file). The output is committed in `certs/`: per case `chain.pem` (the
+    leaf first), `root.pem` (the one anchor of the case) and `leaf.pk8`, and `INDEX`, one
+    line per case (`<case> <host> 2026-11-22T00:00:00Z <outcome>`, the outcome `ok`,
+    `CertificateExpired`, `CertificateNameMismatch` or `CertificateNotTrusted <check>` with a
+    check of item 7), 33 cases; and `DIGEST`, the sha256 of `src/`, `keys/`, `openssl/` and
+    `Cargo.toml`. Tests read `certs/`; only `certs::reproducible` builds the cases, in memory,
+    and compares them with `certs/`. A change to `src/`, `keys/`, `openssl/` or `Cargo.toml`
+    fails `task tls-certs-check` until `task tls-certs-slow WRITE=1` has made `certs/`,
+    `openssl/SOURCE` and `certs/DIGEST` again. 18 tests (`adversary` 4, `certs` 6, `check`
+    8). Depends on `surf-tls`.
 - `view-tests/`: the Playwright tests of the live view's page (`@playwright/test` 1.65.0,
   Chromium's headless shell, a committed `package-lock.json`), each case with its own
   `surf-view-fixture`: 38 cases, 18 in `tests/first-page.spec.mjs`, 6 in
@@ -1045,8 +1086,8 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `planning-only-test`. Since `story:one-test-binary-per-crate` it runs `test-layout` after
   `lock-check` and `test-layout-test` after `planning-only-test`. Since `story:agent-tasks`
   `test` runs `task build` first and sets `SURF_BIN_DIR` to `target/debug` for its tests, and
-  `check` runs `agent-tasks-report` after `test`. Since the stories `tls-handshake` and
-  `tls-x509-path` it runs `tls-flights-check` after `test-layout` and `tls-x509-conformance`
+  `check` runs `agent-tasks-report` after `test`. Since the TLS stories it runs
+  `tls-certs-check` and `tls-flights-check` after `test-layout` and `tls-x509-conformance`
   after `html-conformance`.
 - `task check-runner`: the gate to run before a merge, `task check` as the forge's runner runs
   it (`taskfiles/check-runner.sh`; `slot task check-runner`). What it does differently from
@@ -1124,6 +1165,11 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   pass (a comment that names `#![cfg(any())]`, `mod x;` inside a string literal and in a
   trailing comment, a fixture crate below `tests/data/`), and each of twenty-seven planted
   defects fails naming its path or module. `SCRIPT=<path>` runs a copy of the script.
+- `task tls-certs-check`: `sh taskfiles/tls-certs-check.sh crates/tls-test-certs`, no build and
+  no `openssl`: the sha256 of `src/`, `keys/`, `openssl/` and `Cargo.toml` of
+  `crates/tls-test-certs` against `certs/DIGEST`. It prints `tls-certs: <n> cases, certs/
+  matches its sources`, or `tls-certs: the sources changed since certs/ was generated; run task
+  tls-certs-slow` with the sources that differ, and fails.
 - `task view-test`: the page tests in a browser (`taskfiles/view-test.yml`). It builds
   `surf-agent`, `surf-session` and `surf-view-fixture`, installs `view-tests/` from its
   `package-lock.json` with `npm ci`, and runs `npx playwright test --workers=2` in

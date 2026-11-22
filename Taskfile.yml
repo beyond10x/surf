@@ -51,6 +51,10 @@ includes:
     taskfile: taskfiles/tls-anchors.yml
     flatten: true
     optional: true
+  tls-certs:
+    taskfile: taskfiles/tls-certs.yml
+    flatten: true
+    optional: true
   tls-flights:
     taskfile: taskfiles/tls-flights.yml
     flatten: true
@@ -414,6 +418,7 @@ tasks:
       - task: cli
       - task: lock-check
       - task: test-layout
+      - task: tls-certs-check
       - task: tls-flights-check
       - task: build
       - task: test
