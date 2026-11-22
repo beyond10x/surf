@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use common::*;
+use surf_agent::client::Config;
 use surf_agent::wire;
 use surf_test_process::{alive, ended_within};
 
@@ -113,22 +114,31 @@ fn surfd_that_refuses_exits_3_with_its_reason() {
     assert_eq!(dir.starts().len(), 1);
 }
 
+/// `open` against a `surfd` that writes nothing, run in this process by `client::run` with a
+/// start timeout of 0.5 s (`Config::start_timeout`; the shipped one is `wire::START_TIMEOUT`,
+/// 5 s), so the case waits 0.5 s, not 5 s. That the binary exits with `client::run`'s status 3
+/// is held by `surfd_that_refuses_exits_3_with_its_reason`, a run of the binary.
 #[test]
-fn surfd_that_writes_nothing_exits_3_within_6_seconds() {
+fn surfd_that_writes_nothing_exits_3_within_its_start_timeout() {
+    assert_eq!(Config::default().start_timeout, Duration::from_secs(5));
+    assert_eq!(wire::START_TIMEOUT, Duration::from_secs(5));
     let dir = TestDir::new();
     dir.set("start", "silent");
+    let config = Config {
+        start_timeout: Duration::from_millis(500),
+        ..Config::default()
+    };
     let started = Instant::now();
-    let output = run(agent(&dir).arg("open"));
+    let (status, _, err) = run_in_process(&dir, &["open"], &config);
     assert!(
-        started.elapsed() < Duration::from_secs(6),
+        started.elapsed() < wire::START_TIMEOUT,
         "{:?}",
         started.elapsed()
     );
-    assert_eq!(output.status.code(), Some(3));
+    assert_eq!(status, 3);
     assert!(
-        stderr(&output).contains("did not report ready within 5 seconds"),
-        "{}",
-        stderr(&output)
+        err.contains("surfd did not report ready within 0.5 seconds"),
+        "{err}"
     );
     let starts = dir.starts();
     assert_eq!(starts.len(), 1);

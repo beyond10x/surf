@@ -8,11 +8,15 @@ use crate::common;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use common::{TestDir, surfd_in_process, wire_as, wire_open};
 use surfd::link::EntryKind;
 use surfd::log::Entry;
+
+/// How long a case waits for an event of the session: under the runner's 60 s, so a failure
+/// says what was awaited.
+const WAIT: Duration = Duration::from_secs(20);
 
 fn kept(daemon: &surfd::Daemon, id: &str) -> Vec<Entry> {
     daemon
@@ -50,21 +54,32 @@ fn slow_server(delay: Duration) -> u16 {
 /// D19 and "Change": after each command that records an action, its action entry, its events
 /// and its answer entry are kept. A `go` whose answer arrives after `surfd`'s answer timeout is
 /// recorded by the session (its path shows it), and the log never holds its action entry.
+///
+/// The answer timeout is 0.5 s and the server answers 1.5 s after it read the request, which
+/// it reads after `surfd` sent the `go`: each step 1 s apart. Then `look` until the path shows
+/// the `go` (a `look` while the late answer holds the session's turn is answered status 3),
+/// at most [`WAIT`].
 #[test]
 fn adversary_an_action_recorded_after_a_session_timeout_has_its_entries_kept() {
     let dir = TestDir::new();
     let daemon = surfd_in_process(&dir, |config| {
-        config.session_answer_timeout = Duration::from_secs(2);
+        config.session_answer_timeout = Duration::from_millis(500);
     });
     let session = wire_open(&dir, None);
-    let port = slow_server(Duration::from_secs(4));
+    let port = slow_server(Duration::from_millis(1500));
     let url = format!("http://127.0.0.1:{port}/slow");
     let answer = wire_as(&dir, &session, "go", &[("url", &url)]);
     assert_eq!(answer.status, 3, "the go timed out in surfd: {answer:?}");
-    thread::sleep(Duration::from_secs(5));
-    let look = wire_as(&dir, &session, "look", &[]);
-    assert_eq!(look.status, 0, "{look:?}");
     let path_line = format!("  2 go {}\n", surf_answer::quote(&url));
+    let started = Instant::now();
+    let look = loop {
+        let look = wire_as(&dir, &session, "look", &[]);
+        if (look.status == 0 && look.text.contains(&path_line)) || started.elapsed() > WAIT {
+            break look;
+        }
+        thread::sleep(Duration::from_millis(50));
+    };
+    assert_eq!(look.status, 0, "{look:?}");
     assert!(
         look.text.contains(&path_line),
         "the session recorded the go: {}",

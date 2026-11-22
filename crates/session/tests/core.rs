@@ -452,10 +452,8 @@ impl Site {
                 if stopping.load(Ordering::SeqCst) {
                     break;
                 }
-                if let Ok(stream) = stream
-                    && serve(stream, &pages)
-                {
-                    counting.fetch_add(1, Ordering::SeqCst);
+                if let Ok(stream) = stream {
+                    serve(stream, &pages, &counting);
                 }
             }
         });
@@ -486,8 +484,9 @@ impl Drop for Site {
     }
 }
 
-/// Answer one request on `stream`; whether it was one.
-fn serve(mut stream: TcpStream, pages: &[(&str, &str, Vec<u8>)]) -> bool {
+/// Answer one request on `stream`. A request whose head was read is counted in `fetches`
+/// before any byte of the answer is written, so a client that has its answer sees the count.
+fn serve(mut stream: TcpStream, pages: &[(&str, &str, Vec<u8>)], fetches: &AtomicUsize) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
     let mut head = Vec::new();
     let mut byte = [0u8; 1];
@@ -495,9 +494,10 @@ fn serve(mut stream: TcpStream, pages: &[(&str, &str, Vec<u8>)]) -> bool {
         match stream.read(&mut byte) {
             Ok(1) => head.push(byte[0]),
             Err(error) if error.kind() == ErrorKind::Interrupted => {}
-            _ => return false,
+            _ => return,
         }
     }
+    fetches.fetch_add(1, Ordering::SeqCst);
     let head = String::from_utf8_lossy(&head);
     let path = head.split(' ').nth(1).unwrap_or("");
     let (status, media_type, body) = match pages.iter().find(|(at, _, _)| *at == path) {
@@ -511,7 +511,6 @@ fn serve(mut stream: TcpStream, pages: &[(&str, &str, Vec<u8>)]) -> bool {
     );
     let _ = stream.write_all(head.as_bytes());
     let _ = stream.write_all(body);
-    true
 }
 
 /// A session over [`surf_session::fetch`], opened at `url` with `extra` beside `arg url`: the
