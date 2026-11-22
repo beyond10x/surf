@@ -4,7 +4,7 @@
 //! In each the client sends `GET / HTTP/1.1` and reads the body `ok`, and the test reads back
 //! what the server saw.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use surf_tls::crypto::{Group, Scheme};
 use surf_tls::key_schedule::CipherSuite;
@@ -82,4 +82,49 @@ fn chacha20_poly1305_sha256_x25519() {
 #[test]
 fn chacha20_poly1305_sha256_retry_secp256r1() {
     suite_and_group(CipherSuite::ChaCha20Poly1305Sha256, true);
+}
+
+/// Acceptance 2: the server signs its CertificateVerify with `scheme` over the key of `case`;
+/// the handshake completes within 1 s and the server reports the scheme it used.
+fn scheme(case: &str, scheme: Scheme) {
+    let started = Instant::now();
+    let (_, body, seen) = complete(Config::new(case, scheme));
+    let took = started.elapsed();
+    assert_eq!(body, b"ok");
+    assert_eq!(seen.scheme, Some(scheme));
+    assert!(
+        took < Duration::from_secs(1),
+        "{} took {took:?}",
+        scheme.name()
+    );
+}
+
+#[test]
+fn scheme_ecdsa_secp256r1_sha256() {
+    scheme("ok-ecdsa-p256", Scheme::EcdsaSecp256r1Sha256);
+}
+
+#[test]
+fn scheme_ecdsa_secp384r1_sha384() {
+    scheme("ok-ecdsa-p384", Scheme::EcdsaSecp384r1Sha384);
+}
+
+#[test]
+fn scheme_ed25519() {
+    scheme("ok-ed25519", Scheme::Ed25519);
+}
+
+#[test]
+fn scheme_rsa_pss_rsae_sha256() {
+    scheme("ok-rsa2048", Scheme::RsaPssRsaeSha256);
+}
+
+#[test]
+fn scheme_rsa_pss_rsae_sha384() {
+    scheme("ok-rsa2048", Scheme::RsaPssRsaeSha384);
+}
+
+#[test]
+fn scheme_rsa_pss_rsae_sha512() {
+    scheme("ok-rsa2048", Scheme::RsaPssRsaeSha512);
 }
