@@ -16,6 +16,10 @@ mod alloc;
 mod der;
 #[path = "tls/limbo_parse.rs"]
 mod limbo_parse;
+#[path = "tls/names.rs"]
+mod names;
+#[path = "tls/path.rs"]
+mod path;
 #[path = "tls/pem.rs"]
 mod pem;
 #[path = "tls/record.rs"]

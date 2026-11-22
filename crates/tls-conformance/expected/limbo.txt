@@ -1,0 +1,54 @@
+x509-limbo: 5143 cases, 5089 run, 5059 passed
+group bettertls 4909/4909/4909
+group crl 0/0/22
+group cve 3/3/3
+group invalid 1/1/1
+group online 13/13/13
+group pathlen 11/13/13
+group pathological 11/11/11
+group rfc5280 81/90/109
+group rfc9881 0/4/6
+group webpki 30/45/56
+section 4.1.1.2 1/1/1 complete
+section 4.1.2.4 1/1/1 complete
+section 4.1.2.5 11/11/11 complete
+section 4.1.2.6 1/1/1 complete
+section 4.2 6/6/6 complete
+section 4.2.1.1 6/9/10 incomplete
+section 4.2.1.2 0/3/3 incomplete
+section 4.2.1.3 2/3/3 incomplete
+section 4.2.1.6 4/4/4 complete
+section 4.2.1.9 16/18/18 incomplete
+section 4.2.1.10 4953/4954/4968 incomplete
+section 4.2.1.12 3/3/3 complete
+section 6.1 12/13/13 incomplete
+open pathlen::validation-ignores-pathlen-in-leaf refused KeyUsage: the leaf's keyUsage lacks digitalSignature, which story:tls-x509-path requires of a leaf whose keyUsage is present
+open pathlen::max-chain-depth-1-self-issued refused PathTooLong: the bound of intermediates (item 9) counts a self-issued intermediate too; the case allows 1 and sends 2, one of them self-issued
+open rfc5280::aki::leaf-missing-aki accepted: surf does not require an authorityKeyIdentifier; without one the issuer name alone chooses (item 9.4)
+open rfc5280::aki::intermediate-missing-aki accepted: surf does not require an authorityKeyIdentifier; without one the issuer name alone chooses (item 9.4)
+open rfc5280::ski::critical-ski ends NoPathToAnchor: the leaf's authorityKeyIdentifier differs from the root's subjectKeyIdentifier, so item 9.4 rules the root out before its critical subjectKeyIdentifier is seen
+open rfc5280::ski::root-missing-ski accepted: surf does not require a subjectKeyIdentifier in a CA certificate
+open rfc5280::ski::intermediate-missing-ski accepted: surf does not require a subjectKeyIdentifier in a CA certificate
+open rfc5280::leaf-ku-keycertsign accepted: keyCertSign in a leaf without cA is not checked; the leaf's keyUsage is held to digitalSignature only
+open rfc5280::ca-as-leaf refused KeyUsage: the leaf's keyUsage lacks digitalSignature, which story:tls-x509-path requires of a leaf whose keyUsage is present
+open rfc5280::ca-as-leaf-wrong-san ends KeyUsage before the host is checked: the leaf's keyUsage lacks digitalSignature
+open rfc5280::root-and-intermediate-swapped refused Unreadable: the reader refuses the root sent among the intermediates (BadExtension), and a sent certificate the reader refuses ends the validation (story:tls-x509-path)
+open rfc9881::ml-dsa-44 refused Unreadable: ML-DSA is not among the signature algorithms of docs/design/tls.md item 14
+open rfc9881::ml-dsa-65 refused Unreadable: ML-DSA is not among the signature algorithms of docs/design/tls.md item 14
+open rfc9881::ml-dsa-87 refused Unreadable: ML-DSA is not among the signature algorithms of docs/design/tls.md item 14
+open rfc9881::ml-dsa-44-bad-signature ends Unreadable (UnsupportedAlgorithm) before any signature: ML-DSA is not among the signature algorithms of item 14
+open webpki::aki::root-with-aki-missing-keyidentifier accepted: the reader of story:tls-x509 does not tell an authorityKeyIdentifier without keyIdentifier from none
+open webpki::cn::ipv4-hex-mismatch accepted: the Common Name is never read (RFC 9525 section 6.4.4), so its agreement with the subjectAltName is not checked
+open webpki::cn::ipv4-leading-zeros-mismatch accepted: the Common Name is never read (RFC 9525 section 6.4.4), so its agreement with the subjectAltName is not checked
+open webpki::cn::ipv6-uppercase-mismatch accepted: the Common Name is never read (RFC 9525 section 6.4.4), so its agreement with the subjectAltName is not checked
+open webpki::cn::ipv6-uncompressed-mismatch accepted: the Common Name is never read (RFC 9525 section 6.4.4), so its agreement with the subjectAltName is not checked
+open webpki::cn::ipv6-non-rfc5952-mismatch accepted: the Common Name is never read (RFC 9525 section 6.4.4), so its agreement with the subjectAltName is not checked
+open webpki::cn::punycode-not-in-san accepted: the Common Name is never read (RFC 9525 section 6.4.4), so its agreement with the subjectAltName is not checked
+open webpki::cn::utf8-vs-punycode-mismatch accepted: the Common Name is never read (RFC 9525 section 6.4.4), so its agreement with the subjectAltName is not checked
+open webpki::cn::not-in-san accepted: the Common Name is never read (RFC 9525 section 6.4.4), so its agreement with the subjectAltName is not checked
+open webpki::cn::case-mismatch accepted: the Common Name is never read (RFC 9525 section 6.4.4), so its agreement with the subjectAltName is not checked
+open webpki::nc::permitted-dns-match-noncritical refused NameConstraint: surf refuses nameConstraints not marked critical (RFC 5280 section 4.2.1.10, MUST); limbo marks it conflicting with rfc5280::nc::permitted-dns-match-noncritical, which passes
+open webpki::san::san-critical-with-nonempty-subject accepted: whether subjectAltName is critical beside a non-empty subject is not checked
+open webpki::malformed-aia accepted: surf reads no authorityInfoAccess, so its form is not checked
+open webpki::forbidden-rsa-not-divisible-by-8-in-root accepted: REFUSED holds an RSA key to 2048 bits at least, not to a whole number of octets
+open webpki::ee-basicconstraints-ca accepted: a leaf with basicConstraints cA true is not refused

@@ -225,6 +225,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "surf-tls-conformance"
+version = "0.1.0"
+dependencies = [
+ "surf-html-conformance",
+ "surf-tls",
+]
+
+[[package]]
 name = "surf-tls-test-certs"
 version = "0.1.0"
 dependencies = [

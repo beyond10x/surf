@@ -21,6 +21,8 @@ pub mod crypto;
 pub mod der;
 pub mod error;
 pub mod key_schedule;
+pub mod names;
+pub mod path;
 pub mod pem;
 pub mod record;
 pub mod transcript;
