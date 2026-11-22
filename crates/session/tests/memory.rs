@@ -14,10 +14,11 @@ const ID: &str = "0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b";
 
 #[test]
 fn bodies_of_answered_commands_are_not_kept() {
-    // A body of 256 KiB, loaded 21 times: kept, it would be 5 copies per load (three events and
-    // two binding invocations each carry it), 26.25 MiB in all.
+    // A body of 4 KiB, loaded by `open <url>` and 5 `go`s: kept, it would be 5 copies per load
+    // (three events and two binding invocations each carry it). The counts of `held` are not
+    // zero at the first command that keeps one, whatever the body's size.
     let mut body = b"<!doctype html><p>".to_vec();
-    body.resize(256 * 1024, b'x');
+    body.resize(4 * 1024, b'x');
     let pages = PageServer::with_body(body);
     let mut session = Session::new(ID, surf_session::fetch).unwrap();
 
@@ -31,7 +32,7 @@ fn bodies_of_answered_commands_are_not_kept() {
         "after open"
     );
 
-    for n in 1..=20 {
+    for n in 1..=5 {
         let url = pages.url(&format!("/{n}"));
         let reply = session.answer(&request("go", Some(ID), Some(&token), &[("url", &url)]));
         let text = reply.to_link().text;
@@ -53,14 +54,14 @@ fn bodies_of_answered_commands_are_not_kept() {
         .answer(&request("look", Some(ID), Some(&token), &[]))
         .to_link()
         .text;
-    let url = pages.url("/20");
+    let url = pages.url("/5");
     assert!(
         text.lines()
             .any(|line| line == format!("page 200 \"text/html\" \"{url}\"")),
         "{text}"
     );
-    // `open <url>` is two actions (`open`, then `go`), and 20 more `go`: 22.
-    assert!(text.contains("path 5 of 22\n"), "{text}");
+    // `open <url>` is two actions (`open`, then `go`), and 5 more `go`: 7, cut to the last five.
+    assert!(text.contains("path 5 of 7\n"), "{text}");
 }
 
 /// Story values-and-labels-before-fill, acceptance 5: the text a `look` kept is dropped by the

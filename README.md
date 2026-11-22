@@ -6,7 +6,7 @@
 
 **A web browser written from scratch, where the specification comes first.**
 
-![spec: ESS 0.97.3, valid](docs/badges/spec.svg)
+![spec: ESS 0.97.4, valid](docs/badges/spec.svg)
 ![conformance: 170 of 170 scenarios](docs/badges/conformance.svg)
 ![tests: 877 passed](docs/badges/tests.svg)
 ![third-party crates shipped: 0](docs/badges/dependencies.svg)
@@ -461,7 +461,7 @@ talking to the network, keeping each component's data, the command lines and the
 | `document` | parses response bodies into documents |
 | `renderer` | styles, lays out and paints a document into a frame (specified, not rendering yet) |
 
-To build surf from source you need [`ess`](https://github.com/beyond10x/ess) 0.97.3,
+To build surf from source you need [`ess`](https://github.com/beyond10x/ess) 0.97.4,
 [`task`](https://taskfile.dev) and a Rust toolchain (built with 1.99.1); `task build` builds
 the four binaries. `task check` also needs [`cargo-nextest`](https://nexte.st) 0.9.143 or later.
 That is for working on surf, not for using it.

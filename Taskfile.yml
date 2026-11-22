@@ -87,7 +87,7 @@ tasks:
 
       Both live in the crate conformance/ (surf-conformance), a Cargo workspace of its own with
       its own Cargo.lock and target/: it is the one place third-party crates are allowed, the
-      ess-conformance runner from github.com/beyond10x/ess at tag 0.97.3 and what it brings. The
+      ess-conformance runner from github.com/beyond10x/ess at tag 0.97.4 and what it brings. The
       root workspace, and so task build and task test, do not reach it. cargo fetches the tag
       when its cache does not hold it.
 
@@ -128,26 +128,12 @@ tasks:
 
       Each run fails on its own when a scenario did not pass; this catches a runner or a suite
       change that drops scenarios on one side only. task check runs it after both.
+
+      The script is taskfiles/conform-totals.sh; the tests of crates/surf/tests/conform_totals.rs
+      run it with sh, without task.
     silent: true
     cmds:
-      - |
-        for report in .out/report.json .out/conform-rust.json; do
-          test -f "$report" || { echo "$report: missing; run task conform and task conform-rust first"; exit 1; }
-        done
-        interpreter=$(tr -d ' \n' < .out/report.json)
-        rust=$(tr -d ' \n' < .out/conform-rust.json)
-        interpreter_total=$(printf '%s\n' "$interpreter" | sed -n 's/.*"counts":{[^}]*"total":\([0-9][0-9]*\).*/\1/p')
-        rust_total=$(printf '%s\n' "$rust" | sed -n 's/.*"counts":{[^}]*"total":\([0-9][0-9]*\).*/\1/p')
-        interpreter_suite=$(printf '%s\n' "$interpreter" | sed -n 's/.*"suite":{"digest":"\([^"]*\)".*/\1/p')
-        rust_suite=$(printf '%s\n' "$rust" | sed -n 's/.*"suite":{"digest":"\([^"]*\)".*/\1/p')
-        if [ -n "$interpreter_total" ] && [ -n "$interpreter_suite" ] && [ "$interpreter_total" = "$rust_total" ] && [ "$interpreter_suite" = "$rust_suite" ]; then
-          echo "the interpreter and the Rust system ran $rust_total scenario(s) each, of suite $rust_suite"
-          exit 0
-        fi
-        echo "interpreter: ${interpreter_total:-no} scenario(s) of suite ${interpreter_suite:-unknown} (.out/report.json)"
-        echo "rust: ${rust_total:-no} scenario(s) of suite ${rust_suite:-unknown} (.out/conform-rust.json)"
-        echo "the two runs differ; each must run every scenario of the same suite"
-        exit 1
+      - sh taskfiles/conform-totals.sh
 
   lock-check:
     desc: Fail, naming each package, when the root Cargo.lock holds one from outside this repository.
@@ -242,8 +228,8 @@ tasks:
       into fresh.spec. It runs once per run of task: task check runs it for generated-check, and
       task test, which depends on it, then finds it done. The tests of generated-check in
       crates/surf/tests read this one generation, check that fresh.spec is the spec/ of the
-      checkout, and run task generated-compare FRESH=<this tree> in their copies, so no test
-      generates the tree again.
+      checkout, and run taskfiles/generated-compare.sh <this tree> (the script of task
+      generated-compare) in their copies, so no test generates the tree again.
     run: once
     silent: true
     vars:
@@ -263,64 +249,14 @@ tasks:
       .out/generated-check/fresh) is the fresh tree and FRESH.log the output ess printed for it.
       Its own files go to .out/generated-check/compare, which it removes first. Step 2 still runs
       ess, over a copy of the committed generated/rust.
+
+      The script is taskfiles/generated-compare.sh; the tests of
+      crates/surf/tests/*generated_check*.rs run it with sh in their copies, without task.
     silent: true
     vars:
       FRESH: '{{.FRESH | default ".out/generated-check/fresh"}}'
-      DIR: .out/generated-check/compare
     cmds:
-      - rm -rf {{.DIR}}
-      - mkdir -p {{.DIR}}
-      - |
-        test -d "{{.FRESH}}" && test -f "{{.FRESH}}.log" || { echo "{{.FRESH}}: no generation; run task generated-fresh"; exit 1; }
-        export LC_ALL=C
-        (cd "{{.FRESH}}" && find . -path ./.ess-output -prune -o -type f -print) | sed 's|^\./||' | sort > {{.DIR}}/fresh.list
-        reported=$(sed -n 's/^\([0-9][0-9]*\) artifact(s), written to .*/\1/p' "{{.FRESH}}.log")
-        found=$(wc -l < {{.DIR}}/fresh.list)
-        if [ "$found" -ne "${reported:-0}" ]; then
-          echo "ess reports ${reported:-no} artifact(s) and wrote $found file(s) besides .ess-output; the check would not cover what ess reports"
-          exit 1
-        fi
-        : > {{.DIR}}/drift.txt
-        if [ -L generated/rust ]; then
-          echo "generated/rust: a symbolic link, not a directory" >> {{.DIR}}/drift.txt
-        fi
-        (cd "{{.FRESH}}" && find . -type f -print) | sed 's|^\./||' | sort > {{.DIR}}/fresh.all
-        (cd "{{.FRESH}}" && find . -type f -perm /111 -print) | sed 's|^\./||' | sort > {{.DIR}}/fresh.executable
-        if [ -d generated/rust ]; then
-          (cd generated/rust && find . \( -path ./.ess-output -o -path ./target -o -path ./Cargo.lock \) -prune -o -type f -print) | sed 's|^\./||' | sort > {{.DIR}}/committed.list
-          (cd generated/rust && find . \( -path ./target -type d \) -prune -o ! -type f ! -type d -print) | sed 's|^\./||' | sort | sed 's|^|generated/rust/|; s|$|: not a regular file|' >> {{.DIR}}/drift.txt
-          (cd generated/rust && find . \( -path ./target -o -path ./Cargo.lock \) -prune -o -type f -print) | sed 's|^\./||' | sort > {{.DIR}}/committed.all
-          (cd generated/rust && find . \( -path ./target -o -path ./Cargo.lock \) -prune -o -type f -perm /111 -print) | sed 's|^\./||' | sort > {{.DIR}}/committed.executable
-        else
-          : > {{.DIR}}/committed.list
-          : > {{.DIR}}/committed.all
-          : > {{.DIR}}/committed.executable
-        fi
-        comm -23 {{.DIR}}/fresh.list {{.DIR}}/committed.list | sed 's|^|generated/rust/|; s|$|: missing|' >> {{.DIR}}/drift.txt
-        comm -13 {{.DIR}}/fresh.list {{.DIR}}/committed.list | sed 's|^|generated/rust/|; s|$|: not written by ess|' >> {{.DIR}}/drift.txt
-        comm -12 {{.DIR}}/fresh.list {{.DIR}}/committed.list | while read -r path; do
-          cmp -s "{{.FRESH}}/$path" "generated/rust/$path" || echo "generated/rust/$path: differs from what ess generates"
-        done >> {{.DIR}}/drift.txt
-        comm -12 {{.DIR}}/fresh.all {{.DIR}}/committed.all > {{.DIR}}/both.all
-        comm -13 {{.DIR}}/fresh.executable {{.DIR}}/committed.executable | comm -12 - {{.DIR}}/both.all | sed 's|^|generated/rust/|; s|$|: executable, and ess writes it not executable|' >> {{.DIR}}/drift.txt
-        comm -23 {{.DIR}}/fresh.executable {{.DIR}}/committed.executable | comm -12 - {{.DIR}}/both.all | sed 's|^|generated/rust/|; s|$|: not executable, and ess writes it executable|' >> {{.DIR}}/drift.txt
-        if [ -s {{.DIR}}/drift.txt ]; then
-          cat {{.DIR}}/drift.txt
-          echo "$(wc -l < {{.DIR}}/drift.txt) path(s) differ from spec/; run task generate"
-          exit 1
-        fi
-      - |
-        test -f generated/rust/.ess-output/state.json || { echo "generated/rust/.ess-output/state.json: missing; restore it from git, or remove generated/rust and run task generate"; exit 1; }
-        mkdir -p {{.DIR}}/in-place
-        { echo .ess-output; cat {{.DIR}}/committed.list; } > {{.DIR}}/copy.list
-        tar -cf - -C generated/rust -T {{.DIR}}/copy.list | tar -xf - -C {{.DIR}}/in-place
-        {{.SYNTHESIZE}} --out {{.DIR}}/in-place > {{.DIR}}/in-place.log 2>&1 || {
-          cat {{.DIR}}/in-place.log
-          echo "generated/rust/.ess-output/state.json: ess refuses to regenerate over this record; restore it from git, or remove generated/rust and run task generate"
-          exit 1
-        }
-        diff -rq generated/rust/.ess-output {{.DIR}}/in-place/.ess-output || { echo "generated/rust/.ess-output: regeneration rewrites it; run task generate"; exit 1; }
-      - echo "generated/rust matches spec/ ($(wc -l < {{.DIR}}/fresh.list) artifact(s) and .ess-output)"
+      - sh taskfiles/generated-compare.sh '{{.FRESH}}'
 
   build:
     desc: Build the root workspace, hand-written and generated crates, with warnings denied.

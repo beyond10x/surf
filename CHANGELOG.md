@@ -70,6 +70,7 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ### Changed
 
+- The specification, and the code generated from it, is checked with ESS 0.97.4 instead of 0.97.3.
 - The session log keeps the first 256 rows a page adds, forms, links, controls and options
   together, and counts the rest in one `EventsLeftOut` line, as it did for links and controls.
 - `surf <url>` no longer prints a password: the last field of the `element` line of a

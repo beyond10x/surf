@@ -734,14 +734,33 @@ fn noscript_content_is_not_hidden() {
     assert_eq!(local_name(&tree, parent), "body");
 }
 
+/// The stack of the thread the deep walks run in: 256 KiB.
+const DEEP_STACK: usize = 256 << 10;
+
+/// The depth of the deep trees: 4,000. A walk of `actionable_elements` that recursed over the
+/// depth was measured at 736 bytes a frame (this crate at opt-level 0, 2026-11-22), so 4,000
+/// levels need 2.9 MiB, 11 times the stack; 1,425 would be 4 times. Any frame over 65 bytes
+/// overflows it.
+const DEEP: usize = 4_000;
+
 #[test]
 fn a_deep_tree_is_read_without_recursion() {
+    // In a thread of `DEEP_STACK` bytes: a walk over the depth overflows it and aborts the test.
+    std::thread::Builder::new()
+        .stack_size(DEEP_STACK)
+        .spawn(deep_trees_are_read)
+        .expect("a thread")
+        .join()
+        .expect("the walks end");
+}
+
+fn deep_trees_are_read() {
     let mut input = String::from("<div hidden>");
-    input.push_str(&"<span>".repeat(100_000));
+    input.push_str(&"<span>".repeat(DEEP));
     input.push_str("<a href=deep id=deep>x</a>");
     let deep = ParseOptions {
         limits: surf_html::limits::Limits {
-            max_depth: 100_010,
+            max_depth: DEEP + 10,
             ..surf_html::limits::Limits::default()
         },
         ..ParseOptions::default()
@@ -752,10 +771,10 @@ fn a_deep_tree_is_read_without_recursion() {
     assert!(is_hidden(&tree, tree.children(link)[0]));
     assert_eq!(title(&tree), "");
 
-    // 20,000 nested `span` elements, an `input` in each: 20,000 rows, the last at depth 20,000.
-    let tree = parse_document(&"<span><input>".repeat(20_000), &deep);
+    // `DEEP` nested `span` elements, an `input` in each: `DEEP` rows, the last at depth `DEEP`.
+    let tree = parse_document(&"<span><input>".repeat(DEEP), &deep);
     let rows = actionable_elements(&tree);
-    assert_eq!(rows.len(), 20_000);
+    assert_eq!(rows.len(), DEEP);
     assert!(
         rows.iter()
             .all(|row| row.kind == Kind::Text && !row.hidden && !row.disabled)
@@ -769,7 +788,7 @@ fn a_deep_tree_is_read_without_recursion() {
         }
         current = tree.parent(node);
     }
-    assert_eq!(spans, 20_000);
+    assert_eq!(spans, DEEP);
     assert!(!is_hidden(&tree, deepest));
     assert_eq!(title(&tree), "");
 }

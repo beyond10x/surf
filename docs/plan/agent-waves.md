@@ -118,7 +118,9 @@ Rules of a round, beside the rules of a wave:
   because no command parses a page. The operator, 2026-11-22 (D79, option A): keep it for
   `0.3.0` and record it again when `html-document-port` has landed. Round 1 ends with that
   recording, made with the binaries of the round's last commit, and with the caption under the
-  terminal changed to what an answer then holds.
+  terminal changed to what an answer then holds. It was recorded again with release `0.4.0` on
+  2026-11-22; an answer still carries no title, because the session sets none
+  (`story:agent-follow-links` sets it), and the next recording follows that story.
 
 ### TLS beside the rounds
 
