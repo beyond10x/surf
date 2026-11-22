@@ -6,7 +6,13 @@
 
 #![deny(unsafe_code)]
 
+#[path = "tls/adversary_layer.rs"]
+mod adversary_layer;
 #[path = "tls/alloc.rs"]
 mod alloc;
+#[path = "tls/record.rs"]
+mod record;
+#[path = "tls/rfc8448.rs"]
+mod rfc8448;
 #[path = "tls/seam.rs"]
 mod seam;

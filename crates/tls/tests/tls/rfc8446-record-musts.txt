@@ -1,0 +1,16 @@
+5 | an unknown record type ends the connection | unexpected_message, UnknownContentType (new case for the outer type) | tests/tls/record.rs::unknown_content_type, tests/tls/record.rs::unknown_outer_type
+5.1 | no other record between fragments of a handshake message | unexpected_message, InterleavedHandshake (new) | tests/tls/record.rs::interleaved_handshake
+5.1 | no handshake message across a key change | unexpected_message, HandshakeSpansKeyChange (new) | tests/tls/record.rs::handshake_spans_key_change
+5.1 | no zero-length handshake fragment | never written; received: unexpected_message, EmptyContent (new) | tests/tls/record.rs::empty_handshake_fragment
+5.1 | an alert record holds exactly one alert | decode_error, BadAlertRecord (new) | tests/tls/record.rs::alert_record_length
+5.1 | legacy_record_version ignored; 0x0303 written | read any, write 0x0303 (new) | tests/tls/record.rs::record_version_ignored
+5.1 | a record before protection at most 2^14 | record_overflow, RecordOverflow (new case) | tests/tls/record.rs::oversized_plaintext_record
+5.1 | application data never unprotected | unexpected_message, UnprotectedRecord (new) | tests/tls/record.rs::unprotected_application_data
+5.2 | a protected record at most 2^14 + 256 | record_overflow, RecordOverflow | tests/tls/record.rs::oversized_ciphertext
+5.2 | a record that does not open | bad_record_mac, BadRecordMac | tests/tls/record.rs::flipped_tag
+5.3 | sequence number 0 at each key, the nonce the IV XOR it | per key | tests/tls/rfc8448.rs::section_3, tests/tls/rfc8448.rs::server_direction
+5.3 | never wrap a sequence number | SequenceExhausted | tests/tls/record.rs::sequence_exhausted
+5.4 | padding of zeros when sending | surf pads nothing | tests/tls/rfc8448.rs::section_3
+5.4 | handshake and alert content never empty | unexpected_message, EmptyContent (new) | tests/tls/record.rs::empty_alert_content
+5.4 | no non-zero octet: unexpected_message, only the cleartext scanned | EmptyInnerPlaintext | tests/tls/record.rs::padding_only
+5.4 | the inner plaintext at most 2^14 + 1 | record_overflow, RecordOverflow | tests/tls/record.rs::oversized_inner_plaintext

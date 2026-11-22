@@ -18,6 +18,9 @@
 
 pub mod crypto;
 pub mod error;
+pub mod key_schedule;
+pub mod record;
+pub mod transcript;
 
 /// A fixed string that a binary built with the feature `test-tooling` carries, so that a
 /// release can be checked for it.
