@@ -10,7 +10,36 @@ relations:
 - depends_on: story:agent-history-spec
 - depends_on: story:agent-press-submit
 - depends_on: story:agent-session-events
-revision: 6
+scope:
+- confidence: inferred
+  path: AGENTS.md
+- confidence: inferred
+  path: README.md
+- confidence: cited
+  path: cli/surf-agent.yaml
+- confidence: cited
+  path: crates/agent/src/cli.rs
+- confidence: inferred
+  path: crates/agent/tests/drift.rs
+- confidence: cited
+  path: crates/answer/src/lib.rs
+- confidence: inferred
+  path: crates/answer/tests
+- confidence: cited
+  path: crates/session/src/entries.rs
+- confidence: cited
+  path: crates/session/src/lib.rs
+- confidence: cited
+  path: crates/session/tests
+- confidence: cited
+  path: crates/surfd/src/daemon.rs
+- confidence: cited
+  path: docs/agent-answer.md
+- confidence: inferred
+  path: generated/rust
+- confidence: inferred
+  path: spec/domains/agent.yaml
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 5}

@@ -9,7 +9,32 @@ relations:
 - decomposes: epic:live-view
 - depends_on: story:view-detail-panel
 - depends_on: story:agent-follow-links
-revision: 6
+scope:
+- confidence: inferred
+  path: AGENTS.md
+- confidence: inferred
+  path: README.md
+- confidence: cited
+  path: crates/surfd/src/view.rs
+- confidence: cited
+  path: crates/view-fixture/pages/now
+- confidence: cited
+  path: crates/view/src/assets.rs
+- confidence: cited
+  path: crates/view/src/json.rs
+- confidence: cited
+  path: crates/view/src/model.rs
+- confidence: cited
+  path: crates/view/tests
+- confidence: cited
+  path: crates/view/web
+- confidence: cited
+  path: docs/view-stream.md
+- confidence: cited
+  path: view-tests/tests/now.spec.mjs
+- confidence: inferred
+  path: website/docs/status.md
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:15Z", actor: "human:timo", revision: 4}

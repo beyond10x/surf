@@ -15,7 +15,58 @@ relations:
 - depends_on: story:agent-session-events
 - depends_on: story:page-text-outline
 - depends_on: story:values-and-labels-before-fill
-revision: 11
+scope:
+- confidence: cited
+  path: AGENTS.md
+- confidence: inferred
+  path: CHANGELOG.md
+- confidence: inferred
+  path: Cargo.lock
+- confidence: cited
+  path: README.md
+- confidence: cited
+  path: cli/surf-agent.yaml
+- confidence: inferred
+  path: crates/agent-tasks/src/agent.rs
+- confidence: inferred
+  path: crates/agent-tasks/status.txt
+- confidence: cited
+  path: crates/agent/src/cli.rs
+- confidence: inferred
+  path: crates/agent/src/wire.rs
+- confidence: inferred
+  path: crates/agent/tests/drift.rs
+- confidence: cited
+  path: crates/answer/src/lib.rs
+- confidence: inferred
+  path: crates/answer/tests
+- confidence: cited
+  path: crates/page/Cargo.toml
+- confidence: cited
+  path: crates/page/src/base_url.rs
+- confidence: cited
+  path: crates/page/src/lib.rs
+- confidence: cited
+  path: crates/page/tests/base_url.rs
+- confidence: cited
+  path: crates/page/tests/main.rs
+- confidence: inferred
+  path: crates/session/Cargo.toml
+- confidence: cited
+  path: crates/session/src/lib.rs
+- confidence: cited
+  path: crates/session/tests
+- confidence: inferred
+  path: crates/surfd/src/daemon.rs
+- confidence: cited
+  path: docs/agent-answer.md
+- confidence: inferred
+  path: generated/rust
+- confidence: inferred
+  path: spec/domains/agent.yaml
+- confidence: inferred
+  path: website/docs/drive-from-an-agent.md
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 6}

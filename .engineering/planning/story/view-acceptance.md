@@ -8,7 +8,22 @@ summary: Seven tests named after the epic's acceptance sentences, three over HTT
 relations:
 - decomposes: epic:live-view
 - depends_on: story:view-now-panel
-revision: 6
+scope:
+- confidence: cited
+  path: AGENTS.md
+- confidence: inferred
+  path: README.md
+- confidence: cited
+  path: crates/view-fixture/pages/acceptance
+- confidence: cited
+  path: crates/view-fixture/tests/acceptance.rs
+- confidence: cited
+  path: crates/view-fixture/tests/main.rs
+- confidence: cited
+  path: view-tests/tests/acceptance.spec.mjs
+- confidence: inferred
+  path: website/docs/status.md
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 4}

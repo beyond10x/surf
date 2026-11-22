@@ -14,7 +14,40 @@ relations:
 - depends_on: story:runner-surf-cli-package
 - depends_on: story:html-tree-tables
 - depends_on: story:agent-follow-links
-revision: 5
+scope:
+- confidence: inferred
+  path: AGENTS.md
+- confidence: inferred
+  path: Cargo.lock
+- confidence: inferred
+  path: conformance/Cargo.lock
+- confidence: cited
+  path: conformance/src/target.rs
+- confidence: inferred
+  path: conformance/tests
+- confidence: inferred
+  path: crates/page/Cargo.toml
+- confidence: cited
+  path: crates/page/src/forms.rs
+- confidence: cited
+  path: crates/page/src/lib.rs
+- confidence: cited
+  path: crates/page/tests/forms.rs
+- confidence: cited
+  path: crates/page/tests/main.rs
+- confidence: cited
+  path: crates/session/src/lib.rs
+- confidence: inferred
+  path: crates/surf-cli/src/main.rs
+- confidence: inferred
+  path: crates/surf/Cargo.toml
+- confidence: cited
+  path: crates/surf/src/lib.rs
+- confidence: cited
+  path: crates/surf/tests/forms.rs
+- confidence: cited
+  path: crates/surf/tests/main.rs
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 4}

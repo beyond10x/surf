@@ -12,7 +12,64 @@ relations:
 - depends_on: story:html-document-port
 - depends_on: story:agent-session-events
 - depends_on: story:page-text-outline
-revision: 12
+scope:
+- confidence: inferred
+  path: AGENTS.md
+- confidence: inferred
+  path: CHANGELOG.md
+- confidence: inferred
+  path: README.md
+- confidence: inferred
+  path: Taskfile.yml
+- confidence: cited
+  path: cli/surf-agent.yaml
+- confidence: inferred
+  path: conformance/src/target.rs
+- confidence: inferred
+  path: crates/agent-tasks/status.txt
+- confidence: cited
+  path: crates/agent/src/cli.rs
+- confidence: cited
+  path: crates/agent/src/client.rs
+- confidence: cited
+  path: crates/agent/src/wire.rs
+- confidence: inferred
+  path: crates/agent/tests/drift.rs
+- confidence: cited
+  path: crates/answer/src/lib.rs
+- confidence: inferred
+  path: crates/answer/tests
+- confidence: cited
+  path: crates/session/src/lib.rs
+- confidence: cited
+  path: crates/session/tests
+- confidence: cited
+  path: crates/surfd/src/daemon.rs
+- confidence: cited
+  path: docs/agent-answer.md
+- confidence: inferred
+  path: docs/badges/conformance.svg
+- confidence: inferred
+  path: docs/badges/make.sh
+- confidence: cited
+  path: generated/rust
+- confidence: inferred
+  path: spec/domains/agent.yaml
+- confidence: cited
+  path: spec/domains/document.yaml
+- confidence: inferred
+  path: spec/ess-inputs.yaml
+- confidence: inferred
+  path: spec/scenarios
+- confidence: inferred
+  path: website/docs/how-it-is-built.md
+- confidence: inferred
+  path: website/docs/principles.md
+- confidence: inferred
+  path: website/docs/status.md
+- confidence: inferred
+  path: website/docs/what-works.md
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 6}

@@ -9,7 +9,32 @@ relations:
 - decomposes: epic:agent-cli-target
 - depends_on: story:agent-form-port
 - informed_by: decision-blocker:agent-session-history-home
-revision: 5
+scope:
+- confidence: inferred
+  path: AGENTS.md
+- confidence: inferred
+  path: Taskfile.yml
+- confidence: cited
+  path: conformance/src
+- confidence: cited
+  path: crates/ports
+- confidence: cited
+  path: crates/session/src/lib.rs
+- confidence: cited
+  path: crates/surf/src/lib.rs
+- confidence: cited
+  path: generated/rust
+- confidence: cited
+  path: spec/components.yaml
+- confidence: cited
+  path: spec/domains/agent.yaml
+- confidence: cited
+  path: spec/domains/navigation.yaml
+- confidence: cited
+  path: spec/ess-inputs.yaml
+- confidence: cited
+  path: spec/scenarios
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
