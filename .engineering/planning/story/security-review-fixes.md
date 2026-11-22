@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:security-review-fixes
 kind: story
-status: active
+status: implemented
 title: Four findings of the security review are fixed before release 0.3.0
 summary: A refused call no longer carries the session's address, a redirect from a public address into a loopback or private network is refused at the address dialed, surf-agent checks the runtime directory and the socket before it writes the token, and surfd prints the live view's address with its token only when asked.
 relations:
@@ -30,10 +30,11 @@ scope:
   path: spec/domains/agent.yaml
 - confidence: cited
   path: spec/domains/net.yaml
-revision: 14
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T04:05:32Z", actor: "human:operator", revision: 13}
 - {from: "proposed", to: "active", at: "2026-11-22T04:05:32Z", actor: "human:operator", revision: 14}
+- {from: "active", to: "implemented", at: "2026-11-22T09:03:09Z", actor: "human:operator", revision: 15, decided_on: {"recorded":{"test_result":2,"verification":1}}}
 ---
 ## Context
 

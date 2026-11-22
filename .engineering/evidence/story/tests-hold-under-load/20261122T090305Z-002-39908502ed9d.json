@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T09:03:05Z",
+  "actor": "human:operator",
+  "artifact": "story:tests-hold-under-load",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "planted defects at d28fb7d",
+    "reference": "comparison skipping PLAN.md: red, 'generated/rust/PLAN.md: not named'; pump wait not checking closed: red, 'not within 30s'"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T09:03:05Z",
+  "actor": "human:operator",
+  "artifact": "story:tests-hold-under-load",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "stream test f2_the_wait_for_an_empty_queue_ends_when_the_stream_closes alone, three runs before and after",
+    "reference": "before 4.46 s (60), 4.06 s (90), 4.89 s (57); after 0.55 s (101), 0.70 s (90), 1.32 s (108); cause removed in crates/view/src/sse.rs"
+  }
+}

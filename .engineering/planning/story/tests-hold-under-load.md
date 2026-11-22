@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tests-hold-under-load
 kind: story
-status: active
+status: implemented
 title: Two tests that fail on a loaded machine pay their cost once
 summary: review1's test of one changed byte copies the tree once per generated file (24 to 42 s, killed at 60 s at load 97), and a stream test waits 5 s for something that takes 4 to 9 s
 relations:
@@ -16,10 +16,11 @@ scope:
   path: crates/view/src/sse.rs
 - confidence: cited
   path: crates/view/tests/stream_bounds.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T05:27:49Z", actor: "human:operator", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-22T05:27:49Z", actor: "human:operator", revision: 6}
+- {from: "active", to: "implemented", at: "2026-11-22T09:03:08Z", actor: "human:operator", revision: 8, decided_on: {"recorded":{"test_result":5,"verification":1}}}
 ---
 ## Context
 

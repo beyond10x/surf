@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T09:03:09Z",
+  "actor": "human:operator",
+  "artifact": "story:security-review-fixes",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "review of the four fixes before the merge",
+    "reference": "impl/security-review-fixes at 6b900a5, merged as 36b1b87"
+  }
+}
