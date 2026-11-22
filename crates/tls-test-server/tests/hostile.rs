@@ -208,3 +208,63 @@ fn drop_while_a_connection_stalls_joins_within_three_seconds() {
     );
     assert_eq!(until_closed(&mut stalled), Ok(0), "its socket is closed");
 }
+
+/// Set in the child process of [`drop_returns_when_the_wake_up_connect_fails`].
+const STARVED: &str = "SURF_TLS_TEST_SERVER_STARVED";
+
+/// The drop wakes the accepting thread with a connection of its own; when that cannot be made,
+/// a join would wait forever. The test runs itself again in a child process whose limit of
+/// file descriptors `sh` lowers to 64 (`ulimit -n`); there the server starts, every
+/// descriptor left is taken, and the drop must return. The child's own result is read back,
+/// so a filter that ran nothing fails.
+#[cfg(target_os = "linux")]
+#[test]
+fn drop_returns_when_the_wake_up_connect_fails() {
+    const NAME: &str = "hostile::drop_returns_when_the_wake_up_connect_fails";
+    if std::env::var_os(STARVED).is_none() {
+        let exe = std::env::current_exe().expect("the test binary");
+        let out = std::process::Command::new("sh")
+            .arg("-c")
+            .arg("ulimit -n 64 && exec \"$0\" --exact \"$1\" --nocapture --test-threads 1")
+            .arg(&exe)
+            .arg(NAME)
+            .env(STARVED, "1")
+            .output()
+            .expect("sh runs");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            out.status.success() && stdout.contains("test result: ok. 1 passed"),
+            "the child: {:?}\n{stdout}\n{stderr}",
+            out.status
+        );
+        return;
+    }
+    let server = TestServer::start(Config::default()).expect("the server starts");
+    let addr = server.addr();
+    // One connection first, ended: after it the accepting thread is back in `accept`, which
+    // on Linux takes its descriptor before it waits. Were every descriptor taken before it
+    // got there, its `accept` would fail at once and the thread would see the stop flag by
+    // itself.
+    drop(TcpStream::connect(addr).expect("connect"));
+    assert_eq!(server.wait_seen(1, Duration::from_secs(10)).len(), 1);
+    thread::sleep(Duration::from_millis(50));
+    let mut held = Vec::new();
+    while let Ok(file) = std::fs::File::open("/dev/null") {
+        held.push(file);
+    }
+    assert!(
+        TcpStream::connect(addr).is_err(),
+        "a connection was made with {} descriptors taken",
+        held.len()
+    );
+    let (returned, dropped) = std::sync::mpsc::channel();
+    thread::spawn(move || {
+        drop(server);
+        let _ = returned.send(());
+    });
+    // A bound against a hang only: a drop that joins the blocked thread never returns.
+    let outcome = dropped.recv_timeout(Duration::from_secs(10));
+    drop(held);
+    assert_eq!(outcome, Ok(()), "the drop returned");
+}

@@ -14,7 +14,9 @@
 //!
 //! What the server saw and did on each connection is read back with [`TestServer::wait_seen`]
 //! ([`Seen`]). A connection whose client sends nothing for [`IDLE`] is closed. Dropping the
-//! server stops every connection and joins every thread it started.
+//! server stops every connection and joins every thread it started; when the connection that
+//! wakes the accepting thread cannot be made (no file descriptor left), the drop returns
+//! without joining and the end of the process ends that thread.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -228,7 +230,8 @@ struct Shared {
     ended: Condvar,
 }
 
-/// A TLS 1.3 server on 127.0.0.1; stopped, its threads joined, when dropped.
+/// A TLS 1.3 server on 127.0.0.1; stopped, its threads joined, when dropped (see the crate's
+/// doc for the one case the drop does not join).
 pub struct TestServer {
     addr: SocketAddr,
     shared: Arc<Shared>,
@@ -311,9 +314,13 @@ impl TestServer {
 impl Drop for TestServer {
     fn drop(&mut self) {
         self.shared.stop.store(true, Ordering::SeqCst);
-        // Wakes the accepting thread out of `accept`.
-        let _ = TcpStream::connect_timeout(&self.addr, Duration::from_secs(1));
-        if let Some(acceptor) = self.acceptor.take() {
+        // Wakes the accepting thread out of `accept`. When that connection cannot be made, the
+        // thread stays blocked there and a join would never return: it is left, and the end of
+        // the process ends it. Its connections still stop: each reads the stop flag.
+        let woken = TcpStream::connect_timeout(&self.addr, Duration::from_secs(1)).is_ok();
+        if let Some(acceptor) = self.acceptor.take()
+            && woken
+        {
             let _ = acceptor.join();
         }
     }
