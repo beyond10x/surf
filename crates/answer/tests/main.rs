@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+mod adversary_follow;
 mod cut;
 mod forging;
 mod golden;
