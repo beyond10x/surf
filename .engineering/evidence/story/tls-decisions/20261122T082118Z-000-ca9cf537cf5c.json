@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T08:21:18Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-decisions",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "forge run 45000324518, workflow tls-probe, branch probe/tls-ring at a82e690",
+    "reference": "5 of 5 build jobs success with probe ok; 2 of 2 negative controls fail as the story expects"
+  }
+}

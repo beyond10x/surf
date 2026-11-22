@@ -11,7 +11,7 @@ relations:
 - depends_on: story:runner-replay-transport
 - depends_on: story:runner-surf-cli-package
 - depends_on: story:agent-change-and-log
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 6}
@@ -85,7 +85,7 @@ tiebreak by tree path.
 
 Surfaces: `crates/surf-cli/src/` (a new module and `main.rs`), `crates/surf-cli/Cargo.toml`
 (path dependencies on `surf-session`, `surf-scenario` and `surf-fetch`),
-`crates/surf-cli/tests/run.rs`, `crates/surf-cli/tests/golden/run/`, `docs/formats/surf-run.md`.
+`crates/surf-cli/tests/run.rs`, `crates/surf-cli/tests/main.rs` (one `mod` line), `crates/surf-cli/tests/golden/run/`, `docs/formats/surf-run.md`.
 It does not write `crates/scenario` or `crates/session`. Follows `runner-scenario-from` on
 `crates/surf-cli/src/main.rs`; `runner-e2e` follows it on `crates/surf-cli/tests/`.
 

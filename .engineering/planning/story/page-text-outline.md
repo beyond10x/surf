@@ -17,7 +17,7 @@ scope:
   path: crates/page/src/lib.rs
 - confidence: inferred
   path: crates/page/tests/elements.rs
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T04:59:50Z", actor: "human:operator", revision: 8, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T04:59:50Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"verification":1}}}
@@ -79,7 +79,7 @@ merges second rebases on the other.
   (a file directly under `tests/` would be a second binary): `tests/cases/outline.rs`, each
   parsing with `surf_html::parse_document` and `ParseOptions::default()`, no server.
 
-Writes: `crates/page/src/lib.rs`, `crates/page/tests/elements.rs`, `crates/page-text/` (new).
+Writes: `crates/page/src/lib.rs`, `crates/page/tests/elements.rs`, `crates/page-text/` (new; `autotests = false` and `[[test]] name = "main"` in its `Cargo.toml`, the form of `story:one-test-binary-per-crate`).
 `Cargo.lock` gains a repository package: the coordinator's.
 
 For `AGENTS.md` (D7), a "Layout" entry: "`crates/page-text` (`surf-page-text`): a `surf-html`

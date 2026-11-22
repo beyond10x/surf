@@ -9,7 +9,7 @@ relations:
 - depends_on: story:runner-formats
 - depends_on: story:runner-replay-transport
 - decomposes: epic:detailed-mode
-revision: 3
+revision: 4
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T03:02:28Z", actor: "human:timo", revision: 2}
 - {from: "proposed", to: "active", at: "2026-11-21T03:02:28Z", actor: "human:timo", revision: 3}
@@ -48,7 +48,7 @@ the node has one and a tree path where it has not.
   lines); one for identical states (no line but the note).
 
 Surfaces: `crates/scenario/src/` (a new module and `lib.rs`), `crates/scenario/Cargo.toml`,
-`crates/scenario/tests/detail.rs`. Shares `lib.rs` and `Cargo.toml` with
+`crates/scenario/tests/detail.rs`, `crates/scenario/tests/main.rs` (one `mod` line). Shares `lib.rs` and `Cargo.toml` with
 `runner-replay-transport`, so it follows it.
 
 ## Acceptance

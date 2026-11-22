@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T09:00:40Z",
+  "actor": "human:operator",
+  "artifact": "story:one-test-binary-per-crate",
+  "kind": "story",
+  "revision": 17,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "plan critic panel: scope, design, acceptance, parallel safety",
+    "reference": "approve at 7863e73 after five rounds"
+  }
+}

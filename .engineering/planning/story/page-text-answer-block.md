@@ -8,6 +8,7 @@ summary: docs/agent-answer.md and surf-answer gain the text block (header, body 
 relations:
 - decomposes: epic:agent-cli-target
 - depends_on: story:agent-answer-format
+- depends_on: story:one-test-binary-per-crate
 scope:
 - confidence: inferred
   path: crates/answer/src/lib.rs

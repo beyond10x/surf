@@ -8,7 +8,7 @@ summary: Seven tests named after the epic's acceptance sentences, three over HTT
 relations:
 - decomposes: epic:live-view
 - depends_on: story:view-now-panel
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 4}
@@ -57,7 +57,7 @@ answers the HTTP tests read are the ones that document gives.
   7. `script in title is shown as text`: the title's exact text, with no `\x` escape of the link left in it (D26), is on the page line and in the list,
      the number of `script` elements is unchanged, no dialog opens.
 
-Surfaces written: `crates/view-fixture/tests/acceptance.rs`, `crates/view-fixture/pages/acceptance/`,
+Surfaces written: `crates/view-fixture/tests/acceptance.rs`, `crates/view-fixture/tests/main.rs` (one `mod` line), `crates/view-fixture/pages/acceptance/`,
 `view-tests/tests/acceptance.spec.mjs`.
 
 ## For AGENTS.md (decision D7)

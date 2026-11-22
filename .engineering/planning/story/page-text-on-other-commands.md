@@ -9,6 +9,7 @@ tags:
 - deferred
 relations:
 - informed_by: epic:agent-cli-target
+- depends_on: story:one-test-binary-per-crate
 revision: 1
 ---
 ## What

@@ -14,7 +14,7 @@ relations:
 - depends_on: story:runner-surf-cli-package
 - depends_on: story:html-tree-tables
 - depends_on: story:agent-follow-links
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 4}
@@ -67,7 +67,7 @@ replaces the query of the action URL, `POST` sends the body); URL Standard
   15. names and values with `&`, `=`, space and bytes outside ASCII encoded as the standard says.
 
 Surfaces written: `crates/page/src/forms.rs`, `crates/page/src/lib.rs` (one line),
-`crates/page/tests/forms.rs`, `crates/surf/src/lib.rs`, `crates/surf/tests/forms.rs`,
+`crates/page/tests/forms.rs`, `crates/page/tests/main.rs` (one `mod` line), `crates/surf/src/lib.rs`, `crates/surf/tests/forms.rs`, `crates/surf/tests/main.rs` (one `mod` line),
 `conformance/src/target.rs`, `crates/session/src/`.
 
 ## Acceptance

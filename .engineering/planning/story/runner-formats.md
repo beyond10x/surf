@@ -12,7 +12,7 @@ relations:
 - depends_on: story:html-document-port
 - depends_on: story:agent-request-body-spec
 - depends_on: story:agent-change-and-log
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 5}
@@ -120,8 +120,8 @@ one request (`docs/plan/agent-plan-revision-1.md`, D14). Both stories are edges 
   grammar document's list of block and line kinds and fails when the matching golden file lacks
   one of them.
 
-Surfaces: `docs/formats/` (new), `crates/scenario/` (new), `crates/answer/src/lib.rs`,
-`crates/answer/tests/blocks.rs` (new), `docs/agent-answer.md` (one paragraph). Every earlier writer
+Surfaces: `docs/formats/` (new), `crates/scenario/` (new; `autotests = false` and `[[test]] name = "main"` in its `Cargo.toml`, `tests/main.rs` with one `mod` line per test file, the form of `story:one-test-binary-per-crate`), `crates/answer/src/lib.rs`,
+`crates/answer/tests/blocks.rs` (new), `crates/answer/tests/main.rs` (one `mod` line), `docs/agent-answer.md` (one paragraph). Every earlier writer
 of `crates/answer` and `docs/agent-answer.md` (`agent-answer-format`, `agent-cli-client`,
 `agent-follow-links`, `agent-fill-pick`, `agent-press-submit`, `agent-back-forward`,
 `agent-change-and-log`) is an ancestor of this story; no later runner story writes them. The root `Cargo.lock` gains

@@ -9,7 +9,7 @@ relations:
 - decomposes: epic:e2e-scenario-runner
 - depends_on: story:runner-record-session
 - depends_on: story:runner-run
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 4}
@@ -45,7 +45,7 @@ to `open`, `follow`, `fill` (with `-`), `press` and `close` against a server a t
   `press` step, an `expected` line containing `button "Sign in"` and an `actual` line containing
   `button` and `"Log in"`.
 
-Surfaces: `crates/surf-cli/tests/record_and_run.rs`. Follows `runner-run` on
+Surfaces: `crates/surf-cli/tests/record_and_run.rs`, `crates/surf-cli/tests/main.rs` (one `mod` line). Follows `runner-run` on
 `crates/surf-cli/tests/`.
 
 ## For AGENTS.md and README.md
