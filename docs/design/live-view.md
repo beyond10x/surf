@@ -259,9 +259,12 @@ which confirms the reason for reading `/events` with `fetch`. Firefox: not measu
   on a machine with many users and other local servers. A view token drawn at each start with
   `surf-secret` (`story:agent-secret-primitives`, decision D25): 32 bytes from the operating
   system's random source, written as 64 hexadecimal digits, compared in constant time by
-  `surf-secret`'s comparison. `surfd` prints `http://127.0.0.1:<port>/#<token>` on its standard
-  error and writes it to `$XDG_RUNTIME_DIR/surf/view-url`, mode 0600, removed at exit, because
-  `surfd` is usually started by `surf-agent open` and nobody sees its output. The token is in
+  `surf-secret`'s comparison. `surfd` writes `http://127.0.0.1:<port>/#<token>` to
+  `$XDG_RUNTIME_DIR/surf/view-url`, mode 0600, removed at exit, because `surfd` is usually
+  started by `surf-agent open` and nobody sees its output. Since 2026-11-22
+  (`story:security-review-fixes`) its standard error gets only the path of that file, so that a
+  log of a `surfd` started by hand holds no token; `surfd --print-view-url` prints the address
+  with its token there for a person who asks for it. The token is in
   the fragment: a browser does not send a fragment in a request or a `Referer`. The page keeps
   it in `sessionStorage`, removes it from the address with `history.replaceState`, and sends it
   as `Authorization: Bearer <token>` on every `/api/` request. It reads `/events` with `fetch`

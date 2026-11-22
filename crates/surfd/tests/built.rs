@@ -6,8 +6,10 @@
 mod common;
 
 use std::fs::{self, File};
+use std::io::Read;
 use std::os::unix::fs::{FileTypeExt, PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::thread;
 
 use common::*;
@@ -414,4 +416,78 @@ fn case_26_an_identity_in_upper_case_is_read_in_lower_case() {
             .contains(&format!("session {upper}\n")),
         "the request did not reach the session"
     );
+}
+
+/// The built `surfd` started by hand with `args` and standard error piped, which ends at its
+/// idle exit of 1 second: its `view-url` line, read while it ran, and its whole standard error.
+fn by_hand(dir: &TestDir, args: &[&str]) -> (String, String) {
+    let mut surfd = Surfd::start(dir, args, |command| {
+        command.stderr(Stdio::piped());
+    });
+    assert_eq!(surfd.line, "ready\n");
+    // view-url is written before `ready`.
+    let line = fs::read_to_string(dir.surf().join("view-url")).expect("view-url");
+    let status = surfd.ends_within(ALLOWED).expect("surfd still runs");
+    assert!(status.success(), "{status:?}");
+    let mut err = String::new();
+    surfd
+        .child
+        .stderr
+        .take()
+        .expect("a piped standard error")
+        .read_to_string(&mut err)
+        .unwrap();
+    (line, err)
+}
+
+#[test]
+fn surfd_started_by_hand_writes_no_view_token_unless_asked() {
+    let dir = TestDir::new();
+    let (line, err) = by_hand(&dir, &["--idle-exit", "1"]);
+    let token = line
+        .trim_end()
+        .rsplit_once("/#")
+        .map(|(_, token)| token.to_string())
+        .expect("an address with its token");
+    assert_eq!(token.len(), 64, "{line:?}");
+    assert!(
+        !err.contains(&token),
+        "standard error holds the token: {err:?}"
+    );
+    assert_eq!(
+        err,
+        format!(
+            "surfd: the live view's address is in {}\n",
+            dir.surf().join("view-url").display()
+        )
+    );
+
+    let asked = TestDir::new();
+    let (line, err) = by_hand(&asked, &["--print-view-url", "--idle-exit", "1"]);
+    assert!(line.starts_with("http://127.0.0.1:"), "{line:?}");
+    assert_eq!(err, line, "standard error is the address with its token");
+}
+
+#[test]
+fn surfd_refuses_an_option_twice_or_unknown() {
+    let dir = TestDir::new();
+    let cases: [&[&str]; 5] = [
+        &["--print-view-url", "--print-view-url"],
+        &["--idle-exit", "1", "--idle-exit", "1"],
+        &["--idle-exit", "0"],
+        &["--idle-exit"],
+        &["--view-url"],
+    ];
+    for args in cases {
+        let mut surfd = Surfd::start(&dir, args, |_| {});
+        assert!(
+            surfd
+                .line
+                .starts_with("refused usage: surfd [--idle-exit <seconds>] [--print-view-url]"),
+            "{args:?}: {:?}",
+            surfd.line
+        );
+        let status = surfd.ends_within(ALLOWED).expect("surfd still runs");
+        assert_eq!(status.code(), Some(2), "{args:?}");
+    }
 }

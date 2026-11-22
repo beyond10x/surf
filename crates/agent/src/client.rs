@@ -4,6 +4,11 @@
 //! Exit statuses (design section 4): the status of the answer, passed through (0, or 1, 2 or 3
 //! for a refusal, as the reason table of `docs/agent-answer.md` gives it); 2 a usage error of the
 //! client; 3 `surfd` cannot be reached or started, or its answer cannot be read.
+//!
+//! Before it connects, every command checks the runtime directory, `surf/` in it and the socket
+//! ([`wire::check_socket_path`]): a failed check is status 3 with the path and what is wrong, and
+//! nothing is connected to or written. `open` starts `surfd` only when that check finds no
+//! socket, or a socket nobody listens on, and checks again before it connects.
 
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -101,25 +106,42 @@ fn call(
                 "XDG_RUNTIME_DIR is not set; surf-agent does not fall back to a shared directory",
             )
         })?;
-    let socket = wire::socket_path(Path::new(runtime_dir))
-        .map_err(|error| unreachable(error.to_string()))?;
+    let runtime = Path::new(runtime_dir);
+    let socket = wire::socket_path(runtime).map_err(|error| unreachable(error.to_string()))?;
+    let caller = wire::caller_uid().map_err(|error| {
+        unreachable(format!(
+            "the caller's user id cannot be read from /proc/self: {error}"
+        ))
+    })?;
 
-    let mut stream = match UnixStream::connect(&socket) {
-        Ok(stream) => stream,
-        Err(error) if no_listener(&error) && call.command == "open" => {
+    // The directories and the socket are checked before every connection, so that no byte of
+    // a request, and no token, goes to a socket another user could have put there.
+    let present = checked(runtime, caller)?;
+    let connected = present.then(|| UnixStream::connect(&socket));
+    let mut stream = match connected {
+        Some(Ok(stream)) => stream,
+        Some(Err(error)) if !no_listener(&error) => {
+            return Err(unreachable(format!("cannot reach surfd: {error}")));
+        }
+        _ if call.command == "open" => {
             start_surfd(env, runtime_dir, config)?;
+            if !checked(runtime, caller)? {
+                return Err(unreachable(format!(
+                    "surfd reported ready and {} is not there",
+                    socket.display()
+                )));
+            }
             UnixStream::connect(&socket).map_err(|error| {
                 unreachable(format!(
                     "surfd reported ready and its socket does not answer: {error}"
                 ))
             })?
         }
-        Err(error) if no_listener(&error) => {
+        _ => {
             return Err(unreachable(
                 "surfd is not running; `surf-agent open` starts it",
             ));
         }
-        Err(error) => return Err(unreachable(format!("cannot reach surfd: {error}"))),
     };
 
     stream
@@ -140,6 +162,16 @@ fn call(
         let _ = writeln!(err, "surf-agent: {}", printable(reason));
     }
     Ok(answer.status)
+}
+
+/// [`wire::check_socket_path`]: whether the socket is there, or the refusal naming the path.
+fn checked(runtime: &Path, caller: u32) -> Result<bool, Failure> {
+    match wire::check_socket_path(runtime, caller) {
+        Ok(found) => Ok(found == wire::SocketCheck::Present),
+        Err(reason) => Err(unreachable(format!(
+            "refusing to connect to surfd: {reason}"
+        ))),
+    }
 }
 
 /// No socket, or a socket nobody listens on: the cases in which `open` starts `surfd`.

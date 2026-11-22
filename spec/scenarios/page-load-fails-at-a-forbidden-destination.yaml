@@ -1,0 +1,45 @@
+# A page load whose request a redirect led to a local address. Synthesis sends only the first
+# variant of a reason, and `page-load-fails-without-response.yaml` sends TooManyRedirects, so
+# this is the scenario that sends ForbiddenDestination and reads it back.
+type: ess-scenario/6
+domain: surf.navigation
+scenario: page-load-fails-at-a-forbidden-destination
+summary: A navigation whose request ends with ForbiddenDestination is Failed.
+
+arrange:
+  - instance: load
+    entity: surf.navigation.Navigation
+
+timeline:
+  - at: 2026-01-07T09:00:00Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 3f1d5b7e-0000-4000-8000-000000000002
+      url: http://example.org/moved
+      method: Get
+    outcome: started
+    events:
+      - event: surf.navigation.NavigationStarted
+        payload:
+          url: http://example.org/moved
+    capture: {instance: load, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-07T09:00:01Z
+    command: surf.net.FailRequest
+    input:
+      request_id: {$instance: load}
+      reason: ForbiddenDestination
+    outcome: failed
+    events:
+      - event: surf.net.FetchFailed
+        payload:
+          request_id: {$instance: load}
+          reason: ForbiddenDestination
+
+assert:
+  - view: surf.net.Requests
+    contains: {request_id: {$instance: load}, url: http://example.org/moved, state: Failed}
+
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: load}, state: Failed}

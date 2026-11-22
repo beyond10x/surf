@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T09:03:08Z",
+  "actor": "human:operator",
+  "artifact": "story:security-review-fixes",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate",
+    "reference": "task check-runner on f593c41 at a load average of 106 to 113: exit 0 in 832 s; 579 tests passed (cargo-nextest 577, doc tests 2); test step 61.9 s of its budget of 120 s; conform and conform-rust 96 of 96"
+  }
+}

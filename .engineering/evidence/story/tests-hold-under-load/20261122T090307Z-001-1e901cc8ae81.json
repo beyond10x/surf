@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T09:03:07Z",
+  "actor": "human:operator",
+  "artifact": "story:tests-hold-under-load",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "deviation from the story text",
+    "reference": "the stream test's bound is the file's WAIT of 30 s, not the runner's 60 s; the changed-byte test changes all files of step 1 in one run and names each, and changes each record file and one step-1 file alone"
+  }
+}

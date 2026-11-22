@@ -35,8 +35,8 @@ fetch-failed <request-id> <reason> <address>
   navigation and its request have the same identity.
 - `<state>` is `Started`, `Committed`, `Failed` or `Cancelled` for a navigation and `Pending`,
   `Responded` or `Failed` for a request. `<reason>` is `Unreachable`, `UnsupportedScheme`,
-  `MalformedResponse` or `TooManyRedirects`. A document has one state, and its line has no state
-  field.
+  `MalformedResponse`, `TooManyRedirects` or `ForbiddenDestination`. A document has one
+  state, and its line has no state field.
 - After redirects, the `navigation` and `document` lines hold the address of the last response,
   and the `request` and `fetch-failed` lines the address asked for.
 - `<address>` is the rest of the line. Printable ASCII (U+0020 to U+007E) other than the
@@ -69,3 +69,8 @@ The fetch takes its limits from `surf-fetch`'s defaults: 10 s to resolve the hos
 30 s to send the request and receive the whole response, so at most 40 s for one fetch; 64 KiB of
 header and 16 MiB of body ([`crates/fetch`](../crates/fetch/src/lib.rs)). It follows at most 20
 redirects (301, 302, 303, 307, 308 with a `Location`) inside the one fetch, within the same 40 s.
+When the first request went to a public address, a redirect to a loopback, private,
+link-local, unique-local, shared (100.64.0.0/10) or unspecified address, or to an IPv6 address
+that embeds one (IPv4-mapped, IPv4-compatible, NAT64 or 6to4), also one reached through a name,
+fails the load with `ForbiddenDestination` before any connection to it. A first
+request to such an address, and the redirects of a chain that starts there, load as before.

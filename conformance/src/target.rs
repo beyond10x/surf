@@ -616,6 +616,7 @@ fn failure_reason(reason: FailureReason) -> &'static str {
         FailureReason::UnsupportedScheme => "UnsupportedScheme",
         FailureReason::MalformedResponse => "MalformedResponse",
         FailureReason::TooManyRedirects => "TooManyRedirects",
+        FailureReason::ForbiddenDestination => "ForbiddenDestination",
     }
 }
 
@@ -625,6 +626,7 @@ fn failure_reason_named(name: &str) -> Option<FailureReason> {
         FailureReason::UnsupportedScheme,
         FailureReason::MalformedResponse,
         FailureReason::TooManyRedirects,
+        FailureReason::ForbiddenDestination,
     ]
     .into_iter()
     .find(|reason| failure_reason(*reason) == name)

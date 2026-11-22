@@ -11,12 +11,32 @@ description: What surf does today, and what it does not do yet.
   `renderer`.
 - **Its own HTTP/1.1 client**, with one deadline for the whole exchange (40 seconds at most) and
   hard limits on header and body size.
-- **95 specified scenarios**, each passing twice: once against the specification's own
+- **96 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **561 tests**, built with warnings treated as errors, and 38 tests of the live view's page in a
+- **579 tests**, built with warnings treated as errors, and 38 tests of the live view's page in a
   browser.
 
-New with the ninth wave of the current plan, not in a release yet. Nothing a `surf-agent`
+Fixed after a security review, shipped in release `0.3.0`:
+
+- **A redirect cannot lead into your network.** When a load starts at a public address, a
+  redirect to a loopback, private, link-local, unique-local, shared (100.64.0.0/10) or
+  unspecified address, or to an IPv6 address that embeds one (IPv4-mapped, IPv4-compatible,
+  NAT64 or 6to4), also one reached through a name, fails with `ForbiddenDestination` before any
+  connection to it. The name is resolved once per request, and the address checked is the one
+  connected to. Loading a local address on purpose works as before, and so do the redirects of a
+  load that starts there.
+- **A refused call learns nothing of the session.** A request without the right token, or one
+  that cannot be read, gets the refusal alone: the head line says `unknown`, and no address or
+  title of the session is in the reply, also on the session's own socket.
+- **`surf-agent` checks where it sends the token.** Before it connects, it checks that
+  `$XDG_RUNTIME_DIR` and `surf/` in it are directories of yours, not symbolic links in any
+  spelling of the path, with no access for group and others, and that `surfd.sock` is a socket
+  of yours; otherwise it exits 3, names the path and sends nothing.
+- **`surfd` keeps the view's token off its standard error.** Started by hand, it prints where the
+  live view's address is kept (`$XDG_RUNTIME_DIR/surf/view-url`), not the address with its
+  token; `surfd --print-view-url` prints the address for a person who asks for it.
+
+New with the ninth wave of the current plan, shipped in release `0.3.0`. Nothing a `surf-agent`
 command prints has changed:
 
 - **The HTTP client can send a `POST`** with a body and its media type, and after a redirect it
@@ -33,7 +53,7 @@ command prints has changed:
   its tests run it: no command runs the parser on a page yet, so an answer still shows no page
   content.
 
-New with the eighth wave of the current plan, not in a release yet:
+New with the eighth wave of the current plan, shipped in release `0.3.0`:
 
 - **The live view's detail panel.** The right column of the page shows the action at the
   playhead or, after a click on a mark of the timeline, that event with its fields, and the
@@ -51,13 +71,14 @@ New with the eighth wave of the current plan, not in a release yet:
   with it. The parser has no limits yet on depth, nodes or time, and no command runs it on a
   page, so an answer still shows no page content.
 
-New with the seventh wave of the current plan, not in a release yet:
+New with the seventh wave of the current plan, shipped in release `0.3.0`:
 
 - **Redirects are followed.** A `go` or an `open` follows up to 20 redirects (301, 302, 303, 307
   and 308 with a `Location`) inside one fetch. The `page` line shows the address the fetch ended
   at, and the `did go` line the address asked for. One more redirect after the twentieth fails
   the load with `TooManyRedirects`. Only `http:` loads: a redirect to `https:` fails with
-  `UnsupportedScheme`.
+  `UnsupportedScheme`. A redirect from a public address to a loopback or private one fails with
+  `ForbiddenDestination` (above).
 - **The live view's page shows real sessions.** While `surfd` runs, open the address in
   `$XDG_RUNTIME_DIR/surf/view-url` in a browser on the same machine. The page lists the
   sessions, open, closed or died; for the selected session it shows a timeline of its actions
@@ -70,7 +91,7 @@ New with the seventh wave of the current plan, not in a release yet:
   HTML Standard's own table of 2,231 names. All 4,739 character reference cases of the test data
   pass. No command runs the tokenizer on a page yet, so an answer still shows no page content.
 
-New with the sixth wave of the current plan, not in a release yet. Nothing a `surf-agent`
+New with the sixth wave of the current plan, shipped in release `0.3.0`. Nothing a `surf-agent`
 command prints has changed:
 
 - **What sessions do, served live.** `surfd` serves a read-only stream of what its sessions do:
@@ -88,7 +109,7 @@ command prints has changed:
   parser fills it yet, so a real page's document stays unfinished and an answer still shows no
   page content.
 
-New with the fifth wave of the current plan, not in a release yet. Nothing a user of
+New with the fifth wave of the current plan, shipped in release `0.3.0`. Nothing a user of
 `surf-agent` sees has changed:
 
 - **What a session did, kept for the live view.** With each answer, a session's process sends
@@ -174,8 +195,8 @@ New with the first wave:
 - No window and no rendering. The `renderer` component is specified; it does not render yet.
 - No JavaScript.
 - No `https:`. Only `http:` addresses load.
-- Release `0.2.0` delivers a redirect status as the response; redirects are followed since the
-  seventh wave, not in a release yet.
+- Release `0.2.0` delivers a redirect status as the response; redirects are followed since
+  release `0.3.0`.
 - No page content in an agent's answer: status, media type and address only.
 - The agent binaries run on Linux only.
 - No standard section is marked complete.

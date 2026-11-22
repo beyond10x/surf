@@ -72,7 +72,7 @@
 use std::fmt;
 use std::fs;
 use std::io::{self, BufRead, Read};
-use std::os::unix::fs::MetadataExt;
+use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -628,6 +628,105 @@ pub fn socket_path(runtime_dir: &Path) -> Result<PathBuf, SocketPathError> {
         return Err(SocketPathError::TooLong(length));
     }
     Ok(path)
+}
+
+/// What [`check_socket_path`] found.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SocketCheck {
+    /// A socket of the caller, in directories only the caller can enter.
+    Present,
+    /// No socket, or no directory [`DIRECTORY`] yet: no `surfd` has been started there.
+    Absent,
+}
+
+/// Check what the client trusts before it connects to `<runtime_dir>/surf/surfd.sock` with a
+/// token, looking at each path without following a symbolic link: `runtime_dir` and
+/// [`DIRECTORY`] in it are directories, not symbolic links, owned by `caller`, with no access
+/// for group and others; the socket, when it is there, is a socket owned by `caller`. Within
+/// two such directories nobody but the caller (and the superuser) can put a socket in its
+/// place. The error names the path and what is wrong. `runtime_dir` is first written without a
+/// trailing `/`, a doubled `/` or a `.` component, so that `<link>/` is refused as the symbolic
+/// link it is; a relative path and a `..` component are refused.
+///
+/// The peer of the connection is not checked: the standard library of rustc 1.99.1 reads the
+/// peer's credentials only through `UnixStream::peer_cred`, which is unstable, and this crate
+/// uses no `unsafe` code to call the operating system itself.
+pub fn check_socket_path(runtime_dir: &Path, caller: u32) -> Result<SocketCheck, String> {
+    let runtime_dir = plain_spelling(runtime_dir)?;
+    let runtime_dir = runtime_dir.as_path();
+    check_directory(runtime_dir, caller)?;
+    let surf = runtime_dir.join(DIRECTORY);
+    match fs::symlink_metadata(&surf) {
+        Ok(_) => check_directory(&surf, caller)?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(SocketCheck::Absent),
+        Err(error) => return Err(format!("cannot look at {}: {error}", surf.display())),
+    }
+    let socket = surf.join(SOCKET);
+    let metadata = match fs::symlink_metadata(&socket) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(SocketCheck::Absent),
+        Err(error) => return Err(format!("cannot look at {}: {error}", socket.display())),
+    };
+    let kind = metadata.file_type();
+    if kind.is_symlink() {
+        return Err(format!("{} is a symbolic link", socket.display()));
+    }
+    if !kind.is_socket() {
+        return Err(format!("{} is not a socket", socket.display()));
+    }
+    owned_by(&socket, &metadata, caller)?;
+    Ok(SocketCheck::Present)
+}
+
+/// `path` without a trailing `/`, a doubled `/` or a `.` component, so that looking at it does not
+/// follow a symbolic link in its last component: `<link>/`, `<link>//` and `<link>/.` name what
+/// the link points to, `<link>` names the link. `/run/user/1000/` becomes `/run/user/1000`. A
+/// `..` component is refused: after a symbolic link it leads to the parent of the link's target,
+/// which the spelling does not show. A relative path is refused.
+fn plain_spelling(path: &Path) -> Result<PathBuf, String> {
+    if !path.is_absolute() {
+        return Err(format!("{} is not an absolute path", path.display()));
+    }
+    if path
+        .components()
+        .any(|part| part == std::path::Component::ParentDir)
+    {
+        return Err(format!("{} has a .. component", path.display()));
+    }
+    Ok(path.components().collect())
+}
+
+/// `path` is a directory, not a symbolic link, of `caller`, with no access for group and others.
+fn check_directory(path: &Path, caller: u32) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|error| format!("cannot look at {}: {error}", path.display()))?;
+    let kind = metadata.file_type();
+    if kind.is_symlink() {
+        return Err(format!("{} is a symbolic link", path.display()));
+    }
+    if !kind.is_dir() {
+        return Err(format!("{} is not a directory", path.display()));
+    }
+    owned_by(path, &metadata, caller)?;
+    let mode = metadata.mode() & 0o7777;
+    if mode & 0o077 != 0 {
+        return Err(format!(
+            "{} has mode {mode:04o}; group and others must have no access",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn owned_by(path: &Path, metadata: &fs::Metadata, caller: u32) -> Result<(), String> {
+    if metadata.uid() != caller {
+        return Err(format!(
+            "{} is owned by user {}, not by the caller, user {caller}",
+            path.display(),
+            metadata.uid()
+        ));
+    }
+    Ok(())
 }
 
 fn is_word(text: &str) -> bool {
