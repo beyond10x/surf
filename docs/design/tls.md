@@ -483,6 +483,9 @@ The public `Error` of `error.rs`, a closed list:
 - `Host(HostRefusal)`, which the security review of the seams adds: the host matches no
   certificate (above); nothing was written, no alert is sent.
 
+`error.rs` also holds `excerpt`, the one form in which an error text shows bytes from outside
+the crate (item 7).
+
 The list follows the tables "RFC 8446 client obligations" and "Messages the client receives" of
 `story:tls-handshake` and "RFC 8446 record obligations" of `story:tls-record`.
 
@@ -554,6 +557,15 @@ The checks of `NotTrusted(check)`, a closed list; `INDEX` of `story:tls-test-cer
 | `NoServerAuth` | extKeyUsage without serverAuth on the leaf, or with neither serverAuth nor anyExtendedKeyUsage on an intermediate (below) | `bad_certificate` | `NoServerAuth: the leaf is not for TLS servers`, or `NoServerAuth: certificate <n> is not for TLS servers` for an intermediate |
 | `WeakAlgorithm` | an MD5 or SHA-1 signature, decided before any verification | `bad_certificate` | `WeakAlgorithm: <algorithm> in certificate <n>` |
 | `WeakKey` | an RSA key under 2048 bits, decided before any verification | `bad_certificate` | `WeakKey: RSA <bits> bits in certificate <n>` |
+
+A detail shows bytes from outside the crate only as an excerpt (`error::excerpt`, one helper
+for every such text): the OID of `UnknownCriticalExtension`, the name of `NameConstraint`, the
+host of `NameMismatch` and of `Error::Host`, and the label of `AnchorError::NotACertificate`
+(item 8). An excerpt is at most `error::EXCERPT_BYTES_MAX`, 64 bytes, of the value (the crate
+had no excerpt bound before); each byte outside printable ASCII is written `\xNN` and the
+backslash `\\`; a longer value is cut and followed by ` ... (<n> bytes, cut after 64)`. So a
+detail stays under 512 bytes; the fields themselves keep the whole value. Before, a critical
+extension with an OBJECT IDENTIFIER of 20,001 bytes gave a detail of 40,046 bytes.
 
 `<n>` counts the certificates as the server sent them, the leaf 0. Every certificate keeps its
 sent position; one sent twice is a candidate once, at its first position, and every `<n>` in a

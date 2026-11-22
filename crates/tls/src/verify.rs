@@ -9,7 +9,7 @@
 use std::fmt;
 
 use crate::der::Time;
-use crate::error::AlertDescription;
+use crate::error::{AlertDescription, excerpt};
 use crate::x509;
 
 pub use crate::x509::{LeafKey, TrustAnchor};
@@ -60,6 +60,8 @@ pub enum Limit {
 
 /// The checks of `NotTrusted`: the closed list of item 7, in its order, with what its detail
 /// column prints. `certificate` counts the certificates as the server sent them, the leaf 0.
+/// A field that holds bytes of the peer (`oid`, `name`) holds them whole; the text shows them
+/// through [`excerpt`], cut to [`crate::error::EXCERPT_BYTES_MAX`] bytes and escaped.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Check {
     /// A certificate the server sent that the reader refuses.
@@ -231,15 +233,18 @@ impl fmt::Display for Check {
             Check::KeyUsage { certificate, lacks } => {
                 write!(f, "{name}: certificate {certificate} lacks {lacks}")
             }
-            Check::UnknownCriticalExtension { certificate, oid } => {
-                write!(f, "{name}: {oid} in certificate {certificate}")
-            }
+            Check::UnknownCriticalExtension { certificate, oid } => write!(
+                f,
+                "{name}: {} in certificate {certificate}",
+                excerpt(oid.as_bytes())
+            ),
             Check::NameConstraint {
                 certificate,
                 name: n,
             } => write!(
                 f,
-                "{name}: {n} outside the constraints of certificate {certificate}"
+                "{name}: {} outside the constraints of certificate {certificate}",
+                excerpt(n.as_bytes())
             ),
             Check::NoServerAuth { certificate: 0 } => {
                 write!(f, "{name}: the leaf is not for TLS servers")
@@ -312,7 +317,11 @@ impl fmt::Display for CertificateRejection {
                 "certificate {certificate} valid from {not_before} to {not_after}, checked at {at}"
             ),
             CertificateRejection::NameMismatch { host } => {
-                write!(f, "no subjectAltName entry matches {host}")
+                write!(
+                    f,
+                    "no subjectAltName entry matches {}",
+                    excerpt(host.as_bytes())
+                )
             }
         }
     }

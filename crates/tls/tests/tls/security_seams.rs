@@ -7,7 +7,7 @@
 
 use std::fs;
 
-use surf_tls::anchors::Anchors;
+use surf_tls::anchors::{AnchorError, Anchors, EXTRA_BYTES_MAX};
 use surf_tls::connection::Connection;
 use surf_tls::crypto::{CryptoError, Random, Scheme, SignatureVerifier, SigningKey};
 use surf_tls::der::Time;
@@ -632,6 +632,137 @@ fn a_refusal_text_holds_a_bounded_excerpt_of_the_peer() {
         "the refusal text holds {} bytes: {}...",
         text.len(),
         text.chars().take(60).collect::<String>()
+    );
+}
+
+/// 40,000 bytes from outside the crate, with control characters and a backslash.
+fn hostile() -> String {
+    format!("\u{1b}]0;x\u{7}\\{}", "1.".repeat(20_000))
+}
+
+/// `check` with every field that holds bytes from outside the crate set to [`hostile`], and
+/// whether it has one. The match names every variant: a new one does not compile until it is
+/// sorted here.
+fn hostile_check(check: &Check) -> (Check, bool) {
+    match check {
+        Check::UnknownCriticalExtension { certificate, .. } => (
+            Check::UnknownCriticalExtension {
+                certificate: *certificate,
+                oid: hostile(),
+            },
+            true,
+        ),
+        Check::NameConstraint { certificate, .. } => (
+            Check::NameConstraint {
+                certificate: *certificate,
+                name: hostile(),
+            },
+            true,
+        ),
+        Check::Unreadable { .. }
+        | Check::NoPathToAnchor
+        | Check::BadSignature { .. }
+        | Check::IssuerNotCa { .. }
+        | Check::PathTooLong(_)
+        | Check::CandidateLimit(_)
+        | Check::KeyUsage { .. }
+        | Check::NoServerAuth { .. }
+        | Check::WeakAlgorithm { .. }
+        | Check::WeakKey { .. } => (check.clone(), false),
+    }
+}
+
+/// Every text of a refusal (each `Check` of item 7 inside `NotTrusted`, `Expired`,
+/// `NameMismatch`, each `AnchorError`, `Error::Host`) with the longest bytes from outside the
+/// crate: at most 512 bytes, printable ASCII only, and where it holds such bytes, the excerpt
+/// says it was cut (`error::excerpt`, 64 bytes).
+#[test]
+fn every_refusal_text_shows_outside_bytes_as_a_cut_excerpt() {
+    let time = Time::from_unix(0);
+    let mut texts: Vec<(String, bool)> = Vec::new();
+    for check in Check::ALL.iter() {
+        let (check, outside) = hostile_check(check);
+        texts.push((CertificateRejection::NotTrusted(check).to_string(), outside));
+    }
+    for rejection in [
+        CertificateRejection::Expired {
+            certificate: 0,
+            not_before: time,
+            not_after: time,
+            at: time,
+        },
+        CertificateRejection::NameMismatch { host: hostile() },
+    ] {
+        let outside = match &rejection {
+            CertificateRejection::NotTrusted(_) | CertificateRejection::Expired { .. } => false,
+            CertificateRejection::NameMismatch { .. } => true,
+        };
+        texts.push((Error::Certificate(rejection).to_string(), outside));
+    }
+    let label = "A".repeat(EXTRA_BYTES_MAX);
+    for error in [
+        AnchorError::NoCertificate,
+        AnchorError::NotACertificate { index: 0, label },
+        AnchorError::BadPem { index: 0 },
+        AnchorError::BadCertificate {
+            index: 0,
+            error: surf_tls::x509::Error::BadName,
+        },
+        AnchorError::NotACa { index: 0 },
+        AnchorError::TooLarge,
+        AnchorError::TooMany,
+    ] {
+        let outside = match &error {
+            AnchorError::NotACertificate { .. } => true,
+            AnchorError::NoCertificate
+            | AnchorError::BadPem { .. }
+            | AnchorError::BadCertificate { .. }
+            | AnchorError::NotACa { .. }
+            | AnchorError::TooLarge
+            | AnchorError::TooMany => false,
+        };
+        texts.push((error.to_string(), outside));
+    }
+    let refusal = names::connection_host(&hostile()).expect_err("no DNS name");
+    texts.push((Error::Host(refusal).to_string(), true));
+    assert_eq!(texts.len(), 12 + 2 + 7 + 1);
+
+    for (text, outside) in &texts {
+        let head: String = text.chars().take(80).collect();
+        assert!(text.len() <= 512, "{} bytes: {}", text.len(), shown(&head));
+        assert!(
+            text.bytes().all(|b| (0x20..0x7f).contains(&b)),
+            "printable ASCII only: {}",
+            shown(&head)
+        );
+        if *outside {
+            assert!(text.contains("bytes, cut after 64)"), "{}", shown(text));
+        }
+    }
+}
+
+/// A dNSName of the peer in a nameConstraints refusal is cut at 64 bytes and says so; a host
+/// in a name mismatch is escaped; short printable values print as they are.
+#[test]
+fn a_name_constraint_refusal_cuts_the_peer_name() {
+    let refusal = CertificateRejection::NotTrusted(Check::NameConstraint {
+        certificate: 1,
+        name: format!("{}\n.example", "a".repeat(70)),
+    });
+    assert_eq!(
+        refusal.to_string(),
+        format!(
+            "NameConstraint: {} ... (79 bytes, cut after 64) outside the constraints of \
+             certificate 1",
+            "a".repeat(64)
+        )
+    );
+    let escaped = CertificateRejection::NameMismatch {
+        host: "a\u{0}b\\".into(),
+    };
+    assert_eq!(
+        escaped.to_string(),
+        "no subjectAltName entry matches a\\x00b\\\\"
     );
 }
 
