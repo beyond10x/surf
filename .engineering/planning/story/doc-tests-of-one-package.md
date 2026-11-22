@@ -2,12 +2,13 @@
 format: aep.planning-md/3
 id: story:doc-tests-of-one-package
 kind: story
-status: draft
+status: active
 title: The test step runs the doc tests of surf-ports only, and a check holds that no other package has one
 summary: The doc command of task test took about 21 s of a step of 121.9 s at a load of 142 to 177; alone it takes 20.0 to 47.2 s for the workspace and 3.9 to 13.4 s for surf-ports, where both doc tests are; run -p surf-ports and fail the gate on a doc test elsewhere
 relations:
 - decomposes: epic:headless-rust-target
 - informed_by: story:test-step-holds-with-tls
+- depends_on: story:session-request-timeout-option
 scope:
 - confidence: cited
   path: AGENTS.md
@@ -17,7 +18,10 @@ scope:
   path: taskfiles/doc-tests-check.sh
 - confidence: cited
   path: taskfiles/doc-tests.yml
-revision: 8
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T23:00:33Z", actor: "human:operator", revision: 10}
+- {from: "proposed", to: "active", at: "2026-11-22T23:00:33Z", actor: "human:operator", revision: 11}
 ---
 ## Why
 
@@ -162,7 +166,9 @@ otherwise.
 6. `grep -n 'cargo test --doc' Taskfile.yml` shows `-p surf-ports` and no `--workspace`.
 7. `grep -n 'doc-tests' AGENTS.md` shows the bullet of `task doc-tests-check`, the paragraph of
    `task check` and the list of `taskfiles/`; `grep -n 'surf-ports' AGENTS.md` shows the bullet
-   of `task test`.
+   of `task test`; `grep -n 'indentation' AGENTS.md` shows the sentence of statement 3 (a code
+   block written by indentation is not checked); `grep -n 'marked .text.' AGENTS.md` shows the
+   rule of statement 4 for doc comments outside `crates/ports`.
 8. Statement 5: `aep plan artifact show story:test-step-holds-with-tls` names this story at the
    sentence of the doc step and lists the edge.
 9. The forge: the `check` run of the merge on `main` prints `test step: N s of its budget of

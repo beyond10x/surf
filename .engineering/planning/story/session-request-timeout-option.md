@@ -16,7 +16,7 @@ scope:
   path: crates/session/src/process.rs
 - confidence: cited
   path: crates/session/tests/built.rs
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T21:48:50Z", actor: "human:operator", revision: 8}
 - {from: "proposed", to: "active", at: "2026-11-22T21:48:50Z", actor: "human:operator", revision: 9}
@@ -36,7 +36,11 @@ shorten the idle timeout (`--idle-timeout`, `process.rs`:66-80); the read deadli
 option.
 
 The tree and the order (D246). This story is built on a branch from `main` (`0f0c157`) and lands
-on `main` before `story:tls-session-anchors` starts. That story changes
+on `main` before `story:tls-session-anchors` starts. As built (D266): the gate of its branch
+`impl/session-request-timeout` at `9f83444`, with `main` `7d15e06` merged, ended red on time
+alone (`test step: 121.9 s, over its budget of 120 s`, 893 of 893 tests passed, load 142 to
+177). `story:doc-tests-of-one-package` is built on that branch as `fix/doc-tests-of-ports`, and
+the two stories land on `main` together after one gate. That story changes
 `crates/session/src/process.rs` (`Arguments` and the usage line, for the anchors) and
 `crates/session/tests`, so `story:tls-session-anchors` depends on this story, and this story
 blocks it, both edges for `process.rs`. No branch changes `process.rs` or `built.rs` today
