@@ -15,7 +15,9 @@ scope:
   path: AGENTS.md
 - confidence: cited
   path: Taskfile.yml
-revision: 5
+- confidence: cited
+  path: crates/surf/tests/slowest_tests.rs
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T21:57:12Z", actor: "human:operator", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-22T21:57:13Z", actor: "human:operator", revision: 5}
@@ -53,32 +55,39 @@ packages run in `test-tls`; their tests in other packages run in `task test`.
 
 ## Change
 
-1. `.config/nextest.toml` gains a profile `tls`, which inherits `default` (`fail-fast = false`,
-   `slow-timeout` of 60 s with `terminate-after = 1`), with `[profile.tls.junit] path =
-   "junit.xml"`. Its JUnit report is `target/nextest/tls/junit.xml`; the report of `task test`
-   stays `target/nextest/default/junit.xml`, so neither run overwrites the other.
-2. `Taskfile.yml`, task `test` (:282-344 on the wave): `cargo nextest run --workspace --exclude
-   surf-tls --exclude surf-tls-test-server --exclude surf-tls-test-certs --exclude
-   surf-tls-conformance`, the rest as today: the doc tests, the ten slowest, the `Summary`, the
-   count line and `test step: N s of its budget of 120 s` or the `over its budget` form.
-3. `Taskfile.yml`, a task `test-tls`, POSIX sh, after `task build`: `cargo nextest run --profile
-   tls --locked --color never -p surf-tls -p surf-tls-test-server -p surf-tls-test-certs -p
-   surf-tls-conformance` into `.out/test-tls.log`, timed alone. It prints `the ten slowest tests:`
-   and `sh taskfiles/slowest-tests.sh target/nextest/tls/junit.xml 10`, nextest's `Summary` line,
-   the count line `N tests: P passed, F failed, I ignored`, then `tls test step: N s of its budget
-   of 120 s`, or `tls test step: N s, over its budget of 120 s` and exit 1. The budget is the
-   variable `TLS_TEST_BUDGET`, default 120. It fails when a test failed. It removes
-   `.out/tls-test-step.seconds` at its start and writes N there at its end.
-4. The list of `check` (:350-372 on the wave) runs `test-tls` right after `test`. The forge runs
-   `task check`, so it runs both steps.
+1. One nextest profile, two copies of its report. Both steps run nextest's profile `default`
+   (`fail-fast = false`, `slow-timeout` of 60 s with `terminate-after = 1`), so both write
+   `target/nextest/default/junit.xml`. Each task removes that file at its start and copies it
+   after its run: `task test` to `.out/test-junit.xml`, `task test-tls` to
+   `.out/test-tls-junit.xml`, so neither step reads the other's report. `.config/nextest.toml`
+   does not change. As built: an earlier text of this statement named a profile `tls` with a
+   report of its own; the copies need no second profile and no second build.
+2. `Taskfile.yml`, a variable `TLS_PACKAGES` with the four packages, and task `test`: `cargo
+   nextest run --workspace --exclude surf-tls --exclude surf-tls-test-server --exclude
+   surf-tls-test-certs --exclude surf-tls-conformance`, the rest as before: the doc tests, the
+   ten slowest (read from `.out/test-junit.xml`), the `Summary`, the count line and `test step:
+   N s of its budget of 120 s` or the `over its budget` form.
+3. `Taskfile.yml`, a task `test-tls`, POSIX sh, after `task build`: `cargo nextest run -p
+   surf-tls -p surf-tls-test-server -p surf-tls-test-certs -p surf-tls-conformance --locked
+   --color never` into `.out/test-tls.log`, timed alone. It prints `the ten slowest tests:` and
+   `sh taskfiles/slowest-tests.sh .out/test-tls-junit.xml 10`, nextest's `Summary` line, the
+   count line `N tests: P passed, F failed, I ignored (cargo-nextest N)`, then `tls test step:
+   N s of its budget of 120 s`, or `tls test step: N s, over its budget of 120 s` and exit 1.
+   The budget is the variable `TLS_TEST_BUDGET`, default 120. It fails when a test failed.
+4. The list of `check` runs `test-tls` right after `test`. The forge runs `task check`, so it
+   runs both steps.
 5. The sum line. Where `step-budgets` of `story:page-test-step-within-budget` exists (on
    `wave/round-2` once that story is built), it counts four steps: the merge of `wave/tls-1` and
-   `wave/round-2`, whichever reaches `main` second, extends `step-budgets` to read
-   `.out/tls-test-step.seconds` too and to print `four steps: N s (test step A s, tls test step
-   T s, conformance step B s, page step C s)`.
-6. `AGENTS.md` on the wave: the bullet of `task test` (:1308) says which four packages it leaves
-   out; a new bullet of `task test-tls` after it names the step, its profile, its JUnit file, its
-   line and its budget; the paragraph of `task check` (:1127) names the step.
+   `wave/round-2`, whichever reaches `main` second, makes `test-tls` remove
+   `.out/tls-test-step.seconds` at its start and write its N there at its end, and extends
+   `step-budgets` to read that file too and to print `four steps: N s (test step A s, tls test
+   step T s, conformance step B s, page step C s)`. This story does not write the file: nothing
+   on `wave/tls-1` reads it.
+6. `AGENTS.md` on the wave: the bullet of `task test` says which four packages it leaves out; a
+   new bullet of `task test-tls` after it names the step, its JUnit copy, its line and its
+   budget; the paragraph of `task check` names the step.
+7. `crates/surf/tests/slowest_tests.rs` holds that `Taskfile.yml` runs
+   `taskfiles/slowest-tests.sh` twice and reads both copies.
 
 ### Overlap
 
@@ -99,28 +108,30 @@ packages run in `test-tls`; their tests in other packages run in `task test`.
 
 Every command runs in a tree of `wave/tls-1` at the story's commit, unless named otherwise.
 
-1. `slot --timeout 30m task check > .out/check.log 2>&1`, with `cat /proc/loadavg` before and
-   after, exits 0, and `.out/check.log` holds `test step: N s of its budget of 120 s` and `tls
-   test step: N s of its budget of 120 s`. The evidence quotes both lines with the load.
-2. The counts: `test` prints `(cargo-nextest 887, doc tests 2)` in its count line and `test-tls`
-   prints `545 tests: 545 passed, 0 failed, 0 ignored`; 887 and 545 sum to the 1,432 of
-   `48f05c2`. `target/nextest/default/junit.xml` and `target/nextest/tls/junit.xml` both exist
-   after the run.
+1. `slot --timeout 25m task check-runner`, which runs `task check` in a clean export of the
+   commit, with its output in a log file and `cat /proc/loadavg` before and after, exits 0, and
+   the log holds `test step: N s of its budget of 120 s` and `tls test step: N s of its budget
+   of 120 s`. The evidence quotes both lines with the load.
+2. The counts: `test` prints `(cargo-nextest N, doc tests 2)` in its count line and `test-tls`
+   prints `545 tests: 545 passed, 0 failed, 0 ignored (cargo-nextest 545)`. On `48f05c2` N is
+   887, and 887 and 545 sum to its 1,432; on the story's commit N is 887 plus the tests that the
+   merge of `main` and this story add, and the evidence names it. `.out/test-junit.xml` and
+   `.out/test-tls-junit.xml` both exist after the run.
 3. `TLS_TEST_BUDGET=1 slot task test-tls` prints `tls test step: N s, over its budget of 1 s` and
    exits non-zero.
-4. A TLS test planted to fail (`assert!(false)` in one test of `crates/tls/tests/tls/der.rs`, by
+4. A TLS test planted to fail (`assert!(false)` in one test of one of the four TLS packages, by
    hand, removed after, `git diff --stat` equal before and after): `slot task test-tls` exits
    non-zero with that test's `FAIL` line, and `slot task test` exits 0.
-5. The forge: the `check` run of the story's commit on its branch or pull request prints `test
-   step: N s of its budget of 120 s` and `tls test step: N s of its budget of 120 s`. The evidence
-   names the run id and quotes both lines.
+5. The forge: the `check` run of the merge of `wave/tls-1` on `main` prints `test step: N s of
+   its budget of 120 s` and `tls test step: N s of its budget of 120 s`. The evidence names the
+   run id and quotes both lines.
 6. `grep -n 'task test-tls' AGENTS.md` shows the new bullet, the paragraph of `task check` and
    the bullet of `task test`; `grep -n 'surf-tls-conformance' AGENTS.md` shows the bullet of
    `task test` naming the four packages it leaves out.
 7. The 60 s end holds in the step: a test planted in one TLS package that sleeps 70 s (by hand,
    removed after, `git diff --stat` equal before and after) makes `slot task test-tls` print
    nextest's `TIMEOUT` line for that test and exit non-zero.
-8. Each step reads its own report: in `.out/check.log` of acceptance 1 the ten lines after `the
+8. Each step reads its own report: in the log of acceptance 1 the ten lines after `the
    ten slowest tests:` of `test-tls` name only `surf-tls`, `surf-tls-test-server`,
    `surf-tls-test-certs` and `surf-tls-conformance`, and the ten lines of `test` name none of
    them.
