@@ -5,6 +5,7 @@
 
 #![forbid(unsafe_code)]
 
+mod adversary;
 mod fixtures;
 mod format;
 mod judge;

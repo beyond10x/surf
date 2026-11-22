@@ -59,6 +59,11 @@ impl RuntimeDir {
         dir
     }
 
+    /// The directory that holds the `XDG_RUNTIME_DIR`, removed when this is dropped.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
     /// The `XDG_RUNTIME_DIR`.
     pub fn runtime(&self) -> PathBuf {
         self.path.join("r")

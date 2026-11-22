@@ -7,11 +7,17 @@
 //! every `more` line, until the text block ends; then `close`, also after a failed step. Every
 //! call runs `surf-agent` of one directory with an environment of nothing but `PATH` (that
 //! directory alone), the private `XDG_RUNTIME_DIR`, and after `open` the session and its token.
+//! A call that runs past its bound ([`CALL_BOUND`] unless [`Agent::with_call_bound`] sets
+//! another) is killed with its process group, and its step fails.
 
 use std::ffi::OsString;
-use std::io::Write;
+use std::io::{Read, Write};
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use surf_answer::Answer;
 
@@ -20,6 +26,14 @@ use crate::judge::{Run, StepFailure};
 /// The most `look --as markdown` calls one task makes, a bound against an answer whose `more`
 /// line never ends.
 const PAGES_MAX: usize = 1_000;
+
+/// The bound of one `surf-agent` call: a call still running after it is killed and its step
+/// fails with `no answer within 10 s on <command>`. It ends a hung call; no test asserts a time
+/// with it.
+pub const CALL_BOUND: Duration = Duration::from_secs(10);
+
+/// The pause between two looks at a running call.
+const POLL: Duration = Duration::from_millis(10);
 
 /// One step of the scripted agent.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -87,6 +101,7 @@ fn now_handle(answer: Option<&Answer>, label: &str) -> Option<String> {
 pub struct Agent {
     bin: PathBuf,
     runtime: PathBuf,
+    bound: Duration,
 }
 
 /// The session `open` gave.
@@ -95,20 +110,52 @@ struct Session {
     token: String,
 }
 
+/// How a `surf-agent` call ended.
+enum Called {
+    /// It exited.
+    Exited(Output),
+    /// It ran past the bound and was killed.
+    TimedOut,
+}
+
+/// Read a pipe to its end in a thread; the receiver gets the bytes.
+fn drain(pipe: Option<impl Read + Send + 'static>) -> mpsc::Receiver<Vec<u8>> {
+    let (sender, receiver) = mpsc::channel();
+    if let Some(mut pipe) = pipe {
+        thread::spawn(move || {
+            let mut bytes = Vec::new();
+            let _ = pipe.read_to_end(&mut bytes);
+            let _ = sender.send(bytes);
+        });
+    }
+    receiver
+}
+
 impl Agent {
-    /// The agent of the `surf-agent` in `bin`, in the `XDG_RUNTIME_DIR` `runtime`.
+    /// The agent of the `surf-agent` in `bin`, in the `XDG_RUNTIME_DIR` `runtime`, each call
+    /// bounded by [`CALL_BOUND`].
     pub fn new(bin: PathBuf, runtime: PathBuf) -> Agent {
-        Agent { bin, runtime }
+        Agent {
+            bin,
+            runtime,
+            bound: CALL_BOUND,
+        }
     }
 
-    /// One `surf-agent` call; `after_call` runs when it has returned.
+    /// The same agent with another bound for each call.
+    pub fn with_call_bound(self, bound: Duration) -> Agent {
+        Agent { bound, ..self }
+    }
+
+    /// One `surf-agent` call, in a process group of its own; `after_call` runs when it has
+    /// ended. A call still running after the bound is sent SIGKILL, its whole group with it.
     fn call(
         &self,
         words: &[&str],
         session: Option<&Session>,
         input: Option<&str>,
         after_call: &mut dyn FnMut(),
-    ) -> Output {
+    ) -> Called {
         let mut command = Command::new(self.bin.join("surf-agent"));
         command
             .args(words)
@@ -116,7 +163,8 @@ impl Agent {
             .env("PATH", OsString::from(self.bin.as_os_str()))
             .env("XDG_RUNTIME_DIR", &self.runtime)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .stderr(Stdio::piped())
+            .process_group(0);
         if let Some(session) = session {
             command
                 .env("SURF_SESSION", &session.id)
@@ -131,9 +179,62 @@ impl Agent {
         if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
             let _ = stdin.write_all(input.as_bytes());
         }
-        let output = child.wait_with_output().expect("surf-agent is waited for");
+        let stdout = drain(child.stdout.take());
+        let stderr = drain(child.stderr.take());
+        let started = Instant::now();
+        let status = loop {
+            if let Some(status) = child.try_wait().expect("surf-agent is waited for") {
+                break Some(status);
+            }
+            if started.elapsed() >= self.bound {
+                break None;
+            }
+            thread::sleep(POLL);
+        };
+        let called = match status {
+            Some(status) => Called::Exited(Output {
+                status,
+                stdout: stdout.recv().unwrap_or_default(),
+                stderr: stderr.recv().unwrap_or_default(),
+            }),
+            None => {
+                signal_kill_group(child.id());
+                let _ = child.kill();
+                let _ = child.wait();
+                Called::TimedOut
+            }
+        };
         after_call();
-        output
+        called
+    }
+
+    /// One call of a step: counted, and its failure recorded unless an earlier one is. The
+    /// output when it exited 0.
+    fn step(
+        &self,
+        run: &mut Run,
+        words: &[&str],
+        session: Option<&Session>,
+        input: Option<&str>,
+        after_call: &mut dyn FnMut(),
+    ) -> Option<Output> {
+        run.calls += 1;
+        let command = words[0].to_string();
+        let failure = match self.call(words, session, input, after_call) {
+            Called::Exited(output) if output.status.success() => return Some(output),
+            Called::Exited(output) => StepFailure::Exit {
+                status: output.status.code().unwrap_or(-1),
+                command,
+            },
+            Called::TimedOut => StepFailure::Timeout {
+                bound: self.bound,
+                command,
+            },
+        };
+        if run.failure.is_none() {
+            run.failure = Some(failure);
+        }
+        None
     }
 
     /// Run one task's steps from `start`, the address of its start page. The connections of
@@ -142,36 +243,35 @@ impl Agent {
         let mut run = Run::default();
         let mut session: Option<Session> = None;
         let mut last_look: Option<Answer> = None;
-        let exit = |output: &Output, command: &str| StepFailure::Exit {
-            status: output.status.code().unwrap_or(-1),
-            command: command.to_string(),
-        };
         for step in steps {
             if run.failure.is_some() && *step != Step::Close {
                 continue;
             }
             match step {
                 Step::Open => {
-                    run.calls += 1;
-                    let output = self.call(&["open", start], None, None, after_call);
-                    if !output.status.success() {
-                        run.failure = Some(exit(&output, "open"));
+                    let Some(output) =
+                        self.step(&mut run, &["open", start], None, None, after_call)
+                    else {
                         continue;
-                    }
+                    };
                     let parsed = surf_answer::parse(&String::from_utf8_lossy(&output.stdout));
                     match parsed.ok().and_then(|a| Some((a.head.session, a.token?))) {
                         Some((id, token)) => session = Some(Session { id, token }),
-                        None => run.failure = Some(exit(&output, "open")),
+                        None => {
+                            run.failure = Some(StepFailure::Exit {
+                                status: 0,
+                                command: "open".to_string(),
+                            })
+                        }
                     }
                 }
                 Step::Look => {
-                    run.calls += 1;
-                    let output = self.call(&["look"], session.as_ref(), None, after_call);
-                    if !output.status.success() {
-                        run.failure = Some(exit(&output, "look"));
-                        continue;
+                    if let Some(output) =
+                        self.step(&mut run, &["look"], session.as_ref(), None, after_call)
+                    {
+                        last_look =
+                            surf_answer::parse(&String::from_utf8_lossy(&output.stdout)).ok();
                     }
-                    last_look = surf_answer::parse(&String::from_utf8_lossy(&output.stdout)).ok();
                 }
                 Step::LookMarkdown => {
                     let mut from: Option<u64> = None;
@@ -181,12 +281,11 @@ impl Agent {
                         if let Some(n) = &from_text {
                             words.extend(["--from-line", n.as_str()]);
                         }
-                        run.calls += 1;
-                        let output = self.call(&words, session.as_ref(), None, after_call);
-                        if !output.status.success() {
-                            run.failure = Some(exit(&output, "look"));
+                        let Some(output) =
+                            self.step(&mut run, &words, session.as_ref(), None, after_call)
+                        else {
                             break;
-                        }
+                        };
                         let text = String::from_utf8_lossy(&output.stdout).into_owned();
                         let next = surf_answer::parse(&text)
                             .ok()
@@ -209,12 +308,8 @@ impl Agent {
                         });
                         continue;
                     };
-                    run.calls += 1;
-                    let word = step.word();
-                    let output = self.call(&[word, &handle], session.as_ref(), None, after_call);
-                    if !output.status.success() {
-                        run.failure = Some(exit(&output, word));
-                    }
+                    let words = [step.word(), handle.as_str()];
+                    self.step(&mut run, &words, session.as_ref(), None, after_call);
                 }
                 Step::Fill(label, value) => {
                     let Some(handle) = now_handle(last_look.as_ref(), label) else {
@@ -223,29 +318,26 @@ impl Agent {
                         });
                         continue;
                     };
-                    run.calls += 1;
-                    let output = self.call(
-                        &["fill", &handle, "-"],
-                        session.as_ref(),
-                        Some(value),
-                        after_call,
-                    );
-                    if !output.status.success() {
-                        run.failure = Some(exit(&output, "fill"));
-                    }
+                    let words = ["fill", handle.as_str(), "-"];
+                    self.step(&mut run, &words, session.as_ref(), Some(value), after_call);
                 }
                 Step::Close => {
-                    if session.is_none() {
-                        continue;
-                    }
-                    run.calls += 1;
-                    let output = self.call(&["close"], session.as_ref(), None, after_call);
-                    if !output.status.success() && run.failure.is_none() {
-                        run.failure = Some(exit(&output, "close"));
+                    if session.is_some() {
+                        self.step(&mut run, &["close"], session.as_ref(), None, after_call);
                     }
                 }
             }
         }
         run
     }
+}
+
+/// Send SIGKILL to the process group `group` with `kill -9 -- -<group>`.
+fn signal_kill_group(group: u32) {
+    let _ = Command::new("kill")
+        .args(["-9", "--", &format!("-{group}")])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
 }

@@ -20,6 +20,7 @@
 pub mod agent;
 pub mod format;
 pub mod judge;
+pub mod lane;
 pub mod process;
 pub mod report;
 pub mod server;

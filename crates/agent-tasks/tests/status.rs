@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 use surf_agent_tasks::format::{read_status, read_tasks};
+use surf_agent_tasks::report::Lane;
 use surf_agent_tasks::{TaskResult, Verdict, report, root_report_file, status_file, tasks_file};
 
 /// The judged results of case 1 of the story on base A.
@@ -24,6 +25,14 @@ fn base_a() -> Vec<TaskResult> {
         fail("link", "no now line labelled \"Opening hours\""),
         fail("search", "no now line labelled \"Search\""),
     ]
+}
+
+/// The lane the reports of these tests name.
+fn lane() -> Lane {
+    Lane {
+        name: "gate".to_string(),
+        binaries: PathBuf::from("/opt/surf/bin"),
+    }
 }
 
 fn out_file(name: &str) -> PathBuf {
@@ -58,7 +67,7 @@ fn a_listed_pass_that_fails_fails() {
     let root = root_report_file();
     let before = modified(&root);
 
-    let outcome = report(&base_a(), &status, &out);
+    let outcome = report(&base_a(), &status, &lane(), &out);
 
     assert_eq!(
         outcome,
@@ -67,7 +76,7 @@ fn a_listed_pass_that_fails_fails() {
     let written = fs::read_to_string(&out).expect("the file is written");
     assert_eq!(
         written,
-        "agent-tasks: 4 tasks, 0 pass, 4 fail, 0 skipped\n\
+        "agent-tasks: 4 tasks, 0 pass, 4 fail, 0 skipped, lane gate, binaries /opt/surf/bin\n\
          task article fail 3 calls 1 connections: exit 2 on look\n\
          task table fail 3 calls 1 connections: exit 2 on look\n\
          task link fail 3 calls 1 connections: no now line labelled \"Opening hours\"\n\
@@ -88,12 +97,14 @@ fn a_pending_task_that_passes_is_raised() {
     let root = root_report_file();
     let before = modified(&root);
 
-    let outcome = report(&results, &status, &out);
+    let outcome = report(&results, &status, &lane(), &out);
 
     assert_eq!(outcome, Ok(()));
     let written = fs::read_to_string(&out).expect("the file is written");
     assert!(
-        written.starts_with("agent-tasks: 4 tasks, 1 pass, 3 fail, 0 skipped\n"),
+        written.starts_with(
+            "agent-tasks: 4 tasks, 1 pass, 3 fail, 0 skipped, lane gate, binaries /opt/surf/bin\n"
+        ),
         "{written}"
     );
     assert!(

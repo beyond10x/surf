@@ -121,8 +121,9 @@ The commands use the gates as the bot, from a checkout of this repository:
 
        slot task agent-tasks-archive DIR=<dir>/surf-<version>-x86_64-unknown-linux-musl
 
-   Its first line, `agent-tasks: <n> tasks, <p> pass, <f> fail, <s> skipped`, goes into the
-   notes (step 8) as `agent tasks (scripted): <n> tasks, <p> pass, <f> fail, <s> skipped`.
+   Its first line, `agent-tasks: <n> tasks, <p> pass, <f> fail, <s> skipped, lane archive,
+   binaries <dir>`, goes into the notes (step 8) as `agent tasks (scripted): <n> tasks, <p>
+   pass, <f> fail, <s> skipped`.
 
    `scan-artifact` reads ELF only, so the macOS binaries are covered by the workflow's own
    home-path check and not by it; whether that is accepted for surf is open, the operator's to

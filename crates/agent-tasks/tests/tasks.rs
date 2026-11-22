@@ -6,22 +6,25 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::PathBuf;
+use std::os::unix::fs::{PermissionsExt, symlink};
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
-use surf_agent_tasks::agent::{Agent, steps};
-use surf_agent_tasks::format::{read_status, read_tasks};
-use surf_agent_tasks::process::{self, KILL_BOUND, RuntimeDir};
-use surf_agent_tasks::server::serve;
-use surf_agent_tasks::{
-    TaskResult, judge, report, root_report_file, sites_dir, status_file, tasks_file,
-};
-use surf_test_process::ended_within;
+use surf_agent_tasks::agent::CALL_BOUND;
+use surf_agent_tasks::lane::{self, Config, LaneRun};
+use surf_agent_tasks::report::Lane;
+use surf_agent_tasks::root_report_file;
 
 /// `SURF_BIN_DIR`, which the step `test` sets to the programs `task build` made.
 fn bin_dir() -> PathBuf {
     let dir = std::env::var_os("SURF_BIN_DIR").map(PathBuf::from).expect(
         "SURF_BIN_DIR names the directory of surf-agent, surfd and surf-session (task test sets \
          it to target/debug after task build); this test builds nothing",
+    );
+    assert!(
+        dir.is_absolute(),
+        "SURF_BIN_DIR is {}, not an absolute path",
+        dir.display()
     );
     for program in ["surf-agent", "surfd", "surf-session"] {
         assert!(
@@ -33,90 +36,124 @@ fn bin_dir() -> PathBuf {
     dir
 }
 
+/// The facts of /proc every lane run is held to: one surfd from the first `open` on, no cargo
+/// below the test, surfd ended after SIGKILL, no process of the run left, and its directory
+/// removed.
+fn assert_clean(run: &LaneRun) {
+    let surfd: BTreeSet<u32> = run.surfd_samples.iter().flatten().copied().collect();
+    assert_eq!(surfd.len(), 1, "surfd processes seen: {surfd:?}");
+    assert!(
+        run.surfd_samples.iter().all(|sample| sample.len() == 1),
+        "a sample without exactly one surfd: {:?}",
+        run.surfd_samples
+    );
+    assert!(
+        run.cargo_seen.is_empty(),
+        "cargo below the test: {:?}",
+        run.cargo_seen
+    );
+    for result in &run.ended {
+        result.as_ref().expect("surfd ended after SIGKILL");
+    }
+    assert!(
+        run.left.is_empty(),
+        "processes of the run left: {:?}",
+        run.left
+    );
+    assert!(
+        !run.directory.exists(),
+        "{} is left",
+        run.directory.display()
+    );
+}
+
 #[test]
 fn every_task() {
     let bin = bin_dir();
-    let tasks = read_tasks(&fs::read_to_string(tasks_file()).unwrap()).unwrap();
-    let status = read_status(&fs::read_to_string(status_file()).unwrap(), &tasks).unwrap();
-    let dir = RuntimeDir::new(env!("CARGO_TARGET_TMPDIR").as_ref());
-    let server = serve(sites_dir()).expect("the fixture server listens");
-    let agent = Agent::new(bin.clone(), dir.runtime());
-    let own = std::process::id();
-
-    // What /proc shows after every call: the surfd processes of the directory, and any cargo
-    // below this test.
-    let mut surfd_samples: Vec<Vec<u32>> = Vec::new();
-    let mut cargo_seen: BTreeSet<u32> = BTreeSet::new();
-    let mut results = Vec::new();
-    for task in &tasks {
-        let steps = steps(&task.name).unwrap_or_else(|| panic!("no steps for {}", task.name));
-        let before = server.accepted();
-        let mut sample = || {
-            let surfd = dir.processes_named("surfd");
-            if !surfd.is_empty() || !surfd_samples.is_empty() {
-                surfd_samples.push(surfd);
-            }
-            for pid in process::descendants(own) {
-                if process::comm(pid).as_deref() == Some("cargo") {
-                    cargo_seen.insert(pid);
-                }
-            }
-        };
-        let mut run = agent.run(
-            &steps,
-            &server.address(&task.name, &task.start),
-            &mut sample,
-        );
-        run.connections = server.accepted() - before;
-        let verdict = judge(task, &run);
-        results.push(TaskResult {
-            task: task.name.clone(),
-            calls: run.calls,
-            connections: run.connections,
-            verdict,
-        });
-    }
-
-    // Every session is closed by its task; the one surfd is ended here: it would end on its
-    // own only after its idle exit of 600 s.
-    let surfd: BTreeSet<u32> = surfd_samples.iter().flatten().copied().collect();
-    for &pid in &surfd {
-        process::signal_kill(pid);
-    }
-    let ended: Vec<Result<_, String>> = surfd
-        .iter()
-        .map(|&pid| ended_within(pid, KILL_BOUND))
-        .collect();
-    let left: Vec<(u32, Option<String>)> = dir
-        .processes()
-        .into_iter()
-        .map(|pid| (pid, process::comm(pid)))
-        .collect();
-
-    let outcome = report(&results, &status, &root_report_file());
+    let measure = std::env::var_os("SURF_AGENT_TASKS").is_some_and(|value| value == "measure");
+    let config = Config {
+        bin: bin.clone(),
+        fallback: PathBuf::from(env!("CARGO_TARGET_TMPDIR")),
+        call_bound: CALL_BOUND,
+        lane: Lane {
+            name: if measure { "archive" } else { "gate" }.to_string(),
+            binaries: bin,
+        },
+        out: root_report_file(),
+    };
+    let run = lane::run(&config);
     let written = fs::read_to_string(root_report_file()).expect("the report is written");
     print!("{written}");
-
-    assert_eq!(surfd.len(), 1, "surfd processes seen: {surfd:?}");
-    assert!(
-        surfd_samples.iter().all(|sample| sample.len() == 1),
-        "a sample without exactly one surfd: {surfd_samples:?}"
-    );
-    assert!(
-        cargo_seen.is_empty(),
-        "cargo below the test: {cargo_seen:?}"
-    );
-    for result in ended {
-        result.expect("surfd ended after SIGKILL");
-    }
-    assert!(left.is_empty(), "processes of the run left: {left:?}");
+    assert_clean(&run);
     assert_eq!(
         written.lines().count(),
-        1 + tasks.len() + written.matches("\nraise: ").count(),
+        1 + run.results.len() + written.matches("\nraise: ").count(),
         "{written}"
     );
-    if let Err(error) = outcome {
+    if let Err(error) = &run.outcome {
         panic!("{error}");
     }
-    drop(dir);
+}
+
+/// A directory of the programs of `SURF_BIN_DIR` whose `surf-agent` never answers a `look
+/// --as`: every other call goes to the real one.
+fn hanging_bin(real: &Path) -> PathBuf {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("agent-tasks-hanging-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let script = format!(
+        "#!/bin/sh\n\
+         # A surf-agent whose look --as never answers.\n\
+         if [ \"$1\" = look ] && [ \"$2\" = --as ]; then exec /bin/sleep 120; fi\n\
+         exec '{}' \"$@\"\n",
+        real.join("surf-agent").display()
+    );
+    fs::write(dir.join("surf-agent"), script).unwrap();
+    fs::set_permissions(dir.join("surf-agent"), fs::Permissions::from_mode(0o755)).unwrap();
+    for program in ["surfd", "surf-session"] {
+        symlink(real.join(program), dir.join(program)).unwrap();
+    }
+    dir
+}
+
+#[test]
+fn a_call_that_never_answers_ends_at_its_bound() {
+    let real = bin_dir();
+    let bin = hanging_bin(&real);
+    let out = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("agent-tasks-hanging-{}.txt", std::process::id()));
+    fs::write(&out, "agent-tasks: a file of an earlier run\n").unwrap();
+    let config = Config {
+        bin: bin.clone(),
+        fallback: PathBuf::from(env!("CARGO_TARGET_TMPDIR")),
+        call_bound: Duration::from_secs(1),
+        lane: Lane {
+            name: "gate".to_string(),
+            binaries: bin.clone(),
+        },
+        out: out.clone(),
+    };
+    let run = lane::run(&config);
+    let written = fs::read_to_string(&out).expect("the report is written");
+    assert_clean(&run);
+    assert_eq!(run.outcome, Ok(()), "{written}");
+    let lines: Vec<&str> = written.lines().collect();
+    assert_eq!(
+        lines[0],
+        format!(
+            "agent-tasks: 4 tasks, 0 pass, 4 fail, 0 skipped, lane gate, binaries {}",
+            bin.display()
+        )
+    );
+    assert_eq!(
+        lines[1],
+        "task article fail 3 calls 1 connections: no answer within 1 s on look"
+    );
+    assert_eq!(
+        lines[2],
+        "task table fail 3 calls 1 connections: no answer within 1 s on look"
+    );
+    let _ = fs::remove_file(&out);
+    let _ = fs::remove_dir_all(&bin);
 }
