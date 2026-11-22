@@ -32,7 +32,7 @@
 //!    `NameMismatch` when no entry matches.
 //!
 //! When the search ends without a path, the answer is, in this order: a certificate left out
-//! as unreadable (`Unreadable`, the first); a limit of the search
+//! as unreadable (`Unreadable`, the first, with the count left out); a limit of the search
 //! reached (`CandidateLimit`); a candidate cut by the bound of intermediates (`PathTooLong`);
 //! a candidate refused by the policy (`WeakAlgorithm`, `WeakKey`, the first met); a name match
 //! whose signature did not verify (`BadSignature`, the first met); a complete path that failed
@@ -266,6 +266,7 @@ impl<V: SignatureVerifier> PathVerifier<V> {
         // the same bytes as one before it.
         let mut sent: Vec<Option<Certificate<'_>>> = Vec::with_capacity(certificates.len());
         let mut unreadable = None;
+        let mut left_out = 0;
         for (n, der) in certificates.iter().enumerate() {
             match Certificate::from_der(der) {
                 Ok(cert) => {
@@ -276,10 +277,12 @@ impl<V: SignatureVerifier> PathVerifier<V> {
                     return not_trusted(Check::Unreadable {
                         certificate: 0,
                         error,
+                        left_out: 0,
                     });
                 }
                 Err(error) => {
                     unreadable.get_or_insert((n, error));
+                    left_out += 1;
                     sent.push(None);
                 }
             }
@@ -304,6 +307,7 @@ impl<V: SignatureVerifier> PathVerifier<V> {
             bad_signature: None,
             failed: None,
             unreadable,
+            left_out,
         };
         let mut path = vec![0];
         match search.extend(&mut path) {
@@ -367,6 +371,8 @@ struct Search<'s, 'c, V> {
     failed: Option<CertificateRejection>,
     /// The first certificate left out as unreadable, and the reader's error.
     unreadable: Option<(usize, x509::Error)>,
+    /// How many certificates were left out as unreadable.
+    left_out: usize,
 }
 
 /// The certificate sent at `n`, which the search only asks for when it was read.
@@ -385,7 +391,11 @@ impl<V: SignatureVerifier> Search<'_, '_, V> {
     /// The answer when the search found no path (item 9.4).
     fn answer(&mut self) -> CertificateRejection {
         let check = if let Some((certificate, error)) = self.unreadable.take() {
-            Check::Unreadable { certificate, error }
+            Check::Unreadable {
+                certificate,
+                error,
+                left_out: self.left_out,
+            }
         } else if let Some(limit) = self.limit {
             Check::CandidateLimit(limit)
         } else if let Some(cut) = self.cut {
@@ -614,6 +624,7 @@ impl<V: SignatureVerifier> Search<'_, '_, V> {
             not_trusted(Check::Unreadable {
                 certificate,
                 error: x509::Error::BadExtension,
+                left_out: 0,
             })
         };
         if let Some(error @ (x509::Error::BadExtension | x509::Error::DuplicateExtension)) =
@@ -622,6 +633,7 @@ impl<V: SignatureVerifier> Search<'_, '_, V> {
             return not_trusted(Check::Unreadable {
                 certificate: anchor_n,
                 error,
+                left_out: 0,
             });
         }
         if let Some(cert) = &anchor_cert {
@@ -732,6 +744,7 @@ impl<V: SignatureVerifier> Search<'_, '_, V> {
                 return not_trusted(Check::Unreadable {
                     certificate: anchor_n,
                     error,
+                    left_out: 0,
                 });
             }
         }

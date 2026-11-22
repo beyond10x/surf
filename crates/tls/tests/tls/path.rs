@@ -161,7 +161,8 @@ fn index_case(case: &str) {
             result,
             rejected(Check::Unreadable {
                 certificate: 0,
-                error: x509::Error::UnsupportedVersion
+                error: x509::Error::UnsupportedVersion,
+                left_out: 0,
             })
         ),
         "intermediate-not-ca" => {
@@ -1174,6 +1175,53 @@ fn an_unreadable_certificate_sent_refuses_with_the_reader_error() {
     let bad = bad.der();
     unreadable_at(run(&[&leaf, &bad, &junk]), 2);
     unreadable_at(run(&[&leaf, &bad, &bad, &junk, &junk]), 3);
+}
+
+/// Without a path, the refusal names the first certificate left out as unreadable and how
+/// many were left out: 1, then 3.
+#[test]
+fn the_refusal_counts_the_certificates_left_out_as_unreadable() {
+    let chain = straight(1);
+    let leaf = chain[0].der();
+    let mut bad = chain[1].clone();
+    bad.signer = 7;
+    let bad = bad.der();
+    let junk = vec![0x30, 0x03, 0x02, 0x01];
+    let run =
+        |refs: &[&[u8]]| verifier(&[&root()], Limits::default()).verify(refs, "a.test", now());
+    for (refs, first, count, tail) in [
+        (
+            vec![&leaf[..], &bad, &junk],
+            2,
+            1,
+            "; 1 certificate left out as unreadable",
+        ),
+        (
+            vec![&leaf[..], &junk, &bad, &junk, &junk],
+            1,
+            3,
+            "; 3 certificates left out as unreadable",
+        ),
+    ] {
+        let result = run(&refs);
+        let Err(CertificateRejection::NotTrusted(
+            check @ Check::Unreadable {
+                certificate,
+                left_out,
+                ..
+            },
+        )) = &result
+        else {
+            panic!("{result:?}");
+        };
+        assert_eq!((*certificate, *left_out), (first, count), "{result:?}");
+        let detail = check.to_string();
+        assert!(
+            detail.starts_with(&format!("Unreadable: certificate {first} of the server: ")),
+            "{detail}"
+        );
+        assert!(detail.ends_with(tail), "{detail}");
+    }
 }
 
 /// Each certificate keeps its position as sent: one sent twice, or one unreadable, before an

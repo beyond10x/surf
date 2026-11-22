@@ -23,6 +23,7 @@ use surf_tls::der::Time;
 use surf_tls::error::{AlertDescription, Error, Violation};
 use surf_tls::handshake::trace::{GivenClientHello, Memory};
 use surf_tls::key_schedule::{self, CipherSuite, Secret, TrafficSecrets};
+use surf_tls::path::PathVerifier;
 use surf_tls::pem;
 use surf_tls::transcript::Transcript;
 use surf_tls::verify::{CertificateRejection, LeafKey, ServerCertVerifier};
@@ -1034,6 +1035,45 @@ fn handshake_completes_with_each_key() {
         let (result, _) = outcome(&server.input, &Double::accepting(case));
         assert_eq!(result, Ok(()), "{case}");
     }
+}
+
+/// The seam of the handshake and the path verifier: a whole handshake through the shipped
+/// `PathVerifier`, whose one anchor is the test root of `ok-ecdsa-p256` added with `add_root`.
+/// The right host completes and reads data; a wrong host ends with `NameMismatch` and the
+/// fatal alert that `CertificateRejection::alert()` names.
+#[test]
+fn handshake_through_the_path_verifier() {
+    let case = "ok-ecdsa-p256";
+    let root = fs::read(certs_dir().join(case).join("root.pem")).expect("root.pem");
+    let root = pem::parse(&root).expect("PEM");
+    let mut verifier = PathVerifier::new(Vec::new());
+    verifier
+        .add_root(&root[0].data)
+        .expect("the test root is an anchor");
+
+    let mut server = Server::with_case(CipherSuite::Aes128GcmSha256, case);
+    server.hello();
+    server.flight();
+    server.data(b"ok");
+    let mut pipe = Pipe::with_input(server.input.clone());
+    let mut connection = connect(&mut pipe, &verifier).expect("the right host completes");
+    let mut buf = [0u8; 16];
+    let n = connection.read_data(&mut buf).expect("data");
+    assert_eq!(&buf[..n], b"ok");
+    connection.into_inner();
+
+    let host = "other.test";
+    let mut server = Server::for_host(CipherSuite::Aes128GcmSha256, case, host);
+    server.hello();
+    server.flight();
+    let (result, written) = outcome_to(host, &server.input, &verifier);
+    let rejection = CertificateRejection::NameMismatch {
+        host: host.to_string(),
+    };
+    let alert = rejection.alert();
+    assert_eq!(alert, AlertDescription::BAD_CERTIFICATE);
+    assert_eq!(result, Err(Error::Certificate(rejection)));
+    assert_eq!(last_alert(&server, &written), Some((2, alert.0)));
 }
 
 /// A ServerHello of `legacy_version` 0x0301 with `supported_versions` 0x0304 completes: the

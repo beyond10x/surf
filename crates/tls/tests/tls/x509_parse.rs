@@ -890,6 +890,7 @@ fn each_check_prints_the_detail_of_item_7() {
             Check::Unreadable {
                 certificate: 1,
                 error: Error::Der(der::Error::Truncated),
+                left_out: 0,
             },
             "Unreadable: certificate 1 of the server: Truncated",
         ),
@@ -1024,6 +1025,7 @@ impl ServerCertVerifier for ReadsTheLeaf {
                 CertificateRejection::NotTrusted(Check::Unreadable {
                     certificate: 0,
                     error,
+                    left_out: 0,
                 })
             })
     }
@@ -1045,7 +1047,8 @@ fn a_server_cert_verifier_answers_a_leaf_key_or_a_rejection() {
         rejection,
         CertificateRejection::NotTrusted(Check::Unreadable {
             certificate: 0,
-            error: Error::Der(der::Error::Truncated)
+            error: Error::Der(der::Error::Truncated),
+            left_out: 0,
         })
     );
 }

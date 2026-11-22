@@ -1,7 +1,8 @@
 //! The verifier interface (docs/design/tls.md, items 6 and 7): the trait
 //! [`ServerCertVerifier`], which takes the certificates the server sent, the host and the time
 //! and answers the leaf's key or a [`CertificateRejection`]; and the closed list of [`Check`]s
-//! a rejection of kind `NotTrusted` names. `story:tls-x509-path` implements the trait.
+//! a rejection of kind `NotTrusted` names. [`crate::path::PathVerifier`] implements the trait,
+//! and the handshake calls it once, for the server's Certificate message.
 //!
 //! [`LeafKey`] and [`TrustAnchor`] are defined in [`crate::x509`] and named here too.
 
@@ -67,6 +68,10 @@ pub enum Check {
         certificate: usize,
         /// The reader's error.
         error: x509::Error,
+        /// How many certificates after the leaf were left out as unreadable, when no path
+        /// was found without them and `certificate` is the first of them; else 0 (the leaf
+        /// or the anchor's certificate refused on its own).
+        left_out: usize,
     },
     /// No path from the leaf to a trust anchor.
     NoPathToAnchor,
@@ -133,6 +138,7 @@ impl Check {
         Check::Unreadable {
             certificate: 0,
             error: x509::Error::Der(crate::der::Error::Truncated),
+            left_out: 0,
         },
         Check::NoPathToAnchor,
         Check::BadSignature { certificate: 0 },
@@ -186,11 +192,20 @@ impl fmt::Display for Check {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let name = self.name();
         match self {
-            Check::Unreadable { certificate, error } => {
+            Check::Unreadable {
+                certificate,
+                error,
+                left_out,
+            } => {
                 write!(
                     f,
                     "{name}: certificate {certificate} of the server: {error}"
-                )
+                )?;
+                match left_out {
+                    0 => Ok(()),
+                    1 => write!(f, "; 1 certificate left out as unreadable"),
+                    n => write!(f, "; {n} certificates left out as unreadable"),
+                }
             }
             Check::NoPathToAnchor => write!(f, "{name}: no path to a trust anchor"),
             Check::BadSignature { certificate } => write!(

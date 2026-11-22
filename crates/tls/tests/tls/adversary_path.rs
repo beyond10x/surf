@@ -346,7 +346,8 @@ fn a_root_whose_key_identifiers_differ_is_unreadable() {
         result,
         Err(CertificateRejection::NotTrusted(Check::Unreadable {
             certificate: 1,
-            error: surf_tls::x509::Error::BadExtension
+            error: surf_tls::x509::Error::BadExtension,
+            left_out: 0,
         }))
     );
 }
@@ -362,7 +363,8 @@ fn a_leaf_with_an_empty_subject_and_a_non_critical_san_is_unreadable() {
         result,
         Err(CertificateRejection::NotTrusted(Check::Unreadable {
             certificate: 0,
-            error: surf_tls::x509::Error::BadExtension
+            error: surf_tls::x509::Error::BadExtension,
+            left_out: 0,
         }))
     );
 }

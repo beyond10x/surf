@@ -722,6 +722,7 @@ fn certificate_alerts() {
             CertificateRejection::NotTrusted(Check::Unreadable {
                 certificate: 0,
                 error: unreadable,
+                left_out: 0,
             }),
             A::BAD_CERTIFICATE,
         ),
