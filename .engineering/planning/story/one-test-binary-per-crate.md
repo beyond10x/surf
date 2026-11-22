@@ -90,7 +90,7 @@ scope:
   path: taskfiles/test-layout.sh
 - confidence: cited
   path: taskfiles/test-layout.yml
-revision: 12
+revision: 15
 ---
 ## Context
 
@@ -99,8 +99,8 @@ directly under a crate's `tests/` is linked as its own executable, and cargo-nex
 
 Counted at `5c0eb6d` (branch `plan/useful-for-agents`; its code is `main` at `0721558`): 77 files under `crates/*/tests/*.rs` in 16 crates (`surf` 12,
 `session` 9, `fetch` 8, `answer` 6, `surf-cli` 6, `view` 6, `agent` 5, `html-conformance` 5, `surfd` 5, `html` 4, `ports` 3, `url` 3, `view-fixture` 2,
-`page` 1, `secret` 1, `test-process` 1), so 77 integration-test executables. `crates/test-process/tests/main.rs` is the only file of its crate and has the
-form already. 3 files under `conformance/tests/` (its own workspace). 4 crates have `tests/common/` (`agent`, `session`, `surf`, `surfd`), declared by 21
+`page` 1, `secret` 1, `test-process` 1), so 77 integration-test executables. `crates/test-process/tests/main.rs` is the only file of its crate; it has the
+file name already and holds its tests in two inline modules (Change 8 moves them into files). 3 files under `conformance/tests/` (its own workspace). 4 crates have `tests/common/` (`agent`, `session`, `surf`, `surfd`), declared by 21
 `mod common;` lines. No manifest has `autotests`, `[[test]]`, `harness = false` or `required-features`. Wave 10 (`wave/a10-label-limits`, `a4fa398`) adds
 `crates/html/tests/limits.rs`, `crates/html/tests/adversary_limits.rs`, `crates/html/tests/common/` (2 more `mod common;` lines) and
 `crates/page/tests/label.rs`. The unit counts again on its base (Placement) and states the counts in its report; its cases compare against those.
@@ -192,24 +192,31 @@ manifest or a test file, and the first on the base, carries `SLOT_TIMEOUT=30m`.
    `taskfiles/test-layout.yml`, included from the root `Taskfile.yml` as `planning-only` is and run by `task check` after `lock-check`. For each directory
    `crates/*/tests` and `conformance/tests` under `<root>` it fails, naming the path:
    - when `main.rs` is missing;
-   - when the `Cargo.toml` beside the directory has no line `autotests = false`, or has not exactly one `[[test]]` entry, or that entry lacks
-     `name = "main"` or `path = "tests/main.rs"` (decision C9);
-   - when a `*.rs` file directly in it other than `main.rs` is not declared in `main.rs`: declared means the whole line `mod <stem>;` (`grep -qx`), or the
-     whole line `#[path = "<stem>.rs"]` followed by the whole line `mod <name>;`; a `mod` line whose line before starts with `#[cfg` does not count
-     (decision C10);
+   - when the `Cargo.toml` beside the directory has no line `autotests = false`, or has not exactly one `[[test]]` entry, or that entry does not hold
+     exactly the two keys `name = "main"` and `path = "tests/main.rs"` (a `test = false`, `required-features` or `harness = false` key fails) (decision C9);
+   - when a line of `main.rs` is not one of: blank, a `//` comment (`//!` included), an inner attribute `#![…]`, a `use …;` line, or a declaration
+     `mod <name>;`, `#[path = "<stem>.rs"]` followed by `mod <name>;` on the next line or on the same line, or `#[path = "<dir>/<stem>.rs"]` likewise;
+     so `#[cfg…]`, `/*` and an inline `mod x {` fail (decision C10). This fits statement 3: the head comment is `//!`, `#![forbid(unsafe_code)]` is an inner
+     attribute; `crates/fetch` and `crates/html` put nothing for their global allocators in `main.rs` (each stays in its module file), they only leave out
+     `#![forbid(unsafe_code)]`. `crates/test-process/tests/main.rs` holds its tests in two inline modules (`mod lines {`, `mod children {`); the unit
+     moves each body, unchanged, into `tests/lines.rs` and `tests/children.rs`, declared `mod lines;` and `mod children;`, so its test names stay;
+   - when a `*.rs` file directly in it other than `main.rs` is not declared in `main.rs` by one of those forms (the whole line `mod <stem>;`, `grep -qx`);
    - when a `*.rs` file in a subdirectory one level down (`tests/<dir>/<stem>.rs`, `common/` and `data/` skipped) is not declared: the whole line
      `#[path = "<dir>/<stem>.rs"]` followed by the whole line `mod <stem>;`, or the one line `#[path = "<dir>/<stem>.rs"] mod <stem>;`, the form of
      `story:tls-decisions` for `crates/tls/tests/tls/` (decision C11);
-   - when a selection drifts (decision C12): the script holds the list of selections, one line each of crate directory, selected stem and skipped stems
-     (`crates/surf-cli cli review1_cli`, `crates/session e2e`, `crates/view prototype`, the packages `surf-cli`, `surf-session`, `surf-view`), and fails
-     naming the stem when another stem of that crate's `tests/` ends with the selected stem and is not in the skipped list.
+   - when a selection drifts (decision C12): the script holds the list of selections, one line each of crate directory, selected module and skipped
+     modules (`crates/surf-cli cli review1_cli`, `crates/session e2e`, `crates/view prototype`, the packages `surf-cli`, `surf-session`, `surf-view`), and
+     fails naming the module when another module name on a `mod` line of that crate's `main.rs` (either level) ends with the selected name and is not in
+     the skipped list. It compares module names, not file stems: a file `a.rs` declared `mod zz_cli;` joins the selection `cli::`.
    Else it prints `test-layout: <d> test directories, <f> test files, one test binary each`. The task `test-layout-test` of the same file, run by
    `task check` after `planning-only-test`, copies the `Cargo.toml` files, the `tests/*.rs` files and the `tests/<dir>/*.rs` files of `crates/*` and
-   `conformance` into `.out/test-layout/` and runs the script there ten times: the copy as it is passes; it fails naming the path with a planted
+   `conformance` into `.out/test-layout/` and runs the script there twelve times: the copy as it is passes; it fails naming the path with a planted
    `crates/page/tests/planted.rs`; with `autotests = false` taken out of `crates/page/Cargo.toml`; with `crates/page/tests/main.rs` removed; with the
-   `[[test]]` entry taken out of `crates/page/Cargo.toml`; with a second `[[test]]` entry in it; with `// mod elements;` in place of `mod elements;` in
-   `crates/page/tests/main.rs`; with `#[cfg(any())]` on the line before `mod elements;`; with a planted `crates/page/tests/tls/planted.rs` that no
-   `#[path]` line names; with a planted `crates/surf-cli/tests/zz_cli.rs` named by a `mod` line (a stem that ends with the selected `cli`, not skipped).
+   `[[test]]` entry taken out of `crates/page/Cargo.toml`; with a second `[[test]]` entry in it; with a third key `harness = false` in its entry; with
+   `// mod elements;` in place of `mod elements;` in `crates/page/tests/main.rs`; with `#[cfg(any())]` on the line before `mod elements;`; with
+   `#[cfg(any())]` on the line before a `#[path = "elements.rs"]` line that declares `mod elements;`; with a planted `crates/page/tests/tls/planted.rs`
+   that no `#[path]` line names; with a planted `crates/surf-cli/tests/a.rs` declared `mod zz_cli;` (a module name that ends with the selected `cli`, not
+   skipped).
    `SCRIPT=<path>` runs a copy of the script.
 9. `AGENTS.md` follows: "Layout" states the form of statement 3, that a new test file gets its `mod` line in `tests/main.rs`, that a module may also lie
    one directory down, declared by `#[path = "<dir>/<stem>.rs"]` and `mod <stem>;` (the form of `crates/tls/tests/tls/`), that a new crate starts with
@@ -231,8 +238,10 @@ directly in them other than `main.rs` (79 at `5c0eb6d`, 82 with wave 10).
 1. Before: the report gives, from `<base>`, the output of the `uniq -c` of statement 1 (one line per crate, 77 executables at `5c0eb6d`), the summed bytes,
    the three `test step: N s of its budget of 120 s` lines with their load averages, the count line, and `wc -l` and `sha256sum` of
    `.out/otb/tests-before.txt`, `conformance-before.txt`, `cli-before.txt` and `e2e-before.txt`. `wc -l < .out/otb/tests-before.txt` equals
-   `jq '."test-count"'` of the JSON it was written from, and that number equals the cargo-nextest count `n` of the gate's count line; the same holds for
-   `conformance-before.txt` and its JSON; `cli-before.txt` and `e2e-before.txt` each hold at least one line ending `: test`.
+   `jq '."test-count"'` of the JSON it was written from, and that number equals the cargo-nextest count `n` of the gate's count line; `n` counts the tests
+   nextest skipped, ignored ones included, so it equals `test-count` of a list made without a filter. For `conformance-before.txt`, its own workspace,
+   which the gate's count line does not count (`task conform-rust` runs it), only `wc -l` equals `test-count` of its JSON. `cli-before.txt` and
+   `e2e-before.txt` each hold at least one line ending `: test`.
 2. First crate: after statement 3 in `crates/agent` alone,
    `SLOT_TIMEOUT=30m RUSTFLAGS='-D warnings' cargo nextest list -p surf-agent --locked --list-type binaries-only --message-format json | jq -r '."rust-binaries"[] | select(.kind == "test") | ."binary-id"'`
    prints exactly `surf-agent::main`. With a planted `crates/agent/tests/planted.rs` that holds `#[test] fn planted() {}` and no `mod` line, the same
@@ -251,7 +260,8 @@ directly in them other than `main.rs` (79 at `5c0eb6d`, 82 with wave 10).
    `surf-session::main session_core::`. And
    `git diff --numstat <base> -- 'crates/*/tests/*.rs' 'conformance/tests/*.rs' ':(exclude)crates/*/tests/main.rs' ':(exclude)conformance/tests/main.rs'`
    prints `1	1	<file>` for each file that held `mod common;` (21 at `5c0eb6d`, 23 with wave 10), one line for
-   `crates/fetch/tests/adversary_redirect_memory.rs` and one for `crates/view/tests/prototype.rs`, and no other line.
+   `crates/fetch/tests/adversary_redirect_memory.rs` and one for `crates/view/tests/prototype.rs`, one each for the new `crates/test-process/tests/lines.rs`
+   and `children.rs` (statement 8, their bodies as they were in its `main.rs`), and no other line.
 5. Fetch: `grep -c -- 'cargo test -p surf-fetch -- --test-threads=1' crates/fetch/tests/adversary_redirect_memory.rs` prints `1`;
    `RUSTFLAGS='-D warnings' cargo nextest run -p surf-fetch --locked` exits 0; `grep -c '^surf-fetch::main adversary_redirect_memory::' .out/otb/tests-after.txt`
    and `grep -c '^surf-fetch::adversary_redirect_memory ' .out/otb/tests-before.txt` print the same number, and it is not 0.
@@ -266,8 +276,8 @@ directly in them other than `main.rs` (79 at `5c0eb6d`, 82 with wave 10).
    `release.yml:4-5`, it leaves the archives as the run's artifacts); its four package jobs, which run
    the `--test main cli::` step and `taskfiles/release-smoke.sh`, end `success`, and the evidence holds the run's URL and conclusion.
 8. Gate check: `slot task test-layout` on the branch prints `test-layout: <d> test directories, <f> test files, one test binary each` and exits 0;
-   `slot task test-layout-test` prints `test-layout-test: 10 case(s), each decided as expected by taskfiles/test-layout.sh` and exits 0 (the cases of
-   statement 8, among them those of decisions C9 to C12); with `SCRIPT=<copy>` where the copy always exits 0, it exits 1 and names the nine cases that
+   `slot task test-layout-test` prints `test-layout-test: 12 case(s), each decided as expected by taskfiles/test-layout.sh` and exits 0 (the cases of
+   statement 8, among them those of decisions C9 to C12); with `SCRIPT=<copy>` where the copy always exits 0, it exits 1 and names the eleven cases that
    should fail. Both take under 1 s; neither calls cargo.
 9. References: `git grep -n -- '--test ' -- ':!.engineering'` prints, beside lines that hold `--test main `, only the four lines that name no target of a
    crate of this repository: the note "`cargo test -p <package> --test <name>` does not build the package's examples" of `AGENTS.md` (line 900 at
