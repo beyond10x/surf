@@ -59,7 +59,9 @@ pub enum Mode {
     SelectsTls12,
     /// The ServerHello, then nothing.
     StallAfterServerHello,
-    /// Accepts and reads; sends nothing.
+    /// Accepts and reads raw bytes, past the record layer; sends nothing, whatever arrives
+    /// (bytes that are no record among them). A ClientHello in the first record is read for
+    /// its `server_name` and ALPN.
     NeverAnswer,
     /// A Certificate whose header declares 16 MiB less one byte (2^24 - 1, the most a uint24
     /// holds); only the header is sent.

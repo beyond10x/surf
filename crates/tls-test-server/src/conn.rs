@@ -90,6 +90,9 @@ pub(crate) fn serve(stream: TcpStream, setup: &Setup, stop: &AtomicBool) -> Seen
         stop,
         last: Instant::now(),
     };
+    if setup.config.mode == Mode::NeverAnswer {
+        return never_answer(watched, seen);
+    }
     let mut server = Server {
         layer: RecordLayer::new(watched),
         setup,
@@ -105,6 +108,37 @@ pub(crate) fn serve(stream: TcpStream, setup: &Setup, stop: &AtomicBool) -> Seen
     let _ = server.layer.get_ref().stream.shutdown(Shutdown::Both);
     server.seen.end = end;
     server.seen
+}
+
+/// [`Mode::NeverAnswer`]: reads raw bytes, never through the record layer (which answers a
+/// record it refuses with an alert), until the client closes, goes idle or the server stops,
+/// and writes nothing whatever arrives. A ClientHello in the first record is read for what it
+/// names (`server_name`, ALPN); the rest is counted and dropped.
+fn never_answer(mut watched: Watched<'_>, mut seen: Seen) -> Seen {
+    let mut first = Vec::new();
+    let mut total = 0usize;
+    let mut buf = [0u8; 4096];
+    let why = loop {
+        match watched.read(&mut buf) {
+            Ok(0) => break "the client closed".to_string(),
+            Ok(n) => {
+                total += n;
+                let keep = n.min(MAX_REQUEST.saturating_sub(first.len()));
+                first.extend_from_slice(&buf[..keep]);
+            }
+            Err(e) => break format!("{e}"),
+        }
+    };
+    if let [22, _, _, high, low, rest @ ..] = first.as_slice() {
+        let len = usize::from(u16::from_be_bytes([*high, *low]));
+        if let Some(Ok(hello)) = rest.get(..len).map(wire::client_hello) {
+            seen.server_name = hello.server_name;
+            seen.alpn = hello.alpn;
+        }
+    }
+    let _ = watched.stream.shutdown(Shutdown::Both);
+    seen.end = format!("never answers; read {total} bytes; {why}");
+    seen
 }
 
 struct Server<'a> {
@@ -207,7 +241,6 @@ impl Server<'_> {
         self.seen.server_name = hello.server_name.clone();
         self.seen.alpn = hello.alpn.clone();
         match self.mode() {
-            Mode::NeverAnswer => return self.drain("never answers"),
             Mode::Tls12ReadsSupportedVersions => {
                 if !hello.versions.is_empty() && !hello.versions.contains(&wire::TLS12) {
                     self.abort(AlertDescription::PROTOCOL_VERSION);
