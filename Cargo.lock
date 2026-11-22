@@ -263,6 +263,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "surf-tls-test-server"
+version = "0.1.0"
+dependencies = [
+ "surf-tls",
+]
+
+[[package]]
 name = "surf-types"
 version = "1.0.0"
 
