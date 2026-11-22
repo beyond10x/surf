@@ -60,13 +60,15 @@ scope:
   path: crates/surfd/src/daemon.rs
 - confidence: cited
   path: docs/agent-answer.md
+- confidence: cited
+  path: docs/design/agent-interface.md
 - confidence: inferred
   path: generated/rust
 - confidence: inferred
   path: spec/domains/agent.yaml
 - confidence: inferred
   path: website/docs/drive-from-an-agent.md
-revision: 15
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 6}
@@ -83,8 +85,8 @@ Needs from `epic:html-parser` (`html-document-spec`, `html-actionable-elements`,
   document carries (draft marker 3, answered by `html-document-spec`);
 - the document title;
 - the link rows in document order: an identity that stays the same while the document lives, the
-  `href` value as written, the whole accessible name, and `hidden` when the element or an ancestor
-  has the `hidden` attribute;
+  `href` value as written, the whole accessible name, and `hidden` as `surf-page`'s `is_hidden`
+  reads it (the row's `hidden` flag, `crates/page/src/lib.rs:257-258`);
 - the tree through `Browser::document_tree`, read only (decision D1), for the document base URL;
 - `Browser::parser_not_yet_parsed`, the parts of the tree builder not implemented yet (decision
   D12): until the list is empty, real pages are parsed by an incomplete tree builder and the
@@ -123,14 +125,20 @@ and `html-tree-template` add test files there and touch neither.
   `an_answer_with_text_has_no_now_block` (`:855`) stay true. The block lists each link: handle
   `l<n>` as `surf_page::handles` (`crates/page/src/lib.rs:368`) gives it, in document order,
   kept while the document lives, starting at 1 again for a new document, nothing random; kind
-  `link`; visibility `hid` when `hidden` applies, otherwise `?`, with
-  `note visibility: hidden attribute only`; the label quoted and cut at 60 characters; the target
-  resolved with `surf-url` against the base URL and written as its path when it has the origin of
-  the page, quoted; a target that does not resolve is printed as written, quoted, with the word
-  `unresolved`. `follow <handle>`: an unknown handle, a hidden link and an unresolved target are
-  refused (status 1, `did refused unknown-handle`, `hidden`, `unresolved`); otherwise `Follow`.
+  `link`; visibility `hid` when `surf-page`'s `is_hidden` holds for the element (the row's
+  `hidden` flag: `aria-hidden`, the hidden elements of the HTML Standard's style sheet, a closed
+  `dialog`, a popover, the content of a closed `details` but its first `summary`;
+  `AGENTS.md:553-556`, `crates/page/src/lib.rs:417-421`), otherwise `?`, because no CSS is
+  computed, with `note visibility: no-css`. Design section 5.2 names the attribute only and the
+  note `note visibility: hidden attribute only` (`docs/design/agent-interface.md:249-251`); this
+  story corrects those lines to this rule and note. The label quoted and cut at 60 characters;
+  the target resolved with `surf-url` against the base URL and written as its path when it has
+  the origin of the page, quoted; a target that does not resolve is printed as written, quoted,
+  with the word `unresolved`. `follow <handle>`: an unknown handle, a hidden link (by the same
+  test, the row's `hidden` flag from `is_hidden`) and an unresolved target are refused (status 1,
+  `did refused unknown-handle`, `hidden`, `unresolved`); otherwise `Follow`.
 - `crates/answer`, `docs/agent-answer.md`: the title on the `page` line, the `now` block, the link
-  line, `note visibility: hidden attribute only`, each with its `parse` beside its rendering, so
+  line, `note visibility: no-css`, each with its `parse` beside its rendering, so
   parsing what `render` wrote gives the value back (decision D20 of
   `docs/plan/agent-plan-revision-2.md`).
 - No `Follow` event exists: `follow` publishes `NavigationRequested` and, through `RecordAction`,
@@ -159,10 +167,12 @@ and `html-tree-template` add test files there and touch neither.
   server the test starts:
   1. no `base`: the document address; 2. a relative `base href`; 3. two `base` elements: the first
   with `href`; 4. the `now` block of a page with a relative link, a link to another origin, a link
-  inside a `hidden` element and an `a` without `href` equals its golden text;
+  inside a `hidden` element, a link inside an element with `aria-hidden="true"` (hidden by
+  `is_hidden`, not by the attribute) and an `a` without `href` equals its golden text, both
+  hidden links `hid`;
   5. `follow` of the relative link answers the target page, and its `path` line reads
-  `<n> follow l1 "<label>"`; 6. `follow l9`: status 1, `unknown-handle`; 7. `follow` of the
-  hidden link: status 1, `hidden`; 8. `follow` of an unresolved target: status 1, `unresolved`;
+  `<n> follow l1 "<label>"`; 6. `follow l9`: status 1, `unknown-handle`; 7. `follow` of each of
+  the two hidden links: status 1, `hidden`; 8. `follow` of an unresolved target: status 1, `unresolved`;
   9. two runs over the same pages give the same handles; 10. a label of 200 characters is cut to
   60 and `...`;
   forging, each rendered quoted and escaped with no extra line, for every page-derived field this
@@ -185,12 +195,14 @@ and `html-tree-template` add test files there and touch neither.
 Surfaces written: `crates/page/src/base_url.rs`, `crates/page/src/lib.rs` (one line),
 `crates/page/Cargo.toml`, `crates/page/tests/base_url.rs`, `crates/page/tests/main.rs` (one `mod`
 line), `crates/session/`, `crates/answer/`, `docs/agent-answer.md`, `cli/surf-agent.yaml`,
-`crates/agent/`, `crates/surfd/src/daemon.rs`, `AGENTS.md`, `README.md`.
+`crates/agent/`, `crates/surfd/src/daemon.rs`, `AGENTS.md`, `README.md`,
+`docs/design/agent-interface.md` (lines 249-251).
 
 ## For README.md (handed over in the unit report, decision D7)
 
 - "Driving surf from an agent": "`now` lists every link with a handle such as `l3`; `follow l3`
-  goes there. `?` means visibility is not computed; only the `hidden` attribute is known."
+  goes there. `hid` means the markup hides the link (the `hidden` attribute, `aria-hidden`, a
+  closed `dialog` or `details`); `?` means visibility is not known, because no CSS is computed."
 
 ## Acceptance
 

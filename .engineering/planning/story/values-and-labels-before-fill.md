@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:values-and-labels-before-fill
 kind: story
-status: draft
+status: active
 title: No password value is printed and a recorded label is cut, before the first fill command
 summary: 'Four things the As built sections of round 1 left open become defects with the first command that fills a control or records a label: a password value printed, a recorded label uncut, five inputs with no effect, the kept text''s drop untested'
 relations:
@@ -52,7 +52,10 @@ scope:
   path: website/docs/status.md
 - confidence: inferred
   path: website/docs/what-works.md
-revision: 14
+revision: 16
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T17:58:55Z", actor: "human:operator", revision: 15, decided_on: {"recorded":{"verification":1}}, executor: "agent:coordinator"}
+- {from: "proposed", to: "active", at: "2026-11-22T17:58:56Z", actor: "human:operator", revision: 16, decided_on: {"recorded":{"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Why
 

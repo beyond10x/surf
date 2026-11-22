@@ -52,6 +52,8 @@ scope:
 - confidence: inferred
   path: docs/badges/make.sh
 - confidence: cited
+  path: docs/design/agent-interface.md
+- confidence: cited
   path: generated/rust
 - confidence: inferred
   path: spec/domains/agent.yaml
@@ -69,7 +71,7 @@ scope:
   path: website/docs/status.md
 - confidence: inferred
   path: website/docs/what-works.md
-revision: 16
+revision: 18
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 6}
@@ -115,7 +117,10 @@ argument word", and `README.md` says to use `fill <handle> -` for one.
   `6 bytes`). The earlier sentence of this story (`<n> characters` for a password, every other
   value quoted) is replaced by it.
 - The `did` and `path` lines of `fill` and `pick`. `did fill "<handle>"` and `did pick
-  "<handle>"`: the handle quoted, as the caller typed it. The `path` entry takes the form
+  "<handle>"`: the handle quoted, as the caller typed it, the one quoted argument
+  `docs/agent-answer.md` and `crates/answer` build for a `did` line. The design's example
+  `did fill f1` (`docs/design/agent-interface.md:218`) is corrected by this story to
+  `did fill "f1"`. The `path` entry takes the form
   `story:agent-follow-links` gives an action on an element (`spec/domains/agent.yaml:302-304`):
   `<n> fill f1` as the design writes it (`docs/design/agent-interface.md:223`) and `<n> pick f3`
   by the same rule, the handle bare, never the value typed or the option picked. The reasons
@@ -162,8 +167,9 @@ argument word", and `README.md` says to use `fill <handle> -` for one.
   19. `fill` a `readonly` text field: status 1, `readonly`.
 
 Surfaces written: `crates/session/`, `crates/answer/`, `docs/agent-answer.md`,
-`cli/surf-agent.yaml`, `crates/agent/`, `crates/surfd/src/daemon.rs`, and for `readonly` the
-specification files and count files named above.
+`cli/surf-agent.yaml`, `crates/agent/`, `crates/surfd/src/daemon.rs`,
+`docs/design/agent-interface.md` (line 218), and for `readonly` the specification files and count
+files named above.
 
 ## For README.md (handed over in the unit report, decision D7)
 
