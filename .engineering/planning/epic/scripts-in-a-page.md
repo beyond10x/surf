@@ -7,7 +7,7 @@ title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, against a minimal DOM and under limits per page, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 4
+revision: 5
 ---
 ## Context
 
@@ -378,6 +378,7 @@ is the swell session's, given the requirements above.
 
 - S1, the form of the dependency: option a, a git dependency on a release tag of swell. The operator, 2026-11-22 04:51 CET, relayed by the session `host-operator`: "A: git dep on a swell tag". `lock-check` allows that one source by its exact address and tag, and the sentence on dependencies becomes "no third-party crate; one crate of the organization".
 - S2, where a page's scripts run: option b, a script process of its own per session that holds the DOM; the session process holds the rows. The operator, 2026-11-22 about 04:55 CET, relayed by the session `host-operator`: "B: separate script process". This is not the default the epic named (a). What follows from it, to be written into the sections above when S3 and S4 are answered, in one revision: the sentence in "Security" that the first version runs scripts inside the session process is replaced (an engine defect that escaped the language reaches the script process, which holds no token and no socket of the session); a new process kind (a fifth binary in the release archives, or a mode of `surf-session`: a point of `scripts-decisions`), a protocol between the session process and the script process with its specification and tests, and the lifetime rules (started with the first document that has a script, ended with the session, a crash reported as a failure of the script and not of the session); the candidate stories gain one for the process and its protocol before `scripts-minimal-dom`; the reduced environment, restricted privileges and resource limits of the section "From the security review of 2026-11-22" apply to the script process first.
+- S3, when scripts run: option b of the list above (put to the operator as "A"), per session, an option of `surf-agent open` and of `surf`, off by default, both modes tested. The operator, 2026-11-22 05:12 CET, relayed by the session `host-operator`: "A: option, off by default". It was the default the epic named.
 
 ## From the security review of 2026-11-22
 
