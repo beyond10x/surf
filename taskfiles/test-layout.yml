@@ -23,24 +23,28 @@ tasks:
       - sh taskfiles/test-layout.sh .
 
   test-layout-test:
-    desc: Give taskfiles/test-layout.sh a copy of the test layout as it is and twenty-five planted defects.
+    desc: Give taskfiles/test-layout.sh a copy of the test layout as it is, four right layouts and twenty-seven planted defects.
     summary: |
-      Give taskfiles/test-layout.sh a copy of the test layout as it is and twenty-five planted defects.
+      Give taskfiles/test-layout.sh a copy of the test layout as it is, four right layouts and twenty-seven planted defects.
 
       Copies the Cargo.toml files, the src/*.rs files, the tests/*.rs files and the tests/<dir>/*.rs
       files of crates/* and conformance into .out/test-layout/copy, then runs the script on a
-      fresh copy twenty-six times: the copy as it is must pass; each planted defect must fail and
-      name the path or the module. The defects: a test file no mod line names, autotests = false
-      taken out, tests/main.rs removed, the [[test]] entry taken out, a second [[test]] entry, a
-      third key harness = false, a mod line commented out, #[cfg(any())] before a mod line, before
-      a #[path] line, #![cfg(any())] in main.rs and in a module file, a file one directory down
-      that no #[path] line names, and a module zz_cli and an inline mod zz_cli { that the
-      selection cli:: of surf-cli would run; then a second entry headed [[ test ]] and one headed
-      [["test"]], autotests = false under [lib] instead of [package], #![cfg(any())] after another
-      attribute on its line and one indented, pub(crate) mod zz_cli { and #[cfg(test)] mod zz_cli {
-      on one line, an inline mod review1_cli { inside cli.rs, a child module zz_cli of
-      output_streams.rs in a file of its own, a package under generated/rust/crates with two test
-      files and no tests/main.rs, and an [[example]] with test = true.
+      fresh copy thirty-two times: the copy as it is and four right layouts must pass; each planted
+      defect must fail and name the path or the module. The defects: a test file no mod line
+      names, autotests = false taken out, tests/main.rs removed, the [[test]] entry taken out, a
+      second [[test]] entry, a third key harness = false, a mod line commented out, #[cfg(any())]
+      before a mod line, before a #[path] line, #![cfg(any())] in main.rs and in a module file, a
+      file one directory down that no #[path] line names, and a module zz_cli and an inline mod
+      zz_cli { that the selection cli:: of surf-cli would run; then a second entry headed
+      [[ test ]] and one headed [["test"]], autotests = false under [lib] instead of [package],
+      #![cfg(any())] after another attribute on its line and one indented, pub(crate) mod zz_cli {
+      and #[cfg(test)] mod zz_cli { on one line, an inline mod review1_cli { inside cli.rs, a
+      child module zz_cli of output_streams.rs in a file of its own, a package under
+      generated/rust/crates with two test files and no tests/main.rs, an [[example]] with
+      test = true, an inner attribute #![ cfg(any()) ] over three lines, and an out-of-line
+      mod x; inside an inline pub mod a {. The right layouts: a comment that names
+      #![cfg(any())], mod x; inside a string literal and in a trailing comment, and a fixture
+      crate with a Cargo.toml and tests/ below tests/data/.
 
       SCRIPT names the script under test (default taskfiles/test-layout.sh), so that a planted
       defect can be run in a copy. It prints one line per case that is decided otherwise and fails,
@@ -174,6 +178,29 @@ tasks:
         fresh
         printf '\n[[example]]\nname = "ex"\npath = "it/ex.rs"\ntest = true\n' >> "$page/Cargo.toml"
         check 1 "an [[example]] with test = true" crates/page/Cargo.toml
+        fresh
+        edit "$page/tests/elements.rs" 'NR == 1 { print "//! A module file must not start with #![cfg(any())]." } { print }'
+        check 0 "a comment that names #![cfg(any())]" ""
+        fresh
+        printf '\n#[test]\nfn a_string_with_a_module() {\n    assert_eq!("mod x;".len(), 6);\n}\n' >> "$page/tests/elements.rs"
+        check 0 "mod x; inside a string literal" ""
+        fresh
+        printf '\n#[test]\nfn trailing() {\n    let _ = 1; // see mod elements; above\n}\n' >> "$page/tests/elements.rs"
+        check 0 "mod elements; in a trailing comment" ""
+        fresh
+        mkdir -p "$case_dir/crates/url/tests/data/fixture/tests"
+        printf '[package]\nname = "fixture"\nversion = "0.1.0"\nedition = "2024"\n' > "$case_dir/crates/url/tests/data/fixture/Cargo.toml"
+        printf '#[test]\nfn a() {}\n' > "$case_dir/crates/url/tests/data/fixture/tests/a.rs"
+        check 0 "a fixture crate with tests/ below a crate's tests/ directory" ""
+        fresh
+        edit "$page/tests/elements.rs" 'NR == 1 { print "#!["; print "    cfg(any())"; print "]" } { print }'
+        check 1 "#![ cfg(any()) ] over three lines in a module file" crates/page/tests/elements.rs
+        fresh
+        mkdir -p "$case_dir/crates/session/tests/common/a"
+        printf '#[test]\nfn planted() {}\n' > "$case_dir/crates/session/tests/common/a/x.rs"
+        printf '#[test]\nfn planted() {}\n' > "$case_dir/crates/session/tests/common/x.rs"
+        printf '\npub mod a {\n    pub mod x;\n}\n' >> "$case_dir/crates/session/tests/common/mod.rs"
+        check 1 "an out-of-line mod x; inside an inline pub mod a { in common/mod.rs" crates/session/tests/common/mod.rs
         if [ "$wrong" -ne 0 ]; then
           echo "test-layout-test: $wrong of $cases case(s) decided otherwise by $script"
           exit 1

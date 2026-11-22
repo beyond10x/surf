@@ -5,7 +5,9 @@
 #
 # It visits every directory under <root> that holds a Cargo.toml and a tests/ directory
 # (target, node_modules, .out, .git and every directory whose name starts with a dot are not
-# entered). For each it fails, naming the path or the module, when:
+# entered, and a Cargo.toml below a tests/ directory is a fixture, not a crate). In a file of a
+# test binary it reads a line without its string and char literals and its comments. For each
+# directory it fails, naming the path or the module, when:
 # - tests/main.rs is missing;
 # - the Cargo.toml has no line `autotests = false` in its [package] table, or not exactly one
 #   [[test]] entry, or that entry holds other than exactly `name = "main"` and
@@ -19,9 +21,11 @@
 # - a *.rs file one directory down (common/ and data/ skipped) is not declared by
 #   `#[path = "<dir>/<stem>.rs"]` and `mod <stem>;`;
 # - a file of the binary has `#![cfg` or `#![cfg_attr` anywhere in a line, which can drop its
-#   module. The files of the binary are those main.rs declares and, from each, every child
-#   module declared out of line (`mod <name>;`, with or without `#[path]`), followed to its
-#   file; a child module whose file this check cannot read fails;
+#   module, or an inner attribute `#![` that does not close on its line. The files of the
+#   binary are those main.rs declares and, from each, every child module declared out of line
+#   (`mod <name>;`, with or without `#[path]`), followed to its file; a child module whose file
+#   this check cannot read fails, and so does an out-of-line `mod <name>;` inside an inline
+#   module (indented, or after a `{` on its line), which it cannot follow;
 # - a module would change a selection: SELECTIONS below lists, for each test selection of the
 #   repository, the crate directory, the module it selects and the modules it skips. cargo
 #   matches a filter as a substring of a test's path, so `--test main cli::` also runs a module
@@ -31,6 +35,10 @@
 #   binary (inline or out of line, with any visibility or attribute before it on its line),
 #   whose name ends with one of them, the selected module's own file included. A stem added to
 #   the skipped list gets its `--skip <stem>::` in the selection itself.
+#
+# Not seen by the check: a module that a macro expands to, a file pulled in by `include!`,
+# `autotests = false` inside a multi-line string of [package], and a crate reached through a
+# symbolic link.
 #
 # It calls no cargo. Else it prints one line with the counts and exits 0.
 
@@ -57,6 +65,8 @@ set --
 files=
 testdirs=
 for tests in $dirs; do
+  # A Cargo.toml below a tests/ directory is a fixture of a test, not a crate of the workspace.
+  case "$tests" in tests/* | */tests/*) continue ;; esac
   [ -f "${tests%/tests}/Cargo.toml" ] || continue
   testdirs="$testdirs $tests"
   set -- "$@" "${tests%/tests}/Cargo.toml"
@@ -66,10 +76,10 @@ for tests in $dirs; do
   done
 done
 
-# The lines of the test files that hold `mod`, `path` or `cfg`, for the rules on the files of
-# the binary; /dev/null so that grep never reads its standard input.
+# The lines of the test files that hold `mod`, `path`, `cfg` or `#!`, for the rules on the files
+# of the binary; /dev/null so that grep never reads its standard input.
 # shellcheck disable=SC2086
-grep -n -H -E 'mod|path|cfg' /dev/null $files |
+grep -n -H -E 'mod|path|cfg|#[[:space:]]*!' /dev/null $files |
   FILES=$files SELECTIONS=$SELECTIONS awk -v dirs="$testdirs" '
   function problem(text) { print "test-layout: " text; problems++ }
   function module_of(s) { sub(/^.*mod /, "", s); sub(/;$/, "", s); return s }
@@ -91,9 +101,30 @@ grep -n -H -E 'mod|path|cfg' /dev/null $files |
       if (ends_with(name, names[k]))
         problem(file ": module " name " ends with " names[k] ": the selection `" skipped_text[crate] "` of " crate " would match its tests")
   }
-  # The lines of a file that hold `mod`, `path` or `cfg`, as kept[file, i] with their numbers
-  # at[file, i]: from grep for the files of tests/, read here for any other file. Returns 0
-  # when the file cannot be read.
+  # The line without its char and string literals, its block comments closed on the line and
+  # its line comment: what is left is code.
+  function code_of(s) {
+    gsub("\047(\\\\.|[^\047\\\\])\047", "\047 \047", s)
+    gsub(/"(\\.|[^"\\])*"/, "\"\"", s)
+    gsub(/\/\*([^*]|\*+[^*\/])*\*+\//, " ", s)
+    sub(/\/\/.*$/, "", s)
+    return s
+  }
+  # Whether the inner attribute that starts at the first `#![` of `s` closes on the line.
+  function attribute_closes(s,   at, depth, k, c) {
+    match(s, /#[ \t]*![ \t]*\[/)
+    at = RSTART + RLENGTH
+    depth = 1
+    for (k = at; k <= length(s); k++) {
+      c = substr(s, k, 1)
+      if (c == "[") depth++
+      else if (c == "]" && --depth == 0) return 1
+    }
+    return 0
+  }
+  # The lines of a file that may matter (they hold `mod`, `path`, `cfg` or `#!`), as
+  # kept[file, i] with their numbers at[file, i]: from grep for the files of tests/, read here
+  # for any other file. Returns 0 when the file cannot be read.
   function load(file,   line, number, status) {
     if (file in kept_count) return 1
     if (file in exists) { kept_count[file] = 0; return 1 }
@@ -101,7 +132,7 @@ grep -n -H -E 'mod|path|cfg' /dev/null $files |
     kept_count[file] = 0
     while ((status = (getline line < file)) > 0) {
       number++
-      if (index(line, "mod") || index(line, "path") || index(line, "cfg")) {
+      if (index(line, "mod") || index(line, "path") || index(line, "cfg") || line ~ /#[ \t]*!/) {
         kept_count[file]++
         kept[file, kept_count[file]] = line
         at[file, kept_count[file]] = number
@@ -111,9 +142,9 @@ grep -n -H -E 'mod|path|cfg' /dev/null $files |
     if (status < 0) { delete kept_count[file]; return 0 }
     return 1
   }
-  # Read one file of the binary: its cfg lines, and every module it declares; follow each child
-  # module declared out of line to its file.
-  function visit(crate, file,   i, line, number, attr, attr_at, name, rest, end, child, dir, moddir, base) {
+  # Read one file of the binary: its inner attributes, and every module it declares; follow each
+  # child module declared out of line to its file.
+  function visit(crate, file,   i, line, code, number, attr, attr_at, path_here, name, rest, end, child, dir, moddir, base, before) {
     if ((crate SUBSEP file) in visited) return
     visited[crate SUBSEP file] = 1
     dir = dir_of(file)
@@ -125,35 +156,47 @@ grep -n -H -E 'mod|path|cfg' /dev/null $files |
     for (i = 1; i <= kept_count[file]; i++) {
       line = kept[file, i]
       number = at[file, i]
-      if (line ~ /#[ \t]*![ \t]*\[[ \t]*cfg/)
-        problem(file ":" number ": " line ": #![cfg can drop this module from the binary")
-      if (line ~ /^[ \t]*\/\//) continue
-      if (line ~ /^[ \t]*#\[[ \t]*path[ \t]*=[ \t]*"[^"]*"[ \t]*\][ \t]*$/) {
-        attr = line
-        sub(/^[^"]*"/, "", attr)
-        sub(/".*$/, "", attr)
+      # The value of a #[path] attribute is read before the strings are removed.
+      path_here = ""
+      if (match(line, /#\[[ \t]*path[ \t]*=[ \t]*"[^"]*"[ \t]*\]/)) {
+        path_here = substr(line, RSTART, RLENGTH)
+        sub(/^[^"]*"/, "", path_here)
+        sub(/".*$/, "", path_here)
+      }
+      code = code_of(line)
+      if (code ~ /#[ \t]*![ \t]*\[/) {
+        if (code ~ /#[ \t]*![ \t]*\[[ \t]*cfg/)
+          problem(file ":" number ": " line ": #![cfg can drop this module from the binary")
+        else if (!attribute_closes(code))
+          problem(file ":" number ": " line ": an inner attribute that does not close on its line, which this check cannot read")
+      }
+      if (path_here != "" && code ~ /^[ \t]*#\[[ \t]*path[ \t]*=[ \t]*""[ \t]*\][ \t]*$/) {
+        attr = path_here
         attr_at = number
         continue
       }
-      if (match(line, /(^|[^A-Za-z0-9_])mod[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]*[;{]/)) {
-        rest = substr(line, RSTART, RLENGTH)
+      if (match(code, /(^|[^A-Za-z0-9_])mod[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]*[;{]/)) {
+        before = substr(code, 1, RSTART)
+        rest = substr(code, RSTART, RLENGTH)
         end = substr(rest, length(rest), 1)
         name = rest
         sub(/^.*mod[ \t]+/, "", name)
         sub(/[^A-Za-z0-9_].*$/, "", name)
         nested(crate, file, name)
-        if (end == ";") {
-          if (attr_at != number - 1) attr = ""
-          if (match(line, /#\[[ \t]*path[ \t]*=[ \t]*"[^"]*"/)) {
-            attr = substr(line, RSTART, RLENGTH)
-            sub(/^[^"]*"/, "", attr)
-            sub(/"$/, "", attr)
+        if (end == "{" && match(substr(code, RSTART + RLENGTH), /(^|[^A-Za-z0-9_])mod[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]*;/)) {
+          problem(file ":" number ": " line ": an out-of-line module inside an inline module, which this check cannot follow")
+        } else if (end == ";") {
+          if (code ~ /^[ \t]/ || index(before, "{"))
+            problem(file ":" number ": " line ": an out-of-line module inside an inline module, which this check cannot follow")
+          else {
+            if (attr_at != number - 1) attr = ""
+            if (path_here != "") attr = path_here
+            if (attr != "") child = dir "/" attr
+            else if (load(moddir "/" name ".rs")) child = moddir "/" name ".rs"
+            else child = moddir "/" name "/mod.rs"
+            if (load(child)) visit(crate, child)
+            else problem(file ":" number ": mod " name "; names " child ", which this check cannot read")
           }
-          if (attr != "") child = dir "/" attr
-          else if (load(moddir "/" name ".rs")) child = moddir "/" name ".rs"
-          else child = moddir "/" name "/mod.rs"
-          if (load(child)) visit(crate, child)
-          else problem(file ":" number ": mod " name "; names " child ", which this check cannot read")
         }
       }
       attr = ""

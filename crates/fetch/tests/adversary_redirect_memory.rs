@@ -11,17 +11,22 @@
 //! system allocator unchanged and only counts sizes. No file under any `src/` holds `unsafe`;
 //! every hand-written crate forbids it.
 //!
-//! The allocator is the global allocator of the one test binary of `surf-fetch`, and it counts
-//! for each thread: a case reads what the thread that calls the fetch allocated. The fetches of
-//! these cases go to `127.0.0.1`, an IP address, so the fetch resolves no name on a thread of its
-//! own and allocates only on the calling thread; the test's server runs on another thread and is
-//! not counted. So a case counts only its own fetch, also when `cargo test` runs the tests of the
-//! binary side by side in one process.
+//! The allocator is the global allocator of the one test binary of `surf-fetch`. It keeps two
+//! counts: one of the whole process and one for each thread, and [`held_while`] picks the
+//! reading. When the test runs alone in its process, as under cargo-nextest, which the gate runs
+//! and which sets `NEXTEST_EXECUTION_MODE=process-per-test` in the test's environment, a case
+//! reads the count of the whole process, so a copy the fetch makes on any thread is counted; the
+//! test's server allocates nothing once it accepts. Otherwise, as under plain `cargo test`,
+//! where the threads of other tests allocate in the same process, a case reads the count of the
+//! thread that calls the fetch: it then sees what the fetch allocates on that thread only. The
+//! fetches of these cases go to `127.0.0.1`, an IP address, so the fetch resolves no name on a
+//! thread of its own.
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
+use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -29,6 +34,11 @@ use std::time::Duration;
 use surf_fetch::{fetch, send, Failure, Limits, Method, Request, Response, MAX_ADDRESS_BYTES};
 
 struct Counting;
+
+/// The bytes allocated and not yet freed by every thread of the process.
+static PROCESS_LIVE: AtomicIsize = AtomicIsize::new(0);
+/// The most of [`PROCESS_LIVE`] since the last [`held_while`] began.
+static PROCESS_PEAK: AtomicIsize = AtomicIsize::new(0);
 
 thread_local! {
     /// The bytes allocated and not yet freed by this thread.
@@ -38,6 +48,8 @@ thread_local! {
 }
 
 fn grow(n: usize) {
+    let now = PROCESS_LIVE.fetch_add(n as isize, Ordering::SeqCst) + n as isize;
+    PROCESS_PEAK.fetch_max(now, Ordering::SeqCst);
     let _ = LIVE.try_with(|live| {
         let now = live.get() + n as isize;
         live.set(now);
@@ -46,6 +58,7 @@ fn grow(n: usize) {
 }
 
 fn shrink(n: usize) {
+    PROCESS_LIVE.fetch_sub(n as isize, Ordering::SeqCst);
     let _ = LIVE.try_with(|live| live.set(live.get() - n as isize));
 }
 
@@ -88,9 +101,22 @@ unsafe impl GlobalAlloc for Counting {
 #[global_allocator]
 static ALLOCATOR: Counting = Counting;
 
-/// The value of `f` and the most bytes this thread held while `f` ran, beyond what it held
-/// before.
+/// Whether this test runs alone in its process: cargo-nextest sets
+/// `NEXTEST_EXECUTION_MODE=process-per-test` for each test it starts.
+fn alone_in_process() -> bool {
+    std::env::var_os("NEXTEST_EXECUTION_MODE").is_some_and(|mode| mode == "process-per-test")
+}
+
+/// The value of `f` and the most bytes held while `f` ran, beyond what was held before: by the
+/// whole process when the test runs alone in it ([`alone_in_process`]), else by this thread.
 fn held_while<T>(f: impl FnOnce() -> T) -> (T, usize) {
+    if alone_in_process() {
+        let before = PROCESS_LIVE.load(Ordering::SeqCst);
+        PROCESS_PEAK.store(before, Ordering::SeqCst);
+        let out = f();
+        let held = (PROCESS_PEAK.load(Ordering::SeqCst) - before).max(0) as usize;
+        return (out, held);
+    }
     let before = LIVE.with(Cell::get);
     PEAK.with(|peak| peak.set(before));
     let out = f();
@@ -360,7 +386,9 @@ fn a_post_body_is_not_copied() {
     .into_bytes();
     page.resize(page.len() + limits.max_body_bytes, b'x');
     let page: Arc<Vec<u8>> = Arc::new(page);
-    let (port, server) = serve_posts(&[redirect, page]);
+    // Held until the fetch is measured: the server frees no reply (see [`serve`]).
+    let replies = [redirect, page];
+    let (port, server) = serve_posts(&replies);
     let asked = format!("http://127.0.0.1:{port}/a");
     let request = Request {
         address: &asked,
@@ -407,7 +435,9 @@ fn a_post_body_written_twice_is_not_copied_while_it_is_written() {
     let page: Arc<Vec<u8>> = Arc::new(
         b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 2\r\n\r\nok".to_vec(),
     );
-    let (port, server) = serve_posts(&[redirect, page]);
+    // Held until the fetch is measured: the server frees no reply (see [`serve`]).
+    let replies = [redirect, page];
+    let (port, server) = serve_posts(&replies);
     let asked = format!("http://127.0.0.1:{port}/a");
     let request = Request {
         address: &asked,

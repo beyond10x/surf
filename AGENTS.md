@@ -922,7 +922,10 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
 - `task test-layout`: `sh taskfiles/test-layout.sh .`, the form of the integration tests
   (Layout). It visits every directory that holds a `Cargo.toml` and a `tests/` directory
   (`target`, `node_modules`, `.out`, `.git` and directories whose name starts with a dot not
-  entered) and fails, naming the path or the module: when `tests/main.rs` is missing; when the
+  entered; a `Cargo.toml` below a `tests/` directory is a fixture, not a crate). In a file of a
+  test binary it reads each line without its string and char literals and its comments, so a
+  `mod` or a `#![cfg` there counts for nothing. It fails, naming the path or the module: when
+  `tests/main.rs` is missing; when the
   manifest lacks `autotests = false` in its `[package]` table, or exactly one `[[test]]` entry
   of exactly `name = "main"` and `path = "tests/main.rs"` (a table header is compared without
   its spaces and quotes, so `[[ test ]]` and `[["test"]]` count), or holds `test = true` in an
@@ -930,20 +933,26 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   inner attribute without `cfg`, a `use` line or a module declaration (`mod <name>;`, or a
   `#[path]` line and `mod <name>;`); when a test file, or one a directory down (`common/` and
   `data/` skipped), is not declared; when a file of the binary has `#![cfg` or `#![cfg_attr`
-  anywhere in a line (the files of the binary: those `tests/main.rs` declares and every child
-  module they declare out of line, with or without `#[path]`, followed to its file; a child whose
-  file it cannot read fails: today `crates/secret/tests/secret.rs` declares `src/compare.rs` and
-  the `common/mod.rs` of `surf-agent`, `surfd` and `surf-session` declare
+  anywhere in a line, or an inner attribute `#![` that does not close on its line (the files of
+  the binary: those `tests/main.rs` declares and every child module they declare out of line,
+  with or without `#[path]`, followed to its file; a child whose file it cannot read fails, and
+  so does an out-of-line `mod <name>;` inside an inline module, indented or after a `{` on its
+  line, which it cannot follow; today `crates/secret/tests/secret.rs` declares `src/compare.rs`
+  and the `common/mod.rs` of `surf-agent`, `surfd` and `surf-session` declare
   `crates/agent/tests/common/base.rs`); and, in a crate of its `SELECTIONS` list, when a module
   of `tests/main.rs` other than the selected or a skipped one, or any module declared inside a
   file of the binary (inline or out of line, any visibility, any attribute before it on its line,
   the selected module's own file included), has a name that ends with the selected or a skipped
-  name, so that the selection's filter or its `--skip` would match its tests. It calls no cargo
-  and prints `test-layout: <d> test directories, <f> test files, one test binary each`.
+  name, so that the selection's filter or its `--skip` would match its tests. Not seen by the
+  check: a module that a macro expands to, a file pulled in by `include!`, `autotests = false`
+  inside a multi-line string of `[package]`, and a crate reached through a symbolic link. It
+  calls no cargo and prints `test-layout: <d> test directories, <f> test files, one test binary
+  each`.
 - `task test-layout-test`: that script on a copy of the manifests, the `src/*.rs` and the test
-  files under `.out/test-layout/`, twenty-six cases: the copy as it is passes, and each of
-  twenty-five planted defects fails naming its path or module. `SCRIPT=<path>` runs a copy of
-  the script.
+  files under `.out/test-layout/`, thirty-two cases: the copy as it is and four right layouts
+  pass (a comment that names `#![cfg(any())]`, `mod x;` inside a string literal and in a
+  trailing comment, a fixture crate below `tests/data/`), and each of twenty-seven planted
+  defects fails naming its path or module. `SCRIPT=<path>` runs a copy of the script.
 - `task view-test`: the page tests in a browser (`taskfiles/view-test.yml`). It builds
   `surf-agent`, `surf-session` and `surf-view-fixture`, installs `view-tests/` from its
   `package-lock.json` with `npm ci`, and runs `npx playwright test --workers=2` in
