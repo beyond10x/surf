@@ -57,7 +57,10 @@ pub enum Mode {
     /// Kind (c), hostile: whatever the hello, a TLS 1.2 ServerHello selecting 0xC02F without a
     /// downgrade value.
     SelectsTls12,
-    /// The ServerHello, then nothing.
+    /// The ServerHello and, when the client's hello has a non-empty session id, the
+    /// `change_cipher_spec` of compatibility mode after it (RFC 8446 appendix D.4), as a server
+    /// sends them; then nothing. With [`Config::hello_retry_request`] the HelloRetryRequest
+    /// comes first and that `change_cipher_spec` follows it instead.
     StallAfterServerHello,
     /// Accepts and reads raw bytes, past the record layer; sends nothing, whatever arrives
     /// (bytes that are no record among them). A ClientHello in the first record is read for

@@ -154,8 +154,10 @@ fn until_closed(stream: &mut TcpStream) -> Result<usize, ErrorKind> {
 }
 
 fn start(mode: Mode) -> TestServer {
-    let mut config = Config::default();
-    config.mode = mode;
+    let config = Config {
+        mode,
+        ..Config::default()
+    };
     TestServer::start(config).expect("the server starts")
 }
 
@@ -413,7 +415,10 @@ fn relay(upstream: SocketAddr, patch: fn(&mut [u8])) -> (SocketAddr, JoinHandle<
             s.set_read_timeout(Some(TIMEOUT)).expect("timeout");
             s.set_nodelay(true).expect("nodelay");
         }
-        let (mut c_read, mut s_write) = (client.try_clone().expect("c"), server.try_clone().expect("s"));
+        let (mut c_read, mut s_write) = (
+            client.try_clone().expect("c"),
+            server.try_clone().expect("s"),
+        );
         let up = thread::spawn(move || {
             let mut buf = [0u8; 4096];
             while let Ok(n) = c_read.read(&mut buf) {
@@ -534,26 +539,37 @@ fn adversary_never_answer_sends_nothing_to_garbage() {
     stream
         .write_all(&[0xde, 0xad, 0xbe, 0xef, 0x00, 0x01, 0x02, 0x03, 0xff, 0xfe])
         .expect("write");
-    assert_eq!(until_closed(&mut stream), Ok(0), "bytes sent in NeverAnswer");
+    assert_eq!(
+        until_closed(&mut stream),
+        Ok(0),
+        "bytes sent in NeverAnswer"
+    );
 }
 
-/// `StallAfterServerHello`: "The ServerHello, then nothing" (`Mode` doc), also to a hello with
-/// a session id of compatibility mode.
+/// `StallAfterServerHello` (`Mode` doc): the ServerHello and, to a hello with a session id of
+/// compatibility mode, the `change_cipher_spec` after it; then nothing.
 #[test]
-fn adversary_stall_after_server_hello_sends_one_record() {
+fn adversary_stall_after_server_hello_sends_change_cipher_spec_only_with_a_session_id() {
     let server = start(Mode::StallAfterServerHello);
-    let key = x25519();
-    let mut stream = common::socket(&server, Duration::from_millis(300));
-    let hello = client_hello(&Hello {
-        session_id: &[0x22; 32],
-        ..Hello::with_share(key.public_key())
-    });
-    stream.write_all(&record(22, &hello)).expect("write");
-    let mut types = Vec::new();
-    while let Some((content_type, _)) = read_record(&mut stream) {
-        types.push(content_type);
+    for (session_id, want) in [(&[0x22; 32][..], vec![22, 20]), (&[][..], vec![22])] {
+        let key = x25519();
+        let mut stream = common::socket(&server, Duration::from_millis(300));
+        let hello = client_hello(&Hello {
+            session_id,
+            ..Hello::with_share(key.public_key())
+        });
+        stream.write_all(&record(22, &hello)).expect("write");
+        let mut types = Vec::new();
+        while let Some((content_type, _)) = read_record(&mut stream) {
+            types.push(content_type);
+        }
+        assert_eq!(
+            types,
+            want,
+            "the records sent after a hello with a session id of {} bytes",
+            session_id.len()
+        );
     }
-    assert_eq!(types, vec![22], "the records sent after the hello");
 }
 
 /// A client that writes one byte per segment gets what one that writes its flights whole gets:
@@ -579,8 +595,13 @@ fn adversary_one_byte_segments_change_nothing() {
     }
     let server = start(Mode::Normal);
     let stream = Trickle(common::socket(&server, TIMEOUT));
-    let mut connection = Connection::new(stream, HOST, &common::accepting("ok-ecdsa-p256"), common::now())
-        .expect("the handshake completes");
+    let mut connection = Connection::new(
+        stream,
+        HOST,
+        &common::accepting("ok-ecdsa-p256"),
+        common::now(),
+    )
+    .expect("the handshake completes");
     let (response, end) = common::get(&mut connection, "/");
     assert_eq!((end, common::body(&response)), (Ok(()), &b"ok"[..]));
 
@@ -602,9 +623,13 @@ fn adversary_one_byte_segments_change_nothing() {
     ] {
         let server = start(mode);
         let stream = Trickle(common::socket(&server, TIMEOUT));
-        let outcome =
-            Connection::new(stream, HOST, &common::accepting("ok-ecdsa-p256"), common::now())
-                .map(drop);
+        let outcome = Connection::new(
+            stream,
+            HOST,
+            &common::accepting("ok-ecdsa-p256"),
+            common::now(),
+        )
+        .map(drop);
         assert_eq!(outcome, Err(want), "{mode:?}");
     }
 }
@@ -709,7 +734,10 @@ fn adversary_drop_stops_twenty_connections_in_every_mode() {
 fn adversary_idle_accept_loop_does_not_wake() {
     fn switches() -> u64 {
         let mut total = 0;
-        for task in std::fs::read_dir("/proc/self/task").expect("tasks").flatten() {
+        for task in std::fs::read_dir("/proc/self/task")
+            .expect("tasks")
+            .flatten()
+        {
             let comm = std::fs::read_to_string(task.path().join("comm")).unwrap_or_default();
             if comm.trim() != "tls-test-server" {
                 continue;
