@@ -6,6 +6,8 @@
 use std::fmt;
 use std::io::ErrorKind;
 
+use crate::verify::CertificateRejection;
+
 /// An alert description of RFC 8446 section 6, as sent or received. A received alert may carry
 /// a value RFC 8446 does not name; [`AlertDescription::name`] says `unknown` for it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -238,6 +240,8 @@ pub enum Error {
     SequenceExhausted,
     /// A write key reached the most records RFC 8446 section 5.5 lets it protect (AES-GCM).
     KeyLimitReached,
+    /// The server's certificates are not accepted (`story:tls-x509`).
+    Certificate(CertificateRejection),
 }
 
 impl fmt::Display for Error {
@@ -257,6 +261,7 @@ impl fmt::Display for Error {
             } => write!(f, "{description}: {violation:?}"),
             Error::SequenceExhausted => f.write_str("the sequence number would wrap"),
             Error::KeyLimitReached => f.write_str("the write key reached its record limit"),
+            Error::Certificate(rejection) => write!(f, "{rejection}"),
         }
     }
 }

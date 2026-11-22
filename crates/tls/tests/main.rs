@@ -8,11 +8,21 @@
 
 #[path = "tls/adversary_layer.rs"]
 mod adversary_layer;
+#[path = "tls/adversary_x509.rs"]
+mod adversary_x509;
 #[path = "tls/alloc.rs"]
 mod alloc;
+#[path = "tls/der.rs"]
+mod der;
+#[path = "tls/limbo_parse.rs"]
+mod limbo_parse;
+#[path = "tls/pem.rs"]
+mod pem;
 #[path = "tls/record.rs"]
 mod record;
 #[path = "tls/rfc8448.rs"]
 mod rfc8448;
 #[path = "tls/seam.rs"]
 mod seam;
+#[path = "tls/x509_parse.rs"]
+mod x509_parse;
