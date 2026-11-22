@@ -90,7 +90,7 @@ scope:
   path: taskfiles/test-layout.sh
 - confidence: cited
   path: taskfiles/test-layout.yml
-revision: 15
+revision: 17
 ---
 ## Context
 
@@ -194,29 +194,36 @@ manifest or a test file, and the first on the base, carries `SLOT_TIMEOUT=30m`.
    - when `main.rs` is missing;
    - when the `Cargo.toml` beside the directory has no line `autotests = false`, or has not exactly one `[[test]]` entry, or that entry does not hold
      exactly the two keys `name = "main"` and `path = "tests/main.rs"` (a `test = false`, `required-features` or `harness = false` key fails) (decision C9);
-   - when a line of `main.rs` is not one of: blank, a `//` comment (`//!` included), an inner attribute `#![…]`, a `use …;` line, or a declaration
+   - when a line of `main.rs` is not one of: blank, a `//` comment (`//!` included), an inner attribute `#![…]` that does not contain `cfg` (so neither `#![cfg(…)]` nor `#![cfg_attr(…)]`), a `use …;` line, or a declaration
      `mod <name>;`, `#[path = "<stem>.rs"]` followed by `mod <name>;` on the next line or on the same line, or `#[path = "<dir>/<stem>.rs"]` likewise;
      so `#[cfg…]`, `/*` and an inline `mod x {` fail (decision C10). This fits statement 3: the head comment is `//!`, `#![forbid(unsafe_code)]` is an inner
      attribute; `crates/fetch` and `crates/html` put nothing for their global allocators in `main.rs` (each stays in its module file), they only leave out
      `#![forbid(unsafe_code)]`. `crates/test-process/tests/main.rs` holds its tests in two inline modules (`mod lines {`, `mod children {`); the unit
-     moves each body, unchanged, into `tests/lines.rs` and `tests/children.rs`, declared `mod lines;` and `mod children;`, so its test names stay;
+     moves each body into `tests/lines.rs` and `tests/children.rs`, declared `mod lines;` and `mod children;`, with the four-space indent of each line
+     removed and nothing else changed, so its test names stay;
    - when a `*.rs` file directly in it other than `main.rs` is not declared in `main.rs` by one of those forms (the whole line `mod <stem>;`, `grep -qx`);
+   - when a file that `main.rs` declares (either level) has a line that starts with `#![cfg`, which would drop that module from the binary;
    - when a `*.rs` file in a subdirectory one level down (`tests/<dir>/<stem>.rs`, `common/` and `data/` skipped) is not declared: the whole line
      `#[path = "<dir>/<stem>.rs"]` followed by the whole line `mod <stem>;`, or the one line `#[path = "<dir>/<stem>.rs"] mod <stem>;`, the form of
      `story:tls-decisions` for `crates/tls/tests/tls/` (decision C11);
    - when a selection drifts (decision C12): the script holds the list of selections, one line each of crate directory, selected module and skipped
      modules (`crates/surf-cli cli review1_cli`, `crates/session e2e`, `crates/view prototype`, the packages `surf-cli`, `surf-session`, `surf-view`), and
      fails naming the module when another module name on a `mod` line of that crate's `main.rs` (either level) ends with the selected name and is not in
-     the skipped list. It compares module names, not file stems: a file `a.rs` declared `mod zz_cli;` joins the selection `cli::`.
-   Else it prints `test-layout: <d> test directories, <f> test files, one test binary each`. The task `test-layout-test` of the same file, run by
+     the skipped list. It compares module names, not file stems: a file `a.rs` declared `#[path = "a.rs"]` and `mod zz_cli;` joins the selection `cli::`.
+     For the crates of the list it also reads the lines `mod <name> {` of the files `main.rs` declares and applies the same rule to `<name>`: an inline
+     `mod cli {` in a module file gives tests named `<file>::cli::…`, which `cli::` selects.
+   The check is for a test file or a module that is left out of the binary or selected by accident; a second guard is the test count of the gate's count
+   line and the list of names of Acceptance case 4. Else it prints `test-layout: <d> test directories, <f> test files, one test binary each`. The task `test-layout-test` of the same file, run by
    `task check` after `planning-only-test`, copies the `Cargo.toml` files, the `tests/*.rs` files and the `tests/<dir>/*.rs` files of `crates/*` and
-   `conformance` into `.out/test-layout/` and runs the script there twelve times: the copy as it is passes; it fails naming the path with a planted
+   `conformance` into `.out/test-layout/` and runs the script there fifteen times: the copy as it is passes; it fails naming the path with a planted
    `crates/page/tests/planted.rs`; with `autotests = false` taken out of `crates/page/Cargo.toml`; with `crates/page/tests/main.rs` removed; with the
    `[[test]]` entry taken out of `crates/page/Cargo.toml`; with a second `[[test]]` entry in it; with a third key `harness = false` in its entry; with
    `// mod elements;` in place of `mod elements;` in `crates/page/tests/main.rs`; with `#[cfg(any())]` on the line before `mod elements;`; with
-   `#[cfg(any())]` on the line before a `#[path = "elements.rs"]` line that declares `mod elements;`; with a planted `crates/page/tests/tls/planted.rs`
-   that no `#[path]` line names; with a planted `crates/surf-cli/tests/a.rs` declared `mod zz_cli;` (a module name that ends with the selected `cli`, not
-   skipped).
+   `#[cfg(any())]` on the line before a `#[path = "elements.rs"]` line that declares `mod elements;`; with `#![cfg(any())]` as a line of
+   `crates/page/tests/main.rs`; with `#![cfg(any())]` as the first line of `crates/page/tests/elements.rs`; with a planted
+   `crates/page/tests/tls/planted.rs` that no `#[path]` line names; with a planted `crates/surf-cli/tests/a.rs` declared by `#[path = "a.rs"]` and
+   `mod zz_cli;`, failing naming the module `zz_cli` (a module name that ends with the selected `cli`, not skipped; the declaration itself is valid);
+   with an inline `mod zz_cli {` holding one test added to `crates/surf-cli/tests/output_streams.rs`, failing naming `zz_cli`.
    `SCRIPT=<path>` runs a copy of the script.
 9. `AGENTS.md` follows: "Layout" states the form of statement 3, that a new test file gets its `mod` line in `tests/main.rs`, that a module may also lie
    one directory down, declared by `#[path = "<dir>/<stem>.rs"]` and `mod <stem>;` (the form of `crates/tls/tests/tls/`), that a new crate starts with
@@ -261,7 +268,9 @@ directly in them other than `main.rs` (79 at `5c0eb6d`, 82 with wave 10).
    `git diff --numstat <base> -- 'crates/*/tests/*.rs' 'conformance/tests/*.rs' ':(exclude)crates/*/tests/main.rs' ':(exclude)conformance/tests/main.rs'`
    prints `1	1	<file>` for each file that held `mod common;` (21 at `5c0eb6d`, 23 with wave 10), one line for
    `crates/fetch/tests/adversary_redirect_memory.rs` and one for `crates/view/tests/prototype.rs`, one each for the new `crates/test-process/tests/lines.rs`
-   and `children.rs` (statement 8, their bodies as they were in its `main.rs`), and no other line.
+   and `children.rs` (statement 8), and no other line.
+   `git show <base>:crates/test-process/tests/main.rs | sed -n '/^mod lines {$/,/^}$/p' | sed '1d;$d;s/^    //' | diff - crates/test-process/tests/lines.rs`
+   prints nothing and exits 0, and the same with `children` and `children.rs`.
 5. Fetch: `grep -c -- 'cargo test -p surf-fetch -- --test-threads=1' crates/fetch/tests/adversary_redirect_memory.rs` prints `1`;
    `RUSTFLAGS='-D warnings' cargo nextest run -p surf-fetch --locked` exits 0; `grep -c '^surf-fetch::main adversary_redirect_memory::' .out/otb/tests-after.txt`
    and `grep -c '^surf-fetch::adversary_redirect_memory ' .out/otb/tests-before.txt` print the same number, and it is not 0.
@@ -276,8 +285,8 @@ directly in them other than `main.rs` (79 at `5c0eb6d`, 82 with wave 10).
    `release.yml:4-5`, it leaves the archives as the run's artifacts); its four package jobs, which run
    the `--test main cli::` step and `taskfiles/release-smoke.sh`, end `success`, and the evidence holds the run's URL and conclusion.
 8. Gate check: `slot task test-layout` on the branch prints `test-layout: <d> test directories, <f> test files, one test binary each` and exits 0;
-   `slot task test-layout-test` prints `test-layout-test: 12 case(s), each decided as expected by taskfiles/test-layout.sh` and exits 0 (the cases of
-   statement 8, among them those of decisions C9 to C12); with `SCRIPT=<copy>` where the copy always exits 0, it exits 1 and names the eleven cases that
+   `slot task test-layout-test` prints `test-layout-test: 15 case(s), each decided as expected by taskfiles/test-layout.sh` and exits 0 (the cases of
+   statement 8, among them those of decisions C9 to C12); with `SCRIPT=<copy>` where the copy always exits 0, it exits 1 and names the fourteen cases that
    should fail. Both take under 1 s; neither calls cargo.
 9. References: `git grep -n -- '--test ' -- ':!.engineering'` prints, beside lines that hold `--test main `, only the four lines that name no target of a
    crate of this repository: the note "`cargo test -p <package> --test <name>` does not build the package's examples" of `AGENTS.md` (line 900 at
