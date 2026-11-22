@@ -1,6 +1,8 @@
 //! `LeafKey` and `TrustAnchor` (docs/design/tls.md, item 6): what path validation answers and
 //! what it validates against.
 
+use std::sync::Arc;
+
 use super::{Certificate, Error, Name, NameConstraints};
 use crate::crypto::{PublicKey, PublicKeyKind};
 
@@ -34,27 +36,40 @@ impl LeafKey {
 }
 
 /// A trust anchor (RFC 5280 section 6.1.1 (d)): a subject name, a key and, when made from a
-/// certificate, its nameConstraints. Owned, so that it outlives the bytes it was read from.
+/// certificate the reader reads, its nameConstraints and the certificate itself, so that path
+/// validation holds the anchor to the checks of an issuer (docs/design/tls.md item 9.4:
+/// validity, basicConstraints and pathLenConstraint, keyUsage, nameConstraints), however the
+/// anchor was made. Owned, so that it outlives the bytes it was read from; the certificate is
+/// shared between clones.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TrustAnchor {
     subject: Vec<u8>,
     /// The key.
     pub key: LeafKey,
     name_constraints: Option<Vec<u8>>,
+    certificate: Option<Arc<[u8]>>,
     /// The reader's refusal, when the anchor was made from a certificate it refuses (a version
     /// 1 root, for one) that holds no nameConstraints, and so holds the name and the key only.
     pub refused: Option<Error>,
 }
 
 impl TrustAnchor {
-    /// The anchor of a certificate the reader read: its subject, key and nameConstraints.
+    /// The anchor of a certificate the reader read: its subject, key, nameConstraints and the
+    /// certificate.
     pub fn from_certificate(cert: &Certificate<'_>) -> Self {
         TrustAnchor {
             subject: cert.subject.der().to_vec(),
             key: LeafKey::from_certificate(cert),
             name_constraints: cert.extensions.name_constraints_der.map(<[u8]>::to_vec),
+            certificate: Some(Arc::from(cert.der)),
             refused: None,
         }
+    }
+
+    /// The certificate the anchor was made from, when the reader read it; `None` for an anchor
+    /// of name and key alone ([`TrustAnchor::refused`]).
+    pub fn certificate(&self) -> Option<&[u8]> {
+        self.certificate.as_deref()
     }
 
     /// The anchor of the certificate `der`: from the whole certificate when the reader reads
@@ -76,6 +91,7 @@ impl TrustAnchor {
                 bytes: key.bytes.to_vec(),
             },
             name_constraints: None,
+            certificate: None,
             refused: Some(refused),
         })
     }

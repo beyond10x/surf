@@ -41,7 +41,8 @@
 //! # The checks of a complete path
 //!
 //! In this order, each certificate from the leaf up, the anchor's certificate last when the
-//! anchor was made from one ([`PathVerifier::add_root`]):
+//! anchor holds one ([`TrustAnchor::certificate`]: an anchor of [`PathVerifier::add_root`], of
+//! [`crate::anchors::Anchors::bundled`] or of an extra file, whenever the reader read it):
 //!
 //! | condition | rejection |
 //! |---|---|
@@ -162,18 +163,11 @@ pub struct Work {
     pub name_constraint_comparisons: usize,
 }
 
-/// An anchor and, when it was made from a certificate the reader reads, that certificate.
-#[derive(Clone, Debug)]
-struct Anchor {
-    anchor: TrustAnchor,
-    certificate: Option<Vec<u8>>,
-}
-
 /// The [`ServerCertVerifier`] of surf: path building and validation over a set of trust
 /// anchors, with the signature checks of `V` ([`ShippedVerifier`] unless a test gives its own).
 #[derive(Clone)]
 pub struct PathVerifier<V = ShippedVerifier> {
-    anchors: Vec<Anchor>,
+    anchors: Vec<TrustAnchor>,
     limits: Limits,
     verifier: V,
 }
@@ -188,17 +182,13 @@ impl<V> fmt::Debug for PathVerifier<V> {
 }
 
 impl PathVerifier {
-    /// A verifier over `anchors`, each its name, key and nameConstraints only, with the limits
-    /// of item 9 and the seam's signature checks.
+    /// A verifier over `anchors`, with the limits of item 9 and the seam's signature checks. An
+    /// anchor that holds its certificate ([`TrustAnchor::certificate`]: every anchor of
+    /// [`crate::anchors::Anchors`] the reader reads) is checked as an issuer of every path that
+    /// ends at it, as one added with [`PathVerifier::add_root`] is (item 9.4).
     pub fn new(anchors: Vec<TrustAnchor>) -> Self {
         PathVerifier {
-            anchors: anchors
-                .into_iter()
-                .map(|anchor| Anchor {
-                    anchor,
-                    certificate: None,
-                })
-                .collect(),
+            anchors,
             limits: Limits::default(),
             verifier: ShippedVerifier,
         }
@@ -207,16 +197,11 @@ impl PathVerifier {
 
 impl<V: SignatureVerifier> PathVerifier<V> {
     /// Adds the root certificate `der` as an anchor ([`TrustAnchor::from_der`]). When the reader
-    /// reads it, its certificate is kept and checked as an issuer of every path that ends at it
-    /// (its extensions and validity); else the anchor is its name and key. The reader's error
-    /// when the root gives no anchor.
+    /// reads it, the anchor holds its certificate, which is checked as an issuer of every path
+    /// that ends at it (its extensions and validity); else the anchor is its name and key. The
+    /// reader's error when the root gives no anchor.
     pub fn add_root(&mut self, der: &[u8]) -> Result<(), x509::Error> {
-        let anchor = TrustAnchor::from_der(der)?;
-        let certificate = anchor.refused.is_none().then(|| der.to_vec());
-        self.anchors.push(Anchor {
-            anchor,
-            certificate,
-        });
+        self.anchors.push(TrustAnchor::from_der(der)?);
         Ok(())
     }
 
@@ -491,12 +476,11 @@ impl<V: SignatureVerifier> Search<'_, '_, V> {
             if !self.consider() {
                 return Step::Stop;
             }
-            if anchor.anchor.subject() != child.issuer {
+            if anchor.subject() != child.issuer {
                 continue;
             }
             let ski = anchor
-                .certificate
-                .as_deref()
+                .certificate()
                 .and_then(|d| Certificate::from_der(d).ok())
                 .and_then(|cert| cert.extensions.subject_key_id);
             if !key_ids_match(aki, ski) {
@@ -540,7 +524,7 @@ impl<V: SignatureVerifier> Search<'_, '_, V> {
         let verifier = self.verifier;
         match candidate {
             Candidate::Anchor(a) => {
-                let key = verifier.anchors[a].anchor.key.public_key();
+                let key = verifier.anchors[a].key.public_key();
                 let signed = self.signed(child_n, &key, sent.len());
                 if !matches!(signed, Signed::Verified) {
                     return self.note(signed, child_n).then_some(Step::Stop);
@@ -587,8 +571,7 @@ impl<V: SignatureVerifier> Search<'_, '_, V> {
         let anchor = &verifier.anchors[a];
         let anchor_n = sent.len();
         let anchor_cert = anchor
-            .certificate
-            .as_deref()
+            .certificate()
             .and_then(|d| Certificate::from_der(d).ok());
         // The certificates of the path with their numbers, the leaf first, the anchor's last.
         let mut chain: Vec<(usize, &Certificate<'_>)> =
@@ -628,7 +611,7 @@ impl<V: SignatureVerifier> Search<'_, '_, V> {
             })
         };
         if let Some(error @ (x509::Error::BadExtension | x509::Error::DuplicateExtension)) =
-            anchor.anchor.refused
+            anchor.refused
         {
             return not_trusted(Check::Unreadable {
                 certificate: anchor_n,
@@ -737,7 +720,7 @@ impl<V: SignatureVerifier> Search<'_, '_, V> {
                 self.constrain(n, nc, &path_certs[..i])?;
             }
         }
-        match anchor.anchor.name_constraints() {
+        match anchor.name_constraints() {
             Ok(Some(nc)) => self.constrain(anchor_n, &nc, &path_certs)?,
             Ok(None) => {}
             Err(error) => {

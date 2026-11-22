@@ -188,7 +188,9 @@ impl HashAlgorithm {
 }
 
 /// A digest or an HMAC tag: at most 48 bytes. It has no `==`: a tag or a hash that stands
-/// for a secret is compared with [`constant_time_eq`] or [`hmac_verify`].
+/// for a secret is compared with [`constant_time_eq`] or [`hmac_verify`]. Its bytes are
+/// overwritten with zeros when it is dropped: [`hkdf_extract`] answers the pseudorandom key of
+/// the key schedule in one.
 #[derive(Clone)]
 pub struct Digest {
     bytes: [u8; 48],
@@ -215,6 +217,12 @@ impl AsRef<[u8]> for Digest {
 impl fmt::Debug for Digest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Digest({} bytes)", self.len)
+    }
+}
+
+impl Drop for Digest {
+    fn drop(&mut self) {
+        self.bytes.fill(0);
     }
 }
 
@@ -435,7 +443,8 @@ impl Group {
 }
 
 /// A shared secret of an agreement, or another secret the caller derives keys from. It has no
-/// `==`; a comparison goes through [`constant_time_eq`].
+/// `==`; a comparison goes through [`constant_time_eq`]. Its bytes are overwritten with zeros
+/// when it is dropped, as those of `key_schedule::Secret` are (docs/design/tls.md item 6).
 #[derive(Clone)]
 pub struct Secret(Vec<u8>);
 
@@ -448,6 +457,12 @@ impl AsRef<[u8]> for Secret {
 impl fmt::Debug for Secret {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Secret({} bytes)", self.0.len())
+    }
+}
+
+impl Drop for Secret {
+    fn drop(&mut self) {
+        self.0.fill(0);
     }
 }
 

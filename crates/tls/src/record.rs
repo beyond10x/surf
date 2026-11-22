@@ -11,6 +11,13 @@
 //! key the layer writes at most [`AES_GCM_RECORD_LIMIT`] records (RFC 8446 section 5.5) and
 //! then refuses with [`Error::KeyLimitReached`]; a key update before it is the caller's.
 //!
+//! Each write hands its records to the stream in one `write_all` and one `flush`, so on a
+//! socket without `TCP_NODELAY` no record of it waits for the peer's delayed ACK. Between
+//! [`RecordLayer::cork`] and [`RecordLayer::uncork`] the records of several writes are held and
+//! handed over together, one write and one flush for a flight (the `change_cipher_spec` and
+//! the Finished of a client; a KeyUpdate and the data after it). An alert is never held: it
+//! goes out at once with whatever was held before it.
+//!
 //! What it refuses on reading, each with the alert it writes before it returns
 //! [`Error::AlertSent`] (the table "RFC 8446 record obligations" of `story:tls-record`):
 //!
@@ -284,6 +291,10 @@ pub struct RecordLayer<S> {
     /// buffer is compacted once per record, so the work is linear in the bytes received.
     handshake_start: usize,
     failed: Option<Error>,
+    /// Records written and not yet handed to the stream.
+    out: Vec<u8>,
+    /// Between `cork` and `uncork`: writes are held in `out`.
+    corked: bool,
 }
 
 impl<S> RecordLayer<S> {
@@ -296,6 +307,8 @@ impl<S> RecordLayer<S> {
             handshake: Vec::new(),
             handshake_start: 0,
             failed: None,
+            out: Vec::new(),
+            corked: false,
         }
     }
 
@@ -430,11 +443,12 @@ impl<S: Read + Write> RecordLayer<S> {
     }
 
     fn alert(&mut self, description: AlertDescription, violation: Violation) -> Error {
+        self.corked = false;
         let _ = self.write_record(
             ContentType::Alert,
             &[AlertLevel::Fatal.code(), description.0],
         );
-        let _ = self.stream.flush();
+        let _ = self.send();
         self.fail(Error::AlertSent {
             description,
             violation,
@@ -663,8 +677,9 @@ impl<S: Read + Write> RecordLayer<S> {
         description: AlertDescription,
     ) -> Result<(), Error> {
         self.check()?;
+        self.corked = false;
         self.write_record(ContentType::Alert, &[level.code(), description.0])
-            .and_then(|()| self.stream.flush().map_err(io))
+            .and_then(|()| self.send())
             .map_err(|e| self.fail(e))
     }
 
@@ -674,11 +689,35 @@ impl<S: Read + Write> RecordLayer<S> {
         self.check()?;
         let mut record = [ContentType::ChangeCipherSpec.code(), 0, 0, 0, 1, 1];
         record[1..3].copy_from_slice(&RECORD_VERSION);
-        self.stream
-            .write_all(&record)
-            .and_then(|()| self.stream.flush())
-            .map_err(io)
-            .map_err(|e| self.fail(e))
+        self.out.extend_from_slice(&record);
+        self.send().map_err(|e| self.fail(e))
+    }
+
+    /// Holds the records of the writes from now on until [`RecordLayer::uncork`], which hands
+    /// them to the stream in one write and one flush. An alert ends the hold.
+    pub fn cork(&mut self) {
+        self.corked = true;
+    }
+
+    /// Hands the records held since [`RecordLayer::cork`] to the stream: one write and one
+    /// flush.
+    pub fn uncork(&mut self) -> Result<(), Error> {
+        self.check()?;
+        self.corked = false;
+        self.send().map_err(|e| self.fail(e))
+    }
+
+    /// Unless corked, hands the records written so far to the stream in one write, then
+    /// flushes.
+    fn send(&mut self) -> Result<(), Error> {
+        if self.corked {
+            return Ok(());
+        }
+        let out = std::mem::take(&mut self.out);
+        if !out.is_empty() {
+            self.stream.write_all(&out).map_err(io)?;
+        }
+        self.stream.flush().map_err(io)
     }
 
     fn write_fragments(&mut self, content_type: ContentType, data: &[u8]) -> Result<(), Error> {
@@ -694,10 +733,11 @@ impl<S: Read + Write> RecordLayer<S> {
             self.write_record(content_type, fragment)
                 .map_err(|e| self.fail(e))?;
         }
-        self.stream.flush().map_err(io).map_err(|e| self.fail(e))
+        self.send().map_err(|e| self.fail(e))
     }
 
-    /// Writes one record of at most 2^14 bytes of `content`.
+    /// Adds one record of at most 2^14 bytes of `content` to the records not yet handed to the
+    /// stream.
     fn write_record(&mut self, content_type: ContentType, content: &[u8]) -> Result<(), Error> {
         let mut record = Vec::with_capacity(HEADER_LEN + content.len() + 1 + TAG_LEN);
         match self.write.as_mut() {
@@ -729,7 +769,8 @@ impl<S: Read + Write> RecordLayer<S> {
                 record.extend_from_slice(&inner);
             }
         }
-        self.stream.write_all(&record).map_err(io)
+        self.out.extend_from_slice(&record);
+        Ok(())
     }
 }
 

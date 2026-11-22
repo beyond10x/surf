@@ -265,12 +265,14 @@ fn make(spec: &Spec, keys: &Keys, families: &Families) -> Result<Parts, Error> {
             None,
             Template::leaf("localhost", &families.ed25519.leaf, localhost()),
         ),
+        // The one P-256 leaf with a key of its own (`p256-60`): every other P-256 leaf holds
+        // `p256-02`, so a test can bind CertificateVerify to the leaf's key.
         "ok-wildcard" => three(
             p256,
             None,
             Template::leaf(
                 "*.example.test",
-                &p256.leaf,
+                &keys.key("p256-60")?,
                 vec![San::Dns("*.example.test".into())],
             ),
         ),

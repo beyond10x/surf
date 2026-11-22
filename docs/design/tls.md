@@ -419,10 +419,37 @@ A host whose last label is a number in the URL Standard's sense (all ASCII digit
 followed by hex digits or nothing) is not a DNS name: `0x7f000001`, `127.0.0.0x1`, `1.2.3.0X`
 and `example.0x` match no dNSName; `example.x0` and `0x.example` stay DNS names.
 
+The host is normalised once, where the connection is made (`Connection::new` and
+`Connection::with_random`, through `names::normalise`): one trailing dot removed, ASCII letters
+lowered. That one value is sent in `server_name` (none for an IP address), given to
+`ServerCertVerifier::verify`, and reported by `Connection::host`. `127.0.0.1.` is the address
+127.0.0.1, as `surf-url` reads it (the URL Standard's IPv4 parser drops one empty last part), so
+it carries no `server_name` and is matched against iPAddress entries.
+
+A host that, so normalised, is neither an IP address nor a DNS name in the preferred name syntax
+(`names::is_dns_name`) matches no certificate, and is refused before the first byte is written
+(`names::connection_host`): `Error::Host(HostRefusal)`, whose `reason` is the first rule it
+breaks, in this order: `Empty`, `NameTooLong` (over 253 bytes), `Byte` (a byte other than a
+letter, a digit, `-` or `.`), `EmptyLabel`, `LabelTooLong` (over 63 bytes),
+`HyphenAtLabelEdge`, `NumberLastLabel` (`0x7f000001`). The host in its text is an excerpt
+(item 7). `messages::MAX_SERVER_NAME`, 255, stays the bound the cookie of item 9.1 is computed
+with; the longest name sent is 253 bytes.
+
 KeyUpdate (RFC 8446 section 4.6.3): an `update_requested` is answered by one KeyUpdate of
 `update_not_requested` before the next record of data the client writes, however many came; a
 read writes nothing; `close` with an answer owed sends `close_notify` under the current key
 without it.
+
+Each flight of the client reaches the stream in one `write` and one `flush`: the ClientHello;
+the `change_cipher_spec` of compatibility mode with the empty Certificate (when asked for) and
+the Finished; an owed KeyUpdate, or the one before the AES-GCM record limit, with the record of
+data after it; each alert alone, with nothing held after it. The record layer holds a flight's
+records between `RecordLayer::cork` and `uncork`, and every single write of it hands all its
+records over at once. On a socket without `TCP_NODELAY` a second small write waits for the
+peer's delayed ACK: the unit that built the test server measured 48.8 ms per handshake without
+`nodelay` and 8 to 22 ms with it. The second ClientHello after a HelloRetryRequest is a flight of
+its own (no `change_cipher_spec` goes before it). The bytes are those written before; only the
+calls on the stream are fewer.
 
 The public `Error` of `error.rs`, a closed list:
 
@@ -464,6 +491,11 @@ The public `Error` of `error.rs`, a closed list:
 - `Certificate(CertificateRejection)`, which `story:tls-x509` adds. A `CertificateRejection`
   sends `unknown_ca` (`NoPathToAnchor`), `certificate_expired` (`Expired`) or `bad_certificate`
   (every other).
+- `Host(HostRefusal)`, which the security review of the seams adds: the host matches no
+  certificate (above); nothing was written, no alert is sent.
+
+`error.rs` also holds `excerpt`, the one form in which an error text shows bytes from outside
+the crate (item 7).
 
 The list follows the tables "RFC 8446 client obligations" and "Messages the client receives" of
 `story:tls-handshake` and "RFC 8446 record obligations" of `story:tls-record`.
@@ -475,6 +507,15 @@ keys under 2048 bits. ring exports no SHA-1 signing encoding (`src/rsa/padding.r
 for legacy verification only), refuses to sign with an RSA modulus under 2048 bits
 (`src/rsa/keypair.rs:283`), and has AES-128-GCM and AES-256-GCM only, no AES-192
 (`src/aead/algorithm.rs:149-163`).
+
+The types that hold secret bytes overwrite them with zeros in their own `Drop` (`fill(0)`, no
+`unsafe`): `crypto::Secret` (the (EC)DHE shared secret of an agreement), `crypto::Digest` (the
+pseudorandom key `hkdf_extract` answers, and every HMAC), `key_schedule::Secret` and
+`key_schedule::TrafficKey`; `key_schedule`'s expansion buffer is zeroed after use. The keys
+ring holds inside `AeadKey`, `EphemeralKey` and `SigningKey` are ring's own and not wiped by
+surf. A wipe is a plain write before the memory is freed; that the bytes read zero afterwards
+is not tested (it cannot be read without `unsafe`); the tests hold at compile time that each of
+the four types has its `Drop`.
 
 Behind the cargo feature `test-tooling` (off by default; turned on by `surf-tls-test-certs`,
 `surf-tls-test-server` and the dev-dependency of `surf-tls` on itself): the signing from PKCS#8
@@ -537,6 +578,15 @@ The checks of `NotTrusted(check)`, a closed list; `INDEX` of `story:tls-test-cer
 | `WeakAlgorithm` | an MD5 or SHA-1 signature, decided before any verification | `bad_certificate` | `WeakAlgorithm: <algorithm> in certificate <n>` |
 | `WeakKey` | an RSA key under 2048 bits, decided before any verification | `bad_certificate` | `WeakKey: RSA <bits> bits in certificate <n>` |
 
+A detail shows bytes from outside the crate only as an excerpt (`error::excerpt`, one helper
+for every such text): the OID of `UnknownCriticalExtension`, the name of `NameConstraint`, the
+host of `NameMismatch` and of `Error::Host`, and the label of `AnchorError::NotACertificate`
+(item 8). An excerpt is at most `error::EXCERPT_BYTES_MAX`, 64 bytes, of the value (the crate
+had no excerpt bound before); each byte outside printable ASCII is written `\xNN` and the
+backslash `\\`; a longer value is cut and followed by ` ... (<n> bytes, cut after 64)`. So a
+detail stays under 512 bytes; the fields themselves keep the whole value. Before, a critical
+extension with an OBJECT IDENTIFIER of 20,001 bytes gave a detail of 40,046 bytes.
+
 `<n>` counts the certificates as the server sent them, the leaf 0. Every certificate keeps its
 sent position; one sent twice is a candidate once, at its first position, and every `<n>` in a
 refusal is the position as sent. The anchor is numbered after them: the count of certificates
@@ -564,6 +614,7 @@ Every other condition, each with one reason:
 | any check of the table above, among them a bad certificate (`BadSignature`), a certificate the reader refuses (`Unreadable`) and a weak algorithm (`WeakAlgorithm`, `WeakKey`) | `CertificateNotTrusted` | as above | as above |
 | outside the validity, either side, of any certificate on the path | `CertificateExpired` | `certificate_expired` | `certificate <n> valid from <notBefore> to <notAfter>, checked at <time>` |
 | no `subjectAltName` entry of the leaf matches the host (no Common Name is read) | `CertificateNameMismatch` | `bad_certificate` | `no subjectAltName entry matches <host>` |
+| a host no certificate can match, refused before the first byte (`Error::Host`, item 6) | `CertificateNameMismatch` | none | `the host "<host>" matches no certificate: <reason>` |
 | (a) a `protocol_version` alert before any ServerHello | `TlsVersionUnsupported` | none | `the server sent protocol_version before its ServerHello` |
 | (b) a `handshake_failure` alert before any ServerHello | `TlsHandshakeFailed` | none | `the server sent handshake_failure before its ServerHello; a server limited to TLS 1.2 answers this way` |
 | (c) a ServerHello that selects TLS 1.2 or below (no `supported_versions`) without a downgrade value, any suite | `TlsVersionUnsupported` | `protocol_version` | `the server selected <version>` |
@@ -671,7 +722,19 @@ the count, date and sha256 of the bundled list of item 11, and with a file a sec
      anchor and verifies ends the path: the other checks of item 7 run on it (validity,
      basicConstraints and pathLenConstraint, keyUsage, extKeyUsage, nameConstraints); if they
      pass, the path is the answer, else the search goes on with the next candidate. A candidate
-     that would be the 7th intermediate is not descended into (item 9.3).
+     that would be the 7th intermediate is not descended into (item 9.3). The anchor's own
+     certificate is held to them as an issuer's (validity, basicConstraints cA, keyUsage
+     keyCertSign when keyUsage is present, pathLenConstraint, its critical extensions) however
+     the anchor was made: `TrustAnchor` keeps the certificate it was read from
+     (`TrustAnchor::certificate`), so a root of `PathVerifier::add_root`, of
+     `Anchors::bundled` and of an extra file (`Anchors::with_extra_pem`) are checked alike;
+     an expired root, or one whose keyUsage lacks keyCertSign, refuses the path with the same
+     `Expired` or `KeyUsage` either way. Only a root the reader refuses and item 11 takes as
+     name and key holds no certificate and skips them. The cost: the bundled list of
+     2026-11-05 holds 126,380 bytes of DER in its 117 anchors, read once per process and shared
+     by every clone of the set (one pointer and length more per anchor). No root of that list
+     is expired on 2026-11-22; the first to expire, NetLock Arany (Class Gold) Főtanúsítvány,
+     ends on 2028-12-06.
 
    Why this order, the other one than rustls-webpki's: webpki descends into every name match and
    verifies the signatures only when a path reaches an anchor
@@ -936,7 +999,9 @@ system clock, with certificates valid until 2125 and an expired one whose end li
 - 9.2 extensions (MUST implement, MUST send when applicable): `supported_versions`, `cookie`
   (echoed), `signature_algorithms`, `signature_algorithms_cert`, `supported_groups`,
   `key_share`, `server_name` (sent when the host is a name; RFC 6066 allows no IP literal
-  there). No `pre_shared_key` or `psk_key_exchange_modes`, as no PSK is offered. The
+  there; the name without a trailing dot, in ASCII lower case, the value the verifier is given,
+  item 6; a host that is neither an address nor a DNS name is refused before any ClientHello).
+  No `pre_shared_key` or `psk_key_exchange_modes`, as no PSK is offered. The
   ClientHello holds both `signature_algorithms` and `supported_groups`, and `key_share` with
   `supported_groups`. Met.
 - 9.3 a client supports every parameter it advertises. Shown for each: the three suites and both

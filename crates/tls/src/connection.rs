@@ -31,12 +31,15 @@ use crate::error::{AlertDescription, Error, Violation};
 use crate::handshake::client::{self, Established, Fail, Hellos, Settings, SignatureCheck};
 use crate::handshake::messages::{self, kind};
 use crate::key_schedule::CipherSuite;
+use crate::names;
 use crate::record::{self, AlertLevel, MAX_PLAINTEXT, Message, RecordLayer};
 use crate::verify::ServerCertVerifier;
 
 /// A TLS 1.3 client connection over `S`, its handshake done.
 pub struct Connection<S: Read + Write> {
     layer: Option<RecordLayer<S>>,
+    /// The host as normalised once ([`names::normalise`]).
+    host: String,
     suite: CipherSuite,
     failed: Option<Error>,
     /// `close_notify` came: reads return the end of the stream.
@@ -70,7 +73,9 @@ fn reported(error: Error) -> Error {
 
 impl<S: Read + Write> Connection<S> {
     /// Runs the handshake for `host` over `stream`, the certificates checked by `verifier` at
-    /// `now`, with the operating system's random source.
+    /// `now`, with the operating system's random source. The host is normalised once
+    /// ([`names::connection_host`]); a host that is neither an IP address nor a DNS name a
+    /// certificate can match ends with [`Error::Host`] before anything is written.
     pub fn new(
         stream: S,
         host: &str,
@@ -91,8 +96,9 @@ impl<S: Read + Write> Connection<S> {
     ) -> Result<Self, Error> {
         #[cfg(feature = "test-tooling")]
         std::hint::black_box(crate::TEST_TOOLING_MARKER);
+        let host = names::connection_host(host).map_err(Error::Host)?;
         let settings = Settings {
-            host,
+            host: &host,
             verifier,
             now,
             random,
@@ -101,12 +107,13 @@ impl<S: Read + Write> Connection<S> {
         };
         let established =
             client::handshake(RecordLayer::new(stream), &settings).map_err(reported)?;
-        Ok(Connection::established(established))
+        Ok(Connection::established(established, host))
     }
 
-    pub(crate) fn established(established: Established<S>) -> Self {
+    pub(crate) fn established(established: Established<S>, host: String) -> Self {
         Connection {
             layer: Some(established.layer),
+            host,
             suite: established.suite,
             failed: None,
             received_close: false,
@@ -116,6 +123,12 @@ impl<S: Read + Write> Connection<S> {
             update_owed: false,
             idle_records: 0,
         }
+    }
+
+    /// The host the connection was made for, as normalised once ([`names::connection_host`]):
+    /// the name sent in `server_name` and given to the verifier.
+    pub fn host(&self) -> &str {
+        &self.host
     }
 
     /// The suite the server selected.
@@ -307,7 +320,12 @@ impl<S: Read + Write> Connection<S> {
         if self.sent_close {
             return Err(Error::Io(ErrorKind::BrokenPipe));
         }
+        // A KeyUpdate and the record of data after it go to the stream together, one write
+        // and one flush (`RecordLayer::cork`).
+        let mut held = false;
         if self.update_owed && !data.is_empty() {
+            self.layer_mut().cork();
+            held = true;
             self.send_key_update()?;
             self.update_owed = false;
         }
@@ -315,10 +333,20 @@ impl<S: Read + Write> Connection<S> {
             let limit = record::write_limit(self.suite);
             let sequence = self.layer().write_sequence().unwrap_or(0);
             if limit < u64::MAX && limit.saturating_sub(sequence) < 2 {
+                if !held {
+                    self.layer_mut().cork();
+                    held = true;
+                }
                 self.send_key_update()?;
             }
             if let Err(error) = self.layer_mut().write_application_data(chunk) {
                 return Err(self.fail(error));
+            }
+            if held {
+                held = false;
+                if let Err(error) = self.layer_mut().uncork() {
+                    return Err(self.fail(error));
+                }
             }
         }
         Ok(())

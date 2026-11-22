@@ -1930,11 +1930,13 @@ fn records_without_data_bound() {
 /// their largest) - 6.
 const MAX_COOKIE: usize = 65_116;
 
-/// A server for a host of 255 bytes (the longest `server_name`) whose first answer is a
-/// HelloRetryRequest for secp256r1 with a cookie of `len` bytes, in records of 2^14 bytes.
+/// A server for a host of 253 bytes (the longest DNS name a connection takes, so the longest
+/// `server_name` sent; `messages::MAX_SERVER_NAME`, 255, bounds it from above) whose first
+/// answer is a HelloRetryRequest for secp256r1 with a cookie of `len` bytes, in records of 2^14
+/// bytes.
 fn long_cookie(len: usize) -> (Server, String, Vec<u8>) {
-    let host = format!("{0}.{0}.{0}.{0}", "a".repeat(63));
-    assert_eq!(host.len(), 255);
+    let host = format!("{0}.{0}.{0}.{1}", "a".repeat(63), "a".repeat(61));
+    assert_eq!(host.len(), 253);
     let mut server = Server::for_host(SUITE, "ok-ecdsa-p256", &host);
     let cookie = vec![0x5a; len];
     let hrr = server

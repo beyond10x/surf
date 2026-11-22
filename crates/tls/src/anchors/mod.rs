@@ -99,7 +99,8 @@ impl fmt::Display for AnchorError {
             AnchorError::NotACertificate { index, label } => {
                 write!(
                     f,
-                    "{name}: block {index} is labelled {label}, not CERTIFICATE"
+                    "{name}: block {index} is labelled {}, not CERTIFICATE",
+                    crate::error::excerpt(label.as_bytes())
                 )
             }
             AnchorError::BadPem { index } => write!(f, "{name}: block {index} is not PEM"),
