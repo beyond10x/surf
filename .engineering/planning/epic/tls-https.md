@@ -5,7 +5,7 @@ kind: epic
 status: draft
 title: 'surf loads https: addresses'
 summary: 'TLS 1.3 client written here over one audited source of primitives; X.509 path validation, host names, trust anchors; https: and redirects between schemes in surf-fetch, with TLS failure reasons in the answer.'
-revision: 13
+revision: 16
 ---
 ## Context
 
@@ -63,7 +63,9 @@ What binds this epic:
   authenticated against the trust anchors of decision U2, and show it as an `http:` page is shown.
 - A TLS failure ends the request with a reason of its own, shown as `page failed <reason>
   "<address>"` (below), so that an agent can tell a bad certificate from a host that cannot be
-  reached and a server that speaks only TLS 1.2 from both.
+  reached. A server that speaks only TLS 1.2 is told apart from both when it reads
+  `supported_versions` or answers with a TLS 1.2 ServerHello (`TlsVersionUnsupported`); one
+  that ignores the extension ends `TlsHandshakeFailed` with a detail that says so (Risks).
 - A redirect from `http:` to `https:` and back is followed inside one request, as the Fetch
   Standard follows it, under the destination rule of `story:security-review-fixes`.
 - The cryptographic primitives come from the one source decision U1 names. The lock check allows
@@ -328,7 +330,12 @@ so the stories of one step can share the crate.
 - RSA and P-384 verification in an unoptimised test build may cost tens of milliseconds per call
   (not measured); many handshakes per test file add up against the 120 s step.
 - A stale bundled anchor list trusts a removed CA until the next release.
-- TLS 1.2-only servers fail with `TlsVersionUnsupported` until the TLS 1.2 epic.
+- A server limited to TLS 1.2 ends `TlsVersionUnsupported` when it reads `supported_versions`
+  (it sends `protocol_version`) or answers with a TLS 1.2 ServerHello, and `TlsHandshakeFailed`
+  when it ignores the extension and answers `handshake_failure`; the detail of that reason says
+  a server limited to TLS 1.2 answers this way, but telling kind (b) apart from other handshake
+  failures needs TLS 1.2 itself, which is the next epic (U3). Until then the outcome "a server
+  that speaks only TLS 1.2" holds for kinds (a) and (c), and for (b) only as that detail.
 - Revocation is not checked: a revoked certificate that has not expired loads. The documents say
   so where `https:` is described.
 - The clock: validity is checked against a time the caller passes. `surf` and the session pass the
@@ -363,7 +370,7 @@ Taken by the coordinating agent on 2026-11-22, each reported to the operator, wh
 - U2, trust anchors: option B, the bundled list of Mozilla as curl publishes it, built into the binary and refreshed before each release, plus an extra anchor file per session. Reason: the same list on Linux and macOS, and reading the macOS keychain needs unsafe calls, which principle 5 forbids.
 - U3, TLS 1.2: option C, out of this epic and drafted as the epic after it. Reason: this epic stays the size of one protocol version, and about one trusted site in four offers TLS 1.2 as its best protocol (SSL Pulse, 2025-06-01: 24.7 %), so the gap is closed next and not left open. Until then such a server fails with `TlsVersionUnsupported`.
 
-- TLS 1.2 suites in the ClientHello, taken by the coordinating agent on 2026-11-22 and reported to the operator: beside the three TLS 1.3 suites the ClientHello offers the six TLS 1.2 ECDHE AEAD suites of RFC 5289 and RFC 7905 (TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384, TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256, TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256), for one purpose: a server limited to TLS 1.2 then answers with a ServerHello that selects 1.2, and surf ends the handshake with a `protocol_version` alert and the reason `TlsVersionUnsupported`. surf never continues a TLS 1.2 handshake in this epic. A `handshake_failure` alert before any ServerHello stays `TlsHandshakeFailed`, with a detail that names the alert. Reason: about one site in four offers TLS 1.2 as its best, and an agent must be told which failure it met. The suites are for a server that does not read `supported_versions`: it chooses by `legacy_version` and answers `handshake_failure` when no suite is shared (RFC 5246 section 7.4.1.3, RFC 8446 appendix D). A current OpenSSL limited to TLS 1.2 reads the extension and answers `protocol_version` whatever the suites, so a recording against it shows that kind only and cannot overturn this decision (corrected on 2026-11-22 after the second critic round).
+- TLS 1.2 suites in the ClientHello: taken by the coordinating agent on 2026-11-22 (six TLS 1.2 ECDHE AEAD suites beside the three TLS 1.3 suites), reversed the same day after the fifth critic round because RFC 8446 section 9.3 says "A client sending a ClientHello MUST support all parameters advertised in it" (rfc8446.txt:5834-5836), and surf does not support TLS 1.2. The ClientHello offers the three TLS 1.3 suites and nothing else. A server limited to TLS 1.2 is reported by what it does: (a) it reads `supported_versions` and sends `protocol_version` before any ServerHello: `TlsVersionUnsupported`; (b) it ignores `supported_versions`, finds no suite in common and sends `handshake_failure` before any ServerHello: `TlsHandshakeFailed`, with a detail that names the alert and says in fixed words that a server limited to TLS 1.2 answers this way; (c) it sends a ServerHello that selects a version below 1.3: surf sends `protocol_version`, `TlsVersionUnsupported`, the downgrade values of RFC 8446 section 4.1.3 checked as before.
 
 ## Measured: the packages ring adds
 

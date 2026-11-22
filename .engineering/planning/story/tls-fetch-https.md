@@ -30,7 +30,7 @@ scope:
   path: crates/surf/src/lib.rs
 - confidence: cited
   path: crates/surf/tests
-revision: 7
+revision: 8
 ---
 ## Context
 
@@ -131,12 +131,13 @@ Each against `surf-tls-test-server` on 127.0.0.1 port 0, with the certificates o
 4. `wrong-host`: `CertificateNameMismatch`, its `Display` naming `localhost`.
 5. `ok-rsa2048` without the extra anchor: `CertificateNotTrusted`, its `Display` naming the
    check (no path to an anchor).
-6. Mode `Tls12IgnoresSupportedVersions` (a server limited to TLS 1.2 that selects 1.2 in its
-   ServerHello): `TlsVersionUnsupported`; mode `Tls12ReadsSupportedVersions` (a
-   `protocol_version` alert before any ServerHello): `TlsVersionUnsupported`.
-7. Mode `BadFinished`: `TlsHandshakeFailed`, its `Display` naming `decrypt_error`; mode
-   `RefuseHandshake` (a `handshake_failure` alert before any ServerHello):
-   `TlsHandshakeFailed`, its `Display` naming `handshake_failure`.
+6. The three kinds of a server limited to TLS 1.2 (item 7): mode `Tls12ReadsSupportedVersions`
+   (kind (a), a `protocol_version` alert before any ServerHello): `TlsVersionUnsupported`;
+   mode `Tls12IgnoresSupportedVersions` (kind (b), a `handshake_failure` alert before any
+   ServerHello): `TlsHandshakeFailed`, its `Display` holding the fixed words of item 7 (`the
+   server sent handshake_failure before its ServerHello; a server limited to TLS 1.2 answers
+   this way`); mode `SelectsTls12` (kind (c), a TLS 1.2 ServerHello): `TlsVersionUnsupported`.
+7. Mode `BadFinished`: `TlsHandshakeFailed`, its `Display` naming `decrypt_error`.
 8. Mode `StallAfterServerHello` (a server that never finishes), read timeout 1 s:
    `Unreachable` within 2 s; mode `NeverAnswer`: the same.
 9. Mode `NoCloseNotify` with a body delimited by the end of the connection: `Unreachable`;

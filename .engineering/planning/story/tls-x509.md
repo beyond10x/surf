@@ -32,7 +32,7 @@ scope:
   path: crates/tls/tests/tls/pem.rs
 - confidence: cited
   path: crates/tls/tests/tls/x509_parse.rs
-revision: 8
+revision: 9
 ---
 ## Context
 
@@ -65,7 +65,11 @@ after `tls-lock-allow`, beside `tls-test-certs` and `tls-record`, beside the rou
   section 4.1.2.5 allows (`Z`, seconds, no fraction), UTF8String, PrintableString, IA5String;
   nesting at most 32 deep.
 - `crates/tls/src/x509/`: a certificate as read: the TBS bytes (for the signature), version
-  (only 3), serial (at most 20 bytes), the signature algorithm (outer and inner equal), issuer
+  (only 3), serial (at most 20 bytes), the signature algorithm (outer and inner equal; RSA
+  PKCS#1 v1.5 with SHA-256, SHA-384 or SHA-512, RSASSA-PSS with the parameters of RFC 4055
+  (SHA-256, SHA-384 or SHA-512, MGF1 of the same hash, a salt of the digest length, trailer 1;
+  other parameters `UnsupportedAlgorithm`), ECDSA with SHA-256 or SHA-384, Ed25519; MD5 and
+  SHA-1 algorithms read and named, for `REFUSED` to refuse), issuer
   and subject as DER names that compare byte for byte, validity, the subject public key, the
   extensions named above; a duplicate extension refuses the certificate; an unknown extension
   marked critical is kept as a flag that `story:tls-x509-path` rejects; the Common Name is not
@@ -75,10 +79,11 @@ after `tls-lock-allow`, beside `tls-test-certs` and `tls-record`, beside the rou
 - `crates/tls/src/verify.rs`: the trait `ServerCertVerifier` (the certificates the server sent,
   the host, the time; answers a `LeafKey` or a `CertificateRejection`) and
   `CertificateRejection` with its kinds `NotTrusted(check)`, `Expired` and `NameMismatch`;
-  `check` is an enum of the closed list of item 7 and no other name: `NoPathToAnchor`,
-  `BadSignature`, `IssuerNotCa`, `PathTooLong`, `CandidateLimit`, `KeyUsage`,
-  `UnknownCriticalExtension`, `NameConstraint`, `NoServerAuth`, `WeakAlgorithm`, `WeakKey`.
-  `src/error.rs` gains the variant `Certificate(CertificateRejection)`.
+  `check` is an enum of the closed list of item 7 and no other name: `Unreadable` (with the
+  error of this reader for a certificate the server sent), `NoPathToAnchor`, `BadSignature`,
+  `IssuerNotCa`, `PathTooLong`, `CandidateLimit`, `KeyUsage`, `UnknownCriticalExtension`,
+  `NameConstraint`, `NoServerAuth`, `WeakAlgorithm`, `WeakKey`. `src/error.rs` gains the
+  variant `Certificate(CertificateRejection)`.
 - `crates/tls/src/pem.rs` and `src/base64.rs`: blocks between `-----BEGIN <label>-----` and
   `-----END <label>-----` with equal labels, base64 of RFC 4648 with line breaks, padding
   checked; text outside blocks ignored; each block returned with its label.
@@ -109,7 +114,9 @@ the vendored x509-limbo data is read or refused with a named error, in the count
    made from it as name and key; outer and inner signature algorithms that differ:
    `AlgorithmMismatch`; `subjectAltName` twice: `DuplicateExtension`; UTCTime `2501010000Z` (no
    seconds): `BadTime`; February 30: `BadTime`; a dNSName holding a NUL byte: `BadName`; an
-   unknown critical extension: read, with the flag set.
+   unknown critical extension: read, with the flag set; an RSASSA-PSS signature algorithm with
+   SHA-256 and a salt of 20 bytes: `UnsupportedAlgorithm`, and with a salt of 32 bytes: read as
+   rsa_pss_rsae_sha256; md5WithRSAEncryption: read and named MD5.
 4. PEM: a block with wrong padding: `BadBase64`; a BEGIN without its END: `UnterminatedBlock`;
    a `PRIVATE KEY` block: returned with that label; 16 MiB of `A` with no marker: no block, in
    under 1 s.
@@ -118,7 +125,7 @@ the vendored x509-limbo data is read or refused with a named error, in the count
    (not a number to reach); a refusal of a certificate in a case limbo expects to succeed is
    listed by case id in the report as a finding; no panic.
 6. `sources_match_their_digests` for the limbo files.
-7. `check_names`: the variants of the `check` enum are the eleven names of item 7, in its order
+7. `check_names`: the variants of the `check` enum are the twelve names of item 7, in its order
    (`Check::ALL`, a constant of `verify.rs`, and the name each prints, compared with the list as
    item 7 prints it).
 

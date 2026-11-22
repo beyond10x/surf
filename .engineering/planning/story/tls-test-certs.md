@@ -16,7 +16,7 @@ scope:
   path: taskfiles/tls-certs-check.sh
 - confidence: cited
   path: taskfiles/tls-certs.yml
-revision: 6
+revision: 7
 ---
 ## Context
 
@@ -73,7 +73,10 @@ after `tls-lock-allow`, beside `tls-x509` and `tls-record`, beside the rounds of
     sent with the leaf: 50 certificates), `unknown-critical-extension`,
     `wildcard-two-labels` (`*.example.test` for `a.b.example.test`), `common-name-only` (no
     `subjectAltName`, CN `localhost`), `ip-mismatch`, `name-constraints-excluded`,
-    `eku-client-only`, `1000-sans` (the match is the last entry);
+    `eku-client-only`, `1000-sans` (the match is the last entry), `ok-rsa-pss` (a leaf signed
+    rsa_pss_rsae_sha256 by the RSA 2048 intermediate, with the RFC 4055 parameters of SHA-256
+    and a salt of 32 bytes; RFC 8446 section 9.1), `leaf-v1` (a version 1 leaf, which the
+    reader refuses: `NotTrusted(Unreadable)`);
   - the positive cases valid from 2025-01-01 to 2125-01-01, so that both UTCTime and
     GeneralizedTime are written (RFC 5280 section 4.1.2.5);
   - the binary `surf-tls-test-certs --out <dir>` writes per case `<case>/chain.pem` (leaf
@@ -85,12 +88,16 @@ after `tls-lock-allow`, beside `tls-x509` and `tls-record`, beside the rounds of
     `candidate-limit` `CandidateLimit`, `leaf-no-digital-signature` and
     `issuer-no-key-cert-sign` `KeyUsage`, `unknown-critical-extension`
     `UnknownCriticalExtension`, `name-constraints-excluded` `NameConstraint`, `eku-client-only`
-    `NoServerAuth`, `sha1` `WeakAlgorithm`, `rsa-1024` `WeakKey`: each of the eleven names has
+    `NoServerAuth`, `sha1` and `md5` `WeakAlgorithm`, `rsa-1024` `WeakKey`, `leaf-v1`
+    `Unreadable`: each of the twelve names has
     at least one case). This crate is built beside `story:tls-x509`, so it writes the names as
     text, not through the enum of `verify.rs`.
 - `crates/tls-test-certs/openssl/`: `make.sh` (POSIX `sh`; run only by the lane `slow`), which
-  makes the two cases ring cannot sign, `sha1` (a leaf signed sha1WithRSAEncryption by the RSA
-  2048 intermediate) and `rsa-1024` (a leaf with the RSA 1024 key, signed by the intermediate
+  makes the three cases ring cannot sign, `sha1` (a leaf signed sha1WithRSAEncryption by the
+  RSA 2048 intermediate), `md5` (a leaf signed md5WithRSAEncryption by the same intermediate;
+  whether `openssl` 3.6 still signs with MD5 is not run yet: if it refuses, the unit writes the
+  TBS with `openssl asn1parse` and signs its MD5 digest with `openssl pkeyutl`, both in the
+  script) and `rsa-1024` (a leaf with the RSA 1024 key, signed by the intermediate
   with SHA-256), from the committed keys with a fixed serial, fixed validity dates and a fixed
   subject, so that a run makes the same bytes (RSA PKCS#1 v1.5 signing is deterministic); and
   `SOURCE` (the `openssl version` used, the date, the sha256 of each output). Its output goes
@@ -113,18 +120,21 @@ after `tls-lock-allow`, beside `tls-x509` and `tls-record`, beside the rounds of
 <n> cases, certs/ matches its sources`; `slot task tls-certs-slow` (outside the gate) ends with
 no file that differs.
 
-1. `index`: `INDEX` names every case of `src/cases.rs` and the two of `openssl/` once, and every
-   file it names exists; every check name in it is one of the eleven of item 7 (a constant of
-   the test, copied from item 7), each of the eleven is the check of at least one case, and a
-   copy of `INDEX` with `NotACa` in place of `IssuerNotCa` fails naming the line.
+1. `index`: `INDEX` names every case of `src/cases.rs` and the three of `openssl/` once, and
+   every file it names exists; every check name in it is one of the twelve of item 7 (a
+   constant of the test, copied from item 7), each of the twelve is the check of at least one
+   case, and a copy of `INDEX` with `NotACa` in place of `IssuerNotCa` fails naming the line.
 2. `signatures`: each certificate the builder made verifies through the seam under its issuer
    key, except the leaf of `bad-signature`, which does not.
 3. `reproducible`: the builder run twice in the test makes the same bytes for every case it
    makes, equal to the committed files.
 4. `openssl_cases`: the leaf of `sha1` holds the OID 1.2.840.113549.1.1.5
-   (sha1WithRSAEncryption) as its signature algorithm, the leaf of `rsa-1024` a modulus of 128
-   bytes (both found by a byte search in the test, not by the reader under test); the
-   seam names them `WeakAlgorithm` and `WeakKey`.
+   (sha1WithRSAEncryption) as its signature algorithm, the leaf of `md5` the OID
+   1.2.840.113549.1.1.4 (md5WithRSAEncryption), the leaf of `rsa-1024` a modulus of 128 bytes
+   (each found by a byte search in the test, not by the reader under test); the seam names them
+   `WeakAlgorithm`, `WeakAlgorithm` and `WeakKey`. The leaf of `ok-rsa-pss` holds the OID
+   1.2.840.113549.1.1.10 (RSASSA-PSS) and that of `leaf-v1` the version field absent
+   (version 1).
 5. `rsa-1024` holds a 1024-bit key and `1000-sans` 1000 dNSName entries.
 6. Hostile: a test copies the crate under `CARGO_TARGET_TMPDIR`, changes one byte of
    `src/cases.rs` and runs `sh taskfiles/tls-certs-check.sh` on it: exit 1 with the line above;

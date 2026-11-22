@@ -14,7 +14,7 @@ relations:
 scope:
 - confidence: cited
   path: crates/tls-test-server
-revision: 5
+revision: 6
 ---
 ## Context
 
@@ -30,10 +30,13 @@ A defect the server and the client share passes every test of the server; the re
 of an independent implementation and RFC 8448 (`story:tls-handshake`, `story:tls-record`) are
 the answer the epic gives. `docs/design/tls.md` items 6 (signing through `crypto.rs` under the
 feature `test-tooling`; the `Error` kinds; the public modules; `LeafKey` and the reader owned by
-`story:tls-x509`), 7 (the error of each mode) and 12 (the two kinds of server limited to TLS 1.2:
-one that ignores `supported_versions` answers our hello, which offers six TLS 1.2 suites, with a
-ServerHello selecting 1.2 and a hello without them with `handshake_failure`; one that reads it
-answers `protocol_version` before any ServerHello). Both kinds are tested end to end here and in
+`story:tls-x509`), 7 (the error of each mode, and the three kinds of a server limited to TLS
+1.2) and 12 (our hello offers the three TLS 1.3 suites only; the six TLS 1.2 suites were taken
+out on 2026-11-22 after the fifth critic round, RFC 8446 section 9.3). Kind (a), a server that
+reads `supported_versions`, answers `protocol_version` before any ServerHello; kind (b), one
+that ignores it, finds no suite it knows in our hello and answers `handshake_failure` before
+any ServerHello; kind (c), a ServerHello below TLS 1.3, is what no real server sends to our
+hello and is a hostile mode. All three are tested end to end here and in
 `story:tls-fetch-https`.
 The certificates and keys are those of `crates/tls-test-certs/certs/` (`story:tls-test-certs`).
 
@@ -55,14 +58,15 @@ Placement: the last of the nine stories that write only `crates/tls*`; built alo
   certificate case, the suites and groups it accepts, whether it asks for secp256r1 by
   HelloRetryRequest, the server name and ALPN it saw (read back by the test), and a mode:
   `Normal` (sends one `NewSessionTicket` after its Finished, as servers commonly do);
-  the two kinds of server limited to TLS 1.2 of item 12, `Tls12IgnoresSupportedVersions`
-  (chooses by `legacy_version` and the suites: a hello that offers one of the six TLS 1.2
-  suites gets a TLS 1.2 ServerHello selecting it, without the downgrade value; a hello without
-  them a `handshake_failure` alert) and `Tls12ReadsSupportedVersions` (a `protocol_version`
-  alert before any ServerHello, whatever the suites, as OpenSSL 1.1.1 and later limited to 1.2
-  answer); `RefuseHandshake` (a `handshake_failure` alert at once); `StallAfterServerHello`;
-  `NeverAnswer` (accepts and reads, sends nothing); `OversizedCertificate` (declares 16 MiB);
-  `BadFinished`; `NoCloseNotify` (closes the connection after a body delimited by its end).
+  the two kinds of a real server limited to TLS 1.2 of item 7, answering as such a server does:
+  `Tls12ReadsSupportedVersions` (kind (a): a `protocol_version` alert before any ServerHello,
+  as OpenSSL 1.1.1 and later limited to 1.2 answer) and `Tls12IgnoresSupportedVersions` (kind
+  (b): it chooses by `legacy_version` and holds TLS 1.2 suites only, so our hello, which offers
+  none, gets a `handshake_failure` alert before any ServerHello); the hostile mode
+  `SelectsTls12` (kind (c): whatever the hello, a TLS 1.2 ServerHello selecting 0xC02F without
+  a downgrade value); `StallAfterServerHello`; `NeverAnswer` (accepts and reads, sends
+  nothing); `OversizedCertificate` (declares 16 MiB); `BadFinished`; `NoCloseNotify` (closes
+  the connection after a body delimited by its end).
 - Tests in `crates/tls-test-server/tests/main.rs`, against `surf_tls::Connection` with a
   verifier test double that returns the `LeafKey` of the case leaf. No test uses the trace mode
   `GivenClientHello` (it runs over given bytes only, `story:tls-handshake`).
@@ -79,15 +83,13 @@ the server for each suite and group, and each misbehaving mode ends the client w
 2. The certificate cases `ok-rsa2048`, `ok-ecdsa-p256`, `ok-ecdsa-p384`: the handshake
    completes.
 3. Modes, each with a read timeout of 200 ms on the client stream:
-   - `Tls12IgnoresSupportedVersions` against our client: the server answers a TLS 1.2
-     ServerHello selecting 0xC02F (the `ok-rsa2048` case) and the client ends
-     `VersionUnsupported`, having sent `protocol_version`; the same mode given a ClientHello
-     written as raw bytes over the socket (`client-hello.golden` with the six TLS 1.2 suites cut
-     out and its lengths fixed, a constant of the test; no client code runs) answers a
-     `handshake_failure` alert record;
-   - `Tls12ReadsSupportedVersions` against our client: `AlertReceived { protocol_version,
+   - `Tls12ReadsSupportedVersions` (kind (a)): `AlertReceived { protocol_version,
      before_server_hello: true }`, no ServerHello sent;
-   - `RefuseHandshake`: `AlertReceived { handshake_failure, before_server_hello: true }`;
+   - `Tls12IgnoresSupportedVersions` (kind (b)): `AlertReceived { handshake_failure,
+     before_server_hello: true }`, no ServerHello sent, and the `Display` of the error holds the
+     fixed words of item 7;
+   - `SelectsTls12` (kind (c)): a TLS 1.2 ServerHello selecting 0xC02F (the `ok-rsa2048` case)
+     and the client ends `VersionUnsupported`, having sent `protocol_version`;
    - `Normal` sends a `NewSessionTicket` after its Finished: the client reads the body `ok`
      and sends no byte in answer to the ticket;
    - `StallAfterServerHello`: `TimedOut` within 1 s;

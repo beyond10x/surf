@@ -10,7 +10,7 @@ relations:
 scope:
 - confidence: cited
   path: docs/design/tls.md
-revision: 7
+revision: 8
 ---
 ## Context
 
@@ -19,11 +19,11 @@ relayed by `host-operator`: "A: ring 0.17.14"); the lock check allows its packag
 version and only for the crate `surf-tls`; this story checks the C compiler setup of the musl
 release build on the forge runners before anything else is built. U2 is option B (the root list
 of Mozilla as curl publishes it, compiled in, plus one extra anchor file per session). U3 is
-option C (no TLS 1.2 handshake in this epic). The coordinating agent, 2026-11-22: the
-ClientHello also offers six TLS 1.2 suites, for a server limited to TLS 1.2 that does not read
-`supported_versions` and would otherwise answer `handshake_failure`; it then answers with a
-ServerHello and surf names the failure `TlsVersionUnsupported`. The decision rests on RFC 5246
-section 7.4.1.3 and RFC 8446 appendix D; no recording overturns it (round 2, decision 1).
+option C (no TLS 1.2 handshake in this epic). The coordinating agent took six TLS 1.2 suites into
+the ClientHello on 2026-11-22 and reversed it the same day after the fifth critic round: RFC 8446
+section 9.3, "A client sending a ClientHello MUST support all parameters advertised in it". The
+ClientHello offers the three TLS 1.3 suites alone; a server limited to TLS 1.2 is reported by
+one of three kinds (item 7).
 
 What the forge runs today:
 
@@ -75,7 +75,8 @@ and `story:tls-lock-allow` waits for nothing but this story.
 
 1. `docs/design/tls.md` (new), numbered items, each a decision with its reason or a measurement
    with how it was made:
-   1. U1, U2, U3 and the decision on TLS 1.2 suites, quoted with date and who took them.
+   1. U1, U2, U3 and the decision on TLS 1.2 suites with its reversal, quoted with date and who
+      took them.
    2. The lock: the 19 packages of the epic section "Measured: the packages ring adds", each
       with version, source, checksum and its dependents, and which 8 of them are compiled on
       each of the four release targets (the other 11 belong to Windows and WASI targets and are
@@ -113,8 +114,8 @@ and `story:tls-lock-allow` waits for nothing but this story.
       before_server_hello }`, `AlertSent { description, violation }` with `violation` one of
       `RecordOverflow`, `BadRecordMac`, `UnknownContentType`, `EmptyInnerPlaintext`,
       `MessageTooLarge { declared, bound }`, `UnexpectedMessage { expected, got }`,
-      `EmptyCertificate`, `TooManyCertificates`, `UnofferedSuite`, `Tls12SuiteInTls13` (a TLS
-      1.3 ServerHello or HelloRetryRequest that selects one of the six TLS 1.2 suites),
+      `EmptyCertificate`, `TooManyCertificates`, `UnofferedSuite` (also a TLS 1.2 suite in a
+      TLS 1.3 ServerHello or HelloRetryRequest: surf offers none),
       `UnofferedVersion` (a `supported_versions` in a ServerHello or HelloRetryRequest that
       holds anything but 0x0304), `UnofferedExtension`, `UnofferedGroup`, `UnofferedAlpn`,
       `SecondHelloRetryRequest`, `SuiteChangedAfterRetry` (a ServerHello after a
@@ -128,7 +129,10 @@ and `story:tls-lock-allow` waits for nothing but this story.
       `KeyShareGroupChanged` (after a HelloRetryRequest, a ServerHello share in another group
       than it selected), `BadKeyShare` (a share the agreement refuses), `ExtensionNotAllowedHere`
       (an extension in a message the table of RFC 8446 section 4.2 does not allow it in),
-      `DuplicateExtension`, `UnofferedSignatureScheme` (a CertificateVerify scheme not offered,
+      `RepeatedExtension` (two extensions of one type in a block; `DuplicateExtension` is the
+      error of the X.509 reader), `NonEmptyRequestContext` (a `certificate_request_context` that
+      is not empty in a CertificateRequest or Certificate of the handshake),
+      `UnofferedSignatureScheme` (a CertificateVerify scheme not offered,
       not fitting the key, RSA PKCS#1 or SHA-1), `BadKeyUpdate` (a `request_update` other than
       0 or 1), `Malformed { message }` (alert `decode_error`), and from `story:tls-record`
       `InterleavedHandshake`, `HandshakeSpansKeyChange`, `EmptyContent` (a handshake or alert
@@ -138,10 +142,10 @@ and `story:tls-lock-allow` waits for nothing but this story.
       and `Certificate(CertificateRejection)`, which `story:tls-x509` adds; a
       `CertificateRejection` sends `unknown_ca` (`NoPathToAnchor`), `certificate_expired`
       (`Expired`) or `bad_certificate` (every other). The list is closed; it follows the tables
-      "RFC 8446 client obligations" of `story:tls-handshake` and "RFC 8446 record obligations"
-      of `story:tls-record`.
+      "RFC 8446 client obligations" and "Messages the client receives" of `story:tls-handshake`
+      and "RFC 8446 record obligations" of `story:tls-record`.
       The seam: the operations of `crypto.rs`, the signature algorithms it refuses by name
-      (`REFUSED`: every SHA-1 signature, RSA keys under 2048 bits), and behind the feature
+      (`REFUSED`: every MD5 or SHA-1 signature, RSA keys under 2048 bits), and behind the feature
       `test-tooling` (off by default; turned on by `surf-tls-test-certs`,
       `surf-tls-test-server` and the dev-dependency of `surf-tls` on itself) the signing from
       PKCS#8 that ring offers (ECDSA P-256 and P-384 by `EcdsaKeyPair::from_pkcs8`, Ed25519 by
@@ -166,25 +170,30 @@ and `story:tls-lock-allow` waits for nothing but this story.
       condition to its reason and to the detail text printed after it. The checks of
       `NotTrusted(check)`, a closed list; `INDEX` of `story:tls-test-certs` and
       `CertificateRejection` of `story:tls-x509` take these names and no other:
-      `NoPathToAnchor` (no path to an anchor), `BadSignature` (a signature on the path does not
+      `Unreadable` (a certificate the server sent that the X.509 reader refuses: bad DER, a
+      version 1 leaf, `AlgorithmMismatch` and the other errors of the reader, the error named
+      in the detail; alert `bad_certificate`), `NoPathToAnchor` (no path to an anchor; alert
+      `unknown_ca`), `BadSignature` (a signature on the path does not
       verify), `IssuerNotCa` (an issuer without basicConstraints cA), `PathTooLong` (more
       intermediates than item 9 allows, or a pathLenConstraint broken), `CandidateLimit` (the
       most path candidates of item 9 tried), `KeyUsage` (keyUsage without keyCertSign on an
       issuer or digitalSignature on the leaf), `UnknownCriticalExtension`, `NameConstraint`
       (a name outside a nameConstraints of an issuer or the anchor), `NoServerAuth`
-      (extKeyUsage without serverAuth), `WeakAlgorithm` (a SHA-1 signature) and `WeakKey` (an
-      RSA key under 2048 bits), the last two decided before any verification. All give
+      (extKeyUsage without serverAuth), `WeakAlgorithm` (an MD5 or SHA-1 signature) and
+      `WeakKey` (an RSA key under 2048 bits), the last two decided before any verification;
+      every check but `NoPathToAnchor` sends `bad_certificate`. All give
       `CertificateNotTrusted`. Further rows: outside the validity, either side:
-      `CertificateExpired`; no `subjectAltName` entry for the host: `CertificateNameMismatch`;
-      the two kinds of server limited to TLS 1.2 of item 12, a ServerHello that selects TLS 1.2
-      or below (no `supported_versions`) without a downgrade value, and a `protocol_version`
-      alert before any ServerHello: `TlsVersionUnsupported`; a ServerHello of TLS 1.2 or below
-      with either downgrade value of RFC 8446 section 4.1.3 (`DOWNGRD` 0x01 or 0x00):
+      `CertificateExpired`; no `subjectAltName` entry for the host: `CertificateNameMismatch`.
+      A server limited to TLS 1.2, three kinds (item 12): (a) a `protocol_version` alert
+      before any ServerHello: `TlsVersionUnsupported`; (b) a `handshake_failure` alert before
+      any ServerHello: `TlsHandshakeFailed`, detail `the server sent handshake_failure before
+      its ServerHello; a server limited to TLS 1.2 answers this way`; (c) a ServerHello that
+      selects TLS 1.2 or below (no `supported_versions`) without a downgrade value, any suite:
+      surf sends `protocol_version`, `TlsVersionUnsupported`. A ServerHello of TLS 1.2 or
+      below with either downgrade value of RFC 8446 section 4.1.3 (`DOWNGRD` 0x01 or 0x00):
       `TlsHandshakeFailed` (`illegal_parameter`); a ServerHello whose `supported_versions`
-      holds anything but 0x0304, and a TLS 1.3 ServerHello or HelloRetryRequest that selects
-      one of the six TLS 1.2 suites: `TlsHandshakeFailed` (`illegal_parameter`); a
-      `handshake_failure` alert before any ServerHello: `TlsHandshakeFailed`, the detail
-      naming the alert; every other alert or protocol violation: `TlsHandshakeFailed`;
+      holds anything but 0x0304: `TlsHandshakeFailed` (`illegal_parameter`); every other
+      alert or protocol violation: `TlsHandshakeFailed`, the detail naming the alert;
       `TimedOut`, `ConnectionClosed`, `Truncated`, `Io`: `Unreachable`, as for HTTP today
       (net.yaml: "it ended before a response was complete"). Revocation is not checked: a
       revoked certificate that has not expired loads; the documents say so in those words.
@@ -200,13 +209,14 @@ and `story:tls-lock-allow` waits for nothing but this story.
       HelloRetryRequest.
    10. The test design, per material: where it is vendored, its `SOURCE` (the form of
        `crates/html-conformance/data/*/SOURCE`) and its size: the Wycheproof subset
-       (`crates/tls/tests/data/wycheproof/`; the AES-192 vectors of `aes_gcm_test` are a named
-       skip, their count stated), RFC 8448 (`crates/tls/tests/data/rfc8448/`), x509-limbo
-       (`crates/tls/tests/data/x509-limbo/`; the size of `limbo.json` at the pinned commit, and
-       when it is over 20 MiB the subset taken and the count left out), the generated
-       certificates (`crates/tls-test-certs/certs/`; the cases ring cannot make, a SHA-1
-       signature and an RSA-1024 key, made once by `openssl` in the lane `slow` and committed as
-       bytes; the gate never runs `openssl`), the recorded flights
+       (`crates/tls/tests/data/wycheproof/`, `rsa_pss_2048_sha256_mgf1_32_test.json` among its
+       files; the AES-192 vectors of `aes_gcm_test` are a named skip, their count stated), RFC
+       8448 (`crates/tls/tests/data/rfc8448/`), x509-limbo (`crates/tls/tests/data/x509-limbo/`;
+       the size of `limbo.json` at the pinned commit, and when it is over 20 MiB the subset
+       taken and the count left out), the generated certificates (`crates/tls-test-certs/certs/`;
+       the cases ring cannot make, a SHA-1 signature, an MD5 signature and an RSA-1024 key, made
+       once by `openssl` in the lane `slow` and committed as bytes; the gate never runs
+       `openssl`), the recorded flights
        (`crates/tls/tests/data/flights/`: recorded data pinned by sha256, not a generated
        product; the lane `slow` records again and compares outcomes, since the independent
        server draws its own randomness). BoGo is not used (Go, a long run). The lanes:
@@ -216,42 +226,49 @@ and `story:tls-lock-allow` waits for nothing but this story.
        count, its sha256 from the `.sha256`; where it lives (`crates/tls/src/anchors/`); a root
        the certificate reader refuses (a version 1 root, for one) is taken as name and key (RFC
        5280 section 6.1.1 (d)); the licence of the list and of ring, for `NOTICE`.
-   12. TLS 1.2: the ClientHello offers, after the three TLS 1.3 suites, the six TLS 1.2 ECDHE
-       AEAD suites TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 (0xC02B),
-       TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 (0xC02C), TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
-       (0xC02F), TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 (0xC030) (RFC 5289),
-       TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 (0xCCA8) and
-       TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 (0xCCA9) (RFC 7905). The decision was
-       taken by the coordinator on 2026-11-22 and rests on two texts, cited here: RFC 5246
-       section 7.4.1.3 (a TLS 1.2 server picks a suite from the client list and answers
-       `handshake_failure` when it shares none) and RFC 8446 appendix D.1 (a server without TLS
-       1.3 answers a TLS 1.3 ClientHello with a ServerHello of an older version). Two kinds of
-       server limited to TLS 1.2, both ending in `TlsVersionUnsupported`:
-       - a stack that does not read `supported_versions` chooses by `legacy_version` and a
-         suite in common: with the six suites it sends a ServerHello selecting 1.2, and surf
-         answers `protocol_version` (`VersionUnsupported`); without them it would answer
-         `handshake_failure`, which is why the suites stay;
-       - a stack that reads `supported_versions` (OpenSSL 1.1.1 and later) finds no version in
-         common and sends a `protocol_version` alert before any ServerHello, whatever the
-         suites (`AlertReceived { protocol_version, before_server_hello: true }`, reason
-         `TlsVersionUnsupported`).
-       The recording against `openssl s_server -tls1_2` (its version named, 3.6.5 on the
-       workstation) on 127.0.0.1 is quoted as an example of the second kind and of nothing
-       else; no recording can overturn the decision. A recording of the first kind is added
-       to the lane `slow` only from a stack that can be named and run without a network: the
-       item says whether one can. Looked at on 2026-11-22, not run: the workstation has mbed
-       TLS 2.28.10 as a library only (`mbedtls2`, no TLS 1.3 code), and server programs of mbed
-       TLS 3.6.7 (`mbedtls3_ssl_server2`) and 4.2 (`mbedtls_ssl_server2`) and GnuTLS 3.8.13
-       (`gnutls-serv`), all three with TLS 1.3 code, whose answer under a 1.2 limit is not
-       known. When none is of the first kind, the item says so, and the mode
-       `Tls12IgnoresSupportedVersions` of `story:tls-test-server` is the only test of that kind.
-       surf never continues a TLS 1.2 handshake in this epic.
+   12. TLS 1.2: the ClientHello offers the three TLS 1.3 suites and nothing else (RFC 8446
+       section 9.3: a client supports every parameter it advertises). The coordinator took six
+       TLS 1.2 suites in on 2026-11-22 and reversed it the same day after the fifth critic
+       round; both are quoted with their date. A server limited to TLS 1.2 is reported by the
+       three kinds of item 7: (a) `protocol_version` before any ServerHello, (b)
+       `handshake_failure` before any ServerHello, (c) a ServerHello below TLS 1.3. The
+       recording against `openssl s_server -tls1_2` (its version named, 3.6.5 on the
+       workstation) on 127.0.0.1 is quoted as kind (a) and shows nothing else. Telling kind
+       (b) apart from other handshake failures needs TLS 1.2 itself, the next epic (U3). surf
+       never continues a TLS 1.2 handshake in this epic.
    13. The clock: validity is checked against a time the caller passes; `surf` and the session
        pass the system clock; library tests pass a fixed time (`2026-11-22T00:00:00Z`); a
        limbo case without `validation_time` runs at `LIMBO_TIME`, the `commit-date` of the
        pinned limbo commit as its `SOURCE` records it (`story:tls-x509`, `story:tls-x509-path`);
        tests through a binary run on the system clock, with
        certificates valid until 2125 and an expired one whose end lies in 2001.
+   14. RFC 8446 section 9, what surf offers against each requirement that binds a client:
+       - 9.1 TLS_AES_128_GCM_SHA256 (MUST): offered; TLS_AES_256_GCM_SHA384 and
+         TLS_CHACHA20_POLY1305_SHA256 (SHOULD): offered. Met.
+       - 9.1 signatures (MUST): rsa_pkcs1_sha256 for certificates, rsa_pss_rsae_sha256 for
+         CertificateVerify and for certificates (the reader of `story:tls-x509` takes the
+         RSASSA-PSS AlgorithmIdentifier of RFC 4055 with SHA-256, SHA-384 or SHA-512, MGF1 of the
+         same hash and a salt of the digest length, case `ok-rsa-pss` of
+         `story:tls-test-certs`), ecdsa_secp256r1_sha256: all verified by the seam and offered.
+         `signature_algorithms` (CertificateVerify): ecdsa_secp256r1_sha256,
+         ecdsa_secp384r1_sha384, ed25519, rsa_pss_rsae_sha256, rsa_pss_rsae_sha384,
+         rsa_pss_rsae_sha512; `signature_algorithms_cert`: the same plus rsa_pkcs1_sha256,
+         rsa_pkcs1_sha384, rsa_pkcs1_sha512. Met.
+       - 9.1 key exchange: secp256r1 (MUST) in `supported_groups`, reached by a
+         HelloRetryRequest; X25519 (SHOULD) with a share in the first hello. Met.
+       - 9.2 extensions (MUST implement, MUST send when applicable): `supported_versions`,
+         `cookie` (echoed), `signature_algorithms`, `signature_algorithms_cert`,
+         `supported_groups`, `key_share`, `server_name` (sent when the host is a name; RFC 6066
+         allows no IP literal there). No `pre_shared_key` or `psk_key_exchange_modes`, as no PSK
+         is offered. The ClientHello holds both `signature_algorithms` and `supported_groups`,
+         and `key_share` with `supported_groups`. Met.
+       - 9.3 a client supports every parameter it advertises: every suite, group, scheme,
+         extension and ALPN value of the ClientHello is one surf completes a handshake with.
+         Met since the six TLS 1.2 suites were taken out (item 12).
+       - 9.3 a client ignores unknown extensions in a CertificateRequest or NewSessionTicket:
+         met (`story:tls-handshake`).
+       No requirement of sections 9.1 to 9.3 is deviated from. A deviation found later is a
+       line here, named, and goes to the coordinator for `host-operator`.
 2. The probe, on a branch `probe/tls-ring` that is never merged into `main`:
    `.github/workflows/tls-probe.yml` (`on: push` to that branch only, `permissions: contents:
    read`, every action pinned by commit as `release.yml` pins them, the toolchain read from
@@ -289,14 +306,14 @@ built and ran ring 0.17.14 on the four release targets and on the gate runner.
    `crates/tls/src`; each later story of the epic names a file of item 6 only as its owner
    writes it.
 7. Item 7 has a row for each hostile input the later stories name (a bad certificate, a
-   truncated record, a downgrade to TLS 1.2, a wrong host name, an oversized handshake message, a
-   server that never finishes, a weak algorithm, a `handshake_failure` alert, each of the two
-   kinds of server limited to TLS 1.2), each with one reason and its detail text; and the closed
-   list of the eleven names of the `NotTrusted` checks, each with its condition.
-8. Item 12 cites RFC 5246 section 7.4.1.3 and RFC 8446 appendix D for the six suites, and quotes
-   the recording against `openssl s_server -tls1_2` (its version named) as the
-   `protocol_version` kind; it names a stack that ignores `supported_versions` and can run
-   without a network, with its recording, or says that none was found and what was looked at.
+   certificate the reader refuses, a truncated record, a downgrade to TLS 1.2, a wrong host
+   name, an oversized handshake message, a server that never finishes, a weak algorithm, each
+   of the three kinds (a), (b), (c) of a server limited to TLS 1.2), each with one reason and
+   its detail text, the fixed words of kind (b) quoted; and the closed list of the twelve names
+   of the `NotTrusted` checks, each with its condition.
+8. Item 12 quotes the recording against `openssl s_server -tls1_2` (its version named) as kind
+   (a) and nothing more; item 14 has a line for each requirement of RFC 8446 sections 9.1 and
+   9.2 and the client invariant of 9.3, with what surf offers and "met" or the deviation.
 9. The change to `main` is `docs/design/tls.md` alone (`git diff --stat main`), and `printf
    "docs/design/tls.md\n" | sh taskfiles/planning-only.sh` exits 0.
 
@@ -312,9 +329,8 @@ Code on `main`; the change to `release.yml` (`story:tls-release`); taking U1 to 
 `docs/design/tls.md` on `main`; on the branch `probe/tls-ring` only,
 `.github/workflows/tls-probe.yml` and `probe/tls-ring/`. No other story writes
 `docs/design/tls.md`: a later story that finds an item wrong says so in its report, and the
-coordinator revises the note; a test result cannot overturn the decision on the TLS 1.2 suites
-(item 12). For the coordinator: the line of `AGENTS.md`, "Commands", "Documents", that names
-`docs/design/tls.md`.
+coordinator revises the note. For the coordinator: the line of `AGENTS.md`, "Commands",
+"Documents", that names `docs/design/tls.md`.
 
 ## Order of the stories of the epic
 

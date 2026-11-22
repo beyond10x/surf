@@ -34,7 +34,7 @@ scope:
   path: taskfiles/lock-allow.txt
 - confidence: cited
   path: taskfiles/lock-check.sh
-revision: 7
+revision: 8
 ---
 ## Context
 
@@ -109,8 +109,9 @@ lock check and its test; built alone, after `tls-decisions` and
     and expand; X25519 and P-256 agreement with a key made from a random source; signature
     checks for rsa_pkcs1_sha256/384/512, rsa_pss_rsae_sha256/384/512, ecdsa_secp256r1_sha256,
     ecdsa_secp384r1_sha384 and ed25519, each behind a trait the tests can replace; `REFUSED`,
-    the algorithms it refuses by name (every SHA-1 signature, RSA keys under 2048 bits), with a
-    function that names the refusal for a signature algorithm and key before any verification;
+    the algorithms it refuses by name (every MD5 or SHA-1 signature, RSA keys under 2048 bits),
+    with a function that names the refusal for a signature algorithm and key before any
+    verification;
     the shipped random source `ring::rand::SystemRandom`; behind `test-tooling` the signing
     from PKCS#8 (ECDSA P-256 and P-384; Ed25519 by `Ed25519KeyPair::from_pkcs8_maybe_unchecked`,
     which reads the PKCS#8 v1 that `openssl genpkey` writes; RSA PKCS#1 and PSS from 2048 bits)
@@ -177,9 +178,10 @@ Seam (`crates/tls/tests/main.rs`, module `seam`):
     and refuses it with one byte flipped; the Ed25519 key is a PKCS#8 v1 file as `openssl
     genpkey` writes it (a constant of the test, its command in `SOURCE`); ECDSA under one fixed
     source signs one message twice to equal bytes.
-12. Refused by name: the seam names an RSA-1024 key `WeakKey` and a sha1WithRSAEncryption
-    signature `WeakAlgorithm` before any verification; an AES-128-GCM record with one flipped
-    tag bit does not open; a P-256 public key off the curve is refused by agreement.
+12. Refused by name: the seam names an RSA-1024 key `WeakKey`, and a sha1WithRSAEncryption and
+    an md5WithRSAEncryption signature each `WeakAlgorithm`, before any verification; an
+    AES-128-GCM record with one flipped tag bit does not open; a P-256 public key off the curve
+    is refused by agreement.
 13. `sources_match_their_digests`: the sha256 of each vendored file, through the seam, equals
     its `SOURCE` line; with one byte changed in a copy under `CARGO_TARGET_TMPDIR` it fails
     naming the file.

@@ -23,7 +23,7 @@ scope:
   path: crates/tls/tests/tls/path.rs
 - confidence: cited
   path: taskfiles/tls-x509-conformance.yml
-revision: 7
+revision: 8
 ---
 ## Context
 
@@ -59,8 +59,10 @@ rounds of surf.
   through the seam (`BadSignature`); validity; basicConstraints cA and pathLenConstraint on every
   issuer; keyUsage keyCertSign on an issuer and digitalSignature on the leaf when present;
   extKeyUsage serverAuth on the leaf when present; nameConstraints of issuers and of the anchor
-  over dNSName and iPAddress entries below them; an unknown critical extension refuses. Each
-  refusal is a `CertificateRejection` naming its check.
+  over dNSName and iPAddress entries below them; an unknown critical extension refuses. A
+  certificate the server sent that the reader of `story:tls-x509` refuses is
+  `NotTrusted(Unreadable)` with the reader error. Each refusal is a `CertificateRejection`
+  naming its check.
 - `crates/tls/src/names.rs`: RFC 9525. A dNSName matches without regard to ASCII case; `*` only
   as the whole left-most label, matching one label; an IP host matches an iPAddress entry octet
   for octet (4 or 16) and never a dNSName; the Common Name is never read.
@@ -107,8 +109,9 @@ tls-x509-conformance` prints the `x509-limbo:` line and exits 0 against
    equal to the name `Check::ALL` prints for it: among them `pathlen-exceeded` gives
    `NotTrusted(PathTooLong)` (a pathLenConstraint of 0 broken, within the intermediates item 9
    allows), and `leaf-no-digital-signature` and `issuer-no-key-cert-sign` give
-   `NotTrusted(KeyUsage)`.
-2. Weak algorithms by policy: `sha1` gives `NotTrusted(WeakAlgorithm)` and `rsa-1024`
+   `NotTrusted(KeyUsage)`; `leaf-v1` gives `NotTrusted(Unreadable)` with the reader error
+   `UnsupportedVersion`; `ok-rsa-pss` returns the leaf key (RFC 8446 section 9.1).
+2. Weak algorithms by policy: `sha1` and `md5` give `NotTrusted(WeakAlgorithm)` and `rsa-1024`
    `NotTrusted(WeakKey)`, each different from the `NotTrusted(BadSignature)` of
    `bad-signature`; a copy of the `sha1` leaf with one signature byte flipped still gives
    `WeakAlgorithm` (the policy comes before any verification).
@@ -133,7 +136,7 @@ tls-x509-conformance` prints the `x509-limbo:` line and exits 0 against
    records it (`commit-date`, `story:tls-x509`); the runner takes the time of each case from the
    case or from `LIMBO_TIME` and reads no system clock (the test finds no `SystemTime` under
    `crates/tls-conformance/src`).
-10. `every_check_has_a_case`: each of the eleven check names of item 7 is the expected check of
+10. `every_check_has_a_case`: each of the twelve check names of item 7 is the expected check of
     at least one case of `INDEX`, and each such case gives `NotTrusted` with that check (the
     test reads the names from `Check::ALL` and fails naming a check without a case).
 

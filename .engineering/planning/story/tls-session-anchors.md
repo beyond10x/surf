@@ -38,7 +38,7 @@ scope:
   path: generated/rust
 - confidence: cited
   path: spec/domains/agent.yaml
-revision: 8
+revision: 9
 ---
 ## Context
 
@@ -117,9 +117,9 @@ ended in 2001):
    "https://localhost:<port>/"`.
 3. With the root of each case as the file: `expired`: `page failed CertificateExpired ...`;
    `wrong-host`: `page failed CertificateNameMismatch ...`; modes
-   `Tls12IgnoresSupportedVersions` and `Tls12ReadsSupportedVersions`: `page failed
-   TlsVersionUnsupported ...`; modes `BadFinished` and `RefuseHandshake`: `page failed
-   TlsHandshakeFailed ...`.
+   `Tls12ReadsSupportedVersions` (kind (a) of item 7) and `SelectsTls12` (kind (c)): `page
+   failed TlsVersionUnsupported ...`; modes `Tls12IgnoresSupportedVersions` (kind (b)) and
+   `BadFinished`: `page failed TlsHandshakeFailed ...`.
 4. Two sessions of one `surfd`, A with the file and B without: A loads, B fails
    `CertificateNotTrusted` (the anchors belong to the session, not to the daemon).
 5. Hostile: `--ca-file` naming a missing file, a file of 32 KiB plus one byte, a file holding a

@@ -22,7 +22,7 @@ scope:
   path: taskfiles/release-smoke.sh
 - confidence: cited
   path: website/docs
-revision: 7
+revision: 8
 ---
 ## Context
 
@@ -86,8 +86,9 @@ test certificates turn on `test-tooling` in every `cargo test` build of `surf-cl
 - `NOTICE`: ring 0.17.14 (Apache-2.0 AND ISC, its copyright lines) and the root list (its
   licence, item 11).
 - `CHANGELOG.md`, `## [Unreleased]`: `https:` addresses over TLS 1.3, the five reasons,
-  `surf --ca-file` and `--anchors`, `surf-agent open --ca-file`, TLS 1.2 servers end
-  `TlsVersionUnsupported`.
+  `surf --ca-file` and `--anchors`, `surf-agent open --ca-file`, a server limited to TLS 1.2
+  ends `TlsVersionUnsupported`, or `TlsHandshakeFailed` with a detail saying so when it ignores
+  `supported_versions`.
 - The website: `website/docs/what-works.md`, `status.md`, `roadmap.md`, `principles.md`,
   `how-it-is-built.md`, `try-it.md`, `drive-from-an-agent.md`, and
   `website/docs/reference/surf-command.md` (the hand copy of `docs/surf-command.md`); where

@@ -26,7 +26,7 @@ scope:
   path: spec/domains/net.yaml
 - confidence: cited
   path: spec/scenarios
-revision: 5
+revision: 6
 ---
 ## Context
 
@@ -76,7 +76,9 @@ writes `spec/`, `generated/rust/`, `navigation.yaml`, `conformance/src/target.rs
     agent tell it from `Unreachable`, as the comment of `TooManyRedirects` does; the comment of
     `CertificateNotTrusted` adds that revocation is not checked, so a revoked certificate that
     has not expired loads; that of `TlsVersionUnsupported` that a server offering at best TLS
-    1.2 ends with it;
+    1.2 ends with it when it reads `supported_versions` or answers with a TLS 1.2 ServerHello
+    (kinds (a) and (c) of item 7); that of `TlsHandshakeFailed` that such a server which
+    ignores `supported_versions` ends with it, the detail saying so (kind (b));
   - the comment above `entities:`: `http` and `https` are fetched, `https` over TLS 1.3 (RFC
     8446) on port 443 by default, the server authenticated against the bundled anchors and the
     extra anchors of the session, revocation not checked; redirects between `http:` and
