@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T03:26:39Z",
+  "actor": "human:operator",
+  "artifact": "story:local-gate-equals-forge",
+  "kind": "story",
+  "revision": 32,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "slot task check-runner on impl/local-gate-equals-forge at ef9f5d5, 2026-11-22",
+    "reference": "exit 0 in 356 s, export included; rustc 1.99.1, ess 0.96.0; 95 scenarios passed against the interpreter and against the Rust code; Cargo.lock: 24 package(s), none from outside this repository; 561 tests: 561 passed, 0 failed, 0 ignored (cargo-nextest 559, doc tests 2); test step: 55.2 s of its budget of 120 s; 38 page tests passed; html-conformance: 9107 cases, 9095 run, 8428 passed; forge-watch-test: 6 case(s); planning-only-test: 9 case(s)"
+  }
+}

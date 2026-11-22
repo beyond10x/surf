@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T09:03:09Z",
+  "actor": "human:operator",
+  "artifact": "story:security-review-fixes",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task conform and task conform-rust at 36b1b87",
+    "reference": "96 of 96 scenarios each; suite digest sha256:579a46b3389c56bb67b8fc3174268f525b8568ee47446e67d2a1cca936660ba8; planted defect 62 passed, 34 failed"
+  }
+}

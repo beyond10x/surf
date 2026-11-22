@@ -1,9 +1,9 @@
 # Releasing surf
 
 A release is a bare version tag (`0.2.0`), annotated and written by the organization bot, on a
-`main` commit whose `task check` is green. The tag is the version of the package that ships the
-`surf` binary, `surf-cli` (`crates/surf-cli/Cargo.toml`); the release workflow fails on a tag
-that differs. The three packages of the agent binaries, `surf-agent` (`crates/agent`), `surfd`
+`main` commit whose `task check-runner` is green. The tag is the version of the package that
+ships the `surf` binary, `surf-cli` (`crates/surf-cli/Cargo.toml`); the release workflow fails on
+a tag that differs. The three packages of the agent binaries, `surf-agent` (`crates/agent`), `surfd`
 (`crates/surfd`) and `surf-session` (`crates/session`), carry the same version.
 
 ## What a release holds
@@ -64,8 +64,8 @@ The commands use the gates as the bot, from a checkout of this repository:
    `cargo generate-lockfile --offline`. Release `0.1.0` shipped the binary from the package
    `surf`; `surf-cli` starts at that version, so the next release is above it.
 2. **Changelog.** In `CHANGELOG.md`, rename `## [Unreleased]` to `## [<version>] - <date>` and
-   put an empty `## [Unreleased]` above it. Commit both on `main`; `slot task check` is green on
-   that commit.
+   put an empty `## [Unreleased]` above it. Commit both on `main`; `slot task check-runner` is
+   green on that commit.
 3. **Try it.** Run the workflow by hand on `main`, wait for it, and take steps 6 and 7 on its
    run:
 

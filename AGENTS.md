@@ -125,8 +125,20 @@ above, and the list of standards itself was written from memory.
   the task `view-stream-check`, `taskfiles/view-test.yml` the task `view-test`, and
   `taskfiles/release.yml` the task `release-smoke`
   (`DIR=<unpacked archive>`, optional `TARGET`), which runs `taskfiles/release-smoke.sh`; the
-  release workflow calls that script with `sh`.
-- `spec/scenarios/*.yaml`: fourteen authored scenario files (`ess-scenario/6`), for what synthesis
+  release workflow calls that script with `sh`. `taskfiles/check-runner.yml` holds the task
+  `check-runner`, which runs `taskfiles/check-runner.sh`; `taskfiles/forge-watch.yml` the tasks
+  `forge-watch` and `forge-watch-test` over `taskfiles/forge-watch.sh` and the recorded runs
+  under `taskfiles/forge-watch-test/` (`runs-61fb7a9.json` and `runs-e47b1d1.json` as the forge
+  listed them, four written by hand); `taskfiles/planning-only.yml` the task
+  `planning-only-test` over `taskfiles/planning-only.sh`, the one list of planning and prose
+  paths, which `.github/workflows/check.yml` calls.
+- `rust-toolchain.toml`: the one pinned rustc, `1.99.1`, with the components `rustfmt` and
+  `clippy` (the gate uses neither; units run `cargo fmt -p` and `cargo clippy`), profile
+  `minimal`. rustup reads it in every directory of the checkout, so `rustc --version` there
+  prints that release; `.github/workflows/check.yml` and `release.yml` read the channel and the
+  components from it and name no release of their own. A `RUSTUP_TOOLCHAIN` in the environment
+  wins over the file; `task check-runner` unsets it.
+- `spec/scenarios/*.yaml`: fifteen authored scenario files (`ess-scenario/6`), for what synthesis
   does not write. Two cover the flows synthesis refuses (the page load that commits and the one that
   fails); both also read the request's address back from `Requests`. The third,
   `two-of-each-entity.yaml`, creates two windows, two tabs in one window, two page loads, two
@@ -152,7 +164,10 @@ above, and the list of standards itself was written from memory.
   `Navigate` with `Post`, a body and its media type starts a request with the same method and
   media type) and `navigation-get-has-no-body.yaml` (a `Navigate` with `Get` and no body starts a
   request with `Get` and no media type); both read the request back from `Requests`, which
-  stores no body. Every `Navigate` step of the other files names `method: Get`.
+  stores no body. Every `Navigate` step of the other files names `method: Get`. Since
+  `story:security-review-fixes`, `page-load-fails-at-a-forbidden-destination.yaml` sends
+  `FailRequest` with `ForbiddenDestination` and reads the failed request and navigation back:
+  synthesis sends only the first variant of a reason.
 - `spec/ess-inputs.yaml`: the list of every file above, and the pin `requires: ess 0.96.0`. A new
   file under `spec/` is not read until it is listed there.
 - `generated/rust/`: the workspace `ess generate synthesize` writes, its own `Cargo.toml`
@@ -192,7 +207,8 @@ above, and the list of standards itself was written from memory.
     web-platform-tests URL data vendored under `tests/data/`; no IDNA. No dependency.
   - `crates/fetch` (`surf-fetch`): fetches an `http:` address with the standard library only and
     returns status, media type and body, or `Unreachable`, `UnsupportedScheme`,
-    `MalformedResponse` or `TooManyRedirects`. Its documentation lists what it does not do.
+    `MalformedResponse`, `TooManyRedirects` or `ForbiddenDestination`. Its documentation lists what
+    it does not do.
     Since wave 7 it follows up to 20 redirects (301, 302, 303, 307, 308 with a `Location`, for
     `GET`) inside one fetch, returns the address it ended at (`Response.url`, at most 64 KiB) and
     `TooManyRedirects` for a redirect after the twentieth; a redirect to an address that is not
@@ -210,8 +226,17 @@ above, and the list of standards itself was written from memory.
     borrowed, not copied, and while it is written the fetch holds at most the header limit and
     one read buffer (73,728 bytes at the defaults for the whole fetch of a 4 MiB body sent twice
     through a 308, with short addresses and a 2-byte response); no bound is stated while a head
-    is read. 109 tests: 13 unit tests, `adversary_redirect_memory` 4, `fetch` 24, `fetch_bounds`
-    7, `post` 16, `redirects` 20, `review1_fetch` 5, `review1_security_fetch` 13 and
+    is read. Since `story:security-review-fixes` it has the destination rule of its section
+    "Destinations": each request of a chain resolves its host once, and those addresses are
+    checked and dialed; after a first request to a public address a redirect to a loopback,
+    private, link-local, unique-local, shared or unspecified address (or an IPv6 address that
+    embeds one: IPv4-mapped, IPv4-compatible, NAT64 `64:ff9b::/96`, 6to4 `2002::/16`)
+    ends `ForbiddenDestination` before any connection. `send_through(&Request, &Limits, &dyn
+    Network)` takes the resolver and the transport (`Network::resolve`, `Network::connect`);
+    `send` and `fetch` use `OsNetwork`. 117 tests: 14 unit tests, `adversary_redirect_memory` 4,
+    `fetch` 24, `fetch_bounds` 7, `post` 16, `redirects` 27 (cases 21 to 26 and the review's
+    case of other spellings over a `TestNetwork` of the test, no real name resolved), `review1_fetch` 5,
+    `review1_security_fetch` 13 and
     `review2_fetch_limits` 7. `adversary_redirect_memory` holds the only `unsafe` of the
     repository, a counting allocator, test only; no file under a `src/` holds any. Depends on
     `surf-url`.
@@ -259,9 +284,18 @@ above, and the list of standards itself was written from memory.
   - `crates/agent` (`surf-agent`): the agent command line and the binary `surf-agent`. A parser
     held to `cli/surf-agent.yaml` by a test, the token read from `SURF_TOKEN` or from a token file
     the caller owns, and the wire to `surfd` over a Unix socket in `$XDG_RUNTIME_DIR/surf`.
-    `wire::caller_uid()` is the one definition of the caller's user id (Linux only). Since wave
+    `wire::caller_uid()` is the one definition of the caller's user id (Linux only). Since
+    `story:security-review-fixes` every command checks, before it connects and again after it
+    started `surfd` (`wire::check_socket_path`), that the runtime directory and `surf/` are
+    directories of the caller, not symbolic links, with no access for group and others, and
+    that `surfd.sock` is a socket of the caller; a failed check exits 3 naming the path, with
+    nothing connected or written. It checks no peer: `UnixStream::peer_cred` is unstable in
+    rustc 1.99.1. The runtime directory is checked in one plain spelling (no trailing `/`,
+    doubled `/` or `.` component), so a symbolic link is refused however it is written; a `..`
+    component and a relative path are refused. `tests/start.rs` has the six tests of the checks,
+    each against a listener of the test. Since wave
     4 `surf-agent open`, `go`, `look` and `close` run against a real `surfd` and a real session
-    process; the package carries the release version, `0.2.0`, as do `surf-cli`, `surfd` and
+    process; the package carries the release version, `0.3.0`, as do `surf-cli`, `surfd` and
     `surf-session`. `open` starts `surfd` from the directory of its own executable. Depends on
     `surf-answer` and `surf-secret`.
   - `crates/surfd` (`surfd`): a library and the binary `surfd`, the daemon the agent command line
@@ -274,8 +308,12 @@ above, and the list of standards itself was written from memory.
     address and token in `$XDG_RUNTIME_DIR/surf/view-url` (mode 0600, removed at exit); it reads
     a session's text only through `surf_answer::parse` and `surf_answer::unquote`. The server
     starts in `Daemon`'s `begin` with a view token drawn by `surf-secret`; the token is in that
-    file and in the line the binary writes to standard error (`Config::view_line`), in no
-    answer, refusal, entry or log line. A reader of the view is not activity for the idle exit,
+    file and, only with `surfd --print-view-url`, in the line the binary writes to standard
+    error (`Config::view_line`), in no answer, refusal, entry or log line. Without the option the
+    binary writes `surfd: the live view's address is in <path of view-url>` there
+    (`story:security-review-fixes`). A link answer whose record state is `unknown`
+    (`link::SessionState::Unknown`, a refusal the session did not act on) changes nothing on the
+    list. A reader of the view is not activity for the idle exit,
     and a replay of more than 256 numbers is answered with `reset`. It makes no peer check
     (`UnixStream::peer_cred` is unstable in rustc 1.99.1): the directory's mode and owner and
     the token carry it. A symbolic link under its directory makes it refuse to start. Bounds:
@@ -284,8 +322,8 @@ above, and the list of standards itself was written from memory.
     (`LATE_ANSWER_TIMEOUT`) while the session's turn stays taken, a log of at most 10,000
     entries and 16 MiB per session and 64 MiB over all sessions, a reader queue of 1,024
     entries, 256 ended sessions listed; open sessions are not bounded. It starts `surf-session`
-    from the directory of its own executable. Its 46 tests (3 unit tests of `src/view.rs`,
-    `adversary_link` 2, `built` 12, `in_process` 14, `log` 6, `view` 9) run a stand-in session
+    from the directory of its own executable. Its 48 tests (3 unit tests of `src/view.rs`,
+    `adversary_link` 2, `built` 14, `in_process` 14, `log` 6, `view` 9) run a stand-in session
     or none; the real one is run by the `e2e`, `events`, `view`, `adversary_events` and
     `adversary_view` tests of `surf-session`. Depends on `surf-agent` (for `wire`),
     `surf-answer`, `surf-secret` and `surf-view`.
@@ -296,7 +334,9 @@ above, and the list of standards itself was written from memory.
     `CloseSession`, `RecordAction`) and loads pages through the `surf` library with
     `surf-fetch`: `http:` only. The token is compared in constant time and is in no command
     line, environment or file; a request with a wrong token or for another identity gets the
-    head line and the refusal only. A request is at most 64 KiB and must arrive within 10 s;
+    head line and the refusal only, and since `story:security-review-fixes` that head line says
+    `unknown` and the status record holds the state `unknown` with no address and no title, for
+    an unreadable request too. A request is at most 64 KiB and must arrive within 10 s;
     one connection is served at a time. After each answer the session calls
     `Browser::forget_delivered` and holds no response body. Since wave 5 each answer to `surfd`
     carries the entries of its request: each action, the events the system published for it,
@@ -309,8 +349,8 @@ above, and the list of standards itself was written from memory.
     most four times its length plus two bytes. Since wave 8 the entries of
     `NavigationStarted` and `RequestStarted` carry `method`, `body` as `<n> bytes` and
     `body_type`, an absent one as the field with no value; its transport is `surf::fetch_http`,
-    which since wave 9 sends a `Post` (no command of the session sends one yet). 46 tests:
-    `adversary_events` 1, `adversary_view` 1, `built` 9, `core` 10, `e2e` 1 (runs the three
+    which since wave 9 sends a `Post` (no command of the session sends one yet). 48 tests:
+    `adversary_events` 1, `adversary_view` 1, `built` 11, `core` 10, `e2e` 1 (runs the three
     built binaries, or those in `SURF_BIN_DIR`), `events` 16, `memory` 1, `redirect` 2 and
     `view` 5 (the live view of `surfd` over the real session).
     `cargo clippy -p surf-session` needs `--no-deps`: the generated `surf-types` fails clippy.
@@ -358,15 +398,23 @@ above, and the list of standards itself was written from memory.
     directory of its own in `$XDG_RUNTIME_DIR`, driven by tab-separated commands on its
     standard input (`open`, `agent`, `kill`, `stop-surfd`, `cut`, `mend`). `kill` acts only
     for a session the fixture opened and only on a `surf-session` whose environment holds the
-    fixture's own `XDG_RUNTIME_DIR`. `alive` (in the binary and in `tests/fixture.rs`) counts
-    the `/proc/<pid>/stat` states `Z`, `X` and `x` as ended: a killed session reads `X` while
-    `surfd` reaps it, before it leaves `/proc`; the same holds for `alive` in
-    `tests/common/mod.rs` of `surf-agent`, `surfd` and `surf-session`. A second binary,
+    fixture's own `XDG_RUNTIME_DIR`. Whether a process has ended is decided by `surf-test-process`
+    (`alive`, in the binary and in `tests/fixture.rs`, as in the tests of `surf-agent`, `surfd`
+    and `surf-session`): it counts the `/proc/<pid>/stat` states `Z`, `X` and `x` as ended: a
+    killed session reads `X` while `surfd` reaps it, before it leaves `/proc`. A second binary,
     `surf-view-foreign`, waits until it is killed: `tests/fixture.rs` starts it under the name
     `surf-session` as a process that is not the fixture's and that `kill` must leave alive. A
     test starts no program of the system under another name: on the forge's runner `tail`
-    started as `surf-session` exited at once. 4 tests (`fixture` 2, `adversary_commands` 1,
-    the binary's own 1). Depends on `surfd` and `surf-view`.
+    started as `surf-session` exited at once. 2 tests (`fixture` 1, `adversary_commands` 1).
+    Depends on `surfd`, `surf-view` and `surf-test-process`.
+  - `crates/test-process` (`surf-test-process`): test tooling, not shipped and not published: no
+    binary that ships depends on it. Whether another process has ended, decided once from
+    `/proc/<pid>/stat`: `runs(stat)` for the text of a stat file, `alive(pid)` from one read of
+    it, and `ended_within(pid, bound)`, which waits at most `bound` and returns the time it
+    took, or an error that holds the last stat text read. `alive` and `runs` are no longer
+    copied into the test helpers. The example `sleeper` is the child its tests start. Standard
+    library only. 8 tests in one binary (`tests/main.rs`). A development dependency of
+    `surf-agent`, `surfd` and `surf-session`; a dependency of `surf-view-fixture`.
   - `crates/html` (`surf-html`): the HTML parser. Since wave 5 it decides a document's encoding
     by the sniffing algorithm and decodes UTF-8, UTF-16LE, UTF-16BE, windows-1252 and
     replacement (`src/encoding.rs`; the other 35 encodings of the label table are decoded as
@@ -489,7 +537,9 @@ A response names the address it came from, after the last redirect (`DeliverResp
 `ResponseReceived.url`): the navigation commits there, the document is parsed at it, and the
 session shows it. The request keeps the address asked for. `surf.net.FailureReason` has the
 variant `TooManyRedirects`: a redirect that arrives after 20 followed ones, the wording of the
-Fetch Standard. Since wave 7 the transport (`crates/fetch`) follows redirects inside one
+Fetch Standard; and `ForbiddenDestination`: a redirect from a public address to a local one
+(the comment above `entities` in `spec/domains/net.yaml`, surf's own rule). Since wave 7 the
+transport (`crates/fetch`) follows redirects inside one
 fetch and returns the address it ended at; a redirect adds no event.
 
 A request has a method (wave 8). `Navigate` and `Fetch` carry a method (`surf.net.Method`:
@@ -625,7 +675,10 @@ is on that old history too, and stays local.
       b10x-gates ... publish --receipt <receipt.json> --remote-ref refs/heads/main
 
   The receipt file lives in the session's scratch directory. `main` is published after
-  `task check` is green on it, never before.
+  `task check-runner` is green on it, never before. After the push, `task forge-watch
+  COMMIT=<commit>` (with `GATES_POLICY` naming the policy file when `../gates-policy/` is not
+  beside the checkout) waits for the forge's runs of that commit and exits non-zero when one
+  did not pass.
 - `crates/url/tests/data/urltestdata.json` is vendored test data whose inputs hold
   a `file:` address with a home directory path; the policy carries six exceptions for it. Replacing the file with a
   newer copy needs the exceptions made again (`b10x-gates ... policy except`).
@@ -758,7 +811,45 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `view-stream-check`), and last holds the HTML conformance counts (`html-conformance`). Each
   step's failure fails it. Because of `view-test`, `task check` needs Node and Chromium's
   headless shell on the machine (below); the forge's workflow installs Node 22 and the shell
-  before it.
+  before it. Since `story:local-gate-equals-forge` it ends with `forge-watch-test` and
+  `planning-only-test`.
+- `task check-runner`: the gate to run before a merge, `task check` as the forge's runner runs
+  it (`taskfiles/check-runner.sh`; `slot task check-runner`). What it does differently from
+  `task check`: it runs in `.out/runner/tree`, a clean export of `HEAD` (a clone sharing this
+  repository's objects, brought to `HEAD` by `git checkout --force` and `git clean -ffdx -e
+  target/`, so an unchanged file keeps its time and the export's own `target/` is reused), so
+  that a file that exists only in the working tree, changed, untracked or ignored, cannot make
+  it pass; it refuses, naming the files, when the working tree has uncommitted changes, unless
+  `ALLOW_DIRTY=1` is given, which it prints; and it sets the runner's environment: `CI=true`,
+  `GITHUB_ACTIONS=true`, `CARGO_TERM_COLOR=always`, `CARGO_INCREMENTAL=0`, `ESS_TOOLCHAIN`
+  read from `requires:` of `spec/ess-inputs.yaml` (no need to set it by hand),
+  `HTML_BASE=origin/main` (the export's `origin` is this repository, so that is the local
+  `main`), and it unsets `RUSTUP_TOOLCHAIN`, `CARGO_TARGET_DIR`, `CARGO_BUILD_TARGET_DIR`,
+  `RUSTFLAGS`, `CARGO_ENCODED_RUSTFLAGS` and `RUSTDOCFLAGS`. `view-tests/node_modules` is not
+  committed: `task view-test` installs it in the export with `npm ci`, as on the forge. What
+  stays the machine's: the cargo caches of the user, the Playwright browser cache, the cargo
+  configuration in the user's home, a compiler cache it names (`rustc-wrapper`) included, and
+  the operating system. cargo also reads the working tree's `.cargo/config.toml`, a parent
+  directory of the export: a change to it is uncommitted, so only `ALLOW_DIRTY=1` lets it
+  through.
+- `task forge-watch COMMIT=<commit>`: `taskfiles/forge-watch.sh <commit>` waits until every
+  workflow run of the commit is completed, reading through `b10x-gates ... api --method GET`
+  with the policy file from `GATES_POLICY` (default `../gates-policy/policy.json`) and `jq`,
+  prints one line per run (`<name>: <status> <conclusion> <id>`) and exits non-zero when a run
+  did not conclude `success`, `skipped` or `neutral`, when no run of the workflow `check` was
+  listed within 180 s, or when a run was not completed within an hour. The script's head names
+  the variables that change those bounds. It reaches the forge; no step of `check` runs it.
+- `task forge-watch-test`: the decision of that script on the recorded files under
+  `taskfiles/forge-watch-test/`, without the network (`sh taskfiles/forge-watch.sh --runs
+  <file>`: 0 passed, 1 red, 3 not completed, 4 no run of `check`). `61fb7a9`, whose `check`
+  concluded `failure`, exits 1; `e47b1d1` exits 0.
+- `task planning-only-test`: both sides of `taskfiles/planning-only.sh`, which reads changed
+  paths on standard input and exits 0 when all are planning or prose files: `.engineering/`,
+  `docs/plan/`, and `*.md` outside `website/`, the code directories (`crates/`,
+  `conformance/`, `generated/`, `spec/`, `cli/`, `view-tests/`) and the two documents the gate
+  reads (`docs/design/html-parser.md`, `docs/view-stream.md`). An empty list is not planning
+  only. On a pull request whose files are all such, the workflow `check` skips every step after
+  the listing and ends green; a push to `main` always runs the whole gate.
 - `task view-test`: the page tests in a browser (`taskfiles/view-test.yml`). It builds
   `surf-agent`, `surf-session` and `surf-view-fixture`, installs `view-tests/` from its
   `package-lock.json` with `npm ci`, and runs `npx playwright test --workers=2` in
@@ -866,17 +957,24 @@ coverage inventory (`coverage.knowledge: unknown`), and ess 0.96.0 never qualifi
 unknown coverage. The gate reads the counts. The planted defect, a `Navigation` storage that
 drops every `put`, fails 33 of the 95. The crate's tests: `6 test suites: 28 passed`.
 `generated-check`: `generated/rust matches spec/ (30 artifact(s) and .ess-output)`. `cli`:
-`cli/surf-agent.yaml — valid CLI presentation binding`. `lock-check`: `Cargo.lock: 23 package(s),
-none from outside this repository`. The root workspace: `126 test suites: 555 passed, 0 failed,
-0 ignored`. At `a9532a1` it was 553; the two tests of `surf-view-fixture` came with the fix
-unit after wave 9. Since the story `gate-test-step-within-budget` `task test` runs cargo-nextest
-and prints `555 tests: 555 passed, 0 failed, 0 ignored (cargo-nextest 553, doc tests 2)`, the
-same 555, and `Summary [ … ] 553 tests run: 553 passed, 0 skipped`. Its budget: no test over
-60 s, the step within 120 s. Measured on 2026-11-22 on the shared, loaded machine, after
-`task build`: `test step: 28.8 s`, `25.9 s` and `28.7 s` of its budget in three runs (33 to 36
-s for the whole task with `cli` and `generated-fresh`); before, `cargo test --workspace` ran 177
-s, with `review1_one_changed_byte_in_any_generated_file_fails_naming_it` over 60 s. The ten
-slowest tests of the last run: `review1_one_changed_byte_in_any_generated_file_fails_naming_it`
+`cli/surf-agent.yaml — valid CLI presentation binding`. `lock-check`: `Cargo.lock: 24 package(s),
+none from outside this repository`. The root workspace, with `cargo test`: `126 test suites: 555
+passed, 0 failed, 0 ignored`. At `a9532a1` it was 553; the two tests of `surf-view-fixture` came
+with the fix unit after wave 9. Since the story `gate-test-step-within-budget` `task test` runs
+cargo-nextest. Since the story `local-gate-equals-forge` (run of `task check-runner` at
+`de08b24`, 2026-11-22) it prints
+`561 tests: 561 passed, 0 failed, 0 ignored (cargo-nextest 559, doc tests 2)`, the same 561, and
+`Summary [ … ] 559 tests run: 559 passed, 0 skipped`, and
+`test step: 22.2 s of its budget of 120 s`. The 561 are the 555 of before plus the 8 tests of
+`surf-test-process`, minus the 2 tests of `surf-view-fixture` whose subject moved there, and the
+package count rose from 23 to 24 with that crate. Before that story it printed `555 tests: 555
+passed, 0 failed, 0 ignored (cargo-nextest 553, doc tests 2)` and `Summary [ … ] 553 tests run:
+553 passed, 0 skipped`. Its budget: no test over 60 s, the step within 120 s. Measured on
+2026-11-22 on the shared, loaded machine, after `task build`, before that story:
+`test step: 28.8 s`, `25.9 s` and `28.7 s` of its budget in three runs (33 to 36 s for the whole
+task with `cli` and `generated-fresh`); before, `cargo test --workspace` ran 177 s, with
+`review1_one_changed_byte_in_any_generated_file_fails_naming_it` over 60 s. The ten slowest tests
+of the last of those runs: `review1_one_changed_byte_in_any_generated_file_fails_naming_it`
 16.4 s (31 comparisons against one generation), `request_slower_than_its_deadline_is_closed`
 (`surf-session` `built`) 10.2 s, `adversary_an_action_recorded_after_a_session_timeout_has_its_entries_kept`
 (`surf-session` `adversary_events`) 7.2 s, `surfd_that_writes_nothing_exits_3_within_6_seconds`
@@ -919,6 +1017,21 @@ were 97 suites, 363 passed, and 5 passed cases. Before
 wave 4 they were 7 authored scenarios, 81 scenarios, 31 failed by the planted defect, 20
 packages, 88 suites and 324 passed; the refusals (27, the same lines) and the 30 artifacts did
 not change, and the HTML conformance gate was not part of `check`.
+
+With `story:security-review-fixes` (2026-11-22, the authored scenario
+`page-load-fails-at-a-forbidden-destination.yaml` and the reason `ForbiddenDestination`):
+`surf v1 — 9 file(s), 15 scenario(s), valid`, `96 scenario(s) (15 authored), 28 refusal(s)`,
+`96 scenarios: 96 passed, 0 failed, 0 error, 0 unsupported` against the interpreter and against
+the Rust system, and `conform-totals` of suite
+`sha256:579a46b3389c56bb67b8fc3174268f525b8568ee47446e67d2a1cca936660ba8`; the refusals are the
+same 28 and `generated-check` still names 30 artifacts. Read again on the release branch of
+`0.3.0` with this story merged (`slot task validate`, `conform`, `conform-rust`,
+`conform-totals`, `generated-check`, 2026-11-22): the same lines, and the planted defect
+`planted defect: 96 scenarios: 62 passed, 34 failed, 0 error, 0 unsupported`, so 34 of the 96;
+the conformance crate's tests are still `6 test suites: 28 passed`. The story adds 18 tests to
+the root workspace (14 in its first commit, 4 in the review fix), so `task test` is to print
+`579 tests: 579 passed, 0 failed, 0 ignored (cargo-nextest 577, doc tests 2)`, counted from the
+`#[test]` lines of the diff, not yet from a run of the gate.
 
 `REFUSALS_MAX` in `Taskfile.yml` is 28. `task suite` fails above it. Lower it when a refusal goes
 away; raise it only with the new refusal listed here. The list is `grep '^refused:'

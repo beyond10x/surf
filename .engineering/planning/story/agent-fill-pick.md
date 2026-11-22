@@ -11,7 +11,8 @@ relations:
 - depends_on: story:agent-form-port
 - depends_on: story:html-document-port
 - depends_on: story:agent-session-events
-revision: 7
+- depends_on: story:page-text-outline
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 6}
@@ -38,8 +39,9 @@ argument word", and `README.md` says to use `fill <handle> -` for one.
 
 ## Change
 
-- `crates/session`: control lines in `now`: handle `f<n>` for a control, `b<n>` for a button, by the
-  rules links follow; kind; visibility as for links; label; state: the value quoted, `(set)` or
+- `crates/session`: control lines in `now`: handle `f<n>` for a control, `b<n>` for a button, as
+  `surf_page::handles` (`crates/page`, added by `story:page-text-outline`) gives them, by the rules links follow;
+  kind; visibility as for links; label; state: the value quoted, `(set)` or
   `(empty)` for a password and never its value; `disabled`, `checked`, `required`; for a select the
   label of its selected option, quoted. `fill <handle> <text>` and `fill <handle> -`;
   `pick <handle> <option>` for a select (by option label, then value), `pick <handle> on|off` for a

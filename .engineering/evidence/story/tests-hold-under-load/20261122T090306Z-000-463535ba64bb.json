@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T09:03:06Z",
+  "actor": "human:operator",
+  "artifact": "story:tests-hold-under-load",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "cargo nextest run of both files after the last edit, ESS_TOOLCHAIN=0.96.0, load average 105 to 113",
+    "reference": "review1_generated_check 4 of 4 passed (11.2 s); stream_bounds 6 of 6 passed (10.9 s)"
+  }
+}

@@ -112,7 +112,22 @@ fn case_11_the_bound_over_all_sessions_drops_an_ended_log_whole() {
         list.get(&a.id)
             .is_some_and(|session| session.state == State::Closed)
     }));
-    assert!(!daemon.sessions().get(&a.id).unwrap().log_dropped);
+    // The stand-in exits as soon as it has written the answer to `close`, so `surfd` lists A
+    // ended either before or after it keeps the entries of that answer; the log expects both
+    // (`surfd::log`: an entry kept for a session whose log was dropped whole, "a `close` kept
+    // after the session ended"). Kept before, they drop A's oldest entries and A ends within
+    // the bound, and B's entries drop its log. Kept after, A has ended and they put the log
+    // above the bound themselves, so A's log is dropped whole already. Either way the list
+    // entry and the log say the same.
+    let kept = daemon.session_entries(&a.id).unwrap();
+    assert_eq!(
+        daemon.sessions().get(&a.id).unwrap().log_dropped,
+        kept.log_dropped,
+        "{kept:?}"
+    );
+    if kept.log_dropped {
+        assert!(kept.entries.is_empty(), "{kept:?}");
+    }
     let b = open(&dir);
     let listed = daemon.sessions();
     assert!(

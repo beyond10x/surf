@@ -1,0 +1,25 @@
+version: '3'
+
+set: [pipefail]
+
+tasks:
+  check-runner:
+    desc: Run task check as the forge's runner does, in a clean export of HEAD under .out/runner/.
+    summary: |
+      Run task check as the forge's runner does, in a clean export of HEAD under .out/runner/.
+
+      The gate to run before a merge. It runs taskfiles/check-runner.sh, which refuses, naming
+      the files, when the working tree has uncommitted changes (ALLOW_DIRTY=1 runs HEAD all the
+      same and prints them), brings .out/runner/tree to HEAD by content (a clone that shares
+      this repository's objects, kept between runs with its own target/; every file HEAD does
+      not hold is removed), and runs task check there with the runner's environment: CI=true,
+      GITHUB_ACTIONS=true, CARGO_TERM_COLOR=always, CARGO_INCREMENTAL=0, ESS_TOOLCHAIN read
+      from requires: of spec/ess-inputs.yaml, HTML_BASE=origin/main, and the rustc of
+      rust-toolchain.toml. A file that exists only in the working tree, changed,
+      untracked or ignored, cannot make it pass. Run it alone through the pool: slot task
+      check-runner.
+    dir: '{{.TASKFILE_DIR}}/..'
+    env:
+      ALLOW_DIRTY: '{{.ALLOW_DIRTY}}'
+    cmds:
+      - sh taskfiles/check-runner.sh

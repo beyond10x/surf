@@ -1,6 +1,6 @@
 <!--
   generated from surf v1
-  contract digest a04361f387b990efa6d72ce0d03efd246b075d09426d6d76adc1571cfa05800d
+  contract digest 9cf563aeb85e0ebaf274c9cab36fdfa5c94c5872239a1808e0be06ff915e5e98
   do not edit: regenerate with `ess synthesize`
 -->
 # Synthesis plan — surf v1

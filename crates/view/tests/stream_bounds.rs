@@ -412,17 +412,19 @@ fn f2_a_large_frame_behind_a_full_queue_waits_and_comes_in_order() {
 }
 
 /// The pump waiting with a large frame ends when the stream closes: the client goes away while
-/// entries 3 and 4 are queued, and the stream's threads end within 5 s, long before the write
-/// limit of 120 s.
+/// entries 3 and 4 are queued, and the stream's threads end long before the write limit of
+/// 120 s. The test waits until the stream's slot is free, which happens once the writer, the
+/// pump and the watcher have ended. Its bound is [`WAIT`]: below the write limit, so a stream
+/// that only the write limit ends fails it, and below the runner's 60 s, so the failure says
+/// what was awaited. Ending takes well under a second: the pump finishes the frame of entry 5,
+/// up to 110 MiB, and sees the close within one wait of 100 ms.
 #[test]
 fn f2_the_wait_for_an_empty_queue_ends_when_the_stream_closes() {
     let (server, client, _source, _, _) = blocked_then_large();
     assert_eq!(server.open_streams(), 1);
     drop(client);
-    wait_for(
-        "the stream ends after its client went away",
-        Duration::from_secs(5),
-        || server.open_streams() == 0,
-    );
+    wait_for("the stream ends after its client went away", WAIT, || {
+        server.open_streams() == 0
+    });
     server.stop();
 }
