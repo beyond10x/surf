@@ -24,7 +24,7 @@ scope:
   path: crates/tls/tests/tls/rfc8446-record-musts.txt
 - confidence: cited
   path: crates/tls/tests/tls/rfc8448.rs
-revision: 10
+revision: 11
 ---
 ## Context
 
@@ -156,11 +156,11 @@ sections 3, 5 and 7 reproduced byte for byte, and each hostile record below refu
    is ignored), while every record we write carries 0x0303.
 8. `record::musts_rows_name_tests`: every line of `rfc8446-record-musts.txt` has four columns,
    and every entry of its last column is `tests/tls/<file>.rs::<function>` (the table above
-   abbreviates `tests/tls/record.rs::` as `record::`), accepted only when `crates/tls/<file
-   path>` holds `fn <function>(` with `#[test]` among the attribute lines right above it, or
-   `not reachable: <why>` with a reason; no entry holds a wildcard. A copy with one function
-   name changed and one with its `#[test]` removed each fail naming the line. The file has the
-   16 rows of the table.
+   abbreviates `tests/tls/record.rs::` as `record::` and `tests/tls/rfc8448.rs::` as
+   `rfc8448::`), accepted only when `crates/tls/<file path>` holds `fn <function>(` with
+   `#[test]` among the attribute lines right above it, or `not reachable: <why>` with a reason;
+   no entry holds a wildcard. A copy with one function name changed and one with its `#[test]`
+   removed each fail naming the line. The file has the 16 rows of the table.
 
 Budget: each test under 1 s; no test over 60 s, the test step within 120 s, no network, no model
 call.

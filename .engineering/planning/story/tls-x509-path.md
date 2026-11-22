@@ -23,7 +23,7 @@ scope:
   path: crates/tls/tests/tls/path.rs
 - confidence: cited
   path: taskfiles/tls-x509-conformance.yml
-revision: 8
+revision: 9
 ---
 ## Context
 
@@ -110,7 +110,9 @@ tls-x509-conformance` prints the `x509-limbo:` line and exits 0 against
    `NotTrusted(PathTooLong)` (a pathLenConstraint of 0 broken, within the intermediates item 9
    allows), and `leaf-no-digital-signature` and `issuer-no-key-cert-sign` give
    `NotTrusted(KeyUsage)`; `leaf-v1` gives `NotTrusted(Unreadable)` with the reader error
-   `UnsupportedVersion`; `ok-rsa-pss` returns the leaf key (RFC 8446 section 9.1).
+   `UnsupportedVersion`; `ok-rsa-pss`, `ok-rsa-pss-sha384`, `ok-rsa-pss-sha512`,
+   `ok-rsa-pkcs1-sha384` and `ok-rsa-pkcs1-sha512` each return the leaf key (RFC 8446 section
+   9.1, and every scheme of `signature_algorithms_cert`, `docs/design/tls.md` item 14).
 2. Weak algorithms by policy: `sha1` and `md5` give `NotTrusted(WeakAlgorithm)` and `rsa-1024`
    `NotTrusted(WeakKey)`, each different from the `NotTrusted(BadSignature)` of
    `bad-signature`; a copy of the `sha1` leaf with one signature byte flipped still gives

@@ -10,7 +10,7 @@ relations:
 scope:
 - confidence: cited
   path: docs/design/tls.md
-revision: 8
+revision: 9
 ---
 ## Context
 
@@ -262,9 +262,18 @@ and `story:tls-lock-allow` waits for nothing but this story.
          allows no IP literal there). No `pre_shared_key` or `psk_key_exchange_modes`, as no PSK
          is offered. The ClientHello holds both `signature_algorithms` and `supported_groups`,
          and `key_share` with `supported_groups`. Met.
-       - 9.3 a client supports every parameter it advertises: every suite, group, scheme,
-         extension and ALPN value of the ClientHello is one surf completes a handshake with.
-         Met since the six TLS 1.2 suites were taken out (item 12).
+       - 9.3 a client supports every parameter it advertises. Shown for each: the three suites
+         and both groups complete a handshake with the test server, x25519 directly and
+         secp256r1 after a HelloRetryRequest, with `server_name` and ALPN `http/1.1`
+         (`story:tls-test-server` acceptance 1); each of the six schemes of
+         `signature_algorithms` completes a handshake with the server signing its
+         CertificateVerify with it (acceptance 2 there); each of the nine schemes of
+         `signature_algorithms_cert` signs the leaf of a case that path validation accepts
+         (`ok-rsa2048`, `ok-rsa-pkcs1-sha384`, `ok-rsa-pkcs1-sha512`, `ok-rsa-pss`,
+         `ok-rsa-pss-sha384`, `ok-rsa-pss-sha512`, `ok-ecdsa-p256`, `ok-ecdsa-p384`,
+         `ok-ed25519` of `story:tls-test-certs`, `story:tls-x509-path` acceptance 1); the
+         `cookie` is copied (`story:tls-handshake`). Met since the six TLS 1.2 suites were
+         taken out (item 12).
        - 9.3 a client ignores unknown extensions in a CertificateRequest or NewSessionTicket:
          met (`story:tls-handshake`).
        No requirement of sections 9.1 to 9.3 is deviated from. A deviation found later is a

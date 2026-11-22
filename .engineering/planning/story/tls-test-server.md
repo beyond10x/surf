@@ -14,7 +14,7 @@ relations:
 scope:
 - confidence: cited
   path: crates/tls-test-server
-revision: 6
+revision: 7
 ---
 ## Context
 
@@ -55,7 +55,8 @@ Placement: the last of the nine stories that write only `crates/tls*`; built alo
   6); a need found there is a finding for the coordinator. `TestServer::start(Config)` binds
   127.0.0.1 port 0, serves one HTTP/1.1 response per path from a map (status, fields, body),
   counts the connections it accepts, and on drop stops and joins its thread. `Config`: the
-  certificate case, the suites and groups it accepts, whether it asks for secp256r1 by
+  certificate case, the scheme it signs its CertificateVerify with (one the client offered in
+  `signature_algorithms`), the suites and groups it accepts, whether it asks for secp256r1 by
   HelloRetryRequest, the server name and ALPN it saw (read back by the test), and a mode:
   `Normal` (sends one `NewSessionTicket` after its Finished, as servers commonly do);
   the two kinds of a real server limited to TLS 1.2 of item 7, answering as such a server does:
@@ -80,8 +81,14 @@ the server for each suite and group, and each misbehaving mode ends the client w
 1. For each of the three suites, with x25519 and with a HelloRetryRequest to secp256r1: the
    client completes, sends `GET / HTTP/1.1`, reads the body `ok`; the server counted one
    connection and saw `server_name` `localhost` and ALPN `http/1.1` (six tests).
-2. The certificate cases `ok-rsa2048`, `ok-ecdsa-p256`, `ok-ecdsa-p384`: the handshake
-   completes.
+2. Every scheme of our `signature_algorithms` completes a handshake, the server signing its
+   CertificateVerify with it, one test per scheme, each under 1 s (`docs/design/tls.md` item
+   14, RFC 8446 section 9.3): ecdsa_secp256r1_sha256 (`ok-ecdsa-p256`),
+   ecdsa_secp384r1_sha384 (`ok-ecdsa-p384`), ed25519 (`ok-ed25519`), rsa_pss_rsae_sha256,
+   rsa_pss_rsae_sha384 and rsa_pss_rsae_sha512 (each `ok-rsa2048`): six tests; in each the
+   client reads the body `ok` and the test reads back the scheme the server used. The schemes
+   of `signature_algorithms_cert` are certificate signatures, checked by path validation and
+   not by this verifier double: `story:tls-x509-path` acceptance 1.
 3. Modes, each with a read timeout of 200 ms on the client stream:
    - `Tls12ReadsSupportedVersions` (kind (a)): `AlertReceived { protocol_version,
      before_server_hello: true }`, no ServerHello sent;

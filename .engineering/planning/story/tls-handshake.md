@@ -36,7 +36,7 @@ scope:
   path: crates/tls/tests/tls/rfc8446-client-musts.txt
 - confidence: cited
   path: taskfiles/tls-flights.yml
-revision: 11
+revision: 12
 ---
 ## Context
 
@@ -224,10 +224,12 @@ sent, and the table of which extension may appear in which message), 4.3.1, 4.3.
 as they bind a client (what surf offers against each: `docs/design/tls.md` item 14, no
 deviation). Rows marked "new" were added in round 4 of the critics, rows marked "round 5" in
 round 5. `hh` is `handshake_hostile.rs`, `hs` `handshake.rs` (the committed file writes
-`tests/tls/handshake_hostile.rs::` and `tests/tls/handshake.rs::`); `INDEX:<case>` is a case of
-`crates/tls-test-certs/certs/INDEX` (the test of `story:tls-x509-path` for it),
-`wycheproof:<file>` a file of `crates/tls/tests/data/wycheproof/` (the test of
-`story:tls-lock-allow` for it); both exist before this story starts.
+`tests/tls/handshake_hostile.rs::` and `tests/tls/handshake.rs::`). `INDEX:<case>` is a case of
+`crates/tls-test-certs/certs/INDEX`, which `story:tls-test-certs` writes before this story
+starts: the checker looks the case up in that file; the test of the case is the one of
+`story:tls-x509-path`, built beside this story and landing in the same group. A
+`wycheproof:<file>` is a file of `crates/tls/tests/data/wycheproof/`, which
+`story:tls-lock-allow` writes with its test before this story starts.
 
 | Section | Obligation | Rule | Test |
 |---|---|---|---|
@@ -237,7 +239,7 @@ round 5. `hh` is `handshake_hostile.rs`, `hs` `handshake.rs` (the committed file
 | 4.1.3 | the random is read for the HelloRetryRequest value first | the retry branch | `hs::rfc8448_section_5` |
 | 4.1.3 | neither downgrade value below TLS 1.3 | `illegal_parameter`, `Downgrade` | `hh::downgrade_tls12`, `hh::downgrade_tls11` |
 | 4.1.3 | no `supported_versions`: TLS 1.2 or below | `protocol_version`, `VersionUnsupported` | `hh::tls12_server_hello` |
-| 4.1.3 | renegotiation answered `protocol_version` | not reachable: surf never runs TLS 1.2 nor renegotiates | not reachable |
+| 4.1.3 | renegotiation answered `protocol_version` | none | not reachable: surf never runs TLS 1.2 nor renegotiates |
 | 4.1.4 | the HelloRetryRequest checked as a ServerHello (version, session id, suite, compression) | the names of 4.1.3 (new for the session id) | `hh::retry_session_id_not_echoed`, `hh::tls12_suite_selected` |
 | 4.1.4 | the HelloRetryRequest changes the hello | `illegal_parameter`, `HelloRetryRequestNoChange` | `hh::retry_without_change` |
 | 4.1.4 | a second HelloRetryRequest | `unexpected_message`, `SecondHelloRetryRequest` | `hh::second_retry` |
@@ -260,17 +262,17 @@ round 5. `hh` is `handshake_hostile.rs`, `hs` `handshake.rs` (the committed file
 | 4.2.8 | the ServerHello share in a group the client shared | `illegal_parameter`, `UnofferedKeyShare` (new) | `hh::key_share_group_not_shared` |
 | 4.2.8 | after a retry, the group the retry selected | `illegal_parameter`, `KeyShareGroupChanged` (new) | `hh::key_share_group_changed_after_retry` |
 | 4.2.8 | a ServerHello carries `key_share` (no PSK offered) | `missing_extension`, `MissingExtension` (new case) | `hh::server_hello_without_key_share` |
-| 4.2.8.1 | FFDHE value range | not reachable: no FFDHE group is offered | not reachable |
+| 4.2.8.1 | FFDHE value range | none | not reachable: no FFDHE group is offered |
 | 4.2.8.2 | the peer point on the curve | `illegal_parameter`, `BadKeyShare` (new) | `hh::key_share_rejected` |
-| 4.2.10 | 0-RTT only with `pre_shared_key` and `early_data`; not in a second hello; no resend | not reachable: surf sends neither extension (golden file) | not reachable |
+| 4.2.10 | 0-RTT only with `pre_shared_key` and `early_data`; not in a second hello; no resend | none | not reachable: surf sends neither extension (golden file) |
 | 4.3.1 | EncryptedExtensions right after the ServerHello | `unexpected_message`, `UnexpectedMessage` (new case) | `hh::certificate_before_encrypted_extensions` |
 | 4.3.1 | no forbidden extension in EncryptedExtensions | `illegal_parameter`, `ExtensionNotAllowedHere` (new) | `hh::extension_not_allowed_here` |
 | 4.3.2 | a CertificateRequest after EncryptedExtensions, `signature_algorithms` in it, unknown extensions ignored | accepted once; `missing_extension`, `MissingExtension` (new) | `hs::certificate_request_answered_empty`, `hh::certificate_request_without_signature_algorithms` |
-| 4.3.2 | no CertificateRequest from a PSK server | not reachable: no PSK is offered | not reachable |
+| 4.3.2 | no CertificateRequest from a PSK server | none | not reachable: no PSK is offered |
 | 4.4.2 | a client Certificate when asked, empty without a certificate, Finished still sent | empty Certificate before Finished (new) | `hs::certificate_request_answered_empty` |
 | 4.4.2 | server CertificateEntry extensions offered in the ClientHello | `unsupported_extension`, `UnofferedExtension` (new case) | `hh::certificate_entry_unoffered_extension` |
 | 4.4.2 | the sender certificate first | entry 0 is the leaf for the verifier (new test) | `hs::leaf_is_first_entry` |
-| 4.4.2 | RawPublicKey and OpenPGP types | not reachable: no certificate type extension is offered | not reachable |
+| 4.4.2 | RawPublicKey and OpenPGP types | none | not reachable: no certificate type extension is offered |
 | 4.4.2.2 | digitalSignature in the leaf keyUsage | `NotTrusted(KeyUsage)` of `story:tls-x509-path` | `INDEX:leaf-no-digital-signature` |
 | 4.4.2.4 | an empty server Certificate | `decode_error`, `EmptyCertificate` | `hh::empty_certificate` |
 | 4.4.2.4 | no acceptable chain: a certificate alert | `unknown_ca`, `certificate_expired`, `bad_certificate` (new) | `hh::certificate_alerts` |
@@ -304,7 +306,7 @@ round 5. `hh` is `handshake_hostile.rs`, `hs` `handshake.rs` (the committed file
 | 9.1 | key exchange with secp256r1 (X25519 SHOULD) | x25519 shared first, secp256r1 after a retry (round 5) | `hs::retry_second_hello`, `hs::rfc8448_section_5` |
 | 9.2 | `supported_versions`, `cookie`, `signature_algorithms`, `signature_algorithms_cert`, `supported_groups`, `key_share`, `server_name` implemented and sent when applicable | the golden file (round 5) | `hs::client_hello_golden` |
 | 9.2 | no `pre_shared_key`: `signature_algorithms` and `supported_groups` sent, `key_share` with `supported_groups` | the golden file (round 5) | `hs::client_hello_golden` |
-| 9.2 | `server_name` used | sent for a host name, never for an IP literal (round 5) | `hs::client_hello_golden` (its host `127.0.0.1` case) |
+| 9.2 | `server_name` used | sent for a host name, never for an IP literal, as the host `127.0.0.1` case of the test shows (round 5) | `hs::client_hello_golden` |
 | 9.3 | a client supports every parameter of its ClientHello | the three TLS 1.3 suites only, the six TLS 1.2 suites taken out (round 5) | `hs::client_hello_golden` |
 | 9.3 | unknown extensions of a CertificateRequest or NewSessionTicket ignored | ignored (round 5) | `hs::certificate_request_answered_empty`, `hh::new_session_ticket_dropped` |
 

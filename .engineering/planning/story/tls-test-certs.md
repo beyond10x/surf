@@ -16,7 +16,7 @@ scope:
   path: taskfiles/tls-certs-check.sh
 - confidence: cited
   path: taskfiles/tls-certs.yml
-revision: 7
+revision: 8
 ---
 ## Context
 
@@ -75,8 +75,15 @@ after `tls-lock-allow`, beside `tls-x509` and `tls-record`, beside the rounds of
     `subjectAltName`, CN `localhost`), `ip-mismatch`, `name-constraints-excluded`,
     `eku-client-only`, `1000-sans` (the match is the last entry), `ok-rsa-pss` (a leaf signed
     rsa_pss_rsae_sha256 by the RSA 2048 intermediate, with the RFC 4055 parameters of SHA-256
-    and a salt of 32 bytes; RFC 8446 section 9.1), `leaf-v1` (a version 1 leaf, which the
-    reader refuses: `NotTrusted(Unreadable)`);
+    and a salt of 32 bytes; RFC 8446 section 9.1), `ok-rsa-pss-sha384` and `ok-rsa-pss-sha512`
+    (the same with SHA-384 and a salt of 48 bytes, SHA-512 and a salt of 64 bytes),
+    `ok-rsa-pkcs1-sha384` and `ok-rsa-pkcs1-sha512` (a leaf signed sha384WithRSAEncryption,
+    sha512WithRSAEncryption by the RSA 2048 intermediate), so that every scheme of
+    `signature_algorithms_cert` (`docs/design/tls.md` item 14) signs the leaf of one case,
+    `leaf-v1` (a version 1 leaf, which the reader refuses: `NotTrusted(Unreadable)`); in
+    `ok-rsa2048`, `ok-ecdsa-p256`, `ok-ecdsa-p384` and `ok-ed25519` the root, the
+    intermediate and the leaf hold keys of one type, so every signature of the chain is of
+    one scheme (rsa_pkcs1_sha256, ecdsa_secp256r1_sha256, ecdsa_secp384r1_sha384, ed25519);
   - the positive cases valid from 2025-01-01 to 2125-01-01, so that both UTCTime and
     GeneralizedTime are written (RFC 5280 section 4.1.2.5);
   - the binary `surf-tls-test-certs --out <dir>` writes per case `<case>/chain.pem` (leaf
@@ -132,9 +139,13 @@ no file that differs.
    (sha1WithRSAEncryption) as its signature algorithm, the leaf of `md5` the OID
    1.2.840.113549.1.1.4 (md5WithRSAEncryption), the leaf of `rsa-1024` a modulus of 128 bytes
    (each found by a byte search in the test, not by the reader under test); the seam names them
-   `WeakAlgorithm`, `WeakAlgorithm` and `WeakKey`. The leaf of `ok-rsa-pss` holds the OID
-   1.2.840.113549.1.1.10 (RSASSA-PSS) and that of `leaf-v1` the version field absent
-   (version 1).
+   `WeakAlgorithm`, `WeakAlgorithm` and `WeakKey`. The leaves of `ok-rsa-pss`,
+   `ok-rsa-pss-sha384` and `ok-rsa-pss-sha512` hold the OID 1.2.840.113549.1.1.10 (RSASSA-PSS)
+   with the hash OID 2.16.840.1.101.3.4.2.1, 2.16.840.1.101.3.4.2.2 and 2.16.840.1.101.3.4.2.3
+   (SHA-256, SHA-384, SHA-512) in its parameters; the leaves of `ok-rsa-pkcs1-sha384` and
+   `ok-rsa-pkcs1-sha512` the OIDs 1.2.840.113549.1.1.12 and 1.2.840.113549.1.1.13, and each of
+   these five verifies through the seam under the intermediate key; the leaf of `leaf-v1` has
+   the version field absent (version 1).
 5. `rsa-1024` holds a 1024-bit key and `1000-sans` 1000 dNSName entries.
 6. Hostile: a test copies the crate under `CARGO_TARGET_TMPDIR`, changes one byte of
    `src/cases.rs` and runs `sh taskfiles/tls-certs-check.sh` on it: exit 1 with the line above;
