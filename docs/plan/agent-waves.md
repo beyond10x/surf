@@ -99,6 +99,28 @@ Rules of a round, beside the rules of a wave:
   recording, made with the binaries of the round's last commit, and with the caption under the
   terminal changed to what an answer then holds.
 
+### TLS beside the rounds
+
+`epic:tls-https` and its thirteen stories are active since 2026-11-22 (four plan critics, seven
+rounds). They are not a round of their own:
+
+- Nine stories write only `crates/tls*`, `taskfiles/tls-*`, the lock check and its test, and
+  `.cargo/config.toml`. They are built beside rounds 1 and 2, in this order: `tls-decisions`
+  alone (a design note and a build probe on the forge); `tls-lock-allow`, after
+  `one-test-binary-per-crate`; then `tls-x509`, `tls-test-certs` and `tls-record` side by side;
+  then `tls-x509-path`, `tls-anchors` and `tls-handshake` side by side; then `tls-test-server`.
+- `tls-spec`, `tls-fetch-https`, `tls-session-anchors` and `tls-release` are one unit, in that
+  order. It starts at the first boundary between two rounds after the nine are merged, and
+  never beside a unit that writes `spec/`, `generated/`, `crates/fetch`, `crates/session`,
+  `crates/agent`, `crates/surfd`, `crates/surf/src/lib.rs`, `conformance/src/target.rs` or
+  `docs/agent-answer.md`.
+- The coordinator writes for the nine what they share: the `mod` lines of `crates/tls/src/lib.rs`
+  and `tests/main.rs`, the root `Taskfile.yml`, `Cargo.lock`, `README.md` and `AGENTS.md`.
+- The ClientHello offers the three TLS 1.3 suites and nothing else (RFC 8446 section 9.3). A
+  server limited to TLS 1.2 fails with `TlsVersionUnsupported` when it reads
+  `supported_versions`, and with `TlsHandshakeFailed` and a detail that says so when it does
+  not. A TLS 1.2 epic follows this one and is not drafted yet.
+
 ## What an agent needs from surf
 
 The operator, 2026-11-22: "I wonder what is needed to actually make [surf] useful for agents,
