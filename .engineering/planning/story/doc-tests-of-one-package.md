@@ -15,7 +15,7 @@ scope:
   path: Taskfile.yml
 - confidence: cited
   path: taskfiles/doc-tests-check.sh
-revision: 2
+revision: 3
 ---
 ## Why
 
@@ -23,10 +23,10 @@ The rule (`AGENTS.md` of the folder, "Tests stay fast"): the test step ends with
 120 s; an expensive step runs once, not per package that has nothing to run.
 
 `task test` runs `cargo test --doc --workspace --locked` after `cargo nextest run` (`Taskfile.yml`
-:270 and following on `main`; the same command on `wave/tls-1`). The workspace has 2 doc tests,
+:324 on `main` at `7d15e06`, which holds the first TLS wave). The workspace has 2 doc tests,
 both in `crates/ports/src/lib.rs` (package `surf-ports`): the block that opens at line 40, and
-the `compile_fail,E0277` block that opens at line 61. The command starts rustdoc for 24 packages
-on `main` and 28 on the wave.
+the `compile_fail,E0277` block that opens at line 61. The workspace has 30 packages (`cargo
+metadata --no-deps`); the command starts rustdoc for each that has a library.
 
 Measured on 2026-11-22: the step time minus nextest's `Summary` time, which is the doc step,
 nextest's start and listing, and the step's own lines.
@@ -36,6 +36,13 @@ nextest's start and listing, and the step's own lines.
 | `main` `0f0c157`, three runs | 118 to 139 | 76.2 s, 77.5 s, 82.2 s | 15.2 s, 14.4 s, 19.2 s |
 | `wave/tls-1` `48f05c2`, three runs | 110 to 153 | 130.1 s, 141.8 s, 147.4 s | 21.2 s, 32.5 s, 25.5 s |
 | `wave/tls-1` `48f05c2`, one run | 148 to 120 | 83.9 s (`Summary` 67.9 s) | 16.0 s |
+| `main` `7d15e06` (tree of `cb22b79`), three runs | 25 to 159 | 95.8 s, 98.1 s, 80.8 s | 32.5 s, 26.5 s, 20.1 s |
+
+The last row is `task test` without the TLS packages, which run in `task test-tls` since
+`story:tls-step-within-budget`: 888 tests, each run green. Two of the three are over the 90 s
+that `story:test-step-holds-with-tls` asks for at such a load, and the time outside nextest is
+the largest single cost left in them (the slowest test took 10.8 s to 11.0 s, and
+`story:session-request-timeout-option` brings it to about 2 s).
 
 `story:test-step-holds-with-tls` measured earlier the same day that `cargo test --doc
 --workspace` alone took 8.2 s and 10.4 s, and `cargo test --doc -p surf-ports` 5.3 s and 13.0 s,
@@ -43,14 +50,14 @@ one run of each at a load of 107 to 119, and left the doc step as it was. D259 d
 doc tests of `surf-ports` only; this story measures the gain.
 
 Doc comments in `crates/` write their code blocks as fenced blocks in `///` or `//!` lines. On
-`main` and on the wave the fences that open a block are: `crates/agent/src/wire.rs`:14 and :44,
+`main` at `7d15e06`, the TLS packages included, the fences that open a block are: `crates/agent/src/wire.rs`:14 and :44,
 `crates/surf/src/lib.rs`:396, `crates/surfd/src/link.rs`:18 and :56,
 `crates/view-fixture/src/main.rs`:12, each marked `text`, which rustdoc does not run; and
 `crates/ports/src/lib.rs`:40 (no mark) and :61 (`compile_fail,E0277`), the two doc tests. No
 source uses `#[doc = …]`.
 
-The tree: this story is built on a branch from `main` and lands on `main`. It is not a
-precondition of the merge of `wave/tls-1`.
+The tree: this story is built on a branch from `main` at `7d15e06` or later and lands on `main`.
+It writes no file under `crates/`, so it runs beside the round 2 units.
 
 ## Change
 
@@ -71,20 +78,25 @@ precondition of the merge of `wave/tls-1`.
    `.out/doc-tests-slow.log` and compares the summed count of its `test result:` lines with 2:
    `doc-tests-slow: 2 doc tests in the workspace, as expected`, or `doc-tests-slow: N doc tests in
    the workspace, expected 2` and exit 1. It is a subtask of the lane `slow`, never a step of
-   `check`. When `Taskfile.yml` of the tree holds a task `slow` (`wave/tls-1` defines it at :376
-   there), this story adds `doc-tests-slow` to it; when none exists (`main`), it creates `slow`
-   with `doc-tests-slow` as its only subtask, and the merge with `wave/tls-1` or with
-   `story:conformance-step-within-budget` keeps one `slow` that calls every subtask.
-4. `AGENTS.md`: the bullet of `task test` (:1113-1128 on `main`) says that the doc step runs
-   `surf-ports` only; a bullet of `task doc-tests-check`; the bullet of `task slow`, created or
-   extended as in statement 3.
+   `check`. `Taskfile.yml` on `main` holds the task `slow` (:440); this story adds
+   `doc-tests-slow` to its list. `story:conformance-step-within-budget` adds `conform-slow` to
+   the same list on `wave/round-2`; the merge keeps both subtasks.
+4. `AGENTS.md`: the bullet of `task test` (:1310 on `main`) says that the doc step runs
+   `surf-ports` only; a bullet of `task doc-tests-check`; the bullet of `task slow` (:1227) names
+   `doc-tests-slow`.
 
 ### Overlap
 
-- `Taskfile.yml`: `story:tls-step-within-budget` changes the nextest command of `test` on the
-  wave; this story the doc command. The merge keeps both.
-- `AGENTS.md`: `story:tls-step-within-budget` changes the bullet of `task test` too; the merge
-  keeps both sides. `story:conformance-step-within-budget` also creates or extends `slow`.
+- `Taskfile.yml`: `story:tls-step-within-budget` is on `main`; this story changes the doc command
+  of `test` and leaves its nextest command and `test-tls` as they are.
+  `story:page-test-step-within-budget` (on `wave/round-2`) makes `test` write
+  `.out/test-step.seconds`, and `story:conformance-step-within-budget` extends `slow`; the merge
+  keeps each side.
+- `AGENTS.md`: the bullets of `task test` and `task slow`; `story:conformance-step-within-budget`
+  changes the bullet of `task slow` too, and `impl/round2-view` the page tests' times after the
+  bullet of `task test`; the merge keeps each side.
+- `story:session-request-timeout-option` changes `crates/session` and one sentence of
+  `AGENTS.md` (the waits of `built`), no line of this story.
 
 ## Acceptance
 
