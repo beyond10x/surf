@@ -300,9 +300,8 @@ impl TreeBuilder {
         }
     }
 
-    /// 13.2.6.4.4 The "in head" insertion mode. The `template` start and end tag rules are
-    /// story `html-tree-template`'s: until then those tokens go to in body's "any other start
-    /// tag" and "any other end tag".
+    /// 13.2.6.4.4 The "in head" insertion mode. The `template` start and end tag rules are in
+    /// the submodule `template`.
     pub(super) fn in_head(&mut self, token: &Token) -> Flow {
         match token {
             Token::Character(c) if is_whitespace(*c) => {
@@ -381,11 +380,11 @@ impl TreeBuilder {
             Token::StartTag {
                 name, attributes, ..
             } if name == "template" => {
-                self.any_other_start_tag(name, attributes);
+                self.template_start_tag(name, attributes);
                 Flow::Done
             }
             Token::EndTag { name } if name == "template" => {
-                self.any_other_end_tag(name);
+                self.template_end_tag();
                 Flow::Done
             }
             t if is_start(t, &["head"]) => Flow::Done,
@@ -577,6 +576,9 @@ impl TreeBuilder {
                 Flow::Done
             }
             Token::EndOfFile => {
+                if !self.template_modes.is_empty() {
+                    return self.in_template(token);
+                }
                 self.stop_parsing();
                 Flow::Done
             }

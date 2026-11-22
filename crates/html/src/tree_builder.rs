@@ -13,14 +13,15 @@
 //! in body in the submodule `formatting` (story `html-tree-formatting`); the table insertion
 //! modes (in table, in table text, in caption, in column group, in table body, in row, in cell)
 //! in the submodule `tables`, and resetting the insertion mode appropriately (story
-//! `html-tree-tables`). The `select` rules are those of in body in the snapshot the design note
-//! names, which has no select insertion modes. The tree construction dispatcher always takes
-//! the rules of the current insertion mode: no element in a foreign namespace is created.
+//! `html-tree-tables`); the `template` rules of in head, the in template mode and the stack of
+//! template insertion modes in the submodule `template` (story `html-tree-template`). The
+//! `select` rules are those of in body in the snapshot the design note names, which has no
+//! select insertion modes. The tree construction dispatcher always takes the rules of the
+//! current insertion mode: no element in a foreign namespace is created.
 //!
-//! Not yet written, each by a later story, and named by [`NOT_YET_PARSED`]: the in template mode
-//! (`html-tree-template`); foreign content and the fragment case (`html-tree-foreign`). Until
-//! then a token whose rule one of them writes is processed by in body's "any other start tag" or
-//! "any other end tag", so that every input ends.
+//! Not yet written, by a later story, and named by [`NOT_YET_PARSED`]: foreign content and the
+//! fragment case (`html-tree-foreign`). Until then a token whose rule it writes is processed by
+//! in body's "any other start tag" or "any other end tag", so that every input ends.
 //!
 //! Parse errors are not collected: neither the tokenizer's nor the tree builder's reach a
 //! caller. Scripts do not run: at a `script` end tag the text mode pops the element and returns
@@ -36,6 +37,7 @@
 mod formatting;
 mod modes;
 mod tables;
+mod template;
 
 use std::cell::Cell;
 use std::collections::HashSet;
@@ -49,9 +51,9 @@ use crate::tokenizer::{self, Token, TokenAttribute, Tokenizer};
 use crate::tree::{Attribute, Categories, Namespace, NodeData, NodeId, Tree};
 
 /// Each part of tree construction that the tree builder does not yet parse as the standard
-/// does, named in `[a-z-]+`: `template`, and foreign content (SVG, MathML and fragments). Each
-/// later tree story removes its entry.
-pub const NOT_YET_PARSED: &[&str] = &["template", "foreign-content"];
+/// does, named in `[a-z-]+`: foreign content (SVG, MathML and fragments). The tree story that
+/// writes it removes its entry.
+pub const NOT_YET_PARSED: &[&str] = &["foreign-content"];
 
 /// The mode of a document (DOM, "mode"), which the initial insertion mode decides from the
 /// DOCTYPE.
@@ -80,6 +82,7 @@ enum Mode {
     InTableBody,
     InRow,
     InCell,
+    InTemplate,
     AfterBody,
     InFrameset,
     AfterFrameset,
@@ -339,7 +342,9 @@ pub(crate) fn parse(
             break;
         };
         builder.dispatch(token);
-        if !builder.stopped && builder.steps.get() > builder.limits.max_steps {
+        // Also the end-of-file token, whose rules scan too (in template pops down to each open
+        // `template`), unless another limit stopped the parse.
+        if builder.tree.stopped_by().is_none() && builder.steps.get() > builder.limits.max_steps {
             builder.stop_at(Limit::Steps);
         }
     }
@@ -393,6 +398,8 @@ struct TreeBuilder {
     /// The fragment parsing algorithm's context element, a node of the arena outside the tree;
     /// `None` for a document.
     context: Option<NodeId>,
+    /// The stack of template insertion modes, the current one last.
+    template_modes: Vec<Mode>,
 }
 
 const HTML_ELEMENT_SPECIAL: &[&str] = &[
@@ -579,6 +586,7 @@ impl TreeBuilder {
             pending_table_text: String::new(),
             pending_table_foster: false,
             context: None,
+            template_modes: Vec::new(),
         }
     }
 
@@ -617,6 +625,7 @@ impl TreeBuilder {
                 Mode::InTableBody => self.in_table_body(&token),
                 Mode::InRow => self.in_row(&token),
                 Mode::InCell => self.in_cell(&token),
+                Mode::InTemplate => self.in_template(&token),
                 Mode::AfterBody => self.after_body(&token),
                 Mode::InFrameset => self.in_frameset(&token),
                 Mode::AfterFrameset => self.after_frameset(&token),
@@ -1044,12 +1053,6 @@ impl TreeBuilder {
             return;
         }
         self.mode = Mode::InBody;
-    }
-
-    /// The current template insertion mode: until the stack of template insertion modes is
-    /// written (story `html-tree-template`), in body.
-    fn current_template_mode(&self) -> Mode {
-        Mode::InBody
     }
 
     /// Whether the parser is parsing template contents: a `template` is on the stack of open
