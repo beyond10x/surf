@@ -73,7 +73,9 @@ fn reported(error: Error) -> Error {
 
 impl<S: Read + Write> Connection<S> {
     /// Runs the handshake for `host` over `stream`, the certificates checked by `verifier` at
-    /// `now`, with the operating system's random source.
+    /// `now`, with the operating system's random source. The host is normalised once
+    /// ([`names::connection_host`]); a host that is neither an IP address nor a DNS name a
+    /// certificate can match ends with [`Error::Host`] before anything is written.
     pub fn new(
         stream: S,
         host: &str,
@@ -94,7 +96,7 @@ impl<S: Read + Write> Connection<S> {
     ) -> Result<Self, Error> {
         #[cfg(feature = "test-tooling")]
         std::hint::black_box(crate::TEST_TOOLING_MARKER);
-        let host = names::normalise(host);
+        let host = names::connection_host(host).map_err(Error::Host)?;
         let settings = Settings {
             host: &host,
             verifier,
@@ -123,8 +125,8 @@ impl<S: Read + Write> Connection<S> {
         }
     }
 
-    /// The host the connection was made for, as normalised once ([`names::normalise`]): the
-    /// name sent in `server_name` and given to the verifier.
+    /// The host the connection was made for, as normalised once ([`names::connection_host`]):
+    /// the name sent in `server_name` and given to the verifier.
     pub fn host(&self) -> &str {
         &self.host
     }

@@ -13,7 +13,7 @@ use surf_tls::crypto::{CryptoError, Random, Scheme, SignatureVerifier, SigningKe
 use surf_tls::der::Time;
 use surf_tls::error::{AlertDescription as A, Error, Violation};
 use surf_tls::key_schedule::CipherSuite;
-use surf_tls::names::{self, Host};
+use surf_tls::names::{self, Host, HostReason};
 use surf_tls::path::PathVerifier;
 use surf_tls::pem;
 use surf_tls::verify::{CertificateRejection, Check, ServerCertVerifier};
@@ -422,6 +422,66 @@ fn a_host_no_certificate_can_match_sends_nothing() {
     assert!(
         written_anyway.is_empty(),
         "a ClientHello was written for hosts no certificate can match: {written_anyway:?}"
+    );
+}
+
+/// A refused host ends with `Error::Host` naming the rule it breaks, nothing written and the
+/// verifier not called; the host in the text is a bounded, escaped excerpt.
+#[test]
+fn a_refused_host_names_its_reason_in_a_bounded_text() {
+    let long_label = format!("{}.test", "a".repeat(64));
+    let long_name = format!("{0}.{0}.{0}.{1}", "a".repeat(63), "a".repeat(62));
+    let huge = format!("\u{1b}[31m{}", "\u{7f}".repeat(100_000));
+    for (host, reason) in [
+        ("", HostReason::Empty),
+        (".", HostReason::Empty),
+        ("local\0host", HostReason::Byte(0)),
+        ("b\u{fc}cher.test", HostReason::Byte(0xc3)),
+        ("a b", HostReason::Byte(b' ')),
+        (long_name.as_str(), HostReason::NameTooLong { bytes: 254 }),
+        (long_label.as_str(), HostReason::LabelTooLong { bytes: 64 }),
+        ("a..test", HostReason::EmptyLabel),
+        (".test", HostReason::EmptyLabel),
+        ("test..", HostReason::EmptyLabel),
+        ("-a.test", HostReason::HyphenAtLabelEdge),
+        ("a-.test", HostReason::HyphenAtLabelEdge),
+        ("0x7f000001", HostReason::NumberLastLabel),
+        ("127.0.0.0x1", HostReason::NumberLastLabel),
+        ("1.2.3.4.5", HostReason::NumberLastLabel),
+        (huge.as_str(), HostReason::NameTooLong { bytes: huge.len() }),
+        ("\u{1b}[31m", HostReason::Byte(0x1b)),
+    ] {
+        let mut pipe = Pipe::default();
+        let verifier = Double::accepting("ok-ecdsa-p256");
+        let error = connect_to(&mut pipe, host, &verifier)
+            .map(|c| {
+                c.into_inner();
+            })
+            .expect_err("a host no certificate can match");
+        let Error::Host(refusal) = &error else {
+            panic!("{}: {error:?}", shown(host));
+        };
+        assert_eq!(refusal.reason, reason, "{}", shown(host));
+        assert!(pipe.output.is_empty(), "{}: nothing written", shown(host));
+        assert!(verifier.hosts.borrow().is_empty(), "{}", shown(host));
+        let text = error.to_string();
+        assert!(text.len() <= 512, "{} bytes: {}", text.len(), shown(&text));
+        assert!(
+            text.bytes().all(|b| (0x20..0x7f).contains(&b)),
+            "printable ASCII only: {}",
+            shown(&text)
+        );
+        if host.len() > 64 {
+            assert!(
+                text.contains(&format!("({} bytes, cut after 64)", host.len())),
+                "{text}"
+            );
+        }
+    }
+    assert_eq!(
+        Error::Host(names::connection_host("a\\b\n").expect_err("refused")).to_string(),
+        "the host \"a\\\\b\\x0a\" matches no certificate: the byte 0x5c is none of the letters, \
+         digits, hyphen and dot of a DNS name"
     );
 }
 

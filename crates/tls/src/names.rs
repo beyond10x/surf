@@ -72,6 +72,94 @@ pub fn normalise(host: &str) -> String {
     host.strip_suffix('.').unwrap_or(host).to_ascii_lowercase()
 }
 
+/// Why a host is no name a certificate can match: the first rule of [`is_dns_name`] it breaks,
+/// checked in this order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HostReason {
+    /// The host is empty (or was one dot).
+    Empty,
+    /// The name holds more than 253 bytes.
+    NameTooLong {
+        /// Its length.
+        bytes: usize,
+    },
+    /// A byte outside the letters, digits, hyphen and dot of the preferred name syntax.
+    Byte(u8),
+    /// A label is empty: a dot at the start, two in a row, or two at the end.
+    EmptyLabel,
+    /// A label holds more than 63 bytes.
+    LabelTooLong {
+        /// Its length.
+        bytes: usize,
+    },
+    /// A label starts or ends with a hyphen.
+    HyphenAtLabelEdge,
+    /// The last label is a number in the URL Standard's sense ([`is_url_number`]): an IPv4
+    /// address in a form [`host`] does not read as one.
+    NumberLastLabel,
+}
+
+impl fmt::Display for HostReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            HostReason::Empty => f.write_str("it is empty"),
+            HostReason::NameTooLong { bytes } => {
+                write!(f, "the name holds {bytes} bytes, at most 253")
+            }
+            HostReason::Byte(b) => write!(
+                f,
+                "the byte 0x{b:02x} is none of the letters, digits, hyphen and dot of a DNS name"
+            ),
+            HostReason::EmptyLabel => f.write_str("a label is empty"),
+            HostReason::LabelTooLong { bytes } => {
+                write!(f, "a label holds {bytes} bytes, at most 63")
+            }
+            HostReason::HyphenAtLabelEdge => f.write_str("a label starts or ends with a hyphen"),
+            HostReason::NumberLastLabel => f.write_str("the last label is a number"),
+        }
+    }
+}
+
+/// A host refused before the first byte of a connection is written (docs/design/tls.md item
+/// 6): neither an IP address nor a DNS name in the preferred name syntax, so that no
+/// certificate can match it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HostRefusal {
+    /// Why.
+    pub reason: HostReason,
+    /// The host as given, as [`crate::error::excerpt`] shows it: bounded and escaped.
+    pub host: String,
+}
+
+impl fmt::Display for HostRefusal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "the host \"{}\" matches no certificate: {}",
+            self.host, self.reason
+        )
+    }
+}
+
+impl std::error::Error for HostRefusal {}
+
+/// The host a connection is made for: [`normalise`]d, then an IP address ([`host`]) or a DNS
+/// name in the preferred name syntax ([`is_dns_name`]); any other host is refused with the rule
+/// it breaks, before anything is written.
+pub fn connection_host(text: &str) -> Result<String, HostRefusal> {
+    let normal = normalise(text);
+    if let Host::Ip(_) = host(&normal) {
+        return Ok(normal);
+    }
+    match dns_name_refusal(&normal) {
+        None => Ok(normal),
+        Some(reason) => Err(HostRefusal {
+            reason,
+            host: crate::error::excerpt(text.as_bytes()),
+        }),
+    }
+}
+
 /// An IP address of 4 or 16 octets as text; other lengths as hex octets joined by `:`.
 pub fn ip_text(octets: &[u8]) -> String {
     match octets.len() {
@@ -96,25 +184,40 @@ pub fn ip_text(octets: &[u8]) -> String {
 /// Standard's IPv4 parser ([`is_url_number`]), so that no IPv4 address in text, in any form a
 /// URL host parser reads (`127.0.0.1`, `0x7f000001`, `127.0.0.0x1`), is a DNS name.
 pub fn is_dns_name(name: &str) -> bool {
-    if name.is_empty() || name.len() > 253 {
-        return false;
+    dns_name_refusal(name).is_none()
+}
+
+/// The first rule of [`is_dns_name`] that `name` breaks, in the order of [`HostReason`];
+/// `None` for a DNS name.
+pub fn dns_name_refusal(name: &str) -> Option<HostReason> {
+    if name.is_empty() {
+        return Some(HostReason::Empty);
+    }
+    if name.len() > 253 {
+        return Some(HostReason::NameTooLong { bytes: name.len() });
+    }
+    if let Some(&b) = name
+        .as_bytes()
+        .iter()
+        .find(|&&b| !(b.is_ascii_alphanumeric() || b == b'-' || b == b'.'))
+    {
+        return Some(HostReason::Byte(b));
     }
     let mut last = "";
     for label in name.split('.') {
         let bytes = label.as_bytes();
-        if bytes.is_empty()
-            || bytes.len() > 63
-            || bytes[0] == b'-'
-            || bytes[bytes.len() - 1] == b'-'
-            || !bytes
-                .iter()
-                .all(|&b| b.is_ascii_alphanumeric() || b == b'-')
-        {
-            return false;
+        if bytes.is_empty() {
+            return Some(HostReason::EmptyLabel);
+        }
+        if bytes.len() > 63 {
+            return Some(HostReason::LabelTooLong { bytes: bytes.len() });
+        }
+        if bytes[0] == b'-' || bytes[bytes.len() - 1] == b'-' {
+            return Some(HostReason::HyphenAtLabelEdge);
         }
         last = label;
     }
-    !is_url_number(last)
+    is_url_number(last).then_some(HostReason::NumberLastLabel)
 }
 
 /// Whether `label` is a number as the URL Standard's IPv4 parser reads one ("ends in a

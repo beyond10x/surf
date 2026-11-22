@@ -4,12 +4,45 @@
 //! The stories that change it: `story:tls-record` adds the violations of the record layer and
 //! `KeyLimitReached`; `story:tls-x509` adds the variant `Certificate`; `story:tls-handshake`
 //! adds the violation `TooManyRecordsWithoutData` and gives `AlertReceived` before the
-//! ServerHello the words of item 7. No other story changes this file.
+//! ServerHello the words of item 7. The security review of the seams adds `Host` and
+//! [`excerpt`], the one form of a value from outside the crate in an error text.
 
 use std::fmt;
+use std::fmt::Write as _;
 use std::io::ErrorKind;
 
+use crate::names::HostRefusal;
 use crate::verify::CertificateRejection;
+
+/// The most bytes of a value from outside the crate (a peer's certificate, the caller's host)
+/// that an error text shows: the rest is cut, and the text says so ([`excerpt`]).
+pub const EXCERPT_BYTES_MAX: usize = 64;
+
+/// `bytes` as an error text shows them, the one form every such text uses: at most
+/// [`EXCERPT_BYTES_MAX`] bytes; each byte outside printable ASCII written `\xNN` and the
+/// backslash `\\`; and, when bytes were cut, ` ... (<n> bytes, cut after 64)`. So the text is
+/// at most 4 × 64 bytes and the note, and holds no control character.
+pub fn excerpt(bytes: &[u8]) -> String {
+    let shown = &bytes[..bytes.len().min(EXCERPT_BYTES_MAX)];
+    let mut out = String::with_capacity(shown.len() + 40);
+    for &b in shown {
+        match b {
+            b'\\' => out.push_str("\\\\"),
+            0x20..=0x7E => out.push(char::from(b)),
+            _ => {
+                let _ = write!(out, "\\x{b:02x}");
+            }
+        }
+    }
+    if bytes.len() > EXCERPT_BYTES_MAX {
+        let _ = write!(
+            out,
+            " ... ({} bytes, cut after {EXCERPT_BYTES_MAX})",
+            bytes.len()
+        );
+    }
+    out
+}
 
 /// An alert description of RFC 8446 section 6, as sent or received. A received alert may carry
 /// a value RFC 8446 does not name; [`AlertDescription::name`] says `unknown` for it.
@@ -251,6 +284,9 @@ pub enum Error {
     KeyLimitReached,
     /// The server's certificates are not accepted (`story:tls-x509`).
     Certificate(CertificateRejection),
+    /// The host is neither an IP address nor a DNS name a certificate can match; refused before
+    /// the first byte is written.
+    Host(HostRefusal),
 }
 
 impl fmt::Display for Error {
@@ -281,6 +317,7 @@ impl fmt::Display for Error {
             Error::SequenceExhausted => f.write_str("the sequence number would wrap"),
             Error::KeyLimitReached => f.write_str("the write key reached its record limit"),
             Error::Certificate(rejection) => write!(f, "{rejection}"),
+            Error::Host(refusal) => write!(f, "{refusal}"),
         }
     }
 }

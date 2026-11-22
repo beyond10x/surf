@@ -426,6 +426,15 @@ lowered. That one value is sent in `server_name` (none for an IP address), given
 127.0.0.1, as `surf-url` reads it (the URL Standard's IPv4 parser drops one empty last part), so
 it carries no `server_name` and is matched against iPAddress entries.
 
+A host that, so normalised, is neither an IP address nor a DNS name in the preferred name syntax
+(`names::is_dns_name`) matches no certificate, and is refused before the first byte is written
+(`names::connection_host`): `Error::Host(HostRefusal)`, whose `reason` is the first rule it
+breaks, in this order: `Empty`, `NameTooLong` (over 253 bytes), `Byte` (a byte other than a
+letter, a digit, `-` or `.`), `EmptyLabel`, `LabelTooLong` (over 63 bytes),
+`HyphenAtLabelEdge`, `NumberLastLabel` (`0x7f000001`). The host in its text is an excerpt
+(item 7). `messages::MAX_SERVER_NAME`, 255, stays the bound the cookie of item 9.1 is computed
+with; the longest name sent is 253 bytes.
+
 KeyUpdate (RFC 8446 section 4.6.3): an `update_requested` is answered by one KeyUpdate of
 `update_not_requested` before the next record of data the client writes, however many came; a
 read writes nothing; `close` with an answer owed sends `close_notify` under the current key
@@ -471,6 +480,8 @@ The public `Error` of `error.rs`, a closed list:
 - `Certificate(CertificateRejection)`, which `story:tls-x509` adds. A `CertificateRejection`
   sends `unknown_ca` (`NoPathToAnchor`), `certificate_expired` (`Expired`) or `bad_certificate`
   (every other).
+- `Host(HostRefusal)`, which the security review of the seams adds: the host matches no
+  certificate (above); nothing was written, no alert is sent.
 
 The list follows the tables "RFC 8446 client obligations" and "Messages the client receives" of
 `story:tls-handshake` and "RFC 8446 record obligations" of `story:tls-record`.
@@ -571,6 +582,7 @@ Every other condition, each with one reason:
 | any check of the table above, among them a bad certificate (`BadSignature`), a certificate the reader refuses (`Unreadable`) and a weak algorithm (`WeakAlgorithm`, `WeakKey`) | `CertificateNotTrusted` | as above | as above |
 | outside the validity, either side, of any certificate on the path | `CertificateExpired` | `certificate_expired` | `certificate <n> valid from <notBefore> to <notAfter>, checked at <time>` |
 | no `subjectAltName` entry of the leaf matches the host (no Common Name is read) | `CertificateNameMismatch` | `bad_certificate` | `no subjectAltName entry matches <host>` |
+| a host no certificate can match, refused before the first byte (`Error::Host`, item 6) | `CertificateNameMismatch` | none | `the host "<host>" matches no certificate: <reason>` |
 | (a) a `protocol_version` alert before any ServerHello | `TlsVersionUnsupported` | none | `the server sent protocol_version before its ServerHello` |
 | (b) a `handshake_failure` alert before any ServerHello | `TlsHandshakeFailed` | none | `the server sent handshake_failure before its ServerHello; a server limited to TLS 1.2 answers this way` |
 | (c) a ServerHello that selects TLS 1.2 or below (no `supported_versions`) without a downgrade value, any suite | `TlsVersionUnsupported` | `protocol_version` | `the server selected <version>` |
@@ -944,7 +956,8 @@ system clock, with certificates valid until 2125 and an expired one whose end li
   (echoed), `signature_algorithms`, `signature_algorithms_cert`, `supported_groups`,
   `key_share`, `server_name` (sent when the host is a name; RFC 6066 allows no IP literal
   there; the name without a trailing dot, in ASCII lower case, the value the verifier is given,
-  item 6). No `pre_shared_key` or `psk_key_exchange_modes`, as no PSK is offered. The
+  item 6; a host that is neither an address nor a DNS name is refused before any ClientHello).
+  No `pre_shared_key` or `psk_key_exchange_modes`, as no PSK is offered. The
   ClientHello holds both `signature_algorithms` and `supported_groups`, and `key_share` with
   `supported_groups`. Met.
 - 9.3 a client supports every parameter it advertises. Shown for each: the three suites and both
