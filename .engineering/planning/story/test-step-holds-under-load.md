@@ -17,7 +17,7 @@ scope:
   path: crates/page/tests/label.rs
 - confidence: cited
   path: crates/view/tests/http.rs
-revision: 22
+revision: 23
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T09:57:05Z", actor: "human:operator", revision: 20, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T09:57:05Z", actor: "human:operator", revision: 21, decided_on: {"recorded":{"verification":1}}}
@@ -79,3 +79,15 @@ The unit works on `wave/a10-label-limits`, in a worktree of its own from the hea
 - `AGENTS.md`
 
 Planted and removed again in the same step, never left changed: `crates/fetch/src/lib.rs`, `crates/view/src/http.rs`, `crates/view/src/sse.rs`, `crates/page/src/lib.rs`, `crates/page/src/label.rs`.
+
+## What the change gives up
+
+Found by the adversary on `01a40e2`; each mutant was red on the tests as they were before this story and passes them now. The story takes this loss: an upper bound on wall time tight enough to catch a limit applied at twice its value is the bound that failed on the loaded machine. `story:time-bounds-in-tests` (draft) holds the way back: a clock or a count the test controls.
+
+- `case_23`: the write limit applied at twice its value (`crates/view/src/http.rs:364`, `crates/view/src/sse.rs:321`) passes; anything up to about 9 times the limit passes under `WAIT`. A close before the limit is still caught: 20 % early 5 of 5 beside busy loops, 5 % early alone.
+- `case_20`: the receive limit at twice its value (`crates/view/src/http.rs:349`) passes.
+- `case_32`: the heartbeat at twice its value (`crates/view/src/sse.rs:290`, `:334`) passes.
+- The fetch test: a read timeout applied at 30 times its value (`crates/fetch/src/lib.rs:693`) passes; the bound of 10 s is 50 times the read timeout of 0.2 s.
+- `hidden_flags_cost_one_walk_for_many_references`: a walk of hidden flags per reference that compares no attribute passes the count; with 50,000 nodes the old form ended at the runner's 60 s. The test's comment says what the count catches and what it does not.
+
+Not introduced here, found on the way: a keep-alive comment sent at once passes `case_32` before and after (no lower bound); a send timeout applied per write and not to the whole send passes the fetch test before and after (no test sends to a server that reads slowly); a receive limit at 0.9 of its value passes `case_20` before and after; the drip tests of `crates/fetch/tests/fetch_bounds.rs:108` bound a wall time at 5 times the read timeout.
