@@ -198,6 +198,8 @@ test("adversary now: a bidirectional control in a title and in an address shows 
   expect(held).toBe(false);
   expect(record.errors).toEqual([]);
   expect(record.violations).toEqual([]);
+  // A later fetch of the page may reach the route after the fixture stopped.
+  await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
 test("adversary now: a right-to-left mark in a label stays as it is", async ({ page, surf }) => {
@@ -208,4 +210,34 @@ test("adversary now: a right-to-left mark in a label stays as it is", async ({ p
   const label = elements(page).nth(0).locator(".label");
   expect(await label.textContent()).toBe("go " + String.fromCodePoint(0x200f) + "abc");
   expect(await panel(page).locator(".bidi-mark").count()).toBe(0);
+});
+
+test("adversary now: a bidirectional control in an event field is named in the mark's title", async ({
+  page,
+  surf,
+  record,
+}) => {
+  const id = await surf.open();
+  await surf.agent(id, "go", surf.pages + "/now/links.html");
+  // A session's URL is percent-encoded, so the field is forged on its way to the page.
+  await page.route("**/api/sessions/" + id, async (route) => {
+    const response = await route.fetch();
+    const detail = await response.json();
+    for (const entry of detail.entries) {
+      if (entry.kind === "event" && entry.name === "surf.agent.NavigationRequested") {
+        entry.fields.url = "http://127.0.0.1:9/" + RLO + "xyz";
+      }
+    }
+    await route.fulfill({ response, json: detail });
+  });
+  await load(page, surf.view);
+  const mark = segments(page).locator("li.mark").filter({ hasText: /^NavigationRequested$/ });
+  await expect(mark).toHaveCount(1);
+  const title = await mark.getAttribute("title");
+  expect(title).toContain("\nurl http://127.0.0.1:9/U+202Exyz");
+  expect(title.includes(RLO)).toBe(false);
+  expect(record.errors).toEqual([]);
+  expect(record.violations).toEqual([]);
+  // A later fetch of the page may reach the route after the fixture stopped.
+  await page.unrouteAll({ behavior: "ignoreErrors" });
 });

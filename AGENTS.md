@@ -648,10 +648,10 @@ above, and the list of standards itself was written from memory.
     `entities_table` 2, `inventory` 4, `readers` 2, `tree_format` 2).
 - `view-tests/`: the Playwright tests of the live view's page (`@playwright/test` 1.65.0,
   Chromium's headless shell, a committed `package-lock.json`), each case with its own
-  `surf-view-fixture`: 53 cases, 18 in `tests/first-page.spec.mjs`, 6 in
+  `surf-view-fixture`: 54 cases, 18 in `tests/first-page.spec.mjs`, 6 in
   `tests/adversary-page.spec.mjs`, 6 in `tests/detail.spec.mjs`, 8 in
   `tests/adversary-detail.spec.mjs`, 5 in `tests/now.spec.mjs` (over the pages of
-  `crates/view-fixture/pages/now/`), 6 in `tests/adversary-now.spec.mjs` (over
+  `crates/view-fixture/pages/now/`), 7 in `tests/adversary-now.spec.mjs` (over
   `crates/view-fixture/pages/adversary-now/`) and 4 in `tests/acceptance.spec.mjs` (the page
   part of the live view's acceptance case, over `crates/view-fixture/pages/acceptance/`). Node
   and Playwright are gate tooling only.
@@ -1227,9 +1227,10 @@ records `DocumentParsed` and one `ElementAdded` per actionable element, 28 are d
 and the test derives the number from the entries' `index` since.
 
 With round 2's view unit (`story:view-now-panel`, `story:view-acceptance`, 2026-11-22) `task
-view-test` runs 47 page tests (38 before), 53 since the adversary pass on
-`story:view-now-panel` (4 of the adversary's cases and 2 of its fix). The live view's
-acceptance case of `epic:live-view` is seven tests named after its sentences, all in the gate: in `task test`, the binary
+view-test` runs 47 page tests (38 before), 54 since the adversary pass on
+`story:view-now-panel` (4 of the adversary's cases and 3 of its fix). The live view's
+acceptance case of `epic:live-view` is seven tests named after its sentences, all in the
+gate: in `task test`, the binary
 `surf-view-fixture::main` (5 tests, 2 before) runs `acceptance::api_sessions_lists_both_with_token_and_401_without`,
 `acceptance::request_with_another_host_is_refused` and `acceptance::events_deliver_a_go_in_order`
 (each under 1.2 s at a load average of about 90); in `task view-test`,
@@ -1346,6 +1347,9 @@ the four cases of `acceptance.spec.mjs` 1.9 to 6.0 s each and `an entry over 1 M
 that load. Since the adversary pass on `story:view-now-panel` it prints `53 passed`: `53 passed
 (1.1m)` (the task 71 s) on 2026-11-22 at a load average of 55 to 65, the six cases of
 `adversary-now.spec.mjs` 0.7 to 1.4 s each and `an entry over 1 MiB` 17.7 s at that load.
+With the seventh case of `adversary-now.spec.mjs` (a control in an event field, named in the
+mark's `title`) it prints `54 passed (2.7m)` (the task 189 s) at a load average of 55 to 81,
+the seven cases 3.1 to 7.4 s each and `an entry over 1 MiB` 29.7 s at that load.
 `html-conformance`, the last
 step of `check`: `html-conformance: 9107 cases, 9095 run, 8428 passed` (82 encoding cases,
 7,046 tokenizer cases and 1,300 tree construction cases), with `tag markup 1979/1979/1979`,
