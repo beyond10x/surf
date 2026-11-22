@@ -62,3 +62,37 @@ fn bodies_of_answered_commands_are_not_kept() {
     // `open <url>` is two actions (`open`, then `go`), and 20 more `go`: 22.
     assert!(text.contains("path 5 of 22\n"), "{text}");
 }
+
+/// Story values-and-labels-before-fill, acceptance 5: the text a `look` kept is dropped by the
+/// next request that is not `look`, here a `go` that asks for no text.
+#[test]
+fn kept_text_is_dropped_on_a_request_other_than_look() {
+    let pages = PageServer::start();
+    let mut session = Session::new(ID, surf_session::fetch).unwrap();
+    let reply = session.answer(&request("open", None, None, &[("url", &pages.url("/0"))]));
+    assert_eq!(reply.status, 0);
+    let token = opened(&reply.to_link().text).token;
+    assert_eq!(
+        session.kept_text_lines(),
+        0,
+        "before any text was asked for"
+    );
+
+    let reply = session.answer(&request(
+        "look",
+        Some(ID),
+        Some(&token),
+        &[("form", "tree")],
+    ));
+    assert_eq!(reply.status, 0, "{}", reply.to_link().text);
+    assert!(session.kept_text_lines() > 0, "after look");
+
+    let reply = session.answer(&request(
+        "go",
+        Some(ID),
+        Some(&token),
+        &[("url", &pages.url("/1"))],
+    ));
+    assert_eq!(reply.status, 0, "{}", reply.to_link().text);
+    assert_eq!(session.kept_text_lines(), 0, "after go");
+}

@@ -409,7 +409,8 @@ impl Report {
     /// [`escape`] with `"` written as `\x22`, between two `"`. `<flags>` is the flags of the row
     /// that are set, in the order `hidden`, `disabled`, `checked`, `required`, joined by `,`, or
     /// `-` when none is. The last field is a link's target or a control's value, or `-` when the
-    /// row has neither. `<kind>` is a name of `surf.document.ElementKind`, `<limit>` one of
+    /// row has neither; for a `password` it is `(set)` when the value is not empty and `(empty)`
+    /// when it is, unquoted, never the value. `<kind>` is a name of `surf.document.ElementKind`, `<limit>` one of
     /// `surf.document.ParseLimit`, and `<parts>` the entries of [`Report::not_yet_parsed`]
     /// joined by `,`.
     pub fn lines(&self) -> Vec<String> {
@@ -490,9 +491,22 @@ fn element_line(element: &Elements) -> String {
     } else {
         flags.join(",")
     };
-    let last = match element.target.as_deref().or(element.value.as_deref()) {
-        Some(text) => quoted(text),
-        None => "-".to_owned(),
+    // A password's value is never printed: `(set)` or `(empty)`, unquoted (design section 5.2).
+    let last = if element.kind == ElementKind::Password {
+        if element
+            .value
+            .as_deref()
+            .is_some_and(|value| !value.is_empty())
+        {
+            "(set)".to_owned()
+        } else {
+            "(empty)".to_owned()
+        }
+    } else {
+        match element.target.as_deref().or(element.value.as_deref()) {
+            Some(text) => quoted(text),
+            None => "-".to_owned(),
+        }
     };
     format!(
         "element {} {} {} {flags} {} {last}",

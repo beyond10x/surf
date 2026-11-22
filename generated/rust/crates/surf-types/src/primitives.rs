@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 1fa135dfaf753fab3e34de8ae9a4a7052216d1878fc9d395075ce5cd5ac673a6
+// contract digest 0d10a4e15e4419a19f75ed41363d03a1418a16f486e14602c2f7bc691f017d8d
 // do not edit: regenerate with `ess synthesize`
 
 //! How the specification's primitives are spelled in this workspace.

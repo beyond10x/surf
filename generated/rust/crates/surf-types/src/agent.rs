@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 1fa135dfaf753fab3e34de8ae9a4a7052216d1878fc9d395075ce5cd5ac673a6
+// contract digest 0d10a4e15e4419a19f75ed41363d03a1418a16f486e14602c2f7bc691f017d8d
 // do not edit: regenerate with `ess synthesize`
 
 //! Agent — `surf.agent`.
@@ -1040,6 +1040,8 @@ pub struct FillRequested {
     pub element_id: crate::document::ElementId,
     /// `value` — `String`.
     pub value: String,
+    /// `handle` — `Optional<String>`.
+    pub handle: Option<String>,
 }
 
 /// NavigationRequested — the event `surf.agent.NavigationRequested`.
@@ -1051,6 +1053,10 @@ pub struct NavigationRequested {
     pub tab_id: crate::shell::TabId,
     /// `url` — `surf.url.Url`.
     pub url: crate::url::Url,
+    /// `handle` — `Optional<String>`.
+    pub handle: Option<String>,
+    /// `label` — `Optional<String>`.
+    pub label: Option<String>,
 }
 
 /// PickRequested — the event `surf.agent.PickRequested`.
@@ -1062,6 +1068,8 @@ pub struct PickRequested {
     pub element_id: crate::document::ElementId,
     /// `option_id` — `Optional<surf.document.OptionId>`.
     pub option_id: Option<crate::document::OptionId>,
+    /// `handle` — `Optional<String>`.
+    pub handle: Option<String>,
 }
 
 /// PressRequested — the event `surf.agent.PressRequested`.
@@ -1071,6 +1079,8 @@ pub struct PressRequested {
     pub session_id: SessionId,
     /// `element_id` — `surf.document.ElementId`.
     pub element_id: crate::document::ElementId,
+    /// `handle` — `Optional<String>`.
+    pub handle: Option<String>,
 }
 
 /// SessionClosed — the event `surf.agent.SessionClosed`.

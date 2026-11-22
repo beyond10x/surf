@@ -7,6 +7,21 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ## [Unreleased]
 
+### Changed
+
+- `surf <url>` no longer prints a password: the last field of the `element` line of a
+  `password` control is `(set)` when it holds a value and `(empty)` when it does not, unquoted.
+  Every other kind is printed as before. Output: [`docs/surf-command.md`](docs/surf-command.md).
+- The label of a link, button or field leaves out the value of a password input inside it: a
+  `<button>Code <input type=password value=…></button>` is named `Code`.
+- The session log of `surf-agent` cuts the `label` of a recorded action to its first 1,024 bytes
+  and adds `label_bytes`, the whole label's length, when it cut it, as it already did for a
+  page's title.
+- The event `surf.agent.NavigationRequested` in the session log and the live view has two more
+  fields, `handle` and `label`, both empty after a `go`. They will hold the handle and the label
+  of the link a `follow` takes (the label cut as above), and `FillRequested`, `PickRequested` and
+  `PressRequested` the `handle` of the control, once the session runs those commands.
+
 ## [0.4.0] - 2026-11-22
 
 ### Added

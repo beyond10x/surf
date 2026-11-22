@@ -53,6 +53,7 @@ timeline:
           session_id: {$instance: session}
           element_id: {$instance: user-name}
           value: ada
+          handle: f1
 
 assert:
   - view: surf.document.Controls

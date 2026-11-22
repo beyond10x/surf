@@ -139,11 +139,13 @@
 //! count="<n>"` ([`entries::left_out_line`]) counts the entries left out of them; it is absent
 //! when none was. So a request carries at most 256 element entries, and `surfd`'s bounds of a
 //! session's log (10,000 entries) and of a reader's queue (1,024) are not reached by one page.
-//! An event field holds no body, only its length; the one field that holds text from a page,
-//! the title of `surf.document.DocumentParsed`, holds at most
+//! An event field holds no body, only its length. The fields that hold text from a page, the
+//! title of `surf.document.DocumentParsed` and the label of `surf.agent.ActionRecorded` and of
+//! `surf.agent.NavigationRequested` (the label of the link a `follow` took), each hold at most
 //! [`entries::TITLE_ENTRY_BYTES`] (1,024) bytes of it, at most 4,098 bytes quoted, with the
-//! field `title_bytes` when it was cut. An element's label, target and value are in no entry
-//! (`surf.document.ElementAdded` carries two identities and a position). An address, at most
+//! field `title_bytes` or `label_bytes` when it was cut. An element's target and value are in
+//! no entry, and its label only in those two (`surf.document.ElementAdded` carries two
+//! identities and a position). An address, at most
 //! [`surf_agent::wire::REQUEST_MAX`] bytes when it comes from a request and at most
 //! [`surf_fetch::MAX_ADDRESS_BYTES`] bytes, the same 64 KiB, when it is the address a response
 //! came from after redirects, is at most 262,146 bytes once quoted, in at most nine action and
@@ -444,6 +446,16 @@ impl<T: Transport> Session<T> {
     /// Between commands it is nothing: [`Session::answer`] drops what the system delivered.
     pub fn held(&self) -> surf::Held {
         self.browser.held()
+    }
+
+    /// How many lines of the current document's text the session keeps between requests, in
+    /// every form it rendered: 0 when it keeps none. Read-only, for the tests: the kept text is
+    /// dropped by every request but `look` ([`Session::answer`]).
+    pub fn kept_text_lines(&self) -> usize {
+        self.rendered.as_ref().map_or(0, |kept| {
+            kept.tree.as_ref().map_or(0, |lines| lines.lines.len())
+                + kept.markdown.as_ref().map_or(0, |lines| lines.lines.len())
+        })
     }
 
     /// The reply to `request`, with its entries ("The entries" above), which are read from what

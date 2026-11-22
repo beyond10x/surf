@@ -471,6 +471,8 @@ commands:
             session_id: input.session_id
             tab_id: {subject: tab_id}
             url: input.url
+            handle: {generated: true}
+            label: {generated: true}
         summary: The navigator is asked to load the address into the session's tab.
 
   # `follow <handle>` (design section 4, step 3 of section 9). Handles are not modelled: a handle
@@ -480,7 +482,7 @@ commands:
   # for the action the session then records (`RecordAction` with `command: follow`, as `go` is
   # recorded after `Go`, decision D19); it reads nothing of the node tree. Its outcomes are
   # `Go`'s, and an accepted one emits `NavigationRequested`, which navigates with `Get` and no
-  # body (`navigate-on-navigation-requested`).
+  # body (`navigate-on-navigation-requested`) and carries the handle and the label.
   - name: surf.agent.Follow
     naming:
       wire: follow
@@ -533,6 +535,8 @@ commands:
             session_id: input.session_id
             tab_id: {subject: tab_id}
             url: input.url
+            handle: input.handle
+            label: input.label
         summary: The navigator is asked to load the link's target into the session's tab.
 
   # `fill <handle> <text>`, `pick <handle> [<option>]` and `press <handle>` (design section 4, step
@@ -542,7 +546,7 @@ commands:
   # (`RecordAction`) with the handle and never the value. Each is refused as `Go` is. An accepted
   # one publishes a request that a binding maps onto the `document` component's command
   # (`spec/components.yaml`): this component reads no element row, so whether the element exists
-  # and takes the action is that command's answer.
+  # and takes the action is that command's answer. The request carries the handle too.
   # The value of `fill` travels in `FillRequested` to `surf.document.SetValue`, so an event of this
   # component carries what the agent typed, a password included. The session's entries
   # (`docs/view-stream.md`) write its length, never the value; no row of this component stores it.
@@ -597,6 +601,7 @@ commands:
             session_id: input.session_id
             element_id: input.element_id
             value: input.value
+            handle: input.handle
         summary: The document is asked to give the control the value.
 
   # `pick` without an option activates a checkbox or a radio button (`surf.document.Check`); with
@@ -652,6 +657,7 @@ commands:
             session_id: input.session_id
             element_id: input.element_id
             option_id: input.option_id
+            handle: input.handle
         summary: The document is asked to change the control's choice.
 
   - name: surf.agent.Press
@@ -701,6 +707,7 @@ commands:
           surf.agent.PressRequested:
             session_id: input.session_id
             element_id: input.element_id
+            handle: input.handle
         summary: The document is asked to activate the button.
 
   # The next four commands are the agent component's side of the navigator's events: the bindings
@@ -951,6 +958,11 @@ events:
       - name: tab_id
         type: surf.shell.TabId
 
+  # `handle` and `label` are `Follow`'s inputs, the link's handle and its label as the page wrote
+  # it; a `Go` sets neither. They carry what the session records for the action toward the
+  # record (`RecordAction`); no binding reads them. ess 0.97.3 has no payload spelling for an
+  # absent `Optional` event field: `Go` declares both `{generated: true}`, which lets the
+  # implementation leave them absent, and the agent's ports answer absent.
   - name: surf.agent.NavigationRequested
     fields:
       - name: session_id
@@ -959,6 +971,10 @@ events:
         type: surf.shell.TabId
       - name: url
         type: surf.url.Url
+      - name: handle
+        type: Optional<String>
+      - name: label
+        type: Optional<String>
 
   # ESS refuses an outcome that publishes nothing (`ESS-COMMAND-007`, `empty_change`); this is
   # what the four note commands publish. `sessions` is how many sessions changed: 0 for a
@@ -998,6 +1014,8 @@ events:
       - name: label
         type: Optional<String>
 
+  # `handle` in the next three is the command's input, the control's handle, carried toward the
+  # record as `NavigationRequested`'s is; no binding reads it.
   - name: surf.agent.FillRequested
     fields:
       - name: session_id
@@ -1006,6 +1024,8 @@ events:
         type: surf.document.ElementId
       - name: value
         type: String
+      - name: handle
+        type: Optional<String>
 
   - name: surf.agent.PickRequested
     fields:
@@ -1015,6 +1035,8 @@ events:
         type: surf.document.ElementId
       - name: option_id
         type: Optional<surf.document.OptionId>
+      - name: handle
+        type: Optional<String>
 
   - name: surf.agent.PressRequested
     fields:
@@ -1022,6 +1044,8 @@ events:
         type: surf.agent.SessionId
       - name: element_id
         type: surf.document.ElementId
+      - name: handle
+        type: Optional<String>
 
   # No command publishes it: the session process writes it into the entries of one request, after
   # an action's events, when it left `count` of them out to keep the entries within the link's

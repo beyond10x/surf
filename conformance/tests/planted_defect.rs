@@ -44,6 +44,10 @@ impl TryContext for DropsEveryPut {
         self.0.try_caller_session_id()
     }
 
+    fn try_generate_optional_string(&mut self) -> Result<Option<String>, UnmetObligation> {
+        self.0.try_generate_optional_string()
+    }
+
     fn try_generate_surf_agent_action_id(&mut self) -> Result<ActionId, UnmetObligation> {
         self.0.try_generate_surf_agent_action_id()
     }

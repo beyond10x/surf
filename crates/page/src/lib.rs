@@ -87,8 +87,9 @@
 //!   node gives nothing unless the node that started the traversal (the referenced node, the
 //!   `label`) is hidden (2A); a descendant's own `aria-labelledby` is followed unless the walk is
 //!   already inside an `aria-labelledby` traversal (2B); a control embedded in the name of
-//!   another element gives its value (2C: a Text, Search, Telephone, URL, Email or Password
-//!   `input` and a `textarea` their default value, a Number or Range `input` `aria-valuetext`,
+//!   another element gives its value (2C: a Text, Search, Telephone, URL or Email `input` and a
+//!   `textarea` their default value, a Password `input` nothing (see "Deviations"), a Number
+//!   or Range `input` `aria-valuetext`,
 //!   else `aria-valuenow`, else its `value` attribute); `aria-label` (2D); the element's own
 //!   attributes (2E: an `img`'s `alt`, even blank; an `area`'s `alt`; an Image Button's `alt`,
 //!   `title` or `Submit`; a Submit Button's, Reset Button's or Button's `value`, or `Submit` or
@@ -147,6 +148,9 @@
 //! - A hidden actionable element is named from its own subtree, hidden parts included, as a
 //!   hidden node referenced by `aria-labelledby` is (step 2A would give it the empty name): its
 //!   row is kept and flagged, and a hidden link is shown by its label.
+//! - An `input` of the Password state embedded in another element's name gives nothing in 2C,
+//!   where accname gives its value: a password is never printed, and a label reaches the answer
+//!   and the recorded actions (`story:values-and-labels-before-fill`).
 //! - A label is cut at [`LABEL_BYTES_MAX`] bytes, and the work for the labels of one call is
 //!   bounded by [`LABEL_WORK_MAX`]; past it a name comes from the element's own attributes. The
 //!   standards bound neither.

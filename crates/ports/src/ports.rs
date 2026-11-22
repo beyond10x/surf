@@ -69,6 +69,10 @@ const CALLER: &str = "the caller's session_id";
 /// The identity of an action, as a context answer names it.
 const ACTION_ID: &str = "surf.agent.ActionId";
 
+/// The `Optional<String>` a `{generated: true}` payload field asks for, as a context answer
+/// names it: the `handle` and `label` of the `NavigationRequested` a `Go` emits.
+const OPTIONAL_STRING: &str = "Optional<String>";
+
 /// Implements one storage trait for a ports type over one of its private tables.
 macro_rules! storage {
     ($storage:ident for $ports:ty, $rows:ident: $snapshot:ty, $key:ty $(, $param:ident)?) => {
@@ -98,14 +102,19 @@ macro_rules! storage {
 /// belong to the page load, a document's elements, forms, options and submissions included; the
 /// generated behaviours of a component ask only for their own.
 ///
-/// It also asks for the caller's `session_id` and an action's identity, which only the `agent`
-/// component's commands read. These ports know no caller and record no action, so they answer
-/// both as unmet rather than as a caller with none or an identity for no action.
+/// It also asks for the caller's `session_id`, an action's identity and the `Optional<String>`
+/// of a `Go`'s request, which only the `agent` component's commands read. These ports know no
+/// caller, record no action and issue no `Go`, so they answer all three as unmet rather than as
+/// a caller with none, an identity for no action or an absent value.
 macro_rules! context {
     ($ports:ident) => {
         impl<R: RandomSource> TryContext for $ports<R> {
             fn try_caller_session_id(&self) -> Result<Option<SessionId>, UnmetObligation> {
                 Err(unmet_context(CALLER))
+            }
+
+            fn try_generate_optional_string(&mut self) -> Result<Option<String>, UnmetObligation> {
+                Err(unmet_context(OPTIONAL_STRING))
             }
 
             fn try_generate_surf_agent_action_id(&mut self) -> Result<ActionId, UnmetObligation> {
@@ -557,6 +566,12 @@ storage!(ActionStorage for AgentPorts<R>, actions: ActionSnapshot, ActionId, R);
 impl<R: RandomSource> TryContext for AgentPorts<R> {
     fn try_caller_session_id(&self) -> Result<Option<SessionId>, UnmetObligation> {
         Ok(self.caller.get())
+    }
+
+    /// The `handle` and `label` of the `NavigationRequested` a `Go` emits: a `go` names no link,
+    /// so both are absent (`spec/domains/agent.yaml`, `surf.agent.NavigationRequested`).
+    fn try_generate_optional_string(&mut self) -> Result<Option<String>, UnmetObligation> {
+        Ok(None)
     }
 
     fn try_generate_surf_agent_action_id(&mut self) -> Result<ActionId, UnmetObligation> {

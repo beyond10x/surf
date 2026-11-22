@@ -222,6 +222,10 @@ impl<P: TryContext> TryContext for Planted<P> {
         self.inner.try_caller_session_id()
     }
 
+    fn try_generate_optional_string(&mut self) -> Result<Option<String>, UnmetObligation> {
+        self.inner.try_generate_optional_string()
+    }
+
     fn try_generate_surf_agent_action_id(&mut self) -> Result<ActionId, UnmetObligation> {
         if self.same(Entity::Action) {
             return Ok(ActionId(same()));
