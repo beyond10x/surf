@@ -1,0 +1,13 @@
+[package]
+name = "surf-test-process"
+description = "Test tooling: whether another process has ended, decided once from /proc/<pid>/stat, with a bounded wait. Only tests and the test fixture program depend on it. Not shipped."
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+
+[lib]
+test = false
+doctest = false
+
+[dependencies]

@@ -10,6 +10,7 @@ license = "Apache-2.0"
 [[bin]]
 name = "surf-view-fixture"
 path = "src/main.rs"
+test = false
 
 [[bin]]
 name = "surf-view-foreign"
@@ -19,3 +20,4 @@ test = false
 [dependencies]
 surfd = { path = "../surfd" }
 surf-view = { path = "../view" }
+surf-test-process = { path = "../test-process" }

@@ -60,6 +60,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use surf_test_process::ended_within;
 use surf_view::to_json;
 
 /// The most bytes of a request head the page server reads: 64 KiB.
@@ -456,9 +457,7 @@ fn kill_session(id: &str, runtime: &Path) -> String {
     }
     let deadline = Instant::now() + KILL_WAIT;
     for pid in pids {
-        while alive(pid) && Instant::now() < deadline {
-            thread::sleep(Duration::from_millis(10));
-        }
+        let _ = ended_within(pid, deadline.saturating_duration_since(Instant::now()));
     }
     "{}".to_string()
 }
@@ -487,9 +486,7 @@ fn kill_left(runtime: &Path) {
     }
     let deadline = Instant::now() + KILL_WAIT;
     for pid in left {
-        while alive(pid) && Instant::now() < deadline {
-            thread::sleep(Duration::from_millis(10));
-        }
+        let _ = ended_within(pid, deadline.saturating_duration_since(Instant::now()));
     }
 }
 
@@ -519,24 +516,6 @@ fn signal_kill(pid: u32) {
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .status();
-}
-
-/// Whether `pid` runs: its `/proc/<pid>/stat` reads and [`runs`] says so. A process gone from
-/// `/proc`, a zombie and a dead process being reaped count as ended.
-fn alive(pid: u32) -> bool {
-    fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| runs(&stat))
-}
-
-/// Whether a `/proc/<pid>/stat` line is that of a process that runs: its state, the first
-/// character after the last `)` (the command name may hold `)` and spaces), is there and is not
-/// one that `proc_pid_stat(5)` gives an ended process: `Z` (zombie), `X` (dead) or `x` (dead,
-/// Linux 2.6.33 to 3.13). `X` is read while the parent (of a session: `surfd` in this process)
-/// reaps the zombie, before the process leaves `/proc`.
-fn runs(stat: &str) -> bool {
-    let state = stat
-        .rsplit_once(')')
-        .and_then(|(_, rest)| rest.trim_start().chars().next());
-    state.is_some_and(|state| !matches!(state, 'Z' | 'X' | 'x'))
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -813,29 +792,5 @@ fn pass(state: &Mutex<PipeState>, number: u64, mut client: TcpStream, view_port:
     let _ = upstream.shutdown(Shutdown::Write);
     if let Ok(back) = back {
         let _ = back.join();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::runs;
-
-    /// The binary's own copy of the decision `alive` takes, given lines without a process: the
-    /// same lines as `a_stat_line_of_a_zombie_or_a_dead_process_is_one_of_an_ended_process` of
-    /// `tests/fixture.rs`.
-    #[test]
-    fn a_stat_line_of_a_zombie_or_a_dead_process_is_one_of_an_ended_process() {
-        for (line, running) in [
-            ("4242 (surf-session) S 1 4242 4242 0 -1", true),
-            ("4242 (surf-session) R 1 4242 4242 0 -1", true),
-            ("4242 (surf-session) Z 1 4242 4242 0 -1", false),
-            ("4242 (surf-session) X 1 4242 4242 0 -1", false),
-            ("4242 (surf-session) x 1 4242 4242 0 -1", false),
-            ("4242 (a) b) R 1 4242 4242 0 -1", true),
-            ("4242 (a) b) Z 1 4242 4242 0 -1", false),
-            ("", false),
-        ] {
-            assert_eq!(runs(line), running, "runs({line:?})");
-        }
     }
 }
