@@ -690,7 +690,19 @@ the count, date and sha256 of the bundled list of item 11, and with a file a sec
      anchor and verifies ends the path: the other checks of item 7 run on it (validity,
      basicConstraints and pathLenConstraint, keyUsage, extKeyUsage, nameConstraints); if they
      pass, the path is the answer, else the search goes on with the next candidate. A candidate
-     that would be the 7th intermediate is not descended into (item 9.3).
+     that would be the 7th intermediate is not descended into (item 9.3). The anchor's own
+     certificate is held to them as an issuer's (validity, basicConstraints cA, keyUsage
+     keyCertSign when keyUsage is present, pathLenConstraint, its critical extensions) however
+     the anchor was made: `TrustAnchor` keeps the certificate it was read from
+     (`TrustAnchor::certificate`), so a root of `PathVerifier::add_root`, of
+     `Anchors::bundled` and of an extra file (`Anchors::with_extra_pem`) are checked alike;
+     an expired root, or one whose keyUsage lacks keyCertSign, refuses the path with the same
+     `Expired` or `KeyUsage` either way. Only a root the reader refuses and item 11 takes as
+     name and key holds no certificate and skips them. The cost: the bundled list of
+     2026-11-05 holds 126,380 bytes of DER in its 117 anchors, read once per process and shared
+     by every clone of the set (one pointer and length more per anchor). No root of that list
+     is expired on 2026-11-22; the first to expire, NetLock Arany (Class Gold) Főtanúsítvány,
+     ends on 2028-12-06.
 
    Why this order, the other one than rustls-webpki's: webpki descends into every name match and
    verifies the signatures only when a path reaches an anchor

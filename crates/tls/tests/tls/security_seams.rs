@@ -718,6 +718,62 @@ fn extra_anchors_are_held_to_the_issuer_checks_of_item_9_4() {
     );
 }
 
+/// Item 9.4 for the bundled list: every anchor of `Anchors::bundled()` holds the certificate it
+/// was read from, and a root read the way the bundle is read (`Anchors::from_list`) is held to
+/// the issuer checks as through `add_root`: an expired root, one without keyCertSign, and one
+/// that is no CA.
+#[test]
+fn bundled_anchors_keep_their_certificate_and_are_checked() {
+    let bundled = Anchors::bundled();
+    let without: Vec<usize> = (0..bundled.count())
+        .filter(|&i| bundled.as_slice()[i].certificate().is_none())
+        .collect();
+    assert!(
+        without.is_empty(),
+        "anchors without certificate: {without:?}"
+    );
+    let held: usize = bundled
+        .as_slice()
+        .iter()
+        .filter_map(|a| a.certificate())
+        .map(<[u8]>::len)
+        .sum();
+    eprintln!(
+        "{} bundled anchors hold {held} bytes of certificates",
+        bundled.count()
+    );
+
+    let leaf = Built::leaf("localhost", 9, "Seam Root", 1).der();
+    let roots = [
+        Built {
+            not_before: tlv(0x17, b"000101000000Z"),
+            not_after: tlv(0x17, b"010101000000Z"),
+            ..Built::ca("Seam Root", 1)
+        },
+        Built {
+            key_usage: Some(KU_DIGITAL_SIGNATURE),
+            ..Built::ca("Seam Root", 1)
+        },
+        Built {
+            ca: false,
+            ..Built::ca("Seam Root", 1)
+        },
+    ];
+    for root in roots {
+        let root = root.der();
+        let mut by_certificate = PathVerifier::new(Vec::new()).with_verifier(KeyEcho);
+        by_certificate.add_root(&root).expect("a root");
+        let checked = by_certificate.verify(&[leaf.as_slice()], HOST, now());
+        assert!(checked.is_err(), "add_root refuses: {checked:?}");
+        let list = Anchors::from_list(&pem_of(&root));
+        assert_eq!(list.count(), 1);
+        let got = PathVerifier::new(list.as_slice().to_vec())
+            .with_verifier(KeyEcho)
+            .verify(&[leaf.as_slice()], HOST, now());
+        assert_eq!(got, checked);
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 // 7. Costs across the seam.
 

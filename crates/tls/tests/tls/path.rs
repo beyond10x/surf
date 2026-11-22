@@ -913,14 +913,22 @@ fn the_root_is_checked_as_an_issuer_when_its_certificate_is_known() {
             lacks: "keyCertSign"
         })
     );
-    // Through a TrustAnchor alone, the root is its name and key: no check of its extensions.
+    // Through a TrustAnchor made from the root, the same: the anchor holds its certificate and
+    // is held to item 9.4 as through add_root. (Until the security review of the seams this
+    // asserted that such an anchor skipped the checks of its extensions, against item 9.4.)
     let anchor = TrustAnchor::from_der(&r.der()).expect("an anchor");
     let ders: Vec<Vec<u8>> = sent.iter().map(|c| c.der()).collect();
     let refs: Vec<&[u8]> = ders.iter().map(Vec::as_slice).collect();
     let result = PathVerifier::new(vec![anchor])
         .with_verifier(KeyEcho)
         .verify(&refs, "a.test", now());
-    assert!(result.is_ok(), "{result:?}");
+    assert_eq!(
+        result,
+        not_trusted(Check::KeyUsage {
+            certificate: 2,
+            lacks: "keyCertSign"
+        })
+    );
 }
 
 #[test]
