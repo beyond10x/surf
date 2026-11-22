@@ -1,19 +1,25 @@
 //! Cases 1 to 20 of story `agent-fetch-redirects`: redirects followed inside one fetch, each
-//! against servers the test starts on `127.0.0.1` port 0 and stops before it ends.
+//! against servers the test starts on `127.0.0.1` port 0 and stops before it ends. Cases 21 to
+//! 25, of story `security-review-fixes`: the destination rule, over a resolver and a transport
+//! of the test (`TestNetwork`), which give a public address or a name the addresses the case
+//! chooses and connect them to the test's servers; no real name is resolved.
 //!
 //! A server answers its connections one after another and records the request target and the
 //! `Host` of every request it read. A redirect it sends has a body with no declared length, and
 //! the server holds the connection open until the client closes it: a client that read the body
 //! of a redirect would wait for its read timeout and fail. Every other reply declares its length.
 
+use std::collections::{HashMap, VecDeque};
 use std::io::{ErrorKind, Read, Write};
-use std::net::{Shutdown, TcpListener, TcpStream};
+use std::net::{IpAddr, Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use surf_fetch::{fetch, Failure, Limits, Response, MAX_ADDRESS_BYTES};
+use surf_fetch::{
+    fetch, send_through, Failure, Limits, Method, Network, Request, Response, MAX_ADDRESS_BYTES,
+};
 
 /// The longest a server waits for a client to send or to close.
 const BOUND: Duration = Duration::from_secs(5);
@@ -542,4 +548,225 @@ fn case_20_without_a_redirect_the_url_is_the_asked_address_byte_for_byte() {
     assert_eq!(response.status, 200);
     assert_eq!(response.url, asked);
     assert_eq!(targets, ["/"]);
+}
+
+// --- The destination rule (story `security-review-fixes`) ------------------------------------
+
+/// A network of the test: a name resolves to the lists it is given, one per resolution in
+/// order (the last one repeats), and nothing else resolves; a connection to an address it routes
+/// goes to a server of the test on 127.0.0.1, one to 127.0.0.1 itself goes there, and every
+/// other address is refused. It records every name resolved and every address dialed.
+struct TestNetwork {
+    names: Mutex<HashMap<String, VecDeque<Vec<IpAddr>>>>,
+    routes: HashMap<SocketAddr, u16>,
+    resolved: Mutex<Vec<String>>,
+    dialed: Mutex<Vec<SocketAddr>>,
+}
+
+impl TestNetwork {
+    fn new() -> TestNetwork {
+        TestNetwork {
+            names: Mutex::new(HashMap::new()),
+            routes: HashMap::new(),
+            resolved: Mutex::new(Vec::new()),
+            dialed: Mutex::new(Vec::new()),
+        }
+    }
+
+    /// `name` resolves to `answers`, one list per resolution.
+    fn name(self, name: &str, answers: &[&[&str]]) -> TestNetwork {
+        let lists = answers
+            .iter()
+            .map(|list| list.iter().map(|ip| ip.parse().unwrap()).collect())
+            .collect();
+        self.names.lock().unwrap().insert(name.to_string(), lists);
+        self
+    }
+
+    /// A connection to `address` goes to the server on 127.0.0.1 at `port`.
+    fn route(mut self, address: &str, port: u16) -> TestNetwork {
+        self.routes.insert(address.parse().unwrap(), port);
+        self
+    }
+
+    fn dialed(&self) -> Vec<String> {
+        self.dialed
+            .lock()
+            .unwrap()
+            .iter()
+            .map(ToString::to_string)
+            .collect()
+    }
+
+    fn resolved(&self) -> Vec<String> {
+        self.resolved.lock().unwrap().clone()
+    }
+}
+
+impl Network for TestNetwork {
+    fn resolve(&self, host: &str, port: u16, _: Duration) -> Result<Vec<SocketAddr>, Failure> {
+        self.resolved.lock().unwrap().push(host.to_string());
+        let mut names = self.names.lock().unwrap();
+        let lists = names
+            .get_mut(host)
+            .ok_or_else(|| Failure::Unreachable(format!("the test does not resolve {host}")))?;
+        let list = if lists.len() > 1 {
+            lists.pop_front().unwrap()
+        } else {
+            lists.front().cloned().unwrap_or_default()
+        };
+        Ok(list
+            .into_iter()
+            .map(|ip| SocketAddr::new(ip, port))
+            .collect())
+    }
+
+    fn connect(&self, address: &SocketAddr, timeout: Duration) -> std::io::Result<TcpStream> {
+        self.dialed.lock().unwrap().push(*address);
+        let loopback = IpAddr::from([127, 0, 0, 1]);
+        match self.routes.get(address) {
+            Some(port) => TcpStream::connect_timeout(&SocketAddr::new(loopback, *port), timeout),
+            None if address.ip() == loopback => TcpStream::connect_timeout(address, timeout),
+            None => Err(std::io::Error::new(
+                ErrorKind::ConnectionRefused,
+                "the test routes no connection to this address",
+            )),
+        }
+    }
+}
+
+fn get(address: &str, network: &TestNetwork) -> Result<Response, Failure> {
+    let request = Request {
+        address,
+        method: Method::Get,
+        body: None,
+        media_type: None,
+    };
+    send_through(&request, &limits(), network)
+}
+
+fn assert_forbidden(result: &Result<Response, Failure>) {
+    assert!(
+        matches!(result, Err(Failure::ForbiddenDestination(_))),
+        "expected ForbiddenDestination, got {result:?}"
+    );
+}
+
+#[test]
+fn case_21_a_chain_from_a_public_address_is_refused_at_each_local_address() {
+    let local = Server::start(page);
+    let port = local.port;
+    let locations = [
+        format!("http://127.0.0.1:{port}/"),
+        "http://10.0.0.1/".to_string(),
+        "http://169.254.169.254/latest".to_string(),
+        "http://[::1]/".to_string(),
+        "http://[fc00::1]/".to_string(),
+        format!("http://[::ffff:127.0.0.1]:{port}/"),
+    ];
+    let routed = locations.clone();
+    let public = Server::start(move |target| {
+        let n: usize = target.trim_start_matches('/').parse().unwrap_or(usize::MAX);
+        match routed.get(n) {
+            Some(location) => redirect(302, location.as_str()),
+            None => page(target),
+        }
+    });
+    let network = TestNetwork::new().route("203.0.113.5:80", public.port);
+    for (n, location) in locations.iter().enumerate() {
+        let result = get(&format!("http://203.0.113.5/{n}"), &network);
+        assert_forbidden(&result);
+        let detail = result.unwrap_err().to_string();
+        assert!(
+            detail.starts_with("forbidden destination: "),
+            "{location}: {detail}"
+        );
+    }
+    assert_eq!(network.dialed(), vec!["203.0.113.5:80"; locations.len()]);
+    assert!(network.resolved().is_empty(), "{:?}", network.resolved());
+    assert_eq!(public.targets(), ["/0", "/1", "/2", "/3", "/4", "/5"]);
+    assert!(local.targets().is_empty(), "the local server was reached");
+}
+
+#[test]
+fn case_22_a_name_that_resolves_public_then_local_is_refused_at_the_redirect() {
+    let public = Server::start(|target| match target {
+        "/a" => redirect(302, "/b"),
+        other => page(other),
+    });
+    let network = TestNetwork::new()
+        .name("rebind.test", &[&["203.0.113.5"], &["10.0.0.1"]])
+        .route("203.0.113.5:80", public.port);
+    let result = get("http://rebind.test/a", &network);
+    assert_forbidden(&result);
+    assert_eq!(network.resolved(), ["rebind.test", "rebind.test"]);
+    assert_eq!(network.dialed(), ["203.0.113.5:80"]);
+    assert_eq!(public.targets(), ["/a"]);
+}
+
+#[test]
+fn case_23_a_name_with_a_public_and_a_local_address_after_a_redirect_is_refused() {
+    let first = Server::start(|target| match target {
+        "/a" => redirect(307, "http://mixed.test/b"),
+        other => page(other),
+    });
+    let second = Server::start(page);
+    let network = TestNetwork::new()
+        .name("mixed.test", &[&["198.51.100.7", "127.0.0.1"]])
+        .route("203.0.113.5:80", first.port)
+        .route("198.51.100.7:80", second.port);
+    let result = get("http://203.0.113.5/a", &network);
+    assert_forbidden(&result);
+    assert_eq!(network.resolved(), ["mixed.test"]);
+    assert_eq!(network.dialed(), ["203.0.113.5:80"]);
+    assert_eq!(first.targets(), ["/a"]);
+    assert!(second.targets().is_empty(), "the second server was reached");
+}
+
+#[test]
+fn case_24_a_chain_that_starts_at_127_0_0_1_is_followed_to_local_and_public_addresses() {
+    let public = Server::start(page);
+    let second = Server::start(move |target| match target {
+        "/there" => redirect(302, "http://203.0.113.5/public"),
+        other => page(other),
+    });
+    let port2 = second.port;
+    let first = Server::start(move |target| match target {
+        "/a" => redirect(302, format!("http://127.0.0.1:{port2}/there")),
+        other => page(other),
+    });
+    let network = TestNetwork::new().route("203.0.113.5:80", public.port);
+    let response = ok(get(&first.url("/a"), &network));
+    assert_eq!(response.status, 200);
+    assert_eq!(response.url, "http://203.0.113.5/public");
+    assert_eq!(
+        network.dialed(),
+        [
+            format!("127.0.0.1:{}", first.port),
+            format!("127.0.0.1:{port2}"),
+            "203.0.113.5:80".to_string(),
+        ]
+    );
+    assert_eq!(first.targets(), ["/a"]);
+    assert_eq!(second.targets(), ["/there"]);
+    assert_eq!(public.targets(), ["/public"]);
+}
+
+#[test]
+fn case_25_a_chain_among_public_addresses_is_followed() {
+    let second = Server::start(page);
+    let first = Server::start(|target| match target {
+        "/a" => redirect(301, "http://elsewhere.test/b"),
+        other => page(other),
+    });
+    let network = TestNetwork::new()
+        .name("elsewhere.test", &[&["198.51.100.7"]])
+        .route("203.0.113.5:80", first.port)
+        .route("198.51.100.7:80", second.port);
+    let response = ok(get("http://203.0.113.5/a", &network));
+    assert_eq!(response.status, 200);
+    assert_eq!(response.url, "http://elsewhere.test/b");
+    assert_eq!(network.dialed(), ["203.0.113.5:80", "198.51.100.7:80"]);
+    assert_eq!(first.targets(), ["/a"]);
+    assert_eq!(second.targets(), ["/b"]);
 }

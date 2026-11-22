@@ -168,6 +168,9 @@ pub fn answer(result: Result<surf_fetch::Response, surf_fetch::Failure>) -> Answ
         Err(surf_fetch::Failure::TooManyRedirects(_)) => {
             Answer::Failure(FailureReason::TooManyRedirects)
         }
+        Err(surf_fetch::Failure::ForbiddenDestination(_)) => {
+            Answer::Failure(FailureReason::ForbiddenDestination)
+        }
     }
 }
 
@@ -317,6 +320,7 @@ fn failure_reason(reason: FailureReason) -> &'static str {
         FailureReason::UnsupportedScheme => "UnsupportedScheme",
         FailureReason::MalformedResponse => "MalformedResponse",
         FailureReason::TooManyRedirects => "TooManyRedirects",
+        FailureReason::ForbiddenDestination => "ForbiddenDestination",
     }
 }
 

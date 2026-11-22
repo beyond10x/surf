@@ -22,6 +22,10 @@ It runs on Linux only: the agent binaries read the caller's user id from `/proc/
 - `XDG_RUNTIME_DIR` set to a directory only you can use. A desktop or SSH login on a systemd
   system sets it (`/run/user/<uid>`). Elsewhere, set it to a short directory of yours with mode
   0700: the session's socket lives under it, and a socket path may have 107 bytes at most.
+  Before it connects, `surf-agent` checks that this directory and `surf/` in it are directories
+  of yours, not symbolic links, with no access for group and others, and that
+  `surf/surfd.sock` is a socket of yours; otherwise it exits 3, names the path and what is
+  wrong, and sends nothing, so the token never reaches a socket someone else put there.
 
 ## The four commands
 
@@ -118,7 +122,7 @@ Quoting lowers the risk of page text steering an agent; it does not remove it.
 | 0 | the action was taken |
 | 1 | the action was refused: the token does not belong to the session (`did refused token`), or the session is closed (`did refused closed`) |
 | 2 | usage: a word, the session or the token is missing or malformed |
-| 3 | `surfd` lists no such session (`did refused no-such-session`), the session process ended (`did refused session-died`) or did not answer in time (`did refused session-timeout`), or `surfd` cannot be reached or started |
+| 3 | `surfd` lists no such session (`did refused no-such-session`), the session process ended (`did refused session-died`) or did not answer in time (`did refused session-timeout`), or `surfd` cannot be reached or started, or the runtime directory or the socket fails `surf-agent`'s check |
 
 A refusal by `surfd` or the session prints an answer too, with the reason on its `did` line. When
 `surf-agent` itself cannot go on (a usage error, or no `surfd` to reach or start), it prints no
@@ -130,6 +134,9 @@ answer and says why on standard error.
 - Release `0.2.0` follows no redirect. Since the seventh wave, not in a release yet, a `go`
   follows up to 20 redirects inside one fetch: the `page` line holds the address it ended at,
   the `did go` line the address asked for, and a redirect after the twentieth fails with
-  `TooManyRedirects`.
+  `TooManyRedirects`. When the first request went to a public address, a redirect to a
+  loopback, private, link-local, unique-local, shared or unspecified address fails with
+  `ForbiddenDestination`, before any connection to it; a session that starts at a local
+  address follows its redirects as before.
 - No JavaScript, and no rendering: the answer says what loaded, not what a page shows.
 - Linux only.

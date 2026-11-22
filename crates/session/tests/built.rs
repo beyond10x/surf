@@ -8,14 +8,14 @@
 mod common;
 
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use common::{
-    PageServer, Started, TestDir, agent_call, agent_open, cmdline, contains, path_block,
-    regular_files_under, request, session_program,
+    PageServer, Started, TestDir, agent_call, agent_open, cmdline, contains, opened, path_block,
+    regular_files_under, request, session_program, surfd_in_process, wire_as, wire_call, wire_open,
 };
 use surf_agent::wire::REQUEST_MAX;
 use surfd::link::{self, LinkError, SessionState};
@@ -45,7 +45,7 @@ fn token_of_another_session_is_refused() {
         assert_eq!(output.status.code(), Some(1), "{words:?}");
         assert_eq!(
             String::from_utf8_lossy(&output.stdout),
-            format!("surf 1 session {} open\ndid refused token\n", first.id)
+            format!("surf 1 session {} unknown\ndid refused token\n", first.id)
         );
     }
 
@@ -304,4 +304,108 @@ fn other_argument_shapes_exit_2() {
             "{args:?} bound the socket"
         );
     }
+}
+
+/// One request over one connection to the session socket, and every byte of its reply.
+fn reply_bytes(session: &Started, bytes: &[u8]) -> Vec<u8> {
+    let mut stream = UnixStream::connect(&session.socket).expect("the session listens");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(30)))
+        .unwrap();
+    stream.write_all(bytes).unwrap();
+    let _ = stream.shutdown(std::net::Shutdown::Write);
+    let mut reply = Vec::new();
+    stream.read_to_end(&mut reply).unwrap();
+    reply
+}
+
+/// The session's page is at `address`, opened over the link; its token.
+fn open_at(session: &Started, address: &str) -> String {
+    let answer = session.call(&request("open", None, None, &[("url", address)]));
+    assert_eq!(answer.status, 0, "open: {answer:?}");
+    opened(&answer.text).token
+}
+
+/// A token that differs from `token` in its first digit.
+fn other_than(token: &str) -> String {
+    let first = if token.starts_with('0') { '1' } else { '0' };
+    format!("{first}{}", &token[1..])
+}
+
+#[test]
+fn a_refusal_on_the_session_socket_holds_no_address() {
+    let dir = TestDir::new();
+    let pages = PageServer::start();
+    let session = Started::start(&dir, &[]);
+    let path = "/kept-private?key=k3y#part";
+    let address = pages.url(path);
+    let token = open_at(&session, &address);
+    let wrong = request("look", Some(&session.id), Some(&other_than(&token)), &[]);
+    for (what, bytes, refusal) in [
+        ("a wrong token", wrong.encode().unwrap(), "token"),
+        (
+            "a request that does not decode",
+            b"GET / HTTP/1.1\r\n\r\nend\n".to_vec(),
+            "usage",
+        ),
+    ] {
+        let reply = reply_bytes(&session, &bytes);
+        assert!(!reply.is_empty(), "{what}: no reply");
+        assert!(
+            !contains(&reply, b"kept-private") && !contains(&reply, b"k3y"),
+            "{what}: the address is in the reply: {}",
+            String::from_utf8_lossy(&reply)
+        );
+        let answer = link::Answer::decode(&reply).expect("a link answer");
+        assert_eq!(answer.state, SessionState::Unknown, "{what}");
+        assert_eq!((answer.address, answer.title), (None, None), "{what}");
+        assert_eq!(
+            answer.text,
+            format!(
+                "surf 1 session {} unknown\ndid refused {refusal}\n",
+                session.id
+            ),
+            "{what}"
+        );
+    }
+    let answer = look(&session, &token);
+    assert_eq!(answer.status, 0, "{answer:?}");
+    let page = format!("page 200 \"text/html\" {}", surf_answer::quote(&address));
+    assert!(
+        answer.text.lines().any(|line| line == page),
+        "{}",
+        answer.text
+    );
+    assert_eq!(answer.address, Some(link::Quoted::new(&address)));
+}
+
+#[test]
+fn surfd_keeps_what_it_knew_after_a_refused_call() {
+    let dir = TestDir::new();
+    let pages = PageServer::start();
+    let daemon = surfd_in_process(&dir, |_| {});
+    let address = pages.url("/kept?key=k3y");
+    let session = wire_open(&dir, Some(&address));
+    let before = daemon.sessions().get(&session.id).cloned().expect("listed");
+    assert_eq!(before.address, Some(link::Quoted::new(&address)));
+    let refused = wire_call(
+        &dir,
+        &request(
+            "look",
+            Some(&session.id),
+            Some(&other_than(&session.token)),
+            &[],
+        ),
+    );
+    assert_eq!(refused.status, 1, "{refused:?}");
+    assert_eq!(
+        refused.text,
+        format!("surf 1 session {} unknown\ndid refused token\n", session.id)
+    );
+    let after = daemon.sessions().get(&session.id).cloned().expect("listed");
+    assert_eq!(after, before, "the list after the refused call");
+    let look = wire_as(&dir, &session, "look", &[]);
+    assert_eq!(look.status, 0, "{look:?}");
+    let page = format!("page 200 \"text/html\" {}", surf_answer::quote(&address));
+    assert!(look.text.lines().any(|line| line == page), "{}", look.text);
 }

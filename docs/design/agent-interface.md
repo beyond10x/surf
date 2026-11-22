@@ -114,7 +114,64 @@ what guards the HTTP side.
 - The session process also checks the peer's user id on the socket. This needs a system call
   the standard library does not expose in stable Rust; whether it can be done without `unsafe`
   and without a crate is open, and if not, the directory mode and the token carry it.
+  Answered for the client by `story:security-review-fixes` (below): not possible that way.
 - Idle timeout, proposed 30 minutes, then the session closes itself.
+
+### Four fixes after a security review (2026-11-22, `story:security-review-fixes`)
+
+A review of `0.2.0` and of `main` at `ad8d0e5` found four things, fixed before `0.3.0`.
+
+- **The client checks the way to `surfd` before it connects.** `surf-agent` looks at
+  `$XDG_RUNTIME_DIR`, `$XDG_RUNTIME_DIR/surf` and `surf/surfd.sock` without following a
+  symbolic link (`wire::check_socket_path`), before every connection, for every command, and
+  again after it started `surfd`: both directories must be directories, not symbolic links,
+  owned by the caller, with no access for group and others; the socket, when it is there, a
+  socket owned by the caller. A failed check exits 3 (as a start failure), names the path and
+  what is wrong, and connects to nothing, so no byte and no token is written. Inside two such
+  directories only the caller or the superuser can put a socket in place of `surfd`'s.
+  - The rule is "no access for group and others" (mode `& 0o077 == 0`), not "exactly 0700",
+    for the runtime directory: the freedesktop base directory rule for `XDG_RUNTIME_DIR` is
+    owner-only access, and a directory of mode 0500 or 0300 gives nobody else a way in.
+    `surfd` keeps its own stricter check of `surf/` (exactly 0700) when it starts.
+  - A runtime directory that is itself a symbolic link is refused too, though the review did
+    not ask for it: a link can be changed by whoever owns the directory it is in. This refuses
+    more and is easy to loosen.
+  - **The peer is not checked.** The standard library of rustc 1.99.1 reads a Unix socket
+    peer's credentials only through `UnixStream::peer_cred`, behind the unstable feature
+    `peer_credentials_unix_socket`; calling `getsockopt(SO_PEERCRED)` directly needs `unsafe`
+    or a crate, and neither is used. The owner and mode of the two directories carry it.
+- **A refusal without the token holds nothing of the session.** The session process answers a
+  request with a wrong token, and one it cannot decode, with the head line in the state
+  `unknown` and the `did` line, and sends `surfd` the record state `unknown` with no address and
+  no title (`surfd::link::SessionState::Unknown`). `surfd` changes nothing on its list for such
+  an answer: not the address, not the title, not the time of the last action. The head line's
+  state is `unknown` rather than the session's own because the story allows the refusal only what
+  it needs, and `open` or `closed` is a state of the session; `unknown` is a word the grammar has.
+- **A redirect cannot lead from a public address into the machine's network.** `surf-fetch`
+  resolves the host of each request of a chain once, checks the addresses it got and dials only
+  those (`surf_fetch::Network`, whose `resolve` and `connect` a test replaces). When the first
+  request connected to a public address, a redirect to a local one (loopback, private,
+  link-local, unique-local, shared, unspecified, or their IPv4-mapped IPv6 forms) ends the fetch
+  with `ForbiddenDestination`, a reason of `surf.net.FailureReason`, before any connection.
+  Decisions:
+  - A name that resolves to several addresses is refused when any one of them is local, also
+    when a public one comes first and would be dialed first: the order of a resolver's answer is
+    the resolver's, and a refusal on any local address does not depend on it. This refuses more
+    than "skip the local ones" and is easy to loosen.
+  - A chain counts as started at a local address by the address its first request connected
+    to, not by the name.
+  - The rule is the story's and goes no further: a chain whose first request went to a local
+    address may go to a public address and back to a local one. Whether a later public hop
+    should end the local allowance (a public site would then choose a local address) is left to
+    the story of an operator's own rule (allow-lists of destinations), which the story names
+    out of scope.
+  - The port is not looked at, and the first request is never refused by this rule: going to a
+    local address on purpose is a use of surf.
+- **`surfd` keeps the live view's token off standard error.** Started by hand, `surfd` writes
+  one line on standard error, `surfd: the live view's address is in <path of view-url>`, and no
+  token; `surfd --print-view-url` writes the address with its token instead, for a person who
+  asks for it. The option is named in the form of `--idle-exit`. `surf-agent` starts `surfd`
+  with standard error closed, as before.
 
 ## 4. The commands
 
@@ -301,7 +358,9 @@ session identity.
 - Page content is untrusted input to a language model. The format's answer to that is section
   5: quoting, escaping, cuts on length, and no page text outside quotes. It lowers the risk of
   a page steering the agent; it does not remove it, and the documentation for agents says so.
-- The token and the socket: section 3.
+- The token and the socket: section 3, with the checks the client makes before it connects.
+- A redirect from a public address to a loopback or private one is refused
+  (`ForbiddenDestination`, section 3).
 - One process per session; later the isolation target's boundary around it.
 - `file:` and other local schemes are refused for an agent session unless a flag allows them.
 - A recording can hold what the agent typed, passwords included. Proposed: values of password
@@ -343,6 +402,9 @@ script engine, step 9: nothing mutates a document's tree before it.
    `docs/design/scenario-runner.md`, Q1: surf's own line-oriented formats.
 3. Ranking and paging of long pages in `now` (section 5.2).
 4. Checking the socket peer's user id without `unsafe` and without a crate (section 3).
+   Answered on 2026-11-22: not possible with rustc 1.99.1 (`UnixStream::peer_cred` is
+   unstable); the client checks the directories and the socket instead (section 3, "Four fixes
+   after a security review").
 5. Whether the answer is also offered as JSON. Proposed: no, until something asks for it.
 6. The Chrome DevTools Protocol. Not explored. It would be a third front on the `agent`
    component's commands. WebDriver BiDi (W3C, from memory) is the standard with the same aim.
@@ -419,7 +481,8 @@ without a build step.
 
 - 127.0.0.1 only, on a port `surfd` picks and prints. A request whose `Host` is not that
   address and port is refused (DNS rebinding).
-- A view token, drawn by `surfd` and printed with the address, required on every route that
+- A view token, drawn by `surfd` and kept with the address in `view-url` (on standard error
+  only with `surfd --print-view-url`, since 2026-11-22), required on every route that
   answers with data (the page's own files hold none and are served without it, revision 1,
   D18). Without
   it any program of any local user that can reach the port reads every session's page text.

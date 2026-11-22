@@ -119,7 +119,9 @@ list and the selection scroll inside themselves.
 
 The view only reads: nothing on the page changes a session. It listens on 127.0.0.1 only. The
 token in the address is valid until `surfd` exits, and the browser may keep that address in its
-history.
+history. A `surfd` you start yourself writes one line on standard error, the path of
+`view-url`, and not the token; `surfd --print-view-url` writes the address with its token
+there instead.
 
 ## What surf is
 
@@ -173,6 +175,25 @@ history.
 - **561 tests**, built with warnings treated as errors, and 38 tests of the live view's page in
   a browser.
 
+Fixed after a security review, not in a release yet:
+
+- **A redirect cannot lead into your network.** When a load starts at a public address, a
+  redirect to a loopback, private, link-local, unique-local, shared (100.64.0.0/10) or
+  unspecified address, also one reached through a name, fails with `ForbiddenDestination`
+  before any connection to it. The name is resolved once per request, and the address checked is
+  the one connected to. Loading a local address on purpose works as before, and so do the
+  redirects of a load that starts there.
+- **A refused call learns nothing of the session.** A request without the right token, or one
+  that cannot be read, gets the refusal alone: the head line says `unknown`, and no address or
+  title of the session is in the reply, also on the session's own socket.
+- **`surf-agent` checks where it sends the token.** Before it connects, it checks that
+  `$XDG_RUNTIME_DIR` and `surf/` in it are directories of yours, not symbolic links, with no
+  access for group and others, and that `surfd.sock` is a socket of yours; otherwise it exits 3,
+  names the path and sends nothing.
+- **`surfd` keeps the view's token off its standard error.** Started by hand, it prints where the
+  live view's address is kept (`$XDG_RUNTIME_DIR/surf/view-url`), not the address with its
+  token; `surfd --print-view-url` prints the address for a person who asks for it.
+
 New with the ninth wave of the current plan, not in a release yet. Nothing a `surf-agent`
 command prints has changed:
 
@@ -214,7 +235,8 @@ New with the seventh wave of the current plan, not in a release yet:
   307 and 308 with a `Location`) inside one fetch. The `page` line shows the address the fetch
   ended at, and the `did go` line the address asked for. One more redirect after the twentieth
   fails the load with `TooManyRedirects`. Only `http:` loads: a redirect to `https:` fails with
-  `UnsupportedScheme`.
+  `UnsupportedScheme`. A redirect from a public address to a loopback or private one fails with
+  `ForbiddenDestination` (above).
 - **The live view's page shows real sessions**, with a playhead over each session's actions
   (see "Watching sessions live" above). After a refused token the page stops and reads
   `offline`. It is tested in a browser as a step of `task check`.

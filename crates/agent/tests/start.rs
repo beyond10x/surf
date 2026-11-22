@@ -1,9 +1,13 @@
 //! Cases 19 to 24: the runtime directory, and `open` starting `surfd`, with a copy of the built
-//! `surf-agent` in a directory of the test and the stand-in beside it as `surfd`.
+//! `surf-agent` in a directory of the test and the stand-in beside it as `surfd`. Since the
+//! story `security-review-fixes`, the checks of the runtime directory, `surf/` and the socket
+//! before any connection, each against a listener of the test that must receive nothing.
 
 mod common;
 
 use std::fs;
+use std::os::unix::fs::{PermissionsExt, symlink};
+use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -134,4 +138,91 @@ fn surfd_that_writes_nothing_exits_3_within_6_seconds() {
         panic!("the silent surfd was left running: {error}");
     }
     assert!(!Path::new(&dir.runtime().join("surf/surfd.sock")).exists());
+}
+
+// --- The checks before a connection (story `security-review-fixes`) ---------------------------
+
+/// A listener of the test at `path`, which must receive no connection.
+fn listener_at(path: &Path) -> UnixListener {
+    let listener = UnixListener::bind(path).expect("the test's listener");
+    listener.set_nonblocking(true).unwrap();
+    listener
+}
+
+/// `surf-agent look` with a session and its token; it must exit 3 naming `path` and `what`, and
+/// `listener` must have received no connection, so no byte. `surf-agent` has ended when this
+/// reads the listener, so one read decides.
+fn look_is_refused(dir: &TestDir, path: &Path, what: &str, listener: &UnixListener) {
+    let output = run(agent(dir)
+        .arg("look")
+        .env("SURF_SESSION", SESSION)
+        .env("SURF_TOKEN", TOKEN));
+    assert_eq!(output.status.code(), Some(3), "{}", stderr(&output));
+    let expected = format!("{} {what}", path.display());
+    assert!(stderr(&output).contains(&expected), "{}", stderr(&output));
+    assert!(stdout(&output).is_empty(), "{}", stdout(&output));
+    match listener.accept() {
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+        Err(error) => panic!("the test's listener: {error}"),
+        Ok(_) => panic!("surf-agent connected to the listener"),
+    }
+    assert!(dir.starts().is_empty(), "surfd was started");
+}
+
+#[test]
+fn a_runtime_dir_of_mode_0755_is_refused_before_any_byte() {
+    let dir = TestDir::new();
+    let surf = dir.runtime().join(wire::DIRECTORY);
+    fs::create_dir(&surf).unwrap();
+    fs::set_permissions(&surf, fs::Permissions::from_mode(0o700)).unwrap();
+    let listener = listener_at(&surf.join(wire::SOCKET));
+    fs::set_permissions(dir.runtime(), fs::Permissions::from_mode(0o755)).unwrap();
+    look_is_refused(&dir, &dir.runtime(), "has mode 0755", &listener);
+}
+
+#[test]
+fn surfs_directory_behind_a_symbolic_link_is_refused_before_any_byte() {
+    let dir = TestDir::new();
+    let target = dir.path.join("t");
+    fs::create_dir(&target).unwrap();
+    fs::set_permissions(&target, fs::Permissions::from_mode(0o700)).unwrap();
+    let listener = listener_at(&target.join(wire::SOCKET));
+    let surf = dir.runtime().join(wire::DIRECTORY);
+    symlink(&target, &surf).unwrap();
+    look_is_refused(&dir, &surf, "is a symbolic link", &listener);
+}
+
+#[test]
+fn a_socket_path_that_is_no_socket_is_refused_before_any_byte() {
+    let dir = TestDir::new();
+    let surf = dir.runtime().join(wire::DIRECTORY);
+    fs::create_dir(&surf).unwrap();
+    fs::set_permissions(&surf, fs::Permissions::from_mode(0o700)).unwrap();
+    let behind = dir.path.join("l.sock");
+    let listener = listener_at(&behind);
+    let socket = surf.join(wire::SOCKET);
+    symlink(&behind, &socket).unwrap();
+    look_is_refused(&dir, &socket, "is a symbolic link", &listener);
+    fs::remove_file(&socket).unwrap();
+    fs::write(&socket, "a regular file").unwrap();
+    look_is_refused(&dir, &socket, "is not a socket", &listener);
+}
+
+#[test]
+fn a_directory_of_another_user_is_refused() {
+    let dir = TestDir::new();
+    let caller = wire::caller_uid().unwrap();
+    let other = caller.wrapping_add(1);
+    let refusal = wire::check_socket_path(&dir.runtime(), other).unwrap_err();
+    assert_eq!(
+        refusal,
+        format!(
+            "{} is owned by user {caller}, not by the caller, user {other}",
+            dir.runtime().display()
+        )
+    );
+    assert_eq!(
+        wire::check_socket_path(&dir.runtime(), caller),
+        Ok(wire::SocketCheck::Absent)
+    );
 }

@@ -138,7 +138,7 @@ above, and the list of standards itself was written from memory.
   prints that release; `.github/workflows/check.yml` and `release.yml` read the channel and the
   components from it and name no release of their own. A `RUSTUP_TOOLCHAIN` in the environment
   wins over the file; `task check-runner` unsets it.
-- `spec/scenarios/*.yaml`: fourteen authored scenario files (`ess-scenario/6`), for what synthesis
+- `spec/scenarios/*.yaml`: fifteen authored scenario files (`ess-scenario/6`), for what synthesis
   does not write. Two cover the flows synthesis refuses (the page load that commits and the one that
   fails); both also read the request's address back from `Requests`. The third,
   `two-of-each-entity.yaml`, creates two windows, two tabs in one window, two page loads, two
@@ -164,7 +164,10 @@ above, and the list of standards itself was written from memory.
   `Navigate` with `Post`, a body and its media type starts a request with the same method and
   media type) and `navigation-get-has-no-body.yaml` (a `Navigate` with `Get` and no body starts a
   request with `Get` and no media type); both read the request back from `Requests`, which
-  stores no body. Every `Navigate` step of the other files names `method: Get`.
+  stores no body. Every `Navigate` step of the other files names `method: Get`. Since
+  `story:security-review-fixes`, `page-load-fails-at-a-forbidden-destination.yaml` sends
+  `FailRequest` with `ForbiddenDestination` and reads the failed request and navigation back:
+  synthesis sends only the first variant of a reason.
 - `spec/ess-inputs.yaml`: the list of every file above, and the pin `requires: ess 0.96.0`. A new
   file under `spec/` is not read until it is listed there.
 - `generated/rust/`: the workspace `ess generate synthesize` writes, its own `Cargo.toml`
@@ -204,7 +207,8 @@ above, and the list of standards itself was written from memory.
     web-platform-tests URL data vendored under `tests/data/`; no IDNA. No dependency.
   - `crates/fetch` (`surf-fetch`): fetches an `http:` address with the standard library only and
     returns status, media type and body, or `Unreachable`, `UnsupportedScheme`,
-    `MalformedResponse` or `TooManyRedirects`. Its documentation lists what it does not do.
+    `MalformedResponse`, `TooManyRedirects` or `ForbiddenDestination`. Its documentation lists what
+    it does not do.
     Since wave 7 it follows up to 20 redirects (301, 302, 303, 307, 308 with a `Location`, for
     `GET`) inside one fetch, returns the address it ended at (`Response.url`, at most 64 KiB) and
     `TooManyRedirects` for a redirect after the twentieth; a redirect to an address that is not
@@ -222,8 +226,16 @@ above, and the list of standards itself was written from memory.
     borrowed, not copied, and while it is written the fetch holds at most the header limit and
     one read buffer (73,728 bytes at the defaults for the whole fetch of a 4 MiB body sent twice
     through a 308, with short addresses and a 2-byte response); no bound is stated while a head
-    is read. 109 tests: 13 unit tests, `adversary_redirect_memory` 4, `fetch` 24, `fetch_bounds`
-    7, `post` 16, `redirects` 20, `review1_fetch` 5, `review1_security_fetch` 13 and
+    is read. Since `story:security-review-fixes` it has the destination rule of its section
+    "Destinations": each request of a chain resolves its host once, and those addresses are
+    checked and dialed; after a first request to a public address a redirect to a loopback,
+    private, link-local, unique-local, shared or unspecified address (or its IPv4-mapped form)
+    ends `ForbiddenDestination` before any connection. `send_through(&Request, &Limits, &dyn
+    Network)` takes the resolver and the transport (`Network::resolve`, `Network::connect`);
+    `send` and `fetch` use `OsNetwork`. 115 tests: 14 unit tests, `adversary_redirect_memory` 4,
+    `fetch` 24, `fetch_bounds` 7, `post` 16, `redirects` 25 (cases 21 to 25 over a
+    `TestNetwork` of the test, no real name resolved), `review1_fetch` 5,
+    `review1_security_fetch` 13 and
     `review2_fetch_limits` 7. `adversary_redirect_memory` holds the only `unsafe` of the
     repository, a counting allocator, test only; no file under a `src/` holds any. Depends on
     `surf-url`.
@@ -271,7 +283,14 @@ above, and the list of standards itself was written from memory.
   - `crates/agent` (`surf-agent`): the agent command line and the binary `surf-agent`. A parser
     held to `cli/surf-agent.yaml` by a test, the token read from `SURF_TOKEN` or from a token file
     the caller owns, and the wire to `surfd` over a Unix socket in `$XDG_RUNTIME_DIR/surf`.
-    `wire::caller_uid()` is the one definition of the caller's user id (Linux only). Since wave
+    `wire::caller_uid()` is the one definition of the caller's user id (Linux only). Since
+    `story:security-review-fixes` every command checks, before it connects and again after it
+    started `surfd` (`wire::check_socket_path`), that the runtime directory and `surf/` are
+    directories of the caller, not symbolic links, with no access for group and others, and
+    that `surfd.sock` is a socket of the caller; a failed check exits 3 naming the path, with
+    nothing connected or written. It checks no peer: `UnixStream::peer_cred` is unstable in
+    rustc 1.99.1. `tests/start.rs` has the four tests of the checks, each against a listener of
+    the test. Since wave
     4 `surf-agent open`, `go`, `look` and `close` run against a real `surfd` and a real session
     process; the package carries the release version, `0.2.0`, as do `surf-cli`, `surfd` and
     `surf-session`. `open` starts `surfd` from the directory of its own executable. Depends on
@@ -286,8 +305,12 @@ above, and the list of standards itself was written from memory.
     address and token in `$XDG_RUNTIME_DIR/surf/view-url` (mode 0600, removed at exit); it reads
     a session's text only through `surf_answer::parse` and `surf_answer::unquote`. The server
     starts in `Daemon`'s `begin` with a view token drawn by `surf-secret`; the token is in that
-    file and in the line the binary writes to standard error (`Config::view_line`), in no
-    answer, refusal, entry or log line. A reader of the view is not activity for the idle exit,
+    file and, only with `surfd --print-view-url`, in the line the binary writes to standard
+    error (`Config::view_line`), in no answer, refusal, entry or log line. Without the option the
+    binary writes `surfd: the live view's address is in <path of view-url>` there
+    (`story:security-review-fixes`). A link answer whose record state is `unknown`
+    (`link::SessionState::Unknown`, a refusal the session did not act on) changes nothing on the
+    list. A reader of the view is not activity for the idle exit,
     and a replay of more than 256 numbers is answered with `reset`. It makes no peer check
     (`UnixStream::peer_cred` is unstable in rustc 1.99.1): the directory's mode and owner and
     the token carry it. A symbolic link under its directory makes it refuse to start. Bounds:
@@ -296,8 +319,8 @@ above, and the list of standards itself was written from memory.
     (`LATE_ANSWER_TIMEOUT`) while the session's turn stays taken, a log of at most 10,000
     entries and 16 MiB per session and 64 MiB over all sessions, a reader queue of 1,024
     entries, 256 ended sessions listed; open sessions are not bounded. It starts `surf-session`
-    from the directory of its own executable. Its 46 tests (3 unit tests of `src/view.rs`,
-    `adversary_link` 2, `built` 12, `in_process` 14, `log` 6, `view` 9) run a stand-in session
+    from the directory of its own executable. Its 48 tests (3 unit tests of `src/view.rs`,
+    `adversary_link` 2, `built` 14, `in_process` 14, `log` 6, `view` 9) run a stand-in session
     or none; the real one is run by the `e2e`, `events`, `view`, `adversary_events` and
     `adversary_view` tests of `surf-session`. Depends on `surf-agent` (for `wire`),
     `surf-answer`, `surf-secret` and `surf-view`.
@@ -308,7 +331,9 @@ above, and the list of standards itself was written from memory.
     `CloseSession`, `RecordAction`) and loads pages through the `surf` library with
     `surf-fetch`: `http:` only. The token is compared in constant time and is in no command
     line, environment or file; a request with a wrong token or for another identity gets the
-    head line and the refusal only. A request is at most 64 KiB and must arrive within 10 s;
+    head line and the refusal only, and since `story:security-review-fixes` that head line says
+    `unknown` and the status record holds the state `unknown` with no address and no title, for
+    an unreadable request too. A request is at most 64 KiB and must arrive within 10 s;
     one connection is served at a time. After each answer the session calls
     `Browser::forget_delivered` and holds no response body. Since wave 5 each answer to `surfd`
     carries the entries of its request: each action, the events the system published for it,
@@ -321,8 +346,8 @@ above, and the list of standards itself was written from memory.
     most four times its length plus two bytes. Since wave 8 the entries of
     `NavigationStarted` and `RequestStarted` carry `method`, `body` as `<n> bytes` and
     `body_type`, an absent one as the field with no value; its transport is `surf::fetch_http`,
-    which since wave 9 sends a `Post` (no command of the session sends one yet). 46 tests:
-    `adversary_events` 1, `adversary_view` 1, `built` 9, `core` 10, `e2e` 1 (runs the three
+    which since wave 9 sends a `Post` (no command of the session sends one yet). 48 tests:
+    `adversary_events` 1, `adversary_view` 1, `built` 11, `core` 10, `e2e` 1 (runs the three
     built binaries, or those in `SURF_BIN_DIR`), `events` 16, `memory` 1, `redirect` 2 and
     `view` 5 (the live view of `surfd` over the real session).
     `cargo clippy -p surf-session` needs `--no-deps`: the generated `surf-types` fails clippy.
@@ -509,7 +534,9 @@ A response names the address it came from, after the last redirect (`DeliverResp
 `ResponseReceived.url`): the navigation commits there, the document is parsed at it, and the
 session shows it. The request keeps the address asked for. `surf.net.FailureReason` has the
 variant `TooManyRedirects`: a redirect that arrives after 20 followed ones, the wording of the
-Fetch Standard. Since wave 7 the transport (`crates/fetch`) follows redirects inside one
+Fetch Standard; and `ForbiddenDestination`: a redirect from a public address to a local one
+(the comment above `entities` in `spec/domains/net.yaml`, surf's own rule). Since wave 7 the
+transport (`crates/fetch`) follows redirects inside one
 fetch and returns the address it ended at; a redirect adds no event.
 
 A request has a method (wave 8). `Navigate` and `Fetch` carry a method (`surf.net.Method`:
@@ -987,6 +1014,14 @@ were 97 suites, 363 passed, and 5 passed cases. Before
 wave 4 they were 7 authored scenarios, 81 scenarios, 31 failed by the planted defect, 20
 packages, 88 suites and 324 passed; the refusals (27, the same lines) and the 30 artifacts did
 not change, and the HTML conformance gate was not part of `check`.
+
+With `story:security-review-fixes` (2026-11-22, the authored scenario
+`page-load-fails-at-a-forbidden-destination.yaml` and the reason `ForbiddenDestination`):
+`surf v1 — 9 file(s), 15 scenario(s), valid`, `96 scenario(s) (15 authored), 28 refusal(s)`,
+`96 scenarios: 96 passed, 0 failed, 0 error, 0 unsupported` against the interpreter and against
+the Rust system, and `conform-totals` of suite
+`sha256:579a46b3389c56bb67b8fc3174268f525b8568ee47446e67d2a1cca936660ba8`; the refusals are the
+same 28 and `generated-check` still names 30 artifacts.
 
 `REFUSALS_MAX` in `Taskfile.yml` is 28. `task suite` fails above it. Lower it when a refusal goes
 away; raise it only with the new refusal listed here. The list is `grep '^refused:'

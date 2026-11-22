@@ -40,8 +40,8 @@ fetch-failed <request-id> <reason> <address>
   navigation and its request have the same identity.
 - `<state>` is `Started`, `Committed`, `Failed` or `Cancelled` for a navigation and `Pending`,
   `Responded` or `Failed` for a request. `<reason>` is `Unreachable`, `UnsupportedScheme`,
-  `MalformedResponse` or `TooManyRedirects`. A document has one state, and its line has no state
-  field.
+  `MalformedResponse`, `TooManyRedirects` or `ForbiddenDestination`. A document has one
+  state, and its line has no state field.
 - After redirects, the `navigation` and `document` lines hold the address of the last response,
   and the `request` and `fetch-failed` lines the address asked for.
 - `<address>` is the rest of the line. Printable ASCII (U+0020 to U+007E) other than the backslash
@@ -75,7 +75,11 @@ The fetch takes its limits from `surf-fetch`'s defaults: 10 s to resolve the hos
 header and 16 MiB of body
 ([`crates/fetch`](https://github.com/beyond10x/surf/blob/main/crates/fetch/src/lib.rs)). It
 follows at most 20 redirects (301, 302, 303, 307, 308 with a `Location`) inside the one fetch,
-within the same 40 s.
+within the same 40 s. When the first request went to a public address, a redirect to a loopback,
+private, link-local, unique-local, shared (100.64.0.0/10) or unspecified address, also one
+reached through a name, fails the load with `ForbiddenDestination` before any connection to it.
+A first request to such an address, and the redirects of a chain that starts there, load as
+before.
 
 The source of this page is
 [`docs/surf-command.md`](https://github.com/beyond10x/surf/blob/main/docs/surf-command.md) in the

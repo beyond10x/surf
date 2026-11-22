@@ -923,13 +923,17 @@ fn failure(error: LinkError) -> Failure {
 }
 
 /// Release the turn of `id`; for an answer that arrived, note it on the list (last action,
-/// address, title, `closed`) and keep its entries while the session is listed.
+/// address, title, `closed`) and keep its entries while the session is listed. An answer whose
+/// record is `unknown`, a refusal the session did not act on, changes nothing on the list.
 fn settle(shared: &Shared, id: &str, answer: Option<&mut link::Answer>) {
     let mut table = guard(&shared.table);
     let listed = match table.entries.get_mut(id) {
         Some(entry) => {
             entry.turn = false;
-            if let Some(answer) = &answer {
+            if let Some(answer) = answer
+                .as_ref()
+                .filter(|answer| answer.state != link::SessionState::Unknown)
+            {
                 entry.last_action = SystemTime::now();
                 entry.address = answer.address.clone();
                 entry.title = answer.title.clone();
