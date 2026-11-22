@@ -7,7 +7,7 @@ title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, in the session process, against a DOM generated from Web IDL and under limits per page, when the session's option asks for it, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 32
+revision: 33
 ---
 ## Context
 
@@ -798,3 +798,15 @@ Against this epic and the plan read for it:
 - `epic:e2e-scenario-runner` plans `surf run` to run a scenario in process
   (`story:runner-run`); by S7 it runs no page script, so a scenario of a page that needs its
   scripts cannot run there until `surf run` is a client of `surfd`. That epic is not changed here.
+
+## Answers of the script engine's session
+
+The session of the script engine placed the ten requirements of "The gaps" against its design and code on 2026-11-22 and drafted 13 stories in three batches (H1, H2, H3), built after its budget batch. Its answers, and what they change here:
+
+- Requirement 4 (a weak host reference) is withdrawn as a need of surf. A node-to-wrapper map that does not keep the wrapper alive loses what a script set on the wrapper while its node is still in the tree. surf keeps one wrapper per node strongly for the life of the document, bounded by the parser's node limit. The engine writes down what a kept handle already does.
+- Requirement 3 gains steps: the host charges and credits bytes and charges steps for its own work on the engine's one ledger, through `Cx`. The generated bindings charge steps in proportion to the work of a member (a tree walk, a text copy).
+- Requirement 9 gains `%Array.prototype.entries%`, `keys` and `forEach` beside `values`: Web IDL needs them for an iterable `NodeList`. The intrinsics and the well-known symbols are two closed enumerations.
+- Requirement 1 is a read on the agent of the line and column of the last entry's parse error or uncaught throw; requirement 5 reads an error's kind from its own slot and its own `message` without running code; requirement 8 is `Cx::set_prototype_of` and `get_prototype_of`; requirement 10 is stated ceilings and a measuring test of 300 host functions and 40 host objects, not an exact cost per item; requirement 7 is a committed snapshot of the host interface with a gate check; requirement 6 is shown in the engine's own development and release profiles, and surf tests its own profile.
+- Order: H1 (7, 8, the first part of 9, 4) gates `webidl-bindings` together with 10; H2 (2, 3, 10, 5, 1) gates the first page script; H3 (the rest of 2 and 9, 6) comes before the tag. The tag surf pins comes after the engine's slice 6 closes with these tested.
+
+The picks among the engine's options for the host interface (its G1, G3, G4, G5, G8, G9: option A each) were made by the coordinating agent for the operator on 2026-11-22 and are reported to him.
