@@ -3,11 +3,20 @@ title: Drive surf from an agent
 description: "surf-agent open, go, look and close: a browser session for an AI agent or a script, one call at a time."
 ---
 
+import AgentTerminal from '@site/src/components/AgentTerminal';
+import agentSession from '@site/data/surf-agent.terminal.json';
+
 # Drive surf from an agent
 
 `surf-agent` drives a browser session one call at a time. An AI agent, or a script, opens a
 session, sends it to an address, reads what it holds and closes it. Every call prints a short
 answer in plain lines, written to be read by a language model.
+
+<AgentTerminal
+  id="agent-session"
+  session={agentSession}
+  caption="An agent session recorded on 2026-11-22 against a local copy of this site on 127.0.0.1:43117, with the token replaced."
+/>
 
 It runs on Linux only: the agent binaries read the caller's user id from `/proc/self` and need
 `XDG_RUNTIME_DIR`, and macOS has neither.
