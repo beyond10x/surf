@@ -424,6 +424,98 @@ fn case_05_look_adds_no_entry() {
     assert_eq!(daemon.newest_entry(), newest);
 }
 
+/// `text` with each UUID in it replaced by `#<n>`, n the order of its first appearance in
+/// `seen`, which the calls of one session share.
+fn numbered(text: &str, seen: &mut Vec<String>) -> String {
+    let is_uuid = |word: &[u8]| {
+        word.len() == 36
+            && word.iter().enumerate().all(|(at, b)| match at {
+                8 | 13 | 18 | 23 => *b == b'-',
+                _ => b.is_ascii_digit() || (b'a'..=b'f').contains(b),
+            })
+    };
+    let bytes = text.as_bytes();
+    let mut out = String::new();
+    let mut at = 0;
+    while at < bytes.len() {
+        if at + 36 <= bytes.len() && is_uuid(&bytes[at..at + 36]) {
+            let uuid = &text[at..at + 36];
+            let n = match seen.iter().position(|known| known == uuid) {
+                Some(n) => n,
+                None => {
+                    seen.push(uuid.to_string());
+                    seen.len() - 1
+                }
+            };
+            out.push_str(&format!("#{n}"));
+            at += 36;
+        } else {
+            let c = text[at..].chars().next().unwrap();
+            out.push(c);
+            at += c.len_utf8();
+        }
+    }
+    out
+}
+
+/// Case 10 of `story:page-text-look`: a call with a form records what the same call records
+/// without it.
+#[test]
+fn a_call_with_a_form_records_the_same() {
+    let dir = TestDir::new();
+    let pages = PageServer::start();
+    let daemon = surfd_in_process(&dir, |_| {});
+    let (a, b) = (pages.url("/a"), pages.url("/b"));
+    let mut paths = Vec::new();
+    let mut sessions = Vec::new();
+    for with_form in [true, false] {
+        let form = |value: &'static str| -> Vec<(&'static str, &'static str)> {
+            if with_form {
+                vec![("form", value)]
+            } else {
+                Vec::new()
+            }
+        };
+        let mut args = vec![("url", a.as_str())];
+        args.extend(form("tree"));
+        let answer = common::wire_call(&dir, &common::request("open", None, None, &args));
+        assert_eq!(answer.status, 0, "{answer:?}");
+        let session = common::opened(&answer.text);
+        let mut args = vec![("url", b.as_str())];
+        args.extend(form("markdown"));
+        let answer = wire_as(&dir, &session, "go", &args);
+        assert_eq!(answer.status, 0, "{answer:?}");
+        let answer = wire_as(&dir, &session, "look", &form("tree"));
+        assert_eq!(answer.status, 0, "{answer:?}");
+        assert_eq!(answer.text.contains("\nnote text: no-css\n"), with_form);
+        paths.push(common::path_block(&answer.text));
+        sessions.push(session);
+    }
+    assert_eq!(paths[0], paths[1], "the path lines");
+    let with = kept(&daemon, &sessions[0]);
+    let without = kept(&daemon, &sessions[1]);
+    assert_eq!(with.len(), without.len(), "{with:#?}\n{without:#?}");
+    let (mut seen_with, mut seen_without) = (Vec::new(), Vec::new());
+    let mut answers = 0;
+    for (one, other) in with.iter().zip(&without) {
+        assert_eq!((one.index, one.kind), (other.index, other.kind));
+        let mut text = one.text.clone();
+        if one.kind == EntryKind::Answer {
+            answers += 1;
+            let at = text.find("note text: ").expect("a note text line");
+            assert!(text[at..].contains("\ntext "), "{text}");
+            text.truncate(at);
+        }
+        assert_eq!(
+            numbered(&text, &mut seen_with),
+            numbered(&other.text, &mut seen_without),
+            "entry {}",
+            one.index
+        );
+    }
+    assert_eq!(answers, 2, "the answer entries of open and go");
+}
+
 #[test]
 fn case_06_a_refused_command_adds_no_entry() {
     let dir = TestDir::new();
@@ -912,9 +1004,15 @@ fn case_17_every_event_maps_with_all_its_fields() {
         .map(|event| event.name().to_string())
         .collect();
     assert_eq!(names.len(), covered.len(), "a variant listed twice");
+    // No command publishes `surf.agent.EventsLeftOut`: the session writes it
+    // (`entries::left_out_line`), and `spec/` declares its name and field.
+    let left_out = "surf.agent.EventsLeftOut";
     assert_eq!(
         names,
-        spec.keys().cloned().collect::<BTreeSet<_>>(),
+        spec.keys()
+            .filter(|name| *name != left_out)
+            .cloned()
+            .collect::<BTreeSet<_>>(),
         "the variants covered and the events of spec/"
     );
     assert_eq!(
@@ -922,6 +1020,15 @@ fn case_17_every_event_maps_with_all_its_fields() {
         19,
         "the events of spec/ after story:html-document-spec"
     );
+    assert_eq!(spec.len(), 20, "and surf.agent.EventsLeftOut");
+    let line = surf_session::entries::left_out_line(3);
+    assert!(line.starts_with(&format!("event {left_out} ")), "{line}");
+    let mapped = fields(&line).expect("a mapped event");
+    let declared: Vec<&str> = spec[left_out].iter().map(|(f, _)| f.as_str()).collect();
+    let written: Vec<&str> = mapped.iter().map(|(f, _)| f.as_str()).collect();
+    assert_eq!(written, declared, "the fields of {left_out}");
+    assert_eq!(mapped[0].1.as_deref(), Some("\"3\""));
+    assert!(surfd::link::Entry::line(&line).is_some(), "{line}");
     for field in [
         ("surf.net.ResponseReceived", "url"),
         ("surf.navigation.NavigationCommitted", "url"),

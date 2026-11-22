@@ -2,8 +2,8 @@
   "provenance": {
     "system": "surf",
     "specification_version": "v1",
-    "source_digest": "58c8d71c2857e1d37fdb47be74f43f361b96610088fb3f48b308f12af005b535",
-    "contract_digest": "9cf563aeb85e0ebaf274c9cab36fdfa5c94c5872239a1808e0be06ff915e5e98"
+    "source_digest": "4eda004170e59fade27e10838fa9c53c2219ea2ec5de576c3fc1e66d00ec6e74",
+    "contract_digest": "d02edabfb4604fe93f72d6e24ef0d1805df03b1628561d9011c4f5f33d76c73d"
   },
   "scope": {
     "profile": "component-skeletons"
@@ -39,6 +39,13 @@
     },
     {
       "kind": "domain_type",
+      "source": "surf.agent.LookCall",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
       "source": "surf.agent.OpenCall",
       "disposition": {
         "disposition": "generated"
@@ -47,6 +54,13 @@
     {
       "kind": "domain_type",
       "source": "surf.agent.OpenedSession",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.agent.PageForm",
       "disposition": {
         "disposition": "generated"
       }
@@ -627,6 +641,13 @@
     {
       "kind": "event_type",
       "source": "surf.agent.ActionRecorded",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "event_type",
+      "source": "surf.agent.EventsLeftOut",
       "disposition": {
         "disposition": "generated"
       }

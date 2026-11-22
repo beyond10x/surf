@@ -45,9 +45,9 @@ types:
   # 64 lower-case hexadecimal digits. It is not declared as an `alphabet:` or a length: the
   # command-line binding refuses a constrained type ("invariants are explicit refusals",
   # ess-cli/2), so the form is checked by the code that issues and reads it.
-  # It is named only by the three command-line shapes below that carry it (`SessionCall`,
-  # `GoCall`, `OpenedSession`): no entity, command, event or view holds it, so no stored row and no
-  # published event carries the secret.
+  # It is named only by the four command-line shapes below that carry it (`SessionCall`,
+  # `LookCall`, `GoCall`, `OpenedSession`): no entity, command, event or view holds it, so no
+  # stored row and no published event carries the secret.
   # UNMAPPED: that a session's token is what makes its caller `surf.agent.SessionHolder`. The
   # session process issues the token when it opens its session, keeps only a hash of it, compares
   # a presented token with it in constant time, and sends the call as `SessionHolder` with that
@@ -70,13 +70,48 @@ types:
   # `session_id` is `String` in each, not `SessionId`: the binding refuses a `Uuid` underneath
   # ("unsupported CLI primitive `Uuid`", ess 0.96.0), so the client parses the text into the
   # identity and answers a malformed one as an invalid input.
+  # How `--as` prints the page a call loaded or shows (`docs/design/page-as-text.md`, section 2):
+  # the outline of its node tree or its text as Markdown, in the `text` block of the answer.
+  # `as` is a Rust keyword, so the fields that carry it are named `form`.
+  - name: surf.agent.PageForm
+    kind: enum
+    variants:
+      - name: tree
+        summary: The outline of the page's node tree, one line per element and text.
+      - name: markdown
+        summary: The page's text as Markdown, with its links and controls named by their handles.
+    naming:
+      summary: The form in which an answer prints the page.
+
+  # `form` and `from_line` are two fields on each of `OpenCall`, `GoCall` and `LookCall`, not one
+  # shared record: an `ess-cli/2` argument binds a field of the callable's input by name, and a
+  # field inside a nested record is not a source the binding is measured to take. `from_line`
+  # counts the lines of the form asked for, from 1; the client takes it only beside `form`.
   - name: surf.agent.OpenCall
     kind: struct
     naming:
-      summary: The input of `open`, the address to load first if one is given.
+      summary: The input of `open`, the address to load first if one is given, and the form to print it in.
     fields:
       - name: url
         type: Optional<surf.url.Url>
+      - name: form
+        type: Optional<surf.agent.PageForm>
+      - name: from_line
+        type: Optional<Integer>
+
+  - name: surf.agent.LookCall
+    kind: struct
+    naming:
+      summary: Which session `look` reads, the token that proves the caller holds it, and the form to print the page in.
+    fields:
+      - name: session_id
+        type: String
+      - name: token
+        type: surf.agent.SessionToken
+      - name: form
+        type: Optional<surf.agent.PageForm>
+      - name: from_line
+        type: Optional<Integer>
 
   - name: surf.agent.SessionCall
     kind: struct
@@ -91,7 +126,7 @@ types:
   - name: surf.agent.GoCall
     kind: struct
     naming:
-      summary: The address to load into a session, and the token that proves the caller holds it.
+      summary: The address to load into a session, the token that proves the caller holds it, and the form to print the page in.
     fields:
       - name: session_id
         type: String
@@ -99,6 +134,10 @@ types:
         type: surf.agent.SessionToken
       - name: url
         type: surf.url.Url
+      - name: form
+        type: Optional<surf.agent.PageForm>
+      - name: from_line
+        type: Optional<Integer>
 
   - name: surf.agent.OpenedSession
     kind: struct
@@ -694,6 +733,15 @@ events:
         type: surf.agent.ActionCommand
       - name: url
         type: Optional<surf.url.Url>
+
+  # No command publishes it: the session process writes it into the entries of one request, after
+  # an action's events, when it left `count` of them out to keep the entries within the link's
+  # bounds (`crates/session/src/lib.rs`, "The entries"). It is declared here so that its name and
+  # field are `spec/`'s, as every other event entry's are (`docs/view-stream.md`, "Event names").
+  - name: surf.agent.EventsLeftOut
+    fields:
+      - name: count
+        type: Integer
 
 views:
   # Every session, as the local user lists them: every stored field but `holder`, which repeats

@@ -136,7 +136,7 @@ fn a_page_with_more_links_than_a_request_carries_answers_and_keeps_the_session_o
     assert_eq!(added, ELEMENT_ENTRIES_MAX);
     let left_out: Vec<&Entry> = entries
         .iter()
-        .filter(|entry| entry.text.starts_with("event surf.session.EventsLeftOut "))
+        .filter(|entry| entry.text.starts_with("event surf.agent.EventsLeftOut "))
         .collect();
     assert_eq!(
         left_out
@@ -144,7 +144,7 @@ fn a_page_with_more_links_than_a_request_carries_answers_and_keeps_the_session_o
             .map(|entry| entry.text.as_str())
             .collect::<Vec<_>>(),
         [format!(
-            "event surf.session.EventsLeftOut count=\"{}\"\n",
+            "event surf.agent.EventsLeftOut count=\"{}\"\n",
             LINKS - ELEMENT_ENTRIES_MAX
         )]
     );

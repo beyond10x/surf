@@ -25,6 +25,21 @@
 //! published, so that the log holds the action before the events it caused (decision D19).
 //! [`Session`] holds the sequence number: the last one recorded.
 //!
+//! # The page as text
+//!
+//! `open <url>`, `go <url>` and `look` take `arg form` (`tree` or `markdown`, the client's
+//! `--as`) and, beside it, `arg line` (a number from 1, `--from-line`; 1 when absent). The answer
+//! then ends in `note text: no-css` and the `text` block of `docs/agent-answer.md`:
+//! [`surf_answer::text_page`] over [`surf_page_text::outline`] or
+//! [`surf_page_text::markdown::markdown`] of the tree `surf::Browser` keeps for the document of
+//! the session's current navigation (`Browser::document_tree`, read only; nothing is fetched
+//! again). For `open <url>` and `go <url>` that is the document the load committed. With no such
+//! document (`page none`, a failed load, a response that is not HTML) the answer ends in `note
+//! text: no-document` and has no block. A refusal carries neither. The call records what it
+//! records without the arguments: the same action, the same events, the same `path`; only the
+//! answer is longer, and the exit status is the one the call has without them. Computed at each
+//! call, in time linear in the tree; the lines not shown are counted, not kept.
+//!
 //! # Refusals
 //!
 //! - A request other than `open` whose `session` is not this identity, or whose token does not
@@ -32,9 +47,11 @@
 //!   the session is open: `did refused token`, status 1, the head line and the `did` line only.
 //!   Nothing is acted on and nothing of the session's state is in the answer.
 //! - From the holder, a command this session does not know, an argument name it does not know,
-//!   `go` without `arg url`: `did refused usage`, status 2, with the current page and path.
-//! - `open` after the first, `open` with a session, a token or an argument but `url`, and a
-//!   request that does not decode ([`Session::malformed`]): `did refused usage`, status 2, the
+//!   `go` without `arg url`, `arg form` other than `tree` or `markdown`, `arg line` without `arg
+//!   form` or not a number from 1: `did refused usage`, status 2, with the current page and path.
+//! - `open` after the first, `open` with a session, a token or an argument but `url`, `form` and
+//!   `line`, `open` with `arg form` and no `arg url` or with a `form` or `line` refused above, and
+//!   a request that does not decode ([`Session::malformed`]): `did refused usage`, status 2, the
 //!   head line and the `did` line only, because it carries no token.
 //!
 //! The refusals that carry no proof of the token (the first and the third above) are the same
@@ -61,8 +78,9 @@
 //! its length and its two quotes; `surf-url` leaves a `\` in the query or fragment of a
 //! response URL as it is, so the quoted form of one comes to up to four times
 //! [`surf_fetch::MAX_ADDRESS_BYTES`], at most 262,146 bytes. Seven addresses of at most 262,146
-//! bytes each are 1,835,022 bytes, so an answer stays below [`surfd::link::ANSWER_TEXT_MAX`],
-//! 4,194,304 bytes.
+//! bytes each are 1,835,022 bytes; a `text` block adds at most [`surf_answer::TEXT_BYTES_MAX`]
+//! (32,768) bytes of body lines, its header, a `more` line and a `note text:` line, each under
+//! 200 bytes; so an answer stays below [`surfd::link::ANSWER_TEXT_MAX`], 4,194,304 bytes.
 //!
 //! A status record whose quoted address does not fit [`surfd::link::RECORD_MAX`] (65,536 bytes,
 //! with the record's other lines) is sent without the address, and `surfd` lists the session
@@ -108,7 +126,7 @@
 //! their bytes, with 64 bytes for a left-out line after each, are set aside first; an event
 //! entry that would take the event entries past what is left is left out, and so is every
 //! `surf.document.ElementAdded` entry after the first [`ELEMENT_ENTRIES_MAX`] (256) of the
-//! request. After an action's events, one line `event surf.session.EventsLeftOut
+//! request. After an action's events, one line `event surf.agent.EventsLeftOut
 //! count="<n>"` ([`entries::left_out_line`]) counts the entries left out of them; it is absent
 //! when none was. So a request carries at most 256 element entries, and `surfd`'s bounds of a
 //! session's log (10,000 entries) and of a reader's queue (1,024) are not reached by one page.
@@ -136,7 +154,8 @@ use std::io;
 use surf::{MemoryBrowser, Transport, UnmetObligation};
 use surf_agent::wire::{self, Request};
 use surf_answer::{
-    Answer, Did, Head, Page, Path, PathEntry, RefusalReason, SessionState as HeadState,
+    Answer, Did, Form, Head, Note, Page, Path, PathEntry, RefusalReason, SessionState as HeadState,
+    TextNote,
 };
 use surf_ports::{Caller, ComponentPorts};
 use surf_secret::Token;
@@ -145,6 +164,7 @@ use surf_types::agent::{
     OpenSessionOutcome, RecordAction, RecordActionOutcome, SessionId, SessionState,
     SessionStateView,
 };
+use surf_types::document::DocumentState;
 use surf_types::navigation::NavigationState;
 use surf_types::primitives::Uuid;
 use surf_types::shell::{OpenTab, OpenTabOutcome, OpenWindow, OpenWindowOutcome};
@@ -430,15 +450,74 @@ impl<T: Transport> Session<T> {
         }
         self.caller.set(Some(self.session_id.clone()));
         let result = match request.command.as_str() {
-            "go" => match (request.unknown_arg(&["url"]), request.arg("url")) {
-                (None, Some(url)) => self.go(url),
+            "go" => match (
+                request.unknown_arg(&["url", "form", "line"]),
+                request.arg("url"),
+                as_text(request),
+            ) {
+                (None, Some(url), Ok(text)) => {
+                    self.go(url).map(|reply| self.with_text(reply, text))
+                }
                 _ => Ok(self.with_state(RefusalReason::Usage)),
             },
-            "look" if request.unknown_arg(&[]).is_none() => Ok(self.state_reply(0, None)),
+            "look" => match (request.unknown_arg(&["form", "line"]), as_text(request)) {
+                (None, Ok(text)) => Ok(self.with_text(self.state_reply(0, None), text)),
+                _ => Ok(self.with_state(RefusalReason::Usage)),
+            },
             "close" if request.unknown_arg(&[]).is_none() => self.close(),
             _ => Ok(self.with_state(RefusalReason::Usage)),
         };
         result.unwrap_or_else(|stop| self.stopped(&stop))
+    }
+
+    /// `reply` with the page as text when the call asked for it (`--as`, "The page as text"
+    /// above): `note text: no-css` and the `text` block of the current document, or `note text:
+    /// no-document` when there is none. A refusal (a status other than 0) is left as it is.
+    fn with_text(&self, mut reply: Reply, text: Option<AsText>) -> Reply {
+        let Some(AsText { form, from_line }) = text else {
+            return reply;
+        };
+        if reply.status != 0 {
+            return reply;
+        }
+        match self.current_tree() {
+            Some(tree) => {
+                reply.answer.notes.push(Note::Text(TextNote::NoCss));
+                let lines: Box<dyn Iterator<Item = String>> = match form {
+                    Form::Tree => Box::new(surf_page_text::outline(tree)),
+                    Form::Markdown => Box::new(surf_page_text::markdown::markdown(tree)),
+                };
+                reply.answer.text = Some(surf_answer::text_page(form, lines, from_line));
+            }
+            None => reply.answer.notes.push(Note::Text(TextNote::NoDocument)),
+        }
+        reply
+    }
+
+    /// The node tree of the document of the session's current navigation: the navigation is
+    /// committed and its document parsed. `None` before the first navigation, after a failed
+    /// one, and for a response that is not HTML.
+    fn current_tree(&self) -> Option<&surf::Tree> {
+        let system = self.browser.system();
+        let row = system
+            .agent
+            .sessions()
+            .ok()?
+            .into_iter()
+            .find(|row| row.session_id == self.session_id)?;
+        if row.navigation_state != Some(NavigationState::Committed) {
+            return None;
+        }
+        let navigation = row.navigation_id?;
+        let document = system
+            .document
+            .documents()
+            .ok()?
+            .into_iter()
+            .find(|document| {
+                document.navigation_id == navigation && document.state == DocumentState::Parsed
+            })?;
+        self.browser.document_tree(&document.document_id)
     }
 
     /// The reply to a request that did not decode: `did refused usage`, status 2, the head line
@@ -459,14 +538,17 @@ impl<T: Transport> Session<T> {
     }
 
     fn open(&mut self, request: &Request) -> Reply {
+        let url = request.arg("url");
+        let text = as_text(request);
         if self.opened
             || request.session.is_some()
             || request.token.is_some()
-            || request.unknown_arg(&["url"]).is_some()
+            || request.unknown_arg(&["url", "form", "line"]).is_some()
+            || text.is_err()
+            || (url.is_none() && text.is_ok_and(|text| text.is_some()))
         {
             return self.bare(RefusalReason::Usage);
         }
-        let url = request.arg("url");
         match self.open_session(url) {
             Ok(()) => {
                 let mut reply = self.state_reply(
@@ -477,7 +559,7 @@ impl<T: Transport> Session<T> {
                     }),
                 );
                 reply.answer.token = Some(self.token.to_hex());
-                reply
+                self.with_text(reply, text.unwrap_or_default())
             }
             Err(stop) => self.stopped(&stop),
         }
@@ -732,6 +814,39 @@ fn refusal_status(reason: RefusalReason) -> u8 {
         | RefusalReason::SessionDied
         | RefusalReason::SessionTimeout => 3,
     }
+}
+
+/// What `--as` asked for: the form and the first line ("The page as text" above).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct AsText {
+    form: Form,
+    from_line: u64,
+}
+
+/// The `arg form` and `arg line` of `request` (`surf_agent::wire`): `None` without `form`; `Err`
+/// for a form other than `tree` or `markdown`, for `line` without `form`, and for a `line` that is
+/// not a number from 1 in decimal digits. Without `line` the first line is 1.
+fn as_text(request: &Request) -> Result<Option<AsText>, ()> {
+    let line = request.arg("line");
+    let Some(form) = request.arg("form") else {
+        return if line.is_none() { Ok(None) } else { Err(()) };
+    };
+    let form = match form {
+        "tree" => Form::Tree,
+        "markdown" => Form::Markdown,
+        _ => return Err(()),
+    };
+    let from_line = match line {
+        None => 1,
+        Some(digits) => digits
+            .bytes()
+            .all(|b| b.is_ascii_digit())
+            .then(|| digits.parse::<u64>().ok())
+            .flatten()
+            .filter(|line| *line >= 1)
+            .ok_or(())?,
+    };
+    Ok(Some(AsText { form, from_line }))
 }
 
 /// The word of an action's command on a path line, and its variant name in `spec/`.

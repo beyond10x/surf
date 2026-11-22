@@ -143,6 +143,7 @@ dependencies = [
  "surf-agent",
  "surf-answer",
  "surf-fetch",
+ "surf-page-text",
  "surf-ports",
  "surf-secret",
  "surf-test-process",

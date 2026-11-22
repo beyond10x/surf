@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 9cf563aeb85e0ebaf274c9cab36fdfa5c94c5872239a1808e0be06ff915e5e98
+// contract digest d02edabfb4604fe93f72d6e24ef0d1805df03b1628561d9011c4f5f33d76c73d
 // do not edit: regenerate with `ess synthesize`
 
 //! Agent — `surf.agent`.
@@ -39,7 +39,7 @@ pub struct ActionId(pub crate::primitives::Uuid);
 
 /// GoCall — `surf.agent.GoCall`.
 ///
-/// The address to load into a session, and the token that proves the caller holds it.
+/// The address to load into a session, the token that proves the caller holds it, and the form to print the page in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GoCall {
     /// `session_id` — `String`.
@@ -48,15 +48,38 @@ pub struct GoCall {
     pub token: SessionToken,
     /// `url` — `surf.url.Url`.
     pub url: crate::url::Url,
+    /// `form` — `Optional<surf.agent.PageForm>`.
+    pub form: Option<PageForm>,
+    /// `from_line` — `Optional<Integer>`.
+    pub from_line: Option<i64>,
+}
+
+/// LookCall — `surf.agent.LookCall`.
+///
+/// Which session `look` reads, the token that proves the caller holds it, and the form to print the page in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LookCall {
+    /// `session_id` — `String`.
+    pub session_id: String,
+    /// `token` — `surf.agent.SessionToken`.
+    pub token: SessionToken,
+    /// `form` — `Optional<surf.agent.PageForm>`.
+    pub form: Option<PageForm>,
+    /// `from_line` — `Optional<Integer>`.
+    pub from_line: Option<i64>,
 }
 
 /// OpenCall — `surf.agent.OpenCall`.
 ///
-/// The input of `open`, the address to load first if one is given.
+/// The input of `open`, the address to load first if one is given, and the form to print it in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenCall {
     /// `url` — `Optional<surf.url.Url>`.
     pub url: Option<crate::url::Url>,
+    /// `form` — `Optional<surf.agent.PageForm>`.
+    pub form: Option<PageForm>,
+    /// `from_line` — `Optional<Integer>`.
+    pub from_line: Option<i64>,
 }
 
 /// OpenedSession — `surf.agent.OpenedSession`.
@@ -68,6 +91,17 @@ pub struct OpenedSession {
     pub session_id: String,
     /// `token` — `surf.agent.SessionToken`.
     pub token: SessionToken,
+}
+
+/// PageForm — `surf.agent.PageForm`: one of a closed set of names.
+///
+/// The form in which an answer prints the page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PageForm {
+    /// `tree`.
+    Tree,
+    /// `markdown`.
+    Markdown,
 }
 
 /// The states of `surf.agent.Session`, as runtime values.
@@ -754,6 +788,13 @@ pub struct ActionRecorded {
     pub command: ActionCommand,
     /// `url` — `Optional<surf.url.Url>`.
     pub url: Option<crate::url::Url>,
+}
+
+/// EventsLeftOut — the event `surf.agent.EventsLeftOut`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EventsLeftOut {
+    /// `count` — `Integer`.
+    pub count: i64,
 }
 
 /// NavigationRequested — the event `surf.agent.NavigationRequested`.

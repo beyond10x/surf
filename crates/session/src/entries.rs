@@ -122,12 +122,13 @@ fn variant(value: impl std::fmt::Debug) -> String {
 }
 
 /// The line that stands for `count` event entries the session left out of one action's events
-/// (`crate`, "The entries"), without its line feed: `event surf.session.EventsLeftOut
-/// count="<count>"`. `surf.session.EventsLeftOut` is no event of `spec/`: the session writes it,
-/// in the grammar of an event entry, so that a reader of the log sees how many it left out.
+/// (`crate`, "The entries"), without its line feed: `event surf.agent.EventsLeftOut
+/// count="<count>"`. `spec/` declares the event `surf.agent.EventsLeftOut` and its field; no
+/// command publishes it: the session writes it, in the grammar of an event entry, so that a
+/// reader of the log sees how many it left out.
 pub fn left_out_line(count: u64) -> String {
     format!(
-        "event surf.session.EventsLeftOut count={}",
+        "event surf.agent.EventsLeftOut count={}",
         surf_answer::quote(&count.to_string())
     )
 }

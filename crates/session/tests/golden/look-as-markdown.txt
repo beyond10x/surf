@@ -1,0 +1,12 @@
+note text: no-css
+text markdown 10 of 10 lines from 1, 186 of 186 bytes
+> # Fruit shop
+>
+> Fresh fruit, *picked today*. See [our offers](</offers>) [@l1].
+>
+> - Apples
+> - Pears
+>
+> ![A basket of apples]
+>
+> E-mail [@f1 text: E-mail] [@b1 button: Subscribe]

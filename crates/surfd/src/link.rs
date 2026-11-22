@@ -41,7 +41,9 @@
 //!   `surfd` keeps ([`crate::log`]), at most [`ENTRIES_MAX`] bytes ([`Entry`], below).
 //! - The answer lines are at most [`ANSWER_TEXT_MAX`] bytes; the lines of the record (every line
 //!   but the bytes of the entries and the answer lines) at most [`RECORD_MAX`]; all of it
-//!   printable ASCII and line feeds, every line ending in a line feed.
+//!   printable ASCII and line feeds, every line ending in a line feed, but for the body lines of
+//!   a `text` block in the answer lines and in the answer entry: a line that starts with `>` may
+//!   also hold UTF-8 characters above U+007F that [`surf_answer::escaped_in_text`] does not name.
 //!
 //! # The entries
 //!
@@ -420,7 +422,7 @@ fn decode_entries(mut rest: &[u8]) -> Result<Vec<Entry>, LinkError> {
                 check_text(text)?;
                 Entry::answer(
                     std::str::from_utf8(text)
-                        .map_err(|_| LinkError::Malformed("an entry outside printable ASCII"))?,
+                        .map_err(|_| LinkError::Malformed("an entry that is not UTF-8"))?,
                 )
             }
             None => {
@@ -662,7 +664,7 @@ impl Answer {
         }
         check_text(rest)?;
         let text = String::from_utf8(rest.to_vec())
-            .map_err(|_| LinkError::Malformed("answer lines outside printable ASCII"))?;
+            .map_err(|_| LinkError::Malformed("answer lines that are not UTF-8"))?;
         check_answer_entry(&entries, &text)?;
         Ok(Answer {
             status,
@@ -691,16 +693,16 @@ fn next_line<'a>(rest: &mut &'a [u8]) -> Result<&'a str, LinkError> {
     std::str::from_utf8(line).map_err(|_| LinkError::Malformed("a byte outside printable ASCII"))
 }
 
-/// Answer lines: printable ASCII, each line ending in a line feed, at most [`ANSWER_TEXT_MAX`].
+/// Answer lines: each line ending in a line feed, at most [`ANSWER_TEXT_MAX`] bytes, each line
+/// [`is_answer_line`].
 fn check_text(text: &[u8]) -> Result<(), LinkError> {
     if text.len() > ANSWER_TEXT_MAX {
         return Err(LinkError::TooLarge);
     }
-    if !text
-        .iter()
-        .all(|&b| b == b'\n' || (b' '..=b'~').contains(&b))
-    {
-        return Err(LinkError::Malformed("answer lines outside printable ASCII"));
+    if !text.split(|&b| b == b'\n').all(is_answer_line) {
+        return Err(LinkError::Malformed(
+            "answer lines outside printable ASCII and page text",
+        ));
     }
     if !text.is_empty() && text.last() != Some(&b'\n') {
         return Err(LinkError::Malformed(
@@ -708,6 +710,22 @@ fn check_text(text: &[u8]) -> Result<(), LinkError> {
         ));
     }
     Ok(())
+}
+
+/// Whether one answer line, without its line feed, keeps the Lines rule of
+/// `docs/agent-answer.md`: printable ASCII, and in a body line of a `text` block (a line that
+/// starts with `>`) also UTF-8 characters above U+007F that [`surf_answer::escaped_in_text`] does
+/// not name (decision D1 B of `docs/design/page-as-text.md`).
+fn is_answer_line(line: &[u8]) -> bool {
+    if line.iter().all(|b| (b' '..=b'~').contains(b)) {
+        return true;
+    }
+    line.first() == Some(&b'>')
+        && std::str::from_utf8(line).is_ok_and(|text| {
+            text.chars().all(|c| {
+                (' '..='~').contains(&c) || (c > '\u{7f}' && !surf_answer::escaped_in_text(c))
+            })
+        })
 }
 
 /// Read one link answer from `stream` to the end of the connection, at most [`ANSWER_MAX`]
