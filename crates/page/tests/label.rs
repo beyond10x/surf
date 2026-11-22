@@ -3,8 +3,6 @@
 //! template, `svg`, `math` or misnested formatting, and no tree is deeper than 512 elements but
 //! the last case's.
 
-use std::time::{Duration, Instant};
-
 use surf_html::{NodeData, ParseOptions, Tree, parse_document};
 use surf_page::{
     ActionableElement, LABEL_BYTES_MAX, LABEL_WORK_MAX, actionable_elements, attribute_visits,
@@ -497,35 +495,76 @@ fn past_the_label_work_bound_names_come_from_attributes_only() {
     assert!(rows[full..].iter().all(|r| r.label == "T"));
 }
 
+/// The hidden flags are worked out once, in the walk of `actionable_elements`, not once per
+/// reference. Counted, not timed: for each page, the attribute comparisons with N `input`s
+/// that name a node through `aria-labelledby` against those of the same page where each `input`
+/// carries `aria-label` in its place. A walk of the hidden flags per reference compares at least
+/// `aria-hidden` and `hidden` of the node referenced, 2 comparisons per reference or more; the
+/// bound is 1 per reference. A walk like `is_hidden` also reads the `N` siblings before the
+/// body element or the `summary`, which compares no attribute: `N` is small enough that such a
+/// walk, `N` times `N` steps, ends and fails on the count well before the runner's 60 s.
 #[test]
 fn hidden_flags_cost_one_walk_for_many_references() {
-    let bound = Duration::from_secs(10);
+    /// The comments or children before the node named, and the references to it.
+    const N: usize = 2_000;
 
-    // A `body` with `aria-hidden` true after 50,000 comments: the body element, whose
+    /// The attribute comparisons of `actionable_elements` over `input`, and its rows.
+    fn visits(input: &str) -> (usize, Vec<ActionableElement>) {
+        let tree = parse(input);
+        let before = attribute_visits();
+        let rows = actionable_elements(&tree);
+        (attribute_visits() - before, rows)
+    }
+
+    /// The comparisons of `referenced` beyond those of `labelled`; the rows of each are
+    /// `N` rows named `label`, none hidden.
+    fn extra(referenced: &str, labelled: &str, label: &str) -> usize {
+        let (with, rows) = visits(referenced);
+        assert_eq!(rows.len(), N);
+        assert!(rows.iter().all(|r| r.label == label && !r.hidden));
+        let (without, rows) = visits(labelled);
+        assert_eq!(rows.len(), N);
+        assert!(rows.iter().all(|r| r.label == label && !r.hidden));
+        with.saturating_sub(without)
+    }
+
+    // A `body` with `aria-hidden` true after N comments: the body element, whose
     // `aria-hidden` is not read.
-    let mut input = "<!---->".repeat(50_000);
-    input.push_str("<html><body aria-hidden=true><span id=t>T</span>");
-    input.push_str(&"<input aria-labelledby=t>".repeat(50_000));
-    let tree = parse(&input);
-    let start = Instant::now();
-    let rows = actionable_elements(&tree);
-    let took = start.elapsed();
-    assert_eq!(rows.len(), 50_000);
-    assert!(rows.iter().all(|r| r.label == "T" && !r.hidden));
-    assert!(took < bound, "{took:?} for the body after comments");
+    let page = |inputs: &str| {
+        let mut page = "<!---->".repeat(N);
+        page.push_str("<html><body aria-hidden=true><span id=t>T</span>");
+        page.push_str(&inputs.repeat(N));
+        page
+    };
+    let more = extra(
+        &page("<input aria-labelledby=t>"),
+        &page("<input aria-label=T>"),
+        "T",
+    );
+    assert!(
+        more < N,
+        "{more} more attribute comparisons for {N} references than for none, on the \
+         page of the body after comments"
+    );
 
-    // A `summary` after 50,000 children of a closed `details`.
-    let mut input = String::from("<details>");
-    input.push_str(&"<span></span>".repeat(50_000));
-    input.push_str("<summary id=s>S</summary></details>");
-    input.push_str(&"<input aria-labelledby=s>".repeat(50_000));
-    let tree = parse(&input);
-    let start = Instant::now();
-    let rows = actionable_elements(&tree);
-    let took = start.elapsed();
-    assert_eq!(rows.len(), 50_000);
-    assert!(rows.iter().all(|r| r.label == "S" && !r.hidden));
-    assert!(took < bound, "{took:?} for the summary after children");
+    // A `summary` after N children of a closed `details`.
+    let page = |inputs: &str| {
+        let mut page = String::from("<details>");
+        page.push_str(&"<span></span>".repeat(N));
+        page.push_str("<summary id=s>S</summary></details>");
+        page.push_str(&inputs.repeat(N));
+        page
+    };
+    let more = extra(
+        &page("<input aria-labelledby=s>"),
+        &page("<input aria-label=S>"),
+        "S",
+    );
+    assert!(
+        more < N,
+        "{more} more attribute comparisons for {N} references than for none, on the \
+         page of the summary after children"
+    );
 }
 
 /// 100,000 nested `span` in a `button`, named by its subtree and, through `aria-labelledby`, by

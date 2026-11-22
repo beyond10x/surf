@@ -950,7 +950,9 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   JUnit report, nextest's `Summary` line, the count line `N tests: P passed, F failed, I ignored
   (cargo-nextest n, doc tests d)` (a test nextest ended counts as failed, one it skips as
   ignored), and `test step: <s> s of its budget of 120 s`. Raising either bound is not a fix: a
-  test over the budget is.
+  test over the budget is. A test bounds a time only by a wait for the event with a limit at
+  least 10 times the time it takes alone, and proves a cost by a count (such as
+  `surf_page::attribute_visits()`), not by a wall time.
 - `task open`: every `UNMAPPED:` marker, in `spec/` and `cli/`.
 - `task cli`: check `cli/surf-agent.yaml` against `spec/` and write what `ess` reads from it into
   `.out/cli/` (`binding.json`, `help.txt`). `task test` depends on it.
