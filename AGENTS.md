@@ -783,15 +783,14 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   that a file that exists only in the working tree, changed, untracked or ignored, cannot make
   it pass; it refuses, naming the files, when the working tree has uncommitted changes, unless
   `ALLOW_DIRTY=1` is given, which it prints; and it sets the runner's environment: `CI=true`,
-  `GITHUB_ACTIONS=true`, `CARGO_TERM_COLOR=always`, `CARGO_INCREMENTAL=0`, `RUSTC_WRAPPER`
-  empty (no compiler cache), `ESS_TOOLCHAIN` read from `requires:` of `spec/ess-inputs.yaml`
-  (no need to set it by hand), `HTML_BASE=origin/main` (the export's `origin` is this
-  repository, so that is the local `main`), and it unsets `RUSTUP_TOOLCHAIN`,
-  `CARGO_TARGET_DIR`, `CARGO_BUILD_TARGET_DIR`, `RUSTFLAGS`, `CARGO_ENCODED_RUSTFLAGS` and
-  `RUSTDOCFLAGS`. `view-tests/node_modules` is not committed: `task view-test` installs it in the
-  export with `npm ci`, as on the forge. What stays the machine's: the cargo caches of the user,
-  the Playwright browser cache, the cargo configuration in the user's home (but the
-  `rustc-wrapper` the variable empties) and the operating system. cargo also reads the working
+  `GITHUB_ACTIONS=true`, `CARGO_TERM_COLOR=always`, `CARGO_INCREMENTAL=0`, `ESS_TOOLCHAIN`
+  read from `requires:` of `spec/ess-inputs.yaml` (no need to set it by hand),
+  `HTML_BASE=origin/main` (the export's `origin` is this repository, so that is the local
+  `main`), and it unsets `RUSTUP_TOOLCHAIN`, `CARGO_TARGET_DIR`, `CARGO_BUILD_TARGET_DIR`,
+  `RUSTFLAGS`, `CARGO_ENCODED_RUSTFLAGS` and `RUSTDOCFLAGS`. `view-tests/node_modules` is not
+  committed: `task view-test` installs it in the export with `npm ci`, as on the forge. What stays the machine's: the cargo caches of the user,
+  the Playwright browser cache, the cargo configuration in the user's home, a compiler cache it
+  names (`rustc-wrapper`) included, and the operating system. cargo also reads the working
   tree's `.cargo/config.toml`, a parent directory of the export: a change to it is uncommitted,
   so only `ALLOW_DIRTY=1` lets it through.
 - `task forge-watch COMMIT=<commit>`: `taskfiles/forge-watch.sh <commit>` waits until every
