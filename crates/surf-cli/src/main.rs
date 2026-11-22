@@ -76,9 +76,10 @@ fn parse(words: impl Iterator<Item = OsString>) -> Result<Call, Option<&'static 
     })
 }
 
-/// The lines `--as` adds after the rows: `note text: no-css` and the whole `text` block of the
-/// document the load committed ([`surf_answer::render_text_whole`]), or `note text:
-/// no-document` when there is none (a failed load, a response that is not HTML).
+/// The lines `--as` adds after the rows: `note text: no-css`, `note text: deep <n>` when the
+/// Markdown's nesting passed the prefix bound, and the whole `text` block of the document the
+/// load committed ([`surf_answer::render_text_whole`]), or `note text: no-document` when there
+/// is none (a failed load, a response that is not HTML).
 fn page_text<T: Transport>(
     browser: &MemoryBrowser<T>,
     report: &Report,
@@ -97,11 +98,20 @@ fn page_text<T: Transport>(
     let Some(tree) = tree else {
         return Ok("note text: no-document\n".to_string());
     };
-    let block = match form {
-        Form::Tree => render_text_whole(form, surf_page_text::outline(tree)),
-        Form::Markdown => render_text_whole(form, surf_page_text::markdown::markdown(tree)),
-    }?;
-    Ok(format!("note text: no-css\n{block}"))
+    let (block, deep) = match form {
+        Form::Tree => (render_text_whole(form, surf_page_text::outline(tree))?, 0),
+        Form::Markdown => {
+            let markdown = surf_page_text::markdown::markdown(tree);
+            let deep = markdown.deep();
+            (render_text_whole(form, markdown)?, deep)
+        }
+    };
+    let deep = if deep > 0 {
+        format!("note text: deep {deep}\n")
+    } else {
+        String::new()
+    };
+    Ok(format!("note text: no-css\n{deep}{block}"))
 }
 
 fn main() -> ExitCode {

@@ -909,3 +909,136 @@ fn a_form_or_line_the_session_does_not_take_is_usage() {
         format!("surf 1 session {ID} unknown\ndid refused usage\n")
     );
 }
+
+/// A transport that answers the path `/<n>` with a page of `n` paragraphs `<p>a</p>`, `/deep`
+/// with 100 nested quotes, and any other path with `<p>other</p>`.
+fn paragraphs(request: &surf::RequestStarted) -> surf::Answer {
+    let count = request
+        .url
+        .0
+        .rsplit('/')
+        .next()
+        .and_then(|n| n.parse::<usize>().ok());
+    let body = match count {
+        Some(n) => "<p>a</p>".repeat(n),
+        None if request.url.0.ends_with("/deep") => format!("{}x", "<blockquote>".repeat(100)),
+        None => "<p>other</p>".to_string(),
+    };
+    surf::Answer::Response {
+        url: request.url.0.clone(),
+        status: 200,
+        media_type: "text/html".to_string(),
+        body: body.into_bytes(),
+    }
+}
+
+/// A session over [`paragraphs`], open with no page, and its token.
+fn paragraph_session() -> (Session<Fetch>, String) {
+    let transport: Fetch = paragraphs;
+    let mut session = Session::new(ID, transport).unwrap();
+    let (status, text) = call(&mut session, &request("open", None, None, &[]));
+    assert_eq!(status, 0, "{text}");
+    let token = opened(&text).token;
+    (session, token)
+}
+
+/// The looks it takes to read a page of `n` paragraphs to its end as Markdown after `go --as
+/// markdown`, and the nodes the walks of `surf-page-text` visited for the `go` and the looks.
+fn visits_to_read(n: usize) -> (usize, usize) {
+    let (mut session, token) = paragraph_session();
+    let before = surf_page_text::node_visits();
+    let (status, mut text) = call(
+        &mut session,
+        &holder(
+            "go",
+            &token,
+            &[("url", &url(&format!("/{n}"))), ("form", "markdown")],
+        ),
+    );
+    assert_eq!(status, 0, "{text}");
+    let mut looks = 0;
+    while let Some(more) = block(&text).2 {
+        let line = next_line_of(more);
+        let (status, next) = call(
+            &mut session,
+            &holder("look", &token, &[("form", "markdown"), ("line", &line)]),
+        );
+        assert_eq!(status, 0, "{next}");
+        text = next;
+        looks += 1;
+    }
+    (looks, surf_page_text::node_visits() - before)
+}
+
+/// The fix round of round 1: reading a page to its end renders it once, not once per look, so
+/// the work grows with the page and not with its square. A page twice as long takes twice the
+/// looks; the nodes visited are at most a little over twice as many.
+#[test]
+fn a_page_read_to_its_end_is_rendered_once() {
+    let (looks_n, visits_n) = visits_to_read(1_000);
+    let (looks_2n, visits_2n) = visits_to_read(2_000);
+    eprintln!("n: {looks_n} looks, {visits_n} visits; 2n: {looks_2n} looks, {visits_2n} visits");
+    assert!(
+        looks_n >= 9 && looks_2n >= 2 * looks_n,
+        "{looks_n} {looks_2n}"
+    );
+    assert!(
+        visits_2n * 4 <= visits_n * 9,
+        "{visits_n} node visits at n, {visits_2n} at 2n: more than linear"
+    );
+}
+
+/// The text unit's hand-over: a Markdown block whose nesting passed the prefix bound has `note
+/// text: deep <n>` after `note text: no-css`, on `go` and on each `look`; the outline has none.
+#[test]
+fn a_markdown_block_nested_past_the_prefix_bound_says_deep() {
+    let (mut session, token) = paragraph_session();
+    let go = holder(
+        "go",
+        &token,
+        &[("url", &url("/deep")), ("form", "markdown")],
+    );
+    let look = holder("look", &token, &[("form", "markdown")]);
+    for call_ in [&go, &look, &look] {
+        let (status, text) = call(&mut session, call_);
+        assert_eq!(status, 0, "{text}");
+        let notes: Vec<&str> = text
+            .lines()
+            .filter(|line| line.starts_with("note text: "))
+            .collect();
+        assert_eq!(notes.len(), 2, "{text}");
+        assert_eq!(notes[0], "note text: no-css");
+        let levels: u64 = notes[1]
+            .strip_prefix("note text: deep ")
+            .and_then(|n| n.parse().ok())
+            .unwrap_or_else(|| panic!("{text}"));
+        assert!(levels >= 1, "{text}");
+    }
+    let (status, text) = call(&mut session, &holder("look", &token, &[("form", "tree")]));
+    assert_eq!(status, 0, "{text}");
+    assert!(!text.contains("note text: deep"), "{text}");
+}
+
+/// The text a session keeps is the current document's: after a `go` to another page, `look`
+/// shows that page, and a look of the other form renders it.
+#[test]
+fn a_look_after_a_go_shows_the_new_page() {
+    let (mut session, token) = paragraph_session();
+    for (path, form, first) in [
+        ("/3", "markdown", "a"),
+        ("/other", "markdown", "other"),
+        ("/2", "tree", "html"),
+    ] {
+        let (status, text) = call(&mut session, &holder("go", &token, &[("url", &url(path))]));
+        assert_eq!(status, 0, "{text}");
+        for _ in 0..2 {
+            let (status, text) = call(&mut session, &holder("look", &token, &[("form", form)]));
+            assert_eq!(status, 0, "{text}");
+            let (_, body, _) = block(&text);
+            assert!(
+                body.first().is_some_and(|line| line.contains(first)),
+                "{path} {form}: {text}"
+            );
+        }
+    }
+}

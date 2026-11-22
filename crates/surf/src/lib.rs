@@ -918,33 +918,70 @@ pub struct Held {
     pub events: usize,
     /// The binding invocations recorded, [`System::invocations`].
     pub invocations: usize,
-    /// The bytes of the request and response bodies those events and invocations carry.
+    /// The bytes of the request, form and response bodies those events and invocations carry.
     pub body_bytes: usize,
 }
 
-/// The bytes of the body `event` carries, a request's or a response's, 0 for an event that
-/// carries none.
+/// The bytes of the body `event` carries, a request's, a form's or a response's, 0 for an event
+/// that carries none. Every event is named, so an event a later story adds is sorted here.
 fn event_body(event: &SystemEvent) -> usize {
     match event {
         SystemEvent::NavigationStarted(started) => started.body.as_ref().map_or(0, Vec::len),
         SystemEvent::RequestStarted(started) => started.body.as_ref().map_or(0, Vec::len),
+        SystemEvent::FormSubmitted(submitted) => submitted.body.as_ref().map_or(0, Vec::len),
         SystemEvent::ResponseReceived(received) => received.body.len(),
         SystemEvent::NavigationCommitted(committed) => committed.body.len(),
         SystemEvent::ParsingStarted(started) => started.body.len(),
-        _ => 0,
+        SystemEvent::ActionRecorded(_)
+        | SystemEvent::FillRequested(_)
+        | SystemEvent::NavigationRequested(_)
+        | SystemEvent::PickRequested(_)
+        | SystemEvent::PressRequested(_)
+        | SystemEvent::SessionClosed(_)
+        | SystemEvent::SessionNavigationChanged(_)
+        | SystemEvent::SessionOpened(_)
+        | SystemEvent::CheckednessSet(_)
+        | SystemEvent::DocumentParsed(_)
+        | SystemEvent::ElementAdded(_)
+        | SystemEvent::FormAdded(_)
+        | SystemEvent::OptionAdded(_)
+        | SystemEvent::OptionSelected(_)
+        | SystemEvent::SubmissionAbandoned(_)
+        | SystemEvent::SubmissionStarted(_)
+        | SystemEvent::ValueSet(_)
+        | SystemEvent::NavigationCancelled(_)
+        | SystemEvent::NavigationFailed(_)
+        | SystemEvent::FetchFailed(_)
+        | SystemEvent::FramePainted(_)
+        | SystemEvent::TabClosed(_)
+        | SystemEvent::TabOpened(_)
+        | SystemEvent::WindowOpened(_) => 0,
     }
 }
 
 /// The bytes of the body `invocation` passed, a request's or a response's, 0 for one that
-/// passed none.
+/// passed none. Every binding is named, so a binding a later story adds is sorted here.
 fn invocation_body(invocation: &BindingInvocation) -> usize {
     match invocation {
         BindingInvocation::FetchOnNavigationStarted(fetch) => {
             fetch.body.as_ref().map_or(0, Vec::len)
         }
+        BindingInvocation::NavigateOnFormSubmitted(navigate)
+        | BindingInvocation::NavigateOnNavigationRequested(navigate) => {
+            navigate.body.as_ref().map_or(0, Vec::len)
+        }
         BindingInvocation::CommitOnResponse(commit) => commit.body.len(),
         BindingInvocation::ParseOnNavigationCommitted(parse) => parse.body.len(),
-        _ => 0,
+        BindingInvocation::CheckOnPickRequested(_)
+        | BindingInvocation::CloseTabOnSessionClosed(_)
+        | BindingInvocation::FailOnFetchFailed(_)
+        | BindingInvocation::NoteOnNavigationCancelled(_)
+        | BindingInvocation::NoteOnNavigationCommitted(_)
+        | BindingInvocation::NoteOnNavigationFailed(_)
+        | BindingInvocation::NoteOnNavigationStarted(_)
+        | BindingInvocation::SelectOnPickRequested(_)
+        | BindingInvocation::SetValueOnFillRequested(_)
+        | BindingInvocation::SubmitOnPressRequested(_) => 0,
     }
 }
 

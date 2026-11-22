@@ -361,9 +361,38 @@ fn names(events: &[SystemEvent]) -> String {
     }
     events
         .iter()
-        .map(|event| format!("{event:?}"))
+        .map(named_event)
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// Whether the field `name` of a payload or an input holds an identity: what an error about it
+/// may print. A value an agent filled in, a form's body, an address and page text are never
+/// printed, so a password typed into a form reaches no error text.
+fn is_identity(name: &str) -> bool {
+    name.ends_with("_id") || name == "submitter" || name == "holder"
+}
+
+/// `fields` as `{ <name>=<value>, ... }`, the identities only.
+fn identities(fields: Vec<(&'static str, Node)>) -> String {
+    let named: Vec<String> = fields
+        .into_iter()
+        .filter(|(field, _)| is_identity(field))
+        .map(|(field, node)| format!("{field}={}", ess_conformance::report::quote(&node)))
+        .collect();
+    format!("{{ {} }}", named.join(", "))
+}
+
+/// An event for an error text: its name and its identities, never its other fields; the
+/// generated types derive a `Debug` that prints all of them.
+fn named_event(event: &SystemEvent) -> String {
+    format!("{} {}", event.name(), identities(payload(event)))
+}
+
+/// A binding's invocation for an error text, as [`named_event`] writes an event.
+fn named_invocation(invoked: &BindingInvocation) -> String {
+    let (binding, command, input) = invocation(invoked);
+    format!("{binding} invoking {command} {}", identities(input))
 }
 
 /// The events a command of `command` published itself, read from `gained`, what the system's log
@@ -407,9 +436,10 @@ fn reported_events(
             .any(|event| event.name() == cause && publisher(event) != component);
         if !delivered {
             return Err(format!(
-                "a binding invoked {invocation:?} on the component `{command}` was issued on, and \
+                "a binding invoked {} on the component `{command}` was issued on, and \
                  no `{cause}` of another component reached the log after the command's own \
-                 events, so the log does not tell the command's own events from that one's"
+                 events, so the log does not tell the command's own events from that one's",
+                named_invocation(invocation)
             ));
         }
     }
@@ -419,8 +449,9 @@ fn reported_events(
             .find(|event| publisher(event) == component)
     {
         return Err(format!(
-            "{later:?} reached the log after a binding delivery, from the component `{command}` \
-             was issued on, and no binding invoked that component"
+            "{} reached the log after a binding delivery, from the component `{command}` \
+             was issued on, and no binding invoked that component",
+            named_event(later)
         ));
     }
     let logged = &gained[..direct];
@@ -2953,10 +2984,13 @@ mod tests {
     };
     use surf_system::BindingInvocation;
     use surf_types::agent::{
-        NavigationRequested, NoteNavigationStarted, SessionId, SessionNavigationChanged,
+        FillRequested, NavigationRequested, NoteNavigationStarted, SessionId,
+        SessionNavigationChanged,
     };
     use surf_types::behaviour::Generated;
-    use surf_types::document::{DocumentId, ParsingStarted};
+    use surf_types::document::{
+        DocumentId, ElementId, FormSubmitted, ParsingStarted, SetValue, SubmissionId,
+    };
     use surf_types::navigation::{
         CommitNavigation, Navigate, NavigationCancelled, NavigationCommitted, NavigationStarted,
         NavigationState,
@@ -2965,7 +2999,7 @@ mod tests {
         Fetch, MediaType, Method, RequestId, RequestStarted, ResponseReceived, Status,
     };
     use surf_types::primitives::Uuid;
-    use surf_types::shell::TabId;
+    use surf_types::shell::{TabId, TabOpened, WindowId};
     use surf_types::url::Url;
 
     const NAVIGATION: &str = "3f1d5b7e-0000-4000-8000-000000000010";
@@ -3304,5 +3338,109 @@ mod tests {
             &[navigate()],
         );
         assert!(answer.is_err(), "{answer:?}");
+    }
+
+    /// What an agent types and what a form sends: a password can be either.
+    const MARKER: &str = "s3cret-marker-7f";
+
+    /// Whether `text` holds the marker, as text or as the `Debug` form of its bytes.
+    fn leaks(text: &str) -> bool {
+        let bytes = format!("{:?}", MARKER.as_bytes());
+        text.contains(MARKER) || text.contains(bytes.trim_start_matches('[').trim_end_matches(']'))
+    }
+
+    fn uuid(n: u8) -> Uuid {
+        Uuid(format!("3f1d5b7e-0000-4000-8000-0000000000{n:02x}"))
+    }
+
+    /// The events that carry a filled value or a form's body, each with the marker, and a
+    /// command of the component that publishes it.
+    fn marked_events() -> [(&'static str, SystemEvent); 2] {
+        [
+            (
+                "surf.agent.Fill",
+                SystemEvent::FillRequested(FillRequested {
+                    session_id: SessionId(uuid(1)),
+                    element_id: ElementId(uuid(2)),
+                    value: MARKER.to_owned(),
+                }),
+            ),
+            (
+                "surf.document.SubmitForm",
+                SystemEvent::FormSubmitted(FormSubmitted {
+                    submission_id: SubmissionId(uuid(3)),
+                    tab_id: TabId(uuid(4)),
+                    url: Url(ADDRESS.to_owned()),
+                    method: Method::Post,
+                    body: Some(MARKER.as_bytes().to_vec()),
+                    body_type: Some(MediaType("application/x-www-form-urlencoded".to_owned())),
+                }),
+            ),
+        ]
+    }
+
+    /// The invocations that pass a filled value or a form's body, each with the marker, and a
+    /// command of the component they invoke.
+    fn marked_invocations() -> [(&'static str, BindingInvocation); 2] {
+        [
+            (
+                "surf.document.SetValue",
+                BindingInvocation::SetValueOnFillRequested(SetValue {
+                    element_id: ElementId(uuid(2)),
+                    value: MARKER.to_owned(),
+                }),
+            ),
+            (
+                "surf.navigation.Navigate",
+                BindingInvocation::NavigateOnFormSubmitted(Navigate {
+                    tab_id: TabId(uuid(4)),
+                    url: Url(ADDRESS.to_owned()),
+                    method: Method::Post,
+                    body: Some(MARKER.as_bytes().to_vec()),
+                    body_type: Some(MediaType("application/x-www-form-urlencoded".to_owned())),
+                }),
+            ),
+        ]
+    }
+
+    fn tab_opened() -> SystemEvent {
+        SystemEvent::TabOpened(TabOpened {
+            tab_id: TabId(uuid(4)),
+            window_id: WindowId(uuid(5)),
+        })
+    }
+
+    /// The fix round of round 1: every error the target writes about an event or an invocation
+    /// names its type and its identities, never a filled value or a form's body. Each of the
+    /// three errors that write one: the outcome and the log disagree, a binding invoked back
+    /// without its cause, a later event of the commanding component.
+    #[test]
+    fn no_error_text_holds_a_filled_value_or_a_form_body() {
+        let mut errors = Vec::new();
+        for (command, event) in marked_events() {
+            let disagree = reported_events(command, std::slice::from_ref(&event), &[], &[]);
+            let later = reported_events(command, &[], &[tab_opened(), event.clone()], &[]);
+            errors.extend([disagree, later]);
+        }
+        for (command, invocation) in marked_invocations() {
+            errors.push(reported_events(command, &[], &[], &[invocation]));
+        }
+        assert_eq!(errors.len(), 6);
+        for error in errors {
+            let text = error.expect_err("an error");
+            assert!(!leaks(&text), "{text}");
+            assert!(text.contains("_id="), "the identities are named: {text}");
+        }
+    }
+
+    /// A form body the runner sends that is not padded base64 is refused without its text.
+    #[test]
+    fn a_body_that_is_not_base64_is_refused_without_its_text() {
+        let fields = BTreeMap::from([("body".to_owned(), Node::Text(MARKER.to_owned()))]);
+        let mut input = crate::values::Input::new("surf.document.SubmitForm", &fields);
+        let error = input.bytes("body").expect_err("not base64");
+        let text = format!("{error} {error:?}");
+        assert!(!leaks(&text), "{text}");
+        assert!(text.contains("`body`"), "{text}");
     }
 }

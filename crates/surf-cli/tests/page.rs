@@ -439,6 +439,25 @@ fn a_long_page_prints_whole() {
     assert!(text.ends_with(">\n> x\n"));
 }
 
+/// The text unit's hand-over: Markdown nested past the prefix bound says `note text: deep <n>`
+/// after `note text: no-css`, before the block; the outline does not.
+#[test]
+fn markdown_nested_past_the_prefix_bound_says_deep() {
+    let page = format!("{}x", "<blockquote>".repeat(100));
+    let (run, text) = as_form("text/html", page.as_bytes(), "markdown");
+    assert_eq!(run.status, 0, "{}", run.stderr);
+    let at = text
+        .find("\nnote text: no-css\nnote text: deep ")
+        .expect(&text);
+    let rest = &text[at + "\nnote text: no-css\nnote text: deep ".len()..];
+    let (levels, block) = rest.split_once('\n').expect(&text);
+    assert!(levels.parse::<u64>().is_ok_and(|n| n >= 1), "{text}");
+    assert!(block.starts_with("text markdown "), "{text}");
+    let (run, text) = as_form("text/html", page.as_bytes(), "tree");
+    assert_eq!(run.status, 0, "{}", run.stderr);
+    assert!(!text.contains("note text: deep"), "{text}");
+}
+
 /// Case 3: the forged page of design note section 3: its lines are page text, the rows are
 /// surf's.
 #[test]

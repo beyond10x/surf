@@ -37,8 +37,15 @@
 //! document (`page none`, a failed load, a response that is not HTML) the answer ends in `note
 //! text: no-document` and has no block. A refusal carries neither. The call records what it
 //! records without the arguments: the same action, the same events, the same `path`; only the
-//! answer is longer, and the exit status is the one the call has without them. Computed at each
-//! call, in time linear in the tree; the lines not shown are counted, not kept.
+//! answer is longer, and the exit status is the one the call has without them. A Markdown block
+//! whose nesting passed the prefix bound adds `note text: deep <n>` after `note text: no-css`.
+//!
+//! The session renders a document once per form, in time linear in the tree, and keeps the
+//! lines of the current document for the looks that page through it: a look reads the lines it
+//! shows and one more, so reading a page to its end costs the page once, not once per look. It
+//! keeps the current document's text only, and drops it with every request but `look` (a `go`,
+//! a `close`, and each later command that changes the document or what its text shows) and when
+//! the current document is another one.
 //!
 //! # Refusals
 //!
@@ -102,7 +109,9 @@
 //! HTML page, one document, each with its address and identities; and the session's row.
 //! Since `story:html-document-port` an HTML page also leaves its document's title, one element
 //! row per actionable element, and its node tree, which `surf::Browser` keeps for the life of
-//! the session (each tree within `surf-html`'s limits; no bound over all documents yet).
+//! the session (each tree within `surf-html`'s limits; no bound over all documents yet). Since
+//! the fix round of round 1 a call with `--as` also leaves the lines of the current document in
+//! the forms asked for ("The page as text"), until the next request that is not a `look`.
 //!
 //! # The entries
 //!
@@ -164,7 +173,7 @@ use surf_types::agent::{
     OpenSessionOutcome, RecordAction, RecordActionOutcome, SessionId, SessionState,
     SessionStateView,
 };
-use surf_types::document::DocumentState;
+use surf_types::document::{DocumentId, DocumentState};
 use surf_types::navigation::NavigationState;
 use surf_types::primitives::Uuid;
 use surf_types::shell::{OpenTab, OpenTabOutcome, OpenWindow, OpenWindowOutcome};
@@ -282,6 +291,85 @@ impl fmt::Display for Stop {
     }
 }
 
+/// The lines of one rendering of a document, in one form, kept for the looks that page through
+/// it ("The page as text" above).
+struct Lines {
+    lines: Vec<String>,
+    /// The bytes of all the lines as body lines, as [`surf_answer::text_page`] counts them.
+    bytes: u64,
+    /// [`surf_page_text::markdown::Markdown::deep`]; 0 for the outline.
+    deep: u64,
+}
+
+impl Lines {
+    /// The whole rendering of `tree` in `form`: one walk of the tree.
+    fn render(form: Form, tree: &surf::Tree) -> Lines {
+        let (lines, deep): (Vec<String>, u64) = match form {
+            Form::Tree => (surf_page_text::outline(tree).collect(), 0),
+            Form::Markdown => {
+                let markdown = surf_page_text::markdown::markdown(tree);
+                let deep = u64::try_from(markdown.deep()).unwrap_or(u64::MAX);
+                (markdown.collect(), deep)
+            }
+        };
+        // Read from line `u64::MAX` on, the page keeps no line and counts every one.
+        let bytes = surf_answer::text_page(form, lines.iter().cloned(), u64::MAX).bytes_total;
+        Lines { lines, bytes, deep }
+    }
+
+    /// The page of the lines from line `from`, as [`surf_answer::text_page`] over all of them
+    /// gives it: the page reads at most one line past the most it shows, so a look costs the
+    /// lines it shows and not the whole rendering.
+    fn page(&self, form: Form, from: u64) -> surf_answer::Text {
+        let first = from.max(1);
+        let start = usize::try_from(first - 1)
+            .unwrap_or(usize::MAX)
+            .min(self.lines.len());
+        let shown = self.lines[start..]
+            .iter()
+            .take(surf_answer::TEXT_LINES_MAX + 1)
+            .cloned();
+        let mut text = surf_answer::text_page(form, shown, 1);
+        text.first = first;
+        text.total = u64::try_from(self.lines.len()).unwrap_or(u64::MAX);
+        text.bytes_total = self.bytes;
+        text
+    }
+}
+
+/// The text of the current document, in each form a call asked for: the session renders a
+/// document once per form, and drops it with every request but `look` (which changes no
+/// document) and when the current document is another one.
+struct Rendered {
+    document: DocumentId,
+    tree: Option<Lines>,
+    markdown: Option<Lines>,
+}
+
+impl Rendered {
+    fn of(document: DocumentId) -> Rendered {
+        Rendered {
+            document,
+            tree: None,
+            markdown: None,
+        }
+    }
+
+    fn form(&self, form: Form) -> Option<&Lines> {
+        match form {
+            Form::Tree => self.tree.as_ref(),
+            Form::Markdown => self.markdown.as_ref(),
+        }
+    }
+
+    fn form_mut(&mut self, form: Form) -> &mut Option<Lines> {
+        match form {
+            Form::Tree => &mut self.tree,
+            Form::Markdown => &mut self.markdown,
+        }
+    }
+}
+
 /// One session: its identity, its token, the system it drives and its sequence number.
 pub struct Session<T> {
     id: String,
@@ -296,6 +384,8 @@ pub struct Session<T> {
     /// For each of them, how many events `System::published` held after the run that followed
     /// its `RecordAction`: where its events end.
     marks: Vec<usize>,
+    /// The text of the current document, once a call asked for it.
+    rendered: Option<Rendered>,
 }
 
 impl<T> fmt::Debug for Session<T> {
@@ -335,6 +425,7 @@ impl<T: Transport> Session<T> {
             opened: false,
             recorded: Vec::new(),
             marks: Vec::new(),
+            rendered: None,
         })
     }
 
@@ -362,6 +453,9 @@ impl<T: Transport> Session<T> {
         let start = self.browser.system().published().len();
         self.recorded.clear();
         self.marks.clear();
+        if request.command != "look" {
+            self.rendered = None;
+        }
         let mut reply = self.reply_to(request);
         reply.entries = self.entries(start);
         self.browser.forget_delivered();
@@ -473,31 +567,48 @@ impl<T: Transport> Session<T> {
     /// `reply` with the page as text when the call asked for it (`--as`, "The page as text"
     /// above): `note text: no-css` and the `text` block of the current document, or `note text:
     /// no-document` when there is none. A refusal (a status other than 0) is left as it is.
-    fn with_text(&self, mut reply: Reply, text: Option<AsText>) -> Reply {
+    fn with_text(&mut self, mut reply: Reply, text: Option<AsText>) -> Reply {
         let Some(AsText { form, from_line }) = text else {
             return reply;
         };
         if reply.status != 0 {
             return reply;
         }
-        match self.current_tree() {
-            Some(tree) => {
-                reply.answer.notes.push(Note::Text(TextNote::NoCss));
-                let lines: Box<dyn Iterator<Item = String>> = match form {
-                    Form::Tree => Box::new(surf_page_text::outline(tree)),
-                    Form::Markdown => Box::new(surf_page_text::markdown::markdown(tree)),
-                };
-                reply.answer.text = Some(surf_answer::text_page(form, lines, from_line));
-            }
-            None => reply.answer.notes.push(Note::Text(TextNote::NoDocument)),
+        let Some(document) = self.current_document() else {
+            reply.answer.notes.push(Note::Text(TextNote::NoDocument));
+            return reply;
+        };
+        let mut kept = self
+            .rendered
+            .take()
+            .filter(|kept| kept.document == document)
+            .unwrap_or_else(|| Rendered::of(document));
+        if kept.form(form).is_none() {
+            let Some(tree) = self.browser.document_tree(&kept.document) else {
+                reply.answer.notes.push(Note::Text(TextNote::NoDocument));
+                return reply;
+            };
+            let lines = Lines::render(form, tree);
+            *kept.form_mut(form) = Some(lines);
         }
+        if let Some(lines) = kept.form(form) {
+            reply.answer.notes.push(Note::Text(TextNote::NoCss));
+            if lines.deep > 0 {
+                reply
+                    .answer
+                    .notes
+                    .push(Note::Text(TextNote::Deep(lines.deep)));
+            }
+            reply.answer.text = Some(lines.page(form, from_line));
+        }
+        self.rendered = Some(kept);
         reply
     }
 
-    /// The node tree of the document of the session's current navigation: the navigation is
-    /// committed and its document parsed. `None` before the first navigation, after a failed
-    /// one, and for a response that is not HTML.
-    fn current_tree(&self) -> Option<&surf::Tree> {
+    /// The document of the session's current navigation: the navigation is committed and its
+    /// document parsed. `None` before the first navigation, after a failed one, and for a
+    /// response that is not HTML.
+    fn current_document(&self) -> Option<DocumentId> {
         let system = self.browser.system();
         let row = system
             .agent
@@ -517,7 +628,9 @@ impl<T: Transport> Session<T> {
             .find(|document| {
                 document.navigation_id == navigation && document.state == DocumentState::Parsed
             })?;
-        self.browser.document_tree(&document.document_id)
+        self.browser
+            .document_tree(&document.document_id)
+            .map(|_| document.document_id)
     }
 
     /// The reply to a request that did not decode: `did refused usage`, status 2, the head line
