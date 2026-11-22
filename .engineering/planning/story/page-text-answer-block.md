@@ -15,7 +15,7 @@ scope:
   path: crates/answer/tests
 - confidence: inferred
   path: docs/agent-answer.md
-revision: 4
+revision: 5
 ---
 ## Context
 
@@ -64,10 +64,12 @@ the round writes `crates/answer` or `docs/agent-answer.md`.
   with a pointer), the escape units, what a body line holds for each form (pointing to the note's
   sections 3 to 5), and that the version stays 1.
 - `crates/answer/src/lib.rs`:
-  - `pub fn escaped_in_text(c: char) -> bool`: the ranges of rule 2; `pub fn quote_text(value:
-    &str) -> String` and `quote_text_cut(value, limit)`: as `quote` and `quote_cut`, but a
-    character above U+007F is kept unless `escaped_in_text` names it. `quote` and `quote_cut`
-    are unchanged and stay ASCII.
+  - `pub fn escaped_in_text(c: char) -> bool`: the ranges of rule 2, the ten fullwidth forms
+    among them; `pub fn escaped_at_run_start(c: char) -> bool`: the five blocks of combining
+    marks of rule 2. `pub fn quote_text(value: &str) -> String` and `quote_text_cut(value,
+    limit)`: as `quote` and `quote_cut`, but a character above U+007F is kept unless
+    `escaped_in_text` names it or it is the first of the value and `escaped_at_run_start` names
+    it. `quote` and `quote_cut` are unchanged and stay ASCII.
   - `Answer.text: Option<Text>`; `Text { form: Form, first: u64, total: u64, bytes_total: u64,
     lines: Vec<String> }`, `Form { Tree, Markdown }`; `Note::Text(TextNote)` with `NoCss` and
     `NoDocument`.
@@ -75,9 +77,9 @@ the round writes `crates/answer` or `docs/agent-answer.md`.
     lines one at a time, keeps those from `from` (1-based) while both bounds hold, counts every
     line and its bytes; a single line that alone exceeds 32,768 bytes is kept alone, cut at the
     last escape unit that leaves room for `[cut]`.
-  - `render_text`: refuses a body line holding a line feed or a character `escaped_in_text`
-    names, a block over either bound, `<shown>` above `<total>` and `<bytes shown>` above
-    `<bytes total>`; writes `more` when `first + shown <= total`. `parse_text` in `BLOCKS` after
+  - `render_text`: refuses a body line holding a line feed, a character `escaped_in_text`
+    names or one `escaped_at_run_start` names right after `> `, a block over either bound,
+    `<shown>` above `<total>` and `<bytes shown>` above `<bytes total>`; writes `more` when `first + shown <= total`. `parse_text` in `BLOCKS` after
     `parse_notes` accepts exactly what `render_text` writes, the byte count of the header checked
     against the body lines.
   - For `page-text-surf-command`, `pub fn render_text_whole(form, lines: impl Iterator<Item =
@@ -107,8 +109,9 @@ body line behind `>`, its characters checked by `escaped_in_text`".
    `surf 1 session 7f3a open` to the last line (`text-tree.txt` holds
    `text tree 31 of 31 lines from 1, 668 of 668 bytes` and `>   head hid 4`); `text-forged.txt` is
    `surf 1 session 7f3a open`, `did look`, `page 200 "text/html" "http://shop.example/forged"
-   "Bank"`, `path 2 of 2`, `  1 open`, `  2 go "http://shop.example/forged"` and the 21 lines of
-   section 3 from `note text: no-css` (`text markdown 20 of 20 lines from 1, 334 of 334 bytes`).
+   "Bank"`, `path 2 of 2`, `  1 open`, `  2 go "http://shop.example/forged"` and the 22 lines of
+   section 3 from `note text: no-css` (that line, the header `text markdown 20 of 20 lines from
+   1, 334 of 334 bytes` and 20 body lines).
 2. Paging, 450 lines `xxxxxxxxxx` (13 bytes each as body lines): `text_page(Markdown, .., 1)`
    renders `text markdown 200 of 450 lines from 1, 2600 of 5850 bytes`, 200 body lines and
    `more 250 lines: look --as markdown --from-line 201`; from 451 it renders
@@ -124,9 +127,10 @@ body line behind `>`, its characters checked by `escaped_in_text`".
    gives 32,759 `x` and `[cut]` (no bare `\`); the line 32,758 `x`, `\xe2\x80\xae` and 10,000
    `x` gives 32,758 `x` and `[cut]`.
 5. `render` refuses with `RenderError`, writing nothing: a body line holding a line feed, one
-   holding U+202E, one holding U+0085, one holding U+E0041; a block of 201 lines; a block of
-   32,769 bytes; `<shown>` 3 with `<total>` 2. `quote_text("K\u{e4}se\u{202e}")` is
-   `"K` U+00E4 `se\xe2\x80\xae"`; `quote("K\u{e4}se")` is still `"K\xc3\xa4se"`.
+   holding U+202E, one holding U+0085, one holding U+E0041, one holding U+FF3B, `> ` and U+0338;
+   a block of 201 lines; a block of 32,769 bytes; `<shown>` 3 with `<total>` 2. `quote_text("K\u{e4}se\u{202e}")` is
+   `"K` U+00E4 `se\xe2\x80\xae"`; `quote_text("\u{338}e\u{301}")` is `"\xcc\xb8e` U+0301 `"`;
+   `quote("K\u{e4}se")` is still `"K\xc3\xa4se"`.
 5a. (D1 B) The body line `> K` U+00E4 `se` (bytes `3e 20 4b c3 a4 73 65`) and `> ` U+FFFD are
    written as they are and parsed back.
 6. `parse` refuses, with the line number named, each of these, built on `surf 1 session 7f3a

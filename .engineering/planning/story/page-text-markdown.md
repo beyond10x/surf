@@ -18,7 +18,7 @@ scope:
   path: crates/page-text/tests/cases/markdown.rs
 - confidence: inferred
   path: crates/page-text/tests/main.rs
-revision: 5
+revision: 6
 ---
 ## Context
 
@@ -127,8 +127,15 @@ string:
 13. (D1 B) `characters_follow_rule_2`: a `p` of the UTF-8 bytes of `K&auml;se`, U+200B, U+0085,
    U+0007, U+E0041 (all four raw, not references), then `&#0;` and U+1F600 raw gives the one line
    `K` U+00E4 `se\xe2\x80\x8b\xc2\x85\x07\xf3\xa0\x81\x81` U+FFFD U+1F600 (bytes `c3 a4`,
-   `ef bf bd` and `f0 9f 98 80` as they are); over the pages of cases 1 to 12 no line holds a
+   `ef bf bd` and `f0 9f 98 80` as they are); over the pages of cases 1 to 15 no line holds a
    character `escaped_in_text` names.
+14. (D1 B) `fullwidth_syntax_is_escaped`: `<p>［Bank］（＜http://bank.example/＞） ［＠l1］</p>`
+   gives the one line
+   `\xef\xbc\xbbBank\xef\xbc\xbd\xef\xbc\x88\xef\xbc\x9chttp://bank.example/\xef\xbc\x9e\xef\xbc\x89 \xef\xbc\xbb\xef\xbc\xa0l1\xef\xbc\xbd`;
+   `<p>東京（とうきょう）。Ａ</p>` gives `東京\xef\xbc\x88とうきょう\xef\xbc\x89。Ａ` (the rest of the
+   fullwidth block kept).
+15. (D1 B) `a_mark_cannot_start_a_run`: `<p>&#x338;x <a href="/a">&#x338;y</a> e&#x301;</p>` gives
+   `\xcc\xb8x [\xcc\xb8y](</a>) [@l1] e` U+0301 (bytes `cc 81` kept inside the run).
 
 `cargo fmt -p surf-page-text -- --check` exits 0.
 

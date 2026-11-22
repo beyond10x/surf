@@ -139,18 +139,23 @@ Quoting every line would make Markdown unreadable as Markdown. The rules of the 
    starts with `>`, so a line without it is surf's wherever it stands. A length in bytes with an
    end marker was rejected: a model does not count bytes, and a marker protects only a reader
    that tracks where the block began. With the prefix the block is a Markdown block quote.
-2. **Characters (D1 B, the operator's; the one place of this rule).** A body line holds printable ASCII and UTF-8
-   characters, but these are written as `\x` and two lower-case hexadecimal digits per UTF-8
-   byte: U+0000 to U+001F, U+007F to U+009F (C0, DEL, C1); U+00AD, U+034F, U+061C, U+115F to
+2. **Characters (D1 B, the operator's; the one place of this rule).** A body line holds
+   printable ASCII and UTF-8 characters, but these are written as `\x` and two lower-case
+   hexadecimal digits per UTF-8 byte: U+0000 to U+001F, U+007F to U+009F (C0, DEL, C1); U+00AD, U+034F, U+061C, U+115F to
    U+1160, U+17B4 to U+17B5, U+180B to U+180F, U+200B to U+200F, U+2028 to U+202E, U+2060 to
    U+206F, U+3164, U+FE00 to U+FE0F, U+FEFF, U+FFA0, U+FFF0 to U+FFFB, U+1BCA0 to U+1BCA3,
    U+1D173 to U+1D17A (invisible, format, bidirectional and separator characters, variation
    selectors); U+E000 to U+F8FF and U+F0000 to U+10FFFF (private use); U+40000 to U+EFFFF
    (unassigned planes, tags, variation selectors supplement); U+FDD0 to U+FDEF and U+nFFFE,
-   U+nFFFF of planes 0 to 3 (noncharacters). U+FFFD, which the decoder and the parser give for
-   invalid bytes, surrogates and `&#0;`, is kept. Not detected: unassigned code points of planes
-   0 to 3 (surf has no character database). One predicate, `surf_answer::escaped_in_text`, holds
-   the list; the Markdown escaper, the tree's `surf_answer::quote_text` and `quote_text_cut`
+   U+nFFFF of planes 0 to 3 (noncharacters); U+FF02, U+FF08, U+FF09, U+FF1C, U+FF1E, U+FF20,
+   U+FF3B, U+FF3C, U+FF3D, U+FF5C (the fullwidth forms of surf's syntax: quote, parentheses,
+   angle brackets, at, brackets, backslash, pipe; the rest of that block is kept). A combining
+   mark of U+0300 to U+036F, U+1AB0 to U+1AFF, U+1DC0 to U+1DFF, U+20D0 to U+20FF or U+FE20 to
+   U+FE2F is escaped when it starts a run of page text (the first code point after a character
+   surf wrote: the `> ` prefix, a `[`, `(<`, a quote, a cell wall), kept inside a run. U+FFFD,
+   which the decoder and the parser give for invalid bytes, surrogates and `&#0;`, is kept. Not
+   detected: unassigned code points of planes 0 to 3 (surf has no character database).
+   `surf_answer::escaped_in_text` and `escaped_at_run_start` hold the lists; the Markdown escaper, the tree's `surf_answer::quote_text` and `quote_text_cut`
    (quote `"` and `\` too) and the checks of `surfd` and the client use it. `quote` for every
    other field stays ASCII.
 3. **Markdown-significant characters from the page get a backslash**: `\` `` ` `` `*` `_` `[`
@@ -175,7 +180,13 @@ lines, and `more` is the last line. An answer without `--as` is byte for byte to
 **A stated limit, not a claim.** The escapes protect a reader that parses Markdown. Whether a
 model reads `\[@l1\]` as different from `[@l1]` is not established, and a page chooses the labels
 of its own links in any case. A page that shows the text of several authors (comments under an
-article) stays a risk: what a commenter writes reaches the agent as that page's text.
+article) stays a risk: what a commenter writes reaches the agent as that page's text. Other
+look-alikes are kept (U+01C0, U+2502, U+2223 for the pipe; typographic quotes; mathematical
+brackets), as are combining marks of other scripts at the start of a run: surf has no
+confusables table. Surf's own syntax is ASCII only, and the agent skill text says so: a handle
+is ASCII `@`, one of `l`, `b`, `f` and ASCII digits, inside ASCII brackets surf wrote.
+Right-to-left letters are kept, so a display for a person can show surf's brackets in another
+order; the answer is read in logical order.
 
 A forged page and the answer surf gives (the `page` and `path` lines left out):
 ```html

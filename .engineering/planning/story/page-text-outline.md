@@ -9,6 +9,7 @@ relations:
 - decomposes: epic:agent-cli-target
 - depends_on: story:html-actionable-elements
 - depends_on: story:html-parser-limits
+- depends_on: story:page-text-answer-block
 scope:
 - confidence: inferred
   path: crates/page-text
@@ -16,7 +17,7 @@ scope:
   path: crates/page/src/lib.rs
 - confidence: inferred
   path: crates/page/tests/elements.rs
-revision: 6
+revision: 7
 ---
 ## Context
 
@@ -109,8 +110,10 @@ within 120 s (the folder's budget). Among the cases run:
    `deep 361`; within 5 s in a debug build.
 7. `a_hidden_subtree_is_one_line`: `<div aria-hidden="true"><p>secret</p></div>` gives
    `    div hid 2` and no line holds `secret`.
-8. `comments_and_template_contents_are_left_out`: `<!--c--><template><p>t</p></template>` gives
-   a line starting `    template hid ` and no line holding `"c"` or `"t"`.
+8. `comments_and_template_contents_are_left_out`: `<p>x</p><!--c--><template><p>t</p></template>`
+   (the `p` first, so that the `template` is in `body`, not in the hidden `head`) gives exactly 5
+   lines: `html`, `  head hid 0`, `  body`, `    p "x"` and one starting `    template hid `; no
+   line holds `"c"` or `"t"`.
 9. `foreign_names_carry_their_prefix`: `<svg><circle/></svg>` gives `    svg:svg` and
    `      svg:circle` when `surf_html::NOT_YET_PARSED` does not name foreign content, and `    svg`
    and `      circle` while it does (the expected lines built from the list, as D31 does for the

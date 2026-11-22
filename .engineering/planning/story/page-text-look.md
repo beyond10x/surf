@@ -43,7 +43,7 @@ scope:
   path: generated/rust
 - confidence: inferred
   path: spec/domains/agent.yaml
-revision: 10
+revision: 11
 ---
 ## Context
 
@@ -175,8 +175,14 @@ For `AGENTS.md` (D7): the `crates/session` entry gains "`open <url>`, `go <url>`
    `now`.
 10. `a_call_with_a_form_records_the_same` (`events.rs`): two sessions, one running `open <url>
    --as tree`, `go <url> --as markdown`, `look --as tree`, the other the same calls without the
-   options: their `path` lines are equal, and the actions and events `surfd` keeps of them are
-   equal; the answers differ only by the `note text:` line and the block.
+   options, one after the other in one `surfd`: their `path` lines are equal, and their lists
+   of `surfd::log::Entry` have the same length and, entry by entry, the same `index` and `kind`;
+   `number`, `session` and `kept_at` are not compared. The `text` of every action and event
+   entry is equal after each UUID in it is replaced by `#<n>`, n the order of its first
+   appearance in that session's entries (the session, window, tab, navigation, request and
+   document identities). The `text` of each answer entry of the session with the options, with
+   its `note text:` line and its text block removed, equals the other's under the same
+   replacement, the `token` line of `open` aside.
 11. (D1 B) End to end (`e2e.rs`, the built `surf-agent`, `surfd` and `surf-session`): `go <url>
    --as markdown` to `<p>K&auml;se</p>` exits 0 and prints `text markdown 1 of 1 lines from 1, 8
    of 8 bytes` and `> K` U+00E4 `se` (bytes `c3 a4`). `adversary_link.rs`: an answer entry whose
