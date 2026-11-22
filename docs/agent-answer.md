@@ -194,6 +194,7 @@ field when it had one.
 note parser: <parts>
 note text: no-css
 note text: no-document
+note text: deep <n>
 ```
 
 A `note` line says what the answer cannot show yet. The list is fixed, and a story that adds a
@@ -208,6 +209,11 @@ note adds it here:
   text a style sheet hides is shown, in source order.
 - `note text: no-document`: page text was asked for, but the load failed or the page is not
   HTML; the answer has no `text` block.
+- `note text: deep <n>`: the Markdown of the `text` block wrote up to `<n>` levels of nested
+  lists and quotes, at least 1, at the indentation of the level above them and without their
+  markers, because the prefix of their lines would pass 128 bytes
+  (`surf_page_text::markdown::PREFIX_BYTES_MAX`). The answer has it when
+  `surf_page_text::markdown::Markdown::deep` is not 0.
 
 ### Text
 
@@ -307,7 +313,8 @@ path-entry    = SP SP number SP command [SP quoted] LF
 note-line     = "note" SP (note-parser / note-text) LF
 note-parser   = "parser:" SP part *("," part)
 part          = 1*(lower / "-")
-note-text     = "text:" SP ("no-css" / "no-document")
+note-text     = "text:" SP ("no-css" / "no-document" / "deep" SP number)
+                                              ; deep: at least 1
 
 text-block    = text-line *body-line [more-line]
                                               ; exactly <shown> body-line lines; more-line

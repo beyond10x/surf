@@ -26,6 +26,24 @@ pub const TEXT_CHARS_MAX: usize = 200;
 /// The characters of a control's label kept before it is cut and ends in `[cut]`.
 pub const LABEL_CHARS_MAX: usize = 60;
 
+/// The bytes of the prefix of a line: the markers and the indentation of the lists and quotes it
+/// is in. A list item or a quote that would pass it is written at the indentation of the one it
+/// is in, without a marker of its own (`Markdown::deep` counts those levels); so the text of a
+/// line keeps at least `LINE_BYTES_MAX - PREFIX_BYTES_MAX` bytes.
+pub const PREFIX_BYTES_MAX: usize = 128;
+
+/// The bytes of an atom: a link with its handle, an image, an `iframe`, a code span, a control.
+/// An atom is never broken across lines; a longer one is cut before `[cut]` so that it fits one
+/// line behind the longest prefix, a heading's `###### ` and emphasis markers.
+pub const ATOM_BYTES_MAX: usize = LINE_BYTES_MAX - PREFIX_BYTES_MAX - 32;
+
+/// The bytes of a fence. A `pre` whose longest run of backticks needs a longer one is an
+/// indented code block, which has no fence for a run to close.
+pub const FENCE_BYTES_MAX: usize = 16;
+
+/// The largest number of an ordered list item: CommonMark allows at most 9 digits.
+const LIST_NUMBER_MAX: u64 = 999_999_999;
+
 /// What a cut adds.
 const CUT: &str = "[cut]";
 
@@ -93,7 +111,7 @@ pub const LANDMARKS: [&str; 5] = ["nav", "header", "footer", "main", "aside"];
 /// The lines of `tree` as Markdown, without the `> ` prefix of the answer, an empty line as the
 /// empty string, one block at a time. A first walk counts the lines of each landmark, a second
 /// writes them; each walk has its own stack, so the time is linear in the number of nodes.
-pub fn markdown(tree: &Tree) -> impl Iterator<Item = String> + '_ {
+pub fn markdown(tree: &Tree) -> Markdown<'_> {
     let facts = Rc::new(Facts {
         handles: surf_page::handles(tree).into_iter().collect(),
         rows: surf_page::actionable_elements(tree)
@@ -104,8 +122,39 @@ pub fn markdown(tree: &Tree) -> impl Iterator<Item = String> + '_ {
     });
     let mut counting = Walker::new(tree, facts, None);
     while counting.step() {}
-    let Walker { facts, counts, .. } = counting;
-    Walker::new(tree, facts, Some(counts))
+    let Walker {
+        facts,
+        counts,
+        deep,
+        ..
+    } = counting;
+    Markdown {
+        walker: Walker::new(tree, facts, Some(counts)),
+        deep,
+    }
+}
+
+/// The lines of a page's Markdown, one at a time ([`markdown`]).
+pub struct Markdown<'a> {
+    walker: Walker<'a>,
+    deep: usize,
+}
+
+impl Markdown<'_> {
+    /// The most levels of lists and quotes written at the indentation of the level above them,
+    /// because their prefix would pass [`PREFIX_BYTES_MAX`]; 0 when none was. Known before the
+    /// first line: the answer says it in the line `note text: deep <n>`.
+    pub fn deep(&self) -> usize {
+        self.deep
+    }
+}
+
+impl Iterator for Markdown<'_> {
+    type Item = String;
+
+    fn next(&mut self) -> Option<String> {
+        self.walker.next()
+    }
 }
 
 /// What the walk reads from `surf-page`, once per document.
@@ -134,6 +183,9 @@ enum Close {
     Quote,
     Landmark,
     Term,
+    /// A list item or a quote written without a container: its prefix would pass
+    /// `PREFIX_BYTES_MAX`.
+    Flat,
 }
 
 /// A list item or a block quote: the prefix of its first line and of the others.
@@ -176,6 +228,10 @@ struct Walker<'a> {
     landmarks: Vec<Landmark>,
     /// Inside a table or a heading: blocks are spaces of one paragraph.
     flatten: usize,
+    /// The list items and quotes open now that have no container.
+    flat: usize,
+    /// The most of them open at once.
+    deep: usize,
     para: Para,
     done: bool,
 }
@@ -218,6 +274,8 @@ impl<'a> Walker<'a> {
             lists: Vec::new(),
             landmarks: Vec::new(),
             flatten: 0,
+            flat: 0,
+            deep: 0,
             para: Para::default(),
             done: false,
         }
@@ -268,32 +326,30 @@ impl<'a> Walker<'a> {
                     text if text.is_empty() => row.label.clone(),
                     text => text,
                 };
-                let mut atom = String::from("[");
-                push_cut(&text, TEXT_CHARS_MAX, &mut atom);
-                atom.push_str("](<");
-                escape_text(target, true, &mut atom);
-                atom.push_str(">) [@");
-                atom.push_str(handle);
-                atom.push(']');
-                self.para.push_atom(atom);
+                let (atom, spent) = link_atom(&text, target, handle);
+                self.para.push_atom(atom, spent);
             } else {
-                let mut atom = format!("[@{handle} {}", row.kind.name());
+                let mut head = format!("[@{handle} {}", row.kind.name());
                 for (set, flag) in [
                     (row.disabled, " disabled"),
                     (row.required, " required"),
                     (row.checked, " checked"),
                 ] {
                     if set {
-                        atom.push_str(flag);
+                        head.push_str(flag);
                     }
                 }
+                let mut atom = head.clone();
                 if !row.label.is_empty() {
+                    let mut label = String::new();
+                    push_cut(&row.label, LABEL_CHARS_MAX, &mut label);
                     atom.push_str(": ");
-                    push_cut(&row.label, LABEL_CHARS_MAX, &mut atom);
+                    atom.push_str(&fit(&label, ATOM_BYTES_MAX - head.len() - 3));
                 }
                 atom.push(']');
+                let spent = row.label.chars().count().min(LABEL_CHARS_MAX);
                 self.para.push_space();
-                self.para.push_atom(atom);
+                self.para.push_atom(atom, spent);
                 self.para.push_space();
             }
             return;
@@ -303,19 +359,20 @@ impl<'a> Walker<'a> {
                 if let Some(alt) = attribute(attributes, "alt").map(collapse)
                     && !alt.is_empty()
                 {
-                    let mut atom = String::from("![");
-                    push_cut(&alt, TEXT_CHARS_MAX, &mut atom);
-                    atom.push(']');
-                    self.para.push_atom(atom);
+                    let mut escaped = String::new();
+                    push_cut(&alt, TEXT_CHARS_MAX, &mut escaped);
+                    let atom = format!("![{}]", fit(&escaped, ATOM_BYTES_MAX - 3));
+                    self.para
+                        .push_atom(atom, alt.chars().count().min(TEXT_CHARS_MAX));
                 }
                 return;
             }
             "iframe" => {
                 if let Some(src) = attribute(attributes, "src") {
-                    let mut atom = String::from("[iframe](<");
-                    escape_text(src, true, &mut atom);
-                    atom.push_str(">)");
-                    self.para.push_atom(atom);
+                    let mut escaped = String::new();
+                    escape_text(src, true, &mut escaped);
+                    let atom = format!("[iframe](<{}>)", fit(&escaped, ATOM_BYTES_MAX - 12));
+                    self.para.push_atom(atom, 1);
                 }
                 return;
             }
@@ -329,14 +386,15 @@ impl<'a> Walker<'a> {
             }
             "code" => {
                 let text = collapse(&plain_text(tree, &self.facts.hidden, node));
-                self.para.push_atom(code_span(&text));
+                self.para.push_atom(code_span(&text), text.chars().count());
                 return;
             }
             "pre" | "listing" | "xmp" => {
                 let text = pre_text(tree, &self.facts.hidden, node);
                 if self.flatten > 0 {
+                    let text = collapse(&text);
                     self.para.push_space();
-                    self.para.push_atom(code_span(&collapse(&text)));
+                    self.para.push_atom(code_span(&text), text.chars().count());
                     self.para.push_space();
                 } else {
                     self.block_boundary();
@@ -366,7 +424,7 @@ impl<'a> Walker<'a> {
             "table" if self.numbers.contains_key(&node) => {
                 let number = self.numbers[&node];
                 self.para.push_space();
-                self.para.push_atom(format!("[table {number}]"));
+                self.para.push_atom(format!("[table {number}]"), 1);
                 self.para.push_space();
                 return;
             }
@@ -410,38 +468,31 @@ impl<'a> Walker<'a> {
             }
             "li" => {
                 self.block_boundary();
-                let marker = match self.lists.last_mut() {
+                let (marker, later) = match self.lists.last_mut() {
                     Some(list) => {
                         list.items += 1;
-                        if list.items > 1 {
-                            self.pending_separator = None;
-                        }
-                        if list.ordered {
-                            let marker = format!("{}. ", list.next);
+                        let marker = if list.ordered {
+                            let marker = format!("{}. ", list.next.min(LIST_NUMBER_MAX));
                             list.next = list.next.saturating_add(1);
                             marker
                         } else {
                             "- ".to_string()
-                        }
+                        };
+                        (marker, list.items > 1)
                     }
-                    None => "- ".to_string(),
+                    None => ("- ".to_string(), false),
                 };
-                let rest = " ".repeat(marker.len());
-                self.containers.push(Container {
-                    first: marker,
-                    rest,
-                    first_pending: true,
-                });
-                Close::Item
+                let close = self.open_container(marker, Close::Item);
+                // Items of one list are not parted (a tight list); items without a marker are,
+                // so that their texts stay apart.
+                if later && close == Close::Item {
+                    self.pending_separator = None;
+                }
+                close
             }
             "blockquote" => {
                 self.block_boundary();
-                self.containers.push(Container {
-                    first: "> ".to_string(),
-                    rest: "> ".to_string(),
-                    first_pending: true,
-                });
-                Close::Quote
+                self.open_container("> ".to_string(), Close::Quote)
             }
             "dt" => {
                 self.block_boundary();
@@ -499,6 +550,10 @@ impl<'a> Walker<'a> {
                 self.para.push_close("**");
                 self.block_boundary();
             }
+            Close::Flat => {
+                self.block_boundary();
+                self.flat -= 1;
+            }
             Close::Landmark => {
                 self.block_boundary();
                 if let Some(landmark) = self.landmarks.pop()
@@ -518,13 +573,32 @@ impl<'a> Walker<'a> {
         self.pending_separator = Some(self.pending_separator.map_or(depth, |p| p.min(depth)));
     }
 
+    /// Open a list item (`marker` its `- ` or `<n>. `) or a quote (`> `): a container whose
+    /// prefix the lines inside it carry, or none when that prefix would pass
+    /// [`PREFIX_BYTES_MAX`]; then its content is written at the indentation it is in.
+    fn open_container(&mut self, marker: String, close: Close) -> Close {
+        if self.prefix_width() + marker.len() > PREFIX_BYTES_MAX {
+            self.flat += 1;
+            self.deep = self.deep.max(self.flat);
+            return Close::Flat;
+        }
+        let rest = if close == Close::Quote {
+            marker.clone()
+        } else {
+            " ".repeat(marker.len())
+        };
+        self.containers.push(Container {
+            first: marker,
+            rest,
+            first_pending: true,
+        });
+        close
+    }
+
     /// Write the paragraph collected so far.
     fn flush(&mut self) {
         let para = std::mem::take(&mut self.para);
-        let heading = para.kind.map(|level| format!("{} ", "#".repeat(level)));
-        let width = LINE_BYTES_MAX.saturating_sub(self.prefix_width());
-        let lines = para.lines(width, heading.as_deref().unwrap_or(""));
-        for line in lines {
+        for line in para.lines(self.text_width()) {
             self.emit(&line);
         }
     }
@@ -533,26 +607,44 @@ impl<'a> Walker<'a> {
         self.containers.iter().map(|c| c.rest.len()).sum()
     }
 
-    /// A fenced code block of `text`, its lines as they are, escaped as code.
+    /// The bytes a line keeps for its text behind the prefix of its containers: at least
+    /// `LINE_BYTES_MAX - PREFIX_BYTES_MAX`.
+    fn text_width(&self) -> usize {
+        LINE_BYTES_MAX - self.prefix_width().min(PREFIX_BYTES_MAX)
+    }
+
+    /// A fenced code block of `text`, its lines as they are, escaped as code; a line longer than
+    /// the line bound is broken between units. When the fence would pass [`FENCE_BYTES_MAX`]
+    /// (a run of 16 backticks or more inside), an indented code block: every line behind four
+    /// spaces, no fence.
     fn fence(&mut self, text: &str) {
         let text = text.strip_suffix('\n').unwrap_or(text);
         if text.is_empty() {
             return;
         }
-        let fence = "`".repeat(longest_backtick_run(text).max(2) + 1);
-        let width = LINE_BYTES_MAX.saturating_sub(self.prefix_width());
-        self.emit(&fence);
+        let ticks = longest_backtick_run(text).max(2) + 1;
+        let (fence, indent) = if ticks <= FENCE_BYTES_MAX {
+            (Some("`".repeat(ticks)), "")
+        } else {
+            (None, "    ")
+        };
+        let width = self.text_width() - indent.len();
+        if let Some(fence) = &fence {
+            self.emit(fence);
+        }
         for raw in text.split('\n') {
             let mut line = String::new();
             escape_code(raw, true, &mut line);
             if line.is_empty() {
                 self.emit("");
             }
-            for chunk in break_units(&line, width) {
-                self.emit(&escape_mark_at_start(chunk));
+            for chunk in code_lines(&line, width) {
+                self.emit(&format!("{indent}{chunk}"));
             }
         }
-        self.emit(&fence);
+        if let Some(fence) = &fence {
+            self.emit(fence);
+        }
     }
 
     /// Write one line: the empty line a block boundary asked for, the header lines of the
@@ -713,26 +805,6 @@ fn pre_text(tree: &Tree, hidden: &HashSet<NodeId>, node: NodeId) -> String {
 fn longest_backtick_run(text: &str) -> usize {
     text.split(|c| c != '`').map(str::len).max().unwrap_or(0)
 }
-
-/// A code span of `text`: backticks one more than its longest run of them, a space inside each
-/// when the text starts or ends with one, the text escaped as code.
-fn code_span(text: &str) -> String {
-    if text.is_empty() {
-        return String::new();
-    }
-    let ticks = "`".repeat(longest_backtick_run(text) + 1);
-    let pad = if text.starts_with('`') || text.ends_with('`') {
-        " "
-    } else {
-        ""
-    };
-    let mut span = format!("{ticks}{pad}");
-    escape_code(text, true, &mut span);
-    span.push_str(pad);
-    span.push_str(&ticks);
-    span
-}
-
 /// Write `c` as `\x` and two lower-case hexadecimal digits per UTF-8 byte.
 fn push_hex(c: char, out: &mut String) {
     let mut bytes = [0u8; 4];
@@ -818,57 +890,152 @@ fn hex_escape(bytes: &[u8]) -> Option<u8> {
     }
 }
 
-/// `text` in pieces of at most `width` bytes, each cut between escape units and holding at
-/// least one unit.
-fn break_units(text: &str, width: usize) -> Vec<&str> {
-    let mut pieces = Vec::new();
-    let mut start = 0;
-    while start < text.len() {
-        let mut end = start + unit_len(&text[start..]);
-        while end < text.len() {
-            let next = end + unit_len(&text[end..]);
-            if next - start > width {
+/// A code span of `text`, one atom: backticks one more than the longest run of them inside, so
+/// no run inside can close it, a space inside each when the text starts or ends with one, the
+/// text escaped as code. Longer than [`ATOM_BYTES_MAX`]: the text cut between units, then
+/// `[cut]` after the span.
+fn code_span(text: &str) -> String {
+    if text.is_empty() {
+        return String::new();
+    }
+    let mut escaped = String::new();
+    escape_code(text, true, &mut escaped);
+    let span = |inner: &str| {
+        let ticks = "`".repeat(longest_backtick_run(inner) + 1);
+        let pad = if inner.starts_with('`') || inner.ends_with('`') {
+            " "
+        } else {
+            ""
+        };
+        format!("{ticks}{pad}{inner}{pad}{ticks}")
+    };
+    let whole = span(&escaped);
+    if whole.len() <= ATOM_BYTES_MAX {
+        return whole;
+    }
+    let starts = escaped.starts_with('`');
+    let (mut end, mut run, mut longest) = (0, 0, 0);
+    while end < escaped.len() {
+        let next = end + unit_len(&escaped[end..]);
+        let tick = &escaped[end..next] == "`";
+        let run_next = if tick { run + 1 } else { 0 };
+        let longest_next = longest.max(run_next);
+        let pads = if starts || tick { 2 } else { 0 };
+        if 2 * (longest_next + 1) + pads + next + CUT.len() > ATOM_BYTES_MAX {
+            break;
+        }
+        (end, run, longest) = (next, run_next, longest_next);
+    }
+    if end == 0 {
+        return CUT.to_string();
+    }
+    format!("{}{CUT}", span(&escaped[..end]))
+}
+
+/// `escaped`, escape units of page text that may end in `[cut]`, in at most `max` bytes: cut
+/// between units before a `[cut]` when it is longer.
+fn fit(escaped: &str, max: usize) -> String {
+    if escaped.len() <= max {
+        return escaped.to_string();
+    }
+    let body = escaped.strip_suffix(CUT).unwrap_or(escaped);
+    let limit = max.saturating_sub(CUT.len());
+    let mut end = 0;
+    while end < body.len() {
+        let next = end + unit_len(&body[end..]);
+        if next > limit {
+            break;
+        }
+        end = next;
+    }
+    format!("{}{CUT}", &body[..end])
+}
+
+/// A link, one atom: `[text](<target>) [@handle]`, its text cut at [`TEXT_CHARS_MAX`]
+/// characters; when it is longer than [`ATOM_BYTES_MAX`], its text and its target are cut
+/// before `[cut]` (the text keeps at least half of what is left beside the handle), so a cut
+/// target ends in `[cut]>`. The handle stays whole. With the characters of page text a
+/// renderer shows of it.
+fn link_atom(text: &str, target: &str, handle: &str) -> (String, usize) {
+    let mut label = String::new();
+    push_cut(text, TEXT_CHARS_MAX, &mut label);
+    let mut destination = String::new();
+    escape_text(target, true, &mut destination);
+    let room = ATOM_BYTES_MAX - "[](<>) [@]".len() - handle.len();
+    if label.len() + destination.len() > room {
+        let label_max = label
+            .len()
+            .min((room / 2).max(room.saturating_sub(destination.len())));
+        label = fit(&label, label_max);
+        destination = fit(&destination, room - label.len());
+    }
+    (
+        format!("[{label}](<{destination}>) [@{handle}]"),
+        text.chars().count().min(TEXT_CHARS_MAX),
+    )
+}
+
+/// The lines of one line of code `text`, escaped, broken between units at `width` bytes; a
+/// combining mark that starts a line is written as its bytes.
+fn code_lines(text: &str, width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut rest = text;
+    while !rest.is_empty() {
+        let mut line = String::new();
+        if let Some(c) = rest.chars().next()
+            && escaped_at_run_start(c)
+        {
+            push_hex(c, &mut line);
+            rest = &rest[c.len_utf8()..];
+        }
+        while !rest.is_empty() {
+            let unit = unit_len(rest);
+            if !line.is_empty() && line.len() + unit > width {
                 break;
             }
-            end = next;
+            line.push_str(&rest[..unit]);
+            rest = &rest[unit..];
         }
-        pieces.push(&text[start..end]);
-        start = end;
+        lines.push(line);
     }
-    pieces
+    lines
 }
 
-/// A line that starts with a combining mark kept inside its run gets the mark escaped.
-fn escape_mark_at_start(line: &str) -> String {
-    match line.chars().next() {
-        Some(c) if escaped_at_run_start(c) => {
-            let mut out = String::new();
-            push_hex(c, &mut out);
-            out.push_str(&line[c.len_utf8()..]);
-            out
-        }
-        _ => line.to_string(),
+/// The escape of the start of a line of text `rest` (escaped page text), when it needs one, and
+/// the bytes of `rest` it stands for: `-`, `+` and `=` get a backslash, as the `.` or `)` after
+/// leading digits does when they fit the `room` of the line, and a combining mark is written as
+/// its bytes. Page text is the only thing that can start a line of a paragraph with one of
+/// them; no line of a paragraph starts with a space (a text piece holds no ASCII whitespace,
+/// and a space is written only between two words of one line), so the marker is the line's
+/// first character as CommonMark counts indentation.
+fn line_start(rest: &str, room: usize) -> Option<(String, usize)> {
+    let c = rest.chars().next()?;
+    if matches!(c, '-' | '+' | '=') {
+        return Some((format!("\\{c}"), 1));
     }
-}
-
-/// The escapes of the start of a line of text: `-`, `+`, `=` and the `.` or `)` after leading
-/// digits get a backslash, and a leading combining mark is written as its bytes. Page text is
-/// the only thing that can start a line of a paragraph with one of them.
-fn escape_line_start(line: &str) -> String {
-    if line.starts_with(['-', '+', '=']) {
-        return format!("\\{line}");
+    let head = &rest.as_bytes()[..rest.len().min(room)];
+    let digits = head.iter().take_while(|b| b.is_ascii_digit()).count();
+    if digits > 0 && digits + 2 <= room && matches!(rest.as_bytes().get(digits), Some(b'.' | b')'))
+    {
+        return Some((
+            format!("{}\\{}", &rest[..digits], &rest[digits..=digits]),
+            digits + 1,
+        ));
     }
-    let digits = line.len() - line.trim_start_matches(|c: char| c.is_ascii_digit()).len();
-    if digits > 0 && line[digits..].starts_with(['.', ')']) {
-        return format!("{}\\{}", &line[..digits], &line[digits..]);
+    if escaped_at_run_start(c) {
+        let mut hex = String::new();
+        push_hex(c, &mut hex);
+        return Some((hex, c.len_utf8()));
     }
-    escape_mark_at_start(line)
+    None
 }
 
 #[derive(Debug)]
 enum Token {
-    /// Text as written, escaped; whether its last character is page text.
-    Word(String, bool),
+    /// Page text, escaped.
+    Text(String),
+    /// An atom surf wrote (a link, an image, a code span, a control, `[cut]`): never broken.
+    Atom(String),
     Space,
     Open(&'static str),
     Close(&'static str),
@@ -881,9 +1048,54 @@ struct Para {
     tokens: Vec<Token>,
     /// The level of a heading.
     kind: Option<usize>,
-    /// The characters of page text a heading still keeps.
+    /// The characters of page text a heading or a cell still keeps.
     budget: Option<usize>,
     cut: bool,
+}
+
+/// A piece of a word: escaped page text, which a line may break between two units, or an atom,
+/// which it does not break.
+#[derive(Clone, Debug)]
+enum Piece {
+    Text(String),
+    Atom(String),
+}
+
+impl Piece {
+    fn as_str(&self) -> &str {
+        match self {
+            Piece::Text(text) | Piece::Atom(text) => text,
+        }
+    }
+}
+
+/// The pieces between two spaces, and whether a hard break follows them.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Word {
+    pieces: Vec<Piece>,
+    breaks: bool,
+}
+
+impl Word {
+    fn len(&self) -> usize {
+        self.pieces.iter().map(|p| p.as_str().len()).sum()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.pieces.is_empty()
+    }
+
+    fn push_text(&mut self, text: &str) {
+        match self.pieces.last_mut() {
+            Some(Piece::Text(last)) => last.push_str(text),
+            _ => self.pieces.push(Piece::Text(text.to_string())),
+        }
+    }
+
+    /// The word as written on one line.
+    pub(crate) fn joined(&self) -> String {
+        self.pieces.iter().map(Piece::as_str).collect()
+    }
 }
 
 impl Para {
@@ -907,7 +1119,7 @@ impl Para {
         if self.cut {
             return;
         }
-        let run_start = !matches!(self.tokens.last(), Some(Token::Word(_, true)));
+        let run_start = !matches!(self.tokens.last(), Some(Token::Text(_)));
         let mut escaped = String::new();
         if let Some(budget) = &mut self.budget {
             let count = word.chars().count();
@@ -917,21 +1129,33 @@ impl Para {
                     .nth(*budget)
                     .map_or(word.len(), |(at, _)| at);
                 escape_text(&word[..end], run_start, &mut escaped);
-                self.tokens.push(Token::Word(escaped, true));
-                self.tokens.push(Token::Word(CUT.to_string(), false));
+                self.tokens.push(Token::Text(escaped));
+                self.tokens.push(Token::Atom(CUT.to_string()));
                 self.cut = true;
                 return;
             }
             *budget -= count;
         }
         escape_text(word, run_start, &mut escaped);
-        self.tokens.push(Token::Word(escaped, true));
+        self.tokens.push(Token::Text(escaped));
     }
 
-    fn push_atom(&mut self, atom: String) {
-        if !self.cut && !atom.is_empty() {
-            self.tokens.push(Token::Word(atom, false));
+    /// An atom that shows `spent` characters of page text (at least one is counted): within the
+    /// budget of a heading or a cell, or `[cut]` instead, so a cut falls between atoms.
+    fn push_atom(&mut self, atom: String, spent: usize) {
+        if self.cut || atom.is_empty() {
+            return;
         }
+        if let Some(budget) = &mut self.budget {
+            let spent = spent.max(1);
+            if spent > *budget {
+                self.tokens.push(Token::Atom(CUT.to_string()));
+                self.cut = true;
+                return;
+            }
+            *budget -= spent;
+        }
+        self.tokens.push(Token::Atom(atom));
     }
 
     fn push_space(&mut self) {
@@ -950,7 +1174,7 @@ impl Para {
             Some(_) => {
                 if let Some(budget) = &mut self.budget {
                     if *budget == 0 {
-                        self.tokens.push(Token::Word(CUT.to_string(), false));
+                        self.tokens.push(Token::Atom(CUT.to_string()));
                         self.cut = true;
                         return;
                     }
@@ -996,9 +1220,9 @@ impl Para {
         }
     }
 
-    /// The words of the paragraph, each with whether a hard break follows it: emphasis markers
-    /// without their pair dropped, adjacent pieces joined.
-    fn words(self) -> Vec<(String, bool)> {
+    /// The words of the paragraph: emphasis markers without their pair dropped, the others
+    /// joined to the text beside them, adjacent text joined into one piece.
+    pub(crate) fn words(self) -> Vec<Word> {
         let mut keep = vec![true; self.tokens.len()];
         let mut opens: Vec<(usize, &'static str)> = Vec::new();
         for (index, token) in self.tokens.iter().enumerate() {
@@ -1016,92 +1240,186 @@ impl Para {
         for (index, _) in opens {
             keep[index] = false;
         }
-        let mut words: Vec<(String, bool)> = Vec::new();
-        let mut word = String::new();
+        let mut words: Vec<Word> = Vec::new();
+        let mut word = Word::default();
         for (token, kept) in self.tokens.into_iter().zip(keep) {
             if !kept {
                 continue;
             }
             match token {
-                Token::Word(text, _) => word.push_str(&text),
-                Token::Open(marker) | Token::Close(marker) => word.push_str(marker),
+                Token::Text(text) => word.push_text(&text),
+                Token::Open(marker) | Token::Close(marker) => word.push_text(marker),
+                Token::Atom(atom) => word.pieces.push(Piece::Atom(atom)),
                 Token::Space => {
                     if !word.is_empty() {
-                        words.push((std::mem::take(&mut word), false));
+                        words.push(std::mem::take(&mut word));
                     }
                 }
                 Token::Break => {
                     if !word.is_empty() {
-                        words.push((std::mem::take(&mut word), false));
+                        words.push(std::mem::take(&mut word));
                     }
                     if let Some(last) = words.last_mut() {
-                        last.1 = true;
+                        last.breaks = true;
                     }
                 }
             }
         }
         if !word.is_empty() {
-            words.push((word, false));
+            words.push(word);
         }
         if let Some(last) = words.last_mut() {
-            last.1 = false;
+            last.breaks = false;
         }
         words
     }
 
-    /// The lines of the paragraph: wrapped at the last space that keeps a line within `width`
-    /// bytes, a longer word broken between escape units, `prefix` before the first line, the
-    /// start of each line escaped.
-    fn lines(self, width: usize, prefix: &str) -> Vec<String> {
-        let mut lines = Vec::new();
-        let mut line = String::new();
-        let mut first = true;
-        let finish = |line: &mut String, first: &mut bool, lines: &mut Vec<String>| {
-            let text = std::mem::take(line);
-            if *first {
-                lines.push(format!("{prefix}{text}"));
-                *first = false;
-            } else {
-                lines.push(text);
-            }
+    /// The lines of the paragraph, at most `width` bytes each: wrapped at the last space that
+    /// keeps a line within them, else between two pieces or two units of text, never inside an
+    /// atom; the start of each line escaped. A heading is one line behind its `#` marker, cut
+    /// before `[cut]` when it is longer.
+    fn lines(self, width: usize) -> Vec<String> {
+        let heading = self.kind.map(|level| format!("{} ", "#".repeat(level)));
+        let words = self.words();
+        let Some(prefix) = heading else {
+            return Layout::run(&words, width, "", false);
         };
-        for (word, breaks) in self.words() {
-            let room = |first: bool| width.saturating_sub(if first { prefix.len() } else { 0 });
-            if !line.is_empty() && line.len() + 1 + word.len() <= room(first) {
-                line.push(' ');
-                line.push_str(&word);
-            } else {
-                if !line.is_empty() {
-                    finish(&mut line, &mut first, &mut lines);
+        let lines = Layout::run(&words, width, &prefix, false);
+        if lines.len() <= 1 {
+            return lines;
+        }
+        Layout::run(&words, width, &prefix, true)
+    }
+}
+
+/// The lines of one paragraph while they are made.
+struct Layout<'p> {
+    lines: Vec<String>,
+    line: String,
+    width: usize,
+    /// Before the first line: a heading's marker.
+    prefix: &'p str,
+    /// One line only, ending in `[cut]` when the words do not fit it.
+    single: bool,
+    full: bool,
+}
+
+impl<'p> Layout<'p> {
+    fn run(words: &[Word], width: usize, prefix: &'p str, single: bool) -> Vec<String> {
+        let mut layout = Layout {
+            lines: Vec::new(),
+            line: String::new(),
+            width,
+            prefix,
+            single,
+            full: false,
+        };
+        for word in words {
+            if layout.full {
+                break;
+            }
+            if !layout.line.is_empty() && layout.line.len() + 1 + word.len() <= layout.room() {
+                layout.line.push(' ');
+                for piece in &word.pieces {
+                    layout.line.push_str(piece.as_str());
                 }
-                let word = escape_line_start(&word);
-                if word.len() <= room(first) {
-                    line = word;
-                } else {
-                    let pieces = break_units(&word, room(first).max(1));
-                    let last = pieces.len() - 1;
-                    for (index, piece) in pieces.into_iter().enumerate() {
-                        line = if index == 0 {
-                            piece.to_string()
-                        } else {
-                            escape_line_start(piece)
-                        };
-                        if index < last {
-                            finish(&mut line, &mut first, &mut lines);
-                        }
+            } else {
+                if !layout.line.is_empty() {
+                    if single && layout.line.len() + 1 < layout.room() {
+                        layout.line.push(' ');
+                    } else {
+                        layout.new_line();
                     }
                 }
+                layout.place(word);
             }
-            if breaks {
-                if line.len() < room(first) {
-                    line.push('\\');
+            if word.breaks && !single && !layout.full {
+                if layout.line.len() < layout.room() {
+                    layout.line.push('\\');
                 }
-                finish(&mut line, &mut first, &mut lines);
+                layout.new_line();
             }
         }
-        if !line.is_empty() {
-            finish(&mut line, &mut first, &mut lines);
+        if !layout.line.is_empty() {
+            layout.push_line();
         }
-        lines
+        layout.lines
+    }
+
+    /// The bytes the current line holds: a heading's marker on the first, and the `[cut]` of a
+    /// single line, left out.
+    fn room(&self) -> usize {
+        let first = if self.lines.is_empty() {
+            self.prefix.len()
+        } else {
+            0
+        };
+        let cut = if self.single { CUT.len() } else { 0 };
+        self.width.saturating_sub(first + cut)
+    }
+
+    fn push_line(&mut self) {
+        let text = std::mem::take(&mut self.line);
+        if self.lines.is_empty() {
+            self.lines.push(format!("{}{text}", self.prefix));
+        } else {
+            self.lines.push(text);
+        }
+    }
+
+    /// End the current line; on a single line, end it with `[cut]` and take no more.
+    fn new_line(&mut self) {
+        if self.single {
+            if self.line.ends_with(' ') {
+                self.line.pop();
+            }
+            self.line.push_str(CUT);
+            self.full = true;
+        } else {
+            self.push_line();
+        }
+    }
+
+    /// Place a word that does not fit beside the current line's words: piece by piece, an
+    /// atom on the next line when it does not fit this one, text unit by unit.
+    fn place(&mut self, word: &Word) {
+        for piece in &word.pieces {
+            if self.full {
+                return;
+            }
+            match piece {
+                Piece::Atom(atom) => {
+                    if !self.line.is_empty() && self.line.len() + atom.len() > self.room() {
+                        self.new_line();
+                        if self.full {
+                            return;
+                        }
+                    }
+                    self.line.push_str(atom);
+                }
+                Piece::Text(text) => self.place_text(text),
+            }
+        }
+    }
+
+    fn place_text(&mut self, text: &str) {
+        let mut rest = text;
+        while !rest.is_empty() && !self.full {
+            let room = self.room();
+            if self.line.is_empty()
+                && let Some((head, used)) = line_start(rest, room)
+            {
+                self.line.push_str(&head);
+                rest = &rest[used..];
+                continue;
+            }
+            let unit = unit_len(rest);
+            if !self.line.is_empty() && self.line.len() + unit > room {
+                self.new_line();
+                continue;
+            }
+            self.line.push_str(&rest[..unit]);
+            rest = &rest[unit..];
+        }
     }
 }

@@ -199,6 +199,23 @@ fn comments_and_template_contents_are_left_out() {
     );
 }
 
+/// The fix round after the adversary pass: the text children of a closed `details` are hidden
+/// while their parent is not (15.5.5), both where the element carries its text on its own line
+/// and where a text is a line of its own.
+#[test]
+fn the_text_of_a_closed_details_is_left_out() {
+    let lines = lines("<details>secret<summary>s</summary></details><details>alone</details>");
+    assert_eq!(
+        &lines[2..],
+        [
+            "  body",
+            "    details",
+            "      summary \"s\"",
+            "    details"
+        ]
+    );
+}
+
 #[test]
 fn foreign_names_carry_their_prefix() {
     let lines = lines("<svg><circle/></svg>");

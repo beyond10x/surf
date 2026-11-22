@@ -424,6 +424,26 @@ fn note_text_no_document_alone_renders_and_parses_back() {
     assert_eq!(parse(&rendered), Ok(answer));
 }
 
+/// The fix round after the adversary pass on the text unit (finding B1): the Markdown says how
+/// many levels of lists and quotes it wrote without their prefix.
+#[test]
+fn note_text_deep_renders_and_parses_back() {
+    let mut answer = head_open();
+    answer.notes = vec![Note::Text(TextNote::NoCss), Note::Text(TextNote::Deep(12))];
+    let rendered = render(&answer).expect("the notes render");
+    assert_eq!(
+        rendered,
+        "surf 1 session 7f3a open\nnote text: no-css\nnote text: deep 12\n"
+    );
+    assert_eq!(parse(&rendered), Ok(answer.clone()));
+    answer.notes = vec![Note::Text(TextNote::Deep(0))];
+    assert!(render(&answer).is_err());
+    for line in ["deep 0", "deep 012", "deep", "deep 1 x", "deep -1"] {
+        let text = format!("surf 1 session 7f3a open\nnote text: {line}\n");
+        assert!(parse(&text).is_err(), "{line}");
+    }
+}
+
 /// A body line keeps a character above U+007F that rule 2 does not name (D1 B).
 #[test]
 fn body_lines_keep_utf8_outside_rule_2() {

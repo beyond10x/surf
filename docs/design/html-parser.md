@@ -302,7 +302,9 @@ elements `area, base, basefont, datalist, head, link, meta, noembed, noframes, p
 style, template, title`; `[hidden]` on any element but `embed`, whatever its value (the
 `until-found` value gives `content-visibility: hidden`, which accname also counts);
 `input[type=hidden i]`. In 15.3.3 "Flow content": `dialog:not([open])`, a `dialog` without an
-`open` attribute. In 15.5.5 "The details and summary elements": a `details` element without an
+`open` attribute, and `[popover]:not(:popover-open):not(dialog[open])`, an element with a
+`popover` attribute, whatever its value, but an open `dialog`: surf runs no script and no user
+action, so no popover is ever open. In 15.5.5 "The details and summary elements": a `details` element without an
 `open` attribute gives `content-visibility: hidden` to the slot that takes every child but its
 first `summary` element child, so only that `summary` is shown (a `details` with no `summary`
 child shows its default summary, which is not in the tree, and none of its children).

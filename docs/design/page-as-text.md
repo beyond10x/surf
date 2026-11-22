@@ -236,13 +236,17 @@ is escaped, the override shows as bytes. The last line is the cost of no CSS: `n
   preceded by one.
 - `h1` to `h6`: `#` to `######`. `br`: `\` at the line's end. `hr`: `---`. `blockquote`: lines
   prefixed `> `. `em`, `i`: `*..*`; `strong`, `b`: `**..**` (edge spaces outside, an empty run
-  none). `code`: a code span. `pre`, `listing`, `xmp`: a fence, lines as they are.
+  none). `code`: a code span. `pre`, `listing`, `xmp`: a fence, lines as they are; when the
+  fence would pass 16 backticks, an indented code block (four spaces, no fence to close).
 - `a` with `href`: `[text](<href as written>) [@l<n>]`, not resolved (`document_base_url` is
   `agent-follow-links`'). The text is its content as one inline run (blocks joined by a space, an
   `img` by its `alt`), or its accessible name when that is empty: one link, one line.
 - `img`: `![alt]`; without `alt`, none. `iframe`: `[iframe](<src>)`, no handle: surf loads no
   frame; an agent can `go` there.
-- `ul`, `ol`, `li`: `- `, `<n>. ` (`start` read, `reversed` not); nested content indented by the
+- `ul`, `ol`, `li`: `- `, `<n>. ` (`start` read, `reversed` not; at most 9 digits, as GFM
+  allows); an item or a quote whose prefix would pass 128 bytes is written at the indentation
+  of the one it is in, without its marker, and the answer says `note text: deep <n>`; nested
+  content indented by the
   marker's width. `dl`: `dt` a paragraph `**term**`, `dd` a paragraph (CommonMark has no
   definition list; the bold keeps the term apart).
 - `input`, `select`, `textarea`, `button`: `[@<handle> <kind>[ disabled][ required][ checked]:
@@ -258,11 +262,12 @@ is escaped, the override shows as bytes. The last line is the cost of no CSS: `n
   `colspan`, `rowspan`: text in the first cell, the others empty. A cell is one line: its blocks,
   `br` and the line feeds of a `pre` are joined by a space, a `pre` is a code span, `|` is
   escaped in code too. A table in a cell is `[table <n>]` there and follows the outer one after a
-  line `[table <n>]`; `caption` a paragraph before. Until that story a table is a paragraph of its
+  line `[table <n>]`; each `caption` a paragraph before, in tree order. Until that story a table is a paragraph of its
   text (the tree builder ignores `tr` and `td` until `html-tree-tables`).
 - Dropped: what `is_hidden` calls hidden (`hidden`, `aria-hidden` true, `head` with `title` and
   `meta` (no description is shown), `script`, `style`, `template` and the other 15.3.1 elements,
-  a closed `dialog` or `details` but its `summary`, `input type=hidden`); comments, doctypes,
+  a closed `dialog` or `details` but its `summary`, `input type=hidden`, an element with a
+  `popover` attribute but an open `dialog`, as no script opens one); comments, doctypes,
   processing instructions; `svg`, `math`. `noscript` content is written: no scripting.
 - Whitespace: each block's text stripped and collapsed, as for the title; U+00A0 is not, and is
   kept (rule 2). `lang` is not written; the outline shows it.
@@ -296,9 +301,16 @@ is escaped, the override shows as bytes. The last line is the cost of no CSS: `n
   lines of the form asked for (tree and Markdown are numbered apart); past the end, `text <form>
   0 of <total> lines from <m>, 0 of <bytes total> bytes`.
 - A Markdown line has at most 1,024 bytes without its `> `: a paragraph or item wraps at the last
-  space before that (Markdown joins the lines), a longer word between two units. A heading, link
-  text, `alt` or cell is cut at 200 characters, a label at 60, ending `[cut]`; a line alone over
-  the answer's bound is shown alone, cut, ending `[cut]`.
+  space before that (Markdown joins the lines), a longer word between two atoms or two units. An
+  atom (a link with its handle, an image, a code span, a control) is never broken: one over 864
+  bytes is cut before `[cut]`, a link's text and target both (a cut target ends `[cut]>`, the
+  handle stays whole). A heading is one line, cut before `[cut]`. A heading, link text, `alt`
+  or cell is cut at 200 characters, a label at 60, ending `[cut]`; in a heading or a cell an
+  atom spends the characters it shows, and the cut falls between atoms. The prefix of a line
+  (list markers, indentation, `> `) has at most 128 bytes, so its text keeps at least 896 and
+  the Markdown grows with the page, not with its depth times its words. A table row is not
+  wrapped: the one line that can pass 1,024 bytes. A line alone over the answer's bound is
+  shown alone, cut, ending `[cut]`.
 - Computed from `Browser::document_tree` at each call, in time linear in the tree
   (`html-parser-limits` bounds it), nothing fetched or kept: lines are made one at a time, the
   shown ones kept, the rest counted; paging is stable, as the tree is. An answer adds at most

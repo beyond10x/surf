@@ -573,6 +573,40 @@ fn a_closed_dialog_hides_its_content() {
     assert!(!is_hidden(&tree, tree.parent(by_id(&tree, "d3")).unwrap()));
 }
 
+/// HTML 15.3.3 "Flow content": `[popover]:not(:popover-open):not(dialog[open]) { display: none;
+/// }`. surf runs no script and no user action, so no popover is open: an element with a
+/// `popover` attribute, whatever its value, is hidden, but an open `dialog`.
+#[test]
+fn a_popover_is_hidden() {
+    let tree = parse(
+        "<div popover id=p1><button id=a>a</button></div>\
+         <div popover=manual><button id=b>b</button></div>\
+         <div popover=nonsense><button id=c>c</button></div>\
+         <dialog open popover id=d1><button id=d>d</button></dialog>\
+         <dialog popover><button id=e>e</button></dialog>\
+         <button popover id=f>f</button>\
+         <button id=g>g</button>",
+    );
+    assert_eq!(
+        listing(&tree),
+        [
+            "button#a button hidden",
+            "button#b button hidden",
+            "button#c button hidden",
+            "button#d button",
+            "button#e button hidden",
+            "button#f button hidden",
+            "button#g button",
+        ]
+    );
+    assert!(is_hidden(&tree, by_id(&tree, "p1")));
+    assert!(!is_hidden(&tree, by_id(&tree, "d1")));
+    let hidden = surf_page::hidden_roots(&tree);
+    assert!(hidden.contains(&by_id(&tree, "p1")));
+    assert!(hidden.contains(&by_id(&tree, "f")));
+    assert!(!hidden.contains(&by_id(&tree, "d1")));
+}
+
 /// HTML 15.5.5 "The details and summary elements": the second slot of the shadow tree takes
 /// every child but the first `summary` element child and has `content-visibility: hidden` while
 /// the `details` element has no `open` attribute.

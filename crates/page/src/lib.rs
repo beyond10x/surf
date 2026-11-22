@@ -38,7 +38,10 @@
 //!   elements `base, basefont, datalist, head, link, meta, noembed, noframes, param, rp, script,
 //!   style, template, title`; the `hidden` attribute on any element but `embed`, whatever its
 //!   value; an `input` whose `type` is `hidden` compared ASCII case-insensitively. In 15.3.3
-//!   "Flow content": `dialog:not([open])`, a `dialog` without an `open` attribute. In 15.5.5
+//!   "Flow content": `dialog:not([open])`, a `dialog` without an `open` attribute, and
+//!   `[popover]:not(:popover-open):not(dialog[open])`, an element with a `popover` attribute,
+//!   whatever its value, but an open `dialog`: surf runs no script and no user action, so no
+//!   popover is ever open. In 15.5.5
 //!   "The details and summary elements": a `details` without an `open` attribute gives
 //!   `content-visibility: hidden` to the slot that takes every child but its first `summary`
 //!   element child, so each such child is hidden and that `summary` is not (a `details` with no
@@ -390,7 +393,7 @@ pub fn hidden_roots(tree: &Tree) -> std::collections::HashSet<NodeId> {
 /// Whether `node` is hidden: it or an ancestor element has `aria-hidden="true"` (not read on
 /// the document element and the body element), or matches a rule of the HTML Standard's
 /// user-agent style sheet that needs no style computation (15.3.1 "Hidden elements", a closed
-/// `dialog`, the content of a closed `details` but its first `summary`; see the crate
+/// `dialog`, a popover, the content of a closed `details` but its first `summary`; see the crate
 /// documentation). A walk up [`Tree::parent`]: without `aria-hidden="true"` on the path a call
 /// costs the depth of `node`.
 ///
@@ -481,7 +484,8 @@ fn is_primary(tree: &Tree, node: NodeId) -> bool {
 }
 
 /// Whether the element `this`, the node `node`, is itself hidden by `aria-hidden` or by a rule
-/// of the style sheet on the element itself (15.3.1, a closed `dialog`), ancestors not read.
+/// of the style sheet on the element itself (15.3.1, a closed `dialog`, a popover), ancestors
+/// not read.
 /// `exempt` says whether `node` is the document element or the body element.
 fn hides(this: &Element<'_>, node: NodeId, exempt: impl Fn(NodeId) -> bool) -> bool {
     if this
@@ -501,6 +505,7 @@ fn hides(this: &Element<'_>, node: NodeId, exempt: impl Fn(NodeId) -> bool) -> b
                 .attribute("type")
                 .is_some_and(|t| t.eq_ignore_ascii_case("hidden")))
         || (this.local_name == "dialog" && !this.has("open"))
+        || (this.has("popover") && !(this.local_name == "dialog" && this.has("open")))
 }
 
 /// An HTML `details` element without an `open` attribute.

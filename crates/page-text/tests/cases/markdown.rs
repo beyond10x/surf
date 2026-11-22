@@ -294,4 +294,69 @@ fn a_mark_cannot_start_a_run() {
         lines("<p>&#x338;x <a href=\"/a\">&#x338;y</a> e&#x301;</p>"),
         ["\\xcc\\xb8x [\\xcc\\xb8y](</a>) [@l1] e\u{301}"]
     );
+    // The fix round after the adversary pass: a mark that goes on a run of page text from the
+    // text node before it is kept, as one inside a text node is.
+    assert_eq!(lines("<p>e<span>&#x301;x</span></p>"), ["e\u{301}x"]);
+}
+
+/// The fix round after the adversary pass: `&` and `_` get a backslash; the `start` of an `ol`
+/// is read only with at most 9 digits, else it is 1, as it is when it is not a number.
+#[test]
+fn escapes_and_list_starts() {
+    assert_eq!(lines("<p>a&amp;b_c</p>"), [r"a\&b\_c"]);
+    assert_eq!(lines("<ol start=1000000000><li>x</ol>"), ["1. x"]);
+    assert_eq!(lines("<ol start=999999999><li>x</ol>"), ["999999999. x"]);
+    assert_eq!(lines("<ol start=x><li>a</ol>"), ["1. a"]);
+}
+
+/// The fix round after the adversary pass (finding B1): a list number keeps at most 9 digits;
+/// a quote or an item whose prefix would pass 128 bytes is written at the indentation of the
+/// one it is in, without its marker, and `deep` says how many levels were.
+#[test]
+fn deep_nesting_is_written_at_the_bound() {
+    assert_eq!(
+        lines("<ol start=999999999><li>a<li>b</ol>"),
+        ["999999999. a", "999999999. b"]
+    );
+    let tree = parse(&format!("{}x", "<blockquote>".repeat(70)));
+    let quotes = markdown(&tree);
+    assert_eq!(quotes.deep(), 6);
+    assert_eq!(
+        quotes.collect::<Vec<_>>(),
+        [format!("{}x", "> ".repeat(64))]
+    );
+    assert_eq!(markdown(&parse("<blockquote>x</blockquote>")).deep(), 0);
+    let items = lines(&format!("{}<ul><li>a<li>b</ul>", "<blockquote>".repeat(64)));
+    let quotes = "> ".repeat(64);
+    assert_eq!(
+        items,
+        [
+            format!("{quotes}a"),
+            quotes.trim_end().to_string(),
+            format!("{quotes}b")
+        ]
+    );
+}
+
+/// The total bytes of the Markdown of `levels` nested items of the longest marker GFM allows,
+/// holding `10 * levels` words, and the bytes of that page.
+fn nested_items(levels: usize) -> (usize, usize) {
+    let input = format!(
+        "{}{}",
+        "<ol start=999999999><li>".repeat(levels),
+        "a ".repeat(10 * levels)
+    );
+    let bytes = lines(&input).iter().map(|line| line.len() + 1).sum();
+    (input.len(), bytes)
+}
+
+/// The fix round after the adversary pass (finding B1): the prefix of a line is bounded, so the
+/// Markdown grows with the page, not with its depth times its words.
+#[test]
+fn output_grows_linearly_with_nesting() {
+    let (page, n) = nested_items(100);
+    let (page_2, two_n) = nested_items(200);
+    println!("markdown bytes: {n} of a {page}-byte page, {two_n} of a {page_2}-byte page");
+    assert!(two_n <= 2 * n + 1_024, "{n} at 100 levels, {two_n} at 200");
+    assert!(n <= 4 * page && two_n <= 4 * page_2, "{n}, {two_n}");
 }

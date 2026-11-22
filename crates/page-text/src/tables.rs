@@ -7,9 +7,9 @@ use std::rc::Rc;
 
 use surf_html::{Namespace, NodeData, NodeId, Tree};
 
-use super::{
-    CUT, Frame, LINE_BYTES_MAX, Para, TEXT_CHARS_MAX, Walker, attribute, count_node_visit,
-};
+use crate::count_table_visit;
+
+use super::{CUT, Frame, Para, TEXT_CHARS_MAX, Walker, Word, attribute, count_node_visit};
 
 /// The columns a table shows; a wider one gets one more column, `[cut]`.
 pub const COLUMNS_MAX: usize = 20;
@@ -167,18 +167,19 @@ impl Walker<'_> {
             .collect()
     }
 
-    /// Write one table: its caption as a paragraph, then the header row, the delimiter row and
-    /// the other rows.
+    /// Write one table: its captions as paragraphs (the first `caption` child is the table's,
+    /// a later one is written after it, in tree order), then the header row, the delimiter row
+    /// and the other rows.
     fn write_table(&mut self, table: NodeId, numbers: &Rc<HashMap<NodeId, usize>>) {
         let tree = self.tree;
-        let caption = tree
+        let captions: Vec<NodeId> = tree
             .children(table)
             .iter()
             .copied()
-            .find(|c| !self.facts.hidden.contains(c) && html_name(tree, *c) == Some("caption"));
-        if let Some(caption) = caption {
-            let width = LINE_BYTES_MAX.saturating_sub(self.prefix_width());
-            for line in self.inline(caption, numbers, None).lines(width, "") {
+            .filter(|c| !self.facts.hidden.contains(c) && html_name(tree, *c) == Some("caption"))
+            .collect();
+        for caption in captions {
+            for line in self.inline(caption, numbers, None).lines(self.text_width()) {
                 self.emit(&line);
             }
             self.block_boundary();
@@ -191,6 +192,15 @@ impl Walker<'_> {
                 !first.is_empty() && first.iter().all(|&c| html_name(tree, c) == Some("th"))
             });
 
+        // The rows after each row in its row group, counted once from the last row.
+        let mut left_in_group = vec![0usize; rows.len()];
+        for index in (0..rows.len().saturating_sub(1)).rev() {
+            count_table_visit();
+            if rows[index + 1].1 == rows[index].1 {
+                left_in_group[index] = left_in_group[index + 1] + 1;
+            }
+        }
+
         // The slots of each row, for the first `COLUMNS_MAX + 1` columns.
         let track = COLUMNS_MAX + 1;
         let mut covered = vec![0usize; track];
@@ -200,10 +210,8 @@ impl Walker<'_> {
             if index > 0 && rows[index - 1].1 != group {
                 covered.iter_mut().for_each(|c| *c = 0);
             }
-            let left_in_group = rows[index + 1..]
-                .iter()
-                .take_while(|&&(_, g)| g == group)
-                .count();
+            count_table_visit();
+            let left_in_group = left_in_group[index];
             let mut slots = vec![Slot::Empty; track];
             for (slot, rows_left) in slots.iter_mut().zip(covered.iter_mut()) {
                 if *rows_left > 0 {
@@ -213,6 +221,7 @@ impl Walker<'_> {
             }
             let mut column = 0usize;
             for &cell in row_cells {
+                count_table_visit();
                 while column < track && slots[column] != Slot::Empty {
                     column += 1;
                 }
@@ -259,8 +268,8 @@ impl Walker<'_> {
                             walker
                                 .inline(cell, numbers, Some(TEXT_CHARS_MAX))
                                 .words()
-                                .into_iter()
-                                .map(|(word, _)| word)
+                                .iter()
+                                .map(Word::joined)
                                 .collect::<Vec<_>>()
                                 .join(" ")
                         })

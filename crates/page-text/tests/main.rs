@@ -4,6 +4,8 @@
 
 #![forbid(unsafe_code)]
 
+#[path = "cases/adversary_text.rs"]
+mod adversary_text;
 mod common;
 #[path = "cases/markdown.rs"]
 mod markdown;
