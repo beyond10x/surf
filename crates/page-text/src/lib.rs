@@ -63,8 +63,21 @@
 //!   written.
 //! - `nav`, `header`, `footer`, `main`, `aside`: the line `[<name> <n> lines]` before their
 //!   content, `n` the lines of that content (counted by a first walk); none for an empty one.
-//! - `table`: one paragraph of its text, its blocks joined by a space (until
-//!   `story:page-text-tables`).
+//! - `table` (GitHub Flavored Markdown 0.29 tables, from memory): the `caption`'s text as a
+//!   paragraph before it; a header row (the first row of the first `thead`, or the first row
+//!   when all its cells are `th`, else a row of empty cells), then `| --- |` per column; then the
+//!   other rows: those of `thead`, those of `tbody` and directly in the table in tree order,
+//!   those of `tfoot`. The slots of `colspan` and `rowspan` as the HTML Standard's table
+//!   processing model places them (from memory; a `rowspan` ends with its row group, `0` spans
+//!   to its end): a spanned slot is an empty cell, the text in the slot of the cell that spans.
+//!   Columns: the widest row, at most [`markdown::COLUMNS_MAX`] (20); a wider table gets a
+//!   21st column holding `[cut]`. A cell is one line: its inline content, its blocks, its `br`
+//!   and the line feeds of a `pre` joined by one space, a `pre` as a code span, escaped as all
+//!   page text (`|` as `\|`, in a code span too), cut at 200 characters of page text before
+//!   `[cut]`; an empty cell is `|  |`. A table inside a cell is `[table <n>]` there (`n` from 1
+//!   in document order over the document's nested tables), and follows its outer table after an
+//!   empty line, the line `[table <n>]` and an empty line, in the same form. A table inside a
+//!   heading is a run of its text.
 //! - Not written: hidden nodes ([`surf_page::is_hidden`]: `head` with `title` and `meta`,
 //!   `script`, `style`, `template`, `hidden`, `aria-hidden`, a closed `dialog`, the content of a
 //!   closed `details` but its `summary`, `input type=hidden`), comments, doctypes, processing
@@ -95,7 +108,8 @@
 //! broken at 1,024 bytes reads as two, and a heading wrapped there continues as a paragraph; the
 //! `href` is shown as written, not resolved; a landmark line joins the paragraph after it in a
 //! renderer; a `\` of a `br` that would pass 1,024 bytes is left out, so the break reads as a
-//! space.
+//! space; a table row is not wrapped, so it can pass 1,024 bytes (21 cells of at most 200
+//! characters of page text and their escapes).
 //!
 //! # Not claimed
 //!

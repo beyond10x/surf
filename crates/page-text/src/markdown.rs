@@ -4,12 +4,16 @@
 //! documentation.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::rc::Rc;
 
 use surf_answer::{escaped_at_run_start, escaped_in_text};
 use surf_html::{Attribute, Namespace, NodeData, NodeId, Tree};
 use surf_page::ActionableElement;
 
 use crate::{collapse, count_node_visit};
+
+#[path = "tables.rs"]
+mod tables;
 
 /// The bytes of a Markdown line without the `> ` of the answer, its indentation and markers
 /// included.
@@ -81,6 +85,8 @@ pub const BLOCK_ELEMENTS: [&str; 46] = [
     "xmp",
 ];
 
+pub use tables::COLUMNS_MAX;
+
 /// The landmarks, written with the line `[<name> <n> lines]` before their content.
 pub const LANDMARKS: [&str; 5] = ["nav", "header", "footer", "main", "aside"];
 
@@ -88,14 +94,14 @@ pub const LANDMARKS: [&str; 5] = ["nav", "header", "footer", "main", "aside"];
 /// empty string, one block at a time. A first walk counts the lines of each landmark, a second
 /// writes them; each walk has its own stack, so the time is linear in the number of nodes.
 pub fn markdown(tree: &Tree) -> impl Iterator<Item = String> + '_ {
-    let facts = Facts {
+    let facts = Rc::new(Facts {
         handles: surf_page::handles(tree).into_iter().collect(),
         rows: surf_page::actionable_elements(tree)
             .into_iter()
             .map(|row| (row.node, row))
             .collect(),
         hidden: surf_page::hidden_roots(tree),
-    };
+    });
     let mut counting = Walker::new(tree, facts, None);
     while counting.step() {}
     let Walker { facts, counts, .. } = counting;
@@ -127,7 +133,6 @@ enum Close {
     Item,
     Quote,
     Landmark,
-    Table,
     Term,
 }
 
@@ -153,7 +158,11 @@ struct Landmark {
 
 struct Walker<'a> {
     tree: &'a Tree,
-    facts: Facts,
+    facts: Rc<Facts>,
+    /// The numbers of the tables nested in the table whose cells this walk writes.
+    numbers: Rc<HashMap<NodeId, usize>>,
+    /// The nested tables numbered so far in the document.
+    tables_seen: usize,
     stack: Vec<Frame>,
     /// The lines ready, when the walk writes; `None` while it counts.
     out: Option<VecDeque<String>>,
@@ -187,7 +196,7 @@ impl Iterator for Walker<'_> {
 }
 
 impl<'a> Walker<'a> {
-    fn new(tree: &'a Tree, facts: Facts, counts: Option<HashMap<NodeId, usize>>) -> Self {
+    fn new(tree: &'a Tree, facts: Rc<Facts>, counts: Option<HashMap<NodeId, usize>>) -> Self {
         let writing = counts.is_some();
         let stack = tree
             .children(tree.root())
@@ -198,6 +207,8 @@ impl<'a> Walker<'a> {
         Walker {
             tree,
             facts,
+            numbers: Rc::default(),
+            tables_seen: 0,
             stack,
             out: writing.then(VecDeque::new),
             counts: counts.unwrap_or_default(),
@@ -352,6 +363,13 @@ impl<'a> Walker<'a> {
                 self.para.push_open("**");
                 Close::Emphasis("**")
             }
+            "table" if self.numbers.contains_key(&node) => {
+                let number = self.numbers[&node];
+                self.para.push_space();
+                self.para.push_atom(format!("[table {number}]"));
+                self.para.push_space();
+                return;
+            }
             _ if self.flatten > 0 => {
                 if BLOCK_ELEMENTS.contains(&local_name) {
                     self.para.push_space();
@@ -370,8 +388,9 @@ impl<'a> Walker<'a> {
             }
             "table" => {
                 self.block_boundary();
-                self.flatten += 1;
-                Close::Table
+                self.write_tables(node);
+                self.block_boundary();
+                return;
             }
             "ul" | "ol" | "menu" | "dir" => {
                 self.block_boundary();
@@ -463,14 +482,6 @@ impl<'a> Walker<'a> {
             Close::Heading => {
                 self.flatten -= 1;
                 self.block_boundary();
-            }
-            Close::Table => {
-                self.flatten -= 1;
-                if self.flatten == 0 {
-                    self.block_boundary();
-                } else {
-                    self.para.push_space();
-                }
             }
             Close::List => {
                 self.block_boundary();
