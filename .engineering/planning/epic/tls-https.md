@@ -5,7 +5,7 @@ kind: epic
 status: draft
 title: 'surf loads https: addresses'
 summary: 'TLS 1.3 client written here over one audited source of primitives; X.509 path validation, host names, trust anchors; https: and redirects between schemes in surf-fetch, with TLS failure reasons in the answer.'
-revision: 2
+revision: 3
 ---
 ## Context
 
@@ -332,9 +332,9 @@ next release passes on the four targets.
 
 ## Decisions taken
 
+- U1, the source of the cryptographic primitives: option A, `ring` 0.17.14. The operator, 2026-11-22 05:47 CET, relayed by the session `host-operator`: "A: ring 0.17.14". It adds 8 packages to `Cargo.lock` and needs a C compiler that also builds assembly on every build; the first story checks that setup for the musl release build on the forge's runners before anything else is built. It is the one exception principle 4 of the README plans; the lock check allows these packages by name and version and only for the crate `surf-tls`.
+
 Taken by the coordinating agent on 2026-11-22, each reported to the operator, who can overrule it:
 
 - U2, trust anchors: option B, the bundled list of Mozilla as curl publishes it, built into the binary and refreshed before each release, plus an extra anchor file per session. Reason: the same list on Linux and macOS, and reading the macOS keychain needs unsafe calls, which principle 5 forbids.
 - U3, TLS 1.2: option C, out of this epic and drafted as the epic after it. Reason: this epic stays the size of one protocol version, and about one trusted site in four offers TLS 1.2 as its best protocol (SSL Pulse, 2025-06-01: 24.7 %), so the gap is closed next and not left open. Until then such a server fails with `TlsVersionUnsupported`.
-
-Open, with the operator: U1, the source of the cryptographic primitives.
