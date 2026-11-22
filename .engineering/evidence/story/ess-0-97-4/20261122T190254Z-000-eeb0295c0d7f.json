@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T19:02:54Z",
+  "actor": "human:operator",
+  "artifact": "story:ess-0-97-4",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "suite on ESS 0.97.3 and 0.97.4, same commit of spec/",
+    "reference": "on afba5e3, ESS_TOOLCHAIN=0.97.3 then ess 0.97.4: validate 'surf v1 - 9 file(s), 24 scenario(s), valid' on both; task suite '169 scenario(s) (24 authored), 48 refusal(s)' on both, suite sha256:0aead5f74409f8c561f544df8056b9e6b6fe146c13ba2e5e3a3fbf0ffdea733c on both, the same bytes and the same 48 refused lines; 169 of 169 pass on the interpreter and on the Rust system on both; conform-totals agrees on both; planted defect 133 passed, 36 failed on both"
+  }
+}

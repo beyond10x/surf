@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T19:02:54Z",
+  "actor": "human:operator",
+  "artifact": "story:ess-0-97-4",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "synthesis time, ess verify conform synthesize of spec/ at afba5e3",
+    "reference": "five runs of each release in turn at a load average of 109 to 133 on 20 cores: 0.97.3 3,574 to 4,430 ms (median 3,848 ms), 0.97.4 3,612 to 4,049 ms (median 3,706 ms); every run wrote the suite sha256:0aead5f7..."
+  }
+}

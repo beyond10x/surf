@@ -87,7 +87,7 @@ tasks:
 
       Both live in the crate conformance/ (surf-conformance), a Cargo workspace of its own with
       its own Cargo.lock and target/: it is the one place third-party crates are allowed, the
-      ess-conformance runner from github.com/beyond10x/ess at tag 0.97.3 and what it brings. The
+      ess-conformance runner from github.com/beyond10x/ess at tag 0.97.4 and what it brings. The
       root workspace, and so task build and task test, do not reach it. cargo fetches the tag
       when its cache does not hold it.
 

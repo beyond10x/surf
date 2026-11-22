@@ -7,6 +7,10 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ## [Unreleased]
 
+### Changed
+
+- The specification, and the code generated from it, is checked with ESS 0.97.4 instead of 0.97.3.
+
 ## [0.4.0] - 2026-11-22
 
 ### Added
