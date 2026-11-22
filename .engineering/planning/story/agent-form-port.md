@@ -47,7 +47,7 @@ scope:
   path: crates/surf/tests/forms.rs
 - confidence: cited
   path: crates/surf/tests/main.rs
-revision: 7
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 4}
@@ -80,14 +80,25 @@ replaces the query of the action URL, `POST` sends the body); URL Standard
 - `crates/page/src/forms.rs` (new) and one `pub mod` line in `crates/page/src/lib.rs`: forms in
   document order with `action`, `method`, `enctype`; the form owner and `name` of each control; the
   options of each select with their selectedness.
-- `crates/surf/src/lib.rs`: the parse step carries the new rows in the ending commands; a
-  submission step, a `Browser` parameter like the parse step, answers each started submission: the
-  entry list from the rows of the document (values as filled), encoded with `surf-url`, the action
-  resolved with `crates/page` `document_base_url`; `GET` puts the entries in the query, `POST` in
-  the body as `application/x-www-form-urlencoded`; an action that does not resolve, an `enctype`
-  other than urlencoded, and a resolved scheme other than `http:` end the submission with a reason.
-  `conformance/src/target.rs`: a submission step that never answers. `crates/session/src/`: the
-  default submission step where it constructs `Browser`.
+- `crates/page`: the form handles. `surf_page::handles` (`crates/page/src/lib.rs:368`, which gives
+  `l<n>`, `b<n>` and `f<n>` today) also gives `F<n>` to each form, counted from 1 in document
+  order, the order of the `Forms` view (`spec/domains/document.yaml:1312`). `story:agent-press-submit`
+  only prints them.
+- `crates/surf/src/lib.rs`: the parse step issues the new rows before `FinishParsing`
+  (`crates/surf/src/lib.rs:1085`), which takes no rows: each form as `AddForm`
+  (`spec/domains/document.yaml:561`), each option as `AddOption` (`:617`), and each control's
+  `name` and `form_id` in its `AddElement` (`None` today, `crates/surf/src/lib.rs:1076-1079`). A
+  submission step, a `Browser` parameter like the parse step, answers each started submission:
+  the entry list from the rows of the document (values as filled), encoded with `surf-url`, the
+  action resolved with `crates/page` `document_base_url`; `GET` puts the entries in the query,
+  `POST` in the body as `application/x-www-form-urlencoded`; it ends the submission with
+  `SubmitForm` (`spec/domains/document.yaml:1018`) when it navigates and with
+  `AbandonSubmission` (`:1072`) and one of the seven `SubmissionEndReason` variants (`:105-121`)
+  when it does not: `NoFormOwner`, `NotSubmitButton`, `InvalidControls` (only a `required`
+  control with an empty value is checked; the other constraints of constraint validation are not
+  built), `InvalidAction`, `UnsupportedScheme`, `UnsupportedEnctype` and `DialogMethod`, each
+  with its case below. `conformance/src/target.rs`: a submission step that never answers.
+  `crates/session/src/`: the default submission step where it constructs `Browser`.
 - The counted cases, in `crates/page/tests/forms.rs` and `crates/surf/tests/forms.rs`:
   1. a control owned through the `form` attribute; 2. through nesting; 3. a control in no form;
   4. option selectedness of a `select` without `multiple`; 5. the entry list of a form with a text
@@ -95,18 +106,27 @@ replaces the query of the action URL, `POST` sends the body); URL Standard
   6. a disabled control left out; 7. the submitter included and another submit button not;
   8. `GET` puts the entries in the query; 9. `POST` with body `user=ada&remember=on` for a text
   field `user` = `ada` and a checked checkbox `remember`; 10. an empty `action`: the document
-  address; 11. a relative `action` under a `base`; 12. `multipart/form-data`: ended with a reason;
-  13. `action="javascript:x"`: ended with a reason; 14. `action="file:///x"`: ended with a reason;
-  15. names and values with `&`, `=`, space and bytes outside ASCII encoded as the standard says.
+  address; 11. a relative `action` under a `base`; 12. `multipart/form-data`: ended
+  `UnsupportedEnctype`; 13. `action="javascript:x"`: ended `UnsupportedScheme`;
+  14. `action="file:///x"`: ended `UnsupportedScheme`; 15. names and values with `&`, `=`, space
+  and bytes outside ASCII encoded as the standard says;
+  16. a submit button with no form owner: ended `NoFormOwner`; 17. a `type=reset` and a
+  `type=button` button pressed through `Press`: ended `NotSubmitButton`; 18. a `required` text
+  field left empty: ended `InvalidControls`; 19. an `action` that does not parse as a URL
+  (`http://[x`): ended `InvalidAction`; 20. `method="dialog"`: ended `DialogMethod`;
+  21. `handles` of a page with two forms and a link, a button and a field: `F1` and `F2` in
+  document order beside `l1`, `b1`, `f1`.
 
-Surfaces written: `crates/page/src/forms.rs`, `crates/page/src/lib.rs` (one line),
-`crates/page/tests/forms.rs`, `crates/page/tests/main.rs` (one `mod` line), `crates/surf/src/lib.rs`, `crates/surf/tests/forms.rs`, `crates/surf/tests/main.rs` (one `mod` line),
+Surfaces written: `crates/page/src/forms.rs`, `crates/page/src/lib.rs`,
+`crates/page/tests/forms.rs`, `crates/page/tests/main.rs` (one `mod` line), `crates/surf/src/lib.rs`,
+`crates/surf/tests/forms.rs`, `crates/surf/tests/main.rs` (one `mod` line),
 `conformance/src/target.rs`, `crates/session/src/`.
 
 ## Acceptance
 
-`cargo test -p surf-page -p surf` passes with the 15 numbered cases, each a test named after its
-case, case 9 producing the body `user=ada&remember=on`, and `slot task check` exits 0.
+`cargo nextest run -p surf-page -p surf` passes with the 21 numbered cases, each a test named
+after its case, case 9 producing the body `user=ada&remember=on`, and `slot task check` exits 0.
+No test runs over 60 s, and the test step ends within 120 s.
 
 ## Out of scope
 

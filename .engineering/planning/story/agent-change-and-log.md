@@ -37,7 +37,7 @@ scope:
   path: generated/rust
 - confidence: inferred
   path: spec/domains/agent.yaml
-revision: 10
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 7}
@@ -45,8 +45,10 @@ transitions:
 ## Context
 
 Step 5 of design section 9; design section 5.3 (`changed`), section 4 (`log [<n>]` over the view
-`SessionLog`, `agent-page-path-spec`). The session process keeps the page state of its last answer
-(design section 3); its core returns the two states it compared. This is the last story of the
+`SessionLog`, `agent-page-path-spec`). The session process is to keep the page state of its last
+answer (design section 3); today it keeps none between commands, only the components' rows and
+the kept text of `look` (`crates/session/src/lib.rs:105-116`), so this story adds that state. Its
+core returns the two states it compared. This is the last story of the
 epic and its walk test is the epic acceptance, which "goes back", so it stands on
 `agent-back-forward`.
 
@@ -57,8 +59,9 @@ design kinds `+ <element>`, `- <handle>`, `~ label`, `~ target`, `~ visibility`,
 text changes inside one document need a script to happen, and wait for it. Decision D3: the
 detailed mode and `--detail` are `epic:detailed-mode`, after the script engine.
 
-Needs from `epic:html-parser`: the tree of each document through `Browser::document_tree`, read
-only (decision D1), for the texts of a new document (`html-document-port`).
+Reads, on `main` since `story:html-document-port`: the tree of each document through
+`Browser::document_tree`, read only (decision D1). The texts of a new document are the lines
+`crates/page-text` (`surf-page-text`) renders from that tree, the renderer of `look --as`.
 
 Decided here, where design section 5.3 leaves it open: after a navigation to a new document the
 block is `changed page "<old address>" -> "<new address>"` followed by `+ text "<text>"` lines for
@@ -85,7 +88,9 @@ shows; at most 10, each cut at 120 characters, and `+ text more <n>` for the res
      of the group that changed; 5. `pick` a select option: `~ f5 selected`;
   6. `look` after `look`: `changed 0`;
   7. a new document: `changed page` and a `+ text` line per new text;
-  8. 15 new texts: 10 lines and `+ text more 5`; 9. a text of 200 characters cut to 120 and `...`;
+  8. 15 new texts: 10 lines and `+ text more 5`; 9. a text of 200 characters cut to 120 and `...`
+  by `surf_answer::quote_cut` (`crates/answer/src/lib.rs:444`; `quote_text_cut`, `:404`, is the
+  form of a `text` block and is not used here);
   forging, each quoted and escaped with no extra line, with a value holding a line feed, `"` and a
   bidirectional control: 10. a `+ text` line; 11. the before and after of a `~ value` line;
   12. both addresses of a `changed page` line;
@@ -104,8 +109,18 @@ shows; at most 10, each cut at 120 characters, and `+ text more <n>` for the res
       answer of case 15 gives the typed answer, and rendering that gives the same lines byte for
       byte.
 
+- Every answer gains `changed 0` at least, so the golden files of whole answers gain that line:
+  the 14 of `crates/answer/tests/golden/` (`did-refused`, `did`, `head-died`, `head`,
+  `head-unknown`, `note-parser`, `page-failed`, `page-none`, `page`, `path`, `text-forged`,
+  `text-markdown`, `text-tree`, `token`, each `.txt`, where the file is a whole answer) and the 7
+  of `crates/session/tests/golden/` (`close`, `go-as-markdown`, `go`, `look-as-markdown`, `look`,
+  `open-as-tree`, `open`, each `.txt`); and the tests that compare an answer's exact text:
+  `crates/answer/tests/forging.rs`, `crates/surfd/tests/in_process.rs` and
+  `crates/surfd/tests/common/mod.rs` (inferred, not read whether each asserts the whole text),
+  `crates/agent/tests/stand_in.rs` (inferred).
+
 Surfaces written: `crates/session/`, `crates/answer/`, `docs/agent-answer.md`,
-`cli/surf-agent.yaml`, `crates/agent/`.
+`cli/surf-agent.yaml`, `crates/agent/`, `crates/surfd/tests/`.
 
 ## For AGENTS.md and README.md (handed over in the unit report, decision D7)
 
@@ -117,9 +132,10 @@ Surfaces written: `crates/session/`, `crates/answer/`, `docs/agent-answer.md`,
 
 ## Acceptance
 
-`cargo test -p surf-session -p surf-answer -p surf-agent` passes with the 16 numbered cases, each a
-test named after its case, the walk of case 15 answering `press` with `changed page` and the
-`+ text` line of the server message and listing 7 actions in `log`.
+`cargo nextest run -p surf-session -p surf-answer -p surf-agent` passes with the 16 numbered
+cases, each a test named after its case, the walk of case 15 answering `press` with `changed
+page` and the `+ text` line of the server message and listing 7 actions in `log`. No test runs
+over 60 s, and the test step ends within 120 s.
 
 ## Out of scope
 

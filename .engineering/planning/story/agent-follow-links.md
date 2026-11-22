@@ -66,7 +66,7 @@ scope:
   path: spec/domains/agent.yaml
 - confidence: inferred
   path: website/docs/drive-from-an-agent.md
-revision: 13
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 6}
@@ -108,12 +108,21 @@ and `html-tree-template` add test files there and touch neither.
 ## Change
 
 - `crates/page/src/base_url.rs` (new) and one `pub mod` line in `crates/page/src/lib.rs`:
-  `document_base_url(tree, document_address)`.
-- `crates/session`: after each command the current document is read; the `page` line gains the
-  title; `note parser: <parts>` when `Browser::parser_not_yet_parsed` is not empty; a `now` block
-  lists each link: handle `l<n>` as `surf_page::handles` (`crates/page`, added by `story:page-text-outline`) gives
-  it, in document order, kept while the document lives, starting at 1 again for a new document,
-  nothing random; kind
+  `document_base_url(tree, document_address)`. It parses with `surf-url`, a crate of this
+  repository: `crates/page/Cargo.toml` gains that dependency, and the sentence of `AGENTS.md:580`
+  ("Standard library and `surf-html` only") is corrected to name `surf-url`.
+- `crates/session`: after each command the current document is read. The session sets the title
+  on the `page` line: `page()` (`crates/session/src/lib.rs:984`) writes `title: None` today (line
+  999); `crates/answer` (`Page::Loaded.title`, `crates/answer/src/lib.rs:186`) and the grammar
+  (`page-loaded`, `docs/agent-answer.md:304`) carry it already. `docs/agent-answer.md`, "What an
+  answer holds today" ("A loaded page shows no title", line 45), and `README.md:110` ("and no
+  title") are corrected. `note parser: <parts>` when `Browser::parser_not_yet_parsed` is not
+  empty (`Note::Parser` and `crates/answer/tests/golden/note-parser.txt` exist). A `now` block,
+  in an answer that carries no page text; an answer with text (`--as tree|markdown`) has none
+  (`docs/design/page-as-text.md:120`), so `no_now` (`crates/session/tests/core.rs:560`) and
+  `an_answer_with_text_has_no_now_block` (`:855`) stay true. The block lists each link: handle
+  `l<n>` as `surf_page::handles` (`crates/page/src/lib.rs:368`) gives it, in document order,
+  kept while the document lives, starting at 1 again for a new document, nothing random; kind
   `link`; visibility `hid` when `hidden` applies, otherwise `?`, with
   `note visibility: hidden attribute only`; the label quoted and cut at 60 characters; the target
   resolved with `surf-url` against the base URL and written as its path when it has the origin of
@@ -124,44 +133,59 @@ and `html-tree-template` add test files there and touch neither.
   line, `note visibility: hidden attribute only`, each with its `parse` beside its rendering, so
   parsing what `render` wrote gives the value back (decision D20 of
   `docs/plan/agent-plan-revision-2.md`).
-- `crates/session`: the event entry of the `Follow` event of `agent-links-spec`, with its fields,
-  in the mapping function of `agent-session-events`, and the variant added to its mapping list
-  (decision D27).
+- No `Follow` event exists: `follow` publishes `NavigationRequested` and, through `RecordAction`,
+  `ActionRecorded`, both mapped already (`crates/session/src/entries.rs:144-155`). This story adds
+  no mapping; case 17 observes those entries, with the `handle` and `label` fields
+  `story:values-and-labels-before-fill` adds to `NavigationRequested` and the label cut it
+  gives `ActionRecorded`.
 - Every expected `note parser` line in a test of this story is built from
   `surf_html::NOT_YET_PARSED` joined by `,`; a golden file holds the placeholder line
   `note parser: {NOT_YET_PARSED}`, which the test replaces before comparing, or no such line when
   the constant is empty; no test names a literal list (decision D31).
-- The `did` and `path` lines of `follow`, as `docs/agent-answer.md` and `crates/answer` write
-  them: `did follow "<handle>"` and `<n> follow "<handle>"`, the handle a quoted field. The
-  reasons `unknown-handle`, `hidden` and `unresolved` go into the reason table of
-  `docs/agent-answer.md` with exit status 1, into `RefusalReason` and into a test.
+- The `did` and `path` lines of `follow`. `did follow "<handle>"`: the handle quoted, as the
+  caller typed it. The `path` entry of an action on an element takes the form of the
+  specification and the design (`spec/domains/agent.yaml:302-304`,
+  `docs/design/agent-interface.md:222`): `<n> follow l4 "Sign in"`, the handle bare (the session
+  made it) and the label quoted and cut at 60 characters as in the `now` block. `docs/agent-answer.md`
+  (section "Path" and the grammar's `path-entry`, line 311, which allows one quoted field today)
+  and `crates/answer` (`PathEntry`, `crates/answer/src/lib.rs:206-214`) gain that form;
+  `path()` (`crates/session/src/lib.rs:885`, which prints `row.url` at line 900) prints it from
+  the `SessionLog` row. The reasons `unknown-handle`, `hidden` and `unresolved` go into the
+  reason table of `docs/agent-answer.md` with exit status 1, into `RefusalReason` and its
+  `RefusalReason::ALL` (`crates/answer/src/lib.rs:150`, `[RefusalReason; 6]` today), into the
+  exhaustive `match` of `crates/surfd/src/daemon.rs:815-821`, and into a test.
 - `cli/surf-agent.yaml` and `crates/agent`: `follow <handle>`, together, so the drift test holds.
 - The counted cases, in `crates/page/tests/base_url.rs` and `crates/session/tests/`, against a
   server the test starts:
   1. no `base`: the document address; 2. a relative `base href`; 3. two `base` elements: the first
   with `href`; 4. the `now` block of a page with a relative link, a link to another origin, a link
   inside a `hidden` element and an `a` without `href` equals its golden text;
-  5. `follow` of the relative link answers the target page; 6. `follow l9`: status 1,
-  `unknown-handle`; 7. `follow` of the hidden link: status 1, `hidden`; 8. `follow` of an
-  unresolved target: status 1, `unresolved`; 9. two runs over the same pages give the same handles;
-  10. a label of 200 characters is cut to 60 and `...`;
+  5. `follow` of the relative link answers the target page, and its `path` line reads
+  `<n> follow l1 "<label>"`; 6. `follow l9`: status 1, `unknown-handle`; 7. `follow` of the
+  hidden link: status 1, `hidden`; 8. `follow` of an unresolved target: status 1, `unresolved`;
+  9. two runs over the same pages give the same handles; 10. a label of 200 characters is cut to
+  60 and `...`;
   forging, each rendered quoted and escaped with no extra line, for every page-derived field this
-  story prints: 11. the title; 12. the label; 13. an unresolved target as written; 14. a resolved
-  target whose path holds `"` and a line feed (percent-encoded by the parser, so printed as is);
-  each case with a value holding a line feed, `"` and a bidirectional control;
+  story prints: 11. the title; 12. the label, on the link line and on the `path` line; 13. an
+  unresolved target as written; 14. a resolved target whose path holds `"` and a line feed
+  (percent-encoded by the parser, so printed as is); each case with a value holding a line feed,
+  `"` and a bidirectional control;
   15. the answer of a `text/html` page holds `note parser: ` and the entries of
   `surf_html::NOT_YET_PARSED` joined by `,`, built from the constant, when it is not empty, and no
-  such line when it is empty;
+  such line when it is empty. The constant is empty today (`crates/html/src/tree_builder.rs:59`),
+  so only the "no such line" branch runs;
   16. round trip: `surf_answer::parse` of the answer of case 4 and of each answer of cases 11 to 14
   gives the typed answer, and rendering that gives the same lines byte for byte;
-  17. `follow_event_maps_with_its_fields`: after `follow` of the relative link, with `surfd` run in
-  the test process (decision D29), the session log holds the `Follow` event entry with every field
-  of the specification and no `unmapped` mark, between the `follow` action entry and its answer
-  entry.
+  17. `follow_entries_hold_handle_and_label`: after `follow` of the relative link, with `surfd`
+  run in the test process (decision D29), the session log holds, between the `follow` action
+  entry and its answer entry, the `ActionRecorded` entry with `handle` and the label cut by the
+  rule of `story:values-and-labels-before-fill`, and the `NavigationRequested` entry with its
+  `handle` and `label` fields, neither `unmapped`.
 
 Surfaces written: `crates/page/src/base_url.rs`, `crates/page/src/lib.rs` (one line),
-`crates/page/tests/base_url.rs`, `crates/page/tests/main.rs` (one `mod` line), `crates/session/`, `crates/answer/`, `docs/agent-answer.md`,
-`cli/surf-agent.yaml`, `crates/agent/`.
+`crates/page/Cargo.toml`, `crates/page/tests/base_url.rs`, `crates/page/tests/main.rs` (one `mod`
+line), `crates/session/`, `crates/answer/`, `docs/agent-answer.md`, `cli/surf-agent.yaml`,
+`crates/agent/`, `crates/surfd/src/daemon.rs`, `AGENTS.md`, `README.md`.
 
 ## For README.md (handed over in the unit report, decision D7)
 
@@ -170,9 +194,10 @@ Surfaces written: `crates/page/src/base_url.rs`, `crates/page/src/lib.rs` (one l
 
 ## Acceptance
 
-`cargo test -p surf-page -p surf-session -p surf-answer -p surf-agent` passes with the 17 numbered
-cases, each a test named after its case, case 4 equal to its golden text, and the drift test
-holding with `follow` in both the document and the parser.
+`cargo nextest run -p surf-page -p surf-session -p surf-answer -p surf-agent` passes with the 17
+numbered cases, each a test named after its case, case 4 equal to its golden text, and the drift
+test holding with `follow` in both the document and the parser. No test runs over 60 s, and the
+test step ends within 120 s.
 
 ## Out of scope
 

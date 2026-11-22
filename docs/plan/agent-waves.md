@@ -63,7 +63,7 @@ publication; its stories keep their identities, statuses and acceptance in the s
 | round | units, each one sub-agent building its stories in the order given | review after it |
 |---|---|---|
 | 1 | parser: `html-tree-tables`, `html-tree-template`, `html-tree-foreign`, `html-tree-complete`. Text: `page-text-answer-block`, `page-text-outline`, `page-text-markdown`, `page-text-tables`. Document: `html-document-port`, `page-text-look`, `page-text-surf-command`, `agent-links-spec`, `agent-forms-spec` | the parser on real pages |
-| 2 | commands: `agent-follow-links`, `agent-form-port`, `agent-history-spec`, `agent-fill-pick`, `agent-press-submit`, `agent-back-forward`, `agent-change-and-log`. View: `view-now-panel`, `view-acceptance` | links, forms, history |
+| 2 | commands: `values-and-labels-before-fill`, `agent-follow-links`, `agent-form-port`, `agent-fill-pick`, `agent-press-submit`, `agent-history-spec`, `agent-back-forward`, `agent-change-and-log`. View, from when `agent-follow-links` is in its base: `view-now-panel`, `view-acceptance` | links, forms, history |
 | 3 | runner: `runner-formats`, `runner-record-option`, `runner-replay-transport`, `runner-scenario-from`, `runner-record-session`, `runner-run`, `runner-e2e`. View: `view-controls-and-changes` | the runner |
 
 Rules of a round, beside the rules of a wave:
@@ -87,6 +87,18 @@ Rules of a round, beside the rules of a wave:
   `page-text-outline` and `page-text-markdown`, and `page-text-surf-command` for
   `page-text-tables`. The coordinator merges the finished story's commits into the waiting
   unit's branch.
+- Round 2, decided on 2026-11-22: its nine stories were revised that day against round 1 as
+  built (two scopers on `main` at `c5c2895`), and `values-and-labels-before-fill` was drafted
+  from the "Left open" lines of round 1's As built sections. The commands unit is one sub-agent
+  that builds its stories one after the other in the row's order, `values-and-labels-before-fill`
+  first, and commits each when it is green. `agent-fill-pick` and `agent-press-submit` come
+  before `agent-history-spec` because the round's measure is `agent-tasks`, whose tasks `link`
+  and `search` wait for `agent-follow-links` and for `agent-fill-pick` with
+  `agent-press-submit` (`crates/agent-tasks/status.txt`); no `depends_on` edge forbids that
+  order. The view unit (`view-now-panel`, then `view-acceptance`) starts when
+  `agent-follow-links` is in its base and runs beside the commands unit: no command story after
+  `agent-follow-links` writes `crates/surfd/src/view.rs` (a story that adds a refusal writes
+  `crates/surfd/src/daemon.rs`, `agent-change-and-log` writes `crates/surfd/tests/`).
 - `agent-tasks` runs beside round 1 as a fourth unit and starts when `page-text-answer-block`
   is in its base (its judge tests build answers with `surf_answer::text_page`).
 - Every command of a round follows the pool's rules: every build and test runs through the

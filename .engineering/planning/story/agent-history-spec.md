@@ -34,7 +34,7 @@ scope:
   path: spec/ess-inputs.yaml
 - confidence: cited
   path: spec/scenarios
-revision: 7
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
@@ -58,8 +58,9 @@ it), a comment beside the construct says so.
 
 Today `spec/domains/navigation.yaml` holds a `Navigation` per load and nothing that remembers the
 loads of a tab. Since story `agent-request-body-spec` a navigation carries its method, which a
-`POST` entry is recognised by. Since `agent-links-spec` a committed navigation carries the
-response URL, which is the address of its entry.
+`POST` entry is recognised by. Since commit `c50ff20` ("a response names its address") a
+committed navigation carries the response URL (`spec/domains/navigation.yaml:138-139`, `:157`),
+which is the address of its entry.
 
 Place in the chain of specification stories: after `agent-form-port`, the last story that writes
 `crates/surf` and `conformance/src/target.rs` before it, so forms are not held back; story
@@ -97,8 +98,12 @@ Place in the chain of specification stories: after `agent-form-port`, the last s
     traverse handling, whose commit makes that entry current and adds none; a traversal that
     fails or is cancelled leaves the current entry where it was.
 - `spec/domains/agent.yaml`: `GoBack(session_id)` and `GoForward(session_id)` with the refusals of
-  `Go`; their events invoke the traversal for the tab of the session; `Action` gains `Back` and
-  `Forward`.
+  `Go`; their events invoke the traversal for the tab of the session; the enum
+  `surf.agent.ActionCommand` (`spec/domains/agent.yaml:31`) gains the variants `back` and
+  `forward`, lower case as its other variants.
+- `crates/session/src/lib.rs:968`: `command_word`, an exhaustive `match` on `ActionCommand`,
+  gains `back` and `forward`, which the regenerated enum forces; so do `action_command` and
+  `action_command_named` of `conformance/src/target.rs` (`:512`, `:524`).
 - `spec/components.yaml`: the `navigator` component accepts and publishes the new commands and
   events; bindings from the agent events to the traversal; whatever binding the entry bookkeeping
   needs inside the navigator.
@@ -113,7 +118,11 @@ Place in the chain of specification stories: after `agent-form-port`, the last s
 
 Surfaces written: `spec/domains/navigation.yaml`, `spec/domains/agent.yaml`,
 `spec/components.yaml`, `spec/scenarios/`, `spec/ess-inputs.yaml`, `generated/rust/`,
-`crates/ports/`, `crates/surf/src/lib.rs` (only if forced), `conformance/src/`.
+`crates/ports/`, `crates/surf/src/lib.rs` (only if forced), `conformance/src/`,
+`crates/session/src/lib.rs` (`command_word` only).
+
+Baseline the gate's numbers are measured against: 169 scenarios, 24 authored, 48 refusals
+(`AGENTS.md`, "The gate's numbers", after round 1).
 
 ## For AGENTS.md (handed over in the unit report, decision D7)
 
@@ -127,7 +136,7 @@ Surfaces written: `spec/domains/navigation.yaml`, `spec/domains/agent.yaml`,
 and equal on both runners with `0 failed, 0 error, 0 unsupported`, the eight authored files of
 Change among the passed, and the `refused:` count at most 8 above the count recorded before it,
 `<n>` equal to it, the unit report giving `<n>` and each new refusal with its cause (decision
-D30).
+D30). No test runs over 60 s, and the test step ends within 120 s.
 
 ## Out of scope
 

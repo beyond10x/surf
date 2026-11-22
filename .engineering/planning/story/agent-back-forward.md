@@ -39,7 +39,7 @@ scope:
   path: generated/rust
 - confidence: inferred
   path: spec/domains/agent.yaml
-revision: 8
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 5}
@@ -74,12 +74,15 @@ so the agent gets the reason and status 1 instead of a navigation that never sta
   `path` lines `back` and `forward`, each with its `parse` beside its rendering (decision D20 of
   `docs/plan/agent-plan-revision-2.md`).
 - `crates/session`: the event entries of the `GoBack` and `GoForward` events of
-  `agent-history-spec`, with their fields, in the mapping function of `agent-session-events` and
-  its mapping list (decision D27).
+  `agent-history-spec`, with their fields, in the mapping function `entries::event_line`
+  (`crates/session/src/entries.rs:141`, whose last arm, `:287`, writes `unmapped`) and in the
+  mapping list `covered()` of `crates/session/tests/events.rs:858` (decision D27).
 - The `did` and `path` lines of `back` and `forward` take no argument, as `docs/agent-answer.md`
   and `crates/answer` write a command without one: `did back`, `did forward`, `<n> back`,
   `<n> forward`. The reasons `at-start`, `at-end` and `post-entry` go into the reason table with
-  exit status 1, into `RefusalReason` and into a test.
+  exit status 1, into `RefusalReason` and its `RefusalReason::ALL` (`crates/answer/src/lib.rs:150`,
+  an array of fixed length, 6 on `main`, which each reason-adding story before this one grows),
+  into the exhaustive `match` of `crates/surfd/src/daemon.rs:815-821`, and into a test.
 - `cli/surf-agent.yaml`, `crates/agent`: `back` and `forward`, written together so the drift test
   holds.
 - `crates/session/tests/`, the counted cases, against a server the test starts:
@@ -100,8 +103,13 @@ so the agent gets the reason and status 1 instead of a navigation that never sta
       with every field of the specification and no `unmapped` mark, each between its action entry
       and its answer entry.
 
+  The cases stand on commands built before this story in the commands unit: cases 1, 2, 5, 7, 8,
+  9, 10, 11 and 12 reach a second page with `follow` (`story:agent-follow-links`); case 6 makes
+  its `POST` entry with `press` (`story:agent-press-submit`, and `fill`,
+  `story:agent-fill-pick`, where its form has a field); cases 3 and 4 need neither.
+
 Surfaces written: `crates/session/`, `crates/answer/`, `docs/agent-answer.md`,
-`cli/surf-agent.yaml`, `crates/agent/`.
+`cli/surf-agent.yaml`, `crates/agent/`, `crates/surfd/src/daemon.rs`.
 
 ## For README.md (handed over in the unit report, decision D7)
 
@@ -110,9 +118,10 @@ Surfaces written: `crates/session/`, `crates/answer/`, `docs/agent-answer.md`,
 
 ## Acceptance
 
-`cargo test -p surf-session -p surf-answer -p surf-agent` passes with the 12 numbered cases, each a
-test named after its case, case 1 answering the page line of A and case 2 that of B, and the drift
-test holding with `back` and `forward` in both the document and the parser.
+`cargo nextest run -p surf-session -p surf-answer -p surf-agent` passes with the 12 numbered
+cases, each a test named after its case, case 1 answering the page line of A and case 2 that of
+B, and the drift test holding with `back` and `forward` in both the document and the parser. No
+test runs over 60 s, and the test step ends within 120 s.
 
 ## Out of scope
 
