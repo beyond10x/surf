@@ -13,7 +13,7 @@ relations:
 scope:
 - confidence: cited
   path: crates/agent-tasks
-revision: 3
+revision: 4
 ---
 ## Context
 
@@ -55,6 +55,9 @@ Taken by the coordinating agent on 2026-11-22, reversible, reported to the opera
    `/etc/hosts` maps `localhost` to 127.0.0.1 and ::1; the TLS server listens on 127.0.0.1 only,
    so a refused ::1 is followed by 127.0.0.1. No name server is asked.
 
+7. Round 4 of the panel: the `table` row of `story:agent-tasks` stays pending on
+   `story:page-text-tables`, so the counts below name base B and base C of its case 1.
+
 ## Change
 
 - `crates/agent-tasks/Cargo.toml`: dev-dependencies `surf-tls-test-server` and
@@ -90,13 +93,16 @@ Exact lines, with `<n>`, `<p>`, `<f>`, `<s>` the counts of the line before this 
 
 - `.out/agent-tasks.txt`, first line: `agent-tasks: <n> tasks, <p> pass, <f> fail, 0 skipped`
   becomes `agent-tasks: <n+1> tasks, <p+1> pass, <f> fail, 0 skipped`; after the last task line
-  come `task https pass 3 calls 1 connections` and `check https-without-root pass`. On base B of
-  `story:agent-tasks` case 1, with no other row added and `link` and `search` still failing: `agent-tasks: 5 tasks, 3 pass, 2 fail, 0
+  come `task https pass 3 calls 1 connections` and `check https-without-root pass`. With no other row
+  added and `link` and `search` still failing: on base B of `story:agent-tasks` case 1
+  (`article` pass, `table` pending on `story:page-text-tables`) `agent-tasks: 5 tasks, 2 pass, 3
+  fail, 0 skipped`; on its base C (`table` pass too) `agent-tasks: 5 tasks, 3 pass, 2 fail, 0
   skipped`.
 - `.out/agent-tasks-model.txt`, first line: `agent-tasks-model: <n> tasks, <p> pass, <f> fail,
   <s> skipped, command <c>, model <m>, <date>` becomes `agent-tasks-model: <n+1> tasks, <p> pass,
   <f> fail, <s+1> skipped, command <c>, model <m>, <date>`; the line `task https skipped: server
-  https` follows the line of the task before it. `story:agent-tasks` case 7, built from
+  https` comes after the last line of the task before it (that task's `  answered` line, or its
+  `skipped` line). `story:agent-tasks` case 7, built from
   `tasks.txt`, then expects `agent-tasks-model: 5 tasks, 1 pass, 3 fail, 1 skipped, command
   stub-model.sh, model stub, <date>` (four `http` rows and this one).
 - Release notes (`docs/releasing.md`, written by `story:agent-tasks`): `agent tasks (scripted):

@@ -19,7 +19,7 @@ scope:
   path: taskfiles/agent-tasks-model.sh
 - confidence: cited
   path: taskfiles/agent-tasks.yml
-revision: 6
+revision: 10
 ---
 ## Context
 
@@ -33,8 +33,7 @@ holds page content."
 
 What makes which task pass, by the plan of rounds (same file, :63-67 and :102-122): round 1 (the
 parser, the page text, the document) gives `look --as markdown` (`story:page-text-look`) and
-tables (`story:page-text-tables`; the `table` task passes from `story:page-text-look`, decision
-9); round 2 (the commands) gives `follow`, `fill` and `press`
+tables (`story:page-text-tables`, which the `table` task measures, decision 9); round 2 (the commands) gives `follow`, `fill` and `press`
 (`story:agent-follow-links`, `story:agent-fill-pick`, `story:agent-press-submit`); the TLS unit,
 beside rounds 1 and 2, gives `https:` and `open --ca-file` (`story:tls-session-anchors`);
 cookies come after round 2 (`story:agent-cookie-jar`). Round 3 (the runner) makes no task pass.
@@ -60,7 +59,7 @@ it with `surf-agent` and nothing else. This story ships the four that need no TL
 | task | question | start, target | answer | connections | pending until |
 |---|---|---|---|---|---|
 | `article` | In which year was the bridge opened? | `/article.html` (about 800 words, headings; the year in the fourth paragraph only) | `1932` | 1 | `story:page-text-look` |
-| `table` | What does one kilo of pears cost? | `/prices.html` (a caption, a header row, six rows) | `2.40` | 1 | `story:page-text-look` (decision 9) |
+| `table` | What does one kilo of pears cost? | `/prices.html` (a caption, a header row, six rows) | `2.40` in a table row with `Pears` | 1 | `story:page-text-tables` (decision 9) |
 | `link` | What are the opening hours on Saturday? | `/index.html` (twelve links, one labelled `Opening hours`), target `/about/hours.html` | `10 to 14` | 2 | `story:agent-follow-links` |
 | `search` | What is the title of the first result for lighthouse? | `/search.html` (a `GET` form, one text field labelled `Search`, a button `Find`), target `/results?q=lighthouse` | `The Lighthouse at Point Reyes` | 2 | `story:agent-fill-pick`, `story:agent-press-submit` |
 
@@ -91,7 +90,7 @@ Taken by the coordinating agent on 2026-11-22, reversible, reported to the opera
 6. Placement: its own unit after `story:one-test-binary-per-crate`, beside round 1. Round 2 of
    the panel: it starts after release 0.3.0 is published (the release comes before
    `one-test-binary-per-crate` in the plan). Round 3 of the panel: its merge is not ordered
-   against `story:page-text-look`; case 1 gives the expected lines for both bases.
+   against `story:page-text-look`; case 1 gives the expected lines for each base.
 7. Tests go into the crate's one integration-test binary, `crates/agent-tasks/tests/main.rs`.
 8. Round 2 of the panel: the run's file is the root `.out/agent-tasks.txt`; the test finds the
    `surfd` PID through `/proc`; `task build` builds `agent-tasks-serve`; the paged judge case is
@@ -99,15 +98,16 @@ Taken by the coordinating agent on 2026-11-22, reversible, reported to the opera
 9. Round 3 of the panel: only `tasks::every_task` writes the root `.out/agent-tasks.txt`; the
    reporting function takes its output path, and every other test passes a path under
    `CARGO_TARGET_TMPDIR`. Every first line and every release-notes line carries a skipped count,
-   pass + fail + skipped = rows. `table` is pending until `story:page-text-look` like `article`:
-   before `story:page-text-tables` a table is one paragraph of its text (page-text-markdown.md:33,
-   :73), so `2.40` is in the text and the judge, which looks for the answer in the text, passes it.
+   pass + fail + skipped = rows. Round 4 of the panel: the `table` task measures tables. Its
+   block has `match row Pears`, so it passes only on a table row line that holds `Pears` and
+   `2.40`; a table flattened to one paragraph (page-text-markdown.md:33, :73) does not pass. It
+   stays pending on `story:page-text-tables`; the other tasks keep `match text`, the substring.
 
 ## Placement
 
 Its own unit, started after release 0.3.0 is published and after the merge of
 `story:one-test-binary-per-crate` (an edge), beside the units of round 1, before round 2. It
-merges before or after `story:page-text-look`; case 1 gives the lines of both bases. It writes no
+merges before or after `story:page-text-look` and `story:page-text-tables`; case 1 gives the lines of each base. It writes no
 file of round 1 but two shared ones:
 
 - `Taskfile.yml`: in a wave or round of more than one unit the coordinator writes the root
@@ -136,8 +136,8 @@ task (`story:agent-tasks-https`) reads them.
     (`http` or `https`), `start` (a path on that server), `target` (the path of the page that
     holds the answer), `connections` (the number of connections the fixture server accepts for
     the task), `commands` (the `surf-agent` command words the scripted agent issues, in order,
-    separated by one space; `story:agent-skill-definition` reads them), `question`, `answer`.
-    Anything else is refused with the line number.
+    separated by one space; `story:agent-skill-definition` reads them), `question`, `answer`,
+    then `match`, optional (the judge below). Anything else is refused with the line number.
   - `status.txt`: one line per task of `tasks.txt`, in the same order: `<task> pass`, or `<task>
     pending <story id>` with one or more story ids separated by one space.
   - `src/bin/agent-tasks-serve.rs`: the fixture server as a program for the model lane:
@@ -161,11 +161,17 @@ task (`story:agent-tasks-https`) reads them.
   markdown`, and `look --as markdown --from-line <n>` for every `more` line, until the text block
   ends; then `close`, also after a failed step. No model call; every address is on 127.0.0.1.
 - The judge (`surf_agent_tasks::judge`): a task passes when every step exited 0, the expected
-  answer occurs in the text of the target page (the body lines of every text block read, each
-  without its leading `> ` or `>`, joined with line feeds), and the fixture server accepted
-  exactly the task's `connections` (`look` fetches nothing: page-text-look acceptance 8).
-  Otherwise it fails with the first of these reasons: `exit <status> on <command word>`, `no now
-  line labelled "<label>"`, `answer "<answer>" not in the text`, `<k> connections, expected <n>`.
+  answer is found by the task's kind of match (its block's last line: `match text`, the same as
+  no `match` line, or `match row <cell>`, `<cell>` one or more characters without a space or `|`;
+  only `table` has one, `match row Pears`), and the fixture server accepted exactly the
+  task's `connections` (`look` fetches nothing: page-text-look acceptance 8). The text of the
+  target page is the body lines of every text block read, each without its leading `> ` or `>`.
+  `match text`: the answer occurs in those lines joined with line feeds. `match row <cell>`: one
+  of those lines starts with `|` (a table row of page-text-tables, page-text-tables.md:79-80, `|
+  Apple | 0.50 | 120 |`; in the answer the line starts `> |`) and holds both `<cell>` and the
+  answer. Otherwise it fails with the first of these reasons: `exit <status> on <command word>`,
+  `no now line labelled "<label>"`, `answer "<answer>" not in the text` (`match text`), `answer
+  "<answer>" in no table row with "<cell>"` (`match row`), `<k> connections, expected <n>`.
 - The reporting function `surf_agent_tasks::report(results, status, out: &Path)` writes the
   report to `out`. Only `tasks::every_task` passes the root `.out/agent-tasks.txt` (the file
   `concat!(env!("CARGO_MANIFEST_DIR"), "/../../.out/agent-tasks.txt")`, the one
@@ -212,7 +218,8 @@ task (`story:agent-tasks-https`) reads them.
   model; any other row is written `task <name> skipped: server <server>` and counted as
   skipped, neither pass nor fail. A task passes when the text after the last
   `ANSWER: ` line, with spaces at both ends and one final `.` removed, equals the expected answer
-  after both are lower-cased.
+  after both are lower-cased; `match` plays no part in this lane, so its file is the same for
+  every `match` line.
   - Untrusted input: the text a page returns reaches the model as input it must not obey. The
     limit on its tools is the harness's permission rule: the one tool is `Bash`, allowed only for
     commands that start with `surf-agent`; any other command would need a permission prompt, and
@@ -246,23 +253,28 @@ timed in the report; any over 5 s is named with its time.
    Change, and with each base's `status.txt` no `raise:` line and no error arises.
    - Base A, `story:page-text-look` not merged (`look --as` is a usage error, exit 2):
      `status.txt` is exactly `article pending story:page-text-look`, `table pending
-     story:page-text-look`, `link pending story:agent-follow-links`, `search pending
+     story:page-text-tables`, `link pending story:agent-follow-links`, `search pending
      story:agent-fill-pick story:agent-press-submit`; the report:
      `agent-tasks: 4 tasks, 0 pass, 4 fail, 0 skipped`
      `task article fail 3 calls 1 connections: exit 2 on look`
      `task table fail 3 calls 1 connections: exit 2 on look`
      `task link fail 3 calls 1 connections: no now line labelled "Opening hours"`
      `task search fail 3 calls 1 connections: no now line labelled "Search"`
-   - Base B, `story:page-text-look` merged: `status.txt` lists `article pass` and `table pass`
-     from the start (decision 9), `link` and `search` as in base A; the report:
-     `agent-tasks: 4 tasks, 2 pass, 2 fail, 0 skipped`
+   - Base B, `story:page-text-look` merged and `story:page-text-tables` not: `status.txt` lists
+     `article pass` from the start, `table`, `link` and `search` as in base A; the report:
+     `agent-tasks: 4 tasks, 1 pass, 3 fail, 0 skipped`
      `task article pass 3 calls 1 connections`
-     `task table pass 3 calls 1 connections`
+     `task table fail 3 calls 1 connections: answer "2.40" in no table row with "Pears"`
      `task link fail 3 calls 1 connections: no now line labelled "Opening hours"`
      `task search fail 3 calls 1 connections: no now line labelled "Search"`
-   In both, no `now` block exists before `story:agent-follow-links`. A base A branch rebased onto
-   a merged `story:page-text-look` gets `raise: article` and `raise: table` and is given base B's
-   `status.txt` before it merges.
+   - Base C, both merged (page-text-tables does not depend on page-text-look, so it can merge
+     first): `status.txt` lists `article pass` and `table pass`, the report is base B's with the
+     first line `agent-tasks: 4 tasks, 2 pass, 2 fail, 0 skipped` and the line `task table pass 3
+     calls 1 connections`.
+   In all, no `now` block exists before `story:agent-follow-links`. A branch rebased onto a newly
+   merged story gets one `raise:` line per row that story lets pass (`raise: article` for
+   `story:page-text-look`; `raise: table` for `story:page-text-tables` once page-text-look is in
+   too) and is given the `status.txt` of the base it is now on before it merges.
 2. `tasks::every_task` runs within 10 s and, read through `/proc` as the Change says, has exactly
    one `surfd` PID in its `XDG_RUNTIME_DIR` from the first `open` to the end of the last task, no
    process whose `comm` is `cargo` among its children, and no process of `SURF_BIN_DIR` left
@@ -285,6 +297,16 @@ timed in the report; any over 5 s is named with its time.
    those lines): page 1 alone (lines 1 to 200, ending `more 60 lines: look --as markdown
    --from-line 201`) gives `fail` with `answer "Kestrel Bay" not in the text`; pages 1 and 2
    (lines 201 to 260, no `more` line) give `pass`.
+   `judge::a_flattened_table_fails` (no process), the planted case: an answer built with
+   `surf_answer::text_page(Markdown, ..)` whose body holds the table of `sites/table/prices.html`
+   flattened to one paragraph (`prices.html`: caption `Prices`, header `Fruit`, `Price`, the six
+   rows these lines name), the line `Prices Fruit Price Apples 1.80 Pears 2.40 Plums 3.10
+   Cherries 6.50 Grapes 2.90 Lemons 0.60`, judged against the `table` block of `tasks.txt`:
+   `fail` with `answer "2.40" in no table row with "Pears"`; the same answer with that line
+   replaced by the rows `| Fruit | Price |`, `| --- | --- |`, `| Apples | 1.80 |`, `| Pears |
+   2.40 |` (and the other four): `pass`; with only `| Plums | 2.40 |` holding `2.40`: `fail` with
+   the same reason. `format::tasks_txt_is_read` also refuses `match row` without a cell and
+   `match rows Pears`, naming the line.
 5. `fixtures::each_answer_is_on_its_target_page_only`: for each task, the expected answer occurs
    exactly once in the target page's file and in no other file of `sites/<task>/`.
 6. `format::tasks_txt_is_read` and `format::status_lists_every_task`: `tasks.txt` reads to its
@@ -314,9 +336,10 @@ timed in the report; any over 5 s is named with its time.
    'surf-0.3.0-x86_64-unknown-linux-musl.tar.gz' --dir <dir>`, `gates="b10x-gates --policy
    ../gates-policy/policy.json --repository beyond10x/surf"`), unpacked; then `task
    agent-tasks-archive DIR=<dir>/surf-0.3.0-x86_64-unknown-linux-musl` prints exactly the five
-   report lines of case 1 for base A when the archive's `surf-agent look --as markdown` exits 2,
-   and those for base B otherwise (measure mode: the listed states play no part; the rows of
-   `tasks.txt` at this story's commit: `article`, `table`, `link`, `search`). The unit puts them in its report; the coordinator copies them into the record of
+   report lines of case 1 for base A: release 0.3.0 has no `--as` (`git show
+   263dd71:crates/agent/src/cli.rs` holds no `--as`), so `look --as markdown` is a usage error
+   there (measure mode: the listed states play no part; the rows of `tasks.txt` at this story's
+   commit: `article`, `table`, `link`, `search`). The unit puts them in its report; the coordinator copies them into the record of
    the wave.
 9. `git diff --stat` of the unit names only `crates/agent-tasks/`, `taskfiles/agent-tasks.yml`,
    `taskfiles/agent-tasks-model.sh`, `docs/releasing.md` and, from the coordinator,
