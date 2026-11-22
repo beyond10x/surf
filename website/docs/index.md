@@ -20,7 +20,7 @@ Linux an agent can open a session and send it to a page. It is growing into two 
   server.
 
 surf has no JavaScript yet. The script engine it will embed is
-[swell](https://github.com/beyond10x/swell), an ECMAScript (JavaScript) engine written from
+[swell](https://beyond10x.github.io/swell/), an ECMAScript (JavaScript) engine written from
 scratch in Rust, a project of its own that is developed beside surf. A page that surf loads
 runs no script today.
 
