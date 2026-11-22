@@ -5,6 +5,7 @@
 
 mod adversary_follow;
 mod adversary_select;
+mod adversary_forms;
 mod adversary_values;
 mod base_url;
 mod elements;

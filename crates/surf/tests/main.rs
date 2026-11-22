@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+mod adversary_forms;
 mod common;
 mod conform_totals;
 mod escape;
