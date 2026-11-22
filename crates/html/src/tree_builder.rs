@@ -13,14 +13,16 @@
 //! in body in the submodule `formatting` (story `html-tree-formatting`); the table insertion
 //! modes (in table, in table text, in caption, in column group, in table body, in row, in cell)
 //! in the submodule `tables`, and resetting the insertion mode appropriately (story
-//! `html-tree-tables`). The `select` rules are those of in body in the snapshot the design note
-//! names, which has no select insertion modes. The tree construction dispatcher always takes
-//! the rules of the current insertion mode: no element in a foreign namespace is created.
-//!
-//! Not yet written, each by a later story, and named by [`NOT_YET_PARSED`]: the in template mode
-//! (`html-tree-template`); foreign content and the fragment case (`html-tree-foreign`). Until
-//! then a token whose rule one of them writes is processed by in body's "any other start tag" or
-//! "any other end tag", so that every input ends.
+//! `html-tree-tables`); the `template` rules of in head, the in template mode and the stack of
+//! template insertion modes in the submodule `template` (story `html-tree-template`). The
+//! `select` rules are those of in body in the snapshot the design note names, which has no
+//! select insertion modes. The tree construction dispatcher, the rules for foreign content and
+//! the MathML and SVG adjustments are in the submodule `foreign`, and the fragment parsing
+//! algorithm (13.4) is [`parse_fragment`] (story `html-tree-foreign`): its context element and
+//! `html` root are nodes of the arena outside the tree, and the insertion target redirection
+//! map's one entry sends the `html` root's insertions to the fragment. The submodule
+//! `selectedcontent` copies each `select`'s selected `option` into its `selectedcontent`
+//! elements at the end of a document's parse (story `html-tree-complete`).
 //!
 //! Parse errors are not collected: neither the tokenizer's nor the tree builder's reach a
 //! caller. Scripts do not run: at a `script` end tag the text mode pops the element and returns
@@ -33,9 +35,12 @@
 //! makes no change to the tree (each creation is refused once parsing has stopped), the
 //! dispatcher takes no further mode, and the parse then pops every open element.
 
+mod foreign;
 mod formatting;
 mod modes;
+mod selectedcontent;
 mod tables;
+mod template;
 
 use std::cell::Cell;
 use std::collections::HashSet;
@@ -49,9 +54,9 @@ use crate::tokenizer::{self, Token, TokenAttribute, Tokenizer};
 use crate::tree::{Attribute, Categories, Namespace, NodeData, NodeId, Tree};
 
 /// Each part of tree construction that the tree builder does not yet parse as the standard
-/// does, named in `[a-z-]+`: `template`, and foreign content (SVG, MathML and fragments). Each
-/// later tree story removes its entry.
-pub const NOT_YET_PARSED: &[&str] = &["template", "foreign-content"];
+/// does, named in `[a-z-]+`; the tree story that writes it removes its entry. Empty since
+/// story `html-tree-foreign` wrote foreign content and the fragment case.
+pub const NOT_YET_PARSED: &[&str] = &[];
 
 /// The mode of a document (DOM, "mode"), which the initial insertion mode decides from the
 /// DOCTYPE.
@@ -80,6 +85,7 @@ enum Mode {
     InTableBody,
     InRow,
     InCell,
+    InTemplate,
     AfterBody,
     InFrameset,
     AfterFrameset,
@@ -328,23 +334,95 @@ pub(crate) fn parse(
     encoding: Option<InputEncoding>,
 ) -> Parsed {
     // The input stream keeps its own copy of the code points: this one goes once it is made.
-    let mut builder = {
+    let builder = {
         let code_points: Vec<u32> = input.chars().map(u32::from).collect();
         TreeBuilder::new(&code_points, options, encoding)
     };
+    run(builder)
+}
+
+/// Runs the fragment parsing algorithm (13.4) over decoded text for a context element with no
+/// attribute and no ancestor, in a document in no-quirks mode, with no sanitizer and no
+/// declarative shadow roots: the context element and the `html` root element are nodes of the
+/// arena outside the tree, and the root of the tree is the fragment the `html` root's
+/// insertions are redirected to. A limit that refuses either of the two elements stops the
+/// parse before its first token.
+pub(crate) fn parse_fragment(
+    input: &str,
+    context: &crate::Context,
+    options: &ParseOptions,
+) -> Tree {
+    let mut builder = {
+        let code_points: Vec<u32> = input.chars().map(u32::from).collect();
+        TreeBuilder::new(&code_points, options, None)
+    };
+    builder.tree = Tree::fragment();
+    let name = context.local_name.as_str();
+    let element = match context.namespace {
+        Namespace::Html => builder.create_element(name, &[]),
+        namespace => builder.create_foreign_element(namespace, name, &[]),
+    };
+    let html = builder.create_element("html", &[]);
+    let (Some(element), Some(html)) = (element, html) else {
+        return run(builder).tree;
+    };
+    builder.context = Some(element);
+    builder.fragment_html = Some(html);
+    if context.namespace == Namespace::Html {
+        let state = match name {
+            "title" | "textarea" => Some(tokenizer::State::Rcdata),
+            "style" | "xmp" | "iframe" | "noembed" | "noframes" => Some(tokenizer::State::Rawtext),
+            "script" => Some(tokenizer::State::ScriptData),
+            "noscript" if !builder.scripting_disabled => Some(tokenizer::State::Rawtext),
+            "plaintext" => Some(tokenizer::State::Plaintext),
+            _ => None,
+        };
+        if let Some(state) = state {
+            builder.tokenizer.switch_to(state);
+        }
+    }
+    builder.open.push(html);
+    if builder.is_html(element, &["template"]) {
+        builder.template_modes.push(Mode::InTemplate);
+    }
+    builder.reset_insertion_mode();
+    // The nearest `form` going up from the context element, which has no ancestor here.
+    if builder.is_html(element, &["form"]) {
+        builder.form = Some(element);
+    }
+    run(builder).tree
+}
+
+/// The tokenizer and tree construction from the first token to the end, with the step limit
+/// checked after each token.
+fn run(mut builder: TreeBuilder) -> Parsed {
     while !builder.stopped {
+        builder.tokenizer.set_cdata_allowed(builder.cdata_allowed());
         let Some(token) = builder.tokenizer.next_token() else {
             // The tokenizer stopped at a start tag that would keep one attribute too many.
             builder.stop_at(Limit::Attributes);
             break;
         };
         builder.dispatch(token);
-        if !builder.stopped && builder.steps.get() > builder.limits.max_steps {
+        // Also the end-of-file token, whose rules scan too (in template pops down to each open
+        // `template`), unless another limit stopped the parse.
+        if builder.tree.stopped_by().is_none() && builder.steps.get() > builder.limits.max_steps {
             builder.stop_at(Limit::Steps);
         }
     }
     // "Stop parsing" pops every open element, also after a limit.
     builder.open.clear();
+    if builder.saw_selectedcontent
+        && builder.context.is_none()
+        && builder.tree.stopped_by().is_none()
+        && builder.reparse_with.is_none()
+    {
+        // The queued selectedcontent updates (the module `selectedcontent`): they create nodes,
+        // which a stopped parse refuses, so the flag is lifted for them.
+        builder.stopped = false;
+        builder.update_selectedcontents();
+        builder.stopped = true;
+    }
     builder.tree.set_steps(builder.steps.get());
     Parsed {
         tree: builder.tree,
@@ -393,6 +471,14 @@ struct TreeBuilder {
     /// The fragment parsing algorithm's context element, a node of the arena outside the tree;
     /// `None` for a document.
     context: Option<NodeId>,
+    /// The stack of template insertion modes, the current one last.
+    template_modes: Vec<Mode>,
+    /// The fragment parsing algorithm's `html` root element, a node of the arena outside the
+    /// tree whose insertions go to the fragment; `None` for a document.
+    fragment_html: Option<NodeId>,
+    /// An HTML `selectedcontent` element was created: the end of the parse updates the
+    /// `select` elements' copies of their selected option (the module `selectedcontent`).
+    saw_selectedcontent: bool,
 }
 
 const HTML_ELEMENT_SPECIAL: &[&str] = &[
@@ -579,6 +665,9 @@ impl TreeBuilder {
             pending_table_text: String::new(),
             pending_table_foster: false,
             context: None,
+            template_modes: Vec::new(),
+            fragment_html: None,
+            saw_selectedcontent: false,
         }
     }
 
@@ -593,35 +682,18 @@ impl TreeBuilder {
         self.steps.set(self.steps.get().saturating_add(n));
     }
 
-    /// The tree construction dispatcher (13.2.6): every element is in the HTML namespace, so
-    /// each token goes to the rules of the current insertion mode.
+    /// The tree construction dispatcher (13.2.6): each token goes to the rules of the current
+    /// insertion mode, or to the rules for foreign content (the module `foreign`).
     fn dispatch(&mut self, token: Token) {
         if std::mem::take(&mut self.ignore_line_feed) && token == Token::Character(0x0A) {
             return;
         }
         let mut token = token;
         loop {
-            let flow = match self.mode {
-                Mode::Initial => self.initial(&token),
-                Mode::BeforeHtml => self.before_html(&token),
-                Mode::BeforeHead => self.before_head(&token),
-                Mode::InHead => self.in_head(&token),
-                Mode::InHeadNoscript => self.in_head_noscript(&token),
-                Mode::AfterHead => self.after_head(&token),
-                Mode::InBody => self.in_body(&token),
-                Mode::Text => self.text(&token),
-                Mode::InTable => self.in_table(&token),
-                Mode::InTableText => self.in_table_text(&token),
-                Mode::InCaption => self.in_caption(&token),
-                Mode::InColumnGroup => self.in_column_group(&token),
-                Mode::InTableBody => self.in_table_body(&token),
-                Mode::InRow => self.in_row(&token),
-                Mode::InCell => self.in_cell(&token),
-                Mode::AfterBody => self.after_body(&token),
-                Mode::InFrameset => self.in_frameset(&token),
-                Mode::AfterFrameset => self.after_frameset(&token),
-                Mode::AfterAfterBody => self.after_after_body(&token),
-                Mode::AfterAfterFrameset => self.after_after_frameset(&token),
+            let flow = if self.in_foreign_content(&token) {
+                self.foreign_content(&token)
+            } else {
+                self.process_by_mode(&token)
             };
             match flow {
                 Flow::Done => return,
@@ -631,6 +703,33 @@ impl TreeBuilder {
             if self.stopped {
                 return;
             }
+        }
+    }
+
+    /// Processes `token` by the rules of the current insertion mode.
+    fn process_by_mode(&mut self, token: &Token) -> Flow {
+        match self.mode {
+            Mode::Initial => self.initial(token),
+            Mode::BeforeHtml => self.before_html(token),
+            Mode::BeforeHead => self.before_head(token),
+            Mode::InHead => self.in_head(token),
+            Mode::InHeadNoscript => self.in_head_noscript(token),
+            Mode::AfterHead => self.after_head(token),
+            Mode::InBody => self.in_body(token),
+            Mode::Text => self.text(token),
+            Mode::InTable => self.in_table(token),
+            Mode::InTableText => self.in_table_text(token),
+            Mode::InCaption => self.in_caption(token),
+            Mode::InColumnGroup => self.in_column_group(token),
+            Mode::InTableBody => self.in_table_body(token),
+            Mode::InRow => self.in_row(token),
+            Mode::InCell => self.in_cell(token),
+            Mode::InTemplate => self.in_template(token),
+            Mode::AfterBody => self.after_body(token),
+            Mode::InFrameset => self.in_frameset(token),
+            Mode::AfterFrameset => self.after_frameset(token),
+            Mode::AfterAfterBody => self.after_after_body(token),
+            Mode::AfterAfterFrameset => self.after_after_frameset(token),
         }
     }
 
@@ -686,11 +785,27 @@ impl TreeBuilder {
         self.tree.root()
     }
 
-    /// The appropriate place for inserting a node, with an override target: the target and the
-    /// reference child. With foster parenting enabled (the "anything else" rule of in table) and
-    /// a `table`, `tbody`, `tfoot`, `thead` or `tr` target, the place is in front of the last
-    /// `table` on the stack of open elements, or in the last `template` when that is lower. A
-    /// `template` target gives its template contents.
+    /// Whether `node` is the document: the root of a tree parsed as a document. The root of a
+    /// fragment is a document fragment, which may hold more than one element and text.
+    fn is_document(&self, node: NodeId) -> bool {
+        node == self.document() && self.context.is_none()
+    }
+
+    /// The adjusted insertion location for a place (13.2.6.1): the fragment's `html` root
+    /// element, the only key of the insertion target redirection map, gives the fragment.
+    fn redirect(&self, place: (NodeId, Option<NodeId>)) -> (NodeId, Option<NodeId>) {
+        match self.fragment_html {
+            Some(html) if place.0 == html => (self.document(), None),
+            _ => place,
+        }
+    }
+
+    /// The adjusted insertion location, with an override target: the appropriate place for
+    /// inserting a node, and the target and reference child. With foster parenting enabled (the
+    /// "anything else" rule of in table) and a `table`, `tbody`, `tfoot`, `thead` or `tr`
+    /// target, the place is in front of the last `table` on the stack of open elements, or in
+    /// the last `template` when that is lower. A `template` target gives its template contents.
+    /// The fragment's `html` root redirects to the fragment ([`Self::redirect`]).
     fn appropriate_place(&self, override_target: Option<NodeId>) -> (NodeId, Option<NodeId>) {
         let mut target = override_target.unwrap_or_else(|| self.current_node());
         if self.foster_parenting
@@ -702,16 +817,19 @@ impl TreeBuilder {
                 self.is_html(self.open[index], &["template", "table"])
             });
             self.add_steps(visited);
-            let Some(last) = last else {
-                return (self.open[0], None);
-            };
-            let node = self.open[last];
-            if self.is_html(node, &["template"]) {
-                target = node;
-            } else if let Some(parent) = self.tree.parent(node) {
-                return (parent, Some(node));
-            } else {
-                target = self.open[last - 1];
+            match last {
+                // The fragment case: the `html` element.
+                None => target = self.open[0],
+                Some(last) => {
+                    let node = self.open[last];
+                    if self.is_html(node, &["template"]) {
+                        target = node;
+                    } else if let Some(parent) = self.tree.parent(node) {
+                        return self.redirect((parent, Some(node)));
+                    } else {
+                        target = self.open[last - 1];
+                    }
+                }
             }
         }
         if let NodeData::Element {
@@ -721,7 +839,7 @@ impl TreeBuilder {
         {
             return (*contents, None);
         }
-        (target, None)
+        self.redirect((target, None))
     }
 
     /// Create an element for a token in the HTML namespace: no custom element definition is
@@ -736,10 +854,45 @@ impl TreeBuilder {
         Some(self.create_admitted_element(name, attributes))
     }
 
+    /// Create an element for a token in a foreign namespace, its attributes adjusted as that
+    /// namespace's rules say (`foreign::element_attributes`); `name` is the adjusted name.
+    fn create_foreign_element(
+        &mut self,
+        namespace: Namespace,
+        name: &str,
+        attributes: &[TokenAttribute],
+    ) -> Option<NodeId> {
+        let attributes = foreign::element_attributes(namespace, attributes);
+        let bytes = name.len()
+            + attributes
+                .iter()
+                .map(|a| {
+                    ATTRIBUTE_BYTES
+                        + a.prefix.as_ref().map_or(0, String::len)
+                        + a.local_name.len()
+                        + a.value.len()
+                })
+                .sum::<usize>();
+        if !self.admit(1, bytes) {
+            return None;
+        }
+        let categories = categories_of(namespace, name);
+        let element = self
+            .tree
+            .create_element(namespace, name, attributes, categories);
+        if categories.has(Categories::SCOPE) {
+            self.open.mark_boundary(element);
+        }
+        Some(element)
+    }
+
     /// Create an element for a token in the HTML namespace that the limits admitted already
     /// (the adoption agency algorithm admits a whole iteration at once).
     fn create_admitted_element(&mut self, name: &str, attributes: &[TokenAttribute]) -> NodeId {
         let categories = categories_of(Namespace::Html, name);
+        if name == "selectedcontent" {
+            self.saw_selectedcontent = true;
+        }
         let element = self.tree.create_element(
             Namespace::Html,
             name,
@@ -766,7 +919,7 @@ impl TreeBuilder {
     fn insert_element_at(&mut self, element: NodeId, location: (NodeId, Option<NodeId>)) {
         let (parent, reference) = location;
         if self.tree.parent(element).is_some()
-            || (parent == self.document() && self.tree.has_element_child(parent, &self.steps))
+            || (self.is_document(parent) && self.tree.has_element_child(parent, &self.steps))
         {
             return;
         }
@@ -777,10 +930,25 @@ impl TreeBuilder {
     /// onto the stack of open elements. `None` when a limit refuses it (depth first, then nodes
     /// and stored bytes), or parsing stopped.
     fn insert_html_element(&mut self, name: &str, attributes: &[TokenAttribute]) -> Option<NodeId> {
+        self.insert_element(Namespace::Html, name, attributes)
+    }
+
+    /// Insert a foreign element for a token in `namespace` (an HTML element for
+    /// [`Namespace::Html`]), with `name` already adjusted: the appropriate place is taken, the
+    /// element created, inserted there and pushed onto the stack of open elements.
+    fn insert_element(
+        &mut self,
+        namespace: Namespace,
+        name: &str,
+        attributes: &[TokenAttribute],
+    ) -> Option<NodeId> {
         if !self.room_on_stack() {
             return None;
         }
-        let element = self.create_element(name, attributes)?;
+        let element = match namespace {
+            Namespace::Html => self.create_element(name, attributes)?,
+            _ => self.create_foreign_element(namespace, name, attributes)?,
+        };
         let location = self.appropriate_place(None);
         self.insert_element_at(element, location);
         self.open.push(element);
@@ -795,7 +963,7 @@ impl TreeBuilder {
             return;
         }
         let (parent, reference) = self.appropriate_place(None);
-        if parent == self.document() {
+        if self.is_document(parent) {
             return;
         }
         let c = char::from_u32(c).unwrap_or(char::REPLACEMENT_CHARACTER);
@@ -1044,12 +1212,6 @@ impl TreeBuilder {
             return;
         }
         self.mode = Mode::InBody;
-    }
-
-    /// The current template insertion mode: until the stack of template insertion modes is
-    /// written (story `html-tree-template`), in body.
-    fn current_template_mode(&self) -> Mode {
-        Mode::InBody
     }
 
     /// Whether the parser is parsing template contents: a `template` is on the stack of open

@@ -4,7 +4,7 @@
 
 use super::{Entry, Flow, Mode, QuirksMode, Scope, TreeBuilder, is_whitespace};
 use crate::tokenizer::{self, Token, TokenAttribute};
-use crate::tree::{NodeData, NodeId, stored_bytes_of};
+use crate::tree::{Namespace, NodeData, NodeId, stored_bytes_of};
 
 /// The public identifiers that make a DOCTYPE quirky when one is a prefix of the token's
 /// (13.2.6.4.1).
@@ -300,9 +300,8 @@ impl TreeBuilder {
         }
     }
 
-    /// 13.2.6.4.4 The "in head" insertion mode. The `template` start and end tag rules are
-    /// story `html-tree-template`'s: until then those tokens go to in body's "any other start
-    /// tag" and "any other end tag".
+    /// 13.2.6.4.4 The "in head" insertion mode. The `template` start and end tag rules are in
+    /// the submodule `template`.
     pub(super) fn in_head(&mut self, token: &Token) -> Flow {
         match token {
             Token::Character(c) if is_whitespace(*c) => {
@@ -381,11 +380,11 @@ impl TreeBuilder {
             Token::StartTag {
                 name, attributes, ..
             } if name == "template" => {
-                self.any_other_start_tag(name, attributes);
+                self.template_start_tag(name, attributes);
                 Flow::Done
             }
             Token::EndTag { name } if name == "template" => {
-                self.any_other_end_tag(name);
+                self.template_end_tag();
                 Flow::Done
             }
             t if is_start(t, &["head"]) => Flow::Done,
@@ -500,8 +499,8 @@ impl TreeBuilder {
         Flow::Reprocess
     }
 
-    /// 13.2.6.4.7 The "in body" insertion mode, bounded as `NOT_YET_PARSED` says: the `svg` and
-    /// `math` start tags are processed by "any other start tag". The `select` rules are those
+    /// 13.2.6.4.7 The "in body" insertion mode. The `math` and `svg` start tags insert a foreign
+    /// element (the module `foreign` adjusts its attributes). The `select` rules are those
     /// of the snapshot the design note names, which has no select insertion modes. The end
     /// tags of the formatting elements, an `a` start tag with an `a` in the list and a `nobr`
     /// start tag with a `nobr` in scope run the adoption agency algorithm (`formatting`).
@@ -577,6 +576,9 @@ impl TreeBuilder {
                 Flow::Done
             }
             Token::EndOfFile => {
+                if !self.template_modes.is_empty() {
+                    return self.in_template(token);
+                }
                 self.stop_parsing();
                 Flow::Done
             }
@@ -1007,6 +1009,20 @@ impl TreeBuilder {
                 self.insert_html_element(name, attributes);
                 Flow::Done
             }
+            Token::StartTag {
+                name,
+                attributes,
+                self_closing,
+            } if name == "math" || name == "svg" => {
+                self.reconstruct_active_formatting_elements();
+                let namespace = if name == "math" {
+                    Namespace::MathMl
+                } else {
+                    Namespace::Svg
+                };
+                self.insert_foreign_start_tag(namespace, name, attributes, *self_closing);
+                Flow::Done
+            }
             t if is_start(
                 t,
                 &[
@@ -1141,7 +1157,10 @@ impl TreeBuilder {
             Token::Doctype { .. } => Flow::Done,
             t if is_start(t, &["html"]) => self.in_body(t),
             t if is_end(t, &["html"]) => {
-                self.mode = Mode::AfterAfterBody;
+                // The fragment case ignores it.
+                if self.context.is_none() {
+                    self.mode = Mode::AfterAfterBody;
+                }
                 Flow::Done
             }
             Token::EndOfFile => {
@@ -1181,7 +1200,7 @@ impl TreeBuilder {
             t if is_end(t, &["frameset"]) => {
                 if self.open.len() > 1 {
                     self.open.pop();
-                    if !self.current_is(&["frameset"]) {
+                    if self.context.is_none() && !self.current_is(&["frameset"]) {
                         self.mode = Mode::AfterFrameset;
                     }
                 }

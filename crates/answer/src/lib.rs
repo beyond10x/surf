@@ -232,16 +232,21 @@ pub enum TextNote {
     NoCss,
     /// `no-document`: the load failed or the page is not HTML, so there is no text block.
     NoDocument,
+    /// `deep <n>`: the Markdown wrote up to `n` levels of nested lists and quotes, at least 1,
+    /// at the indentation of the level above them, without their markers, because the prefix of
+    /// their lines would pass its bound (`surf_page_text::markdown::PREFIX_BYTES_MAX`).
+    Deep(u64),
 }
 
 impl TextNote {
-    const ALL: [TextNote; 2] = [TextNote::NoCss, TextNote::NoDocument];
+    const WORDS: [TextNote; 2] = [TextNote::NoCss, TextNote::NoDocument];
 
     /// The word of the format.
     pub fn word(self) -> &'static str {
         match self {
             TextNote::NoCss => "no-css",
             TextNote::NoDocument => "no-document",
+            TextNote::Deep(_) => "deep",
         }
     }
 }
@@ -584,7 +589,7 @@ pub enum RenderError {
     TokenForm,
     /// The `path` block shows more actions than its total.
     PathLongerThanTotal,
-    /// A `note parser` line with no part.
+    /// A `note parser` line with no part, or a `note text: deep` line of 0 levels.
     EmptyNote,
     /// A body line of the `text` block holds a line feed or a character [`escaped_in_text`]
     /// names, or starts with one [`escaped_at_run_start`] names.
@@ -613,7 +618,9 @@ impl fmt::Display for RenderError {
             RenderError::PathLongerThanTotal => {
                 f.write_str("the path shows more actions than its total")
             }
-            RenderError::EmptyNote => f.write_str("a note parser line has no part"),
+            RenderError::EmptyNote => {
+                f.write_str("a note parser line has no part, or a note text deep line 0 levels")
+            }
             RenderError::TextLine { line } => {
                 write!(
                     f,
@@ -748,6 +755,12 @@ fn render_note(note: &Note, out: &mut String) -> Result<(), RenderError> {
         Note::Text(what) => {
             out.push_str("note text: ");
             out.push_str(what.word());
+            if let TextNote::Deep(levels) = what {
+                if *levels == 0 {
+                    return Err(RenderError::EmptyNote);
+                }
+                out.push_str(&format!(" {levels}"));
+            }
         }
     }
     out.push('\n');
@@ -1231,7 +1244,18 @@ fn parse_path(lines: &mut Lines<'_>, answer: &mut Answer) -> Result<(), ParseErr
 fn parse_notes(lines: &mut Lines<'_>, answer: &mut Answer) -> Result<(), ParseError> {
     while let Some(line) = lines.take_if_starts("note ") {
         if let Some(word) = line.text.strip_prefix("note text: ") {
-            let what = TextNote::ALL
+            if word.starts_with("deep ") {
+                let mut cursor = line.cursor();
+                cursor.at = "note text: deep ".len();
+                let levels: u64 = cursor.number()?;
+                cursor.end()?;
+                if levels == 0 {
+                    return Err(line.error(ParseErrorKind::OutsideGrammar));
+                }
+                answer.notes.push(Note::Text(TextNote::Deep(levels)));
+                continue;
+            }
+            let what = TextNote::WORDS
                 .into_iter()
                 .find(|what| what.word() == word)
                 .ok_or_else(|| line.error(ParseErrorKind::OutsideGrammar))?;
