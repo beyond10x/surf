@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T11:09:29Z",
+  "actor": "human:operator",
+  "artifact": "story:limit-tests-at-small-limits",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "plan-critics",
+    "reference": "acceptance, design, scope and parallel-safety critics approve at revision 11 after three rounds"
+  }
+}
