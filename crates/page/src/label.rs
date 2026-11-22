@@ -5,9 +5,10 @@
 //!
 //! What the tree does not offer is gathered by the one walk of `actionable_elements`
 //! ([`Facts`]): a dense index of the nodes with the hidden flag of each, the first element per
-//! ID, and each `label` element with its labeled control. The names are computed after that
-//! walk, each with its own stack: no function recurses over the depth of the tree, and none
-//! calls `is_hidden`.
+//! ID, each `label` element with its labeled control, and, in one pass over each element's
+//! attributes, where the attributes a name reads are ([`READ`]). The names are computed after
+//! that walk, each with its own stack: no function recurses over the depth of the tree, none
+//! calls `is_hidden`, and none searches an element's attributes.
 
 use std::collections::HashMap;
 
@@ -46,6 +47,76 @@ pub(crate) struct Facts<'a> {
     /// The `label` elements without `for` around the node being walked: each link names one
     /// and the link of the next `label` out.
     chain: Vec<Link>,
+    /// Whether each node, by its index, is a labelable element.
+    labelable: Vec<bool>,
+    /// Each node's place in `places`, by its index; [`NONE`] for a node without any of the
+    /// attributes a name reads.
+    place_of: Vec<u32>,
+    /// Where the attributes a name reads are among an element's attributes.
+    places: Vec<Places>,
+}
+
+/// The attributes a name reads, in the order of [`Places`].
+const READ: [&str; 11] = [
+    "aria-labelledby",
+    "aria-label",
+    "title",
+    "alt",
+    "value",
+    "type",
+    "aria-valuetext",
+    "aria-valuenow",
+    "placeholder",
+    "aria-placeholder",
+    "multiple",
+];
+
+/// No place.
+const NONE: u32 = u32::MAX;
+
+/// The position among an element's attributes of the first attribute in no namespace named by
+/// each entry of [`READ`], or [`NONE`].
+type Places = [u32; READ.len()];
+
+/// One pass over the attributes of `this`: where each attribute of [`READ`] is. `None` when it
+/// has none of them.
+fn places(this: &Element<'_>) -> Option<Places> {
+    let mut found = [NONE; READ.len()];
+    let mut any = false;
+    for (at, attribute) in this.attributes.iter().enumerate() {
+        if attribute.namespace.is_some() {
+            continue;
+        }
+        if let Some(which) = READ.iter().position(|&name| name == attribute.local_name)
+            && found[which] == NONE
+        {
+            found[which] = u32::try_from(at).unwrap_or(NONE);
+            any = true;
+        }
+    }
+    crate::count_attribute_visits(this.attributes.len());
+    any.then_some(found)
+}
+
+/// An element as a name reads it: its attributes found through the places the walk recorded,
+/// without a search.
+struct Recorded<'t> {
+    namespace: Namespace,
+    local_name: &'t str,
+    attributes: &'t [surf_html::Attribute],
+    places: Places,
+}
+
+impl<'t> Recorded<'t> {
+    /// The value of the attribute `name`, one of [`READ`].
+    fn attribute(&self, name: &str) -> Option<&'t str> {
+        let which = READ
+            .iter()
+            .position(|&read| read == name)
+            .expect("a name reads only the attributes of READ");
+        let at = self.places[which];
+        (at != NONE).then(|| self.attributes[at as usize].value.as_str())
+    }
 }
 
 struct Label<'a> {
@@ -77,12 +148,24 @@ impl<'a> Facts<'a> {
         self.index.insert(node, self.hidden.len());
         self.hidden.push(hidden);
         let Some(this) = this else {
+            self.labelable.push(false);
+            self.place_of.push(NONE);
             return labels;
         };
+        match places(this) {
+            Some(found) => {
+                self.place_of
+                    .push(u32::try_from(self.places.len()).unwrap_or(NONE));
+                self.places.push(found);
+            }
+            None => self.place_of.push(NONE),
+        }
         if let Some(id) = this.attribute("id").filter(|id| !id.is_empty()) {
             self.by_id.entry(id).or_insert(node);
         }
-        if is_labelable(this) {
+        let labelable = is_labelable(this);
+        self.labelable.push(labelable);
+        if labelable {
             // `node` is the first labelable descendant of every enclosing `label` without `for`
             // that has none yet; those are the nearest ones, so the walk up stops at the first
             // that has one.
@@ -137,7 +220,7 @@ pub(crate) fn fill(tree: &Tree, facts: Facts<'_>, rows: &mut [ActionableElement]
                 .by_id
                 .get(id)
                 .copied()
-                .filter(|&c| element(tree, c).is_some_and(|e| is_labelable(&e))),
+                .filter(|c| facts.labelable[facts.index[c]]),
             None => label.control,
         };
         if let Some(control) = control {
@@ -283,7 +366,7 @@ impl<'t> Namer<'t> {
         self.generation += 1;
         self.root = row.node;
         self.name = Name::default();
-        let this = element(self.tree, row.node).expect("an actionable element is an element");
+        let this = self.recorded(row.node);
         let full = if self.spent {
             Err(Stop::Spent)
         } else {
@@ -307,7 +390,7 @@ impl<'t> Namer<'t> {
     fn element_name(
         &mut self,
         row: &ActionableElement,
-        this: &Element<'t>,
+        this: &Recorded<'t>,
         attributes_only: bool,
     ) -> Result<(), Stop> {
         if !attributes_only {
@@ -400,7 +483,7 @@ impl<'t> Namer<'t> {
     }
 
     /// HTML-AAM 4.1.1 after the label elements: `title`, `placeholder`, `aria-placeholder`.
-    fn text_control(&mut self, this: &Element<'t>) -> Result<(), Stop> {
+    fn text_control(&mut self, this: &Recorded<'t>) -> Result<(), Stop> {
         let _ = self.source(this.attribute("title"))?
             || self.source(this.attribute("placeholder"))?
             || self.source(this.attribute("aria-placeholder"))?;
@@ -455,14 +538,14 @@ impl<'t> Namer<'t> {
                 Task::Resume(node, mode, mark) => {
                     if !self.name.grew(mark) {
                         self.name.reset(mark);
-                        let this = element(self.tree, node).expect("resumed at an element");
+                        let this = self.recorded(node);
                         self.at_embedded_control(node, &this, mode)?;
                     }
                 }
                 Task::Title(node, mark) => {
                     if !self.name.grew(mark) {
                         self.name.reset(mark);
-                        let this = element(self.tree, node).expect("a title of an element");
+                        let this = self.recorded(node);
                         self.source(this.attribute("title"))?;
                     }
                 }
@@ -491,7 +574,7 @@ impl<'t> Namer<'t> {
                 if mode.in_label && node == self.root {
                     return Ok(());
                 }
-                let this = element(tree, node).expect("an element");
+                let this = self.recorded_at(at, node);
                 // 2B, LabelledBy, unless already in such a traversal.
                 if !mode.labelledby
                     && let Some(ids) = this.attribute("aria-labelledby")
@@ -526,7 +609,7 @@ impl<'t> Namer<'t> {
     fn at_embedded_control(
         &mut self,
         node: NodeId,
-        this: &Element<'t>,
+        this: &Recorded<'t>,
         mode: Mode,
     ) -> Result<(), Stop> {
         let html = this.namespace == Namespace::Html;
@@ -542,7 +625,12 @@ impl<'t> Namer<'t> {
                     | State::Password) => {
                         let raw = this.attribute("value").unwrap_or("");
                         self.charge(raw.len())?;
-                        let value = state.value(this).unwrap_or_default();
+                        let value = state
+                            .value_of(
+                                this.attribute("value"),
+                                this.attribute("multiple").is_some(),
+                            )
+                            .unwrap_or_default();
                         return self.append(&value);
                     }
                     State::Number | State::Range => {
@@ -659,5 +747,25 @@ impl<'t> Namer<'t> {
 
     fn hidden(&self, node: NodeId) -> bool {
         self.facts.hidden[self.facts.index[&node]]
+    }
+
+    fn recorded(&self, node: NodeId) -> Recorded<'t> {
+        self.recorded_at(self.facts.index[&node], node)
+    }
+
+    /// The element `node`, of index `at`, with the places of its attributes.
+    fn recorded_at(&self, at: usize, node: NodeId) -> Recorded<'t> {
+        let this = element(self.tree, node).expect("a name reads an element's attributes");
+        let place = self.facts.place_of[at];
+        Recorded {
+            namespace: this.namespace,
+            local_name: this.local_name,
+            attributes: this.attributes,
+            places: if place == NONE {
+                [NONE; READ.len()]
+            } else {
+                self.facts.places[place as usize]
+            },
+        }
     }
 }

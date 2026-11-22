@@ -6,7 +6,9 @@
 use std::time::{Duration, Instant};
 
 use surf_html::{NodeData, ParseOptions, Tree, parse_document};
-use surf_page::{ActionableElement, LABEL_BYTES_MAX, LABEL_WORK_MAX, actionable_elements};
+use surf_page::{
+    ActionableElement, LABEL_BYTES_MAX, LABEL_WORK_MAX, actionable_elements, attribute_visits,
+};
 
 fn parse(input: &str) -> Tree {
     parse_document(input, &ParseOptions::default())
@@ -538,4 +540,81 @@ fn the_name_of_a_deep_subtree_is_computed_without_recursion() {
     let rows = actionable_elements(&tree);
     assert_eq!(rows.len(), 2);
     assert!(rows.iter().all(|r| r.label == "d" && !r.label_cut));
+}
+
+// Adversarial cases.
+
+/// `LABEL_WORK_MAX` counts an element read as one unit, and the story states that the bounds
+/// make the time linear in the nodes and the attribute bytes plus a fixed budget. 400 names each
+/// read the 25 `span` of one `div`, each `span` with 1,024 attributes (the attribute limit of
+/// `story:html-parser-limits`). The walk compares each attribute of the page a fixed number of
+/// times (at most 16), whatever the number of names; names that searched the attributes of each
+/// element they read would compare about 2 * 1,024 * 25 * 400 = 20,480,000. Counted, not timed:
+/// a time comparison fails by chance on a loaded machine.
+#[test]
+fn the_time_of_the_names_does_not_grow_with_the_attributes_of_the_nodes_read() {
+    fn page(attributes: usize) -> String {
+        let mut span = String::from("<span");
+        for i in 0..attributes {
+            // As long as `aria-label`, so that a scan compares the bytes.
+            span.push_str(&format!(" aria-l{i:04}"));
+        }
+        span.push_str("></span>");
+        let mut input = String::from("<div id=d>");
+        input.push_str(&span.repeat(25));
+        input.push_str("</div>");
+        input.push_str(&"<input aria-labelledby=d>".repeat(400));
+        input
+    }
+    let tree = parse(&page(1_024));
+    let attributes: usize = tree
+        .descendants(tree.root())
+        .into_iter()
+        .map(|node| match tree.data(node) {
+            NodeData::Element { attributes, .. } => attributes.len(),
+            _ => 0,
+        })
+        .sum();
+    assert_eq!(attributes, 25 * 1_024 + 1 + 400);
+    let before = attribute_visits();
+    let rows = actionable_elements(&tree);
+    let visits = attribute_visits() - before;
+    assert_eq!(rows.len(), 400);
+    assert!(rows.iter().all(|r| r.label.is_empty() && !r.label_cut));
+    assert!(
+        visits <= 16 * attributes,
+        "{visits} attribute comparisons for a page of {attributes} attributes"
+    );
+}
+
+/// The unit's own documentation of 2E: an embedded Submit Button, Reset Button or Button gives
+/// its `value`, or `Submit` or `Reset` without one; an Image Button its `alt`. A Submit Button
+/// with `value=""` gives nothing, embedded or named itself.
+#[test]
+fn a_button_input_embedded_in_a_label_gives_its_value_or_its_default() {
+    assert_eq!(
+        names(
+            "<label for=c><input type=checkbox id=c>A<input type=submit value=Go>B\
+             <input type=reset>C<input type=submit value=\"\">D<input type=image alt=Pic>E\
+             <input type=button>F</label>"
+        ),
+        [
+            "c=\"AGoBResetCDPicEF\"",
+            "-=\"Go\"",
+            "-=\"Reset\"",
+            "-=\"\"",
+            "-=\"Pic\"",
+            "-=\"\"",
+        ]
+    );
+}
+
+/// Accname 4.3.2 2C applies to a control embedded in the label "for another widget": a text
+/// control that names itself through `aria-labelledby` does not give its own value.
+#[test]
+fn a_text_control_in_its_own_aria_labelledby_leaves_its_value_out() {
+    assert_eq!(
+        names("<span id=l>Label</span><input id=q value=typed aria-labelledby=\"l q\">"),
+        ["q=\"Label\""]
+    );
 }

@@ -97,11 +97,15 @@
 //! each label is computed with its own stack. [`actionable_elements`] computes the inherited
 //! flags (hidden, inside a disabling fieldset) in that one walk, and records there what the
 //! labels need: a dense index of the nodes with the hidden flag of each, the first element per
-//! ID, and each `label` element with its labeled control. The labels call [`is_hidden`] for no
-//! node. The time of a call is linear in the number of nodes, plus the labels: at most
-//! [`LABEL_WORK_MAX`] units of work for all of them (a unit is a node read or a byte read, each
-//! costing a hash lookup and the attribute scans of one element), plus, per row, its own
-//! attributes. The memory of the labels is at most [`LABEL_BYTES_MAX`] bytes per row, and in all
+//! ID, each `label` element with its labeled control, and, in one pass over the attributes of
+//! each element, where the attributes a name reads are (`aria-labelledby`, `aria-label`,
+//! `title`, `alt`, `value`, `type`, `aria-valuetext`, `aria-valuenow`, `placeholder`,
+//! `aria-placeholder`, `multiple`). The labels call [`is_hidden`] for no node and scan no
+//! attributes. The time of a call is linear in the number of nodes and of the attributes the
+//! tree holds (the walk compares each attribute a bounded number of times, whatever the number
+//! of names), plus the labels: at most [`LABEL_WORK_MAX`] units of work for all of them (a unit
+//! is a node read or a byte read, each costing a hash lookup and a fixed number of steps), plus,
+//! per row, the bytes of its own attribute values. The memory of the labels is at most [`LABEL_BYTES_MAX`] bytes per row, and in all
 //! at most [`LABEL_WORK_MAX`] bytes plus the attribute bytes the tree stores; what the walk
 //! records is linear in the number of nodes. [`is_hidden`] costs the depth of the node; it
 //! reads the children of the root or of the document element only at an ancestor with
@@ -153,6 +157,23 @@ mod label;
 use surf_html::{Attribute, Namespace, NodeData, NodeId, Tree};
 
 pub use label::{LABEL_BYTES_MAX, LABEL_WORK_MAX};
+
+thread_local! {
+    /// The attributes this thread compared in this crate's functions.
+    static ATTRIBUTE_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+fn count_attribute_visits(visits: usize) {
+    ATTRIBUTE_VISITS.with(|v| v.set(v.get().saturating_add(visits)));
+}
+
+/// The number of attributes the functions of this crate have compared on this thread so far:
+/// each attribute looked at while searching an element's attributes counts once. For tests that
+/// bound the work of [`actionable_elements`] by a count that does not depend on the machine.
+#[doc(hidden)]
+pub fn attribute_visits() -> usize {
+    ATTRIBUTE_VISITS.with(std::cell::Cell::get)
+}
 
 /// The `document.title` value of the document: the child text content of the first HTML
 /// `title` element in tree order, ASCII whitespace stripped and collapsed; the empty string when
@@ -598,10 +619,16 @@ impl State {
 
     /// The default value of an `input` in this state, for the kinds that hold one.
     fn value(self, input: &Element<'_>) -> Option<String> {
-        let raw = input.attribute("value").unwrap_or("");
+        self.value_of(input.attribute("value"), input.has("multiple"))
+    }
+
+    /// The default value of an `input` in this state with the `value` attribute `value` and the
+    /// `multiple` attribute present or not.
+    fn value_of(self, value: Option<&str>, multiple: bool) -> Option<String> {
+        let raw = value.unwrap_or("");
         Some(match self {
             State::Text | State::Search | State::Telephone | State::Password => strip_newlines(raw),
-            State::Email if input.has("multiple") => split_on_commas(raw).join(","),
+            State::Email if multiple => split_on_commas(raw).join(","),
             State::Url | State::Email => strip_newlines(raw).trim_ascii().to_string(),
             State::Date
             | State::Month
@@ -663,10 +690,12 @@ impl<'a> Element<'a> {
 
     /// The value of the attribute in no namespace named `name`.
     fn attribute(&self, name: &str) -> Option<&'a str> {
-        self.attributes
+        let at = self
+            .attributes
             .iter()
-            .find(|a| a.namespace.is_none() && a.local_name == name)
-            .map(|a| a.value.as_str())
+            .position(|a| a.namespace.is_none() && a.local_name == name);
+        count_attribute_visits(at.map_or(self.attributes.len(), |at| at + 1));
+        at.map(|at| self.attributes[at].value.as_str())
     }
 
     fn has(&self, name: &str) -> bool {
