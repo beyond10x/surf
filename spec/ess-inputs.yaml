@@ -43,3 +43,8 @@ scenarios:
   - scenarios/navigation-traverse-failed-keeps-current.yaml
   - scenarios/agent-go-back-traverses.yaml
   - scenarios/agent-go-forward-traverses.yaml
+  - scenarios/adversary-history-post-redirected-to-get.yaml
+  - scenarios/adversary-history-back-back-keeps-later.yaml
+  - scenarios/adversary-history-forward-then-push-drops-and-keeps-earlier.yaml
+  - scenarios/adversary-history-two-tabs.yaml
+  - scenarios/adversary-history-push-during-traversal.yaml
