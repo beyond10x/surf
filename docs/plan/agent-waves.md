@@ -113,6 +113,16 @@ item says what an agent can do after it and where it is planned.
 6. Be called without reading the manual: a skill or tool definition for agents that ships with
    a release. Not planned; a draft on the same planning branch.
 
+Item 1 in stories (D88), drafted on 2026-11-22 with the design note `docs/design/page-as-text.md`
+(branch `plan/page-as-tree-and-markdown`): `page-text-answer-block` (the `text` block of the
+answer), `page-text-outline`, `page-text-markdown` and `page-text-tables` (a new crate
+`crates/page-text`, built one after the other by one unit of round 1, beside the parser unit),
+then `page-text-look` (`surf-agent look --as tree|markdown`) and `page-text-surf-command`
+(`surf <url> --as`). The planner put the last two into round 2 because they write files of the
+session, the client and `crates/surf-cli/src/main.rs`. They move into round 1 as the document
+unit's stories after `html-document-port`, which writes the same files: the recording that ends
+round 1 (D79) shows a page's content only with them.
+
 Round 3 (the runner) serves surf's own tests and no agent's task. It moves behind items 2 and 4.
 
 The measure is a set of tasks, drafted as a story on the planning branch: an agent that has
