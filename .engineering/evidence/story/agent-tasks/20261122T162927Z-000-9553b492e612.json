@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T16:29:27Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-tasks",
+  "kind": "story",
+  "revision": 28,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "two reviews after the implementation, on 387ac4f and 70c49f2",
+    "reference": "6 findings closed in ac90e57, 5 more in a45e460, the shell's job control replaced in f1e8694; with round 1's binaries the gate lane prints agent-tasks: 4 tasks, 2 pass, 2 fail, 0 skipped (article and table pass; link and search are pending on later stories)"
+  }
+}

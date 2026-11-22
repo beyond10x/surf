@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:page-text-surf-command
 kind: story
-status: active
+status: implemented
 title: surf <url> --as tree|markdown
 summary: The one-process command prints its rows and then the outline or the Markdown of the page in the same framed text block, whole.
 relations:
@@ -20,10 +20,11 @@ scope:
   path: crates/surf-cli/tests/page.rs
 - confidence: inferred
   path: docs/surf-command.md
-revision: 12
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T04:59:52Z", actor: "human:operator", revision: 5, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T04:59:52Z", actor: "human:operator", revision: 6, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-22T16:29:22Z", actor: "human:operator", revision: 14, decided_on: {"recorded":{"test_result":1,"verification":2}}}
 ---
 ## Context
 
@@ -100,3 +101,21 @@ within 120 s (the folder's budget). Among the cases run:
 ## Out of scope
 
 Paging (`surf` runs once); the session (`page-text-look`); writing a file (standard output only).
+
+## As built
+
+What differs from the text above, as of 2418d48:
+
+- Change item 1, `surf <url> [--as tree|markdown]`: `--as=<form>` is accepted too, before or
+  after the address (`docs/surf-command.md`, "The page as text: `--as`").
+- Change item 1, the lines after the rows: Markdown nested past the bound of its line prefix adds
+  `note text: deep <n>` after `note text: no-css` (`markdown_nested_past_the_prefix_bound_says_deep`
+  in `crates/surf-cli/tests/page.rs`).
+- Change item 3, "no other new test file": `crates/surf-cli/tests/adversary_document_command.rs`
+  is a new file of a review.
+- Writes: files outside the list changed. `crates/surf-cli/tests/cli.rs` and
+  `crates/surf-cli/tests/review1_cli.rs` read the new usage line
+  `usage: surf <url> [--as tree|markdown]`; `crates/surfd/src/view.rs` and
+  `crates/surfd/tests/view.rs` fix two clippy lints that fired before the story too.
+- Left open: `docs/surf-command.md` does not name the line `note text: deep <n>` (recorded
+  nowhere else).

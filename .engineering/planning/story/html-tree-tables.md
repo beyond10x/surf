@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:html-tree-tables
 kind: story
-status: active
+status: implemented
 title: Tables, foster parenting and select
 summary: The table insertion modes, foster parenting and the select rules; every tree case tagged up to tables passes.
 relations:
@@ -21,10 +21,11 @@ scope:
   path: crates/page/tests/main.rs
 - confidence: cited
   path: crates/page/tests/tree_tables.rs
-revision: 10
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-11-22T16:29:14Z", actor: "human:operator", revision: 12, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 
@@ -101,3 +102,32 @@ From wave 9 (`docs/plan/agent-wave-9.md`), for this story's own reading before i
   `template` today, and a planted defect there (the entry dropped too) passes every test and
   every conformance count. A test for it belongs to the first of the three stories that
   makes the scope boundary real.
+
+## As built
+
+What differs from the text above, as of 280e8a7:
+
+- Context, "`select` has its own parsing rules": the pinned snapshot has no select insertion
+  modes. The `select`, `input`, `hr`, `option` and `optgroup` start tags of in body hold the
+  `select` rules, and every other tag inside a `select` is parsed as in body
+  (`crates/html/src/tree_builder/modes.rs`).
+- Found before this story's wave, first item: content of a `select` that is not an `option`
+  stays in the tree as the snapshot's rules build it, and `surf-page` still lists it as visible
+  rows; the rule for "hidden" in `docs/design/html-parser.md` got no line for it. The draft
+  `story:select-content-rows` takes it.
+- Change, "the limits ... apply to everything added": the test
+  `elements::a_deep_tree_is_read_without_recursion` (`crates/page/tests/elements.rs`, 20,000
+  nested `span` with an `input` each) keeps the default step limit. To stay inside it, "has a
+  `select` element in scope" visits one entry: `OpenElements` keeps the positions of the
+  entries that bound the default scope (`has_select_in_scope` in
+  `crates/html/src/tree_builder.rs`).
+- Change, foster parenting: a review after the first implementation found that the place in
+  front of the `table` was found by a scan from its parent's first child, so steps grew with
+  the square of the input (`<table>` and n `<img>`: 0.50M / 2.00M / 8.01M steps at n = 1k / 2k /
+  4k, commit 280e8a7's message). `Tree::insertion_index` in `crates/html/src/tree.rs`, a file
+  outside this story's Writes, now scans from the last child. The cost is held by
+  `adversary_tree::foster_parented_*` and `tree_costs::foster_parenting_*` in
+  `crates/html/tests/`.
+- Found before this story's wave, third item: no test of this story's own holds step 4.5 of
+  the adoption agency algorithm. A defect planted there (the entry dropped too) now fails three
+  tree-construction conformance cases and `tree_formatting::an_a_start_tag_closes_an_open_a`.

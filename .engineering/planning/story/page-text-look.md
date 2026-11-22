@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:page-text-look
 kind: story
-status: active
+status: implemented
 title: --as tree|markdown on open, go and look prints the page
 summary: surf-agent open <url>, go <url> and look take --as tree|markdown [--from-line <n>] and answer with the outline or the Markdown of the kept tree in a text block, paged, without fetching again; surfd and the client pass UTF-8 inside > lines.
 relations:
@@ -43,10 +43,11 @@ scope:
   path: generated/rust
 - confidence: inferred
   path: spec/domains/agent.yaml
-revision: 19
+revision: 21
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T04:59:51Z", actor: "human:operator", revision: 12, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T04:59:51Z", actor: "human:operator", revision: 13, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-22T16:29:20Z", actor: "human:operator", revision: 21, decided_on: {"recorded":{"test_result":1,"verification":2}}}
 ---
 ## Context
 
@@ -219,3 +220,34 @@ The renderers; the title on the `page` line and `now` (`agent-follow-links`); `-
 `look --from <handle>` (`agent-answer-paging`); `surf <url> --as` (`page-text-surf-command`);
 `--as` on `follow`, `back`, `forward`, `fill`, `pick`, `press` (`page-text-on-other-commands`,
 deferred); the live view's showing of the block.
+
+## As built
+
+What differs from the text above, as of 2418d48:
+
+- Acceptance case 2 does not hold as written: the answer of `look --as markdown` has no
+  `did look`. `look` writes no `did` line, with `--as` as without it (`golden/look.txt`), and
+  `open_as_tree_then_look_as_markdown` in `crates/session/tests/core.rs` asserts there is none.
+- Change, `crates/session`, `text_page` "of the tree" at each call: the session keeps the
+  rendered lines of the current document, once per form, and pages through them; every request
+  but `look`, and a change of document, drops them (`crates/session/src/lib.rs`, "The page as
+  text"; `Lines` and `Rendered`). A review after the first implementation found that reading a
+  page to its end rendered it once per `look`: node visits at 1,000 and 2,000 paragraphs were
+  40,060 and 160,120, and are 4,006 and 8,006 (message of commit 2418d48; tests
+  `a_page_read_to_its_end_is_rendered_once` and `a_look_after_a_go_shows_the_new_page` in
+  `core.rs`).
+- Change, `crates/session`, the `note text:` lines: Markdown nested past the bound of its line
+  prefix adds `note text: deep <n>` after `note text: no-css`, `<n>` from
+  `surf_page_text::markdown::Markdown::deep` (test
+  `a_markdown_block_nested_past_the_prefix_bound_says_deep` in `core.rs`).
+- Not in the story: the event `surf.agent.EventsLeftOut` (field `count`) is declared in
+  `spec/domains/agent.yaml`; no command publishes it, the session writes it
+  (`docs/view-stream.md`).
+- Change, "no new test file": `crates/session/tests/adversary_document_text.rs` is a new file of a
+  review; it compares the kept pages with a fresh rendering at every edge.
+- Writes: files outside the list changed. `crates/agent/examples/stand_in_surfd.rs` accepts the
+  arguments `form` and `line` and answers unchecked bytes for the client's check;
+  `docs/view-stream.md` names the event above; `crates/session/tests/adversary_parse.rs` follows
+  its name.
+- Left open: no test observes that the kept text is dropped on a request other than `look`
+  (recorded nowhere else).

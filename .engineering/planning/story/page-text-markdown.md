@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:page-text-markdown
 kind: story
-status: active
+status: implemented
 title: A page's content as Markdown, tables aside
 summary: surf-page-text renders headings, paragraphs, links, lists, landmarks, code, images and controls as escaped Markdown (UTF-8 by rule 2) that page text cannot forge; a table is its text until page-text-tables.
 relations:
@@ -18,10 +18,11 @@ scope:
   path: crates/page-text/tests/cases/markdown.rs
 - confidence: inferred
   path: crates/page-text/tests/main.rs
-revision: 9
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T04:59:50Z", actor: "human:operator", revision: 7, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T04:59:50Z", actor: "human:operator", revision: 8, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-22T16:29:17Z", actor: "human:operator", revision: 11, decided_on: {"recorded":{"test_result":1,"verification":2}}}
 ---
 ## Context
 
@@ -156,3 +157,53 @@ string:
 Tables (`page-text-tables`); printing in an answer (`page-text-look`, `page-text-surf-command`);
 resolving link targets (`agent-follow-links`); control values (`now`); whether a model reader
 tells `\[` from `[` (a limit the design note states).
+
+## As built
+
+What differs from the text above, as of 64c6621:
+
+- Context, "from memory, confirmed by this story against the two specifications": only parts of
+  GitHub Flavored Markdown 0.29 were read (the tables extension, the info string of a backtick
+  fence, the 1 to 9 digits of a list number); the rest is from memory of CommonMark 0.31.2, as
+  the crate documentation of `crates/page-text/src/lib.rs` states.
+- Change, block list "taken from ... the snapshot `docs/design/html-parser.md` names": the list
+  was taken from the HTML Standard's rendering section as published on 2026-11-22, not from the
+  snapshot; it has 46 names, `option`, `optgroup` and `table` among them (`BLOCK_ELEMENTS` and its
+  doc comment in `crates/page-text/src/markdown.rs`).
+- Change, `pub fn markdown(tree) -> impl Iterator<Item = String>`: it returns `Markdown<'_>`, an
+  iterator of the same lines with `deep()`, the levels of lists and quotes written without their
+  prefix, known before the first line.
+- Change, bounds, "a longer word broken between units": a link with its handle, an image, an
+  `iframe`, a code span and a control are never broken across lines; a line may break between two
+  of them where the page has no space. One longer than `ATOM_BYTES_MAX` (864 bytes) is cut before
+  `[cut]`: a link's text and its target both, a cut target ending `[cut]>`, the handle whole. See
+  the `adversary_*` cases of `crates/page-text/tests/cases/adversary_text.rs`.
+- Change, a heading: it is always one line, cut before `[cut]` when it does not fit, not wrapped.
+- Change, "heading ... cut at 200 characters of page text": a link, image or code span in a
+  heading spends the characters of page text it shows (at least 1), and the cut falls between
+  them (`adversary_a_cell_and_a_heading_keep_200_characters`).
+- Change, "lists with nesting": the prefix of a line (list markers, indentation, `> `) has at most
+  `PREFIX_BYTES_MAX` (128) bytes. An item or a quote that would pass it is written at the
+  indentation of the one it is in, without its marker, and the answer says `note text: deep <n>`;
+  so a line's text keeps at least 896 bytes and the Markdown grows with the page, not with its
+  depth times its words. See `deep_nesting_is_written_at_the_bound` and
+  `output_grows_linearly_with_nesting` in `crates/page-text/tests/cases/markdown.rs`.
+- Change, `start`: a list number stops at 999,999,999 (`LIST_NUMBER_MAX`, the 9 digits CommonMark
+  allows); a `start` outside 0 to 999,999,999 or not a number is 1 (`escapes_and_list_starts`).
+- Change, `pre`/`listing`/`xmp` as a fence: when the fence would need more than
+  `FENCE_BYTES_MAX` (16) backticks, the text is an indented code block (four spaces, no fence),
+  so no line passes 1,024 bytes (`adversary_no_line_passes_1024_bytes`).
+- Change, controls `[@<handle> <kind>...: <label>]`: with an empty label the `: ` and the label
+  are left out. An `img` with a blank `alt` and an `iframe` without `src` write nothing.
+- Change, "dropped: hidden nodes": an element with a `popover` attribute is hidden unless it is
+  an open `dialog`, and so is the copy of the selected `option` in a `selectedcontent`
+  (`adversary_a_popover_is_hidden`, `crates/page-text/tests/cases/select.rs`).
+- Change, the deviations the crate documentation lists: it also names two atoms broken at 1,024
+  bytes reading as two, a `\` of a `br` left out where it would pass 1,024 bytes, and an item or
+  a quote nested past 128 bytes of prefix losing its marker.
+- Acceptance 4 does not hold as written: in `<pre>[Bank](<http://bank.example/>) ...` the parser
+  reads `<http:` as a start tag, so the case writes the text with `&lt;`
+  (`code_cannot_write_a_link_or_a_handle`, comment in the test).
+- Writes: besides the files listed, `docs/design/page-as-text.md` (sections 4 and 6 for the bounds
+  above) and the cases in `crates/page-text/tests/cases/adversary_text.rs` and `select.rs`, each
+  with its line in `crates/page-text/tests/main.rs`.

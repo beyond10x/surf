@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:html-tree-foreign
 kind: story
-status: active
+status: implemented
 title: Foreign content and the fragment parsing algorithm
 summary: MathML and SVG in the tree, integration points, CDATA, and fragments for a context element; every tree case the note runs is tagged and attempted.
 relations:
@@ -19,10 +19,11 @@ scope:
   path: crates/html/src/tree_builder
 - confidence: cited
   path: crates/html/src/tree_builder.rs
-revision: 8
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-11-22T16:29:15Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 
@@ -79,3 +80,20 @@ The cases tagged `mixed` and the section marks (story `html-tree-complete`). Scr
 `script` end tag in foreign content is where the standard processes the SVG script element;
 surf pops it and runs nothing. The fragment algorithm's use by `innerHTML` and
 `insertAdjacentHTML` needs a DOM interface surf does not have.
+
+## As built
+
+What differs from the text above, as of 280e8a7:
+
+- Writes, "`crates/html/src/tokenizer.rs` (the CDATA hook only)": the hook also changes
+  `crates/html/src/tokenizer/machine.rs`, where the markup declaration open state reads the
+  flag the tree builder sets before each token (`set_cdata_allowed`). `tokenize` keeps the
+  bogus comment.
+- Change, the fragment parsing algorithm: the context element has no attribute and no
+  ancestor, because `Context` in `crates/html/src/lib.rs` names only a namespace and a local
+  name. A MathML `annotation-xml` context is therefore never an HTML integration point, and
+  the form element pointer is set only when the context is itself a `form`
+  (`crates/html/src/tree_builder/foreign.rs`, `parse_fragment` in
+  `crates/html/src/tree_builder.rs`).
+- Left open: the SVG `script` end tag pops the element and nothing runs (`open` line
+  `svg-script-processing`).
