@@ -14,6 +14,10 @@ mod adversary_x509;
 mod alloc;
 #[path = "tls/der.rs"]
 mod der;
+#[path = "tls/handshake.rs"]
+mod handshake;
+#[path = "tls/handshake_hostile.rs"]
+mod handshake_hostile;
 #[path = "tls/limbo_parse.rs"]
 mod limbo_parse;
 #[path = "tls/pem.rs"]

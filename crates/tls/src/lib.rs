@@ -17,9 +17,14 @@
 #![deny(missing_docs)]
 
 mod base64;
+pub mod connection;
 pub mod crypto;
 pub mod der;
 pub mod error;
+#[cfg(not(feature = "test-tooling"))]
+mod handshake;
+#[cfg(feature = "test-tooling")]
+pub mod handshake;
 pub mod key_schedule;
 pub mod pem;
 pub mod record;

@@ -1,0 +1,76 @@
+4.1.3 | session id echo equals ours | illegal_parameter, SessionIdMismatch (new) | tests/tls/handshake_hostile.rs::session_id_not_echoed
+4.1.3 | the suite was offered (a TLS 1.2 suite in a TLS 1.3 ServerHello or HelloRetryRequest among the others) | illegal_parameter, UnofferedSuite | tests/tls/handshake_hostile.rs::suite_not_offered, tests/tls/handshake_hostile.rs::tls12_suite_selected
+4.1.3 | compression method 0 | illegal_parameter, CompressionNotNull (new) | tests/tls/handshake_hostile.rs::compression_not_null
+4.1.3 | the random is read for the HelloRetryRequest value first | the retry branch | tests/tls/handshake.rs::rfc8448_section_5
+4.1.3 | neither downgrade value below TLS 1.3 | illegal_parameter, Downgrade | tests/tls/handshake_hostile.rs::downgrade_tls12, tests/tls/handshake_hostile.rs::downgrade_tls11
+4.1.3 | no supported_versions: TLS 1.2 or below | protocol_version, VersionUnsupported | tests/tls/handshake_hostile.rs::tls12_server_hello
+4.1.3 | renegotiation answered protocol_version | none | not reachable: surf never runs TLS 1.2 nor renegotiates
+4.1.4 | the HelloRetryRequest checked as a ServerHello (version, session id, suite, compression) | the names of 4.1.3 (new for the session id) | tests/tls/handshake_hostile.rs::retry_session_id_not_echoed, tests/tls/handshake_hostile.rs::tls12_suite_selected
+4.1.4 | the HelloRetryRequest changes the hello | illegal_parameter, HelloRetryRequestNoChange | tests/tls/handshake_hostile.rs::retry_without_change
+4.1.4 | a second HelloRetryRequest | unexpected_message, SecondHelloRetryRequest | tests/tls/handshake_hostile.rs::second_retry
+4.1.4 | HelloRetryRequest extensions offered, or cookie | unsupported_extension, UnofferedExtension (new case) | tests/tls/handshake_hostile.rs::retry_unoffered_extension
+4.1.4 | the ServerHello keeps the suite of the HelloRetryRequest | illegal_parameter, SuiteChangedAfterRetry | tests/tls/handshake_hostile.rs::suite_changed_after_retry
+4.1.4 | supported_versions in the HelloRetryRequest, kept in the ServerHello | missing_extension, MissingExtension; UnofferedVersion | tests/tls/handshake_hostile.rs::retry_without_supported_versions, tests/tls/handshake_hostile.rs::retry_version_tls12
+4.2 | no extension in an answer that was not requested | unsupported_extension, UnofferedExtension | tests/tls/handshake_hostile.rs::encrypted_extensions_unoffered
+4.2 | an extension only in the messages of the table | illegal_parameter, ExtensionNotAllowedHere (new) | tests/tls/handshake_hostile.rs::extension_not_allowed_here
+4.2 | one extension of a type per block | illegal_parameter, RepeatedExtension (new; renamed in round 5); our hello by the golden file | tests/tls/handshake_hostile.rs::repeated_extension, tests/tls/handshake.rs::client_hello_golden
+4.2.1 | supported_versions sent with every version surf takes | 0x0304 only | tests/tls/handshake.rs::client_hello_golden
+4.2.1 | supported_versions read first, legacy_version then ignored | rule order (new) | tests/tls/handshake.rs::legacy_version_ignored
+4.2.1 | a version not offered or below TLS 1.3 | illegal_parameter, UnofferedVersion | tests/tls/handshake_hostile.rs::server_hello_version_tls12
+4.2.2 | the cookie copied into the second hello | the second ClientHello (new test) | tests/tls/handshake.rs::retry_second_hello
+4.2.2 | no cookie in a first hello | Connection keeps nothing between connections | tests/tls/handshake.rs::client_hello_golden
+4.2.3 | MD5, SHA-224, DSA and SHA-1 schemes never offered for signatures of the handshake | the schemes of the seam | tests/tls/handshake.rs::client_hello_golden
+4.2.3 | PSS salt as long as the digest; keys of the right type | the seam (ring), the Wycheproof vectors of story:tls-lock-allow | wycheproof:rsa_pss_2048_sha256_mgf1_32_test.json
+4.2.7 | the server supported_groups not acted on | read and ignored (new) | tests/tls/handshake.rs::server_supported_groups_ignored
+4.2.8 | client shares: offered groups, their order, one per group | x25519, then secp256r1 alone after a retry | tests/tls/handshake.rs::client_hello_golden, tests/tls/handshake.rs::retry_second_hello
+4.2.8 | the retry group offered and not already shared | illegal_parameter, UnofferedGroup | tests/tls/handshake_hostile.rs::retry_group_already_shared, tests/tls/handshake_hostile.rs::retry_group_not_offered
+4.2.8 | the ServerHello share in a group the client shared | illegal_parameter, UnofferedKeyShare (new) | tests/tls/handshake_hostile.rs::key_share_group_not_shared
+4.2.8 | after a retry, the group the retry selected | illegal_parameter, KeyShareGroupChanged (new) | tests/tls/handshake_hostile.rs::key_share_group_changed_after_retry
+4.2.8 | a ServerHello carries key_share (no PSK offered) | missing_extension, MissingExtension (new case) | tests/tls/handshake_hostile.rs::server_hello_without_key_share
+4.2.8.1 | FFDHE value range | none | not reachable: no FFDHE group is offered
+4.2.8.2 | the peer point on the curve | illegal_parameter, BadKeyShare (new) | tests/tls/handshake_hostile.rs::key_share_rejected
+4.2.10 | 0-RTT only with pre_shared_key and early_data; not in a second hello; no resend | none | not reachable: surf sends neither extension (golden file)
+4.3.1 | EncryptedExtensions right after the ServerHello | unexpected_message, UnexpectedMessage (new case) | tests/tls/handshake_hostile.rs::certificate_before_encrypted_extensions
+4.3.1 | no forbidden extension in EncryptedExtensions | illegal_parameter, ExtensionNotAllowedHere (new) | tests/tls/handshake_hostile.rs::extension_not_allowed_here
+4.3.2 | a CertificateRequest after EncryptedExtensions, signature_algorithms in it, unknown extensions ignored | accepted once; missing_extension, MissingExtension (new) | tests/tls/handshake.rs::certificate_request_answered_empty, tests/tls/handshake_hostile.rs::certificate_request_without_signature_algorithms
+4.3.2 | no CertificateRequest from a PSK server | none | not reachable: no PSK is offered
+4.4.2 | a client Certificate when asked, empty without a certificate, Finished still sent | empty Certificate before Finished (new) | tests/tls/handshake.rs::certificate_request_answered_empty
+4.4.2 | server CertificateEntry extensions offered in the ClientHello | unsupported_extension, UnofferedExtension (new case) | tests/tls/handshake_hostile.rs::certificate_entry_unoffered_extension
+4.4.2 | the sender certificate first | entry 0 is the leaf for the verifier (new test) | tests/tls/handshake.rs::leaf_is_first_entry
+4.4.2 | RawPublicKey and OpenPGP types | none | not reachable: no certificate type extension is offered
+4.4.2.2 | digitalSignature in the leaf keyUsage | NotTrusted(KeyUsage) of story:tls-x509-path | INDEX:leaf-no-digital-signature
+4.4.2.4 | an empty server Certificate | decode_error, EmptyCertificate | tests/tls/handshake_hostile.rs::empty_certificate
+4.4.2.4 | no acceptable chain: a certificate alert | unknown_ca, certificate_expired, bad_certificate (new) | tests/tls/handshake_hostile.rs::certificate_alerts
+4.4.2.4 | an MD5 signature: bad_certificate | REFUSED names MD5: NotTrusted(WeakAlgorithm), bad_certificate (round 5) | INDEX:md5, tests/tls/handshake_hostile.rs::certificate_alerts
+4.4.3 | CertificateVerify right after Certificate | unexpected_message, UnexpectedMessage | tests/tls/handshake_hostile.rs::skipped_messages
+4.4.3 | an offered scheme that fits the key; RSA as PSS; no SHA-1 | illegal_parameter, UnofferedSignatureScheme (new) | tests/tls/handshake_hostile.rs::certificate_verify_scheme
+4.4.3 | the signature verified | decrypt_error, BadCertificateVerify | tests/tls/handshake_hostile.rs::bad_certificate_verify
+4.4.4 | Finished verified | decrypt_error, BadFinished | tests/tls/handshake_hostile.rs::bad_finished
+4.4.4 | records after Finished under the application keys | the key change | tests/tls/handshake.rs::rfc8448_section_3
+4.6.1 | tickets: 7 days at most, unknown extensions ignored, resumption rules | not reachable for resumption: every ticket is dropped | tests/tls/handshake_hostile.rs::new_session_ticket_dropped
+4.6.2 | a CertificateRequest without post_handshake_auth | unexpected_message, UnexpectedMessage | tests/tls/handshake_hostile.rs::post_handshake_messages
+4.6.3 | no KeyUpdate before the server Finished | unexpected_message, UnexpectedMessage (new case) | tests/tls/handshake_hostile.rs::key_update_before_finished
+4.6.3 | request_update 0 or 1 | illegal_parameter, BadKeyUpdate (new) | tests/tls/handshake_hostile.rs::key_update_bad_value
+4.6.3 | answer update_requested before the next data; the old key ends with the KeyUpdate | answered; a record under the old key after the KeyUpdate is bad_record_mac, BadRecordMac (round 5) | tests/tls/handshake_hostile.rs::key_update_requested, tests/tls/handshake_hostile.rs::old_key_after_key_update
+5 | one change_cipher_spec 0x01 dropped before the peer Finished | ignored; else UnexpectedChangeCipherSpec | tests/tls/handshake.rs::rfc8448_section_7, tests/tls/handshake_hostile.rs::change_cipher_spec_after_finished
+6 | no data after an error alert, the keys forgotten | the Connection ends (new case) | tests/tls/handshake_hostile.rs::no_data_after_alert
+6 | the alerts of 6.2 fatal whatever the level; unknown alerts are errors | AlertReceived: a warning-level handshake_failure (not close_notify nor user_canceled) and a fatal alert of the unknown description 0xfe (round 5: inputs named) | tests/tls/handshake_hostile.rs::alert_levels
+6 | a message that does not parse | decode_error, Malformed (new) | tests/tls/handshake_hostile.rs::malformed_server_hello
+6.1 | data after close_notify ignored | end of stream (new case) | tests/tls/handshake_hostile.rs::data_after_close_notify
+6.1 | close_notify before closing the write side | close and drop send it (new) | tests/tls/handshake.rs::close_sends_close_notify
+6.1 | close_notify before end of data | Truncated | tests/tls/handshake_hostile.rs::truncated
+6.2 | close at once after a fatal alert sent or received | the stream is shut | tests/tls/handshake_hostile.rs::no_data_after_alert
+4.1.2 | the second ClientHello is the first but for one share of the retry group and the cookie | (round 5) | tests/tls/handshake.rs::retry_second_hello
+4.1.2 | legacy_version 0x0303 | the golden file (round 5) | tests/tls/handshake.rs::client_hello_golden
+4.1.2 | a new 32-byte legacy_session_id in compatibility mode | from the random source (round 5) | tests/tls/handshake.rs::client_hello_golden
+4.1.2 | legacy_compression_methods exactly one byte 0 | the golden file (round 5) | tests/tls/handshake.rs::client_hello_golden
+4.1.2 | supported_versions in every TLS 1.3 ClientHello | in both hellos (round 5) | tests/tls/handshake.rs::client_hello_golden, tests/tls/handshake.rs::retry_second_hello
+4.4.2.4 | a certificate the reader refuses ends the handshake with a certificate alert | NotTrusted(Unreadable), bad_certificate (round 5) | INDEX:leaf-v1, tests/tls/handshake_hostile.rs::certificate_alerts
+9.1 | TLS_AES_128_GCM_SHA256 implemented (the other two SHOULD) | all three offered and run (round 5) | tests/tls/handshake.rs::client_hello_golden, tests/tls/handshake.rs::rfc8448_section_3
+9.1 | rsa_pkcs1_sha256 for certificates, rsa_pss_rsae_sha256 for CertificateVerify and certificates, ecdsa_secp256r1_sha256 | verified by the seam and offered (round 5) | INDEX:ok-rsa2048, INDEX:ok-rsa-pss, INDEX:ok-ecdsa-p256, wycheproof:rsa_pss_2048_sha256_mgf1_32_test.json, tests/tls/handshake.rs::client_hello_golden
+9.1 | key exchange with secp256r1 (X25519 SHOULD) | x25519 shared first, secp256r1 after a retry (round 5) | tests/tls/handshake.rs::retry_second_hello, tests/tls/handshake.rs::rfc8448_section_5
+9.2 | supported_versions, cookie, signature_algorithms, signature_algorithms_cert, supported_groups, key_share, server_name implemented and sent when applicable | the golden file (round 5) | tests/tls/handshake.rs::client_hello_golden
+9.2 | no pre_shared_key: signature_algorithms and supported_groups sent, key_share with supported_groups | the golden file (round 5) | tests/tls/handshake.rs::client_hello_golden
+9.2 | server_name used | sent for a host name, never for an IP literal, as the host 127.0.0.1 case of the test shows (round 5) | tests/tls/handshake.rs::client_hello_golden
+9.3 | a client supports every parameter of its ClientHello | the three TLS 1.3 suites only, the six TLS 1.2 suites taken out (round 5) | tests/tls/handshake.rs::client_hello_golden
+9.3 | unknown extensions of a CertificateRequest or NewSessionTicket ignored | ignored (round 5) | tests/tls/handshake.rs::certificate_request_answered_empty, tests/tls/handshake_hostile.rs::new_session_ticket_dropped

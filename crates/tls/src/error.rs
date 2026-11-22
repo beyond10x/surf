@@ -252,6 +252,16 @@ impl fmt::Display for Error {
             Error::Truncated => f.write_str("the connection closed without close_notify"),
             Error::Io(kind) => write!(f, "{kind}"),
             Error::VersionUnsupported { detail } => f.write_str(detail),
+            Error::AlertReceived {
+                description,
+                before_server_hello: true,
+            } => match *description {
+                AlertDescription::HANDSHAKE_FAILURE => f.write_str(
+                    "the server sent handshake_failure before its ServerHello; a server \
+                     limited to TLS 1.2 answers this way",
+                ),
+                _ => write!(f, "the server sent {description} before its ServerHello"),
+            },
             Error::AlertReceived { description, .. } => {
                 write!(f, "the server sent {description}")
             }
