@@ -226,3 +226,135 @@ fn a_directory_of_another_user_is_refused() {
         Ok(wire::SocketCheck::Absent)
     );
 }
+
+/// Security review of `security-review-fixes`: `XDG_RUNTIME_DIR` naming a symbolic link with a
+/// trailing `/` (or `/.`) is still a runtime directory reached through a symbolic link, which the
+/// design says is refused; `symlink_metadata` follows a link whose path ends in `/`. The client
+/// must exit 3 naming the link, and the test's listener behind it must receive no byte.
+#[test]
+fn review_a_runtime_dir_that_is_a_symbolic_link_written_with_a_trailing_slash_is_refused() {
+    use std::io::Read as _;
+    use std::process::Stdio;
+
+    let dir = TestDir::new();
+    let surf = dir.runtime().join(wire::DIRECTORY);
+    fs::create_dir(&surf).unwrap();
+    fs::set_permissions(&surf, fs::Permissions::from_mode(0o700)).unwrap();
+    let listener = listener_at(&surf.join(wire::SOCKET));
+    let link = dir.path.join("l");
+    symlink(dir.runtime(), &link).unwrap();
+    let caller = wire::caller_uid().unwrap();
+    for spelled in [format!("{}/", link.display()), format!("{}/.", link.display())] {
+        let library = wire::check_socket_path(Path::new(&spelled), caller);
+        let mut child = None;
+        for _ in 0..50 {
+            match agent(&dir)
+                .env("XDG_RUNTIME_DIR", &spelled)
+                .env("SURF_SESSION", SESSION)
+                .env("SURF_TOKEN", TOKEN)
+                .arg("look")
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+            {
+                Err(error) if error.kind() == std::io::ErrorKind::ExecutableFileBusy => {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                started => {
+                    child = Some(started.expect("surf-agent runs"));
+                    break;
+                }
+            }
+        }
+        let mut child = child.expect("the copied surf-agent stayed busy");
+        // Accept what the client sends, at most 5 s, and close it so the client ends.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut received = Vec::new();
+        let mut connected = false;
+        while Instant::now() < deadline {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    connected = true;
+                    stream.set_nonblocking(false).unwrap();
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(2)))
+                        .unwrap();
+                    let mut buffer = [0u8; 4096];
+                    while let Ok(n) = stream.read(&mut buffer) {
+                        if n == 0 {
+                            break;
+                        }
+                        received.extend_from_slice(&buffer[..n]);
+                        if received.ends_with(b"end\n") {
+                            break;
+                        }
+                    }
+                    break;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    if child.try_wait().unwrap().is_some() {
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => panic!("the test's listener: {error}"),
+            }
+        }
+        let output = child.wait_with_output().unwrap();
+        let received = String::from_utf8_lossy(&received).into_owned();
+        assert!(
+            !connected,
+            "XDG_RUNTIME_DIR={spelled:?}: check_socket_path gave {library:?}; surf-agent \
+             connected through the symbolic link and wrote {} bytes, the token among them: {}",
+            received.len(),
+            received.contains(TOKEN)
+        );
+        assert_eq!(output.status.code(), Some(3), "{}", stderr(&output));
+        assert!(
+            stderr(&output).contains("is a symbolic link"),
+            "{}",
+            stderr(&output)
+        );
+    }
+}
+
+/// Every spelling of a runtime directory that is a symbolic link is refused naming the link, a
+/// `..` component and a relative path are refused, and the real directory is accepted with a
+/// trailing `/`, as some logins set `XDG_RUNTIME_DIR`.
+#[test]
+fn every_spelling_of_a_runtime_dir_behind_a_symbolic_link_is_refused() {
+    let dir = TestDir::new();
+    let surf = dir.runtime().join(wire::DIRECTORY);
+    fs::create_dir(&surf).unwrap();
+    fs::set_permissions(&surf, fs::Permissions::from_mode(0o700)).unwrap();
+    let _listener = listener_at(&surf.join(wire::SOCKET));
+    let link = dir.path.join("l");
+    symlink(dir.runtime(), &link).unwrap();
+    let caller = wire::caller_uid().unwrap();
+    let named = format!("{} is a symbolic link", link.display());
+    for suffix in ["", "/", "//", "/.", "/./", "/.//."] {
+        let spelled = format!("{}{suffix}", link.display());
+        assert_eq!(
+            wire::check_socket_path(Path::new(&spelled), caller),
+            Err(named.clone()),
+            "{spelled}"
+        );
+    }
+    let up = format!("{}/../{}", link.display(), "l");
+    assert_eq!(
+        wire::check_socket_path(Path::new(&up), caller),
+        Err(format!("{up} has a .. component"))
+    );
+    assert_eq!(
+        wire::check_socket_path(Path::new("run/user"), caller),
+        Err("run/user is not an absolute path".to_string())
+    );
+    for suffix in ["", "/", "//", "/."] {
+        let spelled = format!("{}{suffix}", dir.runtime().display());
+        assert_eq!(
+            wire::check_socket_path(Path::new(&spelled), caller),
+            Ok(wire::SocketCheck::Present),
+            "{spelled}"
+        );
+    }
+}

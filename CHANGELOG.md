@@ -85,7 +85,8 @@ release; what came before it is in the git log and in `docs/plan/`.
   followed (above, in no release yet), a public site could redirect a `go` or a `surf` load to a
   loopback or private address, and surf connected there. Now, when a load starts at a public
   address, a redirect to a loopback, private, link-local, unique-local, shared (100.64.0.0/10)
-  or unspecified address, also through a name, fails with the new reason
+  or unspecified address, or to an IPv6 address that embeds one (IPv4-mapped, IPv4-compatible,
+  NAT64 `64:ff9b::/96`, 6to4 `2002::/16`), also through a name, fails with the new reason
   `ForbiddenDestination` (`page failed ForbiddenDestination`, `fetch-failed … ForbiddenDestination`,
   exit status 1), with no connection to it. The name is resolved once per request and the
   address checked is the one connected to. A load that starts at a local address, and its

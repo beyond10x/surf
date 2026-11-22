@@ -229,7 +229,8 @@ above, and the list of standards itself was written from memory.
     is read. Since `story:security-review-fixes` it has the destination rule of its section
     "Destinations": each request of a chain resolves its host once, and those addresses are
     checked and dialed; after a first request to a public address a redirect to a loopback,
-    private, link-local, unique-local, shared or unspecified address (or its IPv4-mapped form)
+    private, link-local, unique-local, shared or unspecified address (or an IPv6 address that
+    embeds one: IPv4-mapped, IPv4-compatible, NAT64 `64:ff9b::/96`, 6to4 `2002::/16`)
     ends `ForbiddenDestination` before any connection. `send_through(&Request, &Limits, &dyn
     Network)` takes the resolver and the transport (`Network::resolve`, `Network::connect`);
     `send` and `fetch` use `OsNetwork`. 115 tests: 14 unit tests, `adversary_redirect_memory` 4,

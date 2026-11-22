@@ -1,6 +1,6 @@
 //! Cases 1 to 20 of story `agent-fetch-redirects`: redirects followed inside one fetch, each
 //! against servers the test starts on `127.0.0.1` port 0 and stops before it ends. Cases 21 to
-//! 25, of story `security-review-fixes`: the destination rule, over a resolver and a transport
+//! 26, of story `security-review-fixes`: the destination rule, over a resolver and a transport
 //! of the test (`TestNetwork`), which give a public address or a name the addresses the case
 //! chooses and connect them to the test's servers; no real name is resolved.
 //!
@@ -769,4 +769,66 @@ fn case_25_a_chain_among_public_addresses_is_followed() {
     assert_eq!(network.dialed(), ["203.0.113.5:80", "198.51.100.7:80"]);
     assert_eq!(first.targets(), ["/a"]);
     assert_eq!(second.targets(), ["/b"]);
+}
+
+/// Security review of `security-review-fixes`: the other spellings of a local address a
+/// Location can carry (numeric IPv4 forms the URL parser reads, IPv4-mapped IPv6 in hexadecimal,
+/// the unspecified and shared addresses, the other private ranges) are refused like the plain
+/// forms, and none of them is dialed.
+#[test]
+fn review_other_spellings_of_a_local_address_are_refused_after_a_public_start() {
+    let local = Server::start(page);
+    let port = local.port;
+    let locations = [
+        format!("http://2130706433:{port}/"),
+        format!("http://0x7f.0.0.1:{port}/"),
+        format!("http://0177.0.0.1:{port}/"),
+        format!("http://127.1:{port}/"),
+        format!("http://[::ffff:7f00:1]:{port}/"),
+        format!("http://[0:0:0:0:0:ffff:127.0.0.1]:{port}/"),
+        format!("http://0:{port}/"),
+        format!("http://[::]:{port}/"),
+        "http://100.64.0.1/".to_string(),
+        "http://172.16.0.1/".to_string(),
+        "http://192.168.1.1/".to_string(),
+        "http://[fe80::1]/".to_string(),
+        "http://[fd00::1]/".to_string(),
+        "http://[::ffff:a9fe:a9fe]/".to_string(),
+    ];
+    let routed = locations.clone();
+    let public = Server::start(move |target| {
+        let n: usize = target.trim_start_matches('/').parse().unwrap_or(usize::MAX);
+        match routed.get(n) {
+            Some(location) => redirect(302, location.as_str()),
+            None => page(target),
+        }
+    });
+    let network = TestNetwork::new().route("203.0.113.5:80", public.port);
+    for (n, location) in locations.iter().enumerate() {
+        let result = get(&format!("http://203.0.113.5/{n}"), &network);
+        assert!(
+            matches!(result, Err(Failure::ForbiddenDestination(_))),
+            "{location}: expected ForbiddenDestination, got {result:?}"
+        );
+    }
+    assert_eq!(network.dialed(), vec!["203.0.113.5:80"; locations.len()]);
+    assert!(local.targets().is_empty(), "the local server was reached");
+}
+
+/// An IPv6 address in the NAT64 prefix judged by the IPv4 address it embeds: `64:ff9b::7f00:1`
+/// is 127.0.0.1, refused after a public start, and never dialed though the test routes it.
+#[test]
+fn case_26_a_redirect_to_a_nat64_address_of_a_loopback_one_is_refused() {
+    let local = Server::start(page);
+    let public = Server::start(|target| match target {
+        "/a" => redirect(302, "http://[64:ff9b::7f00:1]/"),
+        other => page(other),
+    });
+    let network = TestNetwork::new()
+        .route("203.0.113.5:80", public.port)
+        .route("[64:ff9b::7f00:1]:80", local.port);
+    assert_forbidden(&get("http://203.0.113.5/a", &network));
+    assert_eq!(network.dialed(), ["203.0.113.5:80"]);
+    assert_eq!(public.targets(), ["/a"]);
+    assert!(local.targets().is_empty(), "the local server was reached");
 }

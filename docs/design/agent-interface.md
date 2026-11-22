@@ -136,6 +136,11 @@ A review of `0.2.0` and of `main` at `ad8d0e5` found four things, fixed before `
   - A runtime directory that is itself a symbolic link is refused too, though the review did
     not ask for it: a link can be changed by whoever owns the directory it is in. This refuses
     more and is easy to loosen.
+  - The runtime directory is first written without a trailing `/`, a doubled `/` or a `.`
+    component, then looked at: `<link>/`, `<link>//` and `<link>/.` name what the link points
+    to and would pass the check, so each spelling is refused as the link it is, and
+    `/run/user/<uid>/`, as some logins set it, still works. A `..` component and a relative
+    path are refused. `surf/` and the socket are joined to that path, not read from input.
   - **The peer is not checked.** The standard library of rustc 1.99.1 reads a Unix socket
     peer's credentials only through `UnixStream::peer_cred`, behind the unstable feature
     `peer_credentials_unix_socket`; calling `getsockopt(SO_PEERCRED)` directly needs `unsafe`
@@ -151,7 +156,8 @@ A review of `0.2.0` and of `main` at `ad8d0e5` found four things, fixed before `
   resolves the host of each request of a chain once, checks the addresses it got and dials only
   those (`surf_fetch::Network`, whose `resolve` and `connect` a test replaces). When the first
   request connected to a public address, a redirect to a local one (loopback, private,
-  link-local, unique-local, shared, unspecified, or their IPv4-mapped IPv6 forms) ends the fetch
+  link-local, unique-local, shared, unspecified, or an IPv6 address that embeds one of these:
+  IPv4-mapped, IPv4-compatible, NAT64 `64:ff9b::/96` or 6to4 `2002::/16`) ends the fetch
   with `ForbiddenDestination`, a reason of `surf.net.FailureReason`, before any connection.
   Decisions:
   - A name that resolves to several addresses is refused when any one of them is local, also

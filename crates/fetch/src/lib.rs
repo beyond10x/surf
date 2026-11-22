@@ -102,8 +102,9 @@
 //! resolution comes between the check and the connection. An address is *local* when it is
 //! loopback (127.0.0.0/8, `::1`), private (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16),
 //! link-local (169.254.0.0/16, `fe80::/10`), unique-local (`fc00::/7`), shared (100.64.0.0/10)
-//! or unspecified (0.0.0.0, `::`), or the IPv4-mapped IPv6 form (`::ffff:a.b.c.d`) of one of
-//! these; every other address is *public*.
+//! or unspecified (0.0.0.0, `::`), or an IPv6 address that embeds an IPv4 address of one of
+//! these: IPv4-mapped (`::ffff:a.b.c.d`), IPv4-compatible (`::a.b.c.d`), NAT64 (`64:ff9b::/96`)
+//! or 6to4 (`2002::/16`); every other address is *public*.
 //!
 //! The first request of a fetch may go to any address: going to a local address on purpose is a
 //! use of surf. When the first request connected to a public address, a request that follows a
@@ -873,23 +874,35 @@ fn connect(
 }
 
 /// Whether `ip` is a local address in the sense of the crate documentation, "Destinations":
-/// loopback, private, link-local, unique-local, shared or unspecified, or the IPv4-mapped IPv6
-/// form of one of these.
+/// loopback, private, link-local, unique-local, shared or unspecified, or an IPv6 address that
+/// embeds one of these ([`embedded_v4`]).
 fn is_local(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => is_local_v4(v4),
         IpAddr::V6(v6) => {
-            if let Some(v4) = v6.to_ipv4_mapped() {
-                return is_local_v4(v4);
-            }
             let first = v6.segments()[0];
-            v6.is_loopback()
+            embedded_v4(v6).is_some_and(is_local_v4)
+                || v6.is_loopback()
                 || v6.is_unspecified()
                 // fe80::/10, link-local
                 || first & 0xffc0 == 0xfe80
                 // fc00::/7, unique-local
                 || first & 0xfe00 == 0xfc00
         }
+    }
+}
+
+/// The IPv4 address an IPv6 address embeds: IPv4-mapped (`::ffff:a.b.c.d`), IPv4-compatible
+/// (`::a.b.c.d`) and the NAT64 well-known prefix (`64:ff9b::/96`) in their last 32 bits, 6to4
+/// (`2002::/16`) in the 32 bits after its prefix.
+fn embedded_v4(ip: Ipv6Addr) -> Option<Ipv4Addr> {
+    let joined = |high: u16, low: u16| Ipv4Addr::from((u32::from(high) << 16) | u32::from(low));
+    match ip.segments() {
+        [0, 0, 0, 0, 0, 0xffff, high, low]
+        | [0, 0, 0, 0, 0, 0, high, low]
+        | [0x64, 0xff9b, 0, 0, 0, 0, high, low]
+        | [0x2002, high, low, ..] => Some(joined(high, low)),
+        _ => None,
     }
 }
 
@@ -1813,6 +1826,9 @@ mod tests {
             "::ffff:169.254.169.254",
             "::ffff:100.64.0.1",
             "::ffff:0.0.0.0",
+            "::127.0.0.1",
+            "64:ff9b::7f00:1",
+            "2002:a9fe:a9fe::1",
         ];
         let public = [
             "203.0.113.5",
@@ -1831,6 +1847,9 @@ mod tests {
             "fe7f::1",
             "fb00::1",
             "::ffff:203.0.113.5",
+            "::203.0.113.5",
+            "64:ff9b::cb00:7105",
+            "2002:cb00:7105::1",
         ];
         for text in local {
             let ip: IpAddr = text.parse().unwrap();

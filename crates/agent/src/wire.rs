@@ -644,12 +644,16 @@ pub enum SocketCheck {
 /// [`DIRECTORY`] in it are directories, not symbolic links, owned by `caller`, with no access
 /// for group and others; the socket, when it is there, is a socket owned by `caller`. Within
 /// two such directories nobody but the caller (and the superuser) can put a socket in its
-/// place. The error names the path and what is wrong.
+/// place. The error names the path and what is wrong. `runtime_dir` is first written without a
+/// trailing `/`, a doubled `/` or a `.` component, so that `<link>/` is refused as the symbolic
+/// link it is; a relative path and a `..` component are refused.
 ///
 /// The peer of the connection is not checked: the standard library of rustc 1.99.1 reads the
 /// peer's credentials only through `UnixStream::peer_cred`, which is unstable, and this crate
 /// uses no `unsafe` code to call the operating system itself.
 pub fn check_socket_path(runtime_dir: &Path, caller: u32) -> Result<SocketCheck, String> {
+    let runtime_dir = plain_spelling(runtime_dir)?;
+    let runtime_dir = runtime_dir.as_path();
     check_directory(runtime_dir, caller)?;
     let surf = runtime_dir.join(DIRECTORY);
     match fs::symlink_metadata(&surf) {
@@ -672,6 +676,24 @@ pub fn check_socket_path(runtime_dir: &Path, caller: u32) -> Result<SocketCheck,
     }
     owned_by(&socket, &metadata, caller)?;
     Ok(SocketCheck::Present)
+}
+
+/// `path` without a trailing `/`, a doubled `/` or a `.` component, so that looking at it does not
+/// follow a symbolic link in its last component: `<link>/`, `<link>//` and `<link>/.` name what
+/// the link points to, `<link>` names the link. `/run/user/1000/` becomes `/run/user/1000`. A
+/// `..` component is refused: after a symbolic link it leads to the parent of the link's target,
+/// which the spelling does not show. A relative path is refused.
+fn plain_spelling(path: &Path) -> Result<PathBuf, String> {
+    if !path.is_absolute() {
+        return Err(format!("{} is not an absolute path", path.display()));
+    }
+    if path
+        .components()
+        .any(|part| part == std::path::Component::ParentDir)
+    {
+        return Err(format!("{} has a .. component", path.display()));
+    }
+    Ok(path.components().collect())
 }
 
 /// `path` is a directory, not a symbolic link, of `caller`, with no access for group and others.
