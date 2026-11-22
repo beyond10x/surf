@@ -44,6 +44,44 @@ collision; a story that collides moves to the next wave. The table below is the 
 | 21 | `runner-record-session`, `runner-run` |
 | 22 | `runner-e2e` |
 
+## Rounds after wave 10
+
+The operator, 2026-11-22, on the twelve waves after wave 10: "why don't we, you know, just
+implement all of those like in one go? I mean, we have tests and we should be able to, you
+know, just spit this out in one big one shot". The table above is cut by depth: one chain of
+twelve `depends_on` edges (`html-document-port`, `agent-links-spec`, `agent-forms-spec`,
+`agent-form-port`, `agent-fill-pick`, `agent-press-submit`, `agent-back-forward`,
+`agent-change-and-log`, `runner-formats`, `runner-record-option`, `runner-record-session`,
+`runner-e2e`) gives twelve waves, each with its own branch, gate, record and publication. The
+edges are real (a port needs its specification, a command needs the document), but a unit can
+build a whole chain in order: what must come first is built first inside the unit.
+
+The coordinating agent's decision (D78): after wave 10 the 24 stories of waves 11 to 22 are
+built in three rounds. A round is one wave branch, one gate, one record, one review and one
+publication; its stories keep their identities, statuses and acceptance in the store.
+
+| round | units, each one sub-agent building its stories in the order given | review after it |
+|---|---|---|
+| 1 | parser: `html-tree-tables`, `html-tree-template`, `html-tree-foreign`, `html-tree-complete`. Document: `html-document-port`. Specification: `agent-links-spec`, `agent-forms-spec`, `agent-history-spec` | the parser on real pages |
+| 2 | commands: `agent-follow-links`, `agent-form-port`, `agent-fill-pick`, `agent-press-submit`, `agent-back-forward`, `agent-change-and-log`. View: `view-now-panel`, `view-acceptance` | links, forms, history |
+| 3 | runner: `runner-formats`, `runner-record-option`, `runner-replay-transport`, `runner-scenario-from`, `runner-record-session`, `runner-run`, `runner-e2e`. View: `view-controls-and-changes` | the runner |
+
+Rules of a round, beside the rules of a wave:
+
+- Before a round starts, each of its stories is scoped and the units of the round must not
+  collide (`aep plan artifact waves`); two units that write the same file become one unit or
+  run one after the other.
+- The parser unit of round 1 is held to the vendored html5lib-tests: the line
+  `html-conformance: … passed` of the gate rises with each story and never falls.
+- The specification unit of round 1 runs before the units of round 2 need it; scenarios whose
+  code comes in round 2 are counted with `REFUSALS_MAX`, as in a specification unit of a wave.
+- A unit commits on its branch after each story whose tests are green, so that a story that
+  fails leaves the stories before it usable.
+- The test budget holds for a round as for a wave: no test over 60 s, the test step within
+  120 s, a unit times its tests before it reports.
+- A release can follow each round: the list "What works after which wave" names the same
+  three points (after wave 11, 18 and 22).
+
 ## What works after which wave
 
 - After wave 3: the view's page on example data (`story:view-page-prototype`), served by an
