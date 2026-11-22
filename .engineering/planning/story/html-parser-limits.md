@@ -42,7 +42,7 @@ scope:
   path: spec/domains/document.yaml
 - confidence: cited
   path: spec/scenarios/parse-stopped-at-a-limit.yaml
-revision: 24
+revision: 25
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 4}
@@ -274,6 +274,25 @@ counts.
   the default step limit; the unit says for each test which form it took. The times asserted
   in a test stay at 10 s (and 30 s for the seeded inputs): the bound of a loaded machine, not
   the budget.
+
+
+Note, 2026-11-22: `story:limit-tests-at-small-limits` changed the sizes, counts and names of the limit tests this story describes; the sentences above are left as they were written. No test builds input of a default size any more: a test of a limit sets that limit small, and `the_default_limits_are_their_documented_numbers` asserts the six default values. `tests/limits.rs` has 37 tests. The names, old then new:
+
+- `input_of_16_777_217_bytes_stops_at_the_input_limit`: `input_of_1_001_bytes_stops_at_the_input_limit`
+- `input_of_16_777_217_bytes_as_bytes_stops_at_the_input_limit`: `input_of_1_001_bytes_as_bytes_stops_at_the_input_limit`
+- `node_1_048_577_stops_at_the_node_limit`: `node_1_001_stops_at_the_node_limit`
+- `attribute_1_025_merged_into_html_stops_at_the_attribute_limit`: `attribute_65_merged_into_html_stops_at_the_attribute_limit`
+- `cloned_attributes_past_64_mib_stop_at_the_stored_bytes_limit`: `cloned_attributes_past_1_000_000_bytes_stop_at_the_stored_bytes_limit`
+- `stack_visits_past_2_27_stop_at_the_step_limit`: `stack_visits_past_2_16_stop_at_the_step_limit`
+- `element_with_1_000_000_attributes_ends_within_bounds`: `element_with_10_000_attributes_ends_within_bounds`
+- `input_of_16_mib_plus_one_byte_ends_within_bounds`: `input_of_64_kib_plus_one_byte_ends_within_bounds`
+- `object_490_then_misnested_a_to_16_mib_ends_within_bounds`: `object_490_then_misnested_a_to_64_kib_ends_within_bounds`
+- `a_then_div_500_then_a_end_tags_to_16_mib_end_within_bounds`: `a_then_div_500_then_a_end_tags_to_128_kib_end_within_bounds`
+- `span_505_then_unmatched_end_tags_to_16_mib_end_within_bounds`: `span_505_then_unmatched_end_tags_to_64_kib_end_within_bounds`
+- `span_505_then_div_pairs_to_16_mib_end_within_bounds`: `span_505_then_div_pairs_to_64_kib_end_within_bounds`
+- `tags_with_1_024_attributes_to_16_mib_end_within_bounds`: `tags_with_1_024_attributes_to_64_kib_end_within_bounds`
+- `b_505_with_1_024_attributes_each_ends_within_bounds`: `b_505_with_64_attributes_each_ends_within_bounds`
+- `seeded_10_000_inputs_end_within_bounds`: `seeded_1_200_inputs_end_within_bounds`
 
 ## Out of scope
 

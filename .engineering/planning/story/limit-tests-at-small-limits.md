@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:limit-tests-at-small-limits
 kind: story
-status: active
+status: implemented
 title: The parser's limit tests set small limits and build no input of a default size
 summary: The two limit test files of crates/html took 261 s of 443 s summed in a gate on a machine that swapped, one test 39.8 s of the runner's 60 s; the default values become asserted numbers
 relations:
@@ -17,10 +17,11 @@ scope:
   path: crates/html/tests/common/mod.rs
 - confidence: cited
   path: crates/html/tests/limits.rs
-revision: 13
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T11:09:29Z", actor: "human:operator", revision: 12, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T11:09:29Z", actor: "human:operator", revision: 13, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-22T11:45:44Z", actor: "human:operator", revision: 15, decided_on: {"recorded":{"test_result":3,"verification":3}}}
 ---
 ## Context
 
@@ -111,3 +112,22 @@ The unit works alone in a worktree from `main` after wave 10 (`e84918a`), on a b
 Written at close by the session that closes the story, not by the unit: the note in `.engineering/planning/story/html-parser-limits.md`.
 
 Planted and removed again in the same step, never left changed: `crates/html/src/lib.rs`, `crates/html/src/limits.rs`, `crates/html/src/tree_builder.rs`, `crates/html/src/tree_builder/formatting.rs`, `crates/html/src/tokenizer/machine.rs`.
+
+## As built
+
+The unit's commits are `f448715` and `7f8885f`. Where they differ from the statements above, and why:
+
+- The small limits equal no default of another field: the input limit and the node limit are 1,000 (not 1,024, the default attribute limit), the stored-byte limit is 1,000,000 (not 1 MiB, the default node limit). With the first values a check that read the wrong field passed the test of its own limit; an adversary pass on `f448715` found it.
+- The stored-byte test sets `max_nodes` to 877, one above the 876 nodes its tree holds at the stop, and asserts that count: a stored-byte limit lowered by the node limit (the smaller of `max_stored_bytes` and 60 bytes a node) was red before this story, green on `f448715` and is red again on `7f8885f`. This is the one case of "which limit stops a parse first" the tests show again.
+- The seeded test runs 1,200 inputs with a node limit of 30 in its class of small limits and asserts at least 5 stops for each of the six limits (nodes 5, steps 5, input bytes 7, stored bytes 15, depth 16, attributes 40; no stop 1,112). With the node limit of 40 the first input the node limit stopped was number 7,682.
+- `a_then_div_500_then_a_end_tags_to_128_kib_end_within_bounds` runs at 128 KiB, not 64 KiB: it spends about 506,000 steps once (the 500 `div`, then the adoption agency of the first `</a>` tags) and one step for each later `</a>`, which is 522,697 of 524,288 steps at 64 KiB and 539,081 of 1,048,568 at 128 KiB. Its step limit is 8 times the input's own length, so that it equals no default.
+- The largest resident set was read with the shell's `time` (`TIMEFMT=%M`), each run as `slot --timeout 60s`; `/usr/bin/time` is not installed on the machine.
+- 15 tests are renamed to their sizes and one is new (`the_default_limits_are_their_documented_numbers`); the list is in the note under Acceptance of `story:html-parser-limits`.
+
+Measured: six test processes held more than 64 MiB before (the largest 195,428 KiB), none after (the largest 15,096 KiB, a test this story left unchanged). The two files summed 108.2 s before and 11.5 s after in three runs each, back to back at a load average of 33 to 37; after `7f8885f`, 0.7 s and 0.5 s at a load average of 6 to 8.
+
+Gaps the adversary found that were there before this story, left as they are:
+
+- An extra copy of the attributes of each created element (`tree_builder.rs:626`) stays under the allocation bound: 60 % of it in the test of 505 nested `b` at 1,024 attributes, 65 % at 64.
+- A clone per compared attribute in `is_identical` (`tree_builder.rs:136`) is run by no test: the attributes of the 505 `b` differ in their keys, so none is compared. Case 5 was shown with the other form of its plant, a clone of the entry for each comparison (`tree_builder.rs:926`).
+- Four mutants are each caught by one test only: `cut_bytes` off by one, the step check off by one, the stored-byte check off by one, a token cloned for each formatting end tag.
