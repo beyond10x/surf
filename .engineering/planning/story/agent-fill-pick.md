@@ -71,7 +71,7 @@ scope:
   path: website/docs/status.md
 - confidence: inferred
   path: website/docs/what-works.md
-revision: 19
+revision: 20
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 6}
@@ -111,6 +111,10 @@ argument word", and `README.md` says to use `fill <handle> -` for one.
 - The event entries exist already: `FillRequested`, `PickRequested`, `ValueSet`,
   `CheckednessSet` and `OptionSelected` are mapped (`crates/session/src/entries.rs:242-267`) and
   covered (`crates/session/tests/events.rs:858`). This story adds no mapping; case 17 tests them.
+  It adds no entry kind either: a `handle` written into an event entry (the `handle` of
+  `FillRequested` and `PickRequested` that `story:values-and-labels-before-fill` adds) is cut
+  like a label by the cut the commands unit adds to the existing entries in its fix of that
+  story, and this story relies on that cut.
   Decision D22, corrected to what the code decided: the `value` of `FillRequested` is written as
   its length in UTF-8 bytes, `<n> bytes`, for every control, never the value
   (`crates/session/src/entries.rs:29-30`, `:245`; `crates/session/tests/events.rs:1044` expects
