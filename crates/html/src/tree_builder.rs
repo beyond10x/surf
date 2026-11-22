@@ -4,21 +4,23 @@
 //! Written: the parse state of 13.2.4 (the insertion mode and the original insertion mode, the
 //! stack of open elements with its scopes, the list of active formatting elements with its
 //! markers, the head and form element pointers, the frameset-ok flag, the scripting flag),
-//! creating and inserting nodes (13.2.6.1) without foster parenting, the generic raw text and
+//! creating and inserting nodes (13.2.6.1) with foster parenting, the generic raw text and
 //! RCDATA element parsing algorithms (13.2.6.2), generating implied end tags (13.2.6.3), and the
 //! insertion modes initial, before html, before head, in head, in head noscript, after head, in
 //! body, text, after body, in frameset, after frameset, after after body and after after
 //! frameset (13.2.6.4), in the submodule `modes`, each rule in the standard's order; the Noah's
 //! Ark clause of the list of active formatting elements, and the adoption agency algorithm of
-//! in body in the submodule `formatting` (story `html-tree-formatting`). The tree construction
-//! dispatcher always takes the rules of the current insertion mode: no element in a foreign
-//! namespace is created.
+//! in body in the submodule `formatting` (story `html-tree-formatting`); the table insertion
+//! modes (in table, in table text, in caption, in column group, in table body, in row, in cell)
+//! in the submodule `tables`, and resetting the insertion mode appropriately (story
+//! `html-tree-tables`). The `select` rules are those of in body in the snapshot the design note
+//! names, which has no select insertion modes. The tree construction dispatcher always takes
+//! the rules of the current insertion mode: no element in a foreign namespace is created.
 //!
-//! Not yet written, each by a later story, and named by [`NOT_YET_PARSED`]: the table and select
-//! modes and foster parenting (`html-tree-tables`); the in template mode (`html-tree-template`);
-//! foreign content and the fragment case (`html-tree-foreign`). Until then a token whose rule
-//! one of them writes is processed by in body's "any other start tag" or "any other end tag",
-//! so that every input ends.
+//! Not yet written, each by a later story, and named by [`NOT_YET_PARSED`]: the in template mode
+//! (`html-tree-template`); foreign content and the fragment case (`html-tree-foreign`). Until
+//! then a token whose rule one of them writes is processed by in body's "any other start tag" or
+//! "any other end tag", so that every input ends.
 //!
 //! Parse errors are not collected: neither the tokenizer's nor the tree builder's reach a
 //! caller. Scripts do not run: at a `script` end tag the text mode pops the element and returns
@@ -33,6 +35,7 @@
 
 mod formatting;
 mod modes;
+mod tables;
 
 use std::cell::Cell;
 use std::collections::HashSet;
@@ -46,9 +49,9 @@ use crate::tokenizer::{self, Token, TokenAttribute, Tokenizer};
 use crate::tree::{Attribute, Categories, Namespace, NodeData, NodeId, Tree};
 
 /// Each part of tree construction that the tree builder does not yet parse as the standard
-/// does, named in `[a-z-]+`: tables and `select`, `template`, and foreign content (SVG, MathML
-/// and fragments). Each later tree story removes its entry.
-pub const NOT_YET_PARSED: &[&str] = &["tables-and-select", "template", "foreign-content"];
+/// does, named in `[a-z-]+`: `template`, and foreign content (SVG, MathML and fragments). Each
+/// later tree story removes its entry.
+pub const NOT_YET_PARSED: &[&str] = &["template", "foreign-content"];
 
 /// The mode of a document (DOM, "mode"), which the initial insertion mode decides from the
 /// DOCTYPE.
@@ -70,6 +73,13 @@ enum Mode {
     AfterHead,
     InBody,
     Text,
+    InTable,
+    InTableText,
+    InCaption,
+    InColumnGroup,
+    InTableBody,
+    InRow,
+    InCell,
     AfterBody,
     InFrameset,
     AfterFrameset,
@@ -154,12 +164,19 @@ fn token_bytes(name: &str, attributes: &[TokenAttribute]) -> usize {
 
 /// The stack of open elements (13.2.4.2), the topmost (the `html` element) first, read as a
 /// slice. It keeps, for each node, how many times the node is on it, so that "is in the stack
-/// of open elements" is answered in O(1) and visits no entry ([`OpenElements::holds`]).
+/// of open elements" is answered in O(1) and visits no entry ([`OpenElements::holds`]). It also
+/// keeps the positions of the entries that bound "has an element in scope", so that "has a
+/// `select` element in scope" visits one entry, also at every `input` start tag of a deep tree.
 #[derive(Debug, Default)]
 struct OpenElements {
     stack: Vec<NodeId>,
     /// For each node of the arena by its index, the times it is on the stack (0 or 1).
     on_stack: Vec<u32>,
+    /// For each node of the arena by its index, whether it bounds "has an element in scope"
+    /// ([`OpenElements::mark_boundary`]).
+    bounds: Vec<bool>,
+    /// The positions in `stack` of the entries that bound "has an element in scope", ascending.
+    boundaries: Vec<usize>,
 }
 
 impl std::ops::Deref for OpenElements {
@@ -171,6 +188,19 @@ impl std::ops::Deref for OpenElements {
 }
 
 impl OpenElements {
+    /// Records that `node`, an element just created, bounds "has an element in scope".
+    fn mark_boundary(&mut self, node: NodeId) {
+        let index = node.index();
+        if self.bounds.len() <= index {
+            self.bounds.resize(index + 1, false);
+        }
+        self.bounds[index] = true;
+    }
+
+    fn is_boundary(&self, node: NodeId) -> bool {
+        self.bounds.get(node.index()).copied().unwrap_or(false)
+    }
+
     fn entered(&mut self, node: NodeId) {
         let index = node.index();
         if self.on_stack.len() <= index {
@@ -188,14 +218,32 @@ impl OpenElements {
         self.on_stack.get(node.index()).is_some_and(|&n| n > 0)
     }
 
+    /// The lowest entry that bounds "has an element in scope", if any: no entry is scanned.
+    fn last_boundary(&self) -> Option<NodeId> {
+        self.boundaries.last().map(|&at| self.stack[at])
+    }
+
+    /// Adds `at` to the boundaries when `node`, the entry now at `at`, is one; the boundaries
+    /// at or after `at` were moved already.
+    fn add_boundary(&mut self, at: usize, node: NodeId) {
+        if self.is_boundary(node) {
+            let place = self.boundaries.partition_point(|&b| b < at);
+            self.boundaries.insert(place, at);
+        }
+    }
+
     fn push(&mut self, node: NodeId) {
         self.entered(node);
+        self.add_boundary(self.stack.len(), node);
         self.stack.push(node);
     }
 
     fn pop(&mut self) -> Option<NodeId> {
         let node = self.stack.pop()?;
         self.left(node);
+        if self.boundaries.last() == Some(&self.stack.len()) {
+            self.boundaries.pop();
+        }
         Some(node)
     }
 
@@ -212,12 +260,24 @@ impl OpenElements {
     fn remove(&mut self, at: usize) -> NodeId {
         let node = self.stack.remove(at);
         self.left(node);
+        self.boundaries.retain(|&b| b != at);
+        for b in &mut self.boundaries {
+            if *b > at {
+                *b -= 1;
+            }
+        }
         node
     }
 
     fn insert(&mut self, at: usize, node: NodeId) {
         self.entered(node);
+        for b in &mut self.boundaries {
+            if *b >= at {
+                *b += 1;
+            }
+        }
         self.stack.insert(at, node);
+        self.add_boundary(at, node);
     }
 
     /// Puts `node` in the place of the entry at `at`.
@@ -225,6 +285,8 @@ impl OpenElements {
         self.entered(node);
         let old = std::mem::replace(&mut self.stack[at], node);
         self.left(old);
+        self.boundaries.retain(|&b| b != at);
+        self.add_boundary(at, node);
     }
 }
 
@@ -320,6 +382,17 @@ struct TreeBuilder {
     /// For the `html` and `body` elements that a start tag of in body merged attributes into,
     /// the names of their attributes.
     merged_names: Vec<(NodeId, HashSet<String>)>,
+    /// Foster parenting is enabled (the "anything else" rule of in table).
+    foster_parenting: bool,
+    /// The pending table character tokens of in table text while they are all ASCII whitespace
+    /// (the module `tables` says why no other character is kept).
+    pending_table_text: String,
+    /// In table text met a character that is not ASCII whitespace: the pending characters were
+    /// processed, and each later one is processed as it comes.
+    pending_table_foster: bool,
+    /// The fragment parsing algorithm's context element, a node of the arena outside the tree;
+    /// `None` for a document.
+    context: Option<NodeId>,
 }
 
 const HTML_ELEMENT_SPECIAL: &[&str] = &[
@@ -502,6 +575,10 @@ impl TreeBuilder {
             limits: options.limits,
             steps: Cell::new(0),
             merged_names: Vec::new(),
+            foster_parenting: false,
+            pending_table_text: String::new(),
+            pending_table_foster: false,
+            context: None,
         }
     }
 
@@ -533,6 +610,13 @@ impl TreeBuilder {
                 Mode::AfterHead => self.after_head(&token),
                 Mode::InBody => self.in_body(&token),
                 Mode::Text => self.text(&token),
+                Mode::InTable => self.in_table(&token),
+                Mode::InTableText => self.in_table_text(&token),
+                Mode::InCaption => self.in_caption(&token),
+                Mode::InColumnGroup => self.in_column_group(&token),
+                Mode::InTableBody => self.in_table_body(&token),
+                Mode::InRow => self.in_row(&token),
+                Mode::InCell => self.in_cell(&token),
                 Mode::AfterBody => self.after_body(&token),
                 Mode::InFrameset => self.in_frameset(&token),
                 Mode::AfterFrameset => self.after_frameset(&token),
@@ -603,10 +687,33 @@ impl TreeBuilder {
     }
 
     /// The appropriate place for inserting a node, with an override target: the target and the
-    /// reference child. Foster parenting is never enabled here (only the table modes enable
-    /// it). A `template` target gives its template contents.
+    /// reference child. With foster parenting enabled (the "anything else" rule of in table) and
+    /// a `table`, `tbody`, `tfoot`, `thead` or `tr` target, the place is in front of the last
+    /// `table` on the stack of open elements, or in the last `template` when that is lower. A
+    /// `template` target gives its template contents.
     fn appropriate_place(&self, override_target: Option<NodeId>) -> (NodeId, Option<NodeId>) {
-        let target = override_target.unwrap_or_else(|| self.current_node());
+        let mut target = override_target.unwrap_or_else(|| self.current_node());
+        if self.foster_parenting
+            && self.is_html(target, &["table", "tbody", "tfoot", "thead", "tr"])
+        {
+            let mut visited = 0;
+            let last = (0..self.open.len()).rev().find(|&index| {
+                visited += 1;
+                self.is_html(self.open[index], &["template", "table"])
+            });
+            self.add_steps(visited);
+            let Some(last) = last else {
+                return (self.open[0], None);
+            };
+            let node = self.open[last];
+            if self.is_html(node, &["template"]) {
+                target = node;
+            } else if let Some(parent) = self.tree.parent(node) {
+                return (parent, Some(node));
+            } else {
+                target = self.open[last - 1];
+            }
+        }
         if let NodeData::Element {
             template_contents: Some(contents),
             ..
@@ -632,12 +739,27 @@ impl TreeBuilder {
     /// Create an element for a token in the HTML namespace that the limits admitted already
     /// (the adoption agency algorithm admits a whole iteration at once).
     fn create_admitted_element(&mut self, name: &str, attributes: &[TokenAttribute]) -> NodeId {
-        self.tree.create_element(
+        let categories = categories_of(Namespace::Html, name);
+        let element = self.tree.create_element(
             Namespace::Html,
             name,
             self::attributes(attributes),
-            categories_of(Namespace::Html, name),
-        )
+            categories,
+        );
+        if categories.has(Categories::SCOPE) {
+            self.open.mark_boundary(element);
+        }
+        element
+    }
+
+    /// Whether the stack of open elements has a `select` element in scope. A `select` bounds
+    /// that scope itself, so it is in scope exactly when it is the lowest entry that bounds it:
+    /// one entry is visited.
+    fn has_select_in_scope(&self) -> bool {
+        self.visit();
+        self.open
+            .last_boundary()
+            .is_some_and(|node| self.is_html(node, &["select"]))
     }
 
     /// Insert an element at the adjusted insertion location, given an insertion location.
@@ -887,6 +1009,60 @@ impl TreeBuilder {
                 return;
             }
         }
+    }
+
+    /// Reset the insertion mode appropriately (13.2.4.1): from the current node up, the first
+    /// element that names a mode decides it; at the top of the stack the context element of a
+    /// fragment stands in for the `html` element. Each entry visited is a step.
+    fn reset_insertion_mode(&mut self) {
+        let mut index = self.open.len();
+        while index > 0 {
+            index -= 1;
+            self.visit();
+            let last = index == 0;
+            let node = match (last, self.context) {
+                (true, Some(context)) => context,
+                _ => self.open[index],
+            };
+            let mode = match self.html_name(node) {
+                Some("td" | "th") if !last => Mode::InCell,
+                Some("tr") => Mode::InRow,
+                Some("tbody" | "thead" | "tfoot") => Mode::InTableBody,
+                Some("caption") => Mode::InCaption,
+                Some("colgroup") => Mode::InColumnGroup,
+                Some("table") => Mode::InTable,
+                Some("template") => self.current_template_mode(),
+                Some("head") if !last => Mode::InHead,
+                Some("body") => Mode::InBody,
+                Some("frameset") => Mode::InFrameset,
+                Some("html") if self.head.is_none() => Mode::BeforeHead,
+                Some("html") => Mode::AfterHead,
+                _ if last => Mode::InBody,
+                _ => continue,
+            };
+            self.mode = mode;
+            return;
+        }
+        self.mode = Mode::InBody;
+    }
+
+    /// The current template insertion mode: until the stack of template insertion modes is
+    /// written (story `html-tree-template`), in body.
+    fn current_template_mode(&self) -> Mode {
+        Mode::InBody
+    }
+
+    /// Whether the parser is parsing template contents: a `template` is on the stack of open
+    /// elements, or the fragment's context element is one.
+    fn parsing_template_contents(&self) -> bool {
+        self.context_is("template") || self.template_on_stack()
+    }
+
+    /// Whether the fragment parsing algorithm's context element is an HTML element named
+    /// `name`.
+    fn context_is(&self, name: &str) -> bool {
+        self.context
+            .is_some_and(|c| self.html_name(c) == Some(name))
     }
 
     /// The index of `element` in the stack of open elements, scanning from the current node.

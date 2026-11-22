@@ -206,11 +206,8 @@ fn the_rest_of_the_map() {
         ),
         ["n", "", "a\u{a0}\u{a0}b"]
     );
-    // Replaced by `page-text-tables`, which writes a table as a table.
-    assert_eq!(
-        lines("<p>x</p><table><tr><td>a b</td></tr></table><p>y</p>"),
-        ["x", "", "a b", "", "y"]
-    );
+    // The story's last case here, a table as one paragraph of its text, is replaced by
+    // `tables::caption_header_and_row_order` (`story:page-text-tables`, case 8).
 }
 
 #[test]

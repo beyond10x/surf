@@ -5,7 +5,7 @@
 use surf_answer::escaped_in_text;
 use surf_page_text::{node_visits, outline};
 
-use crate::common::{fruit_shop_without_table, parse};
+use crate::common::{FRUIT_SHOP, fruit_shop_without_table, parse};
 
 fn lines(input: &str) -> Vec<String> {
     let tree = parse(input);
@@ -37,6 +37,48 @@ fn fruit_shop_outline_without_table() {
             r#"    ul"#,
             r#"      li "Apples""#,
             r#"      li "Pears""#,
+            r#"    img src="/basket.jpg" alt="A basket of apples""#,
+            r#"    form action="/subscribe" method="post""#,
+            r#"      label"#,
+            r#"        "E-mail""#,
+            r#"        input @f1 type="email" name="email""#,
+            r#"      button @b1 "Subscribe""#,
+            r#"    script hid 1"#,
+            r#"    div hid 1"#,
+        ]
+    );
+}
+
+/// `story:page-text-tables` case 1: the whole outline of design note section 1, its 31 lines
+/// with the table and the `tbody` the parser implies.
+#[test]
+fn fruit_shop_outline() {
+    assert_eq!(
+        lines(FRUIT_SHOP),
+        [
+            r#"html lang="en""#,
+            r#"  head hid 4"#,
+            r#"  body"#,
+            r#"    h1 "Fruit shop""#,
+            r#"    p"#,
+            r#"      "Fresh fruit,""#,
+            r#"      em "picked today""#,
+            r#"      ". See""#,
+            r#"      a @l1 href="/offers" "our offers""#,
+            r#"      ".""#,
+            r#"    ul"#,
+            r#"      li "Apples""#,
+            r#"      li "Pears""#,
+            r#"    table"#,
+            r#"      tbody"#,
+            r#"        tr"#,
+            r#"          th "Fruit""#,
+            r#"          th "Price""#,
+            r#"          th "Stock""#,
+            r#"        tr"#,
+            r#"          td "Apple""#,
+            r#"          td "0.50""#,
+            r#"          td "120""#,
             r#"    img src="/basket.jpg" alt="A basket of apples""#,
             r#"    form action="/subscribe" method="post""#,
             r#"      label"#,

@@ -9,3 +9,5 @@ mod common;
 mod markdown;
 #[path = "cases/outline.rs"]
 mod outline;
+#[path = "cases/tables.rs"]
+mod tables;
