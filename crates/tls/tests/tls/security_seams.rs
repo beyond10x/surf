@@ -1081,3 +1081,132 @@ fn debug_prints_no_secret() {
     }
     connection.into_inner();
 }
+
+// ---------------------------------------------------------------------------------------------
+// 10. Flights: one write and one flush each.
+
+/// A call on the stream: a `write` of so many bytes, or a `flush`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Op {
+    Write(usize),
+    Flush,
+}
+
+/// A stream over given input that keeps what was written and every `write` and `flush` call.
+#[derive(Default)]
+struct Counting {
+    input: Vec<u8>,
+    read: usize,
+    output: Vec<u8>,
+    ops: Vec<Op>,
+}
+
+impl std::io::Read for Counting {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = buf.len().min(self.input.len() - self.read);
+        buf[..n].copy_from_slice(&self.input[self.read..self.read + n]);
+        self.read += n;
+        Ok(n)
+    }
+}
+
+impl std::io::Write for Counting {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.output.extend_from_slice(buf);
+        self.ops.push(Op::Write(buf.len()));
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.ops.push(Op::Flush);
+        Ok(())
+    }
+}
+
+/// The client's last flight of the handshake, the `change_cipher_spec` of compatibility mode
+/// and its Finished, reaches the stream as one `write` and one `flush`: on a socket without
+/// `TCP_NODELAY` a second small write waits for the peer's delayed ACK. The same for a flight
+/// with the empty Certificate a CertificateRequest asks for, and for the KeyUpdate a server's
+/// `update_requested` is owed with the data after it.
+#[test]
+fn each_flight_of_the_client_is_one_write_and_one_flush() {
+    for certificate_request in [false, true] {
+        let mut server = Server::new(SUITE);
+        server.hello();
+        let ee = server.encrypted_extensions(&[]);
+        server.push(&ee);
+        if certificate_request {
+            // context empty, signature_algorithms with one scheme.
+            let request = msg(13, &[0, 0, 8, 0, 13, 0, 4, 0, 2, 4, 3]);
+            server.push(&request);
+        }
+        let certificate = server.certificate();
+        server.push(&certificate);
+        let cv = server.certificate_verify();
+        server.push(&cv);
+        server.push_finished();
+        server.flush();
+        server.key_update(1);
+        server.data(b"ok");
+        let mut stream = Counting {
+            input: server.input.clone(),
+            ..Counting::default()
+        };
+        let verifier = Double::accepting("ok-ecdsa-p256");
+        let mut connection = Connection::with_random(
+            &mut stream,
+            HOST,
+            &verifier,
+            now(),
+            &Random::fixed_sequence(&DRAWS),
+        )
+        .expect("the handshake completes");
+        let ops = connection.get_ref().ops.clone();
+        let written = connection.get_ref().output.clone();
+        let first = records_of(&written)[0];
+        assert_eq!(
+            ops,
+            [
+                Op::Write(first),
+                Op::Flush,
+                Op::Write(written.len() - first),
+                Op::Flush
+            ],
+            "the hello, then change_cipher_spec and Finished (empty Certificate: \
+             {certificate_request})"
+        );
+        assert_eq!(
+            written[first], 20,
+            "the flight starts with change_cipher_spec"
+        );
+
+        let mut buf = [0u8; 8];
+        let n = connection.read_data(&mut buf).expect("data");
+        assert_eq!(&buf[..n], b"ok");
+        let before = connection.get_ref().ops.len();
+        assert_eq!(before, 4, "a read writes nothing");
+        let at = connection.get_ref().output.len();
+        connection.write_data(b"hi").expect("write");
+        let ops = connection.get_ref().ops[before..].to_vec();
+        let sent = connection.get_ref().output.len() - at;
+        assert_eq!(
+            ops,
+            [Op::Write(sent), Op::Flush],
+            "the owed KeyUpdate and the data in one write"
+        );
+        assert_eq!(records_of(&connection.get_ref().output[at..]).len(), 2);
+        connection.into_inner();
+    }
+}
+
+/// The lengths of the whole records at the start of `bytes`.
+fn records_of(bytes: &[u8]) -> Vec<usize> {
+    let mut out = Vec::new();
+    let mut rest = bytes;
+    while rest.len() >= 5 {
+        let len = 5 + usize::from(u16::from_be_bytes([rest[3], rest[4]]));
+        out.push(len.min(rest.len()));
+        rest = &rest[len.min(rest.len())..];
+    }
+    out
+}

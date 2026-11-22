@@ -227,6 +227,10 @@ impl<S: Read + Write> Client<'_, S> {
             .map_err(|_| invalid_input())?;
         self.layer.set_read_keys(suite, &application.server)?;
 
+        // The change_cipher_spec, the empty Certificate and the Finished are one flight: one
+        // write and one flush (`RecordLayer::cork`), so that no part of it waits for the
+        // server's delayed ACK on a socket without TCP_NODELAY.
+        self.layer.cork();
         if !self.offered.session_id.is_empty() {
             self.layer.write_change_cipher_spec()?;
         }
@@ -245,6 +249,7 @@ impl<S: Read + Write> Client<'_, S> {
         self.transcript.add(&finished);
         flight.extend_from_slice(&finished);
         self.layer.write_handshake(&flight)?;
+        self.layer.uncork()?;
         self.layer.set_write_keys(suite, &application.client)?;
         Ok(suite)
     }

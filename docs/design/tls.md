@@ -440,6 +440,17 @@ KeyUpdate (RFC 8446 section 4.6.3): an `update_requested` is answered by one Key
 read writes nothing; `close` with an answer owed sends `close_notify` under the current key
 without it.
 
+Each flight of the client reaches the stream in one `write` and one `flush`: the ClientHello;
+the `change_cipher_spec` of compatibility mode with the empty Certificate (when asked for) and
+the Finished; an owed KeyUpdate, or the one before the AES-GCM record limit, with the record of
+data after it; each alert alone, with nothing held after it. The record layer holds a flight's
+records between `RecordLayer::cork` and `uncork`, and every single write of it hands all its
+records over at once. On a socket without `TCP_NODELAY` a second small write waits for the
+peer's delayed ACK: the unit that built the test server measured 48.8 ms per handshake without
+`nodelay` and 8 to 22 ms with it. The second ClientHello after a HelloRetryRequest is a flight of
+its own (no `change_cipher_spec` goes before it). The bytes are those written before; only the
+calls on the stream are fewer.
+
 The public `Error` of `error.rs`, a closed list:
 
 - `TimedOut`; `ConnectionClosed` (before the handshake ended); `Truncated` (after it, without

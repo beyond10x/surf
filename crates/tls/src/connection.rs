@@ -320,7 +320,12 @@ impl<S: Read + Write> Connection<S> {
         if self.sent_close {
             return Err(Error::Io(ErrorKind::BrokenPipe));
         }
+        // A KeyUpdate and the record of data after it go to the stream together, one write
+        // and one flush (`RecordLayer::cork`).
+        let mut held = false;
         if self.update_owed && !data.is_empty() {
+            self.layer_mut().cork();
+            held = true;
             self.send_key_update()?;
             self.update_owed = false;
         }
@@ -328,10 +333,20 @@ impl<S: Read + Write> Connection<S> {
             let limit = record::write_limit(self.suite);
             let sequence = self.layer().write_sequence().unwrap_or(0);
             if limit < u64::MAX && limit.saturating_sub(sequence) < 2 {
+                if !held {
+                    self.layer_mut().cork();
+                    held = true;
+                }
                 self.send_key_update()?;
             }
             if let Err(error) = self.layer_mut().write_application_data(chunk) {
                 return Err(self.fail(error));
+            }
+            if held {
+                held = false;
+                if let Err(error) = self.layer_mut().uncork() {
+                    return Err(self.fail(error));
+                }
             }
         }
         Ok(())

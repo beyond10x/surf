@@ -729,10 +729,11 @@ above, and the list of standards itself was written from memory.
     `CARGO_TARGET_TMPDIR`); `names` (11), `path` (71) and `adversary_path` (11); `handshake`
     (16, among them `handshake_through_the_path_verifier`, a whole handshake through
     `PathVerifier` over a test root of `crates/tls-test-certs`), `handshake_hostile` (73),
-    `flights` (3) and `adversary_handshake` (8); `security_seams` (19: the security review of
-    the seams, its 13 cases and the 6 of its fixes: the host normalised once and refused before
+    `flights` (3) and `adversary_handshake` (8); `security_seams` (20: the security review of
+    the seams, its 13 cases and the 7 of its fixes: the host normalised once and refused before
     the first byte, every anchor with its certificate held to item 9.4, refusal texts as cut
-    excerpts, CertificateVerify bound to `ok-wildcard`'s own P-256 key; and a compile-time
+    excerpts, CertificateVerify bound to `ok-wildcard`'s own P-256 key, each client flight one
+    write and one flush; and a compile-time
     check that the four secret-holding types have a `Drop`). Depends on `ring`; its tests on
     `surf-html-conformance` for its JSON reader.
   - `crates/tls-test-certs` (`surf-tls-test-certs`): test tooling, not shipped: the test
