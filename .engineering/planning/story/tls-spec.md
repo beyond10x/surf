@@ -9,6 +9,7 @@ relations:
 - decomposes: epic:tls-https
 - depends_on: story:tls-decisions
 - depends_on: story:tls-test-server
+- depends_on: story:tls-step-within-budget
 scope:
 - confidence: cited
   path: conformance/src/target.rs

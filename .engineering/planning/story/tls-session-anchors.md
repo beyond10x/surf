@@ -11,6 +11,7 @@ relations:
 - depends_on: story:tls-spec
 - depends_on: story:tls-fetch-https
 - depends_on: story:one-test-binary-per-crate
+- depends_on: story:session-request-timeout-option
 scope:
 - confidence: cited
   path: cli/surf-agent.yaml

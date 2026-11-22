@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T21:13:24Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-handshake",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "closing check of the acceptance against the tree at 6cff209 by the coordinating agent's sub-agent: each statement mapped to the test or run that shows it",
+    "reference": "39 statements (lead, 1 to 8 with 4.1 to 4.21 and 6.1 to 6.9, budget); not shown: the cargo tree part of 2 (by hand on 32df67f and 6cff209, no test-tooling), the stream shut and keys forgotten of rows 6 and 6.2, the 1 s bound; listed in As built"
+  }
+}

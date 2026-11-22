@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T21:13:24Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-handshake",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate: task check-runner on 6cff209 (wave/tls-1), 2026-11-22 22:03 to 22:10 CET, and task slow on 6cff209",
+    "reference": "exit 0; Summary [ 27.576s] 1432 tests run: 1432 passed, 0 skipped; test step: 32.0 s of its budget of 120 s; check-runner: task check exit 0 in 362 s; task slow: exit 0, tls-certs-slow: 100 files, none differs, tls-flights-slow: every new recording replays to its outcome. The run before on 32df67f passed the same 1432 tests and failed its budget, test step 126.3 s at a load of 105 to 143; this story's tests: surf-tls handshake 16, handshake_hostile 73, flights 3, adversary_handshake 8 (100), security_seams 20; task tls-flights-check: tls-flights: 6 recordings match SOURCE, the recorder matches DIGEST"
+  }
+}
