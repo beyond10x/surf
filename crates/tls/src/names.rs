@@ -83,8 +83,9 @@ pub fn ip_text(octets: &[u8]) -> String {
 /// Whether `name` is a DNS name in the preferred name syntax of RFC 5280 section 4.2.1.6 (RFC
 /// 1034 section 3.5 as RFC 1123 section 2.1 relaxes it): labels of 1 to 63 letters, digits and
 /// hyphens, neither starting nor ending with a hyphen, joined by single dots, at most 253 bytes
-/// in all, no dot at either end, and a last label that is not all digits (so that no IPv4
-/// address in text is a DNS name).
+/// in all, no dot at either end, and a last label that is no number in the sense of the URL
+/// Standard's IPv4 parser ([`is_url_number`]), so that no IPv4 address in text, in any form a
+/// URL host parser reads (`127.0.0.1`, `0x7f000001`, `127.0.0.0x1`), is a DNS name.
 pub fn is_dns_name(name: &str) -> bool {
     if name.is_empty() || name.len() > 253 {
         return false;
@@ -104,7 +105,19 @@ pub fn is_dns_name(name: &str) -> bool {
         }
         last = label;
     }
-    !last.bytes().all(|b| b.is_ascii_digit())
+    !is_url_number(last)
+}
+
+/// Whether `label` is a number as the URL Standard's IPv4 parser reads one ("ends in a
+/// number"): ASCII digits only, or `0x` or `0X` followed by hex digits or by nothing.
+pub fn is_url_number(label: &str) -> bool {
+    if let Some(hex) = label
+        .strip_prefix("0x")
+        .or_else(|| label.strip_prefix("0X"))
+    {
+        return hex.bytes().all(|b| b.is_ascii_hexdigit());
+    }
+    !label.is_empty() && label.bytes().all(|b| b.is_ascii_digit())
 }
 
 /// The suffix of a wildcard dNSName `*.<suffix>` whose suffix is a DNS name of at least two

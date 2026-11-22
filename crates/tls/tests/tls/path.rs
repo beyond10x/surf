@@ -973,7 +973,7 @@ fn the_leaf_key_usage_and_extended_key_usage_are_checked_when_present() {
     chain[0].eku = Some(vec![&[0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x02]]);
     let sent: Vec<&Cert> = chain.iter().collect();
     let (result, _) = check(&[&root()], &sent, "a.test", Limits::default());
-    assert_eq!(result, not_trusted(Check::NoServerAuth));
+    assert_eq!(result, not_trusted(Check::NoServerAuth { certificate: 0 }));
     chain[0].eku = Some(vec![OID_SERVER_AUTH]);
     let sent: Vec<&Cert> = chain.iter().collect();
     assert!(
@@ -981,6 +981,72 @@ fn the_leaf_key_usage_and_extended_key_usage_are_checked_when_present() {
             .0
             .is_ok()
     );
+}
+
+const OID_EMAIL_PROTECTION: &[u8] = &[0x2B, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x04];
+const OID_ANY_EKU: &[u8] = &[0x55, 0x1D, 0x25, 0x00];
+
+/// extKeyUsage is held on every certificate below the anchor: an intermediate whose
+/// extKeyUsage has neither serverAuth nor anyExtendedKeyUsage refuses with `NoServerAuth`
+/// naming it; one without the extension, with serverAuth or with anyExtendedKeyUsage passes.
+/// The anchor's own extKeyUsage is not read.
+#[test]
+fn every_intermediate_is_held_to_server_auth_when_it_limits_its_purposes() {
+    let run = |chain: &[Cert], r: &Cert| {
+        let sent: Vec<&Cert> = chain.iter().collect();
+        check(&[r], &sent, "a.test", Limits::default()).0
+    };
+    let refused = |certificate| not_trusted(Check::NoServerAuth { certificate });
+    for (eku, ok) in [
+        (None, true),
+        (Some(vec![OID_SERVER_AUTH]), true),
+        (Some(vec![OID_ANY_EKU]), true),
+        (Some(vec![OID_EMAIL_PROTECTION, OID_ANY_EKU]), true),
+        (Some(vec![OID_EMAIL_PROTECTION]), false),
+    ] {
+        let mut chain = straight(1);
+        chain[1].eku = eku.clone();
+        let result = run(&chain, &root());
+        assert_eq!(result.is_ok(), ok, "{eku:?}: {result:?}");
+        if !ok {
+            assert_eq!(result, refused(1));
+        }
+    }
+    // Two intermediates, the upper one for email only: it is named.
+    let mut chain = straight(2);
+    chain[1].eku = Some(vec![OID_SERVER_AUTH]);
+    chain[2].eku = Some(vec![OID_EMAIL_PROTECTION]);
+    assert_eq!(run(&chain, &root()), refused(2));
+    // The anchor's own extKeyUsage is not read.
+    let mut r = root();
+    r.eku = Some(vec![OID_EMAIL_PROTECTION]);
+    assert!(run(&straight(1), &r).is_ok());
+    assert_eq!(
+        Check::NoServerAuth { certificate: 2 }.to_string(),
+        "NoServerAuth: certificate 2 is not for TLS servers"
+    );
+}
+
+/// A failed extKeyUsage ends that path only: a cross-signed intermediate of the same subject
+/// and key with serverAuth, sent after the email-only one, gives the path.
+#[test]
+fn path_building_goes_on_past_an_intermediate_for_other_purposes() {
+    let leaf = Cert::leaf("a.test", "I1", 101);
+    let mut email = Cert::ca("I1", 101, "Root", 1);
+    email.eku = Some(vec![OID_EMAIL_PROTECTION]);
+    let mut tls = Cert::ca("I1", 101, "Root", 1);
+    tls.eku = Some(vec![OID_SERVER_AUTH]);
+    tls.serial = 2;
+    let (result, work) = check(
+        &[&root()],
+        &[&leaf, &email, &tls],
+        "a.test",
+        Limits::default(),
+    );
+    assert!(result.is_ok(), "{result:?}");
+    assert_eq!(work.signature_checks, 4, "leaf and I1 twice each");
+    let (result, _) = check(&[&root()], &[&leaf, &email], "a.test", Limits::default());
+    assert_eq!(result, not_trusted(Check::NoServerAuth { certificate: 1 }));
 }
 
 #[test]
@@ -1078,11 +1144,64 @@ fn the_host_is_checked_after_the_path() {
 
 #[test]
 fn an_unreadable_certificate_sent_refuses_with_the_reader_error() {
+    // Changed by the coordinator's decision of the fix round (design item 7): only an
+    // unreadable leaf refuses at once; a later unreadable certificate is left out, and names
+    // the refusal only when no path is found.
     let chain = straight(1);
     let leaf = chain[0].der();
+    let ica = chain[1].der();
     let junk = vec![0x30, 0x03, 0x02, 0x01];
-    let refs: Vec<&[u8]> = vec![&leaf, &junk];
-    let result = verifier(&[&root()], Limits::default()).verify(&refs, "a.test", now());
+    let run =
+        |refs: &[&[u8]]| verifier(&[&root()], Limits::default()).verify(refs, "a.test", now());
+    let unreadable_at = |result: Result<LeafKey, CertificateRejection>, n: usize| {
+        assert!(
+            matches!(
+                result,
+                Err(CertificateRejection::NotTrusted(Check::Unreadable { certificate, .. }))
+                    if certificate == n
+            ),
+            "{result:?}"
+        );
+    };
+    assert!(run(&[&leaf, &junk, &ica]).is_ok());
+    assert!(run(&[&leaf, &ica, &junk, &junk]).is_ok());
+    assert!(run(&[&leaf, &ica, &ica, &junk]).is_ok());
+    unreadable_at(run(&[&leaf, &junk]), 1);
+    unreadable_at(run(&[&junk, &leaf, &ica]), 0);
+    // Without a path the first one left out is named, before the reason of the search.
+    let mut bad = chain[1].clone();
+    bad.signer = 7;
+    let bad = bad.der();
+    unreadable_at(run(&[&leaf, &bad, &junk]), 2);
+    unreadable_at(run(&[&leaf, &bad, &bad, &junk, &junk]), 3);
+}
+
+/// Each certificate keeps its position as sent: one sent twice, or one unreadable, before an
+/// issuer does not shift the number of that issuer.
+#[test]
+fn positions_are_those_sent() {
+    let mut chain = straight(1);
+    chain[1].basic = Some((false, None));
+    let leaf = chain[0].der();
+    let ica = chain[1].der();
+    let other = Cert::ca("Other", 500, "Root", 1).der();
+    let junk = vec![0x30, 0x03, 0x02, 0x01];
+    for (refs, n) in [
+        (vec![&leaf[..], &other, &other, &ica], 3),
+        (vec![&leaf[..], &ica, &ica], 1),
+        (vec![&leaf[..], &leaf, &ica], 2),
+    ] {
+        let result = verifier(&[&root()], Limits::default()).verify(&refs, "a.test", now());
+        assert_eq!(result, not_trusted(Check::IssuerNotCa { certificate: n }));
+    }
+    // Duplicates count for the anchor's number too: it follows all sent.
+    let mut r = root();
+    r.basic = Some((false, None));
+    let leaf = Cert::leaf("a.test", "Root", 1).der();
+    let result = verifier(&[&r], Limits::default()).verify(&[&leaf, &leaf, &leaf], "a.test", now());
+    assert_eq!(result, not_trusted(Check::IssuerNotCa { certificate: 3 }));
+    // A certificate left out as unreadable is named when no path is found.
+    let result = verifier(&[&r], Limits::default()).verify(&[&leaf, &junk], "a.test", now());
     assert!(
         matches!(
             result,
@@ -1305,48 +1424,55 @@ fn a_self_issued_leaf_is_held_to_name_constraints_and_a_self_issued_intermediate
     assert!(result.is_ok(), "{result:?}");
 }
 
-/// RFC 5280 section 4.2.1.10: nameConstraints "MUST be marked critical" and are "used only in
-/// a CA certificate". Not critical in an intermediate or in the anchor's certificate, or in a
-/// leaf that is no CA, they refuse, even where every name lies inside them.
+/// nameConstraints not marked critical hold like critical ones (the fix round's decision: limbo
+/// expects it, and refusing would break the sites of CAs that issue them so), in an
+/// intermediate and in the anchor's certificate. In a leaf that is no CA they refuse (RFC 5280
+/// section 4.2.1.10: "used only in a CA certificate").
 #[test]
-fn name_constraints_not_critical_or_in_a_leaf_refuse() {
+fn name_constraints_not_critical_hold_and_in_a_leaf_refuse() {
     let permitted = name_constraints(&[dns_name("example.test")], &[]);
-    let refused = |certificate| {
-        not_trusted(Check::NameConstraint {
-            certificate,
-            name: if certificate == 0 {
-                "nameConstraints in an end-entity certificate".into()
-            } else {
-                "nameConstraints not marked critical".into()
-            },
-        })
-    };
-    let leaf = Cert::leaf("a.example.test", "I1", 101);
-    let mut ica = Cert::ca("I1", 101, "Root", 1);
-    ica.nc = Some(permitted.clone());
-    let run = |r: &Cert, sent: &[&Cert]| check(&[r], sent, "a.example.test", Limits::default()).0;
-    assert!(run(&root(), &[&leaf, &ica]).is_ok());
-    ica.nc_critical = false;
-    assert_eq!(run(&root(), &[&leaf, &ica]), refused(1));
-    let mut r = root();
-    r.nc = Some(permitted.clone());
-    r.nc_critical = false;
-    let direct = Cert::leaf("a.example.test", "Root", 1);
-    assert_eq!(run(&r, &[&direct]), refused(1));
+    let run = |r: &Cert, sent: &[&Cert], host: &str| check(&[r], sent, host, Limits::default()).0;
+    for critical in [true, false] {
+        let mut ica = Cert::ca("I1", 101, "Root", 1);
+        ica.nc = Some(permitted.clone());
+        ica.nc_critical = critical;
+        let inside = Cert::leaf("a.example.test", "I1", 101);
+        assert!(run(&root(), &[&inside, &ica], "a.example.test").is_ok());
+        let outside = Cert::leaf("a.other.test", "I1", 101);
+        assert_eq!(
+            run(&root(), &[&outside, &ica], "a.other.test"),
+            nc_refused("a.other.test")
+        );
+        let mut r = root();
+        r.nc = Some(permitted.clone());
+        r.nc_critical = critical;
+        let direct = Cert::leaf("a.other.test", "Root", 1);
+        assert_eq!(
+            run(&r, &[&direct], "a.other.test"),
+            nc_refused("a.other.test"),
+            "anchor, critical {critical}"
+        );
+    }
     let mut in_leaf = Cert::leaf("a.example.test", "Root", 1);
     in_leaf.nc = Some(permitted);
-    assert_eq!(run(&root(), &[&in_leaf]), refused(0));
+    let run = |r: &Cert, sent: &[&Cert]| run(r, sent, "a.example.test");
+    assert_eq!(
+        run(&root(), &[&in_leaf]),
+        not_trusted(Check::NameConstraint {
+            certificate: 0,
+            name: "nameConstraints in an end-entity certificate".into()
+        })
+    );
     // A leaf that is a CA may carry them.
     in_leaf.basic = Some((true, None));
     assert!(run(&root(), &[&in_leaf]).is_ok());
 }
 
-/// Item 9.4: when both carry one, a candidate's subjectKeyIdentifier must equal the
-/// authorityKeyIdentifier of the certificate below, the anchor's certificate as well as a sent
-/// one; a candidate whose identifier differs costs no signature check. Without one on either
-/// side the names alone choose.
+/// Item 9.4 as the fix round decided it: key identifiers order the candidates and rule none
+/// out. Identifiers that differ still give the path when the signatures verify, the anchor's
+/// certificate as well as a sent one.
 #[test]
-fn key_identifiers_that_differ_rule_out_a_candidate() {
+fn key_identifiers_that_differ_rule_out_no_candidate() {
     let mut r = root();
     r.ski = Some(vec![0x01; 20]);
     let mut ica = Cert::ca("I1", 101, "Root", 1);
@@ -1361,17 +1487,49 @@ fn key_identifiers_that_differ_rule_out_a_candidate() {
     assert_eq!(work.signature_checks, 2);
     let mut other = leaf.clone();
     other.aki = Some(vec![0x08; 20]);
-    let (result, work) = run(&r, &other, &ica);
-    assert_eq!(result, not_trusted(Check::NoPathToAnchor));
-    assert_eq!(work.signature_checks, 0);
     let mut ica_other = ica.clone();
     ica_other.aki = Some(vec![0x09; 20]);
-    let (result, work) = run(&r, &leaf, &ica_other);
-    assert_eq!(result, not_trusted(Check::NoPathToAnchor));
-    assert_eq!(work.signature_checks, 1);
-    other.aki = None;
-    let (result, _) = run(&r, &other, &ica);
+    for (leaf, ica) in [(&other, &ica), (&leaf, &ica_other), (&other, &ica_other)] {
+        let (result, work) = run(&r, leaf, ica);
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(work.signature_checks, 2);
+    }
+}
+
+/// The candidate whose subjectKeyIdentifier matches is tried first, though sent after one of
+/// the same subject whose identifier differs: one signature check where the order sent would
+/// take two. Without a match the order sent holds.
+#[test]
+fn a_matching_key_identifier_is_tried_first() {
+    let mut leaf = Cert::leaf("a.test", "I1", 102);
+    leaf.aki = Some(vec![0x02; 20]);
+    let mut wrong = Cert::ca("I1", 101, "Root", 1);
+    wrong.ski = Some(vec![0x01; 20]);
+    let mut right = Cert::ca("I1", 102, "Root", 1);
+    right.ski = Some(vec![0x02; 20]);
+    let (result, work) = check(
+        &[&root()],
+        &[&leaf, &wrong, &right],
+        "a.test",
+        Limits::default(),
+    );
     assert!(result.is_ok(), "{result:?}");
+    assert_eq!(
+        work.signature_checks, 2,
+        "the leaf under right, right under the root"
+    );
+    leaf.aki = None;
+    let (result, work) = check(
+        &[&root()],
+        &[&leaf, &wrong, &right],
+        "a.test",
+        Limits::default(),
+    );
+    assert!(result.is_ok(), "{result:?}");
+    assert_eq!(
+        work.signature_checks, 3,
+        "wrong first, then right, then the root"
+    );
 }
 
 /// The work of name constraints is bounded (item 9): n names against m subtrees is n × m
@@ -1392,19 +1550,60 @@ fn the_name_constraint_work_is_bounded() {
         };
         check(&[&root()], &[&leaf, &ica], "h0.d4.test", limits)
     };
-    let (ok, work) = run(25);
+    // Changed by the fix round's decision on the unit of work: 5 visits for the directoryName
+    // rule, then each name visits the 5 subtrees up to d4.test, the one that holds it.
+    let (ok, work) = run(30);
     assert!(ok.is_ok(), "{ok:?}");
     assert_eq!(
-        work.name_constraint_comparisons, 25,
-        "5 names, each 5 subtrees"
+        work.name_constraint_comparisons, 30,
+        "5 subtrees once, then 5 names, each 5 subtrees"
     );
-    let (refused, work) = run(24);
+    let (refused, work) = run(29);
     assert_eq!(
         refused,
         not_trusted(Check::NameConstraint {
             certificate: 1,
-            name: "the work of 24 name comparisons".into()
+            name: "the work of 29 name comparisons".into()
         })
     );
-    assert_eq!(work.name_constraint_comparisons, 24);
+    assert_eq!(work.name_constraint_comparisons, 29);
+}
+
+/// Every subtree visited is charged, of the name's form or not: n dNSNames under m iPAddress
+/// subtrees (excluded, so none is compared) charge m for the directoryName rule and n × m for
+/// the names. At the limit the path is refused, never accepted.
+#[test]
+fn name_constraint_work_counts_subtrees_of_other_forms() {
+    let charged = |n: usize, m: usize, limit: usize| {
+        let excluded: Vec<Vec<u8>> = (0..m)
+            .map(|i| ip_name(&[10, i as u8, 0, 0, 255, 255, 0, 0]))
+            .collect();
+        let mut ica = Cert::ca("I1", 101, "Root", 1);
+        ica.nc = Some(name_constraints(&[], &excluded));
+        let mut leaf = Cert::leaf("h0.a.test", "I1", 101);
+        leaf.sans = (0..n).map(|i| dns_name(&format!("h{i}.a.test"))).collect();
+        let limits = Limits {
+            name_constraint_comparisons: limit,
+            ..Limits::default()
+        };
+        check(&[&root()], &[&leaf, &ica], "h0.a.test", limits)
+    };
+    for (n, m) in [(5, 4), (10, 4), (5, 8)] {
+        let visits = m + n * m;
+        let (result, work) = charged(n, m, visits);
+        assert!(result.is_ok(), "{n} names, {m} subtrees: {result:?}");
+        assert_eq!(
+            work.name_constraint_comparisons, visits,
+            "{n} names, {m} subtrees"
+        );
+        let (result, work) = charged(n, m, visits - 1);
+        assert_eq!(
+            result,
+            not_trusted(Check::NameConstraint {
+                certificate: 1,
+                name: format!("the work of {} name comparisons", visits - 1)
+            })
+        );
+        assert_eq!(work.name_constraint_comparisons, visits - 1);
+    }
 }

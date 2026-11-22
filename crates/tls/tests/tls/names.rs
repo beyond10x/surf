@@ -110,6 +110,28 @@ fn hosts_and_names_outside_the_preferred_syntax_match_nothing() {
     assert!(matches(&[dns(&name)], &name));
 }
 
+/// A last label that is a number as the URL Standard's IPv4 parser reads one (all digits, or
+/// `0x`/`0X` and hex digits or nothing) makes no DNS name; labels that only look so stay names.
+#[test]
+fn a_name_ending_in_a_url_number_is_no_dns_name() {
+    for text in [
+        "0x7f000001",
+        "127.0.0.0x1",
+        "1.2.3.0X",
+        "example.0x",
+        "example.0XfF",
+        "a.123",
+    ] {
+        assert!(!names::is_dns_name(text), "{text}");
+        assert!(!matches(&[dns(text)], text), "{text}");
+    }
+    for text in ["example.x0", "0x.example", "example.0xg", "example.1a"] {
+        assert!(names::is_dns_name(text), "{text}");
+    }
+    assert!(names::is_url_number("0x"));
+    assert!(!names::is_url_number(""));
+}
+
 #[test]
 fn other_kinds_of_names_match_nothing() {
     let other = [GeneralName::Other {

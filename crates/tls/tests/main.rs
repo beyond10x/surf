@@ -8,6 +8,8 @@
 
 #[path = "tls/adversary_layer.rs"]
 mod adversary_layer;
+#[path = "tls/adversary_path.rs"]
+mod adversary_path;
 #[path = "tls/adversary_x509.rs"]
 mod adversary_x509;
 #[path = "tls/alloc.rs"]

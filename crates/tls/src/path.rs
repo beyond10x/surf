@@ -4,17 +4,24 @@
 //!
 //! # What a validation does
 //!
-//! 1. Every certificate the server sent is read; one the reader refuses ends the validation
-//!    with `NotTrusted(Unreadable)` and the reader's error. A certificate sent twice (the same
-//!    bytes) counts once.
+//! 1. Every certificate the server sent is read, once. The leaf must be readable: one the
+//!    reader refuses ends the validation with `NotTrusted(Unreadable)` and the reader's error.
+//!    A later certificate the reader refuses is left out of the candidates and refuses nothing
+//!    by itself (RFC 8446 section 4.4.2: a client handles extraneous certificates, and servers
+//!    append legacy roots); when the search then finds no path, the answer is
+//!    `NotTrusted(Unreadable)` naming the first certificate left out and its reader error. A
+//!    certificate sent twice (the same bytes) is a candidate once. Every certificate keeps its
+//!    position as sent. The cost of this step is bounded by the message: one reading of each
+//!    certificate and one comparison of its bytes with each certificate before it.
 //! 2. The leaf's own key is held to [`crypto::REFUSED`]: an RSA key under 2048 bits is
 //!    `NotTrusted(WeakKey)` before any signature is verified.
 //! 3. The path is searched depth-first from the leaf (item 9.4). For the certificate at the end
 //!    of the path, its candidate issuers are the anchors, then the certificates sent in the
-//!    order sent, that are not on the path, whose subject equals its issuer byte for byte and,
-//!    when both carry one, whose subjectKeyIdentifier equals its authorityKeyIdentifier (item
-//!    9.4; the anchor's when the anchor was made from its certificate). Each name comparison
-//!    charges [`Work::considered`]. A sent candidate that would be one
+//!    order sent, that are not on the path, whose subject equals its issuer byte for byte. Key
+//!    identifiers order them and rule none out: the candidates whose subjectKeyIdentifier
+//!    equals the certificate's authorityKeyIdentifier come first (the anchor's when the anchor
+//!    was made from its certificate), the others after them, each group in that order. Each
+//!    name comparison charges [`Work::considered`]. A sent candidate that would be one
 //!    intermediate more than [`Limits::intermediates`] is not descended into (item 9.3). Before
 //!    any other candidate is taken, the policy of [`crypto::REFUSED`] is applied to the
 //!    signature and the candidate's key (`WeakAlgorithm`, `WeakKey`), then the signature is
@@ -24,7 +31,8 @@
 //! 4. The host is matched against the leaf's subjectAltName ([`crate::names`]):
 //!    `NameMismatch` when no entry matches.
 //!
-//! When the search ends without a path, the answer is, in this order: a limit of the search
+//! When the search ends without a path, the answer is, in this order: a certificate left out
+//! as unreadable (`Unreadable`, the first); a limit of the search
 //! reached (`CandidateLimit`); a candidate cut by the bound of intermediates (`PathTooLong`);
 //! a candidate refused by the policy (`WeakAlgorithm`, `WeakKey`, the first met); a name match
 //! whose signature did not verify (`BadSignature`, the first met); a complete path that failed
@@ -45,12 +53,17 @@
 //! | an issuer with a pathLenConstraint below the intermediates under it that are not self-issued | `PathTooLong` |
 //! | the leaf's keyUsage, when present, without digitalSignature | `KeyUsage` |
 //! | the leaf's extKeyUsage, when present, without id-kp-serverAuth (anyExtendedKeyUsage alone does not do) | `NoServerAuth` |
+//! | an intermediate's extKeyUsage, when present, with neither id-kp-serverAuth nor anyExtendedKeyUsage (the anchor's own is not read: the anchors are the set trusted for TLS) | `NoServerAuth` |
 //! | a certificate outside its validity at the time given, either side, both ends included | `Expired` |
-//! | nameConstraints in a leaf that is no CA, or not marked critical in an issuer or the anchor's certificate (section 4.2.1.10) | `NameConstraint` |
+//! | nameConstraints in a leaf that is no CA (section 4.2.1.10: "used only in a CA certificate") | `NameConstraint` |
 //! | a name outside the nameConstraints of an issuer or of the anchor | `NameConstraint` |
 //!
-//! `<n>` of a rejection counts the certificates as the server sent them, the leaf 0; the anchor
-//! is numbered after them (the count of certificates sent, after duplicates are dropped).
+//! A failed check ends that path only: the search goes on with the next candidate, so a
+//! cross-signed intermediate of the same subject and key that passes is still found.
+//!
+//! `<n>` of a rejection is the position of the certificate as the server sent it, the leaf 0,
+//! duplicates and unreadable certificates counted; the anchor is numbered after them (the
+//! count of certificates sent).
 //!
 //! # Name constraints
 //!
@@ -67,9 +80,14 @@
 //! uniformResourceIdentifier, otherName, directoryName) are not checked: a constraint of such a
 //! form over a subjectAltName entry of that form, or a directoryName constraint over a
 //! certificate with a subject, fails closed (`NameConstraint`). The extension holds whether it
-//! is marked critical or not. Each comparison charges [`Work::name_constraint_comparisons`];
-//! at [`Limits::name_constraint_comparisons`] the path fails with `NameConstraint` naming that
-//! work.
+//! is marked critical or not (RFC 5280 asks CAs to mark it; some do not, and their constraints
+//! are enforced all the same).
+//!
+//! The work is counted in visits: one unit of [`Work::name_constraint_comparisons`] is one
+//! subtree of the extension looked at for one subjectAltName entry, of whatever form, whether
+//! it is compared or passed over; and, once per extension, each subtree looked at for the
+//! directoryName rule. At [`Limits::name_constraint_comparisons`] the path fails with
+//! `NameConstraint` naming that work; it never passes for want of budget.
 //!
 //! # Bounds and cost
 //!
@@ -244,27 +262,29 @@ impl<V: SignatureVerifier> PathVerifier<V> {
         if certificates.is_empty() {
             return not_trusted(Check::NoPathToAnchor);
         }
-        let mut sent: Vec<Certificate<'_>> = Vec::with_capacity(certificates.len());
+        // Each certificate at its position as sent; `None` for one left out: unreadable, or
+        // the same bytes as one before it.
+        let mut sent: Vec<Option<Certificate<'_>>> = Vec::with_capacity(certificates.len());
+        let mut unreadable = None;
         for (n, der) in certificates.iter().enumerate() {
             match Certificate::from_der(der) {
-                Ok(cert) => sent.push(cert),
-                Err(error) => {
+                Ok(cert) => {
+                    let duplicate = sent.iter().flatten().any(|k| k.der == cert.der);
+                    sent.push((!duplicate).then_some(cert));
+                }
+                Err(error) if n == 0 => {
                     return not_trusted(Check::Unreadable {
-                        certificate: n,
+                        certificate: 0,
                         error,
                     });
                 }
+                Err(error) => {
+                    unreadable.get_or_insert((n, error));
+                    sent.push(None);
+                }
             }
         }
-        // A certificate sent twice counts once: the first of equal bytes is kept.
-        let mut kept: Vec<Certificate<'_>> = Vec::with_capacity(sent.len());
-        for cert in sent {
-            if !kept.iter().any(|k| k.der == cert.der) {
-                kept.push(cert);
-            }
-        }
-        let sent = kept;
-        let leaf = &sent[0];
+        let leaf = at(&sent, 0);
         if let PublicKeyKind::Rsa { bits } = leaf.public_key.kind
             && bits < crypto::REFUSED.rsa_bits_min
         {
@@ -283,6 +303,7 @@ impl<V: SignatureVerifier> PathVerifier<V> {
             refused: None,
             bad_signature: None,
             failed: None,
+            unreadable,
         };
         let mut path = vec![0];
         match search.extend(&mut path) {
@@ -327,9 +348,16 @@ enum Signed {
     Limit,
 }
 
+/// A candidate issuer: the anchor or the certificate sent of that number.
+#[derive(Clone, Copy)]
+enum Candidate {
+    Anchor(usize),
+    Sent(usize),
+}
+
 struct Search<'s, 'c, V> {
     verifier: &'s PathVerifier<V>,
-    sent: &'s [Certificate<'c>],
+    sent: &'s [Option<Certificate<'c>>],
     now: Time,
     work: &'s mut Work,
     limit: Option<Limit>,
@@ -337,12 +365,28 @@ struct Search<'s, 'c, V> {
     refused: Option<Check>,
     bad_signature: Option<usize>,
     failed: Option<CertificateRejection>,
+    /// The first certificate left out as unreadable, and the reader's error.
+    unreadable: Option<(usize, x509::Error)>,
+}
+
+/// The certificate sent at `n`, which the search only asks for when it was read.
+fn at<'a, 'c>(sent: &'a [Option<Certificate<'c>>], n: usize) -> &'a Certificate<'c> {
+    sent[n]
+        .as_ref()
+        .expect("the search names only certificates it read")
+}
+
+/// Whether both carry a key identifier and they are equal.
+fn key_ids_match(authority_key_id: Option<&[u8]>, subject_key_id: Option<&[u8]>) -> bool {
+    matches!((authority_key_id, subject_key_id), (Some(a), Some(s)) if a == s)
 }
 
 impl<V: SignatureVerifier> Search<'_, '_, V> {
     /// The answer when the search found no path (item 9.4).
     fn answer(&mut self) -> CertificateRejection {
-        let check = if let Some(limit) = self.limit {
+        let check = if let Some((certificate, error)) = self.unreadable.take() {
+            Check::Unreadable { certificate, error }
+        } else if let Some(limit) = self.limit {
             Check::CandidateLimit(limit)
         } else if let Some(cut) = self.cut {
             Check::PathTooLong(cut)
@@ -373,7 +417,7 @@ impl<V: SignatureVerifier> Search<'_, '_, V> {
     /// `child_n`) under `key`, the key of the candidate numbered `key_n`.
     fn signed(&mut self, child_n: usize, key: &PublicKey<'_>, key_n: usize) -> Signed {
         let sent = self.sent;
-        let child = &sent[child_n];
+        let child = at(sent, child_n);
         if let Some(refusal) = crypto::refusal(child.signature_algorithm, key.kind) {
             return Signed::Refused(match refusal {
                 crypto::Refusal::WeakAlgorithm { algorithm } => Check::WeakAlgorithm {
@@ -428,8 +472,11 @@ impl<V: SignatureVerifier> Search<'_, '_, V> {
         let child_n = *path.last().expect("a path holds the leaf");
         let sent = self.sent;
         let verifier = self.verifier;
-        let child = &sent[child_n];
-        let anchor_n = sent.len();
+        let child = at(sent, child_n);
+        let aki = child.extensions.authority_key_id;
+        // Candidates whose key identifier matches are tried at once, the others after all of
+        // them, in the order met.
+        let mut later: Vec<Candidate> = Vec::new();
         for (a, anchor) in verifier.anchors.iter().enumerate() {
             if !self.consider() {
                 return Step::Stop;
@@ -437,64 +484,89 @@ impl<V: SignatureVerifier> Search<'_, '_, V> {
             if anchor.anchor.subject() != child.issuer {
                 continue;
             }
-            if let Some(cert) = anchor
+            let ski = anchor
                 .certificate
                 .as_deref()
                 .and_then(|d| Certificate::from_der(d).ok())
-                && !key_ids_agree(child, &cert)
-            {
-                continue;
-            }
-            let key = anchor.anchor.key.public_key();
-            match self.signed(child_n, &key, anchor_n) {
-                Signed::Verified => {}
-                other => {
-                    if self.note(other, child_n) {
-                        return Step::Stop;
-                    }
-                    continue;
-                }
-            }
-            match self.complete(path, a) {
-                Ok(()) => return Step::Found,
-                Err(rejection) => self.failed = Some(rejection),
+                .and_then(|cert| cert.extensions.subject_key_id);
+            if !key_ids_match(aki, ski) {
+                later.push(Candidate::Anchor(a));
+            } else if let Some(step) = self.attempt(path, Candidate::Anchor(a)) {
+                return step;
             }
         }
-        for (j, candidate) in sent.iter().enumerate().skip(1) {
+        for (j, slot) in sent.iter().enumerate().skip(1) {
+            let Some(candidate) = slot else {
+                continue;
+            };
             if path.contains(&j) {
                 continue;
             }
             if !self.consider() {
                 return Step::Stop;
             }
-            if candidate.subject != child.issuer || !key_ids_agree(child, candidate) {
+            if candidate.subject != child.issuer {
                 continue;
             }
-            let intermediates = path.len();
-            if intermediates > self.verifier.limits.intermediates {
-                self.cut = Some(PathTooLong::Intermediates {
-                    count: intermediates,
-                    bound: self.verifier.limits.intermediates,
-                });
-                continue;
+            if !key_ids_match(aki, candidate.extensions.subject_key_id) {
+                later.push(Candidate::Sent(j));
+            } else if let Some(step) = self.attempt(path, Candidate::Sent(j)) {
+                return step;
             }
-            let key = candidate.public_key;
-            let signed = self.signed(child_n, &key, j);
-            if !matches!(signed, Signed::Verified) {
-                if self.note(signed, child_n) {
-                    return Step::Stop;
-                }
-                continue;
-            }
-            path.push(j);
-            let step = self.extend(path);
-            path.pop();
-            match step {
-                Step::Exhausted => {}
-                found_or_stop => return found_or_stop,
+        }
+        for candidate in later {
+            if let Some(step) = self.attempt(path, candidate) {
+                return step;
             }
         }
         Step::Exhausted
+    }
+
+    /// Tries `candidate` as the issuer of the last certificate of `path`: `Some` when the
+    /// search ends with it (a path found, or a limit), `None` to go on.
+    fn attempt(&mut self, path: &mut Vec<usize>, candidate: Candidate) -> Option<Step> {
+        let child_n = *path.last().expect("a path holds the leaf");
+        let sent = self.sent;
+        let verifier = self.verifier;
+        match candidate {
+            Candidate::Anchor(a) => {
+                let key = verifier.anchors[a].anchor.key.public_key();
+                let signed = self.signed(child_n, &key, sent.len());
+                if !matches!(signed, Signed::Verified) {
+                    return self.note(signed, child_n).then_some(Step::Stop);
+                }
+                match self.complete(path, a) {
+                    Ok(()) => Some(Step::Found),
+                    Err(rejection) => {
+                        self.failed = Some(rejection);
+                        None
+                    }
+                }
+            }
+            Candidate::Sent(j) => {
+                let intermediates = path.len();
+                let bound = verifier.limits.intermediates;
+                if intermediates > bound {
+                    self.cut = Some(PathTooLong::Intermediates {
+                        count: intermediates,
+                        bound,
+                    });
+                    return None;
+                }
+                let key = at(sent, j).public_key;
+                let signed = self.signed(child_n, &key, j);
+                if !matches!(signed, Signed::Verified) {
+                    return self.note(signed, child_n).then_some(Step::Stop);
+                }
+                path.push(j);
+                let step = self.extend(path);
+                path.pop();
+                match step {
+                    Step::Exhausted => None,
+                    found_or_stop => Some(found_or_stop),
+                }
+            }
+        }
     }
 
     /// The checks of a complete path: `path` (indexes into `sent`, the leaf first) and the
@@ -510,7 +582,7 @@ impl<V: SignatureVerifier> Search<'_, '_, V> {
             .and_then(|d| Certificate::from_der(d).ok());
         // The certificates of the path with their numbers, the leaf first, the anchor's last.
         let mut chain: Vec<(usize, &Certificate<'_>)> =
-            path.iter().map(|&n| (n, &sent[n])).collect();
+            path.iter().map(|&n| (n, at(sent, n))).collect();
         if let Some(cert) = &anchor_cert {
             chain.push((anchor_n, cert));
         }
@@ -565,7 +637,7 @@ impl<V: SignatureVerifier> Search<'_, '_, V> {
                 return bad_extension(anchor_n);
             }
         }
-        let leaf = &sent[0];
+        let leaf = at(sent, 0);
         if leaf.subject.der() == EMPTY_NAME && !leaf.extensions.critical.subject_alt_name {
             return bad_extension(0);
         }
@@ -606,7 +678,18 @@ impl<V: SignatureVerifier> Search<'_, '_, V> {
         if let Some(eku) = &leaf.extensions.ext_key_usage
             && !eku.server_auth()
         {
-            return not_trusted(Check::NoServerAuth);
+            return not_trusted(Check::NoServerAuth { certificate: 0 });
+        }
+        // An intermediate limited to other purposes issues no TLS server certificate (the
+        // CA/Browser Forum Baseline Requirements 7.1.2.3; rustls-webpki holds every certificate
+        // of the path). The anchor's own extKeyUsage is not read.
+        for &n in &path[1..] {
+            if let Some(eku) = &at(sent, n).extensions.ext_key_usage
+                && !eku.server_auth()
+                && !eku.any()
+            {
+                return not_trusted(Check::NoServerAuth { certificate: n });
+            }
         }
         for &(n, cert) in &chain {
             let v = cert.validity;
@@ -622,26 +705,19 @@ impl<V: SignatureVerifier> Search<'_, '_, V> {
         // Name constraints: of each issuer on the path and of the anchor, over the
         // certificates below it.
         let path_certs: Vec<(usize, &Certificate<'_>)> =
-            path.iter().map(|&n| (n, &sent[n])).collect();
+            path.iter().map(|&n| (n, at(sent, n))).collect();
         let nc_refused = |certificate, name: &str| {
             not_trusted(Check::NameConstraint {
                 certificate,
                 name: name.to_string(),
             })
         };
-        // RFC 5280 section 4.2.1.10: "used only in a CA certificate", "MUST mark this extension
-        // as critical".
+        // RFC 5280 section 4.2.1.10: "used only in a CA certificate". Whether the extension is
+        // marked critical is not looked at: it holds either way.
         if leaf.extensions.name_constraints.is_some()
             && !leaf.extensions.basic_constraints.is_some_and(|bc| bc.ca)
         {
             return nc_refused(0, "nameConstraints in an end-entity certificate");
-        }
-        for &(n, cert) in &chain[1..] {
-            if cert.extensions.name_constraints.is_some()
-                && !cert.extensions.critical.name_constraints
-            {
-                return nc_refused(n, "nameConstraints not marked critical");
-            }
         }
         for i in 1..path_certs.len() {
             let (n, cert) = path_certs[i];
@@ -678,46 +754,49 @@ impl<V: SignatureVerifier> Search<'_, '_, V> {
         };
         let permitted = nc.permitted.as_deref().unwrap_or(&[]);
         let excluded = nc.excluded.as_deref().unwrap_or(&[]);
-        let has_form = |list: &[GeneralName<'_>], tag: u8| list.iter().any(|g| form(g) == tag);
-        for (i, &(_, cert)) in below.iter().enumerate() {
+        // directoryName constraints over the subject are not checked, so they fail closed:
+        // each subtree is looked at once for them.
+        let mut directory = false;
+        for base in permitted.iter().chain(excluded) {
+            self.compare(issuer_n)?;
+            directory |= form(base) == DIRECTORY;
+        }
+        for (i, &(n, cert)) in below.iter().enumerate() {
             if i > 0 && self_issued(cert) {
                 continue;
             }
-            // directoryName constraints over the subject: not checked, so they fail closed.
-            if (has_form(permitted, DIRECTORY) || has_form(excluded, DIRECTORY))
-                && cert.subject.der() != EMPTY_NAME
-            {
-                return refuse(format!("the subject of certificate {}", below[i].0));
+            if directory && cert.subject.der() != EMPTY_NAME {
+                return refuse(format!("the subject of certificate {n}"));
             }
             let Some(sans) = &cert.extensions.subject_alt_name else {
                 continue;
             };
             for san in sans {
                 let tag = form(san);
-                let forms_checked = matches!(san, GeneralName::Dns(_) | GeneralName::Ip(_));
-                let constrained_form = has_form(permitted, tag) || has_form(excluded, tag);
-                if !constrained_form {
-                    continue;
-                }
-                if !forms_checked {
-                    return refuse(name_text(san));
-                }
-                if has_form(permitted, tag) {
-                    let mut inside = false;
-                    for base in permitted.iter().filter(|b| form(b) == tag) {
-                        self.compare(issuer_n)?;
-                        if within(san, base) {
-                            inside = true;
-                            break;
-                        }
+                let checked = matches!(san, GeneralName::Dns(_) | GeneralName::Ip(_));
+                // Every subtree is a visit, of the name's form or not.
+                let mut permits_form = false;
+                let mut inside = false;
+                for base in permitted {
+                    self.compare(issuer_n)?;
+                    if form(base) != tag {
+                        continue;
                     }
-                    if !inside {
+                    if !checked {
                         return refuse(name_text(san));
                     }
+                    permits_form = true;
+                    if within(san, base) {
+                        inside = true;
+                        break;
+                    }
                 }
-                for base in excluded.iter().filter(|b| form(b) == tag) {
+                if permits_form && !inside {
+                    return refuse(name_text(san));
+                }
+                for base in excluded {
                     self.compare(issuer_n)?;
-                    if meets_excluded(san, base) {
+                    if form(base) == tag && (!checked || meets_excluded(san, base)) {
                         return refuse(name_text(san));
                     }
                 }
@@ -726,7 +805,7 @@ impl<V: SignatureVerifier> Search<'_, '_, V> {
         Ok(())
     }
 
-    /// Charges one comparison of name constraints.
+    /// Charges one visit of a subtree of name constraints.
     fn compare(&mut self, issuer_n: usize) -> Result<(), CertificateRejection> {
         let bound = self.verifier.limits.name_constraint_comparisons;
         if self.work.name_constraint_comparisons >= bound {
@@ -745,18 +824,6 @@ const EMPTY_NAME: &[u8] = &[0x30, 0x00];
 
 /// The context tag of directoryName.
 const DIRECTORY: u8 = 0xA4;
-
-/// When both carry one, whether the child's authorityKeyIdentifier is the candidate's
-/// subjectKeyIdentifier (item 9.4).
-fn key_ids_agree(child: &Certificate<'_>, candidate: &Certificate<'_>) -> bool {
-    match (
-        child.extensions.authority_key_id,
-        candidate.extensions.subject_key_id,
-    ) {
-        (Some(aki), Some(ski)) => aki == ski,
-        _ => true,
-    }
-}
 
 /// Whether the certificate's issuer and subject are the same name.
 fn self_issued(cert: &Certificate<'_>) -> bool {

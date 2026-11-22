@@ -13,7 +13,8 @@ rfc5280::eku::ee-wrong-eku CertificateNotTrusted NoServerAuth
 rfc5280::eku::ee-eku-empty CertificateNotTrusted Unreadable
 rfc5280::nc::invalid-ipv*-address CertificateNotTrusted NoPathToAnchor
 rfc5280::nc::nc-permits-invalid-ip-san CertificateNotTrusted Unreadable
-rfc5280::nc::permitted-* CertificateNotTrusted NameConstraint
+rfc5280::nc::permitted-*mismatch CertificateNotTrusted NameConstraint
+rfc5280::nc::permitted-dns-match-noncritical CertificateNotTrusted NameConstraintsNotCritical
 rfc5280::nc::excluded-* CertificateNotTrusted NameConstraint
 rfc5280::nc::invalid-dnsname-* CertificateNotTrusted NameConstraint
 rfc5280::nc::not-allowed-in-ee-* CertificateNotTrusted NameConstraint
