@@ -1,0 +1,79 @@
+version: '3'
+
+set: [pipefail]
+
+tasks:
+  tls-certs-check:
+    desc: Fail when the sources of crates/tls-test-certs changed since its certs/ was made (no build, no openssl).
+    summary: |
+      Fail when the sources of crates/tls-test-certs changed since its certs/ was made (no build, no openssl).
+
+      Runs taskfiles/tls-certs-check.sh, which recomputes the sha256 of src/, keys/, openssl/ and
+      Cargo.toml of the crate with sha256sum and compares them with certs/DIGEST. On a match it
+      prints `tls-certs: <n> cases, certs/ matches its sources`; otherwise it prints `tls-certs:
+      the sources changed since certs/ was generated; run task tls-certs-slow` and the sources
+      that differ, and fails. A step of check.
+    dir: '{{.TASKFILE_DIR}}/..'
+    silent: true
+    cmds:
+      - sh taskfiles/tls-certs-check.sh crates/tls-test-certs
+
+  tls-certs-slow:
+    desc: Make the test certificates again into .out/tls-certs and compare every file with crates/tls-test-certs/certs byte for byte; WRITE=1 writes them.
+    summary: |
+      Make the test certificates again into .out/tls-certs and compare every file with crates/tls-test-certs/certs byte for byte; WRITE=1 writes them.
+
+      A step of the lane slow, never of check: it builds and runs surf-tls-test-certs (the cases
+      of src/cases.rs, signed through the seam under a fixed random source) into
+      .out/tls-certs/certs, then runs openssl/make.sh there (the cases sha1, md5 and rsa-1024,
+      which ring cannot sign; it needs openssl 3.4 or later). It prints the openssl version, one
+      line per file that differs or exists on one side only, and `tls-certs-slow: <n> files,
+      none differs`, and fails when a file differs. Then it runs tls-certs-check.
+
+      With WRITE=1 it replaces certs/ with the new files, copies the record make.sh wrote to
+      openssl/SOURCE and writes certs/DIGEST.
+    dir: '{{.TASKFILE_DIR}}/..'
+    silent: true
+    env:
+      RUSTFLAGS: -D warnings
+    vars:
+      WRITE: '{{.WRITE | default ""}}'
+    cmds:
+      - |
+        set -eu
+        crate=crates/tls-test-certs
+        out=.out/tls-certs
+        rm -rf "$out"
+        mkdir -p "$out"
+        cargo run --quiet --locked -p surf-tls-test-certs -- --out "$out/certs"
+        sh "$crate/openssl/make.sh" "$crate/keys" "$out/certs" "$out/SOURCE"
+        echo "tls-certs-slow: $(openssl version)"
+        if [ '{{.WRITE}}' = 1 ]; then
+          rm -rf "$crate/certs"
+          cp -R "$out/certs" "$crate/certs"
+          cp "$out/SOURCE" "$crate/openssl/SOURCE"
+          sh taskfiles/tls-certs-check.sh --write "$crate"
+          sh taskfiles/tls-certs-check.sh "$crate"
+          exit 0
+        fi
+        (cd "$out/certs" && find . -type f | LC_ALL=C sort) > "$out/new.list"
+        (cd "$crate/certs" && find . -type f ! -name DIGEST | LC_ALL=C sort) > "$out/committed.list"
+        differ=0
+        if ! cmp -s "$out/new.list" "$out/committed.list"; then
+          differ=1
+          diff "$out/committed.list" "$out/new.list" | sed -n -e 's|^< \./|only in certs/: |p' -e 's|^> \./|only in the new output: |p'
+        fi
+        files=0
+        while read -r file; do
+          files=$((files + 1))
+          if [ -f "$crate/certs/$file" ] && ! cmp -s "$out/certs/$file" "$crate/certs/$file"; then
+            differ=1
+            echo "differs: certs/${file#./}"
+          fi
+        done < "$out/new.list"
+        if [ "$differ" = 1 ]; then
+          echo "tls-certs-slow: certs/ differs from what its sources make; run task tls-certs-slow WRITE=1 to write it"
+          exit 1
+        fi
+        echo "tls-certs-slow: $files files, none differs"
+        sh taskfiles/tls-certs-check.sh "$crate"
