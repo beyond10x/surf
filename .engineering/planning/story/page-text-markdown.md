@@ -18,7 +18,7 @@ scope:
   path: crates/page-text/tests/cases/markdown.rs
 - confidence: inferred
   path: crates/page-text/tests/main.rs
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T04:59:50Z", actor: "human:operator", revision: 7, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T04:59:50Z", actor: "human:operator", revision: 8, decided_on: {"recorded":{"verification":1}}}
@@ -76,11 +76,20 @@ before `page-text-tables`; it needs `html-accessible-name`. It writes only `crat
   written, not resolved; a landmark line joins the paragraph after it in a renderer) and what is
   not claimed (no CSS, no script, no model reader).
 - Tests in `crates/page-text/tests/cases/markdown.rs`, a module of the one test binary
-  `tests/main.rs`, no server.
+  `tests/main.rs`, declared there as `#[path = "cases/markdown.rs"] mod markdown;`
+  (`taskfiles/test-layout.sh` passes), no server.
 
 Writes: `crates/page-text/src/markdown.rs` (new), `crates/page-text/src/lib.rs`,
-`crates/page-text/tests/cases/markdown.rs` (new), `crates/page-text/tests/main.rs` (one module
-line).
+`crates/page-text/tests/cases/markdown.rs` (new), `crates/page-text/tests/main.rs` (the line
+`#[path = "cases/markdown.rs"] mod markdown;`).
+
+Bounds for every command of this story. Every build and test runs through the build pool:
+`cargo` is wrapped by the pool's shim, every other command that builds or tests gets the `slot`
+prefix. The pool ends a job after 10 minutes; a command that needs longer names its time with
+`slot --timeout <t>` or `SLOT_TIMEOUT=<t>`, at most 30 minutes; a `timeout` wrapped around the
+command extends nothing. A script that measures or waits starts without the `slot` prefix; the
+builds and test runs inside it carry it. No test runs over 60 s and the test step ends within
+120 s. No Python.
 
 ## Acceptance
 

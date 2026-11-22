@@ -9,7 +9,20 @@ relations:
 - decomposes: epic:html-parser
 - depends_on: story:html-tree-tables
 - depends_on: story:html-actionable-elements
-revision: 8
+scope:
+- confidence: cited
+  path: crates/html-conformance/expected/tree-construction.txt
+- confidence: cited
+  path: crates/html/src/tree.rs
+- confidence: cited
+  path: crates/html/src/tree_builder
+- confidence: cited
+  path: crates/html/src/tree_builder.rs
+- confidence: cited
+  path: crates/page/tests/main.rs
+- confidence: cited
+  path: crates/page/tests/tree_template.rs
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 5}
@@ -47,6 +60,14 @@ The test of `crates/page` that reads template parsing is here, where the parsing
 Writes: `crates/html/src/tree.rs`, `crates/html/src/tree_builder.rs`,
 `crates/html/src/tree_builder/`, `crates/page/tests/tree_template.rs` (new), `crates/page/tests/main.rs` (one `mod` line),
 `crates/html-conformance/expected/tree-construction.txt`.
+
+Bounds for every command of this story. Every build and test runs through the build pool:
+`cargo` is wrapped by the pool's shim, every other command that builds or tests gets the `slot`
+prefix. The pool ends a job after 10 minutes; a command that needs longer names its time with
+`slot --timeout <t>` or `SLOT_TIMEOUT=<t>`, at most 30 minutes; a `timeout` wrapped around the
+command extends nothing. A script that measures or waits starts without the `slot` prefix; the
+builds and test runs inside it carry it. No test runs over 60 s and the test step ends within
+120 s. No Python.
 
 ## Acceptance
 

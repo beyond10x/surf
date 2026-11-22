@@ -22,7 +22,7 @@ scope:
   path: crates/page-text/tests/cases/tables.rs
 - confidence: inferred
   path: crates/page-text/tests/main.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T04:59:51Z", actor: "human:operator", revision: 6, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T04:59:51Z", actor: "human:operator", revision: 7, decided_on: {"recorded":{"verification":1}}}
@@ -62,13 +62,22 @@ section 3 (D1 B, the operator's) as all page text does; no case here adds to tha
     that table, in the same form.
 - The case of `page-text-markdown` that writes a table as a paragraph is replaced by case 8.
 - Tests in `crates/page-text/tests/cases/tables.rs`, a module of the one test binary
-  `tests/main.rs`, and the case `fruit_shop_outline` (the whole outline of design note section 1,
+  `tests/main.rs`, declared there as `#[path = "cases/tables.rs"] mod tables;`
+  (`taskfiles/test-layout.sh` passes), and the case `fruit_shop_outline` (the whole outline of design note section 1,
   its 31 lines with the table) in `tests/cases/outline.rs`, which `page-text-outline` could not
   have before `html-tree-tables`.
 
 Writes: `crates/page-text/src/markdown.rs`, `crates/page-text/src/` (a new `tables.rs` if
 wanted), `crates/page-text/tests/cases/tables.rs` (new), `crates/page-text/tests/cases/outline.rs`,
-`crates/page-text/tests/cases/markdown.rs`, `crates/page-text/tests/main.rs` (one module line).
+`crates/page-text/tests/cases/markdown.rs`, `crates/page-text/tests/main.rs` (the line `#[path = "cases/tables.rs"] mod tables;`).
+
+Bounds for every command of this story. Every build and test runs through the build pool:
+`cargo` is wrapped by the pool's shim, every other command that builds or tests gets the `slot`
+prefix. The pool ends a job after 10 minutes; a command that needs longer names its time with
+`slot --timeout <t>` or `SLOT_TIMEOUT=<t>`, at most 30 minutes; a `timeout` wrapped around the
+command extends nothing. A script that measures or waits starts without the `slot` prefix; the
+builds and test runs inside it carry it. No test runs over 60 s and the test step ends within
+120 s. No Python.
 
 ## Acceptance
 

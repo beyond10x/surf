@@ -20,7 +20,7 @@ scope:
   path: crates/surf-cli/tests/page.rs
 - confidence: inferred
   path: docs/surf-command.md
-revision: 6
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T04:59:52Z", actor: "human:operator", revision: 5, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T04:59:52Z", actor: "human:operator", revision: 6, decided_on: {"recorded":{"verification":1}}}
@@ -57,18 +57,27 @@ merged into the unit's branch. Collision in the round: `crates/surf-cli/src/main
 - `docs/surf-command.md`: the option, the two lines and the block, with the example of design
   note section 1 for `--as markdown`.
 - Tests in `crates/surf-cli/tests/page.rs` (the file `html-document-port` creates; no other new
-  test binary) against a server the test starts on 127.0.0.1.
+  test file) against a server the test starts on 127.0.0.1.
 
 Writes: `crates/surf-cli/src/main.rs`, `crates/surf-cli/Cargo.toml`,
 `crates/surf-cli/tests/page.rs`, `docs/surf-command.md`.
+The root `Cargo.lock` changes with `crates/surf-cli/Cargo.toml`: the coordinator's.
 
 For `README.md` (D7): one line, "`surf <url> --as markdown` prints the page as Markdown, every
 line behind `>`."
 
+Bounds for every command of this story. Every build and test runs through the build pool:
+`cargo` is wrapped by the pool's shim, every other command that builds or tests gets the `slot`
+prefix. The pool ends a job after 10 minutes; a command that needs longer names its time with
+`slot --timeout <t>` or `SLOT_TIMEOUT=<t>`, at most 30 minutes; a `timeout` wrapped around the
+command extends nothing. A script that measures or waits starts without the `slot` prefix; the
+builds and test runs inside it carry it. No test runs over 60 s and the test step ends within
+120 s. No Python.
+
 ## Acceptance
 
-`cargo test -p surf-cli` passes; no test runs over 60 s and the test step ends within 120 s (the
-folder's budget). Among the cases run:
+`SLOT_TIMEOUT=30m cargo test -p surf-cli` passes; no test runs over 60 s and the test step ends
+within 120 s (the folder's budget). Among the cases run:
 
 1. The page of design note section 1: `surf <url> --as markdown` exits 0, and its standard
    output ends with `note text: no-css`, `text markdown 14 of 14 lines from 1, 263 of 263 bytes`
