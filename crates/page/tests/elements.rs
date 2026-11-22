@@ -5,7 +5,9 @@
 use std::fmt::Write as _;
 
 use surf_html::{NodeData, NodeId, ParseOptions, Tree, parse_document};
-use surf_page::{ActionableElement, Kind, actionable_elements, is_hidden, title};
+use surf_page::{
+    ActionableElement, Kind, actionable_elements, handles, hidden_roots, is_hidden, title,
+};
 
 fn parse(input: &str) -> Tree {
     parse_document(input, &ParseOptions::default())
@@ -699,4 +701,63 @@ fn a_deep_tree_is_read_without_recursion() {
     assert_eq!(spans, 20_000);
     assert!(!is_hidden(&tree, deepest));
     assert_eq!(title(&tree), "");
+}
+
+/// `story:page-text-outline` case 2: `l<n>` for a link, `b<n>` for a button, `f<n>` for the
+/// other seven kinds, per letter in document order, hidden elements included.
+#[test]
+fn handles_are_per_letter_in_document_order() {
+    let tree = parse(
+        "<a href=1>a</a><button>b</button><input><a href=2>c</a><select></select>\
+         <a hidden href=3>d</a>",
+    );
+    let names: Vec<String> = handles(&tree).into_iter().map(|(_, name)| name).collect();
+    assert_eq!(names, ["l1", "b1", "f1", "l2", "f2", "l3"]);
+    let rows = actionable_elements(&tree);
+    let nodes: Vec<NodeId> = handles(&tree).into_iter().map(|(node, _)| node).collect();
+    assert_eq!(
+        nodes,
+        rows.iter().map(|row| row.node).collect::<Vec<_>>(),
+        "one handle per row, in the rows' order"
+    );
+}
+
+/// `hidden_roots` holds the nodes `is_hidden` calls hidden whose parent it does not: a node is
+/// hidden exactly when it or an ancestor is in the set.
+#[test]
+fn hidden_roots_agree_with_is_hidden() {
+    for input in [
+        "<p>a</p><p hidden>h<b>i</b></p><div aria-hidden=\"true\"><p>h2</p></div>\
+         <script>s</script><template><p>t</p></template><input type=hidden>\
+         <dialog><p>d</p></dialog><dialog open><p>o</p></dialog>",
+        "<details id=d1><summary id=s1>s</summary><input id=a></details>\
+         <details><input id=e><summary><input id=f></summary>x</details>\
+         <details open><summary>s</summary>\
+         <details><summary><input id=h></summary><input id=i></details></details>",
+        "<html aria-hidden=true><body aria-hidden=TRUE><p>x</p><div aria-hidden=true>y</div>",
+    ] {
+        let tree = parse(input);
+        let roots = hidden_roots(&tree);
+        let mut pending = vec![tree.root()];
+        let mut hidden = 0;
+        while let Some(node) = pending.pop() {
+            let mut in_roots = false;
+            let mut current = Some(node);
+            while let Some(at) = current {
+                in_roots |= roots.contains(&at);
+                current = tree.parent(at);
+            }
+            assert_eq!(in_roots, is_hidden(&tree, node), "{input}: {node:?}");
+            if let Some(parent) = tree.parent(node) {
+                assert_eq!(
+                    roots.contains(&node),
+                    is_hidden(&tree, node) && !is_hidden(&tree, parent),
+                    "{input}: {node:?} is a root exactly when its parent is not hidden"
+                );
+            }
+            hidden += usize::from(in_roots);
+            pending.extend(tree.children(node).iter().rev());
+        }
+        assert!(hidden > 0, "{input}: some node is hidden");
+    }
 }
