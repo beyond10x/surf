@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T09:03:05Z",
+  "actor": "human:operator",
+  "artifact": "story:tests-hold-under-load",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "review1 changed-byte test alone, three runs before and after (cargo nextest, load average after each run)",
+    "reference": "before 60.03 s ended by the runner (109), 45.15 s (78), 24.47 s (51); after 7.63 s (68), 10.89 s (114), 14.18 s (100)"
+  }
+}

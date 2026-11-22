@@ -195,8 +195,11 @@ pub(crate) fn run(mut stream: TcpStream, shared: &Arc<Shared>, slot: StreamSlot,
 }
 
 /// One event's bytes, or `None` when its data would break the framing.
+///
+/// The data is searched with the slice's own `contains`, which looks for one byte value many
+/// bytes at a time; a test build looked at each byte alone, about a second for 100 MiB.
 fn frame(item: &Item) -> Option<Vec<u8>> {
-    if item.data.iter().any(|&b| b == b'\n' || b == b'\r') {
+    if item.data.contains(&b'\n') || item.data.contains(&b'\r') {
         return None;
     }
     let mut frame =

@@ -1,0 +1,45 @@
+{
+  "format": "b10x-terminal/1",
+  "title": "surf-agent · a local copy of this site",
+  "entries": [
+    {
+      "command": "surf-agent open http://127.0.0.1:43117/surf/",
+      "exitCode": 0,
+      "output": "surf 1 session 89a56b78-4046-4f4b-a48b-ae210b93171d open\ntoken <64 hexadecimal digits>\ndid open \"http://127.0.0.1:43117/surf/\"\npage 200 \"text/html\" \"http://127.0.0.1:43117/surf/\"\npath 2 of 2\n  1 open\n  2 go \"http://127.0.0.1:43117/surf/\""
+    },
+    {
+      "command": "export SURF_SESSION=89a56b78-4046-4f4b-a48b-ae210b93171d",
+      "exitCode": 0
+    },
+    {
+      "command": "export SURF_TOKEN=<64 hexadecimal digits>",
+      "exitCode": 0
+    },
+    {
+      "command": "surf-agent go http://127.0.0.1:43117/surf/docs/drive-from-an-agent",
+      "exitCode": 0,
+      "output": "surf 1 session 89a56b78-4046-4f4b-a48b-ae210b93171d open\ndid go \"http://127.0.0.1:43117/surf/docs/drive-from-an-agent\"\npage 200 \"text/html\" \"http://127.0.0.1:43117/surf/docs/drive-from-an-agent\"\npath 3 of 3\n  1 open\n  2 go \"http://127.0.0.1:43117/surf/\"\n  3 go \"http://127.0.0.1:43117/surf/docs/drive-from-an-agent\""
+    },
+    {
+      "command": "surf-agent go http://127.0.0.1:43117/surf/docs/no-such-page",
+      "exitCode": 0,
+      "output": "surf 1 session 89a56b78-4046-4f4b-a48b-ae210b93171d open\ndid go \"http://127.0.0.1:43117/surf/docs/no-such-page\"\npage 404 \"text/html\" \"http://127.0.0.1:43117/surf/docs/no-such-page\"\npath 4 of 4\n  1 open\n  2 go \"http://127.0.0.1:43117/surf/\"\n  3 go \"http://127.0.0.1:43117/surf/docs/drive-from-an-agent\"\n  4 go \"http://127.0.0.1:43117/surf/docs/no-such-page\""
+    },
+    {
+      "command": "surf-agent go https://beyond10x.github.io/surf/",
+      "exitCode": 0,
+      "output": "surf 1 session 89a56b78-4046-4f4b-a48b-ae210b93171d open\ndid go \"https://beyond10x.github.io/surf/\"\npage failed UnsupportedScheme \"https://beyond10x.github.io/surf/\"\npath 5 of 5\n  1 open\n  2 go \"http://127.0.0.1:43117/surf/\"\n  3 go \"http://127.0.0.1:43117/surf/docs/drive-from-an-agent\"\n  4 go \"http://127.0.0.1:43117/surf/docs/no-such-page\"\n  5 go \"https://beyond10x.github.io/surf/\""
+    },
+    {
+      "command": "surf-agent look",
+      "exitCode": 0,
+      "output": "surf 1 session 89a56b78-4046-4f4b-a48b-ae210b93171d open\npage failed UnsupportedScheme \"https://beyond10x.github.io/surf/\"\npath 5 of 5\n  1 open\n  2 go \"http://127.0.0.1:43117/surf/\"\n  3 go \"http://127.0.0.1:43117/surf/docs/drive-from-an-agent\"\n  4 go \"http://127.0.0.1:43117/surf/docs/no-such-page\"\n  5 go \"https://beyond10x.github.io/surf/\""
+    },
+    {
+      "command": "surf-agent close",
+      "exitCode": 0,
+      "output": "surf 1 session 89a56b78-4046-4f4b-a48b-ae210b93171d closed\ndid close\npage failed UnsupportedScheme \"https://beyond10x.github.io/surf/\"\npath 5 of 6\n  2 go \"http://127.0.0.1:43117/surf/\"\n  3 go \"http://127.0.0.1:43117/surf/docs/drive-from-an-agent\"\n  4 go \"http://127.0.0.1:43117/surf/docs/no-such-page\"\n  5 go \"https://beyond10x.github.io/surf/\"\n  6 close"
+    }
+  ],
+  "recordedWith": "surf-agent, surfd and surf-session 0.2.0, built from commit ad8d0e5; a run on 2026-11-22 against a local copy of this site served on 127.0.0.1:43117; the token printed by open is replaced by <64 hexadecimal digits>"
+}

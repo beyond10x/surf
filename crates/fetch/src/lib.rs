@@ -3,9 +3,13 @@
 //! [`fetch`] takes an address as text and a set of [`Limits`], sends a `GET` request with
 //! `Host` and `Connection: close`, follows redirects with one more such request each, and
 //! returns a [`Response`] (status code, media type, body bytes, the address it came from) or a
-//! [`Failure`] with one of four reasons: [`Failure::Unreachable`],
-//! [`Failure::UnsupportedScheme`], [`Failure::MalformedResponse`] or
-//! [`Failure::TooManyRedirects`].
+//! [`Failure`] with one of five reasons: [`Failure::Unreachable`],
+//! [`Failure::UnsupportedScheme`], [`Failure::MalformedResponse`],
+//! [`Failure::TooManyRedirects`] or [`Failure::ForbiddenDestination`].
+//!
+//! [`send_through`] is [`send`] over a [`Network`] of the caller's: where names are resolved and
+//! connections made. [`send`] uses [`OsNetwork`], the operating system's resolver and
+//! [`TcpStream::connect_timeout`]; a test passes a resolver and a transport of its own.
 //!
 //! [`send`] does the same for a [`Request`]: an address, a [`Method`] (`GET` or `POST`), and for
 //! a `POST` an optional body and its media type. [`fetch`] is [`send`] of a `GET` without a body.
@@ -85,8 +89,31 @@
 //!   number of redirects, as the Fetch Standard's "HTTP-redirect fetch" checks the location URL,
 //!   then its scheme, then the redirect count.
 //!
+//! - **Destinations**: see "Destinations" below. A refused destination ends the fetch with
+//!   [`Failure::ForbiddenDestination`], before any connection to it.
+//!
 //! So one fetch lasts at most the connect timeout plus the read timeout, whatever the number of
 //! redirects: 40 s at the defaults.
+//!
+//! # Destinations
+//!
+//! The host of every request of a fetch is resolved once (an IP address is its own), and the
+//! addresses resolved are the ones checked and then dialed, in their order: no second
+//! resolution comes between the check and the connection. An address is *local* when it is
+//! loopback (127.0.0.0/8, `::1`), private (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16),
+//! link-local (169.254.0.0/16, `fe80::/10`), unique-local (`fc00::/7`), shared (100.64.0.0/10)
+//! or unspecified (0.0.0.0, `::`), or an IPv6 address that embeds an IPv4 address of one of
+//! these: IPv4-mapped (`::ffff:a.b.c.d`), IPv4-compatible (`::a.b.c.d`), NAT64 (`64:ff9b::/96`)
+//! or 6to4 (`2002::/16`); every other address is *public*.
+//!
+//! The first request of a fetch may go to any address: going to a local address on purpose is a
+//! use of surf. When the first request connected to a public address, a request that follows a
+//! redirect is refused when its host resolves to a local address, any one of those resolved,
+//! also when a public one comes first: [`Failure::ForbiddenDestination`], with no connection to
+//! any of them. So a page on the public web cannot send a request into the loopback or private
+//! network of the machine, by an address literal or by a name that resolves to a public address
+//! first and a local one later. When the first request connected to a local address, the chain
+//! follows its redirects as before, to local and to public addresses. The port is not looked at.
 //!
 //! A zero [`Duration`] for either timeout leaves no time and fails every fetch with
 //! [`Failure::Unreachable`]. A duration too large to add to the current [`Instant`] sets no
@@ -169,7 +196,7 @@
 
 use std::fmt;
 use std::io::{ErrorKind, Read, Write};
-use std::net::{IpAddr, Ipv6Addr, SocketAddr, TcpStream, ToSocketAddrs};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream, ToSocketAddrs};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -304,6 +331,9 @@ pub enum Failure {
     MalformedResponse(String),
     /// A redirect arrived after 20 redirects of the same fetch were followed.
     TooManyRedirects(String),
+    /// A redirect led from a public address to a local one (the crate documentation,
+    /// "Destinations"). No connection to it was attempted.
+    ForbiddenDestination(String),
 }
 
 impl Failure {
@@ -313,7 +343,8 @@ impl Failure {
             Failure::Unreachable(detail)
             | Failure::UnsupportedScheme(detail)
             | Failure::MalformedResponse(detail)
-            | Failure::TooManyRedirects(detail) => detail,
+            | Failure::TooManyRedirects(detail)
+            | Failure::ForbiddenDestination(detail) => detail,
         }
     }
 }
@@ -325,6 +356,7 @@ impl fmt::Display for Failure {
             Failure::UnsupportedScheme(_) => "unsupported scheme",
             Failure::MalformedResponse(_) => "malformed response",
             Failure::TooManyRedirects(_) => "too many redirects",
+            Failure::ForbiddenDestination(_) => "forbidden destination",
         };
         write!(f, "{reason}: {}", self.detail())
     }
@@ -355,6 +387,49 @@ pub fn fetch(address: &str, limits: &Limits) -> Result<Response, Failure> {
 /// a redirect changes the method as the crate documentation says. Blocks the calling thread for
 /// as long as the [`Limits`] allow.
 pub fn send(request: &Request<'_>, limits: &Limits) -> Result<Response, Failure> {
+    send_through(request, limits, &OsNetwork)
+}
+
+/// Where a fetch resolves names and makes connections. [`OsNetwork`] is the operating system's;
+/// a test supplies its own, to give a name the addresses it chooses and to see every address
+/// dialed. The rule of the crate documentation, "Destinations", is applied between the two
+/// methods, by the fetch, whatever the network.
+pub trait Network {
+    /// The addresses `host` (a name, never an IP address) resolves to, with `port`, within
+    /// `timeout`. A failure is [`Failure::Unreachable`] as a rule.
+    fn resolve(&self, host: &str, port: u16, timeout: Duration)
+        -> Result<Vec<SocketAddr>, Failure>;
+
+    /// A connection to `address`, one the fetch has checked, within `timeout`.
+    fn connect(&self, address: &SocketAddr, timeout: Duration) -> std::io::Result<TcpStream>;
+}
+
+/// The operating system's network: [`std::net::ToSocketAddrs`] on a thread of its own, waited
+/// for at most the timeout, and [`TcpStream::connect_timeout`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct OsNetwork;
+
+impl Network for OsNetwork {
+    fn resolve(
+        &self,
+        host: &str,
+        port: u16,
+        timeout: Duration,
+    ) -> Result<Vec<SocketAddr>, Failure> {
+        resolve_name(host, port, timeout)
+    }
+
+    fn connect(&self, address: &SocketAddr, timeout: Duration) -> std::io::Result<TcpStream> {
+        TcpStream::connect_timeout(address, timeout)
+    }
+}
+
+/// [`send`] over `network`: names are resolved and connections made by it.
+pub fn send_through(
+    request: &Request<'_>,
+    limits: &Limits,
+    network: &dyn Network,
+) -> Result<Response, Failure> {
     let address = request.address;
     let mut target = Target::parse(address)?;
     check(request, limits)?;
@@ -372,9 +447,17 @@ pub fn send(request: &Request<'_>, limits: &Limits) -> Result<Response, Failure>
     let mut redirects = 0;
     let mut connect_left = limits.connect_timeout;
     let mut read_left = limits.read_timeout;
+    // Whether the first request connected to a local address; none before it connected.
+    let mut started_local: Option<bool> = None;
     loop {
         let connecting = Instant::now();
-        let stream = connect(&target, connect_left)?;
+        // The crate documentation, "Destinations": after a first request to a public address,
+        // every later one must resolve to public addresses only.
+        let public_only = started_local == Some(false);
+        let (stream, dialed) = connect(&target, connect_left, network, public_only)?;
+        if started_local.is_none() {
+            started_local = Some(is_local(dialed.ip()));
+        }
         connect_left = connect_left.saturating_sub(connecting.elapsed());
         let exchanging = Instant::now();
         let (head, wire) = exchange(&target, &outgoing, stream, read_left, limits)?;
@@ -746,10 +829,31 @@ impl Target {
     }
 }
 
-/// Resolve and connect, both within `timeout`.
-fn connect(target: &Target, timeout: Duration) -> Result<TcpStream, Failure> {
+/// Resolve once, check, and connect to one of the addresses checked, all within `timeout`.
+/// With `public_only`, any local address among those resolved refuses the request before a
+/// connection (the crate documentation, "Destinations"). Returns the connection and the address
+/// it went to.
+fn connect(
+    target: &Target,
+    timeout: Duration,
+    network: &dyn Network,
+    public_only: bool,
+) -> Result<(TcpStream, SocketAddr), Failure> {
     let deadline = Instant::now().checked_add(timeout);
-    let addresses = resolve(target, timeout)?;
+    let addresses = match target.host.parse::<IpAddr>() {
+        Ok(ip) => vec![SocketAddr::new(ip, target.port)],
+        Err(_) => network.resolve(&target.host, target.port, timeout)?,
+    };
+    if public_only {
+        if let Some(local) = addresses.iter().find(|address| is_local(address.ip())) {
+            return Err(Failure::ForbiddenDestination(format!(
+                "a redirect leads to {}, which is the local address {}, and the first request \
+                 went to a public address",
+                target.host,
+                local.ip()
+            )));
+        }
+    }
     let mut last_error = None;
     for address in &addresses {
         let left = time_left(deadline, timeout);
@@ -759,8 +863,8 @@ fn connect(target: &Target, timeout: Duration) -> Result<TcpStream, Failure> {
             ));
             break;
         }
-        match TcpStream::connect_timeout(address, left) {
-            Ok(stream) => return Ok(stream),
+        match network.connect(address, left) {
+            Ok(stream) => return Ok((stream, *address)),
             Err(e) => last_error = Some(format!("connecting to {address} failed: {e}")),
         }
     }
@@ -769,38 +873,74 @@ fn connect(target: &Target, timeout: Duration) -> Result<TcpStream, Failure> {
     })))
 }
 
-/// The addresses of `target`'s host. An IP address is its own; a name is resolved on a thread of
-/// its own, waited for at most `timeout`. A resolution that takes longer is abandoned: its
-/// thread ends when the resolver returns, and its answer is dropped.
-fn resolve(target: &Target, timeout: Duration) -> Result<Vec<SocketAddr>, Failure> {
-    if let Ok(ip) = target.host.parse::<IpAddr>() {
-        return Ok(vec![SocketAddr::new(ip, target.port)]);
+/// Whether `ip` is a local address in the sense of the crate documentation, "Destinations":
+/// loopback, private, link-local, unique-local, shared or unspecified, or an IPv6 address that
+/// embeds one of these ([`embedded_v4`]).
+fn is_local(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => is_local_v4(v4),
+        IpAddr::V6(v6) => {
+            let first = v6.segments()[0];
+            embedded_v4(v6).is_some_and(is_local_v4)
+                || v6.is_loopback()
+                || v6.is_unspecified()
+                // fe80::/10, link-local
+                || first & 0xffc0 == 0xfe80
+                // fc00::/7, unique-local
+                || first & 0xfe00 == 0xfc00
+        }
     }
+}
+
+/// The IPv4 address an IPv6 address embeds: IPv4-mapped (`::ffff:a.b.c.d`), IPv4-compatible
+/// (`::a.b.c.d`) and the NAT64 well-known prefix (`64:ff9b::/96`) in their last 32 bits, 6to4
+/// (`2002::/16`) in the 32 bits after its prefix.
+fn embedded_v4(ip: Ipv6Addr) -> Option<Ipv4Addr> {
+    let joined = |high: u16, low: u16| Ipv4Addr::from((u32::from(high) << 16) | u32::from(low));
+    match ip.segments() {
+        [0, 0, 0, 0, 0, 0xffff, high, low]
+        | [0, 0, 0, 0, 0, 0, high, low]
+        | [0x64, 0xff9b, 0, 0, 0, 0, high, low]
+        | [0x2002, high, low, ..] => Some(joined(high, low)),
+        _ => None,
+    }
+}
+
+fn is_local_v4(ip: Ipv4Addr) -> bool {
+    let [a, b, _, _] = ip.octets();
+    a == 127
+        || a == 10
+        || (a == 172 && (16..=31).contains(&b))
+        || (a == 192 && b == 168)
+        || (a == 169 && b == 254)
+        || (a == 100 && (64..=127).contains(&b))
+        || ip.is_unspecified()
+}
+
+/// The addresses of the name `host` with `port`, resolved on a thread of its own, waited for at
+/// most `timeout`. A resolution that takes longer is abandoned: its thread ends when the
+/// resolver returns, and its answer is dropped.
+fn resolve_name(host: &str, port: u16, timeout: Duration) -> Result<Vec<SocketAddr>, Failure> {
     let (sender, receiver) = mpsc::channel();
-    let (host, port) = (target.host.clone(), target.port);
+    let owned = host.to_string();
     thread::Builder::new()
         .name("surf-fetch-resolve".to_string())
         .spawn(move || {
-            let addresses = (host.as_str(), port)
+            let addresses = (owned.as_str(), port)
                 .to_socket_addrs()
                 .map(Iterator::collect::<Vec<SocketAddr>>);
             // The receiver is gone when the fetch stopped waiting; the answer is not needed.
             let _ = sender.send(addresses);
         })
-        .map_err(|e| unreachable(format!("{} cannot be resolved: {e}", target.host)))?;
+        .map_err(|e| unreachable(format!("{host} cannot be resolved: {e}")))?;
     match receiver.recv_timeout(timeout) {
         Ok(Ok(addresses)) => Ok(addresses),
-        Ok(Err(e)) => Err(unreachable(format!(
-            "{} does not resolve: {e}",
-            target.host
-        ))),
+        Ok(Err(e)) => Err(unreachable(format!("{host} does not resolve: {e}"))),
         Err(RecvTimeoutError::Timeout) => Err(unreachable(format!(
-            "{} did not resolve within the connect timeout",
-            target.host
+            "{host} did not resolve within the connect timeout"
         ))),
         Err(RecvTimeoutError::Disconnected) => Err(unreachable(format!(
-            "resolving {} ended without an answer",
-            target.host
+            "resolving {host} ended without an answer"
         ))),
     }
 }
@@ -1659,5 +1799,65 @@ mod tests {
         }
         // Each outcome was reached, so the inputs exercised more than the first byte.
         assert!(seen.iter().all(|&n| n > 0), "outcomes {seen:?}");
+    }
+
+    #[test]
+    fn local_addresses_are_the_classes_of_the_destination_rule() {
+        let local = [
+            "127.0.0.1",
+            "127.255.255.254",
+            "10.0.0.1",
+            "10.255.255.255",
+            "172.16.0.1",
+            "172.31.255.255",
+            "192.168.0.1",
+            "169.254.169.254",
+            "100.64.0.1",
+            "100.127.255.255",
+            "0.0.0.0",
+            "::1",
+            "::",
+            "fe80::1",
+            "febf::1",
+            "fc00::1",
+            "fdff::1",
+            "::ffff:127.0.0.1",
+            "::ffff:10.0.0.1",
+            "::ffff:169.254.169.254",
+            "::ffff:100.64.0.1",
+            "::ffff:0.0.0.0",
+            "::127.0.0.1",
+            "64:ff9b::7f00:1",
+            "2002:a9fe:a9fe::1",
+        ];
+        let public = [
+            "203.0.113.5",
+            "198.51.100.7",
+            "8.8.8.8",
+            "172.15.255.255",
+            "172.32.0.0",
+            "192.167.255.255",
+            "169.253.0.1",
+            "100.63.255.255",
+            "100.128.0.0",
+            "11.0.0.1",
+            "0.0.0.1",
+            "2001:db8::1",
+            "fec0::1",
+            "fe7f::1",
+            "fb00::1",
+            "::ffff:203.0.113.5",
+            "::203.0.113.5",
+            "64:ff9b::cb00:7105",
+            "2002:cb00:7105::1",
+        ];
+        for text in local {
+            let ip: IpAddr = text.parse().unwrap();
+            assert!(is_local(ip), "{text} is local");
+        }
+        for text in public {
+            let ip: IpAddr = text.parse().unwrap();
+            assert!(!is_local(ip), "{text} is public");
+        }
     }
 }
