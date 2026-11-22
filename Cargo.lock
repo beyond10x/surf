@@ -70,6 +70,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "surf-agent-tasks"
+version = "0.1.0"
+dependencies = [
+ "surf-answer",
+ "surf-test-process",
+]
+
+[[package]]
 name = "surf-answer"
 version = "0.1.0"
 

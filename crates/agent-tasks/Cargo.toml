@@ -1,0 +1,24 @@
+[package]
+name = "surf-agent-tasks"
+description = "Test tooling: agent tasks on fixture sites served on 127.0.0.1, solved with surf-agent alone; the format readers, the fixture server, the scripted agent and the judge. Not shipped."
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+autotests = false
+
+[lib]
+doctest = false
+
+[[bin]]
+name = "agent-tasks-serve"
+path = "src/bin/agent-tasks-serve.rs"
+test = false
+
+[dependencies]
+surf-answer = { path = "../answer" }
+surf-test-process = { path = "../test-process" }
+
+[[test]]
+name = "main"
+path = "tests/main.rs"

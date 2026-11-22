@@ -1,0 +1,57 @@
+version: '3'
+
+set: [pipefail]
+
+tasks:
+  agent-tasks-report:
+    desc: Print .out/agent-tasks.txt, which tasks::every_task of crates/agent-tasks writes; fail when it is missing.
+    summary: |
+      Print .out/agent-tasks.txt, which tasks::every_task of crates/agent-tasks writes; fail when it is missing.
+
+      The scripted lane of the agent tasks runs inside task test: one test that runs every task
+      of crates/agent-tasks/tasks.txt with the surf-agent of SURF_BIN_DIR and holds each to its
+      row of status.txt. This task prints the file it wrote. task check runs it after test.
+    dir: '{{.TASKFILE_DIR}}/..'
+    silent: true
+    cmds:
+      - |
+        if [ ! -f .out/agent-tasks.txt ]; then
+          echo 'agent-tasks-report: .out/agent-tasks.txt is missing; tasks::every_task of crates/agent-tasks writes it (task test)' >&2
+          exit 1
+        fi
+        cat .out/agent-tasks.txt
+
+  agent-tasks-archive:
+    desc: Measure the agent tasks with the binaries of an unpacked release archive (DIR=<dir>), the listed states not enforced.
+    summary: |
+      Measure the agent tasks with the binaries of an unpacked release archive.
+
+      Runs tasks::every_task of crates/agent-tasks with SURF_BIN_DIR=DIR and
+      SURF_AGENT_TASKS=measure: the listed states of status.txt play no part and no raise: line
+      is written. Then prints .out/agent-tasks.txt, whose first line goes into the release notes
+      (docs/releasing.md, step 7). DIR is the unpacked surf-<version>-<target>/ of a Linux
+      archive. No step of check, check-runner or a forge workflow runs it.
+    dir: '{{.TASKFILE_DIR}}/..'
+    requires:
+      vars: [DIR]
+    cmds:
+      - SURF_BIN_DIR='{{.DIR}}' SURF_AGENT_TASKS=measure cargo nextest run -p surf-agent-tasks -E 'test(=tasks::every_task)'
+      - cat .out/agent-tasks.txt
+
+  agent-tasks-model:
+    desc: Put the agent tasks to a model that has surf-agent alone (MODEL=<name>), outside the gate; writes .out/agent-tasks-model.txt.
+    summary: |
+      Put the agent tasks to a model that has surf-agent alone, outside the gate.
+
+      Runs taskfiles/agent-tasks-model.sh on target/debug (after task build) with
+      AGENT_TASKS_MODEL=MODEL, writes .out/agent-tasks-model.txt and prints it. The script waits
+      on a model and builds nothing: run it without the slot prefix. AGENT_TASKS_MODEL_COMMAND
+      in the environment replaces the default command (claude -p). No step of check,
+      check-runner or a forge workflow runs it.
+    dir: '{{.TASKFILE_DIR}}/..'
+    requires:
+      vars: [MODEL]
+    cmds:
+      - mkdir -p .out
+      - AGENT_TASKS_MODEL='{{.MODEL}}' sh taskfiles/agent-tasks-model.sh target/debug .out/agent-tasks-model.txt
+      - cat .out/agent-tasks-model.txt
