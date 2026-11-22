@@ -33,6 +33,7 @@ arrange:
         disabled: false
         checked: true
         required: false
+        readonly: false
         name: shipping
         form_id: 5a7c1e00-0000-4000-8000-000000000081
       state: Added
@@ -49,6 +50,7 @@ arrange:
         disabled: false
         checked: false
         required: false
+        readonly: false
         name: shipping
         form_id: 5a7c1e00-0000-4000-8000-000000000081
       state: Added
@@ -65,6 +67,7 @@ arrange:
         disabled: false
         checked: true
         required: false
+        readonly: false
         name: shipping
         form_id: 5a7c1e00-0000-4000-8000-000000000082
       state: Added
@@ -81,6 +84,7 @@ arrange:
         disabled: false
         checked: true
         required: false
+        readonly: false
         name: payment
         form_id: 5a7c1e00-0000-4000-8000-000000000081
       state: Added

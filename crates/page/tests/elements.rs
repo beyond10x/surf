@@ -363,7 +363,9 @@ fn checked_is_the_default_checkedness_of_a_checkbox_and_a_radio_button() {
             "input#a checkbox checked",
             "input#b checkbox",
             "input#u checkbox checked",
-            "input#c radio checked",
+            // Since `story:agent-fill-pick` the radio button group rule: of `c` and `d`, both of
+            // group `g` with `checked`, the last stays checked.
+            "input#c radio",
             "input#d radio checked",
             "input#e radio",
             "input#f text value=\"\"",

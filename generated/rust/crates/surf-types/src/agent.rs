@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest a781938fbf4be70c3e62196db4afd2b86d2f53f3955885c5d3e606169c3ba178
+// contract digest b07862b2ffbdc491fea9e4ff79c9710a0d39f78bc99706a1e4893b63e4f39d76
 // do not edit: regenerate with `ess synthesize`
 
 //! Agent — `surf.agent`.
@@ -44,6 +44,21 @@ pub enum ActionCommand {
 /// The identity of one recorded action.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActionId(pub crate::primitives::Uuid);
+
+/// FillCall — `surf.agent.FillCall`.
+///
+/// The handle of the control to fill in a session, its value, and the token that proves the caller holds it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FillCall {
+    /// `session_id` — `String`.
+    pub session_id: String,
+    /// `token` — `surf.agent.SessionToken`.
+    pub token: SessionToken,
+    /// `handle` — `String`.
+    pub handle: String,
+    /// `value` — `String`.
+    pub value: String,
+}
 
 /// FollowCall — `surf.agent.FollowCall`.
 ///
@@ -123,6 +138,21 @@ pub enum PageForm {
     Tree,
     /// `markdown`.
     Markdown,
+}
+
+/// PickCall — `surf.agent.PickCall`.
+///
+/// The handle of the choice to change in a session, the option to pick, and the token that proves the caller holds it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PickCall {
+    /// `session_id` — `String`.
+    pub session_id: String,
+    /// `token` — `surf.agent.SessionToken`.
+    pub token: SessionToken,
+    /// `handle` — `String`.
+    pub handle: String,
+    /// `option` — `String`.
+    pub option: String,
 }
 
 /// The states of `surf.agent.Session`, as runtime values.

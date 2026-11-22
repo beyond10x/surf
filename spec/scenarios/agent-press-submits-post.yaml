@@ -34,6 +34,7 @@ arrange:
         disabled: false
         checked: false
         required: false
+        readonly: false
         form_id: 5a7c1e00-0000-4000-8000-0000000000c6
       state: Added
   - instance: submission

@@ -188,3 +188,28 @@ fn case_21_form_handles_beside_unchanged_handles() {
     let plain: Vec<String> = handles(&tree).into_iter().map(|(_, h)| h).collect();
     assert_eq!(plain, ["l1", "f1", "b1"]);
 }
+
+/// `story:agent-fill-pick`: the radio button group rule at parse time (HTML Standard
+/// 4.10.5.1.18). A group is the radio buttons of one form owner with the same non-empty `name`,
+/// or those with no form owner and the same name; one with no name or an empty one is alone. Of
+/// those of a group that carry `checked`, the last in tree order stays checked.
+#[test]
+fn radio_group_rule_leaves_the_last_checked_of_each_group() {
+    let tree = parse(
+        "<!doctype html>\
+        <form id=a><input type=radio name=x value=a1 checked>\
+        <input type=radio name=x value=a2 checked>\
+        <input type=radio name=y value=a3 checked></form>\
+        <form id=b><input type=radio name=x value=b1 checked></form>\
+        <input type=radio name=x value=o1 checked><input type=radio name=x value=o2 checked>\
+        <input type=radio name=x value=a4 form=a>\
+        <input type=radio value=n1 checked><input type=radio name=\"\" value=n2 checked>\
+        <input type=checkbox name=x value=c1 checked><input type=checkbox name=x value=c2 checked>",
+    );
+    let checked: Vec<String> = surf_page::actionable_elements(&tree)
+        .iter()
+        .filter(|element| element.checked)
+        .filter_map(|element| attribute(&tree, element.node, "value"))
+        .collect();
+    assert_eq!(checked, ["a2", "a3", "b1", "o2", "n1", "n2", "c1", "c2"]);
+}

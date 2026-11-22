@@ -21,7 +21,8 @@
 //! ```
 //!
 //! - `surf-wire 1`, the version line ([`VERSION_LINE`]), always first.
-//! - `command <name>`: a word of `[a-z]+` (`open`, `go`, `look`, `close`).
+//! - `command <name>`: a word of `[a-z]+` (`open`, `go`, `look`, `follow`, `fill`, `pick`,
+//!   `close`).
 //! - `session <id>`: the session identity, a UUID in text form, which the client writes in lower
 //!   case. Absent for `open`. [`Request::decode`] keeps the word as it was sent (any printable
 //!   ASCII without a space); the receiver reads it with [`session_id`], so that an identity that
@@ -31,7 +32,10 @@
 //! - `arg <name> "<value>"`: one line per argument, in any order, each name once; the name a word
 //!   of `[a-z]+`, the value a field of [`surf_answer::quote`]. `open [<url>]` and `go <url>` send
 //!   `arg url`; `--as <form>` is `arg form` (`tree` or `markdown`) and `--from-line <n>` is
-//!   `arg line` (decimal digits), on `open <url>`, `go` and `look`. A later argument is a new name and needs no new version; the receiver answers an
+//!   `arg line` (decimal digits), on `open <url>`, `go` and `look`. `follow <handle>` sends
+//!   `arg handle`; `fill <handle> <value>` sends `arg handle` and `arg value` (the value read
+//!   from standard input for `-`); `pick <handle> <option>` sends `arg handle` and `arg option`.
+//!   A later argument is a new name and needs no new version; the receiver answers an
 //!   argument name it does not know with status 2 ([`Request::unknown_arg`]).
 //! - `end`: the request is complete. The receiver reads nothing after it.
 //!

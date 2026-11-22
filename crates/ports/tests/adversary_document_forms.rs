@@ -33,6 +33,7 @@ fn control(n: u64, document: u64, kind: ElementKind, checked: bool) -> ElementSn
             disabled: false,
             checked,
             required: false,
+            readonly: false,
             name: Some("group".to_owned()),
             form_id: Some(FormId(uuid(7))),
         },

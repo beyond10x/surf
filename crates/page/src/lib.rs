@@ -25,7 +25,9 @@
 //!   mode "filename" with no selected file). `textarea`: its child text content. `None` for the
 //!   other kinds; a `select`'s options are not read.
 //! - `checked`: the default checkedness of an `input` in the Checkbox or Radio Button state
-//!   (the `checked` attribute is present).
+//!   (the `checked` attribute is present), with the radio button group rule as the parser leaves
+//!   it (`story:agent-fill-pick`): of the radio buttons of one group with `checked`, only the
+//!   last in tree order is checked ([`forms`] gives the group and its rule).
 //! - `disabled`: for `button`, `input`, `select` and `textarea`: the `disabled` attribute is
 //!   present, or the element is a descendant of a `fieldset` with a `disabled` attribute and not
 //!   a descendant of that fieldset's first `legend` element child. Always `false` for a link.
@@ -158,12 +160,6 @@
 //! - A label is cut at [`LABEL_BYTES_MAX`] bytes, and the work for the labels of one call is
 //!   bounded by [`LABEL_WORK_MAX`]; past it a name comes from the element's own attributes. The
 //!   standards bound neither.
-//!
-//! # Not yet taken
-//!
-//! - The radio button group rule, by which a later checked radio button unchecks the others of
-//!   its group: here every radio button with a `checked` attribute is `checked`, and a
-//!   submission gives each of them as an entry. No story names it yet.
 
 #![forbid(unsafe_code)]
 
@@ -365,6 +361,7 @@ pub fn actionable_elements(tree: &Tree) -> Vec<ActionableElement> {
         }
     }
     label::fill(tree, facts, &mut found);
+    forms::uncheck_radio_groups(tree, &mut found);
     found
 }
 

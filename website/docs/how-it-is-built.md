@@ -40,11 +40,11 @@ One command checks everything:
 ```console
 $ task check
 surf v1 — 9 file(s), 24 scenario(s), valid
-169 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
-  169 scenarios: 169 passed, 0 failed, 0 error, 0 unsupported
-169 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
-  169 scenarios: 169 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 169 scenario(s) each, of suite sha256:95b3119d869d65aec04eaf21d4f9a762352056b6d22b23f0ad1e5a7678f2c672
+170 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
+  170 scenarios: 170 passed, 0 failed, 0 error, 0 unsupported
+170 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
+  170 scenarios: 170 passed, 0 failed, 0 error, 0 unsupported
+the interpreter and the Rust system ran 170 scenario(s) each, of suite sha256:4d7a2a59a0bb8e7760ca9cd70d6c2c138f8cdb4a24ed6cd71b392524220636ca
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 Cargo.lock: 26 package(s), none from outside this repository
@@ -58,7 +58,7 @@ view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
 html-conformance: 9107 cases, 9095 run, 9095 passed
 ```
 
-It validates the specification, runs the 169 scenarios against the interpreter built into `ess`
+It validates the specification, runs the 170 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
 that the lock file holds no outside package, then builds and tests, checks that every event
 name of the live view's stream is an event of the specification, runs the live view's page

@@ -1,6 +1,6 @@
 ---
 title: Drive surf from an agent
-description: "surf-agent open, go, look, follow and close: a browser session for an AI agent or a script, one call at a time."
+description: "surf-agent open, go, look, follow, fill, pick and close: a browser session for an AI agent or a script, one call at a time."
 ---
 
 import AgentTerminal from '@site/src/components/AgentTerminal';
@@ -44,6 +44,8 @@ It runs on Linux only: the agent binaries read the caller's user id from `/proc/
 | `surf-agent go <url>` | load an address into the session's tab |
 | `surf-agent look` | print the session's state |
 | `surf-agent follow <handle>` | follow the link of a handle of the `now` block, such as `l3` |
+| `surf-agent fill <handle> <value>` | type a value into a text field, password field or textarea, such as `f1`; `-` reads the value from standard input |
+| `surf-agent pick <handle> <option>` | select an option of a select by its label or value, or `on` or `off` for a checkbox, `on` for a radio button |
 | `surf-agent close` | close the session and print its final state |
 
 `open <url>`, `go` and `look` also take `--as tree` or `--as markdown`: the answer then ends
@@ -136,6 +138,40 @@ as it was: a target over 65,536 bytes (`address-too-long`), a scheme surf does n
 public address, a target on a loopback or private address or `localhost`
 (`forbidden-destination`). A target never shows a `user:password@` part; `follow` still sends it.
 
+## Form fields
+
+The `now` block lists a page's form fields beside its links, with handles such as `f1` (a
+field) and `b1` (a button), and in place of a target the field's state:
+
+```text
+now 4 of 4
+  f1 text ? "User name" = "ada" required
+  f2 password ? "Password" = (set)
+  f3 checkbox ? "News" checked
+  f4 select ? "Colour" = "Green"
+note visibility: hidden attribute only
+```
+
+The value stands in quotes; a password shows only `(set)` or `(empty)`; a select shows the
+label of its selected option; the flags `disabled`, `checked`, `required` and `readonly` follow
+when they hold.
+
+`fill f1 ada` types into a field; for a secret use `fill f2 -` and write the value to standard
+input: an argument word is readable by other users. `pick` chooses an option or checks a box.
+A password is never printed: `(set)` or `(empty)`.
+
+```sh
+printf '%s\n' "$PASSWORD" | surf-agent fill f2 -
+surf-agent pick f4 Red
+surf-agent pick f3 off
+```
+
+The answer says `did fill "f2"`, and the `path` line `4 fill f2`: the handle, never the value.
+`fill` and `pick` are refused with status 1 for a handle the page has not (`unknown-handle`), a
+field of another kind (`wrong-kind`, also for `follow` of a field), a disabled field or option
+(`disabled`), a hidden one (`hidden`), a read-only field (`readonly`) and an option the select
+has not, or a word other than `on` and `off` (`unknown-option`). A form cannot be submitted yet.
+
 A script can take the two values from the answer of `open`:
 
 ```console
@@ -150,7 +186,7 @@ $ surf-agent look
 Every answer starts with its head line, `surf 1 session <id> <state>`, then the action it is
 for (`did`), the page (`page`: `none` before the first load, the status, media type, address and
 title of a loaded page, or `failed` with the reason), the session's last actions (`path`) and
-the page's links (`now`). Every
+the page's links and form fields (`now`). Every
 value that comes from a page, a server or an address stands in double quotes, with every
 character that could start a line or look like a field escaped. The format, line by line, with
 its grammar:
@@ -163,7 +199,7 @@ Quoting lowers the risk of page text steering an agent; it does not remove it.
 | status | meaning |
 |---|---|
 | 0 | the action was taken |
-| 1 | the action was refused: the token does not belong to the session (`did refused token`), the session is closed (`did refused closed`), or `follow` names a handle the page has not (`unknown-handle`), a hidden link (`hidden`), a target that does not resolve (`unresolved`), a target over 65,536 bytes (`address-too-long`), one with a scheme surf does not fetch (`unsupported-scheme`) or, from a public page, one on a local address (`forbidden-destination`) |
+| 1 | the action was refused: the token does not belong to the session (`did refused token`), the session is closed (`did refused closed`), or `follow` names a handle the page has not (`unknown-handle`), a hidden link (`hidden`), a target that does not resolve (`unresolved`), a target over 65,536 bytes (`address-too-long`), one with a scheme surf does not fetch (`unsupported-scheme`) or, from a public page, one on a local address (`forbidden-destination`), or `fill` or `pick` names a field of another kind (`wrong-kind`), a disabled (`disabled`) or read-only (`readonly`) one, or an option it has not (`unknown-option`) |
 | 2 | usage: a word, the session or the token is missing or malformed |
 | 3 | `surfd` lists no such session (`did refused no-such-session`), the session process ended (`did refused session-died`) or did not answer in time (`did refused session-timeout`), or `surfd` cannot be reached or started, or the runtime directory or the socket fails `surf-agent`'s check |
 

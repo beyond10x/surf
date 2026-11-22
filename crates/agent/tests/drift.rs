@@ -11,6 +11,8 @@ use surf_agent::cli::{self, Source};
 const BINDING_ONLY: &[&str] = &[
     "close token protected hidden_tty --token-prompt",
     "close token protected stdin --token-stdin",
+    "fill token protected hidden_tty --token-prompt",
+    "fill token protected stdin --token-stdin",
     "follow token protected hidden_tty --token-prompt",
     "follow token protected stdin --token-stdin",
     "global state --session-dir",
@@ -18,6 +20,8 @@ const BINDING_ONLY: &[&str] = &[
     "go token protected stdin --token-stdin",
     "look token protected hidden_tty --token-prompt",
     "look token protected stdin --token-stdin",
+    "pick token protected hidden_tty --token-prompt",
+    "pick token protected stdin --token-stdin",
 ];
 
 /// What the parser reads and the binding cannot declare: the marker `UNMAPPED:` (a), the
@@ -25,12 +29,16 @@ const BINDING_ONLY: &[&str] = &[
 const PARSER_ONLY: &[&str] = &[
     "close session_id environment SURF_SESSION",
     "close token environment SURF_TOKEN",
+    "fill session_id environment SURF_SESSION",
+    "fill token environment SURF_TOKEN",
     "follow session_id environment SURF_SESSION",
     "follow token environment SURF_TOKEN",
     "go session_id environment SURF_SESSION",
     "go token environment SURF_TOKEN",
     "look session_id environment SURF_SESSION",
     "look token environment SURF_TOKEN",
+    "pick session_id environment SURF_SESSION",
+    "pick token environment SURF_TOKEN",
 ];
 
 #[test]

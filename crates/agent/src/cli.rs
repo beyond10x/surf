@@ -3,7 +3,7 @@
 //! parser's table: [`parse`] reads the words through them and nothing else, and the test `drift`
 //! holds them to `.out/cli/binding.json`, which `task cli` writes from the document.
 //!
-//! The differences from the document are its three `UNMAPPED:` markers, and only those:
+//! The differences from the document are its four `UNMAPPED:` markers, and only those:
 //!
 //! - (a) `ess-cli/2` has no environment source. The parser reads the session from `SURF_SESSION`
 //!   when `--session` is absent and the token from `SURF_TOKEN` when `--token-file` is absent;
@@ -13,6 +13,8 @@
 //!   or a terminal ([`Source::TokenStdin`], [`Source::TokenPrompt`]).
 //! - (c) the state global `--session-dir`, which `ess-cli/2` requires. The parser refuses it with
 //!   exit 2 and touches no path; the directory is `$XDG_RUNTIME_DIR/surf/` always ([`GLOBALS`]).
+//! - (d) the value word `-` of `fill` ([`STDIN_VALUE`]). The parser keeps the word; the client
+//!   reads the value from standard input in its place ([`crate::client::run_with_input`]).
 //!
 //! The token is never an argument word: no option takes it, because other local users can read
 //! a process's arguments. It is read from `SURF_TOKEN` or from a file that is a regular file, not
@@ -139,6 +141,22 @@ const HANDLE: Argument = Argument {
     }],
 };
 
+const VALUE: Argument = Argument {
+    field: "value",
+    sources: &[Source::Positional {
+        index: 2,
+        required: true,
+    }],
+};
+
+const OPTION: Argument = Argument {
+    field: "option",
+    sources: &[Source::Positional {
+        index: 2,
+        required: true,
+    }],
+};
+
 const SESSION: Argument = Argument {
     field: "session_id",
     sources: &[
@@ -176,9 +194,10 @@ const FROM_LINE: Argument = Argument {
 /// The forms `--as` takes, the variants of `surf.agent.PageForm`.
 pub const FORMS: &[&str] = &["tree", "markdown"];
 
-/// The commands: `open [<url>]`, `go <url>`, `look`, `follow <handle>`, `close`. `open` takes no
-/// session and no token. `open`, `go` and `look` take `--as tree|markdown [--from-line <n>]`;
-/// `open` only with an address.
+/// The commands: `open [<url>]`, `go <url>`, `look`, `follow <handle>`, `fill <handle> <value>`,
+/// `pick <handle> <option>`, `close`. `open` takes no session and no token. `open`, `go` and
+/// `look` take `--as tree|markdown [--from-line <n>]`; `open` only with an address. The value
+/// `-` of `fill` is read from standard input by the client ([`STDIN_VALUE`]).
 pub const COMMANDS: &[Command] = &[
     Command {
         name: "open",
@@ -195,6 +214,14 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "follow",
         arguments: &[HANDLE, SESSION, TOKEN],
+    },
+    Command {
+        name: "fill",
+        arguments: &[HANDLE, VALUE, SESSION, TOKEN],
+    },
+    Command {
+        name: "pick",
+        arguments: &[HANDLE, OPTION, SESSION, TOKEN],
     },
     Command {
         name: "close",
@@ -215,13 +242,21 @@ usage: surf-agent open [<url>] [--as tree|markdown [--from-line <n>]]
        surf-agent go <url> [--session <id>] [--token-file <path>] [--as tree|markdown [--from-line <n>]]
        surf-agent look [--session <id>] [--token-file <path>] [--as tree|markdown [--from-line <n>]]
        surf-agent follow <handle> [--session <id>] [--token-file <path>]
+       surf-agent fill <handle> <value>|- [--session <id>] [--token-file <path>]
+       surf-agent pick <handle> <option>|on|off [--session <id>] [--token-file <path>]
        surf-agent close [--session <id>] [--token-file <path>]
 The session comes from --session or SURF_SESSION, the token from --token-file or SURF_TOKEN.
 A token file is a regular file of yours that group and others cannot read (mode 0600).
 --as prints the page as an outline of its tree or as Markdown, from line --from-line (from 1);
 open takes it only with an address.
-follow takes a handle of the now block of the last answer, such as l3.
+follow, fill and pick take a handle of the now block of the last answer, such as l3 or f1.
+fill - reads the value from standard input; give a secret that way, since other users can
+read the words of a command. pick takes an option's label or value, or on or off for a box.
 ";
+
+/// The value word of `fill` that the client replaces by standard input, without one line feed
+/// at its end: the marker `UNMAPPED:` at `fill` in `cli/surf-agent.yaml`.
+pub const STDIN_VALUE: &str = "-";
 
 /// What the parser reads from the process: the environment and the program's directory. Its
 /// `Debug` does not write the token.
@@ -263,8 +298,8 @@ impl fmt::Debug for Environment {
 }
 
 /// A call the parser read: the command and its values. Its `Debug` writes the token as
-/// `Token(..)`.
-#[derive(Clone, Debug)]
+/// `Token(..)` and the value of `fill` as its length in bytes.
+#[derive(Clone)]
 pub struct Call {
     /// The command word.
     pub command: &'static str,
@@ -274,17 +309,44 @@ pub struct Call {
     pub token: Option<Token>,
     /// The address, for `go` and an `open` given one.
     pub url: Option<String>,
-    /// The handle, for `follow`.
+    /// The handle, for `follow`, `fill` and `pick`.
     pub handle: Option<String>,
+    /// The value word of `fill`; [`STDIN_VALUE`] until the client reads standard input. The
+    /// `Debug` of the call writes only its length.
+    pub value: Option<String>,
+    /// The option word of `pick`.
+    pub option: Option<String>,
     /// The form of `--as`, one of [`FORMS`].
     pub form: Option<&'static str>,
     /// The line of `--from-line`, from 1; only beside [`Call::form`].
     pub from_line: Option<u64>,
 }
 
+impl fmt::Debug for Call {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Call")
+            .field("command", &self.command)
+            .field("session", &self.session)
+            .field("token", &self.token)
+            .field("url", &self.url)
+            .field("handle", &self.handle)
+            .field(
+                "value",
+                &self
+                    .value
+                    .as_ref()
+                    .map(|value| format!("{} bytes", value.len())),
+            )
+            .field("option", &self.option)
+            .field("form", &self.form)
+            .field("from_line", &self.from_line)
+            .finish()
+    }
+}
+
 impl Call {
-    /// The request of the wire for this call: `arg url`, `arg handle`, `arg form` and `arg line`,
-    /// each when the call has it.
+    /// The request of the wire for this call: `arg url`, `arg handle`, `arg value`, `arg option`,
+    /// `arg form` and `arg line`, each when the call has it.
     pub fn request(&self) -> Request {
         let arg = |name: &str, value: String| Arg {
             name: name.to_string(),
@@ -293,6 +355,8 @@ impl Call {
         let args = [
             self.url.clone().map(|url| arg("url", url)),
             self.handle.clone().map(|handle| arg("handle", handle)),
+            self.value.clone().map(|value| arg("value", value)),
+            self.option.clone().map(|option| arg("option", option)),
             self.form.map(|form| arg("form", form.to_string())),
             self.from_line.map(|line| arg("line", line.to_string())),
         ];
@@ -420,6 +484,8 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
         token: None,
         url: None,
         handle: None,
+        value: None,
+        option: None,
         form: None,
         from_line: None,
     };
@@ -511,14 +577,17 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
                             .ok_or_else(|| usage(format!("the {} is not UTF-8", argument.field)))?;
                         match argument.field {
                             "handle" => call.handle = Some(text.to_string()),
+                            "value" => call.value = Some(text.to_string()),
+                            "option" => call.option = Some(text.to_string()),
                             _ => call.url = Some(text.to_string()),
                         }
                     }
                     None if *required => {
-                        let what = if argument.field == "handle" {
-                            "a handle"
-                        } else {
-                            "an address"
+                        let what = match argument.field {
+                            "handle" => "a handle",
+                            "value" => "a value, or - for standard input",
+                            "option" => "an option, on or off",
+                            _ => "an address",
                         };
                         return Err(usage(format!("{} needs {what}", command.name)));
                     }

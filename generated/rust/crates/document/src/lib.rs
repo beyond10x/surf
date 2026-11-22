@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest a781938fbf4be70c3e62196db4afd2b86d2f53f3955885c5d3e606169c3ba178
+// contract digest b07862b2ffbdc491fea9e4ff79c9710a0d39f78bc99706a1e4893b63e4f39d76
 // do not edit: regenerate with `ess synthesize`
 
 //! document — the `document` component of `surf` v1.
@@ -228,6 +228,7 @@ where
             surf_types::document::SetValueOutcome::NotTextEntry { .. } => {}
             surf_types::document::SetValueOutcome::Disabled { .. } => {}
             surf_types::document::SetValueOutcome::Hidden { .. } => {}
+            surf_types::document::SetValueOutcome::Readonly { .. } => {}
             surf_types::document::SetValueOutcome::Set { value_set, .. } => {
                 self.outbox.push(PublishedEvent::ValueSet(value_set.clone()));
             }

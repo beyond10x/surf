@@ -13,10 +13,10 @@ through `unquote` and `parse` and write no parser of their own (decisions D20 an
 answers in this grammar, byte for byte.
 
 This document states the blocks of step 1 of design section 9 (`docs/design/agent-interface.md`)
-and the `now` block of its step 3 (`agent-follow-links`), which lists links. Controls in `now`
-and the `changed` block are defined by later stories (`agent-fill-pick`, `agent-press-submit`,
-`agent-back-forward`, `agent-change-and-log`), each of which adds its lines here and in the
-crate.
+and the `now` block of its step 3 (`agent-follow-links`), which lists links, with the control
+and button lines of its step 4 (`agent-fill-pick`). The `changed` block is defined by later
+stories (`agent-press-submit`, `agent-back-forward`, `agent-change-and-log`), each of which adds
+its lines here and in the crate.
 
 ## Example
 
@@ -167,6 +167,10 @@ refusal of the action, with a reason from this list:
 | `address-too-long` | the link's resolved target is longer than 65,536 bytes, the bound of an address `surf-fetch` follows | 1 |
 | `unsupported-scheme` | the link's resolved target has a scheme surf does not fetch: any but `http` (`javascript:`, `mailto:`, `data:`, `file:`, `https:`) | 1 |
 | `forbidden-destination` | the page was loaded from a public address and the link's target is a local one: a loopback, private, link-local, unique-local, shared or unspecified IP address, an IPv6 address that embeds one, or the name `localhost` or one under it | 1 |
+| `disabled` | the control, or the option `pick` names, is disabled | 1 |
+| `wrong-kind` | the element is not of a kind the command acts on: `fill` takes `text`, `password` and `textarea`, `pick` takes `select`, `checkbox` and `radio` | 1 |
+| `unknown-option` | the select has no option of that label or value, or the word is not `on` or `off` for a checkbox, or not `on` for a radio button | 1 |
+| `readonly` | the control has the `readonly` attribute | 1 |
 
 A reason not in the list is refused by the parser. A story that adds a reason adds it here, to
 `RefusalReason` and to a test.
@@ -202,7 +206,9 @@ The last actions of the session, oldest first: `<shown>` of the `<total>` the se
 the action's sequence number, its command, a word of `[a-z]+`, and its argument as a quoted
 field when it had one. An action on an element names the element's handle, a word of
 `[a-z0-9]+` written bare (the session made it), and, for `follow`, the link's label as the
-`now` block writes it, cut at 60 characters: `3 follow l4 "Sign in"` (design section 5.1).
+`now` block writes it, cut at 60 characters: `3 follow l4 "Sign in"` (design section 5.1). A
+`fill` or a `pick` names the handle alone, never the value typed or the option picked:
+`4 fill f1`, `5 pick f3`.
 
 ### Now
 
@@ -210,18 +216,23 @@ field when it had one. An action on an element names the element's handle, a wor
 now <shown> of <total>
   <handle> link <visibility> "<label>" -> "<target>"
   <handle> link <visibility> "<label>" -> "<target>" unresolved
+  <handle> <kind> <visibility> "<label>" [= <value>] [disabled] [checked] [required] [readonly]
 note visibility: hidden attribute only
 ```
 
 The actionable elements of the current document, one line each, in document order (design
-section 5.2); since `agent-follow-links` its links. Only in an answer without page text (no
-`--as`), and only when the document has a link; `note visibility: hidden attribute only`
-follows it among the notes. `<shown>` of the `<total>` links are listed, the first ones: the
-lines stop before the block passes 1,048,576 bytes (paging is `agent-answer-paging`).
+section 5.2): since `agent-follow-links` its links, since `agent-fill-pick` its controls and
+buttons too. Only in an answer without page text (no `--as`), and only when the document has an
+actionable element; `note visibility: hidden attribute only` follows it among the notes.
+`<shown>` of the `<total>` elements are listed, the first ones: the lines stop before the block
+passes 1,048,576 bytes (paging is `agent-answer-paging`).
 
-- `<handle>`: `l<n>`, numbered from 1 in document order over the actionable elements, hidden
-  ones included, as the outline and the Markdown number them; a new document starts at 1 again,
-  and the same pages give the same handles.
+- `<handle>`: `l<n>` for a link, `b<n>` for a button, `f<n>` for every other control, each
+  letter numbered from 1 in document order over the actionable elements, hidden ones included,
+  as the outline and the Markdown number them; a new document starts at 1 again, and the same
+  pages give the same handles.
+- `<kind>`: `link`, `button`, `text`, `password`, `checkbox`, `radio`, `select`, `textarea` or
+  `file`. A `link` line has a target and no value; every other line has no target.
 - `<visibility>`: `hid` when the element or an ancestor has the `hidden` attribute, `?`
   otherwise: visibility is not computed, and `aria-hidden`, a closed `dialog` or `details` and
   a popover leave a link `?`. `vis` is not written until visibility is computed.
@@ -233,6 +244,23 @@ lines stop before the block passes 1,048,576 bytes (paging is `agent-answer-pagi
   wrote it, followed by `unresolved`. Cut at 1,024 characters. A whole target never shows a
   userinfo (`user:password@`): scheme, host and port come first and stay whole when the target
   is cut, and `follow` still goes to the whole address, userinfo included.
+- `= <value>`: the control's current value as a quoted field cut at 1,024 characters, for a
+  `text`, `textarea` and `file` control (a file control's is always `""`); for a `password`
+  never its value but `(set)` when it holds one and `(empty)` when it does not; for a `select`
+  the label of its selected option, absent when none is selected. A checkbox, a radio button
+  and a button have no value.
+- the flags, each written when it holds, in this order: `disabled`; `checked`, a checked
+  checkbox or radio button; `required`; `readonly`, which `fill` refuses.
+
+`fill <handle> <value>` gives a `text`, `password` or `textarea` control the value; `pick
+<handle> <option>` selects the option of a `select` whose label is the word, else the first
+whose value is, turns a `checkbox` `on` or `off`, or a `radio` button `on`, which turns the
+others of its group off. A `pick` that asks for the state a checkbox already has records no
+action and answers `did pick` with status 0. Each is refused, with status 1 and nothing changed:
+`unknown-handle`, then `wrong-kind`, `disabled`, `hidden` (the `hidden` attribute, or what else
+hides the control: `aria-hidden`, a closed `dialog` or `details`, a popover), `readonly` for
+`fill`, and `unknown-option`, or the picked option's `disabled` or `hidden`, for `pick`. The
+`did` line names the handle as typed, `did fill "f1"`.
 
 `follow <handle>` takes a handle of this block. It is refused `unknown-handle` for a handle the
 current document has not, `hidden` for a `hid` link and `unresolved` for an unresolved one;
@@ -354,7 +382,8 @@ did-action    = command [SP quoted]           ; command is not "refused"
 reason        = "token" / "closed" / "usage" / "no-such-session"
               / "session-died" / "session-timeout" / "unknown-handle" / "hidden"
               / "unresolved" / "address-too-long" / "unsupported-scheme"
-              / "forbidden-destination"
+              / "forbidden-destination" / "disabled" / "wrong-kind"
+              / "unknown-option" / "readonly"
 
 page-line     = "page" SP (page-none / page-failed / page-loaded) LF
 page-none     = "none"
@@ -373,8 +402,13 @@ handle        = 1*(lower / DIGIT)
 now-block     = now-line *now-entry           ; exactly <shown> now-entry lines
 now-line      = "now" SP number SP "of" SP number LF
                                               ; <shown> of <total>, <shown> not above <total>
-now-entry     = SP SP handle SP kind SP visibility SP cut-quoted SP "->" SP cut-quoted
+now-entry     = link-entry / control-entry
+link-entry    = SP SP handle SP "link" SP visibility SP cut-quoted SP "->" SP cut-quoted
                 [SP "unresolved"] LF          ; label at most 60, target at most 1,024
+control-entry = SP SP handle SP kind SP visibility SP cut-quoted
+                [SP "=" SP (cut-quoted / "(set)" / "(empty)")]
+                [SP "disabled"] [SP "checked"] [SP "required"] [SP "readonly"] LF
+                                              ; kind not "link", value at most 1,024
 kind          = 1*lower
 visibility    = "vis" / "hid" / "?"
 

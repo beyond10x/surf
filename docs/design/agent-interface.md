@@ -215,7 +215,7 @@ line or look like a field of the format.
 
 ```
 surf 1 session 7f3a open
-did fill f1
+did fill "f1"
 page 200 text/html http://example.org/login "Sign in"
 path 3 of 3
   1 go http://example.org/

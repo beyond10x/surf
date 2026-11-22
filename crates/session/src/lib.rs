@@ -56,8 +56,8 @@
 //! The `page` line and the status record carry its title (`document.title`), unless it is empty
 //! or longer than [`TITLE_CHARS_MAX`] characters. An answer with such a document holds `note
 //! parser: <parts>` when [`surf::NOT_YET_PARSED`] is not empty; one of an open session without
-//! page text, when the document has links, the `now` block and `note visibility: hidden
-//! attribute only` (`docs/agent-answer.md`). A call with `--as` has no `now` block.
+//! page text, when the document has links or controls, the `now` block and `note visibility:
+//! hidden attribute only` (`docs/agent-answer.md`). A call with `--as` has no `now` block.
 //!
 //! The links are the rows of `surf.document.Elements` of kind `link` in position order, each
 //! with the handle [`surf_page::handles`] gives its node (`l1`, `l2`, … in document order,
@@ -75,9 +75,36 @@
 //! The session computes the links once per document and keeps them while it is current.
 //!
 //! `follow <handle>` is refused `closed` on a closed session, `unknown-handle` when the current
-//! document has no link of that handle (or there is none), `hidden` for a link `hid` names, and
-//! `unresolved` for a target that does not resolve; each with status 1 and the state. The `path`
-//! line of a `follow` is `<n> follow <handle> "<label>"`, the label cut as in the `now` block.
+//! document has no element of that handle (or there is none), `wrong-kind` for a control,
+//! `hidden` for a link `hid` names, and `unresolved` for a target that does not resolve; each
+//! with status 1 and the state. The `path` line of a `follow` is `<n> follow <handle>
+//! "<label>"`, the label cut as in the `now` block.
+//!
+//! # The controls
+//!
+//! The `now` block lists every actionable row, links and controls together, in position order:
+//! a control's handle is `f<n>` or `b<n>` from [`surf_page::handles`], its visibility as for a
+//! link, and in place of a target its state (`docs/agent-answer.md`, "The now block"), read from
+//! the control's row and, for a select, from its option rows: the value of a text, textarea or
+//! file control quoted and cut at [`surf_answer::VALUE_CHARS_MAX`]; `(set)` or `(empty)` for a
+//! password, whose value is in no line; the label of a select's selected option (the first of
+//! them in position order); then `disabled`, `checked` (a checkbox or radio button), `required`
+//! and `readonly`.
+//!
+//! `fill <handle> <value>` and `pick <handle> <option>` are checked in this order, each refusal
+//! with status 1 and the state: `closed`; `unknown-handle`; `wrong-kind` (`fill` takes `text`,
+//! `password` and `textarea`, `pick` takes `select`, `checkbox` and `radio`); `disabled`;
+//! `hidden`, from the row's `hidden` flag, which is wider than `hid` and is what `SetValue`
+//! refuses; then for `fill` `readonly`, and for `pick` `unknown-option` (a select without an
+//! option of that label, then of that value; a word other than `on` or `off` for a checkbox, or
+//! than `on` for a radio button) and `disabled` or `hidden` for the option picked. A checkbox
+//! already in the state asked for is left as it is: `did pick "<handle>"`, status 0, no action.
+//! Otherwise the session sends `Fill` or `Pick` as the holder, records the action (`<n> fill
+//! <handle>`, `<n> pick <handle>`: the handle bare, never the value or the option) and runs the
+//! system, in which the bindings set the value, check the control (a radio button unchecks the
+//! others of its group) or select the option. The answer is `did fill "<handle>"` or `did pick
+//! "<handle>"` with the state. The value of a `fill` is in no row of the session, no line of an
+//! answer and no entry: the `FillRequested` entry gives its length (`"<n> bytes"`).
 //!
 //! # Following a link
 //!
@@ -115,8 +142,10 @@
 //! state `unknown` ([`link::SessionState::Unknown`]) with no address and no title. So a process
 //! that reaches the session's socket without the token reads nothing of the session, not even
 //! the address of its page, and `surfd` keeps what it knew of the session before the request.
-//! - `go`, `follow` or `close` on a closed session: `did refused closed`, status 1, with the
-//!   state. `follow` without `arg handle` or with another argument: `did refused usage`.
+//! - `go`, `follow`, `fill`, `pick` or `close` on a closed session: `did refused closed`, status
+//!   1, with the state. `follow` without `arg handle`, `fill` without `arg handle` and `arg
+//!   value`, `pick` without `arg handle` and `arg option`, or any of them with another argument:
+//!   `did refused usage`.
 //!
 //! # The token
 //!
@@ -229,16 +258,19 @@ use surf::{MemoryBrowser, NodeId, Transport, Tree, UnmetObligation};
 use surf_agent::wire::{self, Request};
 use surf_answer::{
     Answer, Cut, Did, Element, Form, Head, LABEL_CHARS_MAX, Note, Now, Page, Path, PathEntry,
-    RefusalReason, SessionState as HeadState, TARGET_CHARS_MAX, Target, TextNote, Visibility,
+    RefusalReason, SessionState as HeadState, State, TARGET_CHARS_MAX, Target, TextNote,
+    VALUE_CHARS_MAX, Value, Visibility,
 };
 use surf_ports::{Caller, ComponentPorts};
 use surf_secret::Token;
 use surf_types::agent::{
-    ActionCommand, CloseSession, CloseSessionOutcome, Follow, FollowOutcome, Go, GoOutcome,
-    OpenSession, OpenSessionOutcome, RecordAction, RecordActionOutcome, SessionId, SessionState,
-    SessionStateView,
+    ActionCommand, CloseSession, CloseSessionOutcome, Fill, FillOutcome, Follow, FollowOutcome, Go,
+    GoOutcome, OpenSession, OpenSessionOutcome, Pick, PickOutcome, RecordAction,
+    RecordActionOutcome, SessionId, SessionState, SessionStateView,
 };
-use surf_types::document::{DocumentId, DocumentState, Documents, ElementKind};
+use surf_types::document::{
+    DocumentId, DocumentState, Documents, ElementId, ElementKind, Elements, Options,
+};
 use surf_types::navigation::NavigationState;
 use surf_types::primitives::Uuid;
 use surf_types::shell::{OpenTab, OpenTabOutcome, OpenWindow, OpenWindowOutcome};
@@ -261,6 +293,11 @@ pub const TITLE_CHARS_MAX: usize = 1_024;
 /// `link`, the visibility word, `...` after each field, ` -> `, ` unresolved`, separators and
 /// the line feed, counted high.
 const NOW_LINE_FIXED: usize = 48;
+
+/// The bytes a control's `now` line takes beside [`NOW_LINE_FIXED`], its handle, its label and
+/// its quoted value: a kind word of up to eight letters, ` = `, `(empty)`, `...` after the value
+/// and the four flags with their spaces, counted high.
+const CONTROL_LINE_FIXED: usize = 64;
 
 /// The most row entries (`surf.document.ElementAdded`, `FormAdded` and `OptionAdded`) one request
 /// carries ("The entries" above): the first 256 of the request; the others are left out and
@@ -455,25 +492,33 @@ impl Rendered {
     }
 }
 
-/// One link of the current document, as the `now` block shows it and `follow` takes it ("The
-/// links" above).
+/// One actionable element of the current document, a link or a control, as the `now` block
+/// shows it and `follow`, `fill` and `pick` take it ("The links" and "The controls" above). What
+/// does not change while the document lives; a control's state is read from its row at each
+/// answer.
 #[derive(Clone)]
 struct Link {
-    /// `l<n>`, as [`surf_page::handles`] numbers it.
+    /// `l<n>`, `b<n>` or `f<n>`, as [`surf_page::handles`] numbers it.
     handle: String,
+    /// The element's row.
+    element_id: ElementId,
+    /// The element's kind.
+    kind: ElementKind,
     /// The label of the element's row, the whole accessible name (at most
     /// [`surf_page::LABEL_BYTES_MAX`] bytes).
     label: String,
     /// The element or an ancestor has the `hidden` attribute.
     hidden: bool,
-    /// The target resolved against the document base URL; `None` when it does not resolve.
+    /// A link's target resolved against the document base URL; `None` when it does not
+    /// resolve, and for a control.
     resolved: Option<surf_url::Url>,
-    /// What the `now` line shows: the target's path, query and fragment when it has the
-    /// document's origin, the whole target otherwise, the `href` as written when unresolved.
+    /// What the `now` line of a link shows: the target's path, query and fragment when it has
+    /// the document's origin, the whole target otherwise, the `href` as written when
+    /// unresolved; empty for a control.
     shown: String,
 }
 
-/// The links of the current document, kept while it is current.
+/// The actionable elements of the current document, kept while it is current.
 struct Links {
     document: DocumentId,
     links: Vec<Link>,
@@ -695,6 +740,22 @@ impl<T: Transport> Session<T> {
                 (None, Some(handle)) => self.follow(handle),
                 _ => Ok(self.with_state(RefusalReason::Usage)),
             },
+            "fill" => match (
+                request.unknown_arg(&["handle", "value"]),
+                request.arg("handle"),
+                request.arg("value"),
+            ) {
+                (None, Some(handle), Some(value)) => self.fill(handle, value),
+                _ => Ok(self.with_state(RefusalReason::Usage)),
+            },
+            "pick" => match (
+                request.unknown_arg(&["handle", "option"]),
+                request.arg("handle"),
+                request.arg("option"),
+            ) {
+                (None, Some(handle), Some(option)) => self.pick(handle, option),
+                _ => Ok(self.with_state(RefusalReason::Usage)),
+            },
             "close" if request.unknown_arg(&[]).is_none() => self.close(),
             _ => Ok(self.with_state(RefusalReason::Usage)),
         };
@@ -838,6 +899,9 @@ impl<T: Transport> Session<T> {
             return Ok(self.with_state(RefusalReason::UnknownHandle));
         };
         let from_public = self.links.as_ref().is_none_or(|kept| kept.from_public);
+        if link.kind != ElementKind::Link {
+            return Ok(self.with_state(RefusalReason::WrongKind));
+        }
         if link.hidden {
             return Ok(self.with_state(RefusalReason::Hidden));
         }
@@ -881,6 +945,194 @@ impl<T: Transport> Session<T> {
                 Err(Stop::Unexpected("no such session to the open session"))
             }
         }
+    }
+
+    /// The `now` block of the current document, with each control's state read from its row
+    /// now ("The controls" above); `None` without a current document or an actionable element.
+    fn now(&mut self) -> Option<Now> {
+        let states = self.control_states()?;
+        self.links().and_then(|links| now_block(links, &states))
+    }
+
+    /// The state of each control of the current document, from the rows of its elements and of
+    /// every select's options.
+    fn control_states(&self) -> Option<HashMap<String, State>> {
+        let row = self.current_row()?;
+        let document = &self.browser.system().document;
+        let rows = document.elements(row.document_id).ok()?;
+        let options = document.options().ok()?;
+        Some(control_states(&rows, &options))
+    }
+
+    /// The row of the control `handle` of the current document, checked as "The controls"
+    /// above orders the refusals for `command`: `unknown-handle`, `wrong-kind` (a kind not in
+    /// `kinds`), `disabled`, then `hidden` (the row's flag, which the document's command reads).
+    fn control(&mut self, handle: &str, kinds: &[ElementKind]) -> Result<Elements, RefusalReason> {
+        let Some(link) = self
+            .links()
+            .and_then(|links| links.iter().find(|link| link.handle == handle))
+            .cloned()
+        else {
+            return Err(RefusalReason::UnknownHandle);
+        };
+        let row = self
+            .current_row()
+            .and_then(|row| {
+                self.browser
+                    .system()
+                    .document
+                    .elements(row.document_id)
+                    .ok()
+            })
+            .and_then(|rows| {
+                rows.into_iter()
+                    .find(|row| row.element_id == link.element_id)
+            })
+            .ok_or(RefusalReason::UnknownHandle)?;
+        if !kinds.contains(&row.kind) {
+            return Err(RefusalReason::WrongKind);
+        }
+        if row.disabled {
+            return Err(RefusalReason::Disabled);
+        }
+        if row.hidden || link.hidden {
+            return Err(RefusalReason::Hidden);
+        }
+        Ok(row)
+    }
+
+    /// `fill <handle> <value>`: refused `closed` on a closed session; `unknown-handle`,
+    /// `wrong-kind` for a control that is not `text`, `password` or `textarea`, `disabled`,
+    /// `hidden` and `readonly` from the control's row; otherwise `Fill` as the holder, and when
+    /// it is `requested`, `RecordAction` `fill` with the handle alone and a run, in which the
+    /// binding gives the control the value (`SetValue`). The value is in no row of the session
+    /// and no line of the answer.
+    fn fill(&mut self, handle: &str, value: &str) -> Result<Reply, Stop> {
+        if self.is_closed() {
+            return Ok(self.with_state(RefusalReason::Closed));
+        }
+        let row = match self.control(
+            handle,
+            &[
+                ElementKind::Text,
+                ElementKind::Password,
+                ElementKind::Textarea,
+            ],
+        ) {
+            Ok(row) if row.readonly => return Ok(self.with_state(RefusalReason::Readonly)),
+            Ok(row) => row,
+            Err(reason) => return Ok(self.with_state(reason)),
+        };
+        let outcome = self.browser.agent_mut().fill(Fill {
+            session_id: self.session_id.clone(),
+            element_id: row.element_id,
+            value: value.to_string(),
+            handle: handle.to_string(),
+        })?;
+        match outcome {
+            FillOutcome::Requested { .. } => {
+                self.record_and_run(ActionCommand::Fill, None, Some((handle, None)))?;
+                Ok(self.acted("fill", handle))
+            }
+            FillOutcome::Closed { .. } => Ok(self.with_state(RefusalReason::Closed)),
+            FillOutcome::NotHolder { .. } => Err(Stop::Unexpected("not-holder to the holder")),
+            FillOutcome::NoSuchSession { .. } => {
+                Err(Stop::Unexpected("no such session to the open session"))
+            }
+        }
+    }
+
+    /// `pick <handle> <option>`: refused `closed` on a closed session; `unknown-handle`,
+    /// `wrong-kind` for a control that is not a `select`, `checkbox` or `radio`, `disabled` and
+    /// `hidden` from the control's row; `unknown-option` for a select without an option of that
+    /// label, then value, and for a word other than `on` or `off` on a checkbox or `on` on a
+    /// radio button; `disabled` for a disabled option. A checkbox already in the state asked for
+    /// is left as it is: `did pick`, status 0, no action. Otherwise `Pick` as the holder (with the
+    /// option for a select), and when it is `requested`, `RecordAction` `pick` with the handle
+    /// alone and a run, in which the binding checks the control (`Check`) or selects the option
+    /// (`SelectOption`).
+    fn pick(&mut self, handle: &str, word: &str) -> Result<Reply, Stop> {
+        if self.is_closed() {
+            return Ok(self.with_state(RefusalReason::Closed));
+        }
+        let row = match self.control(
+            handle,
+            &[
+                ElementKind::Select,
+                ElementKind::Checkbox,
+                ElementKind::Radio,
+            ],
+        ) {
+            Ok(row) => row,
+            Err(reason) => return Ok(self.with_state(reason)),
+        };
+        let option_id = match row.kind {
+            ElementKind::Select => {
+                let mut options: Vec<Options> = self
+                    .browser
+                    .system()
+                    .document
+                    .options()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|option| option.select_id == row.element_id)
+                    .collect();
+                options.sort_by_key(|option| option.position);
+                let found = options
+                    .iter()
+                    .find(|option| option.label == word)
+                    .or_else(|| options.iter().find(|option| option.value == word));
+                match found {
+                    None => return Ok(self.with_state(RefusalReason::UnknownOption)),
+                    Some(option) if option.disabled => {
+                        return Ok(self.with_state(RefusalReason::Disabled));
+                    }
+                    Some(option) if option.hidden => {
+                        return Ok(self.with_state(RefusalReason::Hidden));
+                    }
+                    Some(option) => Some(option.option_id.clone()),
+                }
+            }
+            ElementKind::Checkbox => match word {
+                "on" | "off" if row.checked == (word == "on") => {
+                    return Ok(self.acted("pick", handle));
+                }
+                "on" | "off" => None,
+                _ => return Ok(self.with_state(RefusalReason::UnknownOption)),
+            },
+            _ => match word {
+                "on" => None,
+                _ => return Ok(self.with_state(RefusalReason::UnknownOption)),
+            },
+        };
+        let outcome = self.browser.agent_mut().pick(Pick {
+            session_id: self.session_id.clone(),
+            element_id: row.element_id,
+            option_id,
+            handle: handle.to_string(),
+        })?;
+        match outcome {
+            PickOutcome::Requested { .. } => {
+                self.record_and_run(ActionCommand::Pick, None, Some((handle, None)))?;
+                Ok(self.acted("pick", handle))
+            }
+            PickOutcome::Closed { .. } => Ok(self.with_state(RefusalReason::Closed)),
+            PickOutcome::NotHolder { .. } => Err(Stop::Unexpected("not-holder to the holder")),
+            PickOutcome::NoSuchSession { .. } => {
+                Err(Stop::Unexpected("no such session to the open session"))
+            }
+        }
+    }
+
+    /// Status 0 with `did <command> "<handle>"` and the state.
+    fn acted(&mut self, command: &str, handle: &str) -> Reply {
+        self.state_reply(
+            0,
+            Some(Did::Action {
+                command: command.to_string(),
+                argument: Some(handle.to_string()),
+            }),
+        )
     }
 
     /// The reply to a request that did not decode: `did refused usage`, status 2, the head line
@@ -1145,7 +1397,7 @@ impl<T: Transport> Session<T> {
                 ));
             }
             if !self.is_closed()
-                && let Some(now) = self.links().and_then(now_block)
+                && let Some(now) = self.now()
             {
                 answer.now = Some(now);
                 answer.notes.push(Note::Visibility);
@@ -1231,7 +1483,11 @@ fn refusal_status(reason: RefusalReason) -> u8 {
         | RefusalReason::Unresolved
         | RefusalReason::AddressTooLong
         | RefusalReason::UnsupportedScheme
-        | RefusalReason::ForbiddenDestination => 1,
+        | RefusalReason::ForbiddenDestination
+        | RefusalReason::Disabled
+        | RefusalReason::WrongKind
+        | RefusalReason::UnknownOption
+        | RefusalReason::Readonly => 1,
         RefusalReason::Usage => 2,
         RefusalReason::NoSuchSession
         | RefusalReason::SessionDied
@@ -1320,14 +1576,15 @@ fn page(row: &SessionStateView) -> Page {
     }
 }
 
-/// The links of a document from its element rows (`rows`, in position order) and the node of
-/// each (`nodes`, [`surf::Browser::element_nodes`]): the handle [`surf_page::handles`] gives its
-/// node, the row's label and target, whether it or an ancestor has the `hidden` attribute, and
-/// the target resolved against the document base URL of `tree` at `address`.
+/// The actionable elements of a document from its element rows (`rows`, in position order) and
+/// the node of each (`nodes`, [`surf::Browser::element_nodes`]): the handle
+/// [`surf_page::handles`] gives its node, the row's kind and label, whether it or an ancestor
+/// has the `hidden` attribute, and for a link its target resolved against the document base URL
+/// of `tree` at `address`.
 fn document_links(
     tree: &Tree,
     address: &str,
-    rows: &[surf_types::document::Elements],
+    rows: &[Elements],
     nodes: &[(surf_types::document::ElementId, NodeId)],
 ) -> Vec<Link> {
     let handles: HashMap<NodeId, String> = surf_page::handles(tree).into_iter().collect();
@@ -1342,26 +1599,29 @@ fn document_links(
         .collect();
     let mut links = Vec::new();
     for row in rows {
-        let Some(href) = row
+        let href = row
             .target
             .as_ref()
-            .filter(|_| row.kind == ElementKind::Link)
-        else {
+            .filter(|_| row.kind == ElementKind::Link);
+        if row.kind == ElementKind::Link && href.is_none() {
             continue;
-        };
+        }
         let Some(node) = node_of.get(row.element_id.0.0.as_str()) else {
             continue;
         };
         let Some(handle) = handles.get(node) else {
             continue;
         };
-        let resolved = surf_url::Url::parse(href, base.as_ref()).ok();
-        let shown = match &resolved {
-            Some(target) => shown_target(target, page.as_ref()),
-            None => href.clone(),
+        let resolved = href.and_then(|href| surf_url::Url::parse(href, base.as_ref()).ok());
+        let shown = match (&resolved, href) {
+            (Some(target), _) => shown_target(target, page.as_ref()),
+            (None, Some(href)) => href.clone(),
+            (None, None) => String::new(),
         };
         links.push(Link {
             handle: handle.clone(),
+            element_id: row.element_id.clone(),
+            kind: row.kind,
             label: row.label.clone(),
             hidden: hidden.contains(node),
             resolved,
@@ -1456,10 +1716,12 @@ fn host_is_local(url: &surf_url::Url) -> bool {
     }
 }
 
-/// The `now` block of `links`: a line per link in document order while the lines fit
-/// [`NOW_BYTES_MAX`], the label cut at [`LABEL_CHARS_MAX`] characters and the target at
-/// [`TARGET_CHARS_MAX`]; `None` for a document without links.
-fn now_block(links: &[Link]) -> Option<Now> {
+/// The `now` block of `links`: a line per element in document order while the lines fit
+/// [`NOW_BYTES_MAX`], the label cut at [`LABEL_CHARS_MAX`] characters, a link's target at
+/// [`TARGET_CHARS_MAX`] and a control's value at [`VALUE_CHARS_MAX`]; a control's state is its
+/// entry in `states`, and nothing when it has none. `None` for a document without an actionable
+/// element.
+fn now_block(links: &[Link], states: &HashMap<String, State>) -> Option<Now> {
     if links.is_empty() {
         return None;
     }
@@ -1468,30 +1730,103 @@ fn now_block(links: &[Link]) -> Option<Now> {
     let mut elements = Vec::new();
     for link in links {
         let label = Cut::of(&link.label, LABEL_CHARS_MAX);
-        let target = Cut::of(&link.shown, TARGET_CHARS_MAX);
-        let line = NOW_LINE_FIXED
-            + link.handle.len()
-            + surf_answer::quote(&label.kept).len()
-            + surf_answer::quote(&target.kept).len();
+        let fixed = NOW_LINE_FIXED + link.handle.len() + surf_answer::quote(&label.kept).len();
+        let (line, target) = if link.kind == ElementKind::Link {
+            let target = Cut::of(&link.shown, TARGET_CHARS_MAX);
+            let line = fixed + surf_answer::quote(&target.kept).len();
+            let target = if link.resolved.is_some() {
+                Target::Resolved(target)
+            } else {
+                Target::Unresolved(target)
+            };
+            (line, target)
+        } else {
+            let state = states
+                .get(&link.element_id.0.0)
+                .cloned()
+                .unwrap_or_default();
+            let value = match &state.value {
+                Some(Value::Text(value)) => surf_answer::quote(&value.kept).len(),
+                _ => 0,
+            };
+            (fixed + CONTROL_LINE_FIXED + value, Target::State(state))
+        };
         if bytes + line > NOW_BYTES_MAX {
             break;
         }
         bytes += line;
         elements.push(Element {
             handle: link.handle.clone(),
-            kind: "link".to_string(),
+            kind: kind_word(link.kind).to_string(),
             visibility: if link.hidden {
                 Visibility::Hidden
             } else {
                 Visibility::Unknown
             },
             label,
-            target: if link.resolved.is_some() {
-                Target::Resolved(target)
-            } else {
-                Target::Unresolved(target)
-            },
+            target,
         });
     }
     Some(Now { total, elements })
+}
+
+/// The kind word of a `now` line: the variant name of `surf.document.ElementKind`.
+fn kind_word(kind: ElementKind) -> &'static str {
+    match kind {
+        ElementKind::Link => "link",
+        ElementKind::Button => "button",
+        ElementKind::Text => "text",
+        ElementKind::Password => "password",
+        ElementKind::Checkbox => "checkbox",
+        ElementKind::Radio => "radio",
+        ElementKind::File => "file",
+        ElementKind::Select => "select",
+        ElementKind::Textarea => "textarea",
+    }
+}
+
+/// The state of each control of a document as a `now` line writes it ("The controls" above):
+/// from its row (`rows`) and, for a select, the label of its first selected option by position
+/// (`options`, the rows of every select).
+fn control_states(rows: &[Elements], options: &[Options]) -> HashMap<String, State> {
+    let mut selected: HashMap<&str, (i64, &str)> = HashMap::new();
+    for option in options.iter().filter(|option| option.selected) {
+        let entry = selected
+            .entry(option.select_id.0.0.as_str())
+            .or_insert((option.position, option.label.as_str()));
+        if option.position < entry.0 {
+            *entry = (option.position, option.label.as_str());
+        }
+    }
+    rows.iter()
+        .filter(|row| row.kind != ElementKind::Link)
+        .map(|row| {
+            let text = |value: &str| Some(Value::Text(Cut::of(value, VALUE_CHARS_MAX)));
+            let value = match row.kind {
+                ElementKind::Text | ElementKind::Textarea | ElementKind::File => {
+                    text(row.value.as_deref().unwrap_or(""))
+                }
+                ElementKind::Password => Some(
+                    if row.value.as_deref().is_some_and(|value| !value.is_empty()) {
+                        Value::Set
+                    } else {
+                        Value::Empty
+                    },
+                ),
+                ElementKind::Select => selected
+                    .get(row.element_id.0.0.as_str())
+                    .and_then(|(_, label)| text(label)),
+                _ => None,
+            };
+            let state = State {
+                value,
+                disabled: row.disabled,
+                checked: row.checked
+                    && matches!(row.kind, ElementKind::Checkbox | ElementKind::Radio),
+                required: row.required,
+                readonly: row.readonly,
+            };
+            (row.element_id.0.0.clone(), state)
+        })
+        .collect()
 }

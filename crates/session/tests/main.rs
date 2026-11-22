@@ -14,6 +14,7 @@ mod common;
 mod core;
 mod e2e;
 mod events;
+mod fill_pick;
 mod follow;
 mod follow_refusals;
 mod form_rows;

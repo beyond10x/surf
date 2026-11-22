@@ -24,6 +24,19 @@ release; what came before it is in the git log and in `docs/plan/`.
   unique-local, shared or unspecified IP address or `localhost`. A target is never shown with
   its `user:password@`, and a path on the page's own origin that starts with `//` is shown as
   the whole address. Format: [`docs/agent-answer.md`](docs/agent-answer.md).
+- `surf-agent fill <handle> <value>` types into a text field, a password field or a textarea,
+  and `fill <handle> -` reads the value from standard input, for a secret: other users can read
+  a command's words. `surf-agent pick <handle> <option>` selects an option of a select by its
+  label, then its value, and `pick <handle> on|off` checks or unchecks a box, `on` a radio button
+  (the others of its group are unchecked). The `now` block lists the form fields beside the
+  links, such as `f1 text ? "User name" = "ada" required`: the value quoted, `(set)` or
+  `(empty)` for a password, whose value is never printed, the selected option's label for a
+  select, and the flags `disabled`, `checked`, `required` and `readonly`. The answer is `did fill
+  "f1"` and the path line `4 fill f1`, never the value. `fill` and `pick` exit 1 with `did
+  refused` and `unknown-handle`, `wrong-kind`, `disabled`, `hidden`, `readonly` or
+  `unknown-option`; `follow` of a form field is `wrong-kind`.
+- Of two radio buttons of one group that a page marks `checked`, only the last is checked, as
+  the HTML Standard parses it, in the `now` block and in a submission.
 - The `page` line of an agent answer ends with the page's title, and the live view's session
   list shows it. A title longer than 1,024 characters is left out.
 - The `surf` library reads a page's forms: each form, each control's `name` and form, and the

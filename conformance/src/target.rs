@@ -971,6 +971,7 @@ fn element_snapshot(
         disabled: input.boolean("disabled")?,
         checked: input.boolean("checked")?,
         required: input.boolean("required")?,
+        readonly: input.boolean("readonly")?,
         name: optional_text(&mut input, &present, "name")?,
         form_id: optional_text(&mut input, &present, "form_id")?.map(|id| FormId(Uuid(id))),
     };
@@ -2089,6 +2090,7 @@ where
                 let disabled = input.boolean("disabled")?;
                 let checked = input.boolean("checked")?;
                 let required = input.boolean("required")?;
+                let readonly = input.boolean("readonly")?;
                 let name = optional_text(&mut input, &present, "name")?;
                 let form_id =
                     optional_text(&mut input, &present, "form_id")?.map(|id| FormId(Uuid(id)));
@@ -2106,6 +2108,7 @@ where
                         disabled,
                         checked,
                         required,
+                        readonly,
                         name,
                         form_id,
                     })
@@ -2271,6 +2274,11 @@ where
                     SetValueOutcome::Hidden { error } => {
                         refused_element("hidden", "surf.document.ControlHidden", &error.element_id)?
                     }
+                    SetValueOutcome::Readonly { error } => refused_element(
+                        "readonly",
+                        "surf.document.ControlReadonly",
+                        &error.element_id,
+                    )?,
                 }
             }
             "surf.document.Check" => {
@@ -2559,6 +2567,7 @@ where
                         ("disabled", values::boolean(row.disabled)),
                         ("checked", values::boolean(row.checked)),
                         ("required", values::boolean(row.required)),
+                        ("readonly", values::boolean(row.readonly)),
                         ("name", optional(row.name.as_deref(), text)),
                         ("form_id", optional(row.form_id.as_ref(), |id| uuid(&id.0))),
                     ])

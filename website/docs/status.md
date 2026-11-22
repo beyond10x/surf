@@ -16,7 +16,7 @@ On 2026-11-22, with ess 0.97.3, after round 1, which follows wave 10 of the curr
 | what | value |
 |---|---|
 | specification | ESS 0.97.3, valid |
-| conformance scenarios | 169 of 169 pass, against the interpreter and against the Rust code |
+| conformance scenarios | 170 of 170 pass, against the interpreter and against the Rust code |
 | tests | 877 passed |
 | agent tasks | 2 of 4 pass (`article`, `table`); `link` and `search` wait for later stories |
 | live view's page tests | 38 passed, in Chromium's headless shell |

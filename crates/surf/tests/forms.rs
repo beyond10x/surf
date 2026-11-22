@@ -679,3 +679,51 @@ fn the_parse_step_writes_the_form_rows() {
         ]
     );
 }
+
+/// Case 21 of `story:agent-fill-pick`: of two radio buttons of one group that carry `checked`,
+/// the parser step leaves the last checked (HTML Standard 4.10.5.1.18, the radio button group:
+/// setting a radio button's checkedness to true unchecks the others of its group, and the parser
+/// inserts them in tree order), so a submission gives one entry of the group.
+#[test]
+fn fill_pick_case_21_radio_group_two_checked_submits_the_last() {
+    let mut page = load(
+        "<!doctype html><form action=\"/save\" method=\"post\">\
+        <label><input type=radio name=size value=s checked> Small</label>\
+        <label><input type=radio name=size value=m checked> Medium</label>\
+        <button>Save</button></form>",
+    );
+    assert!(!page.element("Small").checked);
+    assert!(page.element("Medium").checked);
+    assert_eq!(page.press("Save"), post("http://127.0.0.1/save", "size=m"));
+}
+
+/// The parser step writes `readonly` where it applies (`story:agent-fill-pick`, case 19), and
+/// `SetValue` refuses such a control.
+#[test]
+fn the_parse_step_writes_readonly_and_set_value_refuses_it() {
+    let mut page = load(
+        "<!doctype html><form><label>Code <input name=code value=X1 readonly></label>\
+        <label>Box <input type=checkbox name=box readonly></label>\
+        <label>Note <textarea name=note readonly>n</textarea></label></form>",
+    );
+    assert!(page.element("Code").readonly);
+    assert!(
+        !page.element("Box").readonly,
+        "readonly does not apply to a checkbox"
+    );
+    assert!(page.element("Note").readonly);
+    let element_id = page.element("Code").element_id;
+    let outcome = page
+        .browser
+        .document_mut()
+        .set_value(SetValue {
+            element_id,
+            value: "X2".to_owned(),
+        })
+        .unwrap();
+    assert!(
+        matches!(outcome, SetValueOutcome::Readonly { .. }),
+        "{outcome:?}"
+    );
+    assert_eq!(page.element("Code").value.as_deref(), Some("X1"));
+}

@@ -1,13 +1,13 @@
 <!--
   generated from surf v1
-  contract digest a781938fbf4be70c3e62196db4afd2b86d2f53f3955885c5d3e606169c3ba178
+  contract digest b07862b2ffbdc491fea9e4ff79c9710a0d39f78bc99706a1e4893b63e4f39d76
   do not edit: regenerate with `ess synthesize`
 -->
 # Synthesis plan — surf v1
 
 Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synthesize`.
 
-242 capabilities: **232 generated**, **6 obligations**, **4 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
+245 capabilities: **235 generated**, **6 obligations**, **4 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
 
 ## Generated
 
@@ -16,12 +16,14 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | domain type | `surf.agent.Action.State` |
 | domain type | `surf.agent.ActionCommand` |
 | domain type | `surf.agent.ActionId` |
+| domain type | `surf.agent.FillCall` |
 | domain type | `surf.agent.FollowCall` |
 | domain type | `surf.agent.GoCall` |
 | domain type | `surf.agent.LookCall` |
 | domain type | `surf.agent.OpenCall` |
 | domain type | `surf.agent.OpenedSession` |
 | domain type | `surf.agent.PageForm` |
+| domain type | `surf.agent.PickCall` |
 | domain type | `surf.agent.Session.State` |
 | domain type | `surf.agent.SessionCall` |
 | domain type | `surf.agent.SessionId` |
@@ -167,6 +169,7 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | error type | `surf.document.ControlDisabled` |
 | error type | `surf.document.ControlHidden` |
 | error type | `surf.document.ControlKindConflict` |
+| error type | `surf.document.ControlReadonly` |
 | error type | `surf.document.DocumentNotFound` |
 | error type | `surf.document.DocumentStateConflict` |
 | error type | `surf.document.ElementNotFound` |

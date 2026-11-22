@@ -162,10 +162,19 @@ pub enum RefusalReason {
     /// `forbidden-destination`: the page came from a public address and the link's target is
     /// a local one.
     ForbiddenDestination,
+    /// `disabled`: the control, or the option picked, is disabled.
+    Disabled,
+    /// `wrong-kind`: the control is not of a kind the command acts on.
+    WrongKind,
+    /// `unknown-option`: the select has no option of that label or value, or the word is not
+    /// one a checkbox or a radio button takes.
+    UnknownOption,
+    /// `readonly`: the control is read-only and takes no value.
+    Readonly,
 }
 
 impl RefusalReason {
-    const ALL: [RefusalReason; 12] = [
+    const ALL: [RefusalReason; 16] = [
         RefusalReason::Token,
         RefusalReason::Closed,
         RefusalReason::Usage,
@@ -178,6 +187,10 @@ impl RefusalReason {
         RefusalReason::AddressTooLong,
         RefusalReason::UnsupportedScheme,
         RefusalReason::ForbiddenDestination,
+        RefusalReason::Disabled,
+        RefusalReason::WrongKind,
+        RefusalReason::UnknownOption,
+        RefusalReason::Readonly,
     ];
 
     /// The word of the format.
@@ -195,6 +208,10 @@ impl RefusalReason {
             RefusalReason::AddressTooLong => "address-too-long",
             RefusalReason::UnsupportedScheme => "unsupported-scheme",
             RefusalReason::ForbiddenDestination => "forbidden-destination",
+            RefusalReason::Disabled => "disabled",
+            RefusalReason::WrongKind => "wrong-kind",
+            RefusalReason::UnknownOption => "unknown-option",
+            RefusalReason::Readonly => "readonly",
         }
     }
 }
@@ -313,7 +330,7 @@ impl Visibility {
     }
 }
 
-/// A link's target on a `now` line.
+/// What follows the label on a `now` line: a link's target, or a control's state.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Target {
     /// `-> "<target>"`: resolved against the document base URL, written as its path, query and
@@ -321,6 +338,61 @@ pub enum Target {
     Resolved(Cut),
     /// `-> "<target>" unresolved`: the value as the page wrote it, which does not resolve.
     Unresolved(Cut),
+    /// The state of a control or a button (`story:agent-fill-pick`): `= <value>` when it has
+    /// one, then its flags.
+    State(State),
+}
+
+/// The most characters of a control's value on a `now` line, a password's never written, and
+/// of the label of a select's selected option. A deliberate bound the design does not state, as
+/// for [`TARGET_CHARS_MAX`].
+pub const VALUE_CHARS_MAX: usize = 1_024;
+
+/// A control's state on a `now` line: `[= <value>] [disabled] [checked] [required]
+/// [readonly]`, the flags in that order, each written when it holds.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct State {
+    /// `= <value>`; `None` for a checkbox, a radio button, a button and a select with no
+    /// option selected.
+    pub value: Option<Value>,
+    /// `disabled`.
+    pub disabled: bool,
+    /// `checked`: a checked checkbox or radio button.
+    pub checked: bool,
+    /// `required`.
+    pub required: bool,
+    /// `readonly`: `fill` is refused.
+    pub readonly: bool,
+}
+
+/// The value of a control on a `now` line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Value {
+    /// `"<value>"`: the value of a text control, a textarea or a file control, or the label of a
+    /// select's selected option, cut at [`VALUE_CHARS_MAX`] characters.
+    Text(Cut),
+    /// `(set)`: a password control that holds a value, never written.
+    Set,
+    /// `(empty)`: a password control with no value.
+    Empty,
+}
+
+/// The flag words of a [`State`], in the order a line writes them.
+const STATE_FLAGS: [&str; 4] = ["disabled", "checked", "required", "readonly"];
+
+impl State {
+    fn flags(&self) -> [bool; 4] {
+        [self.disabled, self.checked, self.required, self.readonly]
+    }
+
+    fn set_flag(&mut self, index: usize) {
+        match index {
+            0 => self.disabled = true,
+            1 => self.checked = true,
+            2 => self.required = true,
+            _ => self.readonly = true,
+        }
+    }
 }
 
 /// A `note` line, from a fixed list.
@@ -734,6 +806,9 @@ pub enum RenderError {
     PathLongerThanTotal,
     /// The `now` block shows more elements than its total.
     NowLongerThanTotal,
+    /// A `now` line whose kind and what follows its label disagree: a `link` without a target,
+    /// or another kind with one.
+    TargetOfKind,
     /// A field with a length limit that its reading could not give back: a value marked cut
     /// that does not keep exactly its limit, an uncut one over it, or a `path` argument marked
     /// cut on a line without a handle or without an argument.
@@ -772,6 +847,9 @@ impl fmt::Display for RenderError {
             }
             RenderError::NowLongerThanTotal => {
                 f.write_str("the now block shows more elements than its total")
+            }
+            RenderError::TargetOfKind => {
+                f.write_str("a now line has a target and is not a link, or is a link without one")
             }
             RenderError::CutLength { field } => {
                 write!(f, "the {field} does not fit its length limit as marked")
@@ -940,16 +1018,37 @@ fn render_now(now: &Now, out: &mut String) -> Result<(), RenderError> {
     for element in &now.elements {
         let handle = checked(&element.handle, "now handle", is_handle_char)?;
         let kind = checked(&element.kind, "now kind", is_command_char)?;
+        if (kind == "link") == matches!(element.target, Target::State(_)) {
+            return Err(RenderError::TargetOfKind);
+        }
         out.push_str(&format!("  {handle} {kind} {} ", element.visibility.word()));
         push_cut(&element.label, LABEL_CHARS_MAX, "now label", out)?;
-        out.push_str(" -> ");
         match &element.target {
             Target::Resolved(target) => {
+                out.push_str(" -> ");
                 push_cut(target, TARGET_CHARS_MAX, "now target", out)?;
             }
             Target::Unresolved(target) => {
+                out.push_str(" -> ");
                 push_cut(target, TARGET_CHARS_MAX, "now target", out)?;
                 out.push_str(" unresolved");
+            }
+            Target::State(state) => {
+                match &state.value {
+                    Some(Value::Text(value)) => {
+                        out.push_str(" = ");
+                        push_cut(value, VALUE_CHARS_MAX, "now value", out)?;
+                    }
+                    Some(Value::Set) => out.push_str(" = (set)"),
+                    Some(Value::Empty) => out.push_str(" = (empty)"),
+                    None => {}
+                }
+                for (word, holds) in STATE_FLAGS.iter().zip(state.flags()) {
+                    if holds {
+                        out.push(' ');
+                        out.push_str(word);
+                    }
+                }
             }
         }
         out.push('\n');
@@ -1532,17 +1631,51 @@ fn parse_now(lines: &mut Lines<'_>, answer: &mut Answer) -> Result<(), ParseErro
             .ok_or_else(|| element_line.error(ParseErrorKind::OutsideGrammar))?;
         cursor.space()?;
         let label = cursor.cut_quoted(LABEL_CHARS_MAX)?;
-        cursor.literal(" -> ")?;
-        let target = cursor.cut_quoted(TARGET_CHARS_MAX)?;
-        let target = match cursor.rest() {
-            "" => Target::Resolved(target),
-            " unresolved" => {
-                cursor.at = element_line.text.len();
-                Target::Unresolved(target)
+        let target = if cursor.rest().starts_with(" -> ") {
+            cursor.literal(" -> ")?;
+            let target = cursor.cut_quoted(TARGET_CHARS_MAX)?;
+            match cursor.rest() {
+                "" => Target::Resolved(target),
+                " unresolved" => {
+                    cursor.at = element_line.text.len();
+                    Target::Unresolved(target)
+                }
+                _ => return Err(element_line.error(ParseErrorKind::OutsideGrammar)),
             }
-            _ => return Err(element_line.error(ParseErrorKind::OutsideGrammar)),
+        } else {
+            let mut state = State::default();
+            if cursor.rest().starts_with(" = ") {
+                cursor.literal(" = ")?;
+                state.value = Some(if cursor.rest().starts_with("(set)") {
+                    cursor.literal("(set)")?;
+                    Value::Set
+                } else if cursor.rest().starts_with("(empty)") {
+                    cursor.literal("(empty)")?;
+                    Value::Empty
+                } else {
+                    Value::Text(cursor.cut_quoted(VALUE_CHARS_MAX)?)
+                });
+            }
+            // The flags in their order, each at most once, so that a line reads back to the
+            // one value that renders it.
+            let mut next = 0;
+            while !cursor.rest().is_empty() {
+                cursor.space()?;
+                let word = cursor.word(|c| c.is_ascii_lowercase())?;
+                let index = STATE_FLAGS[next..]
+                    .iter()
+                    .position(|flag| *flag == word)
+                    .map(|found| next + found)
+                    .ok_or_else(|| element_line.error(ParseErrorKind::OutsideGrammar))?;
+                state.set_flag(index);
+                next = index + 1;
+            }
+            Target::State(state)
         };
         cursor.end()?;
+        if (kind == "link") == matches!(target, Target::State(_)) {
+            return Err(element_line.error(ParseErrorKind::OutsideGrammar));
+        }
         elements.push(Element {
             handle,
             kind,

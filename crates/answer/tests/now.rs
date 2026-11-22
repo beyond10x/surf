@@ -5,7 +5,8 @@
 
 use surf_answer::{
     Answer, Cut, Did, Element, Head, LABEL_CHARS_MAX, Note, Now, Page, Path, PathEntry,
-    RefusalReason, RenderError, SessionState, TARGET_CHARS_MAX, Target, Visibility, parse, render,
+    RefusalReason, RenderError, SessionState, State, TARGET_CHARS_MAX, Target, VALUE_CHARS_MAX,
+    Value, Visibility, parse, render,
 };
 
 fn golden(name: &str) -> String {
@@ -316,4 +317,151 @@ fn parse_refuses_lines_the_renderer_does_not_write() {
         1,
     );
     assert!(parse(&moved).is_err());
+}
+
+/// `story:agent-fill-pick`: the four reasons of `fill` and `pick`.
+#[test]
+fn the_four_reasons_of_fill_and_pick_read_back() {
+    for (reason, word) in [
+        (RefusalReason::Disabled, "disabled"),
+        (RefusalReason::WrongKind, "wrong-kind"),
+        (RefusalReason::UnknownOption, "unknown-option"),
+        (RefusalReason::Readonly, "readonly"),
+    ] {
+        assert_eq!(reason.word(), word);
+        let text = format!("surf 1 session 7f3a open\ndid refused {word}\n");
+        let parsed = parse(&text).expect("the reason parses");
+        assert_eq!(parsed.did, Some(Did::Refused(reason)));
+        assert_eq!(render(&parsed).unwrap(), text);
+    }
+}
+
+fn control(handle: &str, kind: &str, label: &str, state: State) -> Element {
+    Element {
+        handle: handle.to_string(),
+        kind: kind.to_string(),
+        visibility: Visibility::Unknown,
+        label: Cut::of(label, LABEL_CHARS_MAX),
+        target: Target::State(state),
+    }
+}
+
+fn text_value(value: &str) -> Option<Value> {
+    Some(Value::Text(Cut::of(value, VALUE_CHARS_MAX)))
+}
+
+fn controls() -> Answer {
+    let mut answer = shop();
+    answer.now = Some(Now {
+        total: 7,
+        elements: vec![
+            control(
+                "f1",
+                "text",
+                "Name",
+                State {
+                    value: text_value("ada \"l\"\n"),
+                    required: true,
+                    ..State::default()
+                },
+            ),
+            control(
+                "f2",
+                "password",
+                "Password",
+                State {
+                    value: Some(Value::Set),
+                    ..State::default()
+                },
+            ),
+            control(
+                "f3",
+                "password",
+                "Again",
+                State {
+                    value: Some(Value::Empty),
+                    disabled: true,
+                    ..State::default()
+                },
+            ),
+            control(
+                "f4",
+                "radio",
+                "Small",
+                State {
+                    checked: true,
+                    ..State::default()
+                },
+            ),
+            control("f5", "checkbox", "News", State::default()),
+            control(
+                "f6",
+                "text",
+                "Code",
+                State {
+                    value: text_value(&"c".repeat(VALUE_CHARS_MAX + 5)),
+                    disabled: true,
+                    checked: true,
+                    required: true,
+                    readonly: true,
+                },
+            ),
+            control("b1", "button", "Save", State::default()),
+        ],
+    });
+    answer
+}
+
+/// Control lines: the value quoted (cut at its bound), `(set)` and `(empty)`, the flags in
+/// their order; each reads back to its typed value and renders the same bytes.
+#[test]
+fn control_lines_render_and_read_back() {
+    let answer = controls();
+    let text = render(&answer).expect("renders");
+    for line in [
+        "  f1 text ? \"Name\" = \"ada \\x22l\\x22\\x0a\" required\n",
+        "  f2 password ? \"Password\" = (set)\n",
+        "  f3 password ? \"Again\" = (empty) disabled\n",
+        "  f4 radio ? \"Small\" checked\n",
+        "  f5 checkbox ? \"News\"\n",
+        "  b1 button ? \"Save\"\n",
+    ] {
+        assert!(text.contains(line), "{line:?} in\n{text}");
+    }
+    let code = format!(
+        "  f6 text ? \"Code\" = \"{}\"... disabled checked required readonly\n",
+        "c".repeat(VALUE_CHARS_MAX)
+    );
+    assert!(text.contains(&code), "{text}");
+    let parsed = parse(&text).expect("parses");
+    assert_eq!(parsed, answer);
+    assert_eq!(render(&parsed).unwrap(), text);
+}
+
+/// A link line carries `->` and a control line does not: `render` refuses the other, and
+/// `parse` refuses control lines the renderer does not write.
+#[test]
+fn control_lines_the_renderer_does_not_write_are_refused() {
+    let mut answer = controls();
+    answer.now.as_mut().unwrap().elements[0].kind = "link".to_string();
+    assert_eq!(render(&answer), Err(RenderError::TargetOfKind));
+    let mut answer = now_shop();
+    answer.now.as_mut().unwrap().elements[0].target = Target::State(State::default());
+    assert_eq!(render(&answer), Err(RenderError::TargetOfKind));
+
+    let base = render(&controls()).unwrap();
+    for (from, to) in [
+        ("\"Small\" checked", "\"Small\" checked disabled"),
+        ("\"Small\" checked", "\"Small\"  checked"),
+        ("\"Small\" checked", "\"Small\" selected"),
+        ("= (set)", "= (unset)"),
+        ("= (set)", "=(set)"),
+        ("\"News\"\n", "\"News\" -> \"/x\"\n"),
+        ("\"Password\" = (set)", "\"Password\" = ada"),
+        (" required\n", " required required\n"),
+    ] {
+        let forged = base.replacen(from, to, 1);
+        assert_ne!(forged, base, "{from}");
+        assert!(parse(&forged).is_err(), "{to} was read");
+    }
 }

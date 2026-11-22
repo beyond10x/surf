@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest a781938fbf4be70c3e62196db4afd2b86d2f53f3955885c5d3e606169c3ba178
+// contract digest b07862b2ffbdc491fea9e4ff79c9710a0d39f78bc99706a1e4893b63e4f39d76
 // do not edit: regenerate with `ess synthesize`
 
 //! What the specification fully determines, generated: the behaviour of every command the plan
@@ -732,6 +732,7 @@ where
             disabled: input.disabled.clone(),
             checked: input.checked.clone(),
             required: input.required.clone(),
+            readonly: input.readonly.clone(),
             name: input.name.clone(),
             form_id: input.form_id.clone(),
         };
@@ -924,6 +925,10 @@ where
         // `hidden`: selected by the addressed row.
         if decided(equal(Some(&held.data.hidden).map(|value| *value), Some(true)), "surf.document.SetValue")? {
             return Ok(crate::document::SetValueOutcome::Hidden { error: crate::document::ControlHidden { element_id: input.element_id.clone() } });
+        }
+        // `readonly`: selected by the addressed row.
+        if decided(equal(Some(&held.data.readonly).map(|value| *value), Some(true)), "surf.document.SetValue")? {
+            return Ok(crate::document::SetValueOutcome::Readonly { error: crate::document::ControlReadonly { element_id: input.element_id.clone() } });
         }
         // `set`: the default.
         let Some(held) = ElementStorage::get(&self.ports, &input.element_id) else {
@@ -1459,6 +1464,7 @@ where
                 disabled: held.data.disabled,
                 checked: held.data.checked,
                 required: held.data.required,
+                readonly: held.data.readonly,
                 name: held.data.name,
                 form_id: held.data.form_id,
             })

@@ -7,7 +7,7 @@
 **A web browser written from scratch, where the specification comes first.**
 
 ![spec: ESS 0.97.3, valid](docs/badges/spec.svg)
-![conformance: 169 of 169 scenarios](docs/badges/conformance.svg)
+![conformance: 170 of 170 scenarios](docs/badges/conformance.svg)
 ![tests: 877 passed](docs/badges/tests.svg)
 ![third-party crates shipped: 0](docs/badges/dependencies.svg)
 ![unsafe code: forbidden](docs/badges/unsafe.svg)
@@ -88,9 +88,16 @@ last field is `-` for a row with neither target nor value.
 On Linux, `surf-agent` drives a browser session one call at a time, for an AI agent or a
 script. `surf-agent open <url>` opens a session, loads the address and prints the session's
 identity and a token, once. Export the two as `SURF_SESSION` and `SURF_TOKEN`; then `go <url>`,
-`look`, `follow <handle>` and `close` take the session as their subject. Each call answers in a
-few plain lines. `now` lists every link with a handle such as `l3`; `follow l3` goes there. `?`
-means visibility is not computed; only the `hidden` attribute is known. A run of `go`:
+`look`, `follow <handle>`, `fill <handle> <value>`, `pick <handle> <option>` and `close` take
+the session as their subject. Each call answers in a few plain lines. `now` lists every link
+with a handle such as `l3`, and every form field with one such as `f1`; `follow l3` goes
+there. `?` means visibility is not computed; only the `hidden` attribute is known.
+
+`fill f1 ada` types into a field; for a secret use `fill f2 -` and write the value to standard
+input: an argument word is readable by other users. `pick` chooses an option or checks a box.
+A password is never printed: `(set)` or `(empty)`.
+
+A run of `go`:
 
 ```console
 $ surf-agent go http://example.org/
@@ -113,9 +120,9 @@ What it does not do yet:
 - No JavaScript and no rendering.
 - An answer holds the status, the media type, the address and the title. Since release
   `0.4.0`, `--as tree` or `--as markdown` adds the page as text.
-- A form cannot be filled or submitted yet: the commands are `open`, `go`, `look`, `follow`
-  and `close`. Visibility is not computed: `now` says `hid` for the `hidden` attribute and `?`
-  for every other link.
+- A form can be filled but not submitted yet: the commands are `open`, `go`, `look`,
+  `follow`, `fill`, `pick` and `close`. Visibility is not computed: `now` says `hid` for the
+  `hidden` attribute and `?` for every other element.
 - `follow` refuses, before any navigation, a link to a scheme other than `http:`
   (`unsupported-scheme`), a target over 65,536 bytes (`address-too-long`) and, from a page on a
   public address, a target on a loopback or private address or `localhost`
@@ -190,7 +197,7 @@ there instead.
 6. **Text from the web stays text.** Anything from a page, a server or an address is escaped
    before it is printed, so a page cannot forge a line of surf's output.
 7. **A passing test must be able to fail.** Tests are tried against planted defects. A storage
-   that drops every write fails 36 of the 169 scenarios.
+   that drops every write fails 36 of the 170 scenarios.
 8. **Small.** A standard is followed for what surf does, not implemented whole.
 
 ## What works today
@@ -201,7 +208,7 @@ there instead.
   `renderer`.
 - **Its own HTTP/1.1 client**, with one deadline for the whole exchange (40 seconds at most)
   and hard limits on header and body size.
-- **169 specified scenarios**, each passing twice: once against the specification's own
+- **170 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
 - **877 tests**, built with warnings treated as errors, and 38 tests of the live view's page in
   a browser.
@@ -455,11 +462,11 @@ One command checks everything:
 ```console
 $ task check
 surf v1 — 9 file(s), 24 scenario(s), valid
-169 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
-  169 scenarios: 169 passed, 0 failed, 0 error, 0 unsupported
-169 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
-  169 scenarios: 169 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 169 scenario(s) each, of suite sha256:95b3119d869d65aec04eaf21d4f9a762352056b6d22b23f0ad1e5a7678f2c672
+170 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
+  170 scenarios: 170 passed, 0 failed, 0 error, 0 unsupported
+170 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
+  170 scenarios: 170 passed, 0 failed, 0 error, 0 unsupported
+the interpreter and the Rust system ran 170 scenario(s) each, of suite sha256:4d7a2a59a0bb8e7760ca9cd70d6c2c138f8cdb4a24ed6cd71b392524220636ca
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 Cargo.lock: 26 package(s), none from outside this repository
@@ -473,7 +480,7 @@ view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
 html-conformance: 9107 cases, 9095 run, 9095 passed
 ```
 
-It validates the specification, runs the 169 scenarios against the interpreter built into `ess`
+It validates the specification, runs the 170 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
 that the lock file holds no outside package, then builds and tests, checks that every event
 name of the live view's stream is an event of the specification, runs the live view's page

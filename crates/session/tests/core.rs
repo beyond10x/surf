@@ -850,9 +850,10 @@ fn look_as_markdown_fetches_nothing() {
     assert_eq!(before, 1);
     let (_, plain) = call(&mut session, &holder("look", &token, &[]));
     // The answer with text has no `now` block and no `note visibility:` (since
-    // `story:agent-follow-links`): the plain answer up to its `now` line.
+    // `story:agent-follow-links`): the plain answer up to its `now` line. Since
+    // `story:agent-fill-pick` the block lists the form's field and button beside the link.
     let at = plain
-        .find("\nnow 1 of 1\n")
+        .find("\nnow 3 of 3\n")
         .expect("the plain answer has a now block")
         + 1;
     let plain = &plain[..at];

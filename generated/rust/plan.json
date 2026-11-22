@@ -2,8 +2,8 @@
   "provenance": {
     "system": "surf",
     "specification_version": "v1",
-    "source_digest": "23cb9f909a8270defcd0818278c0cc55081686d403783d898f43f38e40bf3244",
-    "contract_digest": "a781938fbf4be70c3e62196db4afd2b86d2f53f3955885c5d3e606169c3ba178"
+    "source_digest": "33ce58678b9fdbe866f71fe06cb48dadd6d9287158f133c5b0125621f0045812",
+    "contract_digest": "b07862b2ffbdc491fea9e4ff79c9710a0d39f78bc99706a1e4893b63e4f39d76"
   },
   "scope": {
     "profile": "component-skeletons"
@@ -26,6 +26,13 @@
     {
       "kind": "domain_type",
       "source": "surf.agent.ActionId",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.agent.FillCall",
       "disposition": {
         "disposition": "generated"
       }
@@ -68,6 +75,13 @@
     {
       "kind": "domain_type",
       "source": "surf.agent.PageForm",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.agent.PickCall",
       "disposition": {
         "disposition": "generated"
       }
@@ -1155,6 +1169,13 @@
     {
       "kind": "error_type",
       "source": "surf.document.ControlKindConflict",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "error_type",
+      "source": "surf.document.ControlReadonly",
       "disposition": {
         "disposition": "generated"
       }

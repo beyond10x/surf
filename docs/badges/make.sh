@@ -34,7 +34,7 @@ blue="#1565c0"
 grey="#757575"
 
 badge spec.svg "spec" "ESS 0.97.3, valid" "$blue"
-badge conformance.svg "conformance" "169 of 169 scenarios" "$green"
+badge conformance.svg "conformance" "170 of 170 scenarios" "$green"
 badge tests.svg "tests" "877 passed" "$green"
 badge dependencies.svg "third-party crates shipped" "0" "$green"
 badge unsafe.svg "unsafe code" "forbidden" "$green"

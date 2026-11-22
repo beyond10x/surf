@@ -1,5 +1,5 @@
-//! The binary `surf-agent`: [`surf_agent::client::run`] over this process's words, environment
-//! and standard streams.
+//! The binary `surf-agent`: [`surf_agent::client::run_with_input`] over this process's words,
+//! environment and standard streams.
 
 #![forbid(unsafe_code)]
 
@@ -12,10 +12,11 @@ use surf_agent::client::{self, Config};
 
 fn main() -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
-    let status = client::run(
+    let status = client::run_with_input(
         &args,
         &Environment::from_process(),
         &Config::default(),
+        &mut io::stdin().lock(),
         &mut io::stdout().lock(),
         &mut io::stderr().lock(),
     );

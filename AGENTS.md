@@ -253,7 +253,12 @@ above, and the list of standards itself was written from memory.
     an element (`3 follow l1 "Sign in"`, `PathEntry::handle`) and the refusal reasons
     `unknown-handle`, `hidden` and `unresolved`; since its fix round `address-too-long`,
     `unsupported-scheme` and `forbidden-destination`, and `render` refuses a `path` entry marked
-    cut without an argument. No dependency.
+    cut without an argument. Since `story:agent-fill-pick` a `now` line of a control carries its
+    state in place of a target (`Target::State`, `State`, `Value`: `= "<value>"` cut at
+    `VALUE_CHARS_MAX` 1,024, `= (set)`, `= (empty)`, then `disabled`, `checked`, `required`,
+    `readonly` in that order; `render` refuses a link without `->` and a control with one,
+    `RenderError::TargetOfKind`), and the reasons `disabled`, `wrong-kind`, `unknown-option`
+    and `readonly`. No dependency.
   - `crates/secret` (`surf-secret`): the operating system random source, the comparison in
     constant time and the 32-byte token. Every secret and every random identity of the agent
     and the view comes from here. No dependency.
@@ -305,8 +310,9 @@ above, and the list of standards itself was written from memory.
     `try_generate_surf_agent_action_id` as unmet. Since wave 6 `DocumentPorts` stores
     `Document` and `Element` and draws element identities. Each table keeps an index from key
     to row (`Rows::index`), so a put or a read by key is one hash lookup; 10,001 links of one
-    page are stored in under a second (`crates/session/tests/adversary_parse.rs`). Depends on
-    the generated crates only.
+    page are stored in under a second (`crates/session/tests/adversary_parse.rs`). Its tests
+    write `readonly: false` in each `ElementData` since `story:agent-fill-pick` added the
+    field. Depends on the generated crates only.
   - `crates/surf` (`surf`): a library only since wave 3 of the agent plan. It builds the
     generated `System` from six component ports the caller supplies and adds the `net`
     component's transport, a trait with one method, as a parameter. `Browser::run` hands each
@@ -351,8 +357,10 @@ above, and the list of standards itself was written from memory.
     answers `SubmitForm` or `AbandonSubmission` with one of the seven `SubmissionEndReason`s.
     `surf::submit_form` is the HTML Standard's form submission algorithm and entry list, from
     memory, with `application/x-www-form-urlencoded` only (the crate documentation, "The
-    submission step", lists what is not taken). `tests/forms.rs` 18 (cases 5 to 20, the hidden
-    input, the rows of the parser step).
+    submission step", lists what is not taken). `tests/forms.rs` 20 (cases 5 to 20, the hidden
+    input, the rows of the parser step; since `story:agent-fill-pick` its case 21, the last of
+    two `checked` radio buttons of a group submitted alone, and the element's `readonly`,
+    which the parser step carries in `AddElement` and `SetValue` refuses with `readonly`).
     Depends on the generated crates, `surf-ports`, `surf-fetch`, `surf-html`, `surf-page` and
     `surf-url`.
   - `crates/surf-cli` (`surf-cli`): the binary `surf` and its five tests, moved out of
@@ -379,7 +387,10 @@ above, and the list of standards itself was written from memory.
     component and a relative path are refused. `tests/start.rs` has the six tests of the checks,
     each against a listener of the test. Since wave
     4 `surf-agent open`, `go`, `look` and `close` run against a real `surfd` and a real session
-    process, and since round 2 `follow <handle>` (`story:agent-follow-links`); the package carries the release version, `0.4.0`, as do `surf-cli`, `surfd` and
+    process, and since round 2 `follow <handle>` (`story:agent-follow-links`), `fill <handle>
+    <value>` and `pick <handle> <option>` (`story:agent-fill-pick`; `fill <handle> -` reads the
+    value from standard input, `client::run_with_input`, at most 64 KiB without one line feed,
+    the fourth `UNMAPPED:` marker of `cli/surf-agent.yaml`); the package carries the release version, `0.4.0`, as do `surf-cli`, `surfd` and
     `surf-session`. `open` starts `surfd` from the directory of its own executable. Depends on
     `surf-answer` and `surf-secret`.
   - `crates/surfd` (`surfd`): a library and the binary `surfd`, the daemon the agent command line
@@ -413,7 +424,8 @@ above, and the list of standards itself was written from memory.
     `surf-answer`, `surf-secret` and `surf-view`.
   - `crates/session` (`surf-session`): one agent session. A library core over any transport
     and the binary `surf-session`, which `surfd` starts, one process per session. It draws the
-    session token, answers `open`, `go`, `look`, `follow` and `close` in the format of
+    session token, answers `open`, `go`, `look`, `follow`, `fill`, `pick` and `close` in the
+    format of
     `docs/agent-answer.md`, issues the model commands for each (`OpenSession`, `Go`,
     `CloseSession`, `RecordAction`) and loads pages through the `surf` library with
     `surf-fetch`: `http:` only. The token is compared in constant time and is in no command
@@ -433,10 +445,11 @@ above, and the list of standards itself was written from memory.
     most four times its length plus two bytes. Since wave 8 the entries of
     `NavigationStarted` and `RequestStarted` carry `method`, `body` as `<n> bytes` and
     `body_type`, an absent one as the field with no value; its transport is `surf::fetch_http`,
-    which since wave 9 sends a `Post` (no command of the session sends one yet). 118 tests:
+    which since wave 9 sends a `Post` (no command of the session sends one yet). 140 tests:
     `adversary_document_text` 7, `adversary_events` 1, `adversary_follow` 8, `adversary_parse`
     4, `adversary_values` 3, `adversary_view` 1, `built` 11, `core` 22, `e2e` 2 (runs the three
-    built binaries, or those in `SURF_BIN_DIR`), `events` 23, `follow` 17, `follow_refusals` 9
+    built binaries, or those in `SURF_BIN_DIR`), `events` 23, `fill_pick` 22 (case 3 runs the
+    built `surf-agent` against `surfd` in the test process), `follow` 17, `follow_refusals` 9
     (over an in-memory transport that stands at any address), `form_rows` 1, `memory` 2,
     `redirect` 2 and `view` 5 (the live view of `surfd` over the real session). The bound of 256 row entries
     per request counts `FormAdded` and `OptionAdded` with `ElementAdded`
@@ -458,7 +471,14 @@ above, and the list of standards itself was written from memory.
     one with a scheme other than `http` (`unsupported-scheme`), and from a page whose host is
     not local by its text a target whose host is (`forbidden-destination`: an IP address
     `surf_fetch::is_local` names, or `localhost`); a shown target holds no userinfo, and a
-    same-origin path that starts with `//` is shown whole.
+    same-origin path that starts with `//` is shown whole. Since `story:agent-fill-pick` the
+    `now` block lists the controls beside the links (`f<n>`, `b<n>`, with their state from the
+    rows of `Elements` and `Options`; a password only `(set)` or `(empty)`); `fill` issues
+    `Fill` and `pick` issues `Pick` (with the option for a select), each recording the action
+    with the handle alone, after the session checks, from the rows, `unknown-handle`,
+    `wrong-kind`, `disabled`, `hidden` (the row's flag), then `readonly` or `unknown-option`,
+    because the bindings drop a refusal of `SetValue`, `Check` and `SelectOption`; `follow` of a
+    control is `wrong-kind`.
     `cargo clippy -p surf-session` needs `--no-deps`: the generated `surf-types` fails clippy.
     Depends on the `surf` library, `surf-ports`, `surf-fetch`, `surf-answer`, `surf-html`,
     `surf-page`, `surf-page-text`, `surf-secret`, `surf-url`, the
@@ -611,10 +631,10 @@ above, and the list of standards itself was written from memory.
     the copy of the selected `option` the parser puts into a `selectedcontent`, from which
     `actionable_elements` lists no row (surf's reading, not the standard's rendering). Since
     `story:html-document-port` (round 1) `surf` depends on it, and `surf-page-text` too.
-    75 tests: 28 in `tests/elements.rs`, 35 in `tests/label.rs`, 3 in `tests/base_url.rs`,
-    5 in `tests/forms.rs`, 1 each in `tests/tree_tables.rs` and `tests/tree_template.rs` (the
-    parser unit's), 1 in `tests/adversary_select.rs` (the parser adversary's) and 1 in
-    `tests/adversary_values.rs`, modules of the one test binary
+    78 tests: 28 in `tests/elements.rs`, 35 in `tests/label.rs`, 3 in `tests/base_url.rs`,
+    6 in `tests/forms.rs`, 1 each in `tests/tree_tables.rs` and `tests/tree_template.rs` (the
+    parser unit's), 1 in `tests/adversary_select.rs` (the parser adversary's), 1 in
+    `tests/adversary_values.rs` and 2 in `tests/adversary_follow.rs`, modules of the one test binary
     (`story:one-test-binary-per-crate`). Since round 2 (`story:agent-follow-links`) it has
     `base_url::document_base_url`, the one owner of the document base URL (the first `base`
     with `href`, parsed against the document address). Since `story:agent-form-port` it has
@@ -625,8 +645,11 @@ above, and the list of standards itself was written from memory.
     disabledness and selectedness after parsing; and `form_handles`, `F<n>` per form in
     document order, apart from `handles`, which page text prints, so page text names no form.
     The parser's form element pointer is not in the tree, so a control the parser associated
-    with a form it is not inside of has no owner here (the module documentation). Standard
-    library, `surf-html` and `surf-url` only.
+    with a form it is not inside of has no owner here (the module documentation). Since
+    `story:agent-fill-pick` `actionable_elements` takes the radio button group rule: of the
+    radio buttons of one group (same form owner, or none, and same non-empty `name`) with a
+    `checked` attribute only the last in tree order is `checked`
+    (`forms::uncheck_radio_groups`). Standard library, `surf-html` and `surf-url` only.
   - `crates/page-text` (`surf-page-text`): a `surf-html` tree as text, the outline
     (`outline`) and Markdown (`markdown::markdown`, tables as GitHub tables since
     `story:page-text-tables`), each line without the answer's `> `, one at a time.
@@ -687,7 +710,9 @@ above, and the list of standards itself was written from memory.
     events are read from what `System::published` gained while it ran, up to the first binding
     delivery, and the scenario errors where they differ from the event the typed outcome
     carries. Since wave 8 `Navigate` and `Fetch` read their inputs through `present()`, so an
-    optional input sent as `null` reads as one left out.
+    optional input sent as `null` reads as one left out. Since `story:agent-fill-pick` it maps
+    the element's `readonly` (in `AddElement`, an `Element` setup and the `Elements` view) and
+    the outcome `readonly` of `SetValue`.
   - `src/main.rs`: the binary `conform-rust` runs. `tests/planted_defect.rs`: the same suite over
     a `Navigation` storage that drops every `put` must fail at least one scenario.
     `tests/two_of_each_entity.rs`: for each entity alone, one identity for every instance, and
@@ -1214,14 +1239,16 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
 After round 1 (2026-11-22, on the wave branch at `fe5c723`: the parser, text and document units
 and `story:agent-tasks` merged on `main` at `5415f27`), with ess 0.97.3: `169 scenario(s) (24
 authored), 48 refusal(s)` (`slot task suite`; the document unit read the same on 0.96.0).
-Against the interpreter and against the Rust system: `169 scenarios: 169 passed, 0 failed, 0
-error, 0 unsupported`; `conform-totals`: `the interpreter and the Rust system ran 169
+Since `story:agent-fill-pick` (round 2), whose element field `readonly` adds the synthesized
+outcome `SetValue/outcome/readonly`: `170 scenario(s) (24 authored), 48 refusal(s)`.
+Against the interpreter and against the Rust system: `170 scenarios: 170 passed, 0 failed, 0
+error, 0 unsupported`; `conform-totals`: `the interpreter and the Rust system ran 170
 scenario(s) each, of suite
-sha256:95b3119d869d65aec04eaf21d4f9a762352056b6d22b23f0ad1e5a7678f2c672` (the digest since
-`story:agent-follow-links`, which added the shape `surf.agent.FollowCall`; no gate step
-compares it).
+sha256:4d7a2a59a0bb8e7760ca9cd70d6c2c138f8cdb4a24ed6cd71b392524220636ca` (the digest since
+`story:agent-fill-pick`, which added the shapes `surf.agent.FillCall` and
+`surf.agent.PickCall` and the field `readonly`; no gate step compares it).
 The planted defect:
-`planted defect: 169 scenarios: 133 passed, 36 failed, 0 error, 0 unsupported`; the
+`planted defect: 170 scenarios: 134 passed, 36 failed, 0 error, 0 unsupported`; the
 conformance crate's `tests/main.rs` ran 15 passed. `generated-check`: `generated/rust matches
 spec/ (30 artifact(s) and .ess-output)`, the committed bytes. `html-conformance: 9107 cases,
 9095 run, 9095 passed`: the parser unit raised `crates/html-conformance/expected/`, which the

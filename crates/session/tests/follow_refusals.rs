@@ -99,6 +99,7 @@ fn shown(answer: &Answer) -> (String, bool) {
     match &element.target {
         Target::Resolved(cut) => (cut.kept.clone(), cut.cut),
         Target::Unresolved(cut) => panic!("unresolved: {:?}", cut.kept),
+        Target::State(_) => panic!("a control, not a link"),
     }
 }
 

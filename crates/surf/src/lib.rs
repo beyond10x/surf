@@ -1479,6 +1479,7 @@ where
                 disabled: element.disabled,
                 checked: element.checked,
                 required: element.required,
+                readonly: control.is_some_and(|control| control.readonly),
                 name: control.and_then(|control| control.name.clone()),
                 form_id: control
                     .and_then(|control| control.owner)

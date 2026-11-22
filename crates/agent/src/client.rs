@@ -50,7 +50,8 @@ pub const USAGE_STATUS: u8 = 2;
 pub const UNREACHABLE_STATUS: u8 = 3;
 
 /// Run one call: `args` are the words after the program name. The answer lines go to `out`,
-/// every message of the client and the answer's reason to `err`. Returns the exit status.
+/// every message of the client and the answer's reason to `err`. Returns the exit status. Reads
+/// no input: `fill <handle> -` reads an empty value; [`run_with_input`] gives it one.
 pub fn run(
     args: &[OsString],
     env: &Environment,
@@ -58,7 +59,25 @@ pub fn run(
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> u8 {
-    let status = match call(args, env, config, out, err) {
+    run_with_input(args, env, config, &mut io::empty(), out, err)
+}
+
+/// The most bytes of a value read from standard input: the most a request holds. One more is
+/// read to tell a longer value, which is a usage error.
+pub const STDIN_VALUE_MAX: usize = wire::REQUEST_MAX;
+
+/// [`run`], with `input` read for the value word `-` of `fill` ([`cli::STDIN_VALUE`]): at most
+/// [`STDIN_VALUE_MAX`] bytes, without one line feed at the end, as UTF-8. The value is written
+/// to no message of the client.
+pub fn run_with_input(
+    args: &[OsString],
+    env: &Environment,
+    config: &Config,
+    input: &mut dyn Read,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> u8 {
+    let status = match call(args, env, config, input, out, err) {
         Ok(status) => status,
         Err(Failure::Usage(message)) => {
             let _ = writeln!(err, "surf-agent: {message}");
@@ -88,10 +107,14 @@ fn call(
     args: &[OsString],
     env: &Environment,
     config: &Config,
+    input: &mut dyn Read,
     out: &mut dyn Write,
     err: &mut dyn Write,
 ) -> Result<u8, Failure> {
-    let call = cli::parse(args, env).map_err(|error| Failure::Usage(error.0))?;
+    let mut call = cli::parse(args, env).map_err(|error| Failure::Usage(error.0))?;
+    if call.command == "fill" && call.value.as_deref() == Some(cli::STDIN_VALUE) {
+        call.value = Some(read_value(input)?);
+    }
     let request = call
         .request()
         .encode()
@@ -162,6 +185,31 @@ fn call(
         let _ = writeln!(err, "surf-agent: {}", printable(reason));
     }
     Ok(answer.status)
+}
+
+/// The value of `fill -` from `input`: at most [`STDIN_VALUE_MAX`] bytes of UTF-8, without one
+/// line feed at the end. No message repeats a byte of it.
+fn read_value(input: &mut dyn Read) -> Result<String, Failure> {
+    let mut bytes = Vec::new();
+    input
+        .take(STDIN_VALUE_MAX as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| {
+            Failure::Usage(format!(
+                "the value cannot be read from standard input: {}",
+                error.kind()
+            ))
+        })?;
+    if bytes.len() > STDIN_VALUE_MAX {
+        return Err(Failure::Usage(format!(
+            "the value read from standard input is longer than {STDIN_VALUE_MAX} bytes"
+        )));
+    }
+    if bytes.last() == Some(&b'\n') {
+        bytes.pop();
+    }
+    String::from_utf8(bytes)
+        .map_err(|_| Failure::Usage("the value read from standard input is not UTF-8".into()))
 }
 
 /// [`wire::check_socket_path`]: whether the socket is there, or the refusal naming the path.

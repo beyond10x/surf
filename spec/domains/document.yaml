@@ -267,6 +267,11 @@ entities:
         type: Boolean
       - name: required
         type: Boolean
+      # The `readonly` attribute is present and applies to the control (a `textarea`, or an
+      # `input` whose state `readonly` applies to, HTML Standard 4.10.5.3.3): `SetValue` refuses
+      # it. `false` for every other element.
+      - name: readonly
+        type: Boolean
       # The control's `name` attribute as written, absent where it has none: it names the
       # control's entry in a submission, and with the form owner it makes a radio button group.
       - name: name
@@ -422,6 +427,12 @@ errors:
       - name: element_id
         type: surf.document.ElementId
 
+  - name: surf.document.ControlReadonly
+    summary: The control is read-only, so nothing changed.
+    fields:
+      - name: element_id
+        type: surf.document.ElementId
+
   - name: surf.document.OptionNotFound
     summary: No option has this identity.
     fields:
@@ -511,6 +522,8 @@ commands:
         type: Boolean
       - name: required
         type: Boolean
+      - name: readonly
+        type: Boolean
       - name: name
         type: Optional<String>
       - name: form_id
@@ -546,6 +559,7 @@ commands:
           disabled: input.disabled
           checked: input.checked
           required: input.required
+          readonly: input.readonly
           name: input.name
           form_id: input.form_id
         emits:
@@ -731,9 +745,9 @@ commands:
   # Each refuses, in this order, an element that does not exist, one of a kind it does not act
   # on, a disabled control and a hidden control (`docs/design/agent-interface.md`, section 4:
   # "hidden or disabled control"). `hidden` is the `hidden` attribute until visibility is computed
-  # (section 5.2). A control's `readonly` is not stored: a read-only text control takes `fill`.
-  # UNMAPPED: `readonly`. What would settle it: a field of the element when `fill` must refuse it.
-  # The events carry the element and not the value, so a password reaches no event of this
+  # (section 5.2). `SetValue` refuses a read-only control last (`story:agent-fill-pick`): the
+  # HTML Standard's `readonly` keeps the user from editing the value, and `fill` is the user's
+  # edit. The events carry the element and not the value, so a password reaches no event of this
   # component.
   - name: surf.document.SetValue
     naming:
@@ -778,6 +792,14 @@ commands:
           surf.document.ControlHidden:
             element_id: input.element_id
         summary: The control is hidden; nothing changed.
+
+      - name: readonly
+        when_subject: {predicate: readonly == true}
+        error: surf.document.ControlReadonly
+        payload:
+          surf.document.ControlReadonly:
+            element_id: input.element_id
+        summary: The control is read-only; nothing changed.
 
       - name: set
         updates: surf.document.Element
@@ -1269,6 +1291,8 @@ views:
       - name: checked
         type: Boolean
       - name: required
+        type: Boolean
+      - name: readonly
         type: Boolean
       - name: name
         type: Optional<String>

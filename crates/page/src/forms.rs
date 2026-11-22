@@ -31,6 +31,9 @@
 //!   last option: with `multiple`, each option with a `selected` attribute; without it, the last
 //!   such option in the list, else, when the display size is 1, the first option that is not
 //!   disabled.
+//! - The radio button group rule at parse time (`story:agent-fill-pick`), which
+//!   [`crate::actionable_elements`] applies to its rows: of the radio buttons of one group with
+//!   `checked`, only the last in tree order stays checked (`uncheck_radio_groups`).
 //!
 //! # Deviations
 //!
@@ -175,6 +178,44 @@ enum Owner {
     Id(String),
     /// The nearest ancestor form, if any.
     Ancestor(Option<usize>),
+}
+
+/// The radio button group rule at parse time (`story:agent-fill-pick`; HTML Standard 4.10.5.1.18
+/// "Radio Button state"): setting a radio button's checkedness to true, as the parser does for
+/// one with a `checked` attribute when it inserts it, sets the checkedness of every other radio
+/// button of its group to false. So of the radio buttons of one group that carry `checked`, only
+/// the last in tree order stays checked. The group: the radio buttons with the same form owner
+/// and the same non-empty `name` (compared exactly), or with no form owner and the same name in
+/// the same tree; one with no `name` or an empty one is in no group but its own. The form owner
+/// is the one [`forms`] computes, after the whole tree is parsed. Rows of `found` that are not
+/// radio buttons, or not checked, are left as they are; [`forms`] is computed only when two
+/// radio buttons are checked.
+pub(crate) fn uncheck_radio_groups(tree: &Tree, found: &mut [crate::ActionableElement]) {
+    let checked = || {
+        found
+            .iter()
+            .filter(|row| row.kind == crate::Kind::Radio && row.checked)
+    };
+    if checked().nth(1).is_none() {
+        return;
+    }
+    let owners = forms(tree);
+    let mut seen: std::collections::HashSet<(Option<usize>, String)> =
+        std::collections::HashSet::new();
+    for row in found.iter_mut().rev() {
+        if row.kind != crate::Kind::Radio || !row.checked {
+            continue;
+        }
+        let Some(control) = owners.control(row.node) else {
+            continue;
+        };
+        let Some(name) = control.name.as_ref().filter(|name| !name.is_empty()) else {
+            continue;
+        };
+        if !seen.insert((control.owner, name.clone())) {
+            row.checked = false;
+        }
+    }
 }
 
 /// The forms and the controls of `tree`, template contents left out.

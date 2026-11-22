@@ -20,6 +20,7 @@ arrange:
         disabled: false
         checked: false
         required: false
+        readonly: false
         name: subscribe
       state: Added
   - instance: shown
@@ -35,6 +36,7 @@ arrange:
         disabled: false
         checked: false
         required: false
+        readonly: false
         name: remember
       state: Added
 

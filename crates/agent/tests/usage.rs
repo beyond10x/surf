@@ -124,6 +124,101 @@ fn follow_takes_one_handle() {
     assert_eq!(args, vec![("handle", "l3")]);
 }
 
+/// `story:agent-fill-pick`: `fill` and `pick` take a handle and one word; without the word it
+/// is usage, status 2, and nothing is sent. `fill <handle> -` sends the value read from standard
+/// input without its last line feed; a value over the bound, or not UTF-8, is usage and no
+/// message repeats it. The `Debug` of a call writes the value's length only.
+#[test]
+fn fill_and_pick_take_a_handle_and_a_word() {
+    let dir = TestDir::new();
+    for (args, says) in [
+        (
+            vec!["fill", "f1"],
+            "fill needs a value, or - for standard input",
+        ),
+        (vec!["pick", "f3"], "pick needs an option, on or off"),
+        (vec!["fill"], "fill needs a handle"),
+        (
+            vec!["pick", "f3", "on", "off"],
+            "pick takes at most 2 positional word",
+        ),
+    ] {
+        let output = run(agent(&dir)
+            .args(&args)
+            .env("SURF_SESSION", SESSION)
+            .env("SURF_TOKEN", TOKEN));
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        let printed = stderr(&output);
+        assert!(printed.contains(says), "{args:?}: {printed}");
+        assert!(
+            printed.contains("surf-agent fill <handle> <value>|-"),
+            "{printed}"
+        );
+    }
+    assert!(!dir.runtime().join("surf").exists(), "nothing was sent");
+
+    let env = surf_agent::cli::Environment {
+        runtime_dir: Some(dir.runtime().into()),
+        session: Some(SESSION.into()),
+        token: Some(TOKEN.into()),
+        program_dir: None,
+    };
+    let args = |call: &surf_agent::cli::Call| -> Vec<(String, String)> {
+        call.request()
+            .args
+            .iter()
+            .map(|arg| (arg.name.clone(), arg.value.clone()))
+            .collect()
+    };
+    let fill = surf_agent::cli::parse(&["fill".into(), "f1".into(), "ada lovelace".into()], &env)
+        .expect("a call");
+    assert_eq!(
+        args(&fill),
+        vec![
+            ("handle".to_string(), "f1".to_string()),
+            ("value".to_string(), "ada lovelace".to_string())
+        ]
+    );
+    let debug = format!("{fill:?}");
+    assert!(!debug.contains("lovelace"), "{debug}");
+    assert!(debug.contains("12 bytes"), "{debug}");
+    let pick =
+        surf_agent::cli::parse(&["pick".into(), "f6".into(), "Red".into()], &env).expect("a call");
+    assert_eq!(
+        args(&pick),
+        vec![
+            ("handle".to_string(), "f6".to_string()),
+            ("option".to_string(), "Red".to_string())
+        ]
+    );
+
+    let config = surf_agent::client::Config::default();
+    let too_long = vec![b'Q'; surf_agent::client::STDIN_VALUE_MAX + 1];
+    for (input, says) in [
+        (too_long, "is longer than"),
+        (vec![b'Q', b'Q', 0xff, b'\n'], "is not UTF-8"),
+    ] {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let status = surf_agent::client::run_with_input(
+            &["fill".into(), "f2".into(), "-".into()],
+            &env,
+            &config,
+            &mut input.as_slice(),
+            &mut out,
+            &mut err,
+        );
+        let printed = String::from_utf8_lossy(&err);
+        assert_eq!(status, 2, "{printed}");
+        assert!(printed.contains(says), "{printed}");
+        assert!(
+            !printed.contains("QQ"),
+            "the value is not repeated: {printed}"
+        );
+        assert!(out.is_empty());
+    }
+    assert!(!dir.runtime().join("surf").exists(), "nothing was sent");
+}
+
 /// A standard input that is a file the test holds open: a read by the child would move the
 /// offset the two share.
 fn stdin_file(dir: &TestDir) -> (File, File) {
@@ -185,14 +280,19 @@ fn token_prompt_exits_2_with_the_usage_and_opens_no_terminal() {
         0,
         "standard input was read"
     );
-    // No code of the client can open a terminal: nothing in its sources names one.
+    // No code of the client can open a terminal: nothing in its sources names one. Standard
+    // input is named once, in `main.rs`, which hands it to `run_with_input` for the value of
+    // `fill -` (`story:agent-fill-pick`); the read above shows a token is never read from it.
     let sources = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     for entry in fs::read_dir(sources).unwrap() {
         let path = entry.unwrap().path();
         let text = fs::read_to_string(&path).unwrap();
-        for name in ["/dev/tty", "isatty", "IsTerminal", "is_terminal", "stdin()"] {
+        for name in ["/dev/tty", "isatty", "IsTerminal", "is_terminal"] {
             assert!(!text.contains(name), "{} names {name}", path.display());
         }
+        let named = text.matches("stdin()").count();
+        let allowed = usize::from(path.file_name().is_some_and(|name| name == "main.rs"));
+        assert_eq!(named, allowed, "{} names stdin()", path.display());
     }
 }
 

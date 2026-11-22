@@ -45,6 +45,7 @@ fn shown_target(answer: &Answer, handle: &str) -> (String, bool) {
     match &element.target {
         Target::Resolved(cut) => (cut.kept.clone(), cut.cut),
         Target::Unresolved(cut) => panic!("{handle} unresolved: {:?}", cut.kept),
+        Target::State(_) => panic!("{handle} is a control, not a link"),
     }
 }
 

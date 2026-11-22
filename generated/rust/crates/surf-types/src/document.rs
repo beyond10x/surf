@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest a781938fbf4be70c3e62196db4afd2b86d2f53f3955885c5d3e606169c3ba178
+// contract digest b07862b2ffbdc491fea9e4ff79c9710a0d39f78bc99706a1e4893b63e4f39d76
 // do not edit: regenerate with `ess synthesize`
 
 //! Document — `surf.document`.
@@ -366,6 +366,8 @@ pub struct ElementData {
     pub checked: bool,
     /// `required` — `Boolean`.
     pub required: bool,
+    /// `readonly` — `Boolean`.
+    pub readonly: bool,
     /// `name` — `Optional<String>`.
     pub name: Option<String>,
     /// `form_id` — `Optional<surf.document.FormId>`.
@@ -1026,6 +1028,8 @@ pub struct AddElement {
     pub checked: bool,
     /// `required` — `Boolean`.
     pub required: bool,
+    /// `readonly` — `Boolean`.
+    pub readonly: bool,
     /// `name` — `Optional<String>`.
     pub name: Option<String>,
     /// `form_id` — `Optional<surf.document.FormId>`.
@@ -1409,6 +1413,13 @@ pub enum SetValueOutcome {
         /// Why it was refused: `surf.document.ControlHidden`.
         error: ControlHidden,
     },
+    /// `readonly` — when the existing subject's stored fields satisfy `readonly == true`.
+    ///
+    /// The control is read-only; nothing changed.
+    Readonly {
+        /// Why it was refused: `surf.document.ControlReadonly`.
+        error: ControlReadonly,
+    },
     /// `set` — otherwise.
     ///
     /// The control holds the value.
@@ -1672,6 +1683,15 @@ pub struct ControlKindConflict {
     pub element_id: ElementId,
 }
 
+/// The declared error `surf.document.ControlReadonly`.
+///
+/// The control is read-only, so nothing changed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ControlReadonly {
+    /// `element_id` — `surf.document.ElementId`.
+    pub element_id: ElementId,
+}
+
 /// The declared error `surf.document.DocumentNotFound`.
 ///
 /// No document has this identity.
@@ -1811,6 +1831,8 @@ pub struct Elements {
     pub checked: bool,
     /// `required` — `Boolean`.
     pub required: bool,
+    /// `readonly` — `Boolean`.
+    pub readonly: bool,
     /// `name` — `Optional<String>`.
     pub name: Option<String>,
     /// `form_id` — `Optional<surf.document.FormId>`.
