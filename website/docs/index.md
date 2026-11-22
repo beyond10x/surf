@@ -19,6 +19,11 @@ Linux an agent can open a session and send it to a page. It is growing into two 
 - a fast, repeatable end-to-end test runner that replays what such an agent explored, without a
   server.
 
+surf has no JavaScript yet. The script engine it will embed is
+[swell](https://github.com/beyond10x/swell), an ECMAScript (JavaScript) engine written from
+scratch in Rust, a project of its own that is developed beside surf. A page that surf loads
+runs no script today.
+
 :::caution[Not for daily use]
 
 surf has no window, no rendering, no JavaScript and no `https:` yet. It loads one `http:` address
