@@ -496,13 +496,16 @@ fn past_the_label_work_bound_names_come_from_attributes_only() {
 }
 
 /// The hidden flags are worked out once, in the walk of `actionable_elements`, not once per
-/// reference. Counted, not timed: for each page, the attribute comparisons with N `input`s
-/// that name a node through `aria-labelledby` against those of the same page where each `input`
-/// carries `aria-label` in its place. A walk of the hidden flags per reference compares at least
-/// `aria-hidden` and `hidden` of the node referenced, 2 comparisons per reference or more; the
-/// bound is 1 per reference. A walk like `is_hidden` also reads the `N` siblings before the
-/// body element or the `summary`, which compares no attribute: `N` is small enough that such a
-/// walk, `N` times `N` steps, ends and fails on the count well before the runner's 60 s.
+/// reference. Counted, not timed: the count is `attribute_visits()`, the attribute comparisons,
+/// on each page with N `input`s that name a node through `aria-labelledby` against the same page
+/// where each `input` carries `aria-label` in its place; the bound is 1 more per reference. So
+/// the test catches a read of the hidden flags once per reference that compares attributes, as
+/// `is_hidden` does: 2 to 4 more per reference on these pages (measured with `is_hidden` planted
+/// in the labels). It does not catch a walk per reference that compares no attribute (over the
+/// ancestors through `is_primary` and `slotted_out` alone); `story:time-bounds-in-tests` holds
+/// that gap. `is_hidden` also reads the N siblings before the body element or the `summary`, N
+/// times N steps in all: N is small enough that it ends, and fails on the count, well before the
+/// runner's 60 s.
 #[test]
 fn hidden_flags_cost_one_walk_for_many_references() {
     /// The comments or children before the node named, and the references to it.
