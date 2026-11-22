@@ -1,0 +1,65 @@
+# A disabled control takes no value: `SetValue` on it is refused with `ControlDisabled`, and the
+# control keeps the value it had. The same control enabled takes the value, so the refusal is the
+# disabledness's and not the kind's.
+type: ess-scenario/6
+domain: surf.document
+scenario: document-refuses-disabled-control
+summary: A disabled text control refuses a value and keeps its own; an enabled one takes it.
+
+arrange:
+  - instance: disabled
+    entity: surf.document.Element
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-0000000000a1
+      fields:
+        document_id: 5a7c1e00-0000-4000-8000-0000000000a0
+        position: 1
+        kind: text
+        label: Coupon
+        value: SAVE10
+        hidden: false
+        disabled: true
+        checked: false
+        required: false
+        name: coupon
+      state: Added
+  - instance: enabled
+    entity: surf.document.Element
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-0000000000a2
+      fields:
+        document_id: 5a7c1e00-0000-4000-8000-0000000000a0
+        position: 2
+        kind: text
+        label: Note
+        value: ""
+        hidden: false
+        disabled: false
+        checked: false
+        required: false
+        name: note
+      state: Added
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.document.SetValue
+    input:
+      element_id: {$instance: disabled}
+      value: FREE
+    outcome: disabled
+    error:
+      name: surf.document.ControlDisabled
+      fields: {element_id: 5a7c1e00-0000-4000-8000-0000000000a1}
+
+  - at: 2026-01-06T09:00:01Z
+    command: surf.document.SetValue
+    input:
+      element_id: {$instance: enabled}
+      value: FREE
+    outcome: set
+
+assert:
+  - view: surf.document.Controls
+    contains: {element_id: {$instance: disabled}, value: SAVE10, disabled: true}
+  - view: surf.document.Controls
+    contains: {element_id: {$instance: enabled}, value: FREE, disabled: false}

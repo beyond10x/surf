@@ -238,6 +238,12 @@ surf.agent.SessionNavigationChanged
 surf.agent.SessionOpened
 ```
 
+One more name reaches the log and the stream: `surf.agent.EventsLeftOut` (field `count`), which
+the session process writes after an action's events when it left `count` of them out of the
+request's entries (`crates/session/src/lib.rs`, "The entries"). `spec/` declares it, but no
+command publishes it, so the AsyncAPI projection has no message for it and it stands outside the
+block the check reads.
+
 ## The stream, `GET /events`
 
 The body is server-sent events (HTML Standard, event stream format). Each line ends in LF; each

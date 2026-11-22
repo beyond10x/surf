@@ -1,0 +1,36 @@
+task article
+server http
+start /article.html
+target /article.html
+connections 1
+commands open look close
+question In which year was the bridge opened?
+answer 1932
+
+task table
+server http
+start /prices.html
+target /prices.html
+connections 1
+commands open look close
+question What does one kilo of pears cost?
+answer 2.40
+match row Pears
+
+task link
+server http
+start /index.html
+target /about/hours.html
+connections 2
+commands open look follow look close
+question What are the opening hours on Saturday?
+answer 10 to 14
+
+task search
+server http
+start /search.html
+target /results?q=lighthouse
+connections 2
+commands open look fill press look close
+question What is the title of the first result for lighthouse?
+answer The Lighthouse at Point Reyes

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:page-text-answer-block
 kind: story
-status: active
+status: implemented
 title: 'The text block: page text in an answer, every line behind >'
 summary: docs/agent-answer.md and surf-answer gain the text block (header, body lines behind >, more, note text:), at most 200 lines and 32,768 bytes; the version stays 1.
 relations:
@@ -16,10 +16,11 @@ scope:
   path: crates/answer/tests
 - confidence: inferred
   path: docs/agent-answer.md
-revision: 8
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T04:59:49Z", actor: "human:operator", revision: 6, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T04:59:50Z", actor: "human:operator", revision: 7, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-22T16:29:16Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"test_result":1,"verification":2}}}
 ---
 ## Context
 
@@ -163,3 +164,23 @@ Writes list.
 The renderers (`page-text-outline`, `page-text-markdown`); `look --as` itself and the checks of
 `surfd` and the client (`page-text-look`); `--max-lines` and `look --from <handle>`
 (`agent-answer-paging`).
+
+## As built
+
+What differs from the text above, as of 0a4f254:
+
+- Change, `note-text = "text:" SP ("no-css" / "no-document")` and `TextNote` with `NoCss` and
+  `NoDocument`: the list has a third note, `note text: deep <n>` (`TextNote::Deep(u64)`, at least
+  1), which says how many levels of nested lists and quotes the Markdown wrote without their
+  prefix because it would pass 128 bytes. `render` refuses `deep 0` with `RenderError::EmptyNote`;
+  `parse` refuses `deep 0`, a leading zero and a missing number. See `docs/agent-answer.md`
+  sections "Note" and "Grammar", and `golden::note_text_deep_renders_and_parses_back` in
+  `crates/answer/tests/golden.rs`.
+- No command writes `note text: deep <n>` yet: `docs/agent-answer.md`, section "Note", states that
+  the answer has it when `surf_page_text::markdown::Markdown::deep` is not 0, for the command that
+  prints the Markdown.
+- Change, `render_text` refusals: besides the ones listed, it refuses a `<first>` of 0 and a block
+  whose lines shown would pass `<total>` (`<first> + <shown> - 1` over `<total>`), both as
+  `RenderError::TextCounts` (`counts_hold` in `crates/answer/src/lib.rs`).
+- Change, `text_page(form, lines, from)` with `from` 1-based: a `from` of 0 reads as 1 (the doc
+  comment of `text_page`).

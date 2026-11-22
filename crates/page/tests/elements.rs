@@ -5,7 +5,9 @@
 use std::fmt::Write as _;
 
 use surf_html::{NodeData, NodeId, ParseOptions, Tree, parse_document};
-use surf_page::{ActionableElement, Kind, actionable_elements, is_hidden, title};
+use surf_page::{
+    ActionableElement, Kind, actionable_elements, handles, hidden_roots, is_hidden, title,
+};
 
 fn parse(input: &str) -> Tree {
     parse_document(input, &ParseOptions::default())
@@ -571,6 +573,75 @@ fn a_closed_dialog_hides_its_content() {
     assert!(!is_hidden(&tree, tree.parent(by_id(&tree, "d3")).unwrap()));
 }
 
+/// HTML 15.3.3 "Flow content": `[popover]:not(:popover-open):not(dialog[open]) { display: none;
+/// }`. surf runs no script and no user action, so no popover is open: an element with a
+/// `popover` attribute, whatever its value, is hidden, but an open `dialog`.
+#[test]
+fn a_popover_is_hidden() {
+    let tree = parse(
+        "<div popover id=p1><button id=a>a</button></div>\
+         <div popover=manual><button id=b>b</button></div>\
+         <div popover=nonsense><button id=c>c</button></div>\
+         <dialog open popover id=d1><button id=d>d</button></dialog>\
+         <dialog popover><button id=e>e</button></dialog>\
+         <button popover id=f>f</button>\
+         <button id=g>g</button>",
+    );
+    assert_eq!(
+        listing(&tree),
+        [
+            "button#a button hidden",
+            "button#b button hidden",
+            "button#c button hidden",
+            "button#d button",
+            "button#e button hidden",
+            "button#f button hidden",
+            "button#g button",
+        ]
+    );
+    assert!(is_hidden(&tree, by_id(&tree, "p1")));
+    assert!(!is_hidden(&tree, by_id(&tree, "d1")));
+    let hidden = surf_page::hidden_roots(&tree);
+    assert!(hidden.contains(&by_id(&tree, "p1")));
+    assert!(hidden.contains(&by_id(&tree, "f")));
+    assert!(!hidden.contains(&by_id(&tree, "d1")));
+}
+
+/// surf's reading, not the standard's rendering: the copy of the selected option that the
+/// parser puts into each `selectedcontent` of a `select` is hidden and lists no row; the option
+/// lists its own. A `selectedcontent` the parser fills nothing into (outside a `select`) is not
+/// hidden.
+#[test]
+fn the_copy_in_a_selectedcontent_is_hidden_and_lists_nothing() {
+    let tree = parse(
+        "<label for=s>Size</label>\
+         <select id=s><button><selectedcontent id=c1></selectedcontent>\
+         <selectedcontent id=c2></selectedcontent></button>\
+         <option><a href=/a>a</a></option></select>\
+         <div><selectedcontent id=c3><a href=/b id=b>b</a></selectedcontent></div>",
+    );
+    assert_eq!(
+        listing(&tree),
+        [
+            "select#s select",
+            "button button",
+            "a link target=\"/a\"",
+            "a#b link target=\"/b\""
+        ]
+    );
+    let hidden = surf_page::hidden_roots(&tree);
+    for id in ["c1", "c2"] {
+        let copy = by_id(&tree, id);
+        assert!(is_hidden(&tree, copy) && hidden.contains(&copy), "{id}");
+        let link = tree.children(copy)[0];
+        assert!(is_hidden(&tree, link) && !hidden.contains(&link), "{id}");
+    }
+    for id in ["b", "c3"] {
+        assert!(!is_hidden(&tree, by_id(&tree, id)), "{id}");
+    }
+    assert!(!hidden.contains(&by_id(&tree, "c3")));
+}
+
 /// HTML 15.5.5 "The details and summary elements": the second slot of the shadow tree takes
 /// every child but the first `summary` element child and has `content-visibility: hidden` while
 /// the `details` element has no `open` attribute.
@@ -699,4 +770,63 @@ fn a_deep_tree_is_read_without_recursion() {
     assert_eq!(spans, 20_000);
     assert!(!is_hidden(&tree, deepest));
     assert_eq!(title(&tree), "");
+}
+
+/// `story:page-text-outline` case 2: `l<n>` for a link, `b<n>` for a button, `f<n>` for the
+/// other seven kinds, per letter in document order, hidden elements included.
+#[test]
+fn handles_are_per_letter_in_document_order() {
+    let tree = parse(
+        "<a href=1>a</a><button>b</button><input><a href=2>c</a><select></select>\
+         <a hidden href=3>d</a>",
+    );
+    let names: Vec<String> = handles(&tree).into_iter().map(|(_, name)| name).collect();
+    assert_eq!(names, ["l1", "b1", "f1", "l2", "f2", "l3"]);
+    let rows = actionable_elements(&tree);
+    let nodes: Vec<NodeId> = handles(&tree).into_iter().map(|(node, _)| node).collect();
+    assert_eq!(
+        nodes,
+        rows.iter().map(|row| row.node).collect::<Vec<_>>(),
+        "one handle per row, in the rows' order"
+    );
+}
+
+/// `hidden_roots` holds the nodes `is_hidden` calls hidden whose parent it does not: a node is
+/// hidden exactly when it or an ancestor is in the set.
+#[test]
+fn hidden_roots_agree_with_is_hidden() {
+    for input in [
+        "<p>a</p><p hidden>h<b>i</b></p><div aria-hidden=\"true\"><p>h2</p></div>\
+         <script>s</script><template><p>t</p></template><input type=hidden>\
+         <dialog><p>d</p></dialog><dialog open><p>o</p></dialog>",
+        "<details id=d1><summary id=s1>s</summary><input id=a></details>\
+         <details><input id=e><summary><input id=f></summary>x</details>\
+         <details open><summary>s</summary>\
+         <details><summary><input id=h></summary><input id=i></details></details>",
+        "<html aria-hidden=true><body aria-hidden=TRUE><p>x</p><div aria-hidden=true>y</div>",
+    ] {
+        let tree = parse(input);
+        let roots = hidden_roots(&tree);
+        let mut pending = vec![tree.root()];
+        let mut hidden = 0;
+        while let Some(node) = pending.pop() {
+            let mut in_roots = false;
+            let mut current = Some(node);
+            while let Some(at) = current {
+                in_roots |= roots.contains(&at);
+                current = tree.parent(at);
+            }
+            assert_eq!(in_roots, is_hidden(&tree, node), "{input}: {node:?}");
+            if let Some(parent) = tree.parent(node) {
+                assert_eq!(
+                    roots.contains(&node),
+                    is_hidden(&tree, node) && !is_hidden(&tree, parent),
+                    "{input}: {node:?} is a root exactly when its parent is not hidden"
+                );
+            }
+            hidden += usize::from(in_roots);
+            pending.extend(tree.children(node).iter().rev());
+        }
+        assert!(hidden > 0, "{input}: some node is hidden");
+    }
 }

@@ -4,7 +4,7 @@
 
 use super::{Entry, Flow, Mode, QuirksMode, Scope, TreeBuilder, is_whitespace};
 use crate::tokenizer::{self, Token, TokenAttribute};
-use crate::tree::{NodeData, NodeId, stored_bytes_of};
+use crate::tree::{Namespace, NodeData, NodeId, stored_bytes_of};
 
 /// The public identifiers that make a DOCTYPE quirky when one is a prefix of the token's
 /// (13.2.6.4.1).
@@ -300,9 +300,8 @@ impl TreeBuilder {
         }
     }
 
-    /// 13.2.6.4.4 The "in head" insertion mode. The `template` start and end tag rules are
-    /// story `html-tree-template`'s: until then those tokens go to in body's "any other start
-    /// tag" and "any other end tag".
+    /// 13.2.6.4.4 The "in head" insertion mode. The `template` start and end tag rules are in
+    /// the submodule `template`.
     pub(super) fn in_head(&mut self, token: &Token) -> Flow {
         match token {
             Token::Character(c) if is_whitespace(*c) => {
@@ -381,11 +380,11 @@ impl TreeBuilder {
             Token::StartTag {
                 name, attributes, ..
             } if name == "template" => {
-                self.any_other_start_tag(name, attributes);
+                self.template_start_tag(name, attributes);
                 Flow::Done
             }
             Token::EndTag { name } if name == "template" => {
-                self.any_other_end_tag(name);
+                self.template_end_tag();
                 Flow::Done
             }
             t if is_start(t, &["head"]) => Flow::Done,
@@ -500,8 +499,9 @@ impl TreeBuilder {
         Flow::Reprocess
     }
 
-    /// 13.2.6.4.7 The "in body" insertion mode, bounded as `NOT_YET_PARSED` says: the `table`,
-    /// `select`, `svg` and `math` start tags are processed by "any other start tag". The end
+    /// 13.2.6.4.7 The "in body" insertion mode. The `math` and `svg` start tags insert a foreign
+    /// element (the module `foreign` adjusts its attributes). The `select` rules are those
+    /// of the snapshot the design note names, which has no select insertion modes. The end
     /// tags of the formatting elements, an `a` start tag with an `a` in the list and a `nobr`
     /// start tag with a `nobr` in scope run the adoption agency algorithm (`formatting`).
     pub(super) fn in_body(&mut self, token: &Token) -> Flow {
@@ -576,6 +576,9 @@ impl TreeBuilder {
                 Flow::Done
             }
             Token::EndOfFile => {
+                if !self.template_modes.is_empty() {
+                    return self.in_template(token);
+                }
                 self.stop_parsing();
                 Flow::Done
             }
@@ -649,14 +652,13 @@ impl TreeBuilder {
             Token::StartTag {
                 name, attributes, ..
             } if name == "form" => {
-                // The parser is never parsing template contents: `template` is story
-                // `html-tree-template`'s, and its start tag is "any other start tag" until then.
-                if self.form.is_some() && !self.template_on_stack() {
+                let in_template = self.parsing_template_contents();
+                if self.form.is_some() && !in_template {
                     return Flow::Done;
                 }
                 self.close_a_p_element_in_button_scope();
                 if let Some(form) = self.insert_html_element(name, attributes)
-                    && !self.template_on_stack()
+                    && !in_template
                 {
                     self.form = Some(form);
                 }
@@ -731,8 +733,7 @@ impl TreeBuilder {
                 Flow::Done
             }
             t if is_end(t, &["form"]) => {
-                // Not parsing template contents (see the `form` start tag).
-                if !self.template_on_stack() {
+                if !self.parsing_template_contents() {
                     let node = self.form.take();
                     let Some(node) = node else {
                         return Flow::Done;
@@ -849,6 +850,12 @@ impl TreeBuilder {
                 }
                 Flow::Done
             }
+            Token::StartTag {
+                name, attributes, ..
+            } if name == "table" => {
+                self.in_body_table_start(name, attributes);
+                Flow::Done
+            }
             t if is_end(t, &["br"]) => Flow::Replace(Token::StartTag {
                 name: "br".to_string(),
                 attributes: Vec::new(),
@@ -869,8 +876,12 @@ impl TreeBuilder {
             Token::StartTag {
                 name, attributes, ..
             } if name == "input" => {
-                // The clauses for a `select` context element and a `select` in scope are story
-                // `html-tree-tables`'s: written as if there is none.
+                if self.context_is("select") {
+                    return Flow::Done;
+                }
+                if self.has_select_in_scope() {
+                    self.pop_until(&["select"]);
+                }
                 self.reconstruct_active_formatting_elements();
                 self.insert_void_element(name, attributes);
                 let hidden = attributes
@@ -891,8 +902,10 @@ impl TreeBuilder {
             Token::StartTag {
                 name, attributes, ..
             } if name == "hr" => {
-                // The clause for a `select` in scope is story `html-tree-tables`'s.
                 self.close_a_p_element_in_button_scope();
+                if self.has_select_in_scope() {
+                    self.generate_implied_end_tags(None);
+                }
                 self.insert_void_element(name, attributes);
                 self.frameset_ok = false;
                 Flow::Done
@@ -941,9 +954,25 @@ impl TreeBuilder {
             }
             Token::StartTag {
                 name, attributes, ..
+            } if name == "select" => {
+                if self.context_is("select") {
+                    return Flow::Done;
+                }
+                if self.has_select_in_scope() {
+                    self.pop_until(&["select"]);
+                    return Flow::Done;
+                }
+                self.reconstruct_active_formatting_elements();
+                self.insert_html_element(name, attributes);
+                self.frameset_ok = false;
+                Flow::Done
+            }
+            Token::StartTag {
+                name, attributes, ..
             } if name == "option" => {
-                // The clause for a `select` in scope is story `html-tree-tables`'s.
-                if self.current_is(&["option"]) {
+                if self.has_select_in_scope() {
+                    self.generate_implied_end_tags(Some("optgroup"));
+                } else if self.current_is(&["option"]) {
                     self.open.pop();
                 }
                 self.reconstruct_active_formatting_elements();
@@ -953,8 +982,9 @@ impl TreeBuilder {
             Token::StartTag {
                 name, attributes, ..
             } if name == "optgroup" => {
-                // The clause for a `select` in scope is story `html-tree-tables`'s.
-                if self.current_is(&["option"]) {
+                if self.has_select_in_scope() {
+                    self.generate_implied_end_tags(None);
+                } else if self.current_is(&["option"]) {
                     self.open.pop();
                 }
                 self.reconstruct_active_formatting_elements();
@@ -977,6 +1007,20 @@ impl TreeBuilder {
                     self.generate_implied_end_tags(Some("rtc"));
                 }
                 self.insert_html_element(name, attributes);
+                Flow::Done
+            }
+            Token::StartTag {
+                name,
+                attributes,
+                self_closing,
+            } if name == "math" || name == "svg" => {
+                self.reconstruct_active_formatting_elements();
+                let namespace = if name == "math" {
+                    Namespace::MathMl
+                } else {
+                    Namespace::Svg
+                };
+                self.insert_foreign_start_tag(namespace, name, attributes, *self_closing);
                 Flow::Done
             }
             t if is_start(
@@ -1003,7 +1047,7 @@ impl TreeBuilder {
     }
 
     /// Whether a `template` element is on the stack of open elements.
-    fn template_on_stack(&self) -> bool {
+    pub(super) fn template_on_stack(&self) -> bool {
         self.open.iter().any(|&n| {
             self.visit();
             self.is_html(n, &["template"])
@@ -1012,7 +1056,11 @@ impl TreeBuilder {
 
     /// Insert an HTML element for a token and pop it off the stack of open elements at once:
     /// whether a limit admitted it.
-    fn insert_void_element(&mut self, name: &str, attributes: &[TokenAttribute]) -> bool {
+    pub(super) fn insert_void_element(
+        &mut self,
+        name: &str,
+        attributes: &[TokenAttribute],
+    ) -> bool {
         let inserted = self.insert_html_element(name, attributes).is_some();
         if inserted {
             self.open.pop();
@@ -1064,7 +1112,7 @@ impl TreeBuilder {
     }
 
     /// Close a `p` element.
-    fn close_a_p_element(&mut self) {
+    pub(super) fn close_a_p_element(&mut self) {
         self.generate_implied_end_tags(Some("p"));
         self.pop_until(&["p"]);
     }
@@ -1109,7 +1157,10 @@ impl TreeBuilder {
             Token::Doctype { .. } => Flow::Done,
             t if is_start(t, &["html"]) => self.in_body(t),
             t if is_end(t, &["html"]) => {
-                self.mode = Mode::AfterAfterBody;
+                // The fragment case ignores it.
+                if self.context.is_none() {
+                    self.mode = Mode::AfterAfterBody;
+                }
                 Flow::Done
             }
             Token::EndOfFile => {
@@ -1149,7 +1200,7 @@ impl TreeBuilder {
             t if is_end(t, &["frameset"]) => {
                 if self.open.len() > 1 {
                     self.open.pop();
-                    if !self.current_is(&["frameset"]) {
+                    if self.context.is_none() && !self.current_is(&["frameset"]) {
                         self.mode = Mode::AfterFrameset;
                     }
                 }

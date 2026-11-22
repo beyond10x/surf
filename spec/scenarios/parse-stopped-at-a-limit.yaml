@@ -29,6 +29,7 @@ timeline:
       url: https://example.org/deep
       body: PGRpdj4=
       navigation_id: 3f1d5b7e-0000-4000-8000-000000000111
+      tab_id: 3f1d5b7e-0000-4000-8000-000000000041
     outcome: started
     capture: {instance: deep, event: surf.document.ParsingStarted, field: document_id}
 
@@ -70,6 +71,7 @@ timeline:
       url: https://example.org/long
       body: PGRpdj4=
       navigation_id: 3f1d5b7e-0000-4000-8000-000000000112
+      tab_id: 3f1d5b7e-0000-4000-8000-000000000041
     outcome: started
     capture: {instance: long, event: surf.document.ParsingStarted, field: document_id}
 
@@ -88,6 +90,7 @@ timeline:
       url: https://example.org/many
       body: PGRpdj4=
       navigation_id: 3f1d5b7e-0000-4000-8000-000000000113
+      tab_id: 3f1d5b7e-0000-4000-8000-000000000041
     outcome: started
     capture: {instance: many, event: surf.document.ParsingStarted, field: document_id}
 
@@ -106,6 +109,7 @@ timeline:
       url: https://example.org/wide
       body: PGRpdj4=
       navigation_id: 3f1d5b7e-0000-4000-8000-000000000114
+      tab_id: 3f1d5b7e-0000-4000-8000-000000000041
     outcome: started
     capture: {instance: wide, event: surf.document.ParsingStarted, field: document_id}
 
@@ -124,6 +128,7 @@ timeline:
       url: https://example.org/large
       body: PGRpdj4=
       navigation_id: 3f1d5b7e-0000-4000-8000-000000000115
+      tab_id: 3f1d5b7e-0000-4000-8000-000000000041
     outcome: started
     capture: {instance: large, event: surf.document.ParsingStarted, field: document_id}
 
@@ -142,6 +147,7 @@ timeline:
       url: https://example.org/busy
       body: PGRpdj4=
       navigation_id: 3f1d5b7e-0000-4000-8000-000000000116
+      tab_id: 3f1d5b7e-0000-4000-8000-000000000041
     outcome: started
     capture: {instance: busy, event: surf.document.ParsingStarted, field: document_id}
 

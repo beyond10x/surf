@@ -973,8 +973,9 @@ fn seeded_1_200_inputs_end_within_bounds() {
     // small, in turn, so that every limit stops some of them at a place of its own: at least
     // [`STOPS_PER_LIMIT`] each, which the end of the test asserts. With these seeds the fifth
     // input the step limit stops is input 1,127, the last of the six limits to reach five; a
-    // node limit of 40 stopped only input 7,682 of the first 7,683, one of 30 stops 5 by
-    // input 758.
+    // node limit of 40 stopped only input 7,682 of the first 7,683, one of 30 stopped 5 by
+    // input 758. Since `story:html-tree-template` (the in template mode) the same inputs build
+    // fewer nodes and a node limit of 30 stops 4 of the 1,200; one of 25 stops 8.
     let d = Limits::default();
     let small = [
         Limits {
@@ -982,7 +983,7 @@ fn seeded_1_200_inputs_end_within_bounds() {
             ..d
         },
         Limits { max_depth: 12, ..d },
-        Limits { max_nodes: 30, ..d },
+        Limits { max_nodes: 25, ..d },
         Limits {
             max_attributes: 1,
             ..d

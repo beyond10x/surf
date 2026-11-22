@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T16:29:23Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-links-spec",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "review after the implementation, on 2418d48",
+    "reference": "nothing broken: the kept text equals a fresh rendering for both forms at every line (2003 and 4003 node visits at 1000 and 2000 paragraphs in the tree form, 4006 and 8006 as Markdown), no stale text after a failed go, a marker value in no answer, reason or entry; 25 one-line changes run, 5 passed the tests and the conformance run until the 13 cases of 18d9bfc"
+  }
+}

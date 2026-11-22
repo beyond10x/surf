@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T16:29:23Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-links-spec",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate",
+    "reference": "task check-runner on ee9f4fd, 2026-11-22 17:26 to 17:28 CET: exit 0; 877 tests: 877 passed, 0 failed (cargo-nextest 875, doc tests 2), test step 29.0 s of 120 s; 169 scenarios (24 authored), 48 refusals, the interpreter and the Rust system ran 169 each; html-conformance: 9107 cases, 9095 run, 9095 passed; agent-tasks: 4 tasks, 2 pass, 2 fail, 0 skipped, lane gate; 38 page tests passed"
+  }
+}

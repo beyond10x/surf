@@ -15,7 +15,7 @@ answer in plain lines, written to be read by a language model.
 <AgentTerminal
   id="agent-session"
   session={agentSession}
-  caption="An agent session recorded on 2026-11-22 against a local copy of this site on 127.0.0.1:43117, with the token replaced. An answer names a page's status, media type and address. It shows no title and no content yet: no command parses a page so far."
+  caption="An agent session recorded on 2026-11-22 against a local copy of this site on 127.0.0.1:43117, with the token replaced. The binaries of release 0.3.0 made it, and they parse no page: an answer names a page's status, media type and address, with no title and no content."
 />
 
 It runs on Linux only: the agent binaries read the caller's user id from `/proc/self` and need
@@ -44,6 +44,12 @@ It runs on Linux only: the agent binaries read the caller's user id from `/proc/
 | `surf-agent go <url>` | load an address into the session's tab |
 | `surf-agent look` | print the session's state |
 | `surf-agent close` | close the session and print its final state |
+
+`open <url>`, `go` and `look` also take `--as tree` or `--as markdown`: the answer then ends
+with the page as the outline of its tree or as Markdown, every line behind `>`, at most 200
+lines at a time
+([`docs/agent-answer.md`](https://github.com/beyond10x/surf/blob/main/docs/agent-answer.md),
+section "Text").
 
 `open` starts `surfd` when it is not running. `surfd` keeps the list of sessions and exits ten
 minutes after its last session ended.

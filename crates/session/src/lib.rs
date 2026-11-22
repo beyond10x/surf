@@ -25,6 +25,28 @@
 //! published, so that the log holds the action before the events it caused (decision D19).
 //! [`Session`] holds the sequence number: the last one recorded.
 //!
+//! # The page as text
+//!
+//! `open <url>`, `go <url>` and `look` take `arg form` (`tree` or `markdown`, the client's
+//! `--as`) and, beside it, `arg line` (a number from 1, `--from-line`; 1 when absent). The answer
+//! then ends in `note text: no-css` and the `text` block of `docs/agent-answer.md`:
+//! [`surf_answer::text_page`] over [`surf_page_text::outline`] or
+//! [`surf_page_text::markdown::markdown`] of the tree `surf::Browser` keeps for the document of
+//! the session's current navigation (`Browser::document_tree`, read only; nothing is fetched
+//! again). For `open <url>` and `go <url>` that is the document the load committed. With no such
+//! document (`page none`, a failed load, a response that is not HTML) the answer ends in `note
+//! text: no-document` and has no block. A refusal carries neither. The call records what it
+//! records without the arguments: the same action, the same events, the same `path`; only the
+//! answer is longer, and the exit status is the one the call has without them. A Markdown block
+//! whose nesting passed the prefix bound adds `note text: deep <n>` after `note text: no-css`.
+//!
+//! The session renders a document once per form, in time linear in the tree, and keeps the
+//! lines of the current document for the looks that page through it: a look reads the lines it
+//! shows and one more, so reading a page to its end costs the page once, not once per look. It
+//! keeps the current document's text only, and drops it with every request but `look` (a `go`,
+//! a `close`, and each later command that changes the document or what its text shows) and when
+//! the current document is another one.
+//!
 //! # Refusals
 //!
 //! - A request other than `open` whose `session` is not this identity, or whose token does not
@@ -32,9 +54,11 @@
 //!   the session is open: `did refused token`, status 1, the head line and the `did` line only.
 //!   Nothing is acted on and nothing of the session's state is in the answer.
 //! - From the holder, a command this session does not know, an argument name it does not know,
-//!   `go` without `arg url`: `did refused usage`, status 2, with the current page and path.
-//! - `open` after the first, `open` with a session, a token or an argument but `url`, and a
-//!   request that does not decode ([`Session::malformed`]): `did refused usage`, status 2, the
+//!   `go` without `arg url`, `arg form` other than `tree` or `markdown`, `arg line` without `arg
+//!   form` or not a number from 1: `did refused usage`, status 2, with the current page and path.
+//! - `open` after the first, `open` with a session, a token or an argument but `url`, `form` and
+//!   `line`, `open` with `arg form` and no `arg url` or with a `form` or `line` refused above, and
+//!   a request that does not decode ([`Session::malformed`]): `did refused usage`, status 2, the
 //!   head line and the `did` line only, because it carries no token.
 //!
 //! The refusals that carry no proof of the token (the first and the third above) are the same
@@ -61,8 +85,9 @@
 //! its length and its two quotes; `surf-url` leaves a `\` in the query or fragment of a
 //! response URL as it is, so the quoted form of one comes to up to four times
 //! [`surf_fetch::MAX_ADDRESS_BYTES`], at most 262,146 bytes. Seven addresses of at most 262,146
-//! bytes each are 1,835,022 bytes, so an answer stays below [`surfd::link::ANSWER_TEXT_MAX`],
-//! 4,194,304 bytes.
+//! bytes each are 1,835,022 bytes; a `text` block adds at most [`surf_answer::TEXT_BYTES_MAX`]
+//! (32,768) bytes of body lines, its header, a `more` line and a `note text:` line, each under
+//! 200 bytes; so an answer stays below [`surfd::link::ANSWER_TEXT_MAX`], 4,194,304 bytes.
 //!
 //! A status record whose quoted address does not fit [`surfd::link::RECORD_MAX`] (65,536 bytes,
 //! with the record's other lines) is sent without the address, and `surfd` lists the session
@@ -82,6 +107,11 @@
 //! media type, address, failure reason). What stays across commands are the components' rows,
 //! none of which holds a body: per `go` one action, one navigation, one request and, for an
 //! HTML page, one document, each with its address and identities; and the session's row.
+//! Since `story:html-document-port` an HTML page also leaves its document's title, one element
+//! row per actionable element, and its node tree, which `surf::Browser` keeps for the life of
+//! the session (each tree within `surf-html`'s limits; no bound over all documents yet). Since
+//! the fix round of round 1 a call with `--as` also leaves the lines of the current document in
+//! the forms asked for ("The page as text"), until the next request that is not a `look`.
 //!
 //! # The entries
 //!
@@ -96,14 +126,30 @@
 //! (`look`, a refusal) has no entry.
 //!
 //! The entries of one request through the wire stay below [`surfd::link::ENTRIES_MAX`],
-//! 8,388,608 bytes: an event field holds no body, only its length, and an address, at most
-//! [`surf_agent::wire::REQUEST_MAX`] bytes long when it comes from a request and at most
+//! 8,388,608 bytes, whatever the page holds. The answer entry is the answer lines, at most
+//! [`surfd::link::ANSWER_TEXT_MAX`] (4,194,304 bytes; it holds at most seven addresses, `did`,
+//! `page` and [`PATH_SHOWN`] path lines, each at most 262,146 bytes once quoted, "What it
+//! keeps"), and its `answer-entry <m>` line. The action and event entries take at most
+//! [`ACTION_AND_EVENT_BYTES_MAX`], 4,194,240 bytes, the rest: the action entries (at most two,
+//! `open <url>` records `open` and `go`, each with at most one address) are written whole and
+//! their bytes, with 64 bytes for a left-out line after each, are set aside first; an event
+//! entry that would take the event entries past what is left is left out, and so is every
+//! `surf.document.ElementAdded` entry after the first [`ELEMENT_ENTRIES_MAX`] (256) of the
+//! request. After an action's events, one line `event surf.agent.EventsLeftOut
+//! count="<n>"` ([`entries::left_out_line`]) counts the entries left out of them; it is absent
+//! when none was. So a request carries at most 256 element entries, and `surfd`'s bounds of a
+//! session's log (10,000 entries) and of a reader's queue (1,024) are not reached by one page.
+//! An event field holds no body, only its length; the one field that holds text from a page,
+//! the title of `surf.document.DocumentParsed`, holds at most
+//! [`entries::TITLE_ENTRY_BYTES`] (1,024) bytes of it, at most 4,098 bytes quoted, with the
+//! field `title_bytes` when it was cut. An element's label, target and value are in no entry
+//! (`surf.document.ElementAdded` carries two identities and a position). An address, at most
+//! [`surf_agent::wire::REQUEST_MAX`] bytes when it comes from a request and at most
 //! [`surf_fetch::MAX_ADDRESS_BYTES`] bytes, the same 64 KiB, when it is the address a response
-//! came from after redirects, is in at most eight event and action lines of one `open <url>`
-//! or `go`, and the answer entry holds at most seven addresses (`did`, `page` and
-//! [`PATH_SHOWN`] path lines). Each address is at most 262,146 bytes once quoted ("What it
-//! keeps"), so the fifteen come to at most 3,932,190 bytes, with a few hundred bytes of other
-//! fields per line.
+//! came from after redirects, is at most 262,146 bytes once quoted, in at most nine action and
+//! event lines of one `open <url>` or `go` (`DocumentParsed` is the ninth), 2,359,314 bytes,
+//! with a few hundred bytes of other fields per line: below the 4,194,240, so no event of the
+//! page load itself is left out.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -117,7 +163,8 @@ use std::io;
 use surf::{MemoryBrowser, Transport, UnmetObligation};
 use surf_agent::wire::{self, Request};
 use surf_answer::{
-    Answer, Did, Head, Page, Path, PathEntry, RefusalReason, SessionState as HeadState,
+    Answer, Did, Form, Head, Note, Page, Path, PathEntry, RefusalReason, SessionState as HeadState,
+    TextNote,
 };
 use surf_ports::{Caller, ComponentPorts};
 use surf_secret::Token;
@@ -126,6 +173,7 @@ use surf_types::agent::{
     OpenSessionOutcome, RecordAction, RecordActionOutcome, SessionId, SessionState,
     SessionStateView,
 };
+use surf_types::document::{DocumentId, DocumentState};
 use surf_types::navigation::NavigationState;
 use surf_types::primitives::Uuid;
 use surf_types::shell::{OpenTab, OpenTabOutcome, OpenWindow, OpenWindowOutcome};
@@ -134,6 +182,20 @@ use surfd::link;
 
 /// The most actions the `path` block shows: the last five (design section 5.1).
 pub const PATH_SHOWN: usize = 5;
+
+/// The most `surf.document.ElementAdded` entries one request carries ("The entries" above): the
+/// first 256 of the request; the others are left out and counted.
+pub const ELEMENT_ENTRIES_MAX: usize = 256;
+
+/// The most bytes the action and event entries of one request take together, left-out lines
+/// included ("The entries" above): [`surfd::link::ENTRIES_MAX`] less
+/// [`surfd::link::ANSWER_TEXT_MAX`], the most the answer entry holds, and 64 bytes for its
+/// `answer-entry <m>` line: 4,194,240 bytes.
+pub const ACTION_AND_EVENT_BYTES_MAX: usize = link::ENTRIES_MAX - link::ANSWER_TEXT_MAX - 64;
+
+/// The most bytes of a left-out line ([`entries::left_out_line`]) with its line feed: the line
+/// with the 20 digits of the largest count is 61 bytes.
+const LEFT_OUT_LINE_MAX: usize = 64;
 
 /// The transport of the binary: [`surf::fetch_http`] at `surf-fetch`'s default limits, through
 /// [`surf::answer`]. An address that is not `http:` is `UnsupportedScheme` and nothing is read;
@@ -229,6 +291,85 @@ impl fmt::Display for Stop {
     }
 }
 
+/// The lines of one rendering of a document, in one form, kept for the looks that page through
+/// it ("The page as text" above).
+struct Lines {
+    lines: Vec<String>,
+    /// The bytes of all the lines as body lines, as [`surf_answer::text_page`] counts them.
+    bytes: u64,
+    /// [`surf_page_text::markdown::Markdown::deep`]; 0 for the outline.
+    deep: u64,
+}
+
+impl Lines {
+    /// The whole rendering of `tree` in `form`: one walk of the tree.
+    fn render(form: Form, tree: &surf::Tree) -> Lines {
+        let (lines, deep): (Vec<String>, u64) = match form {
+            Form::Tree => (surf_page_text::outline(tree).collect(), 0),
+            Form::Markdown => {
+                let markdown = surf_page_text::markdown::markdown(tree);
+                let deep = u64::try_from(markdown.deep()).unwrap_or(u64::MAX);
+                (markdown.collect(), deep)
+            }
+        };
+        // Read from line `u64::MAX` on, the page keeps no line and counts every one.
+        let bytes = surf_answer::text_page(form, lines.iter().cloned(), u64::MAX).bytes_total;
+        Lines { lines, bytes, deep }
+    }
+
+    /// The page of the lines from line `from`, as [`surf_answer::text_page`] over all of them
+    /// gives it: the page reads at most one line past the most it shows, so a look costs the
+    /// lines it shows and not the whole rendering.
+    fn page(&self, form: Form, from: u64) -> surf_answer::Text {
+        let first = from.max(1);
+        let start = usize::try_from(first - 1)
+            .unwrap_or(usize::MAX)
+            .min(self.lines.len());
+        let shown = self.lines[start..]
+            .iter()
+            .take(surf_answer::TEXT_LINES_MAX + 1)
+            .cloned();
+        let mut text = surf_answer::text_page(form, shown, 1);
+        text.first = first;
+        text.total = u64::try_from(self.lines.len()).unwrap_or(u64::MAX);
+        text.bytes_total = self.bytes;
+        text
+    }
+}
+
+/// The text of the current document, in each form a call asked for: the session renders a
+/// document once per form, and drops it with every request but `look` (which changes no
+/// document) and when the current document is another one.
+struct Rendered {
+    document: DocumentId,
+    tree: Option<Lines>,
+    markdown: Option<Lines>,
+}
+
+impl Rendered {
+    fn of(document: DocumentId) -> Rendered {
+        Rendered {
+            document,
+            tree: None,
+            markdown: None,
+        }
+    }
+
+    fn form(&self, form: Form) -> Option<&Lines> {
+        match form {
+            Form::Tree => self.tree.as_ref(),
+            Form::Markdown => self.markdown.as_ref(),
+        }
+    }
+
+    fn form_mut(&mut self, form: Form) -> &mut Option<Lines> {
+        match form {
+            Form::Tree => &mut self.tree,
+            Form::Markdown => &mut self.markdown,
+        }
+    }
+}
+
 /// One session: its identity, its token, the system it drives and its sequence number.
 pub struct Session<T> {
     id: String,
@@ -243,6 +384,8 @@ pub struct Session<T> {
     /// For each of them, how many events `System::published` held after the run that followed
     /// its `RecordAction`: where its events end.
     marks: Vec<usize>,
+    /// The text of the current document, once a call asked for it.
+    rendered: Option<Rendered>,
 }
 
 impl<T> fmt::Debug for Session<T> {
@@ -282,6 +425,7 @@ impl<T: Transport> Session<T> {
             opened: false,
             recorded: Vec::new(),
             marks: Vec::new(),
+            rendered: None,
         })
     }
 
@@ -309,6 +453,9 @@ impl<T: Transport> Session<T> {
         let start = self.browser.system().published().len();
         self.recorded.clear();
         self.marks.clear();
+        if request.command != "look" {
+            self.rendered = None;
+        }
         let mut reply = self.reply_to(request);
         reply.entries = self.entries(start);
         self.browser.forget_delivered();
@@ -330,14 +477,26 @@ impl<T: Transport> Session<T> {
             .agent
             .session_log(self.session_id.clone())
             .unwrap_or_default();
-        let mut out = Vec::new();
-        let mut from = start.min(published.len());
-        for (at, sequence) in self.recorded.iter().enumerate() {
+        let mut actions = Vec::with_capacity(self.recorded.len());
+        for sequence in &self.recorded {
             let row = log.iter().find(|row| row.sequence == *sequence);
             let Some(action) = row.and_then(|row| link::Entry::line(&entries::action_line(row)))
             else {
                 return Vec::new();
             };
+            actions.push(action);
+        }
+        // What the event entries may take: the bytes of the request's entries beside the answer
+        // entry, less its action entries and a left-out line after each.
+        let reserved: usize = actions
+            .iter()
+            .map(|action| action.text.len() + LEFT_OUT_LINE_MAX)
+            .sum();
+        let mut room = ACTION_AND_EVENT_BYTES_MAX.saturating_sub(reserved);
+        let mut elements = 0;
+        let mut out = Vec::new();
+        let mut from = start.min(published.len());
+        for (at, action) in actions.into_iter().enumerate() {
             out.push(action);
             let end = if at + 1 == self.recorded.len() {
                 published.len()
@@ -348,11 +507,29 @@ impl<T: Transport> Session<T> {
                     .unwrap_or(published.len())
                     .clamp(from, published.len())
             };
-            out.extend(
-                published[from..end]
-                    .iter()
-                    .filter_map(|event| link::Entry::line(&entries::event_line(event))),
-            );
+            let mut left_out = 0u64;
+            for event in &published[from..end] {
+                let element = matches!(event, surf::SystemEvent::ElementAdded(_));
+                if element && elements >= ELEMENT_ENTRIES_MAX {
+                    left_out += 1;
+                    continue;
+                }
+                let Some(entry) = link::Entry::line(&entries::event_line(event)) else {
+                    continue;
+                };
+                if entry.text.len() > room {
+                    left_out += 1;
+                    continue;
+                }
+                room -= entry.text.len();
+                elements += usize::from(element);
+                out.push(entry);
+            }
+            if left_out > 0
+                && let Some(line) = link::Entry::line(&entries::left_out_line(left_out))
+            {
+                out.push(line);
+            }
             from = end;
         }
         out
@@ -367,15 +544,93 @@ impl<T: Transport> Session<T> {
         }
         self.caller.set(Some(self.session_id.clone()));
         let result = match request.command.as_str() {
-            "go" => match (request.unknown_arg(&["url"]), request.arg("url")) {
-                (None, Some(url)) => self.go(url),
+            "go" => match (
+                request.unknown_arg(&["url", "form", "line"]),
+                request.arg("url"),
+                as_text(request),
+            ) {
+                (None, Some(url), Ok(text)) => {
+                    self.go(url).map(|reply| self.with_text(reply, text))
+                }
                 _ => Ok(self.with_state(RefusalReason::Usage)),
             },
-            "look" if request.unknown_arg(&[]).is_none() => Ok(self.state_reply(0, None)),
+            "look" => match (request.unknown_arg(&["form", "line"]), as_text(request)) {
+                (None, Ok(text)) => Ok(self.with_text(self.state_reply(0, None), text)),
+                _ => Ok(self.with_state(RefusalReason::Usage)),
+            },
             "close" if request.unknown_arg(&[]).is_none() => self.close(),
             _ => Ok(self.with_state(RefusalReason::Usage)),
         };
         result.unwrap_or_else(|stop| self.stopped(&stop))
+    }
+
+    /// `reply` with the page as text when the call asked for it (`--as`, "The page as text"
+    /// above): `note text: no-css` and the `text` block of the current document, or `note text:
+    /// no-document` when there is none. A refusal (a status other than 0) is left as it is.
+    fn with_text(&mut self, mut reply: Reply, text: Option<AsText>) -> Reply {
+        let Some(AsText { form, from_line }) = text else {
+            return reply;
+        };
+        if reply.status != 0 {
+            return reply;
+        }
+        let Some(document) = self.current_document() else {
+            reply.answer.notes.push(Note::Text(TextNote::NoDocument));
+            return reply;
+        };
+        let mut kept = self
+            .rendered
+            .take()
+            .filter(|kept| kept.document == document)
+            .unwrap_or_else(|| Rendered::of(document));
+        if kept.form(form).is_none() {
+            let Some(tree) = self.browser.document_tree(&kept.document) else {
+                reply.answer.notes.push(Note::Text(TextNote::NoDocument));
+                return reply;
+            };
+            let lines = Lines::render(form, tree);
+            *kept.form_mut(form) = Some(lines);
+        }
+        if let Some(lines) = kept.form(form) {
+            reply.answer.notes.push(Note::Text(TextNote::NoCss));
+            if lines.deep > 0 {
+                reply
+                    .answer
+                    .notes
+                    .push(Note::Text(TextNote::Deep(lines.deep)));
+            }
+            reply.answer.text = Some(lines.page(form, from_line));
+        }
+        self.rendered = Some(kept);
+        reply
+    }
+
+    /// The document of the session's current navigation: the navigation is committed and its
+    /// document parsed. `None` before the first navigation, after a failed one, and for a
+    /// response that is not HTML.
+    fn current_document(&self) -> Option<DocumentId> {
+        let system = self.browser.system();
+        let row = system
+            .agent
+            .sessions()
+            .ok()?
+            .into_iter()
+            .find(|row| row.session_id == self.session_id)?;
+        if row.navigation_state != Some(NavigationState::Committed) {
+            return None;
+        }
+        let navigation = row.navigation_id?;
+        let document = system
+            .document
+            .documents()
+            .ok()?
+            .into_iter()
+            .find(|document| {
+                document.navigation_id == navigation && document.state == DocumentState::Parsed
+            })?;
+        self.browser
+            .document_tree(&document.document_id)
+            .map(|_| document.document_id)
     }
 
     /// The reply to a request that did not decode: `did refused usage`, status 2, the head line
@@ -396,14 +651,17 @@ impl<T: Transport> Session<T> {
     }
 
     fn open(&mut self, request: &Request) -> Reply {
+        let url = request.arg("url");
+        let text = as_text(request);
         if self.opened
             || request.session.is_some()
             || request.token.is_some()
-            || request.unknown_arg(&["url"]).is_some()
+            || request.unknown_arg(&["url", "form", "line"]).is_some()
+            || text.is_err()
+            || (url.is_none() && text.is_ok_and(|text| text.is_some()))
         {
             return self.bare(RefusalReason::Usage);
         }
-        let url = request.arg("url");
         match self.open_session(url) {
             Ok(()) => {
                 let mut reply = self.state_reply(
@@ -414,7 +672,7 @@ impl<T: Transport> Session<T> {
                     }),
                 );
                 reply.answer.token = Some(self.token.to_hex());
-                reply
+                self.with_text(reply, text.unwrap_or_default())
             }
             Err(stop) => self.stopped(&stop),
         }
@@ -529,6 +787,8 @@ impl<T: Transport> Session<T> {
             sequence,
             command,
             url: url.map(|url| Url(url.to_string())),
+            handle: None,
+            label: None,
         })?;
         match outcome {
             RecordActionOutcome::Recorded { .. } => {
@@ -671,12 +931,49 @@ fn refusal_status(reason: RefusalReason) -> u8 {
     }
 }
 
+/// What `--as` asked for: the form and the first line ("The page as text" above).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct AsText {
+    form: Form,
+    from_line: u64,
+}
+
+/// The `arg form` and `arg line` of `request` (`surf_agent::wire`): `None` without `form`; `Err`
+/// for a form other than `tree` or `markdown`, for `line` without `form`, and for a `line` that is
+/// not a number from 1 in decimal digits. Without `line` the first line is 1.
+fn as_text(request: &Request) -> Result<Option<AsText>, ()> {
+    let line = request.arg("line");
+    let Some(form) = request.arg("form") else {
+        return if line.is_none() { Ok(None) } else { Err(()) };
+    };
+    let form = match form {
+        "tree" => Form::Tree,
+        "markdown" => Form::Markdown,
+        _ => return Err(()),
+    };
+    let from_line = match line {
+        None => 1,
+        Some(digits) => digits
+            .bytes()
+            .all(|b| b.is_ascii_digit())
+            .then(|| digits.parse::<u64>().ok())
+            .flatten()
+            .filter(|line| *line >= 1)
+            .ok_or(())?,
+    };
+    Ok(Some(AsText { form, from_line }))
+}
+
 /// The word of an action's command on a path line, and its variant name in `spec/`.
 fn command_word(command: ActionCommand) -> &'static str {
     match command {
         ActionCommand::Open => "open",
         ActionCommand::Go => "go",
         ActionCommand::Close => "close",
+        ActionCommand::Follow => "follow",
+        ActionCommand::Fill => "fill",
+        ActionCommand::Pick => "pick",
+        ActionCommand::Press => "press",
     }
 }
 

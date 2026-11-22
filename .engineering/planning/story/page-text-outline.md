@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:page-text-outline
 kind: story
-status: active
+status: implemented
 title: The document's tree as a bounded outline, with the handles now will use
 summary: A new crate surf-page-text renders a surf-html tree as indented lines with quoted text, a small attribute set, hid and deep counts, and the handles @l<n>, @b<n>, @f<n> of surf_page::handles, added here.
 relations:
@@ -17,10 +17,11 @@ scope:
   path: crates/page/src/lib.rs
 - confidence: inferred
   path: crates/page/tests/elements.rs
-revision: 15
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T04:59:50Z", actor: "human:operator", revision: 8, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T04:59:50Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-22T16:29:16Z", actor: "human:operator", revision: 17, decided_on: {"recorded":{"test_result":1,"verification":2}}}
 ---
 ## Context
 
@@ -143,3 +144,37 @@ exits 0.
 
 Markdown (`page-text-markdown`); printing the outline in an answer (`page-text-look`,
 `page-text-surf-command`); the `now` block (`agent-follow-links`); CSS and layout.
+
+## As built
+
+What differs from the text above, as of 64c6621:
+
+- Change, `crates/page/src/lib.rs` gains `handles`: it also gains `pub fn hidden_roots`, the rule of
+  `is_hidden` for a whole tree in one walk that does not enter a hidden subtree; the outline and
+  the Markdown read hidden nodes through it, so `hid` costs no walk up per node. See
+  `hidden_roots_agree_with_is_hidden` in `crates/page/tests/elements.rs`.
+- Change, a line "per text node that is not whitespace only": a text node hidden while its parent
+  is not (a text child of a closed `details`) has no line, and is left out of the text an element
+  carries on its own line. See the crate documentation of `crates/page-text/src/lib.rs` and
+  `the_text_of_a_closed_details_is_left_out` in `crates/page-text/tests/cases/outline.rs`.
+- Context, "the hidden rule `surf_page::is_hidden`": the rule is wider than when the story was
+  written. An element with a `popover` attribute, whatever its value, is hidden unless it is an
+  open `dialog` (no script opens a popover), so it is one `hid` line. See `a_popover_is_hidden`
+  in `crates/page/tests/elements.rs` and the hidden rule in `docs/design/html-parser.md`.
+- Context, same rule: the copy of the selected `option` that the parser puts into a
+  `selectedcontent` is hidden, and `actionable_elements` lists no row and records no `id` from
+  it, so a link in that option has one row, one handle and one line; the outline shows
+  `selectedcontent hid <n>`. This is surf's reading, not the standard's rendering, which shows
+  the copy in the closed control. A `selectedcontent` the parser fills nothing into (outside a
+  `select`, under a `select` with `multiple`) keeps its content. See
+  `crates/page-text/tests/cases/select.rs`, `crates/page/tests/adversary_select.rs` and, in
+  `crates/page/tests/elements.rs`, `the_copy_in_a_selectedcontent_is_hidden_and_lists_nothing`.
+- Left open by the tree: a `selectedcontent` inside a `select` whose copy a parse limit stopped
+  holds its parsed content and is hidden all the same, because the tree does not tell the two
+  apart; recorded in the hidden rule of `docs/design/html-parser.md`.
+- Writes: besides the files listed, `crates/page/src/label.rs` (no `id` of the copy recorded for
+  the names), `crates/page/tests/adversary_select.rs` with its line in `crates/page/tests/main.rs`,
+  and the hidden rule in `docs/design/html-parser.md` and `docs/design/page-as-text.md`.
+- Acceptance 6, "the counter is `surf_page::attribute_visits()` ... otherwise ... a counter of node
+  visits": the test asserts both, the crate's `node_visits()` and `surf_page::attribute_visits()`,
+  each at most 2.5 times as large at 400 as at 200 (`a_deep_tree_stops_at_level_40`).

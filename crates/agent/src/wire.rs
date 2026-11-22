@@ -3,8 +3,10 @@
 //! process read and write requests with this module; nothing else defines the format.
 //!
 //! Every byte of a request and of an answer is printable ASCII (U+0020 to U+007E) or a line feed
-//! (U+000A), and every line ends in a line feed. A value from outside (an address, a path, a
-//! reason) is written only through [`surf_answer::quote`] and read back only through
+//! (U+000A), and every line ends in a line feed; the one exception is a body line of a `text`
+//! block in the answer lines (it starts with `>`), which may also hold UTF-8 characters above
+//! U+007F that [`surf_answer::escaped_in_text`] does not name. A value from outside (an address,
+//! a path, a reason) is written only through [`surf_answer::quote`] and read back only through
 //! [`surf_answer::unquote`].
 //!
 //! # The request
@@ -28,7 +30,8 @@
 //!   only as a [`surf_secret::Token`]. Absent for `open`.
 //! - `arg <name> "<value>"`: one line per argument, in any order, each name once; the name a word
 //!   of `[a-z]+`, the value a field of [`surf_answer::quote`]. `open [<url>]` and `go <url>` send
-//!   `arg url`. A later argument is a new name and needs no new version; the receiver answers an
+//!   `arg url`; `--as <form>` is `arg form` (`tree` or `markdown`) and `--from-line <n>` is
+//!   `arg line` (decimal digits), on `open <url>`, `go` and `look`. A later argument is a new name and needs no new version; the receiver answers an
 //!   argument name it does not know with status 2 ([`Request::unknown_arg`]).
 //! - `end`: the request is complete. The receiver reads nothing after it.
 //!
@@ -52,8 +55,9 @@
 //! - `reason "<text>"`: at most once, absent when there is none: a sentence for standard error,
 //!   quoted by [`surf_answer::quote`].
 //! - `answer <n>`: the number of bytes that follow, at most [`ANSWER_TEXT_MAX`]; then exactly
-//!   those bytes, the answer lines of `docs/agent-answer.md` (printable ASCII, each line ending in
-//!   a line feed; zero bytes for an answer of no lines). The client prints them unchanged.
+//!   those bytes, the answer lines of `docs/agent-answer.md` (printable ASCII but for the body
+//!   lines of a `text` block, each line ending in a line feed; zero bytes for an answer of no
+//!   lines). The client prints them unchanged.
 //!
 //! The receiver closes the connection after the answer. The client reads to the end of the
 //! connection, at most [`ANSWER_MAX`] bytes, within [`ANSWER_TIMEOUT`] ([`read_answer`]), and
@@ -475,7 +479,7 @@ impl Answer {
             ));
         }
         check_text(rest)?;
-        let text = String::from_utf8(rest.to_vec()).expect("printable ASCII");
+        let text = String::from_utf8(rest.to_vec()).expect("lines check_text read as UTF-8");
         Ok(Answer {
             status,
             reason,
@@ -499,17 +503,15 @@ fn next_line<'a>(rest: &mut &'a [u8]) -> Result<&'a str, AnswerError> {
     Ok(std::str::from_utf8(line).expect("printable ASCII"))
 }
 
-/// Answer lines: printable ASCII, every line ending in a line feed, at most [`ANSWER_TEXT_MAX`].
+/// Answer lines: every line ending in a line feed, at most [`ANSWER_TEXT_MAX`] bytes, each line
+/// [`is_answer_line`].
 fn check_text(text: &[u8]) -> Result<(), AnswerError> {
     if text.len() > ANSWER_TEXT_MAX {
         return Err(AnswerError::TooLarge);
     }
-    if !text
-        .iter()
-        .all(|&b| b == b'\n' || (b' '..=b'~').contains(&b))
-    {
+    if !text.split(|&b| b == b'\n').all(is_answer_line) {
         return Err(AnswerError::Malformed(
-            "answer lines outside printable ASCII",
+            "answer lines outside printable ASCII and page text",
         ));
     }
     if !text.is_empty() && text.last() != Some(&b'\n') {
@@ -518,6 +520,22 @@ fn check_text(text: &[u8]) -> Result<(), AnswerError> {
         ));
     }
     Ok(())
+}
+
+/// Whether one answer line, without its line feed, keeps the Lines rule of
+/// `docs/agent-answer.md`: printable ASCII, and in a body line of a `text` block (a line that
+/// starts with `>`) also UTF-8 characters above U+007F that [`surf_answer::escaped_in_text`] does
+/// not name (decision D1 B of `docs/design/page-as-text.md`).
+fn is_answer_line(line: &[u8]) -> bool {
+    if line.iter().all(|b| (b' '..=b'~').contains(b)) {
+        return true;
+    }
+    line.first() == Some(&b'>')
+        && std::str::from_utf8(line).is_ok_and(|text| {
+            text.chars().all(|c| {
+                (' '..='~').contains(&c) || (c > '\u{7f}' && !surf_answer::escaped_in_text(c))
+            })
+        })
 }
 
 /// Read one answer from `stream` to the end of the connection, at most [`ANSWER_MAX`] bytes, all

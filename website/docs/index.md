@@ -28,7 +28,7 @@ runs no script today.
 
 surf has no window, no rendering, no JavaScript and no `https:` yet. It loads one `http:` address
 from the command line and prints what happened; `surf-agent` does the same for an agent, one
-call at a time, and shows no page content yet.
+call at a time, and shows a page as text when asked.
 
 :::
 

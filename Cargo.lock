@@ -55,6 +55,8 @@ dependencies = [
  "renderer",
  "shell",
  "surf-fetch",
+ "surf-html",
+ "surf-page",
  "surf-ports",
  "surf-system",
  "surf-types",
@@ -62,10 +64,18 @@ dependencies = [
 
 [[package]]
 name = "surf-agent"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "surf-answer",
  "surf-secret",
+ "surf-test-process",
+]
+
+[[package]]
+name = "surf-agent-tasks"
+version = "0.1.0"
+dependencies = [
+ "surf-answer",
  "surf-test-process",
 ]
 
@@ -75,11 +85,14 @@ version = "0.1.0"
 
 [[package]]
 name = "surf-cli"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "surf",
+ "surf-answer",
  "surf-fetch",
+ "surf-page-text",
  "surf-ports",
+ "surf-types",
 ]
 
 [[package]]
@@ -108,6 +121,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "surf-page-text"
+version = "0.1.0"
+dependencies = [
+ "surf-answer",
+ "surf-html",
+ "surf-page",
+]
+
+[[package]]
 name = "surf-ports"
 version = "0.1.0"
 dependencies = [
@@ -126,12 +148,13 @@ version = "0.1.0"
 
 [[package]]
 name = "surf-session"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "surf",
  "surf-agent",
  "surf-answer",
  "surf-fetch",
+ "surf-page-text",
  "surf-ports",
  "surf-secret",
  "surf-test-process",
@@ -182,7 +205,7 @@ dependencies = [
 
 [[package]]
 name = "surfd"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "surf-agent",
  "surf-answer",

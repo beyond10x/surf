@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:html-tree-template
 kind: story
-status: active
+status: implemented
 title: The template element and its insertion mode
 summary: Template contents and the stack of template insertion modes; every tree case tagged up to template passes.
 relations:
@@ -22,10 +22,11 @@ scope:
   path: crates/page/tests/main.rs
 - confidence: cited
   path: crates/page/tests/tree_template.rs
-revision: 10
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-11-22T16:29:13Z", actor: "human:operator", revision: 12, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 
@@ -97,3 +98,26 @@ wave 9):
   which stops at a special element where the standard's own rule pops until the `template`.
   The reading of `story:html-tree-formatting` measured that the adoption agency algorithm
   brings the tag to 30 again (`template.dat` case 84).
+
+## As built
+
+What differs from the text above, as of 280e8a7:
+
+- Change, "`crates/html/src/tree.rs`: template contents as a fragment": the tree held template
+  contents already before this story (`Tree::create_element` gives an HTML `template` its
+  contents), so the story changed nothing in `tree.rs`.
+- Change, "The limits keep applying": the step limit is now also checked after the end-of-file
+  token, whose in template rule scans the stack of open elements (`run` in
+  `crates/html/src/tree_builder.rs`, held by
+  `adversary_tree::the_end_of_file_token_is_held_to_the_step_limit`).
+- Change, "The limits keep applying": the seeded test
+  `limits::seeded_1_200_inputs_end_within_bounds` in `crates/html/tests/limits.rs`, a file
+  outside this story's Writes, runs with a node limit of 25 instead of 30. With template
+  contents parsed as the standard says, the same inputs build fewer nodes, and 30 stopped 4 of
+  the 1,200 inputs, fewer than the 5 the test asserts; 25 stops 8 (the comment beside the
+  limit).
+- Left open: the snapshot's content patching, a `template` start tag with a `for` attribute, is
+  not taken. The standard moves the template's content into the element it marks, and surf
+  keeps it in the template contents (`open` line `template-content-patching`).
+- Left open: declarative shadow roots are not attached (`open` line `declarative-shadow-roots`,
+  and the comment of `crates/html/src/tree_builder/template.rs`).

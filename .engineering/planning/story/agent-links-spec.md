@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-links-spec
 kind: story
-status: active
+status: implemented
 title: Specify following a link, and redirects inside one request
 summary: surf.agent gains Follow, mapped to Navigate; surf.net delivers the response URL after redirects and the navigation commits at it.
 relations:
@@ -28,10 +28,11 @@ scope:
   path: spec/ess-inputs.yaml
 - confidence: cited
   path: spec/scenarios
-revision: 12
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-11-22T16:29:24Z", actor: "human:operator", revision: 14, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 
@@ -100,3 +101,22 @@ D30).
 The link lines and handles (`agent-follow-links`); redirects (`agent-redirect-spec`,
 `agent-fetch-redirects`); session history, `back`, `forward` (`agent-history-spec`,
 `agent-back-forward`).
+
+## As built
+
+What differs from the text above, as of 2418d48:
+
+- Change item 1, "records an `Action` with command `Follow`": `Follow/requested` records nothing
+  itself; it emits `NavigationRequested`, and the session process then records the action with
+  `RecordAction`, command `follow`, as `go` is recorded after `Go` (comments above
+  `surf.agent.Follow` and `surf.agent.RecordAction` in `spec/domains/agent.yaml`). `Action`,
+  `ActionRecorded` and `SessionLog` carry the handle and the label as optional fields.
+- Surfaces written: files outside the list changed. `crates/session/src/entries.rs` writes the
+  handle and the label into the entry of `ActionRecorded`; `crates/session/tests/events.rs`,
+  `crates/ports/tests/agent.rs`, `crates/ports/tests/ports.rs` and
+  `crates/surf/tests/forget_delivered.rs` follow the regenerated types.
+- Left open: the entry of `ActionRecorded` writes the label uncut
+  (`crates/session/src/entries.rs`), against the sentence "An element's label, target and value
+  are in no entry" in `crates/session/src/lib.rs` (recorded nowhere else).
+- Left open: `handle` and `label` of `Follow` are inputs with no effect on its outcomes; no
+  command of the session sends `Follow` yet (recorded nowhere else).

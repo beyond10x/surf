@@ -11,7 +11,7 @@ Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `s
 `surfd` and `surf-session`, for Linux only at first. The
 [releases page](https://github.com/beyond10x/surf/releases) lists the releases. After it, work
 moves to the script engine, [swell](https://beyond10x.github.io/swell/), a project of its own.
-Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. The waves after them are planned, and they and the
+Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. Wave 10 and round 1, which builds the stories of wave 11 and some of the waves after it, followed, and release `0.4.0` follows round 1: it adds the HTML parser on real pages and the page as text. The waves after them are planned, and they and the
 list under "After the plan" have no date.
 
 | after wave | what you can do |
@@ -19,13 +19,12 @@ list under "After the plan" have no date.
 | 4 (delivered) | Drive a session: `surf-agent open`, `go`, `look`, `close`. A daemon keeps the sessions, one process and one token per session. |
 | 7 (delivered) | Watch every session live in a local web page: where it is and what it did, action by action. Redirects are followed. |
 | 8 (delivered) | Select an action or an event in the live view and read its fields, beside the session's requests. |
-| 11 | Read a real page's links, buttons and form fields, from an HTML parser held to the html5lib tests. |
+| 11 (delivered, round 1) | Read a real page's links, buttons and form fields, from an HTML parser held to the html5lib tests. |
 | 18 | Follow links, fill and submit forms, go back and forward. Each answer says what changed. |
 | 22 | Record an agent's session, turn it into a test, and replay it against the recorded network. |
 
-The next planned steps are the HTML parser on real pages (an answer shows no page content yet),
-first the tree rules for tables, templates and foreign content, and the parser behind the document.
-TLS and `https:` are on the list below. None of them has a date.
+The next planned steps are following links, filling and submitting forms, and going back and
+forward (round 2). TLS and `https:` are on the list below. None of them has a date.
 
 The agent commands exist today: see [Drive surf from an agent](drive-from-an-agent.md). An
 agent's answer looks like this today:
@@ -39,8 +38,8 @@ path 2 of 2
   2 go "http://example.org/"
 ```
 
-Once the HTML parser reads real pages, the `page` line gains the page's title, and the answer
-gains what you can do on the page.
+Since release `0.4.0`, `--as tree` or `--as markdown` adds the page as text, with the handles
+of its links, buttons and fields. The `page` line does not show the page's title yet.
 
 ## After the plan
 

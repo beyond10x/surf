@@ -7,8 +7,8 @@
 **A web browser written from scratch, where the specification comes first.**
 
 ![spec: ESS 0.97.3, valid](docs/badges/spec.svg)
-![conformance: 96 of 96 scenarios](docs/badges/conformance.svg)
-![tests: 661 passed](docs/badges/tests.svg)
+![conformance: 169 of 169 scenarios](docs/badges/conformance.svg)
+![tests: 877 passed](docs/badges/tests.svg)
 ![third-party crates shipped: 0](docs/badges/dependencies.svg)
 ![unsafe code: forbidden](docs/badges/unsafe.svg)
 ![standard sections marked complete: 0](docs/badges/complete.svg)
@@ -42,7 +42,7 @@ archive (Apple silicon and Intel) holds `surf`: the agent binaries read the call
 file.
 
 ```console
-$ version=0.3.0 target=x86_64-unknown-linux-musl
+$ version=0.4.0 target=x86_64-unknown-linux-musl
 $ base=https://github.com/beyond10x/surf/releases/download/$version
 $ curl -fsSLO $base/surf-$version-$target.tar.gz -fsSLO $base/SHA256SUMS
 $ grep " surf-$version-$target.tar.gz\$" SHA256SUMS | sha256sum --check
@@ -68,6 +68,21 @@ One line per thing that happened, in a format a script can rely on. The exit sta
 whether the page loaded. The full output format and the exit statuses are in
 [`docs/surf-command.md`](docs/surf-command.md).
 
+For a parsed HTML page the output also holds its title, its links, buttons and form fields, and
+the limit that stopped the parse, if one did:
+
+```text
+title <document-id> "<title>"
+element <document-id> <position> <kind> <flags> "<label>" "<target or value>"
+note limit <document-id> <limit>
+```
+
+A title, label, target and value are quoted fields, written like an address with `"` as `\x22`;
+`<flags>` is the set flags among `hidden,disabled,checked,required` joined by `,`, or `-`; the
+last field is `-` for a row with neither target nor value.
+
+`surf <url> --as markdown` prints the page as Markdown, every line behind `>`.
+
 ## Driving surf from an agent
 
 On Linux, `surf-agent` drives a browser session one call at a time, for an AI agent or a
@@ -92,8 +107,10 @@ What it does not do yet:
 - Release `0.2.0` delivers a redirect status as the response. Since release `0.3.0`, a `go`
   follows redirects.
 - No JavaScript and no rendering.
-- Nothing of the page's content is shown yet: an answer holds the status, the media type and the
-  address.
+- An answer holds the status, the media type and the address, and no title. Since release
+  `0.4.0`, `--as tree` or `--as markdown` adds the page as text.
+- A link cannot be followed and a form cannot be filled or submitted yet: the commands are
+  `open`, `go`, `look` and `close`.
 - The agent binaries run on Linux only.
 
 The commands, the token, the exit statuses and the answer, one by one:
@@ -164,7 +181,7 @@ there instead.
 6. **Text from the web stays text.** Anything from a page, a server or an address is escaped
    before it is printed, so a page cannot forge a line of surf's output.
 7. **A passing test must be able to fail.** Tests are tried against planted defects. A storage
-   that drops every write fails 34 of the 96 scenarios.
+   that drops every write fails 36 of the 169 scenarios.
 8. **Small.** A standard is followed for what surf does, not implemented whole.
 
 ## What works today
@@ -175,10 +192,22 @@ there instead.
   `renderer`.
 - **Its own HTTP/1.1 client**, with one deadline for the whole exchange (40 seconds at most)
   and hard limits on header and body size.
-- **96 specified scenarios**, each passing twice: once against the specification's own
+- **169 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **661 tests**, built with warnings treated as errors, and 38 tests of the live view's page in
+- **877 tests**, built with warnings treated as errors, and 38 tests of the live view's page in
   a browser.
+
+New with round 1 after the tenth wave of the current plan, shipped in release `0.4.0`:
+
+- **A page as text, for an agent.** A parsed page can be written as the outline of its tree
+  (one line per element and text, with `hid` for hidden parts and the handles `@l1`, `@b1`,
+  `@f1` of its links, buttons and fields) or as Markdown (headings, paragraphs, links, lists,
+  quotes, code, images, form controls with their labels, landmarks and tables). Every piece of
+  page text is escaped, so a page can write neither a line of the answer nor a link or a handle
+  of surf's; control, invisible and bidirectional characters are shown as bytes. A link stays
+  on one line with its handle, and the Markdown grows with the page, not with its nesting. The
+  answer format has a `text` block for it, every line behind `>`, at most 200 lines and 32 KiB
+  at a time.
 
 Fixed after a security review, shipped in release `0.3.0`:
 
@@ -200,14 +229,15 @@ Fixed after a security review, shipped in release `0.3.0`:
   live view's address is kept (`$XDG_RUNTIME_DIR/surf/view-url`), not the address with its
   token; `surfd --print-view-url` prints the address for a person who asks for it.
 
-New with the tenth wave of the current plan, not released yet. Nothing a `surf-agent` command
-prints has changed:
+New with the tenth wave of the current plan, shipped in release `0.4.0`. Nothing a `surf-agent`
+command prints has changed:
 
 - **The HTML parser has limits on untrusted input.** Input bytes (16 MiB), depth (512), nodes
   (1,048,576), attributes of one element (1,024), stored bytes (64 MiB) and steps (2^27). A
   parse that meets one stops, keeps what it built and names the limit.
 - **Each link and form field has a label**, its accessible name, computed over the tree without
-  CSS, cut at 1,024 bytes and within a bound of work per page. Only the tests run it yet.
+  CSS, cut at 1,024 bytes and within a bound of work per page. Since round 1, `surf` prints it
+  on each `element` line.
 
 New with the ninth wave of the current plan, shipped in release `0.3.0`. Nothing a `surf-agent`
 command prints has changed:
@@ -344,7 +374,7 @@ New with the second wave:
   reader ([`docs/view-stream.md`](docs/view-stream.md)). Its page is new with the third wave.
 - **A test harness for the HTML parser.** It holds 9,107 cases from html5lib-tests and
   web-platform-tests and counts how many a parser passes. Today it runs 9,095 of them and
-  passes 8,428: 82 encoding cases, 7,046 tokenizer cases and 1,300 tree construction cases.
+  passes 9,095: 82 encoding cases, 7,046 tokenizer cases and 1,967 tree construction cases.
 
 New with the first wave:
 
@@ -366,20 +396,19 @@ plan is [`docs/plan/agent-waves.md`](docs/plan/agent-waves.md) and its design is
 Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `surf-agent`,
 `surfd` and `surf-session`, for Linux only at first. The releases are listed at
 <https://github.com/beyond10x/surf/releases>. After it, work moves to the script engine,
-[swell](https://beyond10x.github.io/swell/), a project of its own. Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. The waves after them are planned and have no date.
+[swell](https://beyond10x.github.io/swell/), a project of its own. Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. Wave 10 and round 1, which builds the stories of wave 11 and some of the waves after it, followed, and release `0.4.0` follows round 1: it adds the HTML parser on real pages and the page as text. The waves after them are planned and have no date.
 
 | after wave | what you can do |
 |---|---|
 | 4 (delivered) | Drive a session: `surf-agent open`, `go`, `look`, `close`. A daemon keeps the sessions, one process and one token per session. |
 | 7 (delivered) | Watch every session live in a local web page: where it is and what it did, action by action. Redirects are followed. |
 | 8 (delivered) | Select an action or an event in the live view and read its fields, beside the session's requests. |
-| 11 | Read a real page's links, buttons and form fields, from an HTML parser held to the html5lib tests. |
+| 11 (delivered, round 1) | Read a real page's links, buttons and form fields, from an HTML parser held to the html5lib tests. |
 | 18 | Follow links, fill and submit forms, go back and forward. Each answer says what changed. |
 | 22 | Record an agent's session, turn it into a test, and replay it against the recorded network. |
 
-The next planned steps are the HTML parser on real pages (an answer shows no page content yet),
-first the tree rules for tables, templates and foreign content, and the parser behind the document.
-TLS and `https:` are on the list below. None of them has a date.
+The next planned steps are following links, filling and submitting forms, and going back and
+forward (round 2). TLS and `https:` are on the list below. None of them has a date.
 
 Next after that, wanted and not planned in detail yet:
 
@@ -416,32 +445,33 @@ One command checks everything:
 
 ```console
 $ task check
-surf v1 — 9 file(s), 15 scenario(s), valid
-96 scenario(s) (15 authored), 28 refusal(s), written to .out/suite.json
-  96 scenarios: 96 passed, 0 failed, 0 error, 0 unsupported
-96 scenario(s) (15 authored), 28 refusal(s), written to .out/suite.json
-  96 scenarios: 96 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 96 scenario(s) each, of suite sha256:3041446cb0234779316d887f5a96d127f60fc03893977e2b341f92e69af28b81
+surf v1 — 9 file(s), 24 scenario(s), valid
+169 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
+  169 scenarios: 169 passed, 0 failed, 0 error, 0 unsupported
+169 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
+  169 scenarios: 169 passed, 0 failed, 0 error, 0 unsupported
+the interpreter and the Rust system ran 169 scenario(s) each, of suite sha256:0aead5f74409f8c561f544df8056b9e6b6fe146c13ba2e5e3a3fbf0ffdea733c
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
-Cargo.lock: 24 package(s), none from outside this repository
+Cargo.lock: 26 package(s), none from outside this repository
     Finished `dev` profile [unoptimized] target(s) in 0.00s
-661 tests: 661 passed, 0 failed, 0 ignored (cargo-nextest 659, doc tests 2)
-test step: 61.9 s of its budget of 120 s
+877 tests: 877 passed, 0 failed, 0 ignored (cargo-nextest 875, doc tests 2)
+test step: 62.3 s of its budget of 120 s
+agent-tasks: 4 tasks, 2 pass, 2 fail, 0 skipped, lane gate, binaries target/debug
 view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
   38 passed (15.8s)
-html-conformance: 9107 cases, 9095 run, 8428 passed
+html-conformance: 9107 cases, 9095 run, 9095 passed
 ```
 
-It validates the specification, runs the 96 scenarios against the interpreter built into `ess`
+It validates the specification, runs the 169 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
 that the lock file holds no outside package, then builds and tests, checks that every event
 name of the live view's stream is an event of the specification, runs the live view's page
 tests in a browser, and last holds the HTML parser's test counts where they are. The tests run
 under cargo-nextest; a test still running after 60 seconds is ended and fails, the test step
 fails when it takes over 120 seconds, and the block leaves out the ten slowest tests the step
-also prints. The page tests need Node and Chromium's headless shell; with Node there, install
-the shell once with `npm --prefix view-tests ci`, then `npx --prefix view-tests playwright
+also prints and the agent tasks' rows after their counts. The page tests need Node and
+Chromium's headless shell; with Node there, install the shell once with `npm --prefix view-tests ci`, then `npx --prefix view-tests playwright
 install --only-shell chromium`. The scenario runner in
 [`conformance/`](conformance/) is the one place a third-party crate is used; nothing that
 ships depends on it.

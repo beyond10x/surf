@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T16:29:16Z",
+  "actor": "human:operator",
+  "artifact": "story:page-text-outline",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "review after the implementation, on db82b7c",
+    "reference": "findings closed in 0a4f254 and 64c6621: one page gave 4.4 MB of text, tables were read in quadratic work, a link was listed twice through the selectedcontent copy, 15 one-line changes passed the tests; after it prefixes are bounded at 128 bytes, atoms are whole or cut with [cut], and node_visits and table_visits hold the work linear"
+  }
+}
