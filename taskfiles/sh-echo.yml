@@ -1,0 +1,90 @@
+version: '3'
+
+set: [pipefail]
+
+tasks:
+  sh-echo:
+    desc: Run the tests that start a script with the sh of PATH under an sh whose echo expands backslashes, as dash's does.
+    summary: |
+      Run the tests that start a script with the sh of PATH under an sh whose echo expands backslashes, as dash's does.
+
+      Runs taskfiles/sh-echo.sh. The forge's runner has dash as sh, whose echo turns \n, \\ and
+      the other backslash sequences into control characters; where /bin/sh is bash, echo prints
+      them as they are, so a script that writes a value with echo can pass here and fail there
+      (0.4.0: the model lane wrote the awk program of its surf-agent wrapper with echo and
+      counted no call under dash). The script puts .out/sh-echo/bin/sh, bash --posix -O
+      xpg_echo, first on PATH, checks that its echo expands, and runs every test of
+      surf-agent-tasks but tasks::every_task, and slowest_tests of surf, with cargo nextest.
+      It prints nextest's summary line, and the log when a test failed. FILTER=<expression>
+      replaces the filter. A script started through #!/bin/sh still gets /bin/sh.
+    dir: '{{.TASKFILE_DIR}}/..'
+    silent: true
+    env:
+      RUSTFLAGS: -D warnings
+      SURF_BIN_DIR: '{{.ROOT_DIR}}/target/debug'
+    cmds:
+      - sh taskfiles/sh-echo.sh {{if .FILTER}}'{{.FILTER}}'{{end}}
+
+  sh-echo-test:
+    desc: Give taskfiles/sh-echo.sh both sides, the model lane's driver as it is and with its wrapper written by echo.
+    summary: |
+      Give taskfiles/sh-echo.sh both sides, the model lane's driver as it is and with its wrapper written by echo.
+
+      Copies taskfiles/agent-tasks-model.sh to .out/sh-echo-test/taskfiles/, beside links to
+      crates/ and README.md, and runs adversary2::every_call_is_one_line_that_reads_back through
+      taskfiles/sh-echo.sh with ADVERSARY_MODEL_SCRIPT naming the copy, twice: the copy as it is
+      must pass, and the copy with the line that writes the wrapper's awk program changed from
+      printf '%s\n' to echo must fail. It fails when the change finds no such line.
+
+      SCRIPT names the script under test (default taskfiles/sh-echo.sh), so that a planted
+      defect can be run in a copy. It prints one line per case that is decided otherwise and
+      fails, or one line with the count.
+    dir: '{{.TASKFILE_DIR}}/..'
+    silent: true
+    env:
+      RUSTFLAGS: -D warnings
+      SURF_BIN_DIR: '{{.ROOT_DIR}}/target/debug'
+    vars:
+      SCRIPT: '{{.SCRIPT | default "taskfiles/sh-echo.sh"}}'
+    cmds:
+      - |
+        script='{{.SCRIPT}}'
+        test -f "$script" || { echo "$script: missing"; exit 1; }
+        out=.out/sh-echo-test
+        rm -rf "$out"
+        mkdir -p "$out/taskfiles"
+        ln -s ../../crates "$out/crates"
+        ln -s ../../README.md "$out/README.md"
+        driver=$out/taskfiles/agent-tasks-model.sh
+        planted=$out/taskfiles/agent-tasks-model-echo.sh
+        cp taskfiles/agent-tasks-model.sh "$driver"
+        sed "s/^  printf '%s\\\\n' \"one_line=/  echo \"one_line=/" "$driver" > "$planted"
+        if cmp -s "$driver" "$planted"; then
+          echo "sh-echo-test: no line of $driver writes one_line= with printf '%s\n'"
+          exit 1
+        fi
+        test_name='test(=adversary2::every_call_is_one_line_that_reads_back)'
+        cases=0
+        wrong=0
+        check() {
+          expected=$1
+          name=$2
+          copy=$3
+          cases=$((cases + 1))
+          status=0
+          ADVERSARY_MODEL_SCRIPT=$(pwd)/$copy sh "$script" "$test_name" > "$out/case$cases.log" 2>&1 || status=$?
+          case $expected:$status in
+            0:0 | 1:[1-9]*) ;;
+            *)
+              printf '%s\n' "sh-echo-test: $name: exit $status, expected $expected ($out/case$cases.log)"
+              wrong=$((wrong + 1))
+              ;;
+          esac
+        }
+        check 0 "the driver as it is" "$driver"
+        check 1 "the driver with its wrapper's awk program written by echo" "$planted"
+        if [ "$wrong" -ne 0 ]; then
+          echo "sh-echo-test: $wrong of $cases case(s) decided otherwise by $script"
+          exit 1
+        fi
+        echo "sh-echo-test: $cases case(s), each decided as expected by $script"
