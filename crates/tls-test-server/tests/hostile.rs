@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use surf_tls::connection::Connection;
 use surf_tls::error::AlertDescription;
-use surf_tls_test_server::{Config, IDLE, TestServer};
+use surf_tls_test_server::{Config, IDLE, Received, TestServer};
 
 use crate::common::{self, HOST};
 
@@ -120,6 +120,43 @@ fn hello_with_a_session_id_over_32_bytes_gets_decode_error() {
         answer(&server, &hello),
         (21, vec![2, AlertDescription::DECODE_ERROR.0])
     );
+}
+
+/// A `change_cipher_spec` record of the one byte 0x01, unprotected.
+const CHANGE_CIPHER_SPEC: [u8; 6] = [20, 3, 3, 0, 1, 1];
+
+/// RFC 8446 section 5: a `change_cipher_spec` before the first ClientHello is an unexpected
+/// record, `unexpected_message`, even of the value 0x01.
+#[test]
+fn change_cipher_spec_before_the_hello_is_refused() {
+    let server = TestServer::start(Config::default()).expect("the server starts");
+    assert_eq!(
+        answer(&server, &CHANGE_CIPHER_SPEC),
+        (21, vec![2, AlertDescription::UNEXPECTED_MESSAGE.0])
+    );
+}
+
+/// RFC 8446 section 5: a `change_cipher_spec` after the client's Finished is an unexpected
+/// record, `unexpected_message`, even of the value 0x01. Written on the socket under the
+/// client's connection, before its request.
+#[test]
+fn change_cipher_spec_after_the_finished_is_refused() {
+    let server = TestServer::start(Config::default()).expect("the server starts");
+    let stream = common::socket(&server, common::READ_TIMEOUT);
+    let mut raw = stream.try_clone().expect("a second handle of the socket");
+    let connection = Connection::new(
+        stream,
+        HOST,
+        &common::accepting("ok-ecdsa-p256"),
+        common::now(),
+    )
+    .expect("the handshake completes");
+    raw.write_all(&CHANGE_CIPHER_SPEC).expect("write");
+    drop(connection);
+    let seen = server.wait_seen(1, Duration::from_secs(10));
+    assert_eq!(seen.len(), 1, "the server ended one connection: {seen:?}");
+    assert_eq!(seen[0].after_handshake[..1], [Received::ChangeCipherSpec]);
+    assert_eq!(seen[0].end, "the server sent unexpected_message");
 }
 
 #[test]

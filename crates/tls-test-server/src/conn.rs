@@ -94,6 +94,7 @@ pub(crate) fn serve(stream: TcpStream, setup: &Setup, stop: &AtomicBool) -> Seen
         layer: RecordLayer::new(watched),
         setup,
         seen,
+        hello_read: false,
         finished: false,
         random: Random::system(),
     };
@@ -110,6 +111,8 @@ struct Server<'a> {
     layer: RecordLayer<Watched<'a>>,
     setup: &'a Setup,
     seen: Seen,
+    /// A handshake message was read: the first ClientHello came.
+    hello_read: bool,
     /// The client's Finished was read: every later record is noted in `after_handshake`.
     finished: bool,
     random: Random<'static>,
@@ -121,7 +124,10 @@ impl Server<'_> {
     }
 
     /// The next message, noted: an alert in `alerts`, and after the handshake every message in
-    /// `after_handshake`.
+    /// `after_handshake`. A `change_cipher_spec` that RFC 8446 section 5 does not let the
+    /// server drop ends the connection with `unexpected_message`: one before the first
+    /// ClientHello, one after the client's Finished, and one whose content is not the one byte
+    /// 0x01 (a protected one the record layer refuses itself).
     fn next(&mut self) -> Result<Message, End> {
         let message = self.layer.read_message().map_err(ended)?;
         if let Message::Alert { description, .. } = &message {
@@ -135,11 +141,20 @@ impl Server<'_> {
                 Message::ApplicationData(d) => Received::ApplicationData(d.len()),
             });
         }
+        match &message {
+            Message::Handshake(_) => self.hello_read = true,
+            Message::ChangeCipherSpec(content)
+                if content.as_slice() != [1] || !self.hello_read || self.finished =>
+            {
+                return Err(self.abort(AlertDescription::UNEXPECTED_MESSAGE));
+            }
+            _ => {}
+        }
         Ok(message)
     }
 
-    /// The next handshake message; a `change_cipher_spec` of compatibility mode is dropped,
-    /// an alert ends the connection.
+    /// The next handshake message; a `change_cipher_spec` of compatibility mode is dropped
+    /// (one that may not be is refused by [`Server::next`]), an alert ends the connection.
     fn handshake_message(&mut self) -> Result<Vec<u8>, End> {
         loop {
             match self.next()? {
