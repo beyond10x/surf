@@ -93,7 +93,7 @@ if [ -z "$XDG_RUNTIME_DIR" ]; then
 fi
 export XDG_RUNTIME_DIR
 
-set -- --locked --release -p surf-session --test e2e
+set -- --locked --release -p surf-session --test main e2e::
 [ -z "$target" ] || set -- "$@" --target "$target"
 SURF_BIN_DIR=$dir cargo test "$@"
 

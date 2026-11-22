@@ -4,7 +4,7 @@
 //! Two more on the link: entries go and come back as they were sent, and a session whose
 //! entries break the link's rules is ended and listed died.
 
-mod common;
+use crate::common;
 
 use std::time::Duration;
 

@@ -23,7 +23,7 @@
 //! with `max_steps` 8 × its size ([`small_form`]), the steps per input byte of the default
 //! 2^27 for 16 MiB.
 
-mod common;
+use crate::common;
 
 use std::time::Instant;
 

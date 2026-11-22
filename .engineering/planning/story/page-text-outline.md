@@ -17,7 +17,7 @@ scope:
   path: crates/page/src/lib.rs
 - confidence: inferred
   path: crates/page/tests/elements.rs
-revision: 10
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T04:59:50Z", actor: "human:operator", revision: 8, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T04:59:50Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"verification":1}}}
@@ -48,16 +48,15 @@ command takes it without the `@`.
 
 Placement (the coordinator, 2026-11-22): round 1, the text unit, after `page-text-answer-block`
 (merged into the unit's branch) and before `page-text-markdown`; it needs `html-parser-limits`
-and `html-actionable-elements`. Collision: `html-accessible-name` writes
-`crates/page/src/lib.rs` too (the label field); the two add separate functions, and whichever
-merges second rebases on the other.
+and `html-actionable-elements`. No collision: `html-accessible-name`, which writes
+`crates/page/src/lib.rs` too (the label field), is implemented.
 `Cargo.lock` is the coordinator's.
 
 ## Change
 
 - `crates/page/src/lib.rs`: `pub fn handles(tree: &Tree) -> Vec<(NodeId, String)>`, the rule
-  above over `actionable_elements`, without the `@`; a case in the crate's one test file
-  `crates/page/tests/elements.rs`.
+  above over `actionable_elements`, without the `@`; a case in
+  `crates/page/tests/elements.rs`, a module of the crate's one test binary.
 - `crates/page-text/` (package `surf-page-text`, version `0.1.0`, edition 2024,
   `publish = false`, `license = "Apache-2.0"`, `#![forbid(unsafe_code)]`; depends by path on
   `surf-html`, `surf-page` and `surf-answer` only):
@@ -73,13 +72,14 @@ merges second rebases on the other.
   whitespace only, none shown); `deep <n>` for an element at level 40 that has children; every
   text and value through `quote_text_cut` at 80 characters. Comments, doctypes, processing
   instructions and template contents are left out. Time linear in the number of nodes, one walk
-  with its own stack. The crate documentation states the rules and what is not claimed (no CSS:
+  with its own stack (case 6 proves it by a count). The crate documentation states the rules and what is not claimed (no CSS:
   an element hidden by a style sheet is shown as not hidden).
-- Tests in one test binary, `crates/page-text/tests/main.rs`, its modules under `tests/cases/`
-  (a file directly under `tests/` would be a second binary): `tests/cases/outline.rs`, each
+- Tests in one test binary, `crates/page-text/tests/main.rs`, its modules under `tests/cases/`,
+  each declared there as `#[path = "cases/<stem>.rs"] mod <stem>;` (`taskfiles/test-layout.sh`
+  passes): `tests/cases/outline.rs`, each
   parsing with `surf_html::parse_document` and `ParseOptions::default()`, no server.
 
-Writes: `crates/page/src/lib.rs`, `crates/page/tests/elements.rs`, `crates/page-text/` (new; `autotests = false` and `[[test]] name = "main"` in its `Cargo.toml`, the form of `story:one-test-binary-per-crate`).
+Writes: `crates/page/src/lib.rs`, `crates/page/tests/elements.rs`, `crates/page-text/` (new; `autotests = false` and one `[[test]]` entry with `name = "main"` and `path = "tests/main.rs"` in its `Cargo.toml`, the form of `story:one-test-binary-per-crate`).
 `Cargo.lock` gains a repository package: the coordinator's.
 
 For `AGENTS.md` (D7), a "Layout" entry: "`crates/page-text` (`surf-page-text`): a `surf-html`
@@ -87,9 +87,17 @@ tree as text, the outline and (from `page-text-markdown`) Markdown. Depends on `
 `surf-page` and `surf-answer`." The `crates/page` entry gains "and `handles`, the one numbering
 of `l<n>`, `b<n>`, `f<n>`".
 
+Bounds for every command of this story. Every build and test runs through the build pool:
+`cargo` is wrapped by the pool's shim, every other command that builds or tests gets the `slot`
+prefix. The pool ends a job after 10 minutes; a command that needs longer names its time with
+`slot --timeout <t>` or `SLOT_TIMEOUT=<t>`, at most 30 minutes; a `timeout` wrapped around the
+command extends nothing. A script that measures or waits starts without the `slot` prefix; the
+builds and test runs inside it carry it. No test runs over 60 s and the test step ends within
+120 s. No Python.
+
 ## Acceptance
 
-`cargo test -p surf-page -p surf-page-text` passes; no test runs over 60 s and the test step ends
+`SLOT_TIMEOUT=30m cargo test -p surf-page -p surf-page-text` passes; no test runs over 60 s and the test step ends
 within 120 s (the folder's budget). Among the cases run:
 
 1. `fruit_shop_outline_without_table`: the page of design note section 1 without its `table`
@@ -110,7 +118,12 @@ within 120 s (the folder's budget). Among the cases run:
    href="` and 100 `b` `">` gives a line holding `href="`, 80 `b` and `"...`.
 6. `a_deep_tree_stops_at_level_40`: 400 nested `div` (under the parser's depth limit of 512)
    give 42 lines (`html`, `  head hid 0`, `  body` and the `div`s to level 40), the last ending
-   `deep 361`; within 5 s in a debug build.
+   `deep 361`. The test asserts a count, no time (decision D131 of the coordinating agent,
+   2026-11-22): for 200 and for 400 nested `div class=x` it reads the counter the walk feeds and
+   requires the count at 400 to be at most 2.5 times the count at 200. The counter is
+   `surf_page::attribute_visits()` (`crates/page/src/lib.rs:174`) if the unit decides `hid`
+   through `surf-page`; otherwise `surf-page-text` gains a counter of node visits of the same
+   form (`#[doc(hidden)]`, a thread-local count), and the unit says which in its report.
 7. `a_hidden_subtree_is_one_line`: `<div aria-hidden="true"><p>secret</p></div>` gives
    `    div hid 2` and no line holds `secret`.
 8. `comments_and_template_contents_are_left_out`: `<p>x</p><!--c--><template><p>t</p></template>`

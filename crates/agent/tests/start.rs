@@ -3,7 +3,7 @@
 //! story `security-review-fixes`, the checks of the runtime directory, `surf/` and the socket
 //! before any connection, each against a listener of the test that must receive nothing.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};

@@ -5,20 +5,29 @@
 //! case 14 of the story that sends a `POST` (wave 9): a request body of 1 MiB is not copied; and
 //! the peak while a request body of 4 MiB is written twice.
 //!
-//! Why this file holds `unsafe`, the only `unsafe` of the repository: what a fetch holds is
+//! Why this file holds `unsafe` (as does `crates/html/tests/common/mod.rs`): what a fetch holds is
 //! only seen by counting what it allocates, and a counting allocator is a `GlobalAlloc`, an
 //! `unsafe` trait whose methods are `unsafe fn`. The allocator passes every call on to the
 //! system allocator unchanged and only counts sizes. No file under any `src/` holds `unsafe`;
 //! every hand-written crate forbids it.
 //!
-//! The allocator counts every thread of the test binary, so the cases of this file run one at a
-//! time, each holding `SERIAL`.
+//! The allocator is the global allocator of the one test binary of `surf-fetch`. It keeps two
+//! counts: one of the whole process and one for each thread, and [`held_while`] picks the
+//! reading. When the test runs alone in its process, as under cargo-nextest, which the gate runs
+//! and which sets `NEXTEST_EXECUTION_MODE=process-per-test` in the test's environment, a case
+//! reads the count of the whole process, so a copy the fetch makes on any thread is counted; the
+//! test's server allocates nothing once it accepts. Otherwise, as under plain `cargo test`,
+//! where the threads of other tests allocate in the same process, a case reads the count of the
+//! thread that calls the fetch: it then sees what the fetch allocates on that thread only. The
+//! fetches of these cases go to `127.0.0.1`, an IP address, so the fetch resolves no name on a
+//! thread of its own.
 
 use std::alloc::{GlobalAlloc, Layout, System};
+use std::cell::Cell;
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::atomic::{AtomicIsize, Ordering};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -26,16 +35,31 @@ use surf_fetch::{fetch, send, Failure, Limits, Method, Request, Response, MAX_AD
 
 struct Counting;
 
-static CURRENT: AtomicUsize = AtomicUsize::new(0);
-static PEAK: AtomicUsize = AtomicUsize::new(0);
+/// The bytes allocated and not yet freed by every thread of the process.
+static PROCESS_LIVE: AtomicIsize = AtomicIsize::new(0);
+/// The most of [`PROCESS_LIVE`] since the last [`held_while`] began.
+static PROCESS_PEAK: AtomicIsize = AtomicIsize::new(0);
+
+thread_local! {
+    /// The bytes allocated and not yet freed by this thread.
+    static LIVE: Cell<isize> = const { Cell::new(0) };
+    /// The most of [`LIVE`] since the last [`held_while`] began.
+    static PEAK: Cell<isize> = const { Cell::new(0) };
+}
 
 fn grow(n: usize) {
-    let now = CURRENT.fetch_add(n, Ordering::SeqCst) + n;
-    PEAK.fetch_max(now, Ordering::SeqCst);
+    let now = PROCESS_LIVE.fetch_add(n as isize, Ordering::SeqCst) + n as isize;
+    PROCESS_PEAK.fetch_max(now, Ordering::SeqCst);
+    let _ = LIVE.try_with(|live| {
+        let now = live.get() + n as isize;
+        live.set(now);
+        let _ = PEAK.try_with(|peak| peak.set(peak.get().max(now)));
+    });
 }
 
 fn shrink(n: usize) {
-    CURRENT.fetch_sub(n, Ordering::SeqCst);
+    PROCESS_LIVE.fetch_sub(n as isize, Ordering::SeqCst);
+    let _ = LIVE.try_with(|live| live.set(live.get() - n as isize));
 }
 
 // SAFETY: every call is passed on to the system allocator unchanged; only sizes are counted.
@@ -77,13 +101,27 @@ unsafe impl GlobalAlloc for Counting {
 #[global_allocator]
 static ALLOCATOR: Counting = Counting;
 
-/// Held by each case while it runs, so no other case allocates during its measurement.
-static SERIAL: Mutex<()> = Mutex::new(());
+/// Whether this test runs alone in its process: cargo-nextest sets
+/// `NEXTEST_EXECUTION_MODE=process-per-test` for each test it starts.
+fn alone_in_process() -> bool {
+    std::env::var_os("NEXTEST_EXECUTION_MODE").is_some_and(|mode| mode == "process-per-test")
+}
 
-fn serial() -> MutexGuard<'static, ()> {
-    SERIAL
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+/// The value of `f` and the most bytes held while `f` ran, beyond what was held before: by the
+/// whole process when the test runs alone in it ([`alone_in_process`]), else by this thread.
+fn held_while<T>(f: impl FnOnce() -> T) -> (T, usize) {
+    if alone_in_process() {
+        let before = PROCESS_LIVE.load(Ordering::SeqCst);
+        PROCESS_PEAK.store(before, Ordering::SeqCst);
+        let out = f();
+        let held = (PROCESS_PEAK.load(Ordering::SeqCst) - before).max(0) as usize;
+        return (out, held);
+    }
+    let before = LIVE.with(Cell::get);
+    PEAK.with(|peak| peak.set(before));
+    let out = f();
+    let held = (PEAK.with(Cell::get) - before).max(0) as usize;
+    (out, held)
 }
 
 /// The bytes one read from the connection asks for: `READ_CHUNK_BYTES` of the crate, 8 KiB.
@@ -145,11 +183,7 @@ fn serve(replies: &[Arc<Vec<u8>>]) -> (u16, JoinHandle<()>) {
 
 /// The fetch of `asked` and the most bytes it held at once beyond what was held before it.
 fn measure(asked: &str, limits: &Limits) -> (Result<Response, Failure>, usize) {
-    let baseline = CURRENT.load(Ordering::SeqCst);
-    PEAK.store(baseline, Ordering::SeqCst);
-    let result = fetch(asked, limits);
-    let held = PEAK.load(Ordering::SeqCst) - baseline;
-    (result, held)
+    held_while(|| fetch(asked, limits))
 }
 
 /// A 302 whose `Location` is `location`.
@@ -160,7 +194,6 @@ fn redirect(location: &str) -> Vec<u8> {
 #[test]
 fn adversary_a_redirect_to_a_64_kib_address_holds_at_most_the_documented_sum_while_the_body_is_read(
 ) {
-    let _serial = serial();
     let limits = Limits::default();
     // The Location fits the header limit; the address it resolves to is at most 64 KiB.
     let location = format!("/{}", "p".repeat(65_000));
@@ -222,7 +255,6 @@ fn adversary_a_redirect_to_a_64_kib_address_holds_at_most_the_documented_sum_whi
 /// address asked, once against a URL that is itself the 64 KiB result of such a `Location`.
 #[test]
 fn resolving_a_location_at_the_header_limit_holds_at_most_30_or_54_times_the_header_limit() {
-    let _serial = serial();
     let limits = Limits {
         max_body_bytes: 16,
         ..Limits::default()
@@ -342,7 +374,6 @@ fn serve_posts(replies: &[Arc<Vec<u8>>]) -> (u16, JoinHandle<Vec<usize>>) {
 /// as a `Get`, though the request body is 1 MiB.
 #[test]
 fn a_post_body_is_not_copied() {
-    let _serial = serial();
     let limits = Limits::default();
     let body = vec![b'b'; 1024 * 1024];
     let redirect: Arc<Vec<u8>> = Arc::new(
@@ -355,7 +386,9 @@ fn a_post_body_is_not_copied() {
     .into_bytes();
     page.resize(page.len() + limits.max_body_bytes, b'x');
     let page: Arc<Vec<u8>> = Arc::new(page);
-    let (port, server) = serve_posts(&[redirect, page]);
+    // Held until the fetch is measured: the server frees no reply (see [`serve`]).
+    let replies = [redirect, page];
+    let (port, server) = serve_posts(&replies);
     let asked = format!("http://127.0.0.1:{port}/a");
     let request = Request {
         address: &asked,
@@ -364,10 +397,7 @@ fn a_post_body_is_not_copied() {
         media_type: Some("application/octet-stream"),
     };
 
-    let baseline = CURRENT.load(Ordering::SeqCst);
-    PEAK.store(baseline, Ordering::SeqCst);
-    let result = send(&request, &limits);
-    let held = PEAK.load(Ordering::SeqCst) - baseline;
+    let (result, held) = held_while(|| send(&request, &limits));
 
     let bodies = server.join().expect("server thread");
     assert_eq!(bodies, [body.len(), body.len()], "the 307 repeats the body");
@@ -397,7 +427,6 @@ fn a_post_body_is_not_copied() {
 /// one copy of it is red.
 #[test]
 fn a_post_body_written_twice_is_not_copied_while_it_is_written() {
-    let _serial = serial();
     let limits = Limits::default();
     let body = vec![b'b'; 4 * 1024 * 1024];
     let redirect: Arc<Vec<u8>> = Arc::new(
@@ -406,7 +435,9 @@ fn a_post_body_written_twice_is_not_copied_while_it_is_written() {
     let page: Arc<Vec<u8>> = Arc::new(
         b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 2\r\n\r\nok".to_vec(),
     );
-    let (port, server) = serve_posts(&[redirect, page]);
+    // Held until the fetch is measured: the server frees no reply (see [`serve`]).
+    let replies = [redirect, page];
+    let (port, server) = serve_posts(&replies);
     let asked = format!("http://127.0.0.1:{port}/a");
     let request = Request {
         address: &asked,
@@ -415,10 +446,7 @@ fn a_post_body_written_twice_is_not_copied_while_it_is_written() {
         media_type: Some("application/octet-stream"),
     };
 
-    let baseline = CURRENT.load(Ordering::SeqCst);
-    PEAK.store(baseline, Ordering::SeqCst);
-    let result = send(&request, &limits);
-    let held = PEAK.load(Ordering::SeqCst) - baseline;
+    let (result, held) = held_while(|| send(&request, &limits));
 
     let bodies = server.join().expect("server thread");
     assert_eq!(bodies, [body.len(), body.len()], "the 308 repeats the body");

@@ -5,6 +5,7 @@ version = "0.3.0"
 edition = "2024"
 publish = false
 license = "Apache-2.0"
+autotests = false
 
 [[bin]]
 name = "surf"
@@ -14,3 +15,7 @@ path = "src/main.rs"
 surf = { path = "../surf" }
 surf-fetch = { path = "../fetch" }
 surf-ports = { path = "../ports" }
+
+[[test]]
+name = "main"
+path = "tests/main.rs"

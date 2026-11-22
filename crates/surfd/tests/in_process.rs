@@ -2,7 +2,7 @@
 //! `Daemon::start`, speak to it with `surf_agent::wire` and read its list through
 //! `Daemon::sessions()` (decision D29). Case 17 decides on metadata alone.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::io::{ErrorKind, Read, Write};

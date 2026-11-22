@@ -80,12 +80,21 @@ Rules of a round, beside the rules of a wave:
   makes every specification change of round 1, one after the other, and `agent-history-spec`
   is built by the commands unit of round 2 after `agent-form-port`. Scenarios whose code comes
   in round 2 are counted with `REFUSALS_MAX`, as in a specification unit of a wave.
-- Units of round 1 hand over at three points: `page-text-outline` starts on the round's base
-  (wave 10 holds the parser's limits and the labels); `page-text-tables` waits for the parser
+- Units of round 1 hand over at three points: `page-text-answer-block` starts on the round's
+  base and `page-text-outline` follows it in the text unit (wave 10 holds the parser's limits
+  and the labels); `page-text-tables` waits for the parser
   unit's `html-tree-tables`; `page-text-look` waits for `page-text-answer-block`,
   `page-text-outline` and `page-text-markdown`, and `page-text-surf-command` for
   `page-text-tables`. The coordinator merges the finished story's commits into the waiting
   unit's branch.
+- `agent-tasks` runs beside round 1 as a fourth unit and starts when `page-text-answer-block`
+  is in its base (its judge tests build answers with `surf_answer::text_page`).
+- Every command of a round follows the pool's rules: every build and test runs through the
+  build pool; the pool ends a job after 10 minutes, and a command that needs longer names its
+  time with `slot --timeout <t>` or `SLOT_TIMEOUT=<t>`, at most 30 minutes; a script that
+  measures or waits starts without the `slot` prefix. A unit runs the tests of the packages it
+  touched; the coordinator runs the gate once after the round's units, as
+  `slot --timeout 25m task check-runner`.
 - A unit commits on its branch after each story whose tests are green, so that a story that
   fails leaves the stories before it usable.
 - The test budget holds for a round as for a wave: no test over 60 s, the test step within
@@ -131,8 +140,10 @@ The coordinating agent's decision (D85): the work after wave 10 is ordered by th
 item says what an agent can do after it and where it is planned.
 
 1. Read a page. The title and the element rows (`html-document-port`), the page as a tree and
-   as Markdown (drafts on the branch `plan/page-as-tree-and-markdown`), a long answer in parts
-   (`agent-answer-paging`). Round 1.
+   as Markdown (the stories `page-text-*` of round 1). Round 1. A long answer in parts
+   (`agent-answer-paging`) is deferred and comes after round 1 (the coordinating agent's
+   decision D129, 2026-11-22: the text block of round 1 is bounded by its own limits, so no
+   answer needs paging yet).
 2. Reach the web. TLS 1.3 and `https:`: the README's own line is "most of the web is not
    reachable without it". It was on the list after the plan with no date. An epic is drafted
    beside round 1 (branch `plan/useful-for-agents`), with the cryptographic primitives from
@@ -233,8 +244,9 @@ Beside `AGENTS.md` "Planning and waves" and `docs/plan/unit-invariants.md`:
 
 - In a wave of more than one unit, `AGENTS.md`, `README.md`, the root `Taskfile.yml`
   (`REFUSALS_MAX` included) and the root `Cargo.lock` are written by the coordinator on the
-  wave branch, from the units' reports (D7, D16, D30). A specification unit runs its gate as
-  `slot task check REFUSALS_MAX=<n>`.
+  wave branch, from the units' reports (D7, D16, D30). In a round, a specification unit runs
+  `slot task suite REFUSALS_MAX=<n>` and the tests of its packages; the coordinator writes the
+  last `<n>` of the round into `Taskfile.yml` and runs the gate.
 - Every unit is implemented by a sub-agent on Opus; the coordinating session writes no code.
 - One adversary or security review per larger piece, not per unit: after wave 4 (the daemon,
   the session process, the token), after wave 7 (the view's server and page), after wave 11

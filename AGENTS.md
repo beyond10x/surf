@@ -131,7 +131,8 @@ above, and the list of standards itself was written from memory.
   under `taskfiles/forge-watch-test/` (`runs-61fb7a9.json` and `runs-e47b1d1.json` as the forge
   listed them, four written by hand); `taskfiles/planning-only.yml` the task
   `planning-only-test` over `taskfiles/planning-only.sh`, the one list of planning and prose
-  paths, which `.github/workflows/check.yml` calls.
+  paths, which `.github/workflows/check.yml` calls; `taskfiles/test-layout.yml` the tasks
+  `test-layout` and `test-layout-test` over `taskfiles/test-layout.sh`.
 - `rust-toolchain.toml`: the one pinned rustc, `1.99.1`, with the components `rustfmt` and
   `clippy` (the gate uses neither; units run `cargo fmt -p` and `cargo clippy`), profile
   `minimal`. rustup reads it in every directory of the checkout, so `rustc --version` there
@@ -187,6 +188,24 @@ above, and the list of standards itself was written from memory.
   home may set `debug`. cargo reads it from the directory it runs in and its parents, so it
   holds for the root workspace, `conformance/` (run from the root with `--manifest-path`) and
   `generated/rust/` alike.
+- Integration tests: each crate with a `tests/` directory, and `conformance/`, builds them into
+  one test binary (`story:one-test-binary-per-crate`). Its `Cargo.toml` has `autotests = false`
+  under `[package]` and one entry `[[test]]` with `name = "main"` and `path = "tests/main.rs"`;
+  `tests/main.rs` holds a head comment, `#![forbid(unsafe_code)]` (not in `crates/fetch` and
+  `crates/html`, whose counting allocators are `unsafe`; each stays in its module file) and one
+  sorted `mod <file>;` line per file of `tests/`, `mod common;` included. A file reaches the
+  shared helpers with `use crate::common;`. A new test file gets its `mod` line in
+  `tests/main.rs`: cargo builds no file that is not declared there. A module file may also lie
+  one directory down, `tests/<dir>/<stem>.rs`, declared in `tests/main.rs` by the line
+  `#[path = "<dir>/<stem>.rs"]` and the line `mod <stem>;` (`common/` and `data/` are not such
+  directories). A new crate starts with `autotests = false`, `[[test]] name = "main"` and
+  `tests/main.rs`. A test is named `<file>::<name>` (`e2e::e2e_open_go_look_close`)
+  in the binary `<package>::main`. One file's tests are selected with `--test main <file>::`;
+  the filter matches a substring of the name, so where another module's name ends in `<file>`
+  the selection adds `-- --skip <other>::` (`cargo test -p surf-cli --test main cli:: --
+  --skip review1_cli::`). The selections of the repository are listed in
+  `taskfiles/test-layout.sh` (`SELECTIONS`), and a stem added to the skipped list of a selection
+  gets its `--skip <stem>::` in that selection. `task test-layout` holds this form.
 - `crates/<name>/`: one hand-written crate each. One that uses a generated crate depends on it
   by path, `../../generated/rust/crates/<name>`. cargo 1.99.1 refuses a member glob that matches
   nothing (measured 2026-11-20), so `crates/` always holds at least one crate. Format one crate
@@ -414,8 +433,9 @@ above, and the list of standards itself was written from memory.
     it, and `ended_within(pid, bound)`, which waits at most `bound` and returns the time it
     took, or an error that holds the last stat text read. `alive` and `runs` are no longer
     copied into the test helpers. The example `sleeper` is the child its tests start. Standard
-    library only. 8 tests in one binary (`tests/main.rs`). A development dependency of
-    `surf-agent`, `surfd` and `surf-session`; a dependency of `surf-view-fixture`.
+    library only. 8 tests in one binary (`tests/main.rs` over `tests/lines.rs` and
+    `tests/children.rs`). A development dependency of `surf-agent`, `surfd` and
+    `surf-session`; a dependency of `surf-view-fixture`.
   - `crates/html` (`surf-html`): the HTML parser. Since wave 5 it decides a document's encoding
     by the sniffing algorithm and decodes UTF-8, UTF-16LE, UTF-16BE, windows-1252 and
     replacement (`src/encoding.rs`; the other 35 encodings of the label table are decoded as
@@ -471,8 +491,8 @@ above, and the list of standards itself was written from memory.
     per thread, and assert the limit that stopped a parse, its steps and the bytes it allocated,
     no wall time. A test of a limit sets a small limit, the default values are asserted as
     numbers, and no test builds input of a default size (`story:limit-tests-at-small-limits`).
-    Each test file is a test binary of its own until
-    `story:one-test-binary-per-crate`.
+    The test files are modules of the one test binary, whose global allocator is the one of
+    `tests/common/mod.rs` (`story:one-test-binary-per-crate`).
   - `crates/page` (`surf-page`): since wave 9, the title and the actionable elements of a
     `surf-html` tree (`title`, `actionable_elements`), with their kind, target or value and the
     flags `hidden`, `disabled`, `checked` and `required`. `is_hidden` is the rule of
@@ -494,7 +514,7 @@ above, and the list of standards itself was written from memory.
     attributes the crate's functions compared on this thread while searching an element's
     attributes; `tests/label.rs` holds it at 16 per attribute of the page. No crate of the
     product depends on it yet. 58 tests: 24 in `tests/elements.rs` and 34 in `tests/label.rs`,
-    each a test binary of its own until `story:one-test-binary-per-crate`. Depends on
+    modules of the one test binary (`story:one-test-binary-per-crate`). Depends on
     `surf-html` only.
   - `crates/html-conformance` (`surf-html-conformance`): the vendored html5lib-tests (commit
     `c5495c5`, 19 files, 7,134 cases, MIT) and web-platform-tests parser data (commit `13f8051`,
@@ -855,7 +875,8 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   step's failure fails it. Because of `view-test`, `task check` needs Node and Chromium's
   headless shell on the machine (below); the forge's workflow installs Node 22 and the shell
   before it. Since `story:local-gate-equals-forge` it ends with `forge-watch-test` and
-  `planning-only-test`.
+  `planning-only-test`. Since `story:one-test-binary-per-crate` it runs `test-layout` after
+  `lock-check` and `test-layout-test` after `planning-only-test`.
 - `task check-runner`: the gate to run before a merge, `task check` as the forge's runner runs
   it (`taskfiles/check-runner.sh`; `slot task check-runner`). What it does differently from
   `task check`: it runs in `.out/runner/tree`, a clean export of `HEAD` (a clone sharing this
@@ -898,6 +919,40 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   reads (`docs/design/html-parser.md`, `docs/view-stream.md`). An empty list is not planning
   only. On a pull request whose files are all such, the workflow `check` skips every step after
   the listing and ends green; a push to `main` always runs the whole gate.
+- `task test-layout`: `sh taskfiles/test-layout.sh .`, the form of the integration tests
+  (Layout). It visits every directory that holds a `Cargo.toml` and a `tests/` directory
+  (`target`, `node_modules`, `.out`, `.git` and directories whose name starts with a dot not
+  entered; a `Cargo.toml` below a `tests/` directory is a fixture, not a crate). In a file of a
+  test binary it reads each line without its string and char literals and its comments, so a
+  `mod` or a `#![cfg` there counts for nothing. It fails, naming the path or the module: when
+  `tests/main.rs` is missing; when the
+  manifest lacks `autotests = false` in its `[package]` table, or exactly one `[[test]]` entry
+  of exactly `name = "main"` and `path = "tests/main.rs"` (a table header is compared without
+  its spaces and quotes, so `[[ test ]]` and `[["test"]]` count), or holds `test = true` in an
+  `[[example]]` or `[[bench]]` entry; when a line of `tests/main.rs` is not blank, a comment, an
+  inner attribute without `cfg`, a `use` line or a module declaration (`mod <name>;`, or a
+  `#[path]` line and `mod <name>;`); when a test file, or one a directory down (`common/` and
+  `data/` skipped), is not declared; when a file of the binary has `#![cfg` or `#![cfg_attr`
+  anywhere in a line, or an inner attribute `#![` that does not close on its line (the files of
+  the binary: those `tests/main.rs` declares and every child module they declare out of line,
+  with or without `#[path]`, followed to its file; a child whose file it cannot read fails, and
+  so does an out-of-line `mod <name>;` inside an inline module, indented or after a `{` on its
+  line, which it cannot follow; today `crates/secret/tests/secret.rs` declares `src/compare.rs`
+  and the `common/mod.rs` of `surf-agent`, `surfd` and `surf-session` declare
+  `crates/agent/tests/common/base.rs`); and, in a crate of its `SELECTIONS` list, when a module
+  of `tests/main.rs` other than the selected or a skipped one, or any module declared inside a
+  file of the binary (inline or out of line, any visibility, any attribute before it on its line,
+  the selected module's own file included), has a name that ends with the selected or a skipped
+  name, so that the selection's filter or its `--skip` would match its tests. Not seen by the
+  check: a module that a macro expands to, a file pulled in by `include!`, `autotests = false`
+  inside a multi-line string of `[package]`, and a crate reached through a symbolic link. It
+  calls no cargo and prints `test-layout: <d> test directories, <f> test files, one test binary
+  each`.
+- `task test-layout-test`: that script on a copy of the manifests, the `src/*.rs` and the test
+  files under `.out/test-layout/`, thirty-two cases: the copy as it is and four right layouts
+  pass (a comment that names `#![cfg(any())]`, `mod x;` inside a string literal and in a
+  trailing comment, a fixture crate below `tests/data/`), and each of twenty-seven planted
+  defects fails naming its path or module. `SCRIPT=<path>` runs a copy of the script.
 - `task view-test`: the page tests in a browser (`taskfiles/view-test.yml`). It builds
   `surf-agent`, `surf-session` and `surf-view-fixture`, installs `view-tests/` from its
   `package-lock.json` with `npm ci`, and runs `npx playwright test --workers=2` in
@@ -977,9 +1032,11 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
 - `cargo run -p surf-view --example prototype`: serve the live view's page over three scripted
   sessions (open, closed, died) and print one address; open it in a browser on the same machine.
   It shows example data only.
-- `cargo test -p <package> --test <name>` does not build the package's examples. The tests of
-  `surfd` and `surf-agent` that run an example need the whole package run (`cargo test -p
-  surfd`); `crates/view/tests/prototype.rs` builds its example itself.
+- `cargo test -p <package> --test main` does not build the package's examples, nor does
+  `cargo test -p <package> --test main <module>::`, which selects one module of the package's
+  one test binary. The tests of `surfd` and `surf-agent` that run an example need the whole
+  package run (`cargo test -p surfd`); `crates/view/tests/prototype.rs` builds its example
+  itself.
 - `cargo test -p surf-agent` needs `.out/cli/binding.json`: run `slot task cli` first.
 - `crates/session/tests/e2e.rs` runs `surf-agent`, `surfd` and `surf-session` built from this
   tree, or those in the directory `SURF_BIN_DIR` names (the release smoke test sets it to an
@@ -994,6 +1051,19 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `what-works.md`, `roadmap.md`, `how-it-is-built.md`, `principles.md`) in the same commit.
 
 ## The gate's numbers
+
+With `story:one-test-binary-per-crate` (2026-11-22, on `main` at `b98ab10`), one test binary
+per crate: `task test` prints `662 tests: 662 passed, 0 failed, 0 ignored (cargo-nextest 660,
+doc tests 2)`, the same 660 tests under nextest, each now named `<file>::<name>` in the binary
+`<package>::main`, and in the last of three runs
+`test step: 15.3 s of its budget of 120 s`
+(15.7 s, 16.5 s and 15.3 s at a load average of 13.7 to 14.4; on `b98ab10` before the change
+16.6 s, 17.4 s and 15.3 s at 22.1 to 27.0). The root workspace's test executables fell from 80
+(146,442,536 bytes) to 16 (41,435,688 bytes), one per crate. The conformance crate's tests:
+`4 test suites: 28 passed` (the unit tests of `src/lib.rs` 13, of `src/main.rs` 0,
+`tests/main.rs` 15, doc tests 0; 6 suites before), and `task conform-rust` printed `96
+scenarios: 96 passed, 0 failed, 0 error, 0 unsupported`. `task test-layout`: `test-layout: 17
+test directories, 84 test files, one test binary each`.
 
 On 2026-11-22 with ess 0.96.0, after wave 10 of the agent interface plan, on the wave branch
 at `1b234c4` (`main` of release `0.3.0` merged) with the comment on `label` in

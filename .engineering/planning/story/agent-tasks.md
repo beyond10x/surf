@@ -8,9 +8,8 @@ summary: Tasks read from tasks.txt (four without TLS here; https and login added
 relations:
 - decomposes: epic:agent-cli-target
 - depends_on: story:one-test-binary-per-crate
+- depends_on: story:page-text-answer-block
 scope:
-- confidence: cited
-  path: Taskfile.yml
 - confidence: cited
   path: crates/agent-tasks
 - confidence: cited
@@ -19,7 +18,7 @@ scope:
   path: taskfiles/agent-tasks-model.sh
 - confidence: cited
   path: taskfiles/agent-tasks.yml
-revision: 13
+revision: 27
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T07:42:29Z", actor: "human:operator", revision: 11, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T07:42:30Z", actor: "human:operator", revision: 12, decided_on: {"recorded":{"verification":1}}}
@@ -51,7 +50,8 @@ and a model outside it.
 Two shapes this story must not take, both read in the tree: `bin_dir()` of
 `crates/session/tests/common/mod.rs:222-260` runs `cargo build` behind a `OnceLock` when
 `SURF_BIN_DIR` is unset, and under cargo-nextest every test is its own process
-(`Taskfile.yml:327-329`, `.config/nextest.toml`), so a nested cargo and a `surfd` per test would
+(`Taskfile.yml:327-329` on `main` at `b98ab10`, which `one-test-binary-per-crate` moves;
+`.config/nextest.toml`), so a nested cargo and a `surfd` per test would
 be paid once per test.
 
 ## The tasks
@@ -87,14 +87,17 @@ Taken by the coordinating agent on 2026-11-22, reversible, reported to the opera
    (round 2 of the panel: this story starts after 0.3.0 is published, so the archive exists).
 4. No nested cargo and no server per test: the binaries are those `task build` made, through a
    `SURF_BIN_DIR` the step `test` sets; one `surfd` and the fixture server are started once per
-   test run, by one test that runs every task. The lane takes about 5 s, at most 10 s.
+   test run, by one test that runs every task. The lane takes about 5 s; the unit measures its
+   time three times and reports it, and a test over 5 s is named in the report.
 5. The model lane runs outside the gate, the forge and `check-runner`. Its driver is a POSIX sh
    script; the gate tests it with a stub command, so the gate makes no model call.
 6. Placement: its own unit after `story:one-test-binary-per-crate`, beside round 1. Round 2 of
    the panel: it starts after release 0.3.0 is published (the release comes before
    `one-test-binary-per-crate` in the plan). Round 3 of the panel: its merge is not ordered
-   against `story:page-text-look`; case 1 gives the expected lines for each base.
-7. Tests go into the crate's one integration-test binary, `crates/agent-tasks/tests/main.rs` (`autotests = false` and `[[test]] name = "main"` in its `Cargo.toml`).
+   against `story:page-text-look`; case 1 gives the expected lines for each base. Amended
+   2026-11-22: the unit also starts only when the commits of `story:page-text-answer-block` are
+   in its base (Placement).
+7. Tests go into the crate's one integration-test binary, `crates/agent-tasks/tests/main.rs` (`autotests = false` and one `[[test]]` entry with `name = "main"` and `path = "tests/main.rs"` in its `Cargo.toml`).
 8. Round 2 of the panel: the run's file is the root `.out/agent-tasks.txt`; the test finds the
    `surfd` PID through `/proc`; `task build` builds `agent-tasks-serve`; the paged judge case is
    built in the test from named lines.
@@ -105,18 +108,29 @@ Taken by the coordinating agent on 2026-11-22, reversible, reported to the opera
    block has `match row Pears`, so it passes only on a table row line that holds `Pears` and
    `2.40`; a table flattened to one paragraph (page-text-markdown.md:33, :73) does not pass. It
    stays pending on `story:page-text-tables`; the other tasks keep `match text`, the substring.
+10. D130, 2026-11-22: `tasks::every_task` ends its `surfd` itself. At its end it closes every
+   session, sends SIGKILL to the `surfd` it found, as the `Drop` of `TestDir` in
+   `crates/session/tests/common/mod.rs` does, and waits for it with
+   `surf_test_process::ended_within`, bound 5 s. A `surfd` that `open` started ends on its own
+   only after its idle exit of 600 s (`crates/surfd/src/daemon.rs:46`). The model lane sets
+   `XDG_RUNTIME_DIR` to a new directory in its scratch directory, so that it reaches no `surfd`
+   of the user; at exit it sends SIGKILL to every `surfd` whose `environ` holds that directory
+   and waits for each with a bound of 5 s.
 
 ## Placement
 
-Its own unit, started after release 0.3.0 is published and after the merge of
-`story:one-test-binary-per-crate` (an edge), beside the units of round 1, before round 2. It
+Its own unit, started after release 0.3.0 is published, after the merge of
+`story:one-test-binary-per-crate` (an edge) and when the commits of
+`story:page-text-answer-block` are in its base (an edge: its judge tests build answers with
+`surf_answer::text_page`), beside the units of round 1, before round 2. It
 merges before or after `story:page-text-look` and `story:page-text-tables`; case 1 gives the lines of each base. It writes no
 file of round 1 but two shared ones:
 
 - `Taskfile.yml`: in a wave or round of more than one unit the coordinator writes the root
   `Taskfile.yml` from the unit's report (agent-waves.md, "Rules of a wave in this plan"). The
   report names the three changes below; they go in after `one-test-binary-per-crate`'s changes
-  to the same file.
+  to the same file, after the units. On the unit's branch the unit builds and runs its test
+  without them (Change, the `Taskfile.yml` item).
 - `docs/releasing.md`: also written by `story:tls-release` (tls-release.md:145-147, "never in the
   same wave") and, through it, the age check of `story:tls-anchors` (tls-anchors.md:100). This
   story's unit runs beside round 1, before the TLS unit of four can start (at a boundary between
@@ -148,13 +162,16 @@ task (`story:agent-tasks-https`) reads them.
     its first line and serves until it is killed. `/results?q=<query>` answers
     `results-<query>.html` when it exists and `results-none.html` otherwise. `task build` builds
     it into `target/debug/agent-tasks-serve`: its step is `cargo build --workspace --all-targets`
-    (`Taskfile.yml:319`) and the workspace takes every `crates/*` (`Cargo.toml:3`).
+    (`Taskfile.yml:319` on `main` at `b98ab10`; `one-test-binary-per-crate` moves it) and the
+    workspace takes every `crates/*` (`Cargo.toml:3`).
 - The scripted lane, in the gate: module `tasks` of `crates/agent-tasks/tests/main.rs`, one test
   `every_task`. It starts the fixture server once (a thread of the test) and runs the tasks one
   after the other with the `surf-agent`, `surfd` and `surf-session` of `SURF_BIN_DIR`, in one
   private `XDG_RUNTIME_DIR` with a `PATH` that holds only that directory, so one `surfd` serves
-  every task; at its end it closes every session and waits for `surfd` to end with
-  `surf_test_process::ended_within`. The test finds `surfd` as `processes()` of
+  every task; at its end it closes every session, sends SIGKILL to the `surfd` it found (as the
+  `Drop` of `TestDir` in `crates/session/tests/common/mod.rs` does: a `surfd` that `open`
+  started ends on its own only after its idle exit of 600 s, `crates/surfd/src/daemon.rs:46`),
+  and waits for it with `surf_test_process::ended_within`. The test finds `surfd` as `processes()` of
   `crates/session/tests/common/mod.rs:92-110` finds a case's processes: every `/proc/<pid>` whose
   `environ` holds `XDG_RUNTIME_DIR=<the test's directory>` and whose `comm` is `surfd`. Per task: `open <start address>`; then the task's own steps,
   each handle found through `surf_answer::parse` by its label in the `now` block of a `look`
@@ -197,16 +214,29 @@ task (`story:agent-tasks-https`) reads them.
   (nothing to do when `check` ran it) and exports `SURF_BIN_DIR={{.ROOT_DIR}}/target/debug` to the
   nextest run, outside its timed part, so no test builds a program (the e2e tests of
   `crates/session` read the same variable through `bin_dir()`); `check` runs `agent-tasks-report`
-  after `test`; the include of `taskfiles/agent-tasks.yml`.
-- `taskfiles/agent-tasks.yml`: `agent-tasks-report` prints `.out/agent-tasks.txt` and fails when
+  after `test`; the include of `taskfiles/agent-tasks.yml`. The coordinator writes these lines
+  after the units, so on the unit's branch the unit runs
+  `SLOT_TIMEOUT=30m cargo build --workspace --all-targets`, then
+  `SURF_BIN_DIR=$PWD/target/debug cargo nextest run -p surf-agent-tasks`, and reads
+  `.out/agent-tasks.txt`.
+- For `AGENTS.md` (D7), handed over in the unit's report: "Commands" gains "`task
+  agent-tasks-report`: prints `.out/agent-tasks.txt`, which `tasks::every_task` of
+  `crates/agent-tasks` writes, and fails when it is missing; `task check` runs it after `test`."
+- `taskfiles/agent-tasks.yml`: each task of the file sets `dir: '{{.TASKFILE_DIR}}/..'`, as
+  `taskfiles/check-runner.yml` does, so that it runs at the repository's root both through the
+  include and with `--taskfile`. `agent-tasks-report` prints `.out/agent-tasks.txt` and fails when
   it is missing; `agent-tasks-archive DIR=<unpacked archive>` runs `SURF_BIN_DIR=<dir>
   SURF_AGENT_TASKS=measure cargo nextest run -p surf-agent-tasks -E 'test(=tasks::every_task)'`
   and prints the file; `agent-tasks-model MODEL=<name>` runs the driver below. Neither of the
-  last two is a step of `check`, `check-runner` or a forge workflow.
+  last two is a step of `check`, `check-runner` or a forge workflow. A selection of a test target
+  that a task, a script or a workflow of this story names gets its line in the list `SELECTIONS`
+  of `taskfiles/test-layout.sh`.
 - The model lane, outside the gate: `taskfiles/agent-tasks-model.sh <bin dir> <out file>`, POSIX
   sh, started without the `slot` prefix (it waits on a model, it builds nothing). It starts
   `agent-tasks-serve` (path `AGENT_TASKS_SERVE`, default `target/debug/agent-tasks-serve`) and
-  kills it by its PID at exit; puts into a scratch directory a `surf-agent` wrapper (sh) that
+  kills it by its PID at exit; it sets `XDG_RUNTIME_DIR` to a new directory in its scratch
+  directory, so that it reaches no `surfd` of the user; at exit it sends SIGKILL to every
+  `surfd` whose `environ` holds that directory and waits for each with a bound of 5 s; puts into a scratch directory a `surf-agent` wrapper (sh) that
   appends its argument words to a log and runs the real one, first on a `PATH` of that directory,
   `<bin dir>`, `/usr/bin` and `/bin`; and per task runs the command named by
   `AGENT_TASKS_MODEL_COMMAND` with one argument, the prompt: the standard output of `surf-agent
@@ -237,22 +267,36 @@ task (`story:agent-tasks-https`) reads them.
     log holds neither) and the line `  answered "<the text after ANSWER: >"`, or `  answered
     nothing` when there is no such line.
 - `docs/releasing.md`, "Cutting a release": step 2 gains "the gate's output holds no line that
-  starts with `raise:`"; step 7 gains, after the smoke test, `task agent-tasks-archive
+  starts with `raise:`"; step 7 gains, after the smoke test, `slot task agent-tasks-archive
   DIR=<dir>/surf-<version>-x86_64-unknown-linux-musl`, whose first line goes into the notes as
   `agent tasks (scripted): <n> tasks, <p> pass, <f> fail, <s> skipped`; step 8 gains: when the
   model lane was run on the release commit, the notes carry `agent tasks: <n> tasks, <p> pass,
   <f> fail, <s> skipped, model <model>, <YYYY-MM-DD>`, the numbers, model and date copied from the
   first line of `.out/agent-tasks-model.txt`.
 
+Bounds for every command of this story. Every build and test runs through the build pool:
+`cargo` is wrapped by the pool's shim, every other command that builds or tests gets the `slot`
+prefix. The pool ends a job after 10 minutes; a command that needs longer names its time with
+`slot --timeout <t>` or `SLOT_TIMEOUT=<t>`, at most 30 minutes; a `timeout` wrapped around the
+command extends nothing. A script that measures or waits starts without the `slot` prefix; the
+builds and test runs inside it carry it. No test runs over 60 s and the test step ends within
+120 s. No Python.
+
 ## Acceptance
 
-`slot task check` exits 0 and prints the lines of `.out/agent-tasks.txt`. The folder's bounds
+The gate, run once by the coordinator after the round's units as
+`slot --timeout 25m task check-runner`, after the coordinator has written the include of
+`taskfiles/agent-tasks.yml` and the `SURF_BIN_DIR` export into `Taskfile.yml`, exits 0 and prints
+the lines of `.out/agent-tasks.txt`; the unit runs the tests of the packages it touched. The
+folder's bounds
 hold: the test step ends within 120 s, no test runs over 60 s, no model call and no network
 request in the test step, nothing is built or started per test, no Python. Each test below is
 timed in the report; any over 5 s is named with its time.
 
-1. On the unit's branch `agent-tasks-report` prints exactly the five lines of the base the branch
-   is on, and no other; the lines follow from the rule of (status row, judged result) in the
+1. On the unit's branch, after `SLOT_TIMEOUT=30m cargo build --workspace --all-targets` and
+   `SURF_BIN_DIR=$PWD/target/debug cargo nextest run -p surf-agent-tasks`, `.out/agent-tasks.txt`
+   holds exactly the five lines of the base the branch is on, and no other (the gate's
+   `agent-tasks-report` prints them once the coordinator has written the include); the lines follow from the rule of (status row, judged result) in the
    Change, and with each base's `status.txt` no `raise:` line and no error arises.
    - Base A, `story:page-text-look` not merged (`look --as` is a usage error, exit 2):
      `status.txt` is exactly `article pending story:page-text-look`, `table pending
@@ -278,10 +322,12 @@ timed in the report; any over 5 s is named with its time.
    merged story gets one `raise:` line per row that story lets pass (`raise: article` for
    `story:page-text-look`; `raise: table` for `story:page-text-tables` once page-text-look is in
    too) and is given the `status.txt` of the base it is now on before it merges.
-2. `tasks::every_task` runs within 10 s and, read through `/proc` as the Change says, has exactly
+2. `tasks::every_task` (its time measured three times by the unit and reported) has, read
+   through `/proc` as the Change says, exactly
    one `surfd` PID in its `XDG_RUNTIME_DIR` from the first `open` to the end of the last task, no
    process whose `comm` is `cargo` among its children, and no process of `SURF_BIN_DIR` left
-   after `surf_test_process::ended_within` returned for that PID (bound 5 s).
+   after the test sent SIGKILL to that PID and `surf_test_process::ended_within` returned for it
+   (a cleanup wait for the event, bound 5 s: SIGKILL ends the process within milliseconds).
 3. `status::a_listed_pass_that_fails_fails`: the judged results of 1 with `status.txt` replaced
    by one that lists `article pass`, the output path a file under `CARGO_TARGET_TMPDIR`: the
    reporting function returns the error `agent-tasks: task article is listed pass and failed: exit
@@ -319,9 +365,11 @@ timed in the report; any over 5 s is named with its time.
    command words of the scripted agent's steps for it, in order (`article` and `table`: `open
    look close`; `link`: `open look follow look close`; `search`: `open look fill press look
    close`).
-7. `model_driver::a_stub_model_is_counted`: `sh taskfiles/agent-tasks-model.sh "$SURF_BIN_DIR"
-   <file under CARGO_TARGET_TMPDIR>` with `AGENT_TASKS_MODEL_COMMAND` set to
-   `crates/agent-tasks/tests/stub-model.sh` and `AGENT_TASKS_MODEL=stub` exits 0 and writes the
+7. `model_driver::a_stub_model_is_counted`: `sh
+   "$CARGO_MANIFEST_DIR/../../taskfiles/agent-tasks-model.sh" "$SURF_BIN_DIR" <file under
+   CARGO_TARGET_TMPDIR>` (a test's working directory is `crates/agent-tasks`) with
+   `AGENT_TASKS_SERVE=$SURF_BIN_DIR/agent-tasks-serve`, `AGENT_TASKS_MODEL_COMMAND` set to
+   `$CARGO_MANIFEST_DIR/tests/stub-model.sh` and `AGENT_TASKS_MODEL=stub` exits 0 and writes the
    text the test builds from `tasks.txt`: first line `agent-tasks-model: <n> tasks, 1 pass, <h -
    1> fail, <n - h> skipped, command stub-model.sh, model stub, <date>`, `<h>` the number of rows
    whose `server` is `http`, then `task article pass 1 calls`, `
@@ -337,16 +385,16 @@ timed in the report; any over 5 s is named with its time.
    downloaded through the bot's route for the forge, as `docs/releasing.md` does its own
    downloads (`$gates gh -- release download 0.3.0 --pattern
    'surf-0.3.0-x86_64-unknown-linux-musl.tar.gz' --dir <dir>`, `gates="b10x-gates --policy
-   ../gates-policy/policy.json --repository beyond10x/surf"`), unpacked; then `task
-   agent-tasks-archive DIR=<dir>/surf-0.3.0-x86_64-unknown-linux-musl` prints exactly the five
+   ../gates-policy/policy.json --repository beyond10x/surf"`), unpacked; then `slot task
+   --taskfile taskfiles/agent-tasks.yml agent-tasks-archive DIR=<dir>/surf-0.3.0-x86_64-unknown-linux-musl` prints exactly the five
    report lines of case 1 for base A: release 0.3.0 has no `--as` (`git show
    263dd71:crates/agent/src/cli.rs` holds no `--as`), so `look --as markdown` is a usage error
    there (measure mode: the listed states play no part; the rows of `tasks.txt` at this story's
    commit: `article`, `table`, `link`, `search`). The unit puts them in its report; the coordinator copies them into the record of
    the wave.
 9. `git diff --stat` of the unit names only `crates/agent-tasks/`, `taskfiles/agent-tasks.yml`,
-   `taskfiles/agent-tasks-model.sh`, `docs/releasing.md` and, from the coordinator,
-   `Taskfile.yml` and `Cargo.lock`.
+   `taskfiles/agent-tasks-model.sh` and `docs/releasing.md` (`Taskfile.yml`, `Cargo.lock` and
+   `AGENTS.md` are the coordinator's, on the wave branch).
 
 ## Out of scope
 

@@ -149,7 +149,7 @@ jobs:
               ;;
           esac
           # The command-line cases run `surf` built above against servers started by the test.
-          cargo test --locked --release --package "$PACKAGE" --target "$TARGET" --test cli
+          cargo test --locked --release --package "$PACKAGE" --target "$TARGET" --test main cli:: -- --skip review1_cli::
           package="$ARCHIVE-$VERSION-$TARGET"
           mkdir -p "dist/$package"
           for binary in "${binaries[@]}"; do

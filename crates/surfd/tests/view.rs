@@ -4,7 +4,7 @@
 //! the built `surfd`. Each case reads the port and the token from `view-url` and asserts what a
 //! route answers.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};

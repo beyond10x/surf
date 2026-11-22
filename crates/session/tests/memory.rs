@@ -5,7 +5,7 @@
 
 #![forbid(unsafe_code)]
 
-mod common;
+use crate::common;
 
 use common::{PageServer, opened, request};
 use surf_session::Session;

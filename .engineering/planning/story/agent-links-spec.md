@@ -11,7 +11,24 @@ relations:
 - depends_on: story:agent-session-process
 - depends_on: story:html-document-port
 - depends_on: story:agent-fetch-post
-revision: 6
+scope:
+- confidence: cited
+  path: conformance/src
+- confidence: cited
+  path: crates/session/src/lib.rs
+- confidence: cited
+  path: crates/surf/src/lib.rs
+- confidence: cited
+  path: generated/rust
+- confidence: cited
+  path: spec/components.yaml
+- confidence: cited
+  path: spec/domains/agent.yaml
+- confidence: cited
+  path: spec/ess-inputs.yaml
+- confidence: cited
+  path: spec/scenarios
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 6}
@@ -47,11 +64,19 @@ story comes after `html-document-port` because both write `crates/surf/src/lib.r
 - Authored scenarios: `spec/scenarios/agent-follow-navigates.yaml` (the navigation starts at the
   given address with `Get`) and `agent-follow-records-handle-and-label.yaml`.
 - `task generate`; `conformance/src/`; `crates/surf/src/lib.rs` only where the regenerated
-  interface forces it. `REFUSALS_MAX` is not written here (decision D30): the unit runs its gate as `slot task check REFUSALS_MAX=<n>`, `<n>` the measured `refused:` count, and its report gives `<n>` and each new refusal with its cause; the coordinator writes the number on the wave branch.
+  interface forces it. `REFUSALS_MAX` is not written here (decision D30): the unit runs the tests of the packages it touched, `<n>` is the measured `refused:` count (`.out/synthesize.log` after `slot task suite REFUSALS_MAX=<n>`), and its report gives `<n>` and each new refusal with its cause; the coordinator writes the last `<n>` of the round on the wave branch and runs the gate once after the round's units, as `slot --timeout 25m task check-runner`.
 
 Surfaces written: `spec/domains/agent.yaml`, `spec/components.yaml`, `spec/scenarios/`,
 `spec/ess-inputs.yaml`, `generated/rust/`, `crates/surf/src/lib.rs` (only if forced),
-`conformance/src/`.
+`conformance/src/`, `crates/session/src/lib.rs` (`command_word` matches every `ActionCommand`).
+
+Bounds for every command of this story. Every build and test runs through the build pool:
+`cargo` is wrapped by the pool's shim, every other command that builds or tests gets the `slot`
+prefix. The pool ends a job after 10 minutes; a command that needs longer names its time with
+`slot --timeout <t>` or `SLOT_TIMEOUT=<t>`, at most 30 minutes; a `timeout` wrapped around the
+command extends nothing. A script that measures or waits starts without the `slot` prefix; the
+builds and test runs inside it carry it. No test runs over 60 s and the test step ends within
+120 s. No Python.
 
 ## For AGENTS.md (handed over in the unit report, decision D7)
 
@@ -60,11 +85,14 @@ Surfaces written: `spec/domains/agent.yaml`, `spec/components.yaml`, `spec/scena
 
 ## Acceptance
 
-`slot task check REFUSALS_MAX=<n>` exits 0 with the scenario total at least 5 above the total recorded before it and
-equal on both runners with `0 failed, 0 error, 0 unsupported`, the two authored files and the
-synthesized `Follow/outcome/requested`, `Follow/outcome/not-holder`,
-`Follow/outcome/no-such-session` and `Follow/outcome/closed` among the passed, and the `refused:`
-count at most 4 above the count recorded before it, `<n>` equal to it, the unit report giving `<n>` and each new refusal with its cause (decision
+On the unit's branch after this story, `slot task conform REFUSALS_MAX=<n>` prints a scenario
+total at least 5 above the total recorded before it with `0 failed, 0 error, 0 unsupported`, and
+`.out/report.json` (the report `task conform` writes with `--report-out`) lists the two authored
+files and the synthesized `Follow/outcome/requested`, `Follow/outcome/not-holder`,
+`Follow/outcome/no-such-session` and `Follow/outcome/closed` as passed;
+`slot task conform-rust REFUSALS_MAX=<n>` and then `task conform-totals` show the same total on
+both runners; and `.out/synthesize.log` holds `<n>` `refused:` lines, at most 4 above the count
+recorded before it, the unit report giving `<n>` and each new refusal with its cause (decision
 D30).
 
 ## Out of scope

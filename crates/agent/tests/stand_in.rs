@@ -1,7 +1,7 @@
 //! Cases 11, 13 to 18 and 28: `surf-agent` against the stand-in serving `surfd.sock` under a short
 //! `XDG_RUNTIME_DIR` of its own.
 
-mod common;
+use crate::common;
 
 use std::ffi::OsString;
 use std::time::{Duration, Instant};

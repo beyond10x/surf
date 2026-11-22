@@ -5,6 +5,7 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 license = "Apache-2.0"
+autotests = false
 
 [dependencies]
 surf-types = { path = "../../generated/rust/crates/surf-types" }
@@ -17,3 +18,7 @@ renderer = { path = "../../generated/rust/crates/renderer" }
 agent = { path = "../../generated/rust/crates/agent" }
 surf-ports = { path = "../ports" }
 surf-fetch = { path = "../fetch" }
+
+[[test]]
+name = "main"
+path = "tests/main.rs"

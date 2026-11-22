@@ -1,7 +1,7 @@
 //! Cases 12 and 25 to 27: usage errors, and the three markers of `cli/surf-agent.yaml` the
 //! client refuses.
 
-mod common;
+use crate::common;
 
 use std::fs::{self, File};
 use std::io::{Seek, Write};

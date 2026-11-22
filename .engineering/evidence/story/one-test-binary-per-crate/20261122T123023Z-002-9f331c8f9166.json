@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T12:30:23Z",
+  "actor": "human:operator",
+  "artifact": "story:one-test-binary-per-crate",
+  "kind": "story",
+  "revision": 23,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "release workflow by workflow_dispatch on the branch at 22d8f4b (case 7)",
+    "reference": "https://github.com/beyond10x/surf/actions/runs/45020354556 conclusion success; each of the four package jobs ran --test main cli:: -- --skip review1_cli:: with 6 passed and 15 filtered out; the two Linux jobs ran taskfiles/release-smoke.sh with 1 passed; the run published nothing"
+  }
+}

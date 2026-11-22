@@ -1,0 +1,15 @@
+//! The integration tests of `surf-session`, one test binary: one module per file of `tests/`.
+//! A new test file gets its `mod` line here (AGENTS.md, Layout).
+
+#![forbid(unsafe_code)]
+
+mod adversary_events;
+mod adversary_view;
+mod built;
+mod common;
+mod core;
+mod e2e;
+mod events;
+mod memory;
+mod redirect;
+mod view;

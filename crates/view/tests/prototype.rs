@@ -65,9 +65,9 @@ fn fresh(path: &Path) -> bool {
 
 /// The example that `cargo test` built, beside this test's directory
 /// (`target/<profile>/examples/prototype`). `cargo test -p surf-view` builds it; `cargo test
-/// --test prototype` alone does not (measured with cargo 1.99.1), so when it is missing or
-/// older than a file it is built from, this builds it once with the cargo running these tests,
-/// into the same directory. No case runs an old program.
+/// -p surf-view --test main prototype::` alone does not (measured with cargo 1.99.1), so when
+/// it is missing or older than a file it is built from, this builds it once with the cargo
+/// running these tests, into the same directory. No case runs an old program.
 fn program() -> PathBuf {
     static BUILT: OnceLock<PathBuf> = OnceLock::new();
     BUILT

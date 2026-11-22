@@ -16,7 +16,7 @@ scope:
   path: crates/answer/tests
 - confidence: inferred
   path: docs/agent-answer.md
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T04:59:49Z", actor: "human:operator", revision: 6, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T04:59:50Z", actor: "human:operator", revision: 7, decided_on: {"recorded":{"verification":1}}}
@@ -90,8 +90,8 @@ the round writes `crates/answer` or `docs/agent-answer.md`.
     String>) -> Result<String, RenderError>`: the header `text <form> <n> of <n> lines from 1,
     <b> of <b> bytes` and every line behind `>`, without the two bounds, with the same check of
     each line.
-- Tests in the crate's existing test files, no new test binary (the crate has six; collapsing
-  them is `story:one-test-binary-per-crate`): golden cases in `tests/golden.rs` with the golden
+- Tests in the crate's existing test files, no new test file (the crate has one test binary
+  after `story:one-test-binary-per-crate`): golden cases in `tests/golden.rs` with the golden
   files `tests/golden/text-tree.txt`, `text-markdown.txt` and `text-forged.txt`; paging and cut
   cases in `tests/cut.rs`; refusals in `tests/parse.rs`; `quote_text` and every new outside field
   in the matrix of `tests/forging.rs`.
@@ -102,6 +102,14 @@ Writes: `docs/agent-answer.md`, `crates/answer/src/lib.rs`, `crates/answer/tests
 
 For `AGENTS.md` (D7): the `crates/answer` entry gains "and the `text` block of page text, every
 body line behind `>`, its characters checked by `escaped_in_text`".
+
+Bounds for every command of this story. Every build and test runs through the build pool:
+`cargo` is wrapped by the pool's shim, every other command that builds or tests gets the `slot`
+prefix. The pool ends a job after 10 minutes; a command that needs longer names its time with
+`slot --timeout <t>` or `SLOT_TIMEOUT=<t>`, at most 30 minutes; a `timeout` wrapped around the
+command extends nothing. A script that measures or waits starts without the `slot` prefix; the
+builds and test runs inside it carry it. No test runs over 60 s and the test step ends within
+120 s. No Python.
 
 ## Acceptance
 

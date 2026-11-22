@@ -6,7 +6,7 @@
 //! generated-compare`) against the one generation `task generated-fresh` wrote (`common`). Needs
 //! `task` and `ess` 0.96.0 on `PATH`, as `task check` does.
 
-mod common;
+use crate::common;
 
 use std::fs;
 use std::os::unix::fs::symlink;
