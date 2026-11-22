@@ -43,7 +43,7 @@ scope:
   path: generated/rust
 - confidence: inferred
   path: spec/domains/agent.yaml
-revision: 12
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 5}
@@ -73,7 +73,13 @@ so the agent gets the reason and status 1 instead of a navigation that never sta
   later entry `did refused at-end`, an entry made by `POST` `did refused post-entry`, all status
   1 with the current state. Otherwise `GoBack` or `GoForward`, then the answer of the page the
   traversal committed at, or `page failed` when it failed. Handles start at 1 again, as for any
-  new document.
+  new document. `back` and `forward` go to an entry of the session's own history, so the three
+  refusals of a target (`address-too-long`, `unsupported-scheme`, `forbidden-destination`,
+  `story:agent-follow-links`, "As decided after the adversary's pass") do not apply to them: an
+  entry whose address was refused never entered the history, since an entry is made only by a
+  committed navigation of a push (`.engineering/planning/story/agent-history-spec.md:82-83`,
+  `:97-98`)
+  and a refused target starts no navigation.
 - `crates/answer`, `docs/agent-answer.md`: `did back`, `did forward`, the refusal reasons, the
   `path` lines `back` and `forward`, each with its `parse` beside its rendering (decision D20 of
   `docs/plan/agent-plan-revision-2.md`).
