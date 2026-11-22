@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T14:35:53Z",
+  "actor": "human:operator",
+  "artifact": "story:ess-0-97-3",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "forge",
+    "reference": "https://github.com/beyond10x/surf/pull/1 at d18c42a: 4 of 4 check runs success"
+  }
+}
