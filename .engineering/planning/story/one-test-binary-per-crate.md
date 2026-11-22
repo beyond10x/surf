@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:one-test-binary-per-crate
 kind: story
-status: draft
+status: active
 title: Each crate has one integration-test binary
 summary: 77 files under crates/*/tests/ are 77 test executables in 16 crates. Every crate with a tests/ directory, and conformance/, gets autotests = false and one [[test]] main over tests/main.rs with one mod line per file; no file moves and no test is removed; a POSIX sh gate check keeps the form; the executables and the test step are measured before and after.
 relations:
@@ -90,7 +90,10 @@ scope:
   path: taskfiles/test-layout.sh
 - confidence: cited
   path: taskfiles/test-layout.yml
-revision: 17
+revision: 19
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T09:00:41Z", actor: "human:operator", revision: 18, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T09:00:41Z", actor: "human:operator", revision: 19, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Context
 
