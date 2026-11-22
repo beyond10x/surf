@@ -7,7 +7,7 @@ title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, against a minimal DOM and under limits per page, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 1
+revision: 2
 ---
 ## Context
 
@@ -373,3 +373,7 @@ is the swell session's, given the requirements above.
    present, each test under 5 s.
 5. Both conformance reports hold at least one passed scenario for every outcome of the commands
    that record a script's end.
+
+## Decisions taken
+
+- S1, the form of the dependency: option a, a git dependency on a release tag of swell. The operator, 2026-11-22 04:51 CET, relayed by the session `host-operator`: "A: git dep on a swell tag". `lock-check` allows that one source by its exact address and tag, and the sentence on dependencies becomes "no third-party crate; one crate of the organization".
