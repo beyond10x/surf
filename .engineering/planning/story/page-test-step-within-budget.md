@@ -24,7 +24,7 @@ scope:
   path: view-tests/playwright.config.mjs
 - confidence: cited
   path: view-tests/tests
-revision: 9
+revision: 10
 ---
 ## Why
 
@@ -207,8 +207,13 @@ Statement 1 comes first; the others follow in any order.
 
 - `impl/round2-view` changes `AGENTS.md` at the page tests' count (:631-633 on `main`) and their
   times (:1319-1320 on `main`); this story writes over the merged text.
-- `wave/tls-1` changes the list of `check` (`Taskfile.yml`:346-374 on `main`), where statement 8
-  adds `step-budgets`; the merge keeps both.
+- `wave/tls-1` changes `Taskfile.yml` in the list of `check` (:338-359 on `main`) and adds the
+  task `slow:` after :359. `step-budgets` goes in as the last item of `check`; the merge keeps
+  both.
+- `wave/tls-1` changes `AGENTS.md` in the paragraph of `task check` (:966-968 and :977-980 on
+  `main`), which statement 9 also changes, and inserts bullets before the bullet of `task
+  view-test` (after :1054 on `main`), next to statement 9's edit of that bullet. The merge keeps
+  both sides of each.
 - `story:test-step-holds-with-tls` changes `Taskfile.yml` at `generated-compare` and
   `conform-totals`, not at `test`'s budget lines (:327 and :330).
 - `story:conformance-step-within-budget` lands on the same tree first: statement 8 reads its
@@ -242,8 +247,11 @@ Statement 1 comes first; the others follow in any order.
    view-test` on the story's commit, each with `cat /proc/loadavg` before and after: all 54 tests
    pass, each prints its budget line with N within the budget, and no test takes over 20 s in the
    JUnit file. The evidence names the load of the three runs (D251).
-9. `task check`'s log shows `three steps: N s (…)`, and its three numbers equal the lines of the
-   three steps in the same log.
+9. `slot --timeout 30m task check > .out/check.log 2>&1` on the story's commit on `wave/round-2`
+   passes, and `.out/check.log` holds the line `three steps: N s (test step A s, conformance step
+   B s, page step C s)`. A, B and C equal the numbers of the lines `test step: …`, `conformance
+   step: …` and `page step: …` in the same log, and N is their sum. The evidence names the commit
+   and quotes the four lines.
 10. Statement 6: the evidence holds statement 1's output of the 10 starts (median, sum, both load
     readings) and names the branch taken, "shared" or "own".
     - "shared": after each run of acceptance 8, `wc -l < .out/view-test/fixture-starts.txt`
@@ -252,6 +260,8 @@ Statement 1 comes first; the others follow in any order.
       are answered `{"error":"command"}`, shown by a test of `crates/view-fixture/tests`.
     - "own": `grep -n` on `AGENTS.md` shows the sentence of statement 6 with its median, its sum
       and its load, and the command that printed them.
+11. The forge: the `check` run of the story's commit on its branch or pull request prints `page
+    step: N s of its budget of <budget> s`. The evidence names the run id and quotes the line.
 
 ## What it does not do
 

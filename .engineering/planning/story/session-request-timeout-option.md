@@ -16,7 +16,7 @@ scope:
   path: crates/session/src/process.rs
 - confidence: cited
   path: crates/session/tests/built.rs
-revision: 6
+revision: 7
 ---
 ## Why
 
@@ -96,6 +96,16 @@ A later run over the target at a higher load is a new defect with its own story.
    `wire::REQUEST_TIMEOUT` planted at 11 s (by hand, removed after) it fails.
 8. Statement 4: `grep -n -- --request-timeout AGENTS.md` shows the sentence of the waits of
    `built` with 1 s.
+9. "At most once": `other_argument_shapes_exit_2` also holds `--request-timeout 1
+   --request-timeout 1 <identity> <socket>` and `--idle-timeout 1 --idle-timeout 1 <identity>
+   <socket>`. Each exits 2, writes nothing on standard output and binds no socket, as the test
+   asserts for every shape (`built.rs`:296-305). `surf-session` writes no usage line on a wrong
+   shape today (`process.rs`:102-104 returns `USAGE_STATUS`), and this story adds none.
+10. "Either order": a test of `built.rs` starts `surf-session --request-timeout 3 --idle-timeout 5
+    <identity> <socket>` and the same with the two options in the reverse order. Each writes
+    `ready`, and `surf_session::process::arguments` (`process.rs`:66) returns `request_timeout`
+    3 s and `idle_timeout` 5 s for both orders. `cargo nextest run -p surf-session -E
+    'test(/^built::/)'` on the story's commit passes.
 
 ## What it does not do
 

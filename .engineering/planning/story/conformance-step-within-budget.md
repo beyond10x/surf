@@ -21,7 +21,7 @@ scope:
   path: conformance/tests/main.rs
 - confidence: cited
   path: taskfiles/slowest-tests.sh
-revision: 10
+revision: 11
 ---
 ## Why
 
@@ -125,16 +125,23 @@ Statement 1 comes first; the others follow in any order.
    file with a digest of its sources, when the probe of statement 1 prints its expected line.
    When the probe fails, the unit stops and reports the runner's refusal text; remedy B is not
    built without a new decision.
-   - A. `conformance/tests/noticed.txt`
-     holds the sha256 of `.out/suite.json` on its first line and then one line per planted
-     defect: its label and the ids of the first 3 scenarios, in the suite's order, that do not
-     pass over it. Each planted-defect test runs its defect over those scenarios only and
-     asserts that at least one does not pass, which is the claim "the suite notices the defect".
-     A stale list can only turn a test red, never green. A fast check in `conform-rust` compares
-     the digest with `.out/suite.json` and, when they differ, fails naming `task slow`. The task
-     `slow` (the lane the rule names), not part of `check`, runs every planted defect over the
-     whole suite, writes `.out/noticed.txt` and compares its bytes with the committed file. The
-     two controls keep the whole suite. Expected: the 29 planted runs fall to 3 scenarios each;
+   - A. `conformance/tests/noticed.txt` holds on its first line `sources <sha256>`, the digest of
+     its four sources: `.out/suite.json`; the planted-defect test modules
+     `conformance/tests/planted_defect.rs`, `review2_planted_defects.rs` and
+     `two_of_each_entity.rs`; `conformance/src/target.rs`; and the `[[package]]` entry of
+     `ess-conformance` in `conformance/Cargo.lock`. Then it holds one line per planted defect:
+     its label and the ids of the first 3 scenarios, in the suite's order, that do not pass over
+     it. Each planted-defect test runs its defect over those scenarios only and asserts that at
+     least one does not pass, which is the claim "the suite notices the defect". A stale list can
+     only turn a test red, never green.
+   - The fast check, a step of `conform-rust` before the timed part, POSIX sh: it computes the
+     digest of the four sources and compares it with the first line. When they differ it fails
+     with the line `conform-rust: the sources of conformance/tests/noticed.txt changed; run task
+     conform-slow`.
+   - The task `conform-slow`, not part of `check`, runs every planted defect over the whole
+     suite, writes `.out/noticed.txt` and compares its bytes with the committed file. It is a
+     subtask of the lane `slow` (statement 6).
+   - The two controls keep the whole suite. Expected: the 29 planted runs fall to 3 scenarios each;
      the step costs about 3 runs of the suite (two controls and step 2). A narrowed suite is the
      probe's question: `SuiteInput::select` of 0.97.4 (`coverage.rs`:964) needs a coverage block
      (:928-931), and the suite of `task suite` has none, so A narrows the `scenarios` map before
@@ -144,14 +151,29 @@ Statement 1 comes first; the others follow in any order.
      after any change of a source.
 5. `AGENTS.md`, the bullet of `task conform-rust` (:1087-1091 on `main`): its tests run under
    cargo-nextest with the 60 s end; one timed part covers the tests and the suite run; the budget
-   line and the ten slowest; under remedy A, `conformance/tests/noticed.txt` and `task slow`. The
-   bullet of `conformance/` (:654-661 on `main`) names `noticed.txt` under remedy A.
+   line and the ten slowest; the fast check, `conformance/tests/noticed.txt` and `task
+   conform-slow`. The bullet of `conformance/` (:654-661 on `main`) names `noticed.txt` and its
+   four sources.
+6. The lane `slow`. The order of `wave/tls-1` and `wave/round-2` onto `main` is open, so the
+   story is written for both trees.
+   - When `Taskfile.yml` of the tree holds a task `slow` (`wave/tls-1` defines it at :376 there,
+     with the subtasks `tls-certs-slow` and `tls-flights-slow`), the story adds `conform-slow` as
+     its third subtask and extends the bullet of `task slow` in `AGENTS.md` (:1225-1235 on
+     `wave/tls-1`) with it.
+   - When it holds none, the story creates `slow` in `Taskfile.yml` after the list of `check`
+     (:338-359 on `main`), with `conform-slow` as its only subtask, never a step of `check`, and
+     a bullet of `task slow` in `AGENTS.md`. The later merge with `wave/tls-1` keeps one `slow`
+     that calls all three subtasks and one bullet that names them.
 
 ### Overlap and order
 
-- `wave/tls-1` changes `Taskfile.yml` at :15 and :43 (includes and tasks of its own), `lock-check` (:136-167)
-  and the list of `check` (:346-374), not `conform-rust` (:83-115). It changes `AGENTS.md` from
-  :1092, the bullet of `task lock-check` right after this story's bullet; the merge keeps both.
+- `wave/tls-1` changes `Taskfile.yml` at :15 and :43 (includes and tasks of its own), `lock-check`
+  (:136-167), the list of `check` (:338-359 on `main`) and adds `slow:` after :359; not
+  `conform-rust` (:83-115). Statement 6 says how the two `slow` meet. In `AGENTS.md` the wave
+  changes the paragraph of `task check` (:966-968 and :977-980 on `main`), inserts bullets before
+  the bullet of `task view-test` (after :1054 on `main`), and changes from :1092, the bullet of
+  `task lock-check` right after this story's bullet of `task conform-rust`; the merge keeps both
+  sides.
 - `story:session-request-timeout-option` changes `AGENTS.md` at the waits of `built` (:1306-1307
   on `main`); this story changes the bullet of `task conform-rust` and the bullet of
   `conformance/`. The sections do not overlap.
@@ -184,14 +206,22 @@ Statement 1 comes first; the others follow in any order.
      line each run already writes (`planted defect: N scenarios`, `review2 [<label>]: N
      scenarios`, `<label>: N scenarios`): 29 lines for the 29 planted defects, each with N at
      most 3, and the 2 lines of the controls with the suite's 170.
-   - The digest check: with the first line of `conformance/tests/noticed.txt` edited by hand,
-     `task conform-rust` fails naming `task slow`. `task slow` on the story's commit writes
-     `.out/noticed.txt` equal byte for byte to the committed file.
+   - The digest check: with the first line of `conformance/tests/noticed.txt` edited by hand, and
+     then with one byte changed in each of the four sources in turn (`.out/suite.json`,
+     `conformance/tests/two_of_each_entity.rs`, `conformance/src/target.rs`, the
+     `ess-conformance` entry of `conformance/Cargo.lock`), `task conform-rust` fails with the line
+     `conform-rust: the sources of conformance/tests/noticed.txt changed; run task conform-slow`.
+     Five runs, each output in the evidence.
+   - `task conform-slow` on the story's commit writes `.out/noticed.txt` equal byte for byte to the
+     committed file, and `task --dry slow` lists `conform-slow`.
    - With one planted defect taken out of its wrapper (by hand), its test fails naming the
      defect.
    Each plant is removed after (`git diff --stat` equal before and after).
 7. `cargo nextest list --manifest-path conformance/Cargo.toml` before and after gives the same 15
    tests.
+8. The forge: the `check` run of the story's commit on its branch or pull request prints
+   `conformance step: N s of its budget of <budget> s`. The evidence names the run id and quotes
+   the line.
 
 ## What it does not do
 
@@ -203,6 +233,6 @@ Statement 1 comes first; the others follow in any order.
 
 ## Scope
 
-The files of `aep plan artifact scope`. In `AGENTS.md` the bullets of `task conform-rust` and of
+The files of `aep plan artifact scope`. In `AGENTS.md` the bullets of `task conform-rust`, of `task slow` and of
 `conformance/`; not the waits of `built` (`story:session-request-timeout-option`) and not the
 bullets of `task view-test` and `task check` (`story:page-test-step-within-budget`).
