@@ -42,7 +42,7 @@ archive (Apple silicon and Intel) holds `surf`: the agent binaries read the call
 file.
 
 ```console
-$ version=0.2.0 target=x86_64-unknown-linux-musl
+$ version=0.3.0 target=x86_64-unknown-linux-musl
 $ base=https://github.com/beyond10x/surf/releases/download/$version
 $ curl -fsSLO $base/surf-$version-$target.tar.gz -fsSLO $base/SHA256SUMS
 $ grep " surf-$version-$target.tar.gz\$" SHA256SUMS | sha256sum --check
@@ -89,8 +89,8 @@ path 2 of 2
 What it does not do yet:
 
 - Only `http:` addresses load: no TLS.
-- Release `0.2.0` delivers a redirect status as the response. Since the seventh wave, not in a
-  release yet, a `go` follows redirects.
+- Release `0.2.0` delivers a redirect status as the response. Since release `0.3.0`, a `go`
+  follows redirects.
 - No JavaScript and no rendering.
 - Nothing of the page's content is shown yet: an answer holds the status, the media type and the
   address.
@@ -102,7 +102,7 @@ Quoting lowers the risk of page text steering an agent; it does not remove it.
 
 ## Watching sessions live
 
-New with the seventh wave, not in a release yet. While `surfd` runs, a page in your browser
+New with the seventh wave, shipped in release `0.3.0`. While `surfd` runs, a page in your browser
 shows its sessions as they act. Open a session with `surf-agent open <url>`, then open the
 address in `$XDG_RUNTIME_DIR/surf/view-url` in a browser on the same machine:
 
@@ -117,7 +117,7 @@ of its actions with a playhead: the page line is that of the action at the playh
 follows the newest action, and the arrow keys move the playhead one action. The selection is
 kept in the address, so a reload shows the same action.
 
-Since the eighth wave, not in a release yet, the right column shows the action at the playhead
+Since the eighth wave, shipped in release `0.3.0`, the right column shows the action at the playhead
 or, after a click on a mark of the timeline, that event with its fields, and the session's
 requests, one row per request. The selected event is kept in the address too. The requests
 list and the selection scroll inside themselves.
@@ -178,7 +178,7 @@ history.
 - **561 tests**, built with warnings treated as errors, and 38 tests of the live view's page in
   a browser.
 
-New with the ninth wave of the current plan, not in a release yet. Nothing a `surf-agent`
+New with the ninth wave of the current plan, shipped in release `0.3.0`. Nothing a `surf-agent`
 command prints has changed:
 
 - **The HTTP client can send a `POST`** with a body and its media type, and after a redirect
@@ -195,7 +195,7 @@ command prints has changed:
   its tests run it: no command runs the parser on a page yet, so an answer still shows no page
   content.
 
-New with the eighth wave of the current plan, not in a release yet:
+New with the eighth wave of the current plan, shipped in release `0.3.0`:
 
 - **The live view's detail panel.** The right column of the page shows the action at the
   playhead or, after a click on a mark, that event with its fields, and the session's requests,
@@ -213,7 +213,7 @@ New with the eighth wave of the current plan, not in a release yet:
   with it. The parser has no limits yet on depth, nodes or time, and no command runs it on a
   page, so an answer still shows no page content.
 
-New with the seventh wave of the current plan, not in a release yet:
+New with the seventh wave of the current plan, shipped in release `0.3.0`:
 
 - **Redirects are followed.** A `go` or an `open` follows up to 20 redirects (301, 302, 303,
   307 and 308 with a `Location`) inside one fetch. The `page` line shows the address the fetch
@@ -228,7 +228,7 @@ New with the seventh wave of the current plan, not in a release yet:
   data pass. No command runs the tokenizer on a page yet, so an answer still shows no page
   content.
 
-New with the sixth wave of the current plan, not in a release yet. Nothing a `surf-agent`
+New with the sixth wave of the current plan, shipped in release `0.3.0`. Nothing a `surf-agent`
 command prints has changed:
 
 - **What sessions do, served live.** `surfd` serves a read-only stream of what its sessions
@@ -246,7 +246,7 @@ command prints has changed:
   hold it. No parser fills it yet, so a real page's document stays unfinished and an answer
   still shows no page content.
 
-New with the fifth wave of the current plan, not in a release yet. Nothing a user of
+New with the fifth wave of the current plan, shipped in release `0.3.0`. Nothing a user of
 `surf-agent` sees has changed:
 
 - **What a session did, kept for the live view.** With each answer, a session's process sends
@@ -334,7 +334,7 @@ plan is [`docs/plan/agent-waves.md`](docs/plan/agent-waves.md) and its design is
 Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `surf-agent`,
 `surfd` and `surf-session`, for Linux only at first. The releases are listed at
 <https://github.com/beyond10x/surf/releases>. After it, work moves to the script engine,
-[swell](https://github.com/beyond10x/swell), a project of its own. Waves 5 to 9 followed; the waves after them are planned and have no date.
+[swell](https://github.com/beyond10x/swell), a project of its own. Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. The waves after them are planned and have no date.
 
 | after wave | what you can do |
 |---|---|

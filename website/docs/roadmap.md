@@ -11,7 +11,7 @@ Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `s
 `surfd` and `surf-session`, for Linux only at first. The
 [releases page](https://github.com/beyond10x/surf/releases) lists the releases. After it, work
 moves to the script engine, [swell](https://github.com/beyond10x/swell), a project of its own.
-Waves 5 to 9 followed; the waves after them are planned, and they and the
+Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. The waves after them are planned, and they and the
 list under "After the plan" have no date.
 
 | after wave | what you can do |

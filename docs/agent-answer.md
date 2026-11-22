@@ -31,7 +31,7 @@ note parser: tables,foreign-content
 
 ## What an answer holds today
 
-The example above shows the whole format. The binaries of release `0.2.0` (`surf-agent`,
+The example above shows the whole format. The binaries of release `0.3.0` (`surf-agent`,
 `surfd`, `surf-session`) parse no page yet, so they print fewer lines:
 
 - the head line, `surf 1 session <id> <state>`;

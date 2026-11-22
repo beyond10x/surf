@@ -273,7 +273,7 @@ above, and the list of standards itself was written from memory.
     the caller owns, and the wire to `surfd` over a Unix socket in `$XDG_RUNTIME_DIR/surf`.
     `wire::caller_uid()` is the one definition of the caller's user id (Linux only). Since wave
     4 `surf-agent open`, `go`, `look` and `close` run against a real `surfd` and a real session
-    process; the package carries the release version, `0.2.0`, as do `surf-cli`, `surfd` and
+    process; the package carries the release version, `0.3.0`, as do `surf-cli`, `surfd` and
     `surf-session`. `open` starts `surfd` from the directory of its own executable. Depends on
     `surf-answer` and `surf-secret`.
   - `crates/surfd` (`surfd`): a library and the binary `surfd`, the daemon the agent command line

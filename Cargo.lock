@@ -62,7 +62,7 @@ dependencies = [
 
 [[package]]
 name = "surf-agent"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "surf-answer",
  "surf-secret",
@@ -75,7 +75,7 @@ version = "0.1.0"
 
 [[package]]
 name = "surf-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "surf",
  "surf-fetch",
@@ -126,7 +126,7 @@ version = "0.1.0"
 
 [[package]]
 name = "surf-session"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "surf",
  "surf-agent",
@@ -182,7 +182,7 @@ dependencies = [
 
 [[package]]
 name = "surfd"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "surf-agent",
  "surf-answer",

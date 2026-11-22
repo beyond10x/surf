@@ -7,6 +7,8 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-22
+
 ### Added
 
 - `surfd` keeps, in memory only, a log of what each session did: each action, the events it
@@ -19,7 +21,8 @@ release; what came before it is in the git log and in `docs/plan/`.
   anything) and listens on 127.0.0.1 only, on a port the system picks. The address and a token
   drawn at start are in `$XDG_RUNTIME_DIR/surf/view-url` (mode 0600), removed when `surfd`
   exits; the routes of data need the token. No session's token is in the stream. The page at
-  that address shows the sessions (below).
+  that address shows the sessions (below). A `surfd` started from a shell also prints that
+  address, with the token, on standard error.
 - The HTML parser (`surf-html`) decides a document's encoding by the HTML Standard's sniffing
   algorithm and decodes UTF-8, UTF-16LE, UTF-16BE and windows-1252, and its tokenizer reads
   tags, attributes, comments, DOCTYPEs, processing instructions and CDATA sections. No command
@@ -60,6 +63,11 @@ release; what came before it is in the git log and in `docs/plan/`.
 - A new crate, `surf-page`, reads a document's title and its links, buttons and form fields out
   of the parser's tree, each with its kind, its target or value, and whether it is hidden,
   disabled, checked or required. No command uses it yet.
+- The fetch library behind `surf` and `surf-agent` (`surf-fetch`) sends a `POST` with a body and
+  its media type (up to 16 MiB of body by default), and after a 301, 302 or 303 to a `POST`
+  continues as a `GET` without the body, as the Fetch Standard says; a 307 or 308 repeats the
+  `POST`. No command sends a `POST` yet: `surf` and `surf-agent go` still send a `GET` with no
+  body.
 
 ### Changed
 

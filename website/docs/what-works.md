@@ -16,7 +16,7 @@ description: What surf does today, and what it does not do yet.
 - **561 tests**, built with warnings treated as errors, and 38 tests of the live view's page in a
   browser.
 
-New with the ninth wave of the current plan, not in a release yet. Nothing a `surf-agent`
+New with the ninth wave of the current plan, shipped in release `0.3.0`. Nothing a `surf-agent`
 command prints has changed:
 
 - **The HTTP client can send a `POST`** with a body and its media type, and after a redirect it
@@ -33,7 +33,7 @@ command prints has changed:
   its tests run it: no command runs the parser on a page yet, so an answer still shows no page
   content.
 
-New with the eighth wave of the current plan, not in a release yet:
+New with the eighth wave of the current plan, shipped in release `0.3.0`:
 
 - **The live view's detail panel.** The right column of the page shows the action at the
   playhead or, after a click on a mark of the timeline, that event with its fields, and the
@@ -51,7 +51,7 @@ New with the eighth wave of the current plan, not in a release yet:
   with it. The parser has no limits yet on depth, nodes or time, and no command runs it on a
   page, so an answer still shows no page content.
 
-New with the seventh wave of the current plan, not in a release yet:
+New with the seventh wave of the current plan, shipped in release `0.3.0`:
 
 - **Redirects are followed.** A `go` or an `open` follows up to 20 redirects (301, 302, 303, 307
   and 308 with a `Location`) inside one fetch. The `page` line shows the address the fetch ended
@@ -70,7 +70,7 @@ New with the seventh wave of the current plan, not in a release yet:
   HTML Standard's own table of 2,231 names. All 4,739 character reference cases of the test data
   pass. No command runs the tokenizer on a page yet, so an answer still shows no page content.
 
-New with the sixth wave of the current plan, not in a release yet. Nothing a `surf-agent`
+New with the sixth wave of the current plan, shipped in release `0.3.0`. Nothing a `surf-agent`
 command prints has changed:
 
 - **What sessions do, served live.** `surfd` serves a read-only stream of what its sessions do:
@@ -88,7 +88,7 @@ command prints has changed:
   parser fills it yet, so a real page's document stays unfinished and an answer still shows no
   page content.
 
-New with the fifth wave of the current plan, not in a release yet. Nothing a user of
+New with the fifth wave of the current plan, shipped in release `0.3.0`. Nothing a user of
 `surf-agent` sees has changed:
 
 - **What a session did, kept for the live view.** With each answer, a session's process sends
@@ -174,8 +174,8 @@ New with the first wave:
 - No window and no rendering. The `renderer` component is specified; it does not render yet.
 - No JavaScript.
 - No `https:`. Only `http:` addresses load.
-- Release `0.2.0` delivers a redirect status as the response; redirects are followed since the
-  seventh wave, not in a release yet.
+- Release `0.2.0` delivers a redirect status as the response; redirects are followed since
+  release `0.3.0`.
 - No page content in an agent's answer: status, media type and address only.
 - The agent binaries run on Linux only.
 - No standard section is marked complete.
