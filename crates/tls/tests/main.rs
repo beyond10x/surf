@@ -8,6 +8,8 @@
 
 #[path = "tls/adversary_anchors.rs"]
 mod adversary_anchors;
+#[path = "tls/adversary_handshake.rs"]
+mod adversary_handshake;
 #[path = "tls/adversary_layer.rs"]
 mod adversary_layer;
 #[path = "tls/adversary_path.rs"]
@@ -20,6 +22,12 @@ mod alloc;
 mod anchors;
 #[path = "tls/der.rs"]
 mod der;
+#[path = "tls/flights.rs"]
+mod flights;
+#[path = "tls/handshake.rs"]
+mod handshake;
+#[path = "tls/handshake_hostile.rs"]
+mod handshake_hostile;
 #[path = "tls/limbo_parse.rs"]
 mod limbo_parse;
 #[path = "tls/names.rs"]

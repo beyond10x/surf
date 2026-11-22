@@ -1,0 +1,61 @@
+version: '3'
+
+set: [pipefail]
+
+tasks:
+  tls-flights-check:
+    desc: Fail when a recorded flight differs from its sha256 in SOURCE or the recorder changed since (no build, no openssl).
+    summary: |
+      Fail when a recorded flight differs from its sha256 in SOURCE or the recorder changed since (no build, no openssl).
+
+      Runs taskfiles/tls-flights-check.sh on crates/tls/tests/data/flights: every *.bin against
+      its line in SOURCE, every line of SOURCE against a file, and
+      crates/tls/examples/record-flights.rs against DIGEST. It prints `tls-flights: <n>
+      recordings match SOURCE, the recorder matches DIGEST`, or one line naming each file that
+      differs, and fails. Then the script's self-test: a copy with one byte changed must fail
+      naming the file. A step of check.
+    dir: '{{.TASKFILE_DIR}}/..'
+    silent: true
+    cmds:
+      - sh taskfiles/tls-flights-check.sh crates/tls/tests/data/flights
+      - sh taskfiles/tls-flights-check.sh --self-test crates/tls/tests/data/flights
+
+  tls-flights-slow:
+    desc: Record the flights of openssl s_server on 127.0.0.1 again into .out/tls-flights and replay them; WRITE=1 writes them.
+    summary: |
+      Record the flights of openssl s_server on 127.0.0.1 again into .out/tls-flights and replay them; WRITE=1 writes them.
+
+      A step of the lane slow, never of check: it builds the example record-flights of
+      surf-tls, which starts `openssl s_server` on 127.0.0.1 once per recording (loopback only)
+      and writes .out/tls-flights/flights/<name>.bin and SOURCE. The server draws its own
+      randomness, so the new files differ from the committed ones byte for byte; the lane
+      requires that each replays to the same outcome: it runs the tests flights:: with
+      SURF_TLS_FLIGHTS set to the new directory. It prints the openssl version and the outcome
+      of each recording.
+
+      With WRITE=1 it replaces crates/tls/tests/data/flights with the new files, writes DIGEST
+      and runs tls-flights-check.
+    dir: '{{.TASKFILE_DIR}}/..'
+    silent: true
+    env:
+      RUSTFLAGS: -D warnings
+    vars:
+      WRITE: '{{.WRITE | default ""}}'
+    cmds:
+      - |
+        set -eu
+        out=.out/tls-flights
+        rm -rf "$out"
+        mkdir -p "$out"
+        cargo build --quiet --locked -p surf-tls --example record-flights
+        echo "tls-flights-slow: $(openssl version)"
+        target/debug/examples/record-flights "$out/flights" "$out/work"
+        recorder=crates/tls/examples/record-flights.rs
+        echo "$(sha256sum "$recorder" | awk '{ print $1 }')  $recorder" > "$out/flights/DIGEST"
+        SURF_TLS_FLIGHTS="$PWD/$out/flights" cargo nextest run --locked -p surf-tls -E 'test(/^flights::/)'
+        if [ '{{.WRITE}}' = 1 ]; then
+          rm -rf crates/tls/tests/data/flights
+          cp -R "$out/flights" crates/tls/tests/data/flights
+          sh taskfiles/tls-flights-check.sh crates/tls/tests/data/flights
+        fi
+        echo "tls-flights-slow: every new recording replays to its outcome"
