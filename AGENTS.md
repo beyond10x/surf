@@ -31,11 +31,16 @@ wanted, not mandatory: "I'm not saying we have to follow a spec, but would be gr
     system are allowed.
   - One exception: audited cryptographic primitives (ciphers, hashes, key exchange, signature
     verification) come from a third-party crate, because hand-written ones leak keys through
-    timing. Which crate is not chosen yet. The TLS protocol code on top of them is written here.
+    timing. The crate is ring 0.17.14 (the operator, 2026-11-22: "A: ring 0.17.14"), used by
+    `surf-tls` alone and allowed by `taskfiles/lock-allow.txt`. The TLS protocol code on top of
+    it is written here.
   - Build and test tooling (`ess`, `task`, test suites) is not runtime and is not covered.
   - `conformance/` is the one place in the repository where a third-party crate is allowed: the
     `ess-conformance` runner and what it brings, in a Cargo workspace of its own. The root
-    `Cargo.lock` proves the rest: it lists no package from outside this repository.
+    `Cargo.lock` proves the rest: every package in it from outside this repository is one of
+    the 19 packages of ring on `taskfiles/lock-allow.txt`, matched on name, version, source and
+    checksum, and no crate of this repository but `surf-tls` depends on one (`task
+    lock-check`).
 
 Status on 2026-11-20: `spec/` was drafted by reasoning over the page load. No standard was read
 for it. Its names, lifecycle states and command boundaries are not checked against the standards
@@ -191,8 +196,9 @@ above, and the list of standards itself was written from memory.
 - Integration tests: each crate with a `tests/` directory, and `conformance/`, builds them into
   one test binary (`story:one-test-binary-per-crate`). Its `Cargo.toml` has `autotests = false`
   under `[package]` and one entry `[[test]]` with `name = "main"` and `path = "tests/main.rs"`;
-  `tests/main.rs` holds a head comment, `#![forbid(unsafe_code)]` (not in `crates/fetch` and
-  `crates/html`, whose counting allocators are `unsafe`; each stays in its module file) and one
+  `tests/main.rs` holds a head comment, `#![forbid(unsafe_code)]` (not in `crates/fetch`,
+  `crates/html` and `crates/tls`, whose counting allocators are `unsafe`; each stays in its
+  module file, and `crates/tls/tests/main.rs` holds `#![deny(unsafe_code)]`) and one
   sorted `mod <file>;` line per file of `tests/`, `mod common;` included. A file reaches the
   shared helpers with `use crate::common;`. A new test file gets its `mod` line in
   `tests/main.rs`: cargo builds no file that is not declared there. A module file may also lie
@@ -257,8 +263,9 @@ above, and the list of standards itself was written from memory.
     case of other spellings over a `TestNetwork` of the test, no real name resolved), `review1_fetch` 5,
     `review1_security_fetch` 13 and
     `review2_fetch_limits` 7. `adversary_redirect_memory` holds an `unsafe`, a counting
-    allocator, test only; since wave 10 `crates/html/tests/common/mod.rs` holds the only other
-    one, also a counting allocator of tests; no file under a `src/` holds any. Depends on
+    allocator, test only; since wave 10 `crates/html/tests/common/mod.rs` holds another, and
+    since `story:tls-lock-allow` `crates/tls/tests/tls/alloc.rs` the third, each a counting
+    allocator of tests; no file under a `src/` holds any. Depends on
     `surf-url`.
   - `crates/ports` (`surf-ports`): in-memory storage and version 4 identities for the generated
     components, one ports type per component. `AgentPorts<R = OsRandom>` stores `Session` and
@@ -541,6 +548,25 @@ above, and the list of standards itself was written from memory.
     `task check`; `.github/workflows/check.yml` fetches the full history and sets
     `HTML_BASE: origin/main`. 27 tests in `surf-html-conformance` (`check` 17,
     `entities_table` 2, `inventory` 4, `readers` 2, `tree_format` 2).
+  - `crates/tls` (`surf-tls`): TLS 1.3 for `https:`, being built (`epic:tls-https`, design
+    note `docs/design/tls.md`). Its one dependency is ring 0.17.14, the one third-party crate in
+    what ships, and `src/crypto.rs`, the seam, is the one file that names it: AEAD seal and
+    open for AES-128-GCM, AES-256-GCM and ChaCha20-Poly1305, SHA-256 and SHA-384 one-shot and
+    running, HMAC, HKDF extract and expand, X25519 and P-256 agreement from a `Random` source,
+    the signature checks of nine schemes behind the trait `SignatureVerifier`, and `REFUSED`
+    (every MD5 or SHA-1 signature, RSA keys under 2048 bits), named before any verification.
+    `src/error.rs` holds the public `Error` of item 6 of the note. The feature `test-tooling`,
+    off by default and never in a release, adds signing from PKCS#8, ring's fixed random
+    sources and `TEST_TOOLING_MARKER`; the crate's dev-dependency on itself turns it on for its
+    tests. `.cargo/config.toml` compiles ring at `opt-level = 3` in the dev and test profiles
+    (item 4 of the note). Tests: one binary, `tests/main.rs` declaring each module of
+    `tests/tls/` with `#[path]`: `alloc` (a counting allocator, per thread, in the form of
+    `crates/html/tests/common/mod.rs`, the third `unsafe` of the repository, test only) and
+    `seam` (one test per Wycheproof file of `tests/data/wycheproof/`, 14 files of commit
+    `65ca494` with `LICENSE` and `SOURCE`; the 103 AES-192 vectors and the AES-GCM nonces other
+    than 96 bits skipped by name; the hashes, signing under `test-tooling`, the refusals, the
+    digests of the vendored files, and that only `crypto.rs` names ring). Depends on `ring`;
+    its tests on `surf-html-conformance` for its JSON reader.
 - `view-tests/`: the Playwright tests of the live view's page (`@playwright/test` 1.65.0,
   Chromium's headless shell, a committed `package-lock.json`), each case with its own
   `surf-view-fixture`: 38 cases, 18 in `tests/first-page.spec.mjs`, 6 in
@@ -979,10 +1005,19 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
 - `task conform-totals`: fail, printing both, when `.out/report.json` (interpreter) and
   `.out/conform-rust.json` (Rust) are of different suites by digest or differ in
   `counts.total`. Needs both runs first.
-- `task lock-check`: fail, naming each as `Cargo.lock: <name> <version> from <source>`, when the
-  root `Cargo.lock` holds a package with a `source` line, that is one from a registry or a git
-  repository. It does not read `conformance/Cargo.lock`. A path dependency outside the
-  repository has no `source` line and is not caught.
+- `task lock-check`: runs `sh taskfiles/lock-check.sh Cargo.lock taskfiles/lock-allow.txt`.
+  It fails, one line per finding, when the root `Cargo.lock` holds a package with a `source`
+  line (one from a registry or a git repository) that matches no line of
+  `taskfiles/lock-allow.txt` on name, version, source and checksum (`Cargo.lock: <name>
+  <version> from <source>: not on the allow-list`, with the listed line when the name is
+  listed); when a crate of this repository other than `surf-tls` depends on a listed package
+  (`Cargo.lock: <package> depends on <allowed>; only surf-tls may`); when a listed line is in
+  no package (`taskfiles/lock-allow.txt: <name> <version> is in no package of Cargo.lock`);
+  and when the lock is missing. Else it prints `Cargo.lock: <n> package(s), 19 from outside
+  this repository, each on the allow-list`. The list holds the 19 packages of ring 0.17.14
+  (`docs/design/tls.md`, item 2), one line `<name> <version> <source> <checksum>` each,
+  sorted; the script's head states the format. It does not read `conformance/Cargo.lock`. A
+  path dependency outside the repository has no `source` line and is not caught.
 - `task generate`: rewrite `generated/rust/` from `spec/`, in place. `ess` refuses, naming the
   file, when a file it wrote was edited since; delete that file or restore it from git, then run
   it again.

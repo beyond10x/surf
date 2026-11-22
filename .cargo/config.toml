@@ -3,3 +3,6 @@ debug = false
 
 [profile.test]
 debug = false
+
+[profile.dev.package.ring]
+opt-level = 3

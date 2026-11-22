@@ -1,0 +1,43 @@
+The data files below and LICENSE are copied unchanged from Wycheproof, a subset of its test
+vectors for the primitives of the seam of surf-tls (docs/design/tls.md, item 10).
+
+repository: https://github.com/C2SP/wycheproof
+address: https://raw.githubusercontent.com/C2SP/wycheproof/<commit>/testvectors_v1/<file>
+commit: 65ca494727a52944c204441c860b039e6786b99b
+commit date: 2026-11-11T22:04:54Z
+fetched: 2026-11-22
+licence: the Apache License 2.0 (LICENSE)
+files: 14
+vectors: 4163
+aes-192 vectors: 103, in aes_gcm_test.json, skipped: ring has no AES-192
+
+sha256 of each file, path relative to this directory:
+
+58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd  LICENSE
+985e5ecc172e181eaf49e89508b9470dcf478002eb7e8559c707eb42dc97dfe7  aes_gcm_test.json
+fe61d25f90e1bde4461d00eafe61049e5f29bd999f36b766df9cda90906ad53d  chacha20_poly1305_test.json
+cdb8bd5d1206fddb6618c69ffa18f303b4752caba321d348d4aacae3f20cbec4  ecdh_secp256r1_test.json
+182db4f3e230f6f9fa9f800d2a614dede30284b8e8438bbfe1171905402e9332  ecdsa_secp256r1_sha256_test.json
+8a5b3ae1760975143414811f13588c24d951d9d8c904195087ba327591dfe9cc  ecdsa_secp384r1_sha384_test.json
+ea80ffebac085e21cb9d3e903e7fa2b448d96702da5b31f061d0b83b430b74b3  ed25519_test.json
+bb2b462a38b251cb52a2aede706d6d4b62b26864f4e80c95497507ddb07c5f1e  hkdf_sha256_test.json
+69ff6ea3657bb9c1b8cdffbbb4e7832353d08fd15c0d9997b03f7a6b180e3678  hkdf_sha384_test.json
+7f6efafc160f4816b96cbf1c12188a31051d7e3f001e27505d9edb5f2a0e325c  rsa_pss_2048_sha256_mgf1_32_test.json
+66d464778b0b2f683a1d1a20e94f77e9472b8cc393b45f423fa08a48e677063c  rsa_pss_2048_sha384_mgf1_48_test.json
+94a917b01ff50fb874cfc05bf29b4af44868d944a6558201cf18380da93fb393  rsa_signature_2048_sha256_test.json
+c571c105d261c0ff588a2888a529f152563fb3b77894b7620d4e4f8f934f2c1d  rsa_signature_2048_sha384_test.json
+16ea24b039905d054bdb6004f5fd179374e150b7b6d73a7ba654b6d00eab12ef  rsa_signature_2048_sha512_test.json
+35c3f5231cf25cc640b524d403461deee9e49441d5d915a3a25b2c8ff5adbe7d  x25519_test.json
+
+Not from Wycheproof: the PKCS#8 keys of the signing tests of tests/tls/seam.rs are constants
+of that file, made once on 2026-11-22 with OpenSSL 3.6.5 for these tests and never
+regenerated. The Ed25519 key is PKCS#8 v1, 48 bytes, as genpkey writes it:
+
+  openssl genpkey -algorithm ed25519 -outform DER
+
+genpkey writes the other three in their traditional form (SEC1, PKCS#1) with -outform DER, so
+each was converted to PKCS#8 v1 unchanged otherwise:
+
+  openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -outform DER | openssl pkcs8 -topk8 -nocrypt -inform DER -outform DER
+  openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-384 -outform DER | openssl pkcs8 -topk8 -nocrypt -inform DER -outform DER
+  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -outform DER | openssl pkcs8 -topk8 -nocrypt -inform DER -outform DER

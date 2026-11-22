@@ -142,32 +142,26 @@ tasks:
         exit 1
 
   lock-check:
-    desc: Fail, naming each package, when the root Cargo.lock holds one from outside this repository.
+    desc: Fail, naming each package, when the root Cargo.lock holds one from outside this repository that is not on taskfiles/lock-allow.txt, or a crate other than surf-tls depends on one that is.
     summary: |
-      Fail, naming each package, when the root Cargo.lock holds one from outside this repository.
+      Fail, naming each package, when the root Cargo.lock holds one from outside this repository
+      that is not on taskfiles/lock-allow.txt, or a crate other than surf-tls depends on one that is.
 
-      Nothing that ships uses a third-party crate (AGENTS.md, Goals), and the root Cargo.lock
-      proves it. cargo writes a source line for every package it takes from a registry or a git
-      repository, and none for a crate it reaches by path. Each package with a source line is
-      named as "Cargo.lock: <name> <version> from <source>". A missing Cargo.lock fails too.
+      Nothing that ships uses a third-party crate but ring, the one source of cryptographic
+      primitives (AGENTS.md, Goals), and the root Cargo.lock proves it with two rules:
+      - every package with a source line (one cargo took from a registry or a git repository)
+        matches a line of taskfiles/lock-allow.txt on name, version, source and checksum;
+      - no crate of this repository but surf-tls depends on a package of that list.
+      A line of the list that no package matches fails too, and so does a missing Cargo.lock.
+      taskfiles/lock-check.sh does the work and names each finding; its head states the format
+      of the list.
 
       conformance/ has a lock of its own, which this does not read: it is the one place a
-      third-party crate is allowed. A path dependency on a directory outside this repository has
-      no source line either, and is not caught here.
+      third-party crate is allowed beside ring. A path dependency on a directory outside this
+      repository has no source line, and is not caught here.
     silent: true
     cmds:
-      - |
-        test -f Cargo.lock || { echo "Cargo.lock: missing; the root workspace's lock is committed"; exit 1; }
-        awk '
-          /^\[\[package\]\]$/ { packages++; name = ""; version = "" }
-          /^name = / { name = $3; gsub(/"/, "", name) }
-          /^version = / { version = $3; gsub(/"/, "", version) }
-          /^source = / { source = $3; gsub(/"/, "", source); print "Cargo.lock: " name " " version " from " source; outside++ }
-          END {
-            if (outside) { print outside " package(s) from outside this repository; nothing that ships may use a third-party crate"; exit 1 }
-            print "Cargo.lock: " packages " package(s), none from outside this repository"
-          }
-        ' Cargo.lock
+      - sh taskfiles/lock-check.sh Cargo.lock taskfiles/lock-allow.txt
 
   generate:
     desc: Rewrite generated/rust from spec/ with ess, in place.
