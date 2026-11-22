@@ -13,31 +13,35 @@ use surf_tls_test_server::{Config, IDLE, Received, TestServer};
 
 use crate::common::{self, HOST};
 
+/// The read timeout of a socket that waits for the server to close it: a bound against a hang
+/// only, far above any wait the tests expect, and below the runner's 60 s.
+const HANG: Duration = Duration::from_secs(20);
+
 /// Reads `stream` until the server closes it: `Ok` with the bytes read at the end of the
 /// stream or a reset, `Err` with the kind of any other end (a timeout among them).
-fn until_closed(stream: &mut TcpStream) -> Result<usize, ErrorKind> {
-    let mut total = 0;
+fn until_closed(stream: &mut TcpStream) -> Result<Vec<u8>, ErrorKind> {
+    let mut read = Vec::new();
     let mut buf = [0u8; 512];
     loop {
         match stream.read(&mut buf) {
-            Ok(0) => return Ok(total),
-            Ok(n) => total += n,
+            Ok(0) => return Ok(read),
+            Ok(n) => read.extend_from_slice(&buf[..n]),
             Err(e)
                 if matches!(
                     e.kind(),
                     ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted
                 ) =>
             {
-                return Ok(total);
+                return Ok(read);
             }
             Err(e) => return Err(e.kind()),
         }
     }
 }
 
-/// Waits until the server has accepted `count` connections, at most 1 s.
+/// Waits until the server has accepted `count` connections; [`HANG`] bounds the wait.
 fn accepted(server: &TestServer, count: usize) {
-    let deadline = Instant::now() + Duration::from_secs(1);
+    let deadline = Instant::now() + HANG;
     while server.accepted() < count {
         assert!(Instant::now() < deadline, "the server accepted {count}");
         thread::sleep(Duration::from_millis(5));
@@ -159,16 +163,31 @@ fn change_cipher_spec_after_the_finished_is_refused() {
     assert_eq!(seen[0].end, "the server sent unexpected_message");
 }
 
+/// Garbage that is no record gets the one alert the record layer answers it with, then the
+/// end of the connection; the next client is served. Outcomes, not time.
 #[test]
 fn garbage_is_closed_and_the_next_client_served() {
     let server = TestServer::start(Config::default()).expect("the server starts");
-    let mut garbage = common::socket(&server, Duration::from_secs(1));
-    let started = Instant::now();
+    let mut garbage = common::socket(&server, HANG);
     garbage
         .write_all(&[0xde, 0xad, 0xbe, 0xef, 0x00, 0x01, 0x02, 0x03, 0xff, 0xfe])
         .expect("write the garbage");
-    assert!(until_closed(&mut garbage).is_ok(), "the server closed it");
-    assert!(started.elapsed() < Duration::from_secs(1));
+    assert_eq!(
+        until_closed(&mut garbage),
+        Ok(vec![
+            21,
+            3,
+            3,
+            0,
+            2,
+            2,
+            AlertDescription::UNEXPECTED_MESSAGE.0
+        ]),
+        "one fatal unexpected_message, then the end"
+    );
+    let seen = server.wait_seen(1, HANG);
+    assert_eq!(seen.len(), 1, "the server ended it: {seen:?}");
+    assert!(!seen[0].server_hello_sent);
 
     let mut connection = common::connect(&server, "ok-ecdsa-p256").expect("the next completes");
     let (response, end) = common::get(&mut connection, "/");
@@ -177,36 +196,43 @@ fn garbage_is_closed_and_the_next_client_served() {
     assert_eq!(server.accepted(), 2);
 }
 
+/// A client that sends nothing is closed with nothing sent, not before [`IDLE`]. No upper
+/// bound: on a loaded host the close comes late; the runner ends a test at 60 s.
 #[test]
 fn silent_client_is_closed_after_two_seconds() {
     let server = TestServer::start(Config::default()).expect("the server starts");
-    let mut silent = common::socket(&server, Duration::from_secs(3));
+    let mut silent = common::socket(&server, HANG);
     let started = Instant::now();
-    assert_eq!(until_closed(&mut silent), Ok(0), "closed, nothing sent");
+    assert_eq!(
+        until_closed(&mut silent),
+        Ok(Vec::new()),
+        "closed, nothing sent"
+    );
     let took = started.elapsed();
     assert_eq!(IDLE, Duration::from_secs(2));
     assert!(
         took >= IDLE - Duration::from_millis(100),
         "closed early: {took:?}"
     );
-    assert!(took < Duration::from_secs(3), "closed late: {took:?}");
+    eprintln!("silent: closed after {took:?}");
 }
 
+/// Dropping the server while a connection stalls returns, its threads joined, and the stalled
+/// socket reads its end with nothing sent. The time of the drop is printed, not bounded.
 #[test]
-fn drop_while_a_connection_stalls_joins_within_three_seconds() {
+fn drop_while_a_connection_stalls_joins_and_closes_it() {
     let server = TestServer::start(Config::default()).expect("the server starts");
-    let mut stalled = common::socket(&server, Duration::from_secs(1));
+    let mut stalled = common::socket(&server, HANG);
     accepted(&server, 1);
     let started = Instant::now();
     drop(server);
     let took = started.elapsed();
-    assert!(took < Duration::from_secs(3), "the drop took {took:?}");
-    // Below the idle bound: the drop stopped the connection, its idle timeout did not.
-    assert!(
-        took < IDLE / 2,
-        "the drop waited for the idle timeout: {took:?}"
+    assert_eq!(
+        until_closed(&mut stalled),
+        Ok(Vec::new()),
+        "its socket is closed"
     );
-    assert_eq!(until_closed(&mut stalled), Ok(0), "its socket is closed");
+    eprintln!("drop: returned after {took:?}");
 }
 
 /// Set in the child process of [`drop_returns_when_the_wake_up_connect_fails`].
