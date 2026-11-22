@@ -1,7 +1,7 @@
 # The agent answer
 
 Every command of the agent command line answers in this format, reads included. It is line
-text, printable ASCII only. The reader is a language model, and page text is untrusted input to
+text, printable ASCII only but for the body lines of the `text` block (section "Text"). The reader is a language model, and page text is untrusted input to
 it, so no value from a page, a server or an address can start a line, end one, or look like a
 field of the format. This lowers the risk of a page steering an agent; it does not remove it.
 
@@ -62,7 +62,9 @@ path 3 of 3
 
 - An answer is one or more lines. Every line ends in a line feed (U+000A), the last one too.
   No line is empty, and no line holds a carriage return.
-- Every byte of a line is from U+0020 to U+007E.
+- Every byte of a line is from U+0020 to U+007E. The one exception is a body line of the
+  `text` block: it holds UTF-8 characters above U+007F too, but those rule 2 of section "Text"
+  names.
 - The first line is the head line. The blocks follow in this order, each at most once unless
   it says otherwise, each left out when the answer has nothing for it:
   1. `token`
@@ -70,6 +72,7 @@ path 3 of 3
   3. `page`
   4. `path` and its indented lines
   5. `note` lines, any number
+  6. `text`, its body lines and its `more` line, which is the last line of the answer
 - A line is made of words of the format, numbers and quoted fields, separated by one space.
   Only a quoted field holds a value from a page, a server or an address. A word is checked
   against its character set below, and the renderer refuses an answer with a word outside it
@@ -189,6 +192,8 @@ field when it had one.
 
 ```
 note parser: <parts>
+note text: no-css
+note text: no-document
 ```
 
 A `note` line says what the answer cannot show yet. The list is fixed, and a story that adds a
@@ -199,6 +204,66 @@ note adds it here:
   (`html-document-port` exposes the list as `Browser::parser_not_yet_parsed`), joined by `,`
   without spaces, at least one. Each name is a word of `[a-z-]+`; the renderer refuses
   another (decision D31).
+- `note text: no-css`: the `text` block is computed from the document's tree without CSS, so
+  text a style sheet hides is shown, in source order.
+- `note text: no-document`: page text was asked for, but the load failed or the page is not
+  HTML; the answer has no `text` block.
+
+### Text
+
+```
+text <form> <shown> of <total> lines from <first>, <bytes shown> of <bytes total> bytes
+>
+> <line>
+more <n> lines: look --as <form> --from-line <m>
+```
+
+Page text in bulk: the lines of one rendering of the page, `tree` (the outline of the document's
+tree, `docs/design/page-as-text.md` section 5) or `markdown` (its content as Markdown, sections
+3 and 4 of that note). Only in the answer to a call that asks for it (`--as`), after the `note`
+lines. The rules are those of section 3 of that note; this section copies them, and the note is
+the one place of rule 2.
+
+- The header names the form, how many lines are shown of how many the rendering has, the
+  number of the first line shown (counted from 1), and the bytes of the body lines shown of the
+  bytes of all of them. Exactly `<shown>` body lines follow, each `>` alone (an empty line) or
+  `> ` and the line. Bytes count a body line with its prefix and its line feed. No line surf
+  writes for itself starts with `>`, so a line without it is surf's wherever it stands. With
+  the prefix the block is a Markdown block quote.
+- Characters (rule 2, decision D1 B). A body line holds printable ASCII and UTF-8 characters,
+  but these are written as `\x` and two lower-case hexadecimal digits per UTF-8 byte: U+0000 to
+  U+001F, U+007F to U+009F; U+00AD, U+034F, U+061C, U+115F to U+1160, U+17B4 to U+17B5, U+180B
+  to U+180F, U+200B to U+200F, U+2028 to U+202E, U+2060 to U+206F, U+3164, U+FE00 to U+FE0F,
+  U+FEFF, U+FFA0, U+FFF0 to U+FFFB, U+1BCA0 to U+1BCA3, U+1D173 to U+1D17A; U+E000 to U+F8FF
+  and U+F0000 to U+10FFFF; U+40000 to U+EFFFF; U+FDD0 to U+FDEF and U+nFFFE, U+nFFFF of planes
+  0 to 3; U+FF02, U+FF08, U+FF09, U+FF1C, U+FF1E, U+FF20, U+FF3B, U+FF3C, U+FF3D, U+FF5C. A
+  combining mark of U+0300 to U+036F, U+1AB0 to U+1AFF, U+1DC0 to U+1DFF, U+20D0 to U+20FF or
+  U+FE20 to U+FE2F is escaped when it starts a run of page text (the first code point after a
+  character surf wrote: the `> ` prefix, a `[`, `(<`, a quote, a cell wall) and kept inside a
+  run. U+FFFD is kept. `surf_answer::escaped_in_text` and `escaped_at_run_start` hold the lists.
+  The renderer refuses a body line that holds a line feed or a character `escaped_in_text`
+  names, or whose first character `escaped_at_run_start` names.
+- Escape units. A unit is one character, a `\` with the character it escapes, or the `\x`
+  escapes of one character. Every wrap, cut and `[cut]` falls between units, so no line ends in
+  a bare `\` and `[cut]` is never escaped.
+- What a body line holds: for `tree`, one line of the outline, its texts and attribute values
+  written by `surf_answer::quote_text` or `quote_text_cut` (as `quote`, with the characters
+  of rule 2; note section 5); for `markdown`, one line of Markdown, page text escaped by note
+  sections 3 and 4.
+- Bounds: at most 200 body lines and 32,768 bytes of them, whichever is met first. When lines
+  are left, `more <n> lines: look --as <form> --from-line <m>` ends the block and the answer:
+  `<m>` is `<first>` plus `<shown>`, `<n>` the lines from there to the end. `--from-line` counts
+  the lines of the form asked for (it is not `--from <handle>` of `agent-answer-paging`). Past
+  the end the block is `text <form> 0 of <total> lines from <m>, 0 of <bytes total> bytes`. A
+  line that alone is over the byte bound is shown alone, cut at the last unit that leaves room
+  for `[cut]`, and ends in `[cut]`.
+- The version stays 1: no outside value starts a line, the block is only in an answer to a
+  call that asks for it, after the `note` lines, and `more` is the last line. An answer to a
+  call without `--as` is the same as before the block existed.
+
+`surf_answer::text_page` makes one page of a rendering's lines, reading them one at a time;
+`surf_answer::render_text_whole` writes every line behind `>` without the bounds and without
+`more`, for `surf <url> --as`.
 
 ### Later blocks
 
@@ -213,6 +278,7 @@ U+000A, `DQUOTE` is U+0022, `DIGIT` is `0` to `9`, `ALPHA` is `A` to `Z` and `a`
 
 ```
 answer        = head-line [token-line] [did-line] [page-line] [path-block] *note-line
+                [text-block]
 
 head-line     = "surf" SP "1" SP "session" SP session-id SP state LF
 session-id    = 1*(DIGIT / lower / "-")
@@ -238,9 +304,23 @@ path-line     = "path" SP number SP "of" SP number LF
                                               ; <shown> of <total>, <shown> not above <total>
 path-entry    = SP SP number SP command [SP quoted] LF
 
-note-line     = "note" SP note-parser LF
+note-line     = "note" SP (note-parser / note-text) LF
 note-parser   = "parser:" SP part *("," part)
 part          = 1*(lower / "-")
+note-text     = "text:" SP ("no-css" / "no-document")
+
+text-block    = text-line *body-line [more-line]
+                                              ; exactly <shown> body-line lines; more-line
+                                              ; when <first> + <shown> is not above <total>
+text-line     = "text" SP form SP number SP "of" SP number SP "lines" SP "from" SP number ","
+                SP number SP "of" SP number SP "bytes" LF
+                                              ; <shown> of <total>, <first>,
+                                              ; <bytes shown> of <bytes total>
+form          = "tree" / "markdown"
+body-line     = ">" [SP 1*text-char] LF
+text-char     = %x20-7E / <a UTF-8 character above U+007F not named by rule 2>
+more-line     = "more" SP number SP "lines:" SP "look" SP "--as" SP form SP "--from-line" SP
+                number LF
 
 command       = 1*lower
 number        = "0" / (%x31-39 *DIGIT)
@@ -253,7 +333,11 @@ lower         = %x61-7A
 ```
 
 The grammar is not all of it: an `escaped` sequence stands only for a character that `plain`
-does not hold, and the bytes of a field's escapes are UTF-8 (section "Quoting").
+does not hold, and the bytes of a field's escapes are UTF-8 (section "Quoting"). In the `text`
+block, `<shown>` is at most `<total>` and at most 200, `<bytes shown>` is the bytes of the body
+lines (at most `<bytes total>` and 32,768), `<first>` is at least 1, the lines shown end at or
+before `<total>`, and the first `text-char` of a body line is not a mark `escaped_at_run_start`
+names (section "Text").
 
 ## Exit status and refusals
 

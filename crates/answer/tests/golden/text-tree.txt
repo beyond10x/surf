@@ -1,0 +1,39 @@
+surf 1 session 7f3a open
+did look
+page 200 "text/html" "http://shop.example/" "Fruit shop"
+path 2 of 2
+  1 open
+  2 go "http://shop.example/"
+note text: no-css
+text tree 31 of 31 lines from 1, 668 of 668 bytes
+> html lang="en"
+>   head hid 4
+>   body
+>     h1 "Fruit shop"
+>     p
+>       "Fresh fruit,"
+>       em "picked today"
+>       ". See"
+>       a @l1 href="/offers" "our offers"
+>       "."
+>     ul
+>       li "Apples"
+>       li "Pears"
+>     table
+>       tbody
+>         tr
+>           th "Fruit"
+>           th "Price"
+>           th "Stock"
+>         tr
+>           td "Apple"
+>           td "0.50"
+>           td "120"
+>     img src="/basket.jpg" alt="A basket of apples"
+>     form action="/subscribe" method="post"
+>       label
+>         "E-mail"
+>         input @f1 type="email" name="email"
+>       button @b1 "Subscribe"
+>     script hid 1
+>     div hid 1
