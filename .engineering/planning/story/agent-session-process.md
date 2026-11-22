@@ -17,7 +17,7 @@ scope:
   path: crates/session
 - confidence: inferred
   path: docs/agent-answer.md
-revision: 16
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 7}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 8}
@@ -132,10 +132,14 @@ nothing.
     `Answer` with only `did` set; `crates/answer/tests/golden/did-refused.txt` is that form). A command this session does not know, an argument name it
     does not know (`Request::unknown_arg`), `go` without `arg url`, an `open` after the first:
     `did refused usage`, status 2, with the current state, nothing acted on.
-  - The process: `surf-session [--idle-timeout <seconds>] <identity> <socket path>`. Any other
+  - The process: `surf-session [--idle-timeout <seconds>] [--request-timeout <seconds>]
+    <identity> <socket path>`. Each option comes at most once, before the identity, in either
+    order; `surfd` passes neither (`--request-timeout` added by
+    `story:session-request-timeout-option`). Any other
     argument shape exits 2 without `ready`. It checks that `<identity>` is what
     `wire::session_id` returns for it, draws the token, binds the socket, writes `ready`, and
-    serves one connection at a time with the read deadline `wire::REQUEST_TIMEOUT`. It ends with
+    serves one connection at a time with the read deadline `wire::REQUEST_TIMEOUT`
+    (`--request-timeout` shortens it for a test that starts the binary itself). It ends with
     status 0 after the answer to `close`, at its idle timeout (30 minutes without a request,
     design section 3; `--idle-timeout` shortens it for a test that starts the binary itself),
     and when its standard input reaches its end, each time removing its socket file first.

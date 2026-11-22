@@ -1,12 +1,14 @@
 //! Cases 2, 3, 5, 6, 12, 13 and 14 of `story:agent-session-process`, on the built programs: the
 //! first two through `surf-agent` and `surfd`, the others on a `surf-session` the test starts as
-//! `surfd` starts it. Two more: a request slower than the read deadline is closed and the next
-//! one is served, and an argument shape other than the story's exits 2 without `ready`.
+//! `surfd` starts it. More: a request slower than the read deadline (`--request-timeout 1`) is
+//! closed and the next one is served, the shipped read deadline is 10 s, the two options are
+//! taken in either order, and an argument shape other than the story's exits 2 without `ready`.
 
 #![forbid(unsafe_code)]
 
 use crate::common;
 
+use std::ffi::OsString;
 use std::fs;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
@@ -17,7 +19,8 @@ use common::{
     PageServer, Started, TestDir, agent_call, agent_open, cmdline, contains, opened, path_block,
     regular_files_under, request, session_program, surfd_in_process, wire_as, wire_call, wire_open,
 };
-use surf_agent::wire::REQUEST_MAX;
+use surf_agent::wire::{REQUEST_MAX, REQUEST_TIMEOUT};
+use surf_session::process;
 use surfd::link::{self, LinkError, SessionState};
 
 /// `look` with its own token on the session the test started.
@@ -247,18 +250,48 @@ fn standard_output_holds_ready_only() {
 #[test]
 fn request_slower_than_its_deadline_is_closed() {
     let dir = TestDir::new();
-    let session = Started::start(&dir, &[]);
+    let session = Started::start(&dir, &["--request-timeout", "1"]);
     let token = session.open();
     let mut slow = UnixStream::connect(&session.socket).unwrap();
     slow.write_all(b"surf-wire 1\ncommand look\n").unwrap();
     let started = Instant::now();
     let answer = look(&session, &token);
     assert_eq!(answer.status, 0);
+    let waited = started.elapsed();
     assert!(
-        started.elapsed() < Duration::from_secs(50),
-        "the next request waited {:?}, five times the read deadline of 10 seconds is 50",
-        started.elapsed()
+        waited < Duration::from_secs(5),
+        "the next request waited {waited:?}, five times the read deadline of 1 second is 5"
     );
+}
+
+#[test]
+fn the_shipped_read_deadline_is_10_seconds() {
+    assert_eq!(REQUEST_TIMEOUT, Duration::from_secs(10));
+}
+
+#[test]
+fn the_two_options_in_either_order() {
+    let identity = "0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b";
+    for options in [
+        ["--request-timeout", "3", "--idle-timeout", "5"],
+        ["--idle-timeout", "5", "--request-timeout", "3"],
+    ] {
+        let dir = TestDir::new();
+        let session = Started::start(&dir, &options);
+        assert_eq!(session.line, "ready\n", "{options:?}");
+        let words: Vec<OsString> = options
+            .iter()
+            .copied()
+            .chain([identity, "/s"])
+            .map(OsString::from)
+            .collect();
+        let arguments = process::arguments(&words).expect("the shape is accepted");
+        assert_eq!(
+            (arguments.request_timeout, arguments.idle_timeout),
+            (Duration::from_secs(3), Duration::from_secs(5)),
+            "{options:?}"
+        );
+    }
 }
 
 #[test]
@@ -279,6 +312,33 @@ fn other_argument_shapes_exit_2() {
         ],
         vec![
             "--idle-timeout",
+            "0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b",
+            socket,
+        ],
+        vec![
+            "--request-timeout",
+            "0",
+            "0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b",
+            socket,
+        ],
+        vec![
+            "--request-timeout",
+            "0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b",
+            socket,
+        ],
+        vec![
+            "--request-timeout",
+            "1",
+            "--request-timeout",
+            "1",
+            "0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b",
+            socket,
+        ],
+        vec![
+            "--idle-timeout",
+            "1",
+            "--idle-timeout",
+            "1",
             "0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b",
             socket,
         ],

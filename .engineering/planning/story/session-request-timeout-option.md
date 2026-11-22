@@ -16,7 +16,7 @@ scope:
   path: crates/session/src/process.rs
 - confidence: cited
   path: crates/session/tests/built.rs
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T21:48:50Z", actor: "human:operator", revision: 8}
 - {from: "proposed", to: "active", at: "2026-11-22T21:48:50Z", actor: "human:operator", revision: 9}
@@ -86,15 +86,20 @@ A later run over the target at a higher load is a new defect with its own story.
 3. Guard, true on `0f0c157` too: `git grep -n request-timeout crates/surfd crates/agent` prints
    nothing.
 4. Three consecutive runs of `cargo nextest run -p surf-session`, each with `cat /proc/loadavg`
-   before and after: `built::request_slower_than_its_deadline_is_closed` takes under 2 s in each
+   before and after: `built::request_slower_than_its_deadline_is_closed` takes under 3 s in each
    (`target/nextest/default/junit.xml`). The evidence names the load of the three runs (D251).
+   As built: the bound was 2 s; the test waits out its deadline of 1 s and took 1.685 s, 2.028 s
+   and 2.028 s at a load of 107 to 115, down from 10.455 s. 3 s is the bound that
+   `story:test-step-holds-with-tls` uses for a changed test (D261).
 5. With the option parsed and the default of 10 s kept in `serve` (planted in `process.rs` by
    hand, removed after, `git diff --stat` equal before and after), the test fails on its 5 s
    assertion after about 10 s, before the runner's 60 s, with the failure text `the next request
    waited 10.…s, five times the read deadline of 1 second is 5`; the text is in the evidence.
 6. Statement 2: `aep plan artifact show story:agent-session-process` prints the option in its
-   interface record, and `aep plan artifact history story:agent-session-process` shows the
-   `update`.
+   interface record, and the story's commit changes
+   `.engineering/planning/story/agent-session-process.md` with a revision one higher. As built:
+   `aep plan artifact history` lists moves and evidence and no change of a body, so the commit
+   is the record.
 7. Statement 3: `built::the_shipped_read_deadline_is_10_seconds` passes; with
    `wire::REQUEST_TIMEOUT` planted at 11 s (by hand, removed after) it fails.
 8. Statement 4: `grep -n -- --request-timeout AGENTS.md` shows the sentence of the waits of

@@ -1303,8 +1303,10 @@ of the last of those runs: `review1_one_changed_byte_in_any_generated_file_fails
 (`surf-session` `adversary_events`) 7.2 s, `surfd_that_writes_nothing_exits_3_within_6_seconds`
 (`surf-agent` `start`) 5.1 s, `every_character_is_written_as_printable_ascii_and_reads_back`
 (`surf` `escape`) 4.8 s, then five tests of `surf-view` and `surf-session` between 2.3 and 3.7
-s. Three of them waited on purpose. `built` waits out a deadline of the product
-(`wire::REQUEST_TIMEOUT`, 10 s, in `crates/agent/src/wire.rs`). Since
+s. Three of them waited on purpose. `built` waits out a deadline of the product, the read
+deadline of one request; since `story:session-request-timeout-option` it starts `surf-session`
+with `--request-timeout 1` and waits 1 s instead of the shipped `wire::REQUEST_TIMEOUT` of 10 s
+(`crates/agent/src/wire.rs`), which `the_shipped_read_deadline_is_10_seconds` asserts. Since
 `story:test-step-holds-with-tls` the other two wait less: `start`'s case, now
 `surfd_that_writes_nothing_exits_3_within_its_start_timeout`, runs `client::run` in the test
 process with a start timeout of 0.5 s instead of the binary's `wire::START_TIMEOUT` of 5 s (the
