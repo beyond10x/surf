@@ -43,7 +43,7 @@ scope:
   path: generated/rust
 - confidence: inferred
   path: spec/domains/agent.yaml
-revision: 13
+revision: 19
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T04:59:51Z", actor: "human:operator", revision: 12, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T04:59:51Z", actor: "human:operator", revision: 13, decided_on: {"recorded":{"verification":1}}}
@@ -115,7 +115,7 @@ with `html-document-port`. `agent-history-spec` is round 2.
 - The checks of both ends, `check_text` in `crates/surfd/src/link.rs` and
   `crates/agent/src/wire.rs`: a line starting with `>` may hold UTF-8 characters above U+007F
   that `surf_answer::escaped_in_text` does not name; every other line stays printable ASCII.
-- Tests in existing test files, no new test binary: answers in `crates/session/tests/core.rs`
+- Tests in existing test files, no new test file: answers in `crates/session/tests/core.rs`
   with golden files under `crates/session/tests/golden/`, against a server the test starts on
   127.0.0.1; records in `crates/session/tests/events.rs`; one end-to-end case in
   `crates/session/tests/e2e.rs`; the link check in `crates/surfd/tests/adversary_link.rs`; the
@@ -129,15 +129,35 @@ Writes: `spec/domains/agent.yaml`, `generated/rust/`, `cli/surf-agent.yaml`, `cr
 `crates/surfd/src/link.rs`, `crates/surfd/tests/adversary_link.rs`, `crates/session/src/`,
 `crates/session/tests/core.rs`, `crates/session/tests/events.rs`, `crates/session/tests/e2e.rs`,
 `crates/session/tests/golden/`, `crates/session/Cargo.toml` (the dependency on `surf-page-text`).
-`REFUSALS_MAX` is the coordinator's (D30): the unit runs `slot task check REFUSALS_MAX=<n>`.
+`Cargo.lock` gains it: the coordinator's.
+`REFUSALS_MAX` is the coordinator's (D30): the unit runs `slot task cli` (its packages read
+`.out/cli/binding.json`, `crates/agent/tests/drift.rs:72`), then
+`SLOT_TIMEOUT=30m cargo build --workspace --all-targets` (the session manifest changes), then
+`SURF_BIN_DIR=$PWD/target/debug cargo nextest run -p surf-session -p surf-agent -p surfd` (with
+`SURF_BIN_DIR` unset the session tests start a nested `cargo build`,
+`crates/session/tests/common/mod.rs:222-260`), then `slot task suite REFUSALS_MAX=<n>`, and reports `<n>`, the `refused:` count of
+`.out/synthesize.log`; the coordinator writes the last `<n>` of the round and runs the gate once
+after the round's units, as `slot --timeout 25m task check-runner`.
 
 For `AGENTS.md` (D7): the `crates/session` entry gains "`open <url>`, `go <url>` and `look` take
 `--as tree|markdown [--from-line <n>]` and print the page as an outline or as Markdown in a
 `text` block".
 
+Bounds for every command of this story. Every build and test runs through the build pool:
+`cargo` is wrapped by the pool's shim, every other command that builds or tests gets the `slot`
+prefix. The pool ends a job after 10 minutes; a command that needs longer names its time with
+`slot --timeout <t>` or `SLOT_TIMEOUT=<t>`, at most 30 minutes; a `timeout` wrapped around the
+command extends nothing. A script that measures or waits starts without the `slot` prefix; the
+builds and test runs inside it carry it. No test runs over 60 s and the test step ends within
+120 s. No Python.
+
 ## Acceptance
 
-`slot task check REFUSALS_MAX=<n>` exits 0; no test runs over 60 s and the test step ends within
+On the unit's branch after this story, after `slot task cli` and
+`SLOT_TIMEOUT=30m cargo build --workspace --all-targets`,
+`SURF_BIN_DIR=$PWD/target/debug cargo nextest run -p surf-session -p surf-agent -p surfd` passes
+and
+`slot task suite REFUSALS_MAX=<n>` exits 0, `<n>` the count the unit reports; no test runs over 60 s and the test step ends within
 120 s (the folder's budget; the e2e case is timed and named in the report). Among the cases run:
 
 1. `go_as_markdown_prints_the_page` (`core.rs`): `go <url> --as markdown` to a page titled

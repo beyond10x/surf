@@ -8,7 +8,18 @@ summary: MathML and SVG in the tree, integration points, CDATA, and fragments fo
 relations:
 - decomposes: epic:html-parser
 - depends_on: story:html-tree-template
-revision: 6
+scope:
+- confidence: cited
+  path: crates/html-conformance/expected/tree-construction.txt
+- confidence: cited
+  path: crates/html/src/lib.rs
+- confidence: cited
+  path: crates/html/src/tokenizer.rs
+- confidence: cited
+  path: crates/html/src/tree_builder
+- confidence: cited
+  path: crates/html/src/tree_builder.rs
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 5}
@@ -47,6 +58,14 @@ story `html-tree-complete`'s.
 Writes: `crates/html/src/lib.rs`, `crates/html/src/tree_builder.rs`,
 `crates/html/src/tree_builder/`, `crates/html/src/tokenizer.rs` (the CDATA hook only),
 `crates/html-conformance/expected/tree-construction.txt`.
+
+Bounds for every command of this story. Every build and test runs through the build pool:
+`cargo` is wrapped by the pool's shim, every other command that builds or tests gets the `slot`
+prefix. The pool ends a job after 10 minutes; a command that needs longer names its time with
+`slot --timeout <t>` or `SLOT_TIMEOUT=<t>`, at most 30 minutes; a `timeout` wrapped around the
+command extends nothing. A script that measures or waits starts without the `slot` prefix; the
+builds and test runs inside it carry it. No test runs over 60 s and the test step ends within
+120 s. No Python.
 
 ## Acceptance
 

@@ -8,7 +8,14 @@ summary: The remaining failing cases fixed; each tree-construction section marke
 relations:
 - decomposes: epic:html-parser
 - depends_on: story:html-tree-foreign
-revision: 6
+scope:
+- confidence: cited
+  path: crates/html-conformance/expected/tree-construction.txt
+- confidence: cited
+  path: crates/html/src
+- confidence: cited
+  path: docs/design/html-parser.md
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 5}
@@ -41,6 +48,14 @@ refuses it otherwise.
 
 Writes: `crates/html/src/`, `crates/html-conformance/expected/tree-construction.txt`,
 `docs/design/html-parser.md` (one section added, outside the fenced blocks).
+
+Bounds for every command of this story. Every build and test runs through the build pool:
+`cargo` is wrapped by the pool's shim, every other command that builds or tests gets the `slot`
+prefix. The pool ends a job after 10 minutes; a command that needs longer names its time with
+`slot --timeout <t>` or `SLOT_TIMEOUT=<t>`, at most 30 minutes; a `timeout` wrapped around the
+command extends nothing. A script that measures or waits starts without the `slot` prefix; the
+builds and test runs inside it carry it. No test runs over 60 s and the test step ends within
+120 s. No Python.
 
 ## Acceptance
 

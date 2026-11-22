@@ -7,7 +7,7 @@ title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, in the session process, against a DOM generated from Web IDL and under limits per page, when the session's option asks for it, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 34
+revision: 36
 ---
 ## Context
 
@@ -199,8 +199,10 @@ What swell offers, by its committed documents at `6a43e18`, each with a test the
 - Limits per agent (decision 2): `steps_per_entry`, `memory_bytes` (the agent's heap over its
   life), `frame_depth`, `reentry_depth`, `parser_nesting`, `string_length`, `bigint_bits`; 0 is a
   limit of zero. Each ends in an outcome the host reads (HOST-6 to HOST-20, HOST-22); a nested
-  entry spends from the outermost entry's budget (HOST-8); after a budget or an interrupt the
-  agent stays usable (HOST-70).
+  entry spends from the outermost entry's budget (HOST-8); after a step budget or an interrupt
+  the agent stays usable; after a memory budget it stays alive and runs the next entry once the
+  host made room (HOST-70 as narrowed on 2026-11-22, HOST-188 to HOST-190; "Answers of the
+  script engine's session").
 - An `InterruptHandle` that another thread may set (HOST-90 to HOST-96), for a wall-clock bound.
 - Misuse is a defined answer: stale or foreign handles answer `Err` (HOST-30, HOST-31, HOST-45); no
   entry point panics for any argument (HOST-3, a fuzz test); a broken invariant faults the agent
@@ -817,3 +819,10 @@ Later the same day the engine's session revised its 13 stories after four critic
 - `HostObjectSpec` gains `error_kind`: a host object can carry the slot of an error, as Web IDL asks for `DOMException`.
 - The cost ceilings are constants of the engine (`HOST_FUNCTION_LIVE_BYTES`, `HOST_OBJECT_LIVE_BYTES`, `PROPERTY_LIVE_BYTES`, `BINDINGS_REALM_HEAP_BYTES`). The bindings test reads the constants and does not copy their numbers.
 - Batches as revised: H1 holds the changelog rule, the prototype calls and the stack tests; H2 the kept handle, the closed list of intrinsics, string and object charging, host bytes and steps; H3 the error summary, the cost ceilings, the string builtins, the iteration intrinsics and the error site.
+
+Later the same day the engine's session narrowed HOST-70 (its question D28, option A; surf did not object, decision D128 of the coordinating agent). What it states now, and what surf does:
+
+- After `Terminated(StepBudget)` or `Terminated(Interrupted)`, `state()` reads `Alive` and a following script runs. After `Terminated(MemoryBudget)`, `state()` reads `Alive` and the calls that take no memory answer: `state()`, `collect()`, reading and dropping a root the host kept, dropping the agent (HOST-188).
+- An entry whose parse and script need more than the room `memory_bytes` − `heap_bytes()` ends in `Terminated(MemoryBudget)` again, with the agent still `Alive` (HOST-189). Once the host made room, by dropping roots and calling `collect()`, the script `1` answers `Normal(1)` when the room is at least 3,072 bytes (HOST-190).
+- surf: after an entry that ends in `Terminated(MemoryBudget)`, surf calls `collect()` once. If the next entry of that document ends in `Terminated(MemoryBudget)` again, surf runs no further script in that document.
+- Requirement 1 is built in the engine as `Agent::last_entry_error_site`, which answers the line, the column and whether the code was dynamic or host defined, after a parse error or an uncaught throw (HOST-172 to HOST-174).

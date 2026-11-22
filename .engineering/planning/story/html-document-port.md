@@ -14,7 +14,26 @@ relations:
 - depends_on: story:runner-surf-cli-package
 - depends_on: story:agent-fetch-post
 - depends_on: story:one-test-binary-per-crate
-revision: 7
+scope:
+- confidence: cited
+  path: conformance/src/target.rs
+- confidence: cited
+  path: crates/session
+- confidence: cited
+  path: crates/surf-cli/src/main.rs
+- confidence: cited
+  path: crates/surf-cli/tests/main.rs
+- confidence: cited
+  path: crates/surf-cli/tests/page.rs
+- confidence: cited
+  path: crates/surf/Cargo.toml
+- confidence: cited
+  path: crates/surf/src/lib.rs
+- confidence: cited
+  path: crates/surf/tests/main.rs
+- confidence: cited
+  path: crates/surf/tests/parse.rs
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 5}
@@ -89,7 +108,9 @@ for them.
 
 Writes: `crates/surf/src/lib.rs`, `crates/surf/tests/parse.rs` (new), `crates/surf/tests/main.rs` (one `mod` line), `crates/surf-cli/src/main.rs`,
 `crates/surf-cli/tests/page.rs` (new), `crates/surf-cli/tests/main.rs` (one `mod` line), `conformance/src/target.rs`, `crates/session/` (the
-`Browser` construction only).
+`Browser` construction only), `crates/surf/Cargo.toml` (the dependencies on `surf-html` and
+`surf-page`). The root `Cargo.lock` and `conformance/Cargo.lock` change with it: the
+coordinator's.
 
 For `AGENTS.md`, handed over in the report (D7):
 - "Layout", the `crates/surf` entry gains: "The library also runs the `document` component's
@@ -106,12 +127,22 @@ For `README.md`, handed over in the report (D7): the output format of `surf <url
 <target or value>` and `note parser: <parts>`, with one sentence: "Until the parser is complete,
 a `note parser:` line names what it does not yet parse as the HTML Standard says."
 
+Bounds for every command of this story. Every build and test runs through the build pool:
+`cargo` is wrapped by the pool's shim, every other command that builds or tests gets the `slot`
+prefix. The pool ends a job after 10 minutes; a command that needs longer names its time with
+`slot --timeout <t>` or `SLOT_TIMEOUT=<t>`, at most 30 minutes; a `timeout` wrapped around the
+command extends nothing. A script that measures or waits starts without the `slot` prefix; the
+builds and test runs inside it carry it. No test runs over 60 s and the test step ends within
+120 s. No Python.
+
 ## Acceptance
 
-`cargo test -p surf` passes with the three tests of `tests/parse.rs` and `cargo test -p surf-cli`
+After `slot task generated-fresh`, `SLOT_TIMEOUT=30m cargo test -p surf` passes with the three
+tests of `tests/parse.rs` and `cargo test -p surf-cli`
 with the five tests of `tests/page.rs` named in Change, among them a page with a title, three
 links and a form printing the title line and one element line per actionable element, and
-`slot task check` exits 0.
+the gate exits 0, run once by the coordinator after the round's units as
+`slot --timeout 25m task check-runner`.
 
 ## Out of scope
 
