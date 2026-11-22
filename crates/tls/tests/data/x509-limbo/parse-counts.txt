@@ -1,0 +1,34 @@
+limbo-other.json cases 234
+limbo-other.json certificates 978
+limbo-other.json read 944
+limbo-other.json refused 34
+limbo-other.json refused AlgorithmMismatch 1
+limbo-other.json refused BadExtension 5
+limbo-other.json refused BadKey 3
+limbo-other.json refused BadName 4
+limbo-other.json refused DuplicateExtension 1
+limbo-other.json refused SerialTooLong 1
+limbo-other.json refused Truncated 1
+limbo-other.json refused UnsupportedAlgorithm 14
+limbo-other.json refused UnsupportedKey 3
+limbo-other.json refused UnsupportedVersion 1
+limbo-other.json expected-refusal rfc9881::ml-dsa-44 UnsupportedAlgorithm: ML-DSA is not among the signature algorithms of docs/design/tls.md item 14
+limbo-other.json expected-refusal rfc9881::ml-dsa-65 UnsupportedAlgorithm: ML-DSA is not among the signature algorithms of docs/design/tls.md item 14
+limbo-other.json expected-refusal rfc9881::ml-dsa-87 UnsupportedAlgorithm: ML-DSA is not among the signature algorithms of docs/design/tls.md item 14
+limbo-other.json acceptance-1 webpki::san::exact-dns-san
+limbo-bettertls-1.json cases 1228
+limbo-bettertls-1.json certificates 3685
+limbo-bettertls-1.json read 3685
+limbo-bettertls-1.json refused 0
+limbo-bettertls-2.json cases 1228
+limbo-bettertls-2.json certificates 3685
+limbo-bettertls-2.json read 3685
+limbo-bettertls-2.json refused 0
+limbo-bettertls-3.json cases 1228
+limbo-bettertls-3.json certificates 3685
+limbo-bettertls-3.json read 3685
+limbo-bettertls-3.json refused 0
+limbo-bettertls-4.json cases 1225
+limbo-bettertls-4.json certificates 3676
+limbo-bettertls-4.json read 3676
+limbo-bettertls-4.json refused 0

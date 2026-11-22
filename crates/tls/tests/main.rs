@@ -10,6 +10,8 @@
 mod alloc;
 #[path = "tls/der.rs"]
 mod der;
+#[path = "tls/limbo_parse.rs"]
+mod limbo_parse;
 #[path = "tls/pem.rs"]
 mod pem;
 #[path = "tls/seam.rs"]

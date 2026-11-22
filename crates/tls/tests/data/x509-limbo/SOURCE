@@ -1,0 +1,91 @@
+The five limbo-*.json files are a subset of x509-limbo's limbo.json, made by jq from the file
+of the commit below (docs/design/tls.md, item 10): every case not of the family bettertls, and
+the cases of bettertls in file order while the cases kept, each as compact JSON, sum to at most
+20 MiB (20,971,520 bytes). The subset is split by case group so that no test reads it whole:
+limbo-other.json holds 234 cases of the other families, limbo-bettertls-1.json to -4.json
+the kept cases of bettertls (all of them bettertls::nameconstraints) in four runs of file
+order, 1,228, 1,228, 1,228 and 1,225 cases. Each file is {"version":1,"testcases":[...]}, the
+cases in file order, written as compact JSON. LICENSE is copied unchanged. parse-counts.txt is
+written by the tests limbo_parse of surf-tls, not by x509-limbo.
+
+dropped: the field peer_certificate_key of every kept case, after the cases are chosen. It holds
+the peer's private key as PEM (216 values, all in limbo-other.json; null in every bettertls
+case) and is the only field of a case that holds a private key. surf's tests read the
+certificates, trust anchors and expected results; none uses a peer's private key (the test
+server takes its keys from crates/tls-test-certs). Dropping it keeps private keys out of the
+repository. Every other field is kept unchanged.
+
+left out after the cases are chosen: the case online::facebook.com (SUCCESS, SERVER, 3
+certificates). A secret scanner's token pattern (gitleaks square-access-token) matches a run of
+the leaf certificate's base64; the certificate is public and holds no token.
+
+repository: https://github.com/C2SP/x509-limbo
+address: https://raw.githubusercontent.com/C2SP/x509-limbo/<commit>/limbo.json
+commit: b12423782a88abead01141fa6582254e3eb49e74
+commit-date: 2026-11-17T15:57:29Z
+fetched: 2026-11-22
+licence: the Apache License 2.0 (LICENSE)
+
+the whole file at that commit: 41,805,636 bytes, sha256
+56799cefd65fc9e0bdb9cb0f97fce6734533b45df3de4fc17fdc7b7b79654fca, version 1, 9,807 cases
+(935 SUCCESS, 8,872 FAILURE; 9,797 SERVER, 10 CLIENT; by family bettertls 9,572, rfc5280 109,
+webpki 56, crl 22, online 14, pathlen 13, pathological 11, rfc9881 6, cve 3, invalid 1)
+
+chosen: 5,144 cases: the 235 cases of the other families (1,999,896 bytes as compact JSON) and
+the first 4,909 cases of bettertls, bettertls::nameconstraints::tc0 to tc4908 (18,971,513 bytes
+as compact JSON). These sizes are of the cases as upstream has them, online::facebook.com and
+peer_certificate_key included, so the choice of bettertls cases does not depend on what is
+dropped after it.
+kept: 5,143 cases (533 SUCCESS, 4,610 FAILURE; 5,133 SERVER, 10 CLIENT)
+left out: 4,663 cases of bettertls and online::facebook.com
+
+How to make it again: run these commands, with limbo.json the file of the commit above.
+
+  jq -c -f subset.jq limbo.json > kept.json
+  jq -c '.testcases |= map(select(.id != "online::facebook.com") | del(.peer_certificate_key))' kept.json > subset.json
+  jq -c --arg part other -f split.jq subset.json > limbo-other.json
+  for i in 1 2 3 4; do
+    jq -c --arg part "$i" -f split.jq subset.json > "limbo-bettertls-$i.json"
+  done
+
+subset.jq:
+
+  .testcases as $t
+  | ([$t[] | select(.id | startswith("bettertls::") | not) | tojson | utf8bytelength] | add) as $other
+  | (reduce ($t[] | select(.id | startswith("bettertls::")) | tojson | utf8bytelength) as $n
+      ({sum: $other, k: 0, stop: false};
+       if .stop then .
+       elif .sum + $n <= 20971520 then .sum += $n | .k += 1
+       else .stop = true end)) as $r
+  | ([$t[] | select(.id | startswith("bettertls::")) | .id][0:$r.k]) as $kept
+  | ($kept | map({key: ., value: true}) | from_entries) as $keep
+  | {version: .version,
+     testcases: [$t[] | select((.id | startswith("bettertls::") | not) or ($keep[.id] // false))]}
+
+split.jq:
+
+  .version as $v
+  | [.testcases[] | select(.id | startswith("bettertls::") | not)] as $other
+  | [.testcases[] | select(.id | startswith("bettertls::"))] as $b
+  | ($b | length) as $n
+  | (($n + 3) / 4 | floor) as $k
+  | if $part == "other" then {version: $v, testcases: $other}
+    else ($part | tonumber) as $i | {version: $v, testcases: $b[($i - 1) * $k : $i * $k]}
+    end
+
+per file: bytes, cases (SUCCESS, FAILURE), first and last case
+limbo-other.json: 1,934,876 bytes, 234 cases (69, 165), crl::structure::crl-invalid-signature
+to online::stackoverflow.com
+limbo-bettertls-1.json: 4,704,468 bytes, 1,228 cases (140, 1,088), tc0 to tc1227
+limbo-bettertls-2.json: 4,723,954 bytes, 1,228 cases (81, 1,147), tc1228 to tc2455
+limbo-bettertls-3.json: 4,716,526 bytes, 1,228 cases (123, 1,105), tc2456 to tc3683
+limbo-bettertls-4.json: 4,694,134 bytes, 1,225 cases (120, 1,105), tc3684 to tc4908
+
+sha256 of each file, path relative to this directory:
+
+aac73b3148f6d1d7111dbca32099f68d26c644c6813ae1e4f05f6579aa2663fe  LICENSE
+0f94b21c2f3f22ef3cb1f9bc95f07fbe74d70f7259c6db163937d17d854de82d  limbo-bettertls-1.json
+52158d6182e9dd1676a183f8ac4cecaeedb2cef3696fd426123fce82a7b4d5c8  limbo-bettertls-2.json
+58cb97e6221a0558ef42e9613a1be44e20f174c06fd842ebcf0399e0f085600e  limbo-bettertls-3.json
+1169327dea97da1ca435e2048c999096cdef843b8c6324410922e3009d970788  limbo-bettertls-4.json
+267d3de7f8f1e208ad5a1f8fe629fa05fe72f1da168f475f6e4a354750420c14  limbo-other.json

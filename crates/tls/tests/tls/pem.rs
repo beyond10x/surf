@@ -49,6 +49,15 @@ fn a_begin_without_its_end_is_unterminated() {
     assert_eq!(pem::parse(text.as_bytes()), Err(Error::UnterminatedBlock));
 }
 
+#[test]
+fn a_private_key_block_is_returned_with_its_label() {
+    let text = "-----BEGIN PRIVATE KEY-----\nZm9v\n-----END PRIVATE KEY-----\n";
+    assert_eq!(
+        labels_and_data(text),
+        vec![("PRIVATE KEY".to_string(), b"foo".to_vec())]
+    );
+}
+
 /// 16 MiB of `A` with no marker: no block, every byte looked at a bounded number of times
 /// (the count of `parse_counting`), and nothing allocated by it. The time is printed, not
 /// asserted.
@@ -148,7 +157,7 @@ fn the_last_end_line_needs_no_line_break() {
 
 #[test]
 fn an_end_with_another_label_is_a_mismatch() {
-    let text = "-----BEGIN CERTIFICATE-----\nZm9v\n-----END PRIVATE KEY-----\n";
+    let text = "-----BEGIN CERTIFICATE-----\nZm9v\n-----END X509 CRL-----\n";
     assert_eq!(pem::parse(text.as_bytes()), Err(Error::LabelMismatch));
 }
 
