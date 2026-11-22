@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T10:53:01Z",
+  "actor": "human:operator",
+  "artifact": "story:html-parser-limits",
+  "kind": "story",
+  "revision": 23,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate",
+    "reference": "task check-runner on 28e6d1a (2026-11-22 11:48 to 11:52 CET, load average 53 before and 80 after): exit 0 in 240 s; 96 scenarios passed in both conformance runs; 661 tests: 661 passed, 0 failed, 0 ignored; test step: 100.8 s of its budget of 120 s. The same gate on 54f7a4e at 11:37 CET (load 61 to 56): exit 0 in 136 s, test step: 42.6 s. Tests over 5 s in the run on 28e6d1a: 17, the slowest b_505_with_1_024_attributes_each_ends_within_bounds 39.8 s, input_of_16_777_217_bytes_stops_at_the_input_limit 36.2 s, input_of_16_777_217_bytes_as_bytes_stops_at_the_input_limit 33.4 s, node_1_048_577_stops_at_the_node_limit 21.4 s, cloned_attributes_past_64_mib_stop_at_the_stored_bytes_limit 19.3 s; surf-html::limits sums to 220.7 s and surf-html::adversary_limits to 40.4 s of 442.6 s (story:limit-tests-at-small-limits)"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T10:53:02Z",
+  "actor": "human:operator",
+  "artifact": "story:html-parser-limits",
+  "kind": "story",
+  "revision": 23,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "adversary on the unit, then its fix",
+    "reference": "impl/html-parser-limits at 3a8e882, merged into wave/a10-label-limits; the adversary's cases are kept in adversary_limits.rs"
+  }
+}

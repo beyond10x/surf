@@ -30,7 +30,7 @@ collision; a story that collides moves to the next wave. The table below is the 
 | 7 (delivered, [page](agent-wave-7.md)) | `agent-fetch-redirects`, `html-character-references`, `view-first-page` |
 | 8 (delivered, [page](agent-wave-8.md)) | `agent-request-body-spec`, `html-tree-body`, `view-detail-panel` |
 | 9 (delivered, [page](agent-wave-9.md)) | `agent-fetch-post`, `html-actionable-elements`, `html-tree-formatting` |
-| 10 | `html-accessible-name`, `html-parser-limits`; then `one-test-binary-per-crate`, alone, on `main` after the merges of release 0.3.0, `fix/tests-hold-under-load` and this wave; round 1 (the rounds after wave 10) starts after its merge |
+| 10 (delivered, [page](agent-wave-10.md)) | `html-accessible-name`, `html-parser-limits`; then `one-test-binary-per-crate`, alone, on `main` after the merges of release 0.3.0, `fix/tests-hold-under-load` and this wave; round 1 (the rounds after wave 10) starts after its merge |
 | 11 | `html-document-port`, `html-tree-tables` |
 | 12 | `agent-links-spec`, `html-tree-template` |
 | 13 | `agent-follow-links`, `agent-forms-spec`, `html-tree-foreign` |
@@ -43,6 +43,126 @@ collision; a story that collides moves to the next wave. The table below is the 
 | 20 | `runner-record-option`, `runner-replay-transport`, `runner-scenario-from` |
 | 21 | `runner-record-session`, `runner-run` |
 | 22 | `runner-e2e` |
+
+## Rounds after wave 10
+
+The operator, 2026-11-22, on the twelve waves after wave 10: "why don't we, you know, just
+implement all of those like in one go? I mean, we have tests and we should be able to, you
+know, just spit this out in one big one shot". The table above is cut by depth: one chain of
+twelve `depends_on` edges (`html-document-port`, `agent-links-spec`, `agent-forms-spec`,
+`agent-form-port`, `agent-fill-pick`, `agent-press-submit`, `agent-back-forward`,
+`agent-change-and-log`, `runner-formats`, `runner-record-option`, `runner-record-session`,
+`runner-e2e`) gives twelve waves, each with its own branch, gate, record and publication. The
+edges are real (a port needs its specification, a command needs the document), but a unit can
+build a whole chain in order: what must come first is built first inside the unit.
+
+The coordinating agent's decision (D78): after wave 10 the 24 stories of waves 11 to 22 are
+built in three rounds. A round is one wave branch, one gate, one record, one review and one
+publication; its stories keep their identities, statuses and acceptance in the store.
+
+| round | units, each one sub-agent building its stories in the order given | review after it |
+|---|---|---|
+| 1 | parser: `html-tree-tables`, `html-tree-template`, `html-tree-foreign`, `html-tree-complete`. Text: `page-text-answer-block`, `page-text-outline`, `page-text-markdown`, `page-text-tables`. Document: `html-document-port`, `page-text-look`, `page-text-surf-command`, `agent-links-spec`, `agent-forms-spec` | the parser on real pages |
+| 2 | commands: `agent-follow-links`, `agent-form-port`, `agent-history-spec`, `agent-fill-pick`, `agent-press-submit`, `agent-back-forward`, `agent-change-and-log`. View: `view-now-panel`, `view-acceptance` | links, forms, history |
+| 3 | runner: `runner-formats`, `runner-record-option`, `runner-replay-transport`, `runner-scenario-from`, `runner-record-session`, `runner-run`, `runner-e2e`. View: `view-controls-and-changes` | the runner |
+
+Rules of a round, beside the rules of a wave:
+
+- Before a round starts, each of its stories is scoped and the units of the round must not
+  collide (`aep plan artifact waves`); two units that write the same file become one unit or
+  run one after the other.
+- The parser unit of round 1 is held to the vendored html5lib-tests: the line
+  `html-conformance: … passed` of the gate rises with each story and never falls.
+- Round 1 has no specification unit of its own (corrected on 2026-11-22 after the critic panel
+  on the page text drafts): `agent-links-spec` depends on `html-document-port`, every run of
+  `task generate` rewrites all files under `generated/` with one contract digest, and
+  `agent-history-spec` depends on `agent-form-port`, a story of round 2. So the document unit
+  makes every specification change of round 1, one after the other, and `agent-history-spec`
+  is built by the commands unit of round 2 after `agent-form-port`. Scenarios whose code comes
+  in round 2 are counted with `REFUSALS_MAX`, as in a specification unit of a wave.
+- Units of round 1 hand over at three points: `page-text-outline` starts on the round's base
+  (wave 10 holds the parser's limits and the labels); `page-text-tables` waits for the parser
+  unit's `html-tree-tables`; `page-text-look` waits for `page-text-answer-block`,
+  `page-text-outline` and `page-text-markdown`, and `page-text-surf-command` for
+  `page-text-tables`. The coordinator merges the finished story's commits into the waiting
+  unit's branch.
+- A unit commits on its branch after each story whose tests are green, so that a story that
+  fails leaves the stories before it usable.
+- The test budget holds for a round as for a wave: no test over 60 s, the test step within
+  120 s, a unit times its tests before it reports.
+- A release can follow each round: the list "What works after which wave" names the same
+  three points (after wave 11, 18 and 22).
+- The website plays a recorded agent session (`website/data/surf-agent.terminal.json`, on
+  "Drive surf from an agent"). The recording of release `0.3.0` shows no title and no content,
+  because no command parses a page. The operator, 2026-11-22 (D79, option A): keep it for
+  `0.3.0` and record it again when `html-document-port` has landed. Round 1 ends with that
+  recording, made with the binaries of the round's last commit, and with the caption under the
+  terminal changed to what an answer then holds.
+
+### TLS beside the rounds
+
+`epic:tls-https` and its thirteen stories are active since 2026-11-22 (four plan critics, seven
+rounds). They are not a round of their own:
+
+- Nine stories write only `crates/tls*`, `taskfiles/tls-*`, the lock check and its test, and
+  `.cargo/config.toml`. They are built beside rounds 1 and 2, in this order: `tls-decisions`
+  alone (a design note and a build probe on the forge); `tls-lock-allow`, after
+  `one-test-binary-per-crate`; then `tls-x509`, `tls-test-certs` and `tls-record` side by side;
+  then `tls-x509-path`, `tls-anchors` and `tls-handshake` side by side; then `tls-test-server`.
+- `tls-spec`, `tls-fetch-https`, `tls-session-anchors` and `tls-release` are one unit, in that
+  order. It starts at the first boundary between two rounds after the nine are merged, and
+  never beside a unit that writes `spec/`, `generated/`, `crates/fetch`, `crates/session`,
+  `crates/agent`, `crates/surfd`, `crates/surf/src/lib.rs`, `conformance/src/target.rs` or
+  `docs/agent-answer.md`.
+- The coordinator writes for the nine what they share: the `mod` lines of `crates/tls/src/lib.rs`
+  and `tests/main.rs`, the root `Taskfile.yml`, `Cargo.lock`, `README.md` and `AGENTS.md`.
+- The ClientHello offers the three TLS 1.3 suites and nothing else (RFC 8446 section 9.3). A
+  server limited to TLS 1.2 fails with `TlsVersionUnsupported` when it reads
+  `supported_versions`, and with `TlsHandshakeFailed` and a detail that says so when it does
+  not. A TLS 1.2 epic follows this one and is not drafted yet.
+
+## What an agent needs from surf
+
+The operator, 2026-11-22: "I wonder what is needed to actually make [surf] useful for agents,
+because right now I think it isn't." At release `0.3.0` that holds: an answer names a page's
+status, media type and address and nothing of its content, and only `http:` loads.
+
+The coordinating agent's decision (D85): the work after wave 10 is ordered by this list. Each
+item says what an agent can do after it and where it is planned.
+
+1. Read a page. The title and the element rows (`html-document-port`), the page as a tree and
+   as Markdown (drafts on the branch `plan/page-as-tree-and-markdown`), a long answer in parts
+   (`agent-answer-paging`). Round 1.
+2. Reach the web. TLS 1.3 and `https:`: the README's own line is "most of the web is not
+   reachable without it". It was on the list after the plan with no date. An epic is drafted
+   beside round 1 (branch `plan/useful-for-agents`), with the cryptographic primitives from
+   audited code as principle 4 of the README plans it. It is built beside round 2: it writes
+   `crates/fetch` and new crates, round 2 writes the session and the client.
+3. Move through a site. Links, forms, history: round 2.
+4. Stay signed in. Cookies: not planned (`spec/domains/net.yaml` lists them as unmapped). A
+   story after the forms.
+5. Pages that build their content by script: `epic:scripts-in-a-page`, after round 1, on a tag
+   of the script engine that holds the fixes of the security review of 2026-11-22.
+6. Be called without reading the manual: a skill or tool definition for agents that ships with
+   a release. Not planned; a draft on the same planning branch.
+
+Item 1 in stories (D88), drafted on 2026-11-22 with the design note `docs/design/page-as-text.md`
+(branch `plan/page-as-tree-and-markdown`): `page-text-answer-block` (the `text` block of the
+answer), `page-text-outline`, `page-text-markdown` and `page-text-tables` (a new crate
+`crates/page-text`, built one after the other by one unit of round 1, beside the parser unit),
+then `page-text-look` (`surf-agent look --as tree|markdown`) and `page-text-surf-command`
+(`surf <url> --as`). The planner put the last two into round 2 because they write files of the
+session, the client and `crates/surf-cli/src/main.rs`. They move into round 1 as the document
+unit's stories after `html-document-port`, which writes the same files: the recording that ends
+round 1 (D79) shows a page's content only with them.
+
+Round 3 (the runner) serves surf's own tests and no agent's task. It moves behind items 2 and 4.
+
+The measure is a set of tasks, drafted as a story on the planning branch: an agent that has
+`surf-agent` and nothing else answers a question whose answer is on a named page (read an
+article, read a table, go from an index to a page by a link, send a search form, a page behind
+`https:`). Each release record says how many of them pass. Release `0.3.0` passes none: no
+answer holds page content.
 
 ## What works after which wave
 

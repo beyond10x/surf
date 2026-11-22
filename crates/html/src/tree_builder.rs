@@ -23,14 +23,27 @@
 //! Parse errors are not collected: neither the tokenizer's nor the tree builder's reach a
 //! caller. Scripts do not run: at a `script` end tag the text mode pops the element and returns
 //! to the original insertion mode.
+//!
+//! The limits (story `html-parser-limits`, the crate documentation's "Limits"): every element,
+//! node, text and attribute merge is admitted against the depth, node, stored-byte and attribute
+//! limits before it is made, and every entry a scan visits is counted as a step, checked after
+//! each token. A limit reached inside a token stops parsing: the rest of that token's rule
+//! makes no change to the tree (each creation is refused once parsing has stopped), the
+//! dispatcher takes no further mode, and the parse then pops every open element.
 
 mod formatting;
 mod modes;
 
+use std::cell::Cell;
+use std::collections::HashSet;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+
 use crate::ParseOptions;
 use crate::encoding::{self, Confidence};
+use crate::limits::{ATTRIBUTE_BYTES, Limit, Limits};
 use crate::tokenizer::{self, Token, TokenAttribute, Tokenizer};
-use crate::tree::{Attribute, Namespace, NodeData, NodeId, Tree};
+use crate::tree::{Attribute, Categories, Namespace, NodeData, NodeId, Tree};
 
 /// Each part of tree construction that the tree builder does not yet parse as the standard
 /// does, named in `[a-z-]+`: tables and `select`, `template`, and foreign content (SVG, MathML
@@ -76,26 +89,142 @@ enum Flow {
 }
 
 /// A start tag token as an element of the list of active formatting elements keeps it: the
-/// element is created again from it when the list is reconstructed.
+/// element is created again from it when the list is reconstructed. It keeps a key for Noah's
+/// Ark with it: its attributes in the order of their names, and a hash of the tag name and of
+/// those attributes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct TagToken {
     name: String,
     attributes: Vec<TokenAttribute>,
+    /// The indices of `attributes`, in the order of the attributes' names.
+    by_name: Vec<usize>,
+    /// A hash of the tag name and of the attributes, taken in the order of `by_name`.
+    key: u64,
 }
 
 impl TagToken {
+    fn new(name: &str, attributes: &[TokenAttribute]) -> TagToken {
+        let mut by_name: Vec<usize> = (0..attributes.len()).collect();
+        by_name.sort_unstable_by(|&a, &b| attributes[a].name.cmp(&attributes[b].name));
+        let mut hasher = DefaultHasher::new();
+        name.hash(&mut hasher);
+        for &i in &by_name {
+            attributes[i].name.hash(&mut hasher);
+            attributes[i].value.hash(&mut hasher);
+        }
+        TagToken {
+            name: name.to_string(),
+            attributes: attributes.to_vec(),
+            by_name,
+            key: hasher.finish(),
+        }
+    }
+
     /// The Noah's Ark comparison: the same tag name, and attributes that pair up with the same
     /// names and values, in any order. A token holds an attribute name at most once (the
-    /// tokenizer drops a duplicate), so equal counts and a match for each attribute pair them.
+    /// tokenizer drops a duplicate), so the attributes taken in the order of their names pair
+    /// up one by one. Two tokens whose keys, names or counts differ are told apart in O(1); the
+    /// others in O(k) for k attributes.
     fn is_identical(&self, other: &TagToken) -> bool {
-        self.name == other.name
+        self.key == other.key
+            && self.name == other.name
             && self.attributes.len() == other.attributes.len()
-            && self.attributes.iter().all(|a| {
-                other
-                    .attributes
-                    .iter()
-                    .any(|b| b.name == a.name && b.value == a.value)
-            })
+            && self
+                .by_name
+                .iter()
+                .zip(&other.by_name)
+                .all(|(&a, &b)| self.attributes[a] == other.attributes[b])
+    }
+
+    /// The bytes of strings an element created from this token holds.
+    fn stored_bytes(&self) -> usize {
+        token_bytes(&self.name, &self.attributes)
+    }
+}
+
+/// The stored bytes of an element created for a token named `name` with `attributes`
+/// ([`Tree::stored_bytes`]): its strings and [`ATTRIBUTE_BYTES`] for each attribute.
+fn token_bytes(name: &str, attributes: &[TokenAttribute]) -> usize {
+    name.len()
+        + attributes
+            .iter()
+            .map(|a| ATTRIBUTE_BYTES + a.name.len() + a.value.len())
+            .sum::<usize>()
+}
+
+/// The stack of open elements (13.2.4.2), the topmost (the `html` element) first, read as a
+/// slice. It keeps, for each node, how many times the node is on it, so that "is in the stack
+/// of open elements" is answered in O(1) and visits no entry ([`OpenElements::holds`]).
+#[derive(Debug, Default)]
+struct OpenElements {
+    stack: Vec<NodeId>,
+    /// For each node of the arena by its index, the times it is on the stack (0 or 1).
+    on_stack: Vec<u32>,
+}
+
+impl std::ops::Deref for OpenElements {
+    type Target = [NodeId];
+
+    fn deref(&self) -> &[NodeId] {
+        &self.stack
+    }
+}
+
+impl OpenElements {
+    fn entered(&mut self, node: NodeId) {
+        let index = node.index();
+        if self.on_stack.len() <= index {
+            self.on_stack.resize(index + 1, 0);
+        }
+        self.on_stack[index] += 1;
+    }
+
+    fn left(&mut self, node: NodeId) {
+        self.on_stack[node.index()] -= 1;
+    }
+
+    /// Whether `node` is in the stack of open elements: no entry is visited.
+    fn holds(&self, node: NodeId) -> bool {
+        self.on_stack.get(node.index()).is_some_and(|&n| n > 0)
+    }
+
+    fn push(&mut self, node: NodeId) {
+        self.entered(node);
+        self.stack.push(node);
+    }
+
+    fn pop(&mut self) -> Option<NodeId> {
+        let node = self.stack.pop()?;
+        self.left(node);
+        Some(node)
+    }
+
+    fn truncate(&mut self, len: usize) {
+        while self.stack.len() > len {
+            self.pop();
+        }
+    }
+
+    fn clear(&mut self) {
+        self.truncate(0);
+    }
+
+    fn remove(&mut self, at: usize) -> NodeId {
+        let node = self.stack.remove(at);
+        self.left(node);
+        node
+    }
+
+    fn insert(&mut self, at: usize, node: NodeId) {
+        self.entered(node);
+        self.stack.insert(at, node);
+    }
+
+    /// Puts `node` in the place of the entry at `at`.
+    fn replace(&mut self, at: usize, node: NodeId) {
+        self.entered(node);
+        let old = std::mem::replace(&mut self.stack[at], node);
+        self.left(old);
     }
 }
 
@@ -136,12 +265,25 @@ pub(crate) fn parse(
     options: &ParseOptions,
     encoding: Option<InputEncoding>,
 ) -> Parsed {
-    let code_points: Vec<u32> = input.chars().map(u32::from).collect();
-    let mut builder = TreeBuilder::new(&code_points, options, encoding);
+    // The input stream keeps its own copy of the code points: this one goes once it is made.
+    let mut builder = {
+        let code_points: Vec<u32> = input.chars().map(u32::from).collect();
+        TreeBuilder::new(&code_points, options, encoding)
+    };
     while !builder.stopped {
-        let token = builder.tokenizer.next_token();
+        let Some(token) = builder.tokenizer.next_token() else {
+            // The tokenizer stopped at a start tag that would keep one attribute too many.
+            builder.stop_at(Limit::Attributes);
+            break;
+        };
         builder.dispatch(token);
+        if !builder.stopped && builder.steps.get() > builder.limits.max_steps {
+            builder.stop_at(Limit::Steps);
+        }
     }
+    // "Stop parsing" pops every open element, also after a limit.
+    builder.open.clear();
+    builder.tree.set_steps(builder.steps.get());
     Parsed {
         tree: builder.tree,
         quirks_mode: builder.quirks_mode,
@@ -156,7 +298,7 @@ struct TreeBuilder {
     mode: Mode,
     original_mode: Mode,
     /// The stack of open elements, the topmost (the `html` element) first.
-    open: Vec<NodeId>,
+    open: OpenElements,
     /// The list of active formatting elements, the least recently added first.
     active: Vec<Entry>,
     head: Option<NodeId>,
@@ -168,7 +310,16 @@ struct TreeBuilder {
     ignore_line_feed: bool,
     encoding: Option<InputEncoding>,
     reparse_with: Option<&'static str>,
+    /// Parsing stopped: at the end of the input, at a `meta` that changes the encoding, or at a
+    /// limit. No node is created after it.
     stopped: bool,
+    limits: Limits,
+    /// The entries visited by the scans so far (the step limit). A `Cell`, so that the scans
+    /// that only read the parse state count too.
+    steps: Cell<usize>,
+    /// For the `html` and `body` elements that a start tag of in body merged attributes into,
+    /// the names of their attributes.
+    merged_names: Vec<(NodeId, HashSet<String>)>,
 }
 
 const HTML_ELEMENT_SPECIAL: &[&str] = &[
@@ -288,6 +439,36 @@ fn is_whitespace(c: u32) -> bool {
     matches!(c, 0x09 | 0x0A | 0x0C | 0x0D | 0x20)
 }
 
+/// The categories of an element in `namespace` named `name`, decided once when it is created:
+/// special, and the element types of the scopes of 13.2.4.2.
+fn categories_of(namespace: Namespace, name: &str) -> Categories {
+    let mut bits = 0;
+    match namespace {
+        Namespace::Html => {
+            if HTML_ELEMENT_SPECIAL.contains(&name) {
+                bits |= Categories::SPECIAL;
+            }
+            if SCOPE_HTML.contains(&name) {
+                bits |= Categories::SCOPE;
+            }
+            if name == "ol" || name == "ul" {
+                bits |= Categories::LIST_ITEM_SCOPE;
+            }
+            if name == "button" {
+                bits |= Categories::BUTTON_SCOPE;
+            }
+        }
+        Namespace::MathMl if SCOPE_MATHML.contains(&name) => {
+            bits |= Categories::SPECIAL | Categories::SCOPE;
+        }
+        Namespace::Svg if SCOPE_SVG.contains(&name) => {
+            bits |= Categories::SPECIAL | Categories::SCOPE;
+        }
+        _ => {}
+    }
+    Categories(bits)
+}
+
 fn attributes(token: &[TokenAttribute]) -> Vec<Attribute> {
     token
         .iter()
@@ -303,11 +484,11 @@ fn attributes(token: &[TokenAttribute]) -> Vec<Attribute> {
 impl TreeBuilder {
     fn new(input: &[u32], options: &ParseOptions, encoding: Option<InputEncoding>) -> TreeBuilder {
         TreeBuilder {
-            tokenizer: Tokenizer::new(input),
+            tokenizer: Tokenizer::new(input, options.limits.max_attributes),
             tree: Tree::document(),
             mode: Mode::Initial,
             original_mode: Mode::Initial,
-            open: Vec::new(),
+            open: OpenElements::default(),
             active: Vec::new(),
             head: None,
             form: None,
@@ -318,7 +499,21 @@ impl TreeBuilder {
             encoding,
             reparse_with: None,
             stopped: false,
+            limits: options.limits,
+            steps: Cell::new(0),
+            merged_names: Vec::new(),
         }
+    }
+
+    /// One entry visited by a scan: a step.
+    fn visit(&self) {
+        self.add_steps(1);
+    }
+
+    /// `n` entries visited by a scan, counted at its end (the hot scans, so that a visit costs no
+    /// more than the comparison it makes).
+    fn add_steps(&self, n: usize) {
+        self.steps.set(self.steps.get().saturating_add(n));
     }
 
     /// The tree construction dispatcher (13.2.6): every element is in the HTML namespace, so
@@ -362,6 +557,45 @@ impl TreeBuilder {
         self.stopped = true;
     }
 
+    /// Stops parsing at `limit` (the crate documentation, "Limits"). The open elements stay
+    /// until the token's rule has returned, so that what is left of it runs on the state it
+    /// expects; it creates nothing more, and [`parse`] then pops them.
+    fn stop_at(&mut self, limit: Limit) {
+        self.tree.stop_at(limit);
+        self.stopped = true;
+    }
+
+    /// Whether a creation of `nodes` nodes that hold `bytes` bytes of strings stays inside the
+    /// node and stored-byte limits. When it does not, parsing stops at the limit it would pass;
+    /// after parsing stopped, nothing is admitted.
+    fn admit(&mut self, nodes: usize, bytes: usize) -> bool {
+        if self.stopped {
+            return false;
+        }
+        if self.tree.node_count().saturating_add(nodes) > self.limits.max_nodes {
+            self.stop_at(Limit::Nodes);
+            return false;
+        }
+        if self.tree.stored_bytes().saturating_add(bytes) > self.limits.max_stored_bytes {
+            self.stop_at(Limit::StoredBytes);
+            return false;
+        }
+        true
+    }
+
+    /// Whether the stack of open elements has room for one element more (the depth limit).
+    /// When it has not, parsing stops.
+    fn room_on_stack(&mut self) -> bool {
+        if self.stopped {
+            return false;
+        }
+        if self.open.len() >= self.limits.max_depth {
+            self.stop_at(Limit::Depth);
+            return false;
+        }
+        true
+    }
+
     // 13.2.6.1 Creating and inserting nodes.
 
     fn document(&self) -> NodeId {
@@ -385,50 +619,97 @@ impl TreeBuilder {
 
     /// Create an element for a token in the HTML namespace: no custom element definition is
     /// looked up and no form element is associated (a form-associated element's form owner is
-    /// not part of the tree).
-    fn create_element(&mut self, name: &str, attributes: &[TokenAttribute]) -> NodeId {
-        self.tree
-            .create_element(Namespace::Html, name, self::attributes(attributes))
+    /// not part of the tree). `None` when the node or stored-byte limit refuses it (a `template`
+    /// is two nodes, with its contents), or parsing stopped.
+    fn create_element(&mut self, name: &str, attributes: &[TokenAttribute]) -> Option<NodeId> {
+        let nodes = if name == "template" { 2 } else { 1 };
+        if !self.admit(nodes, token_bytes(name, attributes)) {
+            return None;
+        }
+        Some(self.create_admitted_element(name, attributes))
+    }
+
+    /// Create an element for a token in the HTML namespace that the limits admitted already
+    /// (the adoption agency algorithm admits a whole iteration at once).
+    fn create_admitted_element(&mut self, name: &str, attributes: &[TokenAttribute]) -> NodeId {
+        self.tree.create_element(
+            Namespace::Html,
+            name,
+            self::attributes(attributes),
+            categories_of(Namespace::Html, name),
+        )
     }
 
     /// Insert an element at the adjusted insertion location, given an insertion location.
     fn insert_element_at(&mut self, element: NodeId, location: (NodeId, Option<NodeId>)) {
         let (parent, reference) = location;
         if self.tree.parent(element).is_some()
-            || (parent == self.document() && self.tree.has_element_child(parent))
+            || (parent == self.document() && self.tree.has_element_child(parent, &self.steps))
         {
             return;
         }
-        self.tree.insert(parent, element, reference);
+        self.tree.insert(parent, element, reference, &self.steps);
     }
 
     /// Insert an HTML element for a token: created, inserted at the appropriate place, pushed
-    /// onto the stack of open elements.
-    fn insert_html_element(&mut self, name: &str, attributes: &[TokenAttribute]) -> NodeId {
-        let element = self.create_element(name, attributes);
+    /// onto the stack of open elements. `None` when a limit refuses it (depth first, then nodes
+    /// and stored bytes), or parsing stopped.
+    fn insert_html_element(&mut self, name: &str, attributes: &[TokenAttribute]) -> Option<NodeId> {
+        if !self.room_on_stack() {
+            return None;
+        }
+        let element = self.create_element(name, attributes)?;
         let location = self.appropriate_place(None);
         self.insert_element_at(element, location);
         self.open.push(element);
-        element
+        Some(element)
     }
 
     /// Insert a character: `c` appended at the appropriate place, merged into a text node just
-    /// before it. A character for the document is dropped.
+    /// before it. A character for the document is dropped. A character the node or stored-byte
+    /// limit refuses is not inserted, and parsing stops.
     fn insert_character(&mut self, c: u32) {
+        if self.stopped {
+            return;
+        }
         let (parent, reference) = self.appropriate_place(None);
         if parent == self.document() {
             return;
         }
         let c = char::from_u32(c).unwrap_or(char::REPLACEMENT_CHARACTER);
-        self.tree
-            .insert_text(parent, c.encode_utf8(&mut [0; 4]), reference);
+        let mut buffer = [0; 4];
+        let text: &str = c.encode_utf8(&mut buffer);
+        match self.tree.text_before(parent, reference, &self.steps) {
+            Some(node) => {
+                if self.admit(0, text.len()) {
+                    self.tree.push_text(node, text);
+                }
+            }
+            None => {
+                if self.admit(1, text.len()) {
+                    self.tree.insert_new(
+                        parent,
+                        NodeData::Text(text.to_string()),
+                        reference,
+                        &self.steps,
+                    );
+                }
+            }
+        }
     }
 
     /// Insert a comment, at the appropriate place or at the location given.
     fn insert_comment(&mut self, data: &str, location: Option<NodeId>) {
+        if !self.admit(1, data.len()) {
+            return;
+        }
         let (parent, reference) = self.appropriate_place(location);
-        self.tree
-            .insert_new(parent, NodeData::Comment(data.to_string()), reference);
+        self.tree.insert_new(
+            parent,
+            NodeData::Comment(data.to_string()),
+            reference,
+            &self.steps,
+        );
     }
 
     /// Insert a processing instruction, at the appropriate place or at the location given.
@@ -438,6 +719,9 @@ impl TreeBuilder {
         data: &str,
         location: Option<NodeId>,
     ) {
+        if !self.admit(1, target.len() + data.len()) {
+            return;
+        }
         let (parent, reference) = self.appropriate_place(location);
         self.tree.insert_new(
             parent,
@@ -446,7 +730,52 @@ impl TreeBuilder {
                 data: data.to_string(),
             },
             reference,
+            &self.steps,
         );
+    }
+
+    /// The `html` and `body` start tag rules of in body: each attribute of the token whose name
+    /// `element` has no attribute of is added to it, in order. A merge that would give the
+    /// element more attributes than the attribute limit, or pass the stored-byte limit, is not
+    /// made, and parsing stops. The names of the element's attributes are kept in a set, so the
+    /// merge costs O(1) for each attribute of the token.
+    fn merge_attributes(&mut self, element: NodeId, attributes: &[TokenAttribute]) {
+        if self.stopped {
+            return;
+        }
+        let at = match self.merged_names.iter().position(|(n, _)| *n == element) {
+            Some(at) => at,
+            None => {
+                let names = match self.tree.data(element) {
+                    NodeData::Element { attributes, .. } => {
+                        attributes.iter().map(|a| a.local_name.clone()).collect()
+                    }
+                    _ => HashSet::new(),
+                };
+                self.merged_names.push((element, names));
+                self.merged_names.len() - 1
+            }
+        };
+        let names = &self.merged_names[at].1;
+        let new: Vec<TokenAttribute> = attributes
+            .iter()
+            .filter(|a| !names.contains(&a.name))
+            .cloned()
+            .collect();
+        if new.is_empty() {
+            return;
+        }
+        if names.len() + new.len() > self.limits.max_attributes {
+            self.stop_at(Limit::Attributes);
+            return;
+        }
+        if !self.admit(0, token_bytes("", &new)) {
+            return;
+        }
+        self.merged_names[at]
+            .1
+            .extend(new.iter().map(|a| a.name.clone()));
+        self.tree.add_attributes(element, self::attributes(&new));
     }
 
     // 13.2.6.2 Parsing elements that contain only text.
@@ -469,6 +798,7 @@ impl TreeBuilder {
     /// Generate implied end tags, except for HTML elements named `except`.
     fn generate_implied_end_tags(&mut self, except: Option<&str>) {
         while let Some(&node) = self.open.last() {
+            self.visit();
             match self.html_name(node) {
                 Some(name) if IMPLIED_END_TAGS.contains(&name) && Some(name) != except => {
                     self.open.pop();
@@ -509,63 +839,38 @@ impl TreeBuilder {
         self.open.last().is_some_and(|&n| self.is_html(n, names))
     }
 
-    /// Whether `node` is in the special category.
+    /// Whether `node` is in the special category, as decided when it was created.
     fn is_special(&self, node: NodeId) -> bool {
-        match self.tree.data(node) {
-            NodeData::Element {
-                namespace,
-                local_name,
-                ..
-            } => {
-                let name = local_name.as_str();
-                match namespace {
-                    Namespace::Html => HTML_ELEMENT_SPECIAL.contains(&name),
-                    Namespace::MathMl => SCOPE_MATHML.contains(&name),
-                    Namespace::Svg => SCOPE_SVG.contains(&name),
-                    _ => false,
-                }
-            }
-            _ => false,
-        }
+        self.tree.categories(node).has(Categories::SPECIAL)
     }
 
-    /// Whether `node` is one of the element types of `scope`.
+    /// Whether `node` is one of the element types of `scope`, as decided when it was created.
     fn bounds_scope(&self, node: NodeId, scope: Scope) -> bool {
-        let NodeData::Element {
-            namespace,
-            local_name,
-            ..
-        } = self.tree.data(node)
-        else {
-            return false;
-        };
-        let name = local_name.as_str();
-        match namespace {
-            Namespace::Html => {
-                SCOPE_HTML.contains(&name)
-                    || match scope {
-                        Scope::Default => false,
-                        Scope::ListItem => name == "ol" || name == "ul",
-                        Scope::Button => name == "button",
-                    }
+        let categories = self.tree.categories(node);
+        categories.has(Categories::SCOPE)
+            || match scope {
+                Scope::Default => false,
+                Scope::ListItem => categories.has(Categories::LIST_ITEM_SCOPE),
+                Scope::Button => categories.has(Categories::BUTTON_SCOPE),
             }
-            Namespace::MathMl => SCOPE_MATHML.contains(&name),
-            Namespace::Svg => SCOPE_SVG.contains(&name),
-            _ => false,
-        }
     }
 
     /// Whether the stack of open elements has an element that `is_target` holds for in `scope`.
     fn has_in_scope(&self, scope: Scope, is_target: impl Fn(&Self, NodeId) -> bool) -> bool {
+        let mut visited = 0;
+        let mut found = false;
         for &node in self.open.iter().rev() {
+            visited += 1;
             if is_target(self, node) {
-                return true;
+                found = true;
+                break;
             }
             if self.bounds_scope(node, scope) {
-                return false;
+                break;
             }
         }
-        false
+        self.add_steps(visited);
+        found
     }
 
     /// Whether the stack of open elements has an HTML element named `name` in `scope`.
@@ -577,15 +882,23 @@ impl TreeBuilder {
     /// popped.
     fn pop_until(&mut self, names: &[&str]) {
         while let Some(node) = self.open.pop() {
+            self.visit();
             if self.is_html(node, names) {
                 return;
             }
         }
     }
 
+    /// The index of `element` in the stack of open elements, scanning from the current node.
+    fn stack_position(&self, element: NodeId) -> Option<usize> {
+        let at = self.open.iter().rposition(|&n| n == element);
+        self.add_steps(at.map_or(self.open.len(), |at| self.open.len() - at));
+        at
+    }
+
     /// Removes `element` from the stack of open elements, scanning from the current node.
     fn remove_from_stack(&mut self, element: NodeId) {
-        if let Some(at) = self.open.iter().rposition(|&n| n == element) {
+        if let Some(at) = self.stack_position(element) {
             self.open.remove(at);
         }
     }
@@ -600,16 +913,14 @@ impl TreeBuilder {
         name: &str,
         attributes: &[TokenAttribute],
     ) {
-        let token = TagToken {
-            name: name.to_string(),
-            attributes: attributes.to_vec(),
-        };
+        let token = TagToken::new(name, attributes);
         // 1. Three elements after the last marker with the same tag name, namespace (every
         // element of the list is in the HTML namespace) and attributes as the token's: the
         // earliest of them is removed.
         let mut identical = 0;
         let mut earliest = None;
         for (index, entry) in self.active.iter().enumerate().rev() {
+            self.visit();
             match entry {
                 Entry::Marker => break,
                 Entry::Element { token: other, .. } if other.is_identical(&token) => {
@@ -629,11 +940,17 @@ impl TreeBuilder {
     }
 
     /// Reconstruct the active formatting elements, if any. "Is in the stack of open elements"
-    /// is asked from the current node down: an entry that is open is almost always near it.
+    /// is answered by [`OpenElements::holds`] without a scan, so the standard's first checks (the
+    /// list is empty, or its last entry is a marker or open) cost O(1) and no step, also for
+    /// every character of a text; the rewind counts one step for each entry it steps back over,
+    /// the advance one for each entry it creates an element for. Each element is admitted by the
+    /// limits before it is created; one they refuse ends the reconstruction, with the elements
+    /// created before it in the tree. No start tag token is copied: the entry's own token is
+    /// read and kept.
     fn reconstruct_active_formatting_elements(&mut self) {
         let is_open_or_marker = |b: &Self, entry: &Entry| match entry {
             Entry::Marker => true,
-            Entry::Element { node, .. } => b.open.iter().rev().any(|n| n == node),
+            Entry::Element { node, .. } => b.open.holds(*node),
         };
         match self.active.last() {
             None => return,
@@ -643,14 +960,24 @@ impl TreeBuilder {
         // Rewind: back to the entry after the last marker or open element, or the first entry.
         let mut index = self.active.len() - 1;
         while index > 0 && !is_open_or_marker(self, &self.active[index - 1]) {
+            self.visit();
             index -= 1;
         }
         // Advance and create, to the end of the list.
         for i in index..self.active.len() {
-            let Entry::Element { token, .. } = self.active[i].clone() else {
+            self.visit();
+            if matches!(self.active[i], Entry::Marker) {
                 continue;
+            }
+            let Entry::Element { node: old, token } =
+                std::mem::replace(&mut self.active[i], Entry::Marker)
+            else {
+                unreachable!("the entry is an element");
             };
-            let node = self.insert_html_element(&token.name, &token.attributes);
+            let Some(node) = self.insert_html_element(&token.name, &token.attributes) else {
+                self.active[i] = Entry::Element { node: old, token };
+                return;
+            };
             self.active[i] = Entry::Element { node, token };
         }
     }
@@ -658,6 +985,7 @@ impl TreeBuilder {
     /// Clear the list of active formatting elements up to the last marker.
     fn clear_active_formatting_elements_to_last_marker(&mut self) {
         while let Some(entry) = self.active.pop() {
+            self.visit();
             if entry == Entry::Marker {
                 return;
             }
@@ -668,15 +996,17 @@ impl TreeBuilder {
     /// holds a node at most once; the scan starts at the end of the list, where the standard's
     /// rules look ("the last element in the list").
     fn active_position(&self, node: NodeId) -> Option<usize> {
-        self.active
-            .iter()
-            .rposition(|e| matches!(e, Entry::Element { node: n, .. } if *n == node))
+        self.active.iter().rposition(|e| {
+            self.visit();
+            matches!(e, Entry::Element { node: n, .. } if *n == node)
+        })
     }
 
     /// The index of `node` in the list of active formatting elements after the last marker (or
     /// in the whole list when there is none), if it is there: the scan ends at the marker.
     fn active_position_after_last_marker(&self, node: NodeId) -> Option<usize> {
         for (index, entry) in self.active.iter().enumerate().rev() {
+            self.visit();
             match entry {
                 Entry::Marker => return None,
                 Entry::Element { node: n, .. } if *n == node => return Some(index),
@@ -720,7 +1050,8 @@ impl TreeBuilder {
     /// The `meta` rule of in head after the element is inserted: a `charset` attribute, or an
     /// `http-equiv` of `Content-Type` with a `content`, while the confidence is tentative.
     fn meta_changes_the_encoding(&mut self, attributes: &[TokenAttribute]) {
-        if self.encoding.map(|e| e.confidence) != Some(Confidence::Tentative) {
+        // A limit reached before it means no parse again.
+        if self.stopped || self.encoding.map(|e| e.confidence) != Some(Confidence::Tentative) {
             return;
         }
         let value = |name: &str| {

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T10:53:07Z",
+  "actor": "human:operator",
+  "artifact": "story:test-step-holds-under-load",
+  "kind": "story",
+  "revision": 23,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "ten runs each beside one busy loop per processor (20)",
+    "reference": "before: fetch 2 of 10, case_23 9 of 10, label 10 of 10; after: fetch, case_23, label, case_20 and case_32 each 10 of 10"
+  }
+}

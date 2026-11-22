@@ -4,7 +4,7 @@
 
 use super::{Entry, Flow, Mode, QuirksMode, Scope, TreeBuilder, is_whitespace};
 use crate::tokenizer::{self, Token, TokenAttribute};
-use crate::tree::{NodeData, NodeId};
+use crate::tree::{NodeData, NodeId, stored_bytes_of};
 
 /// The public identifiers that make a DOCTYPE quirky when one is a prefix of the token's
 /// (13.2.6.4.1).
@@ -189,21 +189,20 @@ impl TreeBuilder {
                 force_quirks,
             } => {
                 let document = self.document();
+                let doctype = NodeData::Doctype {
+                    name: name.clone().unwrap_or_default(),
+                    public_id: public_id.clone().unwrap_or_default(),
+                    system_id: system_id.clone().unwrap_or_default(),
+                };
                 if self.tree.children(document).iter().all(|&c| {
+                    self.visit();
                     !matches!(
                         self.tree.data(c),
                         NodeData::Doctype { .. } | NodeData::Element { .. }
                     )
-                }) {
-                    self.tree.insert_new(
-                        document,
-                        NodeData::Doctype {
-                            name: name.clone().unwrap_or_default(),
-                            public_id: public_id.clone().unwrap_or_default(),
-                            system_id: system_id.clone().unwrap_or_default(),
-                        },
-                        None,
-                    );
+                }) && self.admit(1, stored_bytes_of(&doctype))
+                {
+                    self.tree.insert_new(document, doctype, None, &self.steps);
                 }
                 self.quirks_mode = doctype_quirks_mode(
                     name.as_deref(),
@@ -240,10 +239,7 @@ impl TreeBuilder {
             Token::StartTag {
                 name, attributes, ..
             } if name == "html" => {
-                let element = self.create_element(name, attributes);
-                let document = self.document();
-                self.insert_element_at(element, (document, None));
-                self.open.push(element);
+                self.insert_html_root(name, attributes);
                 self.mode = Mode::BeforeHead;
                 Flow::Done
             }
@@ -251,14 +247,25 @@ impl TreeBuilder {
                 Flow::Done
             }
             _ => {
-                let element = self.create_element("html", &[]);
-                let document = self.document();
-                self.insert_element_at(element, (document, None));
-                self.open.push(element);
+                self.insert_html_root("html", &[]);
                 self.mode = Mode::BeforeHead;
                 Flow::Reprocess
             }
         }
+    }
+
+    /// The `html` element of the before html mode: created for the token, appended to the
+    /// document and put on the stack of open elements, when the limits admit it.
+    fn insert_html_root(&mut self, name: &str, attributes: &[TokenAttribute]) {
+        if !self.room_on_stack() {
+            return;
+        }
+        let Some(element) = self.create_element(name, attributes) else {
+            return;
+        };
+        let document = self.document();
+        self.insert_element_at(element, (document, None));
+        self.open.push(element);
     }
 
     /// 13.2.6.4.3 The "before head" insertion mode.
@@ -278,7 +285,7 @@ impl TreeBuilder {
             Token::StartTag {
                 name, attributes, ..
             } if name == "head" => {
-                self.head = Some(self.insert_html_element(name, attributes));
+                self.head = self.insert_html_element(name, attributes);
                 self.mode = Mode::InHead;
                 Flow::Done
             }
@@ -286,7 +293,7 @@ impl TreeBuilder {
                 Flow::Done
             }
             _ => {
-                self.head = Some(self.insert_html_element("head", &[]));
+                self.head = self.insert_html_element("head", &[]);
                 self.mode = Mode::InHead;
                 Flow::Reprocess
             }
@@ -315,16 +322,15 @@ impl TreeBuilder {
             Token::StartTag {
                 name, attributes, ..
             } if matches!(name.as_str(), "base" | "basefont" | "bgsound" | "link") => {
-                self.insert_html_element(name, attributes);
-                self.open.pop();
+                self.insert_void_element(name, attributes);
                 Flow::Done
             }
             Token::StartTag {
                 name, attributes, ..
             } if name == "meta" => {
-                self.insert_html_element(name, attributes);
-                self.open.pop();
-                self.meta_changes_the_encoding(attributes);
+                if self.insert_void_element(name, attributes) {
+                    self.meta_changes_the_encoding(attributes);
+                }
                 Flow::Done
             }
             Token::StartTag {
@@ -353,7 +359,12 @@ impl TreeBuilder {
                 name, attributes, ..
             } if name == "script" => {
                 let (parent, reference) = self.appropriate_place(None);
-                let element = self.create_element(name, attributes);
+                if !self.room_on_stack() {
+                    return Flow::Done;
+                }
+                let Some(element) = self.create_element(name, attributes) else {
+                    return Flow::Done;
+                };
                 self.insert_element_at(element, (parent, reference));
                 self.open.push(element);
                 self.tokenizer.switch_to(tokenizer::State::ScriptData);
@@ -464,9 +475,11 @@ impl TreeBuilder {
                 ],
             ) =>
             {
-                let head = self
-                    .head
-                    .expect("the head element pointer is set after head");
+                // The head element pointer is set after head: before head set it, or a limit
+                // refused the `head` and parsing stopped.
+                let Some(head) = self.head else {
+                    return Flow::Done;
+                };
                 self.open.push(head);
                 let flow = self.in_head(t);
                 self.remove_from_stack(head);
@@ -519,8 +532,7 @@ impl TreeBuilder {
             } if name == "html" => {
                 if !self.template_on_stack() {
                     let html = self.open[0];
-                    self.tree
-                        .add_missing_attributes(html, &super::attributes(attributes));
+                    self.merge_attributes(html, attributes);
                 }
                 Flow::Done
             }
@@ -543,8 +555,7 @@ impl TreeBuilder {
                 {
                     self.frameset_ok = false;
                     let body = self.open[1];
-                    self.tree
-                        .add_missing_attributes(body, &super::attributes(attributes));
+                    self.merge_attributes(body, attributes);
                 }
                 Flow::Done
             }
@@ -558,7 +569,7 @@ impl TreeBuilder {
                     return Flow::Done;
                 }
                 let body = self.open[1];
-                self.tree.remove(body);
+                self.tree.remove(body, &self.steps);
                 self.open.truncate(1);
                 self.insert_html_element(name, attributes);
                 self.mode = Mode::InFrameset;
@@ -644,8 +655,9 @@ impl TreeBuilder {
                     return Flow::Done;
                 }
                 self.close_a_p_element_in_button_scope();
-                let form = self.insert_html_element(name, attributes);
-                if !self.template_on_stack() {
+                if let Some(form) = self.insert_html_element(name, attributes)
+                    && !self.template_on_stack()
+                {
                     self.form = Some(form);
                 }
                 Flow::Done
@@ -655,6 +667,7 @@ impl TreeBuilder {
             } if name == "li" => {
                 self.frameset_ok = false;
                 for index in (0..self.open.len()).rev() {
+                    self.visit();
                     let node = self.open[index];
                     if self.is_html(node, &["li"]) {
                         self.generate_implied_end_tags(Some("li"));
@@ -674,6 +687,7 @@ impl TreeBuilder {
             } if name == "dd" || name == "dt" => {
                 self.frameset_ok = false;
                 for index in (0..self.open.len()).rev() {
+                    self.visit();
                     let node = self.open[index];
                     if let Some(found @ ("dd" | "dt")) = self.html_name(node) {
                         let found = if found == "dd" { "dd" } else { "dt" };
@@ -735,8 +749,10 @@ impl TreeBuilder {
                 Flow::Done
             }
             t if is_end(t, &["p"]) => {
-                if !self.has_named_in_scope("p", Scope::Button) {
-                    self.insert_html_element("p", &[]);
+                if !self.has_named_in_scope("p", Scope::Button)
+                    && self.insert_html_element("p", &[]).is_none()
+                {
+                    return Flow::Done;
                 }
                 self.close_a_p_element();
                 Flow::Done
@@ -771,7 +787,7 @@ impl TreeBuilder {
             } if name == "a" => {
                 // 1. An `a` in the list after the last marker: a parse error, the adoption
                 // agency algorithm, then that `a` out of the list and the stack if still there.
-                if let Some((_, existing_a, _)) = self.last_active_named("a") {
+                if let Some((_, existing_a)) = self.last_active_named("a") {
                     self.adoption_agency("a");
                     // "If existingA is in the list", it is after the last marker: the algorithm
                     // adds no marker and moves no entry, it only removes and replaces. It takes
@@ -788,8 +804,7 @@ impl TreeBuilder {
                 // 2.
                 self.reconstruct_active_formatting_elements();
                 // 3.
-                let element = self.insert_html_element(name, attributes);
-                self.push_active_formatting_element(element, name, attributes);
+                self.insert_formatting_element(name, attributes);
                 Flow::Done
             }
             Token::StartTag {
@@ -802,16 +817,14 @@ impl TreeBuilder {
                     self.adoption_agency("nobr");
                     self.reconstruct_active_formatting_elements();
                 }
-                let element = self.insert_html_element(name, attributes);
-                self.push_active_formatting_element(element, name, attributes);
+                self.insert_formatting_element(name, attributes);
                 Flow::Done
             }
             Token::StartTag {
                 name, attributes, ..
             } if FORMATTING.contains(&name.as_str()) => {
                 self.reconstruct_active_formatting_elements();
-                let element = self.insert_html_element(name, attributes);
-                self.push_active_formatting_element(element, name, attributes);
+                self.insert_formatting_element(name, attributes);
                 Flow::Done
             }
             Token::EndTag { name } if FORMATTING.contains(&name.as_str()) => {
@@ -822,8 +835,9 @@ impl TreeBuilder {
                 name, attributes, ..
             } if matches!(name.as_str(), "applet" | "marquee" | "object") => {
                 self.reconstruct_active_formatting_elements();
-                self.insert_html_element(name, attributes);
-                self.active.push(Entry::Marker);
+                if self.insert_html_element(name, attributes).is_some() {
+                    self.active.push(Entry::Marker);
+                }
                 self.frameset_ok = false;
                 Flow::Done
             }
@@ -848,8 +862,7 @@ impl TreeBuilder {
             ) =>
             {
                 self.reconstruct_active_formatting_elements();
-                self.insert_html_element(name, attributes);
-                self.open.pop();
+                self.insert_void_element(name, attributes);
                 self.frameset_ok = false;
                 Flow::Done
             }
@@ -859,8 +872,7 @@ impl TreeBuilder {
                 // The clauses for a `select` context element and a `select` in scope are story
                 // `html-tree-tables`'s: written as if there is none.
                 self.reconstruct_active_formatting_elements();
-                self.insert_html_element(name, attributes);
-                self.open.pop();
+                self.insert_void_element(name, attributes);
                 let hidden = attributes
                     .iter()
                     .find(|a| a.name == "type")
@@ -873,8 +885,7 @@ impl TreeBuilder {
             Token::StartTag {
                 name, attributes, ..
             } if matches!(name.as_str(), "param" | "source" | "track") => {
-                self.insert_html_element(name, attributes);
-                self.open.pop();
+                self.insert_void_element(name, attributes);
                 Flow::Done
             }
             Token::StartTag {
@@ -882,8 +893,7 @@ impl TreeBuilder {
             } if name == "hr" => {
                 // The clause for a `select` in scope is story `html-tree-tables`'s.
                 self.close_a_p_element_in_button_scope();
-                self.insert_html_element(name, attributes);
-                self.open.pop();
+                self.insert_void_element(name, attributes);
                 self.frameset_ok = false;
                 Flow::Done
             }
@@ -994,7 +1004,28 @@ impl TreeBuilder {
 
     /// Whether a `template` element is on the stack of open elements.
     fn template_on_stack(&self) -> bool {
-        self.open.iter().any(|&n| self.is_html(n, &["template"]))
+        self.open.iter().any(|&n| {
+            self.visit();
+            self.is_html(n, &["template"])
+        })
+    }
+
+    /// Insert an HTML element for a token and pop it off the stack of open elements at once:
+    /// whether a limit admitted it.
+    fn insert_void_element(&mut self, name: &str, attributes: &[TokenAttribute]) -> bool {
+        let inserted = self.insert_html_element(name, attributes).is_some();
+        if inserted {
+            self.open.pop();
+        }
+        inserted
+    }
+
+    /// Insert an HTML element for a formatting element's start tag token and push it onto the
+    /// list of active formatting elements, when a limit admits it.
+    fn insert_formatting_element(&mut self, name: &str, attributes: &[TokenAttribute]) {
+        if let Some(element) = self.insert_html_element(name, attributes) {
+            self.push_active_formatting_element(element, name, attributes);
+        }
     }
 
     /// In body's "any other start tag".
@@ -1006,17 +1037,21 @@ impl TreeBuilder {
     /// In body's "any other end tag", which step 4.3 of the adoption agency algorithm also runs:
     /// the element it popped down to, `None` when it ignored the token.
     pub(super) fn any_other_end_tag(&mut self, name: &str) -> Option<NodeId> {
-        for index in (0..self.open.len()).rev() {
+        let len = self.open.len();
+        for index in (0..len).rev() {
             let node = self.open[index];
             if self.html_name(node) == Some(name) {
+                self.add_steps(len - index);
                 self.generate_implied_end_tags(Some(name));
                 self.open.truncate(index);
                 return Some(node);
             }
             if self.is_special(node) {
+                self.add_steps(len - index);
                 return None;
             }
         }
+        self.add_steps(len);
         None
     }
 
@@ -1123,8 +1158,7 @@ impl TreeBuilder {
             Token::StartTag {
                 name, attributes, ..
             } if name == "frame" => {
-                self.insert_html_element(name, attributes);
-                self.open.pop();
+                self.insert_void_element(name, attributes);
                 Flow::Done
             }
             t if is_start(t, &["noframes"]) => self.in_head(t),

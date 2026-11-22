@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T10:53:08Z",
+  "actor": "human:operator",
+  "artifact": "story:test-step-holds-under-load",
+  "kind": "story",
+  "revision": 23,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "adversary on 01a40e2",
+    "reference": "5 mutants confirmed that were red before the change and pass now (limits of the view at twice their value, the read timeout of the fetch at 30 times its value, a walk of hidden flags per reference that compares no attribute): named in the section What the change gives up, with story:time-bounds-in-tests for the way back; 3 gaps that were there before; held: early closes of case_23 are caught, no race in the fetch test server, attribute_visits is thread-local; the comment of the label test was corrected in 9aac537"
+  }
+}

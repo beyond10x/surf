@@ -8,11 +8,11 @@
 
 ![spec: ESS 0.96.0, valid](docs/badges/spec.svg)
 ![conformance: 96 of 96 scenarios](docs/badges/conformance.svg)
-![tests: 579 passed](docs/badges/tests.svg)
+![tests: 661 passed](docs/badges/tests.svg)
 ![third-party crates shipped: 0](docs/badges/dependencies.svg)
 ![unsafe code: forbidden](docs/badges/unsafe.svg)
 ![standard sections marked complete: 0](docs/badges/complete.svg)
-![roadmap: 9 of 22 waves delivered](docs/badges/roadmap.svg)
+![roadmap: 10 of 22 waves delivered](docs/badges/roadmap.svg)
 
 surf is a small browser written in Rust. It does not wrap Chromium, WebKit or Gecko, and nothing
 that ships depends on a third-party crate. Every behaviour is written down as a specification
@@ -159,8 +159,8 @@ there instead.
 4. **No third-party code in what ships.** The Rust standard library and the operating system
    are allowed. The checks fail if the lock file lists an outside package. One exception is
    planned: audited cryptographic primitives for TLS.
-5. **No unsafe code.** Every hand-written crate forbids it. The one exception is a test: a
-   counting allocator that measures what a fetch holds.
+5. **No unsafe code.** Every hand-written crate forbids it. The exceptions are in tests: two
+   counting allocators that measure what a fetch holds and what a parse allocates.
 6. **Text from the web stays text.** Anything from a page, a server or an address is escaped
    before it is printed, so a page cannot forge a line of surf's output.
 7. **A passing test must be able to fail.** Tests are tried against planted defects. A storage
@@ -177,7 +177,7 @@ there instead.
   and hard limits on header and body size.
 - **96 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **579 tests**, built with warnings treated as errors, and 38 tests of the live view's page in
+- **661 tests**, built with warnings treated as errors, and 38 tests of the live view's page in
   a browser.
 
 Fixed after a security review, shipped in release `0.3.0`:
@@ -199,6 +199,15 @@ Fixed after a security review, shipped in release `0.3.0`:
 - **`surfd` keeps the view's token off its standard error.** Started by hand, it prints where the
   live view's address is kept (`$XDG_RUNTIME_DIR/surf/view-url`), not the address with its
   token; `surfd --print-view-url` prints the address for a person who asks for it.
+
+New with the tenth wave of the current plan, not released yet. Nothing a `surf-agent` command
+prints has changed:
+
+- **The HTML parser has limits on untrusted input.** Input bytes (16 MiB), depth (512), nodes
+  (1,048,576), attributes of one element (1,024), stored bytes (64 MiB) and steps (2^27). A
+  parse that meets one stops, keeps what it built and names the limit.
+- **Each link and form field has a label**, its accessible name, computed over the tree without
+  CSS, cut at 1,024 bytes and within a bound of work per page. Only the tests run it yet.
 
 New with the ninth wave of the current plan, shipped in release `0.3.0`. Nothing a `surf-agent`
 command prints has changed:
@@ -232,8 +241,8 @@ New with the eighth wave of the current plan, shipped in release `0.3.0`:
 - **The HTML parser builds a document tree** with the HTML Standard's rules outside tables,
   templates and foreign content (SVG and MathML). All 476 `body` tree cases of the test data
   pass, and all 82 encoding cases: a `meta` that names another encoding parses the page again
-  with it. The parser has no limits yet on depth, nodes or time, and no command runs it on a
-  page, so an answer still shows no page content.
+  with it. The parser had no limits then (they came with the tenth wave), and no command runs it
+  on a page, so an answer still shows no page content.
 
 New with the seventh wave of the current plan, shipped in release `0.3.0`:
 
@@ -350,7 +359,7 @@ New with the first wave:
 
 ## Roadmap
 
-The current plan has 58 stories in 22 steps, called waves. Waves 1 to 9 are delivered. The
+The current plan has 58 stories in 22 steps, called waves. Waves 1 to 10 are delivered. The
 plan is [`docs/plan/agent-waves.md`](docs/plan/agent-waves.md) and its design is
 [`docs/design/agent-interface.md`](docs/design/agent-interface.md).
 
@@ -369,7 +378,7 @@ Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `s
 | 22 | Record an agent's session, turn it into a test, and replay it against the recorded network. |
 
 The next planned steps are the HTML parser on real pages (an answer shows no page content yet),
-first the labels of a page's links and form fields and the parser's limits on untrusted input.
+first the tree rules for tables, templates and foreign content, and the parser behind the document.
 TLS and `https:` are on the list below. None of them has a date.
 
 Next after that, wanted and not planned in detail yet:
@@ -412,13 +421,13 @@ surf v1 — 9 file(s), 15 scenario(s), valid
   96 scenarios: 96 passed, 0 failed, 0 error, 0 unsupported
 96 scenario(s) (15 authored), 28 refusal(s), written to .out/suite.json
   96 scenarios: 96 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 96 scenario(s) each, of suite sha256:579a46b3389c56bb67b8fc3174268f525b8568ee47446e67d2a1cca936660ba8
+the interpreter and the Rust system ran 96 scenario(s) each, of suite sha256:3041446cb0234779316d887f5a96d127f60fc03893977e2b341f92e69af28b81
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 Cargo.lock: 24 package(s), none from outside this repository
     Finished `dev` profile [unoptimized] target(s) in 0.00s
-579 tests: 579 passed, 0 failed, 0 ignored (cargo-nextest 577, doc tests 2)
-test step: 22.2 s of its budget of 120 s
+661 tests: 661 passed, 0 failed, 0 ignored (cargo-nextest 659, doc tests 2)
+test step: 61.9 s of its budget of 120 s
 view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
   38 passed (15.8s)
 html-conformance: 9107 cases, 9095 run, 8428 passed

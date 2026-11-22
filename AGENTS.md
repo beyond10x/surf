@@ -237,8 +237,9 @@ above, and the list of standards itself was written from memory.
     `fetch` 24, `fetch_bounds` 7, `post` 16, `redirects` 27 (cases 21 to 26 and the review's
     case of other spellings over a `TestNetwork` of the test, no real name resolved), `review1_fetch` 5,
     `review1_security_fetch` 13 and
-    `review2_fetch_limits` 7. `adversary_redirect_memory` holds the only `unsafe` of the
-    repository, a counting allocator, test only; no file under a `src/` holds any. Depends on
+    `review2_fetch_limits` 7. `adversary_redirect_memory` holds an `unsafe`, a counting
+    allocator, test only; since wave 10 `crates/html/tests/common/mod.rs` holds the only other
+    one, also a counting allocator of tests; no file under a `src/` holds any. Depends on
     `surf-url`.
   - `crates/ports` (`surf-ports`): in-memory storage and version 4 identities for the generated
     components, one ports type per component. `AgentPorts<R = OsRandom>` stores `Session` and
@@ -443,19 +444,56 @@ above, and the list of standards itself was written from memory.
     formatting elements. `NOT_YET_PARSED` names `tables-and-select`, `template` and
     `foreign-content`; `parse_fragment` returns only its root. `Tree::parent` and
     `Tree::descendants` read the tree without recursion. Parse errors of tree construction are
-    not collected. The section "State" of `src/lib.rs` says it module by module. The parser has
-    no limits yet (depth, nodes, time) until `story:html-parser-limits` (wave 10), and no crate
-    of the product depends on `surf-html` until `story:html-document-port` (wave 11): only the
-    conformance harness and the tests of `surf-page` run the tree builder. 47 tests: 17 unit
-    tests, 13 in `tests/encoding.rs`, 1 in `tests/not_yet_parsed.rs`, 8 in `tests/tree_body.rs`
-    and 8 in `tests/tree_formatting.rs`.
+    not collected. The section "State" of `src/lib.rs` says it module by module. Since wave 10
+    a parse is bounded (`src/limits.rs`, `ParseOptions::limits`, `story:html-parser-limits`):
+    `limits::Limits` has the public fields and defaults `max_input_bytes` 16,777,216 (16 MiB,
+    the body limit of `surf-fetch`; a longer input is cut at a character boundary, bytes before
+    decoding), `max_depth` 512 (elements on the stack of open elements), `max_nodes` 1,048,576
+    (every node of the arena, template contents and detached nodes included),
+    `max_attributes` 1,024 (on one element), `max_stored_bytes` 67,108,864 (64 MiB: the UTF-8
+    bytes of every string the tree holds, clones included, and `limits::ATTRIBUTE_BYTES`, 80,
+    per attribute) and `max_steps` 134,217,728 (2^27: the entries tree construction visits in
+    its scans of the stack of open elements, the list of active formatting elements and a
+    node's children, checked after each token). On a limit the parse stops, the tree holds what
+    was built, and `Tree::stopped_by` names it (`limits::Limit`: `InputBytes`, `Depth`, `Nodes`,
+    `Attributes`, `StoredBytes`, `Steps`, the names of `surf.document.ParseLimit`); `InputBytes`
+    is named only when no other limit stopped the prefix. `Tree::node_count`,
+    `Tree::stored_bytes` and `Tree::steps` read the counts. A tree's heap is at most 2 ×
+    `stored_bytes()` + 3 × `limits::NODE_BYTES` (136) × `node_count()`. The section "Limits" of
+    `src/lib.rs` says where each limit stops. Still unbounded, as the unit reported: the scan of
+    one token before the step check, end tags in the public `tokenizer::tokenize`, and the
+    decoded text of `parse_document_bytes` (up to 3 bytes per input byte). No crate of the
+    product depends on `surf-html` until `story:html-document-port` (wave 11): only the
+    conformance harness and the tests of `surf-page` run the tree builder. 95 tests: 18 unit
+    tests, 13 in `tests/encoding.rs`, 1 in `tests/not_yet_parsed.rs`, 8 in `tests/tree_body.rs`,
+    8 in `tests/tree_formatting.rs`, 36 in `tests/limits.rs` and 11 in
+    `tests/adversary_limits.rs`. The last two share `tests/common/mod.rs`, a counting allocator
+    per thread, and assert the limit that stopped a parse, its steps and the bytes it allocated,
+    no wall time. Each test file is a test binary of its own until
+    `story:one-test-binary-per-crate`.
   - `crates/page` (`surf-page`): since wave 9, the title and the actionable elements of a
     `surf-html` tree (`title`, `actionable_elements`), with their kind, target or value and the
     flags `hidden`, `disabled`, `checked` and `required`. `is_hidden` is the rule of
     `docs/design/html-parser.md` for "hidden": `aria-hidden` true in any ASCII case, the hidden
     elements of the HTML Standard's style sheet, a closed `dialog`, the content of a closed
-    `details` but for its first `summary`. No crate of the product depends on it yet. 24 tests
-    in `tests/elements.rs`. Depends on `surf-html` only.
+    `details` but for its first `summary`. Since wave 10 each row has `label`, its accessible
+    name (`src/label.rs`, `story:html-accessible-name`: Accessible Name and Description
+    Computation 1.2, 4.3.2, with HTML-AAM 4.1, over the tree, without CSS), and `label_cut`.
+    `LABEL_BYTES_MAX` is 1,024: a longer name is cut at the last UTF-8 character boundary at or
+    below 1,024 bytes, without a space the cut would leave at its end. `LABEL_WORK_MAX` is
+    16,777,216: the work for all labels of one call of `actionable_elements`, one unit per node
+    read and one per byte read into a name; once it is spent, each later name comes from the
+    element's own attributes only. `label_cut` says that either happened. A hidden element is
+    named from its own subtree, hidden parts included (a deviation of the crate documentation).
+    The one walk records what the labels need (a dense index of the nodes with their hidden
+    flags, the first element per ID, each `label` with its control, and where the eleven
+    attributes a name reads sit), so a name calls `is_hidden` for no node and searches no
+    attributes. `surf_page::attribute_visits()`, hidden from the documentation, counts the
+    attributes the crate's functions compared on this thread while searching an element's
+    attributes; `tests/label.rs` holds it at 16 per attribute of the page. No crate of the
+    product depends on it yet. 58 tests: 24 in `tests/elements.rs` and 34 in `tests/label.rs`,
+    each a test binary of its own until `story:one-test-binary-per-crate`. Depends on
+    `surf-html` only.
   - `crates/html-conformance` (`surf-html-conformance`): the vendored html5lib-tests (commit
     `c5495c5`, 19 files, 7,134 cases, MIT) and web-platform-tests parser data (commit `13f8051`,
     62 files, 1,973 cases, 3-Clause BSD) under `data/`, each source with a `SOURCE` file of
@@ -583,7 +621,9 @@ Since wave 8 a request has a method and a body in the specification, `surf-html`
 document outside tables, templates and foreign content (run by the conformance harness only),
 and the live view's page has a detail panel. Since wave 9 `surf-fetch` sends a `POST` (no
 command sends one yet), the tree builder handles misnested formatting, and `surf-page` reads
-the title and the actionable elements out of a tree (run by its tests only).
+the title and the actionable elements out of a tree (run by its tests only). Since wave 10 the
+HTML parser stops at six limits and names the one it met, and `surf-page` gives each
+actionable element its label (run by the tests only).
 
 - First target, chosen by the operator on 2026-11-20: Rust, all six components in one process (five
   until wave 2 added `agent`), a headless command line. No isolation in this target.
@@ -762,11 +802,12 @@ the others were written to a scratch directory and not compiled:
   release `0.2.0` that ships `surf`, `surf-agent`, `surfd` and `surf-session` (the agent
   binaries for Linux only at first). Work then moves to the script engine, which is its own
   repository. The waves after 4 stay in the plan; they are planned and not scheduled.
-- Present state: wave 9 is delivered (9 of 22); release `0.2.0` follows wave 4 (the releases
-  are listed at https://github.com/beyond10x/surf/releases). The session `host-operator`
-  ordered the continuation after the checkpoint on 2026-11-21, for the operator: "continue as
-  its `AGENTS.md` says". The next is wave 10 of
-  `docs/plan/agent-waves.md` (`html-accessible-name`, `html-parser-limits`). The stories
+- Present state: wave 10 is delivered (10 of 22); release `0.2.0` follows wave 4 and release
+  `0.3.0` wave 9 (the releases are listed at https://github.com/beyond10x/surf/releases). The
+  session `host-operator` ordered the continuation after the checkpoint on 2026-11-21, for the
+  operator: "continue as its `AGENTS.md` says". The next is `story:one-test-binary-per-crate`,
+  alone, then round 1 of `docs/plan/agent-waves.md` ("Rounds after wave 10": the waves 11 to
+  22 in three rounds). The stories
   accepted behind the planned waves are listed in
   that file, in "Accepted on 2026-11-21, behind the planned waves". Open for the next steps:
   the HTML parser on real pages, and TLS.
@@ -831,7 +872,12 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   configuration in the user's home, a compiler cache it names (`rustc-wrapper`) included, and
   the operating system. cargo also reads the working tree's `.cargo/config.toml`, a parent
   directory of the export: a change to it is uncommitted, so only `ALLOW_DIRTY=1` lets it
-  through.
+  through. On the forge `task check` takes 167 s (release `0.3.0`); on a machine at a load
+  average of 106 to 113 `task check-runner` ran 832 s (2026-11-22), past the build pool's
+  limit of 10 minutes for a job, so there it names its time:
+  `slot --timeout 25m task check-runner`. `.out/runner/tree` is a clone inside the working
+  tree, and `worktree finish` refuses a managed tree that still holds it: remove `.out/runner`
+  before the tree is finished.
 - `task forge-watch COMMIT=<commit>`: `taskfiles/forge-watch.sh <commit>` waits until every
   workflow run of the commit is completed, reading through `b10x-gates ... api --method GET`
   with the policy file from `GATES_POLICY` (default `../gates-policy/policy.json`) and `jq`,
@@ -904,7 +950,9 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   JUnit report, nextest's `Summary` line, the count line `N tests: P passed, F failed, I ignored
   (cargo-nextest n, doc tests d)` (a test nextest ended counts as failed, one it skips as
   ignored), and `test step: <s> s of its budget of 120 s`. Raising either bound is not a fix: a
-  test over the budget is.
+  test over the budget is. A test bounds a time only by a wait for the event with a limit at
+  least 10 times the time it takes alone, and proves a cost by a count (such as
+  `surf_page::attribute_visits()`), not by a wall time.
 - `task open`: every `UNMAPPED:` marker, in `spec/` and `cli/`.
 - `task cli`: check `cli/surf-agent.yaml` against `spec/` and write what `ess` reads from it into
   `.out/cli/` (`binding.json`, `help.txt`). `task test` depends on it.
@@ -945,7 +993,29 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
 
 ## The gate's numbers
 
-On 2026-11-21 with ess 0.96.0, after wave 9 of the agent interface plan, at `a9532a1`:
+On 2026-11-22 with ess 0.96.0, after wave 10 of the agent interface plan, on the wave branch
+at `1b234c4` (`main` of release `0.3.0` merged) with the comment on `label` in
+`spec/domains/document.yaml` changed after it: `surf v1 — 9 file(s), 15 scenario(s), valid`
+(`slot task validate`) and `96 scenario(s) (15 authored), 28 refusal(s)` (`slot task suite`).
+Against the interpreter (`slot task conform`): `96 scenarios: 96 passed, 0 failed, 0 error, 0
+unsupported`. The suite's digest, the sha256 of the bytes of `.out/suite.json` that
+`conform-totals` prints (read with `sha256sum` and from the `digest` of `.out/report.json`):
+`sha256:3041446cb0234779316d887f5a96d127f60fc03893977e2b341f92e69af28b81`. Wave 10 changed it
+(`surf.document.ParseLimit` gained `Steps`, and `parse-stopped-at-a-limit.yaml` a sixth
+document); the comment on `label` changed no byte of the suite. The planted defect, the test
+alone: `planted defect: 96 scenarios: 62 passed, 34 failed, 0 error, 0 unsupported`.
+`generated-check`: `generated/rust matches spec/ (30 artifact(s) and .ess-output)`. The root
+workspace: `task test` is to print `661 tests: 661 passed, 0 failed, 0 ignored (cargo-nextest
+659, doc tests 2)`, the 579 of `main` and the 82 `#[test]` lines the wave adds (36 in
+`crates/html/tests/limits.rs`, 11 in `adversary_limits.rs`, 34 in `crates/page/tests/label.rs`,
+1 unit test in `crates/html/src/tree.rs`; none removed), counted from the diff, not yet from a
+run of the gate. The last gate run on `main` printed `test step: 61.9 s of its budget of 120 s`,
+at a load average of 106 to 113. The Rust system's run, `conform-totals`, `cli`, `lock-check`,
+`view-test` and `html-conformance` were not run for these lines; the wave changed no manifest
+and no `Cargo.lock`, and its units reported `html-conformance: 9107 cases, 9095 run, 8428
+passed`, unchanged.
+
+After wave 9, on 2026-11-21 with ess 0.96.0, at `a9532a1`:
 `surf v1 — 9 file(s), 14 scenario(s), valid` and `95 scenario(s) (14 authored), 28
 refusal(s)`. Against the interpreter: `95 scenarios: 95 passed, 0 failed, 0 error, 0
 unsupported`. Against the Rust system (`conform-rust`): `95 scenarios: 95 passed, 0 failed, 0
@@ -1031,13 +1101,14 @@ same 28 and `generated-check` still names 30 artifacts. Read again on the releas
 the conformance crate's tests are still `6 test suites: 28 passed`. The story adds 18 tests to
 the root workspace (14 in its first commit, 4 in the review fix), so `task test` is to print
 `579 tests: 579 passed, 0 failed, 0 ignored (cargo-nextest 577, doc tests 2)`, counted from the
-`#[test]` lines of the diff, not yet from a run of the gate.
+`#[test]` lines of the diff; the gate on `main` counted the same 579 since.
 
 `REFUSALS_MAX` in `Taskfile.yml` is 28. `task suite` fails above it. Lower it when a refusal goes
 away; raise it only with the new refusal listed here. The list is `grep '^refused:'
 .out/synthesize.log` (read on 2026-11-21 after wave 6: 28 lines, the same as below; the gate
 after wave 7 printed `28 refusal(s)`; in wave 8 the unit of `agent-request-body-spec` read the
-same 28 lines; the gate after wave 9 printed `28 refusal(s)`).
+same 28 lines; the gate after wave 9 printed `28 refusal(s)`, and `task suite` after wave 10
+too).
 Twenty-two are `ESS-SYNTH-010`:
 
 - 10 × `<binding>/binding/delivery`: every binding is `at_most_once`, which has no second

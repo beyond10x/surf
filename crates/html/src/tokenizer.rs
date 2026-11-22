@@ -9,7 +9,10 @@
 //! and switches its state between two tokens (to RCDATA, RAWTEXT, script data or PLAINTEXT
 //! after the start tag of an element whose text it reads); one serves a whole parse, so an
 //! end tag in a text state is appropriate when it names the start tag the machine emitted
-//! last. That tokenizer keeps no parse error.
+//! last. That tokenizer keeps no parse error. Since `story:html-parser-limits` it stops at a
+//! start tag that would keep more attributes than the attribute limit, and it keeps no attribute
+//! of an end tag but the one being read (an end tag token has none, and no error is kept). The
+//! duplicate-attribute check of both looks the name up in a set of the tag's names.
 
 mod machine;
 
@@ -144,20 +147,26 @@ impl From<State> for machine::State {
 /// The tokenizer as the tree builder drives it: one token at a time, from the data state with
 /// no last start tag, its state switched between two tokens. One serves a whole parse, so the
 /// last start tag an appropriate end tag compares with is the last one it emitted. It keeps no
-/// parse error.
+/// parse error, and it holds the attribute limit ([`crate::limits::Limits::max_attributes`]),
+/// which [`tokenize`] does not.
 pub(crate) struct Tokenizer(machine::Tokenizer);
 
 impl Tokenizer {
-    /// A tokenizer over the code points of the input stream, before preprocessing.
-    pub(crate) fn new(input: &[u32]) -> Tokenizer {
+    /// A tokenizer over the code points of the input stream, before preprocessing, that stops
+    /// at a start tag that would keep more than `max_attributes` attributes.
+    pub(crate) fn new(input: &[u32], max_attributes: usize) -> Tokenizer {
         let mut machine = machine::Tokenizer::new(input, machine::State::Data, None);
         machine.drop_errors();
+        machine.limit_attributes(max_attributes);
         Tokenizer(machine)
     }
 
-    /// The next token; [`Token::EndOfFile`] at the end and after it.
-    pub(crate) fn next_token(&mut self) -> Token {
-        self.0.next_token()
+    /// The next token; [`Token::EndOfFile`] at the end and after it. `None` when the tokenizer
+    /// stopped at a start tag that would keep one attribute more than the limit: that tag is
+    /// not emitted, and no token comes after it.
+    pub(crate) fn next_token(&mut self) -> Option<Token> {
+        let token = self.0.next_token();
+        (!self.0.attribute_limit_reached()).then_some(token)
     }
 
     /// Switches the tokenizer to `state` before the next token.

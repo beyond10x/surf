@@ -16,7 +16,7 @@
 //! state, the temporary buffer and the character reference code. The code saturates at
 //! 0x110000, above 0x10FFFF, so that a run of digits of any length cannot overflow it.
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 
 use super::{ParseError, Token, TokenAttribute, Tokenized};
 use crate::charref;
@@ -148,6 +148,8 @@ struct TagToken {
     /// The current attribute (the last of `attributes`) is a duplicate and is removed from the
     /// token when the next attribute starts or the token is emitted (13.2.5.33).
     current_attribute_removed: bool,
+    /// The names of the attributes kept on the token, for the duplicate check in O(1).
+    names: HashSet<String>,
 }
 
 /// The DOCTYPE token being built.
@@ -240,11 +242,22 @@ pub(super) struct Tokenizer {
     processing_instruction: ProcessingInstructionToken,
     /// The tokens emitted and not yet taken, in the order they were emitted.
     emitted: VecDeque<Token>,
+    /// Character tokens emitted after those of `emitted`, one for each code point from
+    /// `pending_at` on, given one at a time: the temporary buffer an end tag name state gives
+    /// back as text (13.2.5.11, 13.2.5.14, 13.2.5.17, 13.2.5.25). The code points stay 4 bytes
+    /// each, not a token each, however long the run of letters was.
+    pending: Vec<u32>,
+    pending_at: usize,
     /// Whether parse errors are kept: by [`Tokenizer::run`], not when a tree builder takes one
     /// token at a time and reads no error.
     keep_errors: bool,
     errors: Vec<ParseError>,
     done: bool,
+    /// The most attributes a start tag token keeps; `None` for no limit.
+    max_attributes: Option<usize>,
+    /// The machine stopped at a start tag that would have kept one attribute more than
+    /// `max_attributes`; that tag was not emitted.
+    attribute_limit_reached: bool,
 }
 
 impl Tokenizer {
@@ -266,10 +279,25 @@ impl Tokenizer {
             doctype: DoctypeToken::default(),
             processing_instruction: ProcessingInstructionToken::default(),
             emitted: VecDeque::new(),
+            pending: Vec::new(),
+            pending_at: 0,
             keep_errors: true,
             errors: Vec::new(),
             done: false,
+            max_attributes: None,
+            attribute_limit_reached: false,
         }
+    }
+
+    /// Stops the machine at a start tag that would keep more than `max` attributes (a duplicate
+    /// it drops is not kept): the tag is not emitted, and nothing after it.
+    pub(super) fn limit_attributes(&mut self, max: usize) {
+        self.max_attributes = Some(max);
+    }
+
+    /// Whether the machine stopped at the attribute limit.
+    pub(super) fn attribute_limit_reached(&self) -> bool {
+        self.attribute_limit_reached
     }
 
     /// Runs the state machine until it emits the end-of-file token.
@@ -278,6 +306,9 @@ impl Tokenizer {
         while !self.done {
             self.step();
             tokens.extend(self.emitted.drain(..));
+            while let Some(c) = self.next_pending() {
+                tokens.push(Token::Character(c));
+            }
         }
         Tokenized {
             tokens,
@@ -292,12 +323,35 @@ impl Tokenizer {
     }
 
     /// The next token: the state machine runs until it has emitted one. After the end-of-file
-    /// token, each call gives the end-of-file token again.
+    /// token, each call gives the end-of-file token again. The machine does not step while a
+    /// token emitted before is not taken.
     pub(super) fn next_token(&mut self) -> Token {
-        while self.emitted.is_empty() && !self.done {
+        loop {
+            if let Some(token) = self.emitted.pop_front() {
+                return token;
+            }
+            if !self.pending.is_empty()
+                && let Some(c) = self.next_pending()
+            {
+                return Token::Character(c);
+            }
+            if self.done {
+                return Token::EndOfFile;
+            }
             self.step();
         }
-        self.emitted.pop_front().unwrap_or(Token::EndOfFile)
+    }
+
+    /// The next code point of `pending`, if any; the buffer is freed after its last.
+    fn next_pending(&mut self) -> Option<u32> {
+        let c = self.pending.get(self.pending_at).copied();
+        if c.is_some() {
+            self.pending_at += 1;
+        } else if !self.pending.is_empty() {
+            self.pending = Vec::new();
+            self.pending_at = 0;
+        }
+        c
     }
 
     /// Switches the state between two tokens, as the tree builder does (13.2.6). The last start
@@ -389,6 +443,11 @@ impl Tokenizer {
 
     fn start_attribute(&mut self) {
         self.finish_attribute();
+        if self.tag.end && !self.keep_errors {
+            // An end tag token has no attributes, and without errors no duplicate is reported:
+            // only the attribute being read is kept.
+            self.tag.attributes.clear();
+        }
         self.tag.attributes.push(TokenAttribute {
             name: String::new(),
             value: String::new(),
@@ -405,12 +464,29 @@ impl Tokenizer {
 
     /// Leaving the attribute name state: a name already on the token is a
     /// `duplicate-attribute` parse error, and the new attribute is removed (13.2.5.33).
+    ///
+    /// The names kept are in a set, so the check is O(1) for each attribute. A start tag that
+    /// keeps one attribute more than `max_attributes` stops the machine.
     fn leave_attribute_name(&mut self) {
-        if let Some((current, earlier)) = self.tag.attributes.split_last()
-            && earlier.iter().any(|a| a.name == current.name)
-        {
+        if self.tag.end && !self.keep_errors {
+            return;
+        }
+        let Some(current) = self.tag.attributes.last() else {
+            return;
+        };
+        if self.tag.names.contains(&current.name) {
             self.error("duplicate-attribute");
             self.tag.current_attribute_removed = true;
+            return;
+        }
+        self.tag.names.insert(current.name.clone());
+        if !self.tag.end
+            && self
+                .max_attributes
+                .is_some_and(|max| self.tag.attributes.len() > max)
+        {
+            self.attribute_limit_reached = true;
+            self.done = true;
         }
     }
 
@@ -1799,12 +1875,16 @@ impl Tokenizer {
                 self.temporary_buffer.push(c);
             }
             _ => {
+                // "Emit a U+003C LESS-THAN SIGN character token, a U+002F SOLIDUS character
+                // token, and a character token for each of the characters in the temporary
+                // buffer": the last are given one at a time from the buffer itself
+                // (`pending`), not queued as a token each, so a long run of
+                // letters holds 4 bytes for each and not a token. The tokens are the same.
                 self.emit_character(LESS_THAN_SIGN);
                 self.emit_character(SOLIDUS);
-                let buffer = std::mem::take(&mut self.temporary_buffer);
-                for c in buffer {
-                    self.emit_character(c);
-                }
+                debug_assert!(self.pending_at >= self.pending.len());
+                self.pending = std::mem::take(&mut self.temporary_buffer);
+                self.pending_at = 0;
                 self.reconsume_in(text);
             }
         }

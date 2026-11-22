@@ -9,6 +9,7 @@ relations:
 - decomposes: epic:headless-rust-target
 - depends_on: story:html-accessible-name
 - depends_on: story:html-parser-limits
+- depends_on: story:test-step-holds-under-load
 scope:
 - confidence: cited
   path: .github/workflows/release.yml
@@ -90,7 +91,7 @@ scope:
   path: taskfiles/test-layout.sh
 - confidence: cited
   path: taskfiles/test-layout.yml
-revision: 19
+revision: 21
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T09:00:41Z", actor: "human:operator", revision: 18, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T09:00:41Z", actor: "human:operator", revision: 19, decided_on: {"recorded":{"verification":1}}}
@@ -146,7 +147,7 @@ What holds in one binary, read at `5c0eb6d`:
 
 Bounds for every command of this story. Every build and test runs through the build pool: `cargo` is wrapped by the pool's shim, every other command that
 builds or tests gets the `slot` prefix (`slot task test`). The pool ends a job after 10 minutes; a command that needs longer names its time with
-`slot --timeout <t>` or, for `cargo`, `SLOT_TIMEOUT=<t>`, at most 1 hour; a `timeout` wrapped around the command extends nothing. A script that measures or
+`slot --timeout <t>` or, for `cargo`, `SLOT_TIMEOUT=<t>`, at most 30 minutes (a job that needs more is split); a `timeout` wrapped around the command extends nothing. A script that measures or
 waits (the three timed runs of statement 1) starts without the `slot` prefix, and the commands in it that build or test carry it. The test step ends within
 120 s and no test runs longer than 60 s. Nothing that stays in the repository is written in Python. Every `cargo` command of this story, in Change and in
 Acceptance, runs with `RUSTFLAGS='-D warnings'`, the flags `task test` sets, so that they share one build; the first `cargo` command after a change of a
@@ -320,7 +321,7 @@ Its base is `main` after three merges: release 0.3.0 (the security fixes), `fix/
 `crates/surf/tests/common/mod.rs`, `crates/surf/tests/review1_generated_check.rs` and `crates/view/tests/stream_bounds.rs`; the story is in the store of
 `release/0.3.0`, merged there, not of this branch, and reaches `main` with release 0.3.0, so no edge to it can be recorded here: the base merge is the
 order), and wave 10
-(`wave/a10-label-limits`: `story:html-accessible-name` and `story:html-parser-limits`, each an edge; they add the test files counted in Context).
+(`wave/a10-label-limits`: `story:html-accessible-name`, `story:html-parser-limits` and `story:test-step-holds-under-load`, each an edge; the first two add the test files counted in Context, the third changes three tests in `crates/fetch/tests/fetch_bounds.rs`, `crates/view/tests/http.rs` and `crates/page/tests/label.rs`).
 
 It runs alone: no other unit that writes under `crates/*/tests`, `conformance/tests`, the `Cargo.toml` of a crate with tests, `Taskfile.yml`,
 `taskfiles/`, `.github/` or `AGENTS.md` runs beside it. One unit, one implementor; alone in its wave, the unit writes the root `Taskfile.yml` itself.

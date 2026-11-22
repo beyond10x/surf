@@ -13,7 +13,7 @@ description: What surf does today, and what it does not do yet.
   hard limits on header and body size.
 - **96 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **579 tests**, built with warnings treated as errors, and 38 tests of the live view's page in a
+- **661 tests**, built with warnings treated as errors, and 38 tests of the live view's page in a
   browser.
 
 Fixed after a security review, shipped in release `0.3.0`:
@@ -35,6 +35,15 @@ Fixed after a security review, shipped in release `0.3.0`:
 - **`surfd` keeps the view's token off its standard error.** Started by hand, it prints where the
   live view's address is kept (`$XDG_RUNTIME_DIR/surf/view-url`), not the address with its
   token; `surfd --print-view-url` prints the address for a person who asks for it.
+
+New with the tenth wave of the current plan, not released yet. Nothing a `surf-agent` command
+prints has changed:
+
+- **The HTML parser has limits on untrusted input.** Input bytes (16 MiB), depth (512), nodes
+  (1,048,576), attributes of one element (1,024), stored bytes (64 MiB) and steps (2^27). A
+  parse that meets one stops, keeps what it built and names the limit.
+- **Each link and form field has a label**, its accessible name, computed over the tree without
+  CSS, cut at 1,024 bytes and within a bound of work per page. Only the tests run it yet.
 
 New with the ninth wave of the current plan, shipped in release `0.3.0`. Nothing a `surf-agent`
 command prints has changed:
@@ -68,8 +77,8 @@ New with the eighth wave of the current plan, shipped in release `0.3.0`:
 - **The HTML parser builds a document tree** with the HTML Standard's rules outside tables,
   templates and foreign content (SVG and MathML). All 476 `body` tree cases of the test data
   pass, and all 82 encoding cases: a `meta` that names another encoding parses the page again
-  with it. The parser has no limits yet on depth, nodes or time, and no command runs it on a
-  page, so an answer still shows no page content.
+  with it. The parser had no limits then (they came with the tenth wave), and no command runs it
+  on a page, so an answer still shows no page content.
 
 New with the seventh wave of the current plan, shipped in release `0.3.0`:
 

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T10:53:01Z",
+  "actor": "human:operator",
+  "artifact": "story:html-parser-limits",
+  "kind": "story",
+  "revision": 23,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "tests of the unit, counted from the files",
+    "reference": "crates/html/tests/limits.rs 36 tests, crates/html/tests/adversary_limits.rs 11 tests; crates/html 95 tests"
+  }
+}

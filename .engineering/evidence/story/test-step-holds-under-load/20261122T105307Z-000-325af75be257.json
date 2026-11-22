@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T10:53:07Z",
+  "actor": "human:operator",
+  "artifact": "story:test-step-holds-under-load",
+  "kind": "story",
+  "revision": 23,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the unit's runs alone, before and after (01a40e2)",
+    "reference": "fetch 6.8 s failed, 2.2 s, 7.2 s failed -> 0.32, 0.38, 0.35 s; case_23 2.5, 2.6, 2.8 -> 2.45, 2.17, 2.42 s; label 5.4, 10.7, 7.8 -> 0.48, 0.25, 0.21 s; case_20 1.29, 1.11, 1.07 -> 1.07, 1.25, 1.08 s; case_32 1.28, 1.19, 1.49 -> 1.02, 1.17, 1.03 s; load average 60 to 127"
+  }
+}

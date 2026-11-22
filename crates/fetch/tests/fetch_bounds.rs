@@ -1,8 +1,9 @@
 //! The whole-fetch time bound and the body buffer bound of `surf-fetch`, through the public API.
 //! `read_timeout` bounds sending the request and receiving the response to its last byte;
 //! running out of it is `Unreachable`. The body buffer never allocates more than the body limit
-//! plus a few KiB, for every framing. Every server is started here on `127.0.0.1` port 0 and ends
-//! on its own within `BOUND`.
+//! plus a few KiB, for every framing. Every server is started here on `127.0.0.1` port 0. Each
+//! ends on its own within `BOUND` but the server that never reads: it accepts until its test
+//! stops it, and lets go of the connection 1 s after its own bound at the latest.
 
 use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -10,7 +11,7 @@ use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use surf_fetch::{fetch, Failure, Limits, Response};
+use surf_fetch::{fetch, send, Failure, Limits, Method, Request, Response};
 
 const BOUND: Duration = Duration::from_secs(10);
 
@@ -149,33 +150,76 @@ fn a_close_delimited_body_dripped_within_each_read_timeout_ends_at_the_read_time
     server.join().expect("server");
 }
 
-/// A server that accepts and never reads. The request is larger than the socket buffers hold,
-/// so sending it blocks; the read timeout bounds that too.
+/// The detail of a fetch whose read timeout ran out after the connection was made.
+const TIMED_OUT: &str = "the server did not complete the exchange within the read timeout";
+
+/// The bound on the time from the moment the server of
+/// `a_server_that_never_reads_the_request_ends_at_the_read_timeout` accepted to the end of the
+/// fetch: at least 10 times the median of that time alone, and at most 30 s. Alone it took 193,
+/// 215 and 211 ms (measured 2026-11-22 at a load average of 99 on 20 processors).
+const NEVER_READ_BOUND: Duration = Duration::from_secs(10);
+
+/// A server that accepts and never reads. The request carries a body, sent through `send`, that
+/// is larger than the socket buffers hold, so sending it blocks; the read timeout bounds that
+/// too. The address is short, so nothing long is parsed before the connect. The server accepts
+/// until the test stops it, and lets go of the connection at `NEVER_READ_BOUND` plus 1 s, so a
+/// fetch that ignores the read timeout fails the test with its message.
 #[test]
 fn a_server_that_never_reads_the_request_ends_at_the_read_timeout() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
     let port = listener.local_addr().expect("address").port();
-    let (done, wait) = mpsc::channel::<()>();
-    let server = accept_then(listener, move |_| {
-        let _ = wait.recv_timeout(BOUND);
+    listener.set_nonblocking(true).expect("nonblocking");
+    let (stop, stopped) = mpsc::channel::<()>();
+    let (accepted, accepted_at) = mpsc::channel::<Instant>();
+    let server = thread::spawn(move || {
+        let stream = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                    if !matches!(stopped.try_recv(), Err(mpsc::TryRecvError::Empty)) {
+                        return;
+                    }
+                    thread::sleep(Duration::from_millis(5));
+                }
+                Err(_) => return,
+            }
+        };
+        let _ = accepted.send(Instant::now());
+        drop(listener);
+        let _ = stopped.recv_timeout(NEVER_READ_BOUND + Duration::from_secs(1));
+        drop(stream);
     });
-    let address = format!("http://127.0.0.1:{port}/{}", "a".repeat(16 * 1024 * 1024));
-    let start = Instant::now();
-    let result = fetch(&address, &limits());
-    let elapsed = start.elapsed();
-    let _ = done.send(());
+    let address = format!("http://127.0.0.1:{port}/");
+    let body = vec![b'a'; 16 * 1024 * 1024];
+    let request = Request {
+        address: &address,
+        method: Method::Post,
+        body: Some(&body),
+        media_type: Some("application/octet-stream"),
+    };
+    let result = send(&request, &limits());
+    let ended = Instant::now();
+    let _ = stop.send(());
     server.join().expect("server");
-    // The fetch must end at the read timeout, not when the server lets go after `BOUND`: of
-    // about 0.7 s measured alone, 0.2 s is the read timeout and 0.5 s the fetch's work on the
-    // 16 MiB address before it connects, in a debug build (measured 2026-11-22), so the bound is
-    // half of `BOUND` and not a multiple of the read timeout.
-    assert!(
-        elapsed < BOUND / 2,
-        "one fetch took {elapsed:?} with a read timeout of {READ_TIMEOUT:?} and ended {result:?}"
+    let elapsed = accepted_at
+        .try_recv()
+        .ok()
+        .map(|at| ended.saturating_duration_since(at));
+    assert_eq!(
+        result.as_ref().err().map(Failure::detail),
+        Some(TIMED_OUT),
+        "the fetch ended {elapsed:?} after the server accepted, with a read timeout of \
+         {READ_TIMEOUT:?}, and not at it: {result:?}"
     );
     assert!(
         matches!(result, Err(Failure::Unreachable(_))),
         "expected Unreachable, got {result:?}"
+    );
+    let elapsed = elapsed.expect("the server accepted");
+    assert!(
+        elapsed < NEVER_READ_BOUND,
+        "one fetch ended {elapsed:?} after the server accepted, with a read timeout of \
+         {READ_TIMEOUT:?}: {result:?}"
     );
 }
 

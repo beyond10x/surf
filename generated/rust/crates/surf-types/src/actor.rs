@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 96684badf51201e308af373a0097db9fb63321aefd9a08fd216a1e28745125c0
+// contract digest 9cf563aeb85e0ebaf274c9cab36fdfa5c94c5872239a1808e0be06ff915e5e98
 // do not edit: regenerate with `ess synthesize`
 
 //! Every actor the specification declares, and the commands each may invoke — as data.

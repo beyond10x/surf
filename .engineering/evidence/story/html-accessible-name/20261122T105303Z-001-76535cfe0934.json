@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T10:53:03Z",
+  "actor": "human:operator",
+  "artifact": "story:html-accessible-name",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "tests of the unit, counted from the files",
+    "reference": "crates/page/tests/label.rs 34 tests, crates/page/tests/elements.rs 24 tests; crates/page 58 tests"
+  }
+}

@@ -276,8 +276,22 @@ the "in head" insertion mode exist.
 Description Computation 1.2 ("Computation steps", 4.3.2), with the HTML Accessibility API
 Mappings for each element ("Accessible Name Computations By HTML Element", for example
 `#input-type-text-input-type-password-input-type-number-input-type-search-input-type-tel-input-type-email-input-type-url-and-textarea-elements-accessible-name-computation`),
-computed over the tree. The row holds the whole name; cutting it to 60 characters is the answer
-format's job.
+computed over the tree (`crates/page/src/label.rs`, `story:html-accessible-name`). The row holds
+the name cut at `surf_page::LABEL_BYTES_MAX`, 1,024 bytes: a longer name ends at the last UTF-8
+character boundary at or below 1,024 bytes, without a space the cut would leave at its end, the
+walk for that name stops there, and the row's `label_cut` is set. Cutting it to 60 characters is
+the answer format's job. `surf_page::LABEL_WORK_MAX`, 16,777,216, bounds the work for all labels
+of one call of `actionable_elements`: one unit per node read, one per byte read from a text node
+or an attribute value into a name, and the bytes of each `aria-labelledby` value split into
+IDREFs. Once it is spent, the name being computed and each later one come from the element's own
+attributes only (`aria-label`; an `input`'s `value`, or its `Submit` or `Reset`; `alt`; `title`;
+`placeholder`; `aria-placeholder`), without `aria-labelledby`, `label` elements or the subtree,
+and `label_cut` is set. So the time of the labels is linear in the nodes and the attributes of
+the tree plus that budget, and their memory at most 1,024 bytes a row and the budget plus the
+attribute bytes the tree stores. Both bounds are a deliberate deviation: the standards bound
+neither a name nor its work. A hidden actionable element, whose row is kept and flagged, is named
+from its own subtree, hidden parts included, as a hidden node referenced by `aria-labelledby` is
+(step 2A would give it the empty name); a deviation too.
 
 "Hidden" in the step "Hidden Not Referenced": accname's own note counts "Nodes with CSS
 properties display:none, visibility:hidden, visibility:collapse or content-visibility:hidden" as
@@ -353,16 +367,60 @@ Open: whether the answer wants kinds for those states, or for `summary`, `detail
 | tree depth (elements on the stack of open elements) | 512 |
 | nodes, template contents included | 1,048,576 |
 | attributes on one element | 1,024 |
-| stored bytes (text and attribute values held by the tree, clones included) | 67,108,864 (64 MiB) |
+| stored bytes (every string the tree holds, clones included, and 80 for each attribute) | 67,108,864 (64 MiB) |
+| steps (entries tree construction visits in its scans) | 134,217,728 (2^27) |
 
 Reaching one stops parsing as "stop parsing" does; the document holds what was built and names
-the limit (a row field, item 2). The standard places none of these: "The algorithm described
-below places no limit on the depth of the DOM tree generated, or on the length of tag names,
-attribute names, attribute values, Text nodes, etc. While implementers are encouraged to avoid
-arbitrary limits, it is recognized that practical concerns will likely force user agents to
-impose nesting depth constraints" (13.2.6, before 13.2.6.1). The depth limit is the kind it
-expects; the node, attribute and stored-byte limits are a deliberate deviation, and so is what
-reaching any limit does (parsing stops).
+the limit (a row field, item 2).
+
+Stored bytes, as `story:html-parser-limits` made them exact: the UTF-8 bytes of every string the
+tree holds, element local names, attribute names, prefixes and values, text, comment data,
+doctype fields, processing instruction targets and data. Names count as well as values because
+the reconstruction of the active formatting elements clones attribute names, which would
+otherwise grow without a bound. Since the adversarial review of the story, each attribute also
+counts `limits::ATTRIBUTE_BYTES`, the size of its record (`size_of::<Attribute>()`, 80 bytes):
+counted by its strings alone, an attribute with a one-byte name counted 1 while it held 80, and
+the default admitted about 2.3 GB of heap. What the limit promises: a tree holds at most 2 ×
+`stored_bytes()` + 3 × `limits::NODE_BYTES` × `node_count()` bytes of heap, where `NODE_BYTES`
+(136) is the size of a node's record in the arena and of its entry in its parent's child list;
+the factors cover lists and texts that grow by doubling, a child list's first room of 4 entries
+and a text's first 8 bytes. At the defaults that is about 536 MiB (inferred from the bound).
+Nodes are not counted in the stored bytes: the node limit bounds them, and at 136 bytes each
+the default stored-byte limit would otherwise stop a tree long before the node limit. Steps:
+every entry visited in a scan of the stack of open elements or of the list of active formatting
+elements, and every child visited in a parent's child list, checked after each token;
+`Tree::steps` reads the count a parse ended with. "Is in the stack of open elements" visits no
+entry (the stack keeps a count for each node), so the reconstruction before each character of a
+text costs no step when there is nothing to reconstruct (before the review, text 20 elements
+below an unclosed `<b>` cost 20 steps a byte and a 1 MiB page of it was cut). The five other
+limits bound memory, not time: an input
+inside them can still cost tokens times depth stack visits (505 nested `span`, then `</q>` to
+16 MiB, ran 122.9 s in the release profile before the story). The default is twice the visits a
+16 MiB page of the kind of five large documentation pages would make (at most 3.8 visits per
+input byte). Where each limit stops, and what a caller gets, is the section "Limits" of
+`crates/html/src/lib.rs`. The tests of `crates/html/tests/limits.rs` and
+`crates/html/tests/adversary_limits.rs` assert no time (a loaded machine made 10 s bounds fail):
+they assert the limit that stopped a parse, its steps, and the bytes it allocated, read by a
+counting allocator of the test binary; a copy that a token can repeat without paying steps (a
+formatting end tag behind a `table` copied its element's start tag token, 1,024 attributes for
+4 input bytes) shows in the bytes allocated. The
+standard places none of these: "The algorithm described below places no limit on the depth of
+the DOM tree generated, or on the length of tag names, attribute names, attribute values, Text
+nodes, etc. While implementers are encouraged to avoid arbitrary limits, it is recognized that
+practical concerns will likely force user agents to impose nesting depth constraints" (13.2.6,
+before 13.2.6.1). The depth limit is the kind it expects; the input, node, attribute,
+stored-byte and step limits are a deliberate deviation, and so is what reaching any limit does
+(parsing stops).
+
+Measured by the story, seconds before and after it, release and test profile (a test-profile
+run before it was ended at 60 s):
+
+| input | release before | release after | test before | test after |
+|---|---|---|---|---|
+| 505 nested `span`, then `</q>` to 1 MiB | 27.006 | 0.427 | over 60 | 5.996 |
+| Noah's Ark: 100 nested `<b>` with 1,024 attributes | 28.417 | 0.040 | over 60 | 0.592 |
+| `<span>` with 1,024 attributes and `</span>` to 1 MiB (the duplicate check) | 1.653 | 0.075 | 2.779 | 0.766 |
+| 50,000 `<html aK>` | 37.214 | 0.002 | 39.644 | 0.070 |
 
 They cost no conformance case. The largest tree-construction input is 1,041 bytes
 (`tests1.dat`) with at most 38 `<` followed by a letter in one case (`tests11.dat`); the largest
