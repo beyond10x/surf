@@ -55,6 +55,8 @@ dependencies = [
  "renderer",
  "shell",
  "surf-fetch",
+ "surf-html",
+ "surf-page",
  "surf-ports",
  "surf-system",
  "surf-types",

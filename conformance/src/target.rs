@@ -5,7 +5,9 @@
 //! it ends. A command is issued on its component's port, and [`Browser::run`] then delivers what it
 //! published through the generated bindings before the answer returns. The transport is
 //! [`Unanswered`]: the suite ends a request itself, with `surf.net.DeliverResponse` or
-//! `surf.net.FailRequest`, so no request is ever answered from the network.
+//! `surf.net.FailRequest`, so no request is ever answered from the network. The parser step is
+//! [`Unparsed`]: the suite ends a parse itself, with `surf.document.AddElement` and
+//! `surf.document.FinishParsing`, so no body is ever parsed by `surf-html`.
 //!
 //! What the target reports, and where it reads it:
 //!
@@ -36,8 +38,9 @@ use ess_domain::command::OutcomeName;
 use ess_primitives::consistency::ConsistencyToken;
 use ess_primitives::node::Node;
 use surf::{
-    AgentBehaviors, Answer, Browser, DocumentBehaviors, NavigatorBehaviors, NetBehaviors,
-    RendererBehaviors, RequestStarted, ShellBehaviors, SystemEvent, Transport, UnmetObligation,
+    AgentBehaviors, Answer, Browser, DocumentBehaviors, NavigatorBehaviors, NetBehaviors, Parse,
+    Parser, ParsingStarted, RendererBehaviors, RequestStarted, ShellBehaviors, SystemEvent,
+    Transport, UnmetObligation,
 };
 use surf_ports::{AgentPorts, Caller};
 use surf_system::BindingInvocation;
@@ -81,9 +84,24 @@ impl Transport for Unanswered {
     }
 }
 
+/// A parser step that never answers: every document stays `Parsing` until the suite ends its
+/// parse itself, with `surf.document.AddElement` and `surf.document.FinishParsing`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Unparsed;
+
+impl Parser for Unparsed {
+    fn parse(&mut self, _started: &ParsingStarted) -> Parse {
+        Parse::Unanswered
+    }
+}
+
 /// A [`Browser`] over component ports `A`, `D`, `N`, `Ne`, `R` and `S`, with the
-/// [`Unanswered`] transport.
+/// [`Unanswered`] transport: what the function a [`SurfTarget`] is built with returns. The
+/// target replaces its parser step with [`Unparsed`] before the scenario's first command.
 pub type ConformanceBrowser<A, D, N, Ne, R, S> = Browser<A, D, N, Ne, R, S, Unanswered>;
+
+/// The browser a scenario runs: a [`ConformanceBrowser`] with the parser step [`Unparsed`].
+type Running<A, D, N, Ne, R, S> = Browser<A, D, N, Ne, R, S, Unanswered, Unparsed>;
 
 type Assemble<A, D, N, Ne, R, S> = Box<dyn Fn(&Setup) -> ConformanceBrowser<A, D, N, Ne, R, S>>;
 
@@ -122,7 +140,7 @@ pub struct SurfTarget<A, D, N, Ne, R, S> {
 }
 
 struct Scenario<A, D, N, Ne, R, S> {
-    browser: ConformanceBrowser<A, D, N, Ne, R, S>,
+    browser: Running<A, D, N, Ne, R, S>,
     /// Who the next command is sent as, set from each command's caller before it is issued, and
     /// the sessions established so far.
     setup: Setup,
@@ -973,7 +991,7 @@ where
     /// Issues one command on its component's port.
     #[allow(clippy::too_many_lines)]
     fn issue(
-        browser: &mut ConformanceBrowser<A, D, N, Ne, R, S>,
+        browser: &mut Running<A, D, N, Ne, R, S>,
         command: &str,
         fields: &BTreeMap<String, Node>,
     ) -> Result<Answered, TargetError> {
@@ -1585,7 +1603,7 @@ where
     /// The rows of one view, by projected field name, for `params`, its parameters by declared
     /// name. A parameter the view does not declare is an adapter failure naming it.
     fn rows(
-        browser: &ConformanceBrowser<A, D, N, Ne, R, S>,
+        browser: &Running<A, D, N, Ne, R, S>,
         view: &str,
         params: &BTreeMap<String, Node>,
     ) -> Result<Vec<ViewRow>, TargetError> {
@@ -1828,7 +1846,7 @@ where
     fn begin_scenario(&self, _scenario: &ScenarioContext) -> Result<(), TargetError> {
         let setup = Setup::default();
         *self.scenario.borrow_mut() = Some(Scenario {
-            browser: (self.assemble)(&setup),
+            browser: (self.assemble)(&setup).with_parser(Unparsed),
             setup,
             writes: 0,
         });
@@ -1867,7 +1885,7 @@ where
                 ));
             }
             scenario.setup.sessions.push(session);
-            scenario.browser = (self.assemble)(&scenario.setup);
+            scenario.browser = (self.assemble)(&scenario.setup).with_parser(Unparsed);
             Ok(())
         })
     }
@@ -2286,7 +2304,8 @@ mod tests {
     /// The `NavigationStarted` and the `Fetch` invocation of `Navigate` with `fields`, over a
     /// fresh system.
     fn navigated(fields: &[(&str, Node)]) -> (NavigationStarted, Fetch) {
-        let mut browser = Browser::from_ports(ComponentPorts::new(), super::Unanswered);
+        let mut browser = Browser::from_ports(ComponentPorts::new(), super::Unanswered)
+            .with_parser(super::Unparsed);
         let fields: BTreeMap<String, Node> = fields
             .iter()
             .map(|(name, node)| ((*name).to_owned(), node.clone()))

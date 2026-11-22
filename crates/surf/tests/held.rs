@@ -38,11 +38,12 @@ fn a_parsed_body_is_held_five_times_until_delivered() {
         .collect();
     assert_eq!(parsing_started, vec![body]);
 
-    // No parser step runs yet (`story:html-document-port`): the document stays `Parsing`.
+    // The parser step (`story:html-document-port`) parsed the page, which has no title; the
+    // events it adds carry no body.
     let documents = browser.system().document.documents().unwrap();
     assert_eq!(documents.len(), 1);
-    assert_eq!(documents[0].state, DocumentState::Parsing);
-    assert_eq!(documents[0].title, None);
+    assert_eq!(documents[0].state, DocumentState::Parsed);
+    assert_eq!(documents[0].title.as_deref(), Some(""));
 
     browser.forget_delivered();
     assert_eq!(

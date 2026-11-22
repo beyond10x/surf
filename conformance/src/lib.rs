@@ -18,7 +18,7 @@
 mod target;
 mod values;
 
-pub use target::{ConformanceBrowser, Setup, SurfTarget, Unanswered};
+pub use target::{ConformanceBrowser, Setup, SurfTarget, Unanswered, Unparsed};
 
 use ess_conformance::target::{ConformanceTarget, ImplementationIdentity};
 use ess_conformance::{AdmittedSuite, CountReport, ExecutedRun, Runner};

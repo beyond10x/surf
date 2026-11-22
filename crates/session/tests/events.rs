@@ -49,9 +49,11 @@ use surfd::{Daemon, State};
 /// entry. Measured by this unit (story: counted from `spec/` as 6).
 const OPEN_ENTRIES: usize = 6;
 
-/// The entries of `go` to a served HTML page: the action entry, its nine events, the answer
-/// entry. Measured by this unit (story: counted from `spec/` as 11).
-const GO_ENTRIES: usize = 11;
+/// The entries of `go` to a served HTML page: the action entry, its ten events, the answer
+/// entry. Measured by this unit (story: counted from `spec/` as 11); since
+/// `story:html-document-port` the parser step adds `surf.document.DocumentParsed` (the page has
+/// no actionable element, so no `surf.document.ElementAdded`).
+const GO_ENTRIES: usize = 12;
 
 // --- Reading entries ---------------------------------------------------------------------------
 

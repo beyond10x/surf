@@ -5,6 +5,7 @@
 
 mod cli;
 mod output_streams;
+mod page;
 mod redirects;
 mod review1_cli;
 mod review1_output;
