@@ -43,8 +43,10 @@
 //! `surf-html` at its default limits and computes the title, the actionable elements with
 //! their labels, and the forms with each control's form owner, `name` and options with
 //! `surf-page` ([`parse_page`]); the step issues `surf.document.AddForm` per form, the `name`
-//! and `form_id` in each `AddElement`, and `surf.document.AddOption` per option of a select
-//! after the select's `AddElement`, before `FinishParsing`. [`Browser`] keeps the tree of each
+//! and `form_id` in each `AddElement` with a radio button's group key `radio_group`
+//! (`F<n> <name>`, or `- <name>` with no form owner; none without a name), and
+//! `surf.document.AddOption` per option of a select after the select's `AddElement`, before
+//! `FinishParsing`. [`Browser`] keeps the tree of each
 //! parsed document, keyed by the document's identity, with the node of each element row and its
 //! forms: read only, through [`Browser::document_tree`] and [`Browser::element_nodes`], and for
 //! the submission step. No component's port receives the tree. The tree is not changed after parsing (decision D2 of
@@ -872,6 +874,19 @@ fn with_query(action: &surf_url::Url, query: &str) -> String {
         url.push_str(fragment);
     }
     url
+}
+
+/// The `radio_group` key of a radio button `control` (`surf.document.Element`): `F<n> <name>`
+/// for one whose form owner is the form of handle `F<n>`, `- <name>` for one with no form owner,
+/// so that the radio buttons of one group, the HTML Standard's "radio button group", share it;
+/// `None` for one without a name or with an empty one, a group of its own. The parse-time rule
+/// of `surf_page` groups checked radio buttons by the same owner and name.
+fn radio_group(control: &surf_page::forms::Control) -> Option<String> {
+    let name = control.name.as_deref().filter(|name| !name.is_empty())?;
+    Some(match control.owner {
+        Some(owner) => format!("F{} {name}", owner + 1),
+        None => format!("- {name}"),
+    })
 }
 
 fn element_kind(kind: surf_page::Kind) -> ElementKind {
@@ -1717,6 +1732,9 @@ where
                 form_id: control
                     .and_then(|control| control.owner)
                     .and_then(|owner| form_ids[owner].clone()),
+                radio_group: control
+                    .filter(|_| matches!(element.kind, surf_page::Kind::Radio))
+                    .and_then(radio_group),
             })?;
             let AddElementOutcome::Added { element_added } = outcome else {
                 continue;

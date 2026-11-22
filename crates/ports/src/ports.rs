@@ -313,9 +313,9 @@ context!(DocumentPorts);
 /// A checkbox's or a radio button's activation, its outcomes chosen in the order `spec/` declares
 /// them: an element no row holds, one neither a checkbox nor a radio button, a disabled one and
 /// a hidden one are refused; a radio button is checked and every other radio button of its group
-/// (same document, same form owner, same name) unchecked, where a group with no form owner or no
-/// name selects no other (the marker at `surf.document.Check`); a checked checkbox is unchecked,
-/// and an unchecked one checked.
+/// (same document, same `radio_group` key: the same form owner and name, or no form owner and
+/// the same name) unchecked, where a radio button with no key (no name) selects no other; a
+/// checked checkbox is unchecked, and an unchecked one checked.
 impl<R> CheckBehavior for DocumentPorts<R> {
     fn check(&mut self, input: Check) -> Result<CheckOutcome, UnmetObligation> {
         let Some(mut subject) = self.elements.get(&input.element_id) else {
@@ -356,10 +356,8 @@ impl<R> CheckBehavior for DocumentPorts<R> {
                     other.element_id != group.element_id
                         && other.kind == ElementKind::Radio
                         && other.document_id == group.document_id
-                        && other.form_id.is_some()
-                        && other.form_id == group.form_id
-                        && other.name.is_some()
-                        && other.name == group.name
+                        && other.radio_group.is_some()
+                        && other.radio_group == group.radio_group
                 },
                 |other| other.checked = false,
             );

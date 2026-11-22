@@ -98,9 +98,12 @@
 //! `hidden`, from the row's `hidden` flag, which is wider than `hid` and is what `SetValue`
 //! refuses; then for `fill` `readonly`, and for `pick` `unknown-option` (a select without an
 //! option of that label, then of that value; a word other than `on` or `off` for a checkbox, or
-//! than `on` for a radio button) and `disabled` or `hidden` for the option picked. A checkbox
-//! already in the state asked for is left as it is: `did pick "<handle>"`, status 0, no action.
-//! Otherwise the session sends `Fill` or `Pick` as the holder, records the action (`<n> fill
+//! than `on` for a radio button) and `disabled` for the option picked (an option is hidden only
+//! where its select is, which is refused `hidden` before). A checkbox already in the state asked
+//! for is left as it is: `did pick "<handle>"`, status 0, no action. The value of a `text` or
+//! `password` control is sent with its line feeds and carriage returns removed, as the HTML
+//! Standard sanitizes a single-line `input`; a `textarea` keeps them. Otherwise the session sends
+//! `Fill` or `Pick` as the holder, records the action (`<n> fill
 //! <handle>`, `<n> pick <handle>`: the handle bare, never the value or the option) and runs the
 //! system, in which the bindings set the value, check the control (a radio button unchecks the
 //! others of its group) or select the option. The answer is `did fill "<handle>"` or `did pick
@@ -1047,8 +1050,9 @@ impl<T: Transport> Session<T> {
     /// `wrong-kind` for a control that is not `text`, `password` or `textarea`, `disabled`,
     /// `hidden` and `readonly` from the control's row; otherwise `Fill` as the holder, and when
     /// it is `requested`, `RecordAction` `fill` with the handle alone and a run, in which the
-    /// binding gives the control the value (`SetValue`). The value is in no row of the session
-    /// and no line of the answer.
+    /// binding gives the control the value (`SetValue`). The value of a `text` or `password`
+    /// control is sent without its line breaks ([`sanitized`]). The value is in no row of the
+    /// session and no line of the answer.
     fn fill(&mut self, handle: &str, value: &str) -> Result<Reply, Stop> {
         if self.is_closed() {
             return Ok(self.with_state(RefusalReason::Closed));
@@ -1068,7 +1072,7 @@ impl<T: Transport> Session<T> {
         let outcome = self.browser.agent_mut().fill(Fill {
             session_id: self.session_id.clone(),
             element_id: row.element_id,
-            value: value.to_string(),
+            value: sanitized(row.kind, value),
             handle: handle.to_string(),
         })?;
         match outcome {
@@ -1128,9 +1132,6 @@ impl<T: Transport> Session<T> {
                     None => return Ok(self.with_state(RefusalReason::UnknownOption)),
                     Some(option) if option.disabled => {
                         return Ok(self.with_state(RefusalReason::Disabled));
-                    }
-                    Some(option) if option.hidden => {
-                        return Ok(self.with_state(RefusalReason::Hidden));
                     }
                     Some(option) => Some(option.option_id.clone()),
                 }
@@ -1900,6 +1901,23 @@ fn now_block(links: &[Link], states: &HashMap<String, State>) -> Option<Now> {
         });
     }
     Some(Now { total, elements })
+}
+
+/// The value `fill` sends for a control of `kind`: for `text` and `password`, the kinds of a
+/// single-line `input`, `value` with every U+000A and U+000D removed, the value sanitization
+/// algorithm of the HTML Standard's Text, Search, Telephone, URL, Email and Password states
+/// ("strip newlines"); for a `textarea`, `value` as given. It is done here, before `Fill`,
+/// because the specification's `SetValue` stores its input as it is: a field's `sets:` has no
+/// operation on a string. So the value `FillRequested` counts, the row holds and a submission
+/// sends is the one the field holds.
+fn sanitized(kind: ElementKind, value: &str) -> String {
+    match kind {
+        ElementKind::Text | ElementKind::Password => value
+            .chars()
+            .filter(|c| !matches!(c, '\n' | '\r'))
+            .collect(),
+        _ => value.to_string(),
+    }
 }
 
 /// The word of a submission's end reason ("Pressing a button" above): one per reason;

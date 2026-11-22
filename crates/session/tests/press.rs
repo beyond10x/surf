@@ -739,3 +739,35 @@ fn press_without_its_handle_is_usage() {
     assert_eq!(status, 1, "{text}");
     assert_eq!(typed.did, Some(Did::Refused(RefusalReason::WrongKind)));
 }
+
+/// Decision 1 of the fix round of `story:agent-fill-pick`: a text field holds its value without
+/// line breaks, so a `press` submits the stripped value; a textarea's keeps them.
+#[test]
+fn a_pressed_form_submits_the_stripped_value() {
+    let server = FormServer::start();
+    server.page("/find", HOME);
+    let (mut session, token) = at(
+        &server,
+        "/form.html",
+        "<!doctype html><form action=\"/find\"><label>Q <input name=\"q\"></label>\
+         <label>Note <textarea name=\"t\"></textarea></label><button>Find</button></form>",
+    );
+    for (handle, value) in [("f1", "light\r\nhouse\n"), ("f2", "a\nb")] {
+        let (status, text, _, _) = ask(
+            &mut session,
+            &token,
+            "fill",
+            &[("handle", handle), ("value", value)],
+        );
+        assert_eq!(status, 0, "{text}");
+    }
+    let (status, text, _, _) = ask(&mut session, &token, "press", &[("handle", "b1")]);
+    assert_eq!(status, 0, "{text}");
+    assert!(
+        server
+            .lines()
+            .contains(&"GET /find?q=lighthouse&t=a%0D%0Ab HTTP/1.1".to_string()),
+        "{:?}",
+        server.lines()
+    );
+}

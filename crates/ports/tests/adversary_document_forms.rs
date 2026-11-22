@@ -36,6 +36,7 @@ fn control(n: u64, document: u64, kind: ElementKind, checked: bool) -> ElementSn
             readonly: false,
             name: Some("group".to_owned()),
             form_id: Some(FormId(uuid(7))),
+            radio_group: Some("F7 group".to_owned()),
         },
     }
 }
@@ -112,23 +113,38 @@ fn adversary_document_a_radio_group_holds_radio_buttons_of_its_document_only() {
     assert!(checked(&ports, 1));
 }
 
-/// `spec/` (the marker at `surf.document.Check`): a filter that reads an absent `form_id`
-/// selects nothing, so a radio button with no form owner unchecks no other, not even one with
-/// no form owner and the same name.
+/// `spec/` (`surf.document.Check`, since decision 2 after the adversary's pass on
+/// `story:agent-fill-pick`): radio buttons with no form owner and the same name share the key
+/// `radio_group`, so checking one unchecks the other; radio buttons with no name have no key,
+/// and checking one unchecks no other.
 #[test]
-fn adversary_document_a_radio_button_with_no_form_owner_unchecks_no_other() {
+fn adversary_document_a_radio_button_with_no_form_owner_unchecks_its_group_only() {
     let mut ports = DocumentPorts::new();
-    for (n, checked) in [(1, false), (2, true)] {
+    for (n, checked, group) in [
+        (1, false, Some("- group")),
+        (2, true, Some("- group")),
+        (3, false, None),
+        (4, true, None),
+    ] {
         let mut radio = control(n, 9, ElementKind::Radio, checked);
         radio.data.form_id = None;
+        radio.data.radio_group = group.map(str::to_owned);
+        if group.is_none() {
+            radio.data.name = None;
+        }
         ElementStorage::put(&mut ports, radio);
     }
-    ports
-        .check(Check {
-            element_id: ElementId(uuid(1)),
-        })
-        .unwrap();
-    assert_eq!([1, 2].map(|n| checked(&ports, n)), [true, true]);
+    for n in [1, 3] {
+        ports
+            .check(Check {
+                element_id: ElementId(uuid(n)),
+            })
+            .unwrap();
+    }
+    assert_eq!(
+        [1, 2, 3, 4].map(|n| checked(&ports, n)),
+        [true, false, true, true]
+    );
 }
 
 fn option(n: u64, selected: bool, disabled: bool, hidden: bool) -> ListOptionSnapshot {

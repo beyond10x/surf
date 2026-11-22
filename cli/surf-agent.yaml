@@ -74,6 +74,12 @@ callables:
 # from `SURF_SESSION` when `--session` is absent, and the token from `SURF_TOKEN` when
 # `--token-file` is absent; an option given wins over the environment. What would settle it: an
 # environment source in an ESS command-line binding.
+# UNMAPPED: `--` as the end of options for every command (`story:agent-fill-pick`, decision 3
+# after the adversary's pass). After the first `--` the client reads every word as a positional,
+# even one that starts with `-` (`fill f1 -- -5`, `pick f2 -- "-- choose --"`), and the word `-`
+# as a value of one dash, not standard input (`fill f1 -- -`). `ess-cli/2` fills positionals only
+# before `--` and gives the words after it to a `trailing` source, which takes a list and no
+# positional. What would settle it: positionals that `ess-cli` fills after `--` too.
 commands:
   - path: [open]
     callable: open

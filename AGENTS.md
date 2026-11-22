@@ -315,7 +315,10 @@ above, and the list of standards itself was written from memory.
     to row (`Rows::index`), so a put or a read by key is one hash lookup; 10,001 links of one
     page are stored in under a second (`crates/session/tests/adversary_parse.rs`). Its tests
     write `readonly: false` in each `ElementData` since `story:agent-fill-pick` added the
-    field. Depends on the generated crates only.
+    field. Since its fix round `DocumentPorts::check` unchecks the other radio buttons of the
+    subject's document with the same `radio_group` key (the parser step's `F<n> <name>` or
+    `- <name>`), so radio buttons with no form owner and one name are one group; a radio button
+    with no name has no key and unchecks no other. Depends on the generated crates only.
   - `crates/surf` (`surf`): a library only since wave 3 of the agent plan. It builds the
     generated `System` from six component ports the caller supplies and adds the `net`
     component's transport, a trait with one method, as a parameter. `Browser::run` hands each
@@ -408,7 +411,12 @@ above, and the list of standards itself was written from memory.
     <value>` and `pick <handle> <option>` (`story:agent-fill-pick`; `fill <handle> -` reads the
     value from standard input, `client::run_with_input`, at most 64 KiB without one line feed,
     the fourth `UNMAPPED:` marker of `cli/surf-agent.yaml`), and `press <handle>`
-    (`story:agent-press-submit`); the package carries the release version, `0.4.0`, as do `surf-cli`, `surfd` and
+    (`story:agent-press-submit`). Since the fix round of `story:agent-fill-pick` `--` ends the
+    options of every command (the fifth marker; `Call::stdin` tells `fill f1 -` from
+    `fill f1 -- -`), and a value from standard input whose request is over 65,536 bytes is
+    refused naming its quoted size (`client::STDIN_VALUE_FITS`, 16,000 bytes, always fits beside
+    a handle of up to 1,364); the `Debug` of a wire `Arg` writes its value's length. The
+    package carries the release version, `0.4.0`, as do `surf-cli`, `surfd` and
     `surf-session`. `open` starts `surfd` from the directory of its own executable. Depends on
     `surf-answer` and `surf-secret`.
   - `crates/surfd` (`surfd`): a library and the binary `surfd`, the daemon the agent command line
@@ -498,7 +506,10 @@ above, and the list of standards itself was written from memory.
     with the handle alone, after the session checks, from the rows, `unknown-handle`,
     `wrong-kind`, `disabled`, `hidden` (the row's flag), then `readonly` or `unknown-option`,
     because the bindings drop a refusal of `SetValue`, `Check` and `SelectOption`; `follow` of a
-    control is `wrong-kind`. Since `story:agent-press-submit` a button line names what it
+    control is `wrong-kind`. Since its fix round the value of a `text` or `password` control
+    is sent without U+000A and U+000D (`sanitized`, before `Fill`: `SetValue` stores its input
+    as it is), and the hidden-option refusal is gone (an option is hidden only with its
+    select). Since `story:agent-press-submit` a button line names what it
     submits (`surf::Browser::submits`), and `press` issues `Press` after the session checks
     `unknown-handle`, `wrong-kind`, `disabled`, `hidden`, `no-default-action`, and from
     `surf::Browser::plan_submission` (the computation the submission step itself uses, so the
@@ -1272,8 +1283,10 @@ outcome `SetValue/outcome/readonly`: `170 scenario(s) (24 authored), 48 refusal(
 Against the interpreter and against the Rust system: `170 scenarios: 170 passed, 0 failed, 0
 error, 0 unsupported`; `conform-totals`: `the interpreter and the Rust system ran 170
 scenario(s) each, of suite
-sha256:fbe2be79ba2ccfcc09fcb7ea7df4e7663de6f8eb82eb7b530ea35fcb1f0ebfcd` (the digest since
-`story:agent-press-submit` added `PressCall`, after the fix round of `story:agent-form-port`
+sha256:8b5c4b2f27ec981e3b3d5dff934bc62e935606f9b441604980c929c185d9a132` (the digest since
+the fix round of `story:agent-fill-pick` added the element field `radio_group` and a group
+with no form owner to `agent-pick-unchecks-radio-group`, after `story:agent-press-submit`
+added `PressCall`, the fix round of `story:agent-form-port`
 added the end reason `AddressTooLong` and `story:agent-fill-pick` added `FillCall`, `PickCall`
 and `readonly`; the counts did not change; no gate step compares it).
 The planted defect:

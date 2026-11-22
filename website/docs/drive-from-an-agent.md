@@ -159,7 +159,10 @@ when they hold.
 
 `fill f1 ada` types into a field; for a secret use `fill f2 -` and write the value to standard
 input: an argument word is readable by other users. `pick` chooses an option or checks a box.
-A password is never printed: `(set)` or `(empty)`.
+A password is never printed: `(set)` or `(empty)`. A value of up to 16,000 bytes from standard
+input always fits its request. A text field drops the line breaks of its value, as a browser
+does; a textarea keeps them. `--` ends the options, for a value or an option that starts with a
+dash: `fill f1 -- -5`, `pick f2 -- "-- choose --"`.
 
 ```sh
 printf '%s\n' "$PASSWORD" | surf-agent fill f2 -

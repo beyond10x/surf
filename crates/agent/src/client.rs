@@ -112,13 +112,17 @@ fn call(
     err: &mut dyn Write,
 ) -> Result<u8, Failure> {
     let mut call = cli::parse(args, env).map_err(|error| Failure::Usage(error.0))?;
-    if call.command == "fill" && call.value.as_deref() == Some(cli::STDIN_VALUE) {
+    let from_stdin = call.command == "fill" && call.stdin;
+    if from_stdin {
         call.value = Some(read_value(input)?);
     }
-    let request = call
-        .request()
-        .encode()
-        .map_err(|error| Failure::Usage(error.to_string()))?;
+    let request = call.request();
+    let request = request.encode().map_err(|error| match error {
+        wire::RequestError::TooLarge if from_stdin => {
+            Failure::Usage(too_long_for_the_wire(&request))
+        }
+        other => Failure::Usage(other.to_string()),
+    })?;
 
     let runtime_dir = env
         .runtime_dir
@@ -185,6 +189,50 @@ fn call(
         let _ = writeln!(err, "surf-agent: {}", printable(reason));
     }
     Ok(answer.status)
+}
+
+/// A value of `fill -` of up to this many bytes always fits in its request, beside a handle of
+/// up to [`FILL_HANDLE_FITS`] bytes as quoted (a handle the session gives, such as `f12`, is a
+/// few). [`wire::Request::encode`] quotes a byte outside printable ASCII, `"` and `\` as `\x`
+/// and two digits, 4 bytes, so 16,000 bytes take at most 64,000; a `fill` request is 172 bytes
+/// besides its value and its handle (`surf-wire 1`, `command fill`, the session's 36 characters,
+/// the token's 64 digits, `arg handle ""`, `arg value ""`, `end`, each line with its line feed),
+/// and 64,000 + 172 + 1,364 = 65,536, [`wire::REQUEST_MAX`].
+pub const STDIN_VALUE_FITS: usize = 16_000;
+
+/// The longest handle, as quoted, beside which a value of [`STDIN_VALUE_FITS`] bytes fits.
+pub const FILL_HANDLE_FITS: usize = 1_364;
+
+/// The message for a value from standard input whose request is over [`wire::REQUEST_MAX`]: the
+/// value's size on the wire and the rest of the request, never a byte of the value.
+fn too_long_for_the_wire(request: &wire::Request) -> String {
+    let quoted = request
+        .arg("value")
+        .map_or(0, |value| surf_answer::quote(value).len());
+    let whole = wire_length(request);
+    format!(
+        "the value read from standard input is longer than a request carries: {quoted} bytes \
+         quoted on the wire beside {} bytes of the rest of the request, over {} bytes; a value of \
+         up to {STDIN_VALUE_FITS} bytes always fits",
+        whole - quoted,
+        wire::REQUEST_MAX
+    )
+}
+
+/// The bytes `request` takes on the wire, as [`wire::Request::encode`] writes it, counted
+/// without the bound.
+fn wire_length(request: &wire::Request) -> usize {
+    let mut length = wire::VERSION_LINE.len() + 1 + "command ".len() + request.command.len() + 1;
+    if let Some(session) = &request.session {
+        length += "session ".len() + session.len() + 1;
+    }
+    if request.token.is_some() {
+        length += "token ".len() + 64 + 1;
+    }
+    for arg in &request.args {
+        length += "arg ".len() + arg.name.len() + 1 + surf_answer::quote(&arg.value).len() + 1;
+    }
+    length + "end\n".len()
 }
 
 /// The value of `fill -` from `input`: at most [`STDIN_VALUE_MAX`] bytes of UTF-8, without one

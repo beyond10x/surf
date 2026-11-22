@@ -3,7 +3,7 @@
 //! parser's table: [`parse`] reads the words through them and nothing else, and the test `drift`
 //! holds them to `.out/cli/binding.json`, which `task cli` writes from the document.
 //!
-//! The differences from the document are its four `UNMAPPED:` markers, and only those:
+//! The differences from the document are its five `UNMAPPED:` markers, and only those:
 //!
 //! - (a) `ess-cli/2` has no environment source. The parser reads the session from `SURF_SESSION`
 //!   when `--session` is absent and the token from `SURF_TOKEN` when `--token-file` is absent;
@@ -15,6 +15,9 @@
 //!   exit 2 and touches no path; the directory is `$XDG_RUNTIME_DIR/surf/` always ([`GLOBALS`]).
 //! - (d) the value word `-` of `fill` ([`STDIN_VALUE`]). The parser keeps the word; the client
 //!   reads the value from standard input in its place ([`crate::client::run_with_input`]).
+//! - (e) `--` ends the options of every command: every word after it is a positional, one that
+//!   starts with `-` included, and the value word `-` after it is one dash, not standard input
+//!   ([`Call::stdin`]).
 //!
 //! The token is never an argument word: no option takes it, because other local users can read
 //! a process's arguments. It is read from `SURF_TOKEN` or from a file that is a regular file, not
@@ -258,7 +261,10 @@ open takes it only with an address.
 follow, fill, pick and press take a handle of the now block of the last answer, such as l3,
 f1 or b1.
 fill - reads the value from standard input; give a secret that way, since other users can
-read the words of a command. pick takes an option's label or value, or on or off for a box.
+read the words of a command. A value of up to 16000 bytes from standard input always fits.
+pick takes an option's label or value, or on or off for a box.
+-- ends the options: a word after it is an argument even when it starts with -
+(fill f1 -- -5, pick f2 -- \"-- choose --\"; fill f1 -- - fills one dash).
 ";
 
 /// The value word of `fill` that the client replaces by standard input, without one line feed
@@ -327,6 +333,9 @@ pub struct Call {
     pub form: Option<&'static str>,
     /// The line of `--from-line`, from 1; only beside [`Call::form`].
     pub from_line: Option<u64>,
+    /// The value of `fill` is read from standard input: its word is [`STDIN_VALUE`], given before
+    /// any `--` (after `--` the word `-` is a value of one dash).
+    pub stdin: bool,
 }
 
 impl fmt::Debug for Call {
@@ -347,6 +356,7 @@ impl fmt::Debug for Call {
             .field("option", &self.option)
             .field("form", &self.form)
             .field("from_line", &self.from_line)
+            .field("stdin", &self.stdin)
             .finish()
     }
 }
@@ -399,15 +409,19 @@ fn usage(message: impl Into<String>) -> UsageError {
 /// address), then the token, then the session, then the address.
 pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
     let mut command: Option<&'static Command> = None;
-    let mut positionals: Vec<&OsStr> = Vec::new();
+    // Each positional word, and whether it came after `--`.
+    let mut positionals: Vec<(&OsStr, bool)> = Vec::new();
     let mut given: Vec<(&'static Source, OsString)> = Vec::new();
+    let mut options_ended = false;
     let mut index = 0;
     while index < args.len() {
         let number = index + 1;
         let word = &args[index];
         index += 1;
         let bytes = word.as_encoded_bytes();
-        if let Some(rest) = bytes.strip_prefix(b"--") {
+        if !options_ended && bytes == b"--" {
+            options_ended = true;
+        } else if let Some(rest) = bytes.strip_prefix(b"--").filter(|_| !options_ended) {
             let (name, inline) = match rest.iter().position(|&b| b == b'=') {
                 Some(at) => (&rest[..at], Some(&rest[at + 1..])),
                 None => (rest, None),
@@ -430,7 +444,8 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
                 .find(|source| source.long().is_some_and(|long| long.as_bytes() == name))
             else {
                 return Err(usage(format!(
-                    "word {number} is not an option of {}; no option takes the token",
+                    "word {number} is not an option of {}; no option takes the token; -- before it makes \
+                     it an argument",
                     current.name
                 )));
             };
@@ -464,9 +479,9 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
                 )));
             }
             given.push((source, value));
-        } else if bytes.len() > 1 && bytes[0] == b'-' {
+        } else if !options_ended && bytes.len() > 1 && bytes[0] == b'-' {
             return Err(usage(format!(
-                "word {number} is not an option of surf-agent"
+                "word {number} is not an option of surf-agent; -- before it makes it an argument"
             )));
         } else if command.is_none() {
             command = Some(
@@ -478,7 +493,7 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
                     })?,
             );
         } else {
-            positionals.push(word);
+            positionals.push((word, options_ended));
         }
     }
     let Some(command) = command else {
@@ -495,6 +510,7 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
         option: None,
         form: None,
         from_line: None,
+        stdin: false,
     };
     let positional_count = command
         .arguments
@@ -578,13 +594,16 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
         for source in argument.sources {
             if let Source::Positional { index, required } = source {
                 match positionals.get(index - 1) {
-                    Some(word) => {
+                    Some(&(word, after_end)) => {
                         let text = word
                             .to_str()
                             .ok_or_else(|| usage(format!("the {} is not UTF-8", argument.field)))?;
                         match argument.field {
                             "handle" => call.handle = Some(text.to_string()),
-                            "value" => call.value = Some(text.to_string()),
+                            "value" => {
+                                call.stdin = !after_end && text == STDIN_VALUE;
+                                call.value = Some(text.to_string());
+                            }
                             "option" => call.option = Some(text.to_string()),
                             _ => call.url = Some(text.to_string()),
                         }

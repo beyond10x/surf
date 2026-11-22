@@ -284,6 +284,15 @@ entities:
       # where it has none. A link has none.
       - name: form_id
         type: Optional<surf.document.FormId>
+      # The radio button group key the parser step computes (HTML Standard, "radio button
+      # group"): for a `radio` with a non-empty `name`, its form owner and its name, the same text
+      # for every radio button of one group of its document, a radio button with no form owner
+      # included; absent for every other element and for a radio button with no name or an
+      # empty one, which is a group of its own. `Check` unchecks the radio buttons of the
+      # subject's document with the same key; a filter that compares two absent values selects
+      # nothing, which is why the key, and not `form_id` and `name`, is compared.
+      - name: radio_group
+        type: Optional<String>
     relations:
       - name: document
         kind: references
@@ -532,6 +541,8 @@ commands:
         type: Optional<String>
       - name: form_id
         type: Optional<surf.document.FormId>
+      - name: radio_group
+        type: Optional<String>
     outcomes:
       - name: no-such-document
         when_related: {via: input.document_id, exists: false}
@@ -566,6 +577,7 @@ commands:
           readonly: input.readonly
           name: input.name
           form_id: input.form_id
+          radio_group: input.radio_group
         emits:
           - surf.document.ElementAdded
         payload:
@@ -820,12 +832,10 @@ commands:
   # A checkbox's or a radio button's activation behaviour (HTML Standard, the Checkbox and Radio
   # Button states): a checkbox's checkedness is toggled; a radio button becomes checked, and every
   # other radio button of its group unchecked. Its group is the radio buttons of its document with
-  # the same form owner and the same `name`.
-  # UNMAPPED: the group of a radio button with no form owner (the radio buttons of its tree with no
-  # form owner and the same name) and of one with no name (itself alone). A filter that reads an
-  # absent `form_id` or `name` selects nothing, so neither unchecks another; the HTML Standard
-  # unchecks the first group's others. What would settle it: a comparison of absent values in a
-  # filter, or a group key the parser step computes.
+  # the same form owner and the same `name`, a radio button with no form owner among the others
+  # with none: they share the key `radio_group` the parser step computes. A radio button with no
+  # name has no key, so a check of it unchecks no other (`story:agent-fill-pick`, decision 2 after
+  # the adversary's pass).
   - name: surf.document.Check
     naming:
       wire: check
@@ -879,8 +889,7 @@ commands:
               all:
                 - kind == radio
                 - document_id == subject.document_id
-                - form_id == subject.form_id
-                - name == subject.name
+                - radio_group == subject.radio_group
             sets:
               checked: false
         emits:

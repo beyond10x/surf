@@ -133,7 +133,8 @@ pub const SOCKET: &str = "surfd.sock";
 
 // --- The request --------------------------------------------------------------------------------
 
-/// One request. Its `Debug` writes the token as `Token(..)`.
+/// One request. Its `Debug` writes the token as `Token(..)` and each argument's value as its
+/// length ([`Arg`]).
 #[derive(Clone, Debug)]
 pub struct Request {
     /// The command, a word of `[a-z]+`.
@@ -146,13 +147,23 @@ pub struct Request {
     pub args: Vec<Arg>,
 }
 
-/// One `arg` line: a name and its exact value.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// One `arg` line: a name and its exact value. Its `Debug` writes the value as its length in
+/// bytes, never its bytes: the value of `fill` can be a password.
+#[derive(Clone, PartialEq, Eq)]
 pub struct Arg {
     /// The argument name, a word of `[a-z]+`.
     pub name: String,
     /// The value, unquoted.
     pub value: String,
+}
+
+impl fmt::Debug for Arg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Arg")
+            .field("name", &self.name)
+            .field("value", &format_args!("{} bytes", self.value.len()))
+            .finish()
+    }
 }
 
 /// Why a request was not read or not written.

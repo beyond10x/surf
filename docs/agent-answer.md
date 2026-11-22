@@ -273,15 +273,20 @@ passes 1,048,576 bytes (paging is `agent-answer-paging`).
   `dialog` is `get`. An action that does not resolve is written as the page wrote it, followed
   by `unresolved`. A button without a form owner has no `submits` part.
 
-`fill <handle> <value>` gives a `text`, `password` or `textarea` control the value; `pick
+`fill <handle> <value>` gives a `text`, `password` or `textarea` control the value, a `text` or
+`password` control without its line feeds and carriage returns (the HTML Standard's value
+sanitization of a single-line `input`), a `textarea` with them; `pick
 <handle> <option>` selects the option of a `select` whose label is the word, else the first
 whose value is, turns a `checkbox` `on` or `off`, or a `radio` button `on`, which turns the
-others of its group off. A `pick` that asks for the state a checkbox already has records no
+others of its group off: the radio buttons of the page with its name and its form, or with its
+name and no form. A `pick` that asks for the state a checkbox already has records no
 action and answers `did pick` with status 0. Each is refused, with status 1 and nothing changed:
 `unknown-handle`, then `wrong-kind`, `disabled`, `hidden` (the `hidden` attribute, or what else
 hides the control: `aria-hidden`, a closed `dialog` or `details`, a popover), `readonly` for
-`fill`, and `unknown-option`, or the picked option's `disabled` or `hidden`, for `pick`. The
-`did` line names the handle as typed, `did fill "f1"`.
+`fill`, and `unknown-option`, or the picked option's `disabled`, for `pick`. The `did` line
+names the handle as typed, `did fill "f1"`. `surf-agent fill <handle> -` reads the value from
+standard input; a value of up to 16,000 bytes always fits its request of 65,536 bytes, where a
+byte outside printable ASCII takes 4. `--` ends the options: `fill f1 -- -5` fills `-5`.
 
 `follow <handle>` takes a handle of this block. It is refused `unknown-handle` for a handle the
 current document has not, `hidden` for a `hid` link and `unresolved` for an unresolved one;
@@ -389,7 +394,7 @@ the one place of rule 2.
 
 ### Later blocks
 
-Controls in `now` and `changed` (what the last action changed) are defined by later stories.
+The `changed` block (what the last action changed) is defined by a later story.
 The `log` answer is defined by `agent-change-and-log`.
 
 ## Grammar

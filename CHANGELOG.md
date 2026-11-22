@@ -46,6 +46,12 @@ release; what came before it is in the git log and in `docs/plan/`.
   would be submitted to; a submission that ends without a request exits 1 with
   `no-form-owner`, `invalid-controls`, `invalid-action`, `unsupported-enctype` or
   `dialog-method`.
+- `fill` of a text or password field drops the line feeds and carriage returns of the value, as
+  a browser sanitizes a single-line field; a textarea keeps them. `pick` of a radio button with
+  no form unchecks the other radio buttons of the page with its name and no form. `surf-agent`
+  takes `--` as the end of options (`fill f1 -- -5`, `pick f2 -- "-- choose --"`; `fill f1 --
+  -` fills one dash), and a value from standard input too long for its request is refused with
+  its size on the wire; a value of up to 16,000 bytes always fits.
 - The `surf` library takes a submit button's `formaction` and `formmethod`: an empty
   `formaction` submits to the page's own address, and a `formmethod` of an unknown value is
   `GET`.

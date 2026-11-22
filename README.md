@@ -95,7 +95,10 @@ button with one such as `b1`; `follow l3` goes there. `?` means visibility is no
 
 `fill f1 ada` types into a field; for a secret use `fill f2 -` and write the value to standard
 input: an argument word is readable by other users. `pick` chooses an option or checks a box.
-A password is never printed: `(set)` or `(empty)`.
+A password is never printed: `(set)` or `(empty)`. A value of up to 16,000 bytes from standard
+input always fits its request. A text field drops the line breaks of its value, as a browser
+does; a textarea keeps them. `--` ends the options, for a value or an option that starts with a
+dash: `fill f1 -- -5`, `pick f2 -- "-- choose --"`.
 
 `press b1` submits the form of a submit button; the answer shows the page the server answered
 with. A button that only a script would act on is refused.
@@ -472,7 +475,7 @@ surf v1 — 9 file(s), 24 scenario(s), valid
   170 scenarios: 170 passed, 0 failed, 0 error, 0 unsupported
 170 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
   170 scenarios: 170 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 170 scenario(s) each, of suite sha256:fbe2be79ba2ccfcc09fcb7ea7df4e7663de6f8eb82eb7b530ea35fcb1f0ebfcd
+the interpreter and the Rust system ran 170 scenario(s) each, of suite sha256:8b5c4b2f27ec981e3b3d5dff934bc62e935606f9b441604980c929c185d9a132
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 Cargo.lock: 26 package(s), none from outside this repository

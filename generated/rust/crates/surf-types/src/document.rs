@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 056231f07ec8201418330c04178f86aee67ffbe892f67ed6cdbb4c96b8e95bca
+// contract digest 71d0fa10af57da751b7353e8f39151103bcec8623bf2eb84c499af9f11b091a5
 // do not edit: regenerate with `ess synthesize`
 
 //! Document — `surf.document`.
@@ -376,6 +376,8 @@ pub struct ElementData {
     ///
     /// Carries `form`: `surf.document.Element` references one `surf.document.Form`.
     pub form_id: Option<FormId>,
+    /// `radio_group` — `Optional<String>`.
+    pub radio_group: Option<String>,
 }
 
 /// The states of `surf.document.Element`, at the type level.
@@ -1036,6 +1038,8 @@ pub struct AddElement {
     pub name: Option<String>,
     /// `form_id` — `Optional<surf.document.FormId>`.
     pub form_id: Option<FormId>,
+    /// `radio_group` — `Optional<String>`.
+    pub radio_group: Option<String>,
 }
 
 /// Everything `surf.document.AddElement` can result in — one variant per declared outcome.
@@ -1960,7 +1964,7 @@ pub mod obligations {
     ///
     /// Why it is not generated: kept an obligation by effects on filtered rows (`affects:`), in `radio-checked`.
     ///
-    /// Contract: given `surf.document.Check` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `no-such-element` for an identity no record carries, error `surf.document.ElementNotFound`; `not-checkable` when the existing subject's stored fields satisfy `(kind != checkbox and kind != radio)`, error `surf.document.ControlKindConflict`; `disabled` when the existing subject's stored fields satisfy `disabled == true`, error `surf.document.ControlDisabled`; `hidden` when the existing subject's stored fields satisfy `hidden == true`, error `surf.document.ControlHidden`; `radio-checked` when the existing subject's stored fields satisfy `kind == radio`, updates `surf.document.Element`, changes, beside its subject, every `surf.document.Element` where `(kind == radio and document_id == subject.document_id and form_id == subject.form_id and name == subject.name)`, setting `checked`, emits `surf.document.CheckednessSet`; `unchecked` when the existing subject's stored fields satisfy `checked == true`, updates `surf.document.Element`, emits `surf.document.CheckednessSet`; `checked` otherwise, updates `surf.document.Element`, emits `surf.document.CheckednessSet`.
+    /// Contract: given `surf.document.Check` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `no-such-element` for an identity no record carries, error `surf.document.ElementNotFound`; `not-checkable` when the existing subject's stored fields satisfy `(kind != checkbox and kind != radio)`, error `surf.document.ControlKindConflict`; `disabled` when the existing subject's stored fields satisfy `disabled == true`, error `surf.document.ControlDisabled`; `hidden` when the existing subject's stored fields satisfy `hidden == true`, error `surf.document.ControlHidden`; `radio-checked` when the existing subject's stored fields satisfy `kind == radio`, updates `surf.document.Element`, changes, beside its subject, every `surf.document.Element` where `(kind == radio and document_id == subject.document_id and radio_group == subject.radio_group)`, setting `checked`, emits `surf.document.CheckednessSet`; `unchecked` when the existing subject's stored fields satisfy `checked == true`, updates `surf.document.Element`, emits `surf.document.CheckednessSet`; `checked` otherwise, updates `surf.document.Element`, emits `surf.document.CheckednessSet`.
     pub trait CheckBehavior {
         /// Decides and enacts exactly one declared outcome of `surf.document.Check`.
         ///

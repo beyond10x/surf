@@ -270,6 +270,7 @@ fn storage_element_put_get_list_in_insertion_order_replace_in_place_delete() {
             readonly: false,
             name: None,
             form_id: None,
+            radio_group: None,
         },
     });
     // An element has one state, so the replacement differs in its fields.
@@ -404,6 +405,13 @@ fn control(n: u8, kind: ElementKind, name: Option<&str>, form: Option<u8>) -> El
             readonly: false,
             name: name.map(str::to_owned),
             form_id: form.map(|form| FormId(uuid(u64::from(form)))),
+            radio_group: (kind == ElementKind::Radio)
+                .then_some(name)
+                .flatten()
+                .map(|name| match form {
+                    Some(form) => format!("F{form} {name}"),
+                    None => format!("- {name}"),
+                }),
         },
     }
 }
@@ -425,6 +433,7 @@ fn check_on_a_radio_unchecks_its_group_only_and_toggles_a_checkbox() {
         (4, Some("pay"), Some(7)),
         (5, None, Some(7)),
         (6, Some("ship"), None),
+        (7, Some("ship"), None),
     ];
     for (n, name, form) in radios {
         let mut radio = control(n, ElementKind::Radio, name, form);
@@ -439,13 +448,21 @@ fn check_on_a_radio_unchecks_its_group_only_and_toggles_a_checkbox() {
         matches!(outcome, Ok(CheckOutcome::RadioChecked { .. })),
         "{outcome:?}"
     );
-    let after: Vec<bool> = [1, 2, 3, 4, 5, 6]
+    let after: Vec<bool> = [1, 2, 3, 4, 5, 6, 7]
         .into_iter()
         .map(|n| checked(&ports, n))
         .collect();
-    // Only the radio of the same document, form owner and name is unchecked; a group with no
-    // name or no form owner selects no other (the marker at `surf.document.Check`).
-    assert_eq!(after, [false, true, true, true, true, true]);
+    // Only the radio of the same document, form owner and name is unchecked; a radio with no
+    // name has no `radio_group` and is a group of its own.
+    assert_eq!(after, [false, true, true, true, true, true, true]);
+    // The radio buttons with no form owner and one name are one group.
+    ports
+        .check(Check {
+            element_id: ElementId(uuid(6)),
+        })
+        .unwrap();
+    assert_eq!([6, 7].map(|n| checked(&ports, n)), [true, false]);
+    assert!(checked(&ports, 2) && checked(&ports, 3));
     for expected in [true, false] {
         let outcome = ports.check(Check {
             element_id: ElementId(uuid(10)),
@@ -566,6 +583,7 @@ fn storage_document_and_element_tables_of_one_ports_value_are_apart() {
                 readonly: false,
                 name: None,
                 form_id: None,
+                radio_group: None,
             },
         },
     );

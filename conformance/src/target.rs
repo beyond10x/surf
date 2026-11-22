@@ -976,6 +976,7 @@ fn element_snapshot(
         readonly: input.boolean("readonly")?,
         name: optional_text(&mut input, &present, "name")?,
         form_id: optional_text(&mut input, &present, "form_id")?.map(|id| FormId(Uuid(id))),
+        radio_group: optional_text(&mut input, &present, "radio_group")?,
     };
     input.finish()?;
     let state = established_state(ENTITY, state, |name| {
@@ -2096,6 +2097,7 @@ where
                 let name = optional_text(&mut input, &present, "name")?;
                 let form_id =
                     optional_text(&mut input, &present, "form_id")?.map(|id| FormId(Uuid(id)));
+                let radio_group = optional_text(&mut input, &present, "radio_group")?;
                 input.finish()?;
                 match browser
                     .document_mut()
@@ -2113,6 +2115,7 @@ where
                         readonly,
                         name,
                         form_id,
+                        radio_group,
                     })
                     .map_err(unmet)?
                 {

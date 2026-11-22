@@ -395,14 +395,41 @@ fn case_14_a_forged_value_stays_in_its_field() {
         &[("handle", "f1"), ("value", FORGING)],
     );
     assert_eq!(status, 0, "{text}");
+    // A text field strips its line breaks (decision 1 of "As decided after the adversary's
+    // pass"): the line feed is gone, `"` and the bidirectional control are escaped.
+    let stripped = FORGING.replace('\n', "");
     stays_in_its_field(
         &text,
         plain.lines().count() + 1,
         "f1",
-        &format!("= {}", surf_answer::quote(FORGING)),
+        &format!("= {}", surf_answer::quote(&stripped)),
     );
     assert_eq!(
         state(&typed, "f1").value,
+        Some(Value::Text(surf_answer::Cut::of(
+            &stripped,
+            surf_answer::VALUE_CHARS_MAX
+        )))
+    );
+    round_trip(&text, &typed);
+    // A textarea keeps it, escaped as `\x0a`.
+    let (status, text, typed) = call(
+        &mut session,
+        &token,
+        "fill",
+        &[("handle", "f7"), ("value", FORGING)],
+    );
+    assert_eq!(status, 0, "{text}");
+    let quoted = surf_answer::quote(FORGING);
+    assert!(quoted.contains("\\x0a"), "{quoted}");
+    stays_in_its_field(
+        &text,
+        plain.lines().count() + 2,
+        "f7",
+        &format!("= {quoted}"),
+    );
+    assert_eq!(
+        state(&typed, "f7").value,
         Some(Value::Text(surf_answer::Cut::of(
             FORGING,
             surf_answer::VALUE_CHARS_MAX
