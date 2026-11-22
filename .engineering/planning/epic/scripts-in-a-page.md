@@ -7,7 +7,7 @@ title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, in the session process, against a DOM generated from Web IDL and under limits per page, when the session's option asks for it, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 33
+revision: 34
 ---
 ## Context
 
@@ -810,3 +810,10 @@ The session of the script engine placed the ten requirements of "The gaps" again
 - Order: H1 (7, 8, the first part of 9, 4) gates `webidl-bindings` together with 10; H2 (2, 3, 10, 5, 1) gates the first page script; H3 (the rest of 2 and 9, 6) comes before the tag. The tag surf pins comes after the engine's slice 6 closes with these tested.
 
 The picks among the engine's options for the host interface (its G1, G3, G4, G5, G8, G9: option A each) were made by the coordinating agent for the operator on 2026-11-22 and are reported to him.
+
+Later the same day the engine's session revised its 13 stories after four critics (its requirements HOST-172 to HOST-187). What changed for surf:
+
+- Host bytes are a handle: `charge_host_bytes(n)` answers a `HostBytes` value, and dropping it credits its charge, also when host data is dropped during a sweep. There is no free-standing credit call. surf keeps one handle per node's bytes in the node's host data. surf asked for a way to change a handle's charge in place when a node's bytes change, so that a node is not charged twice for a moment.
+- `HostObjectSpec` gains `error_kind`: a host object can carry the slot of an error, as Web IDL asks for `DOMException`.
+- The cost ceilings are constants of the engine (`HOST_FUNCTION_LIVE_BYTES`, `HOST_OBJECT_LIVE_BYTES`, `PROPERTY_LIVE_BYTES`, `BINDINGS_REALM_HEAP_BYTES`). The bindings test reads the constants and does not copy their numbers.
+- Batches as revised: H1 holds the changelog rule, the prototype calls and the stack tests; H2 the kept handle, the closed list of intrinsics, string and object charging, host bytes and steps; H3 the error summary, the cost ceilings, the string builtins, the iteration intrinsics and the error site.
