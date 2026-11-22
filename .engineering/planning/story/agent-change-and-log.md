@@ -39,7 +39,7 @@ scope:
   path: generated/rust
 - confidence: inferred
   path: spec/domains/agent.yaml
-revision: 15
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 7}
@@ -99,7 +99,9 @@ shows; at most 10, each cut at 120 characters, and `+ text more <n>` for the res
   by `surf_answer::quote_cut` (`crates/answer/src/lib.rs:444`; `quote_text_cut`, `:404`, is the
   form of a `text` block and is not used here);
   forging, each quoted and escaped with no extra line, with a value holding a line feed, `"` and a
-  bidirectional control: 10. a `+ text` line; 11. the before and after of a `~ value` line;
+  bidirectional control: 10. a `+ text` line; 11. the before and after of a `~ value` line of a
+  `textarea` (a single-line field removes line feeds on `fill`, `story:agent-fill-pick`,
+  "As decided after the adversary's pass", decision 1);
   12. both addresses of a `changed page` line;
   13. the same calls in two runs give the same output;
   14. `log` lists every action in order, and `log 2` the last two;
