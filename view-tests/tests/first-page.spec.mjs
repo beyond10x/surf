@@ -429,13 +429,21 @@ test("reset after a long absence", async ({ page, surf, record }) => {
 
 test("dropped entries are a gap", async ({ page, startFixture }) => {
   test.setTimeout(120_000);
-  const bounded = await startFixture(["--entries-per-session", "30"]);
+  const bound = 30;
+  const bounded = await startFixture(["--entries-per-session", String(bound)]);
   const id = await bounded.open();
   for (let at = 0; at < 4; at += 1) {
     await bounded.agent(id, "go", bounded.pages + "/first/a.html");
   }
   const detail = await bounded.api("/api/sessions/" + id);
-  expect(detail.dropped).toBe(20);
+  // The session numbers its entries from 1, so the newest one's `index` is how many it recorded,
+  // whatever a `go` records (`GO_ENTRIES` in crates/session/tests/events.rs). The bound keeps
+  // the newest `bound` of them, numbered without a hole, and counts every older one as dropped.
+  const indices = detail.entries.map((entry) => entry.index);
+  const recorded = indices[indices.length - 1];
+  expect(recorded, "open and four go record more entries than the bound").toBeGreaterThan(bound);
+  expect(indices).toEqual(Array.from({ length: bound }, (_, at) => recorded - bound + 1 + at));
+  expect(detail.dropped).toBe(recorded - bound);
   const kept = detail.entries.filter((entry) => entry.kind === "action").length;
   await load(page, bounded.view);
   await expect(segments(page)).toHaveCount(kept);

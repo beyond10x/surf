@@ -50,7 +50,7 @@ cli/surf-agent.yaml — valid CLI presentation binding
 Cargo.lock: 26 package(s), none from outside this repository
     Finished `dev` profile [unoptimized] target(s) in 0.00s
 877 tests: 877 passed, 0 failed, 0 ignored (cargo-nextest 875, doc tests 2)
-test step: 48.5 s of its budget of 120 s
+test step: 62.3 s of its budget of 120 s
 agent-tasks: 4 tasks, 2 pass, 2 fail, 0 skipped, lane gate, binaries target/debug
 view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
   38 passed (15.8s)

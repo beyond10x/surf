@@ -378,8 +378,8 @@ above, and the list of standards itself was written from memory.
     (`LATE_ANSWER_TIMEOUT`) while the session's turn stays taken, a log of at most 10,000
     entries and 16 MiB per session and 64 MiB over all sessions, a reader queue of 1,024
     entries, 256 ended sessions listed; open sessions are not bounded. It starts `surf-session`
-    from the directory of its own executable. Its 48 tests (3 unit tests of `src/view.rs`,
-    `adversary_link` 2, `built` 14, `in_process` 14, `log` 6, `view` 9) run a stand-in session
+    from the directory of its own executable. Its 49 tests (3 unit tests of `src/view.rs`,
+    `adversary_link` 3, `built` 14, `in_process` 14, `log` 6, `view` 9) run a stand-in session
     or none; the real one is run by the `e2e`, `events`, `view`, `adversary_events` and
     `adversary_view` tests of `surf-session`. Depends on `surf-agent` (for `wire`),
     `surf-answer`, `surf-secret` and `surf-view`.
@@ -405,10 +405,11 @@ above, and the list of standards itself was written from memory.
     most four times its length plus two bytes. Since wave 8 the entries of
     `NavigationStarted` and `RequestStarted` carry `method`, `body` as `<n> bytes` and
     `body_type`, an absent one as the field with no value; its transport is `surf::fetch_http`,
-    which since wave 9 sends a `Post` (no command of the session sends one yet). 48 tests:
-    `adversary_events` 1, `adversary_view` 1, `built` 11, `core` 10, `e2e` 1 (runs the three
-    built binaries, or those in `SURF_BIN_DIR`), `events` 16, `memory` 1, `redirect` 2 and
-    `view` 5 (the live view of `surfd` over the real session).
+    which since wave 9 sends a `Post` (no command of the session sends one yet). 73 tests:
+    `adversary_document_text` 7, `adversary_events` 1, `adversary_parse` 4, `adversary_view`
+    1, `built` 11, `core` 22, `e2e` 2 (runs the three built binaries, or those in
+    `SURF_BIN_DIR`), `events` 17, `memory` 1, `redirect` 2 and `view` 5 (the live view of
+    `surfd` over the real session).
     `open <url>`, `go <url>` and `look` take `--as tree|markdown [--from-line <n>]` and print the
     page as an outline or as Markdown in a `text` block, computed at each call from the tree
     `surf::Browser::document_tree` keeps for the document of the session's current navigation
@@ -1037,7 +1038,8 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `view-tests/`. It installs no browser: Chromium's headless shell of the revision
   `@playwright/test` names must be in the Playwright cache. On a new machine, once:
   `npm --prefix view-tests ci`, then `npx --prefix view-tests playwright install --only-shell
-  chromium`.
+  chromium`. A change to what a `go` records is checked with `task view-test` too, because
+  the crate tests do not run the page tests.
 - `task view-stream-check`: the event names of `docs/view-stream.md` against the AsyncAPI
   projection of `spec/` (`taskfiles/view-stream-check.yml`). It fails, naming each, for a name
   that is no message of the projection; a new event whose name nobody adds to the document
@@ -1156,13 +1158,17 @@ stories and their two fix rounds add 81 tests to the root workspace (`surf-answe
 `surf-page` 58 to 65 with the parser unit's two, `surf-page-text` 0 to 57), counted from the
 runner's summary lines; the whole count is the gate's to print. The gate's first run on the
 wave branch, `task check-runner` on `6b2e3a6`, printed `877 tests: 876 passed, 1 failed, 0
-ignored (cargo-nextest 875, doc tests 2)` and `test step: 48.5 s of its budget of 120 s`;
-`264c962` fixed the one failure (`surf-agent-tasks`,
-`tasks::a_call_that_never_answers_ends_at_its_bound`) without adding or removing a test, so
-the count is 877 tests (cargo-nextest 875, doc tests 2). The same run: `surf v1 — 9 file(s),
-24 scenario(s), valid`, `Cargo.lock: 26 package(s), none from outside this repository`.
-`agent-tasks: 4 tasks, 2 pass, 2 fail, 0 skipped, lane gate, binaries target/debug`: `article`
-and `table` pass, `link` and `search` are pending on later stories.
+ignored (cargo-nextest 875, doc tests 2)`; `264c962` fixed the one failure
+(`surf-agent-tasks`, `tasks::a_call_that_never_answers_ends_at_its_bound`) without adding or
+removing a test. The run on `264c962` printed `877 tests: 877 passed, 0 failed, 0 ignored
+(cargo-nextest 875, doc tests 2)`, `test step: 62.3 s of its budget of 120 s`, `surf v1 — 9
+file(s), 24 scenario(s), valid`, `Cargo.lock: 26 package(s), none from outside this
+repository` and `agent-tasks: 4 tasks, 2 pass, 2 fail, 0 skipped, lane gate, binaries
+target/debug` (`article` and `table` pass, `link` and `search` are pending on later stories).
+That run was not green: `task view-test` failed one case, `dropped entries are a gap`, which
+held the 20 entries four `go`s dropped before `story:html-document-port`; the parser step
+records `DocumentParsed` and one `ElementAdded` per actionable element, 28 are dropped now,
+and the test derives the number from the entries' `index` since.
 
 With `story:ess-0-97-3` (2026-11-22, on `896c64d`), surf builds on ess 0.97.3: `surf v1 — 9
 file(s), 15 scenario(s), valid` and `96 scenario(s) (15 authored), 28 refusal(s)`, as with
