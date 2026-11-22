@@ -10,7 +10,8 @@ use surf::{Browser, System};
 use surf_conformance::{ConformanceBrowser, Setup, SurfTarget, Unanswered, run};
 use surf_ports::{
     DocumentPorts, NavigatorPorts, NetPorts, RandomSource, RendererPorts, ShellPorts, agent_port,
-    document_port, navigator_port, net_port, renderer_port, shell_port,
+    commit_navigation, document_port, navigator_port, net_port, renderer_port, shell_port,
+    traverse_history,
 };
 use surf_types::agent::{ActionId, SessionId};
 use surf_types::behaviour::{
@@ -23,8 +24,12 @@ use surf_types::document::{
     FormSnapshot, ListOptionSnapshot, OptionId, SelectOption, SelectOptionOutcome, SubmissionId,
     SubmissionSnapshot,
 };
-use surf_types::navigation::{NavigationSnapshot, NavigationState};
-use surf_types::net::{RequestId, RequestSnapshot};
+use surf_types::navigation::obligations::{CommitNavigationBehavior, TraverseHistoryBehavior};
+use surf_types::navigation::{
+    CommitNavigation, CommitNavigationOutcome, NavigationSnapshot, NavigationState,
+    TraverseHistory, TraverseHistoryOutcome,
+};
+use surf_types::net::{MediaType, RequestId, RequestSnapshot};
 use surf_types::obligation::UnmetObligation;
 use surf_types::render::{FrameId, FrameSnapshot};
 use surf_types::shell::{
@@ -162,6 +167,32 @@ impl<P: SelectOptionBehavior> SelectOptionBehavior for Mutant<P> {
     }
 }
 
+/// The `navigator` component's obligations for `$ty`, met over its own storage: they read and
+/// write a tab's entries through it, as the component's generated behaviours do.
+macro_rules! navigator_obligations {
+    (impl$(<$param:ident: NavigationStorage>)? for $ty:ty) => {
+        impl$(<$param: NavigationStorage>)? CommitNavigationBehavior for $ty {
+            fn commit_navigation(
+                &mut self,
+                input: CommitNavigation,
+            ) -> Result<CommitNavigationOutcome, UnmetObligation> {
+                commit_navigation(self, input)
+            }
+        }
+
+        impl$(<$param: NavigationStorage>)? TraverseHistoryBehavior for $ty {
+            fn traverse_history(
+                &mut self,
+                input: TraverseHistory,
+            ) -> Result<TraverseHistoryOutcome, UnmetObligation> {
+                traverse_history(self, input)
+            }
+        }
+    };
+}
+
+navigator_obligations!(impl<P: NavigationStorage> for Mutant<P>);
+
 /// `TryContext` handed through to `$field` of `$ty`.
 macro_rules! context_through {
     (impl$(<$param:ident: TryContext>)? for $ty:ty, $field:tt) => {
@@ -174,6 +205,18 @@ macro_rules! context_through {
                 &mut self,
             ) -> Result<Option<String>, UnmetObligation> {
                 self.$field.try_generate_optional_string()
+            }
+
+            fn try_generate_optional_bytes(
+                &mut self,
+            ) -> Result<Option<Vec<u8>>, UnmetObligation> {
+                self.$field.try_generate_optional_bytes()
+            }
+
+            fn try_generate_optional_surf_net_media_type(
+                &mut self,
+            ) -> Result<Option<MediaType>, UnmetObligation> {
+                self.$field.try_generate_optional_surf_net_media_type()
             }
 
             fn try_generate_surf_agent_action_id(&mut self) -> Result<ActionId, UnmetObligation> {
@@ -447,6 +490,7 @@ impl NavigationStorage for Navigations {
 }
 
 context_through!(impl for Navigations, inner);
+navigator_obligations!(impl for Navigations);
 
 fn keep(snapshot: NavigationSnapshot) -> Option<NavigationSnapshot> {
     Some(snapshot)

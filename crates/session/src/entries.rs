@@ -8,7 +8,8 @@
 //!
 //! - an `Integer` (and `surf.net.Status`) in decimal;
 //! - an enum by its variant name as `spec/` spells it: `open`, `go`, `follow`, `fill`, `pick`,
-//!   `press` and `close` for `surf.agent.ActionCommand`, the generated variant's name for
+//!   `press`, `back`, `forward` and `close` for `surf.agent.ActionCommand`, the lower-case name
+//!   for `surf.navigation.Standing` (`back`, `forward`, ...), the generated variant's name for
 //!   `surf.navigation.Navigation.State`, `surf.net.FailureReason`, `surf.net.Method`,
 //!   `surf.document.ParseLimit` and `surf.document.SubmissionEndReason`, which `spec/` spells the
 //!   same (`Committed`, `Unreachable`, `Post`, `Depth`, `InvalidControls`), so that a variant a
@@ -42,6 +43,7 @@
 
 use surf::SystemEvent;
 use surf_types::agent::SessionLog;
+use surf_types::navigation::Standing;
 
 use crate::command_word;
 
@@ -138,6 +140,18 @@ impl Line {
 /// The variant name of an enum whose generated variants are spelled as `spec/` spells them.
 fn variant(value: impl std::fmt::Debug) -> String {
     format!("{value:?}")
+}
+
+/// A `surf.navigation.Standing` as `spec/` spells it, in lower case.
+fn standing_word(standing: Standing) -> &'static str {
+    match standing {
+        Standing::Earlier => "earlier",
+        Standing::Back => "back",
+        Standing::Current => "current",
+        Standing::Forward => "forward",
+        Standing::Later => "later",
+        Standing::Dropped => "dropped",
+    }
 }
 
 /// The line that stands for `count` event entries the session left out of one action's events
@@ -301,6 +315,18 @@ pub fn event_line(event: &SystemEvent) -> String {
         SystemEvent::SubmissionAbandoned(e) => line
             .text("submission_id", &e.submission_id.0.0)
             .text("reason", &variant(e.reason)),
+        SystemEvent::TraversalRequested(e) => line
+            .text("session_id", &e.session_id.0.0)
+            .text("tab_id", &e.tab_id.0.0)
+            .text("step", standing_word(e.step)),
+        SystemEvent::TraversalStarted(e) => line
+            .text("tab_id", &e.tab_id.0.0)
+            .text("url", &e.url.0)
+            .text("entry_id", &e.entry_id.0.0)
+            .optional(
+                "entry_next",
+                e.entry_next.as_ref().map(|id| id.0.0.as_str()),
+            ),
         // `SystemEvent` is not `#[non_exhaustive]`: while every variant is mapped this arm is
         // not reached, and an event a specification story adds lands here until it is mapped.
         #[allow(unreachable_patterns)]

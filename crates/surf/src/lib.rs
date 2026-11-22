@@ -1208,6 +1208,8 @@ pub trait AgentBehaviors:
     + surf_types::agent::obligations::FillBehavior
     + surf_types::agent::obligations::FollowBehavior
     + surf_types::agent::obligations::GoBehavior
+    + surf_types::agent::obligations::GoBackBehavior
+    + surf_types::agent::obligations::GoForwardBehavior
     + surf_types::agent::obligations::NoteNavigationCommittedBehavior
     + surf_types::agent::obligations::NoteNavigationEndedBehavior
     + surf_types::agent::obligations::NoteNavigationFailedBehavior
@@ -1227,6 +1229,8 @@ impl<B> AgentBehaviors for B where
         + surf_types::agent::obligations::FillBehavior
         + surf_types::agent::obligations::FollowBehavior
         + surf_types::agent::obligations::GoBehavior
+        + surf_types::agent::obligations::GoBackBehavior
+        + surf_types::agent::obligations::GoForwardBehavior
         + surf_types::agent::obligations::NoteNavigationCommittedBehavior
         + surf_types::agent::obligations::NoteNavigationEndedBehavior
         + surf_types::agent::obligations::NoteNavigationFailedBehavior
@@ -1290,6 +1294,8 @@ pub trait NavigatorBehaviors:
     + surf_types::navigation::obligations::CommitNavigationBehavior
     + surf_types::navigation::obligations::FailNavigationBehavior
     + surf_types::navigation::obligations::NavigateBehavior
+    + surf_types::navigation::obligations::StartTraversalBehavior
+    + surf_types::navigation::obligations::TraverseHistoryBehavior
     + surf_types::navigation::obligations::NavigationsQuery
 {
 }
@@ -1299,6 +1305,8 @@ impl<B> NavigatorBehaviors for B where
         + surf_types::navigation::obligations::CommitNavigationBehavior
         + surf_types::navigation::obligations::FailNavigationBehavior
         + surf_types::navigation::obligations::NavigateBehavior
+        + surf_types::navigation::obligations::StartTraversalBehavior
+        + surf_types::navigation::obligations::TraverseHistoryBehavior
         + surf_types::navigation::obligations::NavigationsQuery
 {
 }
@@ -1573,6 +1581,7 @@ fn event_body(event: &SystemEvent) -> usize {
         | SystemEvent::NavigationRequested(_)
         | SystemEvent::PickRequested(_)
         | SystemEvent::PressRequested(_)
+        | SystemEvent::TraversalRequested(_)
         | SystemEvent::SessionClosed(_)
         | SystemEvent::SessionNavigationChanged(_)
         | SystemEvent::SessionOpened(_)
@@ -1587,6 +1596,7 @@ fn event_body(event: &SystemEvent) -> usize {
         | SystemEvent::ValueSet(_)
         | SystemEvent::NavigationCancelled(_)
         | SystemEvent::NavigationFailed(_)
+        | SystemEvent::TraversalStarted(_)
         | SystemEvent::FetchFailed(_)
         | SystemEvent::FramePainted(_)
         | SystemEvent::TabClosed(_)
@@ -1617,7 +1627,9 @@ fn invocation_body(invocation: &BindingInvocation) -> usize {
         | BindingInvocation::NoteOnNavigationStarted(_)
         | BindingInvocation::SelectOnPickRequested(_)
         | BindingInvocation::SetValueOnFillRequested(_)
-        | BindingInvocation::SubmitOnPressRequested(_) => 0,
+        | BindingInvocation::StartOnTraversalStarted(_)
+        | BindingInvocation::SubmitOnPressRequested(_)
+        | BindingInvocation::TraverseOnTraversalRequested(_) => 0,
     }
 }
 

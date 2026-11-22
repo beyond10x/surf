@@ -1,0 +1,103 @@
+# A step back whose request fails, and one the user cancels, leave the current entry where it was:
+# after A and B, B stays current and A stays the entry before it. The traversals' navigations are
+# started with `StartTraversal`, for the reason `navigation-push-after-back-drops-forward.yaml`
+# gives; synthesis cannot arrange it for that reason too.
+type: ess-scenario/6
+domain: surf.navigation
+scenario: navigation-traverse-failed-keeps-current
+summary: A traversal that fails or is cancelled leaves the current entry where it was.
+
+arrange:
+  - instance: a
+    entity: surf.navigation.Navigation
+  - instance: b
+    entity: surf.navigation.Navigation
+  - instance: failed
+    entity: surf.navigation.Navigation
+  - instance: cancelled
+    entity: surf.navigation.Navigation
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000601
+      url: http://example.org/a
+      method: Get
+    outcome: started
+    capture: {instance: a, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:01Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: a}
+      url: http://example.org/a
+      status: 200
+      media_type: text/plain
+      body: aGk=
+    outcome: responded
+
+  - at: 2026-01-06T09:00:02Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000601
+      url: http://example.org/b
+      method: Get
+    outcome: started
+    capture: {instance: b, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:03Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: b}
+      url: http://example.org/b
+      status: 200
+      media_type: text/plain
+      body: aGk=
+    outcome: responded
+
+  - at: 2026-01-06T09:00:04Z
+    command: surf.navigation.StartTraversal
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000601
+      url: http://example.org/a
+      entry_id: {$instance: a}
+      entry_next: {$instance: b}
+    outcome: started
+    capture: {instance: failed, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:05Z
+    command: surf.net.FailRequest
+    input:
+      request_id: {$instance: failed}
+      reason: Unreachable
+    outcome: failed
+
+  - at: 2026-01-06T09:00:06Z
+    command: surf.navigation.StartTraversal
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000601
+      url: http://example.org/a
+      entry_id: {$instance: a}
+      entry_next: {$instance: b}
+    outcome: started
+    capture: {instance: cancelled, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:07Z
+    command: surf.navigation.CancelNavigation
+    actor: surf.navigation.User
+    input:
+      navigation_id: {$instance: cancelled}
+    outcome: cancelled
+
+assert:
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: a}, standing: back, next: {$instance: b}}
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: b}, standing: current}
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: failed}, handling: traverse, standing: null, state: Failed}
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: cancelled}, handling: traverse, standing: null, state: Cancelled}

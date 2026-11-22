@@ -1,0 +1,114 @@
+# An agent goes forward: the session's tab loaded A and B and went back to A, so B is the entry
+# after the current one. `GoForward` publishes `TraversalRequested`, and the bindings start a
+# navigation to B with `Get`. The step back is started with `StartTraversal`, for the reason
+# `navigation-push-after-back-drops-forward.yaml` gives. Synthesis shows the outcome and its event,
+# not the traversal the bindings start after it.
+type: ess-scenario/6
+domain: surf.agent
+scenario: agent-go-forward-traverses
+summary: An agent goes forward, and its tab starts a navigation to the entry after the current one, with Get.
+
+arrange:
+  - instance: session
+    entity: surf.agent.Session
+    setup:
+      identity: 7e5a1b00-0000-4000-8000-000000000801
+      fields:
+        window_id: 7e5a1b00-0000-4000-8000-000000000802
+        tab_id: 7e5a1b00-0000-4000-8000-000000000803
+        holder: 7e5a1b00-0000-4000-8000-000000000801
+      state: Open
+  - instance: a
+    entity: surf.navigation.Navigation
+  - instance: b
+    entity: surf.navigation.Navigation
+  - instance: back-to-a
+    entity: surf.navigation.Navigation
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000803
+      url: http://example.org/a
+      method: Get
+    outcome: started
+    capture: {instance: a, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:01Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: a}
+      url: http://example.org/a
+      status: 200
+      media_type: text/plain
+      body: aGk=
+    outcome: responded
+
+  - at: 2026-01-06T09:00:02Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000803
+      url: http://example.org/b
+      method: Get
+    outcome: started
+    capture: {instance: b, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:03Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: b}
+      url: http://example.org/b
+      status: 200
+      media_type: text/plain
+      body: aGk=
+    outcome: responded
+
+  - at: 2026-01-06T09:00:04Z
+    command: surf.navigation.StartTraversal
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000803
+      url: http://example.org/a
+      entry_id: {$instance: a}
+      entry_next: {$instance: b}
+    outcome: started
+    capture: {instance: back-to-a, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:05Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: back-to-a}
+      url: http://example.org/a
+      status: 200
+      media_type: text/plain
+      body: aGk=
+    outcome: responded
+
+  - at: 2026-01-06T09:00:06Z
+    command: surf.agent.GoForward
+    actor: surf.agent.SessionHolder
+    caller: {session_id: {$instance: session}}
+    input:
+      session_id: {$instance: session}
+    outcome: requested
+    events:
+      - event: surf.agent.TraversalRequested
+        payload:
+          session_id: {$instance: session}
+          tab_id: 7e5a1b00-0000-4000-8000-000000000803
+          step: forward
+
+assert:
+  - view: surf.navigation.Navigations
+    contains: {tab_id: 7e5a1b00-0000-4000-8000-000000000803, url: http://example.org/b, handling: traverse, entry_id: {$instance: b}, entry_next: null, state: Started}
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: a}, standing: current}
+  - view: surf.agent.SessionState
+    params: {session_id: {$instance: session}}
+    contains:
+      session_id: {$instance: session}
+      state: Open
+      url: http://example.org/b
+      navigation_state: Started

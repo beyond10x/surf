@@ -1,13 +1,13 @@
 <!--
   generated from surf v1
-  contract digest 71d0fa10af57da751b7353e8f39151103bcec8623bf2eb84c499af9f11b091a5
+  contract digest 3228537f9d6e7cdd446cb9ccbf75b058addda67c10b212a848f9115f7eba7e7b
   do not edit: regenerate with `ess synthesize`
 -->
 # Synthesis plan — surf v1
 
 Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synthesize`.
 
-246 capabilities: **236 generated**, **6 obligations**, **4 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
+264 capabilities: **252 generated**, **8 obligations**, **4 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
 
 ## Generated
 
@@ -44,7 +44,9 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | domain type | `surf.document.Submission.State` |
 | domain type | `surf.document.SubmissionEndReason` |
 | domain type | `surf.document.SubmissionId` |
+| domain type | `surf.navigation.HistoryHandling` |
 | domain type | `surf.navigation.Navigation.State` |
+| domain type | `surf.navigation.Standing` |
 | domain type | `surf.net.FailureReason` |
 | domain type | `surf.net.MediaType` |
 | domain type | `surf.net.Method` |
@@ -78,6 +80,10 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | command behaviour | `surf.agent.Follow` |
 | command contract | `surf.agent.Go` |
 | command behaviour | `surf.agent.Go` |
+| command contract | `surf.agent.GoBack` |
+| command behaviour | `surf.agent.GoBack` |
+| command contract | `surf.agent.GoForward` |
+| command behaviour | `surf.agent.GoForward` |
 | command contract | `surf.agent.NoteNavigationCommitted` |
 | command contract | `surf.agent.NoteNavigationEnded` |
 | command contract | `surf.agent.NoteNavigationFailed` |
@@ -113,11 +119,13 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | command contract | `surf.navigation.CancelNavigation` |
 | command behaviour | `surf.navigation.CancelNavigation` |
 | command contract | `surf.navigation.CommitNavigation` |
-| command behaviour | `surf.navigation.CommitNavigation` |
 | command contract | `surf.navigation.FailNavigation` |
 | command behaviour | `surf.navigation.FailNavigation` |
 | command contract | `surf.navigation.Navigate` |
 | command behaviour | `surf.navigation.Navigate` |
+| command contract | `surf.navigation.StartTraversal` |
+| command behaviour | `surf.navigation.StartTraversal` |
+| command contract | `surf.navigation.TraverseHistory` |
 | command contract | `surf.net.DeliverResponse` |
 | command behaviour | `surf.net.DeliverResponse` |
 | command contract | `surf.net.FailRequest` |
@@ -141,6 +149,7 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | event type | `surf.agent.SessionClosed` |
 | event type | `surf.agent.SessionNavigationChanged` |
 | event type | `surf.agent.SessionOpened` |
+| event type | `surf.agent.TraversalRequested` |
 | event type | `surf.document.CheckednessSet` |
 | event type | `surf.document.DocumentParsed` |
 | event type | `surf.document.ElementAdded` |
@@ -156,6 +165,7 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | event type | `surf.navigation.NavigationCommitted` |
 | event type | `surf.navigation.NavigationFailed` |
 | event type | `surf.navigation.NavigationStarted` |
+| event type | `surf.navigation.TraversalStarted` |
 | event type | `surf.net.FetchFailed` |
 | event type | `surf.net.RequestStarted` |
 | event type | `surf.net.ResponseReceived` |
@@ -179,6 +189,8 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | error type | `surf.document.SubmissionStateConflict` |
 | error type | `surf.navigation.NavigationNotFound` |
 | error type | `surf.navigation.NavigationStateConflict` |
+| error type | `surf.navigation.NoHistoryEntry` |
+| error type | `surf.navigation.TraversalUnsupported` |
 | error type | `surf.net.RequestNotFound` |
 | error type | `surf.net.RequestStateConflict` |
 | error type | `surf.render.InvalidViewport` |
@@ -241,8 +253,12 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | binding delivery | `select-on-pick-requested` |
 | binding transformation | `set-value-on-fill-requested` |
 | binding delivery | `set-value-on-fill-requested` |
+| binding transformation | `start-on-traversal-started` |
+| binding delivery | `start-on-traversal-started` |
 | binding transformation | `submit-on-press-requested` |
 | binding delivery | `submit-on-press-requested` |
+| binding transformation | `traverse-on-traversal-requested` |
+| binding delivery | `traverse-on-traversal-requested` |
 | component port | `agent` |
 | component port | `document` |
 | component port | `navigator` |
@@ -269,12 +285,14 @@ What the specification fully determines is generated; what it cannot determine i
 | command behaviour | `surf.agent.NoteNavigationStarted` | kept an obligation by a set outcome over filtered rows (`instances:`), in `noted` | given `surf.agent.NoteNavigationStarted` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `tab_id == input.tab_id`, setting `navigation_id`, `url`, `navigation_state`, `status`, `media_type`, `failure_reason`, emits `surf.agent.SessionNavigationChanged` |
 | command behaviour | `surf.document.Check` | kept an obligation by effects on filtered rows (`affects:`), in `radio-checked` | given `surf.document.Check` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `no-such-element` for an identity no record carries, error `surf.document.ElementNotFound`; `not-checkable` when the existing subject's stored fields satisfy `(kind != checkbox and kind != radio)`, error `surf.document.ControlKindConflict`; `disabled` when the existing subject's stored fields satisfy `disabled == true`, error `surf.document.ControlDisabled`; `hidden` when the existing subject's stored fields satisfy `hidden == true`, error `surf.document.ControlHidden`; `radio-checked` when the existing subject's stored fields satisfy `kind == radio`, updates `surf.document.Element`, changes, beside its subject, every `surf.document.Element` where `(kind == radio and document_id == subject.document_id and radio_group == subject.radio_group)`, setting `checked`, emits `surf.document.CheckednessSet`; `unchecked` when the existing subject's stored fields satisfy `checked == true`, updates `surf.document.Element`, emits `surf.document.CheckednessSet`; `checked` otherwise, updates `surf.document.Element`, emits `surf.document.CheckednessSet` |
 | command behaviour | `surf.document.SelectOption` | kept an obligation by effects on filtered rows (`affects:`), in `selected` | given `surf.document.SelectOption` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `no-such-option` for an identity no record carries, error `surf.document.OptionNotFound`; `disabled` when the existing subject's stored fields satisfy `disabled == true`, error `surf.document.ControlDisabled`; `hidden` when the existing subject's stored fields satisfy `hidden == true`, error `surf.document.ControlHidden`; `selected` otherwise, updates `surf.document.Option`, changes, beside its subject, every `surf.document.Option` where `select_id == subject.select_id`, setting `selected`, emits `surf.document.OptionSelected` |
+| command behaviour | `surf.navigation.CommitNavigation` | kept an obligation by effects on filtered rows (`affects:`), in `traversed` | given `surf.navigation.CommitNavigation` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `no-such-navigation` for an identity no record carries, error `surf.navigation.NavigationNotFound`; `traversed` when the existing subject's stored fields satisfy `handling == traverse`, takes `commit` of `surf.navigation.Navigation`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and standing == back)`, setting `standing`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and standing == forward)`, setting `standing`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and standing == current)`, setting `standing`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and next == subject.entry_id)`, setting `standing`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and navigation_id == subject.entry_next)`, setting `standing`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and navigation_id == subject.entry_id)`, setting `standing`, emits `surf.navigation.NavigationCommitted`; `committed` otherwise, takes `commit` of `surf.navigation.Navigation`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and (standing == forward or standing == later))`, setting `standing`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and standing == back)`, setting `standing`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and standing == current)`, setting `standing`, `next`, emits `surf.navigation.NavigationCommitted`; `wrong-state` from a state no declared move starts in, error `surf.navigation.NavigationStateConflict` |
+| command behaviour | `surf.navigation.TraverseHistory` | kept an obligation by a guard over the rows a selector selects (`when_related: {entity, where, exists | count | forall}`), in `no-entry` | given `surf.navigation.TraverseHistory` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `unsupported` when `(step != back and step != forward)`, error `surf.navigation.TraversalUnsupported`; `no-entry` when, of the `surf.navigation.Navigation` rows satisfying `(tab_id == input.tab_id and defined(standing) and standing == input.step and method == Get)`, no row is selected, error `surf.navigation.NoHistoryEntry`; `requested` otherwise, emits `surf.navigation.TraversalStarted` |
 
 ## Refused — not represented by this synthesis
 
 | capability | source | stage | why |
 | --- | --- | --- | --- |
 | actor grants | `surf.agent.Opener` | planning | may invoke `surf.agent.OpenSession`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry |
-| actor grants | `surf.agent.SessionHolder` | planning | may invoke `surf.agent.CloseSession`, `surf.agent.Fill`, `surf.agent.Follow`, `surf.agent.Go`, `surf.agent.Pick`, `surf.agent.Press`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry |
+| actor grants | `surf.agent.SessionHolder` | planning | may invoke `surf.agent.CloseSession`, `surf.agent.Fill`, `surf.agent.Follow`, `surf.agent.Go`, `surf.agent.GoBack`, `surf.agent.GoForward`, `surf.agent.Pick`, `surf.agent.Press`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry |
 | actor grants | `surf.navigation.User` | planning | may invoke `surf.navigation.CancelNavigation`, `surf.navigation.Navigate`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry |
 | actor grants | `surf.shell.User` | planning | may invoke `surf.shell.CloseTab`, `surf.shell.OpenTab`, `surf.shell.OpenWindow`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry |

@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 71d0fa10af57da751b7353e8f39151103bcec8623bf2eb84c499af9f11b091a5
+// contract digest 3228537f9d6e7cdd446cb9ccbf75b058addda67c10b212a848f9115f7eba7e7b
 // do not edit: regenerate with `ess synthesize`
 
 //! What the specification fully determines, generated: the behaviour of every command the plan
@@ -243,9 +243,17 @@ pub trait Context {
     /// The authenticated caller's `session_id`, or `None` where the caller carries none.
     fn caller_session_id(&self) -> Option<crate::agent::SessionId>;
 
+    /// A `Optional<Bytes>` the model says the implementation assigns — a `{generated: true}` value —
+    /// or `None` where there is nothing to report.
+    fn generate_optional_bytes(&mut self) -> Option<Vec<u8>>;
+
     /// A `Optional<String>` the model says the implementation assigns — a `{generated: true}` value —
     /// or `None` where there is nothing to report.
     fn generate_optional_string(&mut self) -> Option<String>;
+
+    /// A `Optional<surf.net.MediaType>` the model says the implementation assigns — a `{generated: true}` value —
+    /// or `None` where there is nothing to report.
+    fn generate_optional_surf_net_media_type(&mut self) -> Option<crate::net::MediaType>;
 
     /// A new `surf.agent.ActionId`, which the model says the implementation assigns — a created identity, a
     /// `{generated: true}` value, or an event field the model leaves undetermined.
@@ -294,7 +302,11 @@ pub trait TryContext {
 /// The caller's `session_id`, or a named unavailable answer.
 fn try_caller_session_id(&self) -> Result<Option<crate::agent::SessionId>, UnmetObligation>;
 /// Assigns the value, or names the unavailable answer.
+fn try_generate_optional_bytes(&mut self) -> Result<Option<Vec<u8>>, UnmetObligation>;
+/// Assigns the value, or names the unavailable answer.
 fn try_generate_optional_string(&mut self) -> Result<Option<String>, UnmetObligation>;
+/// Assigns the value, or names the unavailable answer.
+fn try_generate_optional_surf_net_media_type(&mut self) -> Result<Option<crate::net::MediaType>, UnmetObligation>;
 /// Assigns the value, or names the unavailable answer.
 fn try_generate_surf_agent_action_id(&mut self) -> Result<crate::agent::ActionId, UnmetObligation>;
 /// Assigns the value, or names the unavailable answer.
@@ -319,7 +331,9 @@ fn try_generate_surf_shell_window_id(&mut self) -> Result<crate::shell::WindowId
 
 impl<T: Context + ?Sized> TryContext for T {
 fn try_caller_session_id(&self) -> Result<Option<crate::agent::SessionId>, UnmetObligation> { Ok(Context::caller_session_id(self)) }
+fn try_generate_optional_bytes(&mut self) -> Result<Option<Vec<u8>>, UnmetObligation> { Ok(Context::generate_optional_bytes(self)) }
 fn try_generate_optional_string(&mut self) -> Result<Option<String>, UnmetObligation> { Ok(Context::generate_optional_string(self)) }
+fn try_generate_optional_surf_net_media_type(&mut self) -> Result<Option<crate::net::MediaType>, UnmetObligation> { Ok(Context::generate_optional_surf_net_media_type(self)) }
 fn try_generate_surf_agent_action_id(&mut self) -> Result<crate::agent::ActionId, UnmetObligation> { Ok(Context::generate_surf_agent_action_id(self)) }
 fn try_generate_surf_document_document_id(&mut self) -> Result<crate::document::DocumentId, UnmetObligation> { Ok(Context::generate_surf_document_document_id(self)) }
 fn try_generate_surf_document_element_id(&mut self) -> Result<crate::document::ElementId, UnmetObligation> { Ok(Context::generate_surf_document_element_id(self)) }
@@ -495,6 +509,80 @@ where
         let before = held.data.clone();
         let next = held;
         let answer = crate::agent::GoOutcome::Requested { navigation_requested: crate::agent::NavigationRequested { session_id: input.session_id.clone(), tab_id: before.tab_id.clone(), url: input.url.clone(), handle: self.ports.try_generate_optional_string()?, label: self.ports.try_generate_optional_string()? } };
+        SessionStorage::put(&mut self.ports, next);
+        return Ok(answer);
+    }
+}
+
+/// `surf.agent.GoBack`, generated: every outcome is one the specification fully determines.
+impl<P> crate::agent::obligations::GoBackBehavior for Generated<P>
+where
+    P: TryContext + SessionStorage,
+{
+    fn go_back(&mut self, input: crate::agent::GoBack) -> Result<crate::agent::GoBackOutcome, UnmetObligation> {
+        let _ = &input;
+        // The addressed row's existence, at step 2 of the one precedence rule.
+        if SessionStorage::get(&self.ports, &input.session_id).is_none() {
+            return Ok(crate::agent::GoBackOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        }
+        // The addressed row, read before the branches that select by it.
+        let Some(held) = SessionStorage::get(&self.ports, &input.session_id) else {
+            return Ok(crate::agent::GoBackOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        };
+        let _ = &held;
+        // `not-holder`: selected by the addressed row.
+        if decided(equal(Some(&held.data.holder).map(|value| &value.0).map(|value| value.0.clone()), self.ports.try_caller_session_id()?.as_ref().map(|value| &value.0).map(|value| value.0.clone())).map(|value| !value), "surf.agent.GoBack")? {
+            return Ok(crate::agent::GoBackOutcome::NotHolder { error: crate::agent::NotSessionHolder { session_id: input.session_id.clone() } });
+        }
+        // `closed`: selected by the addressed row.
+        if decided(Some(matches!(held.state, crate::agent::SessionState::Closed)), "surf.agent.GoBack")? {
+            return Ok(crate::agent::GoBackOutcome::Closed { error: crate::agent::SessionStateConflict { state: held.state } });
+        }
+        // `requested`: the default.
+        let Some(held) = SessionStorage::get(&self.ports, &input.session_id) else {
+            return Ok(crate::agent::GoBackOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        };
+        let _ = &held;
+        let before = held.data.clone();
+        let next = held;
+        let answer = crate::agent::GoBackOutcome::Requested { traversal_requested: crate::agent::TraversalRequested { session_id: input.session_id.clone(), tab_id: before.tab_id.clone(), step: crate::navigation::Standing::Back } };
+        SessionStorage::put(&mut self.ports, next);
+        return Ok(answer);
+    }
+}
+
+/// `surf.agent.GoForward`, generated: every outcome is one the specification fully determines.
+impl<P> crate::agent::obligations::GoForwardBehavior for Generated<P>
+where
+    P: TryContext + SessionStorage,
+{
+    fn go_forward(&mut self, input: crate::agent::GoForward) -> Result<crate::agent::GoForwardOutcome, UnmetObligation> {
+        let _ = &input;
+        // The addressed row's existence, at step 2 of the one precedence rule.
+        if SessionStorage::get(&self.ports, &input.session_id).is_none() {
+            return Ok(crate::agent::GoForwardOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        }
+        // The addressed row, read before the branches that select by it.
+        let Some(held) = SessionStorage::get(&self.ports, &input.session_id) else {
+            return Ok(crate::agent::GoForwardOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        };
+        let _ = &held;
+        // `not-holder`: selected by the addressed row.
+        if decided(equal(Some(&held.data.holder).map(|value| &value.0).map(|value| value.0.clone()), self.ports.try_caller_session_id()?.as_ref().map(|value| &value.0).map(|value| value.0.clone())).map(|value| !value), "surf.agent.GoForward")? {
+            return Ok(crate::agent::GoForwardOutcome::NotHolder { error: crate::agent::NotSessionHolder { session_id: input.session_id.clone() } });
+        }
+        // `closed`: selected by the addressed row.
+        if decided(Some(matches!(held.state, crate::agent::SessionState::Closed)), "surf.agent.GoForward")? {
+            return Ok(crate::agent::GoForwardOutcome::Closed { error: crate::agent::SessionStateConflict { state: held.state } });
+        }
+        // `requested`: the default.
+        let Some(held) = SessionStorage::get(&self.ports, &input.session_id) else {
+            return Ok(crate::agent::GoForwardOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        };
+        let _ = &held;
+        let before = held.data.clone();
+        let next = held;
+        let answer = crate::agent::GoForwardOutcome::Requested { traversal_requested: crate::agent::TraversalRequested { session_id: input.session_id.clone(), tab_id: before.tab_id.clone(), step: crate::navigation::Standing::Forward } };
         SessionStorage::put(&mut self.ports, next);
         return Ok(answer);
     }
@@ -1051,33 +1139,9 @@ where
     }
 }
 
-/// `surf.navigation.CommitNavigation`, generated: every outcome is one the specification fully determines.
-impl<P> crate::navigation::obligations::CommitNavigationBehavior for Generated<P>
-where
-    P: NavigationStorage,
-{
+impl<P: crate::navigation::obligations::CommitNavigationBehavior> crate::navigation::obligations::CommitNavigationBehavior for Generated<P> {
     fn commit_navigation(&mut self, input: crate::navigation::CommitNavigation) -> Result<crate::navigation::CommitNavigationOutcome, UnmetObligation> {
-        let _ = &input;
-        // The addressed row's existence, at step 2 of the one precedence rule.
-        if NavigationStorage::get(&self.ports, &input.navigation_id).is_none() {
-            return Ok(crate::navigation::CommitNavigationOutcome::NoSuchNavigation { error: crate::navigation::NavigationNotFound { navigation_id: input.navigation_id.clone() } });
-        }
-        // `committed`: the default.
-        let Some(held) = NavigationStorage::get(&self.ports, &input.navigation_id) else {
-            return Ok(crate::navigation::CommitNavigationOutcome::NoSuchNavigation { error: crate::navigation::NavigationNotFound { navigation_id: input.navigation_id.clone() } });
-        };
-        let _ = &held;
-        let held_state = held.state;
-        let before = held.data.clone();
-        let moved = match held.refine() {
-            crate::navigation::AnyNavigation::Started(instance) => crate::navigation::AnyNavigation::Committed(instance.commit()),
-            _ => return Ok(crate::navigation::CommitNavigationOutcome::WrongState { error: crate::navigation::NavigationStateConflict { state: held_state } }),
-        };
-        let mut next = moved.snapshot();
-        next.data.url = input.url.clone();
-        let answer = crate::navigation::CommitNavigationOutcome::Committed { navigation_committed: crate::navigation::NavigationCommitted { navigation_id: input.navigation_id.clone(), tab_id: before.tab_id.clone(), url: input.url.clone(), status: input.status.clone(), media_type: input.media_type.clone(), body: input.body.clone() } };
-        NavigationStorage::put(&mut self.ports, next);
-        return Ok(answer);
+        crate::navigation::obligations::CommitNavigationBehavior::commit_navigation(&mut self.ports, input)
     }
 }
 
@@ -1123,10 +1187,48 @@ where
             navigation_id: identity.clone(),
             tab_id: input.tab_id.clone(),
             url: input.url.clone(),
+            method: input.method.clone(),
+            handling: crate::navigation::HistoryHandling::Push,
+            standing: None,
+            next: None,
+            entry_id: None,
+            entry_next: None,
         };
         let answer = crate::navigation::NavigateOutcome::Started { navigation_started: crate::navigation::NavigationStarted { navigation_id: identity.clone(), tab_id: input.tab_id.clone(), url: input.url.clone(), method: input.method.clone(), body: input.body.clone(), body_type: input.body_type.clone() } };
         NavigationStorage::put(&mut self.ports, crate::navigation::AnyNavigation::Started(crate::navigation::Navigation::new(data)).snapshot());
         return Ok(answer);
+    }
+}
+
+/// `surf.navigation.StartTraversal`, generated: every outcome is one the specification fully determines.
+impl<P> crate::navigation::obligations::StartTraversalBehavior for Generated<P>
+where
+    P: TryContext + NavigationStorage,
+{
+    fn start_traversal(&mut self, input: crate::navigation::StartTraversal) -> Result<crate::navigation::StartTraversalOutcome, UnmetObligation> {
+        let _ = &input;
+        // `started`: the default.
+        let identity: crate::net::RequestId = self.ports.try_generate_surf_net_request_id()?;
+        let data = crate::navigation::NavigationData {
+            navigation_id: identity.clone(),
+            tab_id: input.tab_id.clone(),
+            url: input.url.clone(),
+            method: crate::net::Method::Get,
+            handling: crate::navigation::HistoryHandling::Traverse,
+            standing: None,
+            next: None,
+            entry_id: Some(input.entry_id.clone()),
+            entry_next: input.entry_next.clone(),
+        };
+        let answer = crate::navigation::StartTraversalOutcome::Started { navigation_started: crate::navigation::NavigationStarted { navigation_id: identity.clone(), tab_id: input.tab_id.clone(), url: input.url.clone(), method: crate::net::Method::Get, body: self.ports.try_generate_optional_bytes()?, body_type: self.ports.try_generate_optional_surf_net_media_type()? } };
+        NavigationStorage::put(&mut self.ports, crate::navigation::AnyNavigation::Started(crate::navigation::Navigation::new(data)).snapshot());
+        return Ok(answer);
+    }
+}
+
+impl<P: crate::navigation::obligations::TraverseHistoryBehavior> crate::navigation::obligations::TraverseHistoryBehavior for Generated<P> {
+    fn traverse_history(&mut self, input: crate::navigation::TraverseHistory) -> Result<crate::navigation::TraverseHistoryOutcome, UnmetObligation> {
+        crate::navigation::obligations::TraverseHistoryBehavior::traverse_history(&mut self.ports, input)
     }
 }
 
@@ -1551,6 +1653,12 @@ where
                 tab_id: held.data.tab_id,
                 url: held.data.url,
                 state: held.state,
+                method: held.data.method,
+                handling: held.data.handling,
+                standing: held.data.standing,
+                next: held.data.next,
+                entry_id: held.data.entry_id,
+                entry_next: held.data.entry_next,
             })
             .collect())
     }

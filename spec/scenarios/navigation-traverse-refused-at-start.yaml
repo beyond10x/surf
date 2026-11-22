@@ -1,0 +1,58 @@
+# A step back from a tab's first entry is refused and starts no navigation, and so is a step back
+# in a tab that has no history at all. Synthesis cannot arrange it: the entries' standing is
+# written only by `CommitNavigation`'s effects on other rows.
+type: ess-scenario/6
+domain: surf.navigation
+scenario: navigation-traverse-refused-at-start
+summary: A step back from the first entry, or in a tab without history, is refused and starts nothing.
+
+arrange:
+  - instance: a
+    entity: surf.navigation.Navigation
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.navigation.TraverseHistory
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000201
+      step: back
+    outcome: no-entry
+    error:
+      name: surf.navigation.NoHistoryEntry
+      fields: {tab_id: 7e5a1b00-0000-4000-8000-000000000201, step: back}
+
+  - at: 2026-01-06T09:00:01Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000201
+      url: http://example.org/a
+      method: Get
+    outcome: started
+    capture: {instance: a, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:02Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: a}
+      url: http://example.org/a
+      status: 200
+      media_type: text/plain
+      body: aGk=
+    outcome: responded
+
+  - at: 2026-01-06T09:00:03Z
+    command: surf.navigation.TraverseHistory
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000201
+      step: back
+    outcome: no-entry
+    error:
+      name: surf.navigation.NoHistoryEntry
+      fields: {tab_id: 7e5a1b00-0000-4000-8000-000000000201, step: back}
+
+assert:
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: a}, standing: current, state: Committed}
+  - view: surf.navigation.Navigations
+    counts: {at_least: 1, at_most: 1}

@@ -6,6 +6,59 @@ naming:
   wire: navigation
   display: Navigation
 
+# Session history (HTML Standard, "session history", from memory: a traversable navigable's
+# session history entries, its current entry, the history handling "push" and "replace", and
+# traversing the history by a delta; a push removes the entries after the current one). Each tab
+# has its own, kept here, in the navigator, as `decision-blocker:agent-session-history-home`
+# decided.
+# An entry is the committed `push` navigation that made it: its row is the entry, its `url` the
+# entry's address (the response's, after the last redirect), its `method` the one the entry was
+# made by, and `standing` says where it is from the tab's current entry. A separate entry entity
+# was measured (`story:agent-history-spec`): a command cannot create a row and change other rows
+# at once (`affects:` sits only beside an outcome on an existing subject), so creating the entry
+# took a binding of its own; with the entries' standing in that entity, synthesis refused 20 more
+# scenarios. A row per tab holding the current entry was measured too: a create-or-update over it
+# cannot select its update by the stored row with a `when:` beside it, a command reads one row
+# through stored references, and an input typed `surf.shell.TabId` reads the shell's tab, so it
+# took four bindings, eight refusals for their delivery and failure alone.
+# The order of the entries is their `next` links, not a stored position: a value is copied or
+# counted, never one more than another row's (`{increment:}` writes its own row only).
+# Where this differs from the standard: no `replace`, which nothing needs yet; no cache, so an
+# entry a POST made is refused rather than shown or sent again; a step of one back or one forward
+# only; a traversal is a navigation of its own, loading the entry's address again.
+types:
+  - name: surf.navigation.HistoryHandling
+    kind: enum
+    variants:
+      - name: push
+        summary: Its commit adds an entry after the current one and makes it current.
+      - name: traverse
+        summary: Its commit makes the entry it went to current and adds none.
+    naming:
+      summary: What a navigation's commit does to its tab's session history.
+
+  # Where an entry is, in a word a filter can compare: the current entry, the one before and the
+  # one after it, which a step back or forward goes to, and the rest on either side. A push after
+  # going back drops the entries that were after the current one; a dropped row stays, as a
+  # navigation's row does.
+  - name: surf.navigation.Standing
+    kind: enum
+    variants:
+      - name: earlier
+        summary: Before the entry before the current one.
+      - name: back
+        summary: The entry before the current one.
+      - name: current
+        summary: The tab's current entry.
+      - name: forward
+        summary: The entry after the current one.
+      - name: later
+        summary: After the entry after the current one.
+      - name: dropped
+        summary: A push after an earlier entry removed it.
+    naming:
+      summary: Where a session history entry stands from its tab's current entry.
+
 entities:
   - name: surf.navigation.Navigation
     naming:
@@ -30,12 +83,46 @@ entities:
         type: surf.shell.TabId
       - name: url
         type: surf.url.Url
+      # The request's method: an entry made by `Post` is not traversed to.
+      - name: method
+        type: surf.net.Method
+      # `push` for every `Navigate`, `traverse` for a `StartTraversal`.
+      - name: handling
+        type: surf.navigation.HistoryHandling
+      # The entry this navigation's commit made, and where it stands: absent until a `push`
+      # commits, and for every other navigation.
+      - name: standing
+        type: Optional<surf.navigation.Standing>
+      # The entry pushed after this one, once one is.
+      - name: next
+        type: Optional<surf.net.RequestId>
+      # A traversal's: the entry it goes to, and the entry after that one, which its commit
+      # makes the entry after the current one.
+      - name: entry_id
+        type: Optional<surf.net.RequestId>
+      - name: entry_next
+        type: Optional<surf.net.RequestId>
     relations:
       - name: tab
         kind: references
         target: surf.shell.Tab
         cardinality: one
         via: tab_id
+      - name: next
+        kind: references
+        target: surf.navigation.Navigation
+        cardinality: one
+        via: next
+      - name: entry
+        kind: references
+        target: surf.navigation.Navigation
+        cardinality: one
+        via: entry_id
+      - name: entry_next
+        kind: references
+        target: surf.navigation.Navigation
+        cardinality: one
+        via: entry_next
     lifecycle:
       initial: Started
       states:
@@ -81,6 +168,20 @@ errors:
       - name: state
         type: surf.navigation.Navigation.State
 
+  - name: surf.navigation.NoHistoryEntry
+    summary: The tab has no entry at that step from its current one.
+    fields:
+      - name: tab_id
+        type: surf.shell.TabId
+      - name: step
+        type: surf.navigation.Standing
+
+  - name: surf.navigation.TraversalUnsupported
+    summary: Only one step back or one step forward is traversed.
+    fields:
+      - name: step
+        type: surf.navigation.Standing
+
 commands:
   - name: surf.navigation.Navigate
     naming:
@@ -95,8 +196,9 @@ commands:
         example: "https://example.org/"
       # The request the navigation issues: its method, and the body with its media type, as the
       # HTML Standard's form submission navigates to a POST resource (a request body and its
-      # content type). They are not stored on the navigation: they travel in `NavigationStarted`
-      # to the request (`fetch-on-navigation-started`).
+      # content type). The body and its media type are not stored on the navigation: they travel
+      # in `NavigationStarted` to the request (`fetch-on-navigation-started`). The method is, for
+      # the session history: an entry made by `Post` is not traversed to.
       - name: method
         type: surf.net.Method
       - name: body
@@ -112,6 +214,8 @@ commands:
         sets:
           tab_id: input.tab_id
           url: input.url
+          method: input.method
+          handling: push
         emits:
           - surf.navigation.NavigationStarted
         payload:
@@ -123,6 +227,49 @@ commands:
             body: input.body
             body_type: input.body_type
         summary: The navigation is Started and its address is to be fetched.
+
+  # A traversal's navigation: `Get` to the entry's address, without a body, with the handling
+  # `traverse`, so that its commit makes the entry current and adds none. The binding
+  # `start-on-traversal-started` invokes it after `TraverseHistory` accepted a step; no actor is
+  # granted it. It is not `Navigate` with more inputs, so that every `Navigate` pushes and none
+  # names an entry.
+  - name: surf.navigation.StartTraversal
+    naming:
+      wire: start-traversal
+      display: Start a traversal
+      summary: Start loading a session history entry's address into its tab.
+    input:
+      - name: tab_id
+        type: surf.shell.TabId
+      - name: url
+        type: surf.url.Url
+        example: "http://example.org/"
+      - name: entry_id
+        type: surf.net.RequestId
+      - name: entry_next
+        type: Optional<surf.net.RequestId>
+    outcomes:
+      - name: started
+        creates: surf.navigation.Navigation
+        instance: navigation_id
+        sets:
+          tab_id: input.tab_id
+          url: input.url
+          method: Get
+          handling: traverse
+          entry_id: input.entry_id
+          entry_next: input.entry_next
+        emits:
+          - surf.navigation.NavigationStarted
+        payload:
+          surf.navigation.NavigationStarted:
+            navigation_id: {generated: true}
+            tab_id: input.tab_id
+            url: input.url
+            method: Get
+            body: {generated: true}
+            body_type: {generated: true}
+        summary: The traversal's navigation is Started and the entry's address is to be fetched.
 
   - name: surf.navigation.CommitNavigation
     naming:
@@ -156,11 +303,41 @@ commands:
 
       # The navigation's address becomes the response's: after redirects it is where the page is.
       # The address asked for stays on the request (`surf.net.Requests`).
-      - name: committed
+      # A traversal's commit makes the entry it went to current and adds none (HTML Standard,
+      # traversing the history, from memory). The effects apply in the order written: the
+      # entries around the old current one move out, then the entry before the one it went to
+      # (the one whose `next` it is) is the entry before, the one after it the entry after, and it
+      # is current. A traversal that fails or is cancelled changes no entry, so the current one
+      # stays where it was.
+      # UNMAPPED: a traversal that commits after a push or another traversal in the same tab
+      # committed since it started. The HTML Standard queues the steps of a traversable's session
+      # history; here the commit moves the entries as if nothing had moved them. What would settle
+      # it: a story that serializes a tab's traversals (`agent-back-forward` starts one at a time).
+      - name: traversed
+        when_subject: {predicate: handling == traverse}
         moves: surf.navigation.Navigation.commit
         instance: navigation_id
         sets:
           url: input.url
+        affects:
+          - entity: surf.navigation.Navigation
+            where: {all: [tab_id == subject.tab_id, standing == back]}
+            sets: {standing: earlier}
+          - entity: surf.navigation.Navigation
+            where: {all: [tab_id == subject.tab_id, standing == forward]}
+            sets: {standing: later}
+          - entity: surf.navigation.Navigation
+            where: {all: [tab_id == subject.tab_id, standing == current]}
+            sets: {standing: earlier}
+          - entity: surf.navigation.Navigation
+            where: {all: [tab_id == subject.tab_id, next == subject.entry_id]}
+            sets: {standing: back}
+          - entity: surf.navigation.Navigation
+            where: {all: [tab_id == subject.tab_id, navigation_id == subject.entry_next]}
+            sets: {standing: forward}
+          - entity: surf.navigation.Navigation
+            where: {all: [tab_id == subject.tab_id, navigation_id == subject.entry_id]}
+            sets: {standing: current}
         emits:
           - surf.navigation.NavigationCommitted
         payload:
@@ -171,7 +348,38 @@ commands:
             status: input.status
             media_type: input.media_type
             body: input.body
-        summary: The navigation is Committed.
+        summary: The navigation is Committed and the entry it went to is current.
+
+      # A push's commit (HTML Standard, history handling "push", from memory): the entries after
+      # the current one are dropped, the current one is the entry before, and the navigation is
+      # the new current entry. The first commit in a tab finds no entry and only makes its own.
+      - name: committed
+        moves: surf.navigation.Navigation.commit
+        instance: navigation_id
+        sets:
+          url: input.url
+          standing: current
+        affects:
+          - entity: surf.navigation.Navigation
+            where: {all: [tab_id == subject.tab_id, any: [standing == forward, standing == later]]}
+            sets: {standing: dropped}
+          - entity: surf.navigation.Navigation
+            where: {all: [tab_id == subject.tab_id, standing == back]}
+            sets: {standing: earlier}
+          - entity: surf.navigation.Navigation
+            where: {all: [tab_id == subject.tab_id, standing == current]}
+            sets: {standing: back, next: input.navigation_id}
+        emits:
+          - surf.navigation.NavigationCommitted
+        payload:
+          surf.navigation.NavigationCommitted:
+            navigation_id: input.navigation_id
+            tab_id: {subject: tab_id}
+            url: input.url
+            status: input.status
+            media_type: input.media_type
+            body: input.body
+        summary: The navigation is Committed and is its tab's current entry, after the one that was current; the entries after that one are dropped.
 
       - name: wrong-state
         wrong_state: true
@@ -257,6 +465,71 @@ commands:
             state: {subject: state}
         summary: The navigation had already ended.
 
+  # Traversing a tab's history by one step (HTML Standard, "traverse the history by a delta", from
+  # memory): `step` is `back` for a delta of -1 and `forward` for +1, the standing of the entry it
+  # goes to, so one filter finds it. Accepted, it starts nothing itself: `TraversalStarted` carries
+  # the entry's address, the entry and the entry after it to `StartTraversal`
+  # (`start-on-traversal-started`), so the traversal is a navigation as every other is.
+  # Refused, nothing starts: at the first entry going back, at the last going forward, in a tab
+  # without history, and where the entry was made by `Post`. Those are one refusal, because the
+  # standard's answer to the last (a cache, or sending the POST again after asking) is not here,
+  # and a second refusal over the same rows is one more scenario synthesis cannot arrange.
+  - name: surf.navigation.TraverseHistory
+    naming:
+      wire: traverse-history
+      display: Traverse the history
+      summary: Ask to load the entry before or after a tab's current one.
+    refs: ["whatwg-html:traverse-the-history-by-a-delta"]
+    input:
+      - name: tab_id
+        type: surf.shell.TabId
+      - name: step
+        type: surf.navigation.Standing
+        example: back
+    outcomes:
+      - name: unsupported
+        when: {all: [step != back, step != forward]}
+        error: surf.navigation.TraversalUnsupported
+        payload:
+          surf.navigation.TraversalUnsupported:
+            step: input.step
+        summary: Only one step back or forward is traversed.
+
+      - name: no-entry
+        when_related:
+          entity: surf.navigation.Navigation
+          where: {all: [tab_id == input.tab_id, defined(standing), standing == input.step, method == Get]}
+          exists: false
+        error: surf.navigation.NoHistoryEntry
+        payload:
+          surf.navigation.NoHistoryEntry:
+            tab_id: input.tab_id
+            step: input.step
+        summary: No entry made by GET is there.
+
+      - name: requested
+        emits:
+          - surf.navigation.TraversalStarted
+        payload:
+          surf.navigation.TraversalStarted:
+            tab_id: input.tab_id
+            url:
+              related:
+                entity: surf.navigation.Navigation
+                where: {all: [tab_id == input.tab_id, defined(standing), standing == input.step, method == Get]}
+                field: url
+            entry_id:
+              related:
+                entity: surf.navigation.Navigation
+                where: {all: [tab_id == input.tab_id, defined(standing), standing == input.step, method == Get]}
+                field: navigation_id
+            entry_next:
+              related:
+                entity: surf.navigation.Navigation
+                where: {all: [tab_id == input.tab_id, defined(standing), standing == input.step, method == Get]}
+                field: next
+        summary: The tab is to load the entry's address.
+
 events:
   - name: surf.navigation.NavigationStarted
     fields:
@@ -307,6 +580,17 @@ events:
       - name: tab_id
         type: surf.shell.TabId
 
+  - name: surf.navigation.TraversalStarted
+    fields:
+      - name: tab_id
+        type: surf.shell.TabId
+      - name: url
+        type: surf.url.Url
+      - name: entry_id
+        type: surf.net.RequestId
+      - name: entry_next
+        type: Optional<surf.net.RequestId>
+
 views:
   - name: surf.navigation.Navigations
     source: surf.navigation.Navigation
@@ -320,6 +604,18 @@ views:
         type: surf.url.Url
       - name: state
         type: surf.navigation.Navigation.State
+      - name: method
+        type: surf.net.Method
+      - name: handling
+        type: surf.navigation.HistoryHandling
+      - name: standing
+        type: Optional<surf.navigation.Standing>
+      - name: next
+        type: Optional<surf.net.RequestId>
+      - name: entry_id
+        type: Optional<surf.net.RequestId>
+      - name: entry_next
+        type: Optional<surf.net.RequestId>
     naming:
       wire: navigations
       display: Navigations

@@ -24,7 +24,9 @@ use surf_types::document::{
     SelectOption, SelectOptionOutcome, SubmissionData, SubmissionId, SubmissionSnapshot,
     SubmissionState,
 };
-use surf_types::navigation::{NavigationData, NavigationSnapshot, NavigationState};
+use surf_types::navigation::{
+    HistoryHandling, NavigationData, NavigationSnapshot, NavigationState,
+};
 use surf_types::net::{Method, RequestData, RequestId, RequestSnapshot, RequestState};
 use surf_types::obligation::UnmetObligation;
 use surf_types::primitives::Uuid;
@@ -163,6 +165,12 @@ fn storage_navigation_put_get_list_in_insertion_order_replace_in_place_delete() 
             navigation_id,
             tab_id: TabId(uuid(9)),
             url: url("a"),
+            method: Method::Get,
+            handling: HistoryHandling::Push,
+            standing: None,
+            next: None,
+            entry_id: None,
+            entry_next: None,
         },
     });
     let replacement = NavigationSnapshot {

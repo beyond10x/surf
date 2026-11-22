@@ -23,7 +23,7 @@ use surf_ports::{Caller, ComponentPorts};
 use surf_types::agent::{
     ActionCommand, ActionId, ActionRecorded, FillRequested, Go, NavigationRequested, OpenSession,
     PickRequested, PressRequested, RecordAction, SessionClosed, SessionId,
-    SessionNavigationChanged, SessionOpened,
+    SessionNavigationChanged, SessionOpened, TraversalRequested,
 };
 use surf_types::document::{
     CheckednessSet, DocumentId, DocumentParsed, ElementAdded, ElementId, EncodingName, FormAdded,
@@ -32,6 +32,7 @@ use surf_types::document::{
 };
 use surf_types::navigation::{
     NavigationCancelled, NavigationCommitted, NavigationFailed, NavigationStarted, NavigationState,
+    Standing, TraversalStarted,
 };
 use surf_types::net::{
     FailureReason, FetchFailed, MediaType, Method, RequestId, RequestStarted, ResponseReceived,
@@ -1027,6 +1028,17 @@ fn covered() -> Vec<SystemEvent> {
             submission_id: SubmissionId(uuid(11)),
             reason: SubmissionEndReason::InvalidControls,
         }),
+        SystemEvent::TraversalRequested(TraversalRequested {
+            session_id: SessionId(uuid(2)),
+            tab_id: TabId(uuid(3)),
+            step: Standing::Back,
+        }),
+        SystemEvent::TraversalStarted(TraversalStarted {
+            tab_id: TabId(uuid(3)),
+            url: url(),
+            entry_id: RequestId(uuid(5)),
+            entry_next: None,
+        }),
     ]
 }
 
@@ -1065,6 +1077,9 @@ fn expected_value(event: &str, field: &str) -> Option<String> {
         ("surf.agent.SessionNavigationChanged", "sessions") => text("1"),
         ("surf.navigation.NavigationFailed", "reason") => text("TooManyRedirects"),
         ("surf.net.FetchFailed", "reason") => text("Unreachable"),
+        ("surf.agent.TraversalRequested", "step") => text("back"),
+        ("surf.navigation.TraversalStarted", "entry_id") => id(5),
+        ("surf.navigation.TraversalStarted", "entry_next") => None,
         (_, "status") => text("404"),
         (_, "media_type") => text("text/html"),
         (_, "method") => text("Post"),
@@ -1098,10 +1113,10 @@ fn case_17_every_event_maps_with_all_its_fields() {
     );
     assert_eq!(
         names.len(),
-        30,
-        "the events of spec/ after story:agent-forms-spec"
+        32,
+        "the events of spec/ after story:agent-history-spec"
     );
-    assert_eq!(spec.len(), 31, "and surf.agent.EventsLeftOut");
+    assert_eq!(spec.len(), 33, "and surf.agent.EventsLeftOut");
     let line = surf_session::entries::left_out_line(3);
     assert!(line.starts_with(&format!("event {left_out} ")), "{line}");
     let mapped = fields(&line).expect("a mapped event");

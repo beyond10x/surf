@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 71d0fa10af57da751b7353e8f39151103bcec8623bf2eb84c499af9f11b091a5
+// contract digest 3228537f9d6e7cdd446cb9ccbf75b058addda67c10b212a848f9115f7eba7e7b
 // do not edit: regenerate with `ess synthesize`
 
 //! agent — the `agent` component of `surf` v1.
@@ -33,6 +33,8 @@ pub enum PublishedEvent {
     SessionNavigationChanged(surf_types::agent::SessionNavigationChanged),
     /// `surf.agent.SessionOpened`.
     SessionOpened(surf_types::agent::SessionOpened),
+    /// `surf.agent.TraversalRequested`.
+    TraversalRequested(surf_types::agent::TraversalRequested),
 }
 
 /// agent — the port over the component's obligations.
@@ -65,7 +67,7 @@ impl<B> Agent<B> {
 
 impl<B> Agent<B>
 where
-    B: surf_types::agent::obligations::CloseSessionBehavior + surf_types::agent::obligations::FillBehavior + surf_types::agent::obligations::FollowBehavior + surf_types::agent::obligations::GoBehavior + surf_types::agent::obligations::NoteNavigationCommittedBehavior + surf_types::agent::obligations::NoteNavigationEndedBehavior + surf_types::agent::obligations::NoteNavigationFailedBehavior + surf_types::agent::obligations::NoteNavigationStartedBehavior + surf_types::agent::obligations::OpenSessionBehavior + surf_types::agent::obligations::PickBehavior + surf_types::agent::obligations::PressBehavior + surf_types::agent::obligations::RecordActionBehavior + surf_types::agent::obligations::SessionLogQuery + surf_types::agent::obligations::SessionStateViewQuery + surf_types::agent::obligations::SessionsQuery,
+    B: surf_types::agent::obligations::CloseSessionBehavior + surf_types::agent::obligations::FillBehavior + surf_types::agent::obligations::FollowBehavior + surf_types::agent::obligations::GoBehavior + surf_types::agent::obligations::GoBackBehavior + surf_types::agent::obligations::GoForwardBehavior + surf_types::agent::obligations::NoteNavigationCommittedBehavior + surf_types::agent::obligations::NoteNavigationEndedBehavior + surf_types::agent::obligations::NoteNavigationFailedBehavior + surf_types::agent::obligations::NoteNavigationStartedBehavior + surf_types::agent::obligations::OpenSessionBehavior + surf_types::agent::obligations::PickBehavior + surf_types::agent::obligations::PressBehavior + surf_types::agent::obligations::RecordActionBehavior + surf_types::agent::obligations::SessionLogQuery + surf_types::agent::obligations::SessionStateViewQuery + surf_types::agent::obligations::SessionsQuery,
 {
     /// Accepts `surf.agent.CloseSession`: runs the behaviour obligation, then publishes the declared events
     /// the outcome carries.
@@ -134,6 +136,42 @@ where
             surf_types::agent::GoOutcome::Closed { .. } => {}
             surf_types::agent::GoOutcome::Requested { navigation_requested, .. } => {
                 self.outbox.push(PublishedEvent::NavigationRequested(navigation_requested.clone()));
+            }
+        }
+        Ok(outcome)
+    }
+
+    /// Accepts `surf.agent.GoBack`: runs the behaviour obligation, then publishes the declared events
+    /// the outcome carries.
+    ///
+    /// `Err` is the typed refusal of an unmet obligation — never a domain outcome, which always
+    /// arrives as a variant of the outcome type, refusals included.
+    pub fn go_back(&mut self, input: surf_types::agent::GoBack) -> Result<surf_types::agent::GoBackOutcome, surf_types::obligation::UnmetObligation> {
+        let outcome = self.behaviors.go_back(input)?;
+        match &outcome {
+            surf_types::agent::GoBackOutcome::NotHolder { .. } => {}
+            surf_types::agent::GoBackOutcome::NoSuchSession { .. } => {}
+            surf_types::agent::GoBackOutcome::Closed { .. } => {}
+            surf_types::agent::GoBackOutcome::Requested { traversal_requested, .. } => {
+                self.outbox.push(PublishedEvent::TraversalRequested(traversal_requested.clone()));
+            }
+        }
+        Ok(outcome)
+    }
+
+    /// Accepts `surf.agent.GoForward`: runs the behaviour obligation, then publishes the declared events
+    /// the outcome carries.
+    ///
+    /// `Err` is the typed refusal of an unmet obligation — never a domain outcome, which always
+    /// arrives as a variant of the outcome type, refusals included.
+    pub fn go_forward(&mut self, input: surf_types::agent::GoForward) -> Result<surf_types::agent::GoForwardOutcome, surf_types::obligation::UnmetObligation> {
+        let outcome = self.behaviors.go_forward(input)?;
+        match &outcome {
+            surf_types::agent::GoForwardOutcome::NotHolder { .. } => {}
+            surf_types::agent::GoForwardOutcome::NoSuchSession { .. } => {}
+            surf_types::agent::GoForwardOutcome::Closed { .. } => {}
+            surf_types::agent::GoForwardOutcome::Requested { traversal_requested, .. } => {
+                self.outbox.push(PublishedEvent::TraversalRequested(traversal_requested.clone()));
             }
         }
         Ok(outcome)

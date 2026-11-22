@@ -5,5 +5,6 @@
 
 mod adversary_document_forms;
 mod agent;
+mod history;
 mod ports;
 mod review1_ports;

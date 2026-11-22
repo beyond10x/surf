@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 71d0fa10af57da751b7353e8f39151103bcec8623bf2eb84c499af9f11b091a5
+// contract digest 3228537f9d6e7cdd446cb9ccbf75b058addda67c10b212a848f9115f7eba7e7b
 // do not edit: regenerate with `ess synthesize`
 
 //! Agent — `surf.agent`.
@@ -35,6 +35,10 @@ pub enum ActionCommand {
     Pick,
     /// `press`.
     Press,
+    /// `back`.
+    Back,
+    /// `forward`.
+    Forward,
     /// `close`.
     Close,
 }
@@ -751,6 +755,102 @@ pub enum GoOutcome {
     },
 }
 
+/// Go back — the input of `surf.agent.GoBack`.
+///
+/// Ask for the entry before the current one in the session's tab.
+///
+/// Everything it can result in is [`GoBackOutcome`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GoBack {
+    /// `session_id` — `surf.agent.SessionId`.
+    pub session_id: SessionId,
+}
+
+/// Everything `surf.agent.GoBack` can result in — one variant per declared outcome.
+///
+/// An infrastructure failure is deliberately not in here: a refusal is a fact about the domain,
+/// a transport fault is a fact about the run, and conflating the two is what the declared
+/// outcomes exist to prevent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GoBackOutcome {
+    /// `not-holder` — when the existing subject's stored fields satisfy `holder != caller.session_id`.
+    ///
+    /// The caller's token is another session's.
+    NotHolder {
+        /// Why it was refused: `surf.agent.NotSessionHolder`.
+        error: NotSessionHolder,
+    },
+    /// `no-such-session` — for an identity no record carries.
+    ///
+    /// No session has this identity.
+    NoSuchSession {
+        /// Why it was refused: `surf.agent.SessionNotFound`.
+        error: SessionNotFound,
+    },
+    /// `closed` — when the existing subject is in Closed.
+    ///
+    /// The session is Closed; nothing was requested.
+    Closed {
+        /// Why it was refused: `surf.agent.SessionStateConflict`.
+        error: SessionStateConflict,
+    },
+    /// `requested` — otherwise.
+    ///
+    /// The navigator is asked for the entry before the current one.
+    Requested {
+        /// The `surf.agent.TraversalRequested` this outcome publishes.
+        traversal_requested: TraversalRequested,
+    },
+}
+
+/// Go forward — the input of `surf.agent.GoForward`.
+///
+/// Ask for the entry after the current one in the session's tab.
+///
+/// Everything it can result in is [`GoForwardOutcome`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GoForward {
+    /// `session_id` — `surf.agent.SessionId`.
+    pub session_id: SessionId,
+}
+
+/// Everything `surf.agent.GoForward` can result in — one variant per declared outcome.
+///
+/// An infrastructure failure is deliberately not in here: a refusal is a fact about the domain,
+/// a transport fault is a fact about the run, and conflating the two is what the declared
+/// outcomes exist to prevent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GoForwardOutcome {
+    /// `not-holder` — when the existing subject's stored fields satisfy `holder != caller.session_id`.
+    ///
+    /// The caller's token is another session's.
+    NotHolder {
+        /// Why it was refused: `surf.agent.NotSessionHolder`.
+        error: NotSessionHolder,
+    },
+    /// `no-such-session` — for an identity no record carries.
+    ///
+    /// No session has this identity.
+    NoSuchSession {
+        /// Why it was refused: `surf.agent.SessionNotFound`.
+        error: SessionNotFound,
+    },
+    /// `closed` — when the existing subject is in Closed.
+    ///
+    /// The session is Closed; nothing was requested.
+    Closed {
+        /// Why it was refused: `surf.agent.SessionStateConflict`.
+        error: SessionStateConflict,
+    },
+    /// `requested` — otherwise.
+    ///
+    /// The navigator is asked for the entry after the current one.
+    Requested {
+        /// The `surf.agent.TraversalRequested` this outcome publishes.
+        traversal_requested: TraversalRequested,
+    },
+}
+
 /// Note a committed navigation — the input of `surf.agent.NoteNavigationCommitted`.
 ///
 /// Record on the session showing a navigation that it committed, with its address, status and media type.
@@ -1172,6 +1272,17 @@ pub struct SessionOpened {
     pub tab_id: crate::shell::TabId,
 }
 
+/// TraversalRequested — the event `surf.agent.TraversalRequested`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TraversalRequested {
+    /// `session_id` — `surf.agent.SessionId`.
+    pub session_id: SessionId,
+    /// `tab_id` — `surf.shell.TabId`.
+    pub tab_id: crate::shell::TabId,
+    /// `step` — `surf.navigation.Standing`.
+    pub step: crate::navigation::Standing,
+}
+
 /// The declared error `surf.agent.NotSessionHolder`.
 ///
 /// The caller's token is not this session's, so nothing moved.
@@ -1331,6 +1442,28 @@ pub mod obligations {
         ///
         /// `Err` is the typed refusal of a request the model declares no outcome for.
         fn go(&mut self, input: super::Go) -> Result<super::GoOutcome, crate::obligation::UnmetObligation>;
+    }
+
+    /// The behaviour `surf.agent.GoBack` — generated.
+    ///
+    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
+    /// over the storage and context ports. Implement it yourself to replace that behaviour.
+    pub trait GoBackBehavior {
+        /// Decides and enacts exactly one declared outcome of `surf.agent.GoBack`.
+        ///
+        /// `Err` is the typed refusal of a request the model declares no outcome for.
+        fn go_back(&mut self, input: super::GoBack) -> Result<super::GoBackOutcome, crate::obligation::UnmetObligation>;
+    }
+
+    /// The behaviour `surf.agent.GoForward` — generated.
+    ///
+    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
+    /// over the storage and context ports. Implement it yourself to replace that behaviour.
+    pub trait GoForwardBehavior {
+        /// Decides and enacts exactly one declared outcome of `surf.agent.GoForward`.
+        ///
+        /// `Err` is the typed refusal of a request the model declares no outcome for.
+        fn go_forward(&mut self, input: super::GoForward) -> Result<super::GoForwardOutcome, crate::obligation::UnmetObligation>;
     }
 
     /// The behaviour `surf.agent.NoteNavigationCommitted` — an implementation obligation.

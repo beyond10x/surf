@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 71d0fa10af57da751b7353e8f39151103bcec8623bf2eb84c499af9f11b091a5
+// contract digest 3228537f9d6e7cdd446cb9ccbf75b058addda67c10b212a848f9115f7eba7e7b
 // do not edit: regenerate with `ess synthesize`
 
 //! Every actor the specification declares, and the commands each may invoke — as data.
@@ -54,6 +54,8 @@ pub fn may(actor: Actor) -> &'static [&'static str] {
             "surf.agent.Fill",
             "surf.agent.Follow",
             "surf.agent.Go",
+            "surf.agent.GoBack",
+            "surf.agent.GoForward",
             "surf.agent.Pick",
             "surf.agent.Press",
         ],

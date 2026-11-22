@@ -27,7 +27,6 @@ types:
       summary: The identity of one recorded action.
 
   # The command word of an action as the `path` and `did` lines print it (`docs/agent-answer.md`).
-  # `agent-history-spec` adds its commands here.
   - name: surf.agent.ActionCommand
     kind: enum
     variants:
@@ -43,6 +42,10 @@ types:
         summary: A choice of the page was changed (`Pick`).
       - name: press
         summary: A button of the page was pressed (`Press`).
+      - name: back
+        summary: The entry before the current one was requested (`GoBack`).
+      - name: forward
+        summary: The entry after the current one was requested (`GoForward`).
       - name: close
         summary: The session was closed (`CloseSession`).
     naming:
@@ -406,6 +409,8 @@ actors:
       - surf.agent.Fill
       - surf.agent.Pick
       - surf.agent.Press
+      - surf.agent.GoBack
+      - surf.agent.GoForward
       - surf.agent.CloseSession
       - surf.agent.SessionState
       - surf.agent.SessionLog
@@ -776,6 +781,102 @@ commands:
             handle: input.handle
         summary: The document is asked to activate the button.
 
+  # `back` and `forward` (design section 4): the navigator is asked to traverse the session's tab
+  # by one step, through `TraversalRequested` and the binding `traverse-on-traversal-requested`.
+  # Each is refused as `Go` is. Whether the tab has an entry there, and whether it may be loaded
+  # again, is the navigator's answer (`surf.navigation.TraverseHistory`): this component reads no
+  # history row, so an accepted `GoBack` may start nothing, which the session then shows as the
+  # navigation it had.
+  - name: surf.agent.GoBack
+    naming:
+      wire: go-back
+      display: Go back
+      summary: Ask for the entry before the current one in the session's tab.
+    input:
+      - name: session_id
+        type: surf.agent.SessionId
+    outcomes:
+      - name: not-holder
+        when_subject: {predicate: holder != caller.session_id}
+        error: surf.agent.NotSessionHolder
+        payload:
+          surf.agent.NotSessionHolder:
+            session_id: input.session_id
+        summary: The caller's token is another session's.
+
+      - name: no-such-session
+        unknown_instance: true
+        error: surf.agent.SessionNotFound
+        payload:
+          surf.agent.SessionNotFound:
+            session_id: input.session_id
+        summary: No session has this identity.
+
+      - name: closed
+        when_subject_state: Closed
+        error: surf.agent.SessionStateConflict
+        payload:
+          surf.agent.SessionStateConflict:
+            state: {subject: state}
+        summary: The session is Closed; nothing was requested.
+
+      - name: requested
+        updates: surf.agent.Session
+        instance: session_id
+        emits:
+          - surf.agent.TraversalRequested
+        payload:
+          surf.agent.TraversalRequested:
+            session_id: input.session_id
+            tab_id: {subject: tab_id}
+            step: back
+        summary: The navigator is asked for the entry before the current one.
+
+  - name: surf.agent.GoForward
+    naming:
+      wire: go-forward
+      display: Go forward
+      summary: Ask for the entry after the current one in the session's tab.
+    input:
+      - name: session_id
+        type: surf.agent.SessionId
+    outcomes:
+      - name: not-holder
+        when_subject: {predicate: holder != caller.session_id}
+        error: surf.agent.NotSessionHolder
+        payload:
+          surf.agent.NotSessionHolder:
+            session_id: input.session_id
+        summary: The caller's token is another session's.
+
+      - name: no-such-session
+        unknown_instance: true
+        error: surf.agent.SessionNotFound
+        payload:
+          surf.agent.SessionNotFound:
+            session_id: input.session_id
+        summary: No session has this identity.
+
+      - name: closed
+        when_subject_state: Closed
+        error: surf.agent.SessionStateConflict
+        payload:
+          surf.agent.SessionStateConflict:
+            state: {subject: state}
+        summary: The session is Closed; nothing was requested.
+
+      - name: requested
+        updates: surf.agent.Session
+        instance: session_id
+        emits:
+          - surf.agent.TraversalRequested
+        payload:
+          surf.agent.TraversalRequested:
+            session_id: input.session_id
+            tab_id: {subject: tab_id}
+            step: forward
+        summary: The navigator is asked for the entry after the current one.
+
   # The next four commands are the agent component's side of the navigator's events: the bindings
   # `note-on-navigation-*` invoke them, and no actor is granted them. A navigation event names its
   # tab and its navigation and no session, so each command changes every session its filter
@@ -957,7 +1058,8 @@ commands:
   # before it answers: `OpenSession/opened` records `open`, `Go/requested` records `go` with its
   # address, `Follow/requested` records `follow` with its address, handle and label,
   # `Fill/requested`, `Pick/requested` and `Press/requested` record `fill`, `pick` and `press` with
-  # the handle, `CloseSession/closed` records `close`. `open <url>` is two actions, `open` and then
+  # the handle, `GoBack/requested` and `GoForward/requested` record `back` and `forward` with
+  # nothing more, `CloseSession/closed` records `close`. `open <url>` is two actions, `open` and then
   # `go` with the address, because it is `OpenSession` and then `Go` (design section 4). The
   # session process holds one session and is the only writer of its log, so it supplies the
   # sequence number, from 1. A refused command records nothing. No actor is granted it: like
@@ -1041,6 +1143,17 @@ events:
         type: Optional<String>
       - name: label
         type: Optional<String>
+
+  # `step` is `back` for `GoBack` and `forward` for `GoForward`, the navigator's own type for where
+  # an entry stands from the current one.
+  - name: surf.agent.TraversalRequested
+    fields:
+      - name: session_id
+        type: surf.agent.SessionId
+      - name: tab_id
+        type: surf.shell.TabId
+      - name: step
+        type: surf.navigation.Standing
 
   # ESS refuses an outcome that publishes nothing (`ESS-COMMAND-007`, `empty_change`); this is
   # what the four note commands publish. `sessions` is how many sessions changed: 0 for a
