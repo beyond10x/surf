@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T14:35:54Z",
+  "actor": "human:operator",
+  "artifact": "story:ess-0-97-3",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "suite on ESS 0.96.0 and 0.97.3, same commit of spec/",
+    "reference": "ess verify conform synthesize writes the same bytes on both releases: 96 scenarios, 28 refusals; 96 of 96 pass on the interpreter and on the Rust system; median time of synthesis 1,086 ms on 0.96.0 and 763 ms on 0.97.3"
+  }
+}
