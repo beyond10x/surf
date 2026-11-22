@@ -8,5 +8,11 @@
 
 #[path = "tls/alloc.rs"]
 mod alloc;
+#[path = "tls/der.rs"]
+mod der;
+#[path = "tls/pem.rs"]
+mod pem;
 #[path = "tls/seam.rs"]
 mod seam;
+#[path = "tls/x509_parse.rs"]
+mod x509_parse;
