@@ -824,7 +824,14 @@ fn own(id: &str, state: HeadState, reason: RefusalReason) -> wire::Answer {
         | RefusalReason::Disabled
         | RefusalReason::WrongKind
         | RefusalReason::UnknownOption
-        | RefusalReason::Readonly => 1,
+        | RefusalReason::Readonly
+        | RefusalReason::NoDefaultAction
+        | RefusalReason::PasswordInQuery
+        | RefusalReason::NoFormOwner
+        | RefusalReason::InvalidControls
+        | RefusalReason::InvalidAction
+        | RefusalReason::UnsupportedEnctype
+        | RefusalReason::DialogMethod => 1,
         RefusalReason::Usage => 2,
         RefusalReason::NoSuchSession
         | RefusalReason::SessionDied

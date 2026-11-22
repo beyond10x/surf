@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest d8fcabc238518cedb3ad774db227271bec321d8750577fd75159dddefa5fb4b4
+// contract digest 056231f07ec8201418330c04178f86aee67ffbe892f67ed6cdbb4c96b8e95bca
 // do not edit: regenerate with `ess synthesize`
 
 //! The `surf` system, v1: its components assembled, its bindings wired, and its one transport.

@@ -19,5 +19,6 @@ mod follow;
 mod follow_refusals;
 mod form_rows;
 mod memory;
+mod press;
 mod redirect;
 mod view;

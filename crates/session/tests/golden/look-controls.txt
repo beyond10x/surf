@@ -16,5 +16,5 @@ now 13 of 13
   f10 text ? "Email" = "" required
   f11 text ? "Code" = "X1" readonly
   f12 text hid "Secret" = ""
-  b1 button ? "Save"
+  b1 button ? "Save" submits F1 post "/save"
 note visibility: hidden attribute only

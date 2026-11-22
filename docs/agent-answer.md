@@ -14,9 +14,10 @@ answers in this grammar, byte for byte.
 
 This document states the blocks of step 1 of design section 9 (`docs/design/agent-interface.md`)
 and the `now` block of its step 3 (`agent-follow-links`), which lists links, with the control
-and button lines of its step 4 (`agent-fill-pick`). The `changed` block is defined by later
-stories (`agent-press-submit`, `agent-back-forward`, `agent-change-and-log`), each of which adds
-its lines here and in the crate.
+and button lines of its step 4 (`agent-fill-pick`), and the `submits` part of a button line
+(`agent-press-submit`). The `changed` block is defined by later stories
+(`agent-back-forward`, `agent-change-and-log`), each of which adds its lines here and in the
+crate.
 
 ## Example
 
@@ -171,6 +172,16 @@ refusal of the action, with a reason from this list:
 | `wrong-kind` | the element is not of a kind the command acts on: `fill` takes `text`, `password` and `textarea`, `pick` takes `select`, `checkbox` and `radio` | 1 |
 | `unknown-option` | the select has no option of that label or value, or the word is not `on` or `off` for a checkbox, or not `on` for a radio button | 1 |
 | `readonly` | the control has the `readonly` attribute | 1 |
+| `no-default-action` | the button is not a submit button (`type=button`, `type=reset`): without a script engine pressing it does nothing | 1 |
+| `password-in-query` | the form submits with `GET` and a password control of it holds a value, which the address would carry | 1 |
+| `no-form-owner` | the submission ended: the submit button belongs to no form | 1 |
+| `invalid-controls` | the submission ended: a control of the form is `required` and empty | 1 |
+| `invalid-action` | the submission ended: the action does not parse as an address | 1 |
+| `unsupported-enctype` | the submission ended: the form `POST`s as `multipart/form-data` or `text/plain`, which surf does not encode | 1 |
+| `dialog-method` | the submission ended: the form's method is `dialog` | 1 |
+
+`address-too-long`, `unsupported-scheme` and `forbidden-destination` are given for the address a
+`press` would submit to as for a link's target.
 
 A reason not in the list is refused by the parser. A story that adds a reason adds it here, to
 `RefusalReason` and to a test.
@@ -208,7 +219,7 @@ field when it had one. An action on an element names the element's handle, a wor
 `[a-z0-9]+` written bare (the session made it), and, for `follow`, the link's label as the
 `now` block writes it, cut at 60 characters: `3 follow l4 "Sign in"` (design section 5.1). A
 `fill` or a `pick` names the handle alone, never the value typed or the option picked:
-`4 fill f1`, `5 pick f3`.
+`4 fill f1`, `5 pick f3`; so does a `press`, `6 press b1`.
 
 ### Now
 
@@ -217,6 +228,7 @@ now <shown> of <total>
   <handle> link <visibility> "<label>" -> "<target>"
   <handle> link <visibility> "<label>" -> "<target>" unresolved
   <handle> <kind> <visibility> "<label>" [= <value>] [disabled] [checked] [required] [readonly]
+  <handle> button <visibility> "<label>" [disabled] submits F<n> <method> "<action>" [unresolved]
 note visibility: hidden attribute only
 ```
 
@@ -251,6 +263,15 @@ passes 1,048,576 bytes (paging is `agent-answer-paging`).
   and a button have no value.
 - the flags, each written when it holds, in this order: `disabled`; `checked`, a checked
   checkbox or radio button; `required`; `readonly`, which `fill` refuses.
+- `submits F<n> <method> "<action>"`, after the flags, on the line of a button that has a form
+  owner: what a `press` of it submits. `F<n>` is the form's handle, the forms of the document
+  numbered from 1 in tree order (`surf_page::form_handles`); `<method>` is `get`, `post` or
+  `dialog`, a word of `[a-z]+`; `<action>` is the address it submits to, written as a link's
+  `<target>` is, cut at 1,024 characters. The method and the action are the button's own
+  `formmethod` and `formaction` when a submit button has them, else the form's `method` and
+  `action`; an empty action is the document's address, and a method other than `post` or
+  `dialog` is `get`. An action that does not resolve is written as the page wrote it, followed
+  by `unresolved`. A button without a form owner has no `submits` part.
 
 `fill <handle> <value>` gives a `text`, `password` or `textarea` control the value; `pick
 <handle> <option>` selects the option of a `select` whose label is the word, else the first
@@ -266,6 +287,17 @@ hides the control: `aria-hidden`, a closed `dialog` or `details`, a popover), `r
 current document has not, `hidden` for a `hid` link and `unresolved` for an unresolved one;
 and, before any navigation and with the page left as it was, `address-too-long`,
 `unsupported-scheme` or `forbidden-destination` for a target the table of `did refused` names.
+
+`press <handle>` takes a `button` of this block and submits its form; the answer shows the page
+the server answered with, and the `did` line names the handle as typed, `did press "b1"`. Before
+any submission starts, with the page left as it was and no request sent, it is refused, status
+1: `unknown-handle`, `wrong-kind` for any other kind, `disabled`, `hidden`; `no-default-action`
+for a button that is not a submit button; `password-in-query` for a `GET` form whose password
+control holds a value; and `address-too-long`, `unsupported-scheme` or `forbidden-destination`
+for the address it would submit to: the action, and for `GET` the action with its query
+replaced by the form's entries. A submission that starts and then ends without a request is
+refused with the word of its reason, the `press` in the path: `no-form-owner`,
+`invalid-controls`, `invalid-action`, `unsupported-enctype`, `dialog-method`.
 
 The answer of a closed session has no `now` block.
 
@@ -383,7 +415,9 @@ reason        = "token" / "closed" / "usage" / "no-such-session"
               / "session-died" / "session-timeout" / "unknown-handle" / "hidden"
               / "unresolved" / "address-too-long" / "unsupported-scheme"
               / "forbidden-destination" / "disabled" / "wrong-kind"
-              / "unknown-option" / "readonly"
+              / "unknown-option" / "readonly" / "no-default-action"
+              / "password-in-query" / "no-form-owner" / "invalid-controls"
+              / "invalid-action" / "unsupported-enctype" / "dialog-method"
 
 page-line     = "page" SP (page-none / page-failed / page-loaded) LF
 page-none     = "none"
@@ -407,8 +441,12 @@ link-entry    = SP SP handle SP "link" SP visibility SP cut-quoted SP "->" SP cu
                 [SP "unresolved"] LF          ; label at most 60, target at most 1,024
 control-entry = SP SP handle SP kind SP visibility SP cut-quoted
                 [SP "=" SP (cut-quoted / "(set)" / "(empty)")]
-                [SP "disabled"] [SP "checked"] [SP "required"] [SP "readonly"] LF
+                [SP "disabled"] [SP "checked"] [SP "required"] [SP "readonly"]
+                [SP submits] LF
                                               ; kind not "link", value at most 1,024
+submits       = "submits" SP form-handle SP command SP cut-quoted [SP "unresolved"]
+                                              ; method, then action at most 1,024
+form-handle   = "F" %x31-39 *DIGIT
 kind          = 1*lower
 visibility    = "vis" / "hid" / "?"
 

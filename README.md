@@ -88,14 +88,17 @@ last field is `-` for a row with neither target nor value.
 On Linux, `surf-agent` drives a browser session one call at a time, for an AI agent or a
 script. `surf-agent open <url>` opens a session, loads the address and prints the session's
 identity and a token, once. Export the two as `SURF_SESSION` and `SURF_TOKEN`; then `go <url>`,
-`look`, `follow <handle>`, `fill <handle> <value>`, `pick <handle> <option>` and `close` take
-the session as their subject. Each call answers in a few plain lines. `now` lists every link
-with a handle such as `l3`, and every form field with one such as `f1`; `follow l3` goes
-there. `?` means visibility is not computed; only the `hidden` attribute is known.
+`look`, `follow <handle>`, `fill <handle> <value>`, `pick <handle> <option>`, `press <handle>`
+and `close` take the session as their subject. Each call answers in a few plain lines. `now`
+lists every link with a handle such as `l3`, every form field with one such as `f1` and every
+button with one such as `b1`; `follow l3` goes there. `?` means visibility is not computed; only the `hidden` attribute is known.
 
 `fill f1 ada` types into a field; for a secret use `fill f2 -` and write the value to standard
 input: an argument word is readable by other users. `pick` chooses an option or checks a box.
 A password is never printed: `(set)` or `(empty)`.
+
+`press b1` submits the form of a submit button; the answer shows the page the server answered
+with. A button that only a script would act on is refused.
 
 A run of `go`:
 
@@ -120,8 +123,11 @@ What it does not do yet:
 - No JavaScript and no rendering.
 - An answer holds the status, the media type, the address and the title. Since release
   `0.4.0`, `--as tree` or `--as markdown` adds the page as text.
-- A form can be filled but not submitted yet: the commands are `open`, `go`, `look`,
-  `follow`, `fill`, `pick` and `close`. Visibility is not computed: `now` says `hid` for the
+- A form is submitted with `GET` or `POST` as `application/x-www-form-urlencoded` only: a
+  `multipart/form-data` form is refused (`unsupported-enctype`), and so is a `GET` form whose
+  password field holds a value (`password-in-query`). `press` refuses the address a form would
+  submit to as `follow` refuses a link's target. The commands are `open`, `go`, `look`,
+  `follow`, `fill`, `pick`, `press` and `close`. Visibility is not computed: `now` says `hid` for the
   `hidden` attribute and `?` for every other element.
 - `follow` refuses, before any navigation, a link to a scheme other than `http:`
   (`unsupported-scheme`), a target over 65,536 bytes (`address-too-long`) and, from a page on a
@@ -466,7 +472,7 @@ surf v1 — 9 file(s), 24 scenario(s), valid
   170 scenarios: 170 passed, 0 failed, 0 error, 0 unsupported
 170 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
   170 scenarios: 170 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 170 scenario(s) each, of suite sha256:3f6445ae99059cdc5b3a6a99381d82828fb567c6e0b1892c8dc0f80bfe743070
+the interpreter and the Rust system ran 170 scenario(s) each, of suite sha256:fbe2be79ba2ccfcc09fcb7ea7df4e7663de6f8eb82eb7b530ea35fcb1f0ebfcd
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 Cargo.lock: 26 package(s), none from outside this repository

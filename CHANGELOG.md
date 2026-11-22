@@ -35,6 +35,20 @@ release; what came before it is in the git log and in `docs/plan/`.
   "f1"` and the path line `4 fill f1`, never the value. `fill` and `pick` exit 1 with `did
   refused` and `unknown-handle`, `wrong-kind`, `disabled`, `hidden`, `readonly` or
   `unknown-option`; `follow` of a form field is `wrong-kind`.
+- `surf-agent press <handle>` submits the form of a submit button with `GET` or `POST`, and the
+  answer shows the page the server answered with: `did press "b1"`, the path line `5 press b1`.
+  The line of a button with a form says what it submits, such as `b1 button ? "Sign in" submits
+  F1 post "/session"`: the form's handle, the method and the action, shown as a link's target
+  is; the button's `formmethod` and `formaction` count. Before anything is sent `press` exits 1
+  with `did refused no-default-action` for a button that is not a submit button,
+  `password-in-query` for a `GET` form whose password field holds a value, and
+  `address-too-long`, `unsupported-scheme` or `forbidden-destination` for the address the form
+  would be submitted to; a submission that ends without a request exits 1 with
+  `no-form-owner`, `invalid-controls`, `invalid-action`, `unsupported-enctype` or
+  `dialog-method`.
+- The `surf` library takes a submit button's `formaction` and `formmethod`: an empty
+  `formaction` submits to the page's own address, and a `formmethod` of an unknown value is
+  `GET`.
 - Of two radio buttons of one group that a page marks `checked`, only the last is checked, as
   the HTML Standard parses it, in the `now` block and in a submission.
 - The `page` line of an agent answer ends with the page's title, and the live view's session

@@ -423,7 +423,8 @@ fn adversary_document_one_level_past_the_bound_says_deep_1() {
 /// and reaches no answer line, no reason and no entry. Since `story:agent-follow-links` the
 /// session takes `follow`: a handle it did not give is refused `unknown-handle` (status 1), and
 /// is in no output either. Since `story:agent-fill-pick` it takes `fill` and `pick` too, and
-/// refuses the same way a handle the page has not.
+/// refuses the same way a handle the page has not. Since `story:agent-press-submit` it takes
+/// `press` too, which refuses such a handle `unknown-handle` as well.
 #[test]
 fn adversary_document_a_value_sent_to_a_command_the_session_does_not_take_is_in_no_output() {
     const MARKER: &str = "pw-7c1e-marker";
@@ -447,7 +448,7 @@ fn adversary_document_a_value_sent_to_a_command_the_session_does_not_take_is_in_
         let reply = session.answer(request);
         let link = reply.to_link();
         let expected = match request.command.as_str() {
-            "follow" | "fill" | "pick" => 1,
+            "follow" | "fill" | "pick" | "press" => 1,
             _ => 2,
         };
         assert_eq!(link.status, expected, "{}: {}", request.command, link.text);

@@ -781,3 +781,87 @@ fn filled_and_submit_print_lengths_not_values() {
         "{printed}"
     );
 }
+
+/// `story:agent-press-submit`, cases 20 and 21 in the library: a submit button's `formaction`
+/// and `formmethod` replace the form's `action` and `method`; a button without them takes the
+/// form's. 4.10.21.3 "Form submission algorithm", the submitter's action and method.
+#[test]
+fn press_submit_formaction_and_formmethod_of_the_submitter() {
+    let forms = "<!doctype html><form action=/session method=post>\
+        <label>User <input name=user value=ada></label><button>Save</button>\
+        <button formaction=/draft formmethod=get>Draft</button>\
+        <button formaction=\"mailto:a@example.org\">Mail</button>\
+        <button formmethod=dialog>Close</button></form>";
+    assert_eq!(
+        load(forms).press("Save"),
+        post("http://127.0.0.1/session", "user=ada")
+    );
+    assert_eq!(
+        load(forms).press("Draft"),
+        get("http://127.0.0.1/draft?user=ada")
+    );
+    assert_eq!(
+        load(forms).press("Mail"),
+        Ended::Abandoned(SubmissionEndReason::UnsupportedScheme)
+    );
+    assert_eq!(
+        load(forms).press("Close"),
+        Ended::Abandoned(SubmissionEndReason::DialogMethod)
+    );
+}
+
+/// The two values the story left to the implementor, by the HTML Standard: an empty
+/// `formaction` is the document's address and not the form's `action` (the element's action is
+/// the document's URL when it is the empty string); a `formmethod` of an unknown value is `GET`
+/// and not the form's `method` (its invalid value default is the GET state). A `type=button`
+/// does not read either.
+#[test]
+fn press_submit_an_empty_formaction_and_an_unknown_formmethod() {
+    let forms = "<!doctype html><form action=/session method=post>\
+        <input name=a value=1><button formaction=\"\">Empty</button>\
+        <button formmethod=bogus>Unknown</button>\
+        <button type=button formaction=/x formmethod=get>Plain</button></form>";
+    assert_eq!(load(forms).press("Empty"), post(ADDRESS, "a=1"));
+    assert_eq!(
+        load(forms).press("Unknown"),
+        get("http://127.0.0.1/session?a=1")
+    );
+    let page = load(forms);
+    let plain = page.element("Plain").element_id;
+    let plan = page.browser.plan_submission(&plain).unwrap().unwrap();
+    let submits = plan.submits.expect("a form owner");
+    assert_eq!(submits.method, surf::FormMethod::Post);
+    assert_eq!(
+        submits.action.map(|action| action.href()),
+        Ok("http://127.0.0.1/session".to_owned())
+    );
+}
+
+/// What the session checks is what is requested: [`surf::Plan::address`] of a `GET` is the
+/// address the submission navigates to, the query written; of a `POST` its action; none for an
+/// action that does not parse.
+#[test]
+fn press_submit_the_planned_address_is_the_requested_one() {
+    let forms = "<!doctype html><form action=\"results?x=1#top\">\
+        <label>Search <input name=q></label><button>Find</button></form>\
+        <form method=post action=/session><button>Post</button></form>\
+        <form action=\"http://[\"><button>Broken</button></form>";
+    let mut page = load(forms);
+    page.fill("Search", "light house");
+    for (label, address) in [
+        (
+            "Find",
+            Some("http://127.0.0.1/shop/results?q=light+house#top"),
+        ),
+        ("Post", Some("http://127.0.0.1/session")),
+        ("Broken", None),
+    ] {
+        let id = page.element(label).element_id;
+        let plan = page.browser.plan_submission(&id).unwrap().unwrap();
+        assert_eq!(plan.address.as_deref(), address, "{label}");
+    }
+    assert_eq!(
+        page.press("Find"),
+        get("http://127.0.0.1/shop/results?q=light+house#top")
+    );
+}

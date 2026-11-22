@@ -258,7 +258,10 @@ above, and the list of standards itself was written from memory.
     `VALUE_CHARS_MAX` 1,024, `= (set)`, `= (empty)`, then `disabled`, `checked`, `required`,
     `readonly` in that order; `render` refuses a link without `->` and a control with one,
     `RenderError::TargetOfKind`), and the reasons `disabled`, `wrong-kind`, `unknown-option`
-    and `readonly`. No dependency.
+    and `readonly`. Since `story:agent-press-submit` a button line ends in `submits F<n>
+    <method> "<action>" [unresolved]` (`State::submits`, `Submits`), and the reasons
+    `no-default-action`, `password-in-query`, `no-form-owner`, `invalid-controls`,
+    `invalid-action`, `unsupported-enctype` and `dialog-method`. No dependency.
   - `crates/secret` (`surf-secret`): the operating system random source, the comparison in
     constant time and the 32-byte token. Every secret and every random identity of the agent
     and the view comes from here. No dependency.
@@ -361,12 +364,19 @@ above, and the list of standards itself was written from memory.
     address over `surf_fetch::MAX_ADDRESS_BYTES` (a `GET`'s with its query, a `POST`'s action)
     ends `AddressTooLong`, the eighth reason, before any navigation; a `required` select that
     submits nothing or only empty values ends `InvalidControls`; the `Debug` of `Filled`,
-    `Submission` and `Submit` writes a value or a body as its length. `tests/forms.rs` 22
+    `Submission` and `Submit` writes a value or a body as its length. Since
+    `story:agent-press-submit` a submit button's `formaction` and `formmethod` are taken (an
+    empty `formaction` is the document's address, an unknown `formmethod` is `GET`), and
+    `surf::plan_submission` (`Plan`: the button's type, `Submits`, the address a navigation
+    would request, whether a filled password is an entry) is the one computation `submit_form`
+    answers from and the session checks before `press` (`Browser::plan_submission`,
+    `Browser::submits`). `tests/forms.rs` 25
     (cases 5 to 20, the hidden input, the rows of the parser step; since
     `story:agent-fill-pick` its case 21, the last of two `checked` radio buttons of a group
     submitted alone, and the element's `readonly`, which the parser step carries in
     `AddElement` and `SetValue` refuses with `readonly`; the address bound and the `Debug`
-    lengths). `tests/adversary_forms.rs` 12, its two probes of many forms and options at
+    lengths; since `story:agent-press-submit` the submitter's `formaction` and `formmethod`
+    and the planned address). `tests/adversary_forms.rs` 12, its two probes of many forms and options at
     20,000 each, no wall time asserted.
     Depends on the generated crates, `surf-ports`, `surf-fetch`, `surf-html`, `surf-page` and
     `surf-url`.
@@ -397,7 +407,8 @@ above, and the list of standards itself was written from memory.
     process, and since round 2 `follow <handle>` (`story:agent-follow-links`), `fill <handle>
     <value>` and `pick <handle> <option>` (`story:agent-fill-pick`; `fill <handle> -` reads the
     value from standard input, `client::run_with_input`, at most 64 KiB without one line feed,
-    the fourth `UNMAPPED:` marker of `cli/surf-agent.yaml`); the package carries the release version, `0.4.0`, as do `surf-cli`, `surfd` and
+    the fourth `UNMAPPED:` marker of `cli/surf-agent.yaml`), and `press <handle>`
+    (`story:agent-press-submit`); the package carries the release version, `0.4.0`, as do `surf-cli`, `surfd` and
     `surf-session`. `open` starts `surfd` from the directory of its own executable. Depends on
     `surf-answer` and `surf-secret`.
   - `crates/surfd` (`surfd`): a library and the binary `surfd`, the daemon the agent command line
@@ -431,8 +442,8 @@ above, and the list of standards itself was written from memory.
     `surf-answer`, `surf-secret` and `surf-view`.
   - `crates/session` (`surf-session`): one agent session. A library core over any transport
     and the binary `surf-session`, which `surfd` starts, one process per session. It draws the
-    session token, answers `open`, `go`, `look`, `follow`, `fill`, `pick` and `close` in the
-    format of
+    session token, answers `open`, `go`, `look`, `follow`, `fill`, `pick`, `press` and `close`
+    in the format of
     `docs/agent-answer.md`, issues the model commands for each (`OpenSession`, `Go`,
     `CloseSession`, `RecordAction`) and loads pages through the `surf` library with
     `surf-fetch`: `http:` only. The token is compared in constant time and is in no command
@@ -452,13 +463,15 @@ above, and the list of standards itself was written from memory.
     most four times its length plus two bytes. Since wave 8 the entries of
     `NavigationStarted` and `RequestStarted` carry `method`, `body` as `<n> bytes` and
     `body_type`, an absent one as the field with no value; its transport is `surf::fetch_http`,
-    which since wave 9 sends a `Post` (no command of the session sends one yet). 140 tests:
+    which since wave 9 sends a `Post` (since `story:agent-press-submit` the one of `press`).
+    163 tests:
     `adversary_document_text` 7, `adversary_events` 1, `adversary_follow` 8, `adversary_parse`
     4, `adversary_values` 3, `adversary_view` 1, `built` 11, `core` 22, `e2e` 2 (runs the three
     built binaries, or those in `SURF_BIN_DIR`), `events` 23, `fill_pick` 22 (case 3 runs the
     built `surf-agent` against `surfd` in the test process), `follow` 17, `follow_refusals` 9
     (over an in-memory transport that stands at any address), `form_rows` 1, `memory` 2,
-    `redirect` 2 and `view` 5 (the live view of `surfd` over the real session). The bound of 256 row entries
+    `press` 23 (the 22 cases of `story:agent-press-submit` and the usage of `press`, against a
+    server that records each request), `redirect` 2 and `view` 5 (the live view of `surfd` over the real session). The bound of 256 row entries
     per request counts `FormAdded` and `OptionAdded` with `ElementAdded`
     (`story:agent-form-port`).
     `open <url>`, `go <url>` and `look` take `--as tree|markdown [--from-line <n>]` and print the
@@ -485,7 +498,13 @@ above, and the list of standards itself was written from memory.
     with the handle alone, after the session checks, from the rows, `unknown-handle`,
     `wrong-kind`, `disabled`, `hidden` (the row's flag), then `readonly` or `unknown-option`,
     because the bindings drop a refusal of `SetValue`, `Check` and `SelectOption`; `follow` of a
-    control is `wrong-kind`.
+    control is `wrong-kind`. Since `story:agent-press-submit` a button line names what it
+    submits (`surf::Browser::submits`), and `press` issues `Press` after the session checks
+    `unknown-handle`, `wrong-kind`, `disabled`, `hidden`, `no-default-action`, and from
+    `surf::Browser::plan_submission` (the computation the submission step itself uses, so the
+    address checked is the address requested) `password-in-query` and the three address
+    refusals of `follow`; a submission the step ends is answered with the word of its
+    `SubmissionAbandoned` reason (`end_reason`), the action recorded.
     `cargo clippy -p surf-session` needs `--no-deps`: the generated `surf-types` fails clippy.
     Depends on the `surf` library, `surf-ports`, `surf-fetch`, `surf-answer`, `surf-html`,
     `surf-page`, `surf-page-text`, `surf-secret`, `surf-url`, the
@@ -1253,9 +1272,10 @@ outcome `SetValue/outcome/readonly`: `170 scenario(s) (24 authored), 48 refusal(
 Against the interpreter and against the Rust system: `170 scenarios: 170 passed, 0 failed, 0
 error, 0 unsupported`; `conform-totals`: `the interpreter and the Rust system ran 170
 scenario(s) each, of suite
-sha256:3f6445ae99059cdc5b3a6a99381d82828fb567c6e0b1892c8dc0f80bfe743070` (the digest since the fix round
-of `story:agent-form-port`, which added the end reason `AddressTooLong`, after
-`story:agent-fill-pick` added `FillCall`, `PickCall` and `readonly`; no gate step compares it).
+sha256:fbe2be79ba2ccfcc09fcb7ea7df4e7663de6f8eb82eb7b530ea35fcb1f0ebfcd` (the digest since
+`story:agent-press-submit` added `PressCall`, after the fix round of `story:agent-form-port`
+added the end reason `AddressTooLong` and `story:agent-fill-pick` added `FillCall`, `PickCall`
+and `readonly`; the counts did not change; no gate step compares it).
 The planted defect:
 `planted defect: 170 scenarios: 134 passed, 36 failed, 0 error, 0 unsupported`; the
 conformance crate's `tests/main.rs` ran 15 passed. `generated-check`: `generated/rust matches

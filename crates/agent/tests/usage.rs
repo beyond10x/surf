@@ -124,6 +124,51 @@ fn follow_takes_one_handle() {
     assert_eq!(args, vec![("handle", "l3")]);
 }
 
+/// `story:agent-press-submit`: `press` takes one handle, as `follow` does; without it, with
+/// two, or with an option it does not take it is usage, status 2, and nothing is sent.
+#[test]
+fn press_takes_one_handle() {
+    let dir = TestDir::new();
+    for (args, says) in [
+        (vec!["press"], "press needs a handle"),
+        (
+            vec!["press", "b1", "b2"],
+            "press takes at most 1 positional word",
+        ),
+        (
+            vec!["press", "b1", "--as", "tree"],
+            "is not an option of press",
+        ),
+    ] {
+        let output = run(agent(&dir)
+            .args(&args)
+            .env("SURF_SESSION", SESSION)
+            .env("SURF_TOKEN", TOKEN));
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert_eq!(stdout(&output), "", "{args:?}");
+        let printed = stderr(&output);
+        assert!(printed.contains(says), "{args:?}: {printed}");
+        assert!(printed.contains("surf-agent press <handle>"), "{printed}");
+    }
+    assert!(!dir.runtime().join("surf").exists(), "nothing was sent");
+
+    let env = surf_agent::cli::Environment {
+        runtime_dir: Some(dir.runtime().into()),
+        session: Some(SESSION.into()),
+        token: Some(TOKEN.into()),
+        program_dir: None,
+    };
+    let call = surf_agent::cli::parse(&["press".into(), "b1".into()], &env).expect("a call");
+    let request = call.request();
+    assert_eq!(request.command, "press");
+    let args: Vec<(&str, &str)> = request
+        .args
+        .iter()
+        .map(|arg| (arg.name.as_str(), arg.value.as_str()))
+        .collect();
+    assert_eq!(args, vec![("handle", "b1")]);
+}
+
 /// `story:agent-fill-pick`: `fill` and `pick` take a handle and one word; without the word it
 /// is usage, status 2, and nothing is sent. `fill <handle> -` sends the value read from standard
 /// input without its last line feed; a value over the bound, or not UTF-8, is usage and no

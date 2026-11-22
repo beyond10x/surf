@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest d8fcabc238518cedb3ad774db227271bec321d8750577fd75159dddefa5fb4b4
+// contract digest 056231f07ec8201418330c04178f86aee67ffbe892f67ed6cdbb4c96b8e95bca
 // do not edit: regenerate with `ess synthesize`
 
 //! Agent — `surf.agent`.
@@ -153,6 +153,19 @@ pub struct PickCall {
     pub handle: String,
     /// `option` — `String`.
     pub option: String,
+}
+
+/// PressCall — `surf.agent.PressCall`.
+///
+/// The handle of the button to press in a session, and the token that proves the caller holds it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PressCall {
+    /// `session_id` — `String`.
+    pub session_id: String,
+    /// `token` — `surf.agent.SessionToken`.
+    pub token: SessionToken,
+    /// `handle` — `String`.
+    pub handle: String,
 }
 
 /// The states of `surf.agent.Session`, as runtime values.

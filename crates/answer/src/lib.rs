@@ -171,10 +171,27 @@ pub enum RefusalReason {
     UnknownOption,
     /// `readonly`: the control is read-only and takes no value.
     Readonly,
+    /// `no-default-action`: the button is a plain or a reset button, which only a script acts
+    /// on.
+    NoDefaultAction,
+    /// `password-in-query`: a `GET` submission would put a filled password into the address.
+    PasswordInQuery,
+    /// `no-form-owner`: the submit button has no form owner (`NoFormOwner`).
+    NoFormOwner,
+    /// `invalid-controls`: a control of the form failed constraint validation
+    /// (`InvalidControls`).
+    InvalidControls,
+    /// `invalid-action`: the form's action did not parse as a URL (`InvalidAction`).
+    InvalidAction,
+    /// `unsupported-enctype`: the form asks for an encoding surf does not build
+    /// (`UnsupportedEnctype`).
+    UnsupportedEnctype,
+    /// `dialog-method`: the form's method is `dialog` (`DialogMethod`).
+    DialogMethod,
 }
 
 impl RefusalReason {
-    const ALL: [RefusalReason; 16] = [
+    const ALL: [RefusalReason; 23] = [
         RefusalReason::Token,
         RefusalReason::Closed,
         RefusalReason::Usage,
@@ -191,6 +208,13 @@ impl RefusalReason {
         RefusalReason::WrongKind,
         RefusalReason::UnknownOption,
         RefusalReason::Readonly,
+        RefusalReason::NoDefaultAction,
+        RefusalReason::PasswordInQuery,
+        RefusalReason::NoFormOwner,
+        RefusalReason::InvalidControls,
+        RefusalReason::InvalidAction,
+        RefusalReason::UnsupportedEnctype,
+        RefusalReason::DialogMethod,
     ];
 
     /// The word of the format.
@@ -212,6 +236,13 @@ impl RefusalReason {
             RefusalReason::WrongKind => "wrong-kind",
             RefusalReason::UnknownOption => "unknown-option",
             RefusalReason::Readonly => "readonly",
+            RefusalReason::NoDefaultAction => "no-default-action",
+            RefusalReason::PasswordInQuery => "password-in-query",
+            RefusalReason::NoFormOwner => "no-form-owner",
+            RefusalReason::InvalidControls => "invalid-controls",
+            RefusalReason::InvalidAction => "invalid-action",
+            RefusalReason::UnsupportedEnctype => "unsupported-enctype",
+            RefusalReason::DialogMethod => "dialog-method",
         }
     }
 }
@@ -348,8 +379,23 @@ pub enum Target {
 /// for [`TARGET_CHARS_MAX`].
 pub const VALUE_CHARS_MAX: usize = 1_024;
 
+/// What a submit button submits (`story:agent-press-submit`): `submits <form> <method>
+/// "<action>"`, and ` unresolved` after an action that does not parse.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Submits {
+    /// The form's handle, `F` and a number from 1 (`F1`).
+    pub form: String,
+    /// The method the button submits with, a word of `[a-z]+`: `get`, `post` or `dialog`.
+    pub method: String,
+    /// The action, shown as a link's target is and cut at [`TARGET_CHARS_MAX`] characters.
+    pub action: Cut,
+    /// The action does not resolve against the document base URL; it is shown as written.
+    pub unresolved: bool,
+}
+
 /// A control's state on a `now` line: `[= <value>] [disabled] [checked] [required]
-/// [readonly]`, the flags in that order, each written when it holds.
+/// [readonly] [submits ...]`, the flags in that order, each written when it holds, and a
+/// submit button's [`Submits`] last.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct State {
     /// `= <value>`; `None` for a checkbox, a radio button, a button and a select with no
@@ -363,6 +409,8 @@ pub struct State {
     pub required: bool,
     /// `readonly`: `fill` is refused.
     pub readonly: bool,
+    /// What a submit button with a form owner submits; `None` for every other control.
+    pub submits: Option<Submits>,
 }
 
 /// The value of a control on a `now` line.
@@ -1049,6 +1097,21 @@ fn render_now(now: &Now, out: &mut String) -> Result<(), RenderError> {
                         out.push_str(word);
                     }
                 }
+                if let Some(submits) = &state.submits {
+                    let form = checked(&submits.form, "now form", is_form_char)?;
+                    if !is_form_handle(form) {
+                        return Err(RenderError::NotAWord {
+                            field: "now form",
+                            value: quote(form),
+                        });
+                    }
+                    let method = checked(&submits.method, "now method", is_command_char)?;
+                    out.push_str(&format!(" submits {form} {method} "));
+                    push_cut(&submits.action, TARGET_CHARS_MAX, "now action", out)?;
+                    if submits.unresolved {
+                        out.push_str(" unresolved");
+                    }
+                }
             }
         }
         out.push('\n');
@@ -1361,6 +1424,17 @@ fn is_handle_char(c: char) -> bool {
     c.is_ascii_lowercase() || c.is_ascii_digit()
 }
 
+fn is_form_char(c: char) -> bool {
+    c == 'F' || c.is_ascii_digit()
+}
+
+/// `F` and a number from 1 without a leading zero: a form handle.
+fn is_form_handle(word: &str) -> bool {
+    word.strip_prefix('F').is_some_and(|digits| {
+        !digits.is_empty() && !digits.starts_with('0') && digits.bytes().all(|b| b.is_ascii_digit())
+    })
+}
+
 fn is_part_char(c: char) -> bool {
     c.is_ascii_lowercase() || c == '-'
 }
@@ -1662,6 +1736,32 @@ fn parse_now(lines: &mut Lines<'_>, answer: &mut Answer) -> Result<(), ParseErro
             while !cursor.rest().is_empty() {
                 cursor.space()?;
                 let word = cursor.word(|c| c.is_ascii_lowercase())?;
+                if word == "submits" {
+                    cursor.space()?;
+                    let form = cursor.word(is_form_char)?.to_string();
+                    if !is_form_handle(&form) {
+                        return Err(element_line.error(ParseErrorKind::OutsideGrammar));
+                    }
+                    cursor.space()?;
+                    let method = cursor.word(is_command_char)?.to_string();
+                    cursor.space()?;
+                    let action = cursor.cut_quoted(TARGET_CHARS_MAX)?;
+                    let unresolved = match cursor.rest() {
+                        "" => false,
+                        " unresolved" => {
+                            cursor.at = element_line.text.len();
+                            true
+                        }
+                        _ => return Err(element_line.error(ParseErrorKind::OutsideGrammar)),
+                    };
+                    state.submits = Some(Submits {
+                        form,
+                        method,
+                        action,
+                        unresolved,
+                    });
+                    break;
+                }
                 let index = STATE_FLAGS[next..]
                     .iter()
                     .position(|flag| *flag == word)

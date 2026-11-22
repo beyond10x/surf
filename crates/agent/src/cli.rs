@@ -195,9 +195,10 @@ const FROM_LINE: Argument = Argument {
 pub const FORMS: &[&str] = &["tree", "markdown"];
 
 /// The commands: `open [<url>]`, `go <url>`, `look`, `follow <handle>`, `fill <handle> <value>`,
-/// `pick <handle> <option>`, `close`. `open` takes no session and no token. `open`, `go` and
-/// `look` take `--as tree|markdown [--from-line <n>]`; `open` only with an address. The value
-/// `-` of `fill` is read from standard input by the client ([`STDIN_VALUE`]).
+/// `pick <handle> <option>`, `press <handle>`, `close`. `open` takes no session and no token.
+/// `open`, `go` and `look` take `--as tree|markdown [--from-line <n>]`; `open` only with an
+/// address. The value `-` of `fill` is read from standard input by the client
+/// ([`STDIN_VALUE`]).
 pub const COMMANDS: &[Command] = &[
     Command {
         name: "open",
@@ -224,6 +225,10 @@ pub const COMMANDS: &[Command] = &[
         arguments: &[HANDLE, OPTION, SESSION, TOKEN],
     },
     Command {
+        name: "press",
+        arguments: &[HANDLE, SESSION, TOKEN],
+    },
+    Command {
         name: "close",
         arguments: &[SESSION, TOKEN],
     },
@@ -244,12 +249,14 @@ usage: surf-agent open [<url>] [--as tree|markdown [--from-line <n>]]
        surf-agent follow <handle> [--session <id>] [--token-file <path>]
        surf-agent fill <handle> <value>|- [--session <id>] [--token-file <path>]
        surf-agent pick <handle> <option>|on|off [--session <id>] [--token-file <path>]
+       surf-agent press <handle> [--session <id>] [--token-file <path>]
        surf-agent close [--session <id>] [--token-file <path>]
 The session comes from --session or SURF_SESSION, the token from --token-file or SURF_TOKEN.
 A token file is a regular file of yours that group and others cannot read (mode 0600).
 --as prints the page as an outline of its tree or as Markdown, from line --from-line (from 1);
 open takes it only with an address.
-follow, fill and pick take a handle of the now block of the last answer, such as l3 or f1.
+follow, fill, pick and press take a handle of the now block of the last answer, such as l3,
+f1 or b1.
 fill - reads the value from standard input; give a secret that way, since other users can
 read the words of a command. pick takes an option's label or value, or on or off for a box.
 ";

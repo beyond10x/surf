@@ -1,6 +1,6 @@
 ---
 title: Drive surf from an agent
-description: "surf-agent open, go, look, follow, fill, pick and close: a browser session for an AI agent or a script, one call at a time."
+description: "surf-agent open, go, look, follow, fill, pick, press and close: a browser session for an AI agent or a script, one call at a time."
 ---
 
 import AgentTerminal from '@site/src/components/AgentTerminal';
@@ -46,6 +46,7 @@ It runs on Linux only: the agent binaries read the caller's user id from `/proc/
 | `surf-agent follow <handle>` | follow the link of a handle of the `now` block, such as `l3` |
 | `surf-agent fill <handle> <value>` | type a value into a text field, password field or textarea, such as `f1`; `-` reads the value from standard input |
 | `surf-agent pick <handle> <option>` | select an option of a select by its label or value, or `on` or `off` for a checkbox, `on` for a radio button |
+| `surf-agent press <handle>` | submit the form of a submit button, such as `b1`, and load the page the server answers with |
 | `surf-agent close` | close the session and print its final state |
 
 `open <url>`, `go` and `look` also take `--as tree` or `--as markdown`: the answer then ends
@@ -170,7 +171,29 @@ The answer says `did fill "f2"`, and the `path` line `4 fill f2`: the handle, ne
 `fill` and `pick` are refused with status 1 for a handle the page has not (`unknown-handle`), a
 field of another kind (`wrong-kind`, also for `follow` of a field), a disabled field or option
 (`disabled`), a hidden one (`hidden`), a read-only field (`readonly`) and an option the select
-has not, or a word other than `on` and `off` (`unknown-option`). A form cannot be submitted yet.
+has not, or a word other than `on` and `off` (`unknown-option`).
+
+`press b1` submits the form of a submit button; the answer shows the page the server answered
+with. A button that only a script would act on is refused. The line of a submit button says
+what it submits: `b1 button ? "Sign in" submits F1 post "/session"`, the form's handle, the
+method and the action, the button's own `formmethod` and `formaction` when it has them.
+
+```sh
+surf-agent fill f1 ada
+printf '%s\n' "$PASSWORD" | surf-agent fill f2 -
+surf-agent press b1
+```
+
+The answer says `did press "b1"` with the page the form led to, and the `path` line `5 press
+b1`. Before anything is sent, with the page left as it was, `press` is refused with status 1
+for a button that is not a submit button (`no-default-action`), a disabled or hidden one
+(`disabled`, `hidden`), a `GET` form whose password field holds a value, which the address
+would carry (`password-in-query`), and an address `follow` would refuse as a link's target
+(`address-too-long`, `unsupported-scheme`, `forbidden-destination`). A submission that starts
+and ends without a request is refused with its reason: a button outside any form
+(`no-form-owner`), an empty `required` field (`invalid-controls`), an action that is not an
+address (`invalid-action`), a `multipart/form-data` or `text/plain` form, which surf does not
+encode (`unsupported-enctype`), and `method="dialog"` (`dialog-method`).
 
 A script can take the two values from the answer of `open`:
 
@@ -199,7 +222,7 @@ Quoting lowers the risk of page text steering an agent; it does not remove it.
 | status | meaning |
 |---|---|
 | 0 | the action was taken |
-| 1 | the action was refused: the token does not belong to the session (`did refused token`), the session is closed (`did refused closed`), or `follow` names a handle the page has not (`unknown-handle`), a hidden link (`hidden`), a target that does not resolve (`unresolved`), a target over 65,536 bytes (`address-too-long`), one with a scheme surf does not fetch (`unsupported-scheme`) or, from a public page, one on a local address (`forbidden-destination`), or `fill` or `pick` names a field of another kind (`wrong-kind`), a disabled (`disabled`) or read-only (`readonly`) one, or an option it has not (`unknown-option`) |
+| 1 | the action was refused: the token does not belong to the session (`did refused token`), the session is closed (`did refused closed`), or `follow` names a handle the page has not (`unknown-handle`), a hidden link (`hidden`), a target that does not resolve (`unresolved`), a target over 65,536 bytes (`address-too-long`), one with a scheme surf does not fetch (`unsupported-scheme`) or, from a public page, one on a local address (`forbidden-destination`), or `fill` or `pick` names a field of another kind (`wrong-kind`), a disabled (`disabled`) or read-only (`readonly`) one, or an option it has not (`unknown-option`), or `press` names a button that is not a submit button (`no-default-action`), a `GET` form with a filled password (`password-in-query`), or a submission that ended without a request (`no-form-owner`, `invalid-controls`, `invalid-action`, `unsupported-enctype`, `dialog-method`) |
 | 2 | usage: a word, the session or the token is missing or malformed |
 | 3 | `surfd` lists no such session (`did refused no-such-session`), the session process ended (`did refused session-died`) or did not answer in time (`did refused session-timeout`), or `surfd` cannot be reached or started, or the runtime directory or the socket fails `surf-agent`'s check |
 

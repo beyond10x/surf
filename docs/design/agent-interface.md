@@ -228,7 +228,7 @@ now 5
   l2 link hid "Admin" -> /admin
   f1 text vis "User name" = "ada"
   f2 password vis "Password" = (set)
-  b1 button vis "Sign in" submits F1 post /session
+  b1 button vis "Sign in" submits F1 post "/session"
 ```
 
 - Line 1: format version, session, session state.

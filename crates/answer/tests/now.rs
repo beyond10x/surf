@@ -404,6 +404,7 @@ fn controls() -> Answer {
                     checked: true,
                     required: true,
                     readonly: true,
+                    submits: None,
                 },
             ),
             control("b1", "button", "Save", State::default()),

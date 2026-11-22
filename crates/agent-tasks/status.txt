@@ -1,4 +1,4 @@
 article pass
 table pass
 link pass
-search pending story:agent-fill-pick story:agent-press-submit
+search pass

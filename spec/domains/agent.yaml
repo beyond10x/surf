@@ -53,9 +53,10 @@ types:
   # 64 lower-case hexadecimal digits. It is not declared as an `alphabet:` or a length: the
   # command-line binding refuses a constrained type ("invariants are explicit refusals",
   # ess-cli/2), so the form is checked by the code that issues and reads it.
-  # It is named only by the seven command-line shapes below that carry it (`SessionCall`,
-  # `LookCall`, `GoCall`, `FollowCall`, `FillCall`, `PickCall`, `OpenedSession`): no entity,
-  # command, event or view holds it, so no stored row and no published event carries the secret.
+  # It is named only by the eight command-line shapes below that carry it (`SessionCall`,
+  # `LookCall`, `GoCall`, `FollowCall`, `FillCall`, `PickCall`, `PressCall`,
+  # `OpenedSession`): no entity, command, event or view holds it, so no stored row and no
+  # published event carries the secret.
   # UNMAPPED: that a session's token is what makes its caller `surf.agent.SessionHolder`. The
   # session process issues the token when it opens its session, keeps only a hash of it, compares
   # a presented token with it in constant time, and sends the call as `SessionHolder` with that
@@ -196,6 +197,20 @@ types:
       - name: handle
         type: String
       - name: option
+        type: String
+
+  # `press <handle>` (`story:agent-press-submit`): the handle of a submit button of the `now`
+  # block, as `FollowCall` carries a link's.
+  - name: surf.agent.PressCall
+    kind: struct
+    naming:
+      summary: The handle of the button to press in a session, and the token that proves the caller holds it.
+    fields:
+      - name: session_id
+        type: String
+      - name: token
+        type: surf.agent.SessionToken
+      - name: handle
         type: String
 
   - name: surf.agent.OpenedSession

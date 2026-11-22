@@ -22,6 +22,8 @@ const BINDING_ONLY: &[&str] = &[
     "look token protected stdin --token-stdin",
     "pick token protected hidden_tty --token-prompt",
     "pick token protected stdin --token-stdin",
+    "press token protected hidden_tty --token-prompt",
+    "press token protected stdin --token-stdin",
 ];
 
 /// What the parser reads and the binding cannot declare: the marker `UNMAPPED:` (a), the
@@ -39,6 +41,8 @@ const PARSER_ONLY: &[&str] = &[
     "look token environment SURF_TOKEN",
     "pick session_id environment SURF_SESSION",
     "pick token environment SURF_TOKEN",
+    "press session_id environment SURF_SESSION",
+    "press token environment SURF_TOKEN",
 ];
 
 #[test]

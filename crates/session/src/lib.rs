@@ -22,6 +22,7 @@
 //! - `follow <handle>` (`arg handle`): `Follow` as the holder with the link's resolved address,
 //!   its handle and its label; when it is `requested`, `RecordAction` `follow` with all three
 //!   ("The links" below).
+//! - `fill`, `pick` ("The controls" below) and `press <handle>` ("Pressing a button" below).
 //! - `close`: `CloseSession` as the holder; when it is `closed`, `RecordAction` `close`.
 //!
 //! An accepted command's `RecordAction` is issued before the run that delivers what the command
@@ -123,6 +124,31 @@
 //!   redirects only; and a document at such a name counts as public, as the session does not
 //!   know where its fetch connected.
 //!
+//! # Pressing a button
+//!
+//! The line of a button with a form owner ends in `submits F<n> <method> "<action>"`: the form's
+//! handle ([`surf_page::form_handles`]), and the method and action of [`surf::Submits`], which
+//! [`surf::Browser::submits`] reads for every button of the document with the submitter's
+//! `formmethod` and `formaction`; the action is shown as a link's target is ("The links"), or as
+//! written and `unresolved`.
+//!
+//! `press <handle>` is checked in this order, each refusal with status 1 and the state, before
+//! any command is sent, so with no submission event, no request and the path as it was:
+//! `closed`; `unknown-handle`; `wrong-kind` for anything but a button; `disabled`; `hidden`;
+//! `no-default-action` for a button that is not a submit button (`type=button`, `type=reset`);
+//! then, for a button with a form owner, from [`surf::Browser::plan_submission`], the plan the
+//! submission step itself follows ([`surf::plan_submission`]), so the address checked is the
+//! address requested: `password-in-query` for a `GET` whose entry list holds a non-empty password
+//! value; and for the address it would request (a `GET`'s with its query written) the three
+//! refusals of "Following a link", `address-too-long`, `unsupported-scheme` and
+//! `forbidden-destination`. Otherwise the session sends `Press` as the holder, records `<n> press
+//! <handle>` and runs the system: the submission step submits the form and the tab navigates
+//! (`did press "<handle>"`, the page it committed), or ends the submission with a
+//! `SubmissionAbandoned` the session answers with its word, status 1, the action recorded:
+//! `no-form-owner`, `invalid-controls`, `invalid-action`, `unsupported-enctype`,
+//! `dialog-method`; `NotSubmitButton`, `UnsupportedScheme` and `AddressTooLong`, refused before,
+//! map to `no-default-action`, `unsupported-scheme` and `address-too-long`.
+//!
 //! # Refusals
 //!
 //! - A request other than `open` whose `session` is not this identity, or whose token does not
@@ -142,10 +168,10 @@
 //! state `unknown` ([`link::SessionState::Unknown`]) with no address and no title. So a process
 //! that reaches the session's socket without the token reads nothing of the session, not even
 //! the address of its page, and `surfd` keeps what it knew of the session before the request.
-//! - `go`, `follow`, `fill`, `pick` or `close` on a closed session: `did refused closed`, status
-//!   1, with the state. `follow` without `arg handle`, `fill` without `arg handle` and `arg
-//!   value`, `pick` without `arg handle` and `arg option`, or any of them with another argument:
-//!   `did refused usage`.
+//! - `go`, `follow`, `fill`, `pick`, `press` or `close` on a closed session: `did refused
+//!   closed`, status 1, with the state. `follow` or `press` without `arg handle`, `fill` without
+//!   `arg handle` and `arg value`, `pick` without `arg handle` and `arg option`, or any of them
+//!   with another argument: `did refused usage`.
 //!
 //! # The token
 //!
@@ -265,8 +291,8 @@ use surf_ports::{Caller, ComponentPorts};
 use surf_secret::Token;
 use surf_types::agent::{
     ActionCommand, CloseSession, CloseSessionOutcome, Fill, FillOutcome, Follow, FollowOutcome, Go,
-    GoOutcome, OpenSession, OpenSessionOutcome, Pick, PickOutcome, RecordAction,
-    RecordActionOutcome, SessionId, SessionState, SessionStateView,
+    GoOutcome, OpenSession, OpenSessionOutcome, Pick, PickOutcome, Press, PressOutcome,
+    RecordAction, RecordActionOutcome, SessionId, SessionState, SessionStateView,
 };
 use surf_types::document::{
     DocumentId, DocumentState, Documents, ElementId, ElementKind, Elements, Options,
@@ -298,6 +324,11 @@ const NOW_LINE_FIXED: usize = 48;
 /// its quoted value: a kind word of up to eight letters, ` = `, `(empty)`, `...` after the value
 /// and the four flags with their spaces, counted high.
 const CONTROL_LINE_FIXED: usize = 64;
+
+/// The bytes of a button's `submits` part beside its form handle and its quoted action:
+/// ` submits `, a method word of up to six letters, the spaces, `...` and ` unresolved`, counted
+/// high.
+const SUBMITS_FIXED: usize = 32;
 
 /// The most row entries (`surf.document.ElementAdded`, `FormAdded` and `OptionAdded`) one request
 /// carries ("The entries" above): the first 256 of the request; the others are left out and
@@ -756,6 +787,10 @@ impl<T: Transport> Session<T> {
                 (None, Some(handle), Some(option)) => self.pick(handle, option),
                 _ => Ok(self.with_state(RefusalReason::Usage)),
             },
+            "press" => match (request.unknown_arg(&["handle"]), request.arg("handle")) {
+                (None, Some(handle)) => self.press(handle),
+                _ => Ok(self.with_state(RefusalReason::Usage)),
+            },
             "close" if request.unknown_arg(&[]).is_none() => self.close(),
             _ => Ok(self.with_state(RefusalReason::Usage)),
         };
@@ -959,9 +994,16 @@ impl<T: Transport> Session<T> {
     fn control_states(&self) -> Option<HashMap<String, State>> {
         let row = self.current_row()?;
         let document = &self.browser.system().document;
-        let rows = document.elements(row.document_id).ok()?;
+        let rows = document.elements(row.document_id.clone()).ok()?;
         let options = document.options().ok()?;
-        Some(control_states(&rows, &options))
+        let mut states = control_states(&rows, &options);
+        let page = surf_url::Url::parse(&row.url.0, None).ok();
+        for (element_id, found) in self.browser.submits(&row.document_id).ok()? {
+            if let Some(state) = states.get_mut(&element_id.0.0) {
+                state.submits = Some(submits_part(&found, page.as_ref()));
+            }
+        }
+        Some(states)
     }
 
     /// The row of the control `handle` of the current document, checked as "The controls"
@@ -1119,6 +1161,83 @@ impl<T: Transport> Session<T> {
             PickOutcome::Closed { .. } => Ok(self.with_state(RefusalReason::Closed)),
             PickOutcome::NotHolder { .. } => Err(Stop::Unexpected("not-holder to the holder")),
             PickOutcome::NoSuchSession { .. } => {
+                Err(Stop::Unexpected("no such session to the open session"))
+            }
+        }
+    }
+
+    /// `press <handle>` ("Pressing a button" above): refused `closed` on a closed session;
+    /// `unknown-handle`, `wrong-kind` for an element that is not a button, `disabled` and
+    /// `hidden` from its row; then, from the [`surf::Plan`] of the press, which computes the
+    /// address the submission step would request, `no-default-action` for a plain or a reset
+    /// button, `password-in-query` for a `GET` whose entry list holds a filled password, and
+    /// `address-too-long`, `unsupported-scheme` and `forbidden-destination` for that address.
+    /// Otherwise `Press` as the holder, and when it is `requested`, `RecordAction` `press` with
+    /// the handle alone and a run, in which the submission starts and ends: with a navigation,
+    /// `did press "<handle>"` and the page it landed on; abandoned, the word of its reason
+    /// ([`end_reason`]), status 1.
+    fn press(&mut self, handle: &str) -> Result<Reply, Stop> {
+        if self.is_closed() {
+            return Ok(self.with_state(RefusalReason::Closed));
+        }
+        let row = match self.control(handle, &[ElementKind::Button]) {
+            Ok(row) => row,
+            Err(reason) => return Ok(self.with_state(reason)),
+        };
+        let Some(plan) = self.browser.plan_submission(&row.element_id)? else {
+            return Ok(self.with_state(RefusalReason::NoDefaultAction));
+        };
+        if !matches!(
+            plan.button,
+            surf_page::forms::ButtonType::Submit | surf_page::forms::ButtonType::Image
+        ) {
+            return Ok(self.with_state(RefusalReason::NoDefaultAction));
+        }
+        if let Some(submits) = &plan.submits {
+            if submits.method == surf::FormMethod::Get && plan.password {
+                return Ok(self.with_state(RefusalReason::PasswordInQuery));
+            }
+            if let (Some(address), Ok(action)) = (&plan.address, &submits.action) {
+                let from_public = self.links.as_ref().is_none_or(|kept| kept.from_public);
+                if address.len() > surf_fetch::MAX_ADDRESS_BYTES {
+                    return Ok(self.with_state(RefusalReason::AddressTooLong));
+                }
+                if action.scheme() != "http" {
+                    return Ok(self.with_state(RefusalReason::UnsupportedScheme));
+                }
+                if from_public && host_is_local(action) {
+                    return Ok(self.with_state(RefusalReason::ForbiddenDestination));
+                }
+            }
+        }
+        let outcome = self.browser.agent_mut().press(Press {
+            session_id: self.session_id.clone(),
+            element_id: row.element_id,
+            handle: handle.to_string(),
+        })?;
+        match outcome {
+            PressOutcome::Requested { .. } => {
+                let start = self.browser.system().published().len();
+                self.record_and_run(ActionCommand::Press, None, Some((handle, None)))?;
+                let abandoned = self
+                    .browser
+                    .system()
+                    .published()
+                    .get(start..)
+                    .unwrap_or(&[])
+                    .iter()
+                    .find_map(|event| match event {
+                        surf::SystemEvent::SubmissionAbandoned(abandoned) => Some(abandoned.reason),
+                        _ => None,
+                    });
+                Ok(match abandoned {
+                    Some(reason) => self.with_state(end_reason(reason)),
+                    None => self.acted("press", handle),
+                })
+            }
+            PressOutcome::Closed { .. } => Ok(self.with_state(RefusalReason::Closed)),
+            PressOutcome::NotHolder { .. } => Err(Stop::Unexpected("not-holder to the holder")),
+            PressOutcome::NoSuchSession { .. } => {
                 Err(Stop::Unexpected("no such session to the open session"))
             }
         }
@@ -1487,7 +1606,14 @@ fn refusal_status(reason: RefusalReason) -> u8 {
         | RefusalReason::Disabled
         | RefusalReason::WrongKind
         | RefusalReason::UnknownOption
-        | RefusalReason::Readonly => 1,
+        | RefusalReason::Readonly
+        | RefusalReason::NoDefaultAction
+        | RefusalReason::PasswordInQuery
+        | RefusalReason::NoFormOwner
+        | RefusalReason::InvalidControls
+        | RefusalReason::InvalidAction
+        | RefusalReason::UnsupportedEnctype
+        | RefusalReason::DialogMethod => 1,
         RefusalReason::Usage => 2,
         RefusalReason::NoSuchSession
         | RefusalReason::SessionDied
@@ -1749,7 +1875,13 @@ fn now_block(links: &[Link], states: &HashMap<String, State>) -> Option<Now> {
                 Some(Value::Text(value)) => surf_answer::quote(&value.kept).len(),
                 _ => 0,
             };
-            (fixed + CONTROL_LINE_FIXED + value, Target::State(state))
+            let submits = state.submits.as_ref().map_or(0, |submits| {
+                SUBMITS_FIXED + submits.form.len() + surf_answer::quote(&submits.action.kept).len()
+            });
+            (
+                fixed + CONTROL_LINE_FIXED + value + submits,
+                Target::State(state),
+            )
         };
         if bytes + line > NOW_BYTES_MAX {
             break;
@@ -1768,6 +1900,40 @@ fn now_block(links: &[Link], states: &HashMap<String, State>) -> Option<Now> {
         });
     }
     Some(Now { total, elements })
+}
+
+/// The word of a submission's end reason ("Pressing a button" above): one per reason;
+/// `UnsupportedScheme` and `AddressTooLong`, which the session refuses before it presses, give
+/// the words of those refusals.
+fn end_reason(reason: surf::SubmissionEndReason) -> RefusalReason {
+    use surf::SubmissionEndReason as End;
+
+    match reason {
+        End::NoFormOwner => RefusalReason::NoFormOwner,
+        End::NotSubmitButton => RefusalReason::NoDefaultAction,
+        End::InvalidControls => RefusalReason::InvalidControls,
+        End::InvalidAction => RefusalReason::InvalidAction,
+        End::UnsupportedScheme => RefusalReason::UnsupportedScheme,
+        End::UnsupportedEnctype => RefusalReason::UnsupportedEnctype,
+        End::DialogMethod => RefusalReason::DialogMethod,
+        End::AddressTooLong => RefusalReason::AddressTooLong,
+    }
+}
+
+/// The `submits` part of a button line (`story:agent-press-submit`): the form's handle
+/// `F<n>`, the method, and the action shown by the rules of a link's target
+/// ([`shown_target`]), or as written with `unresolved`, cut at [`TARGET_CHARS_MAX`].
+fn submits_part(found: &surf::Submits, page: Option<&surf_url::Url>) -> surf_answer::Submits {
+    let (shown, unresolved) = match &found.action {
+        Ok(action) => (shown_target(action, page), false),
+        Err(written) => (written.clone(), true),
+    };
+    surf_answer::Submits {
+        form: format!("F{}", found.form + 1),
+        method: found.method.word().to_string(),
+        action: Cut::of(&shown, TARGET_CHARS_MAX),
+        unresolved,
+    }
 }
 
 /// The kind word of a `now` line: the variant name of `surf.document.ElementKind`.
@@ -1825,6 +1991,7 @@ fn control_states(rows: &[Elements], options: &[Options]) -> HashMap<String, Sta
                     && matches!(row.kind, ElementKind::Checkbox | ElementKind::Radio),
                 required: row.required,
                 readonly: row.readonly,
+                submits: None,
             };
             (row.element_id.0.0.clone(), state)
         })
