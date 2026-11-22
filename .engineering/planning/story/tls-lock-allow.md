@@ -34,7 +34,7 @@ scope:
   path: taskfiles/lock-allow.txt
 - confidence: cited
   path: taskfiles/lock-check.sh
-revision: 11
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:24Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:24Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
@@ -69,7 +69,7 @@ hostile cases of `story:tls-x509` and `story:tls-record` need one in the test bi
 `surf-tls`, where every module runs on parallel threads under `cargo test`; a per-thread count
 keeps their peaks apart.
 
-`story:one-test-binary-per-crate` moves `crates/surf/tests/lock_check.rs` into the one test
+`story:one-test-binary-per-crate` makes `crates/surf/tests/lock_check.rs`, which stays in place, the module `lock_check` of the one test
 binary of `crates/surf`; this story rewrites that file, so it depends on that story and starts
 after it (round 2, decision 7).
 
@@ -97,8 +97,8 @@ lock check and its test; built alone, after `tls-decisions` and
   working; its body becomes `sh taskfiles/lock-check.sh Cargo.lock taskfiles/lock-allow.txt`
   and its summary says what the two rules are. The coordinator writes this edit when the wave
   has more than one unit; alone, the unit writes it.
-- the module `lock_check` of the test binary of `crates/surf` (`crates/surf/tests/lock_check.rs`
-  before `story:one-test-binary-per-crate` moved it): each copy also holds
+- the module `lock_check` of the test binary of `crates/surf` (the file `crates/surf/tests/lock_check.rs`,
+  which stays in place): each copy also holds
   `taskfiles/lock-check.sh` and `taskfiles/lock-allow.txt`; the four cases stay (the registry
   case appends `serde 1.0.0`, which is on no list) and the cases below are added.
 - `crates/tls` (`surf-tls`, new, Apache-2.0, `#![forbid(unsafe_code)]`, `#![deny(missing_docs)]`):
@@ -207,8 +207,8 @@ of primitives.
 ## Writes
 
 `taskfiles/lock-check.sh`, `taskfiles/lock-allow.txt`, the module `lock_check` of the test
-binary of `crates/surf` (where `story:one-test-binary-per-crate` put
-`crates/surf/tests/lock_check.rs`; this story starts after that one, by its `depends_on` edge,
+binary of `crates/surf` (the file
+`crates/surf/tests/lock_check.rs`, a module of `tests/main.rs` since `story:one-test-binary-per-crate`; this story starts after that one, by its `depends_on` edge,
 so that the two never rewrite the file side by side), `crates/tls/` (`Cargo.toml` with `autotests = false` and `[[test]] name = "main"`,
 `src/lib.rs`, `src/crypto.rs`, `src/error.rs`, `tests/main.rs`, `tests/tls/alloc.rs`,
 `tests/tls/seam.rs`, `tests/data/wycheproof/`), `.cargo/config.toml` when item 4 asks.

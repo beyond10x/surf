@@ -7,6 +7,7 @@ title: surf-fetch states and holds a bound on memory while a head is read
 summary: Each parsed header field takes 48 bytes besides its bytes, so a section of short fields held 24.59 times the header limit; measured in wave 7, no bound stated.
 relations:
 - decomposes: epic:agent-cli-target
+- depends_on: story:one-test-binary-per-crate
 revision: 1
 ---
 ## Context

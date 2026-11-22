@@ -90,7 +90,7 @@ scope:
   path: taskfiles/test-layout.sh
 - confidence: cited
   path: taskfiles/test-layout.yml
-revision: 9
+revision: 12
 ---
 ## Context
 
@@ -145,8 +145,9 @@ Bounds for every command of this story. Every build and test runs through the bu
 builds or tests gets the `slot` prefix (`slot task test`). The pool ends a job after 10 minutes; a command that needs longer names its time with
 `slot --timeout <t>` or, for `cargo`, `SLOT_TIMEOUT=<t>`, at most 1 hour; a `timeout` wrapped around the command extends nothing. A script that measures or
 waits (the three timed runs of statement 1) starts without the `slot` prefix, and the commands in it that build or test carry it. The test step ends within
-120 s and no test runs longer than 60 s. Nothing that stays in the repository is written in Python. Every `cargo` command of statements 1 and 11 runs with
-`RUSTFLAGS='-D warnings'`, the flags `task test` sets, so that they share one build.
+120 s and no test runs longer than 60 s. Nothing that stays in the repository is written in Python. Every `cargo` command of this story, in Change and in
+Acceptance, runs with `RUSTFLAGS='-D warnings'`, the flags `task test` sets, so that they share one build; the first `cargo` command after a change of a
+manifest or a test file, and the first on the base, carries `SLOT_TIMEOUT=30m`.
 
 1. Measure first, on the base, before any change (decision C7). Lists go under `.out/otb/`, which is not committed.
    - The test executables: `SLOT_TIMEOUT=30m RUSTFLAGS='-D warnings' cargo nextest list --workspace --locked --list-type binaries-only --message-format json
@@ -155,7 +156,8 @@ waits (the three timed runs of statement 1) starts without the `slot` prefix, an
      the summed bytes of their `binary-path` files (`stat -c %s`, summed by `awk`).
    - The tests: `cargo nextest list --workspace --locked --message-format json`, written as one line `<binary-id> <test name>` per test with
      `jq -r '."rust-suites" | to_entries[] | .key as $b | .value.testcases | keys[] | "\($b) \(.)"'`, sorted, into `.out/otb/tests-before.txt`; the same with
-     `--manifest-path conformance/Cargo.toml` into `.out/otb/conformance-before.txt`.
+     `--manifest-path conformance/Cargo.toml` into `.out/otb/conformance-before.txt`. Before it reads a field, the unit prints one record of each JSON
+     (`jq '."rust-binaries" | to_entries[0]'`, `jq '."rust-suites" | to_entries[0]'`) and names in its report the field names it used.
    - The selections: `cargo test --locked -p surf-cli --test cli -- --list` into `.out/otb/cli-before.txt` and
      `cargo test --locked -p surf-session --test e2e -- --list` into `.out/otb/e2e-before.txt`.
    - The step: one `SLOT_TIMEOUT=30m RUSTFLAGS='-D warnings' cargo nextest run --workspace --locked --no-run`, so that the timed runs do not compile, then
@@ -169,6 +171,8 @@ waits (the three timed runs of statement 1) starts without the `slot` prefix, an
    `[[test]]` with `name = "main"` and `path = "tests/main.rs"`. `tests/main.rs` (new, except in `crates/test-process`) holds a head comment, one
    `mod <file>;` line per `tests/<file>.rs`, sorted, and `mod common;` where `tests/common/` exists. It holds `#![forbid(unsafe_code)]`, except in
    `crates/fetch` and `crates/html`, whose counting allocators are `unsafe`. No file moves and none is renamed, so no `#[path]` or `include_str!` changes.
+   `mod core;` (`crates/session/tests/core.rs`) sits at the root of the binary beside the crate `core`; the unit reports whether it builds. If it does
+   not, `main.rs` declares it `#[path = "core.rs"]` on one line and `mod session_core;` on the next, and its tests are named `session_core::<name>`.
 4. In each test file, `mod common;` (21 lines at `5c0eb6d`, 23 with wave 10) becomes `use crate::common;`. No other line of a test file changes but those
    of statements 5 and 7. No test is removed, renamed or changed in what it asserts; its name gains its module as a prefix (`e2e::<name>`).
 5. `crates/fetch` keeps no binary of its own (decision C2). The sentence of `crates/fetch/tests/adversary_redirect_memory.rs:14-15` becomes: "The allocator
@@ -186,15 +190,32 @@ waits (the three timed runs of statement 1) starts without the `slot` prefix, an
    - The comment `crates/view/tests/prototype.rs:68`: `cargo test -p surf-view --test main prototype::`.
 8. A gate check keeps the form (decision C4): `taskfiles/test-layout.sh <root>`, POSIX `sh`, no cargo call, run by the task `test-layout` of the new
    `taskfiles/test-layout.yml`, included from the root `Taskfile.yml` as `planning-only` is and run by `task check` after `lock-check`. For each directory
-   `crates/*/tests` and `conformance/tests` under `<root>` it fails, naming the path, when a `*.rs` file directly in it other than `main.rs` has no line
-   `mod <stem>;` in that `main.rs`, when `main.rs` is missing, or when the `Cargo.toml` beside the directory has no line `autotests = false`. Else it prints
-   `test-layout: <d> test directories, <f> test files, one test binary each`. The task `test-layout-test` of the same file, run by `task check` after
-   `planning-only-test`, copies the `Cargo.toml` files and the `tests/*.rs` files of `crates/*` and `conformance` into `.out/test-layout/` and runs the
-   script there four times: the copy as it is passes; with a planted `crates/page/tests/planted.rs`, with `autotests = false` taken out of
-   `crates/page/Cargo.toml`, and with `crates/page/tests/main.rs` removed, it fails naming that path. `SCRIPT=<path>` runs a copy of the script.
-9. `AGENTS.md` follows: "Layout" states the form of statement 3, that a new test file gets its `mod` line in `tests/main.rs`, that a new crate starts with
+   `crates/*/tests` and `conformance/tests` under `<root>` it fails, naming the path:
+   - when `main.rs` is missing;
+   - when the `Cargo.toml` beside the directory has no line `autotests = false`, or has not exactly one `[[test]]` entry, or that entry lacks
+     `name = "main"` or `path = "tests/main.rs"` (decision C9);
+   - when a `*.rs` file directly in it other than `main.rs` is not declared in `main.rs`: declared means the whole line `mod <stem>;` (`grep -qx`), or the
+     whole line `#[path = "<stem>.rs"]` followed by the whole line `mod <name>;`; a `mod` line whose line before starts with `#[cfg` does not count
+     (decision C10);
+   - when a `*.rs` file in a subdirectory one level down (`tests/<dir>/<stem>.rs`, `common/` and `data/` skipped) is not declared: the whole line
+     `#[path = "<dir>/<stem>.rs"]` followed by the whole line `mod <stem>;`, or the one line `#[path = "<dir>/<stem>.rs"] mod <stem>;`, the form of
+     `story:tls-decisions` for `crates/tls/tests/tls/` (decision C11);
+   - when a selection drifts (decision C12): the script holds the list of selections, one line each of crate directory, selected stem and skipped stems
+     (`crates/surf-cli cli review1_cli`, `crates/session e2e`, `crates/view prototype`, the packages `surf-cli`, `surf-session`, `surf-view`), and fails
+     naming the stem when another stem of that crate's `tests/` ends with the selected stem and is not in the skipped list.
+   Else it prints `test-layout: <d> test directories, <f> test files, one test binary each`. The task `test-layout-test` of the same file, run by
+   `task check` after `planning-only-test`, copies the `Cargo.toml` files, the `tests/*.rs` files and the `tests/<dir>/*.rs` files of `crates/*` and
+   `conformance` into `.out/test-layout/` and runs the script there ten times: the copy as it is passes; it fails naming the path with a planted
+   `crates/page/tests/planted.rs`; with `autotests = false` taken out of `crates/page/Cargo.toml`; with `crates/page/tests/main.rs` removed; with the
+   `[[test]]` entry taken out of `crates/page/Cargo.toml`; with a second `[[test]]` entry in it; with `// mod elements;` in place of `mod elements;` in
+   `crates/page/tests/main.rs`; with `#[cfg(any())]` on the line before `mod elements;`; with a planted `crates/page/tests/tls/planted.rs` that no
+   `#[path]` line names; with a planted `crates/surf-cli/tests/zz_cli.rs` named by a `mod` line (a stem that ends with the selected `cli`, not skipped).
+   `SCRIPT=<path>` runs a copy of the script.
+9. `AGENTS.md` follows: "Layout" states the form of statement 3, that a new test file gets its `mod` line in `tests/main.rs`, that a module may also lie
+   one directory down, declared by `#[path = "<dir>/<stem>.rs"]` and `mod <stem>;` (the form of `crates/tls/tests/tls/`), that a new crate starts with
    `autotests = false`, `[[test]] name = "main"` and `tests/main.rs`, and that one file's tests are selected with `--test main <file>::` (with
-   `-- --skip <other>::` where another module's name ends in `<file>`, Context); "Commands" names `task test-layout` and `task test-layout-test`;
+   `-- --skip <other>::` where another module's name ends in `<file>`, Context); that the selections are listed in `taskfiles/test-layout.sh`, and a stem
+   added to the skipped list of a selection gets its `--skip <stem>::` in that selection; "Commands" names `task test-layout` and `task test-layout-test`;
    "The gate's numbers" gives the count line and the `test step` line of the last run of statement 11, and the test suites of the conformance crate.
 10. No debug info in a test binary: `.cargo/config.toml` keeps `debug = false` for `dev` and `test`; the story does not change it.
 11. The same measurement as statement 1, on the branch, on the same base. The numbers of 1 and 11 (executables per crate, summed bytes, three `test step`
@@ -209,27 +230,31 @@ directly in them other than `main.rs` (79 at `5c0eb6d`, 82 with wave 10).
 
 1. Before: the report gives, from `<base>`, the output of the `uniq -c` of statement 1 (one line per crate, 77 executables at `5c0eb6d`), the summed bytes,
    the three `test step: N s of its budget of 120 s` lines with their load averages, the count line, and `wc -l` and `sha256sum` of
-   `.out/otb/tests-before.txt`, `conformance-before.txt`, `cli-before.txt` and `e2e-before.txt`.
+   `.out/otb/tests-before.txt`, `conformance-before.txt`, `cli-before.txt` and `e2e-before.txt`. `wc -l < .out/otb/tests-before.txt` equals
+   `jq '."test-count"'` of the JSON it was written from, and that number equals the cargo-nextest count `n` of the gate's count line; the same holds for
+   `conformance-before.txt` and its JSON; `cli-before.txt` and `e2e-before.txt` each hold at least one line ending `: test`.
 2. First crate: after statement 3 in `crates/agent` alone,
-   `RUSTFLAGS='-D warnings' cargo nextest list -p surf-agent --locked --list-type binaries-only --message-format json | jq -r '."rust-binaries"[] | select(.kind == "test") | ."binary-id"'`
+   `SLOT_TIMEOUT=30m RUSTFLAGS='-D warnings' cargo nextest list -p surf-agent --locked --list-type binaries-only --message-format json | jq -r '."rust-binaries"[] | select(.kind == "test") | ."binary-id"'`
    prints exactly `surf-agent::main`. With a planted `crates/agent/tests/planted.rs` that holds `#[test] fn planted() {}` and no `mod` line, the same
-   command prints exactly `surf-agent::main`, `cargo nextest list -p surf-agent --locked` prints no line that holds `planted`, and
+   command prints exactly `surf-agent::main`, `RUSTFLAGS='-D warnings' cargo nextest list -p surf-agent --locked` prints no line that holds `planted`, and
    `sh taskfiles/test-layout.sh .` exits 1 naming `crates/agent/tests/planted.rs`. The planted file is then removed. The report shows the four outputs.
-3. Every crate: the command of case 2 with `--workspace` in place of `-p surf-agent`, piped through `LC_ALL=C sort`, prints exactly these 16 lines and
+3. Every crate: the command of case 2 (with its `SLOT_TIMEOUT=30m`) with `--workspace` in place of `-p surf-agent`, piped through `LC_ALL=C sort`, prints exactly these 16 lines and
    one line `<package>::main` for each test directory the base adds: `surf-agent::main`, `surf-answer::main`, `surf-cli::main`, `surf-fetch::main`,
    `surf-html-conformance::main`, `surf-html::main`, `surf-page::main`, `surf-ports::main`, `surf-secret::main`, `surf-session::main`,
    `surf-test-process::main`, `surf-url::main`, `surf-view-fixture::main`, `surf-view::main`, `surf::main`, `surfd::main`. With
    `--manifest-path conformance/Cargo.toml` in place of `--workspace` it prints exactly `surf-conformance::main`.
 4. No test removed: `sed '/^[^ ]*::main /!s/^\([^ :]*\)::\([^ /]*\) /\1::main \2::/' .out/otb/tests-before.txt | LC_ALL=C sort > .out/otb/tests-renamed.txt`
    turns `surf-session::e2e <name>` into `surf-session::main e2e::<name>` and leaves unit-test and binary lines as they are; the list of statement 1 taken
-   on the branch into `.out/otb/tests-after.txt`; `diff .out/otb/tests-renamed.txt .out/otb/tests-after.txt` prints nothing and exits 0. The same for
-   `conformance-before.txt` and `conformance-after.txt`. And
+   on the branch into `.out/otb/tests-after.txt`; `diff .out/otb/tests-renamed.txt .out/otb/tests-after.txt` prints nothing and exits 0, and
+   `wc -l` of both files equals the `wc -l` of case 1 and `jq '."test-count"'` of the JSON of the branch. The same for `conformance-before.txt` and
+   `conformance-after.txt`. If statement 3 declared `session_core`, the `sed` also turns `surf-session::main core::` into
+   `surf-session::main session_core::`. And
    `git diff --numstat <base> -- 'crates/*/tests/*.rs' 'conformance/tests/*.rs' ':(exclude)crates/*/tests/main.rs' ':(exclude)conformance/tests/main.rs'`
    prints `1	1	<file>` for each file that held `mod common;` (21 at `5c0eb6d`, 23 with wave 10), one line for
    `crates/fetch/tests/adversary_redirect_memory.rs` and one for `crates/view/tests/prototype.rs`, and no other line.
 5. Fetch: `grep -c -- 'cargo test -p surf-fetch -- --test-threads=1' crates/fetch/tests/adversary_redirect_memory.rs` prints `1`;
-   `RUSTFLAGS='-D warnings' cargo nextest run -p surf-fetch --locked` exits 0, and its tests named `adversary_redirect_memory::…` are as many as the tests
-   of the binary `surf-fetch::adversary_redirect_memory` in `.out/otb/tests-before.txt`.
+   `RUSTFLAGS='-D warnings' cargo nextest run -p surf-fetch --locked` exits 0; `grep -c '^surf-fetch::main adversary_redirect_memory::' .out/otb/tests-after.txt`
+   and `grep -c '^surf-fetch::adversary_redirect_memory ' .out/otb/tests-before.txt` print the same number, and it is not 0.
 6. Conformance: `slot task conform-rust` exits 0, and
    `grep -c '^test \(planted_defect::a_navigation_storage_that_drops_every_put_fails_at_least_one_scenario\|two_of_each_entity::one_identity_for_every_instance_of_an_entity_is_noticed_for_each_entity\|two_of_each_entity::a_view_cut_to_its_first_row_is_noticed_for_each_entity\) \.\.\. ok$' .out/conform-rust-test.log`
    prints `3`.
@@ -237,16 +262,21 @@ directly in them other than `main.rs` (79 at `5c0eb6d`, 82 with wave 10).
    `RUSTFLAGS='-D warnings' cargo test --locked -p surf-cli --test main cli:: -- --skip review1_cli:: --list | grep ': test$'`, and
    `grep ': test$' .out/otb/e2e-before.txt | sed 's/^/e2e::/'` equals
    `RUSTFLAGS='-D warnings' cargo test --locked -p surf-session --test main e2e:: -- --list | grep ': test$'` (each pair compared with `diff`, empty). The
-   release workflow runs once on the story branch by `workflow_dispatch` (`gh workflow run release.yml --ref <branch>`); its four package jobs, which run
+   release workflow runs once on the story branch by `workflow_dispatch` (`gh workflow run release.yml --ref <branch>`; a manual run publishes nothing,
+   `release.yml:4-5`, it leaves the archives as the run's artifacts); its four package jobs, which run
    the `--test main cli::` step and `taskfiles/release-smoke.sh`, end `success`, and the evidence holds the run's URL and conclusion.
 8. Gate check: `slot task test-layout` on the branch prints `test-layout: <d> test directories, <f> test files, one test binary each` and exits 0;
-   `slot task test-layout-test` prints `test-layout-test: 4 case(s), each decided as expected by taskfiles/test-layout.sh` and exits 0; with
-   `SCRIPT=<copy>` where the copy always exits 0, it exits 1 and names the three cases that should fail. Both take under 1 s; neither calls cargo.
+   `slot task test-layout-test` prints `test-layout-test: 10 case(s), each decided as expected by taskfiles/test-layout.sh` and exits 0 (the cases of
+   statement 8, among them those of decisions C9 to C12); with `SCRIPT=<copy>` where the copy always exits 0, it exits 1 and names the nine cases that
+   should fail. Both take under 1 s; neither calls cargo.
 9. References: `git grep -n -- '--test ' -- ':!.engineering'` prints, beside lines that hold `--test main `, only the four lines that name no target of a
    crate of this repository: the note "`cargo test -p <package> --test <name>` does not build the package's examples" of `AGENTS.md` (line 900 at
    `5c0eb6d`), `docs/plan/agent-wave-3.md:85` (a wave record), and `docs/design/tls.md:248` and `:351` (records of scratch tests). `AGENTS.md`
-   ("Layout", "Commands", "The gate's numbers") holds the text of statement 9.
-10. No debug info: `readelf -S "$(jq -r '."rust-binaries"."surf-session::main"."binary-path"' .out/otb/binaries-after.json)" | grep -c '\.debug_'` prints `0`.
+   holds the text of statement 9: `grep -c 'autotests = false' AGENTS.md` prints at least 1 more than on `<base>`; `grep -c -- '--test main ' AGENTS.md`
+   at least 1; `grep -c 'task test-layout-test' AGENTS.md` at least 1; `grep -c 'test step: [0-9.]* s of its budget of 120 s' AGENTS.md` at least 1 more
+   than on `<base>`, the line of the last run of statement 11.
+10. No debug info: with `bin=$(jq -r '."rust-binaries"."surf-session::main"."binary-path"' .out/otb/binaries-after.json)`, `test -f "$bin"` exits 0,
+    `readelf -S "$bin"` exits 0 and lists a `.text` section, and `readelf -S "$bin" | grep -c '\.debug_'` prints `0`.
 11. Budget: each of the three `slot task test` runs on the branch exits 0 and prints `test step: N s of its budget of 120 s` with N at most 120;
     `grep -c TIMEOUT .out/test.log` prints `0` after each; the count line has the same total N as in case 1; the `uniq -c` of statement 11 prints one
     executable per crate. The evidence holds the numbers of statements 1 and 11.
@@ -265,7 +295,9 @@ directly in them other than `main.rs` (79 at `5c0eb6d`, 82 with wave 10).
 ## Placement
 
 Its base is `main` after three merges: release 0.3.0 (the security fixes), `fix/tests-hold-under-load` (`story:tests-hold-under-load`, which writes
-`crates/surf/tests/common/mod.rs`, `crates/surf/tests/review1_generated_check.rs` and `crates/view/tests/stream_bounds.rs`), and wave 10
+`crates/surf/tests/common/mod.rs`, `crates/surf/tests/review1_generated_check.rs` and `crates/view/tests/stream_bounds.rs`; the story is in the store of
+`release/0.3.0`, merged there, not of this branch, and reaches `main` with release 0.3.0, so no edge to it can be recorded here: the base merge is the
+order), and wave 10
 (`wave/a10-label-limits`: `story:html-accessible-name` and `story:html-parser-limits`, each an edge; they add the test files counted in Context).
 
 It runs alone: no other unit that writes under `crates/*/tests`, `conformance/tests`, the `Cargo.toml` of a crate with tests, `Taskfile.yml`,
@@ -276,7 +308,8 @@ The stories that follow it were changed on `plan/useful-for-agents`, the branch 
 Each story that adds a file to a crate's `tests/` names `crates/<c>/tests/main.rs` (one `mod` line) in its Writes; each story that creates a crate
 with tests creates it in the form of Change statement 3; each `--test <file>` became `--test main <file>::`. Direct `depends_on` edges to this story:
 `story:agent-tasks`, `story:tls-lock-allow`, `story:tls-fetch-https`, `story:tls-session-anchors`, `story:html-document-port`, `story:html-tree-tables`
-and `story:page-text-answer-block`; every other such story reaches it through one of them.
+and `story:page-text-answer-block`, and the drafts `story:fetch-head-memory`, `story:view-surfd-start-cases` and `story:page-text-on-other-commands`;
+every other such story reaches it through one of them.
 
 ## Writes
 
