@@ -1165,7 +1165,9 @@ authored), 48 refusal(s)` (`slot task suite`; the document unit read the same on
 Against the interpreter and against the Rust system: `169 scenarios: 169 passed, 0 failed, 0
 error, 0 unsupported`; `conform-totals`: `the interpreter and the Rust system ran 169
 scenario(s) each, of suite
-sha256:0aead5f74409f8c561f544df8056b9e6b6fe146c13ba2e5e3a3fbf0ffdea733c`. The planted defect:
+sha256:81fd1b7b25c7e95459d58100a7a1b7fb30551921658349aba516bdf4b150459a` (the digest since
+`story:values-and-labels-before-fill`, which changed four events; no gate step compares it).
+The planted defect:
 `planted defect: 169 scenarios: 133 passed, 36 failed, 0 error, 0 unsupported`; the
 conformance crate's `tests/main.rs` ran 15 passed. `generated-check`: `generated/rust matches
 spec/ (30 artifact(s) and .ess-output)`, the committed bytes. `html-conformance: 9107 cases,
