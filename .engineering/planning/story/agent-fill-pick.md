@@ -12,7 +12,7 @@ relations:
 - depends_on: story:html-document-port
 - depends_on: story:agent-session-events
 - depends_on: story:page-text-outline
-revision: 10
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 6}
@@ -59,6 +59,12 @@ argument word", and `README.md` says to use `fill <handle> -` for one.
   picked. The reasons `hidden` (if `agent-follow-links` has not added it), `disabled`,
   `wrong-kind` and `unknown-option` go into the reason table with exit status 1, into
   `RefusalReason` and into a test.
+- `fill` of a `readonly` control is refused, status 1, `did refused readonly` (the reason
+  `readonly` into the reason table, `RefusalReason` and a test), counted as case 19 below, which
+  needs the element's `readonly` that `spec/domains/document.yaml:735` does not store yet, so
+  `spec/domains/document.yaml` and `generated/rust/` join the surfaces written, while a `select`
+  with `multiple` and the radio group of a button with no form owner or no name stay open
+  (`spec/domains/document.yaml:306`, `798`; `story:agent-forms-spec`, As built, line 215).
 - `cli/surf-agent.yaml`, `crates/agent`: `fill` and `pick`, together, so the drift test holds.
 - `crates/session/tests/`, the counted cases, against a server the test starts:
   1. the `now` block of a form with a text field, a password, a checkbox, a radio group, a select,
@@ -77,7 +83,8 @@ argument word", and `README.md` says to use `fill <handle> -` for one.
       its value as `<n> characters`; after case 2 the `Fill` event entry has the value filled,
       quoted; neither is `unmapped`;
   18. round trip: `surf_answer::parse` of the answer of case 1 and of each answer of cases 14 to
-      16 gives the typed answer, and rendering that gives the same lines byte for byte.
+      16 gives the typed answer, and rendering that gives the same lines byte for byte;
+  19. `fill` a `readonly` text field: status 1, `readonly`.
 
 Surfaces written: `crates/session/`, `crates/answer/`, `docs/agent-answer.md`,
 `cli/surf-agent.yaml`, `crates/agent/`.
@@ -90,7 +97,7 @@ Surfaces written: `crates/session/`, `crates/answer/`, `docs/agent-answer.md`,
 
 ## Acceptance
 
-`cargo test -p surf-session -p surf-answer -p surf-agent` passes with the 18 numbered cases, each a
+`cargo test -p surf-session -p surf-answer -p surf-agent` passes with the 19 numbered cases, each a
 test named after its case, case 1 equal to its golden text and no answer of case 3 containing the
 password.
 

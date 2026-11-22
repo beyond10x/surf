@@ -14,6 +14,7 @@ relations:
 - depends_on: story:html-accessible-name
 - depends_on: story:agent-session-events
 - depends_on: story:page-text-outline
+- depends_on: story:values-and-labels-before-fill
 revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
