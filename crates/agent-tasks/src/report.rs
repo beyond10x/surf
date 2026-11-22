@@ -2,7 +2,8 @@
 //!
 //! The file, exactly: the first line `agent-tasks: <n> tasks, <p> pass, <f> fail, <s> skipped,
 //! lane <lane>, binaries <directory>`, `<n>` the rows of `status.txt` (one per block of
-//! `tasks.txt`), `<lane>` `gate` or `archive`, `<directory>` that of the binaries the run used;
+//! `tasks.txt`), `<lane>` `gate` or `archive`, `<directory>` that of the binaries the run used, never a path of this
+//! machine ([`shown_binaries`]);
 //! one line per task in their order, `task <name> pass <c> calls <k> connections` or `task
 //! <name> fail <c> calls <k> connections: <reason>` (a row without a result: `task <name>
 //! skipped`); then `raise: <name>` for each task listed `pending` that passed.
@@ -40,8 +41,39 @@ pub struct TaskResult {
 pub struct Lane {
     /// `gate` or `archive` (the model lane writes its own file).
     pub name: String,
-    /// The directory of the binaries the run used.
+    /// The directory of the binaries the run used, as its caller gave it; the line names it by
+    /// [`shown_binaries`].
     pub binaries: PathBuf,
+}
+
+/// The repository's root, from this crate's directory.
+fn repository_root() -> Option<PathBuf> {
+    Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
+        .canonicalize()
+        .ok()
+}
+
+/// How the first line names the directory of the binaries, so that it holds no path of this
+/// machine (the line goes into release notes): a relative directory as given; an absolute one
+/// inside the repository relative to its root (`target/debug`); any other absolute one by its
+/// last two components.
+pub fn shown_binaries(dir: &Path) -> String {
+    if !dir.is_absolute() {
+        return dir.display().to_string();
+    }
+    if let (Some(root), Ok(real)) = (repository_root(), dir.canonicalize())
+        && let Ok(relative) = real.strip_prefix(&root)
+    {
+        return relative.display().to_string();
+    }
+    let names: Vec<_> = dir
+        .components()
+        .filter_map(|component| match component {
+            std::path::Component::Normal(name) => Some(name.to_string_lossy()),
+            _ => None,
+        })
+        .collect();
+    names[names.len().saturating_sub(2)..].join("/")
 }
 
 /// Whether `SURF_AGENT_TASKS=measure` is set: the listed states play no part.
@@ -94,7 +126,7 @@ pub fn report(
          {}\n{lines}{raises}",
         status.len(),
         lane.name,
-        lane.binaries.display()
+        shown_binaries(&lane.binaries)
     );
     if let Some(dir) = out.parent() {
         fs::create_dir_all(dir)

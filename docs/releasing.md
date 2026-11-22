@@ -123,7 +123,10 @@ The commands use the gates as the bot, from a checkout of this repository:
 
    Its first line, `agent-tasks: <n> tasks, <p> pass, <f> fail, <s> skipped, lane archive,
    binaries <dir>`, goes into the notes (step 8) as `agent tasks (scripted): <n> tasks, <p>
-   pass, <f> fail, <s> skipped`.
+   pass, <f> fail, <s> skipped`. `<dir>` is `DIR` as typed; an absolute `DIR` is named by its
+   last two components (`<version-dir>/surf-<version>-x86_64-unknown-linux-musl`), so the line
+   holds no path of this machine. The model lane's line names its binaries the same way
+   (`target/debug`).
 
    `scan-artifact` reads ELF only, so the macOS binaries are covered by the workflow's own
    home-path check and not by it; whether that is accepted for surf is open, the operator's to

@@ -15,6 +15,8 @@ use surf_agent_tasks::lane::{self, Config, LaneRun};
 use surf_agent_tasks::report::Lane;
 use surf_agent_tasks::root_report_file;
 
+use crate::status::binaries_field;
+
 /// `SURF_BIN_DIR`, which the step `test` sets to the programs `task build` made.
 fn bin_dir() -> PathBuf {
     let dir = std::env::var_os("SURF_BIN_DIR").map(PathBuf::from).expect(
@@ -71,19 +73,28 @@ fn assert_clean(run: &LaneRun) {
 fn every_task() {
     let bin = bin_dir();
     let measure = std::env::var_os("SURF_AGENT_TASKS").is_some_and(|value| value == "measure");
+    // The archive task passes DIR as typed; the line names that, never the absolute form.
+    let given = std::env::var_os("SURF_BIN_DIR_GIVEN")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| bin.clone());
     let config = Config {
         bin: bin.clone(),
         fallback: PathBuf::from(env!("CARGO_TARGET_TMPDIR")),
         call_bound: CALL_BOUND,
         lane: Lane {
             name: if measure { "archive" } else { "gate" }.to_string(),
-            binaries: bin,
+            binaries: given,
         },
         out: root_report_file(),
     };
     let run = lane::run(&config);
     let written = fs::read_to_string(root_report_file()).expect("the report is written");
     print!("{written}");
+    let first = written.lines().next().unwrap_or_default();
+    assert!(
+        !binaries_field(first).starts_with('/'),
+        "a machine's path in {first:?}"
+    );
     assert_clean(&run);
     assert_eq!(
         written.lines().count(),
@@ -139,12 +150,19 @@ fn a_call_that_never_answers_ends_at_its_bound() {
     assert_clean(&run);
     assert_eq!(run.outcome, Ok(()), "{written}");
     let lines: Vec<&str> = written.lines().collect();
+    let shown = binaries_field(lines[0]);
+    assert!(
+        !shown.starts_with('/'),
+        "a machine's path in {:?}",
+        lines[0]
+    );
+    assert!(
+        shown.ends_with(&format!("/agent-tasks-hanging-{}", std::process::id())),
+        "{shown}"
+    );
     assert_eq!(
         lines[0],
-        format!(
-            "agent-tasks: 4 tasks, 0 pass, 4 fail, 0 skipped, lane gate, binaries {}",
-            bin.display()
-        )
+        format!("agent-tasks: 4 tasks, 0 pass, 4 fail, 0 skipped, lane gate, binaries {shown}")
     );
     assert_eq!(
         lines[1],

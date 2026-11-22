@@ -96,12 +96,25 @@ fn a_stub_model_is_counted() {
     }
     let written = written.expect("the out file is written");
     let (first, rest) = written.split_once('\n').expect("a first line");
+    assert!(
+        !crate::status::binaries_field(first).starts_with('/'),
+        "a machine's path in {first:?}"
+    );
+    // SURF_BIN_DIR is target/debug of the repository: the line names it from the root.
+    let root = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
+        .canonicalize()
+        .unwrap();
+    let shown = bin
+        .canonicalize()
+        .unwrap()
+        .strip_prefix(&root)
+        .map(|relative| relative.display().to_string())
+        .unwrap_or_else(|_| crate::status::binaries_field(first).to_string());
     let prefix = format!(
         "agent-tasks-model: {n} tasks, 1 pass, {} fail, {} skipped, command stub-model.sh, \
-         model stub, lane model, binaries {}, ",
+         model stub, lane model, binaries {shown}, ",
         h - 1,
         n - h,
-        bin.display()
     );
     let date = first
         .strip_prefix(&prefix)

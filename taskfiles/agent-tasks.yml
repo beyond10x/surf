@@ -11,9 +11,10 @@ tasks:
       The scripted lane of the agent tasks runs inside task test: one test that runs every task
       of crates/agent-tasks/tasks.txt with the surf-agent of SURF_BIN_DIR and holds each to its
       row of status.txt. A run removes the file before it starts and writes it at its end; its
-      first line holds the counts, the lane (gate or archive) and the directory of the binaries.
-      This task prints the file, and exits 1 with one line when it is missing. task check runs
-      it after test.
+      first line holds the counts, the lane (gate or archive) and the directory of the binaries,
+      named relative to the repository (target/debug), never as a path of this machine. This
+      task prints the file, and exits 1 with one line when it is missing. task check runs it
+      after test.
     dir: '{{.TASKFILE_DIR}}/..'
     silent: true
     cmds:
@@ -34,8 +35,9 @@ tasks:
       is written, and the file's first line names the lane archive. Then prints
       .out/agent-tasks.txt, whose first line goes into the release notes (docs/releasing.md,
       step 7). DIR is the unpacked surf-<version>-<target>/ of a Linux archive; a relative DIR
-      is taken from the directory task was called in. No step of check, check-runner or a forge
-      workflow runs it.
+      is taken from the directory task was called in. The first line names DIR as typed, an
+      absolute DIR by its last two components; the absolute form only finds the files. No step
+      of check, check-runner or a forge workflow runs it.
     dir: '{{.TASKFILE_DIR}}/..'
     requires:
       vars: [DIR]
@@ -49,7 +51,7 @@ tasks:
           *) bin=$CALLER_DIR/$GIVEN_DIR ;;
         esac
         bin=$(cd "$bin" && pwd) || { echo "agent-tasks-archive: $GIVEN_DIR is not a directory" >&2; exit 1; }
-        SURF_BIN_DIR=$bin SURF_AGENT_TASKS=measure cargo nextest run -p surf-agent-tasks -E 'test(=tasks::every_task)'
+        SURF_BIN_DIR=$bin SURF_BIN_DIR_GIVEN=$GIVEN_DIR SURF_AGENT_TASKS=measure cargo nextest run -p surf-agent-tasks -E 'test(=tasks::every_task)'
       - cat .out/agent-tasks.txt
 
   agent-tasks-model:
@@ -62,7 +64,8 @@ tasks:
       on a model and builds nothing: run it without the slot prefix. AGENT_TASKS_MODEL_COMMAND
       in the environment replaces the default command (claude -p); TIMEOUT=<seconds> bounds each
       task's model run (default 300). A model command that cannot start, fails or passes its
-      bound ends the task non-zero and writes no file. No step of check, check-runner or a forge
+      bound ends the task non-zero and writes no file. The first line names the binaries as
+      target/debug, never as a path of this machine. No step of check, check-runner or a forge
       workflow runs it.
     dir: '{{.TASKFILE_DIR}}/..'
     requires:

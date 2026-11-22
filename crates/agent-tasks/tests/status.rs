@@ -76,7 +76,7 @@ fn a_listed_pass_that_fails_fails() {
     let written = fs::read_to_string(&out).expect("the file is written");
     assert_eq!(
         written,
-        "agent-tasks: 4 tasks, 0 pass, 4 fail, 0 skipped, lane gate, binaries /opt/surf/bin\n\
+        "agent-tasks: 4 tasks, 0 pass, 4 fail, 0 skipped, lane gate, binaries surf/bin\n\
          task article fail 3 calls 1 connections: exit 2 on look\n\
          task table fail 3 calls 1 connections: exit 2 on look\n\
          task link fail 3 calls 1 connections: no now line labelled \"Opening hours\"\n\
@@ -103,7 +103,7 @@ fn a_pending_task_that_passes_is_raised() {
     let written = fs::read_to_string(&out).expect("the file is written");
     assert!(
         written.starts_with(
-            "agent-tasks: 4 tasks, 1 pass, 3 fail, 0 skipped, lane gate, binaries /opt/surf/bin\n"
+            "agent-tasks: 4 tasks, 1 pass, 3 fail, 0 skipped, lane gate, binaries surf/bin\n"
         ),
         "{written}"
     );
@@ -115,4 +115,56 @@ fn a_pending_task_that_passes_is_raised() {
     assert_eq!(written.matches("raise:").count(), 1, "{written}");
     assert_eq!(modified(&root), before, "the root file is not touched");
     let _ = fs::remove_file(&out);
+}
+
+/// The directory field of a first line: what follows `, binaries ` up to the next `,`.
+pub fn binaries_field(first: &str) -> &str {
+    let (_, field) = first
+        .split_once(", binaries ")
+        .unwrap_or_else(|| panic!("no binaries field in {first:?}"));
+    field.split(", ").next().unwrap()
+}
+
+/// The first line of the report of `lane` on the results of base A.
+fn first_line_of(name: &str, lane: &Lane) -> String {
+    let tasks = read_tasks(&fs::read_to_string(tasks_file()).unwrap()).unwrap();
+    let status = read_status(&fs::read_to_string(status_file()).unwrap(), &tasks).unwrap();
+    let out = out_file(name);
+    let _ = report(&base_a(), &status, lane, &out);
+    let written = fs::read_to_string(&out).expect("the file is written");
+    let _ = fs::remove_file(&out);
+    let first = written.lines().next().unwrap().to_string();
+    assert!(
+        !binaries_field(&first).starts_with('/'),
+        "a machine's path in {first:?}"
+    );
+    first
+}
+
+#[test]
+fn the_gate_lane_names_its_binaries_from_the_root() {
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
+    let lane = Lane {
+        name: "gate".to_string(),
+        binaries: PathBuf::from(format!("{root}/target/debug")),
+    };
+    let first = first_line_of("gate-dir", &lane);
+    assert_eq!(binaries_field(&first), "target/debug", "{first}");
+}
+
+#[test]
+fn the_archive_lane_names_its_dir_as_typed() {
+    let unpacked = "archive-0.3.0/surf-0.3.0-x86_64-unknown-linux-musl";
+    for (given, shown) in [
+        (format!("/srv/unpacked/{unpacked}"), unpacked),
+        (unpacked.to_string(), unpacked),
+        ("./surf-0.3.0/".to_string(), "./surf-0.3.0/"),
+    ] {
+        let lane = Lane {
+            name: "archive".to_string(),
+            binaries: PathBuf::from(&given),
+        };
+        let first = first_line_of("archive-dir", &lane);
+        assert_eq!(binaries_field(&first), shown, "{given}: {first}");
+    }
 }

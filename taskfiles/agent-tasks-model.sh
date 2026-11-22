@@ -37,7 +37,10 @@
 #   agent-tasks-model: <n> tasks, <p> pass, <f> fail, <s> skipped, command <name>, model <model>, lane model, binaries <bin dir>, <YYYY-MM-DD>
 # then per task "task <name> pass <c> calls" or "task <name> fail <c> calls", one line
 # "  surf-agent <words>" per call, and "  answered "<text>"" (the text escaped as the log is)
-# or "  answered nothing".
+# or "  answered nothing". <bin dir> on the first line is never a path of this machine (it
+# goes into release notes): a relative <bin dir> as given, an absolute one inside the
+# repository relative to its root (target/debug), any other absolute one by its last two
+# components.
 
 set -u
 
@@ -50,7 +53,21 @@ bin=$1
 out=$2
 
 root=$(cd "$(dirname "$0")/.." && pwd) || exit 1
-case $bin in /*) ;; *) bin=$(pwd)/$bin ;; esac
+case $bin in
+  /*)
+    real=$(cd "$bin" 2> /dev/null && pwd -P) || real=$bin
+    real_root=$(cd "$root" && pwd -P) || real_root=$root
+    case $real in
+      "$real_root"/*) shown=${real#"$real_root"/} ;;
+      *) shown=$(printf '%s\n' "$bin" | awk -F/ '{
+           n = 0
+           for (i = 1; i <= NF; i++) if ($i != "" && $i != ".") c[++n] = $i
+           if (n >= 2) print c[n - 1] "/" c[n]; else if (n == 1) print c[1]
+         }') ;;
+    esac
+    ;;
+  *) shown=$bin; bin=$(pwd)/$bin ;;
+esac
 case $out in /*) ;; *) out=$(pwd)/$out ;; esac
 tasks=$root/crates/agent-tasks/tasks.txt
 sites=$root/crates/agent-tasks/sites
@@ -265,6 +282,6 @@ done < "$rows"
 
 mkdir -p "$(dirname "$out")" || fail "cannot make the directory of $out"
 {
-  echo "agent-tasks-model: $n tasks, $p pass, $f fail, $s skipped, command $name, model $model, lane model, binaries $bin, $(date +%Y-%m-%d)"
+  echo "agent-tasks-model: $n tasks, $p pass, $f fail, $s skipped, command $name, model $model, lane model, binaries $shown, $(date +%Y-%m-%d)"
   cat "$body"
 } > "$out.part" && mv "$out.part" "$out" || fail "cannot write $out"
