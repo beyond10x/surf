@@ -31,6 +31,10 @@ scope:
 - confidence: inferred
   path: crates/answer/tests
 - confidence: cited
+  path: crates/fetch/src
+- confidence: cited
+  path: crates/fetch/tests
+- confidence: cited
   path: crates/session/src/lib.rs
 - confidence: cited
   path: crates/session/tests
@@ -48,7 +52,7 @@ scope:
   path: spec/domains/agent.yaml
 - confidence: inferred
   path: website/docs/drive-from-an-agent.md
-revision: 19
+revision: 22
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 6}
@@ -253,7 +257,11 @@ it, like every page-derived field, and corrects that line.
   22. the shown action: a form with `action="http://user:pw@127.0.0.1:<port>/session"` shows
       `submits F1 post "/session"` with no `user` and no `pw` on any line of the answer; a form on
       the same origin with `action="http://127.0.0.1:<port>//x"` shows the action absolute,
-      `"http://127.0.0.1:<port>//x"`.
+      `"http://127.0.0.1:<port>//x"`;
+  23. `buttons_share_one_resolved_action`: the answer of `look` on a page of 1,000 submit
+      buttons in one form whose action is 10,000 bytes holds 1,000 button lines, each with its
+      `submits` part, and the test runs under 3 s alone (decision 3 of "As decided after the
+      adversary's pass"; no assertion on wall time).
 
 - `crates/agent-tasks/status.txt`, the round's measure: `search pass` (line 4). A task listed
   `pending` that passes makes the report print `raise: search` (`crates/agent-tasks/src/report.rs:9-14`),
@@ -263,7 +271,8 @@ Surfaces written: `crates/session/`, `crates/answer/`, `docs/agent-answer.md`,
 `cli/surf-agent.yaml`, `crates/agent/`, `crates/surfd/src/daemon.rs`,
 `docs/design/agent-interface.md` (line 231), `crates/agent-tasks/status.txt`,
 `crates/surf/src/lib.rs` (`submit_form`: `formaction`, `formmethod`, and the address the session
-checks).
+checks), `crates/fetch/src` and `crates/fetch/tests` (the destination rule on the first request,
+"As decided after the adversary's pass").
 
 ## For README.md (handed over in the unit report, decision D7)
 
@@ -272,8 +281,9 @@ checks).
 
 ## Acceptance
 
-`cargo nextest run -p surf-session` passes with the 22 numbered cases, each a test named after its
-case, and `cargo nextest run -p surf` passes with `agent-form-port`'s cases unchanged, case 1 reading the request line `POST /session HTTP/1.1` and the body
+`cargo nextest run -p surf-session` passes with the 23 numbered cases, each a test named after its
+case, and with the adversary's tests named in "As decided after the adversary's pass";
+`cargo nextest run -p surf -p surf-fetch` passes with `agent-form-port`'s cases unchanged, case 1 reading the request line `POST /session HTTP/1.1` and the body
 `user=ada&password=s3cret` and answering with the page at `/home`. The round's measure:
 `crates/agent-tasks/status.txt` reads `search pass` (line 4 reads `search pending
 story:agent-fill-pick story:agent-press-submit` today), `tasks::every_task`
@@ -297,3 +307,46 @@ each:
   submission.
 - "cannot navigate": not checked; `press` acts on the document the tab shows now, whose
   handles are the only ones the session holds.
+
+## As decided after the adversary's pass
+
+The adversary's cases on the built story (code `b11ed6c`; cases at `8626f23` on
+`adv/press-submit`: `crates/session/tests/adversary_press.rs`, 22 cases, 2 red). Decided by the
+coordinator; line numbers are those at `b11ed6c`:
+
+1. The destination rule applies to the address a request connects to, not only to the host's
+   text. Today the session refuses `forbidden-destination` by reading the host
+   (`crates/session/src/lib.rs:1208`; `host_is_local` at `:1829`, an IP literal or a
+   `localhost` name at `:1837-1840`), and the fetch applies its rule to redirects only
+   (`crates/fetch/src/lib.rs`, "Destinations": "The host of every request of a fetch is resolved
+   once ... the addresses resolved are the ones checked and then dialed"). Decided: for `follow`
+   and `press` from a page that counts as public, the fetch applies that same rule to the first
+   request. The session tells the fetch that the request comes from a public page; a host that
+   resolves to a local address, any one of those resolved, is refused before a connection is
+   made and before a byte is sent, and the session answers `did refused
+   forbidden-destination`. The session's text check stays the first check. `go` with an address
+   the agent typed is not changed. Which page counts as public stays as decided: by its address
+   text, local only when its host is a local IP address or `localhost`. The path, the page and
+   the filled values after this refusal are as after the other `forbidden-destination`; how the
+   session keeps them so when the navigation has started and its fetch fails is the
+   implementor's, with the reason in the unit report. Test:
+   `adversary_press_a_host_name_of_the_loopback_address_from_a_public_page_is_not_refused`
+   (`crates/session/tests/adversary_press.rs:874`, renamed for what it then asserts), which
+   listens on `[::1]` and uses the name `ip6-localhost`; if that name is not portable to the
+   forge's runner (it is `::1` in `/etc/hosts` of Debian, Ubuntu and Manjaro, `:869`), the test
+   uses a `Network` of its own (`crates/fetch/src/lib.rs:397`, `send_through`) with a resolver
+   that maps a name to a local address. `story:agent-follow-links` gains the same rule and one
+   case of the same shape for `follow`.
+2. An action that does not parse is not shown: the button line reads
+   `submits F<n> <method> unresolved`, with no text of the action, which could hold a userinfo.
+   `docs/agent-answer.md:273` ("An action that does not resolve is written as the page wrote
+   it, followed by `unresolved`") changes with it. Test:
+   `adversary_press_an_unresolved_action_shows_no_userinfo` (`:665`).
+3. A form's action and each distinct `formaction` are resolved once per document for an answer,
+   not once per button: today `crates/surf/src/lib.rs:606` parses the action for each node
+   (called per node at `:1856`, from `crates/session/src/lib.rs:1001`); 1,000 buttons with an
+   action of 60,000 bytes took 14.7 s per `look` in a debug build. No test asserts wall time.
+   Case 23 holds the answer of a page of 1,000 buttons with an action of 10,000 bytes (2.5 s per
+   `look` before) and runs under 3 s alone; the unit report gives its time before and after.
+
+Scope: `crates/fetch/src` and `crates/fetch/tests` for decision 1.
