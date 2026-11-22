@@ -588,7 +588,13 @@ so in those words where `https:` is described.
 the file and its bytes travel in the `open` request; not an environment variable, because a
 `surfd` started by an earlier `open` does not see the environment of a later caller. The file
 holds at most 32 KiB and 64 certificates; every block is a `CERTIFICATE`, every certificate a
-CA (basicConstraints cA). Why 32 KiB: an `open` request holds at most `surf_agent::wire::
+CA (basicConstraints cA). The reader of the file is `surf_tls::anchors::Anchors::with_extra_pem`;
+it refuses the file whole with an `AnchorError`: `NoCertificate` (no PEM block),
+`NotACertificate { index, label }` (another label; its content is not decoded), `BadPem {
+index }`, `BadCertificate { index, error }` (the reader's error), `NotACa { index }`,
+`TooLarge` (over 32,768 bytes, before any block is read) or `TooMany` (over 64 blocks, before
+any is decoded). A certificate the reader refuses is not taken as name and key from this file.
+Why 32 KiB: an `open` request holds at most `surf_agent::wire::
 REQUEST_MAX`, 64 KiB with its `end` line (`crates/agent/src/wire.rs:86`), and an `arg` value
 travels quoted (`surf_answer::quote`, `crates/answer/src/lib.rs:221`), which writes a newline
 as `\x0a`, 4 bytes; a PEM file of 64-character lines grows by 3 bytes per line, so 32,768 bytes
@@ -819,8 +825,14 @@ binary). The first of them fixes the form of those files for all four (binary fi
 no such keyword on the line) and states it here through the coordinating agent. If no form
 passes, it is a question to the operator, since the exceptions of the gates policy are his.
 
-BoGo, BoringSSL's TLS suite, is not used: it needs Go and a long run. The lanes: `tls-certs-check`
-and `tls-flights-check` in `check`, `tls-certs-slow` and `tls-flights-slow` in `slow`.
+BoGo, BoringSSL's TLS suite, is not used: it needs Go and a long run. The lanes: `check` runs
+`tls-certs-check` and `tls-flights-check` (digests, no build, no `openssl`) and
+`tls-x509-conformance` (the x509-limbo counts); the task `slow` runs `tls-certs-slow` (the test
+certificates made again and compared byte for byte) and `tls-flights-slow` (the flights
+recorded again and replayed, compared by outcome). `slow` needs `openssl` 3.4 or later; no
+workflow runs it, because the forge's runner pins no `openssl` and three of the certificates
+are bytes `openssl` writes. It is run by hand after a change to the sources of either
+generator.
 
 ## 11. U2 in detail: the bundled anchors
 
