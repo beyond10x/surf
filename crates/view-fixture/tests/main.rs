@@ -3,5 +3,6 @@
 
 #![forbid(unsafe_code)]
 
+mod acceptance;
 mod adversary_commands;
 mod fixture;

@@ -496,7 +496,9 @@ above, and the list of standards itself was written from memory.
     `surf-view-foreign`, waits until it is killed: `tests/fixture.rs` starts it under the name
     `surf-session` as a process that is not the fixture's and that `kill` must leave alive. A
     test starts no program of the system under another name: on the forge's runner `tail`
-    started as `surf-session` exited at once. 2 tests (`fixture` 1, `adversary_commands` 1).
+    started as `surf-session` exited at once. 5 tests (`acceptance` 3, `fixture` 1,
+    `adversary_commands` 1); `acceptance` is the HTTP part of the live view's acceptance case
+    (`story:view-acceptance`), over the pages of `pages/acceptance/`.
     Depends on `surfd`, `surf-view` and `surf-test-process`.
   - `crates/test-process` (`surf-test-process`): test tooling, not shipped and not published: no
     binary that ships depends on it. Whether another process has ended, decided once from
@@ -642,10 +644,12 @@ above, and the list of standards itself was written from memory.
     `entities_table` 2, `inventory` 4, `readers` 2, `tree_format` 2).
 - `view-tests/`: the Playwright tests of the live view's page (`@playwright/test` 1.65.0,
   Chromium's headless shell, a committed `package-lock.json`), each case with its own
-  `surf-view-fixture`: 43 cases, 18 in `tests/first-page.spec.mjs`, 6 in
+  `surf-view-fixture`: 47 cases, 18 in `tests/first-page.spec.mjs`, 6 in
   `tests/adversary-page.spec.mjs`, 6 in `tests/detail.spec.mjs`, 8 in
-  `tests/adversary-detail.spec.mjs` and 5 in `tests/now.spec.mjs` (over the pages of
-  `crates/view-fixture/pages/now/`). Node and Playwright are gate tooling only.
+  `tests/adversary-detail.spec.mjs`, 5 in `tests/now.spec.mjs` (over the pages of
+  `crates/view-fixture/pages/now/`) and 4 in `tests/acceptance.spec.mjs` (the page part of the
+  live view's acceptance case, over `crates/view-fixture/pages/acceptance/`). Node and
+  Playwright are gate tooling only.
 - `conformance/` (`surf-conformance`): runs `.out/suite.json` against the Rust system in process,
   with the runner of `ess-conformance`. A Cargo workspace of its own, outside the root one, with
   its own committed `Cargo.lock` and its own `target/`. It depends on `surf`, `surf-ports` and the
@@ -1217,6 +1221,21 @@ held the 20 entries four `go`s dropped before `story:html-document-port`; the pa
 records `DocumentParsed` and one `ElementAdded` per actionable element, 28 are dropped now,
 and the test derives the number from the entries' `index` since.
 
+With round 2's view unit (`story:view-now-panel`, `story:view-acceptance`, 2026-11-22) `task
+view-test` runs 47 page tests (38 before). The live view's acceptance case of `epic:live-view`
+is seven tests named after its sentences, all in the gate: in `task test`, the binary
+`surf-view-fixture::main` (5 tests, 2 before) runs `acceptance::api_sessions_lists_both_with_token_and_401_without`,
+`acceptance::request_with_another_host_is_refused` and `acceptance::events_deliver_a_go_in_order`
+(each under 1.2 s at a load average of about 90); in `task view-test`,
+`tests/acceptance.spec.mjs` runs `page lists both sessions`, `page line and three links after
+go`, `latest marker moves on second go` and `script in title is shown as text`. The three
+slowest page tests, at a load average of 106 to 140: `an entry over 1 MiB` 29.7 s (three `go`s
+to a 60,000-byte address, then waits up to 30 s each for four segments and the page line of an
+answer over 1 MiB), `adversary: a refused token on the stream stops the page` 15.5 s (a fixed
+`page.waitForTimeout(12_000)` to see that no request follows a refusal) and `dropped entries
+are a gap` 9.7 s (two fixtures of their own, four `go`s, a poll of `/api/sessions` until a
+session reads `closed`).
+
 With `story:ess-0-97-3` (2026-11-22, on `896c64d`), surf builds on ess 0.97.3: `surf v1 — 9
 file(s), 15 scenario(s), valid` and `96 scenario(s) (15 authored), 28 refusal(s)`, as with
 0.96.0. The suite is byte for byte the one 0.96.0 writes, digest
@@ -1313,8 +1332,12 @@ the test does not depend on the runner's speed. In the root workspace, `surf-url
 `crates/url/tests/data/SKIPPED`. `view-stream-check`: `view-stream-check: 19 event name(s),
 each a message of the AsyncAPI projection`. `view-test`: `38 passed (15.8s)`; 12.9 s of it are
 the case that waits to see that a refused token is not sent again. Since `story:view-now-panel`
-it prints `43 passed`: `43 passed (2.7m)` on 2026-11-22 under a load average of about 140 on
-20 CPUs, the five cases of `now.spec.mjs` 2.2 to 3.8 s each and `an entry over 1 MiB` 29.9 s.
+it printed `43 passed (2.7m)` on 2026-11-22 at a load average of about 140 on 20 CPUs, the
+five cases of `now.spec.mjs` 2.2 to 3.8 s each and `an entry over 1 MiB` 29.9 s at a load
+average of about 140. Since `story:view-acceptance` it prints `47 passed`: `47 passed (2.5m)`
+(the task 174 s with its build and `npm ci`) on 2026-11-22 at a load average of 106 to 140,
+the four cases of `acceptance.spec.mjs` 1.9 to 6.0 s each and `an entry over 1 MiB` 29.7 s at
+that load.
 `html-conformance`, the last
 step of `check`: `html-conformance: 9107 cases, 9095 run, 8428 passed` (82 encoding cases,
 7,046 tokenizer cases and 1,300 tree construction cases), with `tag markup 1979/1979/1979`,

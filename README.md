@@ -205,7 +205,7 @@ there instead.
   and hard limits on header and body size.
 - **169 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **877 tests**, built with warnings treated as errors, and 43 tests of the live view's page in
+- **877 tests**, built with warnings treated as errors, and 47 tests of the live view's page in
   a browser.
 
 New with round 1 after the tenth wave of the current plan, shipped in release `0.4.0`:
@@ -472,7 +472,7 @@ test step: 62.3 s of its budget of 120 s
 agent-tasks: 4 tasks, 2 pass, 2 fail, 0 skipped, lane gate, binaries target/debug
 sh-echo: Summary [   2.623s] 40 tests run: 40 passed, 54 skipped
 view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
-  43 passed (2.7m)
+  47 passed (2.5m)
 html-conformance: 9107 cases, 9095 run, 9095 passed
 ```
 
@@ -483,7 +483,9 @@ name of the live view's stream is an event of the specification, runs the live v
 tests in a browser, and last holds the HTML parser's test counts where they are. The tests run
 under cargo-nextest; a test still running after 60 seconds is ended and fails, the test step
 fails when it takes over 120 seconds, and the block leaves out the ten slowest tests the step
-also prints and the agent tasks' rows after their counts. The page tests need Node and
+also prints and the agent tasks' rows after their counts. The page tests' line, `47 passed
+(2.5m)`, was measured at a load average of about 110 to 140 on 20 CPUs, its slowest test (`an
+entry over 1 MiB`) 29.7 s; the 38 of before took 15.8 s. The page tests need Node and
 Chromium's headless shell; with Node there, install the shell once with `npm --prefix view-tests ci`, then `npx --prefix view-tests playwright
 install --only-shell chromium`. The scenario runner in
 [`conformance/`](conformance/) is the one place a third-party crate is used; nothing that
