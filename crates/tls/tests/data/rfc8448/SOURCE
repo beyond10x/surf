@@ -1,0 +1,19 @@
+The data file below is RFC 8448, "Example Handshake Traces for TLS 1.3" (Informational,
+January 2019), copied unchanged from the RFC Editor. The tests of tests/tls/rfc8448.rs read
+the labelled hex blocks of its sections 3, 5 and 7 (docs/design/tls.md, item 10).
+
+address: https://www.rfc-editor.org/rfc/rfc8448.txt
+fetched: 2026-11-22
+bytes: 159343
+licence: the document is subject to BCP 78 and the IETF Trust's Legal Provisions Relating
+  to IETF Documents (https://trustee.ietf.org/license-info) in effect on the date of its
+  publication, as its Copyright Notice states; Copyright (c) 2019 IETF Trust and the persons
+  identified as the document authors. Those provisions allow an RFC to be copied and
+  distributed in full without modification.
+
+The private keys and secrets the trace prints are published example values of that RFC,
+used by no server.
+
+sha256 of each file, path relative to this directory:
+
+6564d1376d1ec744fc7a9993da15ebc1b9be361908b166091f47ef605c537fba  rfc8448.txt
