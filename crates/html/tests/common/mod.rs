@@ -98,7 +98,7 @@ pub fn allocated_while<T>(f: impl FnOnce() -> T) -> (T, usize) {
 
 /// The most bytes these tests let a parse of `input_bytes` bytes allocate, summed over its run
 /// ([`allocated_while`]), given the tree it left: 64 for each input byte, 4 for each stored
-/// byte, 4 × [`NODE_BYTES`] for each node, and 1 MiB. The bound is these tests' own, not a
+/// byte, 4 × [`NODE_BYTES`] for each node, and 64 KiB. The bound is these tests' own, not a
 /// promise of the crate. What a parse allocates: the input as code points, twice (8 bytes a
 /// character); each token's strings and lists, and a tag's set of attribute names (about 250
 /// bytes for an attribute of 6 input bytes); and the tree, whose heap the stored-byte limit
@@ -108,5 +108,5 @@ pub fn allocated_while<T>(f: impl FnOnce() -> T) -> (T, usize) {
 /// of a formatting element copied for each of its end tags (about 61 KB for 4 input bytes with
 /// 1,024 attributes).
 pub fn allocation_bound(input_bytes: usize, tree: &Tree) -> usize {
-    64 * input_bytes + 4 * tree.stored_bytes() + 4 * NODE_BYTES * tree.node_count() + (1 << 20)
+    64 * input_bytes + 4 * tree.stored_bytes() + 4 * NODE_BYTES * tree.node_count() + (1 << 16)
 }

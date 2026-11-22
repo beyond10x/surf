@@ -21,7 +21,9 @@ use surf_html::limits::{ATTRIBUTE_BYTES, Limit, Limits, NODE_BYTES};
 use surf_html::tokenizer::Token;
 use surf_html::{NodeData, NodeId, ParseOptions, Tree, parse_document, parse_document_bytes};
 
-const MIB: usize = 1 << 20;
+/// The size of the inputs that hold a bound per input byte: 64 KiB, as the worst inputs of
+/// `tests/limits.rs` (`story:limit-tests-at-small-limits`).
+const SIZE: usize = 1 << 16;
 
 static SERIAL: Mutex<()> = Mutex::new(());
 
@@ -244,15 +246,15 @@ const HEAP_PER_INPUT_BYTE: usize = 32;
 /// one character token per letter at once (`machine.rs:1846`), so the tokenizer's queue holds
 /// one `Token` (80 bytes) per input byte before the tree builder takes the first. A 16 MiB input
 /// holds about 1.3 to 2.6 GB (inferred from the size of `Token` and the queue's doubling). The
-/// control, the same length of plain text, stays inside the same bound.
+/// control, the same length of plain text, stays inside the same bound. Both run at [`SIZE`].
 #[test]
 fn a_long_end_tag_name_in_rcdata_holds_no_token_per_input_byte() {
     let _serial = serial();
     let options = ParseOptions::default();
-    let plain = "x".repeat(MIB);
+    let plain = "x".repeat(SIZE);
     let (tree, plain_peak) = peak_while(|| parse_document(&plain, &options));
     drop(tree);
-    let input = format!("<title></{}", "a".repeat(MIB));
+    let input = format!("<title></{}", "a".repeat(SIZE));
     let (tree, peak) = peak_while(|| parse_document(&input, &options));
     println!(
         "measured: peak heap {peak} bytes for {} input bytes ({} per byte); plain text {plain_peak} \
@@ -282,14 +284,15 @@ fn a_long_end_tag_name_in_rcdata_holds_no_token_per_input_byte() {
 ///
 /// Since the fix unit the bound is the one `Limits::max_stored_bytes` promises: 2 bytes of heap
 /// per stored byte (each attribute counts its 80-byte record) and 3 × `NODE_BYTES` (408) per
-/// node.
+/// node. The bound is per stored byte and per node with no constant term, so 40 `span` hold it
+/// as 400 did.
 #[test]
 fn the_heap_of_a_tree_is_bounded_by_its_stored_bytes_and_nodes() {
     let _serial = serial();
     let unit = format!("<span{}></span>", short_attributes(1_024));
     let before = live();
     let tree = {
-        let input = unit.repeat(400);
+        let input = unit.repeat(40);
         parse_document(&input, &ParseOptions::default())
     };
     let held = (live() - before).max(0) as usize;
@@ -435,25 +438,25 @@ fn a_template_needs_room_for_two_nodes() {
 
 /// Holds the code to `docs/design/html-parser.md` item 7, "The default is twice the visits a
 /// 16 MiB page of the kind of five large documentation pages would make (at most 3.8 visits per
-/// input byte)", and to `tests/limits.rs`' 1 MiB form ("`max_steps` 2^23, the same visits per
-/// input byte"): every character in body reconstructs the active formatting elements, which asks
-/// whether the last entry is open from the current node down, so text 20 elements below an
-/// unclosed `<b>` costs 20 steps per byte, and a 1 MiB page of it is cut by the step limit.
-/// Severity note: a sloppy page, not an attack.
+/// input byte)", and to `tests/limits.rs`' small form (`max_steps` 8 × the input's size, the
+/// same visits per input byte): every character in body reconstructs the active formatting
+/// elements, which asks whether the last entry is open from the current node down, so text 20
+/// elements below an unclosed `<b>` costs 20 steps per byte, and a page of it is cut by the step
+/// limit. Severity note: a sloppy page, not an attack.
 ///
 /// Added by the fix unit: the characters cost no step at all (the 20 `div` start tags cost 250,
 /// each scanning the stack for a `p` in button scope), so consecutive characters do not pay
-/// again for each character.
+/// again for each character. The page is [`SIZE`] bytes.
 #[test]
 fn text_twenty_elements_below_an_unclosed_b_is_not_cut_by_the_step_limit() {
     let _serial = serial();
     let mut input = String::from("<b>");
     input.push_str(&"<div>".repeat(20));
-    input.push_str(&"x".repeat(MIB - input.len()));
+    input.push_str(&"x".repeat(SIZE - input.len()));
     let tree = parse_document(
         &input,
         &with_limits(Limits {
-            max_steps: 1 << 23,
+            max_steps: 8 * SIZE,
             ..Limits::default()
         }),
     );
@@ -575,14 +578,16 @@ fn small_limits(k: usize) -> Limits {
 
 /// Holds the code to the crate documentation, "Limits": "the tree holds every node inserted
 /// before that point", and `Tree::stored_bytes` "the UTF-8 bytes of every string the tree holds
-/// … in every node of the arena": after 3,000 seeded parses, stopped or not, each tree is well
-/// formed ([`check_well_formed`]) and its stored bytes exact when every node is reachable.
+/// … in every node of the arena": after 1,000 seeded parses, stopped or not, each tree is well
+/// formed ([`check_well_formed`]) and its stored bytes exact when every node is reachable. All
+/// 7 outcomes (no stop and each of the six limits) are seen, so a limit that can stop no input
+/// turns it red.
 #[test]
 fn every_stopped_tree_is_well_formed_and_its_stored_bytes_exact() {
     let _serial = serial();
     let mut random = Seeded(0xAD0E_25A1_0000_0007);
     let mut stopped = std::collections::HashMap::new();
-    for n in 0..3_000 {
+    for n in 0..1_000 {
         let input = seeded_input(&mut random);
         let limits = small_limits(n);
         let options = with_limits(limits);
@@ -595,7 +600,7 @@ fn every_stopped_tree_is_well_formed_and_its_stored_bytes_exact() {
         *stopped.entry(tree.stopped_by()).or_insert(0) += 1;
     }
     println!("measured: stopped by {stopped:?}");
-    assert!(stopped.len() >= 6, "{stopped:?}");
+    assert_eq!(stopped.len(), 7, "{stopped:?}");
 }
 
 /// Holds the code to lib.rs: `parse_document_bytes` runs "the tokenizer and tree construction
