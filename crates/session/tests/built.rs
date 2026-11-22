@@ -1,12 +1,14 @@
 //! Cases 2, 3, 5, 6, 12, 13 and 14 of `story:agent-session-process`, on the built programs: the
 //! first two through `surf-agent` and `surfd`, the others on a `surf-session` the test starts as
-//! `surfd` starts it. Two more: a request slower than the read deadline is closed and the next
-//! one is served, and an argument shape other than the story's exits 2 without `ready`.
+//! `surfd` starts it. More: a request slower than the read deadline (`--request-timeout 1`) is
+//! closed and the next one is served, the shipped read deadline is 10 s, the two options are
+//! taken in either order, and an argument shape other than the story's exits 2 without `ready`.
 
 #![forbid(unsafe_code)]
 
 use crate::common;
 
+use std::ffi::OsString;
 use std::fs;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
@@ -17,7 +19,8 @@ use common::{
     PageServer, Started, TestDir, agent_call, agent_open, cmdline, contains, opened, path_block,
     regular_files_under, request, session_program, surfd_in_process, wire_as, wire_call, wire_open,
 };
-use surf_agent::wire::REQUEST_MAX;
+use surf_agent::wire::{REQUEST_MAX, REQUEST_TIMEOUT};
+use surf_session::process;
 use surfd::link::{self, LinkError, SessionState};
 
 /// `look` with its own token on the session the test started.
@@ -247,18 +250,48 @@ fn standard_output_holds_ready_only() {
 #[test]
 fn request_slower_than_its_deadline_is_closed() {
     let dir = TestDir::new();
-    let session = Started::start(&dir, &[]);
+    let session = Started::start(&dir, &["--request-timeout", "1"]);
     let token = session.open();
     let mut slow = UnixStream::connect(&session.socket).unwrap();
     slow.write_all(b"surf-wire 1\ncommand look\n").unwrap();
     let started = Instant::now();
     let answer = look(&session, &token);
     assert_eq!(answer.status, 0);
+    let waited = started.elapsed();
     assert!(
-        started.elapsed() < Duration::from_secs(50),
-        "the next request waited {:?}, five times the read deadline of 10 seconds is 50",
-        started.elapsed()
+        waited < Duration::from_secs(5),
+        "the next request waited {waited:?}, five times the read deadline of 1 second is 5"
     );
+}
+
+#[test]
+fn the_shipped_read_deadline_is_10_seconds() {
+    assert_eq!(REQUEST_TIMEOUT, Duration::from_secs(10));
+}
+
+#[test]
+fn the_two_options_in_either_order() {
+    let identity = "0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b";
+    for options in [
+        ["--request-timeout", "3", "--idle-timeout", "5"],
+        ["--idle-timeout", "5", "--request-timeout", "3"],
+    ] {
+        let dir = TestDir::new();
+        let session = Started::start(&dir, &options);
+        assert_eq!(session.line, "ready\n", "{options:?}");
+        let words: Vec<OsString> = options
+            .iter()
+            .copied()
+            .chain([identity, "/s"])
+            .map(OsString::from)
+            .collect();
+        let arguments = process::arguments(&words).expect("the shape is accepted");
+        assert_eq!(
+            (arguments.request_timeout, arguments.idle_timeout),
+            (Duration::from_secs(3), Duration::from_secs(5)),
+            "{options:?}"
+        );
+    }
 }
 
 #[test]
@@ -282,6 +315,33 @@ fn other_argument_shapes_exit_2() {
             "0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b",
             socket,
         ],
+        vec![
+            "--request-timeout",
+            "0",
+            "0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b",
+            socket,
+        ],
+        vec![
+            "--request-timeout",
+            "0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b",
+            socket,
+        ],
+        vec![
+            "--request-timeout",
+            "1",
+            "--request-timeout",
+            "1",
+            "0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b",
+            socket,
+        ],
+        vec![
+            "--idle-timeout",
+            "1",
+            "--idle-timeout",
+            "1",
+            "0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b",
+            socket,
+        ],
         vec!["--verbose", "0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b", socket],
         vec!["0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b", socket, "extra"],
     ] {
@@ -302,6 +362,164 @@ fn other_argument_shapes_exit_2() {
         assert!(
             !std::path::Path::new(socket).exists(),
             "{args:?} bound the socket"
+        );
+    }
+}
+
+/// The identity the argument cases below use.
+const IDENTITY: &str = "0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b";
+
+/// `(request_timeout, idle_timeout)` that `parse` returns for `options`, the identity and a socket.
+fn deadlines(
+    parse: impl Fn(&[OsString]) -> Option<process::Arguments>,
+    options: &[&str],
+) -> (Duration, Duration) {
+    let words: Vec<OsString> = options
+        .iter()
+        .copied()
+        .chain([IDENTITY, "/s"])
+        .map(OsString::from)
+        .collect();
+    let arguments = parse(&words).unwrap_or_else(|| panic!("{options:?} is accepted"));
+    (arguments.request_timeout, arguments.idle_timeout)
+}
+
+/// Asserts that a missing option keeps the shipped deadline and that each option sets only its
+/// own: what `surfd`, which passes neither, gets.
+fn assert_each_option_sets_only_its_own_deadline(
+    parse: impl Fn(&[OsString]) -> Option<process::Arguments>,
+) {
+    let (ten_seconds, half_an_hour) = (Duration::from_secs(10), Duration::from_secs(30 * 60));
+    assert_eq!(
+        deadlines(&parse, &[]),
+        (ten_seconds, half_an_hour),
+        "no option: the read deadline of 10 s and the idle timeout of 30 min"
+    );
+    assert_eq!(
+        deadlines(&parse, &["--request-timeout", "2"]),
+        (Duration::from_secs(2), half_an_hour),
+        "--request-timeout 2 alone"
+    );
+    assert_eq!(
+        deadlines(&parse, &["--idle-timeout", "2"]),
+        (ten_seconds, Duration::from_secs(2)),
+        "--idle-timeout 2 alone"
+    );
+}
+
+#[test]
+fn each_option_sets_only_its_own_deadline() {
+    assert_each_option_sets_only_its_own_deadline(process::arguments);
+}
+
+/// Starts a session with each of `options`, sends half of a `look`, waits 1.5 s, sends the rest;
+/// asserts that each session answers it.
+fn assert_answered_after_a_pause(options: &[&[&str]]) {
+    let dir = TestDir::new();
+    let sessions: Vec<Started> = options
+        .iter()
+        .map(|options| Started::start(&dir, options))
+        .collect();
+    let mut halves = Vec::new();
+    for session in &sessions {
+        let token = session.open();
+        let bytes = request("look", Some(&session.id), Some(&token), &[])
+            .encode()
+            .unwrap();
+        let (first, last) = bytes.split_at(bytes.len() / 2);
+        let mut stream = UnixStream::connect(&session.socket).unwrap();
+        stream.write_all(first).unwrap();
+        halves.push((stream, last.to_vec()));
+    }
+    std::thread::sleep(Duration::from_millis(1500));
+    for ((mut stream, last), options) in halves.into_iter().zip(options) {
+        let wrote = stream.write_all(&last);
+        let _ = stream.shutdown(std::net::Shutdown::Write);
+        let answer = link::read_answer(&mut stream, Instant::now() + Duration::from_secs(10));
+        assert!(
+            matches!(&answer, Ok(answer) if answer.status == 0),
+            "{options:?}: a request that ended 1.5 s after it began was not answered: \
+             {answer:?} (the second half: {wrote:?})"
+        );
+    }
+}
+
+#[test]
+fn a_request_within_its_deadline_is_answered() {
+    assert_answered_after_a_pause(&[&[], &["--request-timeout", "3"]]);
+}
+
+#[test]
+fn more_argument_shapes_exit_2() {
+    use std::os::unix::ffi::OsStringExt;
+    let dir = TestDir::new();
+    let socket = dir.session_socket(IDENTITY);
+    let socket = socket.to_str().unwrap();
+    let id = IDENTITY;
+    let mut shapes: Vec<Vec<OsString>> = [
+        vec![id, socket, "--request-timeout", "1"],
+        vec![id, "--request-timeout", "1", socket],
+        vec!["--request-timeout=1", id, socket],
+        vec!["--request-timeout", "-1", id, socket],
+        vec!["--request-timeout", "+1", id, socket],
+        vec!["--request-timeout", " 1", id, socket],
+        vec!["--request-timeout", "1 ", id, socket],
+        vec!["--request-timeout", "", id, socket],
+        vec!["--request-timeout", "1.5", id, socket],
+        vec!["--request-timeout", "0x1", id, socket],
+        vec!["--request-timeout", "\u{ff11}", id, socket],
+        vec!["--request-timeout", "18446744073709551616", id, socket],
+        vec!["--request-timeout", "00", id, socket],
+        vec!["--request-timeout", "--idle-timeout", "1", id, socket],
+        vec!["--request-timeout", "1", "--idle-timeout", id, socket],
+        vec!["--request-timeout", "1", id],
+        vec!["--request-timeout", "1", "--", id, socket],
+        vec!["--Request-Timeout", "1", id, socket],
+        vec![
+            "--request-timeout",
+            "1",
+            "--idle-timeout",
+            "1",
+            "--request-timeout",
+            "2",
+            id,
+            socket,
+        ],
+        vec![
+            "--idle-timeout",
+            "1",
+            "--request-timeout",
+            "1",
+            "--idle-timeout",
+            "2",
+            id,
+            socket,
+        ],
+    ]
+    .into_iter()
+    .map(|words| words.into_iter().map(OsString::from).collect())
+    .collect();
+    shapes.push(vec![
+        OsString::from("--request-timeout"),
+        OsString::from_vec(vec![0xff]),
+        OsString::from(id),
+        OsString::from(socket),
+    ]);
+    for args in shapes {
+        let output = Command::new(session_program())
+            .args(&args)
+            .env_clear()
+            .env("XDG_RUNTIME_DIR", dir.runtime())
+            .current_dir(dir.runtime())
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert!(
+            output.stdout.is_empty(),
+            "{args:?} wrote {:?}",
+            output.stdout
         );
     }
 }

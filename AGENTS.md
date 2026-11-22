@@ -149,7 +149,8 @@ above, and the list of standards itself was written from memory.
   `test-layout` and `test-layout-test` over `taskfiles/test-layout.sh`;
   `taskfiles/agent-tasks.yml` the tasks `agent-tasks-report`, `agent-tasks-archive` and
   `agent-tasks-model` (over `taskfiles/agent-tasks-model.sh`); `taskfiles/sh-echo.yml` the tasks
-  `sh-echo` and `sh-echo-test` over `taskfiles/sh-echo.sh`;
+  `sh-echo` and `sh-echo-test` over `taskfiles/sh-echo.sh`; `taskfiles/doc-tests.yml` the tasks
+  `doc-tests-check` and `doc-tests-check-test` over `taskfiles/doc-tests-check.sh`;
   `taskfiles/tls-anchors.yml` the tasks `anchors-refresh` (fetches curl's `cacert.pem` and
   its `.sha256` with curl, or takes `FILE=<pem> SHA256=<file>`, refuses a sha256 that
   differs, writes `cacert.pem` and `SOURCE`; it reaches the network and is never a step of
@@ -1142,7 +1143,9 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `agent-tasks-report` and ends with `sh-echo-test`. Since the TLS stories it runs
   `tls-certs-check` and `tls-flights-check` after `test-layout` and `tls-x509-conformance`
   after `html-conformance`. The tests of the four TLS packages run in `test-tls`, right after
-  `test`, with a budget of 120 s of its own: the two steps' times are not added up.
+  `test`, with a budget of 120 s of its own: the two steps' times are not added up. Since
+  `story:doc-tests-of-one-package` it runs `doc-tests-check` after `tls-flights-check`, before
+  `build`, and ends with `doc-tests-check-test`, after `sh-echo-test`.
 - `task check-runner`: the gate to run before a merge, `task check` as the forge's runner runs
   it (`taskfiles/check-runner.sh`; `slot task check-runner`). What it does differently from
   `task check`: it runs in `.out/runner/tree`, a clean export of `HEAD` (a clone sharing this
@@ -1264,6 +1267,27 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   script on a copy of `taskfiles/agent-tasks-model.sh` (`ADVERSARY_MODEL_SCRIPT`): the copy as
   it is passes, the copy whose wrapper's awk program is written with `echo` fails.
   `SCRIPT=<path>` runs a copy of the script.
+- `task doc-tests-check`: `sh taskfiles/doc-tests-check.sh .`. `task test` runs the doc tests of
+  `surf-ports` only, so in a doc comment outside `crates/ports` a code block is fenced and
+  marked `text` (` ```text ` or `~~~text`), which rustdoc does not run; a doc test belongs in
+  `crates/ports`. The script reads every `*.rs` under `crates/` and `generated/` but those under
+  `crates/ports/` (`target` and dot directories not entered), follows the fences of the `///`
+  and `//!` lines of each file (a line that starts, after the mark and blanks, with three
+  backticks or three tildes opens a block when none is open and closes it otherwise), and
+  fails, naming `<file>:<line>`, on an opening fence whose mark is not `text` and on a line
+  that holds `#[doc =` or `#![doc =`. Else it prints `doc-tests-check: no doc test outside
+  crates/ports`. A code block written by indentation in a doc comment is outside its reach:
+  rustdoc would run it and the gate would not, so write every code block with a fence. Not seen
+  either: a block doc comment (`/** */`, `/*! */`) and a doc attribute through `cfg_attr` or a
+  macro. It calls no cargo.
+- `task doc-tests-check-test`: that script on small trees under `.out/doc-tests-check-test/`,
+  thirteen cases, each compared on its exit status and the line printed: a fence without a
+  mark, `rust,no_run`, a fence of tildes without a mark, a `text` block followed by a block
+  without a mark (named at the second block's line), `#[doc = "…"]`, `#![doc = "…"]` and a
+  `//!` fence without a mark under `generated/` fail; fences marked `text` pass, and so does
+  each failing form under `crates/ports/`, a `target` directory, a dot directory and in a
+  `////` comment; a root without `crates/` and `generated/` exits 2. `SCRIPT=<path>` runs a
+  copy of the script.
 - `task release-smoke DIR=<unpacked archive>`: `taskfiles/release-smoke.sh` on a release
   archive, as the release workflow runs it (`docs/releasing.md`).
 - `task validate`, `task suite`, `task conform`: the specification steps on their own.
@@ -1311,8 +1335,10 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   (`--exclude` for each name of `TLS_PACKAGES` in `Taskfile.yml`: `surf-tls`,
   `surf-tls-test-server`, `surf-tls-test-certs`, `surf-tls-conformance`, whose tests `task
   test-tls` runs, below; cargo-nextest 0.9.143,
-  installed as a tool; no crate of the workspace changes) and `cargo test --doc --workspace
-  --locked`, which nextest does not run, with `RUSTFLAGS=-D warnings`. The ten slowest tests come from
+  installed as a tool; no crate of the workspace changes) and `cargo test --doc -p surf-ports
+  --locked`, the doc tests of `surf-ports` only (the two of the workspace; `task
+  doc-tests-check` holds that no other package has one), which nextest does not run, with
+  `RUSTFLAGS=-D warnings`. The ten slowest tests come from
   `taskfiles/slowest-tests.sh <junit file> [count]` (POSIX sh, pipefail where the shell has
   it), held by `crates/surf/tests/slowest_tests.rs` on a report of 2,000 cases. Under
   `pipefail` no pipeline of a task ends its reader before its input (no `| head`, `grep -q` or
@@ -1516,8 +1542,10 @@ of the last of those runs: `review1_one_changed_byte_in_any_generated_file_fails
 (`surf-session` `adversary_events`) 7.2 s, `surfd_that_writes_nothing_exits_3_within_6_seconds`
 (`surf-agent` `start`) 5.1 s, `every_character_is_written_as_printable_ascii_and_reads_back`
 (`surf` `escape`) 4.8 s, then five tests of `surf-view` and `surf-session` between 2.3 and 3.7
-s. Three of them waited on purpose. `built` waits out a deadline of the product
-(`wire::REQUEST_TIMEOUT`, 10 s, in `crates/agent/src/wire.rs`). Since
+s. Three of them waited on purpose. `built` waits out a deadline of the product, the read
+deadline of one request; since `story:session-request-timeout-option` it starts `surf-session`
+with `--request-timeout 1` and waits 1 s instead of the shipped `wire::REQUEST_TIMEOUT` of 10 s
+(`crates/agent/src/wire.rs`), which `the_shipped_read_deadline_is_10_seconds` asserts. Since
 `story:test-step-holds-with-tls` the other two wait less: `start`'s case, now
 `surfd_that_writes_nothing_exits_3_within_its_start_timeout`, runs `client::run` in the test
 process with a start timeout of 0.5 s instead of the binary's `wire::START_TIMEOUT` of 5 s (the

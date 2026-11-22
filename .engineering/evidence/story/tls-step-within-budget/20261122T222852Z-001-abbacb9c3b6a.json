@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T22:28:52Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-step-within-budget",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "forge: check run 45077474502 on main at 7d15e06, the merge of wave/tls-1",
+    "reference": "success; test step: 18.8 s of its budget of 120 s; tls test step: 6.5 s of its budget of 120 s; 890 and 545 tests passed (acceptance 5)"
+  }
+}

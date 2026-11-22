@@ -9,6 +9,7 @@ relations:
 - decomposes: epic:headless-rust-target
 - informed_by: story:time-bounds-in-tests
 - supersedes: story:slow-tests-at-small-bounds
+- depends_on: story:doc-tests-of-one-package
 scope:
 - confidence: cited
   path: .cargo/config.toml
@@ -56,7 +57,7 @@ scope:
   path: taskfiles/conform-totals.sh
 - confidence: cited
   path: taskfiles/generated-compare.sh
-revision: 49
+revision: 50
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T19:52:19Z", actor: "human:operator", revision: 48, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T19:52:19Z", actor: "human:operator", revision: 49, decided_on: {"recorded":{"verification":1}}}
@@ -390,7 +391,9 @@ under 20) is replaced by acceptance 3 here; 2 (load over 100, no test over 20 s,
 
 - No higher test-thread count, no shards, no raised budget or timeout.
 - No test moves to the lane `slow`: none of these regenerates anything from sources.
-- No change of the doc step (measured: no gain), of the load, or of the pool.
+- No change of the doc step: `story:doc-tests-of-one-package` owns it. One run each at a load
+  of 107 to 119 showed no gain here; three alternating pairs at a load of 147 to 177 showed a
+  median gain of 20.7 s there. No change of the load or of the pool.
 - No TLS test and no file under `crates/tls*`: `story:tls-tests-as-tables`. No `ring` override.
 - The session's `--request-timeout`: `story:session-request-timeout-option`.
 - The page-test step (`task view-test`, Playwright's `timeout: 90_000` over the rule's 60 s):

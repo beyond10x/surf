@@ -67,6 +67,10 @@ includes:
     taskfile: taskfiles/sh-echo.yml
     flatten: true
     optional: true
+  doc-tests:
+    taskfile: taskfiles/doc-tests.yml
+    flatten: true
+    optional: true
 
 vars:
   REFUSALS_MAX: 48
@@ -281,9 +285,9 @@ tasks:
       - tail -n 1 .out/build.log
 
   test:
-    desc: Test the root workspace but the four TLS packages with cargo-nextest and its doc tests with cargo test, warnings denied, within 120 s.
+    desc: Test the root workspace but the four TLS packages with cargo-nextest and the doc tests of surf-ports with cargo test, warnings denied, within 120 s.
     summary: |
-      Test the root workspace but the four TLS packages with cargo-nextest and its doc tests with cargo test, warnings denied, within 120 s.
+      Test the root workspace but the four TLS packages with cargo-nextest and the doc tests of surf-ports with cargo test, warnings denied, within 120 s.
 
       cargo nextest run --workspace --exclude <each of TLS_PACKAGES> runs every test but the doc
       tests and the tests of surf-tls, surf-tls-test-server, surf-tls-test-certs and
@@ -291,8 +295,10 @@ tasks:
       per test, as .config/nextest.toml sets it: a test still running after 60 s is ended and
       fails, and a failure does not stop the run. Its log is .out/test.log; nextest writes its
       JUnit report to target/nextest/default/junit.xml, which the task copies to
-      .out/test-junit.xml. cargo test --doc --workspace runs the doc tests, which nextest does not
-      run, into .out/test-doc.log.
+      .out/test-junit.xml. cargo test --doc -p surf-ports runs the doc tests, which nextest does
+      not run, into .out/test-doc.log: surf-ports holds the two doc tests of the workspace, and
+      task doc-tests-check fails on a doc test in any other package, so rustdoc is not started
+      for the others.
 
       It prints the ten slowest tests from .out/test-junit.xml, nextest's summary line, and one
       count line for what it ran: "N tests: P passed, F failed, I ignored", where N is what
@@ -321,7 +327,7 @@ tasks:
         tests=0
         cargo nextest run --workspace{{range .TLS_PACKAGES}} --exclude {{.}}{{end}} --locked --color never > .out/test.log 2>&1 || tests=1
         docs=0
-        cargo test --doc --workspace --locked --color never > .out/test-doc.log 2>&1 || docs=1
+        cargo test --doc -p surf-ports --locked --color never > .out/test-doc.log 2>&1 || docs=1
         elapsed=$(( ($(date +%s%N) - start) / 1000000 ))
         if [ -f target/nextest/default/junit.xml ]; then cp target/nextest/default/junit.xml "$junit"; fi
         if [ "$tests" -ne 0 ]; then cat .out/test.log; fi
@@ -423,6 +429,7 @@ tasks:
       - task: test-layout
       - task: tls-certs-check
       - task: tls-flights-check
+      - task: doc-tests-check
       - task: build
       - task: test
       - task: test-tls
@@ -436,6 +443,7 @@ tasks:
       - task: planning-only-test
       - task: test-layout-test
       - task: sh-echo-test
+      - task: doc-tests-check-test
 
   slow:
     desc: Make the committed products of the TLS tests again and compare them with the committed files (the test certificates byte for byte, the recorded flights by outcome); needs openssl 3.4 or later; never a step of check.

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-step-within-budget
 kind: story
-status: active
+status: implemented
 title: The TLS tests run in a gate step of their own within 120 s
 summary: 'wave/tls-1 at 48f05c2: task test 130.1 s at load 110 to 127, over 120 s, 545 of its 1,432 tests in the four TLS packages; task test-tls runs those under the 60 s end with its own budget of 120 s; the wave merges when both steps hold'
 relations:
@@ -17,10 +17,11 @@ scope:
   path: Taskfile.yml
 - confidence: cited
   path: crates/surf/tests/slowest_tests.rs
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T21:57:12Z", actor: "human:operator", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-22T21:57:13Z", actor: "human:operator", revision: 5}
+- {from: "active", to: "implemented", at: "2026-11-22T22:28:53Z", actor: "human:operator", revision: 8, decided_on: {"recorded":{"test_result":2,"verification":2}}, executor: "agent:coordinator"}
 ---
 ## Why
 
