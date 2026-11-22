@@ -46,7 +46,7 @@ scope:
   path: spec/domains/agent.yaml
 - confidence: inferred
   path: website/docs/drive-from-an-agent.md
-revision: 14
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 6}
@@ -84,6 +84,20 @@ it, like every page-derived field, and corrects that line.
   - `UnsupportedScheme`: `unsupported-scheme`, case 8;
   - `UnsupportedEnctype`: `unsupported-enctype`, case 7;
   - `DialogMethod`: `dialog-method`, case 15.
+- `password-in-query` is the session's refusal, like `no-default-action` and not one of the
+  specification's `SubmissionEndReason` values: `press` on a submit button whose form has method
+  `GET` and whose entry list holds a control of `type=password` with a non-empty value is
+  refused before any submission starts, `did refused password-in-query`, exit status 1 as the
+  other session refusals, with no event of a submission and no request. A `GET` submission
+  would put the value into the URL, which the event log writes as text (`FormSubmitted.url`,
+  `RequestStarted.url` and the fields after them) and the `page` and `path` lines print; story
+  `values-and-labels-before-fill` promises that a password value is printed nowhere. A `GET`
+  form whose password control is empty or absent is submitted as before; a `POST` form is not
+  affected (its body is logged as `<n> bytes`). The limit: a site whose sign-in form uses `GET`
+  cannot be signed in to; the refusal names why. A filled value reaches no URL by `follow` or
+  `go`: `SetValue` sets only the control's `value` (`spec/domains/document.yaml:785-786`),
+  `follow` takes the link's `href` and `go` the address typed, so only a submission builds a
+  URL from control values. Cases 16 and 17.
 - `crates/answer`, `docs/agent-answer.md`: the `submits` part of a button line, with its `parse`
   beside its rendering (decision D20 of `docs/plan/agent-plan-revision-2.md`).
 - The event entries exist already: `PressRequested`, `SubmissionStarted`, `FormSubmitted` (the
@@ -94,10 +108,11 @@ it, like every page-derived field, and corrects that line.
   typed it. The `path` entry takes the form `story:agent-follow-links` gives an action on an
   element (`spec/domains/agent.yaml:302-304`): `<n> press b1`, the handle bare (the design shows
   no `press` entry; `docs/design/agent-interface.md:223` shows `3 fill f1`, and this follows it).
-  The reasons `no-default-action`, `disabled` (if `agent-fill-pick` has not added it) and the six
-  submission words above go into the reason table of `docs/agent-answer.md` with exit status 1,
-  into `RefusalReason` and its `RefusalReason::ALL` (`crates/answer/src/lib.rs:150`), into the
-  exhaustive `match` of `crates/surfd/src/daemon.rs:815-821`, and into a test.
+  The reasons `no-default-action`, `password-in-query`, `disabled` (if `agent-fill-pick` has not
+  added it) and the six submission words above go into the reason table of
+  `docs/agent-answer.md` with exit status 1, into `RefusalReason` and its `RefusalReason::ALL`
+  (`crates/answer/src/lib.rs:150`), into `refusal_status` (`crates/session/src/lib.rs:924`),
+  into the exhaustive `match` of `crates/surfd/src/daemon.rs:815-821`, and into a test.
 - `cli/surf-agent.yaml`, `crates/agent`: `press`, together, so the drift test holds.
 - `crates/session/tests/`, the counted cases, against a server the test starts:
   1. a login form filled and pressed: the server reads `POST /session HTTP/1.1` with
@@ -121,7 +136,13 @@ it, like every page-derived field, and corrects that line.
       answer, and rendering that gives the same lines byte for byte;
   12. a submit button with no form owner: `no-form-owner`; 13. a `required` field left empty:
       `invalid-controls`; 14. an action that does not parse as a URL: `invalid-action`;
-  15. a form with `method="dialog"`: `dialog-method`.
+  15. a form with `method="dialog"`: `dialog-method`;
+  16. `password_in_query_is_refused`: a `GET` form with a text field and a password control,
+      the password filled with `s3cret-get`, pressed: status 1, `did refused password-in-query`;
+      the server's log shows no request, and no entry of the event log (with `surfd` run in the
+      test process, decision D29) holds a byte of `s3cret-get`;
+  17. the same `GET` form with the password control left empty, pressed: submitted, the server
+      reads `GET` with the entries in the query.
 
 - `crates/agent-tasks/status.txt`, the round's measure: `search pass` (line 4). A task listed
   `pending` that passes makes the report print `raise: search` (`crates/agent-tasks/src/report.rs:9-14`),
@@ -138,7 +159,7 @@ Surfaces written: `crates/session/`, `crates/answer/`, `docs/agent-answer.md`,
 
 ## Acceptance
 
-`cargo nextest run -p surf-session` passes with the 15 numbered cases, each a test named after its
+`cargo nextest run -p surf-session` passes with the 17 numbered cases, each a test named after its
 case, case 1 reading the request line `POST /session HTTP/1.1` and the body
 `user=ada&password=s3cret` and answering with the page at `/home`. The round's measure:
 `crates/agent-tasks/status.txt` reads `search pass` (line 4 reads `search pending
