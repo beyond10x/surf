@@ -128,8 +128,12 @@
 //!   algorithm's scans and its walk to the root), and every child visited in a parent's child
 //!   list (inserting before a reference, finding the text node to append to, removing a node,
 //!   moving children, looking for an element child). The count is checked after each token:
-//!   the token that takes it past the limit is processed whole, then parsing stops;
-//!   [`Tree::steps`] reads the count a parse ended with. "Is in the stack of open elements"
+//!   the token that takes it past the limit is processed whole, then parsing stops. The
+//!   `selectedcontent` update after the end-of-file token counts every node it visits and
+//!   copies and is checked after each, so it stops where it passes the limit.
+//!   [`Tree::steps`] reads the count a parse ended with. A scan of a child list for a reference
+//!   starts at the last child, where the `table` of foster parenting stays while it is open.
+//!   "Is in the stack of open elements"
 //!   visits no entry (the stack keeps a count for each node), so a reconstruction with nothing
 //!   to reconstruct, as before every character of a text, costs no step. The other
 //!   five limits bound memory; this one bounds time, which they do not: an input inside them can

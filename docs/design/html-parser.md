@@ -530,6 +530,8 @@ section tree-construction https://html.spec.whatwg.org/multipage/parsing.html#tr
 open tree-construction script-processing The script start tag in head and the script end tag in the text insertion mode: the script element's parser flags, preparing and running the script, the script nesting level and the parser pause.
 open tree-construction custom-element-creation Create an element for a token: looking up a custom element definition, willExecuteScript, the constructor and the element reactions.
 open tree-construction declarative-shadow-roots The template start tag in head with a shadowrootmode attribute: attaching a declarative shadow root.
+open tree-construction template-content-patching The template start tag in head with a for attribute: content patching, which moves the template's content into the element it marks; surf keeps it in the template contents.
+open tree-construction selectedcontent-update-timing The select element's queued update of its selectedcontent elements from the option and selectedcontent insertion steps: surf runs it once after the end-of-file token, for a document only.
 wpt tree-construction html/syntax/parsing/html5lib_write.html script
 wpt tree-construction html/syntax/parsing/html5lib_write_single.html script
 wpt tree-construction html/syntax/parsing/adoption-agency-reparenting.html script
@@ -681,11 +683,13 @@ section's cases) and the reasons:
 - `coercing-an-html-dom-into-an-infoset`: incomplete, 0/4, 4 not run (`xml-infoset`); open
   `not-taken`.
 
-Two parts of the parser differ in form from the standard and are not `open` lines, as no case of
-the pinned data tells them apart: the snapshot's template content patching (the `for` attribute
-of a `template` start tag in head) is not taken, and the update of a `select`'s
+Two parts of the parser differ from the standard; no case of the pinned data reaches either,
+and each is an `open` line of `tree-construction`. `template-content-patching`: the snapshot's
+content patching (a `template` start tag with a `for` attribute) is not taken, so the result
+differs: the standard patches the template's content into the element it marks, and surf keeps
+it inert in the template contents. `selectedcontent-update-timing`: the update of a `select`'s
 `selectedcontent` elements runs once at the end of a document's parse instead of from a queued
-microtask, which no script can observe here.
+microtask; that differs in form only, as no script runs to observe the tree in between.
 
 ## 9. The inventory and the script hooks
 
