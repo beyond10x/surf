@@ -48,7 +48,7 @@ scope:
   path: spec/domains/agent.yaml
 - confidence: inferred
   path: website/docs/drive-from-an-agent.md
-revision: 18
+revision: 19
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 6}
@@ -57,8 +57,9 @@ transitions:
 
 Step 4 of design section 9: `press` activates a button; with no script engine the only activation
 is form submission (design section 4). `agent-forms-spec` specifies `Press` and the submission;
-`agent-form-port` computes its body, ends a submission with one of the seven reasons of the
-specification and gives forms their handles `F<n>`; `agent-fetch-post` sends `POST` and turns a
+`agent-form-port` computes its body, ends a submission with one of the eight reasons of the
+specification (seven, and `AddressTooLong` by its section "As decided after the adversary's
+pass") and gives forms their handles `F<n>`; `agent-fetch-post` sends `POST` and turns a
 303 into `GET`. Design section 5.1 shows a button line naming what it submits, with the action
 unquoted (`submits F1 post /session`, `docs/design/agent-interface.md:231`); this story quotes
 it, like every page-derived field, and corrects that line.
@@ -142,8 +143,9 @@ it, like every page-derived field, and corrects that line.
   `no-default-action`, `disabled`, `password-in-query`, `address-too-long`,
   `unsupported-scheme`, `forbidden-destination`; when a form would end with an end reason and
   is refused too, the refusal is the answer. Ended by the specification's reason after the
-  submission started (`SubmissionAbandoned.reason`, `spec/domains/document.yaml:105-121`),
-  refused with its word, exit status 1:
+  submission started (`SubmissionAbandoned.reason`, `spec/domains/document.yaml:105-121`, eight
+  reasons with the `AddressTooLong` of `story:agent-form-port`), refused with its word, exit
+  status 1; five are reached through the session and three are not:
   - `NoFormOwner`: `no-form-owner`, case 12;
   - `NotSubmitButton`: cannot be reached through the session, which refuses `type=button` and
     `type=reset` as `no-default-action` before `Press`; no word of its own and no case;
@@ -156,7 +158,12 @@ it, like every page-derived field, and corrects that line.
     is refused before; should it ever end a submission, the session answers the word
     `unsupported-scheme` of the session's refusal; no case of its own;
   - `UnsupportedEnctype`: `unsupported-enctype`, case 7;
-  - `DialogMethod`: `dialog-method`, case 15.
+  - `DialogMethod`: `dialog-method`, case 15;
+  - `AddressTooLong`: cannot be reached through the session: the port ends a submission with it
+    for an address over `surf_fetch::MAX_ADDRESS_BYTES`, the address the session refuses first
+    as `address-too-long` (case 18) with the same limit, counted on the same address; should it
+    ever end a submission, the session answers the word `address-too-long` of the session's
+    refusal; no case of its own.
 - `password-in-query` is the session's refusal, like `no-default-action` and not one of the
   specification's `SubmissionEndReason` values: `press` on a submit button whose form has method
   `GET` and whose entry list holds a control of `type=password` with a non-empty value is
@@ -189,7 +196,8 @@ it, like every page-derived field, and corrects that line.
   (`crates/answer/src/lib.rs:150`), into `refusal_status` (`crates/session/src/lib.rs:924`),
   into the exhaustive `match` of `crates/surfd/src/daemon.rs:815-821`, and into a test;
   `unsupported-scheme`, `address-too-long` and `forbidden-destination` are there already
-  (above).
+  (above). The session's word for each end reason is one `match` on `SubmissionEndReason`, with
+  `UnsupportedScheme` to `unsupported-scheme` and `AddressTooLong` to `address-too-long`.
 - `cli/surf-agent.yaml`, `crates/agent`: `press`, together, so the drift test holds.
 - `crates/session/tests/`, the counted cases, against a server the test starts:
   1. a login form filled and pressed: the server reads `POST /session HTTP/1.1` with
