@@ -607,6 +607,41 @@ fn a_popover_is_hidden() {
     assert!(!hidden.contains(&by_id(&tree, "d1")));
 }
 
+/// surf's reading, not the standard's rendering: the copy of the selected option that the
+/// parser puts into each `selectedcontent` of a `select` is hidden and lists no row; the option
+/// lists its own. A `selectedcontent` the parser fills nothing into (outside a `select`) is not
+/// hidden.
+#[test]
+fn the_copy_in_a_selectedcontent_is_hidden_and_lists_nothing() {
+    let tree = parse(
+        "<label for=s>Size</label>\
+         <select id=s><button><selectedcontent id=c1></selectedcontent>\
+         <selectedcontent id=c2></selectedcontent></button>\
+         <option><a href=/a>a</a></option></select>\
+         <div><selectedcontent id=c3><a href=/b id=b>b</a></selectedcontent></div>",
+    );
+    assert_eq!(
+        listing(&tree),
+        [
+            "select#s select",
+            "button button",
+            "a link target=\"/a\"",
+            "a#b link target=\"/b\""
+        ]
+    );
+    let hidden = surf_page::hidden_roots(&tree);
+    for id in ["c1", "c2"] {
+        let copy = by_id(&tree, id);
+        assert!(is_hidden(&tree, copy) && hidden.contains(&copy), "{id}");
+        let link = tree.children(copy)[0];
+        assert!(is_hidden(&tree, link) && !hidden.contains(&link), "{id}");
+    }
+    for id in ["b", "c3"] {
+        assert!(!is_hidden(&tree, by_id(&tree, id)), "{id}");
+    }
+    assert!(!hidden.contains(&by_id(&tree, "c3")));
+}
+
 /// HTML 15.5.5 "The details and summary elements": the second slot of the shadow tree takes
 /// every child but the first `summary` element child and has `content-visibility: hidden` while
 /// the `details` element has no `open` attribute.

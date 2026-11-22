@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+mod adversary_select;
 mod elements;
 mod label;
 mod tree_tables;

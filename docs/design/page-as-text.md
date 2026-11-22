@@ -267,7 +267,9 @@ is escaped, the override shows as bytes. The last line is the cost of no CSS: `n
 - Dropped: what `is_hidden` calls hidden (`hidden`, `aria-hidden` true, `head` with `title` and
   `meta` (no description is shown), `script`, `style`, `template` and the other 15.3.1 elements,
   a closed `dialog` or `details` but its `summary`, `input type=hidden`, an element with a
-  `popover` attribute but an open `dialog`, as no script opens one); comments, doctypes,
+  `popover` attribute but an open `dialog`, as no script opens one; the copy of the selected
+  `option` the parser puts into a `selectedcontent`, so the option's content is printed once:
+  surf's reading, where a browser shows the copy in the closed control); comments, doctypes,
   processing instructions; `svg`, `math`. `noscript` content is written: no scripting.
 - Whitespace: each block's text stripped and collapsed, as for the title; U+00A0 is not, and is
   kept (rule 2). `lang` is not written; the outline shows it.

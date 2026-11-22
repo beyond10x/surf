@@ -99,7 +99,7 @@
 //!   written.
 //! - Not written: hidden nodes ([`surf_page::is_hidden`]: `head` with `title` and `meta`,
 //!   `script`, `style`, `template`, `hidden`, `aria-hidden`, a closed `dialog`, a `popover` but
-//!   an open `dialog`, the content of a closed `details` but its `summary`, `input type=hidden`),
+//!   an open `dialog`, the copy of the selected option in a `selectedcontent`, the content of a closed `details` but its `summary`, `input type=hidden`),
 //!   comments, doctypes, processing instructions, `svg` and `math`; `lang`. `noscript` content is
 //!   written: surf runs no script.
 //! - Whitespace: ASCII whitespace stripped and collapsed per block; U+00A0 kept.

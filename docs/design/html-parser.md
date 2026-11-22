@@ -304,7 +304,14 @@ style, template, title`; `[hidden]` on any element but `embed`, whatever its val
 `input[type=hidden i]`. In 15.3.3 "Flow content": `dialog:not([open])`, a `dialog` without an
 `open` attribute, and `[popover]:not(:popover-open):not(dialog[open])`, an element with a
 `popover` attribute, whatever its value, but an open `dialog`: surf runs no script and no user
-action, so no popover is ever open. In 15.5.5 "The details and summary elements": a `details` element without an
+action, so no popover is ever open. The copy of the selected `option` that the parser puts into
+a `selectedcontent` (one with a single `select` without `multiple` above it and no `option` or
+`selectedcontent` above it, the elements the update fills) is hidden, and `actionable_elements`
+lists no row from it and records no `id` of it: the option's own content is listed once. This
+is surf's reading, not the standard's rendering, where a browser shows the copy in the closed
+control and the options only in the picker. A `selectedcontent` the update does not fill keeps
+its content as parsed and is read as any element; one inside a `select` whose update a limit
+stopped is hidden all the same, as the tree does not tell it apart. In 15.5.5 "The details and summary elements": a `details` element without an
 `open` attribute gives `content-visibility: hidden` to the slot that takes every child but its
 first `summary` element child, so only that `summary` is shown (a `details` with no `summary`
 child shows its default summary, which is not in the tree, and none of its children).
