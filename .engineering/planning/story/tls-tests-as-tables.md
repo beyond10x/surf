@@ -16,6 +16,8 @@ scope:
 - confidence: cited
   path: AGENTS.md
 - confidence: cited
+  path: crates/surf/tests/lock_check.rs
+- confidence: cited
   path: crates/tls-conformance/tests
 - confidence: cited
   path: crates/tls-test-certs/tests
@@ -23,7 +25,7 @@ scope:
   path: crates/tls-test-server/tests
 - confidence: cited
   path: crates/tls/tests/tls
-revision: 6
+revision: 8
 ---
 ## Why
 
@@ -74,6 +76,12 @@ On `wave/tls-1`, after `story:test-step-holds-with-tls` is on `main` and merged 
 5. The tests that each read a whole data file (`limbo_parse::*`, `wycheproof_*`), the `sh` runs of
    `anchors.rs`, and the tests named after a single mutant that are not in a group stay as they
    are.
+6. `crates/surf/tests/lock_check.rs` (on the wave since `story:tls-lock-allow`, `87fd19f`) runs
+   `sh taskfiles/lock-check.sh <lock> <allow-list>` in its copy per case, not `task lock-check`,
+   as `story:test-step-holds-with-tls` statement 13 does for `generated-compare` and
+   `conform-totals` on `main`. The wave's script, its interface and the task (`Taskfile.yml`:190
+   there) stay as they are; the module comment of `lock_check.rs` says the test runs the script.
+   On `main` (4 tests, 4.1 s summed in the baseline) the test is not changed.
 
 ## Acceptance
 
@@ -88,6 +96,10 @@ On `wave/tls-1`, after `story:test-step-holds-with-tls` is on `main` and merged 
    `check_named_table` fail and name the line.
 4. `cargo nextest list` on the wave before and after: 1,432 and 1,245 (or the count reached), with
    the list of merged tests and the table test and row each went into; no assertion is dropped.
+5. `git grep -n 'Command::new("task")' crates/surf/tests/lock_check.rs` prints nothing,
+   `git diff <base> -- taskfiles/lock-check.sh` is empty, and a `taskfiles/lock-check.sh` that
+   skips the check of the allow-list (planted, removed after) turns `lock_check`'s tests red with
+   the package named.
 
 ## What it does not do
 

@@ -17,8 +17,6 @@ scope:
 - confidence: cited
   path: Taskfile.yml
 - confidence: cited
-  path: conformance/tests/main.rs
-- confidence: cited
   path: crates/agent/examples/stand_in_surfd.rs
 - confidence: cited
   path: crates/agent/tests/common/mod.rs
@@ -47,8 +45,6 @@ scope:
 - confidence: cited
   path: crates/surf/tests/generated_check_modes.rs
 - confidence: cited
-  path: crates/surf/tests/lock_check.rs
-- confidence: cited
   path: crates/surf/tests/review1_generated_check.rs
 - confidence: cited
   path: crates/surf/tests/review2_generated_check.rs
@@ -60,9 +56,7 @@ scope:
   path: taskfiles/conform-totals.sh
 - confidence: cited
   path: taskfiles/generated-compare.sh
-- confidence: cited
-  path: taskfiles/lock-check.sh
-revision: 42
+revision: 46
 ---
 ## Why
 
@@ -198,7 +192,8 @@ read the profile it leaves; then statements 1, 2 and 4 to 14 in any order.
    (case 8 of `story:agent-session-events`: a page over the answer text limit of 4 MiB,
    `wire::ANSWER_TEXT_MAX`, a constant of the wire with no seam), so the size stays; the time is
    the HTML parser of `surf-html` in the session process (`perf`, Why). Statement 3 makes it
-   faster; the test does not change. If after statement 3 it is over 10 s in one of three runs of
+   faster; the test does not change. Its bound is 10 s (acceptance 3 and 4), not the 3 s of the
+   other changed tests. If after statement 3 it is over 10 s in one of three runs of
    `cargo nextest run -p surf-session` at a load of at least 100, the unit stops and reports, and
    the page's size is decided in a story of its own (a page just over `ANSWER_TEXT_MAX`, or a
    seam for the limit); this story does not change case 8's claim.
@@ -212,10 +207,17 @@ read the profile it leaves; then statements 1, 2 and 4 to 14 in any order.
    builds per level from `cargo clean -p <pkg>`, each without a hit of the shared compile cache
    for the package (`sccache --show-stats` before and after each build, in the evidence); the
    build at opt-level 1 is at most 30 s longer than at 0; and the summed test time is at most
-   half. The summed time counts the package's own tests and the tests of other packages that
-   this statement names for it (for `surf-html`: `case_08`, `memory`, the `core::*`,
-   `adversary_parse::*` and `redirect::case_24` tests of `surf-session`); otherwise the override is
-   not taken.
+   half. The summed time counts the package's own tests and the tests of other packages named
+   here for it, and leaves out every test a later statement of this story changes (`memory`,
+   statement 1; `elements::a_deep_tree_is_read_without_recursion`, statement 11), so a test's own
+   change is not counted for an override. Tests of other packages counted per candidate:
+   `surf-html`: `surf-session` `events::case_08_a_page_of_6_mib_leaves_the_session_open`,
+   `core::a_page_over_the_byte_bound_is_read_to_its_end`, `core::long_address_still_gets_an_answer`,
+   `core::a_page_read_to_its_end_is_rendered_once`, `adversary_parse::*` (3 tests) and
+   `redirect::case_24_a_redirect_to_an_address_that_does_not_fit_the_record_is_answered_without_it`;
+   `surf-page`: none; `surf-url`: none; `surf-page-text`: `surf-session`
+   `adversary_document_text::adversary_document_kept_pages_equal_a_fresh_rendering_at_every_edge`.
+   Otherwise the override is not taken.
    Measured already on `surf-html` alone (its own tests only; build after `cargo clean -p
    surf-html`, tests with `cargo nextest run -p surf-html`), two runs each, 20:26 to 20:31, load
    115 to 157:
@@ -274,7 +276,8 @@ read the profile it leaves; then statements 1, 2 and 4 to 14 in any order.
    server's delay to 1.5 s (each step still 1 s apart; the server's delay counts from its read,
    after `surfd` sent), and replaces the `sleep` with a wait for the event: `look` until the
    path shows the `go`, under the file's wait bound. `AGENTS.md` :1272-1283 says the new numbers.
-   Expected: under 3 s.
+   The gaps of 1 s are held by acceptance 10 (20 runs in a row under load); if one of them
+   fails, the gaps go back to 2 s and this statement says so. Expected: under 3 s.
 10. `crates/agent/tests/start.rs` `surfd_that_writes_nothing_exits_3_within_6_seconds` (b; 5.1 to
     5.6 s; it waits `wire::START_TIMEOUT`, 5 s). The case runs `client::run` in the test process
     with `Config { start_timeout: 500 ms, .. }` and an `Environment` whose program directory holds
@@ -301,30 +304,33 @@ read the profile it leaves; then statements 1, 2 and 4 to 14 in any order.
     1.1 to 10.8 s). It compares every 8-byte window of the page with every window of every entry
     (quadratic). The page's windows go into a `BTreeSet` once and each entry's windows are looked
     up; the failure text is the same. Expected: under 1 s.
-13. The class-(c) tests of `surf` that use a process only as a vehicle (c; 23 tests, 74.8 s
+13. The class-(c) tests of `surf` that use a process only as a vehicle (c; 19 tests, 70.7 s
     summed in the baseline: `review1_generated_check` 4 tests 29.0 s, `generated_check_links` 6
     17.6 s, `review2_generated_check` 2 9.4 s, `conform_totals` 5 7.7 s, `generated_check_modes` 2
-    7.0 s, `lock_check` 4 4.1 s; 1.0 to 12.5 s per test alone). Each case runs `task <name>` in a
+    7.0 s; 1.0 to 12.5 s per test alone). `lock_check` (4 tests, 4.1 s) stays as it is on `main`:
+    `wave/tls-1` (`story:tls-lock-allow`, `87fd19f`) already adds `taskfiles/lock-check.sh` and
+    rewrites `crates/surf/tests/lock_check.rs` and the task; its switch from `task` to `sh` is in
+    `story:tls-tests-as-tables`. Each case runs `task <name>` in a
     copy: `task` parses the whole `Taskfile.yml` with its 12 includes (`task --list` 0.15 s at load
     125 outside the pool), then the task's shell; `generated-compare` also runs `ess` in step 2
     when step 1 passes (0.56 to 0.66 s for the whole task outside the pool at load 125). The copy
     is small (`spec/` and `generated/rust`, 65 files, under 1 MB). The cases are about the
-    script, not about `task`. The scripts of `lock-check`, `generated-compare` and
-    `conform-totals` move from the Taskfile into `taskfiles/lock-check.sh`,
-    `taskfiles/generated-compare.sh` and `taskfiles/conform-totals.sh` (POSIX sh, as
-    `taskfiles/slowest-tests.sh`); the tasks run them, and the tests run `sh <script>` per case,
-    so no case starts `task`. Where several cases of one test would run `ess` over the same
-    unchanged record, the test runs it once and reads its output per case. Expected: each test
-    under 3 s; the 23 together under 25 s summed in the gate.
+    script, not about `task`. The scripts of `generated-compare` (`Taskfile.yml`:257) and
+    `conform-totals` (:117-150) move from the Taskfile into `taskfiles/generated-compare.sh` and
+    `taskfiles/conform-totals.sh` (POSIX sh, as `taskfiles/slowest-tests.sh`); the tasks run them,
+    and the tests run `sh <script>` per case, so no case starts `task`. No branch changes those
+    two tasks (the wave's nearest hunk starts at :153). Where several cases of one test would run
+    `ess` over the same unchanged record, the test runs it once and reads its output per case.
+    `AGENTS.md` says so at :126-145 (the list of `taskfiles/*` scripts, and :128, "four tests
+    copy the root `Taskfile.yml` alone ... and run one task there") and at :1096
+    (`crates/surf/tests/common/mod.rs` runs `generated-compare`). Expected: each test under 3 s;
+    the 19 together under 20 s summed in the gate.
 14. The doc step and nextest's start: unchanged (Why). The unit times `cargo nextest list
     --workspace` once at the start of its work and once at the end, with the load, so the part
     outside nextest's `Summary` is known; it changes nothing there.
-15. The conformance runner's own tests (`conformance/tests/main.rs`, `task conform-rust`,
-    `cargo test`, which ends no test at 60 s; 56.8 s in one run, from
-    `story:slow-tests-at-small-bounds`): they run under cargo-nextest with the root's
-    `.config/nextest.toml` (`--config-file`), so a test over 60 s is ended and fails, and the
-    step prints its time like the test step. The two `grep -q` checks of `Taskfile.yml` for named
-    tests read nextest's output.
+15. (Moved to `story:conformance-step-within-budget`: the conformance runner's own tests under
+    cargo-nextest with the 60 s end. This story stays the smallest change that brings `main`'s
+    test step under its budget; `task conform-rust` is a step of its own.)
 
 ### Kept, each with its reason
 
@@ -356,7 +362,10 @@ Round 2 changes the same files: `crates/session/tests/memory.rs` (this story :17
 :871-1056 and after :1332), `crates/surf/src/lib.rs` (this story `escape` :545-558; round 2 :412,
 :493, :43-305, :763-1108). The remaining round-2 stories claim all of `crates/session/tests`
 (`agent-fill-pick`, `agent-press-submit`, `agent-back-forward`, `agent-change-and-log`) and
-`crates/agent/tests` (`agent-change-and-log`). This story lands on `main` first; then, in this
+`crates/agent/tests` (`agent-change-and-log`). `wave/tls-1` changes `AGENTS.md` at :214 (hunk
+`@@ -214,8 +232,9`), next to this story's edit of :208-213 (statement 3), and at :131 and
+:145-146, inside the list of `taskfiles/*` scripts this story edits at :126-145 (statement 13);
+the merge keeps both sides of each. This story lands on `main` first; then, in this
 order: `impl/ess-0-97-4`, `wave/tls-1`, `impl/round2-commands`, `impl/round2-view`; each merges
 `main` and keeps both sides.
 
@@ -366,11 +375,12 @@ This story supersedes it. Its Change: "a test that waits for a deadline sets it 
 10; the read deadline goes to `story:session-request-timeout-option`); "a test of a bound sets
 the bound small" (here 1, 4, 5, 7, 11, 12); "a test that loops over a large set does the
 expensive part once" (here 6, 13); "the conformance runner's tests run under cargo-nextest with
-the 60 s end" (here 15); "a page test waits on the event" (to `story:page-test-step-within-budget`);
+the 60 s end" (to `story:conformance-step-within-budget`); "a page test waits on the event" (to
+`story:page-test-step-within-budget`);
 "each test keeps what it asserts" (acceptance 5). Its Acceptance 1 (no test over 2 s at load
 under 20) is replaced by acceptance 3 here; 2 (load over 100, no test over 20 s, step within
-90 s) is acceptance 1 and 3 here; 3 (conformance test ended at 60 s) is acceptance 8; 4 and 5
-(names, counts) are acceptance 6; 6 (`view-test` three runs under load, `timeout: 2000`) goes to
+90 s) is acceptance 1 and 3 here; 3 (conformance test ended at 60 s) goes to
+`story:conformance-step-within-budget`; 4 and 5 (names, sizes, counts) are acceptance 6; 6 (`view-test` three runs under load, `timeout: 2000`) goes to
 `story:page-test-step-within-budget`.
 
 ## What it does not do
@@ -384,6 +394,9 @@ under 20) is replaced by acceptance 3 here; 2 (load over 100, no test over 20 s,
   `story:page-test-step-within-budget`.
 - The wall-time upper bounds left in tests: `story:time-bounds-in-tests`.
 - No change of `crates/agent/src/client.rs`.
+- The conformance runner's tests and `task conform-rust`: `story:conformance-step-within-budget`.
+- `lock-check`, its script and `crates/surf/tests/lock_check.rs`: unchanged on `main`; the wave
+  owns them (`story:tls-lock-allow`, `story:tls-tests-as-tables`).
 
 ## Acceptance
 
@@ -394,11 +407,12 @@ under 20) is replaced by acceptance 3 here; 2 (load over 100, no test over 20 s,
    under 100 while the unit works, the runs are reported with their load and this statement stays
    open. Stop: if after all changes such a run is over 90 s, the unit reports the ten largest
    remaining costs from that run and the story stays `active`.
-2. The forge: the `task check` of the pull request or push prints its `test step:` line; it is
-   quoted in the evidence.
-3. In each of the three runs of 1, every test changed by this story (statements 1, 4 to 7, 9 to
-   13, and statement 2's `case_08`) takes under 3 s in the JUnit report, and no test among the ten
-   slowest is over 20 s.
+2. The forge: the `task check` of the pull request or push prints `test step: N s of its budget
+   of 120 s` (the line `Taskfile.yml`:394 writes for a step within its budget; over it, :391
+   writes `over its budget`); the line is quoted in the evidence.
+3. In each of the three runs of 1, in the JUnit report: `events::case_08_a_page_of_6_mib_leaves_the_session_open`
+   (statement 2) takes under 10 s; every other test changed by this story (statements 1, 4 to 7,
+   9 to 13) takes under 3 s; and no test among the ten slowest is over 20 s.
 4. `memory::bodies_of_answered_commands_are_not_kept` and `events::case_08_a_page_of_6_mib_leaves_the_session_open`:
    neither over 10 s in three runs of `cargo nextest run -p surf-session` at a load of at least
    100, with the loads, in the evidence.
@@ -408,22 +422,39 @@ under 20) is replaced by acceptance 3 here; 2 (load over 100, no test over 20 s,
    check at `crates/view/src/sse.rs`:237 and :251 removed (4 and 5, one plant each); `escape`
    that leaves U+2028 unescaped (6); an entry over the queue delivered without a reset (7); the
    action entry of a timed-out `go` dropped (9); a silent `surfd` not killed (10); a recursive
-   walk (11); an entry holding 8 bytes of the page (12); for 13, per script one changed line that
-   lets its defect through. For every package that gets an override, under the final profile,
+   walk (11); an entry holding 8 bytes of the page (12). For 13, one plant per script:
+   `taskfiles/generated-compare.sh` that skips the byte comparison, and
+   `taskfiles/conform-totals.sh` that skips the check of the totals; each turns its tests red and
+   each red test's failure names the file or total it missed; `task --dry generated-compare` and
+   `task --dry conform-totals` show `sh taskfiles/generated-compare.sh` and `sh
+   taskfiles/conform-totals.sh`. For every package that gets an override, under the final profile,
    a recursive walk or drop planted per test that proves "without recursion"
    (`crates/html/tests/tree_body.rs`:118-143, `crates/page/tests/elements.rs`:736) turns that
    test red; the measured frame size is in the evidence.
 6. `cargo nextest list --workspace` before and after gives the same 875 tests: no test is removed
-   or merged.
+   or merged. Each test changed in statements 1, 4, 5, 7 and 11 names its new size in its comment
+   (the body of 4 KiB and 5 `go`s; the blocking size from the default receive buffer; the
+   entries published until the close; the queue of 64 KiB and 4,000 ampersands; the stack and
+   the depth), shown by `sed -n` of each in the evidence.
 7. Per override of statement 3: the two builds per level with `sccache --show-stats` before and
    after each, the build times, the summed test times, and the decision by the rule; the time of
    `task conform-rust` before and after. `git diff <base> -- .config/nextest.toml` is empty, and
    the overrides are in `.cargo/config.toml` only.
-8. A conformance runner test made to sleep 70 s (planted) is ended at 60 s and fails `task
-   conform-rust`; the step prints its time.
-9. `git diff <base> -- crates/agent/src/client.rs crates/tls*` is empty.
+8. (Moved to `story:conformance-step-within-budget`.)
+9. `git diff <base> -- crates/agent/src/client.rs crates/tls* crates/surf/tests/lock_check.rs
+   conformance` is empty.
+10. Statement 9: `adversary_events::adversary_an_action_recorded_after_a_session_timeout_has_its_entries_kept`
+    passes 20 consecutive filtered runs (`cargo nextest run -p surf-session -E
+    'test(=adversary_events::adversary_an_action_recorded_after_a_session_timeout_has_its_entries_kept)'`)
+    at a load of at least 100, each run's load in the evidence, its assertions unchanged
+    (`git diff` of the file shows only the times and the wait). The loop is a script started
+    without the `slot` prefix; `cargo` in it goes through the shim. If one of the 20 fails, the
+    gaps go back to 2 s and statement 9 says so.
 
 ## Scope
 
-The files of `aep plan artifact scope`; `AGENTS.md` at :208-213 (`.cargo/config.toml`) and
-:1272-1283 (the waits of statements 9 and 10).
+The files of `aep plan artifact scope`; `AGENTS.md` at :126-145 (the list of `taskfiles/*`
+scripts, statement 13), :208-213 (`.cargo/config.toml`, statement 3), :1096 (`common/mod.rs`
+runs `generated-compare`, statement 13) and :1272-1283 (the waits of statements 9 and 10). Not
+:1075-1079 (`task conform-rust`, `story:conformance-step-within-budget`) and not :1083-1086
+(`lock-check`).
