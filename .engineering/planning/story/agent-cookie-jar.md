@@ -13,6 +13,8 @@ relations:
 - depends_on: story:tls-session-anchors
 - depends_on: story:agent-tasks
 - depends_on: story:page-text-answer-block
+- depends_on: story:page-text-look
+- depends_on: story:agent-change-and-log
 scope:
 - confidence: inferred
   path: conformance/src/target.rs
@@ -31,6 +33,8 @@ scope:
 - confidence: cited
   path: crates/session/tests
 - confidence: cited
+  path: crates/surf-cli/src/main.rs
+- confidence: cited
   path: crates/surf/src/lib.rs
 - confidence: cited
   path: crates/surf/tests
@@ -48,7 +52,7 @@ scope:
   path: spec/domains/net.yaml
 - confidence: cited
   path: spec/scenarios
-revision: 6
+revision: 8
 ---
 ## Context
 
@@ -111,27 +115,43 @@ overrule each:
    field the model gains is what `SameSite` needs: the initiator of a navigation, drafted in the
    specification first, by this story's first commit.
 7. Tests go into each crate's one integration-test binary (modules named under Acceptance).
+8. Round 2 of the panel: also depends on `story:page-text-look` (the `login` task reads the page
+   with `look --as markdown`) and `story:agent-change-and-log` (the last of round 2; it and
+   `story:agent-back-forward` write `crates/session`, `crates/answer` and `docs/agent-answer.md`).
+   `fetch_http` has a second caller, `crates/surf-cli/src/main.rs` (lines 14 and 41), which this
+   story changes too. The `https` agent task is `story:agent-tasks-https`, not this story.
+9. Round 2 of the panel: the order of the answer's blocks (R18) is one grammar line; `back` and
+   `forward` count as having no initiator by surf's reading of §5.2 (a traversal by the browser's
+   controls), reversible. The cookie of the session test is named `zqsid`, so its name can be
+   searched for as well as its value.
 
 ## Placement
 
-Starts after these merges: round 2 (`follow`, `press`;
-`wave/a10-label-limits:docs/plan/agent-waves.md:66`), the TLS unit's `tls-fetch-https` and
+Starts after these merges: round 2 (`follow`, `press`, `back`, `forward`, the `changed` block;
+`wave/a10-label-limits:docs/plan/agent-waves.md:66`; edges to `agent-follow-links`,
+`agent-press-submit` and `agent-change-and-log`), `story:page-text-look` and
+`story:page-text-answer-block` (round 1), the TLS unit's `tls-fetch-https` and
 `tls-session-anchors` (and so `story:security-review-fixes`, which `tls-fetch-https` starts
-after), `story:agent-tasks`, and `story:page-text-answer-block` (round 1). Before round 3's runner
-unit, which writes `crates/session` and `crates/surf` and wraps the `Transport` (agent-waves.md:159
-moves round 3 behind items 2 and 4).
+after), and `story:agent-tasks`. Before round 3's runner unit, which writes `crates/session` and
+`crates/surf` and wraps the `Transport` (agent-waves.md:159 moves round 3 behind items 2 and 4).
 
 It runs beside no unit that writes `spec/`, `generated/`, `crates/fetch`, `crates/surf/src/lib.rs`,
-`crates/session`, `crates/answer`, `docs/agent-answer.md`, `crates/tls-test-server` or
-`crates/agent-tasks`. Writers of the same files, all before it: `story:tls-spec` (the `UNMAPPED:`
-line of `net.yaml`, tls-spec.md:91, and `navigation.yaml`), `story:agent-links-spec` and
-`story:agent-history-spec` (`spec/`, `generated/`), `story:tls-fetch-https` (`crates/fetch`,
-`crates/surf/src/lib.rs`, `crates/session/src/lib.rs`, tls-fetch-https.md:196-211),
-`story:tls-session-anchors` (`crates/session`, `docs/agent-answer.md`), `story:page-text-answer-block`
-(`crates/answer`, `docs/agent-answer.md`, its "Writes"), `story:tls-test-server` (its crate,
-tls-test-server.md:124-128: this story adds one accessor after it), `story:agent-tasks`
-(`crates/agent-tasks`). `story:agent-skill-definition` writes none of these files and may run
-beside it; it reads `docs/agent-answer.md` when its tests run.
+`crates/surf-cli/src/main.rs`, `crates/session`, `crates/answer`, `docs/agent-answer.md`,
+`crates/tls-test-server` or `crates/agent-tasks`. Writers of the same files, all before it:
+`story:tls-spec` (the `UNMAPPED:` line of `net.yaml`, tls-spec.md:91, and `navigation.yaml`),
+`story:agent-links-spec` and `story:agent-history-spec` (`spec/`, `generated/`; agent-history-spec
+also `crates/surf-cli/src/main.rs`), `story:html-document-port` and
+`story:page-text-surf-command` (`crates/surf-cli/src/main.rs`), `story:tls-fetch-https`
+(`crates/fetch`, `crates/surf/src/lib.rs`, `crates/surf-cli/src/main.rs`,
+`crates/session/src/lib.rs`, tls-fetch-https.md:196-211), `story:tls-session-anchors`
+(`crates/session`, `docs/agent-answer.md`), `story:page-text-answer-block` (`crates/answer`,
+`docs/agent-answer.md`, its "Writes"), `story:page-text-look` (`crates/session`),
+`story:agent-back-forward` and `story:agent-change-and-log` (`crates/session/`,
+`crates/answer/`, `docs/agent-answer.md`; agent-back-forward.md:74, agent-change-and-log.md:80),
+`story:tls-test-server` (its crate, tls-test-server.md, "Writes": this story adds one accessor
+after it), `story:agent-tasks` (`crates/agent-tasks`). `story:agent-tasks-https` also writes
+`crates/agent-tasks`: never in the same wave. `story:agent-skill-definition` writes none of these
+files and may run beside it; it reads `docs/agent-answer.md` when its tests run.
 
 ## Change
 
@@ -177,7 +197,9 @@ The rules, each with the case that holds it (Acceptance):
   (§5.6.7.2). Cases U9, W13, S4.
 - R9 Same site and the initiator (§5.2: the request's URL against its client's "site for
   cookies"): a request is same-site when its navigation has no initiator (`go`, `open`, `back`,
-  `forward`: a person typing or using the browser's controls, the request "has no client") or when
+  `forward`: a person typing or using the browser's controls, so the request "has no client"; for
+  `back` and `forward` this is surf's reading, decision 9, where HTML could keep the first entry's
+  initiator) or when
   the hop's address has the same scheme and the same host as the initiator's origin, ports
   ignored. `follow` and `press` carry the origin of the document they act on. Every hop of a
   redirect keeps the navigation's initiator; its own address and method decide. Cases U10, W13,
@@ -190,7 +212,8 @@ The rules, each with the case that holds it (Acceptance):
   one and keeps its creation time. Case U11.
 - R12 The `Cookie` field (§5.8.3 steps 4 and 6): longer paths first, then earlier creation;
   `name=value` pairs joined by `; `. One `Cookie` field per request, none when no cookie matches.
-  Case W7.
+  Cases W7 (order) and every W and X case (one field: "receives" is defined below as exactly one
+  `Cookie` line).
 - R13 Bounds and eviction (§5.7, "remove excess cookies", §6.1): at most 50 cookies per domain
   and 3,000 per session (the draft's minimums; with R2 at most about 12 MiB of names and values
   per session, the memory bound the crate documentation states). Expired cookies are evicted when
@@ -211,9 +234,16 @@ The rules, each with the case that holds it (Acceptance):
 - R17 Below the `Transport`: the jar is used inside `fetch_http`, so the `RequestStarted` and the
   `Answer` that pass the `Transport` (which `RecordingTransport` records) never hold a cookie.
   Case T1.
-- R18 `cookies <n>` in the answer: one line after the `path` block and before the `note` lines,
-  `<n>` the cookies the jar holds when the answer is made, expired ones evicted first; no line when
-  it holds none. Cases A1, A2, S2, S3.
+- R18 `cookies <n>` in the answer: one line directly after the `path` block, `<n>` the cookies
+  the jar holds when the answer is made, expired ones evicted first; no line when it holds none.
+  The order of the blocks, one grammar line: `answer = head-line [token-line] [did-line]
+  [page-line] [path-block] [cookies-line] [changed-block] [now-block] *note-line [text-block]`.
+  `changed` and `now` follow `path` in the order of the design (docs/design/agent-interface.md:
+  170-178: `page`, `path`, `changed`, `now`; stories `agent-change-and-log` and
+  `agent-follow-links`), the `note` lines follow them, and the `text` block with its `more` line
+  comes last (page-text-answer-block.md:56, "after the `note` lines; `more` last"). An answer with
+  a `text` block has no `now` block (page-text-look, "Change"); `cookies` sits before `changed`
+  either way. Cases A1, A2, A3, S2, S3.
 - R19 Redirects: the `Set-Cookie` fields of every response of a chain are stored for that
   response's address before the next hop is sent; each hop sends the cookies of its own address.
   Cases W1, W2, X3, S1.
@@ -243,14 +273,15 @@ Where it is written:
 - `crates/surf/src/lib.rs`: `fetch_http` takes one per-session context, `RequestContext { anchors,
   jar }`, in place of the anchors argument `tls-fetch-https` gave it, and passes
   `RequestStarted::initiator` on.
+- `crates/surf-cli/src/main.rs`, the second caller of `fetch_http` (lines 14 and 41): passes
+  `RequestContext { anchors, jar: None }`; `surf <url>` keeps no cookie (one process, one page).
 - `crates/session/src`: one `Jar` per session process, passed in that context; the `cookies` line
   (R18).
 - `crates/answer/src/lib.rs` and `docs/agent-answer.md`, by "Adding a block"
   (docs/agent-answer.md:278-293): the line `cookies <n>` in a section "Cookies"; its place in
-  "Lines" (after `path`, before the `note` lines); in "Grammar" `cookies-line = "cookies" SP
-  number LF ; number from 1` and `answer = head-line [token-line] [did-line] [page-line]
-  [path-block] [cookies-line] *note-line ...` (the rest as it stands then); `Answer.cookies:
-  Option<u64>`, `render_cookies`, `parse_cookies` in `BLOCKS`.
+  "Lines" (directly after `path`); in "Grammar" `cookies-line = "cookies" SP number LF ; number
+  from 1` and the `answer` line of R18; `Answer.cookies: Option<u64>`, `render_cookies`,
+  `parse_cookies` in `BLOCKS` right after `parse_path`.
 - `crates/tls-test-server`: `TestServer::requests()`, the head bytes of each request it read, in
   order, so a test reads the `Cookie` field it received.
 - `crates/agent-tasks`: the task `login` (below), its site `sites/login/`, its block in
@@ -272,8 +303,8 @@ over 60 s, no model call and no network request in the test step (every server i
 on 127.0.0.1 or 127.0.0.2; names resolve through the test's `Network`), nothing expensive is made
 per test, no Python. The new tests add at most 10 s to the test step; each over 5 s is named with
 its time in the report. T is 1795305600 (2026-11-22T00:00:00Z). "receives `Cookie: X`" means the
-request head the server read holds exactly the line `Cookie: X`; "no `Cookie`" means it holds no
-line whose name is `Cookie` in any case.
+request head the server read holds exactly one line whose name is `Cookie` in any case, and that
+line is `Cookie: X`; "no `Cookie`" means it holds no such line.
 
 Unit cases, `crates/cookie/tests/main.rs`, module `jar` (`Jar` called directly, the time given):
 
@@ -286,8 +317,10 @@ Unit cases, `crates/cookie/tests/main.rs`, module `jar` (`Jar` called directly, 
 - U3 At T, `l=1; Max-Age=40000000` and `k=1; Expires=Fri, 01 Jan 2100 00:00:00 GMT`: both sent at
   1829865599, neither at 1829865601 (T plus 400 days is 1829865600).
 - U4 At T, `p=1; Expires=someday`: `p=1` at T+10^9.
-- U5 From `http://h.test/d/e/set`, `l=1; Path=/` followed by 1,024 `a`: sent to `/d/e/x`, not to
-  `/`. `big` with a value of 4,093 bytes is stored; `huge` with 4,093 bytes is not (4,097 octets).
+- U5 From `http://h.test/d/e/set`, `l=1; Path=/` followed by 1,024 `a`:
+  `cookie_field(http://h.test/d/e/x)` is `l=1`, `cookie_field(http://h.test/)` is none. From
+  `http://h.test/`, `big=` with 4,093 `x` and `huge=` with 4,093 `y` (4,097 octets):
+  `cookie_field(http://h.test/)` is `big=` followed by the 4,093 `x`.
 - U6 `Set-Cookie: abc` gives `cookie_field` `abc`; `=__Host-x` is not stored.
 - U7 `a=b` U+0001 `c` is not stored.
 - U8 From `https://h.test/x`: `__Secure-a=1; Secure`, `__Secure-b=1`, `__Host-d=1; Secure; Path=/`,
@@ -295,9 +328,10 @@ Unit cases, `crates/cookie/tests/main.rs`, module `jar` (`Jar` called directly, 
   and from `http://h.test/` `__secure-c=1; Secure`: `cookie_field(https://h.test/x)` is
   `__Secure-a=1; __Host-d=1; __HOST-g=1`.
 - U9 From `https://h.test/`: `st=1; SameSite=Strict; Secure`, `lx=1; SameSite=Lax; Secure`, `df=1;
-  Secure`, `no=1; SameSite=None; Secure`, `bd=1; SameSite=Bogus; Secure`, `nn=1; SameSite=None`.
-  `cookie_field(https://h.test/, Same, Get)` and `(Same, Post)`: `st=1; lx=1; df=1; no=1; bd=1`;
-  `(Cross, Get)`: `lx=1; df=1; no=1; bd=1`; `(Cross, Post)`: `no=1`.
+  Secure`, `no=1; SameSite=None; Secure`, `bd=1; SameSite=Bogus; Secure`, `ci=1; SameSite=sTrIcT;
+  Secure`, `cl=1; SameSite=LAX; Secure`, `nn=1; SameSite=None`.
+  `cookie_field(https://h.test/, Same, Get)` and `(Same, Post)`: `st=1; lx=1; df=1; no=1; bd=1;
+  ci=1; cl=1`; `(Cross, Get)`: `lx=1; df=1; no=1; bd=1; cl=1`; `(Cross, Post)`: `no=1`.
 - U10 `site(None, http://a.test/)` is `Same`; `site(http://a.test:1, http://a.test:2/)` is `Same`;
   `site(http://a.test, https://a.test/)`, `site(http://a.test, http://b.a.test/)` and
   `site(http://127.0.0.1, http://127.0.0.2/)` are `Cross`.
@@ -306,8 +340,8 @@ Unit cases, `crates/cookie/tests/main.rs`, module `jar` (`Jar` called directly, 
   `count` is 3000 and `cookie_field(http://h1.test/)` starts with `c2=1`.
 - U13 From `https://h.test/`: `s1=1; Secure`, then `n1=1` to `n50=1`: `cookie_field` starts with
   `s1=1; n2=1` (the 51st evicts `n1`, not the older `s1`).
-- U14 `format!("{jar:?}")` of a jar holding `s=1` is `Jar { cookies: 1 }`; after `m=1; Max-Age=1`
-  at T, `count(T+2)` is the count without it.
+- U14 `format!("{jar:?}")` of a jar holding only `s=1` is `Jar { cookies: 1 }`; after `m=1;
+  Max-Age=1` at T, `count(T)` is `2` and `count(T+2)` is `1`.
 
 Wire cases, `crates/fetch/tests/main.rs`, module `cookies`: `send_through` with a fresh jar per
 case, a test `Network` that resolves `a.example.test`, `b.example.test`, `example.test` and
@@ -363,9 +397,9 @@ back through `TestServer::requests()`) and the plain server as `localhost` port 
 Below the transport, `crates/surf/tests/main.rs`, module `cookies`:
 
 - T1 `a_transport_sees_no_cookie`: a closure `Transport` calls `fetch_http` with a jar for two
-  requests, `/set` (answering `s=` and 32 random hexadecimal digits) and `/echo`; `/echo` receives
-  `Cookie: s=<the digits>`; the `Debug` text of both `RequestStarted` values and both `Answer`
-  values holds neither `s=` nor the digits.
+  requests, `/set` (answering `zqsid=` and 32 random hexadecimal digits) and `/echo`; `/echo`
+  receives `Cookie: zqsid=<the digits>`; the `Debug` text of both `RequestStarted` values and both
+  `Answer` values holds neither `zqsid` nor the digits.
 
 The answer, `crates/answer/tests/main.rs`, module `golden`:
 
@@ -374,6 +408,9 @@ The answer, `crates/answer/tests/main.rs`, module `golden`:
   2`) renders from typed values and parses back byte for byte.
 - A2 `parse` refuses `cookies 0`, `cookies 02` and a `cookies 1` line after a `note` line, each
   naming its line.
+- A3 `parse` refuses a `cookies 1` line after a `changed 0` line, and after a `text` header line,
+  naming its line; an answer whose `cookies 1` line directly follows its `path` block and precedes
+  `changed 0` parses and renders back byte for byte.
 
 The session, `crates/session/tests/main.rs`, module `cookies`, one test
 `a_session_keeps_its_cookies_to_itself`: one `surfd` in the test process (`surfd_in_process`), the
@@ -381,24 +418,36 @@ binaries of `SURF_BIN_DIR`, a page server on 127.0.0.1 port `<p>` and one on 127
 (Linux routes 127.0.0.0/8 to the loopback; the agent binaries run on Linux only):
 
 - S1 Session A: `go http://127.0.0.1:<p>/login`, answered `302`, `Location: /home`, `Set-Cookie:
-  s=<32 random hexadecimal digits>; Path=/`: `/home` receives `Cookie: s=<digits>`; exit 0.
-- S2 A: `look` equals `crates/session/tests/golden/look-cookies.txt` (the `look` answer of the
-  page `/home` with `cookies 1` after its `path` block, `<id>` and `<port>` in place).
+  zqsid=<32 random hexadecimal digits>; Path=/`: `/home` (body `<title>Home</title><p>Signed
+  in.</p>`, no link, no control) receives `Cookie: zqsid=<digits>`; exit 0.
+- S2 A: `look` equals `crates/session/tests/golden/look-cookies.txt`, whose whole text is these
+  lines, `<id>` and `<port>` replaced as for `look.txt`, and the placeholder line replaced as
+  agent-follow-links.md:78-80 says (by the parts of `surf_html::NOT_YET_PARSED` joined by `,`, or
+  removed when there is none):
+  `surf 1 session <id> open`
+  `page 200 "text/html" "http://127.0.0.1:<port>/home" "Home"`
+  `path 2 of 2`
+  `  1 open`
+  `  2 go "http://127.0.0.1:<port>/login"`
+  `cookies 1`
+  `changed 0`
+  `note parser: {NOT_YET_PARSED}`
+  (no `now` line: the page has no link and no control).
 - S3 Session B: `go http://127.0.0.1:<p>/home` has no `Cookie`; B's `look` has no line starting
   with `cookies`.
 - S4 A: `go http://127.0.0.1:<p>/set-site` (answering `lax=1; SameSite=Lax; Path=/`, `strict=1;
   SameSite=Strict; Path=/`, `dflt=1; Path=/`), `go http://127.0.0.2:<q>/from` (a link `Echo` to
   `http://127.0.0.1:<p>/echo` and a `POST` form to it with a button `Send`), `follow` the link
-  found by its label: `/echo` receives `Cookie: s=<digits>; lax=1; dflt=1`; `go` to `/from` again
+  found by its label: `/echo` receives `Cookie: zqsid=<digits>; lax=1; dflt=1`; `go` to `/from` again
   and `press` `Send`: the `POST` has no `Cookie`; `go http://127.0.0.1:<p>/echo`: `Cookie:
-  s=<digits>; lax=1; strict=1; dflt=1`; `look` prints `cookies 4`.
+  zqsid=<digits>; lax=1; strict=1; dflt=1`; `look` prints `cookies 4`.
 - S5 `close` A, `open` C, C: `go http://127.0.0.1:<p>/echo` has no `Cookie`.
-- S6 The digits occur nowhere in: the standard output and error of every `surf-agent` call; the
+- S6 Neither the name `zqsid` nor the digits occur in: the standard output and error of every `surf-agent` call; the
   bytes of the view's event stream from before the first `open` to the last answer and the bodies
   of `/api/sessions` and `/api/sessions/<id>` for each session (as case 16 of
   `crates/session/tests/view.rs:455-486` reads them); `format!("{:?}", daemon.session_entries(id))`
   for each session; every regular file under the test's `XDG_RUNTIME_DIR` after the last call.
-  S1 shows the server received them.
+  S1 shows the server received both.
 - S7 No golden file of `crates/session/tests/golden/` but the new one changes.
 
 The specification and the tasks:

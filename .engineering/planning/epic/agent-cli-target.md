@@ -5,7 +5,7 @@ kind: epic
 status: active
 title: 'Agent target: a session command line for AI agents'
 summary: An agent opens a session, gets a token, and drives the browser through a specified command line that answers with a dense text representation of what the page offers.
-revision: 16
+revision: 19
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 9}
@@ -85,7 +85,7 @@ three pieces of the agent's own front: cookies, one jar per session (item 4,
 `story:agent-cookie-jar`, and the public suffix list, `story:agent-cookie-public-suffixes`); the
 definition for agents that the binary prints (item 6, `story:agent-skill-definition`); and the
 agent tasks that measure what an agent can do with `surf-agent` alone (the measure beside the
-items, `story:agent-tasks`).
+items, `story:agent-tasks`, and its `https` task, `story:agent-tasks-https`).
 
 ## Out of scope
 
@@ -96,7 +96,8 @@ items, `story:agent-tasks`).
   visibility is computed, an element line says `?` or what the `hidden` attribute gives, and a
   `note` line says so. The HTTPS exclusion is lifted for test fixtures of `epic:tls-https`: the
   `https` agent task and the `Secure` cases of the cookie jar use its test server and
-  `surf-agent open --ca-file`, and build nothing of TLS.
+  `surf-agent open --ca-file`, and build nothing of TLS but one accessor on the TLS test server
+  that reports the requests it received (`TestServer::requests()`, `story:agent-cookie-jar`).
 - Deferred, each with a backlog draft tagged `deferred`: hashing the token, paging a long
   answer (`--max-lines`, `look --from <handle>`), a caller-chosen `tab_id` on `OpenTab`,
   `CloseWindow`, `--as` on `follow`, `back`, `forward`, `fill`, `pick` and `press`
@@ -120,7 +121,7 @@ items, `story:agent-tasks`).
 
 ## Acceptance
 
-`slot task check` exits 0 on `main`, and in that run four things hold, each shown by a line a
+`slot task check` exits 0 on `main`, and in that run eight things hold, each shown by a line a
 command prints:
 
 1. The walk test of `story:agent-change-and-log` passes by name: an agent with nothing but
@@ -139,3 +140,12 @@ command prints:
    `go <url> --as markdown` to the `Offers` page of `docs/design/page-as-text.md` section 1
    prints `text markdown 3 of 3 lines from 1, 62 of 62 bytes` and its three body lines, each
    behind `>`.
+5. The agent tasks of `story:agent-tasks`: `agent-tasks-report` prints its first line
+   `agent-tasks: <n> tasks, <p> pass, <f> fail`, a `task` line per row of
+   `crates/agent-tasks/tasks.txt`, and no `raise:` line.
+6. The definition for agents of `story:agent-skill-definition`: the test
+   `help_for_agent::prints_the_definition` passes by name.
+7. A session keeps its cookies to itself (`story:agent-cookie-jar`): the test
+   `cookies::a_session_keeps_its_cookies_to_itself` of `crates/session` passes by name.
+8. The page behind `https:` (`story:agent-tasks-https`): `agent-tasks-report` prints `task https
+   pass 3 calls 1 connections`.

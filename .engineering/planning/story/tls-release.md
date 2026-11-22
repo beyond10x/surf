@@ -22,7 +22,7 @@ scope:
   path: taskfiles/release-smoke.sh
 - confidence: cited
   path: website/docs
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:31Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:31Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
@@ -144,6 +144,9 @@ The tag and the release (the coordinator, on the word of `host-operator`, as
 
 `.github/workflows/release.yml`, `taskfiles/release-smoke.sh`, `docs/releasing.md`, `NOTICE`,
 `CHANGELOG.md`, the website pages above. `docs/releasing.md` is also written by
-`story:agent-tasks` (the model lane line of the release notes): never in the same wave. The
+`story:agent-tasks` (the agent task steps and lines of the release notes), before this story,
+and by `story:agent-cookie-public-suffixes` (the suffix list age step) after it; `NOTICE` by
+`story:agent-cookie-public-suffixes` after it; `taskfiles/release-smoke.sh` by
+`story:agent-skill-definition` (the step `help --for-agent`) after it: never in the same wave. The
 probe workflow of `story:tls-decisions` is on a branch that is not merged. Coordinator:
 `README.md`, `AGENTS.md`, the badges.

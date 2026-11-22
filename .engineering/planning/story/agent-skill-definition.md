@@ -10,6 +10,8 @@ relations:
 - depends_on: story:agent-tasks
 - depends_on: story:page-text-look
 - depends_on: story:agent-press-submit
+- depends_on: story:agent-change-and-log
+- depends_on: story:tls-release
 scope:
 - confidence: cited
   path: cli/surf-agent.yaml
@@ -23,7 +25,7 @@ scope:
   path: crates/agent/tests
 - confidence: cited
   path: taskfiles/release-smoke.sh
-revision: 5
+revision: 6
 ---
 ## Context
 
@@ -89,27 +91,34 @@ Taken by the coordinating agent on 2026-11-22, reversible, reported to the opera
 5. `help` is the client's own word, not a callable of `surf.agent`: it asks no session for
    anything. `cli/surf-agent.yaml` says so in an `UNMAPPED:` marker, and `spec/` and
    `generated/` are not written.
+6. Round 2 of the panel: the printable-ASCII rule covers the lines surf writes for the
+   definition (the first and last line, the six section lines, sections 1, 2 and 5, the `<word>: `
+   of section 3 and the `$` lines of section 6). A copied block (`cli::USAGE`, an `about` text, the
+   parts of `docs/agent-answer.md`, a golden file) is byte-equal to its source, whatever bytes the
+   source holds; nothing is escaped or dropped.
+7. Round 2 of the panel: depends on `story:agent-change-and-log` (the last command of round 2,
+   `log`) and on `story:tls-release`, after which it adds its step to
+   `taskfiles/release-smoke.sh` (tls-release.md, "Writes").
 
 ## Placement
 
 Starts after the merge of round 2 (`agent-follow-links`, `agent-fill-pick`, `agent-press-submit`,
 `agent-back-forward`, `agent-change-and-log` add commands to `cli/surf-agent.yaml` and `USAGE`;
-`wave/a10-label-limits:docs/plan/agent-waves.md:66`) and of `story:page-text-look` (round 1,
-`--as` and `--from-line`), so the definition it first prints lists every command of the epic.
+`wave/a10-label-limits:docs/plan/agent-waves.md:66`; edges to `agent-press-submit` and
+`agent-change-and-log`), of `story:page-text-look` (round 1, `--as` and `--from-line`) and of
+`story:tls-release` (the TLS unit of four, which also writes `cli/surf-agent.yaml` through
+`tls-session-anchors`), so the definition it first prints lists every command of the epic.
 
 Shared files:
 
 - `cli/surf-agent.yaml` and `crates/agent/src/cli.rs` are also written by
   `story:page-text-look` (page-text-look.md:127), `story:agent-follow-links` (:86),
   `story:agent-fill-pick` (:62), `story:agent-press-submit` (:40), `story:agent-back-forward`
-  (:54), `story:agent-change-and-log` (:54), all before it, and by `story:tls-session-anchors`
-  (`open --ca-file`, tls-session-anchors.md:90). This story never runs beside the TLS unit of
-  four, which runs beside no unit that writes `crates/agent`
-  (`wave/a10-label-limits:docs/plan/agent-waves.md:112-116`); whichever lands later rebases on the
-  other, and neither writes a file for the other: the definition reads the document when it is
-  built.
-- `taskfiles/release-smoke.sh` is also written by `story:tls-release` (tls-release.md:76, :145):
-  never in the same wave; the later one adds its step to the script as the earlier left it.
+  (:54), `story:agent-change-and-log` (:54) and `story:tls-session-anchors` (`open --ca-file`,
+  tls-session-anchors.md:90), all before it. Later writers of those files write no file for this
+  story: the definition reads the document when it is built.
+- `taskfiles/release-smoke.sh` is also written by `story:tls-release` (tls-release.md:76, "Writes"),
+  before it (an edge); this story adds its step to the script as `tls-release` left it.
 - `docs/agent-answer.md` is read, never written. `story:agent-cookie-jar` and the TLS stories
   that change it change the printed definition without a file of this story.
 
@@ -124,8 +133,12 @@ Shared files:
   own text and asks no session for anything, so no callable of `surf.agent` stands behind it; the
   client takes it before the parser. What would settle it: a command without a callable in
   `ess-cli/2`." `drift.rs` is unchanged (`help` is not in `COMMANDS`).
-- `crates/agent/src/help.rs` (new): the assembler. Output, in this order, every line ending in a
-  line feed, every byte from U+0020 to U+007E or a line feed:
+- `crates/agent/src/help.rs` (new): the assembler, `pub fn assemble(sources: &Sources) -> String`,
+  `Sources { usage, binding, answer_document, open, go, look }` as text; the binary passes
+  `cli::USAGE` and the `include_str!` of `cli/surf-agent.yaml`, `docs/agent-answer.md` and the
+  three golden files. Output, in this order, every line ending in a line feed; every byte of a
+  line surf writes (decision 6) is from U+0020 to U+007E, and a copied block is its source's
+  bytes unchanged:
   - `surf-agent <version>: a definition for agents` (`<version>` is `CARGO_PKG_VERSION`);
   - `## 1. surf`: fixed lines of this file: what surf is, that it runs no script, and that an
     address of a scheme it does not fetch ends with `page failed UnsupportedScheme` (so no list
@@ -169,10 +182,17 @@ test binary), no Python. Each test below runs within 1 s; its time is in the rep
 `help_for_agent` of `crates/agent/tests/main.rs`:
 
 1. `prints_the_definition`: `surf-agent help --for-agent` with an empty environment exits 0,
-   writes nothing to standard error, and its standard output has every byte from U+0020 to U+007E
-   or a line feed, the first line `surf-agent <CARGO_PKG_VERSION>: a definition for agents`, the
-   six section lines in order, the last line `end of the definition`, and at most 100 lines
-   outside section 4.
+   writes nothing to standard error; in its standard output every line surf writes (decision 6)
+   has every byte from U+0020 to U+007E, the first line is `surf-agent <CARGO_PKG_VERSION>: a
+   definition for agents`, the six section lines are `## 1. surf`, `## 2. the session`, `## 3.
+   commands`, `## 4. the answer`, `## 5. untrusted text`, `## 6. worked calls` in that order, the
+   last line is `end of the definition`, and at most 100 lines lie outside section 4.
+1a. `a_copied_block_keeps_its_bytes` (no process): `help::assemble` over the sources of the tree
+   with the "Grammar" block of `docs/agent-answer.md` given one more line `; K` U+00E4 `se`
+   (bytes `3b 20 4b c3 a4 73 65`): section 4 holds that line with those seven bytes, the lines
+   surf writes are unchanged, and the check of case 1 (a function of the test module) passes on
+   it; the same check over the tree's definition with U+00E4 put into the first line of section 1
+   fails naming `section 1, line 1`.
 2. `section_3_is_the_binding`: section 3 equals `cli::USAGE` followed by `<word>: <about>` for
    each `- path: [<word>]` of `cli/surf-agent.yaml`, read from the file when the test runs, byte
    for byte. On a difference the test fails with `section 3, line <n>: expected "<line>",
@@ -186,7 +206,7 @@ test binary), no Python. Each test below runs within 1 s; its time is in the rep
 5. `section_5_is_the_rule`: section 5 is exactly the three lines of the Change, held as a
    constant of the test, so a change of the binary's sentence fails here.
 6. `a_changed_source_is_found` (no process; the comparison of 2 to 4 over a text the test
-   gives): the printed definition against a copy of `docs/agent-answer.md` whose grammar line
+   gives): the printed definition (`help::assemble` over the tree's sources) against a copy of `docs/agent-answer.md` whose grammar line
    `state = "open" / "closed" / "died" / "unknown"` ends with ` / "gone"`: fails with `section 4,
    line <n>` naming that line; against an `open.txt` whose `did open` line is changed: `section 6,
    line <n>`; against a `cli/surf-agent.yaml` whose `look` `about` is changed: `section 3, line

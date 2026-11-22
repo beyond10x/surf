@@ -38,7 +38,7 @@ scope:
   path: generated/rust
 - confidence: cited
   path: spec/domains/agent.yaml
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:30Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:30Z", actor: "human:operator", revision: 11, decided_on: {"recorded":{"verification":1}}}
@@ -143,9 +143,8 @@ over 60 s, the test step within 120 s; 127.0.0.1 only, no network, no model call
 ## Out of scope
 
 Anchors per `go` or per daemon; trust settings beyond one extra file (pinning, allow-lists);
-`surf-agent` on macOS; task 5 of `story:agent-tasks` (it needs that story and the page text of
-round 1; it belongs to whichever of the two lands last, and can use `open --ca-file` and the test
-server).
+`surf-agent` on macOS; the `https` agent task, which `story:agent-tasks-https` owns (it depends on
+this story and uses `open --ca-file` and the test server).
 
 ## Writes
 
