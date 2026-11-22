@@ -1,0 +1,36 @@
+version: '3'
+
+set: [pipefail]
+
+tasks:
+  anchors-refresh:
+    desc: Fetch curl's cacert.pem and its .sha256, refuse a file whose sha256 differs, and write crates/tls/src/anchors/cacert.pem and SOURCE; FILE=<pem> SHA256=<file> takes local files instead.
+    summary: |
+      Fetch curl's cacert.pem and its .sha256, refuse a file whose sha256 differs, and write crates/tls/src/anchors/cacert.pem and SOURCE; FILE=<pem> SHA256=<file> takes local files instead.
+
+      Runs taskfiles/tls-anchors.sh refresh, whose head states what it checks. It is the one
+      task of surf-tls that reaches the network, and it is never a step of check, check-runner or
+      a workflow. Paths in FILE and SHA256 are relative to the repository's root, or absolute.
+      Run it before a release when task anchors-age fails, then run the tests of surf-tls and
+      read the change of the list (docs/releasing.md).
+    dir: '{{.TASKFILE_DIR}}/..'
+    silent: true
+    env:
+      FILE: '{{.FILE | default ""}}'
+      SHA256: '{{.SHA256 | default ""}}'
+    cmds:
+      - sh taskfiles/tls-anchors.sh refresh crates/tls/src/anchors
+
+  anchors-age:
+    desc: Print the count, date and age of the bundled trust anchors and fail when the list is older than 90 days at DATE (yyyy-mm-dd, default today); no network.
+    summary: |
+      Print the count, date and age of the bundled trust anchors and fail when the list is older than 90 days at DATE (yyyy-mm-dd, default today); no network.
+
+      Runs taskfiles/tls-anchors.sh age on crates/tls/src/anchors/SOURCE and prints `anchors:
+      <n> certificates of <date>, <d> days old`. A step of the release procedure, not of check.
+    dir: '{{.TASKFILE_DIR}}/..'
+    silent: true
+    env:
+      DATE: '{{.DATE | default ""}}'
+    cmds:
+      - sh taskfiles/tls-anchors.sh age crates/tls/src/anchors

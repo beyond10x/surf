@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T21:13:23Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-anchors",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "closing check of the acceptance against the tree at 6cff209 by the coordinating agent's sub-agent: each statement mapped to the test or run that shows it",
+    "reference": "7 statements (lead, 1 to 5, budget); not shown: the 1 s bound of reading the bundle (printed); listed in As built"
+  }
+}

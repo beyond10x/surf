@@ -1,0 +1,17 @@
+The three cases of openssl/make.sh: sha1, md5 and rsa-1024 (docs/design/tls.md, item 6).
+Written by make.sh with the files; the slow lane (task tls-certs-slow WRITE=1) copies it here.
+
+openssl version: OpenSSL 3.6.5 29 Sep 2026 (Library: OpenSSL 3.6.5 29 Sep 2026)
+date: 2026-11-22
+
+sha256 of each output (sha256sum, paths under certs/):
+
+30d11ef07da67fd69621222d3692cd1659510b43bec7d10fadcb6f99874346ce  sha1/chain.pem
+17ad30c4e7594449afea99d845db4afafce9accbe1b71410319695225952a47d  sha1/root.pem
+d93adb0c54ff394214201bbe554f0f87242da8c2c588f4d7a07a93ef6f1ae117  sha1/leaf.pk8
+d80a9094d2f67f7bbe9fa15594762d9d02ee989e2546b72651c7ff82fd371dff  md5/chain.pem
+17ad30c4e7594449afea99d845db4afafce9accbe1b71410319695225952a47d  md5/root.pem
+d93adb0c54ff394214201bbe554f0f87242da8c2c588f4d7a07a93ef6f1ae117  md5/leaf.pk8
+63174f35cec82b7aa5f50a82a165258d444b3e1eb17cc40a50bbc2cc8b64ef02  rsa-1024/chain.pem
+17ad30c4e7594449afea99d845db4afafce9accbe1b71410319695225952a47d  rsa-1024/root.pem
+14938e75e2fc2b6d9c717c2a7d5a232b06290ac461898cc21ee7094dd3232df6  rsa-1024/leaf.pk8

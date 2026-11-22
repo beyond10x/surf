@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-x509
 kind: story
-status: active
+status: implemented
 title: surf-tls reads DER, X.509 certificates and PEM, refusing malformed input with a named error
 summary: A bounded DER reader, the X.509 v3 model the epic names, PEM and base64; x509-limbo vendored and every certificate in it read or refused in held counts.
 relations:
@@ -32,10 +32,11 @@ scope:
   path: crates/tls/tests/tls/pem.rs
 - confidence: cited
   path: crates/tls/tests/tls/x509_parse.rs
-revision: 11
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:25Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:25Z", actor: "human:operator", revision: 11, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-22T21:13:20Z", actor: "human:operator", revision: 13, decided_on: {"recorded":{"test_result":1,"verification":3}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -149,3 +150,36 @@ variant of `src/error.rs`, `tests/tls/der.rs`, `tests/tls/x509_parse.rs`, `tests
 `tests/main.rs` are handed to the coordinator in a wave of more than one unit. Beside it run
 `story:tls-record` and `story:tls-test-certs` (other files). Read later by `tls-x509-path`,
 `tls-anchors`, `tls-handshake` and `tls-test-server`, each with an edge to this story.
+
+## As built
+
+What differs from the text above, as of 6cff209 (branch `wave/tls-1`):
+
+- One trait, `ServerCertVerifier::verify(&self, certificates: &[&[u8]], host: &str, now: Time)
+  -> Result<LeafKey, CertificateRejection>` (`crates/tls/src/verify.rs:18-27`), settled in
+  9623b2c: the handshake calls it once (`crates/tls/src/handshake/client.rs:592-596`) and
+  `PathVerifier` implements it (`crates/tls/src/path.rs:311`).
+- `Check::Unreadable` carries `left_out` (`crates/tls/src/verify.rs:76`): when no path is found
+  and certificates after the leaf were left out as unreadable, how many.
+- `TrustAnchor` keeps the certificate it was read from (`certificate: Option<Arc<[u8]>>`,
+  `crates/tls/src/x509/anchor.rs:50`), so that every anchor holding one is checked as an
+  issuer (7f0ad05, the review of the seams).
+- A refusal text shows bytes from outside the crate only as an excerpt: at most 64 bytes
+  (`EXCERPT_BYTES_MAX`, `crates/tls/src/error.rs:19`), every byte outside printable ASCII
+  escaped, and the length when cut; used by `Check::UnknownCriticalExtension`
+  (`crates/tls/src/verify.rs:239`), `Check::NameConstraint` (`:247`) and
+  `CertificateRejection::NameMismatch` (`:323`). The fields keep the whole value; `Display`
+  cuts (2047347).
+- The limbo data is five files (`limbo-other.json`, `limbo-bettertls-1.json` to `-4.json`,
+  `crates/tls/tests/data/x509-limbo/`), not one `limbo.json`; `limbo_parse` is one test per file
+  plus `parse_counts_name_only_the_files`. Acceptance 5: the three ML-DSA refusals of cases
+  limbo expects to succeed are `expected-refusal` lines, not findings
+  (`crates/tls/tests/tls/limbo_parse.rs:36-42`).
+
+Not shown by a test or a run:
+
+- Acceptance 4, "in under 1 s": printed, not asserted; the test asserts the bytes looked at (at
+  most twice the input) and a peak under 64 KiB. It took 0.23 s in the gate run on 32df67f.
+- Budget, "every other test under 1 s": no bound under 60 s is asserted; on 6cff209 the
+  slowest test of the crate outside `limbo_parse` is not among the ten slowest (the tenth took
+  1.6 s). A per-test report of a gate at normal load would show it.

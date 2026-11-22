@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T21:13:22Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-record",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "closing check of the acceptance against the tree at 6cff209 by the coordinating agent's sub-agent: each statement mapped to the test or run that shows it",
+    "reference": "10 statements and the 16 rows of rfc8446-record-musts.txt; not shown: the member of 7 that cannot be built (unprotected application data after the keys is the protected form), the 1 s bound; listed in As built"
+  }
+}

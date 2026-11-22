@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T21:13:23Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-x509-path",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "security review of the seams of surf-tls on wave/tls-1: 6 findings and one on writes, fixed in bdbcd4f, ee6c101, 7f0ad05, 2047347, d299d0d, 36e50b2, 8de6ce4",
+    "reference": "this story's fixes: bdbcd4f and ee6c101, names::normalise and names::connection_host (one host value, refused before the first byte); 7f0ad05, every anchor holding its certificate checked as an issuer"
+  }
+}

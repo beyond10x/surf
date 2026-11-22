@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T21:13:19Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-lock-allow",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "closing check of the acceptance against the tree at 6cff209 by the coordinating agent's sub-agent: each statement mapped to the test or run that shows it",
+    "reference": "17 statements (lead, 1 to 15, budget); not shown: the planted-file failure of 14 (held in memory), the seam's 5 s sum (6.8 s at a load of 105 to 143); listed in As built"
+  }
+}

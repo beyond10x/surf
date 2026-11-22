@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-lock-allow
 kind: story
-status: active
+status: implemented
 title: The lock check allows ring for surf-tls alone, and surf-tls wraps it in one module
 summary: taskfiles/lock-allow.txt pins the packages of ring by name, version, source and checksum, only surf-tls may depend on them; crates/tls starts with crypto.rs, checked against Wycheproof vectors.
 relations:
@@ -34,10 +34,11 @@ scope:
   path: taskfiles/lock-allow.txt
 - confidence: cited
   path: taskfiles/lock-check.sh
-revision: 14
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:24Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:24Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-22T21:13:20Z", actor: "human:operator", revision: 16, decided_on: {"recorded":{"test_result":1,"verification":3}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -217,3 +218,33 @@ Coordinator: the root `Taskfile.yml` (task body), `Cargo.lock`, `README.md`, `AG
 gains one variant from `tls-x509`; `crates/tls/src/lib.rs` and `tests/main.rs` gain `mod` lines
 from `tls-x509`, `tls-record`, `tls-x509-path`, `tls-anchors` and `tls-handshake`. Nothing runs
 beside it in the epic.
+
+## As built
+
+What differs from the text above, as of 6cff209 (branch `wave/tls-1`):
+
+- `crypto::Secret` and `crypto::Digest` overwrite their bytes when dropped, with a plain
+  `fill(0)` (`crates/tls/src/crypto.rs:223-227` for `Digest`, `:463-467` for `Secret`): a
+  finding of the security review of the seams, fixed in d299d0d; the Change above does not name
+  it. `security_seams` holds at compile time that each of the four secret-holding types has a
+  `Drop` of its own.
+- "no other story changes this file" (`src/error.rs`): `story:tls-record` (e3bfaa7,
+  `KeyLimitReached`), `story:tls-handshake` (b082959, 25546b3) and the review of the seams
+  (ee6c101: `Error::Host`, `error::excerpt`, `EXCERPT_BYTES_MAX` 64; 2047347) changed it; its
+  module documentation (`crates/tls/src/error.rs:4-8`) names who added what.
+- Under `test-tooling` `src/lib.rs` also makes the module `handshake` public
+  (`crates/tls/src/lib.rs:25-28`), for the trace mode of `story:tls-handshake`.
+- `lock_check` holds cases beyond the eight above: `a_line_cargo_does_not_write_fails_naming_it`
+  and six `adversary_*` cases.
+
+Not shown by a test or a run:
+
+- Acceptance 14, the failure with a planted `use ring::digest;` in `src/lib.rs`: held in memory
+  by `seam::the_ring_search_sees_every_spelling`, not as a file planted under `src/`; a run
+  with the line planted would show it.
+- That the bytes of `Secret` and `Digest` read zero after a drop (it needs `unsafe` to read
+  them).
+- Budget, "the seam tests together under 5 s": in the gate run on 32df67f (load 105 to 143)
+  they took 6.8 s together, the longest 0.9 s; on 6cff209 none is among the ten slowest (the
+  tenth took 1.6 s). The sum at normal load would show it; the gate's JUnit report of
+  6cff209 was overwritten by a later step.

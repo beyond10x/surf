@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T21:13:25Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-test-server",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "adversary's pass on surf-tls-test-server",
+    "reference": "adversary's pass: 17 cases (0f93e59) and 8 findings, fixed in 9dca042 (compression methods; session id over 32 bytes), 160f5c0 (change_cipher_spec), 405ba33 (NeverAnswer), f92461e (StallAfterServerHello), 8780590 (record limits as literals, in surf-tls), e4a31c3 (drop without join), 3a0aac6 (no wall-time bounds)"
+  }
+}
