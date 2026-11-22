@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:page-text-outline
 kind: story
-status: draft
+status: active
 title: The document's tree as a bounded outline, with the handles now will use
 summary: A new crate surf-page-text renders a surf-html tree as indented lines with quoted text, a small attribute set, hid and deep counts, and the handles @l<n>, @b<n>, @f<n> of surf_page::handles, added here.
 relations:
@@ -17,7 +17,10 @@ scope:
   path: crates/page/src/lib.rs
 - confidence: inferred
   path: crates/page/tests/elements.rs
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T04:59:50Z", actor: "human:operator", revision: 8, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T04:59:50Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Context
 

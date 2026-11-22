@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:page-text-look
 kind: story
-status: draft
+status: active
 title: --as tree|markdown on open, go and look prints the page
 summary: surf-agent open <url>, go <url> and look take --as tree|markdown [--from-line <n>] and answer with the outline or the Markdown of the kept tree in a text block, paged, without fetching again; surfd and the client pass UTF-8 inside > lines.
 relations:
@@ -43,7 +43,10 @@ scope:
   path: generated/rust
 - confidence: inferred
   path: spec/domains/agent.yaml
-revision: 11
+revision: 13
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T04:59:51Z", actor: "human:operator", revision: 12, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T04:59:51Z", actor: "human:operator", revision: 13, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Context
 

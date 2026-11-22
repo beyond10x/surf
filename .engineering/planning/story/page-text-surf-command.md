@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:page-text-surf-command
 kind: story
-status: draft
+status: active
 title: surf <url> --as tree|markdown
 summary: The one-process command prints its rows and then the outline or the Markdown of the page in the same framed text block, whole.
 relations:
@@ -20,7 +20,10 @@ scope:
   path: crates/surf-cli/tests/page.rs
 - confidence: inferred
   path: docs/surf-command.md
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T04:59:52Z", actor: "human:operator", revision: 5, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T04:59:52Z", actor: "human:operator", revision: 6, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Context
 

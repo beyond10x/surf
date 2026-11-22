@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:page-text-markdown
 kind: story
-status: draft
+status: active
 title: A page's content as Markdown, tables aside
 summary: surf-page-text renders headings, paragraphs, links, lists, landmarks, code, images and controls as escaped Markdown (UTF-8 by rule 2) that page text cannot forge; a table is its text until page-text-tables.
 relations:
@@ -18,7 +18,10 @@ scope:
   path: crates/page-text/tests/cases/markdown.rs
 - confidence: inferred
   path: crates/page-text/tests/main.rs
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T04:59:50Z", actor: "human:operator", revision: 7, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T04:59:50Z", actor: "human:operator", revision: 8, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Context
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:page-text-tables
 kind: story
-status: draft
+status: active
 title: Tables in a page's Markdown
 summary: 'An HTML table becomes a GitHub table: header row, colspan and rowspan as empty cells, nested tables after their outer one, cells escaped and cut.'
 relations:
@@ -22,7 +22,10 @@ scope:
   path: crates/page-text/tests/cases/tables.rs
 - confidence: inferred
   path: crates/page-text/tests/main.rs
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T04:59:51Z", actor: "human:operator", revision: 6, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T04:59:51Z", actor: "human:operator", revision: 7, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Context
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:page-text-answer-block
 kind: story
-status: draft
+status: active
 title: 'The text block: page text in an answer, every line behind >'
 summary: docs/agent-answer.md and surf-answer gain the text block (header, body lines behind >, more, note text:), at most 200 lines and 32,768 bytes; the version stays 1.
 relations:
@@ -15,7 +15,10 @@ scope:
   path: crates/answer/tests
 - confidence: inferred
   path: docs/agent-answer.md
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T04:59:49Z", actor: "human:operator", revision: 6, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T04:59:50Z", actor: "human:operator", revision: 7, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Context
 
