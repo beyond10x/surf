@@ -6,10 +6,9 @@
 //! # State
 //!
 //! Bytes are decoded, the decoded text is tokenized, and [`parse_document`] and
-//! [`parse_document_bytes`] build a document from it with the insertion modes outside tables,
-//! templates and foreign content. [`NOT_YET_PARSED`] names each part not yet parsed as the
-//! standard does; [`parse_fragment`] returns a fragment that holds only its root. Module by
-//! module:
+//! [`parse_document_bytes`] build a document from it with every insertion mode and the rules
+//! for foreign content; [`parse_fragment`] runs the fragment parsing algorithm.
+//! [`NOT_YET_PARSED`] names each part not yet parsed as the standard does. Module by module:
 //!
 //! - [`encoding`]: written. [`encoding::decode`] runs the encoding sniffing algorithm with no
 //!   transport-layer encoding: a byte order mark (confidence certain), else the prescan of the
@@ -33,9 +32,11 @@
 //!   which each start tag it emits replaces; an end tag in the RCDATA, RAWTEXT or script data
 //!   states ends them only when its name is that tag's. The tree builder drives the same state
 //!   machine one token at a time and switches its state between two tokens; one tokenizer
-//!   serves a whole parse, so the last start tag is the one it emitted last. `<![CDATA[` in the
-//!   data state is a bogus comment with the parse error `cdata-in-html-content`: no element in
-//!   a foreign namespace is created yet, so the adjusted current node is never one. A character
+//!   serves a whole parse, so the last start tag is the one it emitted last. `<![CDATA[` opens
+//!   a CDATA section when the tree builder said, before the token, that the adjusted current
+//!   node is an element not in the HTML namespace; otherwise, and always in
+//!   [`tokenizer::tokenize`], it is a bogus comment with the parse error
+//!   `cdata-in-html-content`. A character
 //!   reference in data, in RCDATA and in an attribute value is read as 13.2.5.77 to 13.2.5.84
 //!   say: a named one from the table of 13.5, a numeric one with the replacements of the
 //!   numeric character reference end state.
@@ -48,14 +49,12 @@
 //! - [`tree`]: the node arena and its readers [`Tree::root`], [`Tree::data`],
 //!   [`Tree::children`], [`Tree::parent`] and [`Tree::descendants`]. Only tree construction
 //!   changes a tree; a node is never dropped from it.
-//! - [`tree_builder`]: written for the insertion modes initial, before html, before head, in
-//!   head, in head noscript, after head, in body, text, after body, in frameset, after
-//!   frameset, after after body and after after frameset, with the stack of open elements and
-//!   its scopes, the list of active formatting elements with its Noah's Ark clause and its
-//!   reconstruction, the adoption agency algorithm, and the `meta` rules that change the
-//!   encoding. Not yet: tables and `select`, `template` and foreign content
-//!   ([`NOT_YET_PARSED`]); their tokens go to in body's "any other start tag" and "any other end
-//!   tag". Parse errors are not collected, and no script runs.
+//! - [`tree_builder`]: written for every insertion mode of 13.2.6.4, with the stack of open
+//!   elements and its scopes, the list of active formatting elements with its Noah's Ark clause
+//!   and its reconstruction, the adoption agency algorithm, foster parenting, the stack of
+//!   template insertion modes, the rules for foreign content with the MathML and SVG
+//!   adjustments, the fragment parsing algorithm, and the `meta` rules that change the
+//!   encoding. Parse errors are not collected, and no script runs.
 //! - [`limits`]: written. [`limits::Limits`] holds the six limits of
 //!   `docs/design/html-parser.md` item 7 with their defaults, [`ParseOptions::limits`] carries
 //!   them into a parse, and [`Tree::stopped_by`] names the [`limits::Limit`] that stopped one.
@@ -65,8 +64,9 @@
 //!
 //! - [`parse_document`]: the tokenizer and tree construction over decoded text. With no
 //!   confidence in an encoding, a `meta` does not change it.
-//! - [`parse_fragment`]: returns a document fragment with no child, whatever the input, the
-//!   context and the options (story `html-tree-foreign`).
+//! - [`parse_fragment`]: the fragment parsing algorithm (13.4) for a context element named by
+//!   its namespace and local name, with no attribute and no ancestor: a document fragment that
+//!   holds the children of the algorithm's `html` root.
 //! - [`parse_document_bytes`]: runs [`encoding::decode`], then the tokenizer and tree
 //!   construction. A `meta` met while the confidence is tentative changes the encoding as
 //!   13.2.3.4 says: the same bytes are decoded again with the new encoding and the confidence
@@ -282,8 +282,14 @@ fn parse_cut_bytes(bytes: &[u8], options: &ParseOptions) -> ParsedDocument {
 /// element, with no sanitizer and no declarative shadow roots: a tree whose root is a
 /// [`NodeData::DocumentFragment`] holding the nodes the algorithm returns.
 ///
-/// Not written yet (story `html-tree-foreign`): returns a fragment with no child.
+/// The context element has no attribute and no ancestor, and its document is in no-quirks
+/// mode. An input longer than [`limits::Limits::max_input_bytes`] is parsed as its prefix, as
+/// [`parse_document`] does.
 pub fn parse_fragment(input: &str, context: &Context, options: &ParseOptions) -> Tree {
-    let _ = (input, context, options);
-    Tree::fragment()
+    let (input, cut) = limits::cut_str(input, options.limits.max_input_bytes);
+    let mut tree = tree_builder::parse_fragment(input, context, options);
+    if cut {
+        tree.stop_at(limits::Limit::InputBytes);
+    }
+    tree
 }

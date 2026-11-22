@@ -173,6 +173,13 @@ impl Tokenizer {
     pub(crate) fn switch_to(&mut self, state: State) {
         self.0.switch_state(state.into());
     }
+
+    /// Tells the tokenizer, before the next token, whether the adjusted current node is an
+    /// element that is not in the HTML namespace: then `<![CDATA[` opens a CDATA section
+    /// instead of a bogus comment (13.2.5.42).
+    pub(crate) fn set_cdata_allowed(&mut self, allowed: bool) {
+        self.0.set_cdata_allowed(allowed);
+    }
 }
 
 #[cfg(test)]
