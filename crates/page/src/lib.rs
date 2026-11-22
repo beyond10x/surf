@@ -92,6 +92,10 @@
 //!   The name is a flat string: ASCII whitespace stripped and collapsed. "Hidden" is the flag
 //!   of `hidden`, recorded by the walk of [`actionable_elements`].
 //!
+//! - [`handles`]: surf's own numbering of the rows, not a standard's: `l<n>`, `b<n>`, `f<n>`
+//!   (`docs/design/page-as-text.md` section 5). [`hidden_roots`]: the rule of [`is_hidden`] for a
+//!   whole tree in one walk.
+//!
 //! No function recurses over the depth of the tree: [`actionable_elements`] and [`title`] walk
 //! with their own stack over [`Tree::children`], [`is_hidden`] walks up [`Tree::parent`], and
 //! each label is computed with its own stack. [`actionable_elements`] computes the inherited
@@ -333,6 +337,54 @@ pub fn actionable_elements(tree: &Tree) -> Vec<ActionableElement> {
     }
     label::fill(tree, facts, &mut found);
     found
+}
+
+/// The handle of each actionable element, the one numbering the outline, the Markdown and the
+/// `now` block print (`docs/design/page-as-text.md` section 5): `l<n>` for a link, `b<n>` for a
+/// button, `f<n>` for the other seven kinds, each letter counted from 1 in document order over
+/// [`actionable_elements`], hidden elements included. Written without the `@` the text puts
+/// before it. The tree does not change after parsing, so the numbering is stable.
+pub fn handles(tree: &Tree) -> Vec<(NodeId, String)> {
+    let (mut links, mut buttons, mut fields) = (0u64, 0u64, 0u64);
+    actionable_elements(tree)
+        .into_iter()
+        .map(|row| {
+            let (letter, count) = match row.kind {
+                Kind::Link => ('l', &mut links),
+                Kind::Button => ('b', &mut buttons),
+                _ => ('f', &mut fields),
+            };
+            *count += 1;
+            (row.node, format!("{letter}{count}"))
+        })
+        .collect()
+}
+
+/// The nodes [`is_hidden`] calls hidden whose parent it does not: a node is hidden exactly when
+/// it or an ancestor is in the set. One walk with its own stack that does not enter a hidden
+/// subtree, so the time is linear in the number of nodes and of their attributes, where calling
+/// [`is_hidden`] for every node costs the depth of each.
+pub fn hidden_roots(tree: &Tree) -> std::collections::HashSet<NodeId> {
+    let primary = Primary::of(tree);
+    let exempt = |node| primary.contains(node);
+    let mut roots = std::collections::HashSet::new();
+    // Each node with whether it is slotted out of a closed `details` parent.
+    let mut pending = vec![(tree.root(), false)];
+    while let Some((node, slotted_out)) = pending.pop() {
+        let this = element(tree, node);
+        if slotted_out || this.as_ref().is_some_and(|e| hides(e, node, exempt)) {
+            roots.insert(node);
+            continue;
+        }
+        let first = match &this {
+            Some(e) if is_closed_details(e) => Some(first_summary(tree, node)),
+            _ => None,
+        };
+        for &child in tree.children(node).iter().rev() {
+            pending.push((child, first.is_some_and(|summary| summary != Some(child))));
+        }
+    }
+    roots
 }
 
 /// Whether `node` is hidden: it or an ancestor element has `aria-hidden="true"` (not read on
