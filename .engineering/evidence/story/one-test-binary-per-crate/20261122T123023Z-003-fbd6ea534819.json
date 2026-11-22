@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T12:30:23Z",
+  "actor": "human:operator",
+  "artifact": "story:one-test-binary-per-crate",
+  "kind": "story",
+  "revision": 23,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "adversary on 22d8f4b",
+    "reference": "six findings introduced, closed in 7c76bd0: plain cargo test -p surf-fetch failed one run in three, eleven planted layouts passed taskfiles/test-layout.sh, AGENTS.md cited a directory that does not exist; sound: the 660 test names, the three selections, the lint lines"
+  }
+}

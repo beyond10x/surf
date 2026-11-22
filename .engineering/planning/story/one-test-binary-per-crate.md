@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:one-test-binary-per-crate
 kind: story
-status: active
+status: implemented
 title: Each crate has one integration-test binary
 summary: 77 files under crates/*/tests/ are 77 test executables in 16 crates. Every crate with a tests/ directory, and conformance/, gets autotests = false and one [[test]] main over tests/main.rs with one mod line per file; no file moves and no test is removed; a POSIX sh gate check keeps the form; the executables and the test step are measured before and after.
 relations:
@@ -92,10 +92,11 @@ scope:
   path: taskfiles/test-layout.sh
 - confidence: cited
   path: taskfiles/test-layout.yml
-revision: 22
+revision: 24
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T09:00:41Z", actor: "human:operator", revision: 18, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T09:00:41Z", actor: "human:operator", revision: 19, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-22T12:30:23Z", actor: "human:operator", revision: 24, decided_on: {"recorded":{"test_result":3,"verification":4}}}
 ---
 ## Context
 
@@ -343,3 +344,16 @@ every other such story reaches it through one of them.
 `conformance/Cargo.toml`, `conformance/tests/main.rs` (new). `Taskfile.yml` (the two `grep` lines of `conform-rust`, the include of
 `taskfiles/test-layout.yml`, two lines of `check`), `taskfiles/test-layout.sh` (new), `taskfiles/test-layout.yml` (new), `taskfiles/release-smoke.sh`
 (line 96), `.github/workflows/release.yml` (line 152), `AGENTS.md` ("Layout", "Commands", "The gate's numbers").
+
+## As built
+
+The unit's commits are `22d8f4b`, `7c76bd0` and `7b1bff1`. Where they differ from the statements above, and why:
+
+- Statement 5 and case 5, the fetch memory cases: the sentence the story gives ("the cases still hold `SERIAL`. Without cargo-nextest, run `cargo test -p surf-fetch -- --test-threads=1`") is not in the file, and the `grep` of case 5 prints 0. With that form, plain `cargo test -p surf-fetch` failed one run in three: the allocator counted every thread of the one binary and only the cases of this file held `SERIAL` (an adversary pass on `22d8f4b`). A count per thread (`7c76bd0`) ended that but did not see a copy of the body made on another thread, which the count before this story saw (the second pass). As built in `7b1bff1`: the allocator keeps a count of the whole process and one per thread; a case reads the whole process when it runs alone in its process (cargo-nextest sets `NEXTEST_EXECUTION_MODE=process-per-test`, and the gate runs cargo-nextest) and the calling thread otherwise. `SERIAL` is gone. The two cases that send a body keep the server's replies until the fetch is measured, because the server thread freed its 16 MiB page inside the measurement. No assertion changed.
+- The check `taskfiles/test-layout.sh` counts 84 test files, not 82: `crates/test-process` gained `tests/lines.rs` and `tests/children.rs` for its two inline modules. The conformance crate lists 4 suites where it listed 6, with the same 28 tests.
+- The check does more than statement 8 names, after the two adversary passes: it visits every directory with a `Cargo.toml` and a `tests/` directory (members under `generated/` included; a `tests/` directory below a `tests/` directory is a fixture and is skipped); `autotests = false` counts only in `[package]`; table headers are compared without spaces and quotes; `test = true` in an `[[example]]` or `[[bench]]` entry is refused; `#![cfg` and `#![cfg_attr` are refused anywhere in a line, and an inner attribute that does not close on its line; every `mod` of a file of the binary is followed to its file; an out-of-line module inside an inline module is refused; a module at any depth whose name a selection or its `--skip` would match is refused; string literals and comments are removed from a line first. `task test-layout-test` has 32 cases (5 right layouts, 27 planted defects), not 15.
+- Case 2: `grep planted` on the list shows one line, `surf-agent::main drift::planted_drift`, a test that was there before; the planted file itself is not built, and the check names it.
+
+Measured: 80 test executables of 146,442,536 bytes on `b98ab10`, 16 of 41,435,688 bytes on `22d8f4b`. The test step took 16.6, 17.4 and 15.3 s before (load average 22 to 27) and 15.7, 16.5 and 15.3 s after (load average 14); the lists of tests before and after are equal once the old names are rewritten (660 of the workspace, 28 of `conformance/`). The check takes 0.03 s and its test 1.0 s.
+
+What the check does not see, left as it is and named in its head and in `AGENTS.md`: a module that a macro expands to, a module in a file read by `include!`, `autotests = false` inside a multi-line string of `[package]`, a crate reached through a symlink. A `mod x;` at column 0 inside an inline module that is not indented is not seen either.

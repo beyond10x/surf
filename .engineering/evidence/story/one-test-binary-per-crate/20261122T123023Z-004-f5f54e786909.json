@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T12:30:23Z",
+  "actor": "human:operator",
+  "artifact": "story:one-test-binary-per-crate",
+  "kind": "story",
+  "revision": 23,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "adversary on 7c76bd0",
+    "reference": "the six findings closed; new: the per-thread count missed a planted copy on another thread, four right layouts refused, two wrong ones passed; closed in 7b1bff1, four forms left unseen by decision and named in As built"
+  }
+}

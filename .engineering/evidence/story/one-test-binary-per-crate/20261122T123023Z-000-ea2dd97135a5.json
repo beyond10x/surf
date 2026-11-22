@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T12:30:23Z",
+  "actor": "human:operator",
+  "artifact": "story:one-test-binary-per-crate",
+  "kind": "story",
+  "revision": 23,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate",
+    "reference": "gate on c263b32 (slot --timeout 25m task check-runner): 662 tests, 662 passed, 0 failed (cargo-nextest 660, doc tests 2), test step 15.1 s of its budget of 120 s, task check exit 0 in 40 s, load average 8.7 before and 10.2 after; test-layout: 17 test directories, 84 test files, one test binary each; test-layout-test: 32 cases decided as expected"
+  }
+}

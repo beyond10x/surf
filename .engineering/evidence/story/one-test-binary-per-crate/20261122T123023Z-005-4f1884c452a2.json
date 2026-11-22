@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T12:30:23Z",
+  "actor": "human:operator",
+  "artifact": "story:one-test-binary-per-crate",
+  "kind": "story",
+  "revision": 23,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "planted defects in the fetch memory cases on 7b1bff1, each removed with cmp of the diff equal",
+    "reference": "a second copy of the body on another thread is red under cargo-nextest (16775729 bytes over), a copy on the calling thread is red under cargo-nextest and plain cargo test; ten plain cargo test --locked -p surf-fetch --test main runs exit 0, 103 passed each"
+  }
+}
