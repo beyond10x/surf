@@ -600,6 +600,7 @@ pub fn exit_status(result: &Result<Report, Error>) -> u8 {
 /// The behaviours the `agent` component's port needs to be part of a [`System`].
 pub trait AgentBehaviors:
     surf_types::agent::obligations::CloseSessionBehavior
+    + surf_types::agent::obligations::FollowBehavior
     + surf_types::agent::obligations::GoBehavior
     + surf_types::agent::obligations::NoteNavigationCommittedBehavior
     + surf_types::agent::obligations::NoteNavigationEndedBehavior
@@ -615,6 +616,7 @@ pub trait AgentBehaviors:
 
 impl<B> AgentBehaviors for B where
     B: surf_types::agent::obligations::CloseSessionBehavior
+        + surf_types::agent::obligations::FollowBehavior
         + surf_types::agent::obligations::GoBehavior
         + surf_types::agent::obligations::NoteNavigationCommittedBehavior
         + surf_types::agent::obligations::NoteNavigationEndedBehavior

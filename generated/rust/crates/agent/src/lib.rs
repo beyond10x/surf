@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest d02edabfb4604fe93f72d6e24ef0d1805df03b1628561d9011c4f5f33d76c73d
+// contract digest 49f60222a83939f6aea402a84c409f0a11ea6e9e7cdf407c392a74230af919be
 // do not edit: regenerate with `ess synthesize`
 
 //! agent — the `agent` component of `surf` v1.
@@ -59,7 +59,7 @@ impl<B> Agent<B> {
 
 impl<B> Agent<B>
 where
-    B: surf_types::agent::obligations::CloseSessionBehavior + surf_types::agent::obligations::GoBehavior + surf_types::agent::obligations::NoteNavigationCommittedBehavior + surf_types::agent::obligations::NoteNavigationEndedBehavior + surf_types::agent::obligations::NoteNavigationFailedBehavior + surf_types::agent::obligations::NoteNavigationStartedBehavior + surf_types::agent::obligations::OpenSessionBehavior + surf_types::agent::obligations::RecordActionBehavior + surf_types::agent::obligations::SessionLogQuery + surf_types::agent::obligations::SessionStateViewQuery + surf_types::agent::obligations::SessionsQuery,
+    B: surf_types::agent::obligations::CloseSessionBehavior + surf_types::agent::obligations::FollowBehavior + surf_types::agent::obligations::GoBehavior + surf_types::agent::obligations::NoteNavigationCommittedBehavior + surf_types::agent::obligations::NoteNavigationEndedBehavior + surf_types::agent::obligations::NoteNavigationFailedBehavior + surf_types::agent::obligations::NoteNavigationStartedBehavior + surf_types::agent::obligations::OpenSessionBehavior + surf_types::agent::obligations::RecordActionBehavior + surf_types::agent::obligations::SessionLogQuery + surf_types::agent::obligations::SessionStateViewQuery + surf_types::agent::obligations::SessionsQuery,
 {
     /// Accepts `surf.agent.CloseSession`: runs the behaviour obligation, then publishes the declared events
     /// the outcome carries.
@@ -75,6 +75,24 @@ where
                 self.outbox.push(PublishedEvent::SessionClosed(session_closed.clone()));
             }
             surf_types::agent::CloseSessionOutcome::WrongState { .. } => {}
+        }
+        Ok(outcome)
+    }
+
+    /// Accepts `surf.agent.Follow`: runs the behaviour obligation, then publishes the declared events
+    /// the outcome carries.
+    ///
+    /// `Err` is the typed refusal of an unmet obligation — never a domain outcome, which always
+    /// arrives as a variant of the outcome type, refusals included.
+    pub fn follow(&mut self, input: surf_types::agent::Follow) -> Result<surf_types::agent::FollowOutcome, surf_types::obligation::UnmetObligation> {
+        let outcome = self.behaviors.follow(input)?;
+        match &outcome {
+            surf_types::agent::FollowOutcome::NotHolder { .. } => {}
+            surf_types::agent::FollowOutcome::NoSuchSession { .. } => {}
+            surf_types::agent::FollowOutcome::Closed { .. } => {}
+            surf_types::agent::FollowOutcome::Requested { navigation_requested, .. } => {
+                self.outbox.push(PublishedEvent::NavigationRequested(navigation_requested.clone()));
+            }
         }
         Ok(outcome)
     }

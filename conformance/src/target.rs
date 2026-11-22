@@ -45,11 +45,11 @@ use surf::{
 use surf_ports::{AgentPorts, Caller};
 use surf_system::BindingInvocation;
 use surf_types::agent::{
-    ActionCommand, CloseSession, CloseSessionOutcome, Go, GoOutcome, NoteNavigationCommitted,
-    NoteNavigationCommittedOutcome, NoteNavigationEnded, NoteNavigationEndedOutcome,
-    NoteNavigationFailed, NoteNavigationFailedOutcome, NoteNavigationStarted,
-    NoteNavigationStartedOutcome, OpenSession, OpenSessionOutcome, RecordAction,
-    RecordActionOutcome, SessionData, SessionId, SessionSnapshot, SessionState,
+    ActionCommand, CloseSession, CloseSessionOutcome, Follow, FollowOutcome, Go, GoOutcome,
+    NoteNavigationCommitted, NoteNavigationCommittedOutcome, NoteNavigationEnded,
+    NoteNavigationEndedOutcome, NoteNavigationFailed, NoteNavigationFailedOutcome,
+    NoteNavigationStarted, NoteNavigationStartedOutcome, OpenSession, OpenSessionOutcome,
+    RecordAction, RecordActionOutcome, SessionData, SessionId, SessionSnapshot, SessionState,
 };
 use surf_types::behaviour::SessionStorage;
 use surf_types::document::{
@@ -408,14 +408,20 @@ fn action_command(command: ActionCommand) -> &'static str {
     match command {
         ActionCommand::Open => "open",
         ActionCommand::Go => "go",
+        ActionCommand::Follow => "follow",
         ActionCommand::Close => "close",
     }
 }
 
 fn action_command_named(name: &str) -> Option<ActionCommand> {
-    [ActionCommand::Open, ActionCommand::Go, ActionCommand::Close]
-        .into_iter()
-        .find(|command| action_command(*command) == name)
+    [
+        ActionCommand::Open,
+        ActionCommand::Go,
+        ActionCommand::Follow,
+        ActionCommand::Close,
+    ]
+    .into_iter()
+    .find(|command| action_command(*command) == name)
 }
 
 /// An optional value: `null` where it is absent.
@@ -592,13 +598,16 @@ fn request_fields(
     ]
 }
 
+/// The method of a request, its body and the body's media type.
+type RequestParts = (Method, Option<Vec<u8>>, Option<MediaType>);
+
 /// The method, the body and its media type of the input of `Navigate` or `Fetch`, whose fields
 /// without `null` are `present`: an absent body or media type and one sent as `null` read the
 /// same.
 fn request_input(
     input: &mut Input<'_>,
     present: &BTreeMap<String, Node>,
-) -> Result<(Method, Option<Vec<u8>>, Option<MediaType>), TargetError> {
+) -> Result<RequestParts, TargetError> {
     let request_method = input.variant("method", method_named)?;
     let body = if present.contains_key("body") {
         Some(input.bytes("body")?)
@@ -722,6 +731,8 @@ fn payload(event: &SystemEvent) -> Vec<(&'static str, Node)> {
             ("sequence", integer(e.sequence)),
             ("command", text(action_command(e.command))),
             ("url", optional(e.url.as_ref(), |url| text(&url.0))),
+            ("handle", optional(e.handle.as_deref(), text)),
+            ("label", optional(e.label.as_deref(), text)),
         ],
         SystemEvent::NavigationRequested(e) => vec![
             ("session_id", uuid(&e.session_id.0)),
@@ -1056,6 +1067,45 @@ where
                     )?,
                 }
             }
+            "surf.agent.Follow" => {
+                let session_id = SessionId(input.uuid("session_id")?);
+                let url = Url(input.text("url")?);
+                let handle = input.text("handle")?;
+                let label = input.text("label")?;
+                input.finish()?;
+                match browser
+                    .agent_mut()
+                    .follow(Follow {
+                        session_id,
+                        url,
+                        handle,
+                        label,
+                    })
+                    .map_err(unmet)?
+                {
+                    FollowOutcome::Requested {
+                        navigation_requested,
+                    } => took(
+                        "requested",
+                        SystemEvent::NavigationRequested(navigation_requested),
+                    ),
+                    FollowOutcome::NotHolder { error } => refused(
+                        "not-holder",
+                        "surf.agent.NotSessionHolder",
+                        vec![("session_id", uuid(&error.session_id.0))],
+                    )?,
+                    FollowOutcome::NoSuchSession { error } => refused(
+                        "no-such-session",
+                        "surf.agent.SessionNotFound",
+                        vec![("session_id", uuid(&error.session_id.0))],
+                    )?,
+                    FollowOutcome::Closed { error } => refused(
+                        "closed",
+                        "surf.agent.SessionStateConflict",
+                        vec![("state", values::text(session_state(error.state)))],
+                    )?,
+                }
+            }
             "surf.agent.CloseSession" => {
                 let session_id = SessionId(input.uuid("session_id")?);
                 input.finish()?;
@@ -1161,6 +1211,16 @@ where
                 } else {
                     None
                 };
+                let handle = if present.contains_key("handle") {
+                    Some(input.text("handle")?)
+                } else {
+                    None
+                };
+                let label = if present.contains_key("label") {
+                    Some(input.text("label")?)
+                } else {
+                    None
+                };
                 input.finish()?;
                 match browser
                     .agent_mut()
@@ -1169,6 +1229,8 @@ where
                         sequence,
                         command,
                         url,
+                        handle,
+                        label,
                     })
                     .map_err(unmet)?
                 {
@@ -1658,6 +1720,8 @@ where
                         ("sequence", integer(row.sequence)),
                         ("command", text(action_command(row.command))),
                         ("url", optional(row.url.as_ref(), |url| text(&url.0))),
+                        ("handle", optional(row.handle.as_deref(), text)),
+                        ("label", optional(row.label.as_deref(), text)),
                     ])
                 })
                 .collect();

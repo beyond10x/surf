@@ -369,6 +369,8 @@ fn storage_action_put_get_list_in_insertion_order_replace_in_place_delete() {
             sequence: 1,
             command: ActionCommand::Open,
             url: None,
+            handle: None,
+            label: None,
         },
     });
     let mut replacement = rows[1].clone();

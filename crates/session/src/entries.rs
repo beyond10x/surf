@@ -7,7 +7,7 @@
 //! document declares them, each value quoted, by the field's type:
 //!
 //! - an `Integer` (and `surf.net.Status`) in decimal;
-//! - an enum by its variant name as `spec/` spells it: `open`, `go` and `close` for
+//! - an enum by its variant name as `spec/` spells it: `open`, `go`, `follow` and `close` for
 //!   `surf.agent.ActionCommand`, the generated variant's name for `surf.navigation.Navigation.State`,
 //!   `surf.net.FailureReason`, `surf.net.Method` and `surf.document.ParseLimit`, which `spec/`
 //!   spells the same (`Committed`, `Unreachable`, `Post`, `Depth`), so that a variant a
@@ -142,7 +142,9 @@ pub fn event_line(event: &SystemEvent) -> String {
             .text("session_id", &e.session_id.0.0)
             .integer("sequence", e.sequence)
             .text("command", command_word(e.command))
-            .optional("url", e.url.as_ref().map(|url| url.0.as_str())),
+            .optional("url", e.url.as_ref().map(|url| url.0.as_str()))
+            .optional("handle", e.handle.as_deref())
+            .optional("label", e.label.as_deref()),
         SystemEvent::NavigationRequested(e) => line
             .text("session_id", &e.session_id.0.0)
             .text("tab_id", &e.tab_id.0.0)

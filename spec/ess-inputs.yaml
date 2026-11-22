@@ -26,3 +26,5 @@ scenarios:
   - scenarios/parse-stopped-at-a-limit.yaml
   - scenarios/navigation-post-reaches-request.yaml
   - scenarios/navigation-get-has-no-body.yaml
+  - scenarios/agent-follow-navigates.yaml
+  - scenarios/agent-follow-records-handle-and-label.yaml

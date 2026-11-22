@@ -103,6 +103,7 @@ components:
       commands:
         - surf.agent.OpenSession
         - surf.agent.Go
+        - surf.agent.Follow
         - surf.agent.CloseSession
         - surf.agent.NoteNavigationStarted
         - surf.agent.NoteNavigationCommitted
@@ -196,7 +197,7 @@ bindings:
       event: surf.agent.NavigationRequested
     invoke:
       command: surf.navigation.Navigate
-    # An agent's `go` loads an address: `Get`, without a body.
+    # An agent's `go` and `follow` load an address: `Get`, without a body.
     mapping:
       tab_id: event.tab_id
       url: event.url

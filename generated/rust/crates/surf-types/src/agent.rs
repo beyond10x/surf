@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest d02edabfb4604fe93f72d6e24ef0d1805df03b1628561d9011c4f5f33d76c73d
+// contract digest 49f60222a83939f6aea402a84c409f0a11ea6e9e7cdf407c392a74230af919be
 // do not edit: regenerate with `ess synthesize`
 
 //! Agent — `surf.agent`.
@@ -27,6 +27,8 @@ pub enum ActionCommand {
     Open,
     /// `go`.
     Go,
+    /// `follow`.
+    Follow,
     /// `close`.
     Close,
 }
@@ -178,6 +180,10 @@ pub struct ActionData {
     pub command: ActionCommand,
     /// `url` — `Optional<surf.url.Url>`.
     pub url: Option<crate::url::Url>,
+    /// `handle` — `Optional<String>`.
+    pub handle: Option<String>,
+    /// `label` — `Optional<String>`.
+    pub label: Option<String>,
 }
 
 /// The states of `surf.agent.Action`, at the type level.
@@ -525,6 +531,60 @@ pub enum CloseSessionOutcome {
     },
 }
 
+/// Follow a link — the input of `surf.agent.Follow`.
+///
+/// Start loading a link's target into the session's tab.
+///
+/// Everything it can result in is [`FollowOutcome`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Follow {
+    /// `session_id` — `surf.agent.SessionId`.
+    pub session_id: SessionId,
+    /// `url` — `surf.url.Url`.
+    pub url: crate::url::Url,
+    /// `handle` — `String`.
+    pub handle: String,
+    /// `label` — `String`.
+    pub label: String,
+}
+
+/// Everything `surf.agent.Follow` can result in — one variant per declared outcome.
+///
+/// An infrastructure failure is deliberately not in here: a refusal is a fact about the domain,
+/// a transport fault is a fact about the run, and conflating the two is what the declared
+/// outcomes exist to prevent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FollowOutcome {
+    /// `not-holder` — when the existing subject's stored fields satisfy `holder != caller.session_id`.
+    ///
+    /// The caller's token is another session's.
+    NotHolder {
+        /// Why it was refused: `surf.agent.NotSessionHolder`.
+        error: NotSessionHolder,
+    },
+    /// `no-such-session` — for an identity no record carries.
+    ///
+    /// No session has this identity.
+    NoSuchSession {
+        /// Why it was refused: `surf.agent.SessionNotFound`.
+        error: SessionNotFound,
+    },
+    /// `closed` — when the existing subject is in Closed.
+    ///
+    /// The session is Closed; nothing was requested.
+    Closed {
+        /// Why it was refused: `surf.agent.SessionStateConflict`.
+        error: SessionStateConflict,
+    },
+    /// `requested` — otherwise.
+    ///
+    /// The navigator is asked to load the link's target into the session's tab.
+    Requested {
+        /// The `surf.agent.NavigationRequested` this outcome publishes.
+        navigation_requested: NavigationRequested,
+    },
+}
+
 /// Go to an address — the input of `surf.agent.Go`.
 ///
 /// Start loading an address into the session's tab.
@@ -750,6 +810,10 @@ pub struct RecordAction {
     pub command: ActionCommand,
     /// `url` — `Optional<surf.url.Url>`.
     pub url: Option<crate::url::Url>,
+    /// `handle` — `Optional<String>`.
+    pub handle: Option<String>,
+    /// `label` — `Optional<String>`.
+    pub label: Option<String>,
 }
 
 /// Everything `surf.agent.RecordAction` can result in — one variant per declared outcome.
@@ -788,6 +852,10 @@ pub struct ActionRecorded {
     pub command: ActionCommand,
     /// `url` — `Optional<surf.url.Url>`.
     pub url: Option<crate::url::Url>,
+    /// `handle` — `Optional<String>`.
+    pub handle: Option<String>,
+    /// `label` — `Optional<String>`.
+    pub label: Option<String>,
 }
 
 /// EventsLeftOut — the event `surf.agent.EventsLeftOut`.
@@ -894,6 +962,10 @@ pub struct SessionLog {
     pub command: ActionCommand,
     /// `url` — `Optional<surf.url.Url>`.
     pub url: Option<crate::url::Url>,
+    /// `handle` — `Optional<String>`.
+    pub handle: Option<String>,
+    /// `label` — `Optional<String>`.
+    pub label: Option<String>,
 }
 
 /// Session state — one row of the view `surf.agent.SessionState`.
@@ -963,6 +1035,17 @@ pub mod obligations {
         ///
         /// `Err` is the typed refusal of a request the model declares no outcome for.
         fn close_session(&mut self, input: super::CloseSession) -> Result<super::CloseSessionOutcome, crate::obligation::UnmetObligation>;
+    }
+
+    /// The behaviour `surf.agent.Follow` — generated.
+    ///
+    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
+    /// over the storage and context ports. Implement it yourself to replace that behaviour.
+    pub trait FollowBehavior {
+        /// Decides and enacts exactly one declared outcome of `surf.agent.Follow`.
+        ///
+        /// `Err` is the typed refusal of a request the model declares no outcome for.
+        fn follow(&mut self, input: super::Follow) -> Result<super::FollowOutcome, crate::obligation::UnmetObligation>;
     }
 
     /// The behaviour `surf.agent.Go` — generated.

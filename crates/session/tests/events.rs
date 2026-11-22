@@ -190,6 +190,8 @@ fn reference_names(url: &str) -> (Vec<String>, Vec<String>) {
             sequence: 1,
             command: ActionCommand::Open,
             url: None,
+            handle: None,
+            label: None,
         })
         .unwrap();
     browser.run().unwrap();
@@ -209,6 +211,8 @@ fn reference_names(url: &str) -> (Vec<String>, Vec<String>) {
             sequence: 2,
             command: ActionCommand::Go,
             url: Some(Url(url.to_string())),
+            handle: None,
+            label: None,
         })
         .unwrap();
     browser.run().unwrap();
@@ -839,6 +843,8 @@ const BODY: &[u8] = b"q#~";
 const ADDRESS: &str = "http://example.org/a b";
 /// A title holding a double quote, a backslash and a character outside ASCII.
 const TITLE: &str = "Say \"hi\" \\ caf\u{e9}";
+/// A link label holding a double quote and a character outside ASCII (`agent-links-spec`).
+const LABEL: &str = "Sign \"in\" \u{e9}";
 /// The media type of a request body (`agent-request-body-spec`).
 const FORM: &str = "application/x-www-form-urlencoded";
 
@@ -851,8 +857,10 @@ fn covered() -> Vec<SystemEvent> {
             action_id: ActionId(uuid(1)),
             session_id: SessionId(uuid(2)),
             sequence: 7,
-            command: ActionCommand::Go,
+            command: ActionCommand::Follow,
             url: None,
+            handle: Some("l4".to_string()),
+            label: Some(LABEL.to_string()),
         }),
         SystemEvent::NavigationRequested(NavigationRequested {
             session_id: SessionId(uuid(2)),
@@ -977,7 +985,9 @@ fn expected_value(event: &str, field: &str) -> Option<String> {
         ("surf.document.DocumentParsed", "unsupported_encoding") => text("EUC-KR"),
         ("surf.document.DocumentParsed", "stopped_by") => text("Depth"),
         ("surf.agent.ActionRecorded", "sequence") => text("7"),
-        ("surf.agent.ActionRecorded", "command") => text("go"),
+        ("surf.agent.ActionRecorded", "command") => text("follow"),
+        ("surf.agent.ActionRecorded", "handle") => text("l4"),
+        ("surf.agent.ActionRecorded", "label") => text(LABEL),
         ("surf.agent.ActionRecorded", "url") => None,
         (_, "url") => text(ADDRESS),
         ("surf.agent.SessionNavigationChanged", "state") => text("Committed"),

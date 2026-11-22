@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest d02edabfb4604fe93f72d6e24ef0d1805df03b1628561d9011c4f5f33d76c73d
+// contract digest 49f60222a83939f6aea402a84c409f0a11ea6e9e7cdf407c392a74230af919be
 // do not edit: regenerate with `ess synthesize`
 
 //! What the specification fully determines, generated: the behaviour of every command the plan
@@ -308,6 +308,43 @@ where
     }
 }
 
+/// `surf.agent.Follow`, generated: every outcome is one the specification fully determines.
+impl<P> crate::agent::obligations::FollowBehavior for Generated<P>
+where
+    P: TryContext + SessionStorage,
+{
+    fn follow(&mut self, input: crate::agent::Follow) -> Result<crate::agent::FollowOutcome, UnmetObligation> {
+        let _ = &input;
+        // The addressed row's existence, at step 2 of the one precedence rule.
+        if SessionStorage::get(&self.ports, &input.session_id).is_none() {
+            return Ok(crate::agent::FollowOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        }
+        // The addressed row, read before the branches that select by it.
+        let Some(held) = SessionStorage::get(&self.ports, &input.session_id) else {
+            return Ok(crate::agent::FollowOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        };
+        let _ = &held;
+        // `not-holder`: selected by the addressed row.
+        if decided(equal(Some(&held.data.holder).map(|value| &value.0).map(|value| value.0.clone()), self.ports.try_caller_session_id()?.as_ref().map(|value| &value.0).map(|value| value.0.clone())).map(|value| !value), "surf.agent.Follow")? {
+            return Ok(crate::agent::FollowOutcome::NotHolder { error: crate::agent::NotSessionHolder { session_id: input.session_id.clone() } });
+        }
+        // `closed`: selected by the addressed row.
+        if decided(Some(matches!(held.state, crate::agent::SessionState::Closed)), "surf.agent.Follow")? {
+            return Ok(crate::agent::FollowOutcome::Closed { error: crate::agent::SessionStateConflict { state: held.state } });
+        }
+        // `requested`: the default.
+        let Some(held) = SessionStorage::get(&self.ports, &input.session_id) else {
+            return Ok(crate::agent::FollowOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        };
+        let _ = &held;
+        let before = held.data.clone();
+        let next = held;
+        let answer = crate::agent::FollowOutcome::Requested { navigation_requested: crate::agent::NavigationRequested { session_id: input.session_id.clone(), tab_id: before.tab_id.clone(), url: input.url.clone() } };
+        SessionStorage::put(&mut self.ports, next);
+        return Ok(answer);
+    }
+}
+
 /// `surf.agent.Go`, generated: every outcome is one the specification fully determines.
 impl<P> crate::agent::obligations::GoBehavior for Generated<P>
 where
@@ -428,8 +465,10 @@ where
             sequence: input.sequence.clone(),
             command: input.command.clone(),
             url: input.url.clone(),
+            handle: input.handle.clone(),
+            label: input.label.clone(),
         };
-        let answer = crate::agent::RecordActionOutcome::Recorded { action_recorded: crate::agent::ActionRecorded { action_id: identity.clone(), session_id: input.session_id.clone(), sequence: input.sequence.clone(), command: input.command.clone(), url: input.url.clone() } };
+        let answer = crate::agent::RecordActionOutcome::Recorded { action_recorded: crate::agent::ActionRecorded { action_id: identity.clone(), session_id: input.session_id.clone(), sequence: input.sequence.clone(), command: input.command.clone(), url: input.url.clone(), handle: input.handle.clone(), label: input.label.clone() } };
         ActionStorage::put(&mut self.ports, crate::agent::AnyAction::Recorded(crate::agent::Action::new(data)).snapshot());
         return Ok(answer);
     }
@@ -852,6 +891,8 @@ where
                 sequence: held.data.sequence,
                 command: held.data.command,
                 url: held.data.url,
+                handle: held.data.handle,
+                label: held.data.label,
             })
             .collect())
     }

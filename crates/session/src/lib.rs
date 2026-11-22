@@ -674,6 +674,8 @@ impl<T: Transport> Session<T> {
             sequence,
             command,
             url: url.map(|url| Url(url.to_string())),
+            handle: None,
+            label: None,
         })?;
         match outcome {
             RecordActionOutcome::Recorded { .. } => {
@@ -855,6 +857,7 @@ fn command_word(command: ActionCommand) -> &'static str {
         ActionCommand::Open => "open",
         ActionCommand::Go => "go",
         ActionCommand::Close => "close",
+        ActionCommand::Follow => "follow",
     }
 }
 
