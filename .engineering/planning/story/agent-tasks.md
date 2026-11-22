@@ -19,7 +19,7 @@ scope:
   path: taskfiles/agent-tasks-model.sh
 - confidence: cited
   path: taskfiles/agent-tasks.yml
-revision: 5
+revision: 6
 ---
 ## Context
 
@@ -33,7 +33,8 @@ holds page content."
 
 What makes which task pass, by the plan of rounds (same file, :63-67 and :102-122): round 1 (the
 parser, the page text, the document) gives `look --as markdown` (`story:page-text-look`) and
-tables (`story:page-text-tables`); round 2 (the commands) gives `follow`, `fill` and `press`
+tables (`story:page-text-tables`; the `table` task passes from `story:page-text-look`, decision
+9); round 2 (the commands) gives `follow`, `fill` and `press`
 (`story:agent-follow-links`, `story:agent-fill-pick`, `story:agent-press-submit`); the TLS unit,
 beside rounds 1 and 2, gives `https:` and `open --ca-file` (`story:tls-session-anchors`);
 cookies come after round 2 (`story:agent-cookie-jar`). Round 3 (the runner) makes no task pass.
@@ -59,7 +60,7 @@ it with `surf-agent` and nothing else. This story ships the four that need no TL
 | task | question | start, target | answer | connections | pending until |
 |---|---|---|---|---|---|
 | `article` | In which year was the bridge opened? | `/article.html` (about 800 words, headings; the year in the fourth paragraph only) | `1932` | 1 | `story:page-text-look` |
-| `table` | What does one kilo of pears cost? | `/prices.html` (a caption, a header row, six rows) | `2.40` | 1 | `story:page-text-tables` |
+| `table` | What does one kilo of pears cost? | `/prices.html` (a caption, a header row, six rows) | `2.40` | 1 | `story:page-text-look` (decision 9) |
 | `link` | What are the opening hours on Saturday? | `/index.html` (twelve links, one labelled `Opening hours`), target `/about/hours.html` | `10 to 14` | 2 | `story:agent-follow-links` |
 | `search` | What is the title of the first result for lighthouse? | `/search.html` (a `GET` form, one text field labelled `Search`, a button `Find`), target `/results?q=lighthouse` | `The Lighthouse at Point Reyes` | 2 | `story:agent-fill-pick`, `story:agent-press-submit` |
 
@@ -89,20 +90,25 @@ Taken by the coordinating agent on 2026-11-22, reversible, reported to the opera
    script; the gate tests it with a stub command, so the gate makes no model call.
 6. Placement: its own unit after `story:one-test-binary-per-crate`, beside round 1. Round 2 of
    the panel: it starts after release 0.3.0 is published (the release comes before
-   `one-test-binary-per-crate` in the plan), and its merge comes before the merge of
-   `story:page-text-look`; the coordinator orders those two merges. So case 1 has one expected
-   output.
+   `one-test-binary-per-crate` in the plan). Round 3 of the panel: its merge is not ordered
+   against `story:page-text-look`; case 1 gives the expected lines for both bases.
 7. Tests go into the crate's one integration-test binary, `crates/agent-tasks/tests/main.rs`.
 8. Round 2 of the panel: the run's file is the root `.out/agent-tasks.txt`; the test finds the
    `surfd` PID through `/proc`; `task build` builds `agent-tasks-serve`; the paged judge case is
    built in the test from named lines.
+9. Round 3 of the panel: only `tasks::every_task` writes the root `.out/agent-tasks.txt`; the
+   reporting function takes its output path, and every other test passes a path under
+   `CARGO_TARGET_TMPDIR`. Every first line and every release-notes line carries a skipped count,
+   pass + fail + skipped = rows. `table` is pending until `story:page-text-look` like `article`:
+   before `story:page-text-tables` a table is one paragraph of its text (page-text-markdown.md:33,
+   :73), so `2.40` is in the text and the judge, which looks for the answer in the text, passes it.
 
 ## Placement
 
 Its own unit, started after release 0.3.0 is published and after the merge of
-`story:one-test-binary-per-crate` (an edge), beside the units of round 1. Its merge comes before
-the merge of `story:page-text-look` (and so before round 2); the coordinator orders those two
-merges. It writes no file of round 1 but two shared ones:
+`story:one-test-binary-per-crate` (an edge), beside the units of round 1, before round 2. It
+merges before or after `story:page-text-look`; case 1 gives the lines of both bases. It writes no
+file of round 1 but two shared ones:
 
 - `Taskfile.yml`: in a wave or round of more than one unit the coordinator writes the root
   `Taskfile.yml` from the unit's report (agent-waves.md, "Rules of a wave in this plan"). The
@@ -111,8 +117,8 @@ merges. It writes no file of round 1 but two shared ones:
 - `docs/releasing.md`: also written by `story:tls-release` (tls-release.md:145-147, "never in the
   same wave") and, through it, the age check of `story:tls-anchors` (tls-anchors.md:100). This
   story's unit runs beside round 1, before the TLS unit of four can start (at a boundary between
-  two rounds, after the nine TLS stories): its step merges first and `tls-release` builds on it.
-  If the TLS unit runs first after all, this unit starts after `tls-release` merged.
+  two rounds, after the nine TLS stories): its step merges first and `tls-release` builds on it,
+  as tls-release.md ("Writes") says.
 
 `crates/tls-test-server` and `crates/tls-test-certs` are not read by this story; the `https`
 task (`story:agent-tasks-https`) reads them.
@@ -160,17 +166,23 @@ task (`story:agent-tasks-https`) reads them.
   exactly the task's `connections` (`look` fetches nothing: page-text-look acceptance 8).
   Otherwise it fails with the first of these reasons: `exit <status> on <command word>`, `no now
   line labelled "<label>"`, `answer "<answer>" not in the text`, `<k> connections, expected <n>`.
-- What the run writes, the root `.out/agent-tasks.txt` (the file
-  `concat!(env!("CARGO_MANIFEST_DIR"), "/../../.out/agent-tasks.txt")`, the same file
-  `agent-tasks-report` prints), exactly:
-  - first line `agent-tasks: <n> tasks, <p> pass, <f> fail`, `<n>` the number of blocks of
-    `tasks.txt`;
+- The reporting function `surf_agent_tasks::report(results, status, out: &Path)` writes the
+  report to `out`. Only `tasks::every_task` passes the root `.out/agent-tasks.txt` (the file
+  `concat!(env!("CARGO_MANIFEST_DIR"), "/../../.out/agent-tasks.txt")`, the one
+  `agent-tasks-report` prints); every other test passes a file under `CARGO_TARGET_TMPDIR`. The
+  report, exactly:
+  - first line `agent-tasks: <n> tasks, <p> pass, <f> fail, <s> skipped`, `<n>` the number of
+    blocks of `tasks.txt`, `<p> + <f> + <s> = <n>`; the gate lane skips no row (`<s>` is 0), the
+    count is there so the three files of counts read alike;
   - one line per task in the order of `tasks.txt`: `task <name> pass <c> calls <k>
     connections`, or `task <name> fail <c> calls <k> connections: <reason>`, `<c>` every
     `surf-agent` call of the task, `close` included;
   - then one line `raise: <name>` per task listed `pending` that passed, in the same order.
-  A task listed `pass` that failed fails the test with `agent-tasks: task <name> is listed pass
-  and failed: <reason>`; the file is written first. With `SURF_AGENT_TASKS=measure` the listed
+  The rule from (status row, judged result) to what is written: a `task` line is the judged
+  result alone, whatever the row; (`pending`, pass) adds `raise: <name>`; (`pass`, fail) makes
+  the function return the error `agent-tasks: task <name> is listed pass and failed: <reason>`,
+  which fails the test after the file is written; (`pass`, pass) and (`pending`, fail) add
+  nothing. With `SURF_AGENT_TASKS=measure` the listed
   states are not enforced and no `raise:` line is written (the archive run below).
 - `Taskfile.yml` (by the coordinator, from the report): the step `test` runs `task build` first
   (nothing to do when `check` ran it) and exports `SURF_BIN_DIR={{.ROOT_DIR}}/target/debug` to the
@@ -197,8 +209,8 @@ task (`story:agent-tasks-https`) reads them.
   *)' --permission-prompts none --strict-mcp-config --safe-mode --output-format text`, run in the
   scratch directory, which holds no checkout; each flag is in `claude --help` of the version
   installed on this host, read 2026-11-22. Only rows whose `server` is `http` are put to the
-  model; any other row is written `task <name> skipped: server <server>` and counted neither
-  pass nor fail. A task passes when the text after the last
+  model; any other row is written `task <name> skipped: server <server>` and counted as
+  skipped, neither pass nor fail. A task passes when the text after the last
   `ANSWER: ` line, with spaces at both ends and one final `.` removed, equals the expected answer
   after both are lower-cased.
   - Untrusted input: the text a page returns reaches the model as input it must not obey. The
@@ -208,8 +220,8 @@ task (`story:agent-tasks-https`) reads them.
     worst a page could make the model do is call `surf-agent` with other words, which reaches
     what the session can reach; the lane is run by hand by the operator or the coordinator.
   - `<out file>` (the task writes `.out/agent-tasks-model.txt`), exactly: first line
-    `agent-tasks-model: <n> tasks, <p> pass, <f> fail, command <basename of the command>, model
-    <AGENT_TASKS_MODEL>, <YYYY-MM-DD>`; then per task `task <name> pass <c> calls` or `task <name>
+    `agent-tasks-model: <n> tasks, <p> pass, <f> fail, <s> skipped, command <basename of the
+    command>, model <AGENT_TASKS_MODEL>, <YYYY-MM-DD>`, `<p> + <f> + <s> = <n>`; then per task `task <name> pass <c> calls` or `task <name>
     fail <c> calls`, followed by one line `  surf-agent <words>` per call in the wrapper's log
     (the token is never an argument word and `fill` reads its value from standard input, so the
     log holds neither) and the line `  answered "<the text after ANSWER: >"`, or `  answered
@@ -217,9 +229,10 @@ task (`story:agent-tasks-https`) reads them.
 - `docs/releasing.md`, "Cutting a release": step 2 gains "the gate's output holds no line that
   starts with `raise:`"; step 7 gains, after the smoke test, `task agent-tasks-archive
   DIR=<dir>/surf-<version>-x86_64-unknown-linux-musl`, whose first line goes into the notes as
-  `agent tasks (scripted): <p> of <n>`; step 8 gains: when the model lane was run on the release
-  commit, the notes carry `agent tasks: <p> of <n> with <model> on <date>`, copied from the first
-  line of `.out/agent-tasks-model.txt`.
+  `agent tasks (scripted): <n> tasks, <p> pass, <f> fail, <s> skipped`; step 8 gains: when the
+  model lane was run on the release commit, the notes carry `agent tasks: <n> tasks, <p> pass,
+  <f> fail, <s> skipped, model <model>, <YYYY-MM-DD>`, the numbers, model and date copied from the
+  first line of `.out/agent-tasks-model.txt`.
 
 ## Acceptance
 
@@ -228,26 +241,40 @@ hold: the test step ends within 120 s, no test runs over 60 s, no model call and
 request in the test step, nothing is built or started per test, no Python. Each test below is
 timed in the report; any over 5 s is named with its time.
 
-1. On the unit's branch (merged before `story:page-text-look`, Placement) `agent-tasks-report`
-   prints exactly these five lines and no other:
-   `agent-tasks: 4 tasks, 0 pass, 4 fail`
-   `task article fail 3 calls 1 connections: exit 2 on look`
-   `task table fail 3 calls 1 connections: exit 2 on look`
-   `task link fail 3 calls 1 connections: no now line labelled "Opening hours"`
-   `task search fail 3 calls 1 connections: no now line labelled "Search"`
-   (`look --as` is a usage error, exit 2, before `story:page-text-look`; no `now` block exists
-   before `story:agent-follow-links`). `status.txt` is exactly `article pending
-   story:page-text-look`, `table pending story:page-text-tables`, `link pending
-   story:agent-follow-links`, `search pending story:agent-fill-pick story:agent-press-submit`.
+1. On the unit's branch `agent-tasks-report` prints exactly the five lines of the base the branch
+   is on, and no other; the lines follow from the rule of (status row, judged result) in the
+   Change, and with each base's `status.txt` no `raise:` line and no error arises.
+   - Base A, `story:page-text-look` not merged (`look --as` is a usage error, exit 2):
+     `status.txt` is exactly `article pending story:page-text-look`, `table pending
+     story:page-text-look`, `link pending story:agent-follow-links`, `search pending
+     story:agent-fill-pick story:agent-press-submit`; the report:
+     `agent-tasks: 4 tasks, 0 pass, 4 fail, 0 skipped`
+     `task article fail 3 calls 1 connections: exit 2 on look`
+     `task table fail 3 calls 1 connections: exit 2 on look`
+     `task link fail 3 calls 1 connections: no now line labelled "Opening hours"`
+     `task search fail 3 calls 1 connections: no now line labelled "Search"`
+   - Base B, `story:page-text-look` merged: `status.txt` lists `article pass` and `table pass`
+     from the start (decision 9), `link` and `search` as in base A; the report:
+     `agent-tasks: 4 tasks, 2 pass, 2 fail, 0 skipped`
+     `task article pass 3 calls 1 connections`
+     `task table pass 3 calls 1 connections`
+     `task link fail 3 calls 1 connections: no now line labelled "Opening hours"`
+     `task search fail 3 calls 1 connections: no now line labelled "Search"`
+   In both, no `now` block exists before `story:agent-follow-links`. A base A branch rebased onto
+   a merged `story:page-text-look` gets `raise: article` and `raise: table` and is given base B's
+   `status.txt` before it merges.
 2. `tasks::every_task` runs within 10 s and, read through `/proc` as the Change says, has exactly
    one `surfd` PID in its `XDG_RUNTIME_DIR` from the first `open` to the end of the last task, no
    process whose `comm` is `cargo` among its children, and no process of `SURF_BIN_DIR` left
    after `surf_test_process::ended_within` returned for that PID (bound 5 s).
 3. `status::a_listed_pass_that_fails_fails`: the judged results of 1 with `status.txt` replaced
-   by one that lists `article pass`: the reporting function returns the error `agent-tasks: task
-   article is listed pass and failed: exit 2 on look` and still writes the file.
+   by one that lists `article pass`, the output path a file under `CARGO_TARGET_TMPDIR`: the
+   reporting function returns the error `agent-tasks: task article is listed pass and failed: exit
+   2 on look` and still writes that file; the root `.out/agent-tasks.txt` is not touched (its
+   modification time is the same before and after).
    `status::a_pending_task_that_passes_is_raised`: results where `article` passed, listed
-   `pending`: the file ends with `raise: article` and the function returns `Ok`.
+   `pending`, written to a file under `CARGO_TARGET_TMPDIR`: that file ends with `raise: article`
+   and the function returns `Ok`.
 4. `judge::a_changed_answer_fails` (no process): `tests/answers/article.txt`, a `look --as
    markdown` answer in the form of page-text-look case 1 whose body lines are the article's
    Markdown, judged against the `article` block of `tasks.txt`: `pass`; the same with the block's
@@ -270,13 +297,15 @@ timed in the report; any over 5 s is named with its time.
 7. `model_driver::a_stub_model_is_counted`: `sh taskfiles/agent-tasks-model.sh "$SURF_BIN_DIR"
    <file under CARGO_TARGET_TMPDIR>` with `AGENT_TASKS_MODEL_COMMAND` set to
    `crates/agent-tasks/tests/stub-model.sh` and `AGENT_TASKS_MODEL=stub` exits 0 and writes the
-   text the test builds from `tasks.txt`: first line `agent-tasks-model: <n> tasks, 1 pass, <n -
-   1> fail, command stub-model.sh, model stub, <date>`, then `task article pass 1 calls`, `
+   text the test builds from `tasks.txt`: first line `agent-tasks-model: <n> tasks, 1 pass, <h -
+   1> fail, <n - h> skipped, command stub-model.sh, model stub, <date>`, `<h>` the number of rows
+   whose `server` is `http`, then `task article pass 1 calls`, `
    surf-agent look`, `  answered "1932"`, `task table fail 1 calls`, `  surf-agent look`, `
    answered "2.41"`, for every other row whose `server` is `http` `fail 1 calls`, `  surf-agent
    look`, `  answered "unknown"`, and for any other row `task <name> skipped: server <server>`
    (the date compared as `YYYY-MM-DD`; at this story's commit the first line is
-   `agent-tasks-model: 4 tasks, 1 pass, 3 fail, ...`). The stub, a sh script, runs `surf-agent look`
+   `agent-tasks-model: 4 tasks, 1 pass, 3 fail, 0 skipped, command stub-model.sh, model stub,
+   <date>`). The stub, a sh script, runs `surf-agent look`
    once (exit 2, no session: nothing starts) and prints `ANSWER: 1932`, `ANSWER: 2.41` or
    `ANSWER: unknown` by the question it reads.
 8. Release 0.3.0, outside the gate, by the unit (0.3.0 is published before it starts): the archive
@@ -285,8 +314,9 @@ timed in the report; any over 5 s is named with its time.
    'surf-0.3.0-x86_64-unknown-linux-musl.tar.gz' --dir <dir>`, `gates="b10x-gates --policy
    ../gates-policy/policy.json --repository beyond10x/surf"`), unpacked; then `task
    agent-tasks-archive DIR=<dir>/surf-0.3.0-x86_64-unknown-linux-musl` prints exactly the five
-   lines of case 1 (the rows of `tasks.txt` at this story's commit: `article`, `table`, `link`,
-   `search`). The unit puts them in its report; the coordinator copies them into the record of
+   report lines of case 1 for base A when the archive's `surf-agent look --as markdown` exits 2,
+   and those for base B otherwise (measure mode: the listed states play no part; the rows of
+   `tasks.txt` at this story's commit: `article`, `table`, `link`, `search`). The unit puts them in its report; the coordinator copies them into the record of
    the wave.
 9. `git diff --stat` of the unit names only `crates/agent-tasks/`, `taskfiles/agent-tasks.yml`,
    `taskfiles/agent-tasks-model.sh`, `docs/releasing.md` and, from the coordinator,

@@ -29,11 +29,15 @@ scope:
 - confidence: cited
   path: crates/fetch
 - confidence: cited
+  path: crates/session/Cargo.toml
+- confidence: cited
   path: crates/session/src
 - confidence: cited
   path: crates/session/tests
 - confidence: cited
   path: crates/surf-cli/src/main.rs
+- confidence: cited
+  path: crates/surf/Cargo.toml
 - confidence: cited
   path: crates/surf/src/lib.rs
 - confidence: cited
@@ -52,7 +56,7 @@ scope:
   path: spec/domains/net.yaml
 - confidence: cited
   path: spec/scenarios
-revision: 8
+revision: 10
 ---
 ## Context
 
@@ -124,6 +128,20 @@ overrule each:
    `forward` count as having no initiator by surf's reading of §5.2 (a traversal by the browser's
    controls), reversible. The cookie of the session test is named `zqsid`, so its name can be
    searched for as well as its value.
+10. Round 3 of the panel, read and cited:
+    - The `login` routes go into the fixture server of the library `surf_agent_tasks`
+      (agent-tasks.md:130-131, "whose library holds the format readers, the fixture server and
+      the judge"); `tasks::every_task` starts it, and `agent-tasks-serve`, "the fixture server as
+      a program for the model lane" (agent-tasks.md:143), serves the same library, so the model
+      lane reaches `POST /login` and `/account.html` too. The task's `server` is `http`.
+    - S2 uses only what a story fixes: `story:agent-change-and-log` fixes `changed 0` for a `look`
+      after a `look` (agent-change-and-log.md:59, case 6) and no line for a `look` after a `go`;
+      so S2 compares the second of two `look` calls. The redirect stays in S1: the path entry
+      keeps the address asked for and the redirect adds no entry
+      (crates/session/tests/redirect.rs:1-3, case 23 of `story:agent-fetch-redirects`).
+    - `crates/surf/Cargo.toml` and `crates/session/Cargo.toml` are in the scope; the workspace
+      takes the new crate through `members = ["crates/*", ...]` (Cargo.toml:3), so the root
+      manifest does not change.
 
 ## Placement
 
@@ -136,7 +154,7 @@ after), and `story:agent-tasks`. Before round 3's runner unit, which writes `cra
 `crates/surf` and wraps the `Transport` (agent-waves.md:159 moves round 3 behind items 2 and 4).
 
 It runs beside no unit that writes `spec/`, `generated/`, `crates/fetch`, `crates/surf/src/lib.rs`,
-`crates/surf-cli/src/main.rs`, `crates/session`, `crates/answer`, `docs/agent-answer.md`,
+`crates/surf/Cargo.toml`, `crates/surf-cli/src/main.rs`, `crates/session`, `crates/answer`, `docs/agent-answer.md`,
 `crates/tls-test-server` or `crates/agent-tasks`. Writers of the same files, all before it:
 `story:tls-spec` (the `UNMAPPED:` line of `net.yaml`, tls-spec.md:91, and `navigation.yaml`),
 `story:agent-links-spec` and `story:agent-history-spec` (`spec/`, `generated/`; agent-history-spec
@@ -270,6 +288,9 @@ Where it is written:
   R14) written by `exchange`; every `Set-Cookie` field of the head kept (within the header limit)
   and given to the jar before the next hop (R19). Existing tests change only by the two new fields
   in their `Request` values.
+- `crates/surf/Cargo.toml`, `[dependencies]`: the line `surf-cookie = { path = "../cookie" }`
+  after `surf-fetch = { path = "../fetch" }` (line 19). `crates/session/Cargo.toml`,
+  `[dependencies]`: the same line after `surf-fetch = { path = "../fetch" }` (line 20).
 - `crates/surf/src/lib.rs`: `fetch_http` takes one per-session context, `RequestContext { anchors,
   jar }`, in place of the anchors argument `tls-fetch-https` gave it, and passes
   `RequestStarted::initiator` on.
@@ -288,7 +309,8 @@ Where it is written:
   `tasks.txt`, its line `login pass` in `status.txt`, the scripted agent's steps for it in module
   `tasks` (`open`; `look` for the fields labelled `"Name"` and `"Password"` and the button `"Sign
   in"`; `fill <handle> -` with `ada`, then with `lovelace`, on standard input; `press`; `look --as
-  markdown`; `close`), and the fixture server's two routes: `POST
+  markdown`; `close`), and two routes of the fixture server in the library (decision 10), which
+  `every_task` and `agent-tasks-serve` both serve: `POST
   /login` with the body `name=ada&password=lovelace` answers `303`, `Location: /account.html` and
   `Set-Cookie: sid=4f1c2a9e7b3d5f6081a2c3d4e5f60718; Path=/; HttpOnly; SameSite=Lax`; `GET
   /account.html` answers the account page only with `Cookie: sid=4f1c2a9e7b3d5f6081a2c3d4e5f60718`,
@@ -420,7 +442,10 @@ binaries of `SURF_BIN_DIR`, a page server on 127.0.0.1 port `<p>` and one on 127
 - S1 Session A: `go http://127.0.0.1:<p>/login`, answered `302`, `Location: /home`, `Set-Cookie:
   zqsid=<32 random hexadecimal digits>; Path=/`: `/home` (body `<title>Home</title><p>Signed
   in.</p>`, no link, no control) receives `Cookie: zqsid=<digits>`; exit 0.
-- S2 A: `look` equals `crates/session/tests/golden/look-cookies.txt`, whose whole text is these
+- S2 A: `look`, then `look` again; the second answer equals
+  `crates/session/tests/golden/look-cookies.txt` (decision 10: `changed 0` is what
+  agent-change-and-log.md:59 fixes for a `look` after a `look`; the path entry `go
+  "http://127.0.0.1:<port>/login"` is the address asked for, redirect.rs:1-3), whose whole text is these
   lines, `<id>` and `<port>` replaced as for `look.txt`, and the placeholder line replaced as
   agent-follow-links.md:78-80 says (by the parts of `surf_html::NOT_YET_PARSED` joined by `,`, or
   removed when there is none):
