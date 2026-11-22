@@ -13,12 +13,14 @@
 #    then removes every file HEAD does not hold, ignored ones included, but the directories
 #    named target. No file that exists only in the working tree reaches the export.
 # 3. It runs task check in the export with the runner's environment: CI=true,
-#    GITHUB_ACTIONS=true, CARGO_TERM_COLOR=always, CARGO_INCREMENTAL=0, RUSTC_WRAPPER empty,
-#    ESS_TOOLCHAIN the release spec/ess-inputs.yaml requires, HTML_BASE=origin/main when the
-#    export has that ref (its origin is this repository), and without the variables that would
-#    change what cargo, rustup and rustc do (RUSTUP_TOOLCHAIN, CARGO_TARGET_DIR,
-#    CARGO_BUILD_TARGET_DIR, RUSTFLAGS, CARGO_ENCODED_RUSTFLAGS, RUSTDOCFLAGS). rustc is the one
-#    rust-toolchain.toml of the export names.
+#    GITHUB_ACTIONS=true, CARGO_TERM_COLOR=always, CARGO_INCREMENTAL=0, ESS_TOOLCHAIN the
+#    release spec/ess-inputs.yaml requires, HTML_BASE=origin/main when the export has that ref
+#    (its origin is this repository), and without the variables that would change what cargo,
+#    rustup and rustc do (RUSTUP_TOOLCHAIN, CARGO_TARGET_DIR, CARGO_BUILD_TARGET_DIR,
+#    RUSTFLAGS, CARGO_ENCODED_RUSTFLAGS, RUSTDOCFLAGS). rustc is the one rust-toolchain.toml of
+#    the export names. A compiler cache the user's cargo configuration names (rustc-wrapper)
+#    stays in use: it answers a compile with the artifact the same compiler wrote for the same
+#    inputs, and the forge's runner has none.
 #
 # The page tests' view-tests/node_modules is not committed; task view-test installs it in the
 # export with npm ci, as the workflow does. Chromium's headless shell comes from the user's
@@ -76,7 +78,7 @@ fi
 
 cd "$tree"
 unset RUSTUP_TOOLCHAIN CARGO_TARGET_DIR CARGO_BUILD_TARGET_DIR RUSTFLAGS CARGO_ENCODED_RUSTFLAGS RUSTDOCFLAGS HTML_BASE
-export CI=true GITHUB_ACTIONS=true CARGO_TERM_COLOR=always CARGO_INCREMENTAL=0 RUSTC_WRAPPER= ESS_TOOLCHAIN="$ess"
+export CI=true GITHUB_ACTIONS=true CARGO_TERM_COLOR=always CARGO_INCREMENTAL=0 ESS_TOOLCHAIN="$ess"
 if [ -n "$base" ]; then
   export HTML_BASE="$base"
 fi
