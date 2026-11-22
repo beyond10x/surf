@@ -42,9 +42,22 @@ test("adversary-detail: a click on a mark beside its short name selects that eve
   await load(page, surf.view);
   await expect(segments(page)).toHaveCount(2);
   const mark = segments(page).nth(1).locator("li.mark").filter({ hasText: /^ResponseReceived$/ });
-  const line = await mark.boundingBox();
-  const button = await mark.locator("button").boundingBox();
-  expect(line.x + line.width - (button.x + button.width), "the mark's line is wider than its button").toBeGreaterThan(20);
+  await expect(mark).toBeVisible();
+  // The page draws the timeline again when its stream opens (view.js, open()), which can be after
+  // #live-word reads "live": a mark found and then measured in two steps may be the one taken
+  // away. Both boxes are read in one step of the page, from a mark still in the document, and
+  // read again until they are.
+  let line = null;
+  await expect
+    .poll(async () => {
+      line = await mark.evaluate((node) => {
+        const box = node.getBoundingClientRect();
+        const button = node.querySelector("button").getBoundingClientRect();
+        return node.isConnected ? { width: box.width, height: box.height, beyond: box.right - button.right } : null;
+      });
+      return line === null ? null : line.beyond;
+    }, { message: "the mark's line is wider than its button" })
+    .toBeGreaterThan(20);
   await mark.click({ position: { x: line.width - 6, y: line.height / 2 } });
   await expect(
     mark.locator("button"),
@@ -158,14 +171,22 @@ test("fixes: a click on a segment outside every mark clears the selected event",
   await expect(selection(page).locator(".name")).toHaveText("surf.net.ResponseReceived");
   const third = segments(page).nth(2);
   await third.scrollIntoViewIfNeeded();
-  const box = await third.boundingBox();
-  const position = { x: 4, y: box.height - 4 };
-  const hit = await third.evaluate((node, at) => {
-    const frame = node.getBoundingClientRect();
-    const target = document.elementFromPoint(frame.x + at.x, frame.y + at.y);
-    return target === node;
-  }, position);
-  expect(hit, "the position is the segment itself, no mark and no button").toBe(true);
+  await expect(third).toBeVisible();
+  // The segment's box and what is at the position are read in one step of the page, from a
+  // segment still in the document (the page may draw the timeline again: see the case above).
+  let position = null;
+  await expect
+    .poll(async () => {
+      const spot = await third.evaluate((node) => {
+        const frame = node.getBoundingClientRect();
+        const at = { x: 4, y: frame.height - 4 };
+        const target = document.elementFromPoint(frame.x + at.x, frame.y + at.y);
+        return { at, hit: node.isConnected && target === node };
+      });
+      position = spot.at;
+      return spot.hit;
+    }, { message: "the position is the segment itself, no mark and no button" })
+    .toBe(true);
   await third.click({ position });
   await expect.poll(() => playheadAt(page)).toBe(2);
   await expect(mark.locator("button")).toHaveAttribute("aria-pressed", "false");
