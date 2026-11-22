@@ -42,7 +42,7 @@ pub struct TrustAnchor {
     pub key: LeafKey,
     name_constraints: Option<Vec<u8>>,
     /// The reader's refusal, when the anchor was made from a certificate it refuses (a version
-    /// 1 root, for one) and so holds the name and the key only.
+    /// 1 root, for one) that holds no nameConstraints, and so holds the name and the key only.
     pub refused: Option<Error>,
 }
 
@@ -59,7 +59,10 @@ impl TrustAnchor {
 
     /// The anchor of the certificate `der`: from the whole certificate when the reader reads
     /// it, else from its subject and subject public key alone, with the refusal in
-    /// [`TrustAnchor::refused`]. An error when not even those read.
+    /// [`TrustAnchor::refused`], but only when a walk over the certificate shows that it holds
+    /// no nameConstraints (D164: an anchor of name and key alone would drop them). The reader's
+    /// error when the certificate names nameConstraints, when its fields after the key cannot
+    /// be walked, or when its subject or key do not read.
     pub fn from_der(der: &[u8]) -> Result<Self, Error> {
         let refused = match Certificate::from_der(der) {
             Ok(cert) => return Ok(TrustAnchor::from_certificate(&cert)),

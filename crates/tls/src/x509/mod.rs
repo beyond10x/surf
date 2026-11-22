@@ -6,7 +6,8 @@
 //! the one inside the TBS must be the same bytes), issuer and subject as DER names compared byte
 //! for byte, its validity, its subject public key, and the extensions basicConstraints,
 //! keyUsage, extKeyUsage, subjectAltName (dNSName, iPAddress), nameConstraints and the two key
-//! identifiers. A duplicate extension refuses the certificate. An extension the reader does not
+//! identifiers, each with its critical flag ([`Extensions::critical`]), which the reader keeps
+//! and decides nothing by. A duplicate extension refuses the certificate. An extension the reader does not
 //! know, marked critical, is kept as a flag ([`Extensions::unknown_critical`]) that path
 //! validation (`story:tls-x509-path`) rejects. The Common Name is not read: no host name comes
 //! from it.
@@ -26,7 +27,9 @@ use crate::crypto::{PublicKey, SignatureAlgorithm};
 use crate::der::{self, Reader, Time, tag};
 
 pub use anchor::{LeafKey, TrustAnchor};
-pub use extensions::{BasicConstraints, ExtKeyUsage, Extensions, KeyUsage, NameConstraints};
+pub use extensions::{
+    BasicConstraints, Critical, ExtKeyUsage, Extensions, KeyUsage, NameConstraints,
+};
 pub use name::{GeneralName, Name};
 
 /// The most bytes the content of a serial number may have (RFC 5280 section 4.1.2.2: "Conforming
@@ -184,9 +187,7 @@ impl<'a> Certificate<'a> {
         name::check_name(&subject)?;
         let spki = tbs.expect(tag::SEQUENCE)?;
         let public_key = algorithm::public_key(spki.raw())?;
-        // issuerUniqueID and subjectUniqueID, kept by no one.
-        tbs.optional(tag::context(1))?;
-        tbs.optional(tag::context(2))?;
+        unique_identifiers(&mut tbs)?;
         let extensions = match tbs.optional(tag::context_constructed(3))? {
             Some(explicit) => extensions::read_extensions(&explicit)?,
             None => Extensions::default(),
@@ -213,14 +214,39 @@ impl<'a> Certificate<'a> {
     }
 }
 
-/// The subject and the subject public key of a certificate, every other field skipped
-/// unread: what a trust anchor keeps of a root the reader refuses (RFC 5280 section 6.1.1 (d)).
+/// Reads past issuerUniqueID and subjectUniqueID (`[1]` and `[2]` IMPLICIT BIT STRING, RFC 5280
+/// section 4.1): each, if present, must be a BIT STRING. Kept by no one.
+fn unique_identifiers(tbs: &mut Reader<'_>) -> Result<(), Error> {
+    for n in [1, 2] {
+        if let Some(id) = tbs.optional(tag::context(n))? {
+            id.bit_string()?;
+        }
+    }
+    Ok(())
+}
+
+/// The subject and the subject public key of a certificate: what a trust anchor keeps of a root
+/// the reader refuses (RFC 5280 section 6.1.1 (d)), only when the certificate holds no
+/// nameConstraints (D164). The fields before the subject are skipped unread. After the key, a
+/// version 1 certificate holds nothing, a version 2 certificate at most the unique identifiers,
+/// any other version also `[3]`, whose extension list is walked to its end, each extension's
+/// OBJECT IDENTIFIER read and no value interpreted. An error when the walk fails or an extension
+/// is nameConstraints.
 fn subject_and_key(der: &[u8]) -> Result<(Name<'_>, PublicKey<'_>), Error> {
     let mut outer = Reader::new(der);
     let mut cert = outer.sequence()?;
     outer.finish()?;
     let mut tbs = cert.sequence()?;
-    tbs.optional(tag::context_constructed(0))?;
+    // Absent is version 1 (0), the INTEGER 1 version 2; any other value is taken as version 3.
+    let version = match tbs.optional(tag::context_constructed(0))? {
+        None => 0,
+        Some(explicit) => {
+            let mut inner = explicit.reader();
+            let number = inner.expect(tag::INTEGER)?.small_unsigned()?;
+            inner.finish()?;
+            number.unwrap_or(2)
+        }
+    };
     tbs.expect(tag::INTEGER)?;
     tbs.expect(tag::SEQUENCE)?;
     tbs.expect(tag::SEQUENCE)?;
@@ -229,5 +255,15 @@ fn subject_and_key(der: &[u8]) -> Result<(Name<'_>, PublicKey<'_>), Error> {
     name::check_name(&subject)?;
     let spki = tbs.expect(tag::SEQUENCE)?;
     let key = algorithm::public_key(spki.raw())?;
+    if version >= 1 {
+        unique_identifiers(&mut tbs)?;
+    }
+    if version >= 2
+        && let Some(explicit) = tbs.optional(tag::context_constructed(3))?
+        && extensions::names_name_constraints(&explicit)?
+    {
+        return Err(Error::BadExtension);
+    }
+    tbs.finish()?;
     Ok((Name::new(subject.raw()), key))
 }

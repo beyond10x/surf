@@ -15,8 +15,8 @@ use surf_tls::error::{AlertDescription, Error as TlsError};
 use surf_tls::pem;
 use surf_tls::verify::{CertificateRejection, Check, ServerCertVerifier};
 use surf_tls::x509::{
-    BasicConstraints, Certificate, Error, GeneralName, KeyUsage, LeafKey, SERIAL_BYTES_MAX,
-    TrustAnchor,
+    BasicConstraints, Certificate, Critical, Error, GeneralName, KeyUsage, LeafKey,
+    SERIAL_BYTES_MAX, TrustAnchor,
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -194,6 +194,18 @@ impl Spec {
 
     /// The DER of the certificate.
     pub fn build(&self) -> Vec<u8> {
+        let tail = if self.extensions.is_empty() {
+            Vec::new()
+        } else {
+            let refs: Vec<&[u8]> = self.extensions.iter().map(Vec::as_slice).collect();
+            tlv(0xA3, &seq(&refs))
+        };
+        self.build_with_tail(&tail)
+    }
+
+    /// The DER of the certificate with `tail` (raw bytes) after the subject public key, in place
+    /// of the extensions.
+    pub fn build_with_tail(&self, tail: &[u8]) -> Vec<u8> {
         let mut tbs: Vec<Vec<u8>> = Vec::new();
         if let Some(v) = &self.version {
             tbs.push(tlv(0xA0, &tlv(0x02, v)));
@@ -204,10 +216,7 @@ impl Spec {
         tbs.push(seq(&[&self.not_before, &self.not_after]));
         tbs.push(self.subject.clone());
         tbs.push(self.spki.clone());
-        if !self.extensions.is_empty() {
-            let refs: Vec<&[u8]> = self.extensions.iter().map(Vec::as_slice).collect();
-            tbs.push(tlv(0xA3, &seq(&refs)));
-        }
+        tbs.push(tail.to_vec());
         let refs: Vec<&[u8]> = tbs.iter().map(Vec::as_slice).collect();
         let tbs = seq(&refs);
         let signature = tlv(
@@ -431,6 +440,121 @@ fn a_version_1_certificate_is_unsupported_and_still_an_anchor_by_name_and_key() 
     assert_eq!(anchor.key.kind, PublicKeyKind::EcP256);
     assert_eq!(anchor.key.bytes, p256_point());
     assert_eq!(anchor.name_constraints(), Ok(None));
+}
+
+/// id-ml-dsa-44, 2.16.840.1.101.3.4.3.17 (RFC 9881): a signature algorithm the reader does not
+/// know.
+const OID_ML_DSA_44: &[u8] = &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, 0x11];
+
+/// D164: a refused version 3 root whose extensions name no nameConstraints is an anchor of name
+/// and key.
+#[test]
+fn a_refused_version_3_root_without_name_constraints_is_still_an_anchor() {
+    let spec = Spec::p256().signed_with(alg(OID_ML_DSA_44, None));
+    assert_eq!(read(&spec), Err(Error::UnsupportedAlgorithm));
+    let anchor = TrustAnchor::from_der(&spec.build()).expect("an anchor as name and key");
+    assert_eq!(anchor.refused, Some(Error::UnsupportedAlgorithm));
+    assert_eq!(anchor.subject().der(), name_cn("example.com"));
+    assert_eq!(anchor.name_constraints(), Ok(None));
+}
+
+/// D164: a refused root whose extension list cannot be walked to its end gives no anchor, and
+/// `TrustAnchor::from_der` returns the reader's error.
+#[test]
+fn a_refused_root_whose_extension_list_is_cut_short_gives_no_anchor() {
+    let spec = Spec::p256();
+    let first = &spec.extensions[0];
+    // A SEQUENCE that declares the first extension whole and holds its first 5 bytes.
+    let mut list = vec![0x30, first.len() as u8];
+    list.extend_from_slice(&first[..5]);
+    let der_bytes = spec.build_with_tail(&tlv(0xA3, &list));
+    let refused = Certificate::from_der(&der_bytes).expect_err("refused");
+    assert_eq!(TrustAnchor::from_der(&der_bytes), Err(refused));
+}
+
+/// A version 1 root carries no unique identifier and no extensions, a version 2 root no
+/// extensions, and a unique identifier is a BIT STRING: else there is no anchor.
+#[test]
+fn a_root_with_fields_its_version_does_not_have_gives_no_anchor() {
+    let v1 = Spec {
+        version: None,
+        extensions: Vec::new(),
+        ..Spec::p256()
+    };
+    let v2 = Spec {
+        version: Some(vec![0x01]),
+        ..v1.clone()
+    };
+    let extensions = tlv(0xA3, &seq(&[&Spec::p256().extensions[0]]));
+    for (what, spec, tail) in [
+        ("v1 issuerUniqueID", &v1, tlv(0x81, &[0x00, 0x01])),
+        ("v1 subjectUniqueID", &v1, tlv(0x82, &[0x00, 0x01])),
+        ("v1 extensions", &v1, extensions.clone()),
+        ("v2 extensions", &v2, extensions),
+        (
+            "v2 issuerUniqueID no BIT STRING",
+            &v2,
+            tlv(0x81, &[0x09, 0xFF]),
+        ),
+    ] {
+        let der_bytes = spec.build_with_tail(&tail);
+        assert!(Certificate::from_der(&der_bytes).is_err(), "{what}");
+        assert!(TrustAnchor::from_der(&der_bytes).is_err(), "{what}");
+    }
+    // A version 2 root with both unique identifiers is an anchor of name and key.
+    let tail = [tlv(0x81, &[0x00, 0x01]), tlv(0x82, &[0x00, 0x02])].concat();
+    let anchor = TrustAnchor::from_der(&v2.build_with_tail(&tail)).expect("an anchor");
+    assert_eq!(anchor.refused, Some(Error::UnsupportedVersion));
+}
+
+/// F2: the critical flag of each known extension, and the presence of authorityCertIssuer and
+/// authorityCertSerialNumber, read for path validation.
+#[test]
+fn the_critical_flags_and_the_authority_cert_fields_read() {
+    let mut spec = Spec::p256();
+    spec.extensions
+        .push(extension(OID_SKI, true, &tlv(0x04, &[0x01, 0x02])));
+    spec.extensions.push(extension(
+        OID_AKI,
+        false,
+        &seq(&[
+            &tlv(0x80, &[0x01, 0x02]),
+            &tlv(0xA1, &tlv(0xA4, &name_cn("Example CA"))),
+            &tlv(0x82, &[0x01]),
+        ]),
+    ));
+    spec.extensions.push(extension(
+        OID_NC,
+        true,
+        &seq(&[&tlv(0xA0, &seq(&[&tlv(0x82, b"example.com")]))]),
+    ));
+    let der_bytes = spec.build();
+    let cert = Certificate::from_der(&der_bytes).expect("reads");
+    let e = &cert.extensions;
+    assert_eq!(
+        e.critical,
+        Critical {
+            basic_constraints: true,
+            key_usage: true,
+            ext_key_usage: false,
+            subject_alt_name: false,
+            name_constraints: true,
+            subject_key_id: true,
+            authority_key_id: false,
+        }
+    );
+    assert_eq!(e.authority_key_id, Some(&[0x01, 0x02][..]));
+    assert!(e.authority_cert_issuer);
+    assert!(e.authority_cert_serial);
+    // With the keyIdentifier alone, neither.
+    let mut spec = Spec::p256();
+    spec.extensions
+        .push(extension(OID_AKI, true, &seq(&[&tlv(0x80, &[0x01])])));
+    let der_bytes = spec.build();
+    let cert = Certificate::from_der(&der_bytes).expect("reads");
+    assert!(cert.extensions.critical.authority_key_id);
+    assert!(!cert.extensions.authority_cert_issuer);
+    assert!(!cert.extensions.authority_cert_serial);
 }
 
 #[test]

@@ -59,15 +59,20 @@ fn text(points: &[u32]) -> String {
         .collect()
 }
 
-/// The PEM texts of one case: trusted certificates, intermediates, the peer's certificate.
-fn pem_texts(case: &Value) -> Vec<&[u32]> {
+/// The PEM texts of one case, each with the field it stands in: trusted certificates,
+/// intermediates, the peer's certificate.
+fn pem_texts(case: &Value) -> Vec<(&'static str, &[u32])> {
     let mut out = Vec::new();
     for key in ["trusted_certs", "untrusted_intermediates"] {
         if let Some(Value::Array(items)) = case.get(key) {
-            out.extend(items.iter().filter_map(points));
+            out.extend(items.iter().filter_map(points).map(|p| (key, p)));
         }
     }
-    out.extend(case.get("peer_certificate").and_then(points));
+    out.extend(
+        case.get("peer_certificate")
+            .and_then(points)
+            .map(|p| ("peer_certificate", p)),
+    );
     out
 }
 
@@ -114,6 +119,7 @@ fn tally(file: &str) -> String {
     let (mut certificates, mut read) = (0usize, 0usize);
     let mut refused: BTreeMap<&'static str, usize> = BTreeMap::new();
     let mut findings = Vec::new();
+    let mut refusal_lines = Vec::new();
     let mut leaf_checked = false;
     for case in cases {
         let id = case
@@ -130,14 +136,14 @@ fn tally(file: &str) -> String {
             );
             leaf_checked = true;
         }
-        let succeeds = case
+        let expected_result = case
             .get("expected_result")
             .and_then(points)
             .map(text)
-            .as_deref()
-            == Some("SUCCESS");
+            .unwrap_or_default();
+        let succeeds = expected_result == "SUCCESS";
         let mut refusals_of_case = Vec::new();
-        for pem_points in pem_texts(case) {
+        for (field, pem_points) in pem_texts(case) {
             let verdicts = by_pem.entry(pem_points).or_insert_with(|| {
                 decode(pem_points)
                     .into_iter()
@@ -163,6 +169,9 @@ fn tally(file: &str) -> String {
                     })
                     .collect()
             });
+            for kind in verdicts.iter().flatten() {
+                refusal_lines.push(format!("{id} {expected_result} {field} {kind}\n"));
+            }
             refusals_of_case.extend(verdicts.iter().flatten().copied());
         }
         if succeeds {
@@ -181,6 +190,10 @@ fn tally(file: &str) -> String {
         }
     }
     findings.sort();
+    // Every refusal with its case, the case's expected result and the field, for a reader of
+    // the run (not compared): `target/tmp/limbo-refusals-<file>.txt`.
+    let list = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("limbo-refusals-{file}.txt"));
+    fs::write(&list, refusal_lines.concat()).expect("write the refusals of this run");
 
     let total: usize = refused.values().sum();
     let mut out = format!(

@@ -1,9 +1,9 @@
 limbo-other.json cases 234
 limbo-other.json certificates 978
-limbo-other.json read 944
-limbo-other.json refused 34
+limbo-other.json read 943
+limbo-other.json refused 35
 limbo-other.json refused AlgorithmMismatch 1
-limbo-other.json refused BadExtension 5
+limbo-other.json refused BadExtension 6
 limbo-other.json refused BadKey 3
 limbo-other.json refused BadName 4
 limbo-other.json refused DuplicateExtension 1

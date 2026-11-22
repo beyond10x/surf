@@ -15,7 +15,6 @@ const RSA_ENCRYPTION: &[u8] = &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 
 const ECDSA_WITH_SHA1: &[u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x01];
 const ECDSA_WITH_SHA256: &[u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x03, 0x02];
 const ECDSA_WITH_SHA384: &[u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x03, 0x03];
-const ECDSA_WITH_SHA512: &[u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x03, 0x04];
 const ED25519: &[u8] = &[0x2B, 0x65, 0x70];
 const EC_PUBLIC_KEY: &[u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01];
 const P256: &[u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07];
@@ -68,7 +67,7 @@ pub(super) fn signature_algorithm(raw: &[u8]) -> Result<SignatureAlgorithm, Erro
         ECDSA_WITH_SHA1 => bare(SignatureAlgorithm::Ecdsa(Sha1)),
         ECDSA_WITH_SHA256 => bare(SignatureAlgorithm::Ecdsa(Sha256)),
         ECDSA_WITH_SHA384 => bare(SignatureAlgorithm::Ecdsa(Sha384)),
-        ECDSA_WITH_SHA512 => bare(SignatureAlgorithm::Ecdsa(Sha512)),
+        // ecdsa-with-SHA512 and every other algorithm: not among those of the story.
         ED25519 => bare(SignatureAlgorithm::Ed25519),
         RSASSA_PSS => match params {
             Some(p) => pss(&p)

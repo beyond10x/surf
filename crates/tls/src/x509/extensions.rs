@@ -80,6 +80,26 @@ pub struct NameConstraints<'a> {
     pub excluded: Option<Vec<GeneralName<'a>>>,
 }
 
+/// Which of the extensions the reader knows are present and marked critical. The reader decides
+/// nothing by them; path validation (`story:tls-x509-path`) does.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Critical {
+    /// basicConstraints.
+    pub basic_constraints: bool,
+    /// keyUsage.
+    pub key_usage: bool,
+    /// extKeyUsage.
+    pub ext_key_usage: bool,
+    /// subjectAltName.
+    pub subject_alt_name: bool,
+    /// nameConstraints.
+    pub name_constraints: bool,
+    /// subjectKeyIdentifier.
+    pub subject_key_id: bool,
+    /// authorityKeyIdentifier.
+    pub authority_key_id: bool,
+}
+
 /// The extensions of a certificate.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Extensions<'a> {
@@ -99,6 +119,12 @@ pub struct Extensions<'a> {
     pub subject_key_id: Option<&'a [u8]>,
     /// The keyIdentifier of authorityKeyIdentifier.
     pub authority_key_id: Option<&'a [u8]>,
+    /// Whether authorityKeyIdentifier holds `[1]` authorityCertIssuer.
+    pub authority_cert_issuer: bool,
+    /// Whether authorityKeyIdentifier holds `[2]` authorityCertSerialNumber.
+    pub authority_cert_serial: bool,
+    /// Which of the extensions above are marked critical.
+    pub critical: Critical,
     /// The OBJECT IDENTIFIER (its content) of the first extension marked critical that the
     /// reader does not know; path validation rejects a certificate that has one.
     pub unknown_critical: Option<&'a [u8]>,
@@ -147,6 +173,10 @@ pub(super) fn read_extensions<'a>(explicit: &Value<'a>) -> Result<Extensions<'a>
     while !all.is_empty() {
         oids.push(extension(&mut all)?.oid);
     }
+    // Extensions ::= SEQUENCE SIZE (1..MAX) OF Extension (RFC 5280 section 4.1).
+    if oids.is_empty() {
+        return Err(Error::BadExtension);
+    }
     oids.sort_unstable();
     if oids.windows(2).any(|w| w[0] == w[1]) {
         return Err(Error::DuplicateExtension);
@@ -156,17 +186,41 @@ pub(super) fn read_extensions<'a>(explicit: &Value<'a>) -> Result<Extensions<'a>
     let mut all = list.reader();
     while !all.is_empty() {
         let ext = extension(&mut all)?;
+        let critical = ext.critical;
+        let flags = &mut out.critical;
         match ext.oid {
-            BASIC_CONSTRAINTS => out.basic_constraints = Some(basic_constraints(ext.value)?),
-            KEY_USAGE => out.key_usage = Some(key_usage(ext.value)?),
-            EXT_KEY_USAGE => out.ext_key_usage = Some(ext_key_usage(ext.value)?),
-            SUBJECT_ALT_NAME => out.subject_alt_name = Some(subject_alt_name(ext.value)?),
+            BASIC_CONSTRAINTS => {
+                out.basic_constraints = Some(basic_constraints(ext.value)?);
+                flags.basic_constraints = critical;
+            }
+            KEY_USAGE => {
+                out.key_usage = Some(key_usage(ext.value)?);
+                flags.key_usage = critical;
+            }
+            EXT_KEY_USAGE => {
+                out.ext_key_usage = Some(ext_key_usage(ext.value)?);
+                flags.ext_key_usage = critical;
+            }
+            SUBJECT_ALT_NAME => {
+                out.subject_alt_name = Some(subject_alt_name(ext.value)?);
+                flags.subject_alt_name = critical;
+            }
             NAME_CONSTRAINTS => {
                 out.name_constraints = Some(read_name_constraints(ext.value)?);
                 out.name_constraints_der = Some(ext.value);
+                flags.name_constraints = critical;
             }
-            SUBJECT_KEY_ID => out.subject_key_id = Some(subject_key_id(ext.value)?),
-            AUTHORITY_KEY_ID => out.authority_key_id = authority_key_id(ext.value)?,
+            SUBJECT_KEY_ID => {
+                out.subject_key_id = Some(subject_key_id(ext.value)?);
+                flags.subject_key_id = critical;
+            }
+            AUTHORITY_KEY_ID => {
+                let aki = authority_key_id(ext.value)?;
+                out.authority_key_id = aki.key_id;
+                out.authority_cert_issuer = aki.cert_issuer;
+                out.authority_cert_serial = aki.cert_serial;
+                flags.authority_key_id = critical;
+            }
             other => {
                 if ext.critical && out.unknown_critical.is_none() {
                     out.unknown_critical = Some(other);
@@ -175,6 +229,22 @@ pub(super) fn read_extensions<'a>(explicit: &Value<'a>) -> Result<Extensions<'a>
         }
     }
     Ok(out)
+}
+
+/// Walks the content of `[3]` to its end, reading each extension's OBJECT IDENTIFIER and
+/// interpreting no value: whether one of them is nameConstraints. A list that cannot be walked
+/// is an error.
+pub(super) fn names_name_constraints(explicit: &Value<'_>) -> Result<bool, Error> {
+    let mut outer = explicit.reader();
+    let list = outer.expect(tag::SEQUENCE)?;
+    outer.finish()?;
+    let mut all = list.reader();
+    let mut found = false;
+    while !all.is_empty() {
+        let mut ext = all.sequence()?;
+        found |= ext.expect(tag::OID)?.oid()? == NAME_CONSTRAINTS;
+    }
+    Ok(found)
 }
 
 /// The value of an extension, one DER value checked whole; a shape error is
@@ -211,10 +281,11 @@ fn key_usage(bytes: &[u8]) -> Result<KeyUsage, Error> {
         return Err(Error::BadExtension);
     }
     let bits = shape(v.bit_string())?;
+    // At least one bit set (RFC 5280 section 4.2.1.3), and no trailing zero byte, which DER
+    // drops from a named bit list (X.690 section 11.2.2).
     match bits.bytes {
-        [] => Ok(KeyUsage(0)),
-        [a] => Ok(KeyUsage(u16::from(*a) << 8)),
-        [a, b] => Ok(KeyUsage((u16::from(*a) << 8) | u16::from(*b))),
+        [a] if *a != 0 => Ok(KeyUsage(u16::from(*a) << 8)),
+        [a, b] if *b != 0 => Ok(KeyUsage((u16::from(*a) << 8) | u16::from(*b))),
         _ => Err(Error::BadExtension),
     }
 }
@@ -306,15 +377,27 @@ fn subject_key_id(bytes: &[u8]) -> Result<&[u8], Error> {
     Ok(v.content())
 }
 
-fn authority_key_id(bytes: &[u8]) -> Result<Option<&[u8]>, Error> {
+/// authorityKeyIdentifier as read: the keyIdentifier, and whether authorityCertIssuer and
+/// authorityCertSerialNumber are present (neither is interpreted).
+struct AuthorityKeyId<'a> {
+    key_id: Option<&'a [u8]>,
+    cert_issuer: bool,
+    cert_serial: bool,
+}
+
+fn authority_key_id(bytes: &[u8]) -> Result<AuthorityKeyId<'_>, Error> {
     let v = value(bytes)?;
     if v.tag() != tag::SEQUENCE {
         return Err(Error::BadExtension);
     }
     let mut r = v.reader();
     let key_id = shape(r.optional(tag::context(0)))?.map(|k| k.content());
-    shape(r.optional(tag::context_constructed(1)))?;
-    shape(r.optional(tag::context(2)))?;
+    let cert_issuer = shape(r.optional(tag::context_constructed(1)))?.is_some();
+    let cert_serial = shape(r.optional(tag::context(2)))?.is_some();
     shape(r.finish())?;
-    Ok(key_id)
+    Ok(AuthorityKeyId {
+        key_id,
+        cert_issuer,
+        cert_serial,
+    })
 }

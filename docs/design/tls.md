@@ -599,8 +599,8 @@ the count, date and sha256 of the bundled list of item 11, and with a file a sec
    considered**, per validation. The search (`story:tls-x509-path`, `path.rs`) is depth-first
    from the leaf. At each step, for the certificate at the end of the path, its candidate issuers
    are the trust anchors and then the certificates the server sent, in the order sent, whose
-   subject equals the certificate's issuer name (byte for byte after the reader's
-   normalisation) and, when both carry one, whose subjectKeyIdentifier equals its
+   subject equals the certificate's issuer name (byte for byte as DER; the reader normalises
+   nothing) and, when both carry one, whose subjectKeyIdentifier equals its
    authorityKeyIdentifier; a certificate already on the path is no candidate.
    - **Each candidate looked at charges the counter `considered`**, one per name comparison,
      whether the names match or not. Limit 25,000.
@@ -699,14 +699,18 @@ from the costs of item 4, not runs.
    41,805,636 bytes, sha256 `56799cefd65fc9e0bdb9cb0f97fce6734533b45df3de4fc17fdc7b7b79654fca`,
    `version` 1, 9,807 cases (935 `SUCCESS`, 8,872 `FAILURE`; 9,797 `SERVER`, 10 `CLIENT`; by
    family bettertls 9,572, rfc5280 109, webpki 56, crl 22, online 14, pathlen 13, pathological
-   11, rfc9881 6, cve 3, invalid 1). It is over 20 MiB, so `story:tls-x509` keeps every case not
-   of the `bettertls` family (235 cases, 2,000,133 bytes as compact JSON) and the `bettertls`
-   cases in file order up to 20 MiB in all: at this commit the first 4,907 (18,968,694 bytes),
-   so 5,142 cases kept and 4,665 left out, and states in `SOURCE` the size, the count kept and
-   the count left out. Within the budget (estimate): the file holds 39,975 certificates for its
+   11, rfc9881 6, cve 3, invalid 1). It is over 20 MiB, so `story:tls-x509` chooses every case
+   not of the `bettertls` family (235 cases, 1,999,896 bytes as compact JSON) and the
+   `bettertls` cases in file order up to 20 MiB in all: at this commit the first 4,909
+   (18,971,513 bytes), sizes of the cases as upstream has them. Of the cases chosen it then drops
+   the field `peer_certificate_key` (the peer's private key, D158) and leaves out the case
+   `online::facebook.com` (D161: a secret scanner's token pattern matches a run of its leaf's
+   base64). So 5,143 cases are kept and 4,664 left out: `limbo-other.json` holds 234 cases in
+   1,934,876 bytes, `limbo-bettertls-1.json` to `-4.json` the 4,909 of `bettertls`. `SOURCE`
+   states the sizes, the counts, what is dropped and the jq that makes the files again. Within the budget (estimate): the file holds 39,975 certificates for its
    9,807 cases, about 4 per case; of 400 leaf certificates sampled (200 of each part), 392 hold
    P-256 keys, 2 RSA-2048 and 4 ML-DSA-44. So a case costs a few verifications at about 0.1 ms
-   each, and the 5,142 cases about 2.5 s at opt-level 0 (5,142 × 4 × 0.12 ms); the 11
+   each, and the 5,143 cases about 2.5 s at opt-level 0 (5,143 × 4 × 0.12 ms); the 11
    `pathological` cases are held to the limits of item 9.4, at most 100 verifications each, 0.1
    s for P-256 keys. Reading 21 MB of JSON and its PEM is not estimated here; `story:tls-x509`
    measures it, and the case runner fits the 60 s and the 120 s with it.
@@ -759,7 +763,11 @@ itself (`sha256sum cacert.pem`), checked equal to the published `.sha256` line w
 taken and by the gate's digest check after; `surf --anchors` prints the date, the count and
 that sha256 (item 8). A root
 the certificate reader refuses (a version 1 root, for one) is taken as its name and key, as RFC
-5280 section 6.1.1 (d) defines a trust anchor. A list older than 90 days is refreshed before a
+5280 section 6.1.1 (d) defines a trust anchor, only when a walk over it shows it holds no
+nameConstraints: a version 1 or 2 certificate, or a version 3 certificate whose extension list
+can be walked to its end (each extension's OBJECT IDENTIFIER read, no value interpreted) and
+names no nameConstraints. A refused root that names nameConstraints, or whose extension list
+cannot be walked, gives no anchor: `TrustAnchor::from_der` returns the reader's error (D164). A list older than 90 days is refreshed before a
 release (`docs/releasing.md`).
 
 Licences, for `NOTICE`: the list is Mozilla's root store, published by Mozilla under the

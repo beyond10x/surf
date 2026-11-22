@@ -260,6 +260,62 @@ fn an_oid_reads_and_prints_dotted() {
     assert_eq!(der::oid_to_string(&big), "1.3.1180591620717411303424");
 }
 
+/// An arc that fits 128 bits prints in decimal, a longer one as `0x` and its bits in hex; the
+/// first subidentifier over 128 bits is 2 and the rest less 80, in hex.
+#[test]
+fn an_arc_over_128_bits_prints_in_hex() {
+    // 2^128 - 1: 0x83, then 17 bytes of 0xFF, then 0x7F.
+    let mut max = vec![0x2B, 0x83];
+    max.extend_from_slice(&[0xFF; 17]);
+    max.push(0x7F);
+    assert_eq!(
+        der::oid_to_string(&max),
+        "1.3.340282366920938463463374607431768211455"
+    );
+    // 2^128: 0x84, then 17 bytes of 0x80, then 0x00.
+    let mut over = vec![0x84];
+    over.extend_from_slice(&[0x80; 17]);
+    over.push(0x00);
+    assert_eq!(
+        der::oid_to_string(&[&[0x2B][..], &over].concat()),
+        "1.3.0x100000000000000000000000000000000"
+    );
+    // As the first subidentifier 2^128 is the arcs 2 and 2^128 - 80, which fits 128 bits.
+    assert_eq!(
+        der::oid_to_string(&over),
+        "2.340282366920938463463374607431768211376"
+    );
+    // 2^132 as the first subidentifier: 2 and 2^132 - 80, over 128 bits.
+    let mut huge = vec![0xC0];
+    huge.extend_from_slice(&[0x80; 17]);
+    huge.push(0x00);
+    assert_eq!(
+        der::oid_to_string(&[&huge[..], &[0x01]].concat()),
+        format!("2.0x{}b0.1", "f".repeat(31))
+    );
+}
+
+/// The steps of `oid_to_string` grow with the length of an arc, not its square: one arc of
+/// `n` bytes and one of `2n`, the second at most twice the first and a constant.
+#[test]
+fn printing_an_oid_is_linear_in_the_length_of_an_arc() {
+    let arc = |n: usize| {
+        let mut content = vec![0x2B];
+        content.extend(std::iter::repeat_n(0xFF, n - 1));
+        content.push(0x7F);
+        content
+    };
+    let (text, n_steps) = der::oid_to_string_counting(&arc(1000));
+    let (_, two_n_steps) = der::oid_to_string_counting(&arc(2000));
+    println!("oid_to_string: {n_steps} steps at 1000 bytes, {two_n_steps} at 2000");
+    assert!(text.starts_with("1.3.0x"), "{}", &text[..8]);
+    assert!(n_steps <= 4 * 1000, "{n_steps} steps for 1000 bytes");
+    assert!(
+        two_n_steps <= 2 * n_steps + 16,
+        "{two_n_steps} steps at 2n against {n_steps} at n"
+    );
+}
+
 #[test]
 fn a_bad_oid_is_refused() {
     assert_eq!(der::parse(&[0x06, 0x00]), Err(Error::BadOid));

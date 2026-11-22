@@ -442,85 +442,118 @@ fn bit_string(content: &[u8]) -> Result<BitString<'_>, Error> {
     }
 }
 
-/// The dotted form of an OBJECT IDENTIFIER's content (`2.5.29.17`), for messages. Arcs of any
-/// size are written in full.
+/// The dotted form of an OBJECT IDENTIFIER's content (`2.5.29.17`), for messages. An arc that
+/// fits 128 bits is written in decimal, a longer one as `0x` and its bits in hex, so that the
+/// work grows with the length of the content and not with its square.
 pub fn oid_to_string(content: &[u8]) -> String {
+    oid_to_string_counting(content).0
+}
+
+/// [`oid_to_string`] and the count of the steps it took (each byte looked at, each hex digit
+/// made), for the test of its bound.
+#[doc(hidden)]
+pub fn oid_to_string_counting(content: &[u8]) -> (String, usize) {
+    let mut work = 0usize;
     let mut out = String::new();
-    let mut arc: Vec<u32> = Vec::new(); // decimal digits in base 10^9, least significant first
-    let mut first = true;
-    for &b in content {
-        multiply_add(&mut arc, 128, u32::from(b & 0x7F));
-        if b & 0x80 == 0 {
-            if first {
-                first = false;
-                // The first arc is 0, 1 or 2, the second 40 × first + second.
-                let small = (arc.len() <= 1).then(|| arc.first().copied().unwrap_or(0));
-                let (top, rest) = match small {
-                    Some(n) if n < 40 => (0, n),
-                    Some(n) if n < 80 => (1, n - 40),
-                    _ => {
-                        subtract_small(&mut arc, 80);
-                        out.push_str("2.");
-                        write_decimal(&mut out, &arc);
-                        arc.clear();
-                        continue;
-                    }
-                };
-                out.push_str(&format!("{top}.{rest}"));
-            } else {
-                out.push('.');
-                write_decimal(&mut out, &arc);
+    let mut start = 0;
+    for (i, &b) in content.iter().enumerate() {
+        work += 1;
+        if b & 0x80 != 0 {
+            continue;
+        }
+        let arc = &content[start..=i];
+        let first = start == 0;
+        start = i + 1;
+        if !first {
+            out.push('.');
+        }
+        match (arc_value(arc, &mut work), first) {
+            (Some(v), false) => out.push_str(&v.to_string()),
+            // The first subidentifier is 40 × the first arc (0, 1 or 2) + the second arc.
+            (Some(v), true) if v < 40 => out.push_str(&format!("0.{v}")),
+            (Some(v), true) if v < 80 => out.push_str(&format!("1.{}", v - 40)),
+            (Some(v), true) => out.push_str(&format!("2.{}", v - 80)),
+            (None, first) => {
+                let mut digits = arc_hex(arc, &mut work);
+                if first {
+                    out.push_str("2.");
+                    subtract_hex(&mut digits, 0x50, &mut work);
+                }
+                write_big(&mut out, &digits);
             }
-            arc.clear();
         }
     }
-    out
+    (out, work)
 }
 
-const BASE: u64 = 1_000_000_000;
-
-fn multiply_add(digits: &mut Vec<u32>, factor: u64, add: u32) {
-    let mut carry = u64::from(add);
-    for d in digits.iter_mut() {
-        let v = u64::from(*d) * factor + carry;
-        *d = (v % BASE) as u32;
-        carry = v / BASE;
+/// The value of one arc, if it fits 128 bits.
+fn arc_value(arc: &[u8], work: &mut usize) -> Option<u128> {
+    let mut v: u128 = 0;
+    for &b in arc {
+        *work += 1;
+        if v >> 121 != 0 {
+            return None;
+        }
+        v = (v << 7) | u128::from(b & 0x7F);
     }
-    while carry > 0 {
-        digits.push((carry % BASE) as u32);
-        carry /= BASE;
-    }
+    Some(v)
 }
 
-fn subtract_small(digits: &mut Vec<u32>, n: u32) {
-    let mut borrow = u64::from(n);
-    for d in digits.iter_mut() {
+/// The hex digits (0 to 15) of one arc, most significant first, in one pass over its bytes.
+fn arc_hex(arc: &[u8], work: &mut usize) -> Vec<u8> {
+    let bits = arc.len() * 7;
+    // Zero bits in front, so that the bits fill whole hex digits.
+    let mut held = ((4 - bits % 4) % 4) as u32;
+    let mut acc: u32 = 0;
+    let mut digits = Vec::with_capacity(bits.div_ceil(4));
+    for &b in arc {
+        *work += 1;
+        acc = (acc << 7) | u32::from(b & 0x7F);
+        held += 7;
+        while held >= 4 {
+            held -= 4;
+            digits.push(((acc >> held) & 0xF) as u8);
+            *work += 1;
+        }
+        acc &= (1 << held) - 1;
+    }
+    digits
+}
+
+/// Subtracts `n` (under 16 × 16) from the hex digits of a number at least 2^128.
+fn subtract_hex(digits: &mut [u8], n: u32, work: &mut usize) {
+    let mut borrow = n;
+    for d in digits.iter_mut().rev() {
+        *work += 1;
         if borrow == 0 {
             break;
         }
-        let v = u64::from(*d);
-        if v >= borrow {
-            *d = (v - borrow) as u32;
-            borrow = 0;
+        let low = borrow & 0xF;
+        borrow >>= 4;
+        if u32::from(*d) >= low {
+            *d -= low as u8;
         } else {
-            *d = (v + BASE - borrow) as u32;
-            borrow = 1;
+            *d = (u32::from(*d) + 16 - low) as u8;
+            borrow += 1;
         }
-    }
-    while digits.len() > 1 && digits.last() == Some(&0) {
-        digits.pop();
     }
 }
 
-fn write_decimal(out: &mut String, digits: &[u32]) {
-    match digits.split_last() {
-        None => out.push('0'),
-        Some((top, rest)) => {
-            out.push_str(&top.to_string());
-            for d in rest.iter().rev() {
-                out.push_str(&format!("{d:09}"));
-            }
-        }
+/// Writes a number given by its hex digits: in decimal if it fits 128 bits, else as `0x` and
+/// its digits.
+fn write_big(out: &mut String, digits: &[u8]) {
+    let skip = digits.iter().take_while(|&&d| d == 0).count();
+    let digits = &digits[skip..];
+    if digits.len() <= 32 {
+        let v = digits.iter().fold(0u128, |v, &d| (v << 4) | u128::from(d));
+        out.push_str(&v.to_string());
+    } else {
+        out.push_str("0x");
+        out.extend(
+            digits
+                .iter()
+                .map(|&d| char::from_digit(u32::from(d), 16).unwrap_or('?')),
+        );
     }
 }
 

@@ -39,7 +39,8 @@ dropped after it.
 kept: 5,143 cases (533 SUCCESS, 4,610 FAILURE; 5,133 SERVER, 10 CLIENT)
 left out: 4,663 cases of bettertls and online::facebook.com
 
-How to make it again: run these commands, with limbo.json the file of the commit above.
+How to make it again: run these commands, with limbo.json the file of the commit above. With jq
+1.8.2 (`jq --version`: jq-1.8.2) they make the five files byte for byte.
 
   jq -c -f subset.jq limbo.json > kept.json
   jq -c '.testcases |= map(select(.id != "online::facebook.com") | del(.peer_certificate_key))' kept.json > subset.json

@@ -6,6 +6,8 @@
 
 #![deny(unsafe_code)]
 
+#[path = "tls/adversary_x509.rs"]
+mod adversary_x509;
 #[path = "tls/alloc.rs"]
 mod alloc;
 #[path = "tls/der.rs"]
