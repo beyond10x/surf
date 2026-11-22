@@ -30,7 +30,8 @@ release; what came before it is in the git log and in `docs/plan/`.
   `<button>Code <input type=password value=…></button>` is named `Code`.
 - The session log of `surf-agent` cuts the `label` of a recorded action to its first 1,024 bytes
   and adds `label_bytes`, the whole label's length, when it cut it, as it already did for a
-  page's title.
+  page's title. It cuts the `handle` of an action's events, which the client supplies, the
+  same way, with `handle_bytes`.
 - The event `surf.agent.NavigationRequested` in the session log and the live view has two more
   fields, `handle` and `label`, both empty after a `go`. They will hold the handle and the label
   of the link a `follow` takes (the label cut as above), and `FillRequested`, `PickRequested` and

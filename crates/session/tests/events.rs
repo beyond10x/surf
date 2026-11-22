@@ -1422,3 +1422,122 @@ fn a_recorded_label_is_cut_at_the_entry_bound() {
     });
     assert_cut(&requested, &label);
 }
+
+/// The field `name` of the event line of `event` and the field after it, read back.
+fn field_and_next(
+    event: &SystemEvent,
+    name: &str,
+) -> (Option<String>, Option<(String, Option<String>)>) {
+    let read = read_back(event);
+    let at = read
+        .iter()
+        .position(|(field, _)| field == name)
+        .unwrap_or_else(|| panic!("no {name}: {read:?}"));
+    (read[at].1.clone(), read.get(at + 1).cloned())
+}
+
+/// The adversary's finding on story values-and-labels-before-fill: a client supplies the handle
+/// of a `follow`, `fill`, `pick` or `press`, up to the 64 KiB of a request, and the entry carries
+/// it. A handle of 10,000 bytes ([`long_label`]) is cut as a label is: `handle` quotes its first
+/// 1,023 bytes and `handle_bytes="10000"` follows it, so the line is at most the line of a
+/// two-byte handle, one quoted cut field (4 × 1,024 + 2 bytes) and its `handle_bytes`. A handle of
+/// 1,024 bytes is whole and has no `handle_bytes`.
+fn assert_handle_cut(event_with: impl Fn(&str) -> SystemEvent) {
+    let max = surf_session::entries::TITLE_ENTRY_BYTES;
+    let handle = long_label();
+    let long = event_with(&handle);
+    let (written, next) = field_and_next(&long, "handle");
+    let written = written.expect("a handle");
+    assert_eq!(written.len(), 1023, "the handle's length after the cut");
+    assert!(
+        written == handle[..1023],
+        "the handle is the first 1,023 bytes"
+    );
+    assert_eq!(
+        next,
+        Some(("handle_bytes".to_string(), Some("10000".to_string())))
+    );
+    let line = surf_session::entries::event_line(&long);
+    let short = surf_session::entries::event_line(&event_with("l4"));
+    let bound = short.len() + 4 * max + 2 + r#" handle_bytes="10000""#.len();
+    assert!(
+        line.len() <= bound,
+        "an entry of {} bytes over its bound of {bound}",
+        line.len()
+    );
+    assert!(
+        !line.contains('\n') && !line.contains('\u{202e}'),
+        "a raw line feed or bidirectional control"
+    );
+
+    let whole = "c".repeat(max);
+    let (written, _) = field_and_next(&event_with(&whole), "handle");
+    assert_eq!(written.as_deref(), Some(whole.as_str()));
+    assert!(
+        !surf_session::entries::event_line(&event_with(&whole)).contains("handle_bytes"),
+        "a whole handle has no handle_bytes"
+    );
+}
+
+#[test]
+fn a_recorded_handle_is_cut_at_the_entry_bound() {
+    assert_handle_cut(|handle| {
+        SystemEvent::ActionRecorded(ActionRecorded {
+            action_id: ActionId(uuid(1)),
+            session_id: SessionId(uuid(2)),
+            sequence: 7,
+            command: ActionCommand::Follow,
+            url: None,
+            handle: Some(handle.to_string()),
+            label: Some(LABEL.to_string()),
+        })
+    });
+}
+
+#[test]
+fn a_requested_navigations_handle_is_cut_at_the_entry_bound() {
+    assert_handle_cut(|handle| {
+        SystemEvent::NavigationRequested(NavigationRequested {
+            session_id: SessionId(uuid(2)),
+            tab_id: TabId(uuid(3)),
+            url: Url(ADDRESS.to_string()),
+            handle: Some(handle.to_string()),
+            label: Some(LABEL.to_string()),
+        })
+    });
+}
+
+#[test]
+fn a_requested_fills_handle_is_cut_at_the_entry_bound() {
+    assert_handle_cut(|handle| {
+        SystemEvent::FillRequested(FillRequested {
+            session_id: SessionId(uuid(2)),
+            element_id: ElementId(uuid(8)),
+            value: TYPED.to_string(),
+            handle: Some(handle.to_string()),
+        })
+    });
+}
+
+#[test]
+fn a_requested_picks_handle_is_cut_at_the_entry_bound() {
+    assert_handle_cut(|handle| {
+        SystemEvent::PickRequested(PickRequested {
+            session_id: SessionId(uuid(2)),
+            element_id: ElementId(uuid(8)),
+            option_id: Some(OptionId(uuid(10))),
+            handle: Some(handle.to_string()),
+        })
+    });
+}
+
+#[test]
+fn a_requested_press_handle_is_cut_at_the_entry_bound() {
+    assert_handle_cut(|handle| {
+        SystemEvent::PressRequested(PressRequested {
+            session_id: SessionId(uuid(2)),
+            element_id: ElementId(uuid(8)),
+            handle: Some(handle.to_string()),
+        })
+    });
+}

@@ -180,9 +180,10 @@
 //! title of `surf.document.DocumentParsed` and the label of `surf.agent.ActionRecorded` and of
 //! `surf.agent.NavigationRequested` (the label of the link a `follow` took), each hold at most
 //! [`entries::TITLE_ENTRY_BYTES`] (1,024) bytes of it, at most 4,098 bytes quoted, with the
-//! field `title_bytes` or `label_bytes` when it was cut. An element's target and value are in
-//! no entry, and its label only in those two (`surf.document.ElementAdded` carries two
-//! identities and a position). An address, at most
+//! field `title_bytes` or `label_bytes` when it was cut. The `handle` of an action's events,
+//! which the client supplies, is cut the same way, with `handle_bytes`. An element's target and
+//! value are in no entry, and its label only in those two (`surf.document.ElementAdded` carries
+//! two identities and a position). An address, at most
 //! [`surf_agent::wire::REQUEST_MAX`] bytes when it comes from a request and at most
 //! [`surf_fetch::MAX_ADDRESS_BYTES`] bytes, the same 64 KiB, when it is the address a response
 //! came from after redirects, is at most 262,146 bytes once quoted, in at most nine action and

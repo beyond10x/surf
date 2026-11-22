@@ -192,6 +192,8 @@ fn entries_a() -> Vec<Entry> {
                 ("sequence", Some("1")),
                 ("command", Some("open")),
                 ("url", None),
+                ("handle", None),
+                ("label", None),
             ],
         ),
         EntryKind::Answer {
@@ -209,6 +211,8 @@ fn entries_a() -> Vec<Entry> {
                 ("session_id", Some(A)),
                 ("tab_id", Some(TAB)),
                 ("url", Some(PAGE)),
+                ("handle", None),
+                ("label", None),
             ],
         ),
         event(
@@ -219,6 +223,8 @@ fn entries_a() -> Vec<Entry> {
                 ("sequence", Some("2")),
                 ("command", Some("go")),
                 ("url", Some(PAGE)),
+                ("handle", None),
+                ("label", None),
             ],
         ),
         event(
@@ -335,7 +341,7 @@ fn case_02_a_detail_whose_page_is_committed_is_the_documents_example() {
     };
     let written = to_json(&detail);
     let expected = body_of(&format!("/api/sessions/{A}"));
-    assert_eq!(expected.len(), 5_325, "the document's example");
+    assert_eq!(expected.len(), 5_406, "the document's example");
     assert_eq!(text(&written), text(&expected));
 }
 

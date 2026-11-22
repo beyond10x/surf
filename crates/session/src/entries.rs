@@ -23,6 +23,10 @@
 //!   `title_bytes` or `label_bytes`, right after `title` or `label`, gives the whole text's
 //!   length in bytes; it is absent when the text is whole. Quoted, such a field is at most
 //!   4 × 1,024 + 2 = 4,098 bytes;
+//! - the `handle` of `surf.agent.ActionRecorded`, `surf.agent.NavigationRequested`,
+//!   `surf.agent.FillRequested`, `surf.agent.PickRequested` and `surf.agent.PressRequested`,
+//!   which the client supplies (up to a request's 64 KiB), cut the same way, with `handle_bytes`
+//!   after it when it was cut;
 //! - a field of the type `Bytes` (the `body` of `surf.net.ResponseReceived`, of
 //!   `surf.navigation.NavigationCommitted` and of `surf.document.ParsingStarted`) and a present
 //!   one of the type `Optional<Bytes>` (the request body of `surf.navigation.NavigationStarted`
@@ -158,13 +162,13 @@ pub fn event_line(event: &SystemEvent) -> String {
             .integer("sequence", e.sequence)
             .text("command", command_word(e.command))
             .optional("url", e.url.as_ref().map(|url| url.0.as_str()))
-            .optional("handle", e.handle.as_deref())
+            .optional_cut("handle", e.handle.as_deref(), TITLE_ENTRY_BYTES)
             .optional_cut("label", e.label.as_deref(), TITLE_ENTRY_BYTES),
         SystemEvent::NavigationRequested(e) => line
             .text("session_id", &e.session_id.0.0)
             .text("tab_id", &e.tab_id.0.0)
             .text("url", &e.url.0)
-            .optional("handle", e.handle.as_deref())
+            .optional_cut("handle", e.handle.as_deref(), TITLE_ENTRY_BYTES)
             .optional_cut("label", e.label.as_deref(), TITLE_ENTRY_BYTES),
         SystemEvent::SessionClosed(e) => line
             .text("session_id", &e.session_id.0.0)
@@ -256,16 +260,16 @@ pub fn event_line(event: &SystemEvent) -> String {
             .text("session_id", &e.session_id.0.0)
             .text("element_id", &e.element_id.0.0)
             .bytes("value", e.value.as_bytes())
-            .optional("handle", e.handle.as_deref()),
+            .optional_cut("handle", e.handle.as_deref(), TITLE_ENTRY_BYTES),
         SystemEvent::PickRequested(e) => line
             .text("session_id", &e.session_id.0.0)
             .text("element_id", &e.element_id.0.0)
             .optional("option_id", e.option_id.as_ref().map(|id| id.0.0.as_str()))
-            .optional("handle", e.handle.as_deref()),
+            .optional_cut("handle", e.handle.as_deref(), TITLE_ENTRY_BYTES),
         SystemEvent::PressRequested(e) => line
             .text("session_id", &e.session_id.0.0)
             .text("element_id", &e.element_id.0.0)
-            .optional("handle", e.handle.as_deref()),
+            .optional_cut("handle", e.handle.as_deref(), TITLE_ENTRY_BYTES),
         SystemEvent::FormAdded(e) => line
             .text("form_id", &e.form_id.0.0)
             .text("document_id", &e.document_id.0.0)
