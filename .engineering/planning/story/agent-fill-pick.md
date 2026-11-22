@@ -33,6 +33,8 @@ scope:
   path: crates/agent/src/client.rs
 - confidence: cited
   path: crates/agent/src/wire.rs
+- confidence: cited
+  path: crates/agent/tests/adversary_fill_pick.rs
 - confidence: inferred
   path: crates/agent/tests/drift.rs
 - confidence: cited
@@ -49,6 +51,8 @@ scope:
   path: crates/session/src/lib.rs
 - confidence: cited
   path: crates/session/tests
+- confidence: cited
+  path: crates/session/tests/adversary_fill_pick.rs
 - confidence: cited
   path: crates/surf/tests
 - confidence: cited
@@ -79,7 +83,7 @@ scope:
   path: website/docs/status.md
 - confidence: inferred
   path: website/docs/what-works.md
-revision: 22
+revision: 25
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 6}
@@ -195,9 +199,12 @@ attribute goes into a submission's entry list all the same.
      `on` then `off`; 8. `pick` a radio: the others of its group show unchecked;
   9. `fill` a hidden control: `hidden`; 10. a disabled control: `disabled`; 11. `fill` a checkbox:
      `wrong-kind`; 12. `pick` an unknown option: `unknown-option`; 13. `fill f99`: status 1, `did refused unknown-handle`;
-  forging, each quoted and escaped with no extra line: 14. a value filled with a line feed, `"` and
-  a bidirectional control; 15. a label; 16. an option label from the page; each with the same
-  three characters;
+  forging, each quoted and escaped with no extra line: 14. a value holding a line feed, `"` and
+  a bidirectional control filled into the text field `f1`: its line shows the value with the
+  line feed removed (decision 1 of "As decided after the adversary's pass") and `"` and the
+  control escaped; the same value filled into a `textarea`: its line keeps the line feed,
+  escaped as `\x0a`; 15. a label; 16. an option label from the page; each with the same three
+  characters;
   17. `fill_events_map_with_their_fields`, with `surfd` run in the test process (decision D29):
       after case 3 no entry of the session log holds the password and the `FillRequested` entry
       has its value as `<n> bytes`; after case 2 the `FillRequested` entry has the value filled as
@@ -229,7 +236,8 @@ for `readonly` the specification files and count files named above.
 
 `cargo nextest run -p surf-session -p surf-answer -p surf-agent -p surf-page -p surf` passes with
 the 21 numbered
-cases, each a test named after its case, case 1 equal to its golden text and no answer of case 3
+cases, each a test named after its case, and the adversary's tests named in "As decided after
+the adversary's pass", case 1 equal to its golden text and no answer of case 3
 containing the password. For the `readonly` field of the specification: `slot task validate`,
 `slot task suite`, `slot task conform`, `slot task conform-rust` and `slot task
 generated-check` pass, and the scenario, authored and refused counts after the change stand
@@ -240,3 +248,55 @@ refused count after. No test runs over 60 s, and the test step ends within 120 s
 ## Out of scope
 
 `press` and submission (`agent-press-submit`); file upload; `changed` (`agent-change-and-log`).
+The URL and Email states' sanitization beyond removing newlines (the trim of leading and
+trailing whitespace) is not done: the value keeps its spaces as filled.
+
+## As decided after the adversary's pass
+
+The adversary's cases on the built story (code `1cb6e73`; cases at `5845f36` on
+`adv/fill-pick`: `crates/session/tests/adversary_fill_pick.rs`,
+`crates/agent/tests/adversary_fill_pick.rs`) showed five red. Decided by the coordinator; line
+numbers are those at `1cb6e73`:
+
+1. `fill` of a single-line `input` (the Text, Search, Telephone, URL, Email and Password states)
+   stores the value with every U+000A and U+000D removed, the HTML Standard's value sanitization
+   ("strip newlines"); a `textarea` keeps them. This replaces what case 14 asserted (a line feed
+   kept in the text field `f1`); case 14 now expects the stripped value and keeps its line feed
+   on a `textarea`. Where it is done, in the session before `SetValue` or in `SetValue`
+   (`spec/domains/document.yaml:808`), is the implementor's choice, with the reason written in
+   the unit report. Turns green: `fill_of_a_text_field_strips_its_newlines`.
+2. `pick` of a radio button with no form owner turns off the other radio buttons of its group
+   (same `name`, no form owner, same document), as `docs/agent-answer.md:257-258` promises and
+   as the parse-time rule already groups them (`crates/page/src/forms.rs:215`, the group key
+   `(owner, name)` with an absent owner). `spec/domains/document.yaml:820` marks that group
+   `UNMAPPED` today; the line is corrected when the specification settles it, or names where the
+   session settles it instead. Turns green:
+   `pick_of_a_radio_without_a_form_unchecks_the_others_of_its_group`.
+3. `surf-agent` takes `--` as the end of options for every command: the words after it are
+   arguments even when they start with a dash (`fill f1 -- -5`, `pick f2 -- "-- choose --"`);
+   `fill f1 -` still reads standard input, and `fill f1 -- -` fills a dash. The usage text and
+   `cli/surf-agent.yaml` name it. The adversary's two cases call `fill f1 -5` and
+   `pick f1 "-- choose --"` without `--` (`crates/agent/tests/adversary_fill_pick.rs:21-41`); they
+   are rewritten to write `--` into their calls. Turns green:
+   `fill_takes_a_value_that_starts_with_a_dash`,
+   `pick_takes_an_option_label_that_starts_with_dashes`.
+4. A value from standard input: at most 64 KiB is read (`STDIN_VALUE_MAX`,
+   `crates/agent/src/client.rs:67`); the request on the wire keeps its bound of 65,536 bytes
+   (`REQUEST_MAX`, `crates/agent/src/wire.rs:94`), where a byte that is not printable ASCII
+   takes 4 bytes, quoted. A value that does not fit is refused with a message that names the
+   value and its size on the wire, starting "the value read from standard input is longer
+   than", not "the request". `docs/agent-answer.md`, the usage text and `README.md` say that a
+   value of up to 16,000 bytes always fits (16,000 times 4 is 64,000 bytes, leaving 1,536 for
+   the rest of a `fill` request; that the rest never takes more is to be confirmed by the
+   implementor, `crates/agent/src/wire.rs` settles it). Turns green:
+   `a_value_from_standard_input_within_its_bound_is_sent_or_refused_by_that_bound`.
+5. Notes, each corrected in the same change:
+   - `docs/agent-answer.md:360` ("Controls in `now` and `changed` ... are defined by later
+     stories") is stale: controls in `now` are defined now; only `changed` is later.
+   - The check for a hidden option (`crates/session/src/lib.rs:1090`) cannot trigger: an option
+     row takes its select's hidden flag, and a hidden select is refused `hidden` before. It is
+     removed, with the sentences that promise it (`crates/session/src/lib.rs:100`, "`hidden` for
+     the option picked"; `docs/agent-answer.md:262`, "the picked option's `disabled` or
+     `hidden`").
+   - The `Debug` output of the wire request (`crates/agent/src/wire.rs:136-137`) writes a value's
+     length, never its bytes, as it writes the token as `Token(..)`.
