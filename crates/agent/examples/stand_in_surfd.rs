@@ -2,8 +2,8 @@
 //! builds it. A test starts it itself, or copies it beside a copy of `surf-agent` as `surfd`
 //! so that `open` starts it.
 //!
-//! Its behaviour is set by files in the directory `STAND_IN_DIR` names, each read when it is
-//! needed:
+//! Its behaviour is set by files in the directory `STAND_IN_DIR` names (when it is unset, `c`
+//! beside `XDG_RUNTIME_DIR`), each read when it is needed:
 //!
 //! - `start`: `ready` (the default) binds `$XDG_RUNTIME_DIR/surf/surfd.sock` and writes `ready`;
 //!   a line `refused <reason>` is written as it is, and the stand-in exits; `silent` writes
@@ -40,8 +40,8 @@ fn main() {
         thread::sleep(LIFETIME);
         std::process::exit(0);
     });
-    let Some(control) = std::env::var_os("STAND_IN_DIR").map(PathBuf::from) else {
-        println!("refused STAND_IN_DIR is not set");
+    let Some(control) = control_dir() else {
+        println!("refused STAND_IN_DIR and XDG_RUNTIME_DIR are not set");
         std::process::exit(1);
     };
     append(
@@ -157,6 +157,17 @@ fn serve(stream: UnixStream, control: &Path) {
             }
         }
     }
+}
+
+/// `STAND_IN_DIR`; when it is unset, the directory `c` beside `XDG_RUNTIME_DIR` (the layout of
+/// the tests' `TestDir`, `r` and `c`), for a stand-in that `surf-agent`'s client started from a
+/// test process, which passes it only `XDG_RUNTIME_DIR`.
+fn control_dir() -> Option<PathBuf> {
+    if let Some(dir) = std::env::var_os("STAND_IN_DIR") {
+        return Some(PathBuf::from(dir));
+    }
+    let runtime = PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR")?);
+    Some(runtime.parent()?.join("c"))
 }
 
 /// The first line of the file `name` in `control`, if there is one.

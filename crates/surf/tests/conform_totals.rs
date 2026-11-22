@@ -2,10 +2,11 @@
 //! as many scenarios. It reads the two `ess-conformance-report/2` files `task conform` and
 //! `task conform-rust` write under `.out/`, and fails, printing both totals, when they are of
 //! different suites or differ in their total. Each case writes two reports into a directory of its
-//! own under `CARGO_TARGET_TMPDIR`, beside a copy of `Taskfile.yml`, and runs the task there. The
-//! reports carry only the members the task reads, plus a decoy `total` outside `counts`. Both
-//! writers indent their reports today; the Rust one is written here on one line as well, so the
-//! task is shown not to depend on the layout. Needs `task` on `PATH`, as `task check` does.
+//! own under `CARGO_TARGET_TMPDIR` and runs the task's script there,
+//! `sh taskfiles/conform-totals.sh`, without `task`. The reports carry only the members the task
+//! reads, plus a decoy `total` outside `counts`. Both writers indent their reports today; the
+//! Rust one is written here on one line as well, so the task is shown not to depend on the
+//! layout.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -44,8 +45,6 @@ fn copy(name: &str, report: Option<String>, rust_report: Option<String>) -> Path
         .join(name);
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join(".out")).expect("create copy");
-    fs::copy(repository().join("Taskfile.yml"), dir.join("Taskfile.yml"))
-        .expect("copy Taskfile.yml");
     if let Some(report) = report {
         fs::write(dir.join(".out/report.json"), report).expect("write report.json");
     }
@@ -56,12 +55,14 @@ fn copy(name: &str, report: Option<String>, rust_report: Option<String>) -> Path
     dir
 }
 
+/// `sh taskfiles/conform-totals.sh` of this checkout in `dir`, as `task conform-totals` runs
+/// it: its exit status and everything it printed.
 fn totals(dir: &Path) -> (Option<i32>, String) {
-    let output = Command::new("task")
-        .arg("conform-totals")
+    let output = Command::new("sh")
+        .arg(repository().join("taskfiles/conform-totals.sh"))
         .current_dir(dir)
         .output()
-        .expect("run task");
+        .expect("run sh");
     let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
     text.push_str(&String::from_utf8_lossy(&output.stderr));
     (output.status.code(), text)
