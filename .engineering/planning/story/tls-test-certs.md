@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-test-certs
 kind: story
-status: draft
+status: active
 title: A generated set of test certificates, made once in the slow lane and held by a digest
 summary: crates/tls-test-certs writes the positive cases and the negative suite (badssl names) into committed files with a DIGEST; tls-certs-check in the gate, tls-certs-slow regenerates and compares.
 relations:
@@ -16,7 +16,10 @@ scope:
   path: taskfiles/tls-certs-check.sh
 - confidence: cited
   path: taskfiles/tls-certs.yml
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T06:24:26Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T06:24:26Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Context
 

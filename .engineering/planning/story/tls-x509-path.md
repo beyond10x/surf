@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-x509-path
 kind: story
-status: draft
+status: active
 title: surf-tls validates a server certificate path and its host name, held to x509-limbo in the gate
 summary: RFC 5280 path building and validation with bounds, RFC 9525 name checks; every negative case ends with its reason; tls-x509-conformance holds the limbo counts as html-conformance holds the parser counts.
 relations:
@@ -23,7 +23,10 @@ scope:
   path: crates/tls/tests/tls/path.rs
 - confidence: cited
   path: taskfiles/tls-x509-conformance.yml
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T06:24:26Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T06:24:27Z", actor: "human:operator", revision: 11, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Context
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-spec
 kind: story
-status: draft
+status: active
 title: 'Specify https: fetching, redirects between schemes and the five TLS failure reasons'
 summary: net.yaml fetches https and gains CertificateNotTrusted, CertificateExpired, CertificateNameMismatch, TlsVersionUnsupported, TlsHandshakeFailed with scenarios; the answer and surf command documents list them.
 relations:
@@ -26,7 +26,10 @@ scope:
   path: spec/domains/net.yaml
 - confidence: cited
   path: spec/scenarios
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T06:24:25Z", actor: "human:operator", revision: 7, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T06:24:25Z", actor: "human:operator", revision: 8, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Context
 

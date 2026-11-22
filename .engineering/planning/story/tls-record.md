@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-record
 kind: story
-status: draft
+status: active
 title: surf-tls protects TLS 1.3 records and derives the key schedule, checked against RFC 8448
 summary: Record layer, key schedule and transcript hash; every secret and record of RFC 8448 sections 3, 5 and 7 reproduced byte for byte; hostile records refused with their alert.
 relations:
@@ -24,7 +24,10 @@ scope:
   path: crates/tls/tests/tls/rfc8446-record-musts.txt
 - confidence: cited
   path: crates/tls/tests/tls/rfc8448.rs
-revision: 11
+revision: 13
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T06:24:28Z", actor: "human:operator", revision: 12, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T06:24:28Z", actor: "human:operator", revision: 13, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Context
 

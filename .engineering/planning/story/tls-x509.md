@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-x509
 kind: story
-status: draft
+status: active
 title: surf-tls reads DER, X.509 certificates and PEM, refusing malformed input with a named error
 summary: A bounded DER reader, the X.509 v3 model the epic names, PEM and base64; x509-limbo vendored and every certificate in it read or refused in held counts.
 relations:
@@ -32,7 +32,10 @@ scope:
   path: crates/tls/tests/tls/pem.rs
 - confidence: cited
   path: crates/tls/tests/tls/x509_parse.rs
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T06:24:25Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T06:24:25Z", actor: "human:operator", revision: 11, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Context
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-handshake
 kind: story
-status: draft
+status: active
 title: surf-tls completes a TLS 1.3 client handshake and refuses every server that deviates
 summary: The client state machine with HelloRetryRequest, compatibility mode, KeyUpdate and close_notify; ClientHello held by a golden file; RFC 8448 and recorded flights of an independent server replayed; each deviation ends with its alert.
 relations:
@@ -36,7 +36,10 @@ scope:
   path: crates/tls/tests/tls/rfc8446-client-musts.txt
 - confidence: cited
   path: taskfiles/tls-flights.yml
-revision: 12
+revision: 14
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T06:24:28Z", actor: "human:operator", revision: 13, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T06:24:29Z", actor: "human:operator", revision: 14, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Context
 

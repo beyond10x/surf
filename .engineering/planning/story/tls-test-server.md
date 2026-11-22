@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-test-server
 kind: story
-status: draft
+status: active
 title: A TLS 1.3 test server on 127.0.0.1 for end-to-end tests, with the misbehaviours the negative cases need
 summary: crates/tls-test-server serves HTTP over TLS 1.3 with the generated certificates, and on order answers TLS 1.2, stalls, sends an oversized Certificate, a bad Finished or no close_notify.
 relations:
@@ -14,7 +14,10 @@ relations:
 scope:
 - confidence: cited
   path: crates/tls-test-server
-revision: 7
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T06:24:29Z", actor: "human:operator", revision: 8, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T06:24:29Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Context
 

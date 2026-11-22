@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-decisions
 kind: story
-status: draft
+status: active
 title: Decide the TLS design and check that ring builds for the four release targets
 summary: docs/design/tls.md records U1 to U3, the reasons, the extra anchor option, the crate layout, the bounds and the test design; a probe workflow on an unmerged branch builds ring 0.17.14 on the forge runners.
 relations:
@@ -10,7 +10,10 @@ relations:
 scope:
 - confidence: cited
   path: docs/design/tls.md
-revision: 9
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T06:24:23Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T06:24:24Z", actor: "human:operator", revision: 11, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Context
 

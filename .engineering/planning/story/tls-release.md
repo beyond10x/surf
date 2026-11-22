@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-release
 kind: story
-status: draft
+status: active
 title: 'Release builds carry ring on the four targets, and the smoke test checks https: and the anchors'
 summary: The compiler step of the design note in release.yml, the smoke test checks surf https://127.0.0.1:1/ and surf --anchors, the anchor age step in releasing.md, NOTICE, changelog and website.
 relations:
@@ -22,7 +22,10 @@ scope:
   path: taskfiles/release-smoke.sh
 - confidence: cited
   path: website/docs
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T06:24:31Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T06:24:31Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Context
 

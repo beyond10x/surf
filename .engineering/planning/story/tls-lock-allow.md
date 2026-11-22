@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-lock-allow
 kind: story
-status: draft
+status: active
 title: The lock check allows ring for surf-tls alone, and surf-tls wraps it in one module
 summary: taskfiles/lock-allow.txt pins the packages of ring by name, version, source and checksum, only surf-tls may depend on them; crates/tls starts with crypto.rs, checked against Wycheproof vectors.
 relations:
@@ -34,7 +34,10 @@ scope:
   path: taskfiles/lock-allow.txt
 - confidence: cited
   path: taskfiles/lock-check.sh
-revision: 8
+revision: 10
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T06:24:24Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T06:24:24Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Context
 

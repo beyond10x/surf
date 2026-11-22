@@ -2,10 +2,13 @@
 format: aep.planning-md/3
 id: epic:tls-https
 kind: epic
-status: draft
+status: active
 title: 'surf loads https: addresses'
 summary: 'TLS 1.3 client written here over one audited source of primitives; X.509 path validation, host names, trust anchors; https: and redirects between schemes in surf-fetch, with TLS failure reasons in the answer.'
-revision: 18
+revision: 20
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T06:24:31Z", actor: "human:operator", revision: 19}
+- {from: "proposed", to: "active", at: "2026-11-22T06:24:32Z", actor: "human:operator", revision: 20}
 ---
 ## Context
 

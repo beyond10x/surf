@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-anchors
 kind: story
-status: draft
+status: active
 title: surf-tls carries the root list of Mozilla as curl publishes it, and takes one extra anchor file
 summary: cacert.pem compiled in with its SOURCE, an extra PEM file checked against bounds, anchors-refresh outside the gate and anchors-age for the release.
 relations:
@@ -19,7 +19,10 @@ scope:
   path: taskfiles/tls-anchors.sh
 - confidence: cited
   path: taskfiles/tls-anchors.yml
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T06:24:27Z", actor: "human:operator", revision: 7, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T06:24:27Z", actor: "human:operator", revision: 8, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Context
 
