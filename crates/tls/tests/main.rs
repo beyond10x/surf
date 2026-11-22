@@ -14,6 +14,8 @@ mod adversary_x509;
 mod alloc;
 #[path = "tls/der.rs"]
 mod der;
+#[path = "tls/flights.rs"]
+mod flights;
 #[path = "tls/handshake.rs"]
 mod handshake;
 #[path = "tls/handshake_hostile.rs"]
