@@ -64,9 +64,10 @@ tasks:
       on a model and builds nothing: run it without the slot prefix. AGENT_TASKS_MODEL_COMMAND
       in the environment replaces the default command (claude -p); TIMEOUT=<seconds> bounds each
       task's model run (default 300). A model command that cannot start, fails or passes its
-      bound ends the task non-zero and writes no file. The model command runs in a process
-      group of its own, which gets SIGKILL at the end of each task and at the bound; a process
-      it moves into a new session (setsid) is not found. The first line names the binaries as
+      bound ends the task non-zero and writes no file. The model command runs through
+      agent-tasks-serve --bounded (built by task build) in a process group of its own, which
+      gets SIGKILL at the end of each task and at the bound; a process it moves into a new
+      session (setsid) is not found. The script is POSIX sh. The first line names the binaries as
       target/debug, never as a path of this machine. No step of check, check-runner or a forge
       workflow runs it.
     dir: '{{.TASKFILE_DIR}}/..'

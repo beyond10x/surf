@@ -28,12 +28,13 @@
 #   surf-agent. The command is looked for before the first task. Each run is bounded by
 #   AGENT_TASKS_MODEL_TIMEOUT seconds (default 300). A command that cannot be started, exits
 #   other than 0 or passes its bound ends the lane with exit 1 and one line naming the command,
-#   the task and the status; one that exits 124 by itself is told apart from one this script
-#   killed at its bound.
-# - The model command runs in a process group of its own (set -m, which this script needs from
-#   its sh). At the end of each task and at the bound the whole group is sent SIGKILL, so no
-#   child it started is left. A process that leaves the group by a new session (setsid) is not
-#   found: POSIX sh has no way to find it.
+#   the task and the status; one that exits 124 by itself is told apart from one killed at its
+#   bound.
+# - The model command runs through agent-tasks-serve --bounded (the fixture server's program),
+#   in a process group of its own; when it ends or its bound passes the whole group is sent
+#   SIGKILL, so no child it started is left. A process that leaves the group by a new session
+#   (setsid) is not found. The script uses POSIX sh alone, no job control: it runs under bash,
+#   dash and zsh's sh mode.
 # - A task passes when the text after the last "ANSWER: " line, with spaces at both ends and
 #   one final "." removed, equals the expected answer, both lower-cased. Rows whose server is
 #   not http are written "task <name> skipped: server <server>".
@@ -90,7 +91,6 @@ rm -f "$out" || fail "cannot remove $out"
 [ -x "$serve" ] || fail "$serve is not there; task build builds it"
 [ -f "$tasks" ] || fail "$tasks is not there"
 case $bound in '' | *[!0-9]* | 0*) fail "AGENT_TASKS_MODEL_TIMEOUT is $bound, not a number of seconds of at least 1" ;; esac
-(set -m) 2> /dev/null || fail 'this sh has no job control (set -m); run the script with sh (bash or dash)'
 
 if [ -n "${AGENT_TASKS_MODEL_COMMAND:-}" ]; then
   command=$AGENT_TASKS_MODEL_COMMAND
@@ -119,8 +119,7 @@ runtime=$scratch/r
 mkdir -m 700 "$runtime" "$scratch/bin" "$scratch/work" || fail "cannot make directories in $scratch"
 log=$scratch/calls.log
 serve_pid=
-model_pid=
-timer_pid=
+model_state=
 
 # The state of a process from /proc/<pid>/stat, the first word after the last ")".
 state() {
@@ -145,18 +144,15 @@ wait_ended() {
   done
 }
 
-# SIGKILL to the process group $1 (none when $1 is empty), and its leader waited for.
-end_group() {
-  [ -n "$1" ] || return 0
-  kill -s KILL -- "-$1" 2> /dev/null
-  wait "$1" 2> /dev/null
-  return 0
-}
-
 cleanup() {
   status=$?
-  end_group "$timer_pid"
-  end_group "$model_pid"
+  # The model's group while its runner runs (the script was interrupted): kill(1), whose --
+  # and negative PID every system's kill takes.
+  if [ -n "$model_state" ] && [ -f "$model_state/group" ]; then
+    group=
+    { read -r group < "$model_state/group"; } 2> /dev/null
+    [ -n "$group" ] && env kill -s KILL -- "-$group" 2> /dev/null
+  fi
   if [ -n "$serve_pid" ]; then
     kill "$serve_pid" 2> /dev/null
     wait "$serve_pid" 2> /dev/null
@@ -297,26 +293,20 @@ while IFS=$tab read -r task server start question answer; do
       --allowedTools 'Bash(surf-agent *)' --permission-prompts none --strict-mcp-config \
       --safe-mode --output-format text "$prompt"
   fi
-  killed=$scratch/killed.$n
-  # The model and its timer each in a process group of their own (set -m): the timer sends
-  # SIGKILL to the model's whole group at the bound and leaves the file killed.
-  set -m
+  # The runner (agent-tasks-serve --bounded) starts the model in a process group of its own and
+  # sends the whole group SIGKILL when the model ends or the bound passes; bound-passed in its
+  # state directory, not its status, tells the bound.
+  model_state=$scratch/model.$n
+  mkdir "$model_state" || fail "cannot make $model_state"
   (cd "$scratch/work" && PATH=$scratch/bin:$bin:/usr/bin:/bin XDG_RUNTIME_DIR=$runtime \
-    exec "$@") > "$reply" 2> "$scratch/stderr" < /dev/null &
-  model_pid=$!
-  (sleep "$bound" && : > "$killed" && kill -s KILL -- "-$model_pid") > /dev/null 2>&1 < /dev/null &
-  timer_pid=$!
-  set +m
-  wait "$model_pid" 2> /dev/null
+    exec "$serve" --bounded "$bound" "$model_state" -- "$@") \
+    > "$reply" 2> "$scratch/stderr" < /dev/null
   status=$?
-  end_group "$timer_pid"
-  timer_pid=
-  # A child the model left in its group ends with the task.
-  end_group "$model_pid"
-  model_pid=
-  if [ -f "$killed" ]; then
+  if [ -f "$model_state/bound-passed" ]; then
+    model_state=
     fail "the model command $name did not end within $bound s on task $task (killed); no count is written"
   fi
+  model_state=
   case $status in
     0) ;;
     *) fail "the model command $name exited $status on task $task; no count is written" ;;
