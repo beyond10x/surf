@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T14:35:53Z",
+  "actor": "human:operator",
+  "artifact": "story:ess-0-97-3",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate",
+    "reference": "gate on d18c42a (slot --timeout 25m task check-runner), second run: 662 tests, 662 passed, 0 failed (cargo-nextest 660, doc tests 2), test step 66.4 s of its budget of 120 s, task check exit 0 in 252 s, load average 61 before and 71 after; first run at load average 123: 662 passed, test step 129.8 s, exit 201"
+  }
+}

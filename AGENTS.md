@@ -174,7 +174,7 @@ above, and the list of standards itself was written from memory.
   `story:security-review-fixes`, `page-load-fails-at-a-forbidden-destination.yaml` sends
   `FailRequest` with `ForbiddenDestination` and reads the failed request and navigation back:
   synthesis sends only the first variant of a reason.
-- `spec/ess-inputs.yaml`: the list of every file above, and the pin `requires: ess 0.96.0`. A new
+- `spec/ess-inputs.yaml`: the list of every file above, and the pin `requires: ess 0.97.3`. A new
   file under `spec/` is not read until it is listed there.
 - `generated/rust/`: the workspace `ess generate synthesize` writes, its own `Cargo.toml`
   included, with the record `.ess-output/state.json`. Eight crates under `crates/`: `surf-types`,
@@ -589,7 +589,7 @@ above, and the list of standards itself was written from memory.
   with the runner of `ess-conformance`. A Cargo workspace of its own, outside the root one, with
   its own committed `Cargo.lock` and its own `target/`. It depends on `surf`, `surf-ports` and the
   generated crates by path, and on `ess-conformance`, `ess-primitives` and `ess-domain` from
-  `https://github.com/beyond10x/ess` at tag `0.96.0`; its lock pins the third-party packages
+  `https://github.com/beyond10x/ess` at tag `0.97.3`; its lock pins the third-party packages
   those bring to the versions ESS's own lock holds at that tag. Nothing in the root workspace
   depends on it.
   - `src/target.rs`: `SurfTarget`, the hand-written adapter between the runner's named values
@@ -899,10 +899,10 @@ the others were written to a scratch directory and not compiled:
 Run everything through the build pool: `slot task <name>`.
 
 On a machine whose installed `ess` is newer than the pin of `spec/ess-inputs.yaml`, set
-`ESS_TOOLCHAIN=0.96.0` for every task that runs `ess`: the tasks run it from the repository's
+`ESS_TOOLCHAIN=0.97.3` for every task that runs `ess`: the tasks run it from the repository's
 root, where the pin under `spec/` is not found, and `--strict-requires` then refuses the newer
 release (`ess toolchain which` says which release runs and why; seen with ess 0.97.1 on
-2026-11-21). The forge's workflow installs 0.96.0.
+2026-11-21). The forge's workflow installs 0.97.3.
 
 - `task check`: the gate. Validates (a warning fails it), synthesizes the suite and runs it
   against the interpreter built into `ess`, then against the Rust system (`conform-rust`),
@@ -1013,7 +1013,7 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
 - `task conform-rust`: the crate `conformance/`, warnings denied. Its tests, the planted-defect
   test included, then the suite against the Rust system: log `.out/conform-rust.log`, report
   `.out/conform-rust.json` (`ess-conformance-report/2`). Fails when any scenario failed, errored
-  or was unsupported. cargo fetches `github.com/beyond10x/ess` at tag `0.96.0` when its cache
+  or was unsupported. cargo fetches `github.com/beyond10x/ess` at tag `0.97.3` when its cache
   does not hold it. `task --summary conform-rust` says more.
 - `task conform-totals`: fail, printing both, when `.out/report.json` (interpreter) and
   `.out/conform-rust.json` (Rust) are of different suites by digest or differ in
@@ -1104,6 +1104,23 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `what-works.md`, `roadmap.md`, `how-it-is-built.md`, `principles.md`) in the same commit.
 
 ## The gate's numbers
+
+With `story:ess-0-97-3` (2026-11-22, on `896c64d`), surf builds on ess 0.97.3: `surf v1 — 9
+file(s), 15 scenario(s), valid` and `96 scenario(s) (15 authored), 28 refusal(s)`, as with
+0.96.0. The suite is byte for byte the one 0.96.0 writes, digest
+`sha256:3041446cb0234779316d887f5a96d127f60fc03893977e2b341f92e69af28b81`, so no scenario
+was lost or gained, and the 28 `refused:` lines are the same (neither breaking change of the
+release reaches surf: its tasks pass no `--component`, and the specification serves no
+component, so it owes no read-grant scenario). `generated/rust/` is what 0.97.3 generates,
+unchanged, 30 artifacts. Against the interpreter: `96 scenarios: 96 passed, 0 failed, 0
+error, 0 unsupported`; against the Rust system the same line, the same 96 scenarios passing
+by name; `conform-totals`: `the interpreter and the Rust system ran 96 scenario(s) each`. The
+conformance crate's tests: 13, 0 and 15 passed, the planted defect `96 scenarios: 62 passed,
+34 failed, 0 error, 0 unsupported`, as on 0.96.0. The conformance crate's lock
+changed only in the eight `ess-*` packages of the tag; no third-party package moved. `ess
+verify conform synthesize` of `spec/` at `896c64d`, five runs of each release in turn at a load
+average of 164: 0.96.0 906 to 1,303 ms (median 1,086 ms), 0.97.3 605 to 881 ms (median 763
+ms).
 
 With `story:one-test-binary-per-crate` (2026-11-22, on `main` at `b98ab10`), one test binary
 per crate: `task test` prints `662 tests: 662 passed, 0 failed, 0 ignored (cargo-nextest 660,

@@ -33,7 +33,7 @@ green="#2e7d32"
 blue="#1565c0"
 grey="#757575"
 
-badge spec.svg "spec" "ESS 0.96.0, valid" "$blue"
+badge spec.svg "spec" "ESS 0.97.3, valid" "$blue"
 badge conformance.svg "conformance" "96 of 96 scenarios" "$green"
 badge tests.svg "tests" "661 passed" "$green"
 badge dependencies.svg "third-party crates shipped" "0" "$green"
