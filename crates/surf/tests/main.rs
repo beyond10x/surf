@@ -17,3 +17,4 @@ mod request_method;
 mod review1_generated_check;
 mod review1_library;
 mod review2_generated_check;
+mod slowest_tests;

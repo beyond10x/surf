@@ -371,7 +371,7 @@ tasks:
         if [ "$docs" -ne 0 ]; then cat .out/test-doc.log; fi
         if [ -f "$junit" ]; then
           echo "the ten slowest tests:"
-          tr '\n' ' ' < "$junit" | sed 's/<testcase /\n<testcase /g' | sed -n 's/^<testcase name="\([^"]*\)" classname="\([^"]*\)"[^>]*time="\([0-9.]*\)".*/\3 \2 \1/p' | sort -rn | head -n 10 | awk '{ printf "  %8.3fs %s %s\n", $1, $2, $3 }'
+          sh taskfiles/slowest-tests.sh "$junit" 10
         fi
         summary=$(grep -E '^ *Summary \[' .out/test.log | tail -n 1)
         test -n "$summary" && echo "$summary" | sed 's/^ *//'

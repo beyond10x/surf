@@ -141,7 +141,8 @@ above, and the list of standards itself was written from memory.
   paths, which `.github/workflows/check.yml` calls; `taskfiles/test-layout.yml` the tasks
   `test-layout` and `test-layout-test` over `taskfiles/test-layout.sh`;
   `taskfiles/agent-tasks.yml` the tasks `agent-tasks-report`, `agent-tasks-archive` and
-  `agent-tasks-model` (over `taskfiles/agent-tasks-model.sh`).
+  `agent-tasks-model` (over `taskfiles/agent-tasks-model.sh`). `taskfiles/slowest-tests.sh` is
+  no task's own: `task test` calls it.
 - `rust-toolchain.toml`: the one pinned rustc, `1.99.1`, with the components `rustfmt` and
   `clippy` (the gate uses neither; units run `cargo fmt -p` and `cargo clippy`), profile
   `minimal`. rustup reads it in every directory of the checkout, so `rustc --version` there
@@ -1076,7 +1077,13 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
 - `task build`: `cargo build` of the root workspace with `--locked` and `RUSTFLAGS=-D warnings`.
 - `task test`: `cargo nextest run --workspace --locked` (cargo-nextest 0.9.143, installed as a
   tool; no crate of the workspace changes) and `cargo test --doc --workspace --locked`, which
-  nextest does not run, with `RUSTFLAGS=-D warnings`. Logs `.out/test.log` and
+  nextest does not run, with `RUSTFLAGS=-D warnings`. The ten slowest tests come from
+  `taskfiles/slowest-tests.sh <junit file> [count]` (POSIX sh, pipefail where the shell has
+  it), held by `crates/surf/tests/slowest_tests.rs` on a report of 2,000 cases. Under
+  `pipefail` no pipeline of a task ends its reader before its input (no `| head`, `grep -q` or
+  `sed q` after a command that may write more than a pipe's 64 KiB): the reader stops, the
+  writer dies of SIGPIPE and the task fails with 141 (2026-11-22, the list of 892 tests, 70,331
+  bytes, under `sort -rn | head -n 10`). Logs `.out/test.log` and
   `.out/test-doc.log`, JUnit report `target/nextest/default/junit.xml`. Two bounds, from the
   rules of the folder this repository is worked in: `.config/nextest.toml` ends a test still
   running after 60 s and counts it failed (`slow-timeout` with `terminate-after`), and the task
@@ -1141,8 +1148,9 @@ sha256:0aead5f74409f8c561f544df8056b9e6b6fe146c13ba2e5e3a3fbf0ffdea733c`. The pl
 conformance crate's `tests/main.rs` ran 15 passed. `generated-check`: `generated/rust matches
 spec/ (30 artifact(s) and .ess-output)`, the committed bytes. `html-conformance: 9107 cases,
 9095 run, 9095 passed`: the parser unit raised `crates/html-conformance/expected/`, which the
-gate holds. `task test-layout`: `test-layout: 19 test directories, 106 test files, one test
-binary each` (files under `tests/cases/` are checked but not counted). The text unit's four
+gate holds. `task test-layout`: `test-layout: 19 test directories, 107 test files, one test
+binary each` (files under `tests/cases/` are checked but not counted; 106 before
+`crates/surf/tests/slowest_tests.rs`, 3 tests). The text unit's four
 stories and their two fix rounds add 81 tests to the root workspace (`surf-answer` 38 to 55,
 `surf-page` 58 to 65 with the parser unit's two, `surf-page-text` 0 to 57), counted from the
 runner's summary lines; the whole count is the gate's to print.
