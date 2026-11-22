@@ -10,7 +10,7 @@ relations:
 scope:
 - confidence: cited
   path: docs/design/tls.md
-revision: 6
+revision: 7
 ---
 ## Context
 
@@ -120,10 +120,26 @@ and `story:tls-lock-allow` waits for nothing but this story.
       `SecondHelloRetryRequest`, `SuiteChangedAfterRetry` (a ServerHello after a
       HelloRetryRequest that selects another suite than it did, RFC 8446 section 4.1.4),
       `HelloRetryRequestNoChange` (a HelloRetryRequest that would not change the hello, the
-      same section), `MissingExtension` (a HelloRetryRequest without `supported_versions`; a
-      ServerHello without it is TLS 1.2, alert `missing_extension`), `Downgrade`,
+      same section), `MissingExtension` (a HelloRetryRequest without `supported_versions`, a
+      ServerHello without `key_share`, a CertificateRequest without `signature_algorithms`;
+      alert `missing_extension`; a ServerHello without `supported_versions` is TLS 1.2),
+      `SessionIdMismatch` (a session id echo other than ours), `CompressionNotNull`,
+      `UnofferedKeyShare` (a ServerHello share in a group the client sent no share for),
+      `KeyShareGroupChanged` (after a HelloRetryRequest, a ServerHello share in another group
+      than it selected), `BadKeyShare` (a share the agreement refuses), `ExtensionNotAllowedHere`
+      (an extension in a message the table of RFC 8446 section 4.2 does not allow it in),
+      `DuplicateExtension`, `UnofferedSignatureScheme` (a CertificateVerify scheme not offered,
+      not fitting the key, RSA PKCS#1 or SHA-1), `BadKeyUpdate` (a `request_update` other than
+      0 or 1), `Malformed { message }` (alert `decode_error`), and from `story:tls-record`
+      `InterleavedHandshake`, `HandshakeSpansKeyChange`, `EmptyContent` (a handshake or alert
+      record with no content), `BadAlertRecord` (an alert record that is not one alert of two
+      bytes), `UnprotectedRecord` (application data without protection), `Downgrade`,
       `UnexpectedChangeCipherSpec`, `BadCertificateVerify`, `BadFinished`; `SequenceExhausted`;
-      and `Certificate(CertificateRejection)`, which `story:tls-x509` adds.
+      and `Certificate(CertificateRejection)`, which `story:tls-x509` adds; a
+      `CertificateRejection` sends `unknown_ca` (`NoPathToAnchor`), `certificate_expired`
+      (`Expired`) or `bad_certificate` (every other). The list is closed; it follows the tables
+      "RFC 8446 client obligations" of `story:tls-handshake` and "RFC 8446 record obligations"
+      of `story:tls-record`.
       The seam: the operations of `crypto.rs`, the signature algorithms it refuses by name
       (`REFUSED`: every SHA-1 signature, RSA keys under 2048 bits), and behind the feature
       `test-tooling` (off by default; turned on by `surf-tls-test-certs`,

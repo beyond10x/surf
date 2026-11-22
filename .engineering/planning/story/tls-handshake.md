@@ -19,6 +19,8 @@ scope:
 - confidence: cited
   path: crates/tls/src/handshake
 - confidence: cited
+  path: crates/tls/tests/data/client-hello-retry.golden
+- confidence: cited
   path: crates/tls/tests/data/client-hello.golden
 - confidence: cited
   path: crates/tls/tests/data/flights
@@ -29,8 +31,10 @@ scope:
 - confidence: cited
   path: crates/tls/tests/tls/handshake_hostile.rs
 - confidence: cited
+  path: crates/tls/tests/tls/rfc8446-client-musts.txt
+- confidence: cited
   path: taskfiles/tls-flights.yml
-revision: 7
+revision: 9
 ---
 ## Context
 
@@ -99,9 +103,10 @@ beside the rounds of surf.
     offered TLS 1.3 suite (`UnofferedSuite`, `Tls12SuiteInTls13`), and the ServerHello that
     follows must select the same suite (`SuiteChangedAfterRetry`).
   - Then, in this order only: EncryptedExtensions (only what was offered; ALPN absent or
-    `http/1.1`), Certificate (not empty, at most the entries of item 9, handed with the host and
-    the time to the verifier), CertificateVerify (an offered scheme that fits the `LeafKey`, RSA
-    only as PSS, the content of section 4.4.3), Finished. A message out of this order (a skipped
+    `http/1.1`), a CertificateRequest at most once (below), Certificate (not empty, at most the
+    entries of item 9, handed with the host and the time to the verifier), CertificateVerify
+    (an offered scheme that fits the `LeafKey`, RSA only as PSS, the content of section
+    4.4.3), Finished. A message out of this order (a skipped EncryptedExtensions, a skipped
     Certificate, a skipped CertificateVerify) is `unexpected_message` and `UnexpectedMessage {
     expected, got }`; an empty Certificate is `decode_error` and `EmptyCertificate` (section
     4.4.2.4).
@@ -112,6 +117,48 @@ beside the rounds of surf.
   - One `change_cipher_spec` of the single byte 0x01 is ignored between the first ClientHello and
     the server Finished; any other is `unexpected_message` and `UnexpectedChangeCipherSpec`.
   - Every failure sends the alert of section 6.2 and returns the `Error` of item 6.
+  - The further client obligations of RFC 8446, each from the table "RFC 8446 client
+    obligations" below (round 4: the class closed, not one instance more):
+    - ServerHello and HelloRetryRequest: `legacy_session_id_echo` equal to ours, else
+      `illegal_parameter` and `SessionIdMismatch`; compression 0, else `illegal_parameter` and
+      `CompressionNotNull` (4.1.3, and for the HelloRetryRequest 4.1.4); `legacy_version` is
+      ignored once `supported_versions` is present (4.2.1).
+    - Key share (4.2.8): a ServerHello must carry `key_share`, else `missing_extension` and
+      `MissingExtension`; its group must be one the client sent a share for, else
+      `illegal_parameter` and `UnofferedKeyShare`; after a HelloRetryRequest it must be the
+      group that request selected, else `illegal_parameter` and `KeyShareGroupChanged`; a share
+      the agreement of the seam refuses (a P-256 point off the curve, an X25519 result of all
+      zeros, a wrong length) is `illegal_parameter` and `BadKeyShare` (4.2.8.2).
+    - Extensions (4.2): a recognised extension in a message the table of section 4.2 does not
+      allow it in (ALPN in a ServerHello, `supported_versions` or `key_share` in
+      EncryptedExtensions) is `illegal_parameter` and `ExtensionNotAllowedHere`, checked
+      before the rule of unsolicited extensions; two extensions of one type in a block are
+      `illegal_parameter` and `DuplicateExtension`; a `supported_groups` in
+      EncryptedExtensions is read and ignored (4.2.7); an extension of a server
+      CertificateEntry the ClientHello did not offer is `unsupported_extension` and
+      `UnofferedExtension` (4.4.2).
+    - A CertificateRequest right after EncryptedExtensions is accepted once: it must carry
+      `signature_algorithms` (else `missing_extension` and `MissingExtension`), its unknown
+      extensions are ignored, and the client answers it before its Finished with a Certificate
+      message holding no certificates and no CertificateVerify (4.3.2, 4.4.2); surf has no
+      client certificate.
+    - CertificateVerify (4.4.3): a scheme not offered in `signature_algorithms`, one that does
+      not fit the `LeafKey`, an RSA PKCS#1 scheme or a SHA-1 scheme is `illegal_parameter` and
+      `UnofferedSignatureScheme`.
+    - A `CertificateRejection` of the verifier sends a certificate alert (4.4.2.4):
+      `unknown_ca` for `NotTrusted(NoPathToAnchor)`, `certificate_expired` for `Expired`,
+      `bad_certificate` for every other (the seam verifies no MD5 signature, so a certificate
+      signed with MD5 fails its check and ends `bad_certificate`, as 4.4.2.4 requires).
+    - `KeyUpdate` (4.6.3): before the server Finished it is `unexpected_message` and
+      `UnexpectedMessage`; a `request_update` other than 0 or 1 is `illegal_parameter` and
+      `BadKeyUpdate`; a record under the new key before the KeyUpdate is `bad_record_mac`.
+    - A message that does not parse (a length past its end, a short field) is `decode_error`
+      and `Malformed { message }` (section 6).
+    - Alerts (section 6): every alert of section 6.2 ends the connection whatever its level,
+      and an unknown description too; after an alert sent or received the `Connection` reads
+      and writes nothing more and returns that error; data after a `close_notify` is ignored;
+      `Connection::close` and the drop of a `Connection` after its handshake send
+      `close_notify` before the stream is shut.
 - `crates/tls/src/handshake/trace.rs`, behind the feature `test-tooling` only: the test mode
   `GivenClientHello`, which takes the list of ClientHellos of a trace as bytes (RFC 8448 section
   5 has two: the first, and the second after the HelloRetryRequest with its cookie,
@@ -143,10 +190,92 @@ beside the rounds of surf.
 - `taskfiles/tls-flights.yml`: `tls-flights-check` (the recordings against `SOURCE`, the
   recorder sources against `DIGEST`; a step of `check`) and `tls-flights-slow` (records again
   into `.out/` and requires that every new recording replays to the same outcome; in `slow`).
-  For the coordinator: the include and the two lines.
 - Tests in `crates/tls/tests/main.rs`, modules `handshake`, `flights`, `handshake_hostile`
   (files in `tests/tls/`). The verifier in them is a test double that returns the `LeafKey` of
   the leaf of the case, read from `crates/tls-test-certs/certs/` with the reader of
+  `story:tls-x509`. Each test carries the name the table below gives it.
+- `crates/tls/tests/tls/rfc8446-client-musts.txt`, committed beside the tests: the table below,
+  one line per row, `<section> | <obligation> | <rule> | <tests>`, where `<tests>` is a list of
+  `module::function` (a trailing `*` matches every function with that prefix) or
+  `not reachable: <why>`. The rows of section 5 are those of `story:tls-record`, in its file
+  `rfc8446-record-musts.txt`.
+
+## RFC 8446 client obligations
+
+Every "MUST" of RFC 8446 (`~/.cache/rfcspec-corpus/txt/rfc8446.txt`) that binds a client, in
+sections 4.1.3, 4.1.4, 4.2 (with 4.2.1, 4.2.2, 4.2.3, 4.2.7, 4.2.8 and 4.2.10 as never sent,
+and the table of which extension may appear in which message), 4.3.1, 4.3.2, 4.4.2, 4.4.3,
+4.4.4, 4.6.1, 4.6.2, 4.6.3, the change_cipher_spec rule of section 5, and section 6. Rows
+marked "new" were missing before round 4 of the critics. `hh` is `handshake_hostile`, `hs`
+`handshake`; `INDEX:<case>` is a case of `crates/tls-test-certs/certs/INDEX` (the test of
+`story:tls-x509-path` for it), `wycheproof:<file>` a file of `crates/tls/tests/data/wycheproof/`
+(the test of `story:tls-lock-allow` for it); both exist before this story starts.
+
+| Section | Obligation | Rule | Test |
+|---|---|---|---|
+| 4.1.3 | session id echo equals ours | `illegal_parameter`, `SessionIdMismatch` (new) | `hh::session_id_not_echoed` |
+| 4.1.3 | the suite was offered | `illegal_parameter`, `UnofferedSuite` | `hh::suite_not_offered` |
+| 4.1.3 | a TLS 1.3 hello selects no TLS 1.2 suite | `illegal_parameter`, `Tls12SuiteInTls13` | `hh::tls12_suite_in_tls13` |
+| 4.1.3 | compression method 0 | `illegal_parameter`, `CompressionNotNull` (new) | `hh::compression_not_null` |
+| 4.1.3 | the random is read for the HelloRetryRequest value first | the retry branch | `hs::rfc8448_section_5` |
+| 4.1.3 | neither downgrade value below TLS 1.3 | `illegal_parameter`, `Downgrade` | `hh::downgrade_tls12`, `hh::downgrade_tls11` |
+| 4.1.3 | no `supported_versions`: TLS 1.2 or below | `protocol_version`, `VersionUnsupported` | `hh::tls12_server_hello` |
+| 4.1.3 | renegotiation answered `protocol_version` | not reachable: surf never runs TLS 1.2 nor renegotiates | not reachable |
+| 4.1.4 | the HelloRetryRequest checked as a ServerHello (version, session id, suite, compression) | the names of 4.1.3 (new for the session id) | `hh::retry_session_id_not_echoed`, `hh::tls12_suite_in_tls13` |
+| 4.1.4 | the HelloRetryRequest changes the hello | `illegal_parameter`, `HelloRetryRequestNoChange` | `hh::retry_without_change` |
+| 4.1.4 | a second HelloRetryRequest | `unexpected_message`, `SecondHelloRetryRequest` | `hh::second_retry` |
+| 4.1.4 | HelloRetryRequest extensions offered, or `cookie` | `unsupported_extension`, `UnofferedExtension` (new case) | `hh::retry_unoffered_extension` |
+| 4.1.4 | the ServerHello keeps the suite of the HelloRetryRequest | `illegal_parameter`, `SuiteChangedAfterRetry` | `hh::suite_changed_after_retry` |
+| 4.1.4 | `supported_versions` in the HelloRetryRequest, kept in the ServerHello | `missing_extension`, `MissingExtension`; `UnofferedVersion` | `hh::retry_without_supported_versions`, `hh::retry_version_tls12` |
+| 4.2 | no extension in an answer that was not requested | `unsupported_extension`, `UnofferedExtension` | `hh::encrypted_extensions_unoffered` |
+| 4.2 | an extension only in the messages of the table | `illegal_parameter`, `ExtensionNotAllowedHere` (new) | `hh::extension_not_allowed_here` |
+| 4.2 | one extension of a type per block | `illegal_parameter`, `DuplicateExtension` (new); our hello by the golden file | `hh::duplicate_extension`, `hs::client_hello_golden` |
+| 4.2.1 | `supported_versions` sent with every version surf takes | 0x0304 only | `hs::client_hello_golden` |
+| 4.2.1 | `supported_versions` read first, `legacy_version` then ignored | rule order (new) | `hs::legacy_version_ignored` |
+| 4.2.1 | a version not offered or below TLS 1.3 | `illegal_parameter`, `UnofferedVersion` | `hh::server_hello_version_tls12` |
+| 4.2.2 | the cookie copied into the second hello | the second ClientHello (new test) | `hs::retry_second_hello` |
+| 4.2.2 | no cookie in a first hello | `Connection` keeps nothing between connections | `hs::client_hello_golden` |
+| 4.2.3 | MD5, SHA-224, DSA and SHA-1 schemes never offered for signatures of the handshake | the schemes of the seam | `hs::client_hello_golden` |
+| 4.2.3 | PSS salt as long as the digest; keys of the right type | the seam (ring), the Wycheproof vectors of `story:tls-lock-allow` | `wycheproof:rsa_pss_*` |
+| 4.2.7 | the server `supported_groups` not acted on | read and ignored (new) | `hs::server_supported_groups_ignored` |
+| 4.2.8 | client shares: offered groups, their order, one per group | x25519, then secp256r1 alone after a retry | `hs::client_hello_golden`, `hs::retry_second_hello` |
+| 4.2.8 | the retry group offered and not already shared | `illegal_parameter`, `UnofferedGroup` | `hh::retry_group_already_shared`, `hh::retry_group_not_offered` |
+| 4.2.8 | the ServerHello share in a group the client shared | `illegal_parameter`, `UnofferedKeyShare` (new) | `hh::key_share_group_not_shared` |
+| 4.2.8 | after a retry, the group the retry selected | `illegal_parameter`, `KeyShareGroupChanged` (new) | `hh::key_share_group_changed_after_retry` |
+| 4.2.8 | a ServerHello carries `key_share` (no PSK offered) | `missing_extension`, `MissingExtension` (new case) | `hh::server_hello_without_key_share` |
+| 4.2.8.1 | FFDHE value range | not reachable: no FFDHE group is offered | not reachable |
+| 4.2.8.2 | the peer point on the curve | `illegal_parameter`, `BadKeyShare` (new) | `hh::key_share_rejected` |
+| 4.2.10 | 0-RTT only with `pre_shared_key` and `early_data`; not in a second hello; no resend | not reachable: surf sends neither extension (golden file) | not reachable |
+| 4.3.1 | EncryptedExtensions right after the ServerHello | `unexpected_message`, `UnexpectedMessage` (new case) | `hh::certificate_before_encrypted_extensions` |
+| 4.3.1 | no forbidden extension in EncryptedExtensions | `illegal_parameter`, `ExtensionNotAllowedHere` (new) | `hh::extension_not_allowed_here` |
+| 4.3.2 | a CertificateRequest after EncryptedExtensions, `signature_algorithms` in it, unknown extensions ignored | accepted once; `missing_extension`, `MissingExtension` (new) | `hs::certificate_request_answered_empty`, `hh::certificate_request_without_signature_algorithms` |
+| 4.3.2 | no CertificateRequest from a PSK server | not reachable: no PSK is offered | not reachable |
+| 4.4.2 | a client Certificate when asked, empty without a certificate, Finished still sent | empty Certificate before Finished (new) | `hs::certificate_request_answered_empty` |
+| 4.4.2 | server CertificateEntry extensions offered in the ClientHello | `unsupported_extension`, `UnofferedExtension` (new case) | `hh::certificate_entry_unoffered_extension` |
+| 4.4.2 | the sender certificate first | entry 0 is the leaf for the verifier (new test) | `hs::leaf_is_first_entry` |
+| 4.4.2 | RawPublicKey and OpenPGP types | not reachable: no certificate type extension is offered | not reachable |
+| 4.4.2.2 | digitalSignature in the leaf keyUsage | `NotTrusted(KeyUsage)` of `story:tls-x509-path` | `INDEX:leaf-no-digital-signature` |
+| 4.4.2.4 | an empty server Certificate | `decode_error`, `EmptyCertificate` | `hh::empty_certificate` |
+| 4.4.2.4 | no acceptable chain: a certificate alert | `unknown_ca`, `certificate_expired`, `bad_certificate` (new) | `hh::certificate_alerts` |
+| 4.4.2.4 | an MD5 signature: `bad_certificate` | the seam verifies no MD5 signature, so the check fails and `bad_certificate` is sent (new) | `hh::certificate_alerts` |
+| 4.4.3 | CertificateVerify right after Certificate | `unexpected_message`, `UnexpectedMessage` | `hh::skipped_messages` |
+| 4.4.3 | an offered scheme that fits the key; RSA as PSS; no SHA-1 | `illegal_parameter`, `UnofferedSignatureScheme` (new) | `hh::certificate_verify_scheme` |
+| 4.4.3 | the signature verified | `decrypt_error`, `BadCertificateVerify` | `hh::bad_certificate_verify` |
+| 4.4.4 | Finished verified | `decrypt_error`, `BadFinished` | `hh::bad_finished` |
+| 4.4.4 | records after Finished under the application keys | the key change | `hs::rfc8448_section_3` |
+| 4.6.1 | tickets: 7 days at most, unknown extensions ignored, resumption rules | not reachable for resumption: every ticket is dropped | `hh::new_session_ticket_dropped` |
+| 4.6.2 | a CertificateRequest without `post_handshake_auth` | `unexpected_message`, `UnexpectedMessage` | `hh::post_handshake_messages` |
+| 4.6.3 | no KeyUpdate before the server Finished | `unexpected_message`, `UnexpectedMessage` (new case) | `hh::key_update_before_finished` |
+| 4.6.3 | `request_update` 0 or 1 | `illegal_parameter`, `BadKeyUpdate` (new) | `hh::key_update_bad_value` |
+| 4.6.3 | answer `update_requested` before the next data; old key until the KeyUpdate | answered; a record under the new key first is `bad_record_mac` | `hh::key_update_requested` |
+| 5 | one `change_cipher_spec` 0x01 dropped before the peer Finished | ignored; else `UnexpectedChangeCipherSpec` | `hs::rfc8448_section_7`, `hh::change_cipher_spec_after_finished` |
+| 6 | no data after an error alert, the keys forgotten | the `Connection` ends (new case) | `hh::no_data_after_alert` |
+| 6 | the alerts of 6.2 fatal whatever the level; unknown alerts are errors | `AlertReceived` (new case) | `hh::alert_levels` |
+| 6 | a message that does not parse | `decode_error`, `Malformed` (new) | `hh::malformed_server_hello` |
+| 6.1 | data after `close_notify` ignored | end of stream (new case) | `hh::data_after_close_notify` |
+| 6.1 | `close_notify` before closing the write side | `close` and drop send it (new) | `hs::close_sends_close_notify` |
+| 6.1 | `close_notify` before end of data | `Truncated` | `hh::truncated` |
+| 6.2 | close at once after a fatal alert sent or received | the stream is shut | `hh::no_data_after_alert` |
   `story:tls-x509`.
 
 ## Acceptance
@@ -224,6 +353,32 @@ hostile case below ends with the `Error` and the alert named.
        keys.
 5. `tls-flights-check` passes; with one byte of a recording changed in a copy, it fails naming
    the file.
+6. Every row of "RFC 8446 client obligations" marked new has its test, each from crafted bytes
+   in memory, ending with the alert and the `Error` its rule column names; beyond that column:
+   1. `hs::retry_second_hello`: after a HelloRetryRequest for secp256r1 with a 40-byte cookie,
+      our second ClientHello holds that cookie, one secp256r1 share and the other extensions
+      unchanged, in a record of version 0x0303, byte for byte `client-hello-retry.golden`;
+   2. `hs::certificate_request_answered_empty`: a flight with a CertificateRequest (empty
+      context, `signature_algorithms`, an unknown extension 0x1234): the client writes a
+      Certificate with an empty list and its Finished, no CertificateVerify, and the handshake
+      completes;
+   3. `hs::legacy_version_ignored` (a ServerHello of `legacy_version` 0x0301 with
+      `supported_versions` 0x0304), `hs::server_supported_groups_ignored` (EncryptedExtensions
+      with `supported_groups` x448): each completes;
+   4. `hs::leaf_is_first_entry`: the verifier double receives the entries in the order sent;
+   5. `hh::certificate_alerts`: a verifier double that answers `NotTrusted(NoPathToAnchor)`,
+      `Expired` and `NotTrusted(BadSignature)` makes the client send `unknown_ca`,
+      `certificate_expired` and `bad_certificate`;
+   6. `hh::key_share_rejected`: after a retry to secp256r1, a ServerHello share that is no
+      point of P-256; and an x25519 share of 32 zero bytes: each `AlertSent {
+      illegal_parameter, BadKeyShare }`;
+   7. `hh::no_data_after_alert`: after `AlertReceived`, a read and a write return the same
+      error and nothing more reaches the stream; `hs::close_sends_close_notify`: `close` writes
+      one `close_notify` record under the application key and shuts the write side.
+7. `hs::musts_rows_name_tests`: every line of `rfc8446-client-musts.txt` names, for each entry
+   of its last column, a function `fn <name>(` in `crates/tls/tests/tls/<module>.rs`, a case of
+   `INDEX`, a file of the Wycheproof data, or says `not reachable:` with a reason; a copy with
+   one name changed fails naming the line. The file has the 63 rows of the table.
 
 Budget: each test under 1 s; no test over 60 s, the test step within 120 s, no network (the
 recordings are replayed from files; the independent server runs only in `tls-flights-slow`), no
@@ -238,7 +393,8 @@ Encrypted Client Hello; path validation itself (`story:tls-x509-path`); the test
 ## Writes
 
 `crates/tls/src/handshake/` (with `trace.rs`), `src/connection.rs`, `tests/tls/handshake.rs`,
-`tests/tls/flights.rs`, `tests/tls/handshake_hostile.rs`, `tests/data/client-hello.golden`,
-`tests/data/flights/`, `examples/record-flights.rs`, `taskfiles/tls-flights.yml`. Coordinator:
-`mod` lines in a wave of more than one unit, the root `Taskfile.yml`, `AGENTS.md`. Beside it run
+`tests/tls/flights.rs`, `tests/tls/handshake_hostile.rs`, `tests/tls/rfc8446-client-musts.txt`,
+`tests/data/client-hello.golden`, `tests/data/client-hello-retry.golden`, `tests/data/flights/`,
+`examples/record-flights.rs`, `taskfiles/tls-flights.yml`. Coordinator: `mod` lines in a wave
+of more than one unit, the root `Taskfile.yml`, `AGENTS.md`. Beside it run
 `story:tls-x509-path` and `story:tls-anchors`.

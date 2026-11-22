@@ -22,7 +22,7 @@ scope:
   path: taskfiles/release-smoke.sh
 - confidence: cited
   path: website/docs
-revision: 6
+revision: 7
 ---
 ## Context
 
@@ -55,10 +55,11 @@ test certificates turn on `test-tooling` in every `cargo test` build of `surf-cl
   shipped binary. Today the build comes first (line 140 on Linux, line 148 on macOS), then
   `cargo test ... --test cli` (line 152), which with the dev-dependencies of `story:tls-fetch-https`
   rebuilds `target/$TARGET/release/surf` with `test-tooling`, then the copy from that path
-  (lines 155-169). After this story:
-  1. the test, first: `cargo test --locked --release --package "$PACKAGE" --target "$TARGET"
-     --test main` (`--test main`: the one test target of `crates/surf-cli` after
-     `story:one-test-binary-per-crate`; `--test cli` no longer exists then);
+  (lines 155-169). After this story, with the test line kept as it is at the base of the unit
+  (its `--test` argument is the one `story:one-test-binary-per-crate` left: `--test cli`, or the
+  target that story renamed it to); this story changes only the order of build and test and
+  the target directory of the build:
+  1. the test line, first, unchanged;
   2. then the builds of lines 140 and 148, each with `--target-dir target/ship`: a build of
      `--bins` only turns on no dev-dependency feature, and no file of the test build lies in
      that directory;
@@ -73,11 +74,12 @@ test certificates turn on `test-tooling` in every `cargo test` build of `surf-cl
   `fetch-failed <id> Unreachable https://127.0.0.1:1/`; `surf --anchors` exits 0 and prints
   `anchors <n> bundled <date> sha256:<hex>` with the count and date of
   `crates/tls/src/anchors/SOURCE` of the checkout. The header comment of the script says so.
-  Its step 3 (lines 96-98, today `--test e2e`) runs the end-to-end case from the one test
-  binary of `crates/session`: `--test main` with the filter `e2e::` (`SURF_BIN_DIR=$dir cargo
-  test "$@" e2e::`), as `story:one-test-binary-per-crate` renames those lines before this
-  story; this story keeps them. It tests the unpacked binaries (`SURF_BIN_DIR`), so its own
-  build may carry `test-tooling`.
+  Its step 3 (lines 96-98 today) runs the end-to-end case with the `--test` argument and any
+  filter it holds at the base of the unit, as `story:one-test-binary-per-crate` left them:
+  `--test e2e` when that story kept the end-to-end test in its own binary (it reads
+  `SURF_BIN_DIR`, an environment variable, which that story allows as a reason), or the target
+  and filter it wrote. This story does not change those lines. It tests the unpacked binaries
+  (`SURF_BIN_DIR`), so its own build may carry `test-tooling`.
 - `docs/releasing.md`: "What a release holds" names ring and the compiler step; "Cutting a
   release" gains a step before the tag: `task anchors-age` passes, else `task anchors-refresh`
   and a commit on `main` first; the smoke test paragraph names the two new checks.
@@ -114,11 +116,16 @@ A manual run of the release workflow on the story branch, started and watched by
    build into `target/ship`; the marker search finds `surf-tls test-tooling, never in a release`
    in `target/<t>/release/surf` (the binary the test built) and in none of the copied
    binaries.
-7. Hostile, here on the workstation, the same two builds by hand through `slot`: after `cargo
-   test --release -p surf-cli --test main`, `grep -c -F "surf-tls test-tooling, never in a
-   release" target/release/surf` prints at least 1 (a release that copied the test build would
-   be refused); after `cargo build --release -p surf-cli --bins --target-dir target/ship`, the
-   same search in `target/ship/release/surf` prints 0. Times in the report.
+7. Hostile, here on the workstation, the same two builds by hand through `slot`: after the
+   `cargo test` line of `release.yml` as this story leaves it (without `--target`), `grep -c
+   -F "surf-tls test-tooling, never in a release" target/release/surf` prints at least 1 (a
+   release that copied the test build would be refused); after `cargo build --release -p
+   surf-cli --bins --target-dir target/ship`, the same search in `target/ship/release/surf`
+   prints 0. Times in the report.
+8. `git diff <unit base> -- .github/workflows/release.yml taskfiles/release-smoke.sh` shows no
+   change to a `--test` argument or a test filter: only the order of build and test, the
+   `--target-dir`, the copy path, the marker search, the compiler step and step 2 of the smoke
+   test.
 
 Budget: no test of the root workspace is added; the smoke test runs in the release workflow and
 by hand, never in `task test`; no model call.
