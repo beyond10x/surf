@@ -44,13 +44,13 @@ surf v1 — 9 file(s), 15 scenario(s), valid
   96 scenarios: 96 passed, 0 failed, 0 error, 0 unsupported
 96 scenario(s) (15 authored), 28 refusal(s), written to .out/suite.json
   96 scenarios: 96 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 96 scenario(s) each, of suite sha256:579a46b3389c56bb67b8fc3174268f525b8568ee47446e67d2a1cca936660ba8
+the interpreter and the Rust system ran 96 scenario(s) each, of suite sha256:3041446cb0234779316d887f5a96d127f60fc03893977e2b341f92e69af28b81
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 Cargo.lock: 24 package(s), none from outside this repository
     Finished `dev` profile [unoptimized] target(s) in 0.00s
-579 tests: 579 passed, 0 failed, 0 ignored (cargo-nextest 577, doc tests 2)
-test step: 22.2 s of its budget of 120 s
+661 tests: 661 passed, 0 failed, 0 ignored (cargo-nextest 659, doc tests 2)
+test step: 61.9 s of its budget of 120 s
 view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
   38 passed (15.8s)
 html-conformance: 9107 cases, 9095 run, 8428 passed

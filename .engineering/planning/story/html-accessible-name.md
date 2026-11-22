@@ -15,7 +15,7 @@ scope:
   path: crates/page/src/lib.rs
 - confidence: cited
   path: crates/page/tests/label.rs
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 4}
@@ -171,7 +171,7 @@ bytes the tree stores.
   `hidden_node_referenced_by_aria_labelledby_names_with_its_hidden_subtree` (examples 1 and 2),
   `hidden_label_still_names_its_control`, `hidden_element_is_named_from_its_own_subtree`,
   `element_without_any_source_has_an_empty_name`, `whitespace_in_a_name_is_collapsed` (`<a
-  href> a\n\tb <span>c</span>d</a>` is `a bcd`), `a_reference_cycle_ends` (an element whose
+  href> a\n\tb <span>c</span>d</a>` is `a b cd`), `a_reference_cycle_ends` (an element whose
   `aria-labelledby` names its ancestor, two links naming each other, a repeated IDREF). The
   bounds: `a_name_is_cut_at_label_bytes_max` (a link over 5,000 bytes of text: 1,024 bytes or
   fewer at a character boundary of a two-byte character, `label_cut` true),

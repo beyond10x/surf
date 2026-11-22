@@ -276,8 +276,22 @@ the "in head" insertion mode exist.
 Description Computation 1.2 ("Computation steps", 4.3.2), with the HTML Accessibility API
 Mappings for each element ("Accessible Name Computations By HTML Element", for example
 `#input-type-text-input-type-password-input-type-number-input-type-search-input-type-tel-input-type-email-input-type-url-and-textarea-elements-accessible-name-computation`),
-computed over the tree. The row holds the whole name; cutting it to 60 characters is the answer
-format's job.
+computed over the tree (`crates/page/src/label.rs`, `story:html-accessible-name`). The row holds
+the name cut at `surf_page::LABEL_BYTES_MAX`, 1,024 bytes: a longer name ends at the last UTF-8
+character boundary at or below 1,024 bytes, without a space the cut would leave at its end, the
+walk for that name stops there, and the row's `label_cut` is set. Cutting it to 60 characters is
+the answer format's job. `surf_page::LABEL_WORK_MAX`, 16,777,216, bounds the work for all labels
+of one call of `actionable_elements`: one unit per node read, one per byte read from a text node
+or an attribute value into a name, and the bytes of each `aria-labelledby` value split into
+IDREFs. Once it is spent, the name being computed and each later one come from the element's own
+attributes only (`aria-label`; an `input`'s `value`, or its `Submit` or `Reset`; `alt`; `title`;
+`placeholder`; `aria-placeholder`), without `aria-labelledby`, `label` elements or the subtree,
+and `label_cut` is set. So the time of the labels is linear in the nodes and the attributes of
+the tree plus that budget, and their memory at most 1,024 bytes a row and the budget plus the
+attribute bytes the tree stores. Both bounds are a deliberate deviation: the standards bound
+neither a name nor its work. A hidden actionable element, whose row is kept and flagged, is named
+from its own subtree, hidden parts included, as a hidden node referenced by `aria-labelledby` is
+(step 2A would give it the empty name); a deviation too.
 
 "Hidden" in the step "Hidden Not Referenced": accname's own note counts "Nodes with CSS
 properties display:none, visibility:hidden, visibility:collapse or content-visibility:hidden" as

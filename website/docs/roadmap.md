@@ -5,7 +5,7 @@ description: What surf can do after which step of the current plan, and what com
 
 # Roadmap
 
-The current plan has 58 stories in 22 steps, called waves. Waves 1 to 9 are delivered.
+The current plan has 58 stories in 22 steps, called waves. Waves 1 to 10 are delivered.
 
 Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `surf-agent`,
 `surfd` and `surf-session`, for Linux only at first. The
@@ -24,7 +24,7 @@ list under "After the plan" have no date.
 | 22 | Record an agent's session, turn it into a test, and replay it against the recorded network. |
 
 The next planned steps are the HTML parser on real pages (an answer shows no page content yet),
-first the labels of a page's links and form fields and the parser's limits on untrusted input.
+first the tree rules for tables, templates and foreign content, and the parser behind the document.
 TLS and `https:` are on the list below. None of them has a date.
 
 The agent commands exist today: see [Drive surf from an agent](drive-from-an-agent.md). An
