@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T04:59:51Z",
+  "actor": "human:operator",
+  "artifact": "story:page-text-look",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "plan critic panel (acceptance, design, scope, parallel safety), three rounds on 2026-11-22 at 5853f52, fd0fa28 and c958286",
+    "reference": "round 1: four times needs-revision, 36 findings; round 2: scope approve, 6 findings left; round 3: design approve, acceptance approve, the parallel-safety critic's one finding closed by the edge page-text-outline depends_on page-text-answer-block"
+  }
+}

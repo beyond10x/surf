@@ -5,7 +5,7 @@ kind: epic
 status: active
 title: 'Agent target: a session command line for AI agents'
 summary: An agent opens a session, gets a token, and drives the browser through a specified command line that answers with a dense text representation of what the page offers.
-revision: 9
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 9}
@@ -44,6 +44,9 @@ An AI agent drives surf through a command line, `surf-agent`:
   structurally) and `now` (every actionable element, one line each, with a handle, its kind,
   whether it is visible, its label and its state or target). Every value that comes from a
   page, a server or an address is quoted and escaped.
+- What a page holds, on request: `--as tree|markdown` on `open <url>`, `go <url>` and `look` (and
+  on `surf <url>`) prints the document's tree as an outline or its content as Markdown in a `text`
+  block, every line of page text behind `>` (`docs/design/page-as-text.md`).
 - The commands: `open`, `go`, `look`, `close`; `follow`, `back`, `forward`; `fill`, `pick`,
   `press`; `log`.
 
@@ -84,7 +87,11 @@ lines and added or changed text only where a new document arrived
   visibility is computed, an element line says `?` or what the `hidden` attribute gives, and a
   `note` line says so.
 - Deferred, each with a backlog draft tagged `deferred`: hashing the token, paging a long
-  answer (`--max-lines`, `look --from`), a caller-chosen `tab_id` on `OpenTab`, `CloseWindow`.
+  answer (`--max-lines`, `look --from <handle>`), a caller-chosen `tab_id` on `OpenTab`,
+  `CloseWindow`, `--as` on `follow`, `back`, `forward`, `fill`, `pick` and `press`
+  (`story:page-text-on-other-commands`). One exception to the paging item: the `text` block of
+  page text is paged by `--from-line <n>` (`story:page-text-look`), with a `more` line of its
+  own; `--max-lines` and `look --from <handle>` for `now` stay deferred.
 
 ## Constraints
 
@@ -102,7 +109,7 @@ lines and added or changed text only where a new document arrived
 
 ## Acceptance
 
-`slot task check` exits 0 on `main`, and in that run three things hold, each shown by a line a
+`slot task check` exits 0 on `main`, and in that run four things hold, each shown by a line a
 command prints:
 
 1. The walk test of `story:agent-change-and-log` passes by name: an agent with nothing but
@@ -117,3 +124,7 @@ command prints:
    `Fill`, `Pick` and `Press`, at least one passed scenario for every outcome the command
    declares, and `task conform-totals` prints one total for both runs that is larger than the
    51 of `main` at `1c979b4`.
+4. The test `go_as_markdown_prints_the_page` of `story:page-text-look` passes by name:
+   `go <url> --as markdown` to the `Offers` page of `docs/design/page-as-text.md` section 1
+   prints `text markdown 3 of 3 lines from 1, 62 of 62 bytes` and its three body lines, each
+   behind `>`.

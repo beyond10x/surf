@@ -13,7 +13,8 @@ relations:
 - depends_on: story:html-document-port
 - depends_on: story:html-accessible-name
 - depends_on: story:agent-session-events
-revision: 7
+- depends_on: story:page-text-outline
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 6}
@@ -58,8 +59,9 @@ and `html-tree-template` add test files there and touch neither.
   `document_base_url(tree, document_address)`.
 - `crates/session`: after each command the current document is read; the `page` line gains the
   title; `note parser: <parts>` when `Browser::parser_not_yet_parsed` is not empty; a `now` block
-  lists each link: handle `l<n>` assigned in document order the first time the element is shown and
-  kept while the document lives, starting at 1 again for a new document, nothing random; kind
+  lists each link: handle `l<n>` as `surf_page::handles` (`crates/page`, added by `story:page-text-outline`) gives
+  it, in document order, kept while the document lives, starting at 1 again for a new document,
+  nothing random; kind
   `link`; visibility `hid` when `hidden` applies, otherwise `?`, with
   `note visibility: hidden attribute only`; the label quoted and cut at 60 characters; the target
   resolved with `surf-url` against the base URL and written as its path when it has the origin of
