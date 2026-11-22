@@ -47,6 +47,10 @@ includes:
     taskfile: taskfiles/agent-tasks.yml
     flatten: true
     optional: true
+  sh-echo:
+    taskfile: taskfiles/sh-echo.yml
+    flatten: true
+    optional: true
 
 vars:
   REFUSALS_MAX: 48
@@ -409,9 +413,11 @@ tasks:
       - task: build
       - task: test
       - task: agent-tasks-report
+      - task: sh-echo
       - task: view-stream-check
       - task: view-test
       - task: html-conformance
       - task: forge-watch-test
       - task: planning-only-test
       - task: test-layout-test
+      - task: sh-echo-test

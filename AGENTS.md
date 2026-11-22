@@ -141,8 +141,15 @@ above, and the list of standards itself was written from memory.
   paths, which `.github/workflows/check.yml` calls; `taskfiles/test-layout.yml` the tasks
   `test-layout` and `test-layout-test` over `taskfiles/test-layout.sh`;
   `taskfiles/agent-tasks.yml` the tasks `agent-tasks-report`, `agent-tasks-archive` and
-  `agent-tasks-model` (over `taskfiles/agent-tasks-model.sh`). `taskfiles/slowest-tests.sh` is
+  `agent-tasks-model` (over `taskfiles/agent-tasks-model.sh`); `taskfiles/sh-echo.yml` the tasks
+  `sh-echo` and `sh-echo-test` over `taskfiles/sh-echo.sh`. `taskfiles/slowest-tests.sh` is
   no task's own: `task test` calls it.
+- Shell scripts, committed or written by a test: a value is printed with `printf '%s'`, never
+  with `echo`. The forge's `sh` is dash, whose `echo` turns `\n`, `\\` and the other backslash
+  sequences into control characters; this host's `/bin/sh` is bash, whose `echo` does not, so
+  such a script passes here and fails there (0.4.0: the model lane wrote its wrapper's awk
+  program with `echo` and counted no call on the forge). In the gate `task sh-echo` runs the
+  tests that start a script with the `sh` of `PATH` under an `sh` whose `echo` does as dash's.
 - `rust-toolchain.toml`: the one pinned rustc, `1.99.1`, with the components `rustfmt` and
   `clippy` (the gate uses neither; units run `cargo fmt -p` and `cargo clippy`), profile
   `minimal`. rustup reads it in every directory of the checkout, so `rustc --version` there
@@ -955,7 +962,8 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `planning-only-test`. Since `story:one-test-binary-per-crate` it runs `test-layout` after
   `lock-check` and `test-layout-test` after `planning-only-test`. Since `story:agent-tasks`
   `test` runs `task build` first and sets `SURF_BIN_DIR` to `target/debug` for its tests, and
-  `check` runs `agent-tasks-report` after `test`.
+  `check` runs `agent-tasks-report` after `test`. Since 0.4.0 it runs `sh-echo` after
+  `agent-tasks-report` and ends with `sh-echo-test`.
 - `task check-runner`: the gate to run before a merge, `task check` as the forge's runner runs
   it (`taskfiles/check-runner.sh`; `slot task check-runner`). What it does differently from
   `task check`: it runs in `.out/runner/tree`, a clean export of `HEAD` (a clone sharing this
@@ -1050,6 +1058,17 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   branch, pass `HTML_BASE`.
 - `task agent-tasks-report`: prints `.out/agent-tasks.txt`, which `tasks::every_task` of
   `crates/agent-tasks` writes, and fails when it is missing; `task check` runs it after `test`.
+- `task sh-echo`: `sh taskfiles/sh-echo.sh`, every test of `surf-agent-tasks` but
+  `tasks::every_task`, and `slowest_tests` of `surf`, run by cargo nextest with
+  `.out/sh-echo/bin/sh` (`bash --posix -O xpg_echo`, whose `echo` expands backslashes as dash's
+  does and takes no option) first on `PATH`; it first checks that `echo 'a\nb'` prints two lines
+  there. A script started through `#!/bin/sh` still gets `/bin/sh`. `FILTER=<expression>`
+  replaces the filter. On `ab573de` its `sh` fails the three tests the forge failed, one each
+  of `adversary2`, `adversary` and `model_driver`.
+- `task sh-echo-test`: `adversary2::every_call_is_one_line_that_reads_back` through that
+  script on a copy of `taskfiles/agent-tasks-model.sh` (`ADVERSARY_MODEL_SCRIPT`): the copy as
+  it is passes, the copy whose wrapper's awk program is written with `echo` fails.
+  `SCRIPT=<path>` runs a copy of the script.
 - `task release-smoke DIR=<unpacked archive>`: `taskfiles/release-smoke.sh` on a release
   archive, as the release workflow runs it (`docs/releasing.md`).
 - `task validate`, `task suite`, `task conform`: the specification steps on their own.

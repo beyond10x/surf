@@ -458,6 +458,7 @@ Cargo.lock: 26 package(s), none from outside this repository
 877 tests: 877 passed, 0 failed, 0 ignored (cargo-nextest 875, doc tests 2)
 test step: 62.3 s of its budget of 120 s
 agent-tasks: 4 tasks, 2 pass, 2 fail, 0 skipped, lane gate, binaries target/debug
+sh-echo: Summary [   2.623s] 40 tests run: 40 passed, 54 skipped
 view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
   38 passed (15.8s)
 html-conformance: 9107 cases, 9095 run, 9095 passed

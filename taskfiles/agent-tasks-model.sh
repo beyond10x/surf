@@ -34,7 +34,8 @@
 #   in a process group of its own; when it ends or its bound passes the whole group is sent
 #   SIGKILL, so no child it started is left. A process that leaves the group by a new session
 #   (setsid) is not found. The script uses POSIX sh alone, no job control: it runs under bash,
-#   dash and zsh's sh mode.
+#   dash and zsh's sh mode. A value is written with printf '%s', never with echo, whose dash
+#   form turns a backslash sequence in it into a control character.
 # - A task passes when the text after the last "ANSWER: " line, with spaces at both ends and
 #   one final "." removed, equals the expected answer, both lower-cased. Rows whose server is
 #   not http are written "task <name> skipped: server <server>".
@@ -82,7 +83,7 @@ model=${AGENT_TASKS_MODEL:-}
 bound=${AGENT_TASKS_MODEL_TIMEOUT:-300}
 
 fail() {
-  echo "agent-tasks-model: $*" >&2
+  printf '%s\n' "agent-tasks-model: $*" >&2
   exit 1
 }
 
@@ -137,7 +138,7 @@ wait_ended() {
   while ! ended "$1"; do
     tries=$((tries + 1))
     [ "$tries" -le 500 ] || {
-      echo "agent-tasks-model: process $1 has not ended within 5 s" >&2
+      printf '%s\n' "agent-tasks-model: process $1 has not ended within 5 s" >&2
       return 1
     }
     sleep 0.01
@@ -225,9 +226,9 @@ quote() {
 }
 {
   echo '#!/bin/sh'
-  echo "log=$(quote "$log")"
-  echo "real=$(quote "$bin/surf-agent")"
-  echo "one_line=$(quote "$one_line")"
+  printf '%s\n' "log=$(quote "$log")"
+  printf '%s\n' "real=$(quote "$bin/surf-agent")"
+  printf '%s\n' "one_line=$(quote "$one_line")"
   cat << 'WRAPPER'
 printf '%s\n' "$*" | LC_ALL=C awk "$one_line" >> "$log"
 exec "$real" "$@"
@@ -278,7 +279,7 @@ while IFS=$tab read -r task server start question answer; do
   n=$((n + 1))
   if [ "$server" != http ]; then
     s=$((s + 1))
-    echo "task $task skipped: server $server" >> "$body"
+    printf '%s\n' "task $task skipped: server $server" >> "$body"
     continue
   fi
   address=$origin/$task$start
@@ -321,6 +322,6 @@ done < "$rows"
 
 mkdir -p "$(dirname "$out")" || fail "cannot make the directory of $out"
 {
-  echo "agent-tasks-model: $n tasks, $p pass, $f fail, $s skipped, command $name, model $model, lane model, binaries $shown, $(date +%Y-%m-%d)"
+  printf '%s\n' "agent-tasks-model: $n tasks, $p pass, $f fail, $s skipped, command $name, model $model, lane model, binaries $shown, $(date +%Y-%m-%d)"
   cat "$body"
 } > "$out.part.$$" && mv "$out.part.$$" "$out" || fail "cannot write $out"
