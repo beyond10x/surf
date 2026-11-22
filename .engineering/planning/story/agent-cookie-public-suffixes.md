@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-cookie-public-suffixes
 kind: story
-status: draft
+status: active
 title: 'Cookies across subdomains: the public suffix list bundled as data, domain cookies and same site by registrable domain'
 summary: Bundles the Public Suffix List with its date and digest, refreshed before each release; Domain cookies reach sibling hosts unless the domain is a public suffix; same site compares registrable domains.
 relations:
@@ -24,7 +24,10 @@ scope:
   path: taskfiles/cookie-psl.sh
 - confidence: cited
   path: taskfiles/cookie-psl.yml
-revision: 5
+revision: 7
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T07:42:32Z", actor: "human:operator", revision: 6, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T07:42:32Z", actor: "human:operator", revision: 7, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Context
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-cookie-jar
 kind: story
-status: draft
+status: active
 title: 'A cookie jar per session: Set-Cookie and Cookie, never printed'
 summary: 'One jar per session in memory by draft 22 of the RFC 6265 revision: host-only Domain rule, Secure tested against the TLS test server, SameSite by the navigation initiator, never printed; look shows cookies <n>.'
 relations:
@@ -56,7 +56,10 @@ scope:
   path: spec/domains/net.yaml
 - confidence: cited
   path: spec/scenarios
-revision: 10
+revision: 12
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T07:42:31Z", actor: "human:operator", revision: 11, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T07:42:31Z", actor: "human:operator", revision: 12, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Context
 

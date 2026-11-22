@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-tasks
 kind: story
-status: draft
+status: active
 title: 'Agent tasks: fixture sites solved with surf-agent alone, measured in the gate and run by a model outside it'
 summary: Tasks read from tasks.txt (four without TLS here; https and login added by other stories); a scripted agent in the gate measures each, fails a listed pass that fails and raises a pending task that passes; a sh driver runs a model outside the gate.
 relations:
@@ -19,7 +19,10 @@ scope:
   path: taskfiles/agent-tasks-model.sh
 - confidence: cited
   path: taskfiles/agent-tasks.yml
-revision: 10
+revision: 12
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T07:42:29Z", actor: "human:operator", revision: 11, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T07:42:30Z", actor: "human:operator", revision: 12, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Context
 

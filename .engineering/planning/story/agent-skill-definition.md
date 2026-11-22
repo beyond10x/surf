@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-skill-definition
 kind: story
-status: draft
+status: active
 title: 'surf-agent help --for-agent: a definition an agent reads, assembled from the sources the binary is held to'
 summary: The binary prints the commands, the answer, the untrusted-text rule and worked calls from cli/surf-agent.yaml, docs/agent-answer.md and the golden answers compiled into it; a gate test compares output and sources; a thin SKILL.md is handed over to agentplugins.
 relations:
@@ -25,7 +25,10 @@ scope:
   path: crates/agent/tests
 - confidence: cited
   path: taskfiles/release-smoke.sh
-revision: 6
+revision: 8
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T07:42:30Z", actor: "human:operator", revision: 7, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T07:42:31Z", actor: "human:operator", revision: 8, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Context
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-tasks-https
 kind: story
-status: draft
+status: active
 title: 'The https agent task: a page behind https: on the TLS test server, read with surf-agent alone'
 summary: 'Adds the https row to crates/agent-tasks: a notice served by the TLS test server, opened with open --ca-file and the test root, read with look --as markdown; listed pass.'
 relations:
@@ -13,7 +13,10 @@ relations:
 scope:
 - confidence: cited
   path: crates/agent-tasks
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T07:42:30Z", actor: "human:operator", revision: 5, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T07:42:30Z", actor: "human:operator", revision: 6, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Context
 
