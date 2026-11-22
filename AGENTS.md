@@ -129,9 +129,9 @@ above, and the list of standards itself was written from memory.
 - `cli/surf-agent.yaml`: the `ess-cli/2` document of the agent command line, checked by
   `task cli`; the client parser is held to it.
 - `taskfiles/<name>.yml`: one file per task added since the agent interface plan, included by
-  the root `Taskfile.yml` with `flatten: true` and `optional: true`. Optional because four
-  tests copy the root `Taskfile.yml` alone into a temporary directory and run one task there;
-  a missing include must not stop them. `check` still fails when an included task is missing.
+  the root `Taskfile.yml` with `flatten: true` and `optional: true`. Optional because the four
+  tests of `crates/surf/tests/lock_check.rs` copy the root `Taskfile.yml` alone into a
+  temporary directory and run one task there; a missing include must not stop them. `check` still fails when an included task is missing.
   `taskfiles/cli.yml` holds the task `cli`, `taskfiles/site.yml` the task `site-build`,
   `taskfiles/html-conformance.yml` the task `html-conformance`,
   `taskfiles/tls-x509-conformance.yml` the task `tls-x509-conformance`,
@@ -161,7 +161,11 @@ above, and the list of standards itself was written from memory.
   `taskfiles/tls-flights.yml` the tasks
   `tls-flights-check` (over `taskfiles/tls-flights-check.sh`, a step of `check`) and
   `tls-flights-slow` (a step of `slow`: records the flights again and replays them; `WRITE=1`
-  writes them). `taskfiles/slowest-tests.sh` is no task's own: `task test` calls it.
+  writes them). `taskfiles/slowest-tests.sh` is no task's own: `task test` calls it. Two
+  tasks of the root `Taskfile.yml` run a script of their own, so that their tests run it with
+  `sh` and start no `task` per case: `generated-compare` runs
+  `taskfiles/generated-compare.sh <fresh tree>`, and `conform-totals` runs
+  `taskfiles/conform-totals.sh`.
 - Shell scripts, committed or written by a test: a value is printed with `printf '%s'`, never
   with `echo`. The forge's `sh` is dash, whose `echo` turns `\n`, `\\` and the other backslash
   sequences into control characters; this host's `/bin/sh` is bash, whose `echo` does not, so
@@ -210,7 +214,7 @@ above, and the list of standards itself was written from memory.
   `agent-pick-selects-option.yaml`, `document-refuses-disabled-control.yaml`,
   `document-refuses-hidden-control.yaml`, `agent-press-submits-post.yaml` and
   `agent-press-submission-ends-without-body.yaml`.
-- `spec/ess-inputs.yaml`: the list of every file above, and the pin `requires: ess 0.97.3`. A new
+- `spec/ess-inputs.yaml`: the list of every file above, and the pin `requires: ess 0.97.4`. A new
   file under `spec/` is not read until it is listed there.
 - `generated/rust/`: the workspace `ess generate synthesize` writes, its own `Cargo.toml`
   included, with the record `.ess-output/state.json`. Eight crates under `crates/`: `surf-types`,
@@ -228,7 +232,17 @@ above, and the list of standards itself was written from memory.
   `Cargo.toml` would not do: a cargo config file wins over the manifest, and one in a user's
   home may set `debug`. cargo reads it from the directory it runs in and its parents, so it
   holds for the root workspace, `conformance/` (run from the root with `--manifest-path`) and
-  `generated/rust/` alike.
+  `generated/rust/` alike. It also builds three packages at `opt-level = 1` in `dev`, which
+  `test` inherits (`story:test-step-holds-with-tls`, each taken by its rule: two builds per
+  level from `cargo clean -p`, the one at level 1 at most 30 s longer, and the counted tests'
+  summed time at most half): `surf-html`, the tokenizer and tree builder whose tests and the
+  session's large pages spent their time in checks of a build without optimisation (its
+  tests and nine of `surf-session`, 24.4 s and 25.7 s summed at level 0, 11.0 s and 7.5 s at
+  level 1); `surf-url` (12 tests, 3.4 s and 4.4 s, then 1.1 s and 1.2 s); `surf-page-text`
+  (its tests and `adversary_document_kept_pages_equal_a_fresh_rendering_at_every_edge`, 6.8 s
+  and 6.5 s, then 2.8 s and 2.6 s). `surf-page` was not taken: its summed time did not fall
+  (3.7 s and 3.7 s, then 3.9 s and 4.1 s). A fourth package override compiles ring at
+  `opt-level = 3` (`crates/tls`, below), so the file holds four.
 - Integration tests: each crate with a `tests/` directory, and `conformance/`, builds them into
   one test binary (`story:one-test-binary-per-crate`). Its `Cargo.toml` has `autotests = false`
   under `[package]` and one entry `[[test]]` with `name = "main"` and `path = "tests/main.rs"`;
@@ -786,7 +800,7 @@ above, and the list of standards itself was written from memory.
   with the runner of `ess-conformance`. A Cargo workspace of its own, outside the root one, with
   its own committed `Cargo.lock` and its own `target/`. It depends on `surf`, `surf-ports` and the
   generated crates by path, and on `ess-conformance`, `ess-primitives` and `ess-domain` from
-  `https://github.com/beyond10x/ess` at tag `0.97.3`; its lock pins the third-party packages
+  `https://github.com/beyond10x/ess` at tag `0.97.4`; its lock pins the third-party packages
   those bring to the versions ESS's own lock holds at that tag. Nothing in the root workspace
   depends on it.
   - `src/target.rs`: `SurfTarget`, the hand-written adapter between the runner's named values
@@ -1105,10 +1119,10 @@ the others were written to a scratch directory and not compiled:
 Run everything through the build pool: `slot task <name>`.
 
 On a machine whose installed `ess` is newer than the pin of `spec/ess-inputs.yaml`, set
-`ESS_TOOLCHAIN=0.97.3` for every task that runs `ess`: the tasks run it from the repository's
+`ESS_TOOLCHAIN=0.97.4` for every task that runs `ess`: the tasks run it from the repository's
 root, where the pin under `spec/` is not found, and `--strict-requires` then refuses the newer
 release (`ess toolchain which` says which release runs and why; seen with ess 0.97.1 on
-2026-11-21). The forge's workflow installs 0.97.3.
+2026-11-21). The forge's workflow installs 0.97.4.
 
 - `task check`: the gate. Validates (a warning fails it), synthesizes the suite and runs it
   against the interpreter built into `ess`, then against the Rust system (`conform-rust`),
@@ -1254,7 +1268,7 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
 - `task conform-rust`: the crate `conformance/`, warnings denied. Its tests, the planted-defect
   test included, then the suite against the Rust system: log `.out/conform-rust.log`, report
   `.out/conform-rust.json` (`ess-conformance-report/2`). Fails when any scenario failed, errored
-  or was unsupported. cargo fetches `github.com/beyond10x/ess` at tag `0.97.3` when its cache
+  or was unsupported. cargo fetches `github.com/beyond10x/ess` at tag `0.97.4` when its cache
   does not hold it. `task --summary conform-rust` says more.
 - `task conform-totals`: fail, printing both, when `.out/report.json` (interpreter) and
   `.out/conform-rust.json` (Rust) are of different suites by digest or differ in
@@ -1285,8 +1299,9 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   and why. It is two tasks: `generated-fresh` generates `spec/` into
   `.out/generated-check/fresh` (with `fresh.log` and a copy of `spec/` as `fresh.spec`), once per
   run of `task`; `generated-compare FRESH=<tree>` compares and regenerates `.ess-output` in
-  place. The tests of `crates/surf/tests/*generated_check*.rs` read that one generation
-  (`crates/surf/tests/common/mod.rs`) and run `generated-compare` in their copies; they fail,
+  place, by `taskfiles/generated-compare.sh`. The tests of
+  `crates/surf/tests/*generated_check*.rs` read that one generation
+  (`crates/surf/tests/common/mod.rs`) and run that script with `sh` in their copies; they fail,
   saying so, when it is missing or was made from another `spec/`. `cargo test -p surf` needs
   `slot task generated-fresh` first; `task test` depends on it.
 - `task build`: `cargo build` of the root workspace with `--locked` and `RUSTFLAGS=-D warnings`.
@@ -1351,6 +1366,20 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `what-works.md`, `roadmap.md`, `how-it-is-built.md`, `principles.md`) in the same commit.
 
 ## The gate's numbers
+
+With `story:ess-0-97-4` (2026-11-22, on `afba5e3`), surf builds on ess 0.97.4: `surf v1 — 9
+file(s), 24 scenario(s), valid` and `169 scenario(s) (24 authored), 48 refusal(s)`, as with
+0.97.3. The suite is byte for byte the one 0.97.3 writes, digest
+`sha256:0aead5f74409f8c561f544df8056b9e6b6fe146c13ba2e5e3a3fbf0ffdea733c`, and the 48
+`refused:` lines are the same (the release names no breaking change). `generated/rust/` is
+what 0.97.4 generates, unchanged, 30 artifacts. Against the interpreter and against the Rust
+system: `169 scenarios: 169 passed, 0 failed, 0 error, 0 unsupported`; `conform-totals`: `the
+interpreter and the Rust system ran 169 scenario(s) each`; the planted defect `169 scenarios:
+133 passed, 36 failed, 0 error, 0 unsupported`, on both releases. The conformance crate's lock
+changed only in the eight `ess-*` packages of the tag; no third-party package moved. `ess
+verify conform synthesize` of `spec/` at `afba5e3`, five runs of each release in turn at a load
+average of 109 to 133: 0.97.3 3,574 to 4,430 ms (median 3,848 ms), 0.97.4 3,612 to 4,049 ms
+(median 3,706 ms), a difference inside the spread of either release's runs.
 
 After round 1 (2026-11-22, on the wave branch at `fe5c723`: the parser, text and document units
 and `story:agent-tasks` merged on `main` at `5415f27`), with ess 0.97.3: `169 scenario(s) (24
@@ -1469,11 +1498,17 @@ of the last of those runs: `review1_one_changed_byte_in_any_generated_file_fails
 (`surf-session` `adversary_events`) 7.2 s, `surfd_that_writes_nothing_exits_3_within_6_seconds`
 (`surf-agent` `start`) 5.1 s, `every_character_is_written_as_printable_ascii_and_reads_back`
 (`surf` `escape`) 4.8 s, then five tests of `surf-view` and `surf-session` between 2.3 and 3.7
-s. Three of them wait on purpose: `built` and `start` wait out a deadline of the product
-(`wire::REQUEST_TIMEOUT`, 10 s, and `wire::START_TIMEOUT`, 5 s, in `crates/agent/src/wire.rs`),
-and `adversary_events` waits out `surfd`'s answer timeout of 2 s, a server that answers after 4
-s and 5 s more, so that each step of the order it tests is 2 s or more apart from the next and
-the test does not depend on the runner's speed. In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
+s. Three of them waited on purpose. `built` waits out a deadline of the product
+(`wire::REQUEST_TIMEOUT`, 10 s, in `crates/agent/src/wire.rs`). Since
+`story:test-step-holds-with-tls` the other two wait less: `start`'s case, now
+`surfd_that_writes_nothing_exits_3_within_its_start_timeout`, runs `client::run` in the test
+process with a start timeout of 0.5 s instead of the binary's `wire::START_TIMEOUT` of 5 s (the
+stand-in `surfd` reads its control directory `c` beside `XDG_RUNTIME_DIR` when `STAND_IN_DIR`
+is unset); `adversary_events` gives `surfd` an answer timeout of 0.5 s and a server that answers
+1.5 s after it read the request, then sends `look` until the path shows the `go`, instead of a
+timeout of 2 s, a server that answered after 4 s and a sleep of 5 s. Each step of the order it
+tests is still 1 s or more apart from the next, so the test does not depend on the runner's
+speed. In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
 872 passed, 32 skipped`; the 32 are hosts outside ASCII, listed in
 `crates/url/tests/data/SKIPPED`. `view-stream-check`: `view-stream-check: 19 event name(s),
 each a message of the AsyncAPI projection`. `view-test`: `38 passed (15.8s)`; 12.9 s of it are

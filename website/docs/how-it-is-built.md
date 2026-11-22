@@ -77,7 +77,7 @@ third-party crate is used; nothing that ships depends on it.
 Building is for working on surf; to use it, [install the binary](try-it.md).
 
 You need a Rust toolchain with `cargo` (surf is built with 1.99.1), [`task`](https://taskfile.dev)
-and [`ess`](https://github.com/beyond10x/ess) 0.97.3. `task check` also needs
+and [`ess`](https://github.com/beyond10x/ess) 0.97.4. `task check` also needs
 [`cargo-nextest`](https://nexte.st) 0.9.143 or later.
 
 ```console

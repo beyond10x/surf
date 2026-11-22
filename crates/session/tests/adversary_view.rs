@@ -1,8 +1,13 @@
-//! Adversary cases against `story:view-surfd-serves`, over the real session process with the
-//! shipped limits: an entry whose `data:` line alone is more than the stream's queue of 1 MiB
-//! (`Limits::queue_bytes`). The answer entry of a `go` holds the page line's address and the
-//! last five actions of the path, each argument an address of up to `REQUEST_MAX` bytes, and
-//! the JSON writes each `&` of an address as the six bytes `&`.
+//! Adversary cases against `story:view-surfd-serves`, over the real session process: an entry
+//! whose `data:` line alone is more than the stream's queue (`Limits::queue_bytes`). The answer
+//! entry of a `go` holds the page line's address and the last five actions of the path, each
+//! argument an address of up to `REQUEST_MAX` bytes, and the JSON writes each `&` of an address
+//! as the six bytes `&`.
+//!
+//! The case no longer runs at the shipped queue of 1 MiB: `surfd` is given a queue of 64 KiB
+//! (`Config::view_limits`), and the addresses hold 4,000 `&` each, so one entry is still over
+//! the queue and the request far under `REQUEST_MAX`. The case asserts the shipped value
+//! first.
 
 #![forbid(unsafe_code)]
 
@@ -14,9 +19,13 @@ use std::time::Duration;
 
 use common::{TestDir, surfd_in_process, wire_as, wire_open};
 
-/// The bytes of `&` in the query of each address: 60,000, so the request stays under
-/// `wire::REQUEST_MAX` (64 KiB) and the JSON of one address is 360,000 bytes.
-const AMPERSANDS: usize = 60_000;
+/// The bytes of `&` in the query of each address: 4,000, so the request stays under
+/// `wire::REQUEST_MAX` (64 KiB) and the JSON of one address is 24,000 bytes; an answer entry
+/// holds up to five of them besides the page line's, over [`QUEUE_BYTES`].
+const AMPERSANDS: usize = 4_000;
+
+/// The stream's queue `surfd` is given here: 64 KiB, `Limits::queue_bytes` of the view.
+const QUEUE_BYTES: usize = 64 << 10;
 
 /// A port on 127.0.0.1 that nothing listens on: one the system gave and the test let go.
 fn closed_port() -> u16 {
@@ -81,8 +90,12 @@ fn one_stream(port: u16, token: &str, last: u64, want: u64) -> Vec<(u64, String)
 /// resumes from the last `id:` it read each time must get every entry, or a `reset`.
 #[test]
 fn adversary_an_entry_over_the_stream_queue_is_never_delivered_and_never_reset() {
+    // The shipped queue, `surf_view::Limits::default()` through `surfd::Config::new`: 1 MiB.
+    assert_eq!(surfd::Config::new(None).view_limits.queue_bytes, 1 << 20);
     let dir = TestDir::new();
-    let daemon = surfd_in_process(&dir, |_| {});
+    let daemon = surfd_in_process(&dir, |config| {
+        config.view_limits.queue_bytes = QUEUE_BYTES;
+    });
     let session = wire_open(&dir, None);
     let before = daemon.newest_entry();
     let url = format!(

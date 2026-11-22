@@ -592,14 +592,18 @@ fn case_07_a_body_is_kept_as_its_length() {
             "{name}"
         );
     }
-    let letters = &body[18..];
+    // Every 8 bytes of the page's letters, put in a set once; each window of each entry is
+    // looked up in it.
+    let letters: std::collections::BTreeSet<&[u8]> = body[18..].windows(8).collect();
     for entry in &entries {
-        for window in letters.windows(8) {
-            assert!(
-                !entry.text.as_bytes().windows(8).any(|part| part == window),
-                "an entry holds bytes of the page: {entry:?}"
-            );
-        }
+        assert!(
+            !entry
+                .text
+                .as_bytes()
+                .windows(8)
+                .any(|part| letters.contains(part)),
+            "an entry holds bytes of the page: {entry:?}"
+        );
     }
 }
 

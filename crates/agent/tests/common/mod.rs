@@ -7,8 +7,11 @@
 mod base;
 
 pub use base::test_base;
+use surf_agent::cli::Environment;
+use surf_agent::client::{self, Config};
 use surf_test_process::ended_within;
 
+use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, ErrorKind, Write};
 use std::os::unix::fs::PermissionsExt;
@@ -208,6 +211,33 @@ pub fn run(command: &mut Command) -> Output {
         }
     }
     panic!("the copied surf-agent stayed busy");
+}
+
+/// `surf-agent <args>` run in this process by `client::run` with `config`, the runtime
+/// directory of `dir` and [`bin_dir`] as the program's directory, so that `open` starts the
+/// stand-in there as `surfd`. The client passes `surfd` no `STAND_IN_DIR`, so the stand-in reads
+/// `c` beside the runtime directory, which is [`TestDir::control`]. Returns the status and what
+/// the client wrote to standard output and standard error. A start the kernel refuses because a
+/// copy of the program was still open for writing is retried, as [`run`] does.
+pub fn run_in_process(dir: &TestDir, args: &[&str], config: &Config) -> (u8, String, String) {
+    let args: Vec<OsString> = args.iter().map(OsString::from).collect();
+    let env = Environment {
+        runtime_dir: Some(dir.runtime().into_os_string()),
+        session: None,
+        token: None,
+        program_dir: Some(bin_dir().to_path_buf()),
+    };
+    for _ in 0..50 {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let status = client::run(&args, &env, config, &mut out, &mut err);
+        let err = String::from_utf8_lossy(&err).into_owned();
+        if err.contains("cannot start surfd") && err.contains("os error 26") {
+            thread::sleep(Duration::from_millis(20));
+            continue;
+        }
+        return (status, String::from_utf8_lossy(&out).into_owned(), err);
+    }
+    panic!("the copied surfd stayed busy");
 }
 
 pub fn stdout(output: &Output) -> String {

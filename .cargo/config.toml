@@ -6,3 +6,12 @@ debug = false
 
 [profile.dev.package.ring]
 opt-level = 3
+
+[profile.dev.package.surf-html]
+opt-level = 1
+
+[profile.dev.package.surf-url]
+opt-level = 1
+
+[profile.dev.package.surf-page-text]
+opt-level = 1
