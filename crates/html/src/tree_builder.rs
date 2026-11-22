@@ -41,7 +41,7 @@ use std::hash::{Hash, Hasher};
 
 use crate::ParseOptions;
 use crate::encoding::{self, Confidence};
-use crate::limits::{Limit, Limits};
+use crate::limits::{ATTRIBUTE_BYTES, Limit, Limits};
 use crate::tokenizer::{self, Token, TokenAttribute, Tokenizer};
 use crate::tree::{Attribute, Categories, Namespace, NodeData, NodeId, Tree};
 
@@ -142,14 +142,90 @@ impl TagToken {
     }
 }
 
-/// The bytes of strings an element created for a token named `name` with `attributes` holds
-/// ([`Tree::stored_bytes`]).
+/// The stored bytes of an element created for a token named `name` with `attributes`
+/// ([`Tree::stored_bytes`]): its strings and [`ATTRIBUTE_BYTES`] for each attribute.
 fn token_bytes(name: &str, attributes: &[TokenAttribute]) -> usize {
     name.len()
         + attributes
             .iter()
-            .map(|a| a.name.len() + a.value.len())
+            .map(|a| ATTRIBUTE_BYTES + a.name.len() + a.value.len())
             .sum::<usize>()
+}
+
+/// The stack of open elements (13.2.4.2), the topmost (the `html` element) first, read as a
+/// slice. It keeps, for each node, how many times the node is on it, so that "is in the stack
+/// of open elements" is answered in O(1) and visits no entry ([`OpenElements::holds`]).
+#[derive(Debug, Default)]
+struct OpenElements {
+    stack: Vec<NodeId>,
+    /// For each node of the arena by its index, the times it is on the stack (0 or 1).
+    on_stack: Vec<u32>,
+}
+
+impl std::ops::Deref for OpenElements {
+    type Target = [NodeId];
+
+    fn deref(&self) -> &[NodeId] {
+        &self.stack
+    }
+}
+
+impl OpenElements {
+    fn entered(&mut self, node: NodeId) {
+        let index = node.index();
+        if self.on_stack.len() <= index {
+            self.on_stack.resize(index + 1, 0);
+        }
+        self.on_stack[index] += 1;
+    }
+
+    fn left(&mut self, node: NodeId) {
+        self.on_stack[node.index()] -= 1;
+    }
+
+    /// Whether `node` is in the stack of open elements: no entry is visited.
+    fn holds(&self, node: NodeId) -> bool {
+        self.on_stack.get(node.index()).is_some_and(|&n| n > 0)
+    }
+
+    fn push(&mut self, node: NodeId) {
+        self.entered(node);
+        self.stack.push(node);
+    }
+
+    fn pop(&mut self) -> Option<NodeId> {
+        let node = self.stack.pop()?;
+        self.left(node);
+        Some(node)
+    }
+
+    fn truncate(&mut self, len: usize) {
+        while self.stack.len() > len {
+            self.pop();
+        }
+    }
+
+    fn clear(&mut self) {
+        self.truncate(0);
+    }
+
+    fn remove(&mut self, at: usize) -> NodeId {
+        let node = self.stack.remove(at);
+        self.left(node);
+        node
+    }
+
+    fn insert(&mut self, at: usize, node: NodeId) {
+        self.entered(node);
+        self.stack.insert(at, node);
+    }
+
+    /// Puts `node` in the place of the entry at `at`.
+    fn replace(&mut self, at: usize, node: NodeId) {
+        self.entered(node);
+        let old = std::mem::replace(&mut self.stack[at], node);
+        self.left(old);
+    }
 }
 
 /// An entry of the list of active formatting elements (13.2.4.3).
@@ -207,6 +283,7 @@ pub(crate) fn parse(
     }
     // "Stop parsing" pops every open element, also after a limit.
     builder.open.clear();
+    builder.tree.set_steps(builder.steps.get());
     Parsed {
         tree: builder.tree,
         quirks_mode: builder.quirks_mode,
@@ -221,7 +298,7 @@ struct TreeBuilder {
     mode: Mode,
     original_mode: Mode,
     /// The stack of open elements, the topmost (the `html` element) first.
-    open: Vec<NodeId>,
+    open: OpenElements,
     /// The list of active formatting elements, the least recently added first.
     active: Vec<Entry>,
     head: Option<NodeId>,
@@ -411,7 +488,7 @@ impl TreeBuilder {
             tree: Tree::document(),
             mode: Mode::Initial,
             original_mode: Mode::Initial,
-            open: Vec::new(),
+            open: OpenElements::default(),
             active: Vec::new(),
             head: None,
             form: None,
@@ -863,13 +940,17 @@ impl TreeBuilder {
     }
 
     /// Reconstruct the active formatting elements, if any. "Is in the stack of open elements"
-    /// is asked from the current node down: an entry that is open is almost always near it.
-    /// Each element is admitted by the limits before it is created; one they refuse ends the
-    /// reconstruction, with the elements created before it in the tree.
+    /// is answered by [`OpenElements::holds`] without a scan, so the standard's first checks (the
+    /// list is empty, or its last entry is a marker or open) cost O(1) and no step, also for
+    /// every character of a text; the rewind counts one step for each entry it steps back over,
+    /// the advance one for each entry it creates an element for. Each element is admitted by the
+    /// limits before it is created; one they refuse ends the reconstruction, with the elements
+    /// created before it in the tree. No start tag token is copied: the entry's own token is
+    /// read and kept.
     fn reconstruct_active_formatting_elements(&mut self) {
         let is_open_or_marker = |b: &Self, entry: &Entry| match entry {
             Entry::Marker => true,
-            Entry::Element { node, .. } => b.stack_position(*node).is_some(),
+            Entry::Element { node, .. } => b.open.holds(*node),
         };
         match self.active.last() {
             None => return,
@@ -885,10 +966,16 @@ impl TreeBuilder {
         // Advance and create, to the end of the list.
         for i in index..self.active.len() {
             self.visit();
-            let Entry::Element { token, .. } = self.active[i].clone() else {
+            if matches!(self.active[i], Entry::Marker) {
                 continue;
+            }
+            let Entry::Element { node: old, token } =
+                std::mem::replace(&mut self.active[i], Entry::Marker)
+            else {
+                unreachable!("the entry is an element");
             };
             let Some(node) = self.insert_html_element(&token.name, &token.attributes) else {
+                self.active[i] = Entry::Element { node: old, token };
                 return;
             };
             self.active[i] = Entry::Element { node, token };

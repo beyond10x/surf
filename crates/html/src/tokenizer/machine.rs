@@ -242,6 +242,12 @@ pub(super) struct Tokenizer {
     processing_instruction: ProcessingInstructionToken,
     /// The tokens emitted and not yet taken, in the order they were emitted.
     emitted: VecDeque<Token>,
+    /// Character tokens emitted after those of `emitted`, one for each code point from
+    /// `pending_at` on, given one at a time: the temporary buffer an end tag name state gives
+    /// back as text (13.2.5.11, 13.2.5.14, 13.2.5.17, 13.2.5.25). The code points stay 4 bytes
+    /// each, not a token each, however long the run of letters was.
+    pending: Vec<u32>,
+    pending_at: usize,
     /// Whether parse errors are kept: by [`Tokenizer::run`], not when a tree builder takes one
     /// token at a time and reads no error.
     keep_errors: bool,
@@ -273,6 +279,8 @@ impl Tokenizer {
             doctype: DoctypeToken::default(),
             processing_instruction: ProcessingInstructionToken::default(),
             emitted: VecDeque::new(),
+            pending: Vec::new(),
+            pending_at: 0,
             keep_errors: true,
             errors: Vec::new(),
             done: false,
@@ -298,6 +306,9 @@ impl Tokenizer {
         while !self.done {
             self.step();
             tokens.extend(self.emitted.drain(..));
+            while let Some(c) = self.next_pending() {
+                tokens.push(Token::Character(c));
+            }
         }
         Tokenized {
             tokens,
@@ -312,12 +323,35 @@ impl Tokenizer {
     }
 
     /// The next token: the state machine runs until it has emitted one. After the end-of-file
-    /// token, each call gives the end-of-file token again.
+    /// token, each call gives the end-of-file token again. The machine does not step while a
+    /// token emitted before is not taken.
     pub(super) fn next_token(&mut self) -> Token {
-        while self.emitted.is_empty() && !self.done {
+        loop {
+            if let Some(token) = self.emitted.pop_front() {
+                return token;
+            }
+            if !self.pending.is_empty()
+                && let Some(c) = self.next_pending()
+            {
+                return Token::Character(c);
+            }
+            if self.done {
+                return Token::EndOfFile;
+            }
             self.step();
         }
-        self.emitted.pop_front().unwrap_or(Token::EndOfFile)
+    }
+
+    /// The next code point of `pending`, if any; the buffer is freed after its last.
+    fn next_pending(&mut self) -> Option<u32> {
+        let c = self.pending.get(self.pending_at).copied();
+        if c.is_some() {
+            self.pending_at += 1;
+        } else if !self.pending.is_empty() {
+            self.pending = Vec::new();
+            self.pending_at = 0;
+        }
+        c
     }
 
     /// Switches the state between two tokens, as the tree builder does (13.2.6). The last start
@@ -1841,12 +1875,16 @@ impl Tokenizer {
                 self.temporary_buffer.push(c);
             }
             _ => {
+                // "Emit a U+003C LESS-THAN SIGN character token, a U+002F SOLIDUS character
+                // token, and a character token for each of the characters in the temporary
+                // buffer": the last are given one at a time from the buffer itself
+                // (`pending`), not queued as a token each, so a long run of
+                // letters holds 4 bytes for each and not a token. The tokens are the same.
                 self.emit_character(LESS_THAN_SIGN);
                 self.emit_character(SOLIDUS);
-                let buffer = std::mem::take(&mut self.temporary_buffer);
-                for c in buffer {
-                    self.emit_character(c);
-                }
+                debug_assert!(self.pending_at >= self.pending.len());
+                self.pending = std::mem::take(&mut self.temporary_buffer);
+                self.pending_at = 0;
                 self.reconsume_in(text);
             }
         }

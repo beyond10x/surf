@@ -787,7 +787,7 @@ impl TreeBuilder {
             } if name == "a" => {
                 // 1. An `a` in the list after the last marker: a parse error, the adoption
                 // agency algorithm, then that `a` out of the list and the stack if still there.
-                if let Some((_, existing_a, _)) = self.last_active_named("a") {
+                if let Some((_, existing_a)) = self.last_active_named("a") {
                     self.adoption_agency("a");
                     // "If existingA is in the list", it is after the last marker: the algorithm
                     // adds no marker and moves no entry, it only removes and replaces. It takes

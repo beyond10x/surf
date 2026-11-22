@@ -1,23 +1,27 @@
 //! The limits of `docs/design/html-parser.md` item 7 (`story:html-parser-limits`): each limit
 //! stops a parse at the point the crate documentation names, with the tree built before it;
-//! adversarial inputs and 10,000 seeded ones end within stated times, inside the node and
-//! stored-byte limits and without a panic. Every test parses with the default `Limits` unless it
-//! says otherwise, and builds its own input (each test runs in a process of its own).
+//! adversarial inputs and 10,000 seeded ones end inside the node and stored-byte limits, within
+//! the bytes [`common::allocation_bound`] allows and without a panic. Every test parses with the
+//! default `Limits` unless it says otherwise, and builds its own input (each test runs in a
+//! process of its own). The tests of the section "Steps" assert the steps each scan adds.
 //!
-//! The times asserted are the bound of a loaded machine, not the budget: 10 s for one input, 30 s
-//! for the seeded ones. A shape that ran over 5 s at 16 MiB in the test profile runs at 1 MiB
-//! with `max_steps` 2^23 ([`one_mib_form`]), the same visits per input byte; the report of the
-//! story gives what each measured in both forms.
+//! No test asserts a time: on a loaded machine 10 s bounds failed for inputs that were not
+//! slower (the fix unit of the review). What catches an input that turns quadratic again: in
+//! the scans, the step limit, so each test asserts the limit that stops it (one that ended
+//! without one, or at the depth limit, then names `Steps`); in copies of what a token does not
+//! pay for, the bytes allocated; a scan that stops counting its visits, the tests of "Steps".
+//! The runner's 60 s end is the only time bound left. A shape that ran over 5 s at 16 MiB in the
+//! test profile runs at 1 MiB with `max_steps` 2^23 ([`one_mib_form`]), the same visits per
+//! input byte; the report of the story gives what each measured in both forms.
 
-use std::time::{Duration, Instant};
+mod common;
 
-use surf_html::limits::{Limit, Limits};
+use std::time::Instant;
+
+use surf_html::limits::{ATTRIBUTE_BYTES, Limit, Limits};
 use surf_html::{NodeData, NodeId, ParseOptions, Tree, parse_document, parse_document_bytes};
 
 const MIB: usize = 1 << 20;
-
-/// The bound of one adversarial input.
-const ONE_INPUT: Duration = Duration::from_secs(10);
 
 /// The node and stored-byte limits of the defaults.
 const MAX_NODES: usize = 1_048_576;
@@ -59,25 +63,45 @@ fn b_with_ids(n: usize) -> String {
     (0..n).map(|k| format!("<b id={k}>")).collect()
 }
 
-/// Parses `input` with `options`, asserts that it ends within [`ONE_INPUT`] and inside the
-/// node and stored-byte limits of the defaults, stopped by `expected`, and prints the time.
+/// Parses `input` with `options` and asserts that it ends stopped by `expected`, inside the node
+/// and stored-byte limits of the defaults, within the bytes [`common::allocation_bound`] allows,
+/// and past the step limit only when that limit stopped it. Prints the time it took, which no
+/// assertion reads.
 fn bounded(name: &str, input: &str, options: &ParseOptions, expected: Option<Limit>) -> Tree {
     let start = Instant::now();
-    let tree = parse_document(input, options);
+    let (tree, allocated) = common::allocated_while(|| parse_document(input, options));
     let took = start.elapsed();
+    let bound = common::allocation_bound(input.len(), &tree);
     println!(
-        "measured: {name} {:.3} s, {} input bytes, stopped by {:?}, {} nodes, {} stored bytes",
+        "measured: {name} {:.3} s, {} input bytes, stopped by {:?}, {} steps, {} nodes, {} stored \
+         bytes, {allocated} bytes allocated (bound {bound})",
         took.as_secs_f64(),
         input.len(),
         tree.stopped_by(),
+        tree.steps(),
         tree.node_count(),
         tree.stored_bytes()
     );
-    assert!(took < ONE_INPUT, "{name} took {took:?}");
+    assert_eq!(tree.stopped_by(), expected, "{name}");
     assert!(tree.node_count() <= MAX_NODES);
     assert!(tree.stored_bytes() <= MAX_STORED_BYTES);
-    assert_eq!(tree.stopped_by(), expected, "{name}");
+    assert!(
+        allocated <= bound,
+        "{name}: {allocated} bytes allocated, bound {bound}"
+    );
+    assert!(
+        tree.steps() <= options.limits.max_steps || tree.stopped_by() == Some(Limit::Steps),
+        "{name}: {} steps past the limit without stopping",
+        tree.steps()
+    );
     tree
+}
+
+/// The steps a parse of `input` with the default limits used.
+fn steps(input: &str) -> usize {
+    let tree = parse_document(input, &ParseOptions::default());
+    assert_eq!(tree.stopped_by(), None, "{input}");
+    tree.steps()
 }
 
 /// The elements under the root named `local_name`, in tree order.
@@ -98,9 +122,9 @@ fn data(tree: &Tree) -> Vec<NodeData> {
         .collect()
 }
 
-/// The UTF-8 bytes of every string of the nodes under the root, counted from what they hold:
-/// `stored_bytes()` for a tree with no node out of it.
-fn bytes_of_strings(tree: &Tree) -> usize {
+/// The UTF-8 bytes of every string of the nodes under the root and `ATTRIBUTE_BYTES` for each
+/// attribute, counted from what they hold: `stored_bytes()` for a tree with no node out of it.
+fn stored_bytes_of_nodes(tree: &Tree) -> usize {
     tree.descendants(tree.root())
         .into_iter()
         .map(|n| match tree.data(n) {
@@ -119,7 +143,8 @@ fn bytes_of_strings(tree: &Tree) -> usize {
                     + attributes
                         .iter()
                         .map(|a| {
-                            a.prefix.as_ref().map_or(0, String::len)
+                            ATTRIBUTE_BYTES
+                                + a.prefix.as_ref().map_or(0, String::len)
                                 + a.local_name.len()
                                 + a.value.len()
                         })
@@ -267,7 +292,7 @@ fn attribute_1_025_on_one_element_stops_at_the_attribute_limit() {
     assert_eq!(tree.stopped_by(), None);
     assert_eq!(attribute_count(&tree, elements(&tree, "span")[0]), 1_024);
     // Every attribute name and value counts toward the stored bytes.
-    assert_eq!(tree.stored_bytes(), bytes_of_strings(&tree));
+    assert_eq!(tree.stored_bytes(), stored_bytes_of_nodes(&tree));
 }
 
 #[test]
@@ -310,7 +335,7 @@ fn cloned_attributes_past_64_mib_stop_at_the_stored_bytes_limit() {
         Some(Limit::StoredBytes),
     );
     assert!(tree.stored_bytes() > MAX_STORED_BYTES - 2_000);
-    assert_eq!(tree.stored_bytes(), bytes_of_strings(&tree));
+    assert_eq!(tree.stored_bytes(), stored_bytes_of_nodes(&tree));
 }
 
 #[test]
@@ -384,7 +409,90 @@ fn a_node_limit_inside_the_adoption_agency_leaves_no_element_out_of_the_tree() {
     }
 }
 
-// Adversarial inputs: each ends within ten seconds, inside the limits, stopped by the limit named.
+// Steps: each scan adds the entries it visits. Each test compares two inputs that differ only in
+// what one scan visits, so that a scan that stops counting turns it red; the end-of-file token
+// costs no step in "in body", "after body" and "in frameset".
+
+#[test]
+fn steps_reads_the_count_the_step_limit_checks() {
+    // `<p>` visits `body` and `html` for "has a p element in button scope"; `x` visits nothing.
+    assert_eq!(steps("<p>x"), 2);
+    // The token that passes the limit is processed whole, and its steps are counted.
+    let tree = parse_document(
+        "<p>x",
+        &with_limits(Limits {
+            max_steps: 1,
+            ..Limits::default()
+        }),
+    );
+    assert_eq!(tree.stopped_by(), Some(Limit::Steps));
+    assert_eq!(tree.steps(), 2);
+}
+
+#[test]
+fn steps_count_each_child_the_adoption_agency_moves() {
+    // `</a>` moves the `div`'s children to the new `a` (step 4.30): 8 comments more are 8 steps
+    // more; a comment is inserted at the end of its parent and visits nothing.
+    let input = |k: usize| format!("<a><div>{}</a>", "<!---->".repeat(k));
+    assert_eq!(steps(&input(8)) - steps(&input(0)), 8);
+}
+
+#[test]
+fn steps_count_each_child_visited_to_remove_the_body() {
+    // A `frameset` start tag removes the `body` from the `html` element, scanning its children
+    // from the last: the comments after `</body>` went into the `html` element after the `body`.
+    let input = |k: usize| format!("</body>{}<frameset>", "<!---->".repeat(k));
+    assert_eq!(steps(&input(8)) - steps(&input(0)), 8);
+}
+
+#[test]
+fn steps_count_each_document_child_visited_before_the_html_element() {
+    // The `html` element is inserted into the document only when it has no element child: the
+    // comments before it are visited.
+    let input = |k: usize| format!("{}<html>", "<!---->".repeat(k));
+    assert_eq!(steps(&input(8)) - steps(&input(0)), 8);
+}
+
+#[test]
+fn steps_count_each_open_element_visited_for_a_template() {
+    // An `html` start tag in body asks whether a `template` is on the stack: `html`, `body` and
+    // 5 `div`, 7 steps for each `html` start tag.
+    let input = |m: usize| format!("{}{}", "<div>".repeat(5), "<html>".repeat(m));
+    assert_eq!(steps(&input(2)) - steps(&input(1)), 7);
+}
+
+#[test]
+fn steps_count_each_inner_loop_iteration_of_the_adoption_agency() {
+    // `</a>` over `html`, `body`, `a`, `span`, `div` (the list holds the `a`). First outer
+    // iteration: the list's entry (4.3) 1, the stack down to the `a` (4.4) 3, the scope (4.5) 3,
+    // the furthest block (4.7) 2, the entries `iteration_creates` looks up 1, the inner loop 2
+    // iterations and the `span`'s missing entry 1 (4.18), removing the `div` from the `span`
+    // (4.22) 1, the walk from the `body` to the root (4.23) 3, the formatting element's entry
+    // (4.25) 1. Second outer iteration: the entry, the stack and the scope, 1 each; no furthest
+    // block. 21 in all, 2 of them the inner loop's own.
+    assert_eq!(steps("<a><span><div></a>") - steps("<a><span><div>"), 21);
+}
+
+#[test]
+fn steps_count_each_entry_noahs_ark_compares() {
+    // Each formatting start tag compares the entries after the last marker: the tenth of ten
+    // `b` with different ids visits 9, so the nine after the first visit 1 + 2 + … + 9.
+    let input = |k: usize| (0..k).map(|j| format!("<b id={j}>")).collect::<String>();
+    assert_eq!(steps(&input(10)) - steps(&input(1)), 45);
+}
+
+#[test]
+fn steps_count_each_entry_the_reconstruction_rewinds_over() {
+    // After `</p>` the five `b` are closed and stay in the list. `x` rewinds over 4 entries and
+    // advances over 5, creating an element for each.
+    let prefix = format!(
+        "<p>{}</p>",
+        (0..5).map(|j| format!("<b id={j}>")).collect::<String>()
+    );
+    assert_eq!(steps(&format!("{prefix}x")) - steps(&prefix), 9);
+}
+
+// Adversarial inputs: each ends inside the limits, stopped by the limit named.
 
 #[test]
 fn nested_div_100_000_ends_within_bounds() {
@@ -764,12 +872,13 @@ fn seeded_10_000_inputs_end_within_bounds() {
             ..d
         },
         Limits {
-            max_steps: 1_000,
+            max_steps: 100,
             ..d
         },
     ];
     let mut random = Seeded(0x5EED_0000_2026_1122);
     let mut stopped = std::collections::HashMap::new();
+    let (mut most_steps, mut most_allocated) = (0, 0);
     let start = Instant::now();
     for n in 0..10_000 {
         let input = seeded_input(&mut random);
@@ -780,13 +889,15 @@ fn seeded_10_000_inputs_end_within_bounds() {
         };
         let options = with_limits(limits);
         let parsed = std::panic::catch_unwind(|| {
-            if n % 5 == 0 {
-                parse_document_bytes(input.as_bytes(), &options).tree
-            } else {
-                parse_document(&input, &options)
-            }
+            common::allocated_while(|| {
+                if n % 5 == 0 {
+                    parse_document_bytes(input.as_bytes(), &options).tree
+                } else {
+                    parse_document(&input, &options)
+                }
+            })
         });
-        let tree = parsed.unwrap_or_else(|_| panic!("input {n} panicked: {input:?}"));
+        let (tree, allocated) = parsed.unwrap_or_else(|_| panic!("input {n} panicked: {input:?}"));
         assert!(
             tree.node_count() <= limits.max_nodes,
             "input {n}: {input:?}"
@@ -795,14 +906,27 @@ fn seeded_10_000_inputs_end_within_bounds() {
             tree.stored_bytes() <= limits.max_stored_bytes,
             "input {n}: {input:?}"
         );
+        // `parse_document_bytes` decodes the input first, and may parse twice.
+        let bound = 3 * common::allocation_bound(input.len(), &tree);
+        assert!(
+            allocated <= bound,
+            "input {n}: {allocated} bytes allocated, bound {bound}: {input:?}"
+        );
+        assert!(
+            tree.steps() <= limits.max_steps || tree.stopped_by() == Some(Limit::Steps),
+            "input {n}: {} steps: {input:?}",
+            tree.steps()
+        );
+        most_steps = most_steps.max(tree.steps());
+        most_allocated = most_allocated.max(allocated);
         *stopped.entry(tree.stopped_by()).or_insert(0) += 1;
     }
     let took = start.elapsed();
     println!(
-        "measured: seeded_10_000_inputs {:.3} s, stopped by {stopped:?}",
+        "measured: seeded_10_000_inputs {:.3} s, at most {most_steps} steps and {most_allocated} \
+         bytes allocated for one input, stopped by {stopped:?}",
         took.as_secs_f64()
     );
-    assert!(took < Duration::from_secs(30), "took {took:?}");
     for limit in [
         Limit::Depth,
         Limit::Nodes,

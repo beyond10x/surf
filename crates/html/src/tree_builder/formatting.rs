@@ -15,7 +15,7 @@
 //! iteration runs whole or not at all, and a limit never leaves a clone out of its parent. Every
 //! entry the scans visit, and every node of the walk to the root, is a step.
 
-use super::{Entry, Scope, TagToken, TreeBuilder};
+use super::{Entry, Scope, TreeBuilder};
 use crate::tree::{NodeData, NodeId};
 
 /// Step 4.1: the outer loop runs at most this many times.
@@ -27,15 +27,16 @@ const INNER_LOOP_CLONES: usize = 3;
 
 impl TreeBuilder {
     /// The last element of the list of active formatting elements after the last marker (or in
-    /// the whole list when there is none) whose tag name is `subject`: its index in the list,
-    /// the element and the token it was created for.
-    pub(super) fn last_active_named(&self, subject: &str) -> Option<(usize, NodeId, TagToken)> {
+    /// the whole list when there is none) whose tag name is `subject`: its index in the list and
+    /// the element. The token stays in the entry: a formatting end tag that the algorithm
+    /// ignores at step 4.4 or 4.5 costs its steps and copies nothing.
+    pub(super) fn last_active_named(&self, subject: &str) -> Option<(usize, NodeId)> {
         for (index, entry) in self.active.iter().enumerate().rev() {
             self.visit();
             match entry {
                 Entry::Marker => return None,
-                Entry::Element { node, token } if self.html_name(*node) == Some(subject) => {
-                    return Some((index, *node, token.clone()));
+                Entry::Element { node, .. } if self.html_name(*node) == Some(subject) => {
+                    return Some((index, *node));
                 }
                 Entry::Element { .. } => {}
             }
@@ -66,8 +67,7 @@ impl TreeBuilder {
             // 4.2.
             outer_loop_counter += 1;
             // 4.3. The formatting element; with none, "any other end tag".
-            let Some((formatting_index, formatting_element, formatting_token)) =
-                self.last_active_named(subject)
+            let Some((formatting_index, formatting_element)) = self.last_active_named(subject)
             else {
                 self.any_other_end_tag(subject);
                 return;
@@ -96,7 +96,7 @@ impl TreeBuilder {
             // The elements steps 4.18.6 and 4.24 create, admitted before the iteration changes
             // anything: with a limit that refuses them, parsing stops here.
             let (nodes, bytes) =
-                self.iteration_creates(formatting_stack, furthest_block_stack, &formatting_token);
+                self.iteration_creates(formatting_index, formatting_stack, furthest_block_stack);
             if !self.admit(nodes, bytes) {
                 return;
             }
@@ -152,14 +152,16 @@ impl TreeBuilder {
                     continue;
                 };
                 // 4.18.6. A new element for `node`'s token takes `node`'s place in the list and
-                // in the stack. Finishing the parsing of `node`'s children changes no tree.
-                let token = match &self.active[at] {
-                    Entry::Element { token, .. } => token.clone(),
-                    Entry::Marker => unreachable!("`active_position` finds an element"),
+                // in the stack. Finishing the parsing of `node`'s children changes no tree. The
+                // entry's token is taken out and put back, not copied.
+                let Entry::Element { token, .. } =
+                    std::mem::replace(&mut self.active[at], Entry::Marker)
+                else {
+                    unreachable!("`active_position` finds an element");
                 };
                 let new = self.create_admitted_element(&token.name, &token.attributes);
                 self.active[at] = Entry::Element { node: new, token };
-                self.open[node_stack] = new;
+                self.open.replace(node_stack, new);
                 let node = new;
                 // 4.18.7. The bookmark goes after the first new element.
                 if !bookmark_moved {
@@ -194,14 +196,21 @@ impl TreeBuilder {
             {
                 self.tree.insert(target, last, reference, &self.steps);
             }
-            // 4.24. A new element for the formatting element's token.
-            let new_element =
-                self.create_admitted_element(&formatting_token.name, &formatting_token.attributes);
-            // 4.25. It takes the formatting element's entry, at the bookmark.
+            // 4.24. A new element for the formatting element's token, taken out of its entry,
+            // which step 4.25 removes.
             let formatting_at = self
                 .active_position(formatting_element)
                 .expect("the formatting element is in the list");
-            self.active.remove(formatting_at);
+            let Entry::Element {
+                token: formatting_token,
+                ..
+            } = self.active.remove(formatting_at)
+            else {
+                unreachable!("`active_position` finds an element");
+            };
+            let new_element =
+                self.create_admitted_element(&formatting_token.name, &formatting_token.attributes);
+            // 4.25. It takes the formatting element's entry, at the bookmark.
             if formatting_at < bookmark {
                 bookmark -= 1;
             }
@@ -239,21 +248,25 @@ impl TreeBuilder {
         }
     }
 
-    /// The nodes and the bytes of strings of the elements an outer iteration creates, given the
-    /// formatting element's and the furthest block's indices in the stack of open elements: one
-    /// clone (step 4.18.6) for each of the first [`INNER_LOOP_CLONES`] elements the inner loop
-    /// meets above the furthest block, below the formatting element, that has an entry in the
-    /// list, and the new formatting element (step 4.24). The inner loop meets the elements above
-    /// the furthest block in order, also when it removes one from the stack (step 4.18.5), and
-    /// no earlier iteration of it changes which of them have an entry.
+    /// The nodes and the stored bytes of the elements an outer iteration creates, given the
+    /// formatting element's index in the list and its and the furthest block's indices in the
+    /// stack of open elements: one clone (step 4.18.6) for each of the first
+    /// [`INNER_LOOP_CLONES`] elements the inner loop meets above the furthest block, below the
+    /// formatting element, that has an entry in the list, and the new formatting element (step
+    /// 4.24). The inner loop meets the elements above the furthest block in order, also when it
+    /// removes one from the stack (step 4.18.5), and no earlier iteration of it changes which of
+    /// them have an entry.
     fn iteration_creates(
         &self,
+        formatting_index: usize,
         formatting_stack: usize,
         furthest_block_stack: usize,
-        formatting_token: &TagToken,
     ) -> (usize, usize) {
         let mut nodes = 1;
-        let mut bytes = formatting_token.stored_bytes();
+        let mut bytes = match &self.active[formatting_index] {
+            Entry::Element { token, .. } => token.stored_bytes(),
+            Entry::Marker => unreachable!("`last_active_named` finds an element"),
+        };
         for above in 1..=INNER_LOOP_CLONES {
             let index = furthest_block_stack - above;
             if index <= formatting_stack {

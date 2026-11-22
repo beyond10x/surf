@@ -86,8 +86,8 @@
 //! "stop parsing" pops the open elements, without the end-of-file step, and the tree holds every
 //! node inserted before that point. [`Tree::stopped_by`] names the limit, `None` for a parse
 //! that ended without one; for [`parse_document_bytes`] it is `parsed.tree.stopped_by()`.
-//! [`Tree::node_count`] and [`Tree::stored_bytes`] read the two counts the limits keep. The
-//! defaults are those of [`limits::Limits::default`]:
+//! [`Tree::node_count`], [`Tree::stored_bytes`] and [`Tree::steps`] read the three counts the
+//! limits keep. The defaults are those of [`limits::Limits::default`]:
 //!
 //! - **Input bytes** ([`limits::Limits::max_input_bytes`], default 16 MiB, the body limit of
 //!   `surf-fetch`): a `&str` longer than the limit is cut to its longest prefix of at most that
@@ -113,17 +113,23 @@
 //! - **Stored bytes** ([`limits::Limits::max_stored_bytes`], default 64 MiB): the UTF-8 bytes
 //!   of every string the tree holds, clones included (element local names, attribute names,
 //!   prefixes and values, text, comment data, doctype fields, processing instruction targets
-//!   and data). A node or an append that would take [`Tree::stored_bytes`] past the limit is not
-//!   made. Text is appended a character at a time, so a text node holds everything up to the
-//!   limit. Names count as well as values: the reconstruction clones attribute names, which
-//!   would otherwise grow without a bound.
+//!   and data), and [`limits::ATTRIBUTE_BYTES`] (80, the size of its record) for every
+//!   attribute. A node or an append that would take [`Tree::stored_bytes`] past the limit is
+//!   not made. Text is appended a character at a time, so a text node holds everything up to
+//!   the limit. Names count as well as values: the reconstruction clones attribute names, which
+//!   would otherwise grow without a bound; records count because an attribute with a name of
+//!   one byte holds 80. With the node limit it bounds the tree's heap: at most 2 ×
+//!   [`Tree::stored_bytes`] + 3 × [`limits::NODE_BYTES`] (136) × [`Tree::node_count`].
 //! - **Steps** ([`limits::Limits::max_steps`], default 2^27, 134,217,728): every entry visited
 //!   in a scan of the stack of open elements or of the list of active formatting elements (the
 //!   scopes, popping, "any other end tag", Noah's Ark, the reconstruction, the adoption agency
 //!   algorithm's scans and its walk to the root), and every child visited in a parent's child
 //!   list (inserting before a reference, finding the text node to append to, removing a node,
 //!   moving children, looking for an element child). The count is checked after each token:
-//!   the token that takes it past the limit is processed whole, then parsing stops. The other
+//!   the token that takes it past the limit is processed whole, then parsing stops;
+//!   [`Tree::steps`] reads the count a parse ended with. "Is in the stack of open elements"
+//!   visits no entry (the stack keeps a count for each node), so a reconstruction with nothing
+//!   to reconstruct, as before every character of a text, costs no step. The other
 //!   five limits bound memory; this one bounds time, which they do not: an input inside them can
 //!   cost tokens times depth stack visits. The default is twice the visits of a 16 MiB page of
 //!   the kind of five large documentation pages measured (at most 3.8 visits per input byte).
@@ -132,14 +138,19 @@
 //! an element are decided once when it is created; Noah's Ark compares two entries in O(1) when
 //! their tag names, attribute counts or keys (a hash of the attributes sorted by name) differ;
 //! the tokenizer's duplicate-attribute check and the `html` and `body` merge look names up in a
-//! set. No clock is read: the limits bound the work, and the tests of `tests/limits.rs` measure
-//! the time.
+//! set; no rule copies a start tag token of the list of active formatting elements (the
+//! adoption agency algorithm and the reconstruction read the entry's own). No clock is read: the
+//! limits bound the work, and the tests of `tests/limits.rs` assert the steps, the nodes and the
+//! bytes a parse allocates, not its time.
 //!
 //! What a parse holds besides the tree: the input as code points, 4 bytes for each character
 //! (at most 64 MiB for an input of 16 MiB), the stack of open elements (at most
-//! [`limits::Limits::max_depth`] entries) and the list of active formatting elements with a copy
-//! of each entry's start tag token. [`parse_document_bytes`] holds the decoded text as well, at
-//! most 3 bytes for each input byte, and two of them while it parses again after a `meta`.
+//! [`limits::Limits::max_depth`] entries, and a count of 4 bytes for each node), the list of
+//! active formatting elements with a copy of each entry's start tag token, and the tokenizer's
+//! current token and temporary buffer (a tag name of 1 byte and a buffer of 4 bytes for each
+//! letter of an end tag name in RCDATA, RAWTEXT or script data, given back as character tokens
+//! one at a time). [`parse_document_bytes`] holds the decoded text as well, at most 3 bytes for
+//! each input byte, and two of them while it parses again after a `meta`.
 
 #![forbid(unsafe_code)]
 

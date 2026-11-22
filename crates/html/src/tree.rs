@@ -5,15 +5,15 @@
 //! `story:html-tree-body`. No reader recurses over the depth of the tree.
 //!
 //! Since `story:html-parser-limits` the tree keeps what the limits read as it is built: the
-//! number of its nodes ([`Tree::node_count`]), the bytes of the strings it holds
-//! ([`Tree::stored_bytes`]), and the limit that stopped its parse ([`Tree::stopped_by`]). The
-//! operations that scan a node's children add each child they visit to the step count they are
-//! given. Each element keeps its categories (special, the scopes it bounds), decided once when it
-//! is created.
+//! number of its nodes ([`Tree::node_count`]), the bytes of its strings and attribute records
+//! ([`Tree::stored_bytes`]), the limit that stopped its parse ([`Tree::stopped_by`]) and the
+//! steps the parse used ([`Tree::steps`]). The operations that scan a node's children add each
+//! child they visit to the step count they are given. Each element keeps its categories
+//! (special, the scopes it bounds), decided once when it is created.
 
 use std::cell::Cell;
 
-use crate::limits::Limit;
+use crate::limits::{ATTRIBUTE_BYTES, Limit};
 
 /// A namespace an element or an attribute is in (Infra, "Namespaces").
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -63,6 +63,13 @@ pub struct Attribute {
 /// The identity of a node in its [`Tree`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct NodeId(usize);
+
+impl NodeId {
+    /// The node's index in the arena: 0 for the root, then in the order the nodes were created.
+    pub(crate) fn index(self) -> usize {
+        self.0
+    }
+}
 
 /// What a node is.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -116,6 +123,11 @@ struct Node {
     categories: u8,
 }
 
+/// The bytes of one node's record in the arena and of its entry in its parent's child list
+/// ([`crate::limits::NODE_BYTES`]).
+pub(crate) const NODE_RECORD_BYTES: usize =
+    std::mem::size_of::<Node>() + std::mem::size_of::<NodeId>();
+
 /// The categories of an element that tree construction asks for at every visit of the stack of
 /// open elements, decided once from its namespace and local name when it is created.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -137,14 +149,17 @@ impl Categories {
     }
 }
 
-/// The UTF-8 bytes of the strings of `attribute`: its prefix, local name and value.
+/// The stored bytes of `attribute`: its record ([`ATTRIBUTE_BYTES`]) and the UTF-8 bytes of its
+/// prefix, local name and value.
 fn attribute_bytes(attribute: &Attribute) -> usize {
-    attribute.prefix.as_ref().map_or(0, String::len)
+    ATTRIBUTE_BYTES
+        + attribute.prefix.as_ref().map_or(0, String::len)
         + attribute.local_name.len()
         + attribute.value.len()
 }
 
-/// The UTF-8 bytes of the strings `data` holds ([`Tree::stored_bytes`]).
+/// The stored bytes of `data` ([`Tree::stored_bytes`]): the UTF-8 bytes of its strings and
+/// [`ATTRIBUTE_BYTES`] for each attribute.
 pub(crate) fn stored_bytes_of(data: &NodeData) -> usize {
     match data {
         NodeData::Document | NodeData::DocumentFragment => 0,
@@ -181,6 +196,7 @@ pub struct Tree {
     nodes: Vec<Node>,
     stored_bytes: usize,
     stopped_by: Option<Limit>,
+    steps: usize,
 }
 
 impl Tree {
@@ -199,6 +215,7 @@ impl Tree {
             nodes: Vec::new(),
             stored_bytes: 0,
             stopped_by: None,
+            steps: 0,
         };
         tree.create(data, 0);
         tree
@@ -315,7 +332,9 @@ impl Tree {
     }
 
     /// Adds `attributes` to `element`, in order. The caller has left out every name the element
-    /// has an attribute of (the `html` and `body` start tag rules of "in body").
+    /// has an attribute of (the `html` and `body` start tag rules of "in body"). A list that was
+    /// empty gets exactly the room it needs, so that a list never holds more than twice the
+    /// records it has (the heap bound of [`crate::limits::Limits::max_stored_bytes`]).
     pub(crate) fn add_attributes(&mut self, element: NodeId, attributes: Vec<Attribute>) {
         if let NodeData::Element {
             attributes: existing,
@@ -323,6 +342,9 @@ impl Tree {
         } = &mut self.nodes[element.0].data
         {
             self.stored_bytes += attributes.iter().map(attribute_bytes).sum::<usize>();
+            if existing.is_empty() {
+                existing.reserve_exact(attributes.len());
+            }
             existing.extend(attributes);
         }
     }
@@ -379,11 +401,26 @@ impl Tree {
         self.nodes.len()
     }
 
-    /// The UTF-8 bytes of every string the tree holds: element local names, attribute names,
-    /// prefixes and values, text, comment data, doctype fields, processing instruction targets
-    /// and data, in every node of the arena.
+    /// The stored bytes of the tree ([`crate::limits::Limits::max_stored_bytes`]): the UTF-8
+    /// bytes of every string it holds (element local names, attribute names, prefixes and
+    /// values, text, comment data, doctype fields, processing instruction targets and data), and
+    /// [`ATTRIBUTE_BYTES`] for every attribute, in every node of the arena.
     pub fn stored_bytes(&self) -> usize {
         self.stored_bytes
+    }
+
+    /// Records the steps the parse used.
+    pub(crate) fn set_steps(&mut self, steps: usize) {
+        self.steps = steps;
+    }
+
+    /// The steps the parse of this tree used ([`crate::limits::Limits::max_steps`]): every entry
+    /// tree construction visited in its scans, those of the token that took the count past the
+    /// limit included. For [`crate::parse_document_bytes`] they are those of its last parse: a
+    /// parse again after a `meta` counts from 0. 0 for [`crate::parse_fragment`], which builds no
+    /// tree yet.
+    pub fn steps(&self) -> usize {
+        self.steps
     }
 
     /// The parent of `node`: `None` for the root, for a template's contents and for a node
@@ -435,5 +472,16 @@ impl Tree {
     /// When `node` is not of this tree.
     pub fn children(&self, node: NodeId) -> &[NodeId] {
         &self.nodes[node.0].children
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::limits::{ATTRIBUTE_BYTES, NODE_BYTES};
+
+    /// The numbers `limits.rs` states for the records, on the 64-bit targets surf is built for.
+    #[test]
+    fn the_record_sizes_are_the_numbers_the_limits_state() {
+        assert_eq!([ATTRIBUTE_BYTES, NODE_BYTES], [80, 136]);
     }
 }

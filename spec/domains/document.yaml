@@ -68,7 +68,7 @@ types:
       - name: Attributes
         summary: One element had as many attributes as the attribute limit.
       - name: StoredBytes
-        summary: The tree held as many bytes of strings (names, attribute values, text, comments) as the stored-byte limit.
+        summary: The tree held as many stored bytes (its strings, and the record of each attribute) as the stored-byte limit.
       - name: Steps
         summary: Tree construction visited as many entries as the step limit.
     naming:

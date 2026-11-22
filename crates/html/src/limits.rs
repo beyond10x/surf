@@ -28,16 +28,34 @@ pub struct Limits {
     /// The most attributes one element holds: a start tag that would keep one more creates no
     /// element. Default 1,024.
     pub max_attributes: usize,
-    /// The most bytes of strings the tree holds ([`crate::Tree::stored_bytes`]: the UTF-8 bytes
-    /// of element names, attribute names, prefixes and values, text, comment data, doctype
-    /// fields, processing instruction targets and data; clones included). Default 64 MiB
-    /// (67,108,864).
+    /// The most stored bytes the tree holds ([`crate::Tree::stored_bytes`]): the UTF-8 bytes of
+    /// its strings (element names, attribute names, prefixes and values, text, comment data,
+    /// doctype fields, processing instruction targets and data; clones included), and
+    /// [`ATTRIBUTE_BYTES`] (80) for every attribute. Default 64 MiB (67,108,864).
+    ///
+    /// What it promises: the heap a tree holds is at most 2 × `stored_bytes()` + 3 ×
+    /// [`NODE_BYTES`] (136) × `node_count()`. The factor 2 is the room a growing list or text
+    /// keeps (it at most doubles; an attribute list that was empty grows exactly); the node term
+    /// is the node's record in the arena and its entry in its parent's child list, each in a
+    /// list that at most doubles, a child list's first room of 4 entries and a text's first
+    /// 8 bytes. At the defaults that is at most 2 × 64 MiB + 3 × 136 × 1,048,576 bytes, about
+    /// 536 MiB (inferred from the bound, not measured).
     pub max_stored_bytes: usize,
     /// The most entries tree construction visits in its scans of the stack of open elements, of
     /// the list of active formatting elements and of a node's children, checked after each
-    /// token. Default 134,217,728 (2^27).
+    /// token ([`crate::Tree::steps`] reads them). Default 134,217,728 (2^27).
     pub max_steps: usize,
 }
+
+/// The stored bytes an attribute counts beside its strings ([`Limits::max_stored_bytes`]): the
+/// size of its record, `size_of::<Attribute>()`, 80 bytes on a 64-bit target.
+pub const ATTRIBUTE_BYTES: usize = std::mem::size_of::<crate::tree::Attribute>();
+
+/// The bytes of one node's record in the arena and of its entry in its parent's child list,
+/// `size_of` of the record and of a [`crate::NodeId`]: 136 bytes on a 64-bit target. Not
+/// counted in the stored bytes (the node limit bounds the nodes); it is the node term of the
+/// heap bound of [`Limits::max_stored_bytes`].
+pub const NODE_BYTES: usize = crate::tree::NODE_RECORD_BYTES;
 
 impl Default for Limits {
     fn default() -> Self {
