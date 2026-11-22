@@ -351,7 +351,7 @@ above, and the list of standards itself was written from memory.
     component and a relative path are refused. `tests/start.rs` has the six tests of the checks,
     each against a listener of the test. Since wave
     4 `surf-agent open`, `go`, `look` and `close` run against a real `surfd` and a real session
-    process; the package carries the release version, `0.3.0`, as do `surf-cli`, `surfd` and
+    process; the package carries the release version, `0.4.0`, as do `surf-cli`, `surfd` and
     `surf-session`. `open` starts `surfd` from the directory of its own executable. Depends on
     `surf-answer` and `surf-secret`.
   - `crates/surfd` (`surfd`): a library and the binary `surfd`, the daemon the agent command line
@@ -901,15 +901,15 @@ the others were written to a scratch directory and not compiled:
   release `0.2.0` that ships `surf`, `surf-agent`, `surfd` and `surf-session` (the agent
   binaries for Linux only at first). Work then moves to the script engine, which is its own
   repository. The waves after 4 stay in the plan; they are planned and not scheduled.
-- Present state: wave 10 is delivered (10 of 22); release `0.2.0` follows wave 4 and release
-  `0.3.0` wave 9 (the releases are listed at https://github.com/beyond10x/surf/releases). The
+- Present state: wave 10 and round 1 are delivered (10 of 22 waves, and the stories of round
+  1); release `0.2.0` follows wave 4, release `0.3.0` wave 9 and release `0.4.0` round 1 (the
+  releases are listed at https://github.com/beyond10x/surf/releases). The
   session `host-operator` ordered the continuation after the checkpoint on 2026-11-21, for the
-  operator: "continue as its `AGENTS.md` says". The next is `story:one-test-binary-per-crate`,
-  alone, then round 1 of `docs/plan/agent-waves.md` ("Rounds after wave 10": the waves 11 to
-  22 in three rounds). The stories
+  operator: "continue as its `AGENTS.md` says". The next is round 2 of
+  `docs/plan/agent-waves.md` ("Rounds after wave 10": the waves 11 to 22 in three rounds). The stories
   accepted behind the planned waves are listed in
   that file, in "Accepted on 2026-11-21, behind the planned waves". Open for the next steps:
-  the HTML parser on real pages, and TLS.
+  links, forms and history (round 2), and TLS.
 - Branches: `wave/<n>-<name>` for a wave, `impl/<story-slug>` for a unit. Every checkout is a
   managed worktree (`worktree create`); nothing is edited in the primary checkout during a wave.
 - An implementor leaves its changes uncommitted; the coordinator commits, merges and owns every

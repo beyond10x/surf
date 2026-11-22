@@ -25,12 +25,25 @@ The `surf:` line went to standard error. Standard output holds only these lines,
 navigation <navigation-id> <state> <address>
 request <request-id> <state> <address>
 document <document-id> <address>
+title <document-id> "<title>"
+element <document-id> <position> <kind> <flags> "<label>" "<target or value>"
+note limit <document-id> <limit>
 fetch-failed <request-id> <reason> <address>
 ```
 
 - Every navigation of the `Navigations` view comes first, then every request of the `Requests`
-  view, every document of the `Documents` view, and one line per published `surf.net.FetchFailed`.
-  Each view's lines are in the order the view returns them.
+  view, every document of the `Documents` view, then for each `Parsed` document its `title`
+  line, one `element` line per link, button and form field of the `Elements` view and, when a
+  limit of the parser stopped the parse, its `note limit` line, and last one line per published
+  `surf.net.FetchFailed`. Each view's lines are in the order the view returns them.
+- `<kind>` is `link`, `button`, `text`, `password`, `checkbox`, `radio`, `file`, `select` or
+  `textarea`, and `<limit>` is `InputBytes`, `Depth`, `Nodes`, `Attributes`, `StoredBytes` or
+  `Steps`. `<position>` counts the elements of the document from 1.
+  `<flags>` is the flags that are set, in the order `hidden`, `disabled`, `checked`,
+  `required`, joined by `,`, or `-` when none is. The last field is a link's target or a
+  control's value, or `-` when the element has neither.
+- A title, a label, a target and a value are quoted fields: written as an address is (below),
+  with `"` written as `\x22`, between two `"`.
 - Fields are separated by one space. An identity is a UUID in lower-case 8-4-4-4-12 form. A
   navigation and its request have the same identity.
 - `<state>` is `Started`, `Committed`, `Failed` or `Cancelled` for a navigation and `Pending`,
@@ -55,15 +68,19 @@ answer (`docs/agent-answer.md`, section "Text"):
 
 ```text
 note text: no-css
+note text: deep <n>
 text <form> <n> of <n> lines from 1, <b> of <b> bytes
 > <line>
 >
 ```
 
 - `note text: no-css`: the text is computed from the tree without CSS, so text a style sheet
-  hides is shown. Then the header and all `<n>` lines, each `>` alone for an empty line or `> `
-  and the line; `<b>` counts them with their prefix and line feed. There is no bound and no
-  `more` line: `surf` runs once, and the tree is bounded by the parser's limits.
+  hides is shown. `note text: deep <n>`, with `--as markdown` only: lists and quotes nested
+  deeper than the prefix of a line allows (128 bytes) are written at the indentation of the
+  level above them, without their markers, `<n>` levels of them at most. Then the header and
+  all `<n>` lines, each `>` alone for an empty line or `> ` and the line; `<b>` counts them with
+  their prefix and line feed. There is no bound and no `more` line: `surf` runs once, and the
+  tree is bounded by the parser's limits.
 - Every line of page text starts with `>`, and no row does, so a line a page wrote cannot pass
   for a row. A body line holds printable ASCII and UTF-8 characters; control, invisible,
   bidirectional and private-use characters are written as `\x` and two hexadecimal digits per

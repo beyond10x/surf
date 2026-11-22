@@ -25,7 +25,7 @@ On 2026-11-22, with ess 0.97.3, after round 1, which follows wave 10 of the curr
 | third-party crates in what ships | 0 |
 | unsafe code | forbidden in every hand-written crate; two test files hold a counting allocator |
 | standard sections marked complete | 0 |
-| roadmap | 10 of 22 waves delivered; release `0.3.0` follows wave 9 ([releases](https://github.com/beyond10x/surf/releases)) |
+| roadmap | 10 of 22 waves delivered; release `0.4.0` follows round 1 ([releases](https://github.com/beyond10x/surf/releases)) |
 
 ## What is not checked yet
 

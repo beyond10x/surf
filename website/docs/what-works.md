@@ -16,6 +16,18 @@ description: What surf does today, and what it does not do yet.
 - **877 tests**, built with warnings treated as errors, and 38 tests of the live view's page in a
   browser.
 
+New with round 1 after the tenth wave of the current plan, shipped in release `0.4.0`:
+
+- **A page as text, for an agent.** A parsed page can be written as the outline of its tree
+  (one line per element and text, with `hid` for hidden parts and the handles `@l1`, `@b1`,
+  `@f1` of its links, buttons and fields) or as Markdown (headings, paragraphs, links, lists,
+  quotes, code, images, form controls with their labels, landmarks and tables). Every piece of
+  page text is escaped, so a page can write neither a line of the answer nor a link or a handle
+  of surf's; control, invisible and bidirectional characters are shown as bytes. A link stays
+  on one line with its handle, and the Markdown grows with the page, not with its nesting. The
+  answer format has a `text` block for it, every line behind `>`, at most 200 lines and 32 KiB
+  at a time.
+
 Fixed after a security review, shipped in release `0.3.0`:
 
 - **A redirect cannot lead into your network.** When a load starts at a public address, a
@@ -36,14 +48,15 @@ Fixed after a security review, shipped in release `0.3.0`:
   live view's address is kept (`$XDG_RUNTIME_DIR/surf/view-url`), not the address with its
   token; `surfd --print-view-url` prints the address for a person who asks for it.
 
-New with the tenth wave of the current plan, not released yet. Nothing a `surf-agent` command
-prints has changed:
+New with the tenth wave of the current plan, shipped in release `0.4.0`. Nothing a `surf-agent`
+command prints has changed:
 
 - **The HTML parser has limits on untrusted input.** Input bytes (16 MiB), depth (512), nodes
   (1,048,576), attributes of one element (1,024), stored bytes (64 MiB) and steps (2^27). A
   parse that meets one stops, keeps what it built and names the limit.
 - **Each link and form field has a label**, its accessible name, computed over the tree without
-  CSS, cut at 1,024 bytes and within a bound of work per page. Only the tests run it yet.
+  CSS, cut at 1,024 bytes and within a bound of work per page. Since round 1, `surf` prints it
+  on each `element` line.
 
 New with the ninth wave of the current plan, shipped in release `0.3.0`. Nothing a `surf-agent`
 command prints has changed:
@@ -206,6 +219,8 @@ New with the first wave:
 - No `https:`. Only `http:` addresses load.
 - Release `0.2.0` delivers a redirect status as the response; redirects are followed since
   release `0.3.0`.
-- No page content in an agent's answer: status, media type and address only.
+- No title in an agent's answer, and page content only as text, with `--as tree` or `--as
+  markdown`.
+- A link cannot be followed and a form cannot be filled or submitted yet.
 - The agent binaries run on Linux only.
 - No standard section is marked complete.

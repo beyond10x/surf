@@ -7,6 +7,109 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-22
+
+### Added
+
+- `surf <url>` parses each `text/html` response with the HTML parser and prints, after the
+  `document` line, the page's title, one `element` line for each link, button and form field
+  (its position, kind, the flags among `hidden`, `disabled`, `checked` and `required`, its label,
+  and its target or value), and `note limit <document-id> <limit>` when a limit stopped the
+  parse. Each title, label, target and value is a quoted field, escaped as an address is, with `"`
+  written as `\x22`. A real page's document now ends `Parsed`, with its title and its elements.
+  The lines: [`README.md`](README.md), "A first look".
+- `surf <url> --as tree` and `surf <url> --as markdown` print, after the rows, the page as an
+  outline of its tree or as Markdown: `note text: no-css`, a `text` header, and every line of
+  the page behind `>`, with no bound on the number of lines, since the parser's limits bound the
+  tree. Without an HTML document the last line is `note text: no-document`. The exit status is
+  the one without `--as`; `--as` with another form, or given twice, is a usage error (exit
+  status 2). Output: [`docs/surf-command.md`](docs/surf-command.md).
+- `surf-agent open <url>`, `go <url>` and `look` take `--as tree|markdown` and
+  `--from-line <n>`: the answer ends with a `text` block of the current page, at most 200 lines
+  and 32,768 bytes, then a `more` line that names the `look --as <form> --from-line <m>` call for
+  the rest. The page is not fetched again, and the call records what it records without `--as`.
+  `--as` on `open` without an address, and `--from-line` without `--as`, are usage errors (exit
+  status 2). An answer to a call without `--as` is unchanged. The lines of the block are the one
+  place an answer holds characters outside ASCII: UTF-8 is written as it is, and control,
+  invisible, bidirectional and private-use characters as `\x` and two hexadecimal digits per
+  byte. Format: [`docs/agent-answer.md`](docs/agent-answer.md), section "Text".
+- The two forms of page text, described in
+  [`docs/design/page-as-text.md`](docs/design/page-as-text.md): the outline has one line per
+  element and per text, with some of the attributes, `hid <n>` for a hidden part, and the
+  handles `@l1`, `@b1`, `@f1` of the links, buttons and fields. The Markdown has headings,
+  paragraphs, links with their handles, lists, quotes, code, images, form controls with their
+  labels, landmarks, and tables as GitHub tables; hidden parts are left out. Both are computed
+  from the tree without CSS. Page text is escaped, so a page can write neither a line of the
+  answer nor a link or a handle of surf's. A Markdown line holds at most 1,024 bytes, a table row
+  excepted, and its prefix at most 128 bytes: lists and quotes nested deeper are written at that
+  indentation, and `note text: deep <n>` says so.
+- The HTML parser builds the tree in every insertion mode of the HTML Standard snapshot it is
+  pinned to: tables, `select`, `template` and foreign content (SVG and MathML), and it runs the
+  fragment parsing algorithm. All 9,095 cases of the test data that run pass, of 9,107, among
+  them 1,967 tree construction cases. Two parts differ from the standard, and no case of the
+  test data reaches them: a `template` with a `for` attribute keeps its content, and a `select`
+  copies its selected `option` into its `selectedcontent` once, at the end of the parse.
+  [`docs/design/html-parser.md`](docs/design/html-parser.md).
+- The HTML parser (`surf-html`) stops at six limits on untrusted input: 16 MiB of input, a depth
+  of 512 open elements, 1,048,576 nodes, 1,024 attributes on one element, 64 MiB of stored bytes
+  (the strings the tree holds, and 80 bytes for each attribute) and 134,217,728 (2^27) steps,
+  the entries tree construction visits in its scans. A parse that reaches one stops, keeps the
+  tree built so far and names the limit; a longer input is parsed as its first 16 MiB. The
+  specification's `surf.document.ParseLimit` gains `Steps` for the sixth. What each limit counts
+  and where it stops: [`docs/design/html-parser.md`](docs/design/html-parser.md), section 7.
+- `surf-page` gives each link, button and form field a label, its accessible name by the
+  Accessible Name and Description Computation 1.2 and the HTML Accessibility API Mappings,
+  computed over the tree without CSS: from `aria-labelledby`, `aria-label`, the field's `label`
+  elements, the content, `value`, `alt`, `title` or `placeholder`, in the order the element's
+  kind takes them. A label is cut at 1,024 bytes and then marked as cut. The work for all labels
+  of one page is bounded (16,777,216 units); past it a name comes from the element's own
+  attributes only. The rules, and where surf deviates from the standards:
+  [`docs/design/html-parser.md`](docs/design/html-parser.md), section 5.
+- The specification holds following a link and filling and submitting a form: the commands
+  `surf.agent.Follow`, `Fill`, `Pick` and `Press`, and in `surf.document` forms, options and
+  submissions, with the commands that set a field's value, check a checkbox or a radio button
+  (which unchecks the others of its group), select an option and submit a form, whose request
+  navigates the tab. The scenarios hold them. No command uses them yet: `surf-agent` has `open`,
+  `go`, `look` and `close` only, so a handle in the page text cannot be followed, filled or
+  pressed, and a parsed page's forms and options are not stored.
+- A new crate, `agent-tasks` (`surf-agent-tasks`), measures four tasks on fixture sites served
+  on 127.0.0.1, each a question that a scripted agent answers with `surf-agent` alone.
+  `task check` prints its counts after the tests: 2 of the 4 pass (`article` and `table`), and
+  `link` and `search` wait for the commands that follow a link, fill a field and submit a form
+  ([`crates/agent-tasks/status.txt`](crates/agent-tasks/status.txt)).
+  `task agent-tasks-archive DIR=<dir>` measures the binaries of an unpacked release archive, and
+  the notes of a release carry its line ([`docs/releasing.md`](docs/releasing.md)).
+  `task agent-tasks-model MODEL=<name>` puts the tasks to a model, outside the gate. The crate is
+  not shipped.
+- The design of TLS 1.3 for `https:` addresses is written down in
+  [`docs/design/tls.md`](docs/design/tls.md). No command loads an `https:` address yet.
+
+### Changed
+
+- A session's log, and so the live view's stream, holds what parsing a page publishes:
+  `surf.document.DocumentParsed` with the title, cut at 1,024 bytes (the field `title_bytes`
+  then gives its whole length), and one `surf.document.ElementAdded` per link, button and field,
+  at most 256 of them per call. A line `event surf.agent.EventsLeftOut count="<n>"` after an
+  action's events counts the entries left out. No label, target or value of an element is in
+  the log. [`docs/view-stream.md`](docs/view-stream.md).
+- `surf-agent`, `surfd` and `surf-session` pass the UTF-8 of page text between them, which the
+  binaries of `0.3.0` refuse: install the four binaries of one release together, as before.
+- The specification is checked, and the code generated from it, with ESS 0.97.3 instead of
+  0.96.0. Building surf from source needs `ess` 0.97.3 ([`README.md`](README.md), "How it is
+  built").
+- The integration tests of each crate build as one test binary over `tests/main.rs`, with each
+  former test file a module of it. A file's tests are selected by their module:
+  `cargo test -p surf-session --test main e2e::` instead of `--test e2e`. `task check` holds
+  this layout (`taskfiles/test-layout.sh`).
+- The links to swell, the script engine surf will embed, in `README.md` and on the website go to
+  swell's documentation site, <https://beyond10x.github.io/swell/>, instead of its repository.
+
+### Fixed
+
+- `task test` no longer fails with exit status 141 after every test passed. Printing its ten
+  slowest tests ended the sort early once the list of tests outgrew a pipe's buffer; the list
+  now comes from `taskfiles/slowest-tests.sh`.
+
 ## [0.3.0] - 2026-11-22
 
 ### Added

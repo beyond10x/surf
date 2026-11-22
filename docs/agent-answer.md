@@ -31,20 +31,20 @@ note parser: tables,foreign-content
 
 ## What an answer holds today
 
-The example above shows the whole format. The binaries of release `0.3.0` (`surf-agent`,
-`surfd`, `surf-session`) parse no page yet, so they print fewer lines:
+The example above shows the whole format. The binaries of release `0.4.0` (`surf-agent`,
+`surfd`, `surf-session`) print fewer lines:
 
 - the head line, `surf 1 session <id> <state>`;
 - `token <64 digits>`, in the answer of `open` only;
 - `did <command>`, `did <command> "<argument>"` or `did refused <reason>`;
 - `page <status> "<media type>" "<address>"` for a loaded page, `page failed <reason>
   "<address>"` for a failed load, or `page none` before the first load;
-- `path <shown> of <total>` and its indented lines.
+- `path <shown> of <total>` and its indented lines;
+- with `--as`, the `note text:` lines and the `text` block (section "Text").
 
-A loaded page shows no title, even when the document has one, and no `note parser:` line is
-printed. Both arrive with the HTML parser (`story:html-document-port`). The two names the
-section "Note" refers to, `surf_html::NOT_YET_PARSED` and `Browser::parser_not_yet_parsed`, do
-not exist yet.
+A loaded page shows no title, even when the document has one. No `note parser:` line is
+printed: `surf_html::NOT_YET_PARSED` is empty, since the parser builds the tree in every
+insertion mode.
 
 An answer of today's binaries, to `go`:
 
