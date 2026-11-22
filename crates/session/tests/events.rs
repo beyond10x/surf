@@ -1560,3 +1560,72 @@ fn a_requested_press_handle_is_cut_at_the_entry_bound() {
         })
     });
 }
+
+// --- The order of a follow and a press (D19) ----------------------------------------------------
+
+/// A page with a link and a form that posts; the server answers it at every path.
+const LINK_AND_FORM: &str = "<!doctype html><title>Both</title><a href=\"/next\">Next</a>\
+<form action=\"/sent\" method=post><input name=a value=1><button>Send</button></form>";
+
+/// `command handle` on a session at [`LINK_AND_FORM`], answered status 0: in the kept log, its
+/// action entry follows the answer entry of `go` directly, every event entry of its run, the
+/// navigation's included, has a number above the action entry's and below the answer entry's,
+/// and the answer entry is the last (D19, `docs/view-stream.md`, "The entries").
+fn events_between_action_and_answer(command: &str, handle: &str, first: &[&str]) {
+    let dir = TestDir::new();
+    let pages = PageServer::with_body(LINK_AND_FORM.as_bytes().to_vec());
+    let daemon = surfd_in_process(&dir, |_| {});
+    let session = wire_open(&dir, None);
+    go(&dir, &session, &pages.url("/"));
+    let answer = wire_as(&dir, &session, command, &[("handle", handle)]);
+    assert_eq!(answer.status, 0, "{command} {handle}: {answer:?}");
+    let entries = kept(&daemon, &session);
+    let at = entries
+        .iter()
+        .position(|entry| {
+            entry.kind == EntryKind::Action
+                && entry.text.starts_with(&format!("action 3 {command}"))
+        })
+        .unwrap_or_else(|| panic!("no action entry of {command}: {entries:#?}"));
+    assert_eq!(entries[at - 1].kind, EntryKind::Answer, "{entries:#?}");
+    let end = entries.len() - 1;
+    assert_eq!(entries[end].kind, EntryKind::Answer, "{entries:#?}");
+    let (action, reply) = (entries[at].number, entries[end].number);
+    let between = &entries[at + 1..end];
+    for entry in between {
+        assert_eq!(entry.kind, EntryKind::Event, "{entries:#?}");
+        assert!(
+            action < entry.number && entry.number < reply,
+            "{} not between {action} and {reply}",
+            entry.number
+        );
+    }
+    let names = names(between);
+    for name in first.iter().chain(&[
+        "surf.agent.ActionRecorded",
+        "surf.net.RequestStarted",
+        "surf.navigation.NavigationCommitted",
+    ]) {
+        assert!(
+            names.iter().any(|got| got == name),
+            "no {name} in {names:#?}"
+        );
+    }
+}
+
+#[test]
+fn the_events_of_a_follow_lie_between_its_action_and_its_answer() {
+    events_between_action_and_answer("follow", "l1", &["surf.agent.NavigationRequested"]);
+}
+
+#[test]
+fn the_events_of_a_press_lie_between_its_action_and_its_answer() {
+    events_between_action_and_answer(
+        "press",
+        "b1",
+        &[
+            "surf.agent.PressRequested",
+            "surf.document.SubmissionStarted",
+        ],
+    );
+}
