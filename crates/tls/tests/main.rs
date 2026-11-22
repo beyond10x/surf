@@ -10,6 +10,8 @@
 mod adversary_anchors;
 #[path = "tls/adversary_layer.rs"]
 mod adversary_layer;
+#[path = "tls/adversary_path.rs"]
+mod adversary_path;
 #[path = "tls/adversary_x509.rs"]
 mod adversary_x509;
 #[path = "tls/alloc.rs"]
@@ -20,6 +22,10 @@ mod anchors;
 mod der;
 #[path = "tls/limbo_parse.rs"]
 mod limbo_parse;
+#[path = "tls/names.rs"]
+mod names;
+#[path = "tls/path.rs"]
+mod path;
 #[path = "tls/pem.rs"]
 mod pem;
 #[path = "tls/record.rs"]

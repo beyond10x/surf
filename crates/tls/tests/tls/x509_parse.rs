@@ -838,7 +838,7 @@ fn named(check: &Check) -> &'static str {
         Check::KeyUsage { .. } => "KeyUsage",
         Check::UnknownCriticalExtension { .. } => "UnknownCriticalExtension",
         Check::NameConstraint { .. } => "NameConstraint",
-        Check::NoServerAuth => "NoServerAuth",
+        Check::NoServerAuth { .. } => "NoServerAuth",
         Check::WeakAlgorithm { .. } => "WeakAlgorithm",
         Check::WeakKey { .. } => "WeakKey",
     }
@@ -943,7 +943,7 @@ fn each_check_prints_the_detail_of_item_7() {
             "NameConstraint: evil.example outside the constraints of certificate 1",
         ),
         (
-            Check::NoServerAuth,
+            Check::NoServerAuth { certificate: 0 },
             "NoServerAuth: the leaf is not for TLS servers",
         ),
         (

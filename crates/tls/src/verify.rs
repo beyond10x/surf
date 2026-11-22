@@ -105,8 +105,12 @@ pub enum Check {
         /// The name.
         name: String,
     },
-    /// extKeyUsage without serverAuth on the leaf.
-    NoServerAuth,
+    /// extKeyUsage without serverAuth (or, on an intermediate, anyExtendedKeyUsage) on a
+    /// certificate of the path below the anchor.
+    NoServerAuth {
+        /// The certificate, the leaf 0.
+        certificate: usize,
+    },
     /// An MD5 or SHA-1 signature, decided before any verification.
     WeakAlgorithm {
         /// The certificate.
@@ -147,7 +151,7 @@ impl Check {
             certificate: 0,
             name: String::new(),
         },
-        Check::NoServerAuth,
+        Check::NoServerAuth { certificate: 0 },
         Check::WeakAlgorithm {
             certificate: 0,
             algorithm: "",
@@ -170,7 +174,7 @@ impl Check {
             Check::KeyUsage { .. } => "KeyUsage",
             Check::UnknownCriticalExtension { .. } => "UnknownCriticalExtension",
             Check::NameConstraint { .. } => "NameConstraint",
-            Check::NoServerAuth => "NoServerAuth",
+            Check::NoServerAuth { .. } => "NoServerAuth",
             Check::WeakAlgorithm { .. } => "WeakAlgorithm",
             Check::WeakKey { .. } => "WeakKey",
         }
@@ -222,7 +226,15 @@ impl fmt::Display for Check {
                 f,
                 "{name}: {n} outside the constraints of certificate {certificate}"
             ),
-            Check::NoServerAuth => write!(f, "{name}: the leaf is not for TLS servers"),
+            Check::NoServerAuth { certificate: 0 } => {
+                write!(f, "{name}: the leaf is not for TLS servers")
+            }
+            Check::NoServerAuth { certificate } => {
+                write!(
+                    f,
+                    "{name}: certificate {certificate} is not for TLS servers"
+                )
+            }
             Check::WeakAlgorithm {
                 certificate,
                 algorithm,
