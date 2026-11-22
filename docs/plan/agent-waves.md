@@ -88,6 +88,39 @@ Rules of a round, beside the rules of a wave:
   recording, made with the binaries of the round's last commit, and with the caption under the
   terminal changed to what an answer then holds.
 
+## What an agent needs from surf
+
+The operator, 2026-11-22: "I wonder what is needed to actually make [surf] useful for agents,
+because right now I think it isn't." At release `0.3.0` that holds: an answer names a page's
+status, media type and address and nothing of its content, and only `http:` loads.
+
+The coordinating agent's decision (D85): the work after wave 10 is ordered by this list. Each
+item says what an agent can do after it and where it is planned.
+
+1. Read a page. The title and the element rows (`html-document-port`), the page as a tree and
+   as Markdown (drafts on the branch `plan/page-as-tree-and-markdown`), a long answer in parts
+   (`agent-answer-paging`). Round 1.
+2. Reach the web. TLS 1.3 and `https:`: the README's own line is "most of the web is not
+   reachable without it". It was on the list after the plan with no date. An epic is drafted
+   beside round 1 (branch `plan/useful-for-agents`), with the cryptographic primitives from
+   audited code as principle 4 of the README plans it. It is built beside round 2: it writes
+   `crates/fetch` and new crates, round 2 writes the session and the client.
+3. Move through a site. Links, forms, history: round 2.
+4. Stay signed in. Cookies: not planned (`spec/domains/net.yaml` lists them as unmapped). A
+   story after the forms.
+5. Pages that build their content by script: `epic:scripts-in-a-page`, after round 1, on a tag
+   of the script engine that holds the fixes of the security review of 2026-11-22.
+6. Be called without reading the manual: a skill or tool definition for agents that ships with
+   a release. Not planned; a draft on the same planning branch.
+
+Round 3 (the runner) serves surf's own tests and no agent's task. It moves behind items 2 and 4.
+
+The measure is a set of tasks, drafted as a story on the planning branch: an agent that has
+`surf-agent` and nothing else answers a question whose answer is on a named page (read an
+article, read a table, go from an index to a page by a link, send a search form, a page behind
+`https:`). Each release record says how many of them pass. Release `0.3.0` passes none: no
+answer holds page content.
+
 ## What works after which wave
 
 - After wave 3: the view's page on example data (`story:view-page-prototype`), served by an
