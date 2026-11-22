@@ -14,8 +14,6 @@
 use std::fmt;
 use std::marker::PhantomData;
 
-use ring::{aead, agreement, digest, hkdf, hmac, rand, signature};
-
 /// What an operation of the seam refused, or why it failed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CryptoError {
@@ -50,7 +48,7 @@ impl std::error::Error for CryptoError {}
 // Random sources.
 
 enum Source<'a> {
-    System(rand::SystemRandom, PhantomData<&'a [u8]>),
+    System(ring::rand::SystemRandom, PhantomData<&'a [u8]>),
     #[cfg(feature = "test-tooling")]
     #[allow(deprecated)]
     FixedByte(ring::test::rand::FixedByteRandom),
@@ -71,7 +69,7 @@ impl Random<'static> {
     /// The operating system's source (getrandom), the one a release uses.
     pub fn system() -> Self {
         Random {
-            source: Source::System(rand::SystemRandom::new(), PhantomData),
+            source: Source::System(ring::rand::SystemRandom::new(), PhantomData),
         }
     }
 }
@@ -85,7 +83,7 @@ impl<'a> Random<'a> {
     }
 
     #[allow(deprecated)]
-    fn ring(&self) -> &dyn rand::SecureRandom {
+    fn ring(&self) -> &dyn ring::rand::SecureRandom {
         match &self.source {
             Source::System(random, _) => random,
             #[cfg(feature = "test-tooling")]
@@ -167,24 +165,24 @@ impl HashAlgorithm {
         }
     }
 
-    fn digest(self) -> &'static digest::Algorithm {
+    fn digest(self) -> &'static ring::digest::Algorithm {
         match self {
-            HashAlgorithm::Sha256 => &digest::SHA256,
-            HashAlgorithm::Sha384 => &digest::SHA384,
+            HashAlgorithm::Sha256 => &ring::digest::SHA256,
+            HashAlgorithm::Sha384 => &ring::digest::SHA384,
         }
     }
 
-    fn hmac(self) -> hmac::Algorithm {
+    fn hmac(self) -> ring::hmac::Algorithm {
         match self {
-            HashAlgorithm::Sha256 => hmac::HMAC_SHA256,
-            HashAlgorithm::Sha384 => hmac::HMAC_SHA384,
+            HashAlgorithm::Sha256 => ring::hmac::HMAC_SHA256,
+            HashAlgorithm::Sha384 => ring::hmac::HMAC_SHA384,
         }
     }
 
-    fn hkdf(self) -> hkdf::Algorithm {
+    fn hkdf(self) -> ring::hkdf::Algorithm {
         match self {
-            HashAlgorithm::Sha256 => hkdf::HKDF_SHA256,
-            HashAlgorithm::Sha384 => hkdf::HKDF_SHA384,
+            HashAlgorithm::Sha256 => ring::hkdf::HKDF_SHA256,
+            HashAlgorithm::Sha384 => ring::hkdf::HKDF_SHA384,
         }
     }
 }
@@ -222,13 +220,13 @@ impl fmt::Debug for Digest {
 
 /// The hash of `data`.
 pub fn hash(algorithm: HashAlgorithm, data: &[u8]) -> Digest {
-    Digest::new(digest::digest(algorithm.digest(), data).as_ref())
+    Digest::new(ring::digest::digest(algorithm.digest(), data).as_ref())
 }
 
 /// A hash fed in parts, such as the transcript of a handshake.
 #[derive(Clone)]
 pub struct RunningHash {
-    context: digest::Context,
+    context: ring::digest::Context,
     algorithm: HashAlgorithm,
 }
 
@@ -236,7 +234,7 @@ impl RunningHash {
     /// A hash of nothing yet.
     pub fn new(algorithm: HashAlgorithm) -> Self {
         RunningHash {
-            context: digest::Context::new(algorithm.digest()),
+            context: ring::digest::Context::new(algorithm.digest()),
             algorithm,
         }
     }
@@ -270,7 +268,7 @@ impl fmt::Debug for RunningHash {
 
 /// HMAC of `data` under `key` (RFC 2104), as the Finished message needs it.
 pub fn hmac_sign(algorithm: HashAlgorithm, key: &[u8], data: &[u8]) -> Digest {
-    Digest::new(hmac::sign(&hmac::Key::new(algorithm.hmac(), key), data).as_ref())
+    Digest::new(ring::hmac::sign(&ring::hmac::Key::new(algorithm.hmac(), key), data).as_ref())
 }
 
 /// Checks in constant time that `tag` is the HMAC of `data` under `key`.
@@ -280,7 +278,7 @@ pub fn hmac_verify(
     data: &[u8],
     tag: &[u8],
 ) -> Result<(), CryptoError> {
-    hmac::verify(&hmac::Key::new(algorithm.hmac(), key), data, tag)
+    ring::hmac::verify(&ring::hmac::Key::new(algorithm.hmac(), key), data, tag)
         .map_err(|ring::error::Unspecified| CryptoError::BadSignature)
 }
 
@@ -288,13 +286,13 @@ pub fn hmac_verify(
 /// of two inputs under one key mean equal inputs.
 const COMPARISON_KEY: &[u8] = b"surf-tls constant-time comparison";
 
-/// Whether `a` and `b` hold the same bytes, compared in constant time: `hmac::verify` of ring,
+/// Whether `a` and `b` hold the same bytes, compared in constant time: `ring::hmac::verify`,
 /// which compares in constant time, checks the HMAC of `b` against the HMAC of `a`. The one
 /// way the seam compares a secret or a tag; [`Secret`] and [`Digest`] have no `==`.
 pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    let key = hmac::Key::new(hmac::HMAC_SHA256, COMPARISON_KEY);
-    let tag = hmac::sign(&key, a);
-    hmac::verify(&key, b, tag.as_ref()).is_ok()
+    let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, COMPARISON_KEY);
+    let tag = ring::hmac::sign(&key, a);
+    ring::hmac::verify(&key, b, tag.as_ref()).is_ok()
 }
 
 /// HKDF-Extract (RFC 5869 section 2.2): the pseudorandom key of `ikm` under `salt`, which is
@@ -305,7 +303,7 @@ pub fn hkdf_extract(algorithm: HashAlgorithm, salt: &[u8], ikm: &[u8]) -> Digest
 
 struct OutputLen(usize);
 
-impl hkdf::KeyType for OutputLen {
+impl ring::hkdf::KeyType for OutputLen {
     fn len(&self) -> usize {
         self.0
     }
@@ -319,7 +317,7 @@ pub fn hkdf_expand(
     info: &[&[u8]],
     out: &mut [u8],
 ) -> Result<(), CryptoError> {
-    let prk = hkdf::Prk::new_less_safe(algorithm.hkdf(), prk);
+    let prk = ring::hkdf::Prk::new_less_safe(algorithm.hkdf(), prk);
     prk.expand(info, OutputLen(out.len()))
         .and_then(|okm| okm.fill(out))
         .map_err(|ring::error::Unspecified| CryptoError::OutputTooLong)
@@ -353,28 +351,28 @@ impl AeadAlgorithm {
         }
     }
 
-    fn ring(self) -> &'static aead::Algorithm {
+    fn ring(self) -> &'static ring::aead::Algorithm {
         match self {
-            AeadAlgorithm::Aes128Gcm => &aead::AES_128_GCM,
-            AeadAlgorithm::Aes256Gcm => &aead::AES_256_GCM,
-            AeadAlgorithm::ChaCha20Poly1305 => &aead::CHACHA20_POLY1305,
+            AeadAlgorithm::Aes128Gcm => &ring::aead::AES_128_GCM,
+            AeadAlgorithm::Aes256Gcm => &ring::aead::AES_256_GCM,
+            AeadAlgorithm::ChaCha20Poly1305 => &ring::aead::CHACHA20_POLY1305,
         }
     }
 }
 
 /// An AEAD key. The caller gives each record its own nonce (RFC 8446 section 5.3).
 pub struct AeadKey {
-    key: aead::LessSafeKey,
+    key: ring::aead::LessSafeKey,
     algorithm: AeadAlgorithm,
 }
 
 impl AeadKey {
     /// The key `key` of `algorithm`.
     pub fn new(algorithm: AeadAlgorithm, key: &[u8]) -> Result<Self, CryptoError> {
-        let unbound = aead::UnboundKey::new(algorithm.ring(), key)
+        let unbound = ring::aead::UnboundKey::new(algorithm.ring(), key)
             .map_err(|ring::error::Unspecified| CryptoError::KeyLength)?;
         Ok(AeadKey {
-            key: aead::LessSafeKey::new(unbound),
+            key: ring::aead::LessSafeKey::new(unbound),
             algorithm,
         })
     }
@@ -386,10 +384,10 @@ impl AeadKey {
 
     /// Seals `in_out` in place under `nonce` and `aad`, and appends the tag.
     pub fn seal(&self, nonce: &[u8], aad: &[u8], in_out: &mut Vec<u8>) -> Result<(), CryptoError> {
-        let nonce = aead::Nonce::try_assume_unique_for_key(nonce)
+        let nonce = ring::aead::Nonce::try_assume_unique_for_key(nonce)
             .map_err(|ring::error::Unspecified| CryptoError::NonceLength)?;
         self.key
-            .seal_in_place_append_tag(nonce, aead::Aad::from(aad), in_out)
+            .seal_in_place_append_tag(nonce, ring::aead::Aad::from(aad), in_out)
             .map_err(|ring::error::Unspecified| CryptoError::Unspecified)
     }
 
@@ -401,10 +399,10 @@ impl AeadKey {
         aad: &[u8],
         in_out: &'b mut [u8],
     ) -> Result<&'b mut [u8], CryptoError> {
-        let nonce = aead::Nonce::try_assume_unique_for_key(nonce)
+        let nonce = ring::aead::Nonce::try_assume_unique_for_key(nonce)
             .map_err(|ring::error::Unspecified| CryptoError::NonceLength)?;
         self.key
-            .open_in_place(nonce, aead::Aad::from(aad), in_out)
+            .open_in_place(nonce, ring::aead::Aad::from(aad), in_out)
             .map_err(|ring::error::Unspecified| CryptoError::OpenFailed)
     }
 }
@@ -428,10 +426,10 @@ pub enum Group {
 }
 
 impl Group {
-    fn ring(self) -> &'static agreement::Algorithm {
+    fn ring(self) -> &'static ring::agreement::Algorithm {
         match self {
-            Group::X25519 => &agreement::X25519,
-            Group::Secp256r1 => &agreement::ECDH_P256,
+            Group::X25519 => &ring::agreement::X25519,
+            Group::Secp256r1 => &ring::agreement::ECDH_P256,
         }
     }
 }
@@ -455,15 +453,15 @@ impl fmt::Debug for Secret {
 
 /// An ephemeral private key and its public key, used for one agreement.
 pub struct EphemeralKey {
-    private: agreement::EphemeralPrivateKey,
-    public: agreement::PublicKey,
+    private: ring::agreement::EphemeralPrivateKey,
+    public: ring::agreement::PublicKey,
     group: Group,
 }
 
 impl EphemeralKey {
     /// A key of `group` drawn from `random`: 32 bytes for either group.
     pub fn generate(group: Group, random: &Random<'_>) -> Result<Self, CryptoError> {
-        let private = agreement::EphemeralPrivateKey::generate(group.ring(), random.ring())
+        let private = ring::agreement::EphemeralPrivateKey::generate(group.ring(), random.ring())
             .map_err(|ring::error::Unspecified| CryptoError::KeyRejected)?;
         let public = private
             .compute_public_key()
@@ -488,8 +486,8 @@ impl EphemeralKey {
     /// The shared secret with the peer's public key `peer`; refused when the key is not a valid
     /// key of the group or the X25519 result is all zeros.
     pub fn agree(self, peer: &[u8]) -> Result<Secret, CryptoError> {
-        let peer = agreement::UnparsedPublicKey::new(self.group.ring(), peer);
-        agreement::agree_ephemeral(self.private, &peer, |shared| Secret(shared.to_vec()))
+        let peer = ring::agreement::UnparsedPublicKey::new(self.group.ring(), peer);
+        ring::agreement::agree_ephemeral(self.private, &peer, |shared| Secret(shared.to_vec()))
             .map_err(|ring::error::Unspecified| CryptoError::BadPublicKey)
     }
 }
@@ -678,17 +676,17 @@ impl Scheme {
         }
     }
 
-    fn verification(self) -> &'static dyn signature::VerificationAlgorithm {
+    fn verification(self) -> &'static dyn ring::signature::VerificationAlgorithm {
         match self {
-            Scheme::RsaPkcs1Sha256 => &signature::RSA_PKCS1_2048_8192_SHA256,
-            Scheme::RsaPkcs1Sha384 => &signature::RSA_PKCS1_2048_8192_SHA384,
-            Scheme::RsaPkcs1Sha512 => &signature::RSA_PKCS1_2048_8192_SHA512,
-            Scheme::RsaPssRsaeSha256 => &signature::RSA_PSS_2048_8192_SHA256,
-            Scheme::RsaPssRsaeSha384 => &signature::RSA_PSS_2048_8192_SHA384,
-            Scheme::RsaPssRsaeSha512 => &signature::RSA_PSS_2048_8192_SHA512,
-            Scheme::EcdsaSecp256r1Sha256 => &signature::ECDSA_P256_SHA256_ASN1,
-            Scheme::EcdsaSecp384r1Sha384 => &signature::ECDSA_P384_SHA384_ASN1,
-            Scheme::Ed25519 => &signature::ED25519,
+            Scheme::RsaPkcs1Sha256 => &ring::signature::RSA_PKCS1_2048_8192_SHA256,
+            Scheme::RsaPkcs1Sha384 => &ring::signature::RSA_PKCS1_2048_8192_SHA384,
+            Scheme::RsaPkcs1Sha512 => &ring::signature::RSA_PKCS1_2048_8192_SHA512,
+            Scheme::RsaPssRsaeSha256 => &ring::signature::RSA_PSS_2048_8192_SHA256,
+            Scheme::RsaPssRsaeSha384 => &ring::signature::RSA_PSS_2048_8192_SHA384,
+            Scheme::RsaPssRsaeSha512 => &ring::signature::RSA_PSS_2048_8192_SHA512,
+            Scheme::EcdsaSecp256r1Sha256 => &ring::signature::ECDSA_P256_SHA256_ASN1,
+            Scheme::EcdsaSecp384r1Sha384 => &ring::signature::ECDSA_P384_SHA384_ASN1,
+            Scheme::Ed25519 => &ring::signature::ED25519,
         }
     }
 }
@@ -795,7 +793,7 @@ impl SignatureVerifier for ShippedVerifier {
         message: &[u8],
         signature: &[u8],
     ) -> Result<(), CryptoError> {
-        signature::UnparsedPublicKey::new(scheme.verification(), public_key)
+        ring::signature::UnparsedPublicKey::new(scheme.verification(), public_key)
             .verify(message, signature)
             .map_err(|ring::error::Unspecified| CryptoError::BadSignature)
     }
@@ -836,9 +834,9 @@ pub fn check_signature(
 
 #[cfg(feature = "test-tooling")]
 enum Signer {
-    Ecdsa(signature::EcdsaKeyPair),
-    Ed25519(signature::Ed25519KeyPair),
-    Rsa(signature::RsaKeyPair),
+    Ecdsa(ring::signature::EcdsaKeyPair),
+    Ed25519(ring::signature::Ed25519KeyPair),
+    Rsa(ring::signature::RsaKeyPair),
 }
 
 /// A private key read from PKCS#8 that signs in one scheme (test tooling only): ECDSA P-256
@@ -862,25 +860,26 @@ impl SigningKey {
         let rejected = |_| CryptoError::KeyRejected;
         let signer = match scheme {
             Scheme::EcdsaSecp256r1Sha256 => Signer::Ecdsa(
-                signature::EcdsaKeyPair::from_pkcs8(
-                    &signature::ECDSA_P256_SHA256_ASN1_SIGNING,
+                ring::signature::EcdsaKeyPair::from_pkcs8(
+                    &ring::signature::ECDSA_P256_SHA256_ASN1_SIGNING,
                     pkcs8,
                     random.ring(),
                 )
                 .map_err(rejected)?,
             ),
             Scheme::EcdsaSecp384r1Sha384 => Signer::Ecdsa(
-                signature::EcdsaKeyPair::from_pkcs8(
-                    &signature::ECDSA_P384_SHA384_ASN1_SIGNING,
+                ring::signature::EcdsaKeyPair::from_pkcs8(
+                    &ring::signature::ECDSA_P384_SHA384_ASN1_SIGNING,
                     pkcs8,
                     random.ring(),
                 )
                 .map_err(rejected)?,
             ),
             Scheme::Ed25519 => Signer::Ed25519(
-                signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(pkcs8).map_err(rejected)?,
+                ring::signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(pkcs8)
+                    .map_err(rejected)?,
             ),
-            _ => Signer::Rsa(signature::RsaKeyPair::from_pkcs8(pkcs8).map_err(rejected)?),
+            _ => Signer::Rsa(ring::signature::RsaKeyPair::from_pkcs8(pkcs8).map_err(rejected)?),
         };
         Ok(SigningKey { signer, scheme })
     }
@@ -892,7 +891,6 @@ impl SigningKey {
 
     /// The public key, in the form [`check_signature`] takes.
     pub fn public_key(&self) -> PublicKey<'_> {
-        use signature::KeyPair;
         match &self.signer {
             Signer::Ecdsa(pair) => PublicKey {
                 kind: if self.scheme == Scheme::EcdsaSecp256r1Sha256 {
@@ -900,17 +898,17 @@ impl SigningKey {
                 } else {
                     PublicKeyKind::EcP384
                 },
-                bytes: pair.public_key().as_ref(),
+                bytes: ring::signature::KeyPair::public_key(pair).as_ref(),
             },
             Signer::Ed25519(pair) => PublicKey {
                 kind: PublicKeyKind::Ed25519,
-                bytes: pair.public_key().as_ref(),
+                bytes: ring::signature::KeyPair::public_key(pair).as_ref(),
             },
             Signer::Rsa(pair) => PublicKey {
                 kind: PublicKeyKind::Rsa {
                     bits: pair.public().modulus_len() * 8,
                 },
-                bytes: pair.public_key().as_ref(),
+                bytes: ring::signature::KeyPair::public_key(pair).as_ref(),
             },
         }
     }
@@ -928,13 +926,13 @@ impl SigningKey {
                 .to_vec()),
             Signer::Ed25519(pair) => Ok(pair.sign(message).as_ref().to_vec()),
             Signer::Rsa(pair) => {
-                let padding: &'static dyn signature::RsaEncoding = match self.scheme {
-                    Scheme::RsaPkcs1Sha256 => &signature::RSA_PKCS1_SHA256,
-                    Scheme::RsaPkcs1Sha384 => &signature::RSA_PKCS1_SHA384,
-                    Scheme::RsaPkcs1Sha512 => &signature::RSA_PKCS1_SHA512,
-                    Scheme::RsaPssRsaeSha256 => &signature::RSA_PSS_SHA256,
-                    Scheme::RsaPssRsaeSha384 => &signature::RSA_PSS_SHA384,
-                    _ => &signature::RSA_PSS_SHA512,
+                let padding: &'static dyn ring::signature::RsaEncoding = match self.scheme {
+                    Scheme::RsaPkcs1Sha256 => &ring::signature::RSA_PKCS1_SHA256,
+                    Scheme::RsaPkcs1Sha384 => &ring::signature::RSA_PKCS1_SHA384,
+                    Scheme::RsaPkcs1Sha512 => &ring::signature::RSA_PKCS1_SHA512,
+                    Scheme::RsaPssRsaeSha256 => &ring::signature::RSA_PSS_SHA256,
+                    Scheme::RsaPssRsaeSha384 => &ring::signature::RSA_PSS_SHA384,
+                    _ => &ring::signature::RSA_PSS_SHA512,
                 };
                 let mut out = vec![0u8; pair.public().modulus_len()];
                 pair.sign(padding, random.ring(), message, &mut out)

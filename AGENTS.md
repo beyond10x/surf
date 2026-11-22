@@ -555,9 +555,15 @@ above, and the list of standards itself was written from memory.
     running, HMAC, HKDF extract and expand, X25519 and P-256 agreement from a `Random` source,
     the signature checks of nine schemes behind the trait `SignatureVerifier`, and `REFUSED`
     (every MD5 or SHA-1 signature, RSA keys under 2048 bits), named before any verification.
-    No public item of `crypto.rs` names a ring type. `Secret` and `Digest` have no `==`: a
-    secret or a tag is compared with `constant_time_eq` (ring's `hmac::verify`) or
-    `hmac_verify`. `src/error.rs` holds the public `Error` of item 6 of the note. The feature
+    `crypto.rs` names every ring item by its full path `ring::…` where it uses it: no `use`
+    or `extern crate` of ring, no alias of a ring item. No public item of it holds `ring`:
+    the signature of a `pub fn`, the whole of a `pub struct`, `pub enum`, `pub union`,
+    `pub trait`, `pub type`, `pub const`, `pub static` or `pub use`, a `pub` field, the header
+    of an `impl` block of a type that is not private to the file; `pub(crate)` counts as
+    public. `Secret`, `Digest`, `RunningHash`, `AeadKey`, `EphemeralKey`, `SigningKey` and
+    `Random` implement none of `PartialEq`, `PartialOrd` and `Hash`, which the test crate
+    asserts at compile time: a secret or a tag is compared with `constant_time_eq` (ring's
+    `hmac::verify`) or `hmac_verify`. `src/error.rs` holds the public `Error` of item 6 of the note. The feature
     `test-tooling`, off by default and never in a release, adds signing from PKCS#8, ring's
     fixed random sources (a fixed sequence dropped before every slice was drawn does not
     panic) and `TEST_TOOLING_MARKER`; the crate's dev-dependency on itself turns it on for its
@@ -1023,9 +1029,10 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   when a line of the lock is in no form cargo writes (`Cargo.lock:<n>: not in the form cargo
   writes: <line>`); and when the lock is missing. The check refuses a lock that cargo would
   accept in another spelling (keys without spaces, a comment after `[[package]]`, a
-  dependency array on one line, literal strings, `[metadata]`, `[[patch.unused]]`); it still
-  reads such a lock for the other findings, so its packages are named too. Else it prints `Cargo.lock: <n> package(s), 19 from outside
-  this repository, each on the allow-list`. The list holds the 19 packages of ring 0.17.14
+  dependency array on one line, literal strings, `[metadata]`, `[[patch.unused]]`, the
+  `replace = "…"` line cargo writes for `[replace]`); it still reads such a lock for the
+  other findings, so its packages are named too. Else it prints `Cargo.lock: <n> package(s),
+  19 from outside this repository, each on the allow-list`. The list holds the 19 packages of ring 0.17.14
   (`docs/design/tls.md`, item 2), one line `<name> <version> <source> <checksum>` each,
   sorted; the script's head states the format. It does not read `conformance/Cargo.lock`. A
   path dependency outside the repository has no `source` line and is not caught.

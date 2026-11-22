@@ -837,23 +837,29 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
 }
 
 /// `text` with every comment and the content of every string and char literal replaced by
-/// spaces, newlines kept, so that a line number still points at its line. Knows `//`, nested
-/// `/* */`, `"…"` with escapes, raw strings `r#"…"#`, byte strings, and char literals apart
-/// from lifetimes.
+/// spaces, newlines kept, so that a line number still points at its line. Knows the forms of
+/// the 2024 edition: `//` and nested `/* */` comments; `"…"`, `b"…"` and `c"…"` with escapes;
+/// the raw forms `r"…"`, `br"…"` and `cr"…"` with any number of `#`, in which a backslash is
+/// no escape; char and byte literals (`'x'`, `'\''`, `b'x'`), apart from lifetimes (`'a`).
 fn code_only(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let blank = |c: char| if c == '\n' { '\n' } else { ' ' };
+    let ident = |c: char| c.is_alphanumeric() || c == '_';
     let mut out = String::with_capacity(text.len());
     let mut i = 0;
     while i < chars.len() {
         let c = chars[i];
         let next = chars.get(i + 1).copied();
+        // A literal's prefix starts where no identifier goes on before it.
+        let starts = i == 0 || !ident(chars[i - 1]);
         if c == '/' && next == Some('/') {
             while i < chars.len() && chars[i] != '\n' {
                 out.push(' ');
                 i += 1;
             }
-        } else if c == '/' && next == Some('*') {
+            continue;
+        }
+        if c == '/' && next == Some('*') {
             let mut depth = 0;
             while i < chars.len() {
                 if chars[i] == '/' && chars.get(i + 1) == Some(&'*') {
@@ -872,70 +878,77 @@ fn code_only(text: &str) -> String {
                     i += 1;
                 }
             }
-        } else if c == 'r'
-            && (next == Some('"') || next == Some('#'))
-            && (i == 0 || !(chars[i - 1].is_alphanumeric() || chars[i - 1] == '_'))
-            && {
-                let mut j = i + 1;
-                while chars.get(j) == Some(&'#') {
-                    j += 1;
-                }
-                chars.get(j) == Some(&'"')
-            }
-        {
-            let mut hashes = 0;
-            i += 1;
-            while chars[i] == '#' {
-                hashes += 1;
-                i += 1;
-            }
-            i += 1;
-            out.push(' ');
-            out.extend(std::iter::repeat_n(' ', hashes + 1));
-            while i < chars.len() {
-                if chars[i] == '"' && (0..hashes).all(|k| chars.get(i + 1 + k) == Some(&'#')) {
-                    out.extend(std::iter::repeat_n(' ', hashes + 1));
-                    i += hashes + 1;
-                    break;
-                }
-                out.push(blank(chars[i]));
-                i += 1;
-            }
-        } else if c == '"' {
-            out.push(' ');
-            i += 1;
-            while i < chars.len() && chars[i] != '"' {
-                if chars[i] == '\\' {
-                    out.push(' ');
-                    i += 1;
-                }
-                if i < chars.len() {
-                    out.push(blank(chars[i]));
-                    i += 1;
-                }
-            }
-            out.push(' ');
-            i += 1;
-        } else if c == '\'' && (next == Some('\\') || chars.get(i + 2) == Some(&'\'')) {
-            // A char literal; a lifetime has no closing quote two places on.
-            out.push(' ');
-            i += 1;
-            while i < chars.len() && chars[i] != '\'' {
-                if chars[i] == '\\' {
-                    out.push(' ');
-                    i += 1;
-                }
-                if i < chars.len() {
-                    out.push(blank(chars[i]));
-                    i += 1;
-                }
-            }
-            out.push(' ');
-            i += 1;
-        } else {
-            out.push(c);
-            i += 1;
+            continue;
         }
+        if starts && matches!(c, 'b' | 'c' | 'r' | '"' | '\'') {
+            // The prefix: `b` or `c`, then `r` and its `#`s.
+            let mut j = i;
+            if matches!(chars[j], 'b' | 'c') {
+                j += 1;
+            }
+            let raw = chars.get(j) == Some(&'r');
+            if raw {
+                j += 1;
+            }
+            let mut hashes = 0;
+            while raw && chars.get(j) == Some(&'#') {
+                hashes += 1;
+                j += 1;
+            }
+            let quote = chars.get(j).copied();
+            let byte_char = !raw && quote == Some('\'') && (j == i || chars[i] == 'b');
+            let char_literal =
+                byte_char && (chars.get(j + 1) == Some(&'\\') || chars.get(j + 2) == Some(&'\''));
+            if quote == Some('"') {
+                out.extend(std::iter::repeat_n(' ', j - i + 1));
+                i = j + 1;
+                while i < chars.len() {
+                    if raw {
+                        if chars[i] == '"'
+                            && (0..hashes).all(|k| chars.get(i + 1 + k) == Some(&'#'))
+                        {
+                            out.extend(std::iter::repeat_n(' ', hashes + 1));
+                            i += hashes + 1;
+                            break;
+                        }
+                    } else if chars[i] == '\\' {
+                        out.push(' ');
+                        i += 1;
+                        if i < chars.len() {
+                            out.push(blank(chars[i]));
+                            i += 1;
+                        }
+                        continue;
+                    } else if chars[i] == '"' {
+                        out.push(' ');
+                        i += 1;
+                        break;
+                    }
+                    out.push(blank(chars[i]));
+                    i += 1;
+                }
+                continue;
+            }
+            if char_literal {
+                out.extend(std::iter::repeat_n(' ', j - i + 1));
+                i = j + 1;
+                while i < chars.len() && chars[i] != '\'' {
+                    if chars[i] == '\\' {
+                        out.push(' ');
+                        i += 1;
+                    }
+                    if i < chars.len() {
+                        out.push(blank(chars[i]));
+                        i += 1;
+                    }
+                }
+                out.push(' ');
+                i += 1;
+                continue;
+            }
+        }
+        out.push(c);
+        i += 1;
     }
     out
 }
@@ -1018,95 +1031,378 @@ fn the_ring_search_sees_every_spelling() {
     }
 }
 
-/// The ring modules `crypto.rs` names, as path roots.
-const RING_ROOTS: [&str; 8] = [
-    "ring",
+/// Each form of string, char and comment hides what it holds, and the code after it is still
+/// read: every case ends in a `ring::` path that the search must find.
+#[test]
+fn the_ring_search_reads_on_after_every_literal() {
+    let after = "\nconst N: usize = ring::digest::SHA256_OUTPUT_LEN;";
+    let literals = [
+        "const S: &str = \"ring \\\" \\\\\";",
+        "const S: &[u8] = b\"ring \\\" \\\\\";",
+        "const S: &core::ffi::CStr = c\"ring \\\" \\\\\";",
+        "const S: &str = r\"ring \\\";",
+        "const S: &str = r#\"ring \" \"#;",
+        "const S: &str = r##\"ring \"# \"##;",
+        "const S: &[u8] = br\"ring \\\";",
+        "const S: &[u8] = br#\"ring \"#;",
+        "const S: &core::ffi::CStr = cr\"ring \\\";",
+        "const S: &core::ffi::CStr = cr##\"ring \"##;",
+        "const C: char = '\"';",
+        "const C: char = '\\'';",
+        "const C: char = '\\u{72}';",
+        "const C: char = 'é';",
+        "const B: u8 = b'\"';",
+        "const B: u8 = b'\\'';",
+        "fn f<'a>(s: &'a str) -> &'a str { s }",
+        "fn f() { 'outer: loop { break 'outer; } }",
+        "// ring \"",
+        "/* ring \" /* ' */ \" */",
+        "let r#type = 1; let b = 2; let c = b'x'; let r = \"\";",
+    ];
+    for literal in literals {
+        let code = code_only(&format!("{literal}{after}"));
+        assert!(
+            !code.lines().next().is_some_and(|l| holds_word(l, "ring")),
+            "ring seen inside a literal or comment: {literal:?}"
+        );
+        assert!(
+            code.lines().nth(1).is_some_and(|l| holds_word(l, "ring")),
+            "ring not seen after: {literal:?}"
+        );
+    }
+}
+
+/// The ring modules, as path roots. `crypto.rs` names every ring item from `ring::` on; a path
+/// that starts at one of these modules names a ring item through an import.
+const RING_MODULES: [&str; 13] = [
     "aead",
     "agreement",
+    "constant_time",
     "digest",
+    "error",
     "hkdf",
     "hmac",
+    "io",
+    "pbkdf2",
+    "pkcs8",
     "rand",
+    "rsa",
     "signature",
 ];
 
-/// The public items of `crypto.rs` whose signature names a ring path: every `pub` item (`fn`,
-/// `struct`, `enum`, `type`, `const`, `static`, `trait`, a `pub` field) up to its `{`, `;` or
-/// `=`, and every `impl` header of a public type.
-fn public_ring_paths(crypto: &str) -> Vec<String> {
-    let code = code_only(crypto);
-    let public_types: Vec<String> = code
-        .lines()
-        .filter_map(|l| {
-            let l = l.trim_start();
-            ["pub struct ", "pub enum ", "pub trait ", "pub type "]
-                .iter()
-                .find_map(|p| l.strip_prefix(p))
-                .map(|rest| {
-                    rest.chars()
-                        .take_while(|c| c.is_alphanumeric() || *c == '_')
-                        .collect()
-                })
+fn is_ident(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// The byte offsets in `code` at which `word` stands as a whole identifier.
+fn word_offsets(code: &str, word: &str) -> Vec<usize> {
+    code.match_indices(word)
+        .filter(|(at, _)| {
+            !code[..*at].chars().next_back().is_some_and(is_ident)
+                && !code[at + word.len()..].chars().next().is_some_and(is_ident)
         })
-        .collect();
-    let lines: Vec<&str> = code.lines().collect();
+        .map(|(at, _)| at)
+        .collect()
+}
+
+/// How far an item's text runs from its start.
+#[derive(Clone, Copy, PartialEq)]
+enum Extent {
+    /// To the first `{` or `;`: the signature of a function, the header of an `impl` block.
+    Header,
+    /// To the first `;`, or through the body that a `{` opens: a whole item.
+    Item,
+    /// To the next `,` or the bracket that closes the list: a field.
+    Field,
+}
+
+/// The text of the item in `code` that starts at `start`, as far as `reach` goes.
+fn extent(code: &str, start: usize, reach: Extent) -> &str {
+    let mut depth = 0usize;
+    let mut previous = ' ';
+    for (k, c) in code[start..].char_indices() {
+        let end = start + k + c.len_utf8();
+        match c {
+            '{' if depth == 0 && reach == Extent::Header => return &code[start..end],
+            ';' if depth == 0 && reach != Extent::Field => return &code[start..end],
+            ',' if depth == 0 && reach == Extent::Field => return &code[start..end],
+            '(' | '[' | '{' => depth += 1,
+            '<' if reach == Extent::Field => depth += 1,
+            '>' if reach == Extent::Field && previous != '-' && previous != '=' => {
+                depth = depth.saturating_sub(1)
+            }
+            ')' | ']' | '}' => {
+                if depth == 0 {
+                    return &code[start..start + k];
+                }
+                depth -= 1;
+                if depth == 0 && c == '}' && reach == Extent::Item {
+                    return &code[start..end];
+                }
+            }
+            _ => {}
+        }
+        previous = c;
+    }
+    &code[start..]
+}
+
+/// The line of byte offset `at` in `code`, counted from 1.
+fn line_of(code: &str, at: usize) -> usize {
+    code[..at].matches('\n').count() + 1
+}
+
+/// What a finding shows of an item: its text on one line.
+fn shown(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Rule a: `crypto.rs` names every ring item by its full path, `ring::…`, where it uses it. It
+/// imports nothing from ring (no `use` that names ring, no `extern crate`), declares no alias
+/// whose right side names ring, and starts no path at a ring module.
+fn ring_imports(code: &str) -> Vec<String> {
     let mut found = Vec::new();
-    for (n, line) in lines.iter().enumerate() {
-        let trimmed = line.trim_start();
-        let public = trimmed.starts_with("pub ") || trimmed.starts_with("pub(");
-        let impl_of_public = trimmed.starts_with("impl")
-            && public_types.iter().any(|t| {
-                let header: String = lines[n..]
-                    .iter()
-                    .take(4)
-                    .copied()
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                let header = header.split('{').next().unwrap_or("");
-                let target = header.rsplit(" for ").next().unwrap_or(header);
-                holds_word(target, t)
-            });
-        if !public && !impl_of_public {
+    for at in word_offsets(code, "use") {
+        if code[at + 3..].trim_start().starts_with('<') {
+            // `use<'a>`, the captures of an `impl Trait`.
             continue;
         }
-        // A field ends with its line; a constant or static before its value; any other item
-        // at its body or its `;`.
-        let field = public
-            && trimmed
-                .trim_start_matches("pub ")
-                .split_once(':')
-                .is_some_and(|(name, _)| {
-                    name.chars().all(|c| c.is_alphanumeric() || c == '_') && !name.is_empty()
-                });
-        let value_follows = trimmed.starts_with("pub const ")
-            && !trimmed.starts_with("pub const fn")
-            || trimmed.starts_with("pub static ");
-        let mut signature = String::new();
-        for l in &lines[n..] {
-            let mut end = l.find(['{', ';']).unwrap_or(l.len());
-            if value_follows {
-                end = l.find('=').map_or(end, |e| e.min(end));
-            }
-            signature.push_str(&l[..end]);
-            signature.push(' ');
-            if field || end < l.len() {
-                break;
-            }
-        }
-        let names_ring = RING_ROOTS.iter().any(|root| {
-            signature
-                .match_indices(&format!("{root}::"))
-                .any(|(at, _)| {
-                    !signature[..at]
-                        .chars()
-                        .next_back()
-                        .is_some_and(|c| c.is_alphanumeric() || c == '_')
-                })
-        }) || holds_word(&signature, "ring");
-        if names_ring {
-            found.push(format!("crypto.rs:{}: {}", n + 1, signature.trim()));
+        let text = extent(code, at, Extent::Item);
+        if holds_word(text, "ring") {
+            found.push(format!(
+                "crypto.rs:{}: imports from ring: {}",
+                line_of(code, at),
+                shown(text)
+            ));
         }
     }
+    for at in word_offsets(code, "extern") {
+        let text = extent(code, at, Extent::Item);
+        if text[6..].trim_start().starts_with("crate") && holds_word(text, "ring") {
+            found.push(format!(
+                "crypto.rs:{}: imports ring: {}",
+                line_of(code, at),
+                shown(text)
+            ));
+        }
+    }
+    for at in word_offsets(code, "type") {
+        let text = extent(code, at, Extent::Item);
+        if text
+            .split_once('=')
+            .is_some_and(|(_, right)| holds_word(right, "ring"))
+        {
+            found.push(format!(
+                "crypto.rs:{}: an alias of a ring item: {}",
+                line_of(code, at),
+                shown(text)
+            ));
+        }
+    }
+    for module in RING_MODULES {
+        for at in word_offsets(code, module) {
+            let rest = &code[at + module.len()..];
+            let before = code[..at].trim_end();
+            let short = rest.starts_with("::")
+                && !rest[2..].starts_with('<')
+                && !before.ends_with("::")
+                && !before.ends_with('.');
+            if short {
+                let line = code[..at].rfind('\n').map_or(0, |n| n + 1);
+                let end = code[at..].find('\n').map_or(code.len(), |n| at + n);
+                found.push(format!(
+                    "crypto.rs:{}: a ring path without `ring::`: {}",
+                    line_of(code, at),
+                    shown(&code[line..end])
+                ));
+            }
+        }
+    }
+    found
+}
+
+/// The names of the types `code` declares without `pub`: an `impl` block of one of them is not
+/// seen outside the crate.
+fn private_types(code: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    for keyword in ["struct", "enum", "union", "type"] {
+        for at in word_offsets(code, keyword) {
+            let line = code[..at].rfind('\n').map_or(0, |n| n + 1);
+            if holds_word(&code[line..at], "pub") {
+                continue;
+            }
+            let name: String = code[at + keyword.len()..]
+                .trim_start()
+                .chars()
+                .take_while(|c| is_ident(*c))
+                .collect();
+            if !name.is_empty() {
+                names.push(name);
+            }
+        }
+    }
+    names
+}
+
+/// A `struct` or `union` with its fields, the first `{…}` or `(…)` after its generic
+/// parameters, left out; its header and a `where` clause after a tuple body stay.
+fn without_fields(item: &str) -> String {
+    let mut depth = 0usize;
+    let mut angles = 0usize;
+    let mut open = None;
+    let mut previous = ' ';
+    for (k, c) in item.char_indices() {
+        match c {
+            '<' => angles += 1,
+            '>' if previous != '-' => angles = angles.saturating_sub(1),
+            '{' | '(' | '[' if angles == 0 => {
+                if depth == 0 && open.is_none() && c != '[' {
+                    open = Some(k);
+                }
+                depth += 1;
+            }
+            '}' | ')' | ']' if angles == 0 => {
+                depth = depth.saturating_sub(1);
+                if depth == 0
+                    && let Some(start) = open
+                {
+                    return format!("{} {}", &item[..start], &item[k + 1..]);
+                }
+            }
+            _ => {}
+        }
+        previous = c;
+    }
+    item.to_owned()
+}
+
+/// The type an `impl` header is for: the last name before its generic arguments.
+fn self_type(header: &str) -> String {
+    let header = header.trim_end_matches('{');
+    let header = word_offsets(header, "where")
+        .first()
+        .map_or(header, |w| &header[..*w]);
+    let target = word_offsets(header, "for")
+        .into_iter()
+        .rev()
+        .map(|f| &header[f + 3..])
+        .find(|rest| !rest.trim_start().starts_with('<'))
+        .unwrap_or_else(|| {
+            // An inherent `impl`: what follows `impl` and its generic parameters.
+            let rest = header[4..].trim_start();
+            if !rest.starts_with('<') {
+                return rest;
+            }
+            let mut depth = 0;
+            for (k, c) in rest.char_indices() {
+                match c {
+                    '<' => depth += 1,
+                    '>' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            return &rest[k + 1..];
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            ""
+        });
+    let target = target.split('<').next().unwrap_or("");
+    target
+        .split(|c: char| !is_ident(c))
+        .rfind(|w| !w.is_empty())
+        .unwrap_or("")
+        .to_owned()
+}
+
+/// Rule b: no public item of `crypto.rs` holds the identifier `ring`. The text of an item is
+/// the signature of a `pub fn` (its `where` clause included); the whole of a `pub enum`,
+/// `pub trait`, `pub type`, `pub const`, `pub static`, `pub use`; a `pub struct` or
+/// `pub union` but its fields, of which each `pub` field counts on its own; and the header of
+/// every `impl` block (its `where` clause included) apart from one of a type declared without
+/// `pub` in the file. `pub(crate)`, `pub(super)` and `pub(in …)` count as public, `pub(self)`
+/// does not. A private field of a public struct is the seam's own: it holds the ring value
+/// the struct wraps and is not seen outside the module.
+fn public_items_naming_ring(code: &str) -> Vec<String> {
+    const QUALIFIERS: [&str; 5] = ["const", "async", "unsafe", "extern", "safe"];
+    const ITEMS: [&str; 12] = [
+        "struct", "enum", "union", "trait", "type", "static", "use", "mod", "crate", "impl",
+        "macro", "fn",
+    ];
+    let mut found = Vec::new();
+    for at in word_offsets(code, "pub") {
+        let mut rest = code[at + 3..].trim_start();
+        if rest.starts_with('(') {
+            let (restriction, after) = rest.split_once(')').unwrap_or((rest, ""));
+            if restriction[1..].trim() == "self" {
+                continue;
+            }
+            rest = after;
+        }
+        let mut kind = Extent::Field;
+        let mut keyword = "";
+        for word in rest.split(|c: char| !is_ident(c)).filter(|w| !w.is_empty()) {
+            if word == "fn" {
+                kind = Extent::Header;
+                break;
+            }
+            if ITEMS.contains(&word) {
+                kind = Extent::Item;
+                keyword = word;
+                break;
+            }
+            if QUALIFIERS.contains(&word) {
+                keyword = word;
+                continue;
+            }
+            if !keyword.is_empty() {
+                // `pub const NAME`.
+                kind = Extent::Item;
+            }
+            break;
+        }
+        let mut text = extent(code, at, kind).to_owned();
+        if keyword == "struct" || keyword == "union" {
+            text = without_fields(&text);
+        }
+        if holds_word(&text, "ring") {
+            found.push(format!(
+                "crypto.rs:{}: a public item names ring: {}",
+                line_of(code, at),
+                shown(&text)
+            ));
+        }
+    }
+    let private = private_types(code);
+    for at in word_offsets(code, "impl") {
+        let before = code[..at].trim_end();
+        let before = before.strip_suffix("unsafe").unwrap_or(before).trim_end();
+        let block = before.is_empty() || before.ends_with(['}', ';', ']', '{']);
+        if !block {
+            // `impl Trait` in a type.
+            continue;
+        }
+        let header = extent(code, at, Extent::Header);
+        if private.contains(&self_type(header)) {
+            continue;
+        }
+        if holds_word(header, "ring") {
+            found.push(format!(
+                "crypto.rs:{}: an impl header names ring: {}",
+                line_of(code, at),
+                shown(header)
+            ));
+        }
+    }
+    found
+}
+
+/// What rule a and rule b find in `crypto`, comments and strings left out.
+fn public_ring_paths(crypto: &str) -> Vec<String> {
+    let code = code_only(crypto);
+    let mut found = ring_imports(&code);
+    found.extend(public_items_naming_ring(&code));
     found
 }
 
@@ -1116,30 +1412,120 @@ fn no_public_item_of_crypto_names_ring() {
     let found = public_ring_paths(&crypto);
     assert!(
         found.is_empty(),
-        "a public item of crypto.rs names ring:\n{}",
+        "crypto.rs imports from ring or a public item of it names ring:\n{}",
         found.join("\n")
     );
-    // The search itself, on planted items.
+}
+
+/// Rule a refuses every way to name a ring item other than by its full path.
+#[test]
+fn the_ring_search_refuses_every_import_of_ring() {
     for planted in [
-        "pub struct Leak(pub aead::LessSafeKey);",
-        "pub fn leak(&self) -> &ring::aead::LessSafeKey {",
-        "pub struct S {\n    pub key: hmac::Key,\n}",
-        "pub type T = digest::Digest;",
-        "pub struct D;\nimpl From<digest::Digest> for D {",
+        "use ring;",
+        "use ring::aead;",
+        "use ring::aead::LessSafeKey;",
+        "use ring::{aead, hmac};",
+        "use ring::aead::LessSafeKey as Key;",
+        "use ring as r;",
+        "use ::ring::digest;",
+        "use {ring as r};",
+        "use std::{io, ring};",
+        "use r#ring::rand;",
+        "pub(crate) use ring::digest::Digest;",
+        "fn f() {\n    use ring::digest;\n}",
+        "extern crate ring;",
+        "extern crate ring as r;",
+        "type Inner = ring::aead::LessSafeKey;",
+        "type Inner<'a> =\n    &'a ring::aead::LessSafeKey;",
+        "type Inner = aead::LessSafeKey;",
+        "fn f() -> usize {\n    digest::SHA256_OUTPUT_LEN\n}",
+        "struct S {\n    key: hmac::Key,\n}",
+        "impl hkdf::KeyType for OutputLen {",
+        "const L: usize = signature::ED25519_PUBLIC_KEY_LEN;",
     ] {
         assert!(
-            !public_ring_paths(planted).is_empty(),
+            !ring_imports(&code_only(planted)).is_empty(),
             "not seen: {planted:?}"
         );
     }
     for clean in [
-        "fn ring(&self) -> &dyn rand::SecureRandom {",
-        "pub fn hash(algorithm: HashAlgorithm, data: &[u8]) -> Digest {",
-        "struct OutputLen(usize);\nimpl hkdf::KeyType for OutputLen {",
+        "use std::fmt;",
+        "use SignatureHash::{Sha256, Sha384};",
+        "fn f() -> usize {\n    ring::digest::SHA256_OUTPUT_LEN\n}",
+        "fn f() {\n    ::ring::rand::SystemRandom::new();\n}",
+        "struct OutputLen(usize);\nimpl ring::hkdf::KeyType for OutputLen {",
+        "impl std::error::Error for CryptoError {}",
+        "fn f(d: &Digest) {\n    d.digest::<u8>();\n    self.rand.fill();\n}",
+        "type Alias = Vec<u8>;",
+        "// use ring::digest;\nconst S: &str = \"use ring::digest;\";",
+        "fn f() -> impl Iterator<Item = u8> + use<> {\n    [].into_iter()\n}",
+    ] {
+        let found = ring_imports(&code_only(clean));
+        assert!(found.is_empty(), "seen in clean code: {clean:?}: {found:?}");
+    }
+}
+
+/// Rule b sees `ring` in every part of a public item, and not in private items or bodies.
+#[test]
+fn the_public_search_sees_ring_in_every_public_item() {
+    for planted in [
+        "pub fn leak(&self) -> &ring::aead::LessSafeKey {",
+        "pub fn leak(\n    &self,\n    key: &ring::hmac::Key,\n) -> bool {",
+        "pub fn leak<T>(t: T) -> bool\nwhere\n    T: ring::rand::SecureRandom,\n{",
+        "pub const fn leak() -> ring::digest::Algorithm {",
+        "pub(crate) fn leak() -> ring::digest::Digest {",
+        "pub(super) fn leak() -> ring::digest::Digest {",
+        "pub(in crate::crypto) fn leak() -> ring::digest::Digest {",
+        "pub struct Leak(pub ring::aead::LessSafeKey);",
+        "pub struct Leak(u8, pub(crate) ring::aead::LessSafeKey);",
+        "pub struct Leak {\n    pub key: ring::hmac::Key,\n}",
+        "pub struct Leak<T = ring::hmac::Key> {\n    key: T,\n}",
+        "pub struct Leak<T>(T)\nwhere\n    T: ring::rand::SecureRandom;",
+        "pub struct Leak<T>\nwhere\n    T: ring::rand::SecureRandom,\n{\n    key: T,\n}",
+        "pub(crate) struct Leak {\n    pub(crate) key: ring::hmac::Key,\n}",
+        "pub union U {\n    pub key: std::mem::ManuallyDrop<ring::hmac::Key>,\n}",
+        "struct Hidden {\n    pub key: ring::hmac::Key,\n}",
+        "struct Hidden {\n    pub map: Vec<(u8, ring::hmac::Key)>,\n}",
+        "pub enum CryptoError {\n    Rejected(ring::error::KeyRejected),\n}",
+        "pub enum E {\n    A { error: ring::error::Unspecified },\n}",
+        "pub trait Verifier {\n    fn key(&self) -> &ring::signature::UnparsedPublicKey<Vec<u8>>;\n}",
+        "pub trait Verifier {\n    type Key: ring::signature::VerificationAlgorithm;\n}",
+        "pub trait Verifier: ring::rand::SecureRandom {}",
+        "pub type T = ring::digest::Digest;",
+        "pub const ALGORITHM: &ring::digest::Algorithm = &ring::digest::SHA256;",
+        "pub static ALGORITHM: &ring::digest::Algorithm = &ring::digest::SHA256;",
+        "pub use ring::digest::Digest;",
+        "pub mod inner {\n    use ring::digest;\n}",
+        "pub struct D;\nimpl From<ring::digest::Digest> for D {",
+        "impl From<ring::error::Unspecified> for Error {",
+        "impl ring::rand::SecureRandom for Random<'_> {",
+        "unsafe impl Send for ring::aead::LessSafeKey {}",
+        "pub struct D;\nimpl<T> From<T> for D\nwhere\n    T: ring::rand::SecureRandom,\n{",
+        "pub struct D;\nimpl<T: ring::rand::SecureRandom> D {",
     ] {
         assert!(
-            public_ring_paths(clean).is_empty(),
-            "seen in a clean item: {clean:?}"
+            !public_items_naming_ring(&code_only(planted)).is_empty(),
+            "not seen: {planted:?}"
+        );
+    }
+    for clean in [
+        "fn ring(&self) -> &dyn ring::rand::SecureRandom {",
+        "pub fn hash(algorithm: HashAlgorithm, data: &[u8]) -> Digest {\n    let d = ring::digest::digest(algorithm.ring(), data);\n    Digest::from(d)\n}",
+        "struct OutputLen(usize);\nimpl ring::hkdf::KeyType for OutputLen {",
+        "pub struct AeadKey {\n    algorithm: AeadAlgorithm,\n}\nstruct Inner {\n    key: ring::aead::LessSafeKey,\n}",
+        "pub struct AeadKey {\n    pub(self) key: ring::aead::LessSafeKey,\n    algorithm: u8,\n}",
+        "pub struct Leak(ring::aead::LessSafeKey);",
+        "pub union U {\n    key: std::mem::ManuallyDrop<ring::hmac::Key>,\n}",
+        "pub struct Leak {\n    key: Key,\n}\nfn f() -> ring::hmac::Key {\n    todo!()\n}",
+        "pub fn f() -> impl Iterator<Item = u8> {\n    ring::digest::SHA256.output_len().to_le_bytes().into_iter()\n}",
+        "pub enum E {\n    A,\n}\nconst N: usize = ring::digest::SHA256_OUTPUT_LEN;",
+        "pub fn f() -> &'static str {\n    \"ring\"\n} // ring",
+        "pub fn f() -> char {\n    'r'\n}\nfn g() -> ring::hmac::Key {\n    todo!()\n}",
+    ] {
+        let found = public_items_naming_ring(&code_only(clean));
+        assert!(
+            found.is_empty(),
+            "seen in a clean item: {clean:?}: {found:?}"
         );
     }
 }
@@ -1147,32 +1533,32 @@ fn no_public_item_of_crypto_names_ring() {
 // ---------------------------------------------------------------------------------------------
 // Secrets and tags compare only in constant time.
 
-#[test]
-fn secrets_and_digests_have_no_equality_operator() {
-    let crypto =
-        code_only(&fs::read_to_string(crate_dir().join("src/crypto.rs")).expect("read crypto.rs"));
-    let lines: Vec<&str> = crypto.lines().collect();
-    for name in ["Secret", "Digest"] {
-        let at = lines
-            .iter()
-            .position(|l| l.trim_start().starts_with(&format!("pub struct {name}")))
-            .unwrap_or_else(|| panic!("no pub struct {name}"));
-        let derives: String = lines[..at]
-            .iter()
-            .rev()
-            .take_while(|l| l.trim_start().starts_with("#["))
-            .copied()
-            .collect();
-        assert!(
-            !holds_word(&derives, "PartialEq") && !holds_word(&derives, "Eq"),
-            "{name} derives an equality: {derives}"
-        );
-        let implemented = crypto
-            .lines()
-            .any(|l| l.contains("impl") && l.contains("Eq") && holds_word(l, name));
-        assert!(!implemented, "{name} implements an equality");
-    }
+/// Fails to compile when `$t` implements one of the traits: with an impl of the trait, the
+/// call to `some_item` has two candidates and the compiler cannot pick one.
+macro_rules! assert_not_impl {
+    ($t:ty: $($trait:path),+) => {
+        const _: fn() = || {
+            trait AmbiguousIfImpl<A> {
+                fn some_item() {}
+            }
+            impl<T: ?Sized> AmbiguousIfImpl<()> for T {}
+            $({
+                #[allow(dead_code)]
+                struct Invalid;
+                impl<T: ?Sized + $trait> AmbiguousIfImpl<Invalid> for T {}
+            })+
+            let _ = <$t as AmbiguousIfImpl<_>>::some_item;
+        };
+    };
 }
+
+assert_not_impl!(crypto::Secret: PartialEq, PartialOrd, std::hash::Hash);
+assert_not_impl!(crypto::Digest: PartialEq, PartialOrd, std::hash::Hash);
+assert_not_impl!(RunningHash: PartialEq, PartialOrd, std::hash::Hash);
+assert_not_impl!(AeadKey: PartialEq, PartialOrd, std::hash::Hash);
+assert_not_impl!(EphemeralKey: PartialEq, PartialOrd, std::hash::Hash);
+assert_not_impl!(SigningKey: PartialEq, PartialOrd, std::hash::Hash);
+assert_not_impl!(Random<'static>: PartialEq, PartialOrd, std::hash::Hash);
 
 #[test]
 fn constant_time_equality_tells_bytes_apart() {
@@ -1490,4 +1876,61 @@ fn adversary_alert_descriptions_have_the_names_of_rfc_8446() {
     }
     assert_eq!(A(21).name(), "unknown");
     assert_eq!(A(21).to_string(), "unknown alert 21");
+}
+
+/// A raw byte or C string whose last character is a backslash, `br"\"` or `cr"\"`, ends at its
+/// quote; the ring search must not take it for a basic string with an escaped quote and leave
+/// out the code after it.
+#[test]
+fn adversary_the_ring_search_sees_ring_after_a_raw_string_ending_in_a_backslash() {
+    let missed: Vec<&str> = [
+        "const A: &[u8] = br\"\\\";\nuse ring::digest;\nconst B: &str = \"\\\"\";",
+        "const A: &core::ffi::CStr = cr\"\\\";\nuse ring::digest;\nconst B: &str = \"\\\"\";",
+    ]
+    .into_iter()
+    .filter(|code| !code_only(code).lines().any(|l| holds_word(l, "ring")))
+    .collect();
+    assert!(missed.is_empty(), "not seen: {missed:?}");
+}
+
+/// A variant of a public enum is public without `pub`; one that holds a ring type leaks it.
+#[test]
+fn adversary_the_public_search_sees_ring_in_a_variant_of_a_public_enum() {
+    let planted = "pub enum CryptoError {\n    Rejected(ring::error::KeyRejected),\n}";
+    assert!(
+        !public_ring_paths(planted).is_empty(),
+        "not seen: {planted:?}"
+    );
+}
+
+/// A method of a public trait is public without `pub`; one that names a ring type leaks it.
+#[test]
+fn adversary_the_public_search_sees_ring_in_a_method_of_a_public_trait() {
+    let planted = "pub trait SignatureVerifier {\n    fn key(&self) -> &signature::UnparsedPublicKey<Vec<u8>>;\n}";
+    assert!(
+        !public_ring_paths(planted).is_empty(),
+        "not seen: {planted:?}"
+    );
+}
+
+/// A ring type imported by its own name, `use ring::aead::LessSafeKey;`, leaks through a public
+/// signature that names it without a path.
+#[test]
+fn adversary_the_public_search_sees_a_ring_type_imported_by_name() {
+    let planted = "use ring::aead::LessSafeKey;\npub struct AeadKey;\nimpl AeadKey {\n    pub fn inner(&self) -> &LessSafeKey {\n        todo!()\n    }\n}";
+    assert!(
+        !public_ring_paths(planted).is_empty(),
+        "not seen: {planted:?}"
+    );
+}
+
+/// A private alias of a ring type is transparent: a public signature that names the alias
+/// leaks the ring type.
+#[test]
+fn adversary_the_public_search_sees_a_ring_type_behind_a_private_alias() {
+    let planted = "type Inner = aead::LessSafeKey;\npub fn inner() -> Inner {\n    todo!()\n}";
+    assert!(
+        !public_ring_paths(planted).is_empty(),
+        "not seen: {planted:?}"
+    );
 }

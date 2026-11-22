@@ -360,3 +360,31 @@ fn adversary_another_crate_depending_on_ring_as_a_literal_string_fails() {
         |l| l == line,
     );
 }
+
+/// surf-fetch with ring spelled with a TOML escape, `"ring"`: cargo reads `ring`, accepts
+/// the lock unchanged under `--locked` and builds surf-fetch with ring, while the check's reader
+/// takes the escape for `u0069`. Only the form of an entry, which holds no backslash, stops it:
+/// green today, red when that form admits a backslash.
+#[test]
+fn adversary_another_crate_depending_on_ring_spelled_with_an_escape_fails() {
+    let entry = " \"r\\u0069ng\",";
+    let lock = lock_with_package_edited("surf-fetch", |b| {
+        b.replace(
+            "dependencies = [\n",
+            &format!("dependencies = [\n{entry}\n"),
+        )
+    });
+    let n = lock
+        .lines()
+        .position(|l| l == entry)
+        .expect("the planted entry")
+        + 1;
+    let dir = copy_with("adversary-fetch-ring-escape", &lock, &allow_list());
+    let line = format!("Cargo.lock:{n}: not in the form cargo writes: {entry}");
+    assert_fails_with(
+        "adversary-fetch-ring-escape",
+        &dir,
+        &format!("{line:?}"),
+        |l| l == line,
+    );
+}
