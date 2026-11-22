@@ -5,7 +5,7 @@ kind: epic
 status: active
 title: 'Agent target: a session command line for AI agents'
 summary: An agent opens a session, gets a token, and drives the browser through a specified command line that answers with a dense text representation of what the page offers.
-revision: 14
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 9}
@@ -78,6 +78,15 @@ holds in rows. So the `changed` block of an action inside one document holds con
 lines and added or changed text only where a new document arrived
 (`docs/plan/agent-plan-revision-1.md`, D2).
 
+Also in scope, by the order the operator's question of 2026-11-22 ("what is needed to actually
+make [surf] useful for agents") led to (D85, "What an agent needs from surf",
+`wave/a10-label-limits:docs/plan/agent-waves.md:124-165`, a file of that branch until it merges),
+three pieces of the agent's own front: cookies, one jar per session (item 4,
+`story:agent-cookie-jar`, and the public suffix list, `story:agent-cookie-public-suffixes`); the
+definition for agents that the binary prints (item 6, `story:agent-skill-definition`); and the
+agent tasks that measure what an agent can do with `surf-agent` alone (the measure beside the
+items, `story:agent-tasks`).
+
 ## Out of scope
 
 - The HTML parser and the node tree (`epic:html-parser`).
@@ -85,7 +94,9 @@ lines and added or changed text only where a new document arrived
 - `--detail` and every detailed line (`epic:detailed-mode`, after a script engine).
 - Visibility beyond the `hidden` attribute, scripts, HTTPS, the Chrome DevTools Protocol. Until
   visibility is computed, an element line says `?` or what the `hidden` attribute gives, and a
-  `note` line says so.
+  `note` line says so. The HTTPS exclusion is lifted for test fixtures of `epic:tls-https`: the
+  `https` agent task and the `Secure` cases of the cookie jar use its test server and
+  `surf-agent open --ca-file`, and build nothing of TLS.
 - Deferred, each with a backlog draft tagged `deferred`: hashing the token, paging a long
   answer (`--max-lines`, `look --from <handle>`), a caller-chosen `tab_id` on `OpenTab`,
   `CloseWindow`, `--as` on `follow`, `back`, `forward`, `fill`, `pick` and `press`
