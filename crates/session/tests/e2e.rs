@@ -1,7 +1,8 @@
 //! Case 1 of `story:agent-session-process`, alone: the built `surf-agent`, `surfd` and
 //! `surf-session` against a page server on `127.0.0.1`, each answer compared with its golden
 //! text. With `SURF_BIN_DIR` set it builds nothing and runs the three programs of that
-//! directory, so the release workflow runs the same case on the packed binaries.
+//! directory, so the release workflow runs the same case on the packed binaries. Since
+//! `story:page-text-look`, its case 11: `go <url> --as markdown` prints page text in UTF-8.
 
 #![forbid(unsafe_code)]
 
@@ -77,4 +78,27 @@ fn e2e_open_go_look_close() {
         left.is_empty(),
         "left under the session's directory: {left:?}"
     );
+}
+
+/// Case 11 of `story:page-text-look` (decision D1 B): page text outside ASCII reaches the agent
+/// as UTF-8 through `surf-session`, `surfd` and `surf-agent`.
+#[test]
+fn e2e_go_as_markdown_prints_utf_8() {
+    let dir = TestDir::new();
+    let pages = PageServer::with_body(b"<p>K&auml;se</p>".to_vec());
+    let session = common::agent_open(&dir, None);
+    let (id, token) = (session.id.as_str(), session.token.as_str());
+    let url = pages.url("/k");
+    let output = agent_call(&dir, &["go", &url, "--as", "markdown"], id, token);
+    assert_eq!(output.status.code(), Some(0), "go: {}", stderr(&output));
+    let text = stdout(&output);
+    assert!(
+        text.ends_with(
+            "note text: no-css\ntext markdown 1 of 1 lines from 1, 8 of 8 bytes\n> K\u{e4}se\n"
+        ),
+        "{text}"
+    );
+    assert!(contains(&output.stdout, b"> K\xc3\xa4se\n"));
+    let output = agent_call(&dir, &["close"], id, token);
+    assert_eq!(output.status.code(), Some(0), "close: {}", stderr(&output));
 }

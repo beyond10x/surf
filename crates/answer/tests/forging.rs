@@ -1,9 +1,14 @@
 //! The forging matrix: each of 10 forging values rendered into each of the 5 outside fields of
 //! step 1. Every answer holds only bytes from U+0020 to U+007E and line feeds, has exactly the
 //! line count of the same answer with a plain value, and `parse` gives back exactly the values
-//! given.
+//! given. The body line of the `text` block is the sixth field: through `quote_text` every
+//! value renders and holds no character rule 2 escapes; written raw, a value that could end its
+//! line is refused by `render`.
 
-use surf_answer::{Answer, Did, Head, Page, Path, PathEntry, SessionState, parse, render};
+use surf_answer::{
+    Answer, Did, Form, Head, Note, Page, Path, PathEntry, SessionState, Text, TextNote,
+    escaped_at_run_start, escaped_in_text, parse, quote_text, quote_text_cut, render,
+};
 
 /// The 10 forging values, each with a name for the failure message.
 fn forging_values() -> Vec<(&'static str, String)> {
@@ -124,6 +129,79 @@ fn forging_page_title() {
 fn forging_page_failed_address() {
     let equal = matrix("page failed address", plain_failed);
     assert_eq!(equal, 10);
+}
+
+/// The plain answer with a `text` block of three body lines, the middle one given.
+fn with_body_line(line: &str) -> Answer {
+    let mut answer = plain_loaded("text/html", "http://example.org/", "Home", "plain");
+    answer.notes = vec![Note::Text(TextNote::NoCss)];
+    let lines = vec!["before".to_string(), line.to_string(), "after".to_string()];
+    let bytes = lines.iter().map(|line| line.len() as u64 + 3).sum();
+    answer.text = Some(Text {
+        form: Form::Tree,
+        first: 1,
+        total: 3,
+        bytes_total: bytes,
+        lines,
+    });
+    answer
+}
+
+/// A text answer holds no character rule 2 escapes, its line count is the plain one's, and it
+/// parses back to the value given.
+fn text_matrix(field: &str, answer_with: impl Fn(&str) -> Answer) -> (usize, usize) {
+    let plain = render(&answer_with("plain")).expect("the plain answer renders");
+    let plain_lines = plain.matches('\n').count();
+    let (mut equal, mut refused) = (0, 0);
+    for (name, value) in forging_values() {
+        let given = answer_with(&value);
+        let Ok(text) = render(&given) else {
+            refused += 1;
+            continue;
+        };
+        assert!(
+            text.chars().all(|c| c == '\n' || !escaped_in_text(c)),
+            "{field}, {name}: a character rule 2 escapes"
+        );
+        assert!(
+            text.split('\n')
+                .all(|line| !line.chars().next().is_some_and(escaped_at_run_start)),
+            "{field}, {name}: a line starts with a combining mark"
+        );
+        assert_eq!(
+            text.matches('\n').count(),
+            plain_lines,
+            "{field}, {name}: the line count differs from the plain answer's"
+        );
+        let parsed = parse(&text).unwrap_or_else(|error| panic!("{field}, {name}: {error}"));
+        assert_eq!(parsed, given, "{field}, {name}");
+        equal += 1;
+    }
+    println!("{field}: {equal} of 10 round trips equal, {refused} refused");
+    (equal, refused)
+}
+
+#[test]
+fn forging_text_body_line_through_quote_text() {
+    // The 10,000 characters quote to about 49,000 bytes, over the block's bound of 32,768:
+    // `render` refuses that block (`text_page` would cut the line).
+    let (equal, refused) = text_matrix("text body line by quote_text", |value| {
+        with_body_line(&format!("  p {}", quote_text(value)))
+    });
+    assert_eq!((equal, refused), (9, 1));
+    let (equal, refused) = text_matrix("text body line by quote_text_cut", |value| {
+        with_body_line(&format!("  p {}", quote_text_cut(value, 80)))
+    });
+    assert_eq!((equal, refused), (10, 0));
+}
+
+#[test]
+fn forging_text_body_line_raw_is_refused_or_kept_in_its_line() {
+    // Line feed, carriage return, U+2028, U+2029, U+202E and the long value (it holds a line
+    // feed) are refused; the double quote, the backslash and the two forged lines stay inside
+    // their body line behind `> `.
+    let (equal, refused) = text_matrix("text body line raw", with_body_line);
+    assert_eq!((equal, refused), (4, 6));
 }
 
 #[test]

@@ -12,6 +12,7 @@ mod generated_check_modes;
 mod held;
 mod library;
 mod lock_check;
+mod parse;
 mod request_method;
 mod review1_generated_check;
 mod review1_library;

@@ -20,6 +20,7 @@ surf = { path = "../surf" }
 surf-ports = { path = "../ports" }
 surf-fetch = { path = "../fetch" }
 surf-answer = { path = "../answer" }
+surf-page-text = { path = "../page-text" }
 surf-secret = { path = "../secret" }
 surf-agent = { path = "../agent" }
 surfd = { path = "../surfd" }

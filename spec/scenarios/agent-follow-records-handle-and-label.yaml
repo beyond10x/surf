@@ -1,0 +1,63 @@
+# The session process records a followed link as an action `follow` with its address, its handle
+# and its label (`RecordAction`, after `Follow/requested`), and the log reads them back for the
+# `path` line (`2 follow l4 "Sign in"`, design section 5.1); the `go` before it has neither.
+type: ess-scenario/6
+domain: surf.agent
+scenario: agent-follow-records-handle-and-label
+summary: A followed link is logged with its address, handle and label; a go has neither.
+
+arrange:
+  - instance: session
+    entity: surf.agent.Session
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-000000000051
+      fields:
+        window_id: 5a7c1e00-0000-4000-8000-000000000052
+        tab_id: 5a7c1e00-0000-4000-8000-000000000053
+        holder: 5a7c1e00-0000-4000-8000-000000000051
+      state: Open
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.agent.RecordAction
+    input:
+      session_id: {$instance: session}
+      sequence: 1
+      command: go
+      url: http://example.org/
+    outcome: recorded
+
+  - at: 2026-01-06T09:00:01Z
+    command: surf.agent.RecordAction
+    input:
+      session_id: {$instance: session}
+      sequence: 2
+      command: follow
+      url: http://example.org/login
+      handle: l4
+      label: Sign in
+    outcome: recorded
+    events:
+      - event: surf.agent.ActionRecorded
+        payload:
+          session_id: {$instance: session}
+          sequence: 2
+          command: follow
+          url: http://example.org/login
+          handle: l4
+          label: Sign in
+
+assert:
+  - view: surf.agent.SessionLog
+    params: {session_id: {$instance: session}}
+    counts: {at_least: 2, at_most: 2}
+  - view: surf.agent.SessionLog
+    params: {session_id: {$instance: session}}
+    at:
+      row: first
+      fields: {sequence: 1, command: go, url: http://example.org/, handle: null, label: null}
+  - view: surf.agent.SessionLog
+    params: {session_id: {$instance: session}}
+    at:
+      row: last
+      fields: {sequence: 2, command: follow, url: http://example.org/login, handle: l4, label: Sign in}

@@ -155,20 +155,34 @@ const TOKEN: Argument = Argument {
     ],
 };
 
+const FORM: Argument = Argument {
+    field: "form",
+    sources: &[Source::Option { long: "as" }],
+};
+
+const FROM_LINE: Argument = Argument {
+    field: "from_line",
+    sources: &[Source::Option { long: "from-line" }],
+};
+
+/// The forms `--as` takes, the variants of `surf.agent.PageForm`.
+pub const FORMS: &[&str] = &["tree", "markdown"];
+
 /// The commands: `open [<url>]`, `go <url>`, `look`, `close`. `open` takes no session and no
-/// token.
+/// token. `open`, `go` and `look` take `--as tree|markdown [--from-line <n>]`; `open` only with
+/// an address.
 pub const COMMANDS: &[Command] = &[
     Command {
         name: "open",
-        arguments: &[URL_OPTIONAL],
+        arguments: &[URL_OPTIONAL, FORM, FROM_LINE],
     },
     Command {
         name: "go",
-        arguments: &[URL_REQUIRED, SESSION, TOKEN],
+        arguments: &[URL_REQUIRED, SESSION, TOKEN, FORM, FROM_LINE],
     },
     Command {
         name: "look",
-        arguments: &[SESSION, TOKEN],
+        arguments: &[SESSION, TOKEN, FORM, FROM_LINE],
     },
     Command {
         name: "close",
@@ -185,12 +199,14 @@ pub const GLOBALS: &[Global] = &[Global {
 
 /// The usage, written to standard error after every usage error.
 pub const USAGE: &str = "\
-usage: surf-agent open [<url>]
-       surf-agent go <url> [--session <id>] [--token-file <path>]
-       surf-agent look [--session <id>] [--token-file <path>]
+usage: surf-agent open [<url>] [--as tree|markdown [--from-line <n>]]
+       surf-agent go <url> [--session <id>] [--token-file <path>] [--as tree|markdown [--from-line <n>]]
+       surf-agent look [--session <id>] [--token-file <path>] [--as tree|markdown [--from-line <n>]]
        surf-agent close [--session <id>] [--token-file <path>]
 The session comes from --session or SURF_SESSION, the token from --token-file or SURF_TOKEN.
 A token file is a regular file of yours that group and others cannot read (mode 0600).
+--as prints the page as an outline of its tree or as Markdown, from line --from-line (from 1);
+open takes it only with an address.
 ";
 
 /// What the parser reads from the process: the environment and the program's directory. Its
@@ -244,23 +260,30 @@ pub struct Call {
     pub token: Option<Token>,
     /// The address, for `go` and an `open` given one.
     pub url: Option<String>,
+    /// The form of `--as`, one of [`FORMS`].
+    pub form: Option<&'static str>,
+    /// The line of `--from-line`, from 1; only beside [`Call::form`].
+    pub from_line: Option<u64>,
 }
 
 impl Call {
-    /// The request of the wire for this call.
+    /// The request of the wire for this call: `arg url`, `arg form` and `arg line`, each when
+    /// the call has it.
     pub fn request(&self) -> Request {
+        let arg = |name: &str, value: String| Arg {
+            name: name.to_string(),
+            value,
+        };
+        let args = [
+            self.url.clone().map(|url| arg("url", url)),
+            self.form.map(|form| arg("form", form.to_string())),
+            self.from_line.map(|line| arg("line", line.to_string())),
+        ];
         Request {
             command: self.command.to_string(),
             session: self.session.clone(),
             token: self.token.clone(),
-            args: self
-                .url
-                .iter()
-                .map(|url| Arg {
-                    name: "url".to_string(),
-                    value: url.clone(),
-                })
-                .collect(),
+            args: args.into_iter().flatten().collect(),
         }
     }
 }
@@ -283,8 +306,9 @@ fn usage(message: impl Into<String>) -> UsageError {
 }
 
 /// Read `args` (the words after the program name) into a call. Every word is read before any
-/// value is: a refused option is refused before the token is looked at. Then the token is read,
-/// then the session, then the address.
+/// value is: a refused option is refused before the token is looked at. Then `--as` and
+/// `--from-line` are read (`--from-line` only beside `--as`, `--as` on `open` only with an
+/// address), then the token, then the session, then the address.
 pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
     let mut command: Option<&'static Command> = None;
     let mut positionals: Vec<&OsStr> = Vec::new();
@@ -378,6 +402,8 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
         session: None,
         token: None,
         url: None,
+        form: None,
+        from_line: None,
     };
     let positional_count = command
         .arguments
@@ -402,6 +428,31 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
     };
     let declares = |field: &str| command.arguments.iter().any(|a| a.field == field);
 
+    if let Some((_, value)) = option("form") {
+        call.form = Some(
+            FORMS
+                .iter()
+                .copied()
+                .find(|form| OsStr::new(form) == value.as_os_str())
+                .ok_or_else(|| usage("--as takes tree or markdown"))?,
+        );
+    }
+    if let Some((_, value)) = option("from_line") {
+        if call.form.is_none() {
+            return Err(usage("--from-line is taken only beside --as"));
+        }
+        call.from_line = Some(
+            value
+                .to_str()
+                .filter(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+                .and_then(|digits| digits.parse::<u64>().ok())
+                .filter(|line| *line >= 1)
+                .ok_or_else(|| usage("--from-line takes a line number from 1"))?,
+        );
+    }
+    if call.form.is_some() && command.name == "open" && positionals.is_empty() {
+        return Err(usage("open takes --as only with an address"));
+    }
     if declares("token") {
         call.token = Some(match option("token") {
             Some((_, path)) => read_token_file(Path::new(path))?,

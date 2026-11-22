@@ -1,0 +1,73 @@
+# A hidden control is not picked: `Check` on a hidden checkbox is refused with `ControlHidden`
+# (`hidden` is the `hidden` attribute until visibility is computed), and the checkbox keeps its
+# checkedness. The same checkbox shown is toggled, both ways.
+type: ess-scenario/6
+domain: surf.document
+scenario: document-refuses-hidden-control
+summary: A hidden checkbox refuses a pick and keeps its checkedness; a shown one toggles.
+
+arrange:
+  - instance: hidden
+    entity: surf.document.Element
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-0000000000b1
+      fields:
+        document_id: 5a7c1e00-0000-4000-8000-0000000000b0
+        position: 1
+        kind: checkbox
+        label: Subscribe
+        hidden: true
+        disabled: false
+        checked: false
+        required: false
+        name: subscribe
+      state: Added
+  - instance: shown
+    entity: surf.document.Element
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-0000000000b2
+      fields:
+        document_id: 5a7c1e00-0000-4000-8000-0000000000b0
+        position: 2
+        kind: checkbox
+        label: Remember me
+        hidden: false
+        disabled: false
+        checked: false
+        required: false
+        name: remember
+      state: Added
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.document.Check
+    input:
+      element_id: {$instance: hidden}
+    outcome: hidden
+    error:
+      name: surf.document.ControlHidden
+      fields: {element_id: 5a7c1e00-0000-4000-8000-0000000000b1}
+
+  - at: 2026-01-06T09:00:01Z
+    command: surf.document.Check
+    input:
+      element_id: {$instance: shown}
+    outcome: checked
+    events:
+      - event: surf.document.CheckednessSet
+        payload: {element_id: {$instance: shown}, checked: true}
+
+  - at: 2026-01-06T09:00:02Z
+    command: surf.document.Check
+    input:
+      element_id: {$instance: shown}
+    outcome: unchecked
+    events:
+      - event: surf.document.CheckednessSet
+        payload: {element_id: {$instance: shown}, checked: false}
+
+assert:
+  - view: surf.document.Controls
+    contains: {element_id: {$instance: hidden}, checked: false, hidden: true}
+  - view: surf.document.Controls
+    contains: {element_id: {$instance: shown}, checked: false, hidden: false}

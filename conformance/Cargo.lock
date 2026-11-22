@@ -414,6 +414,8 @@ dependencies = [
  "renderer",
  "shell",
  "surf-fetch",
+ "surf-html",
+ "surf-page",
  "surf-ports",
  "surf-system",
  "surf-types",
@@ -437,6 +439,17 @@ name = "surf-fetch"
 version = "0.1.0"
 dependencies = [
  "surf-url",
+]
+
+[[package]]
+name = "surf-html"
+version = "0.1.0"
+
+[[package]]
+name = "surf-page"
+version = "0.1.0"
+dependencies = [
+ "surf-html",
 ]
 
 [[package]]

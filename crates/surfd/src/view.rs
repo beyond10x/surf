@@ -330,8 +330,9 @@ struct Stream<T> {
 
 /// What one look under the lock found.
 enum Polled {
-    /// An entry, and for an answer entry of a listed session that session's summary.
-    Entry(log::Entry, Option<Raw>),
+    /// An entry, and for an answer entry of a listed session that session's summary; boxed, as
+    /// the two take about 250 bytes and the other variants a few words.
+    Entry(Box<(log::Entry, Option<Raw>)>),
     /// No entry now; the sessions whose change the stream had not told, with the newest number.
     Quiet(u64, Vec<Raw>),
     /// The subscription was disconnected.
@@ -413,13 +414,16 @@ impl<T: Tables> Reader for Stream<T> {
         let polled = tables.hold(|sessions, log| match subscription.try_next() {
             Ok(kept) => {
                 let raw = after_answer(&kept, replay_until, sessions, log, known);
-                Polled::Entry(kept, raw)
+                Polled::Entry(Box::new((kept, raw)))
             }
             Err(TryRecvError::Empty) => Polled::Quiet(log.newest(), changes(sessions, log, known)),
             Err(TryRecvError::Disconnected) => Polled::End,
         });
         match polled {
-            Polled::Entry(kept, raw) => self.entry(&kept, raw),
+            Polled::Entry(found) => {
+                let (kept, raw) = *found;
+                self.entry(&kept, raw)
+            }
             Polled::End => Next::End,
             Polled::Quiet(newest, changed) if !changed.is_empty() => {
                 self.pending

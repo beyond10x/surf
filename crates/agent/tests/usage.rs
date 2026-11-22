@@ -1,5 +1,5 @@
 //! Cases 12 and 25 to 27: usage errors, and the three markers of `cli/surf-agent.yaml` the
-//! client refuses.
+//! client refuses. Since `story:page-text-look`, its case 7: `--as` and `--from-line`.
 
 use crate::common;
 
@@ -25,6 +25,56 @@ fn unknown_command_exits_2_with_the_usage() {
         );
     }
     assert!(!dir.runtime().join("surf").exists());
+}
+
+/// Case 7 of `story:page-text-look`: `--as` and `--from-line` used wrongly are usage, status 2,
+/// and nothing is sent (no `surfd` is started; the session and token are valid).
+#[test]
+fn as_and_from_line_used_wrongly_exit_2_and_send_nothing() {
+    let dir = TestDir::new();
+    for (args, says) in [
+        (vec!["look", "--as", "pdf"], "--as takes tree or markdown"),
+        (
+            vec!["look", "--from-line", "3"],
+            "--from-line is taken only beside --as",
+        ),
+        (
+            vec!["look", "--as", "tree", "--from-line", "0"],
+            "--from-line takes a line number from 1",
+        ),
+        (
+            vec!["look", "--as", "tree", "--from-line", "x"],
+            "--from-line takes a line number from 1",
+        ),
+        (
+            vec!["open", "--as", "tree"],
+            "open takes --as only with an address",
+        ),
+        (vec!["close", "--as", "tree"], "is not an option of close"),
+        (
+            vec!["look", "--as", "tree", "--as", "markdown"],
+            "--as is given twice",
+        ),
+    ] {
+        let output = run(agent(&dir)
+            .args(&args)
+            .env("SURF_SESSION", SESSION)
+            .env("SURF_TOKEN", TOKEN));
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert_eq!(stdout(&output), "", "{args:?}");
+        assert!(
+            stderr(&output).contains(says),
+            "{args:?}: {}",
+            stderr(&output)
+        );
+        assert!(
+            stderr(&output).contains("[--as tree|markdown [--from-line <n>]]"),
+            "{}",
+            stderr(&output)
+        );
+    }
+    assert!(!dir.runtime().join("surf").exists(), "nothing was sent");
+    assert!(dir.starts().is_empty());
 }
 
 /// A standard input that is a file the test holds open: a read by the child would move the

@@ -1,5 +1,6 @@
 //! Cases 11, 13 to 18 and 28: `surf-agent` against the stand-in serving `surfd.sock` under a short
-//! `XDG_RUNTIME_DIR` of its own.
+//! `XDG_RUNTIME_DIR` of its own. Since `story:page-text-look`, the request of `--as` and
+//! `--from-line`, and the client's check of its case 11.
 
 use crate::common;
 
@@ -176,6 +177,103 @@ fn answer_over_the_limit_exits_3() {
         "{}",
         stderr(&output)
     );
+}
+
+/// `story:page-text-look`: `--as` and `--from-line` go to the session as `arg form` and `arg
+/// line`, on `open <url>`, `go` and `look`.
+#[test]
+fn as_and_from_line_are_sent_as_form_and_line() {
+    let dir = TestDir::new();
+    let _surfd = StandIn::start(&dir);
+    dir.set("answer", ANSWER);
+    let held = format!("session {SESSION}\ntoken {TOKEN}\n");
+    let cases: [(Vec<&str>, String); 4] = [
+        (
+            vec!["look", "--as", "markdown"],
+            format!("surf-wire 1\ncommand look\n{held}arg form \"markdown\"\nend\n"),
+        ),
+        (
+            vec!["look", "--from-line=14", "--as=tree"],
+            format!("surf-wire 1\ncommand look\n{held}arg form \"tree\"\narg line \"14\"\nend\n"),
+        ),
+        (
+            vec![
+                "go",
+                "http://example.org/",
+                "--as",
+                "tree",
+                "--from-line",
+                "3",
+            ],
+            format!(
+                "surf-wire 1\ncommand go\n{held}arg url \"http://example.org/\"\narg form \
+                 \"tree\"\narg line \"3\"\nend\n"
+            ),
+        ),
+        (
+            vec!["open", "http://example.org/", "--as", "markdown"],
+            "surf-wire 1\ncommand open\narg url \"http://example.org/\"\narg form \
+             \"markdown\"\nend\n"
+                .to_string(),
+        ),
+    ];
+    for (args, request) in cases {
+        dir.clear_requests();
+        let output = run(agent(&dir)
+            .args(&args)
+            .env("SURF_SESSION", SESSION)
+            .env("SURF_TOKEN", TOKEN));
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{args:?}: {}",
+            stderr(&output)
+        );
+        assert_eq!(dir.requests(), request, "{args:?}");
+    }
+}
+
+/// Case 11 of `story:page-text-look` (decision D1 B), the client's check: an answer whose `>`
+/// line holds U+00E4 is printed; one whose `>` line holds U+202E, or whose `page` line holds
+/// U+00E4, exits 3 and prints nothing of it.
+#[test]
+fn utf_8_is_printed_only_in_a_body_line_and_only_what_is_not_escaped() {
+    let dir = TestDir::new();
+    let _surfd = StandIn::start(&dir);
+    dir.set("behaviour", "unchecked");
+    let with = |page: &str, last: &str| {
+        format!(
+            "surf 1 session {SESSION} open\ndid look\n{page}\nnote text: no-css\ntext markdown 1 \
+             of 1 lines from 1, {} of {} bytes\n{last}\n",
+            last.len() + 1,
+            last.len() + 1
+        )
+    };
+    let page = "page 200 \"text/html\" \"http://a/\"";
+    let good = with(page, "> K\u{e4}se");
+    dir.set("answer", &good);
+    let output = run(agent(&dir)
+        .args(["look", "--as", "markdown"])
+        .env("SURF_SESSION", SESSION)
+        .env("SURF_TOKEN", TOKEN));
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert_eq!(output.stdout, good.as_bytes());
+
+    for answer in [
+        with(page, "> \u{202e}fdp.exe"),
+        with(
+            "page 200 \"text/html\" \"http://a/\" \"K\u{e4}se\"",
+            "> Kase",
+        ),
+    ] {
+        dir.set("answer", &answer);
+        let output = run(agent(&dir)
+            .args(["look", "--as", "markdown"])
+            .env("SURF_SESSION", SESSION)
+            .env("SURF_TOKEN", TOKEN));
+        assert_eq!(output.status.code(), Some(3), "{answer:?}");
+        assert_eq!(stdout(&output), "", "{answer:?}");
+    }
 }
 
 #[test]

@@ -62,20 +62,36 @@ components:
     reached_by: in_process
 
   - component: document
-    summary: Parses response bodies into documents.
+    summary: Parses response bodies into documents, holds the state of their controls and submits their forms.
     owns:
       domains:
         - surf.document
     accepts:
       commands:
         - surf.document.ParseDocument
+        - surf.document.AddForm
         - surf.document.AddElement
+        - surf.document.AddOption
         - surf.document.FinishParsing
+        - surf.document.SetValue
+        - surf.document.Check
+        - surf.document.SelectOption
+        - surf.document.StartSubmission
+        - surf.document.SubmitForm
+        - surf.document.AbandonSubmission
     publishes:
       events:
         - surf.document.ParsingStarted
+        - surf.document.FormAdded
         - surf.document.ElementAdded
+        - surf.document.OptionAdded
         - surf.document.DocumentParsed
+        - surf.document.ValueSet
+        - surf.document.CheckednessSet
+        - surf.document.OptionSelected
+        - surf.document.SubmissionStarted
+        - surf.document.FormSubmitted
+        - surf.document.SubmissionAbandoned
     reached_by: in_process
 
   - component: renderer
@@ -103,6 +119,10 @@ components:
       commands:
         - surf.agent.OpenSession
         - surf.agent.Go
+        - surf.agent.Follow
+        - surf.agent.Fill
+        - surf.agent.Pick
+        - surf.agent.Press
         - surf.agent.CloseSession
         - surf.agent.NoteNavigationStarted
         - surf.agent.NoteNavigationCommitted
@@ -116,10 +136,14 @@ components:
         - surf.agent.SessionNavigationChanged
         - surf.agent.SessionClosed
         - surf.agent.ActionRecorded
+        - surf.agent.FillRequested
+        - surf.agent.PickRequested
+        - surf.agent.PressRequested
     reached_by: in_process
 
-# The page load, as four reactions. Every binding is one attempt inside one process
-# (`at_most_once`), and each says what is lost when its command does not run.
+# The page load, as four reactions, and a form's submission as a fifth. Every binding is one
+# attempt inside one process (`at_most_once`), and each says what is lost when its command does
+# not run.
 bindings:
   - id: fetch-on-navigation-started
     summary: A started navigation fetches its address.
@@ -179,15 +203,36 @@ bindings:
       where: [event.media_type == "text/html"]
     invoke:
       command: surf.document.ParseDocument
+    # `tab_id` is the tab the document is shown in, which a submission of its forms navigates.
     mapping:
       url: event.url
       body: event.body
       navigation_id: event.navigation_id
+      tab_id: event.tab_id
     delivery: at_most_once
     # ParseDocument refuses nothing. If it does not run at all, the tab shows no document.
     on_failure: drop
 
-  # The agent's session, as six reactions: its actions mapped onto the commands the other
+  - id: navigate-on-form-submitted
+    summary: A submitted form navigates its document's tab to the request the submission built.
+    when:
+      event: surf.document.FormSubmitted
+    invoke:
+      command: surf.navigation.Navigate
+    # A `Post` carries the body in `application/x-www-form-urlencoded`; a `Get` carries its entries
+    # in the address and no body (HTML Standard, "form submission algorithm", from memory).
+    mapping:
+      tab_id: event.tab_id
+      url: event.url
+      method: event.method
+      body: event.body
+      body_type: event.body_type
+    delivery: at_most_once
+    # Navigate refuses nothing. If it does not run at all, the submission is Submitted and the tab
+    # keeps its page.
+    on_failure: drop
+
+  # The agent's session, as ten reactions: its actions mapped onto the commands the other
   # components accept, and the navigator's events reported back to it. Each is one attempt inside
   # one process, like the page load's.
   - id: navigate-on-navigation-requested
@@ -196,7 +241,7 @@ bindings:
       event: surf.agent.NavigationRequested
     invoke:
       command: surf.navigation.Navigate
-    # An agent's `go` loads an address: `Get`, without a body.
+    # An agent's `go` and `follow` load an address: `Get`, without a body.
     mapping:
       tab_id: event.tab_id
       url: event.url
@@ -263,6 +308,61 @@ bindings:
       state: Cancelled
     delivery: at_most_once
     # As `note-on-navigation-committed`.
+    on_failure: drop
+
+  # The agent's `fill`, `pick` and `press`, mapped onto the `document` component's commands. Each
+  # of those refuses an element that does not exist, one of another kind, a disabled and a hidden
+  # control; the refusal is dropped here, and the session process, which reads the element's row
+  # before and after, answers the agent with it.
+  - id: set-value-on-fill-requested
+    summary: An agent's fill gives the document's control the value.
+    when:
+      event: surf.agent.FillRequested
+    invoke:
+      command: surf.document.SetValue
+    mapping:
+      element_id: event.element_id
+      value: event.value
+    delivery: at_most_once
+    # If SetValue refuses or does not run, the control keeps its value.
+    on_failure: drop
+
+  - id: check-on-pick-requested
+    summary: An agent's pick without an option activates the document's checkbox or radio button.
+    when:
+      event: surf.agent.PickRequested
+      where: [missing(event.option_id)]
+    invoke:
+      command: surf.document.Check
+    mapping:
+      element_id: event.element_id
+    delivery: at_most_once
+    # If Check refuses or does not run, the control keeps its checkedness.
+    on_failure: drop
+
+  - id: select-on-pick-requested
+    summary: An agent's pick with an option selects that option of the document's select.
+    when:
+      event: surf.agent.PickRequested
+      where: [defined(event.option_id)]
+    invoke:
+      command: surf.document.SelectOption
+    mapping:
+      option_id: event.option_id
+    delivery: at_most_once
+    # If SelectOption refuses or does not run, the select keeps its options' selectedness.
+    on_failure: drop
+
+  - id: submit-on-press-requested
+    summary: An agent's press activates the document's button, which starts a submission.
+    when:
+      event: surf.agent.PressRequested
+    invoke:
+      command: surf.document.StartSubmission
+    mapping:
+      element_id: event.element_id
+    delivery: at_most_once
+    # If StartSubmission refuses or does not run, nothing is submitted.
     on_failure: drop
 
   - id: close-tab-on-session-closed

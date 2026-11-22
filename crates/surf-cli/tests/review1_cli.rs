@@ -81,11 +81,11 @@ fn review1_two_arguments_and_a_non_utf8_argument_are_usage_errors_with_nothing_o
     let two = surf(["http://127.0.0.1:1/", "x"], Stdio::piped());
     assert_eq!(two.status.code(), Some(2));
     assert!(two.stdout.is_empty());
-    assert_eq!(String::from_utf8_lossy(&two.stderr), "usage: surf <url>\n");
+    assert_eq!(String::from_utf8_lossy(&two.stderr), "usage: surf <url> [--as tree|markdown]\n");
     let bad = surf([OsStr::from_bytes(b"http://h/\xff")], Stdio::piped());
     assert_eq!(bad.status.code(), Some(2));
     assert!(bad.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&bad.stderr).ends_with("usage: surf <url>\n"));
+    assert!(String::from_utf8_lossy(&bad.stderr).ends_with("usage: surf <url> [--as tree|markdown]\n"));
 }
 
 /// The rows are the binary's only product. When none of them can be written, exit 0 reports a

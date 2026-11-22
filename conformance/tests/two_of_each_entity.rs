@@ -5,15 +5,17 @@
 //!
 //! Review 2 (F1, F2) planted both defects in every component at once, which one entity covered
 //! would catch; this holds each entity to it. `Request` takes its identity from the navigation,
-//! and `Session` the one its caller names, so neither has an identity defect of its own. A defect
-//! that is not noticed names its entity.
+//! and `Session` the one its caller names, so neither has an identity defect of its own. No
+//! scenario mints two of `Option` or `Submission`: their second instance is arranged with an
+//! identity of its own, so they have a view defect only. `Form` has none: every scenario adds one
+//! form at most. A defect that is not noticed names its entity.
 
 use ess_conformance::target::ImplementationIdentity;
 use surf::{Browser, System};
 use surf_conformance::{SurfTarget, Unanswered, run};
 use surf_ports::{
-    DocumentPorts, NavigatorPorts, NetPorts, RendererPorts, ShellPorts, agent_port, document_port,
-    navigator_port, net_port, renderer_port, shell_port,
+    NavigatorPorts, NetPorts, RendererPorts, ShellPorts, agent_port, document_port, navigator_port,
+    net_port, renderer_port, shell_port,
 };
 use surf_types::agent::obligations::{
     NoteNavigationCommittedBehavior, NoteNavigationEndedBehavior, NoteNavigationFailedBehavior,
@@ -26,10 +28,16 @@ use surf_types::agent::{
     SessionSnapshot,
 };
 use surf_types::behaviour::{
-    ActionStorage, DocumentStorage, ElementStorage, FrameStorage, NavigationStorage,
-    RequestStorage, SessionStorage, TabStorage, TryContext, WindowStorage,
+    ActionStorage, DocumentStorage, ElementStorage, FormStorage, FrameStorage, ListOptionStorage,
+    NavigationStorage, RequestStorage, SessionStorage, SubmissionStorage, TabStorage, TryContext,
+    WindowStorage,
 };
-use surf_types::document::{DocumentId, DocumentSnapshot, ElementId, ElementSnapshot};
+use surf_types::document::obligations::{CheckBehavior, SelectOptionBehavior};
+use surf_types::document::{
+    Check, CheckOutcome, DocumentId, DocumentSnapshot, ElementId, ElementSnapshot, FormId,
+    FormSnapshot, ListOptionSnapshot, OptionId, SelectOption, SelectOptionOutcome, SubmissionId,
+    SubmissionSnapshot,
+};
 use surf_types::navigation::NavigationSnapshot;
 use surf_types::net::{RequestId, RequestSnapshot};
 use surf_types::obligation::UnmetObligation;
@@ -54,6 +62,8 @@ enum Entity {
     Frame,
     Session,
     Action,
+    Option,
+    Submission,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -86,6 +96,25 @@ impl<P> Planted<P> {
 }
 
 macro_rules! planted_storage {
+    ($storage:ident, $snapshot:ty, $key:ty) => {
+        impl<P: $storage> $storage for Planted<P> {
+            fn get(&self, identity: &$key) -> Option<$snapshot> {
+                $storage::get(&self.inner, identity)
+            }
+
+            fn put(&mut self, snapshot: $snapshot) {
+                $storage::put(&mut self.inner, snapshot);
+            }
+
+            fn delete(&mut self, identity: &$key) {
+                $storage::delete(&mut self.inner, identity);
+            }
+
+            fn list(&self) -> Vec<$snapshot> {
+                $storage::list(&self.inner)
+            }
+        }
+    };
     ($storage:ident, $snapshot:ty, $key:ty, $entity:expr) => {
         impl<P: $storage> $storage for Planted<P> {
             fn get(&self, identity: &$key) -> Option<$snapshot> {
@@ -126,8 +155,22 @@ planted_storage!(ElementStorage, ElementSnapshot, ElementId, Entity::Element);
 planted_storage!(FrameStorage, FrameSnapshot, FrameId, Entity::Frame);
 planted_storage!(SessionStorage, SessionSnapshot, SessionId, Entity::Session);
 planted_storage!(ActionStorage, ActionSnapshot, ActionId, Entity::Action);
+planted_storage!(FormStorage, FormSnapshot, FormId);
+planted_storage!(
+    ListOptionStorage,
+    ListOptionSnapshot,
+    OptionId,
+    Entity::Option
+);
+planted_storage!(
+    SubmissionStorage,
+    SubmissionSnapshot,
+    SubmissionId,
+    Entity::Submission
+);
 
-/// The `agent` component's obligations, handed through to the ports the defect is planted in.
+/// The obligations of the `agent` and `document` components, handed through to the ports the
+/// defect is planted in.
 macro_rules! planted_obligation {
     ($behavior:ident, $method:ident, $input:ty, $outcome:ty) => {
         impl<P: $behavior> $behavior for Planted<P> {
@@ -162,6 +205,13 @@ planted_obligation!(
     NoteNavigationEnded,
     NoteNavigationEndedOutcome
 );
+planted_obligation!(CheckBehavior, check, Check, CheckOutcome);
+planted_obligation!(
+    SelectOptionBehavior,
+    select_option,
+    SelectOption,
+    SelectOptionOutcome
+);
 
 fn same() -> Uuid {
     Uuid(SAME.to_owned())
@@ -191,6 +241,20 @@ impl<P: TryContext> TryContext for Planted<P> {
             return Ok(ElementId(same()));
         }
         self.inner.try_generate_surf_document_element_id()
+    }
+
+    fn try_generate_surf_document_form_id(&mut self) -> Result<FormId, UnmetObligation> {
+        self.inner.try_generate_surf_document_form_id()
+    }
+
+    fn try_generate_surf_document_option_id(&mut self) -> Result<OptionId, UnmetObligation> {
+        self.inner.try_generate_surf_document_option_id()
+    }
+
+    fn try_generate_surf_document_submission_id(
+        &mut self,
+    ) -> Result<SubmissionId, UnmetObligation> {
+        self.inner.try_generate_surf_document_submission_id()
     }
 
     fn try_generate_surf_net_request_id(&mut self) -> Result<RequestId, UnmetObligation> {
@@ -237,7 +301,7 @@ fn failed_with(defect: Defect) -> Vec<String> {
                         defect,
                     }),
                     document_port(Planted {
-                        inner: DocumentPorts::new(),
+                        inner: setup.document_ports(),
                         defect,
                     }),
                     navigator_port(Planted {
@@ -325,5 +389,7 @@ fn a_view_cut_to_its_first_row_is_noticed_for_each_entity() {
         Defect::FirstRowOnly(Entity::Frame),
         Defect::FirstRowOnly(Entity::Session),
         Defect::FirstRowOnly(Entity::Action),
+        Defect::FirstRowOnly(Entity::Option),
+        Defect::FirstRowOnly(Entity::Submission),
     ]);
 }

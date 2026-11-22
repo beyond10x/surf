@@ -1,6 +1,8 @@
 domain: surf.document
 
-summary: Turning the bytes of a response into a document, its title and its actionable elements.
+summary: >-
+  Turning the bytes of a response into a document, its title, its actionable elements and its
+  forms; the state of its controls; and the submission of a form.
 
 naming:
   wire: document
@@ -19,6 +21,28 @@ types:
     of: Uuid
     naming:
       summary: The identity of one actionable element of a document.
+
+  # Minted when the form's row is written, as an element's identity is.
+  - name: surf.document.FormId
+    kind: newtype
+    of: Uuid
+    naming:
+      summary: The identity of one form of a document.
+
+  # Minted when the option's row is written, as an element's identity is.
+  - name: surf.document.OptionId
+    kind: newtype
+    of: Uuid
+    naming:
+      summary: The identity of one option of a select.
+
+  # Minted when a submission starts: the step that ends it (`agent-form-port`) learns it from
+  # `SubmissionStarted`.
+  - name: surf.document.SubmissionId
+    kind: newtype
+    of: Uuid
+    naming:
+      summary: The identity of one submission of a form.
 
   # The kinds of `docs/design/agent-interface.md` section 5.2, by element and by the `input`
   # element's type state (`docs/design/html-parser.md`, item 6). Number, Range, Color and the date
@@ -74,6 +98,30 @@ types:
     naming:
       summary: The limit that stopped parsing.
 
+  # Why a submission ended without a navigation: the steps of the HTML Standard's form submission
+  # algorithm that return before navigating, as far as surf takes them on (from memory, to be
+  # confirmed), and the two the agent's `press` reaches first: a button that is not a submit
+  # button, and one with no form owner. Only `application/x-www-form-urlencoded` is encoded.
+  - name: surf.document.SubmissionEndReason
+    kind: enum
+    variants:
+      - name: NoFormOwner
+        summary: The button has no form owner, so its activation submits nothing.
+      - name: NotSubmitButton
+        summary: The button is a reset button or a plain button, whose activation does not submit.
+      - name: InvalidControls
+        summary: A control of the form failed constraint validation.
+      - name: InvalidAction
+        summary: The form's action did not parse as a URL.
+      - name: UnsupportedScheme
+        summary: The action's scheme is not one surf navigates to by a submission (`mailto:`, `javascript:`, `data:`).
+      - name: UnsupportedEnctype
+        summary: The form asks for `multipart/form-data` or `text/plain`, which surf does not encode.
+      - name: DialogMethod
+        summary: The method is `dialog`, which closes a dialog and navigates nowhere.
+    naming:
+      summary: Why a submission ended without a navigation.
+
 entities:
   # The node tree is not modelled: it is built by the parser step of `crates/surf`, kept by
   # `Browser` per document and read only by the session process through
@@ -93,6 +141,11 @@ entities:
       # The navigation this document was parsed for, which shares its identity with the request.
       - name: navigation_id
         type: surf.net.RequestId
+      # The tab the document is shown in: the tab of its navigation, which
+      # `parse-on-navigation-committed` copies from `NavigationCommitted`, because this component
+      # reads no navigator rows. A submission of one of its forms navigates this tab.
+      - name: tab_id
+        type: surf.shell.TabId
       # What `document.title` returns: the text of the first `title` element in tree order,
       # ASCII whitespace stripped and collapsed; the empty string when there is none. Absent
       # while `Parsing`, set by `FinishParsing`.
@@ -116,6 +169,18 @@ entities:
         target: surf.navigation.Navigation
         cardinality: one
         via: navigation_id
+      - name: tab
+        kind: references
+        target: surf.shell.Tab
+        cardinality: one
+        via: tab_id
+      # The forms of the document, in tree order by `position` (HTML Standard, `document.forms`):
+      # none or many, and a form never outlives its document.
+      - name: forms
+        kind: owns
+        target: surf.document.Form
+        cardinality: many
+        via: document_id
     lifecycle:
       initial: Parsing
       states:
@@ -129,9 +194,44 @@ entities:
           from: [Parsing]
           to: Parsed
 
+  # One `form` element of a document. `action`, `method` and `enctype` are the attributes as
+  # written, absent where the element has none: what they mean (the action resolved against the
+  # document's base URL, a missing or invalid method as `get`, a missing or invalid enctype as
+  # `application/x-www-form-urlencoded`, and a submitter's `formaction`, `formmethod` and
+  # `formenctype` over them) is the submission step's (`agent-form-port`), which reads the tree.
+  # Written once, while its document is `Parsing`, like an element's row.
+  - name: surf.document.Form
+    naming:
+      summary: One form of a document, with its action, method and encoding as written.
+    identity:
+      name: form_id
+      type: surf.document.FormId
+    fields:
+      - name: document_id
+        type: surf.document.DocumentId
+      # The form's place among its document's forms in tree order, from 1.
+      - name: position
+        type: Integer
+      - name: action
+        type: Optional<String>
+      - name: method
+        type: Optional<String>
+      - name: enctype
+        type: Optional<String>
+    # Its document: the relation `forms` of `surf.document.Document` carries `document_id`.
+    lifecycle:
+      initial: Added
+      states:
+        - name: Added
+          summary: The form is a row of its document; it never changes.
+      terminal: [Added]
+
   # One link or form control of a document (`docs/design/agent-interface.md`, section 6). A row is
-  # written once, while its document is `Parsing`, and never changes or goes: no command deletes
-  # one, and the document has no state that removes its rows.
+  # written once, while its document is `Parsing`, and never goes: no command deletes one, and
+  # the document has no state that removes its rows. What changes is the control's state, which
+  # the HTML Standard keeps apart from its attributes (decision D2): a control's value
+  # (`SetValue`) and its checkedness (`Check`). A select's state is the selectedness of its
+  # options (D11), held on `surf.document.Option`.
   - name: surf.document.Element
     naming:
       summary: One actionable element of a document, a link or a form control.
@@ -155,29 +255,135 @@ entities:
       - name: target
         type: Optional<String>
       # The value of a `text`, `password`, `textarea` or `file` control; none for a `select` (D11),
-      # whose options' selectedness is `story:agent-forms-spec`'s.
+      # whose state is the selectedness of its options. `SetValue` changes it.
       - name: value
         type: Optional<String>
       - name: hidden
         type: Boolean
       - name: disabled
         type: Boolean
+      # The checkedness of a `checkbox` or `radio`; `Check` changes it.
       - name: checked
         type: Boolean
       - name: required
         type: Boolean
+      # The control's `name` attribute as written, absent where it has none: it names the
+      # control's entry in a submission, and with the form owner it makes a radio button group.
+      - name: name
+        type: Optional<String>
+      # The control's form owner (HTML Standard, "form owner"): the form it belongs to, absent
+      # where it has none. A link has none.
+      - name: form_id
+        type: Optional<surf.document.FormId>
     relations:
       - name: document
         kind: references
         target: surf.document.Document
         cardinality: one
         via: document_id
+      # Zero or one: `form_id` is absent for a control with no form owner.
+      - name: form
+        kind: references
+        target: surf.document.Form
+        cardinality: one
+        via: form_id
+      # The options of a select, in tree order by `position`; none for every other kind.
+      - name: options
+        kind: owns
+        target: surf.document.Option
+        cardinality: many
+        via: select_id
     lifecycle:
       initial: Added
       states:
         - name: Added
-          summary: The element is a row of its document; it never changes.
+          summary: The element is a row of its document; only its control state changes.
       terminal: [Added]
+
+  # One `option` of a select, its own row rather than a list field of the select: picking one is a
+  # command on it, and its selectedness is the select's stored state (D11). Written once, while its
+  # select's document is `Parsing`; only its selectedness changes after that (`SelectOption`).
+  # UNMAPPED: a select with `multiple`. `SelectOption` unselects the select's other options, which
+  # is what the selectedness setting algorithm does for a select without `multiple`; a select
+  # with it toggles one option and keeps the others. What would settle it: a field `multiple` on
+  # the element, when a page needs one.
+  # `code: ListOption`, because the Rust target would name the entity `Option` and shadow the
+  # standard `Option` its generated code uses ("shadows a helper referenced by generated code",
+  # ess 0.96.0).
+  - name: surf.document.Option
+    naming:
+      code: ListOption
+      summary: One option of a select, with its value, its label and whether it is selected.
+    identity:
+      name: option_id
+      type: surf.document.OptionId
+    fields:
+      - name: select_id
+        type: surf.document.ElementId
+      # The option's place among its select's options in tree order, from 1.
+      - name: position
+        type: Integer
+      # The option's value (its `value` attribute, or its text where it has none) and its label
+      # (its `label` attribute, or its text), both as the HTML Standard derives them.
+      - name: value
+        type: String
+      - name: label
+        type: String
+      - name: selected
+        type: Boolean
+      # Whether the option can be picked, as the parser step finds it: disabled where the option,
+      # its `optgroup` or its select is disabled (HTML Standard, an option's "disabled"), hidden
+      # where its select is hidden. Copied onto the option so that `SelectOption`, whose subject
+      # is the option, refuses it without reading the select's row.
+      - name: disabled
+        type: Boolean
+      - name: hidden
+        type: Boolean
+    # Its select: the relation `options` of `surf.document.Element` carries `select_id`.
+    lifecycle:
+      initial: Added
+      states:
+        - name: Added
+          summary: The option is a row of its select; only its selectedness changes.
+      terminal: [Added]
+
+  # One submission of a form, from the press of its submitter to its end. The entry list and its
+  # encoding are not computed in the model (ESS has no encoder): `StartSubmission` starts it, the
+  # submission step (`agent-form-port`) builds the entry list and the request from the tree and the
+  # control rows, and `SubmitForm` or `AbandonSubmission` ends it.
+  - name: surf.document.Submission
+    naming:
+      summary: One submission of a form, started by its submitter's activation.
+    identity:
+      name: submission_id
+      type: surf.document.SubmissionId
+    fields:
+      # The button whose activation started the submission (HTML Standard, "submitter").
+      - name: submitter
+        type: surf.document.ElementId
+    relations:
+      - name: submitter
+        kind: references
+        target: surf.document.Element
+        cardinality: one
+        via: submitter
+    lifecycle:
+      initial: Started
+      states:
+        - name: Started
+          summary: The submitter was activated; the request is being built.
+        - name: Submitted
+          summary: The submission navigated its document's tab.
+        - name: Abandoned
+          summary: The submission ended without a navigation, for a reason.
+      terminal: [Submitted, Abandoned]
+      transitions:
+        - name: submit
+          from: [Started]
+          to: Submitted
+        - name: abandon
+          from: [Started]
+          to: Abandoned
 
 errors:
   - name: surf.document.DocumentNotFound
@@ -191,6 +397,48 @@ errors:
     fields:
       - name: state
         type: surf.document.Document.State
+
+  - name: surf.document.ElementNotFound
+    summary: No element has this identity.
+    fields:
+      - name: element_id
+        type: surf.document.ElementId
+
+  - name: surf.document.ControlKindConflict
+    summary: The element is not of a kind this command acts on, so nothing changed.
+    fields:
+      - name: element_id
+        type: surf.document.ElementId
+
+  - name: surf.document.ControlDisabled
+    summary: The control is disabled, so nothing changed.
+    fields:
+      - name: element_id
+        type: surf.document.ElementId
+
+  - name: surf.document.ControlHidden
+    summary: The control is hidden, so nothing changed.
+    fields:
+      - name: element_id
+        type: surf.document.ElementId
+
+  - name: surf.document.OptionNotFound
+    summary: No option has this identity.
+    fields:
+      - name: option_id
+        type: surf.document.OptionId
+
+  - name: surf.document.SubmissionNotFound
+    summary: No submission has this identity.
+    fields:
+      - name: submission_id
+        type: surf.document.SubmissionId
+
+  - name: surf.document.SubmissionStateConflict
+    summary: The submission already ended, so nothing moved.
+    fields:
+      - name: state
+        type: surf.document.Submission.State
 
 commands:
   # Parsing takes time, so it is a command that starts it, one per actionable element, and one
@@ -210,6 +458,8 @@ commands:
         type: Bytes
       - name: navigation_id
         type: surf.net.RequestId
+      - name: tab_id
+        type: surf.shell.TabId
     outcomes:
       - name: started
         creates: surf.document.Document
@@ -217,6 +467,7 @@ commands:
         sets:
           url: input.url
           navigation_id: input.navigation_id
+          tab_id: input.tab_id
         emits:
           - surf.document.ParsingStarted
         payload:
@@ -225,14 +476,15 @@ commands:
             body: input.body
         summary: The document is Parsing.
 
-  # The next two commands are the component's own steps: its parser step issues them, one
-  # `AddElement` per actionable element in tree order and then `FinishParsing`. No actor is
-  # granted them.
+  # The next four commands are the component's own steps: its parser step issues them, one
+  # `AddForm` per form, one `AddElement` per actionable element and one `AddOption` per option of
+  # a select, each in tree order, and then `FinishParsing`. No actor is granted them.
   # `AddElement` refuses an unknown document and one already `Parsed` by guards over the row its
   # `document_id` names (`via:`), which ess 0.96.0 generates and synthesizes; the row-set form
   # (`when_related: {entity:, where:}`) of `docs/design/html-parser.md` item 2 kept it an
   # obligation. A second element at a position already taken is not refused: the parser step
-  # numbers the elements once, in tree order.
+  # numbers the elements once, in tree order. A form owner that names no form is not refused
+  # either: the parser step adds a form before the controls it owns.
   - name: surf.document.AddElement
     naming:
       wire: add-element
@@ -259,6 +511,10 @@ commands:
         type: Boolean
       - name: required
         type: Boolean
+      - name: name
+        type: Optional<String>
+      - name: form_id
+        type: Optional<surf.document.FormId>
     outcomes:
       - name: no-such-document
         when_related: {via: input.document_id, exists: false}
@@ -290,6 +546,8 @@ commands:
           disabled: input.disabled
           checked: input.checked
           required: input.required
+          name: input.name
+          form_id: input.form_id
         emits:
           - surf.document.ElementAdded
         payload:
@@ -298,6 +556,120 @@ commands:
             document_id: input.document_id
             position: input.position
         summary: The element is a row of its document.
+
+  # A form of a document being parsed, refused as `AddElement` refuses.
+  - name: surf.document.AddForm
+    naming:
+      wire: add-form
+      display: Add a form
+      summary: Record one form of a document being parsed.
+    input:
+      - name: document_id
+        type: surf.document.DocumentId
+      - name: position
+        type: Integer
+      - name: action
+        type: Optional<String>
+        example: "/session"
+      - name: method
+        type: Optional<String>
+        example: "post"
+      - name: enctype
+        type: Optional<String>
+    outcomes:
+      - name: no-such-document
+        when_related: {via: input.document_id, exists: false}
+        error: surf.document.DocumentNotFound
+        payload:
+          surf.document.DocumentNotFound:
+            document_id: input.document_id
+        summary: No document has this identity; nothing is added.
+
+      - name: already-parsed
+        when_related: {via: input.document_id, predicate: state == Parsed}
+        error: surf.document.DocumentStateConflict
+        payload:
+          surf.document.DocumentStateConflict:
+            state: Parsed
+        summary: The document was already Parsed; nothing is added.
+
+      - name: added
+        creates: surf.document.Form
+        instance: form_id
+        sets:
+          document_id: input.document_id
+          position: input.position
+          action: input.action
+          method: input.method
+          enctype: input.enctype
+        emits:
+          - surf.document.FormAdded
+        payload:
+          surf.document.FormAdded:
+            form_id: {generated: true}
+            document_id: input.document_id
+            position: input.position
+        summary: The form is a row of its document.
+
+  # An option of a select, refused where the select is not an element of the kind `select`.
+  # Whether the select's document is still `Parsing` is not read: a guard reads the row its input
+  # names, and the option names its select, not the document.
+  - name: surf.document.AddOption
+    naming:
+      wire: add-option
+      display: Add an option
+      summary: Record one option of a select of a document being parsed.
+    input:
+      - name: select_id
+        type: surf.document.ElementId
+      - name: position
+        type: Integer
+      - name: value
+        type: String
+      - name: label
+        type: String
+      - name: selected
+        type: Boolean
+      - name: disabled
+        type: Boolean
+      - name: hidden
+        type: Boolean
+    outcomes:
+      - name: no-such-select
+        when_related: {via: input.select_id, exists: false}
+        error: surf.document.ElementNotFound
+        payload:
+          surf.document.ElementNotFound:
+            element_id: input.select_id
+        summary: No element has this identity; nothing is added.
+
+      - name: not-a-select
+        when_related: {via: input.select_id, predicate: kind != select}
+        error: surf.document.ControlKindConflict
+        payload:
+          surf.document.ControlKindConflict:
+            element_id: input.select_id
+        summary: The element is not a select; nothing is added.
+
+      - name: added
+        creates: surf.document.Option
+        instance: option_id
+        sets:
+          select_id: input.select_id
+          position: input.position
+          value: input.value
+          label: input.label
+          selected: input.selected
+          disabled: input.disabled
+          hidden: input.hidden
+        emits:
+          - surf.document.OptionAdded
+        payload:
+          surf.document.OptionAdded:
+            option_id: {generated: true}
+            select_id: input.select_id
+            position: input.position
+        summary: The option is a row of its select.
 
   - name: surf.document.FinishParsing
     naming:
@@ -354,6 +726,387 @@ commands:
             state: {subject: state}
         summary: The document's parsing had already ended.
 
+  # The three commands that change a control's state (decision D2) and the one that starts a
+  # submission are what the agent's `fill`, `pick` and `press` map to (`spec/components.yaml`).
+  # Each refuses, in this order, an element that does not exist, one of a kind it does not act
+  # on, a disabled control and a hidden control (`docs/design/agent-interface.md`, section 4:
+  # "hidden or disabled control"). `hidden` is the `hidden` attribute until visibility is computed
+  # (section 5.2). A control's `readonly` is not stored: a read-only text control takes `fill`.
+  # UNMAPPED: `readonly`. What would settle it: a field of the element when `fill` must refuse it.
+  # The events carry the element and not the value, so a password reaches no event of this
+  # component.
+  - name: surf.document.SetValue
+    naming:
+      wire: set-value
+      display: Set a control's value
+      summary: Give a text, password or textarea control a value.
+    input:
+      - name: element_id
+        type: surf.document.ElementId
+      - name: value
+        type: String
+        example: "ada"
+    outcomes:
+      - name: no-such-element
+        unknown_instance: true
+        error: surf.document.ElementNotFound
+        payload:
+          surf.document.ElementNotFound:
+            element_id: input.element_id
+        summary: No element has this identity.
+
+      - name: not-text-entry
+        when_subject: {predicate: {all: [kind != text, kind != password, kind != textarea]}}
+        error: surf.document.ControlKindConflict
+        payload:
+          surf.document.ControlKindConflict:
+            element_id: input.element_id
+        summary: The element takes no typed value; nothing changed.
+
+      - name: disabled
+        when_subject: {predicate: disabled == true}
+        error: surf.document.ControlDisabled
+        payload:
+          surf.document.ControlDisabled:
+            element_id: input.element_id
+        summary: The control is disabled; nothing changed.
+
+      - name: hidden
+        when_subject: {predicate: hidden == true}
+        error: surf.document.ControlHidden
+        payload:
+          surf.document.ControlHidden:
+            element_id: input.element_id
+        summary: The control is hidden; nothing changed.
+
+      - name: set
+        updates: surf.document.Element
+        instance: element_id
+        sets:
+          value: input.value
+        emits:
+          - surf.document.ValueSet
+        payload:
+          surf.document.ValueSet:
+            element_id: input.element_id
+        summary: The control holds the value.
+
+  # A checkbox's or a radio button's activation behaviour (HTML Standard, the Checkbox and Radio
+  # Button states): a checkbox's checkedness is toggled; a radio button becomes checked, and every
+  # other radio button of its group unchecked. Its group is the radio buttons of its document with
+  # the same form owner and the same `name`.
+  # UNMAPPED: the group of a radio button with no form owner (the radio buttons of its tree with no
+  # form owner and the same name) and of one with no name (itself alone). A filter that reads an
+  # absent `form_id` or `name` selects nothing, so neither unchecks another; the HTML Standard
+  # unchecks the first group's others. What would settle it: a comparison of absent values in a
+  # filter, or a group key the parser step computes.
+  - name: surf.document.Check
+    naming:
+      wire: check
+      display: Check a control
+      summary: Toggle a checkbox, or check a radio button and uncheck the others of its group.
+    input:
+      - name: element_id
+        type: surf.document.ElementId
+    outcomes:
+      - name: no-such-element
+        unknown_instance: true
+        error: surf.document.ElementNotFound
+        payload:
+          surf.document.ElementNotFound:
+            element_id: input.element_id
+        summary: No element has this identity.
+
+      - name: not-checkable
+        when_subject: {predicate: {all: [kind != checkbox, kind != radio]}}
+        error: surf.document.ControlKindConflict
+        payload:
+          surf.document.ControlKindConflict:
+            element_id: input.element_id
+        summary: The element is neither a checkbox nor a radio button; nothing changed.
+
+      - name: disabled
+        when_subject: {predicate: disabled == true}
+        error: surf.document.ControlDisabled
+        payload:
+          surf.document.ControlDisabled:
+            element_id: input.element_id
+        summary: The control is disabled; nothing changed.
+
+      - name: hidden
+        when_subject: {predicate: hidden == true}
+        error: surf.document.ControlHidden
+        payload:
+          surf.document.ControlHidden:
+            element_id: input.element_id
+        summary: The control is hidden; nothing changed.
+
+      - name: radio-checked
+        when_subject: {predicate: kind == radio}
+        updates: surf.document.Element
+        instance: element_id
+        sets:
+          checked: true
+        affects:
+          - entity: surf.document.Element
+            where:
+              all:
+                - kind == radio
+                - document_id == subject.document_id
+                - form_id == subject.form_id
+                - name == subject.name
+            sets:
+              checked: false
+        emits:
+          - surf.document.CheckednessSet
+        payload:
+          surf.document.CheckednessSet:
+            element_id: input.element_id
+            checked: true
+        summary: The radio button is checked and the others of its group are not.
+
+      - name: unchecked
+        when_subject: {predicate: checked == true}
+        updates: surf.document.Element
+        instance: element_id
+        sets:
+          checked: false
+        emits:
+          - surf.document.CheckednessSet
+        payload:
+          surf.document.CheckednessSet:
+            element_id: input.element_id
+            checked: false
+        summary: The checked checkbox is unchecked.
+
+      - name: checked
+        updates: surf.document.Element
+        instance: element_id
+        sets:
+          checked: true
+        emits:
+          - surf.document.CheckednessSet
+        payload:
+          surf.document.CheckednessSet:
+            element_id: input.element_id
+            checked: true
+        summary: The unchecked checkbox is checked.
+
+  # The select's selectedness setting for a select without `multiple` (the marker at
+  # `surf.document.Option`): the option picked is selected and every other option of its select
+  # is not. The option is the subject: the agent's handle names the select and its option word one
+  # of that select's options, which the session process resolves to the option's identity, so no
+  # option of another kind of control can be named. A disabled and a hidden option are refused as
+  # the other control commands refuse a disabled and a hidden control, by the option's copy of
+  # them, and the refusal names the select.
+  - name: surf.document.SelectOption
+    naming:
+      wire: select-option
+      display: Select an option
+      summary: Select one option of a select and unselect the others.
+    input:
+      - name: option_id
+        type: surf.document.OptionId
+    outcomes:
+      - name: no-such-option
+        unknown_instance: true
+        error: surf.document.OptionNotFound
+        payload:
+          surf.document.OptionNotFound:
+            option_id: input.option_id
+        summary: No option has this identity.
+
+      - name: disabled
+        when_subject: {predicate: disabled == true}
+        error: surf.document.ControlDisabled
+        payload:
+          surf.document.ControlDisabled:
+            element_id: {subject: select_id}
+        summary: The option or its select is disabled; nothing changed.
+
+      - name: hidden
+        when_subject: {predicate: hidden == true}
+        error: surf.document.ControlHidden
+        payload:
+          surf.document.ControlHidden:
+            element_id: {subject: select_id}
+        summary: The select is hidden; nothing changed.
+
+      - name: selected
+        updates: surf.document.Option
+        instance: option_id
+        sets:
+          selected: true
+        affects:
+          - entity: surf.document.Option
+            where: select_id == subject.select_id
+            sets:
+              selected: false
+        emits:
+          - surf.document.OptionSelected
+        payload:
+          surf.document.OptionSelected:
+            option_id: input.option_id
+            select_id: {subject: select_id}
+        summary: The option is selected and the other options of its select are not.
+
+  # A button's activation: it starts a submission of its form owner's form (HTML Standard, the
+  # Submit Button state's activation behaviour, "form submission algorithm"). Refused as the
+  # other control commands refuse. The submission step then reads the tree and the control rows
+  # and ends it: a button that is not a submit button and one with no form owner end it at once,
+  # with `NotSubmitButton` and `NoFormOwner` (the element's kind does not tell a submit button
+  # from a reset button).
+  - name: surf.document.StartSubmission
+    naming:
+      wire: start-submission
+      display: Start a submission
+      summary: Activate a button, which starts the submission of its form.
+    input:
+      - name: element_id
+        type: surf.document.ElementId
+    outcomes:
+      - name: no-such-element
+        when_related: {via: input.element_id, exists: false}
+        error: surf.document.ElementNotFound
+        payload:
+          surf.document.ElementNotFound:
+            element_id: input.element_id
+        summary: No element has this identity; nothing started.
+
+      - name: not-a-button
+        when_related: {via: input.element_id, predicate: kind != button}
+        error: surf.document.ControlKindConflict
+        payload:
+          surf.document.ControlKindConflict:
+            element_id: input.element_id
+        summary: The element is not a button; nothing started.
+
+      - name: disabled
+        when_related: {via: input.element_id, predicate: disabled == true}
+        error: surf.document.ControlDisabled
+        payload:
+          surf.document.ControlDisabled:
+            element_id: input.element_id
+        summary: The button is disabled; nothing started.
+
+      - name: hidden
+        when_related: {via: input.element_id, predicate: hidden == true}
+        error: surf.document.ControlHidden
+        payload:
+          surf.document.ControlHidden:
+            element_id: input.element_id
+        summary: The button is hidden; nothing started.
+
+      - name: started
+        creates: surf.document.Submission
+        instance: submission_id
+        sets:
+          submitter: input.element_id
+        emits:
+          - surf.document.SubmissionStarted
+        payload:
+          surf.document.SubmissionStarted:
+            submission_id: {generated: true}
+            submitter: input.element_id
+        summary: The submission is Started.
+
+  # The end of a submission that navigates: the submission step gives the tab of the form's
+  # document, the action resolved against the document's base URL (with the query of a `Get`
+  # submission's entries), the method, and a `Post`'s body in `application/x-www-form-urlencoded`
+  # and that media type; a `Get` has neither. The event invokes `surf.navigation.Navigate`
+  # (`navigate-on-form-submitted`).
+  - name: surf.document.SubmitForm
+    naming:
+      wire: submit-form
+      display: Submit a form
+      summary: End a submission with the request it navigates to.
+    input:
+      - name: submission_id
+        type: surf.document.SubmissionId
+      - name: tab_id
+        type: surf.shell.TabId
+      - name: url
+        type: surf.url.Url
+        example: "http://example.org/session"
+      - name: method
+        type: surf.net.Method
+      - name: body
+        type: Optional<Bytes>
+        example: "dXNlcj1hZGE="
+      - name: body_type
+        type: Optional<surf.net.MediaType>
+        example: "application/x-www-form-urlencoded"
+    outcomes:
+      - name: no-such-submission
+        unknown_instance: true
+        error: surf.document.SubmissionNotFound
+        payload:
+          surf.document.SubmissionNotFound:
+            submission_id: input.submission_id
+        summary: No submission has this identity.
+
+      - name: submitted
+        moves: surf.document.Submission.submit
+        instance: submission_id
+        emits:
+          - surf.document.FormSubmitted
+        payload:
+          surf.document.FormSubmitted:
+            submission_id: input.submission_id
+            tab_id: input.tab_id
+            url: input.url
+            method: input.method
+            body: input.body
+            body_type: input.body_type
+        summary: The submission is Submitted, and its tab is to navigate to the request.
+
+      - name: wrong-state
+        wrong_state: true
+        error: surf.document.SubmissionStateConflict
+        payload:
+          surf.document.SubmissionStateConflict:
+            state: {subject: state}
+        summary: The submission had already ended.
+
+  # The end of a submission that navigates nowhere, with the reason.
+  - name: surf.document.AbandonSubmission
+    naming:
+      wire: abandon-submission
+      display: Abandon a submission
+      summary: End a submission without a navigation, with the reason.
+    input:
+      - name: submission_id
+        type: surf.document.SubmissionId
+      - name: reason
+        type: surf.document.SubmissionEndReason
+    outcomes:
+      - name: no-such-submission
+        unknown_instance: true
+        error: surf.document.SubmissionNotFound
+        payload:
+          surf.document.SubmissionNotFound:
+            submission_id: input.submission_id
+        summary: No submission has this identity.
+
+      - name: abandoned
+        moves: surf.document.Submission.abandon
+        instance: submission_id
+        emits:
+          - surf.document.SubmissionAbandoned
+        payload:
+          surf.document.SubmissionAbandoned:
+            submission_id: input.submission_id
+            reason: input.reason
+        summary: The submission is Abandoned; nothing navigates.
+
+      - name: wrong-state
+        wrong_state: true
+        error: surf.document.SubmissionStateConflict
+        payload:
+          surf.document.SubmissionStateConflict:
+            state: {subject: state}
+        summary: The submission had already ended.
+
 events:
   # Carries the body to the parser step, as `surf.net.RequestStarted` carries the address to the
   # transport.
@@ -370,6 +1123,24 @@ events:
         type: surf.document.ElementId
       - name: document_id
         type: surf.document.DocumentId
+      - name: position
+        type: Integer
+
+  - name: surf.document.FormAdded
+    fields:
+      - name: form_id
+        type: surf.document.FormId
+      - name: document_id
+        type: surf.document.DocumentId
+      - name: position
+        type: Integer
+
+  - name: surf.document.OptionAdded
+    fields:
+      - name: option_id
+        type: surf.document.OptionId
+      - name: select_id
+        type: surf.document.ElementId
       - name: position
         type: Integer
 
@@ -390,6 +1161,56 @@ events:
       - name: stopped_by
         type: Optional<surf.document.ParseLimit>
 
+  - name: surf.document.ValueSet
+    fields:
+      - name: element_id
+        type: surf.document.ElementId
+
+  - name: surf.document.CheckednessSet
+    fields:
+      - name: element_id
+        type: surf.document.ElementId
+      - name: checked
+        type: Boolean
+
+  - name: surf.document.OptionSelected
+    fields:
+      - name: option_id
+        type: surf.document.OptionId
+      - name: select_id
+        type: surf.document.ElementId
+
+  # Carries the submitter to the submission step, as `ParsingStarted` carries the body to the
+  # parser step.
+  - name: surf.document.SubmissionStarted
+    fields:
+      - name: submission_id
+        type: surf.document.SubmissionId
+      - name: submitter
+        type: surf.document.ElementId
+
+  - name: surf.document.FormSubmitted
+    fields:
+      - name: submission_id
+        type: surf.document.SubmissionId
+      - name: tab_id
+        type: surf.shell.TabId
+      - name: url
+        type: surf.url.Url
+      - name: method
+        type: surf.net.Method
+      - name: body
+        type: Optional<Bytes>
+      - name: body_type
+        type: Optional<surf.net.MediaType>
+
+  - name: surf.document.SubmissionAbandoned
+    fields:
+      - name: submission_id
+        type: surf.document.SubmissionId
+      - name: reason
+        type: surf.document.SubmissionEndReason
+
 views:
   - name: surf.document.Documents
     source: surf.document.Document
@@ -401,6 +1222,8 @@ views:
         type: surf.url.Url
       - name: navigation_id
         type: surf.net.RequestId
+      - name: tab_id
+        type: surf.shell.TabId
       - name: state
         type: surf.document.Document.State
       - name: title
@@ -447,6 +1270,104 @@ views:
         type: Boolean
       - name: required
         type: Boolean
+      - name: name
+        type: Optional<String>
+      - name: form_id
+        type: Optional<surf.document.FormId>
     naming:
       wire: elements
       display: Elements
+
+  # Every element of every document with its control state, in no order: the view a control
+  # command's result is read back from, whichever document holds the element.
+  - name: surf.document.Controls
+    source: surf.document.Element
+    consistency: read_your_writes
+    fields:
+      - name: element_id
+        type: surf.document.ElementId
+      - name: document_id
+        type: surf.document.DocumentId
+      - name: state
+        type: surf.document.Element.State
+      - name: kind
+        type: surf.document.ElementKind
+      - name: value
+        type: Optional<String>
+      - name: hidden
+        type: Boolean
+      - name: disabled
+        type: Boolean
+      - name: checked
+        type: Boolean
+      - name: name
+        type: Optional<String>
+      - name: form_id
+        type: Optional<surf.document.FormId>
+    naming:
+      wire: controls
+      display: Controls
+
+  # Every form of every document; a reader orders a document's forms by `position`.
+  - name: surf.document.Forms
+    source: surf.document.Form
+    consistency: read_your_writes
+    fields:
+      - name: form_id
+        type: surf.document.FormId
+      - name: document_id
+        type: surf.document.DocumentId
+      - name: state
+        type: surf.document.Form.State
+      - name: position
+        type: Integer
+      - name: action
+        type: Optional<String>
+      - name: method
+        type: Optional<String>
+      - name: enctype
+        type: Optional<String>
+    naming:
+      wire: forms
+      display: Forms
+
+  # Every option of every select; a reader orders a select's options by `position`.
+  - name: surf.document.Options
+    source: surf.document.Option
+    consistency: read_your_writes
+    fields:
+      - name: option_id
+        type: surf.document.OptionId
+      - name: select_id
+        type: surf.document.ElementId
+      - name: state
+        type: surf.document.Option.State
+      - name: position
+        type: Integer
+      - name: value
+        type: String
+      - name: label
+        type: String
+      - name: selected
+        type: Boolean
+      - name: disabled
+        type: Boolean
+      - name: hidden
+        type: Boolean
+    naming:
+      wire: options
+      display: Options
+
+  - name: surf.document.Submissions
+    source: surf.document.Submission
+    consistency: read_your_writes
+    fields:
+      - name: submission_id
+        type: surf.document.SubmissionId
+      - name: submitter
+        type: surf.document.ElementId
+      - name: state
+        type: surf.document.Submission.State
+    naming:
+      wire: submissions
+      display: Submissions

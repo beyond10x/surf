@@ -13,8 +13,11 @@ path = "src/main.rs"
 
 [dependencies]
 surf = { path = "../surf" }
+surf-answer = { path = "../answer" }
 surf-fetch = { path = "../fetch" }
+surf-page-text = { path = "../page-text" }
 surf-ports = { path = "../ports" }
+surf-types = { path = "../../generated/rust/crates/surf-types" }
 
 [[test]]
 name = "main"

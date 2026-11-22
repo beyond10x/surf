@@ -13,7 +13,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use common::*;
 use surf_agent::wire::{self, Arg};
@@ -660,13 +660,11 @@ fn case_27_the_idle_exit_ends_the_stream_and_removes_view_url() {
         .ends_within(Duration::from_secs(5))
         .expect("surfd exits within 5 s with a stream open");
     assert!(status.success(), "{status:?}");
-    let deadline = Instant::now() + ALLOWED;
-    loop {
-        match events.next(deadline.saturating_duration_since(Instant::now())) {
-            Got::Ended => break,
-            Got::Event(event) => panic!("an event without a session: {event:?}"),
-            Got::Nothing => panic!("the stream's connection did not end"),
-        }
+    // The first thing the stream gives is its end: no event comes before it.
+    match events.next(ALLOWED) {
+        Got::Ended => {}
+        Got::Event(event) => panic!("an event without a session: {event:?}"),
+        Got::Nothing => panic!("the stream's connection did not end"),
     }
     assert!(
         fs::symlink_metadata(dir.surf().join("view-url")).is_err(),

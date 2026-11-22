@@ -264,7 +264,10 @@ impl Tree {
 
     /// The index in `parent`'s children before which a node inserted before `reference` goes:
     /// the end for `None` or a reference that is not a child. Each child the scan visits is a
-    /// step.
+    /// step. The scan starts at the last child: the one reference the tree builder passes is
+    /// the `table` of foster parenting, in front of which every foster parented node goes, so it
+    /// stays its parent's last child or close to it while it is open, and the cost of one
+    /// insertion does not grow with the siblings in front of it.
     fn insertion_index(
         &self,
         parent: NodeId,
@@ -274,7 +277,7 @@ impl Tree {
         let children = &self.nodes[parent.0].children;
         reference
             .and_then(|r| {
-                children.iter().position(|&c| {
+                children.iter().rposition(|&c| {
                     visit(steps);
                     c == r
                 })
@@ -360,6 +363,15 @@ impl Tree {
             }) {
                 children.remove(at);
             }
+        }
+    }
+
+    /// Removes every child of `node` (the DOM's "replace all" with null). The children stay in
+    /// the arena. Each child removed is a step.
+    pub(crate) fn remove_children(&mut self, node: NodeId, steps: &Cell<usize>) {
+        for child in std::mem::take(&mut self.nodes[node.0].children) {
+            visit(steps);
+            self.nodes[child.0].parent = None;
         }
     }
 

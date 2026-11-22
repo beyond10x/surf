@@ -1,0 +1,112 @@
+# An agent picks a radio button: `Pick` without an option publishes the request, and
+# `check-on-pick-requested` checks the button through `surf.document.Check`, which unchecks the
+# others of its group: the radio buttons of the same document with the same form owner and the
+# same name. A radio button of the same name in another form and one of another name in the same
+# form stay checked. Synthesis refuses `Check/radio-checked` (the subject's stored fields select
+# it, and `Elements` declares an order over one row) and the binding's flow, so this scenario is
+# their evidence.
+type: ess-scenario/6
+domain: surf.agent
+scenario: agent-pick-unchecks-radio-group
+summary: A pick checks a radio button and unchecks the others of its group, and no other radio button.
+
+arrange:
+  - instance: session
+    entity: surf.agent.Session
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-000000000071
+      fields:
+        window_id: 5a7c1e00-0000-4000-8000-000000000072
+        tab_id: 5a7c1e00-0000-4000-8000-000000000073
+        holder: 5a7c1e00-0000-4000-8000-000000000071
+      state: Open
+  - instance: standard
+    entity: surf.document.Element
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-000000000074
+      fields:
+        document_id: 5a7c1e00-0000-4000-8000-000000000070
+        position: 1
+        kind: radio
+        label: Standard
+        hidden: false
+        disabled: false
+        checked: true
+        required: false
+        name: shipping
+        form_id: 5a7c1e00-0000-4000-8000-000000000081
+      state: Added
+  - instance: express
+    entity: surf.document.Element
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-000000000075
+      fields:
+        document_id: 5a7c1e00-0000-4000-8000-000000000070
+        position: 2
+        kind: radio
+        label: Express
+        hidden: false
+        disabled: false
+        checked: false
+        required: false
+        name: shipping
+        form_id: 5a7c1e00-0000-4000-8000-000000000081
+      state: Added
+  - instance: other-form
+    entity: surf.document.Element
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-000000000076
+      fields:
+        document_id: 5a7c1e00-0000-4000-8000-000000000070
+        position: 3
+        kind: radio
+        label: Standard
+        hidden: false
+        disabled: false
+        checked: true
+        required: false
+        name: shipping
+        form_id: 5a7c1e00-0000-4000-8000-000000000082
+      state: Added
+  - instance: other-name
+    entity: surf.document.Element
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-000000000077
+      fields:
+        document_id: 5a7c1e00-0000-4000-8000-000000000070
+        position: 4
+        kind: radio
+        label: Card
+        hidden: false
+        disabled: false
+        checked: true
+        required: false
+        name: payment
+        form_id: 5a7c1e00-0000-4000-8000-000000000081
+      state: Added
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.agent.Pick
+    actor: surf.agent.SessionHolder
+    caller: {session_id: {$instance: session}}
+    input:
+      session_id: {$instance: session}
+      element_id: {$instance: express}
+      handle: f2
+    outcome: requested
+    events:
+      - event: surf.agent.PickRequested
+        payload:
+          session_id: {$instance: session}
+          element_id: {$instance: express}
+
+assert:
+  - view: surf.document.Controls
+    contains: {element_id: {$instance: express}, checked: true}
+  - view: surf.document.Controls
+    contains: {element_id: {$instance: standard}, checked: false}
+  - view: surf.document.Controls
+    contains: {element_id: {$instance: other-form}, checked: true}
+  - view: surf.document.Controls
+    contains: {element_id: {$instance: other-name}, checked: true}

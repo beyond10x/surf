@@ -18,6 +18,7 @@ timeline:
       url: https://example.org/plain
       body: PHA+SGk=
       navigation_id: 3f1d5b7e-0000-4000-8000-000000000102
+      tab_id: 3f1d5b7e-0000-4000-8000-000000000041
     outcome: started
     events:
       - event: surf.document.ParsingStarted
@@ -45,6 +46,7 @@ assert:
       document_id: {$instance: page}
       url: https://example.org/plain
       navigation_id: 3f1d5b7e-0000-4000-8000-000000000102
+      tab_id: 3f1d5b7e-0000-4000-8000-000000000041
       state: Parsed
       title: ""
       encoding: windows-1252
