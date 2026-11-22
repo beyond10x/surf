@@ -1,7 +1,8 @@
-//! Cases 4 to 18 of `story:agent-follow-links`: the `now` block of the current document, `follow
+//! Cases 4 to 19 of `story:agent-follow-links`: the `now` block of the current document, `follow
 //! <handle>`, its refusals, the title on the `page` line and in the status record. Cases 4 to 16
 //! drive the session core against a page server on `127.0.0.1` the test starts ([`Site`]);
-//! cases 17 and 18 run `surfd` in the test process (decision D29) with the built `surf-session`.
+//! cases 17 and 18 run `surfd` in the test process (decision D29) with the built `surf-session`;
+//! case 19 serves a public page in memory and resolves names through a resolver of its own.
 
 #![forbid(unsafe_code)]
 
@@ -434,6 +435,63 @@ fn case_18_session_list_title() {
         .map(Quoted::as_str)
         .map(str::to_string);
     assert_eq!(title.as_deref(), Some("\"Opening hours\""));
+}
+
+/// Case 19 ("As decided after the adversary's pass"): from a page at a public address, a link to
+/// a host name that resolves to a local address is refused `forbidden-destination` by the fetch
+/// at its first request: status 1, no connection is made, so the listener on `127.0.0.1` reads no
+/// byte, and the page and the path are as before. The name `intranet.test` resolves to
+/// `127.0.0.1` through a resolver of the test's own ([`common::Names`], given to
+/// [`surf_session::fetch_through`]): `ip6-localhost` is `::1` only where `/etc/hosts` says so.
+/// The public page is served in memory.
+#[test]
+fn case_19_a_host_name_of_a_local_address_from_a_public_page_is_refused() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a port on 127.0.0.1");
+    listener.set_nonblocking(true).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let names = std::rc::Rc::new(common::Names::default().name("intranet.test", &["127.0.0.1"]));
+    let public = "http://93.184.216.34/links.html";
+    let page = format!(
+        "<!doctype html><title>Public</title><a href=\"http://intranet.test:{port}/\">Inside</a>"
+    );
+    let network = std::rc::Rc::clone(&names);
+    let start = public.to_string();
+    let transport = move |request: &surf::RequestStarted| {
+        if request.url.0 == start {
+            surf::Answer::Response {
+                url: request.url.0.clone(),
+                status: 200,
+                media_type: "text/html".to_string(),
+                body: page.clone().into_bytes(),
+            }
+        } else {
+            surf_session::fetch_through(request, network.as_ref())
+        }
+    };
+    let mut session = Session::new(ID, transport).unwrap();
+    let opened = session.answer(&common::request("open", None, None, &[("url", public)]));
+    let opened = opened.to_link();
+    assert_eq!(opened.status, 0, "{}", opened.text);
+    let token = common::opened(&opened.text).token;
+    let before = session.answer(&holder("look", &token, &[])).answer;
+    let reply = session.answer(&holder("follow", &token, &[("handle", "l1")]));
+    let link = reply.to_link();
+    assert_eq!(link.status, 1, "{}", link.text);
+    assert!(
+        link.text
+            .lines()
+            .any(|line| line == "did refused forbidden-destination"),
+        "{}",
+        link.text
+    );
+    assert!(link.entries.is_empty(), "{:?}", link.entries);
+    assert_eq!(names.dialed(), Vec::new());
+    assert_eq!(
+        listener.accept().map(|_| ()).map_err(|error| error.kind()),
+        Err(std::io::ErrorKind::WouldBlock)
+    );
+    assert_eq!(reply.answer.page, before.page, "{}", link.text);
+    assert_eq!(reply.answer.path, before.path, "{}", link.text);
 }
 
 /// The bound of `surf_session::TITLE_CHARS_MAX`: a title of 1,024 characters is on the `page`

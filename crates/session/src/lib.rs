@@ -123,17 +123,29 @@
 //! - from a document whose address is not local by its text, a target whose host is
 //!   (`host_is_local`: an IP address [`surf_fetch::is_local`] names, the rule a redirect's
 //!   destination is checked by, or `localhost` or a name under it): `forbidden-destination`. A
-//!   target that is another name is resolved only by the fetch, which applies its rule to
-//!   redirects only; and a document at such a name counts as public, as the session does not
-//!   know where its fetch connected.
+//!   document at another name counts as public, as the session does not know where its fetch
+//!   connected.
+//!
+//! A target that is another name is resolved only by the fetch. From a document that counts as
+//! public, the session tells the transport so ([`fetch`], [`fetch_through`]), and the fetch
+//! applies to the first request the rule it applies to a redirect ([`surf_fetch::Origin`]): a
+//! host that resolves to a local address, any one of those resolved, is refused before a
+//! connection is made. The session runs the navigation before it records the action; when the
+//! fetch refused its first request, it records nothing and answers `did refused
+//! forbidden-destination` with the page, the path and the values as they were, as after its own
+//! check: the page and the current document are read as before that navigation for as long as
+//! it is the session's last. `go` with a typed address is not checked so. The same holds for the
+//! request of a `press` ("Pressing a button").
 //!
 //! # Pressing a button
 //!
 //! The line of a button with a form owner ends in `submits F<n> <method> "<action>"`: the form's
 //! handle ([`surf_page::form_handles`]), and the method and action of [`surf::Submits`], which
 //! [`surf::Browser::submits`] reads for every button of the document with the submitter's
-//! `formmethod` and `formaction`; the action is shown as a link's target is ("The links"), or as
-//! written and `unresolved`.
+//! `formmethod` and `formaction`; the action is shown as a link's target is ("The links"), and
+//! an action that does not parse as `submits F<n> <method> unresolved`, with none of its text,
+//! which could hold a user name and a password. The action of the form and each distinct
+//! `formaction` are resolved once per answer, however many buttons share them.
 //!
 //! `press <handle>` is checked in this order, each refusal with status 1 and the state, before
 //! any command is sent, so with no submission event, no request and the path as it was:
@@ -279,6 +291,7 @@
 pub mod entries;
 pub mod process;
 
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io;
@@ -301,6 +314,7 @@ use surf_types::document::{
     DocumentId, DocumentState, Documents, ElementId, ElementKind, Elements, Options,
 };
 use surf_types::navigation::NavigationState;
+use surf_types::net::RequestId;
 use surf_types::primitives::Uuid;
 use surf_types::shell::{OpenTab, OpenTabOutcome, OpenWindow, OpenWindowOutcome};
 use surf_types::url::Url;
@@ -352,9 +366,82 @@ const LEFT_OUT_LINE_MAX: usize = 64;
 /// [`surf::answer`]. An address that is not `http:` is `UnsupportedScheme` and nothing is read;
 /// so is a `Get` with a body or a media type, before any connection. A `Post` is sent with its
 /// body and media type (an agent's `go` navigates with `Get`). Redirects are followed inside the
-/// one fetch, up to 20, and the answer carries the address of the last response.
+/// one fetch, up to 20, and the answer carries the address of the last response. The first
+/// request of a `follow` or a `press` from a page that counts as public goes to public addresses
+/// only ("Following a link" above).
 pub fn fetch(request: &surf::RequestStarted) -> surf::Answer {
-    surf::answer(surf::fetch_http(request, &surf_fetch::Limits::default()))
+    fetch_through(request, &surf_fetch::OsNetwork)
+}
+
+/// [`fetch`] over `network`, which resolves names and makes connections: a test gives a name
+/// the addresses it chooses without the host's resolver.
+pub fn fetch_through(
+    request: &surf::RequestStarted,
+    network: &dyn surf_fetch::Network,
+) -> surf::Answer {
+    let from_public = FIRST_REQUEST.with(|first| first.from_public.replace(false));
+    let origin = if from_public {
+        surf_fetch::Origin::PublicPage
+    } else {
+        surf_fetch::Origin::Given
+    };
+    let dialing = Dialing {
+        network,
+        dialed: Cell::new(false),
+    };
+    let result = surf::fetch_http_from(request, &surf_fetch::Limits::default(), &dialing, origin);
+    if from_public
+        && !dialing.dialed.get()
+        && matches!(result, Err(surf_fetch::Failure::ForbiddenDestination(_)))
+    {
+        FIRST_REQUEST.with(|first| first.refused.set(true));
+    }
+    surf::answer(result)
+}
+
+/// What the session tells [`fetch`] about the run it starts, and what the fetch tells it back.
+/// The session and its transport run on one thread, the transport inside the session's run.
+struct FirstRequest {
+    /// The next request is the first of a `follow` or a `press` from a page that counts as
+    /// public; the fetch that reads it clears it.
+    from_public: Cell<bool>,
+    /// That request was refused `ForbiddenDestination` before any connection.
+    refused: Cell<bool>,
+}
+
+thread_local! {
+    static FIRST_REQUEST: FirstRequest = const {
+        FirstRequest {
+            from_public: Cell::new(false),
+            refused: Cell::new(false),
+        }
+    };
+}
+
+/// A [`surf_fetch::Network`] that notes whether a connection was attempted.
+struct Dialing<'a> {
+    network: &'a dyn surf_fetch::Network,
+    dialed: Cell<bool>,
+}
+
+impl surf_fetch::Network for Dialing<'_> {
+    fn resolve(
+        &self,
+        host: &str,
+        port: u16,
+        timeout: std::time::Duration,
+    ) -> Result<Vec<std::net::SocketAddr>, surf_fetch::Failure> {
+        self.network.resolve(host, port, timeout)
+    }
+
+    fn connect(
+        &self,
+        address: &std::net::SocketAddr,
+        timeout: std::time::Duration,
+    ) -> io::Result<std::net::TcpStream> {
+        self.dialed.set(true);
+        self.network.connect(address, timeout)
+    }
 }
 
 /// What one request comes to: the exit status, the answer lines as a typed answer, and the
@@ -579,6 +666,21 @@ pub struct Session<T> {
     rendered: Option<Rendered>,
     /// The links of the current document, once an answer showed them.
     links: Option<Links>,
+    /// The state before a `follow` or a `press` whose first request the fetch refused, kept
+    /// while that navigation is the session's last ([`Session::run_from`]).
+    kept: Option<Kept>,
+}
+
+/// What the session showed before a navigation whose first request the fetch refused
+/// `ForbiddenDestination`: its navigation, that navigation's state and the session's row. While
+/// the refused navigation is the session's last, the page, the current document and the path
+/// are read as they were, as after a `forbidden-destination` of the session's own checks.
+#[derive(Clone, Debug)]
+struct Kept {
+    refused: Option<RequestId>,
+    navigation: Option<RequestId>,
+    navigation_state: Option<NavigationState>,
+    row: Option<SessionStateView>,
 }
 
 impl<T> fmt::Debug for Session<T> {
@@ -620,6 +722,7 @@ impl<T: Transport> Session<T> {
             marks: Vec::new(),
             rendered: None,
             links: None,
+            kept: None,
         })
     }
 
@@ -854,16 +957,11 @@ impl<T: Transport> Session<T> {
     /// The row of [`Session::current_document`]: its identity, address and title.
     fn current_row(&self) -> Option<Documents> {
         let system = self.browser.system();
-        let row = system
-            .agent
-            .sessions()
-            .ok()?
-            .into_iter()
-            .find(|row| row.session_id == self.session_id)?;
-        if row.navigation_state != Some(NavigationState::Committed) {
+        let (navigation, navigation_state) = self.navigation()?;
+        if navigation_state != Some(NavigationState::Committed) {
             return None;
         }
-        let navigation = row.navigation_id?;
+        let navigation = navigation?;
         let document = system
             .document
             .documents()
@@ -923,8 +1021,9 @@ impl<T: Transport> Session<T> {
     /// the `hidden` attribute, `unresolved` when its target does not resolve,
     /// `address-too-long`, `unsupported-scheme` or `forbidden-destination` for a target
     /// "Following a link" names; otherwise `Follow` as the holder with the resolved address,
-    /// and when it is `requested`, `RecordAction` `follow` with the address, the handle and the
-    /// label.
+    /// and when it is `requested`, the run ([`Session::run_from`]): `forbidden-destination` when
+    /// the fetch refused its first request, otherwise `RecordAction` `follow` with the address,
+    /// the handle and the label.
     fn follow(&mut self, handle: &str) -> Result<Reply, Stop> {
         if self.is_closed() {
             return Ok(self.with_state(RefusalReason::Closed));
@@ -964,6 +1063,9 @@ impl<T: Transport> Session<T> {
         })?;
         match outcome {
             FollowOutcome::Requested { .. } => {
+                if self.run_from(from_public)? {
+                    return Ok(self.with_state(RefusalReason::ForbiddenDestination));
+                }
                 self.record_and_run(
                     ActionCommand::Follow,
                     Some(&url),
@@ -1173,10 +1275,11 @@ impl<T: Transport> Session<T> {
     /// address the submission step would request, `no-default-action` for a plain or a reset
     /// button, `password-in-query` for a `GET` whose entry list holds a filled password, and
     /// `address-too-long`, `unsupported-scheme` and `forbidden-destination` for that address.
-    /// Otherwise `Press` as the holder, and when it is `requested`, `RecordAction` `press` with
-    /// the handle alone and a run, in which the submission starts and ends: with a navigation,
-    /// `did press "<handle>"` and the page it landed on; abandoned, the word of its reason
-    /// ([`end_reason`]), status 1.
+    /// Otherwise `Press` as the holder, and when it is `requested`, the run in which the
+    /// submission starts and ends ([`Session::run_from`]): `forbidden-destination` when the fetch
+    /// refused its first request; otherwise `RecordAction` `press` with the handle alone. With a
+    /// navigation, `did press "<handle>"` and the page it landed on; abandoned, the word of its
+    /// reason ([`end_reason`]), status 1.
     fn press(&mut self, handle: &str) -> Result<Reply, Stop> {
         if self.is_closed() {
             return Ok(self.with_state(RefusalReason::Closed));
@@ -1194,12 +1297,12 @@ impl<T: Transport> Session<T> {
         ) {
             return Ok(self.with_state(RefusalReason::NoDefaultAction));
         }
+        let from_public = self.links.as_ref().is_none_or(|kept| kept.from_public);
         if let Some(submits) = &plan.submits {
             if submits.method == surf::FormMethod::Get && plan.password {
                 return Ok(self.with_state(RefusalReason::PasswordInQuery));
             }
             if let (Some(address), Ok(action)) = (&plan.address, &submits.action) {
-                let from_public = self.links.as_ref().is_none_or(|kept| kept.from_public);
                 if address.len() > surf_fetch::MAX_ADDRESS_BYTES {
                     return Ok(self.with_state(RefusalReason::AddressTooLong));
                 }
@@ -1219,6 +1322,9 @@ impl<T: Transport> Session<T> {
         match outcome {
             PressOutcome::Requested { .. } => {
                 let start = self.browser.system().published().len();
+                if self.run_from(from_public)? {
+                    return Ok(self.with_state(RefusalReason::ForbiddenDestination));
+                }
                 self.record_and_run(ActionCommand::Press, None, Some((handle, None)))?;
                 let abandoned = self
                     .browser
@@ -1435,15 +1541,99 @@ impl<T: Transport> Session<T> {
         }
     }
 
-    /// The session's row of the view `SessionState`, if it is open or was.
+    /// The session's row of the view `SessionState`, if it is open or was; while a navigation
+    /// whose first request the fetch refused is the last, its address, navigation state,
+    /// status, media type and failure reason are those before it ([`Kept`]).
     fn row(&self) -> Option<SessionStateView> {
-        self.browser
+        let row = self
+            .browser
             .system()
             .agent
             .session_state_view(self.session_id.clone())
             .ok()?
             .into_iter()
-            .next()
+            .next()?;
+        match self.kept_now().and_then(|kept| kept.row.as_ref()) {
+            Some(kept) => Some(SessionStateView {
+                state: row.state,
+                ..kept.clone()
+            }),
+            None => Some(row),
+        }
+    }
+
+    /// The session's navigation and its state from the view `Sessions`, or those before a
+    /// refused first request ([`Kept`]); `None` when the view has no row of the session.
+    fn navigation(&self) -> Option<(Option<RequestId>, Option<NavigationState>)> {
+        let row = self
+            .browser
+            .system()
+            .agent
+            .sessions()
+            .ok()?
+            .into_iter()
+            .find(|row| row.session_id == self.session_id)?;
+        Some(match &self.kept {
+            Some(kept) if kept.refused == row.navigation_id => {
+                (kept.navigation.clone(), kept.navigation_state)
+            }
+            _ => (row.navigation_id, row.navigation_state),
+        })
+    }
+
+    /// [`Session::kept`] while the navigation it was kept for is the session's last.
+    fn kept_now(&self) -> Option<&Kept> {
+        let kept = self.kept.as_ref()?;
+        let last = self
+            .browser
+            .system()
+            .agent
+            .sessions()
+            .ok()?
+            .into_iter()
+            .find(|row| row.session_id == self.session_id)?
+            .navigation_id;
+        (kept.refused == last).then_some(kept)
+    }
+
+    /// The run of a `follow` or a `press` before anything is recorded, with the session's
+    /// transport told whether the first request comes from a page that counts as public
+    /// ("Following a link" above): `true` when the fetch refused that request
+    /// `ForbiddenDestination` before any connection. Then the state before the run is kept
+    /// ([`Kept`]) and the caller records nothing, as for a refusal of its own checks.
+    fn run_from(&mut self, from_public: bool) -> Result<bool, Stop> {
+        let (navigation, navigation_state) = self.navigation().unwrap_or((None, None));
+        let row = self.row();
+        FIRST_REQUEST.with(|first| {
+            first.from_public.set(from_public);
+            first.refused.set(false);
+        });
+        let ran = self.browser.run();
+        let refused = FIRST_REQUEST.with(|first| {
+            first.from_public.set(false);
+            first.refused.replace(false)
+        });
+        ran?;
+        if refused {
+            let refused = self
+                .browser
+                .system()
+                .agent
+                .sessions()
+                .ok()
+                .and_then(|rows| {
+                    rows.into_iter()
+                        .find(|row| row.session_id == self.session_id)
+                })
+                .and_then(|row| row.navigation_id);
+            self.kept = Some(Kept {
+                refused,
+                navigation,
+                navigation_state,
+                row,
+            });
+        }
+        Ok(refused)
     }
 
     fn head(&self) -> Head {
@@ -1879,7 +2069,12 @@ fn now_block(links: &[Link], states: &HashMap<String, State>) -> Option<Now> {
                 _ => 0,
             };
             let submits = state.submits.as_ref().map_or(0, |submits| {
-                SUBMITS_FIXED + submits.form.len() + surf_answer::quote(&submits.action.kept).len()
+                SUBMITS_FIXED
+                    + submits.form.len()
+                    + submits
+                        .action
+                        .as_ref()
+                        .map_or(0, |action| surf_answer::quote(&action.kept).len())
             });
             (
                 fixed + CONTROL_LINE_FIXED + value + submits,
@@ -1942,17 +2137,18 @@ fn end_reason(reason: surf::SubmissionEndReason) -> RefusalReason {
 
 /// The `submits` part of a button line (`story:agent-press-submit`): the form's handle
 /// `F<n>`, the method, and the action shown by the rules of a link's target
-/// ([`shown_target`]), or as written with `unresolved`, cut at [`TARGET_CHARS_MAX`].
+/// ([`shown_target`]), cut at [`TARGET_CHARS_MAX`], or `unresolved` alone.
 fn submits_part(found: &surf::Submits, page: Option<&surf_url::Url>) -> surf_answer::Submits {
-    let (shown, unresolved) = match &found.action {
-        Ok(action) => (shown_target(action, page), false),
-        Err(written) => (written.clone(), true),
-    };
+    // An action that does not parse is shown as `unresolved` with none of its text, which
+    // could hold a userinfo ("As decided after the adversary's pass", decision 2).
     surf_answer::Submits {
         form: format!("F{}", found.form + 1),
         method: found.method.word().to_string(),
-        action: Cut::of(&shown, TARGET_CHARS_MAX),
-        unresolved,
+        action: found
+            .action
+            .as_ref()
+            .ok()
+            .map(|action| Cut::of(&shown_target(action, page), TARGET_CHARS_MAX)),
     }
 }
 

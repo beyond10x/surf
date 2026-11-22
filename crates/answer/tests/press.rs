@@ -44,8 +44,7 @@ fn submits(form: &str, method: &str, action: &str, unresolved: bool) -> Option<S
     Some(Submits {
         form: form.to_string(),
         method: method.to_string(),
-        action: Cut::of(action, TARGET_CHARS_MAX),
-        unresolved,
+        action: (!unresolved).then(|| Cut::of(action, TARGET_CHARS_MAX)),
     })
 }
 
@@ -96,8 +95,8 @@ fn four() -> Answer {
     ])
 }
 
-/// The part after the flags: the form's handle, the method, the action quoted and cut at 1,024
-/// characters, and `unresolved` after an action that does not parse.
+/// The part after the flags: the form's handle, the method, and the action quoted and cut at
+/// 1,024 characters, or `unresolved` alone for an action that does not parse.
 #[test]
 fn a_submits_part_renders_and_reads_back() {
     let answer = four();
@@ -105,7 +104,7 @@ fn a_submits_part_renders_and_reads_back() {
     for line in [
         "  b1 button ? \"Sign in\" submits F1 post \"/session\"\n",
         "  b2 button ? \"Later\" disabled submits F12 get \"/a\\x22b\\x0a\"\n",
-        "  b3 button ? \"Bad\" submits F2 dialog \"http://[x\" unresolved\n",
+        "  b3 button ? \"Bad\" submits F2 dialog unresolved\n",
         "  b5 button ? \"Plain\"\n",
     ] {
         assert!(text.contains(line), "{line:?} in\n{text}");
@@ -150,10 +149,10 @@ fn render_refuses_a_submits_part_it_could_not_read_back() {
         ..
     }) = &mut answer.now.as_mut().unwrap().elements[0].target
     {
-        part.action = Cut {
+        part.action = Some(Cut {
             kept: "/x".to_string(),
             cut: true,
-        };
+        });
     }
     assert!(matches!(
         render(&answer),
@@ -173,7 +172,10 @@ fn submits_lines_the_renderer_does_not_write_are_refused() {
         ("submits F1 post", "submits  F1 post"),
         ("submits F1 post", "submits F1"),
         ("\"/session\"\n", "/session\n"),
-        ("\"/session\"\n", "\"/session\" unresolved unresolved\n"),
+        ("\"/session\"\n", "\"/session\" unresolved\n"),
+        ("dialog unresolved\n", "dialog unresolved unresolved\n"),
+        ("dialog unresolved\n", "dialog \"http://[x\" unresolved\n"),
+        ("dialog unresolved\n", "dialog unresolved \"/y\"\n"),
         ("\"/session\"\n", "\"/session\" resolved\n"),
         ("\"/session\"\n", "\"/session\" submits F2 get \"/y\"\n"),
         ("\"/session\"\n", "\"/session\" disabled\n"),

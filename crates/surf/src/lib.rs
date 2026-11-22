@@ -127,7 +127,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 
 use agent::Agent;
@@ -221,6 +221,23 @@ pub fn fetch_http(
     request: &RequestStarted,
     limits: &surf_fetch::Limits,
 ) -> Result<surf_fetch::Response, surf_fetch::Failure> {
+    fetch_http_from(
+        request,
+        limits,
+        &surf_fetch::OsNetwork,
+        surf_fetch::Origin::Given,
+    )
+}
+
+/// [`fetch_http`] over `network`, for a request that comes from `origin`: with
+/// [`surf_fetch::Origin::PublicPage`], a link or a form of a page at a public address, the first
+/// request goes to public addresses only ([`surf_fetch::send_from`]).
+pub fn fetch_http_from(
+    request: &RequestStarted,
+    limits: &surf_fetch::Limits,
+    network: &dyn surf_fetch::Network,
+    origin: surf_fetch::Origin,
+) -> Result<surf_fetch::Response, surf_fetch::Failure> {
     let method = match (request.method, &request.body, &request.body_type) {
         (Method::Get, None, None) => surf_fetch::Method::Get,
         (Method::Get, _, _) => {
@@ -230,7 +247,7 @@ pub fn fetch_http(
         }
         (Method::Post, _, _) => surf_fetch::Method::Post,
     };
-    surf_fetch::send(
+    surf_fetch::send_from(
         &surf_fetch::Request {
             address: &request.url.0,
             method,
@@ -241,6 +258,8 @@ pub fn fetch_http(
                 .map(|media_type| media_type.0.as_str()),
         },
         limits,
+        network,
+        origin,
     )
 }
 
@@ -582,6 +601,28 @@ pub fn submits(
     base: Option<&surf_url::Url>,
     submitter: NodeId,
 ) -> Option<Submits> {
+    submits_resolving(tree, forms, address, submitter, &mut |action| {
+        resolve_action(action, base)
+    })
+}
+
+/// An action resolved against the document base URL `base`: `Err` holds it as written when it,
+/// or the document's address (`base` is `None`), does not parse.
+fn resolve_action(action: &str, base: Option<&surf_url::Url>) -> Result<surf_url::Url, String> {
+    base.and_then(|base| surf_url::Url::parse(action, Some(base)).ok())
+        .ok_or_else(|| action.to_owned())
+}
+
+/// [`submits`] with the action resolved by `resolve`, so that a caller that reads every button of
+/// a document resolves each distinct action once (`story:agent-press-submit`, "As decided after
+/// the adversary's pass", decision 3).
+fn submits_resolving(
+    tree: &Tree,
+    forms: &surf_page::forms::Forms,
+    address: &str,
+    submitter: NodeId,
+    resolve: &mut dyn FnMut(&str) -> Result<surf_url::Url, String>,
+) -> Option<Submits> {
     use surf_page::forms::{ButtonType, Field};
 
     let control = forms.control(submitter)?;
@@ -604,9 +645,7 @@ pub fn submits(
         None | Some("") => address,
         Some(action) => action,
     };
-    let action = base
-        .and_then(|base| surf_url::Url::parse(action, Some(base)).ok())
-        .ok_or_else(|| action.to_owned());
+    let action = resolve(action);
     Some(Submits {
         form: owner,
         method,
@@ -1864,8 +1903,9 @@ where
     }
 
     /// What each button of the document `document_id` with a form owner submits to
-    /// ([`submits`]), by its element row, the document base URL computed once; empty for a
-    /// document not parsed here.
+    /// ([`submits`]), by its element row, the document base URL computed once and each distinct
+    /// action resolved once, however many buttons share it (`story:agent-press-submit`, "As
+    /// decided after the adversary's pass", decision 3); empty for a document not parsed here.
     pub fn submits(
         &self,
         document_id: &DocumentId,
@@ -1886,11 +1926,20 @@ where
         let base = surf_url::Url::parse(address, None)
             .ok()
             .map(|page| surf_page::base_url::document_base_url(&kept.tree, &page));
+        let mut resolved: HashMap<String, Result<surf_url::Url, String>> = HashMap::new();
+        let mut resolve = |action: &str| {
+            if let Some(found) = resolved.get(action) {
+                return found.clone();
+            }
+            let found = resolve_action(action, base.as_ref());
+            resolved.insert(action.to_owned(), found.clone());
+            found
+        };
         Ok(kept
             .nodes
             .iter()
             .filter_map(|(element_id, node)| {
-                submits(&kept.tree, &kept.forms, address, base.as_ref(), *node)
+                submits_resolving(&kept.tree, &kept.forms, address, *node, &mut resolve)
                     .map(|found| (element_id.clone(), found))
             })
             .collect())

@@ -658,9 +658,9 @@ fn adversary_press_a_post_answered_404_lands_on_the_answer() {
     }
 }
 
-/// An action that does not resolve is written as the page wrote it, but a written action is
-/// still shown with no userinfo: the button line holds neither the user nor the password of
-/// `http://admin:hunter2@[…`.
+/// An action that does not resolve shows none of its text ("As decided after the adversary's
+/// pass", decision 2): the button line holds neither the user nor the password of
+/// `http://admin:hunter2@[…`, and reads `submits F1 post unresolved`.
 #[test]
 fn adversary_press_an_unresolved_action_shows_no_userinfo() {
     let server = Server::start();
@@ -672,7 +672,7 @@ fn adversary_press_an_unresolved_action_shows_no_userinfo() {
     );
     let (_, text, _, _) = ask(&mut session, &token, "look", &[]);
     let b1 = line(&text, "b1");
-    assert!(b1.ends_with(" unresolved"), "{b1}");
+    assert_eq!(b1, "  b1 button ? \"Send\" submits F1 post unresolved");
     assert!(!b1.contains("hunter2"), "{b1}");
     assert!(!b1.contains("admin"), "{b1}");
 }
@@ -865,36 +865,26 @@ fn adversary_press_the_three_hundredth_button_is_pressed() {
     assert_eq!(server.lines()[1], "GET /r?n=300 HTTP/1.1");
 }
 
-/// From a page at a public address, a form whose action names the loopback address by a host
-/// name (`ip6-localhost`, `::1` in `/etc/hosts` of Debian, Ubuntu and Manjaro) is not refused:
-/// the `POST` reaches the server on `[::1]`. The page is served in memory and every other
-/// request goes through the binary's transport, [`surf_session::fetch`], which applies the
-/// destination rule to redirects only.
+/// From a page at a public address, a form whose action names a local address by a host name
+/// is refused `forbidden-destination` by the fetch at its first request, before a connection is
+/// made ("As decided after the adversary's pass", decision 1): status 1, the server reads no
+/// byte, nothing is recorded, and the page, the path and the filled value are as before, also on
+/// the `look` after. The name `intranet.test` resolves to `127.0.0.1` through a resolver of the
+/// test's own ([`common::Names`], given to [`surf_session::fetch_through`]), not the host's:
+/// the adversary's `ip6-localhost` is `::1` only where `/etc/hosts` says so. The page is
+/// served in memory.
 #[test]
-fn adversary_press_a_host_name_of_the_loopback_address_from_a_public_page_is_not_refused() {
-    let listener = TcpListener::bind("[::1]:0").expect("a port on ::1");
-    let port = listener.local_addr().unwrap().port();
-    let got = Arc::new(Mutex::new(Vec::new()));
-    let record = Arc::clone(&got);
-    let accept = thread::spawn(move || {
-        listener.set_nonblocking(false).unwrap();
-        if let Ok((mut stream, _)) = listener.accept() {
-            let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-            let mut buffer = [0u8; 4096];
-            let read = stream.read(&mut buffer).unwrap_or(0);
-            record
-                .lock()
-                .unwrap()
-                .push(String::from_utf8_lossy(&buffer[..read]).into_owned());
-            let _ = stream.write_all(html(HOME).as_bytes());
-        }
-    });
+fn adversary_press_a_host_name_of_a_local_address_from_a_public_page_is_refused() {
+    let server = Server::start();
+    let names = Arc::new(common::Names::default().name("intranet.test", &["127.0.0.1"]));
     let public = "http://93.184.216.34/form.html";
     let page = format!(
-        "<!doctype html><form action=\"http://ip6-localhost:{port}/session\" method=post>\
-         <input name=a value=1><button>Send</button></form>"
+        "<!doctype html><title>Form</title><form action=\"http://intranet.test:{}/session\" \
+         method=post><input name=a value=1><button>Send</button></form>",
+        server.port
     );
     let start_address = public.to_string();
+    let network = Arc::clone(&names);
     let transport: Memory = Box::new(move |request: &surf::RequestStarted| {
         if request.url.0 == start_address {
             surf::Answer::Response {
@@ -904,7 +894,7 @@ fn adversary_press_a_host_name_of_the_loopback_address_from_a_public_page_is_not
                 body: page.clone().into_bytes(),
             }
         } else {
-            surf_session::fetch(request)
+            surf_session::fetch_through(request, network.as_ref())
         }
     });
     let mut session = Session::new(ID, transport).unwrap();
@@ -914,17 +904,27 @@ fn adversary_press_a_host_name_of_the_loopback_address_from_a_public_page_is_not
     );
     assert_eq!(status, 0, "{text}");
     let token = opened(&text).token;
-    let (_, text, typed, _) = ask(&mut session, &token, "press", &[("handle", "b1")]);
-    let _ = TcpStream::connect(("::1", port));
-    let _ = accept.join();
-    let reached = got.lock().unwrap().clone();
+    fill(&mut session, &token, "f1", "2");
+    let (_, _, before, _) = ask(&mut session, &token, "look", &[]);
+    let (status, text, typed, entries) = ask(&mut session, &token, "press", &[("handle", "b1")]);
     assert_eq!(
         typed.did,
         Some(Did::Refused(RefusalReason::ForbiddenDestination)),
-        "the server on ::1 read: {:?}\n{text}",
-        reached.iter().map(|r| r.lines().next().unwrap_or("")).collect::<Vec<_>>()
+        "the server read: {:?}\n{text}",
+        server.lines()
     );
-    assert!(reached.iter().all(|r| !r.starts_with("POST")), "{reached:?}");
+    assert_eq!(status, 1, "{text}");
+    assert_eq!(server.lines(), Vec::<String>::new());
+    assert_eq!(names.dialed(), Vec::new());
+    assert_eq!(entries, Vec::<String>::new());
+    assert_eq!(typed.page, before.page, "{text}");
+    assert_eq!(typed.path, before.path, "{text}");
+    assert_eq!(typed.now, before.now, "{text}");
+    let (status, text, after, _) = ask(&mut session, &token, "look", &[]);
+    assert_eq!(status, 0, "{text}");
+    assert_eq!(after.page, before.page, "{text}");
+    assert_eq!(after.path, before.path, "{text}");
+    assert_eq!(after.now, before.now, "{text}");
 }
 
 /// A submit button inside a disabled `fieldset` is disabled: refused `disabled`, no request;

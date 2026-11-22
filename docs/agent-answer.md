@@ -228,7 +228,7 @@ now <shown> of <total>
   <handle> link <visibility> "<label>" -> "<target>"
   <handle> link <visibility> "<label>" -> "<target>" unresolved
   <handle> <kind> <visibility> "<label>" [= <value>] [disabled] [checked] [required] [readonly]
-  <handle> button <visibility> "<label>" [disabled] submits F<n> <method> "<action>" [unresolved]
+  <handle> button <visibility> "<label>" [disabled] submits F<n> <method> ("<action>" / unresolved)
 note visibility: hidden attribute only
 ```
 
@@ -270,8 +270,9 @@ passes 1,048,576 bytes (paging is `agent-answer-paging`).
   `<target>` is, cut at 1,024 characters. The method and the action are the button's own
   `formmethod` and `formaction` when a submit button has them, else the form's `method` and
   `action`; an empty action is the document's address, and a method other than `post` or
-  `dialog` is `get`. An action that does not resolve is written as the page wrote it, followed
-  by `unresolved`. A button without a form owner has no `submits` part.
+  `dialog` is `get`. An action that does not resolve is written as `unresolved` alone, with
+  none of its text, which could hold a user name and a password. A button without a form owner
+  has no `submits` part.
 
 `fill <handle> <value>` gives a `text`, `password` or `textarea` control the value, a `text` or
 `password` control without its line feeds and carriage returns (the HTML Standard's value
@@ -449,7 +450,7 @@ control-entry = SP SP handle SP kind SP visibility SP cut-quoted
                 [SP "disabled"] [SP "checked"] [SP "required"] [SP "readonly"]
                 [SP submits] LF
                                               ; kind not "link", value at most 1,024
-submits       = "submits" SP form-handle SP command SP cut-quoted [SP "unresolved"]
+submits       = "submits" SP form-handle SP command SP (cut-quoted / "unresolved")
                                               ; method, then action at most 1,024
 form-handle   = "F" %x31-39 *DIGIT
 kind          = 1*lower

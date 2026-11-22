@@ -1,4 +1,4 @@
-//! Cases 1 to 22 of `story:agent-press-submit`: `press <handle>` on a submit button submits its
+//! Cases 1 to 23 of `story:agent-press-submit`: `press <handle>` on a submit button submits its
 //! form with `GET` or `POST` and the session lands on the page the server answers with; the
 //! `submits` part of a button line; the session's refusals before any submission starts
 //! (`no-default-action`, `disabled`, `password-in-query`, `address-too-long`,
@@ -380,8 +380,9 @@ fn case_08_a_javascript_or_mailto_action_is_refused() {
 }
 
 /// The page of case 9: an action holding a line feed, `"` and U+202E, once resolved (the URL
-/// parser drops the line feed and percent-encodes the rest) and once as written after a host
-/// that does not parse.
+/// parser drops the line feed and percent-encodes the rest) and once after a host that does not
+/// parse, which shows none of its text (`unresolved` alone, "As decided after the adversary's
+/// pass", decision 2).
 const FORGING: &str = "<!doctype html><title>Forging</title>\
 <form action=\"/a&#10;b&quot;c&#x202e;d\"><button>Resolved</button></form>\
 <form action=\"http://[a&#10;b&quot;c&#x202e;d\"><button>Written</button></form>";
@@ -398,7 +399,7 @@ fn case_09_a_forged_action_stays_in_its_line() {
     );
     assert_eq!(
         line(&text, "b2"),
-        "  b2 button ? \"Written\" submits F2 get \"http://[a\\x0ab\\x22c\\xe2\\x80\\xaed\" unresolved"
+        "  b2 button ? \"Written\" submits F2 get unresolved"
     );
     assert!(!text.contains('\u{202e}'), "{text}");
 }
@@ -724,6 +725,40 @@ fn case_22_the_shown_action_has_no_userinfo_and_a_double_slash_path_is_whole() {
         line(&text, "b2"),
         format!("  b2 button ? \"Slash\" submits F2 post \"http://127.0.0.1:{port}//x\"")
     );
+}
+
+/// Case 23, decision 3 of "As decided after the adversary's pass": the answer of `look` on a
+/// page of 1,000 submit buttons in one form whose action is 10,000 bytes holds 1,000 button
+/// lines, each with its `submits` part. The form's action is resolved once for the answer, not
+/// once per button; the test asserts no wall time. The action's 10,000 bytes are dot-segments
+/// that resolve to `/session12`: 1,000 lines that each show 1,024 characters of an action would
+/// pass the `now` block's 1 MiB ([`surf_session::NOW_BYTES_MAX`]), which shows 887 of them.
+#[test]
+fn case_23_buttons_share_one_resolved_action() {
+    let server = FormServer::start();
+    let action = format!("{}/session12", "/a/..".repeat(1_998));
+    assert_eq!(action.len(), 10_000);
+    let mut html = format!("<!doctype html><form action=\"{action}\" method=post>");
+    for n in 1..=1_000 {
+        html.push_str(&format!("<button>B{n}</button>"));
+    }
+    html.push_str("</form>");
+    let (mut session, token) = at(&server, "/form.html", &html);
+    let (status, text, typed, _) = ask(&mut session, &token, "look", &[]);
+    assert_eq!(status, 0, "{}", &text[..text.len().min(300)]);
+    let buttons = text
+        .lines()
+        .filter(|line| line.contains(" button ? \"B"))
+        .collect::<Vec<_>>();
+    assert_eq!(buttons.len(), 1_000, "{}", &text[..text.len().min(300)]);
+    assert!(
+        buttons
+            .iter()
+            .all(|line| line.ends_with(" submits F1 post \"/session12\"")),
+        "{}",
+        buttons[0]
+    );
+    assert_eq!(typed.now.map(|now| now.elements.len()), Some(1_000));
 }
 
 /// `press` takes one handle and nothing else.

@@ -380,17 +380,18 @@ pub enum Target {
 pub const VALUE_CHARS_MAX: usize = 1_024;
 
 /// What a submit button submits (`story:agent-press-submit`): `submits <form> <method>
-/// "<action>"`, and ` unresolved` after an action that does not parse.
+/// "<action>"`, or `submits <form> <method> unresolved` for an action that does not parse, with
+/// none of its text, which could hold a userinfo ("As decided after the adversary's pass",
+/// decision 2).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Submits {
     /// The form's handle, `F` and a number from 1 (`F1`).
     pub form: String,
     /// The method the button submits with, a word of `[a-z]+`: `get`, `post` or `dialog`.
     pub method: String,
-    /// The action, shown as a link's target is and cut at [`TARGET_CHARS_MAX`] characters.
-    pub action: Cut,
-    /// The action does not resolve against the document base URL; it is shown as written.
-    pub unresolved: bool,
+    /// The action, shown as a link's target is and cut at [`TARGET_CHARS_MAX`] characters;
+    /// `None` when it does not resolve against the document base URL: `unresolved`, and no text.
+    pub action: Option<Cut>,
 }
 
 /// A control's state on a `now` line: `[= <value>] [disabled] [checked] [required]
@@ -1107,9 +1108,9 @@ fn render_now(now: &Now, out: &mut String) -> Result<(), RenderError> {
                     }
                     let method = checked(&submits.method, "now method", is_command_char)?;
                     out.push_str(&format!(" submits {form} {method} "));
-                    push_cut(&submits.action, TARGET_CHARS_MAX, "now action", out)?;
-                    if submits.unresolved {
-                        out.push_str(" unresolved");
+                    match &submits.action {
+                        Some(action) => push_cut(action, TARGET_CHARS_MAX, "now action", out)?,
+                        None => out.push_str("unresolved"),
                     }
                 }
             }
@@ -1745,20 +1746,19 @@ fn parse_now(lines: &mut Lines<'_>, answer: &mut Answer) -> Result<(), ParseErro
                     cursor.space()?;
                     let method = cursor.word(is_command_char)?.to_string();
                     cursor.space()?;
-                    let action = cursor.cut_quoted(TARGET_CHARS_MAX)?;
-                    let unresolved = match cursor.rest() {
-                        "" => false,
-                        " unresolved" => {
-                            cursor.at = element_line.text.len();
-                            true
-                        }
-                        _ => return Err(element_line.error(ParseErrorKind::OutsideGrammar)),
+                    let action = if cursor.rest() == "unresolved" {
+                        cursor.at = element_line.text.len();
+                        None
+                    } else {
+                        Some(cursor.cut_quoted(TARGET_CHARS_MAX)?)
                     };
+                    if !cursor.rest().is_empty() {
+                        return Err(element_line.error(ParseErrorKind::OutsideGrammar));
+                    }
                     state.submits = Some(Submits {
                         form,
                         method,
                         action,
-                        unresolved,
                     });
                     break;
                 }
