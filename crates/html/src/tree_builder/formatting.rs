@@ -6,8 +6,10 @@
 //! requested and its insertion target redirection map is empty, so the steps that read them
 //! (4.12, 4.13, 4.18.8 to 4.18.10, 4.21, 4.27, 4.28, 4.31 and 4.32) change nothing: every
 //! sanitizer action is "Keep", and an adjusted insertion location is the location it is given.
-//! Foster parenting is not written (story `html-tree-tables`): the appropriate place has no
-//! reference child yet, and step 4.14 and step 4.19 are where it will give one.
+//! Foster parenting (story `html-tree-tables`) reaches the algorithm at steps 4.14 and 4.19: the
+//! appropriate place given the common ancestor gives a reference child, the table, when the
+//! algorithm runs from the "anything else" rule of in table and the common ancestor is a table
+//! element.
 //!
 //! The limits (story `html-parser-limits`): an outer iteration that creates elements has them
 //! admitted by the node and stored-byte limits all at once, after step 4.8 and before step 4.9,
