@@ -497,6 +497,15 @@ for legacy verification only), refuses to sign with an RSA modulus under 2048 bi
 (`src/rsa/keypair.rs:283`), and has AES-128-GCM and AES-256-GCM only, no AES-192
 (`src/aead/algorithm.rs:149-163`).
 
+The types that hold secret bytes overwrite them with zeros in their own `Drop` (`fill(0)`, no
+`unsafe`): `crypto::Secret` (the (EC)DHE shared secret of an agreement), `crypto::Digest` (the
+pseudorandom key `hkdf_extract` answers, and every HMAC), `key_schedule::Secret` and
+`key_schedule::TrafficKey`; `key_schedule`'s expansion buffer is zeroed after use. The keys
+ring holds inside `AeadKey`, `EphemeralKey` and `SigningKey` are ring's own and not wiped by
+surf. A wipe is a plain write before the memory is freed; that the bytes read zero afterwards
+is not tested (it cannot be read without `unsafe`); the tests hold at compile time that each of
+the four types has its `Drop`.
+
 Behind the cargo feature `test-tooling` (off by default; turned on by `surf-tls-test-certs`,
 `surf-tls-test-server` and the dev-dependency of `surf-tls` on itself): the signing from PKCS#8
 that ring offers, the fixed random sources of item 5, the RFC 8448 trace mode of

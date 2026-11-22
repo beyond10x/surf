@@ -986,6 +986,20 @@ fn after_a_bad_record_nothing_more_is_written() {
 // ---------------------------------------------------------------------------------------------
 // 9. Secrets.
 
+/// Fails to compile unless `T` has a `Drop` of its own (a field's drop glue does not count):
+/// the types of docs/design/tls.md item 6 that hold secret bytes and overwrite them with
+/// zeros when dropped. That the bytes are zeros after the drop cannot be read without
+/// `unsafe`; this holds that the wipe is there.
+#[allow(drop_bounds)]
+const fn wipes_on_drop<T: Drop>() {}
+
+const _: () = {
+    wipes_on_drop::<surf_tls::crypto::Secret>();
+    wipes_on_drop::<surf_tls::crypto::Digest>();
+    wipes_on_drop::<surf_tls::key_schedule::Secret>();
+    wipes_on_drop::<surf_tls::key_schedule::TrafficKey>();
+};
+
 /// `Debug` of a connection and of the traffic secrets prints no byte of a secret.
 #[test]
 fn debug_prints_no_secret() {
