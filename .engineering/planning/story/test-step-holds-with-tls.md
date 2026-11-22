@@ -2,9 +2,9 @@
 format: aep.planning-md/3
 id: story:test-step-holds-with-tls
 kind: story
-status: draft
+status: active
 title: The test step holds its budget on main on a loaded host
-summary: main's test step took 180.2 s and 147.2 s at a load of 107 to 143, one test ended at 60 s. Opt-level for CPU-bound crates, small sizes and clocks in twelve tests, scripts without task per case, the conformance tests under nextest; at most 90 s at a load of 100
+summary: main's test step took 180.2 s and 147.2 s at a load of 107 to 143, one test ended at 60 s. Opt-level for CPU-bound crates, small sizes and clocks in twelve tests, check scripts without task per case; at most 90 s at a load of 100
 relations:
 - decomposes: epic:headless-rust-target
 - informed_by: story:time-bounds-in-tests
@@ -56,7 +56,10 @@ scope:
   path: taskfiles/conform-totals.sh
 - confidence: cited
   path: taskfiles/generated-compare.sh
-revision: 46
+revision: 49
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T19:52:19Z", actor: "human:operator", revision: 48, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-22T19:52:19Z", actor: "human:operator", revision: 49, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Why
 

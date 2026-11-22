@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T19:52:19Z",
+  "actor": "human:operator",
+  "artifact": "story:test-step-holds-with-tls",
+  "kind": "story",
+  "revision": 47,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "plan critic panel: scope, design, acceptance, parallel safety",
+    "reference": "approve by all four at 4ce3d2c (revision 46) after three reads; 30 findings in the first read, 9 in the second, 0 in the third"
+  }
+}
