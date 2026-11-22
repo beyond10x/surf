@@ -44,7 +44,7 @@ surf v1 — 9 file(s), 24 scenario(s), valid
   170 scenarios: 170 passed, 0 failed, 0 error, 0 unsupported
 170 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
   170 scenarios: 170 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 170 scenario(s) each, of suite sha256:4d7a2a59a0bb8e7760ca9cd70d6c2c138f8cdb4a24ed6cd71b392524220636ca
+the interpreter and the Rust system ran 170 scenario(s) each, of suite sha256:3f6445ae99059cdc5b3a6a99381d82828fb567c6e0b1892c8dc0f80bfe743070
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 Cargo.lock: 26 package(s), none from outside this repository

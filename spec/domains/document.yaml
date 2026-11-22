@@ -119,6 +119,10 @@ types:
         summary: The form asks for `multipart/form-data` or `text/plain`, which surf does not encode.
       - name: DialogMethod
         summary: The method is `dialog`, which closes a dialog and navigates nowhere.
+      # Not a step of the HTML Standard: surf's bound on every address it fetches, 65,536 bytes
+      # (`surf_fetch::MAX_ADDRESS_BYTES`), applied to the address a submission would navigate to.
+      - name: AddressTooLong
+        summary: The address the submission would navigate to, a `GET`'s with its query or a `POST`'s action, is longer than 65,536 bytes.
     naming:
       summary: Why a submission ended without a navigation.
 

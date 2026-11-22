@@ -727,3 +727,57 @@ fn the_parse_step_writes_readonly_and_set_value_refuses_it() {
     );
     assert_eq!(page.element("Code").value.as_deref(), Some("X1"));
 }
+
+/// The adversary's pass on this story, decision 1: a `GET` address of exactly
+/// `surf_fetch::MAX_ADDRESS_BYTES` bytes is navigated to, one byte more ends `AddressTooLong`.
+#[test]
+fn a_get_address_at_the_bound_is_navigated_and_one_byte_more_is_not() {
+    let start = "http://127.0.0.1/r?h=";
+    for (extra, navigated) in [(0, true), (1, false)] {
+        let value = "v".repeat(surf_fetch::MAX_ADDRESS_BYTES - start.len() + extra);
+        let html: &'static str = Box::leak(
+            format!(
+                "<!doctype html><form action=/r><input type=hidden name=h value={value}>\
+                 <button>Find</button></form>"
+            )
+            .into_boxed_str(),
+        );
+        let mut page = load(html);
+        let end = page.press("Find");
+        if navigated {
+            assert_eq!(end, get(&format!("{start}{value}")));
+        } else {
+            assert_eq!(end, Ended::Abandoned(SubmissionEndReason::AddressTooLong));
+        }
+    }
+}
+
+/// Decision 3: the `Debug` of [`surf::Filled`] and of [`surf::Submit::Navigate`] writes a
+/// value's and a body's length, never their bytes, and the address whole.
+#[test]
+fn filled_and_submit_print_lengths_not_values() {
+    let filled = surf::Filled {
+        value: Some("s3cret-value".to_owned()),
+        selected: vec!["s3cret-option".to_owned()],
+        ..surf::Filled::default()
+    };
+    let printed = format!("{filled:?}");
+    assert!(!printed.contains("s3cret"), "{printed}");
+    assert!(
+        printed.contains("12 bytes") && printed.contains("13 bytes"),
+        "{printed}"
+    );
+    let submit = surf::Submit::Navigate {
+        url: "http://127.0.0.1/r?q=visible".to_owned(),
+        method: Method::Post,
+        body: Some(b"pw=s3cret".to_vec()),
+        body_type: Some("application/x-www-form-urlencoded".to_owned()),
+    };
+    let printed = format!("{submit:?}");
+    assert!(!printed.contains("s3cret"), "{printed}");
+    assert!(printed.contains("9 bytes"), "{printed}");
+    assert!(
+        printed.contains("http://127.0.0.1/r?q=visible"),
+        "{printed}"
+    );
+}

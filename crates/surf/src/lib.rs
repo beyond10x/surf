@@ -68,9 +68,10 @@
 //! 1. A submitter with no form owner ends `NoFormOwner` (the button's activation behaviour
 //!    reads the form owner first); a Reset Button or a Button ends `NotSubmitButton`.
 //! 2. Unless the form has `novalidate`, a control that suffers from being missing ends
-//!    `InvalidControls`: a text, password, textarea or file control that is `required`, not
-//!    disabled, not read-only and not in a `datalist`, with an empty value. The other
-//!    constraints of constraint validation are not built.
+//!    `InvalidControls`: a text, password, textarea, file or select control that is `required`,
+//!    not disabled, not read-only and not in a `datalist`, with an empty value; a select's value
+//!    is empty when it submits nothing or only empty values (its placeholder option selected).
+//!    The other constraints of constraint validation are not built.
 //! 3. The entry list, of the form owner's controls in tree order: a control in a `datalist`, a
 //!    disabled one, a button that is not the submitter, an unchecked checkbox or radio button
 //!    and one without a `name` (or with an empty one) are skipped; an Image Button submitter
@@ -94,6 +95,12 @@
 //!    `text/plain` (ASCII case-insensitive) ends `UnsupportedEnctype`; any other, a missing one
 //!    included, sends the serialized entry list as the body with the media type
 //!    `application/x-www-form-urlencoded`.
+//! 8. Not a step of the standard: an address longer than [`surf_fetch::MAX_ADDRESS_BYTES`]
+//!    (65,536 bytes), a `Get`'s with its query or a `Post`'s action, ends `AddressTooLong`, the
+//!    bound of every address surf fetches; nothing is navigated and no request is made.
+//!
+//! [`Submission`]'s, [`Filled`]'s and [`Submit`]'s `Debug` write a control's value and a body as
+//! their length in bytes, never their bytes; an address is written whole.
 //!
 //! Not taken: `formaction`, `formmethod`, `formenctype`, `formnovalidate` and `formtarget` on a
 //! submitter; `accept-charset` and the document's encoding (every entry list is encoded as
@@ -388,8 +395,9 @@ pub struct Submission<'a> {
 }
 
 /// The state of one control as its rows hold it when the submission starts: what `SetValue`,
-/// `Check` and `SelectOption` left.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// `Check` and `SelectOption` left. Its `Debug` writes each value as its length in bytes, never
+/// its bytes: a password's value is one of them.
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct Filled {
     /// The `Elements` row's `value`.
     pub value: Option<String>,
@@ -402,8 +410,39 @@ pub struct Filled {
     pub selected: Vec<String>,
 }
 
-/// What a [`Submitter`] answers for one started submission.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// `<n> bytes`, how a `Debug` output writes a value it must not print.
+struct Length(usize);
+
+impl fmt::Debug for Length {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} bytes", self.0)
+    }
+}
+
+impl fmt::Debug for Filled {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Filled")
+            .field(
+                "value",
+                &self.value.as_ref().map(|value| Length(value.len())),
+            )
+            .field("checked", &self.checked)
+            .field("required", &self.required)
+            .field(
+                "selected",
+                &self
+                    .selected
+                    .iter()
+                    .map(|value| Length(value.len()))
+                    .collect::<Vec<_>>(),
+            )
+            .finish()
+    }
+}
+
+/// What a [`Submitter`] answers for one started submission. Its `Debug` writes a `POST`'s body
+/// as its length in bytes and the address whole.
+#[derive(Clone, PartialEq, Eq)]
 pub enum Submit {
     /// The request the submission navigates to: issued as `surf.document.SubmitForm` with the
     /// tab of the submitter's document.
@@ -421,6 +460,27 @@ pub enum Submit {
     Abandon(SubmissionEndReason),
     /// No answer. Nothing is issued and the submission stays `Started`.
     Unanswered,
+}
+
+impl fmt::Debug for Submit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Submit::Navigate {
+                url,
+                method,
+                body,
+                body_type,
+            } => f
+                .debug_struct("Navigate")
+                .field("url", url)
+                .field("method", method)
+                .field("body", &body.as_ref().map(|body| Length(body.len())))
+                .field("body_type", body_type)
+                .finish(),
+            Submit::Abandon(reason) => f.debug_tuple("Abandon").field(reason).finish(),
+            Submit::Unanswered => f.write_str("Unanswered"),
+        }
+    }
 }
 
 /// Ends a started submission, for the `document` component.
@@ -514,12 +574,18 @@ pub fn submit_form(submission: &Submission<'_>) -> Submit {
     }
     let encoded = surf_url::form_urlencoded::serialize(&pairs);
     match method {
-        Method::Get => Submit::Navigate {
-            url: with_query(&action, &encoded),
-            method,
-            body: None,
-            body_type: None,
-        },
+        Method::Get => {
+            let url = with_query(&action, &encoded);
+            if url.len() > surf_fetch::MAX_ADDRESS_BYTES {
+                return Submit::Abandon(SubmissionEndReason::AddressTooLong);
+            }
+            Submit::Navigate {
+                url,
+                method,
+                body: None,
+                body_type: None,
+            }
+        }
         Method::Post => {
             let enctype = form.enctype.as_deref().unwrap_or("");
             if enctype.eq_ignore_ascii_case("multipart/form-data")
@@ -527,8 +593,12 @@ pub fn submit_form(submission: &Submission<'_>) -> Submit {
             {
                 return Submit::Abandon(SubmissionEndReason::UnsupportedEnctype);
             }
+            let url = action.href();
+            if url.len() > surf_fetch::MAX_ADDRESS_BYTES {
+                return Submit::Abandon(SubmissionEndReason::AddressTooLong);
+            }
             Submit::Navigate {
-                url: action.href(),
+                url,
                 method,
                 body: Some(encoded.into_bytes()),
                 body_type: Some(URLENCODED.to_owned()),
@@ -539,18 +609,20 @@ pub fn submit_form(submission: &Submission<'_>) -> Submit {
 
 /// "Suffering from being missing", the one constraint built: a candidate for constraint
 /// validation (not disabled, not in a `datalist`, not read-only) of a kind that holds a value,
-/// `required`, with an empty value.
+/// `required`, with an empty value. A select's value is what it submits: it is empty when no
+/// option that is not disabled is selected, or when each one selected has the empty value (its
+/// placeholder label option among them).
 fn suffers_from_being_missing(control: &surf_page::forms::Control, filled: &Filled) -> bool {
     use surf_page::forms::Field;
 
-    matches!(
-        control.field,
-        Field::Text | Field::Password | Field::Textarea | Field::File
-    ) && !control.disabled
-        && !control.in_datalist
-        && !control.readonly
-        && filled.required
-        && filled.value.as_deref().unwrap_or("").is_empty()
+    let empty = match control.field {
+        Field::Text | Field::Password | Field::Textarea | Field::File => {
+            filled.value.as_deref().unwrap_or("").is_empty()
+        }
+        Field::Select => filled.selected.iter().all(String::is_empty),
+        _ => return false,
+    };
+    !control.disabled && !control.in_datalist && !control.readonly && filled.required && empty
 }
 
 /// 4.10.21.4 "Constructing the entry list" over the form's `controls` in tree order with the

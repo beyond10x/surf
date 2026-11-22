@@ -354,13 +354,20 @@ above, and the list of standards itself was written from memory.
     `FormSubmitter`, replaced with `Browser::with_submitter`; `conformance/src/target.rs` gives
     `Unsubmitted`, which never answers): each `SubmissionStarted` whose submitter is a row of a
     kept document gets `surf::Submission` (address, tree, forms, the rows' values) and the step
-    answers `SubmitForm` or `AbandonSubmission` with one of the seven `SubmissionEndReason`s.
+    answers `SubmitForm` or `AbandonSubmission` with one of the eight `SubmissionEndReason`s.
     `surf::submit_form` is the HTML Standard's form submission algorithm and entry list, from
     memory, with `application/x-www-form-urlencoded` only (the crate documentation, "The
-    submission step", lists what is not taken). `tests/forms.rs` 20 (cases 5 to 20, the hidden
-    input, the rows of the parser step; since `story:agent-fill-pick` its case 21, the last of
-    two `checked` radio buttons of a group submitted alone, and the element's `readonly`,
-    which the parser step carries in `AddElement` and `SetValue` refuses with `readonly`).
+    submission step", lists what is not taken). After the adversary's pass on that story: an
+    address over `surf_fetch::MAX_ADDRESS_BYTES` (a `GET`'s with its query, a `POST`'s action)
+    ends `AddressTooLong`, the eighth reason, before any navigation; a `required` select that
+    submits nothing or only empty values ends `InvalidControls`; the `Debug` of `Filled`,
+    `Submission` and `Submit` writes a value or a body as its length. `tests/forms.rs` 22
+    (cases 5 to 20, the hidden input, the rows of the parser step; since
+    `story:agent-fill-pick` its case 21, the last of two `checked` radio buttons of a group
+    submitted alone, and the element's `readonly`, which the parser step carries in
+    `AddElement` and `SetValue` refuses with `readonly`; the address bound and the `Debug`
+    lengths). `tests/adversary_forms.rs` 12, its two probes of many forms and options at
+    20,000 each, no wall time asserted.
     Depends on the generated crates, `surf-ports`, `surf-fetch`, `surf-html`, `surf-page` and
     `surf-url`.
   - `crates/surf-cli` (`surf-cli`): the binary `surf` and its five tests, moved out of
@@ -631,10 +638,12 @@ above, and the list of standards itself was written from memory.
     the copy of the selected `option` the parser puts into a `selectedcontent`, from which
     `actionable_elements` lists no row (surf's reading, not the standard's rendering). Since
     `story:html-document-port` (round 1) `surf` depends on it, and `surf-page-text` too.
-    78 tests: 28 in `tests/elements.rs`, 35 in `tests/label.rs`, 3 in `tests/base_url.rs`,
+    81 tests: 28 in `tests/elements.rs`, 35 in `tests/label.rs`, 3 in `tests/base_url.rs`,
     6 in `tests/forms.rs`, 1 each in `tests/tree_tables.rs` and `tests/tree_template.rs` (the
     parser unit's), 1 in `tests/adversary_select.rs` (the parser adversary's), 1 in
-    `tests/adversary_values.rs` and 2 in `tests/adversary_follow.rs`, modules of the one test binary
+    `tests/adversary_values.rs`, 2 in `tests/adversary_follow.rs` and 3 in
+    `tests/adversary_forms.rs` (its probe at 20,000 forms, options and controls, no wall time
+    asserted; `form_handles` builds no control or option), modules of the one test binary
     (`story:one-test-binary-per-crate`). Since round 2 (`story:agent-follow-links`) it has
     `base_url::document_base_url`, the one owner of the document base URL (the first `base`
     with `href`, parsed against the document address). Since `story:agent-form-port` it has
@@ -1244,9 +1253,9 @@ outcome `SetValue/outcome/readonly`: `170 scenario(s) (24 authored), 48 refusal(
 Against the interpreter and against the Rust system: `170 scenarios: 170 passed, 0 failed, 0
 error, 0 unsupported`; `conform-totals`: `the interpreter and the Rust system ran 170
 scenario(s) each, of suite
-sha256:4d7a2a59a0bb8e7760ca9cd70d6c2c138f8cdb4a24ed6cd71b392524220636ca` (the digest since
-`story:agent-fill-pick`, which added the shapes `surf.agent.FillCall` and
-`surf.agent.PickCall` and the field `readonly`; no gate step compares it).
+sha256:3f6445ae99059cdc5b3a6a99381d82828fb567c6e0b1892c8dc0f80bfe743070` (the digest since the fix round
+of `story:agent-form-port`, which added the end reason `AddressTooLong`, after
+`story:agent-fill-pick` added `FillCall`, `PickCall` and `readonly`; no gate step compares it).
 The planted defect:
 `planted defect: 170 scenarios: 134 passed, 36 failed, 0 error, 0 unsupported`; the
 conformance crate's `tests/main.rs` ran 15 passed. `generated-check`: `generated/rust matches

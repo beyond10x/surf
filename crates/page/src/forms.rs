@@ -162,9 +162,11 @@ pub struct ListOption {
 
 /// The form handle of each form (`F<n>`, counted from 1 in document order, the order of the
 /// `Forms` view's positions), without the `@` an answer puts before it. Apart from
-/// [`crate::handles`], which the outline and the Markdown print: page text names no form.
+/// [`crate::handles`], which the outline and the Markdown print: page text names no form. The
+/// forms are those [`forms`] finds, by the same walk, which here lists no control and builds no
+/// option or its text.
 pub fn form_handles(tree: &Tree) -> Vec<(NodeId, String)> {
-    forms(tree)
+    walk(tree, false)
         .forms
         .into_iter()
         .zip(1u64..)
@@ -220,6 +222,12 @@ pub(crate) fn uncheck_radio_groups(tree: &Tree, found: &mut [crate::ActionableEl
 
 /// The forms and the controls of `tree`, template contents left out.
 pub fn forms(tree: &Tree) -> Forms {
+    walk(tree, true)
+}
+
+/// The walk of [`forms`]; with `with_controls` false only the forms, so no control, option or
+/// option text is built.
+fn walk(tree: &Tree, with_controls: bool) -> Forms {
     #[derive(Clone, Copy)]
     struct Above {
         form: Option<usize>,
@@ -266,7 +274,7 @@ pub fn forms(tree: &Tree) -> Forms {
                     enctype: this.attribute("enctype").map(str::to_owned),
                     novalidate: this.has("novalidate"),
                 });
-            } else if let Some(field) = field(this) {
+            } else if with_controls && let Some(field) = field(this) {
                 owners.push(match this.attribute("form") {
                     Some(id) => Owner::Id(id.to_owned()),
                     None => Owner::Ancestor(above.form),

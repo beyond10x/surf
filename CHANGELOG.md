@@ -44,8 +44,9 @@ release; what came before it is in the git log and in `docs/plan/`.
   (`FormAdded`, `OptionAdded`). It builds a form's submission the way the HTML Standard does
   for `application/x-www-form-urlencoded`: a `GET` replaces the query of the form's action, a
   `POST` sends the body. A submission that cannot be sent ends with its reason, such as a
-  required field left empty or a `multipart/form-data` form. No `surf-agent` command presses
-  a button yet.
+  required field or a required select left empty, a `multipart/form-data` form, or an address
+  over 65,536 bytes (`AddressTooLong`), which is not requested. No `surf-agent` command
+  presses a button yet.
 
 ### Changed
 

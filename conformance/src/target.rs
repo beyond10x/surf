@@ -868,6 +868,7 @@ fn end_reason(reason: SubmissionEndReason) -> &'static str {
         SubmissionEndReason::UnsupportedScheme => "UnsupportedScheme",
         SubmissionEndReason::UnsupportedEnctype => "UnsupportedEnctype",
         SubmissionEndReason::DialogMethod => "DialogMethod",
+        SubmissionEndReason::AddressTooLong => "AddressTooLong",
     }
 }
 
@@ -880,6 +881,7 @@ fn end_reason_named(name: &str) -> Option<SubmissionEndReason> {
         SubmissionEndReason::UnsupportedScheme,
         SubmissionEndReason::UnsupportedEnctype,
         SubmissionEndReason::DialogMethod,
+        SubmissionEndReason::AddressTooLong,
     ]
     .into_iter()
     .find(|reason| end_reason(*reason) == name)
