@@ -224,9 +224,9 @@ above, and the list of standards itself was written from memory.
   `generated/rust/crates/*`, so a crate joins by creating its directory. `Cargo.lock` is
   committed. `task build` and `task test` pass `--locked`, so a new crate fails them until
   `cargo generate-lockfile --offline` has run.
-- `.config/nextest.toml`: the configuration of cargo-nextest, which `task test` runs: at least
-  0.9.143, a run that does not stop at the first failure, a test ended after 60 s, and the
-  JUnit report the task reads the ten slowest tests from.
+- `.config/nextest.toml`: the configuration of cargo-nextest, which `task test` and `task
+  test-tls` run: at least 0.9.143, a run that does not stop at the first failure, a test ended
+  after 60 s, and the JUnit report each task copies and reads the ten slowest tests from.
 - `.cargo/config.toml`: `debug = false` for the profiles `dev` and `test`, so no build of this
   repository carries debug info (the folder's rule: no debug info in test builds). A setting in
   `Cargo.toml` would not do: a cargo config file wins over the manifest, and one in a user's
@@ -1141,7 +1141,9 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `check` runs `agent-tasks-report` after `test`. Since 0.4.0 it runs `sh-echo` after
   `agent-tasks-report` and ends with `sh-echo-test`. Since the TLS stories it runs
   `tls-certs-check` and `tls-flights-check` after `test-layout` and `tls-x509-conformance`
-  after `html-conformance`.- `task check-runner`: the gate to run before a merge, `task check` as the forge's runner runs
+  after `html-conformance`. The tests of the four TLS packages run in `test-tls`, right after
+  `test`, with a budget of 120 s of its own: the two steps' times are not added up.
+- `task check-runner`: the gate to run before a merge, `task check` as the forge's runner runs
   it (`taskfiles/check-runner.sh`; `slot task check-runner`). What it does differently from
   `task check`: it runs in `.out/runner/tree`, a clean export of `HEAD` (a clone sharing this
   repository's objects, brought to `HEAD` by `git checkout --force` and `git clean -ffdx -e
@@ -1305,16 +1307,20 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   saying so, when it is missing or was made from another `spec/`. `cargo test -p surf` needs
   `slot task generated-fresh` first; `task test` depends on it.
 - `task build`: `cargo build` of the root workspace with `--locked` and `RUSTFLAGS=-D warnings`.
-- `task test`: `cargo nextest run --workspace --locked` (cargo-nextest 0.9.143, installed as a
-  tool; no crate of the workspace changes) and `cargo test --doc --workspace --locked`, which
-  nextest does not run, with `RUSTFLAGS=-D warnings`. The ten slowest tests come from
+- `task test`: `cargo nextest run --workspace --locked` without the four TLS packages
+  (`--exclude` for each name of `TLS_PACKAGES` in `Taskfile.yml`: `surf-tls`,
+  `surf-tls-test-server`, `surf-tls-test-certs`, `surf-tls-conformance`, whose tests `task
+  test-tls` runs, below; cargo-nextest 0.9.143,
+  installed as a tool; no crate of the workspace changes) and `cargo test --doc --workspace
+  --locked`, which nextest does not run, with `RUSTFLAGS=-D warnings`. The ten slowest tests come from
   `taskfiles/slowest-tests.sh <junit file> [count]` (POSIX sh, pipefail where the shell has
   it), held by `crates/surf/tests/slowest_tests.rs` on a report of 2,000 cases. Under
   `pipefail` no pipeline of a task ends its reader before its input (no `| head`, `grep -q` or
   `sed q` after a command that may write more than a pipe's 64 KiB): the reader stops, the
   writer dies of SIGPIPE and the task fails with 141 (2026-11-22, the list of 892 tests, 70,331
   bytes, under `sort -rn | head -n 10`). Logs `.out/test.log` and
-  `.out/test-doc.log`, JUnit report `target/nextest/default/junit.xml`. Two bounds, from the
+  `.out/test-doc.log`; nextest writes its JUnit report to `target/nextest/default/junit.xml`,
+  and the task copies it to `.out/test-junit.xml` and reads that copy. Two bounds, from the
   rules of the folder this repository is worked in: `.config/nextest.toml` ends a test still
   running after 60 s and counts it failed (`slow-timeout` with `terminate-after`), and the task
   fails when its two commands together run over 120 s of wall time (`TEST_BUDGET`, not counting
@@ -1325,6 +1331,18 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   test over the budget is. A test bounds a time only by a wait for the event with a limit at
   least 10 times the time it takes alone, and proves a cost by a count (such as
   `surf_page::attribute_visits()`), not by a wall time.
+- `task test-tls`: `cargo nextest run --locked` with `-p` for each of the four TLS packages, the
+  ones `task test` leaves out, under the same `.config/nextest.toml` and environment
+  (`RUSTFLAGS=-D warnings`, `SURF_BIN_DIR`). They hold no doc test. No other package depends on
+  them and only they set a feature of `surf-tls`, so its build and the one of `task test` share
+  every artifact. Log `.out/test-tls.log`, JUnit report copied to `.out/test-tls-junit.xml`. It
+  prints the ten slowest tests, nextest's `Summary` line, `N tests: P passed, F failed, I ignored
+  (cargo-nextest N)` and `tls test step: <s> s of its budget of 120 s`; it fails when a test
+  failed and when the nextest run took over 120 s (`TLS_TEST_BUDGET`), printing `tls test step:
+  <s> s, over its budget of 120 s`. The budget is its own and not shared with `task test`: on
+  2026-11-22, with the TLS packages inside it, `task test` ran 1,432 tests in 130 to 147 s at a
+  load average of 110 to 153 (over its budget on that line alone, every test passed), and on
+  `main`, which holds no TLS package, 76 to 82 s at the same load.
 - `task open`: every `UNMAPPED:` marker, in `spec/` and `cli/`.
 - `task cli`: check `cli/surf-agent.yaml` against `spec/` and write what `ess` reads from it into
   `.out/cli/` (`binding.json`, `help.txt`). `task test` depends on it.
