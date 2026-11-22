@@ -258,6 +258,9 @@ pub(super) struct Tokenizer {
     /// The machine stopped at a start tag that would have kept one attribute more than
     /// `max_attributes`; that tag was not emitted.
     attribute_limit_reached: bool,
+    /// The adjusted current node is an element that is not in the HTML namespace, as the tree
+    /// builder last said: `<![CDATA[` opens a CDATA section.
+    cdata_allowed: bool,
 }
 
 impl Tokenizer {
@@ -286,7 +289,13 @@ impl Tokenizer {
             done: false,
             max_attributes: None,
             attribute_limit_reached: false,
+            cdata_allowed: false,
         }
+    }
+
+    /// Whether the next `<![CDATA[` opens a CDATA section (the markup declaration open state).
+    pub(super) fn set_cdata_allowed(&mut self, allowed: bool) {
+        self.cdata_allowed = allowed;
     }
 
     /// Stops the machine at a start tag that would keep more than `max` attributes (a duplicate
@@ -1937,12 +1946,15 @@ impl Tokenizer {
         } else if self.next_characters_are("[CDATA[", false) {
             self.consume_matched(7);
             // "If there is an adjusted current node and it is not an element in the HTML
-            // namespace": the tokenizer has no tree builder yet, so the answer is no, as for
-            // the HTML namespace. Story `html-tree-foreign` adds the hook the tree builder
-            // answers.
-            self.error("cdata-in-html-content");
-            self.create_comment("[CDATA[");
-            self.switch_to(State::BogusComment);
+            // namespace": the tree builder answers before each token (`set_cdata_allowed`);
+            // with no tree builder, as in `tokenize`, the answer is no.
+            if self.cdata_allowed {
+                self.switch_to(State::CdataSection);
+            } else {
+                self.error("cdata-in-html-content");
+                self.create_comment("[CDATA[");
+                self.switch_to(State::BogusComment);
+            }
         } else {
             self.error("incorrectly-opened-comment");
             self.create_comment("");
