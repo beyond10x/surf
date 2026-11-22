@@ -419,6 +419,13 @@ A host whose last label is a number in the URL Standard's sense (all ASCII digit
 followed by hex digits or nothing) is not a DNS name: `0x7f000001`, `127.0.0.0x1`, `1.2.3.0X`
 and `example.0x` match no dNSName; `example.x0` and `0x.example` stay DNS names.
 
+The host is normalised once, where the connection is made (`Connection::new` and
+`Connection::with_random`, through `names::normalise`): one trailing dot removed, ASCII letters
+lowered. That one value is sent in `server_name` (none for an IP address), given to
+`ServerCertVerifier::verify`, and reported by `Connection::host`. `127.0.0.1.` is the address
+127.0.0.1, as `surf-url` reads it (the URL Standard's IPv4 parser drops one empty last part), so
+it carries no `server_name` and is matched against iPAddress entries.
+
 KeyUpdate (RFC 8446 section 4.6.3): an `update_requested` is answered by one KeyUpdate of
 `update_not_requested` before the next record of data the client writes, however many came; a
 read writes nothing; `close` with an answer owed sends `close_notify` under the current key
@@ -936,7 +943,8 @@ system clock, with certificates valid until 2125 and an expired one whose end li
 - 9.2 extensions (MUST implement, MUST send when applicable): `supported_versions`, `cookie`
   (echoed), `signature_algorithms`, `signature_algorithms_cert`, `supported_groups`,
   `key_share`, `server_name` (sent when the host is a name; RFC 6066 allows no IP literal
-  there). No `pre_shared_key` or `psk_key_exchange_modes`, as no PSK is offered. The
+  there; the name without a trailing dot, in ASCII lower case, the value the verifier is given,
+  item 6). No `pre_shared_key` or `psk_key_exchange_modes`, as no PSK is offered. The
   ClientHello holds both `signature_algorithms` and `supported_groups`, and `key_share` with
   `supported_groups`. Met.
 - 9.3 a client supports every parameter it advertises. Shown for each: the three suites and both

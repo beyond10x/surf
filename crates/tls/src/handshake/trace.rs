@@ -104,6 +104,6 @@ impl GivenClientHello<'_> {
             signature_check: SignatureCheck::Given(self.signatures),
         };
         let established = client::handshake(RecordLayer::new(memory), &settings)?;
-        Ok(Connection::established(established))
+        Ok(Connection::established(established, self.host.to_string()))
     }
 }

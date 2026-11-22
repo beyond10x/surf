@@ -42,5 +42,7 @@ mod record;
 mod rfc8448;
 #[path = "tls/seam.rs"]
 mod seam;
+#[path = "tls/security_seams.rs"]
+mod security_seams;
 #[path = "tls/x509_parse.rs"]
 mod x509_parse;

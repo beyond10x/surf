@@ -63,6 +63,15 @@ pub fn host(text: &str) -> Host<'_> {
     }
 }
 
+/// The host a connection is made for, normalised once where the connection is made
+/// (docs/design/tls.md item 6): one trailing dot removed and ASCII letters lowered. The one
+/// value goes into `server_name`, to [`crate::verify::ServerCertVerifier::verify`], and is what
+/// [`crate::connection::Connection::host`] reports. `127.0.0.1.` becomes the address
+/// `127.0.0.1`, as the URL Standard's IPv4 parser (`surf-url`) reads it.
+pub fn normalise(host: &str) -> String {
+    host.strip_suffix('.').unwrap_or(host).to_ascii_lowercase()
+}
+
 /// An IP address of 4 or 16 octets as text; other lengths as hex octets joined by `:`.
 pub fn ip_text(octets: &[u8]) -> String {
     match octets.len() {

@@ -31,12 +31,15 @@ use crate::error::{AlertDescription, Error, Violation};
 use crate::handshake::client::{self, Established, Fail, Hellos, Settings, SignatureCheck};
 use crate::handshake::messages::{self, kind};
 use crate::key_schedule::CipherSuite;
+use crate::names;
 use crate::record::{self, AlertLevel, MAX_PLAINTEXT, Message, RecordLayer};
 use crate::verify::ServerCertVerifier;
 
 /// A TLS 1.3 client connection over `S`, its handshake done.
 pub struct Connection<S: Read + Write> {
     layer: Option<RecordLayer<S>>,
+    /// The host as normalised once ([`names::normalise`]).
+    host: String,
     suite: CipherSuite,
     failed: Option<Error>,
     /// `close_notify` came: reads return the end of the stream.
@@ -91,8 +94,9 @@ impl<S: Read + Write> Connection<S> {
     ) -> Result<Self, Error> {
         #[cfg(feature = "test-tooling")]
         std::hint::black_box(crate::TEST_TOOLING_MARKER);
+        let host = names::normalise(host);
         let settings = Settings {
-            host,
+            host: &host,
             verifier,
             now,
             random,
@@ -101,12 +105,13 @@ impl<S: Read + Write> Connection<S> {
         };
         let established =
             client::handshake(RecordLayer::new(stream), &settings).map_err(reported)?;
-        Ok(Connection::established(established))
+        Ok(Connection::established(established, host))
     }
 
-    pub(crate) fn established(established: Established<S>) -> Self {
+    pub(crate) fn established(established: Established<S>, host: String) -> Self {
         Connection {
             layer: Some(established.layer),
+            host,
             suite: established.suite,
             failed: None,
             received_close: false,
@@ -116,6 +121,12 @@ impl<S: Read + Write> Connection<S> {
             update_owed: false,
             idle_records: 0,
         }
+    }
+
+    /// The host the connection was made for, as normalised once ([`names::normalise`]): the
+    /// name sent in `server_name` and given to the verifier.
+    pub fn host(&self) -> &str {
+        &self.host
     }
 
     /// The suite the server selected.

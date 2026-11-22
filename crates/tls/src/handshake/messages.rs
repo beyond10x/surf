@@ -239,14 +239,14 @@ pub(crate) fn is_ip_literal(host: &str) -> bool {
     bare.parse::<std::net::IpAddr>().is_ok()
 }
 
-/// The `server_name` of `host`: none for an IP literal or an empty host, else the name
-/// without a trailing dot (RFC 6066 section 3).
+/// The `server_name` of `host`, the host as the connection normalised it
+/// (`names::normalise`, which removed a trailing dot, RFC 6066 section 3): none for an IP
+/// literal or an empty host, else the host itself, the value the verifier is given.
 pub(crate) fn server_name(host: &str) -> Option<&str> {
-    let name = host.strip_suffix('.').unwrap_or(host);
-    if name.is_empty() || is_ip_literal(host) {
+    if host.is_empty() || is_ip_literal(host) {
         None
     } else {
-        Some(name)
+        Some(host)
     }
 }
 
