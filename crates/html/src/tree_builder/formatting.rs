@@ -8,6 +8,12 @@
 //! sanitizer action is "Keep", and an adjusted insertion location is the location it is given.
 //! Foster parenting is not written (story `html-tree-tables`): the appropriate place has no
 //! reference child yet, and step 4.14 and step 4.19 are where it will give one.
+//!
+//! The limits (story `html-parser-limits`): an outer iteration that creates elements has them
+//! admitted by the node and stored-byte limits all at once, after step 4.8 and before step 4.9,
+//! when nothing of the iteration has changed the tree, the stack or the list yet. So an
+//! iteration runs whole or not at all, and a limit never leaves a clone out of its parent. Every
+//! entry the scans visit, and every node of the walk to the root, is a step.
 
 use super::{Entry, Scope, TagToken, TreeBuilder};
 use crate::tree::{NodeData, NodeId};
@@ -25,6 +31,7 @@ impl TreeBuilder {
     /// the element and the token it was created for.
     pub(super) fn last_active_named(&self, subject: &str) -> Option<(usize, NodeId, TagToken)> {
         for (index, entry) in self.active.iter().enumerate().rev() {
+            self.visit();
             match entry {
                 Entry::Marker => return None,
                 Entry::Element { node, token } if self.html_name(*node) == Some(subject) => {
@@ -38,6 +45,9 @@ impl TreeBuilder {
 
     /// The adoption agency algorithm, run for a token whose tag name is `subject`.
     pub(super) fn adoption_agency(&mut self, subject: &str) {
+        if self.stopped {
+            return;
+        }
         // 1. `subject` is the token's tag name.
         // 2. The current node is an HTML element named `subject` that is not in the list.
         let current = self.current_node();
@@ -63,8 +73,7 @@ impl TreeBuilder {
                 return;
             };
             // 4.4. Not in the stack of open elements: a parse error, and the entry goes.
-            let Some(formatting_stack) = self.open.iter().rposition(|&n| n == formatting_element)
-            else {
+            let Some(formatting_stack) = self.stack_position(formatting_element) else {
                 self.active.remove(formatting_index);
                 return;
             };
@@ -74,14 +83,23 @@ impl TreeBuilder {
             }
             // 4.6. Not the current node: a parse error, and the algorithm goes on.
             // 4.7. The furthest block: the topmost special element below the formatting element.
-            let furthest_block_stack = (formatting_stack + 1..self.open.len())
-                .find(|&index| self.is_special(self.open[index]));
+            let furthest_block_stack = (formatting_stack + 1..self.open.len()).find(|&index| {
+                self.visit();
+                self.is_special(self.open[index])
+            });
             // 4.8. No furthest block: pop down to the formatting element, and the entry goes.
             let Some(furthest_block_stack) = furthest_block_stack else {
                 self.open.truncate(formatting_stack);
                 self.active.remove(formatting_index);
                 return;
             };
+            // The elements steps 4.18.6 and 4.24 create, admitted before the iteration changes
+            // anything: with a limit that refuses them, parsing stops here.
+            let (nodes, bytes) =
+                self.iteration_creates(formatting_stack, furthest_block_stack, &formatting_token);
+            if !self.admit(nodes, bytes) {
+                return;
+            }
             let furthest_block = self.open[furthest_block_stack];
             // 4.9. The common ancestor: the element above the formatting element.
             let common_ancestor = self.open[formatting_stack - 1];
@@ -106,6 +124,7 @@ impl TreeBuilder {
             let mut removed_from_stack = 0;
             // 4.18. The inner loop.
             loop {
+                self.visit();
                 // 4.18.1.
                 inner_loop_counter += 1;
                 // 4.18.2. The element above `node`, also when `node` was removed from the stack.
@@ -138,7 +157,7 @@ impl TreeBuilder {
                     Entry::Element { token, .. } => token.clone(),
                     Entry::Marker => unreachable!("`active_position` finds an element"),
                 };
-                let new = self.create_element(&token.name, &token.attributes);
+                let new = self.create_admitted_element(&token.name, &token.attributes);
                 self.active[at] = Entry::Element { node: new, token };
                 self.open[node_stack] = new;
                 let node = new;
@@ -150,8 +169,8 @@ impl TreeBuilder {
                 // 4.18.8 to 4.18.10. The action is "Keep".
                 // 4.18.11. "Keep": append `lastNode` to `node`.
                 if let Some(last) = last_node {
-                    self.tree.remove(last);
-                    self.tree.insert(node, last, None);
+                    self.tree.remove(last, &self.steps);
+                    self.tree.insert(node, last, None, &self.steps);
                 }
                 last_node = Some(node);
             }
@@ -163,21 +182,21 @@ impl TreeBuilder {
                 && self.tree.parent(last).is_some()
                 && self.is_child_or_none(reference, target)
             {
-                self.tree.remove(last);
+                self.tree.remove(last, &self.steps);
             }
             // 4.23. And inserted at that place.
             if let Some(last) = last_node
                 && self.tree.parent(last).is_none()
                 && !self.is_host_including_inclusive_ancestor(last, target)
                 && !(*self.tree.data(target) == NodeData::Document
-                    && self.tree.has_element_child(target))
+                    && self.tree.has_element_child(target, &self.steps))
                 && self.is_child_or_none(reference, target)
             {
-                self.tree.insert(target, last, reference);
+                self.tree.insert(target, last, reference, &self.steps);
             }
             // 4.24. A new element for the formatting element's token.
             let new_element =
-                self.create_element(&formatting_token.name, &formatting_token.attributes);
+                self.create_admitted_element(&formatting_token.name, &formatting_token.attributes);
             // 4.25. It takes the formatting element's entry, at the bookmark.
             let formatting_at = self
                 .active_position(formatting_element)
@@ -209,13 +228,45 @@ impl TreeBuilder {
             // becomes the furthest block's last child.
             if self.is_child_or_none(reference, parent)
                 && !(*self.tree.data(parent) == NodeData::Document
-                    && self.tree.has_element_child(parent))
+                    && self.tree.has_element_child(parent, &self.steps))
             {
-                self.tree.move_children(furthest_block, new_element);
-                self.tree.insert(parent, new_element, reference);
+                self.tree
+                    .move_children(furthest_block, new_element, &self.steps);
+                self.tree
+                    .insert(parent, new_element, reference, &self.steps);
             }
             // 4.31, 4.32. No redirection to update.
         }
+    }
+
+    /// The nodes and the bytes of strings of the elements an outer iteration creates, given the
+    /// formatting element's and the furthest block's indices in the stack of open elements: one
+    /// clone (step 4.18.6) for each of the first [`INNER_LOOP_CLONES`] elements the inner loop
+    /// meets above the furthest block, below the formatting element, that has an entry in the
+    /// list, and the new formatting element (step 4.24). The inner loop meets the elements above
+    /// the furthest block in order, also when it removes one from the stack (step 4.18.5), and
+    /// no earlier iteration of it changes which of them have an entry.
+    fn iteration_creates(
+        &self,
+        formatting_stack: usize,
+        furthest_block_stack: usize,
+        formatting_token: &TagToken,
+    ) -> (usize, usize) {
+        let mut nodes = 1;
+        let mut bytes = formatting_token.stored_bytes();
+        for above in 1..=INNER_LOOP_CLONES {
+            let index = furthest_block_stack - above;
+            if index <= formatting_stack {
+                break;
+            }
+            if let Some(at) = self.active_position(self.open[index])
+                && let Entry::Element { token, .. } = &self.active[at]
+            {
+                nodes += 1;
+                bytes += token.stored_bytes();
+            }
+        }
+        (nodes, bytes)
     }
 
     /// Whether `reference` is null or a child of `target` (steps 4.15, 4.22, 4.23 and 4.30).
@@ -232,6 +283,7 @@ impl TreeBuilder {
     fn is_host_including_inclusive_ancestor(&self, ancestor: NodeId, node: NodeId) -> bool {
         let mut next = Some(node);
         while let Some(at) = next {
+            self.visit();
             if at == ancestor {
                 return true;
             }
@@ -249,6 +301,7 @@ impl TreeBuilder {
     /// the innermost open template is.
     fn template_host(&self, fragment: NodeId) -> Option<NodeId> {
         self.open.iter().rev().copied().find(|&n| {
+            self.visit();
             matches!(
                 self.tree.data(n),
                 NodeData::Element { template_contents: Some(contents), .. } if *contents == fragment

@@ -16,7 +16,7 @@
 //! state, the temporary buffer and the character reference code. The code saturates at
 //! 0x110000, above 0x10FFFF, so that a run of digits of any length cannot overflow it.
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 
 use super::{ParseError, Token, TokenAttribute, Tokenized};
 use crate::charref;
@@ -148,6 +148,8 @@ struct TagToken {
     /// The current attribute (the last of `attributes`) is a duplicate and is removed from the
     /// token when the next attribute starts or the token is emitted (13.2.5.33).
     current_attribute_removed: bool,
+    /// The names of the attributes kept on the token, for the duplicate check in O(1).
+    names: HashSet<String>,
 }
 
 /// The DOCTYPE token being built.
@@ -245,6 +247,11 @@ pub(super) struct Tokenizer {
     keep_errors: bool,
     errors: Vec<ParseError>,
     done: bool,
+    /// The most attributes a start tag token keeps; `None` for no limit.
+    max_attributes: Option<usize>,
+    /// The machine stopped at a start tag that would have kept one attribute more than
+    /// `max_attributes`; that tag was not emitted.
+    attribute_limit_reached: bool,
 }
 
 impl Tokenizer {
@@ -269,7 +276,20 @@ impl Tokenizer {
             keep_errors: true,
             errors: Vec::new(),
             done: false,
+            max_attributes: None,
+            attribute_limit_reached: false,
         }
+    }
+
+    /// Stops the machine at a start tag that would keep more than `max` attributes (a duplicate
+    /// it drops is not kept): the tag is not emitted, and nothing after it.
+    pub(super) fn limit_attributes(&mut self, max: usize) {
+        self.max_attributes = Some(max);
+    }
+
+    /// Whether the machine stopped at the attribute limit.
+    pub(super) fn attribute_limit_reached(&self) -> bool {
+        self.attribute_limit_reached
     }
 
     /// Runs the state machine until it emits the end-of-file token.
@@ -389,6 +409,11 @@ impl Tokenizer {
 
     fn start_attribute(&mut self) {
         self.finish_attribute();
+        if self.tag.end && !self.keep_errors {
+            // An end tag token has no attributes, and without errors no duplicate is reported:
+            // only the attribute being read is kept.
+            self.tag.attributes.clear();
+        }
         self.tag.attributes.push(TokenAttribute {
             name: String::new(),
             value: String::new(),
@@ -405,12 +430,29 @@ impl Tokenizer {
 
     /// Leaving the attribute name state: a name already on the token is a
     /// `duplicate-attribute` parse error, and the new attribute is removed (13.2.5.33).
+    ///
+    /// The names kept are in a set, so the check is O(1) for each attribute. A start tag that
+    /// keeps one attribute more than `max_attributes` stops the machine.
     fn leave_attribute_name(&mut self) {
-        if let Some((current, earlier)) = self.tag.attributes.split_last()
-            && earlier.iter().any(|a| a.name == current.name)
-        {
+        if self.tag.end && !self.keep_errors {
+            return;
+        }
+        let Some(current) = self.tag.attributes.last() else {
+            return;
+        };
+        if self.tag.names.contains(&current.name) {
             self.error("duplicate-attribute");
             self.tag.current_attribute_removed = true;
+            return;
+        }
+        self.tag.names.insert(current.name.clone());
+        if !self.tag.end
+            && self
+                .max_attributes
+                .is_some_and(|max| self.tag.attributes.len() > max)
+        {
+            self.attribute_limit_reached = true;
+            self.done = true;
         }
     }
 

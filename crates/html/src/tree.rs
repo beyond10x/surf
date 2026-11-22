@@ -3,6 +3,17 @@
 //! only from outside the crate: every public function takes `&self`, and the operations that
 //! change a tree are those tree construction uses, crate-private. Written by
 //! `story:html-tree-body`. No reader recurses over the depth of the tree.
+//!
+//! Since `story:html-parser-limits` the tree keeps what the limits read as it is built: the
+//! number of its nodes ([`Tree::node_count`]), the bytes of the strings it holds
+//! ([`Tree::stored_bytes`]), and the limit that stopped its parse ([`Tree::stopped_by`]). The
+//! operations that scan a node's children add each child they visit to the step count they are
+//! given. Each element keeps its categories (special, the scopes it bounds), decided once when it
+//! is created.
+
+use std::cell::Cell;
+
+use crate::limits::Limit;
 
 /// A namespace an element or an attribute is in (Infra, "Namespaces").
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -100,6 +111,62 @@ struct Node {
     data: NodeData,
     parent: Option<NodeId>,
     children: Vec<NodeId>,
+    /// For an element, its categories ([`Categories`]), decided when it was created; 0 for
+    /// every other node.
+    categories: u8,
+}
+
+/// The categories of an element that tree construction asks for at every visit of the stack of
+/// open elements, decided once from its namespace and local name when it is created.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Categories(pub(crate) u8);
+
+impl Categories {
+    /// In the special category (13.2.4.2).
+    pub(crate) const SPECIAL: u8 = 1;
+    /// One of the element types of "has an element in scope".
+    pub(crate) const SCOPE: u8 = 1 << 1;
+    /// One of the element types "in list item scope" adds (`ol`, `ul`).
+    pub(crate) const LIST_ITEM_SCOPE: u8 = 1 << 2;
+    /// The element type "in button scope" adds (`button`).
+    pub(crate) const BUTTON_SCOPE: u8 = 1 << 3;
+
+    /// Whether every bit of `bits` is set.
+    pub(crate) fn has(self, bits: u8) -> bool {
+        self.0 & bits == bits
+    }
+}
+
+/// The UTF-8 bytes of the strings of `attribute`: its prefix, local name and value.
+fn attribute_bytes(attribute: &Attribute) -> usize {
+    attribute.prefix.as_ref().map_or(0, String::len)
+        + attribute.local_name.len()
+        + attribute.value.len()
+}
+
+/// The UTF-8 bytes of the strings `data` holds ([`Tree::stored_bytes`]).
+pub(crate) fn stored_bytes_of(data: &NodeData) -> usize {
+    match data {
+        NodeData::Document | NodeData::DocumentFragment => 0,
+        NodeData::Doctype {
+            name,
+            public_id,
+            system_id,
+        } => name.len() + public_id.len() + system_id.len(),
+        NodeData::Element {
+            local_name,
+            attributes,
+            ..
+        } => local_name.len() + attributes.iter().map(attribute_bytes).sum::<usize>(),
+        NodeData::Text(text) => text.len(),
+        NodeData::Comment(data) => data.len(),
+        NodeData::ProcessingInstruction { target, data } => target.len() + data.len(),
+    }
+}
+
+/// Adds one visit to `steps`.
+fn visit(steps: &Cell<usize>) {
+    steps.set(steps.get().saturating_add(1));
 }
 
 /// A tree of nodes: a document or a document fragment at its root, every other node under it
@@ -112,6 +179,8 @@ struct Node {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Tree {
     nodes: Vec<Node>,
+    stored_bytes: usize,
+    stopped_by: Option<Limit>,
 }
 
 impl Tree {
@@ -126,50 +195,88 @@ impl Tree {
     }
 
     fn with_root(data: NodeData) -> Tree {
-        let mut tree = Tree { nodes: Vec::new() };
-        tree.create(data);
+        let mut tree = Tree {
+            nodes: Vec::new(),
+            stored_bytes: 0,
+            stopped_by: None,
+        };
+        tree.create(data, 0);
         tree
     }
 
     /// Adds a node with no parent to the arena.
-    fn create(&mut self, data: NodeData) -> NodeId {
+    fn create(&mut self, data: NodeData, categories: u8) -> NodeId {
         let id = NodeId(self.nodes.len());
+        self.stored_bytes += stored_bytes_of(&data);
         self.nodes.push(Node {
             data,
             parent: None,
             children: Vec::new(),
+            categories,
         });
         id
     }
 
     /// Creates an element with no parent (the DOM's "create an element", with no custom element
-    /// definition looked up). An HTML `template` gets its template contents, a document fragment
-    /// of this tree.
+    /// definition looked up), with its `categories`. An HTML `template` gets its template
+    /// contents, a document fragment of this tree, created first: a `template` is two nodes.
     pub(crate) fn create_element(
         &mut self,
         namespace: Namespace,
         local_name: &str,
         attributes: Vec<Attribute>,
+        categories: Categories,
     ) -> NodeId {
         let template_contents = (namespace == Namespace::Html && local_name == "template")
-            .then(|| self.create(NodeData::DocumentFragment));
-        self.create(NodeData::Element {
-            namespace,
-            local_name: local_name.to_string(),
-            attributes,
-            template_contents,
-        })
+            .then(|| self.create(NodeData::DocumentFragment, 0));
+        self.create(
+            NodeData::Element {
+                namespace,
+                local_name: local_name.to_string(),
+                attributes,
+                template_contents,
+            },
+            categories.0,
+        )
+    }
+
+    /// The categories `node` was created with: none for a node that is not an element.
+    pub(crate) fn categories(&self, node: NodeId) -> Categories {
+        Categories(self.nodes[node.0].categories)
+    }
+
+    /// The index in `parent`'s children before which a node inserted before `reference` goes:
+    /// the end for `None` or a reference that is not a child. Each child the scan visits is a
+    /// step.
+    fn insertion_index(
+        &self,
+        parent: NodeId,
+        reference: Option<NodeId>,
+        steps: &Cell<usize>,
+    ) -> usize {
+        let children = &self.nodes[parent.0].children;
+        reference
+            .and_then(|r| {
+                children.iter().position(|&c| {
+                    visit(steps);
+                    c == r
+                })
+            })
+            .unwrap_or(children.len())
     }
 
     /// Inserts `node`, which has no parent, into `parent` before `reference`, or as its last
     /// child when `reference` is `None` (the DOM's "insert").
-    pub(crate) fn insert(&mut self, parent: NodeId, node: NodeId, reference: Option<NodeId>) {
+    pub(crate) fn insert(
+        &mut self,
+        parent: NodeId,
+        node: NodeId,
+        reference: Option<NodeId>,
+        steps: &Cell<usize>,
+    ) {
         debug_assert!(self.nodes[node.0].parent.is_none());
-        let children = &mut self.nodes[parent.0].children;
-        let at = reference
-            .and_then(|r| children.iter().position(|&c| c == r))
-            .unwrap_or(children.len());
-        children.insert(at, node);
+        let at = self.insertion_index(parent, reference, steps);
+        self.nodes[parent.0].children.insert(at, node);
         self.nodes[node.0].parent = Some(parent);
     }
 
@@ -179,72 +286,104 @@ impl Tree {
         parent: NodeId,
         data: NodeData,
         reference: Option<NodeId>,
+        steps: &Cell<usize>,
     ) -> NodeId {
-        let node = self.create(data);
-        self.insert(parent, node, reference);
+        let node = self.create(data, 0);
+        self.insert(parent, node, reference, steps);
         node
     }
 
-    /// Inserts `text` into `parent` before `reference`: appended to the data of the node before
-    /// that place when it is a text node, otherwise as a new text node ("flush pending text",
-    /// 13.2.6.1).
-    pub(crate) fn insert_text(&mut self, parent: NodeId, text: &str, reference: Option<NodeId>) {
-        let children = &self.nodes[parent.0].children;
-        let at = reference
-            .and_then(|r| children.iter().position(|&c| c == r))
-            .unwrap_or(children.len());
-        let previous = at.checked_sub(1).map(|i| children[i]);
-        if let Some(previous) = previous
-            && let NodeData::Text(data) = &mut self.nodes[previous.0].data
-        {
-            data.push_str(text);
-            return;
-        }
-        self.insert_new(parent, NodeData::Text(text.to_string()), reference);
+    /// The text node that text inserted into `parent` before `reference` is appended to ("flush
+    /// pending text", 13.2.6.1): the node just before that place, when it is a text node.
+    pub(crate) fn text_before(
+        &self,
+        parent: NodeId,
+        reference: Option<NodeId>,
+        steps: &Cell<usize>,
+    ) -> Option<NodeId> {
+        let at = self.insertion_index(parent, reference, steps);
+        let previous = self.nodes[parent.0].children[..at].last().copied()?;
+        matches!(self.nodes[previous.0].data, NodeData::Text(_)).then_some(previous)
     }
 
-    /// Adds to `element` each of `attributes` whose name it has no attribute of, in order (the
-    /// `html` and `body` start tag rules of "in body").
-    pub(crate) fn add_missing_attributes(&mut self, element: NodeId, attributes: &[Attribute]) {
+    /// Appends `text` to the data of the text node `node`.
+    pub(crate) fn push_text(&mut self, node: NodeId, text: &str) {
+        if let NodeData::Text(data) = &mut self.nodes[node.0].data {
+            data.push_str(text);
+            self.stored_bytes += text.len();
+        }
+    }
+
+    /// Adds `attributes` to `element`, in order. The caller has left out every name the element
+    /// has an attribute of (the `html` and `body` start tag rules of "in body").
+    pub(crate) fn add_attributes(&mut self, element: NodeId, attributes: Vec<Attribute>) {
         if let NodeData::Element {
             attributes: existing,
             ..
         } = &mut self.nodes[element.0].data
         {
-            for attribute in attributes {
-                if !existing
-                    .iter()
-                    .any(|a| a.local_name == attribute.local_name)
-                {
-                    existing.push(attribute.clone());
-                }
-            }
+            self.stored_bytes += attributes.iter().map(attribute_bytes).sum::<usize>();
+            existing.extend(attributes);
         }
     }
 
-    /// Removes `node` from its parent, if it has one. The node stays in the arena.
-    pub(crate) fn remove(&mut self, node: NodeId) {
+    /// Removes `node` from its parent, if it has one. The node stays in the arena. Each child of
+    /// the parent the scan visits is a step.
+    pub(crate) fn remove(&mut self, node: NodeId, steps: &Cell<usize>) {
         if let Some(parent) = self.nodes[node.0].parent.take() {
-            self.nodes[parent.0].children.retain(|&c| c != node);
+            let children = &mut self.nodes[parent.0].children;
+            if let Some(at) = children.iter().rposition(|&c| {
+                visit(steps);
+                c == node
+            }) {
+                children.remove(at);
+            }
         }
     }
 
     /// Moves every child of `from` to the end of `to`'s children, in order, in one pass (the
     /// adoption agency algorithm's "take all of the child nodes of furthestBlock and append them
-    /// to newElement"). `to` is not `from` and not under it.
-    pub(crate) fn move_children(&mut self, from: NodeId, to: NodeId) {
+    /// to newElement"). `to` is not `from` and not under it. Each child moved is a step.
+    pub(crate) fn move_children(&mut self, from: NodeId, to: NodeId, steps: &Cell<usize>) {
         let children = std::mem::take(&mut self.nodes[from.0].children);
         for &child in &children {
+            visit(steps);
             self.nodes[child.0].parent = Some(to);
         }
         self.nodes[to.0].children.extend(children);
     }
 
-    /// Whether `node` has a child that is an element.
-    pub(crate) fn has_element_child(&self, node: NodeId) -> bool {
-        self.children(node)
-            .iter()
-            .any(|&c| matches!(self.data(c), NodeData::Element { .. }))
+    /// Whether `node` has a child that is an element. Each child visited is a step.
+    pub(crate) fn has_element_child(&self, node: NodeId, steps: &Cell<usize>) -> bool {
+        self.children(node).iter().any(|&c| {
+            visit(steps);
+            matches!(self.data(c), NodeData::Element { .. })
+        })
+    }
+
+    /// Records the limit that stopped the parse; the first one recorded stays.
+    pub(crate) fn stop_at(&mut self, limit: Limit) {
+        self.stopped_by.get_or_insert(limit);
+    }
+
+    /// The limit that stopped the parse of this tree ([`crate::limits::Limits`]), `None` for a
+    /// parse that ended without reaching one. The tree holds every node inserted before that
+    /// point.
+    pub fn stopped_by(&self) -> Option<Limit> {
+        self.stopped_by
+    }
+
+    /// The number of nodes of the arena: the root, every node under it, template contents and
+    /// nodes removed from their parent while parsing.
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+
+    /// The UTF-8 bytes of every string the tree holds: element local names, attribute names,
+    /// prefixes and values, text, comment data, doctype fields, processing instruction targets
+    /// and data, in every node of the arena.
+    pub fn stored_bytes(&self) -> usize {
+        self.stored_bytes
     }
 
     /// The parent of `node`: `None` for the root, for a template's contents and for a node

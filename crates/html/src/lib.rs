@@ -56,9 +56,10 @@
 //!   encoding. Not yet: tables and `select`, `template` and foreign content
 //!   ([`NOT_YET_PARSED`]); their tokens go to in body's "any other start tag" and "any other end
 //!   tag". Parse errors are not collected, and no script runs.
-//! - [`limits`]: nothing yet. The module holds no item: none of the limits of
-//!   `docs/design/html-parser.md` item 7 is enforced, so the depth of a tree, the number of its
-//!   nodes and the length of its texts have no bound.
+//! - [`limits`]: written. [`limits::Limits`] holds the six limits of
+//!   `docs/design/html-parser.md` item 7 with their defaults, [`ParseOptions::limits`] carries
+//!   them into a parse, and [`Tree::stopped_by`] names the [`limits::Limit`] that stopped one.
+//!   The section "Limits" below says what each bounds and where it stops.
 //!
 //! Entry points:
 //!
@@ -74,6 +75,71 @@
 //!
 //! The crate is held to the html5lib-tests and web-platform-tests data by the crate
 //! `surf-html-conformance`, which counts the cases that exist, run and pass.
+//!
+//! # Limits
+//!
+//! The bytes come from an untrusted server. Every limit below ends a parse with a defined
+//! result; none of them is a hang, an unbounded allocation or a panic. The standard places none
+//! of them (13.2.6, before 13.2.6.1). The depth limit is the kind it expects ("practical
+//! concerns will likely force user agents to impose nesting depth constraints"); the other five
+//! are a deliberate deviation, and so is what reaching any of them does: parsing stops, as
+//! "stop parsing" pops the open elements, without the end-of-file step, and the tree holds every
+//! node inserted before that point. [`Tree::stopped_by`] names the limit, `None` for a parse
+//! that ended without one; for [`parse_document_bytes`] it is `parsed.tree.stopped_by()`.
+//! [`Tree::node_count`] and [`Tree::stored_bytes`] read the two counts the limits keep. The
+//! defaults are those of [`limits::Limits::default`]:
+//!
+//! - **Input bytes** ([`limits::Limits::max_input_bytes`], default 16 MiB, the body limit of
+//!   `surf-fetch`): a `&str` longer than the limit is cut to its longest prefix of at most that
+//!   many bytes that ends on a character boundary; bytes are cut before they are decoded, so a
+//!   sequence cut in two decodes as the decoder decodes an end of input. The cut input is parsed
+//!   to its end, the end-of-file step included, so the tree is that of the prefix, and
+//!   [`limits::Limit::InputBytes`] is named unless another limit stopped the parse of the
+//!   prefix. The parse again after a `meta` that changes the encoding reads the same cut bytes.
+//! - **Depth** ([`limits::Limits::max_depth`], default 512): an element that would be entry
+//!   513 of the stack of open elements is not created.
+//! - **Nodes** ([`limits::Limits::max_nodes`], default 1,048,576, template contents
+//!   included): a node whose creation would take [`Tree::node_count`] past the limit is not
+//!   created (a `template` is two nodes). The reconstruction of the active formatting elements
+//!   checks before each element it creates. The adoption agency algorithm checks before each
+//!   outer iteration that can create an element, for every element that iteration creates (at
+//!   most four: three clones and the new formatting element), so an iteration runs whole or not
+//!   at all and leaves no element out of its parent.
+//! - **Attributes** ([`limits::Limits::max_attributes`], default 1,024): the tokenizer stops
+//!   when a start tag token would keep one attribute more (a duplicate it drops does not
+//!   count), and that tag creates no element. The `html` and `body` start tags of "in body"
+//!   stop before a merge that would give the element one attribute more; none of that merge is
+//!   made. The public [`tokenizer::tokenize`] runs without it.
+//! - **Stored bytes** ([`limits::Limits::max_stored_bytes`], default 64 MiB): the UTF-8 bytes
+//!   of every string the tree holds, clones included (element local names, attribute names,
+//!   prefixes and values, text, comment data, doctype fields, processing instruction targets
+//!   and data). A node or an append that would take [`Tree::stored_bytes`] past the limit is not
+//!   made. Text is appended a character at a time, so a text node holds everything up to the
+//!   limit. Names count as well as values: the reconstruction clones attribute names, which
+//!   would otherwise grow without a bound.
+//! - **Steps** ([`limits::Limits::max_steps`], default 2^27, 134,217,728): every entry visited
+//!   in a scan of the stack of open elements or of the list of active formatting elements (the
+//!   scopes, popping, "any other end tag", Noah's Ark, the reconstruction, the adoption agency
+//!   algorithm's scans and its walk to the root), and every child visited in a parent's child
+//!   list (inserting before a reference, finding the text node to append to, removing a node,
+//!   moving children, looking for an element child). The count is checked after each token:
+//!   the token that takes it past the limit is processed whole, then parsing stops. The other
+//!   five limits bound memory; this one bounds time, which they do not: an input inside them can
+//!   cost tokens times depth stack visits. The default is twice the visits of a 16 MiB page of
+//!   the kind of five large documentation pages measured (at most 3.8 visits per input byte).
+//!
+//! The decisions that keep the visits cheap: the special category and the scope categories of
+//! an element are decided once when it is created; Noah's Ark compares two entries in O(1) when
+//! their tag names, attribute counts or keys (a hash of the attributes sorted by name) differ;
+//! the tokenizer's duplicate-attribute check and the `html` and `body` merge look names up in a
+//! set. No clock is read: the limits bound the work, and the tests of `tests/limits.rs` measure
+//! the time.
+//!
+//! What a parse holds besides the tree: the input as code points, 4 bytes for each character
+//! (at most 64 MiB for an input of 16 MiB), the stack of open elements (at most
+//! [`limits::Limits::max_depth`] entries) and the list of active formatting elements with a copy
+//! of each entry's start tag token. [`parse_document_bytes`] holds the decoded text as well, at
+//! most 3 bytes for each input byte, and two of them while it parses again after a `meta`.
 
 #![forbid(unsafe_code)]
 
@@ -99,12 +165,16 @@ pub struct ParseOptions {
     /// surf has none, so the default is `true`; the tree-construction data sets it `false` for
     /// its `#script-on` cases.
     pub scripting_disabled: bool,
+    /// The limits the parse stays within (the crate documentation, "Limits"); the default is
+    /// [`limits::Limits::default`].
+    pub limits: limits::Limits,
 }
 
 impl Default for ParseOptions {
     fn default() -> Self {
         ParseOptions {
             scripting_disabled: true,
+            limits: limits::Limits::default(),
         }
     }
 }
@@ -137,9 +207,16 @@ pub struct ParsedDocument {
 ///
 /// The tokenizer and tree construction run as [`tree_builder`] says, with the parts
 /// [`NOT_YET_PARSED`] names not yet parsed as the standard does. The text has no confidence, so
-/// a `meta` never changes the encoding.
+/// a `meta` never changes the encoding. An input longer than
+/// [`limits::Limits::max_input_bytes`] is parsed as its prefix (the crate documentation,
+/// "Limits").
 pub fn parse_document(input: &str, options: &ParseOptions) -> Tree {
-    tree_builder::parse(input, options, None).tree
+    let (input, cut) = limits::cut_str(input, options.limits.max_input_bytes);
+    let mut tree = tree_builder::parse(input, options, None).tree;
+    if cut {
+        tree.stop_at(limits::Limit::InputBytes);
+    }
+    tree
 }
 
 /// Parses bytes as a document: the encoding sniffing algorithm with no transport-layer
@@ -150,8 +227,19 @@ pub fn parse_document(input: &str, options: &ParseOptions) -> Tree {
 /// (13.2.3.4): the parse stops, the same bytes are decoded again with that encoding and the
 /// confidence certain ([`encoding::decode_with`]), and the document is parsed again from the
 /// start, so a parse runs at most twice. [`ParsedDocument::encoding`] is the encoding in use at
-/// the end.
+/// the end. Bytes past [`limits::Limits::max_input_bytes`] are cut before they are decoded, and
+/// both parses read the same cut bytes (the crate documentation, "Limits").
 pub fn parse_document_bytes(bytes: &[u8], options: &ParseOptions) -> ParsedDocument {
+    let (bytes, cut) = limits::cut_bytes(bytes, options.limits.max_input_bytes);
+    let mut parsed = parse_cut_bytes(bytes, options);
+    if cut {
+        parsed.tree.stop_at(limits::Limit::InputBytes);
+    }
+    parsed
+}
+
+/// [`parse_document_bytes`] over bytes already cut to the input limit.
+fn parse_cut_bytes(bytes: &[u8], options: &ParseOptions) -> ParsedDocument {
     let decoded = encoding::decode(bytes);
     let in_use = decoded.encoding.map(|name| tree_builder::InputEncoding {
         name,

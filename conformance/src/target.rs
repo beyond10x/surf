@@ -675,6 +675,7 @@ fn parse_limit(limit: ParseLimit) -> &'static str {
         ParseLimit::Nodes => "Nodes",
         ParseLimit::Attributes => "Attributes",
         ParseLimit::StoredBytes => "StoredBytes",
+        ParseLimit::Steps => "Steps",
     }
 }
 
@@ -685,6 +686,7 @@ fn parse_limit_named(name: &str) -> Option<ParseLimit> {
         ParseLimit::Nodes,
         ParseLimit::Attributes,
         ParseLimit::StoredBytes,
+        ParseLimit::Steps,
     ]
     .into_iter()
     .find(|limit| parse_limit(*limit) == name)
