@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-decisions
 kind: story
-status: active
+status: implemented
 title: Decide the TLS design and check that ring builds for the four release targets
 summary: docs/design/tls.md records U1 to U3, the reasons, the extra anchor option, the crate layout, the bounds and the test design; a probe workflow on an unmerged branch builds ring 0.17.14 on the forge runners.
 relations:
@@ -10,10 +10,11 @@ relations:
 scope:
 - confidence: cited
   path: docs/design/tls.md
-revision: 11
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:23Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:24Z", actor: "human:operator", revision: 11, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-22T08:21:18Z", actor: "human:operator", revision: 14, decided_on: {"recorded":{"test_result":1,"verification":3}}}
 ---
 ## Context
 
@@ -282,7 +283,7 @@ and `story:tls-lock-allow` waits for nothing but this story.
        No requirement of sections 9.1 to 9.3 is deviated from. A deviation found later is a
        line here, named, and goes to the coordinator for `host-operator`.
 2. The probe, on a branch `probe/tls-ring` that is never merged into `main`:
-   `.github/workflows/tls-probe.yml` (`on: push` to that branch only, `permissions: contents:
+   `.github/workflows/tls-probe.yml` (`on: push` to that branch, and `workflow_dispatch` on it, `permissions: contents:
    read`, every action pinned by commit as `release.yml` pins them, the toolchain read from
    `rust-toolchain.toml`) and `probe/tls-ring/`, a crate outside the root workspace with its own
    `Cargo.lock`, whose `main` verifies one fixed ECDSA P-256 signature, runs one X25519
@@ -295,7 +296,7 @@ and `story:tls-lock-allow` waits for nothing but this story.
 
 ## Acceptance
 
-`docs/design/tls.md` is on the story branch with the thirteen items, and the probe run it cites
+`docs/design/tls.md` is on the story branch with the fourteen items, and the probe run it cites
 built and ran ring 0.17.14 on the four release targets and on the gate runner.
 
 1. The probe run named in item 3: its five build jobs conclude `success` and each log holds
