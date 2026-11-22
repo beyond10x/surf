@@ -43,7 +43,7 @@ scope:
   path: generated/rust
 - confidence: inferred
   path: spec/domains/agent.yaml
-revision: 15
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 5}
@@ -122,12 +122,18 @@ so the agent gets the reason and status 1 instead of a navigation that never sta
   12. `history_events_map_with_their_fields`: after cases 1 and 2, with `surfd` run in the test
       process (decision D29), the session log holds the `GoBack` and the `GoForward` event entries
       with every field of the specification and no `unmapped` mark, each between its action entry
-      and its answer entry.
+      and its answer entry;
+  13. after a form `POST` answered by a 303 to the page R, and a `follow` from R to B, `back`: the
+      page line of R, fetched with `GET`. The entry of R was committed by the `GET` that followed
+      the redirect, so it is no `POST` entry (decision D267, `story:agent-history-spec`). The
+      same holds for a 301 and a 302, after which `surf-fetch` continues with `GET` too; the case
+      uses the 303.
 
   The cases stand on commands built before this story in the commands unit: cases 1, 2, 5, 7, 8,
-  9, 10, 11 and 12 reach a second page with `follow` (`story:agent-follow-links`); case 6 makes
-  its `POST` entry with `press` (`story:agent-press-submit`, and `fill`,
-  `story:agent-fill-pick`, where its form has a field); cases 3 and 4 need neither.
+  9, 10, 11 and 12 reach a second page with `follow` (`story:agent-follow-links`); cases 6 and 13 make
+  their `POST` with `press` (`story:agent-press-submit`, and `fill`,
+  `story:agent-fill-pick`, where the form has a field), and case 13 goes on with `follow`; cases
+  3 and 4 need neither.
 
 Surfaces written: `crates/session/`, `crates/answer/`, `docs/agent-answer.md`,
 `cli/surf-agent.yaml`, `crates/agent/` (`src/wire.rs` included), `crates/surfd/src/daemon.rs`,

@@ -35,7 +35,7 @@ scope:
   path: spec/ess-inputs.yaml
 - confidence: cited
   path: spec/scenarios
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
@@ -100,7 +100,20 @@ it.
     at that delta (at the start, at the end), refused for an entry made by `POST`, refused for a
     tab with no history; accepted, it starts a navigation to the entry address with `Get` and the
     traverse handling, whose commit makes that entry current and adds none; a traversal that
-    fails or is cancelled leaves the current entry where it was.
+    fails or is cancelled leaves the current entry where it was;
+  - after the adversary's pass on `1539aa2` (decisions D267 and D268):
+    - an entry made by `POST` is one whose committing request was a `POST`. `CommitNavigation`
+      carries the method of the request that the committed response answered, and the entry
+      keeps that method, not the method its `Navigate` was sent with. A `POST` answered by a
+      301, 302 or 303, which `surf-fetch` continues with `Get`, makes an entry of `Get`, and a
+      traversal reaches it. The HTML Standard, from memory, drops the entry's POST resource
+      when a redirect changes the method; a comment beside the construct says where this is
+      confirmed or differs;
+    - a traversal whose entry is `dropped` when its navigation would commit (a push committed
+      first) commits nothing: no entry becomes current, no standing moves, and the tab keeps
+      the entries the push left, one of them `back`. The comment that marks this order
+      `UNMAPPED` is replaced by the rule. Nothing reaches the order today (the session runs one
+      command at a time); the rule keeps a later caller from a tab that cannot step back.
 - `spec/domains/agent.yaml`: `GoBack(session_id)` and `GoForward(session_id)` with the refusals of
   `Go`; their events invoke the traversal for the tab of the session; the enum
   `surf.agent.ActionCommand` (`spec/domains/agent.yaml:31`) gains the variants `back` and
@@ -118,6 +131,14 @@ it.
   `navigation-traverse-refused-for-post-entry.yaml`, `navigation-traverse-commits-without-entry.yaml`,
   `navigation-traverse-failed-keeps-current.yaml`, `agent-go-back-traverses.yaml`,
   `agent-go-forward-traverses.yaml`.
+- The adversary's cases (branch `adv/history-spec`, commit `9ccf798`): five scenarios
+  `adversary-history-*.yaml` and the module `adversary_history` of the test binary of
+  `crates/ports`. `adversary-history-post-redirected-to-get` and
+  `adversary-history-push-during-traversal` are red at `9ccf798` and green by the two rules
+  above; where a rule turns a step of a scenario into a refusal, the scenario's step is changed
+  to expect it and its closing assertions stay. The other three hold the standings `earlier`
+  and `later`, which no scenario asserted (two mutants of those effects passed all 191
+  scenarios), and two tabs.
 - `task generate`; `crates/ports` stores the entries; `conformance/src/`; `crates/surf/src/lib.rs`
   only where the regenerated interface forces it, keeping every signature `crates/session` and
   `crates/surf-cli` call (`Browser::start` pushes by default). `REFUSALS_MAX` is not written here (decision D30): the unit runs its gate as `slot task check REFUSALS_MAX=<n>`, `<n>` the measured `refused:` count, and its report gives `<n>` and each new refusal with its cause; the coordinator writes the number on the wave branch.
