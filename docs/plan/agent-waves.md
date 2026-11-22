@@ -62,8 +62,8 @@ publication; its stories keep their identities, statuses and acceptance in the s
 
 | round | units, each one sub-agent building its stories in the order given | review after it |
 |---|---|---|
-| 1 | parser: `html-tree-tables`, `html-tree-template`, `html-tree-foreign`, `html-tree-complete`. Document: `html-document-port`. Specification: `agent-links-spec`, `agent-forms-spec`, `agent-history-spec` | the parser on real pages |
-| 2 | commands: `agent-follow-links`, `agent-form-port`, `agent-fill-pick`, `agent-press-submit`, `agent-back-forward`, `agent-change-and-log`. View: `view-now-panel`, `view-acceptance` | links, forms, history |
+| 1 | parser: `html-tree-tables`, `html-tree-template`, `html-tree-foreign`, `html-tree-complete`. Text: `page-text-answer-block`, `page-text-outline`, `page-text-markdown`, `page-text-tables`. Document: `html-document-port`, `page-text-look`, `page-text-surf-command`, `agent-links-spec`, `agent-forms-spec` | the parser on real pages |
+| 2 | commands: `agent-follow-links`, `agent-form-port`, `agent-history-spec`, `agent-fill-pick`, `agent-press-submit`, `agent-back-forward`, `agent-change-and-log`. View: `view-now-panel`, `view-acceptance` | links, forms, history |
 | 3 | runner: `runner-formats`, `runner-record-option`, `runner-replay-transport`, `runner-scenario-from`, `runner-record-session`, `runner-run`, `runner-e2e`. View: `view-controls-and-changes` | the runner |
 
 Rules of a round, beside the rules of a wave:
@@ -73,8 +73,19 @@ Rules of a round, beside the rules of a wave:
   run one after the other.
 - The parser unit of round 1 is held to the vendored html5lib-tests: the line
   `html-conformance: … passed` of the gate rises with each story and never falls.
-- The specification unit of round 1 runs before the units of round 2 need it; scenarios whose
-  code comes in round 2 are counted with `REFUSALS_MAX`, as in a specification unit of a wave.
+- Round 1 has no specification unit of its own (corrected on 2026-11-22 after the critic panel
+  on the page text drafts): `agent-links-spec` depends on `html-document-port`, every run of
+  `task generate` rewrites all files under `generated/` with one contract digest, and
+  `agent-history-spec` depends on `agent-form-port`, a story of round 2. So the document unit
+  makes every specification change of round 1, one after the other, and `agent-history-spec`
+  is built by the commands unit of round 2 after `agent-form-port`. Scenarios whose code comes
+  in round 2 are counted with `REFUSALS_MAX`, as in a specification unit of a wave.
+- Units of round 1 hand over at three points: `page-text-outline` starts on the round's base
+  (wave 10 holds the parser's limits and the labels); `page-text-tables` waits for the parser
+  unit's `html-tree-tables`; `page-text-look` waits for `page-text-answer-block`,
+  `page-text-outline` and `page-text-markdown`, and `page-text-surf-command` for
+  `page-text-tables`. The coordinator merges the finished story's commits into the waiting
+  unit's branch.
 - A unit commits on its branch after each story whose tests are green, so that a story that
   fails leaves the stories before it usable.
 - The test budget holds for a round as for a wave: no test over 60 s, the test step within
