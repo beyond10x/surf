@@ -5,10 +5,10 @@
     {
       "command": "surf-agent open http://127.0.0.1:43117/surf/",
       "exitCode": 0,
-      "output": "surf 1 session 89a56b78-4046-4f4b-a48b-ae210b93171d open\ntoken <64 hexadecimal digits>\ndid open \"http://127.0.0.1:43117/surf/\"\npage 200 \"text/html\" \"http://127.0.0.1:43117/surf/\"\npath 2 of 2\n  1 open\n  2 go \"http://127.0.0.1:43117/surf/\""
+      "output": "surf 1 session 76da4882-95f4-4212-bf5f-4fb19b1f2658 open\ntoken <64 hexadecimal digits>\ndid open \"http://127.0.0.1:43117/surf/\"\npage 200 \"text/html\" \"http://127.0.0.1:43117/surf/\"\npath 2 of 2\n  1 open\n  2 go \"http://127.0.0.1:43117/surf/\""
     },
     {
-      "command": "export SURF_SESSION=89a56b78-4046-4f4b-a48b-ae210b93171d",
+      "command": "export SURF_SESSION=76da4882-95f4-4212-bf5f-4fb19b1f2658",
       "exitCode": 0
     },
     {
@@ -16,30 +16,35 @@
       "exitCode": 0
     },
     {
-      "command": "surf-agent go http://127.0.0.1:43117/surf/docs/drive-from-an-agent",
+      "command": "surf-agent go http://127.0.0.1:43117/surf/docs/principles",
       "exitCode": 0,
-      "output": "surf 1 session 89a56b78-4046-4f4b-a48b-ae210b93171d open\ndid go \"http://127.0.0.1:43117/surf/docs/drive-from-an-agent\"\npage 200 \"text/html\" \"http://127.0.0.1:43117/surf/docs/drive-from-an-agent\"\npath 3 of 3\n  1 open\n  2 go \"http://127.0.0.1:43117/surf/\"\n  3 go \"http://127.0.0.1:43117/surf/docs/drive-from-an-agent\""
+      "output": "surf 1 session 76da4882-95f4-4212-bf5f-4fb19b1f2658 open\ndid go \"http://127.0.0.1:43117/surf/docs/principles\"\npage 200 \"text/html\" \"http://127.0.0.1:43117/surf/docs/principles\"\npath 3 of 3\n  1 open\n  2 go \"http://127.0.0.1:43117/surf/\"\n  3 go \"http://127.0.0.1:43117/surf/docs/principles\""
     },
     {
       "command": "surf-agent go http://127.0.0.1:43117/surf/docs/no-such-page",
       "exitCode": 0,
-      "output": "surf 1 session 89a56b78-4046-4f4b-a48b-ae210b93171d open\ndid go \"http://127.0.0.1:43117/surf/docs/no-such-page\"\npage 404 \"text/html\" \"http://127.0.0.1:43117/surf/docs/no-such-page\"\npath 4 of 4\n  1 open\n  2 go \"http://127.0.0.1:43117/surf/\"\n  3 go \"http://127.0.0.1:43117/surf/docs/drive-from-an-agent\"\n  4 go \"http://127.0.0.1:43117/surf/docs/no-such-page\""
+      "output": "surf 1 session 76da4882-95f4-4212-bf5f-4fb19b1f2658 open\ndid go \"http://127.0.0.1:43117/surf/docs/no-such-page\"\npage 404 \"text/html\" \"http://127.0.0.1:43117/surf/docs/no-such-page\"\npath 4 of 4\n  1 open\n  2 go \"http://127.0.0.1:43117/surf/\"\n  3 go \"http://127.0.0.1:43117/surf/docs/principles\"\n  4 go \"http://127.0.0.1:43117/surf/docs/no-such-page\""
+    },
+    {
+      "command": "surf-agent look --as tree --from-line 45",
+      "exitCode": 0,
+      "output": "surf 1 session 76da4882-95f4-4212-bf5f-4fb19b1f2658 open\npage 404 \"text/html\" \"http://127.0.0.1:43117/surf/docs/no-such-page\"\npath 4 of 4\n  1 open\n  2 go \"http://127.0.0.1:43117/surf/\"\n  3 go \"http://127.0.0.1:43117/surf/docs/principles\"\n  4 go \"http://127.0.0.1:43117/surf/docs/no-such-page\"\nnote text: no-css\ntext tree 51 of 95 lines from 45, 2116 of 3640 bytes\n>       div id=\"__docusaurus_skipToContent_fallback\"\n>         main\n>           div\n>             div\n>               p \"404\"\n>               h1 \"Page not found\"\n>               p \"There is no page at this address. It may have moved, or the link that brought yo\"...\n>               p\n>                 a @l11 href=\"/surf/docs\" \"Go to the documentation\"\n>                 a @l12 href=\"/surf/\" \"Back to the home page\"\n>       footer\n>         div\n>           div\n>             div\n>               div \"Documentation\"\n>               ul\n>                 li\n>                   a @l13 href=\"/surf/docs\" \"What surf is\"\n>                 li\n>                   a @l14 href=\"/surf/docs/try-it\" \"Try it\"\n>                 li\n>                   a @l15 href=\"/surf/docs/drive-from-an-agent\" \"Drive surf from an agent\"\n>                 li\n>                   a @l16 href=\"/surf/docs/principles\" \"Principles\"\n>                 li\n>                   a @l17 href=\"/surf/docs/how-it-is-built\" \"How it is built\"\n>                 li\n>                   a @l18 href=\"/surf/docs/reference/surf-command\" \"The surf command\"\n>             div\n>               div \"Project\"\n>               ul\n>                 li\n>                   a @l19 href=\"/surf/docs/roadmap\" \"Roadmap\"\n>                 li\n>                   a @l20 href=\"/surf/docs/status\" \"Status\"\n>                 li\n>                   a @l21 href=\"https://github.com/beyond10x/surf\"\n>                     \"Source\"\n>                     svg:svg\n>                       svg:use href=\"#theme-svg-external-link\"\n>                 li\n>                   a @l22 href=\"https://beyond10x.github.io/swell/\"\n>                     \"swell, the script engine\"\n>                     svg:svg\n>                       svg:use href=\"#theme-svg-external-link\"\n>           div\n>             div\n>               div \"A beyond10x project · Apache-2.0 · built with Docusaurus and the docs-system pro\"...\n>             p\n>               span \"This build\"\n>               a @l23 href=\"https://github.com/beyond10x/docs-system/commit/a3fae6c9f7d70ca5c04f1dacf8a4ade8\"... \"docs-system a3fae6c\""
+    },
+    {
+      "command": "surf-agent look --as markdown",
+      "exitCode": 0,
+      "output": "surf 1 session 76da4882-95f4-4212-bf5f-4fb19b1f2658 open\npage 404 \"text/html\" \"http://127.0.0.1:43117/surf/docs/no-such-page\"\npath 4 of 4\n  1 open\n  2 go \"http://127.0.0.1:43117/surf/\"\n  3 go \"http://127.0.0.1:43117/surf/docs/principles\"\n  4 go \"http://127.0.0.1:43117/surf/docs/no-such-page\"\nnote text: no-css\ntext markdown 38 of 38 lines from 1, 1671 of 1671 bytes\n> [Skip to main content](<\\#\\_\\_docusaurus\\_skipToContent\\_fallback>) [@l1]\n>\n> [nav 5 lines]\n> [@b1 button: Toggle navigation bar] [surf surf surf](</surf/>) [@l2][Docs](</surf/docs>) [@l3][Try it](</surf/docs/try-it>) [@l4][Agents](</surf/docs/drive-from-an-agent>) [@l5][Command](</surf/docs/reference/surf-command>) [@l6][Roadmap](</surf/docs/roadmap>) [@l7][Status](</surf/docs/status>) [@l8]\n>\n> [swell](<https://beyond10x.github.io/swell/>) [@l9][GitHub](<https://github.com/beyond10x/surf>) [@l10]\n>\n> [@b2 button disabled: Switch between dark and light mode (currently system mode)]\n>\n> [main 7 lines]\n> 404\n>\n> # Page not found\n>\n> There is no page at this address. It may have moved, or the link that brought you here is out of date.\n>\n> [Go to the documentation](</surf/docs>) [@l11][Back to the home page](</surf/>) [@l12]\n>\n> [footer 19 lines]\n> Documentation\n>\n> - [What surf is](</surf/docs>) [@l13]\n> - [Try it](</surf/docs/try-it>) [@l14]\n> - [Drive surf from an agent](</surf/docs/drive-from-an-agent>) [@l15]\n> - [Principles](</surf/docs/principles>) [@l16]\n> - [How it is built](</surf/docs/how-it-is-built>) [@l17]\n> - [The surf command](</surf/docs/reference/surf-command>) [@l18]\n>\n> Project\n>\n> - [Roadmap](</surf/docs/roadmap>) [@l19]\n> - [Status](</surf/docs/status>) [@l20]\n> - [Source](<https://github.com/beyond10x/surf>) [@l21]\n> - [swell, the script engine](<https://beyond10x.github.io/swell/>) [@l22]\n>\n> A beyond10x project · Apache-2.0 · built with Docusaurus and the docs-system product template.\n>\n> This build[docs-system a3fae6c](<https://github.com/beyond10x/docs-system/commit/a3fae6c9f7d70ca5c04f1dacf8a4ade8b7647523>) [@l23]"
     },
     {
       "command": "surf-agent go https://beyond10x.github.io/surf/",
       "exitCode": 0,
-      "output": "surf 1 session 89a56b78-4046-4f4b-a48b-ae210b93171d open\ndid go \"https://beyond10x.github.io/surf/\"\npage failed UnsupportedScheme \"https://beyond10x.github.io/surf/\"\npath 5 of 5\n  1 open\n  2 go \"http://127.0.0.1:43117/surf/\"\n  3 go \"http://127.0.0.1:43117/surf/docs/drive-from-an-agent\"\n  4 go \"http://127.0.0.1:43117/surf/docs/no-such-page\"\n  5 go \"https://beyond10x.github.io/surf/\""
-    },
-    {
-      "command": "surf-agent look",
-      "exitCode": 0,
-      "output": "surf 1 session 89a56b78-4046-4f4b-a48b-ae210b93171d open\npage failed UnsupportedScheme \"https://beyond10x.github.io/surf/\"\npath 5 of 5\n  1 open\n  2 go \"http://127.0.0.1:43117/surf/\"\n  3 go \"http://127.0.0.1:43117/surf/docs/drive-from-an-agent\"\n  4 go \"http://127.0.0.1:43117/surf/docs/no-such-page\"\n  5 go \"https://beyond10x.github.io/surf/\""
+      "output": "surf 1 session 76da4882-95f4-4212-bf5f-4fb19b1f2658 open\ndid go \"https://beyond10x.github.io/surf/\"\npage failed UnsupportedScheme \"https://beyond10x.github.io/surf/\"\npath 5 of 5\n  1 open\n  2 go \"http://127.0.0.1:43117/surf/\"\n  3 go \"http://127.0.0.1:43117/surf/docs/principles\"\n  4 go \"http://127.0.0.1:43117/surf/docs/no-such-page\"\n  5 go \"https://beyond10x.github.io/surf/\""
     },
     {
       "command": "surf-agent close",
       "exitCode": 0,
-      "output": "surf 1 session 89a56b78-4046-4f4b-a48b-ae210b93171d closed\ndid close\npage failed UnsupportedScheme \"https://beyond10x.github.io/surf/\"\npath 5 of 6\n  2 go \"http://127.0.0.1:43117/surf/\"\n  3 go \"http://127.0.0.1:43117/surf/docs/drive-from-an-agent\"\n  4 go \"http://127.0.0.1:43117/surf/docs/no-such-page\"\n  5 go \"https://beyond10x.github.io/surf/\"\n  6 close"
+      "output": "surf 1 session 76da4882-95f4-4212-bf5f-4fb19b1f2658 closed\ndid close\npage failed UnsupportedScheme \"https://beyond10x.github.io/surf/\"\npath 5 of 6\n  2 go \"http://127.0.0.1:43117/surf/\"\n  3 go \"http://127.0.0.1:43117/surf/docs/principles\"\n  4 go \"http://127.0.0.1:43117/surf/docs/no-such-page\"\n  5 go \"https://beyond10x.github.io/surf/\"\n  6 close"
     }
   ],
-  "recordedWith": "surf-agent, surfd and surf-session 0.2.0, built from commit ad8d0e5; a run on 2026-11-22 against a local copy of this site served on 127.0.0.1:43117; the token printed by open is replaced by <64 hexadecimal digits>"
+  "recordedWith": "surf-agent, surfd and surf-session of release 0.4.0 (the archive surf-0.4.0-x86_64-unknown-linux-musl); a run on 2026-11-22 against a local copy of this site served on 127.0.0.1:43117; the token printed by open is replaced by <64 hexadecimal digits>"
 }

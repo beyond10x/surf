@@ -15,7 +15,7 @@ answer in plain lines, written to be read by a language model.
 <AgentTerminal
   id="agent-session"
   session={agentSession}
-  caption="An agent session recorded on 2026-11-22 against a local copy of this site on 127.0.0.1:43117, with the token replaced. The binaries of release 0.3.0 made it, and they parse no page: an answer names a page's status, media type and address, with no title and no content."
+  caption="An agent session recorded on 2026-11-22 with the binaries of release 0.4.0 against a local copy of this site on 127.0.0.1:43117, with the token replaced. An answer names a page's status, media type and address, still with no title; with --as tree or --as markdown it ends with the page as the outline of its tree or as Markdown, every line behind >. The outline starts at line 45 of 95, where the 404 page's own content begins."
 />
 
 It runs on Linux only: the agent binaries read the caller's user id from `/proc/self` and need
@@ -122,7 +122,8 @@ $ surf-agent look
 
 Every answer starts with its head line, `surf 1 session <id> <state>`, then the action it is
 for (`did`), the page (`page`: `none` before the first load, the status, media type and address
-of a loaded page, or `failed` with the reason) and the session's last actions (`path`). Every
+of a loaded page, or `failed` with the reason) and the session's last actions (`path`); with
+`--as`, a `note text:` line and the `text` block with the page follow. Every
 value that comes from a page, a server or an address stands in double quotes, with every
 character that could start a line or look like a field escaped. The format, line by line, with
 its grammar:
@@ -153,5 +154,6 @@ answer and says why on standard error.
   loopback, private, link-local, unique-local, shared or unspecified address, or to an IPv6
   address that embeds one, fails with `ForbiddenDestination`, before any connection to it; a session that starts at a local
   address follows its redirects as before.
-- No JavaScript, and no rendering: the answer says what loaded, not what a page shows.
+- No JavaScript, and no rendering: `--as` reads the document's tree without CSS (`note text:
+  no-css`), so text a style sheet hides is shown, in source order.
 - Linux only.
