@@ -68,6 +68,23 @@ One line per thing that happened, in a format a script can rely on. The exit sta
 whether the page loaded. The full output format and the exit statuses are in
 [`docs/surf-command.md`](docs/surf-command.md).
 
+For a parsed HTML page the output also holds its title, its links, buttons and form fields, and
+the limit that stopped the parse, if one did:
+
+```text
+title <document-id> "<title>"
+element <document-id> <position> <kind> <flags> "<label>" "<target or value>"
+note limit <document-id> <limit>
+note parser: <parts>
+```
+
+A title, label, target and value are quoted fields, written like an address with `"` as `\x22`;
+`<flags>` is the set flags among `hidden,disabled,checked,required` joined by `,`, or `-`; the
+last field is `-` for a row with neither target nor value. Until the parser is complete, a
+`note parser:` line names what it does not yet parse as the HTML Standard says.
+
+`surf <url> --as markdown` prints the page as Markdown, every line behind `>`.
+
 ## Driving surf from an agent
 
 On Linux, `surf-agent` drives a browser session one call at a time, for an AI agent or a
@@ -179,6 +196,18 @@ there instead.
   interpreter and once against the Rust code.
 - **661 tests**, built with warnings treated as errors, and 38 tests of the live view's page in
   a browser.
+
+New with round 1 after the tenth wave of the current plan, not released yet:
+
+- **A page as text, for an agent.** A parsed page can be written as the outline of its tree
+  (one line per element and text, with `hid` for hidden parts and the handles `@l1`, `@b1`,
+  `@f1` of its links, buttons and fields) or as Markdown (headings, paragraphs, links, lists,
+  quotes, code, images, form controls with their labels, landmarks and tables). Every piece of
+  page text is escaped, so a page can write neither a line of the answer nor a link or a handle
+  of surf's; control, invisible and bidirectional characters are shown as bytes. A link stays
+  on one line with its handle, and the Markdown grows with the page, not with its nesting. The
+  answer format has a `text` block for it, every line behind `>`, at most 200 lines and 32 KiB
+  at a time.
 
 Fixed after a security review, shipped in release `0.3.0`:
 
