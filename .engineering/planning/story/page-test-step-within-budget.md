@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:page-test-step-within-budget
 kind: story
-status: draft
+status: active
 title: The page-test step ends each test within 60 s
 summary: 'On wave/round-2 after round 2 merges (54 page tests; impl/round2-view: 54 passed (2.7m), task 189 s at load 55 to 81): test timeout 60 s, own budget and ten slowest, npm ci out of the timed part, a shared fixture if fixture starts sum over 10 s, largest costs cut'
 relations:
@@ -24,7 +24,10 @@ scope:
   path: view-tests/playwright.config.mjs
 - confidence: cited
   path: view-tests/tests
-revision: 10
+revision: 12
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T21:48:50Z", actor: "human:operator", revision: 11}
+- {from: "proposed", to: "active", at: "2026-11-22T21:48:51Z", actor: "human:operator", revision: 12}
 ---
 ## Why
 
