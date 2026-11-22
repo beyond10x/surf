@@ -1,6 +1,6 @@
 //! The limits of `docs/design/html-parser.md` item 7 (`story:html-parser-limits`): each limit
 //! stops a parse at the point the crate documentation names, with the tree built before it;
-//! adversarial inputs and 7,683 seeded ones end inside the node and stored-byte limits of their
+//! adversarial inputs and 1,200 seeded ones end inside the node and stored-byte limits of their
 //! parse, within the bytes [`common::allocation_bound`] allows and without a panic. Every test
 //! parses with the default `Limits` unless it says otherwise, and builds its own input (each
 //! test runs in a process of its own). The tests of the section "Steps" assert the steps each
@@ -197,11 +197,11 @@ fn the_default_limits_are_their_documented_numbers() {
 
 // One test per limit, each at a small value of its limit and the defaults of the others.
 
-/// The input limit of the tests of the input limit.
-const INPUT_LIMIT: usize = 1_024;
+/// The input limit of the tests of the input limit: equal to no default of a field.
+const INPUT_LIMIT: usize = 1_000;
 
 #[test]
-fn input_of_1_025_bytes_stops_at_the_input_limit() {
+fn input_of_1_001_bytes_stops_at_the_input_limit() {
     check_cut_comment(&parse_document(
         &comment_past_the_input_limit(),
         &input_limit_form(),
@@ -209,7 +209,7 @@ fn input_of_1_025_bytes_stops_at_the_input_limit() {
 }
 
 #[test]
-fn input_of_1_025_bytes_as_bytes_stops_at_the_input_limit() {
+fn input_of_1_001_bytes_as_bytes_stops_at_the_input_limit() {
     let parsed = parse_document_bytes(
         comment_past_the_input_limit().as_bytes(),
         &input_limit_form(),
@@ -225,11 +225,11 @@ fn input_limit_form() -> ParseOptions {
     })
 }
 
-/// `<!--xxx…`: one comment of 1,025 bytes, one byte past [`INPUT_LIMIT`].
+/// `<!--xxx…`: one comment of 1,001 bytes, one byte past [`INPUT_LIMIT`].
 fn comment_past_the_input_limit() -> String {
     let mut input = String::from("<!--");
     input.push_str(&"x".repeat(INPUT_LIMIT + 1 - 4));
-    assert_eq!(input.len(), 1_025);
+    assert_eq!(input.len(), 1_001);
     input
 }
 
@@ -318,13 +318,13 @@ fn element_at_depth_513_stops_at_the_depth_limit() {
     }
 }
 
-/// The node limit of [`node_1_025_stops_at_the_node_limit`].
-const NODE_LIMIT: usize = 1_024;
+/// The node limit of [`node_1_001_stops_at_the_node_limit`]: equal to no default of a field.
+const NODE_LIMIT: usize = 1_000;
 
 #[test]
-fn node_1_025_stops_at_the_node_limit() {
-    // The comments before `html` are children of the document: the document and 1,023 of them
-    // are the 1,024 nodes.
+fn node_1_001_stops_at_the_node_limit() {
+    // The comments before `html` are children of the document: the document and 999 of them
+    // are the 1,000 nodes.
     let options = with_limits(Limits {
         max_nodes: NODE_LIMIT,
         ..Limits::default()
@@ -397,13 +397,22 @@ fn attribute_65_merged_into_html_stops_at_the_attribute_limit() {
     );
 }
 
-/// The stored-byte limit of [`cloned_attributes_past_1_mib_stop_at_the_stored_bytes_limit`].
-const STORED_BYTES_LIMIT: usize = MIB;
+/// The stored-byte limit of
+/// [`cloned_attributes_past_1_000_000_bytes_stop_at_the_stored_bytes_limit`]: equal to no
+/// default of a field.
+const STORED_BYTES_LIMIT: usize = 1_000_000;
+
+/// The nodes the parse of
+/// [`cloned_attributes_past_1_000_000_bytes_stop_at_the_stored_bytes_limit`] holds at its stop.
+const CLONED_NODES: usize = 876;
 
 #[test]
-fn cloned_attributes_past_1_mib_stop_at_the_stored_bytes_limit() {
+fn cloned_attributes_past_1_000_000_bytes_stop_at_the_stored_bytes_limit() {
+    // The node limit one above the nodes the parse makes: a stored-byte check that read a
+    // limit lowered by the node limit would stop it early.
     let options = with_limits(Limits {
         max_stored_bytes: STORED_BYTES_LIMIT,
+        max_nodes: CLONED_NODES + 1,
         ..Limits::default()
     });
     let value = "v".repeat(1_024);
@@ -411,20 +420,22 @@ fn cloned_attributes_past_1_mib_stop_at_the_stored_bytes_limit() {
     for k in 0..50 {
         prefix.push_str(&format!("<b v={value} id={k}>"));
     }
-    // The 50 `b` alone stay inside the limit: the stop comes from their clones, which each `x`
-    // after a `<p>` makes again (about 60 KB), so that the limit falls inside the 17th `<p>x`.
-    let tree = parse_document(&prefix, &options);
-    assert_eq!(tree.stopped_by(), None);
-    assert!(tree.stored_bytes() < STORED_BYTES_LIMIT / 16);
+    // The stop comes from the clones of the 50 `b`, which each `x` after a `<p>` makes again
+    // (about 60 KB), so that the limit falls inside the 16th `<p>x`.
     let input = format!("{prefix}{}", "<p>x".repeat(40));
     let tree = bounded(
-        "cloned_attributes_past_1_mib",
+        "cloned_attributes_past_1_000_000_bytes",
         &input,
         &options,
         Some(Limit::StoredBytes),
     );
     assert!(tree.stored_bytes() > STORED_BYTES_LIMIT - 2_000);
+    assert_eq!(tree.node_count(), CLONED_NODES);
     assert_eq!(tree.stored_bytes(), stored_bytes_of_nodes(&tree));
+    // The 50 `b` alone stay inside the limit.
+    let tree = parse_document(&prefix, &options);
+    assert_eq!(tree.stopped_by(), None);
+    assert!(tree.stored_bytes() < STORED_BYTES_LIMIT / 16);
 }
 
 #[test]
@@ -726,14 +737,17 @@ fn a_then_div_500_then_a_end_tags_to_128_kib_end_within_bounds() {
     // The small form at twice [`SIZE`], and no smaller: the 500 `div` cost 126,250 steps, and
     // the first `</a>` tags, whose adoption agency moves the `div` (8,060 steps for the first,
     // fewer for each next), about 380,000 more, once; every later `</a>` costs 1 step. That is
-    // 539,081 steps, about half of the 2^20 of this size; at 64 KiB it was 522,697 of 2^19.
-    // Each `</a>` scanning the 500 elements again would cost about 500 steps, 16 million here.
-    let size = 2 * SIZE;
-    let input = fill(&format!("<a>{}", "<div>".repeat(500)), "</a>", size);
+    // 539,081 steps, about half of the 8 × 131,071 of this input; at 64 KiB it was 522,697 of
+    // 2^19. Each `</a>` scanning the 500 elements again would cost about 500 steps, 16 million
+    // here. The step limit is 8 × the input's own length (131,071 bytes), not 2^20, which is
+    // the default node limit.
+    let input = fill(&format!("<a>{}", "<div>".repeat(500)), "</a>", 2 * SIZE);
+    let options = small_form(input.len());
+    assert_ne!(options.limits.max_steps, Limits::default().max_nodes);
     bounded(
         "a_then_div_500_then_a_end_tags_to_128_kib",
         &input,
-        &small_form(size),
+        &options,
         None,
     );
 }
@@ -950,12 +964,17 @@ fn seeded_input(random: &mut Seeded) -> String {
     }
 }
 
+/// The fewest seeded inputs each limit stops in [`seeded_1_200_inputs_end_within_bounds`].
+const STOPS_PER_LIMIT: usize = 5;
+
 #[test]
-fn seeded_7_683_inputs_end_within_bounds() {
+fn seeded_1_200_inputs_end_within_bounds() {
     // One input in four parses with the default limits; each of the others with one limit made
-    // small, in turn, so that every limit stops some of them at a place of its own, which the
-    // end of the test asserts. 7,683 inputs and no fewer: input 7,682 is the first the node
-    // limit of 40 stops (every other limit stops one of the first 344).
+    // small, in turn, so that every limit stops some of them at a place of its own: at least
+    // [`STOPS_PER_LIMIT`] each, which the end of the test asserts. With these seeds the fifth
+    // input the step limit stops is input 1,127, the last of the six limits to reach five; a
+    // node limit of 40 stopped only input 7,682 of the first 7,683, one of 30 stops 5 by
+    // input 758.
     let d = Limits::default();
     let small = [
         Limits {
@@ -963,7 +982,7 @@ fn seeded_7_683_inputs_end_within_bounds() {
             ..d
         },
         Limits { max_depth: 12, ..d },
-        Limits { max_nodes: 40, ..d },
+        Limits { max_nodes: 30, ..d },
         Limits {
             max_attributes: 1,
             ..d
@@ -981,7 +1000,7 @@ fn seeded_7_683_inputs_end_within_bounds() {
     let mut stopped = std::collections::HashMap::new();
     let (mut most_steps, mut most_allocated, mut most_share) = (0, 0, 0);
     let start = Instant::now();
-    for n in 0..7_683 {
+    for n in 0..1_200 {
         let input = seeded_input(&mut random);
         let limits = if n % 4 == 0 {
             d
@@ -1025,7 +1044,7 @@ fn seeded_7_683_inputs_end_within_bounds() {
     }
     let took = start.elapsed();
     println!(
-        "measured: seeded_7_683_inputs {:.3} s, at most {most_steps} steps and {most_allocated} \
+        "measured: seeded_1_200_inputs {:.3} s, at most {most_steps} steps and {most_allocated} \
          bytes allocated for one input, at most {most_share} % of its bound, stopped by \
          {stopped:?}",
         took.as_secs_f64()
@@ -1038,9 +1057,10 @@ fn seeded_7_683_inputs_end_within_bounds() {
         Limit::Steps,
         Limit::InputBytes,
     ] {
+        let count = stopped.get(&Some(limit)).copied().unwrap_or(0);
         assert!(
-            stopped.contains_key(&Some(limit)),
-            "no input stopped by {limit:?}"
+            count >= STOPS_PER_LIMIT,
+            "{count} inputs stopped by {limit:?}: {stopped:?}"
         );
     }
 }
