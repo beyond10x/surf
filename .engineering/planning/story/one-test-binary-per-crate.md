@@ -7,7 +7,7 @@ title: Each crate has one integration-test binary
 summary: 76 files under crates/*/tests/ are 76 test executables in 15 crates. Each crate with more than one gets tests/main.rs with the files as modules; no test is removed or changed in what it asserts; the build time, the size of the test executables and the step test are measured before and after.
 relations:
 - decomposes: epic:headless-rust-target
-revision: 1
+revision: 2
 ---
 ## Context
 
@@ -44,6 +44,9 @@ Not measured: the link time and the size of the 76 executables, and what the ste
   numbers"), the Taskfile's `grep` lines for test names, `docs/`, the stories' scopes in the
   store where a later wave still writes the file.
 - The same measurement after the change.
+- Every place that names a test target by `--test <name>` follows too: the test step of
+  `.github/workflows/release.yml` and `taskfiles/release-smoke.sh` (`--test e2e`). The release
+  workflow is run once on the branch (its trial run) before the story is closed.
 
 ## Acceptance
 
