@@ -228,7 +228,9 @@ fn shown(host: &str) -> String {
 
 /// The key CertificateVerify is checked with is the key of the first certificate, the one the
 /// verifier judged: a server that appends another certificate (the P-384 leaf; every P-256
-/// leaf of the test certificates holds the same key) and signs with that one's key ends with
+/// leaf of the test certificates but `ok-wildcard`'s holds the same key, see
+/// `cv_by_the_shared_p256_key_is_refused_for_a_leaf_with_its_own`) and signs with that one's
+/// key ends with
 /// `illegal_parameter`, `UnofferedSignatureScheme`, though its path is trusted.
 #[test]
 fn cv_is_checked_with_the_key_of_the_first_certificate() {
@@ -270,6 +272,54 @@ fn cv_is_checked_with_the_key_of_the_first_certificate() {
         ))
     );
     assert_eq!(last_alert(&server, &written), Some((2, 47)));
+}
+
+/// CertificateVerify is bound to the key of the leaf the verifier judged, also between two
+/// P-256 keys: `ok-wildcard`'s leaf holds a P-256 key of its own (`keys/p256-60.pk8`), so a
+/// signature over the right transcript by the key the other P-256 leaves share (that of
+/// `ok-ecdsa-p256`) ends with `decrypt_error`, `BadCertificateVerify`, while the leaf's own key
+/// completes the handshake.
+#[test]
+fn cv_by_the_shared_p256_key_is_refused_for_a_leaf_with_its_own() {
+    let host = "a.example.test";
+    let case = "ok-wildcard";
+    let own = fs::read(certs_dir().join(case).join("leaf.pk8")).expect("leaf.pk8");
+    let shared = fs::read(certs_dir().join("ok-ecdsa-p256").join("leaf.pk8")).expect("leaf.pk8");
+    assert!(own != shared, "{case} holds a key of its own");
+    let verifier = path_verifier(case);
+    for (key, expected) in [
+        (&own, Ok(())),
+        (
+            &shared,
+            Err(sent(A::DECRYPT_ERROR, Violation::BadCertificateVerify)),
+        ),
+    ] {
+        let mut server = Server::for_host(SUITE, case, host);
+        server.hello();
+        let ee = server.encrypted_extensions(&[]);
+        server.push(&ee);
+        let certificate = server.certificate();
+        server.push(&certificate);
+        let hash = server.transcript.current().expect("hash");
+        let mut content = vec![0x20; 64];
+        content.extend_from_slice(b"TLS 1.3, server CertificateVerify");
+        content.push(0);
+        content.extend_from_slice(hash.as_ref());
+        let random = Random::fixed_byte(0x5a);
+        let signer = SigningKey::from_pkcs8(Scheme::EcdsaSecp256r1Sha256, key, &random)
+            .expect("a P-256 key");
+        let signature = signer.sign(&content, &random).expect("sign");
+        let mut body = Scheme::EcdsaSecp256r1Sha256.code().to_be_bytes().to_vec();
+        body.extend_from_slice(&v16(&signature));
+        server.push(&msg(15, &body));
+        server.push_finished();
+        server.flush();
+        let (result, written) = outcome_to(host, &server.input, &verifier);
+        assert_eq!(result, expected);
+        if expected.is_err() {
+            assert_eq!(last_alert(&server, &written), Some((2, 51)));
+        }
+    }
 }
 
 /// An empty list and an entry with empty `cert_data` (`opaque cert_data<1..2^24-1>`) end with

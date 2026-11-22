@@ -11,6 +11,10 @@ Each file was written by one of these commands, run in this directory:
   openssl genpkey -algorithm ed25519 -outform DER -out ed25519-<i>.pk8   (i = 0, 1, 2)
   openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -outform DER -out p256-<nn>.pk8   (nn = 00 to 59)
 
+p256-60.pk8 was made later, on 2026-11-22 with the same OpenSSL, by the same P-256 command
+(nn = 60) and the same conversion below: the leaf key of ok-wildcard, the one P-256 leaf whose key
+no other case shares, so that a test can bind CertificateVerify to the leaf's key.
+
 genpkey -outform DER wrote the RSA keys as PKCS#1 and the EC keys as SEC1 (measured with asn1parse),
 so each rsa*, p256-* and p384-* file was then turned into PKCS#8 in place, the key unchanged:
 
@@ -85,6 +89,7 @@ fc309f91b8564821a5239dd72471e29f257648c58a3b4039af477a68631f78f1  p256-50.pk8
 48b8efad4efe1fb112dc2da3e99f15cd70f7ab9b3f0e188a56615961755f003b  p256-57.pk8
 d8c53f24b8436544c3f9bf3a0adaee8cf31e729714ed5a10fab504de14e9fe1d  p256-58.pk8
 928414d093c3dbb73ec0eeec92444fadd0b3027df674da0d3618eaa55423ae08  p256-59.pk8
+5cc18a7e4c0cfcf778feb978eaea25d5cbbc5f79a84ac392d9e01b48f66fa474  p256-60.pk8
 4cb000dec2a5c0cef2eba12a0d8f578937578631636589300385961d8f50322e  p384-0.pk8
 2c2871757e7a155f3bbfd875344e3019a735bc3e812ef5333a3bc2f3dce29808  p384-1.pk8
 c8dd28f4f38840254a5d4f1258100d6e7e0987f4b598ff14b6688e4dcf92553a  p384-2.pk8
