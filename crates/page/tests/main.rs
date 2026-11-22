@@ -7,6 +7,7 @@ mod adversary_select;
 mod adversary_values;
 mod base_url;
 mod elements;
+mod forms;
 mod label;
 mod tree_tables;
 mod tree_template;

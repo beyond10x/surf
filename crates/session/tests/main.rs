@@ -14,6 +14,7 @@ mod core;
 mod e2e;
 mod events;
 mod follow;
+mod form_rows;
 mod memory;
 mod redirect;
 mod view;

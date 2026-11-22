@@ -100,8 +100,12 @@
 //!   of `hidden`, recorded by the walk of [`actionable_elements`].
 //!
 //! - [`handles`]: surf's own numbering of the rows, not a standard's: `l<n>`, `b<n>`, `f<n>`
-//!   (`docs/design/page-as-text.md` section 5). [`hidden_roots`]: the rule of [`is_hidden`] for a
-//!   whole tree in one walk.
+//!   (`docs/design/page-as-text.md` section 5). [`form_handles`]: the forms numbered `F<n>`
+//!   apart from it, so page text, which prints [`handles`], names no form. [`hidden_roots`]: the
+//!   rule of [`is_hidden`] for a whole tree in one walk.
+//! - [`forms`]: the forms, each control's form owner and `name`, and the options of each select
+//!   with their selectedness (`story:agent-form-port`); its module documentation gives the
+//!   rules.
 //!
 //! No function recurses over the depth of the tree: [`actionable_elements`] and [`title`] walk
 //! with their own stack over [`Tree::children`], [`is_hidden`] walks up [`Tree::parent`], and
@@ -134,8 +138,8 @@
 //! - The spaces accname may join with by CSS `display` (its note under 2F, AccName #225):
 //!   children are joined without a space.
 //! - An explicit `role` attribute: the role is the one the kind implies (item 6 of the note).
-//! - The chosen option of a `select` in 2C: option selectedness is `story:agent-form-port`'s,
-//!   so an embedded `select` gives the empty string.
+//! - The chosen option of a `select` in 2C: an embedded `select` gives the empty string. The
+//!   selectedness [`forms`] computes is not read by the labels.
 //!
 //! # Deviations
 //!
@@ -155,22 +159,21 @@
 //!   bounded by [`LABEL_WORK_MAX`]; past it a name comes from the element's own attributes. The
 //!   standards bound neither.
 //!
-//! # Left to other stories
+//! # Not yet taken
 //!
-//! - A control's form owner and the radio button group rule, by which a later checked radio
-//!   button unchecks the others of its group: here every radio button with a `checked`
-//!   attribute is `checked` (`story:agent-form-port`).
-//! - Option selectedness of a `select` (`story:agent-form-port`).
-//! - Resolving a link's target against the document base URL (`story:agent-follow-links`).
-//! - Writing the rows (`story:html-document-port`).
+//! - The radio button group rule, by which a later checked radio button unchecks the others of
+//!   its group: here every radio button with a `checked` attribute is `checked`, and a
+//!   submission gives each of them as an entry. No story names it yet.
 
 #![forbid(unsafe_code)]
 
 pub mod base_url;
+pub mod forms;
 mod label;
 
 use surf_html::{Attribute, Namespace, NodeData, NodeId, Tree};
 
+pub use forms::form_handles;
 pub use label::{LABEL_BYTES_MAX, LABEL_WORK_MAX};
 
 thread_local! {

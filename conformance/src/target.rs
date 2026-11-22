@@ -7,7 +7,9 @@
 //! [`Unanswered`]: the suite ends a request itself, with `surf.net.DeliverResponse` or
 //! `surf.net.FailRequest`, so no request is ever answered from the network. The parser step is
 //! [`Unparsed`]: the suite ends a parse itself, with `surf.document.AddElement` and
-//! `surf.document.FinishParsing`, so no body is ever parsed by `surf-html`.
+//! `surf.document.FinishParsing`, so no body is ever parsed by `surf-html`. The submission step
+//! is [`Unsubmitted`]: the suite ends a submission itself, with `surf.document.SubmitForm` or
+//! `surf.document.AbandonSubmission`.
 //!
 //! What the target reports, and where it reads it:
 //!
@@ -39,8 +41,8 @@ use ess_primitives::consistency::ConsistencyToken;
 use ess_primitives::node::Node;
 use surf::{
     AgentBehaviors, Answer, Browser, DocumentBehaviors, NavigatorBehaviors, NetBehaviors, Parse,
-    Parser, ParsingStarted, RendererBehaviors, RequestStarted, ShellBehaviors, SystemEvent,
-    Transport, UnmetObligation,
+    Parser, ParsingStarted, RendererBehaviors, RequestStarted, ShellBehaviors, Submission, Submit,
+    Submitter, SystemEvent, Transport, UnmetObligation,
 };
 use surf_ports::{AgentPorts, Caller, DocumentPorts};
 use surf_system::BindingInvocation;
@@ -102,13 +104,26 @@ impl Parser for Unparsed {
     }
 }
 
+/// A submission step that never answers: every submission stays `Started` until the suite ends
+/// it itself, with `surf.document.SubmitForm` or `surf.document.AbandonSubmission`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Unsubmitted;
+
+impl Submitter for Unsubmitted {
+    fn submit(&mut self, _submission: &Submission<'_>) -> Submit {
+        Submit::Unanswered
+    }
+}
+
 /// A [`Browser`] over component ports `A`, `D`, `N`, `Ne`, `R` and `S`, with the
 /// [`Unanswered`] transport: what the function a [`SurfTarget`] is built with returns. The
-/// target replaces its parser step with [`Unparsed`] before the scenario's first command.
+/// target replaces its parser step with [`Unparsed`] and its submission step with
+/// [`Unsubmitted`] before the scenario's first command.
 pub type ConformanceBrowser<A, D, N, Ne, R, S> = Browser<A, D, N, Ne, R, S, Unanswered>;
 
-/// The browser a scenario runs: a [`ConformanceBrowser`] with the parser step [`Unparsed`].
-type Running<A, D, N, Ne, R, S> = Browser<A, D, N, Ne, R, S, Unanswered, Unparsed>;
+/// The browser a scenario runs: a [`ConformanceBrowser`] with the parser step [`Unparsed`] and
+/// the submission step [`Unsubmitted`].
+type Running<A, D, N, Ne, R, S> = Browser<A, D, N, Ne, R, S, Unanswered, Unparsed, Unsubmitted>;
 
 type Assemble<A, D, N, Ne, R, S> = Box<dyn Fn(&Setup) -> ConformanceBrowser<A, D, N, Ne, R, S>>;
 
@@ -2775,7 +2790,9 @@ where
     fn begin_scenario(&self, _scenario: &ScenarioContext) -> Result<(), TargetError> {
         let setup = Setup::default();
         *self.scenario.borrow_mut() = Some(Scenario {
-            browser: (self.assemble)(&setup).with_parser(Unparsed),
+            browser: (self.assemble)(&setup)
+                .with_parser(Unparsed)
+                .with_submitter(Unsubmitted),
             setup,
             writes: 0,
         });
@@ -2831,7 +2848,9 @@ where
                     format!("a `{entity}` `{identity}` is already established"),
                 ));
             }
-            scenario.browser = (self.assemble)(&scenario.setup).with_parser(Unparsed);
+            scenario.browser = (self.assemble)(&scenario.setup)
+                .with_parser(Unparsed)
+                .with_submitter(Unsubmitted);
             Ok(())
         })
     }
@@ -3256,7 +3275,8 @@ mod tests {
     /// fresh system.
     fn navigated(fields: &[(&str, Node)]) -> (NavigationStarted, Fetch) {
         let mut browser = Browser::from_ports(ComponentPorts::new(), super::Unanswered)
-            .with_parser(super::Unparsed);
+            .with_parser(super::Unparsed)
+            .with_submitter(super::Unsubmitted);
         let fields: BTreeMap<String, Node> = fields
             .iter()
             .map(|(name, node)| ((*name).to_owned(), node.clone()))

@@ -171,11 +171,13 @@
 //! `open <url>` records `open` and `go`, each with at most one address) are written whole and
 //! their bytes, with 64 bytes for a left-out line after each, are set aside first; an event
 //! entry that would take the event entries past what is left is left out, and so is every
-//! `surf.document.ElementAdded` entry after the first [`ELEMENT_ENTRIES_MAX`] (256) of the
-//! request. After an action's events, one line `event surf.agent.EventsLeftOut
-//! count="<n>"` ([`entries::left_out_line`]) counts the entries left out of them; it is absent
-//! when none was. So a request carries at most 256 element entries, and `surfd`'s bounds of a
-//! session's log (10,000 entries) and of a reader's queue (1,024) are not reached by one page.
+//! row entry (`surf.document.ElementAdded`, `surf.document.FormAdded` and
+//! `surf.document.OptionAdded`, one per row the parser step adds) after the first
+//! [`ELEMENT_ENTRIES_MAX`] (256) of the request. After an action's events, one line
+//! `event surf.agent.EventsLeftOut count="<n>"` ([`entries::left_out_line`]) counts the entries
+//! left out of them; it is absent when none was. So a request carries at most 256 row entries,
+//! and `surfd`'s bounds of a session's log (10,000 entries) and of a reader's queue (1,024)
+//! are not reached by one page.
 //! An event field holds no body, only its length. The fields that hold text from a page, the
 //! title of `surf.document.DocumentParsed` and the label of `surf.agent.ActionRecorded` and of
 //! `surf.agent.NavigationRequested` (the label of the link a `follow` took), each hold at most
@@ -238,8 +240,9 @@ pub const TITLE_CHARS_MAX: usize = 1_024;
 /// the line feed, counted high.
 const NOW_LINE_FIXED: usize = 48;
 
-/// The most `surf.document.ElementAdded` entries one request carries ("The entries" above): the
-/// first 256 of the request; the others are left out and counted.
+/// The most row entries (`surf.document.ElementAdded`, `FormAdded` and `OptionAdded`) one request
+/// carries ("The entries" above): the first 256 of the request; the others are left out and
+/// counted.
 pub const ELEMENT_ENTRIES_MAX: usize = 256;
 
 /// The most bytes the action and event entries of one request take together, left-out lines
@@ -606,7 +609,12 @@ impl<T: Transport> Session<T> {
             };
             let mut left_out = 0u64;
             for event in &published[from..end] {
-                let element = matches!(event, surf::SystemEvent::ElementAdded(_));
+                let element = matches!(
+                    event,
+                    surf::SystemEvent::ElementAdded(_)
+                        | surf::SystemEvent::FormAdded(_)
+                        | surf::SystemEvent::OptionAdded(_)
+                );
                 if element && elements >= ELEMENT_ENTRIES_MAX {
                     left_out += 1;
                     continue;

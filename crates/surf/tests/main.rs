@@ -7,6 +7,7 @@ mod common;
 mod conform_totals;
 mod escape;
 mod forget_delivered;
+mod forms;
 mod generated_check_links;
 mod generated_check_modes;
 mod held;

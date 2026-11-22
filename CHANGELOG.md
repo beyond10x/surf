@@ -20,9 +20,18 @@ release; what came before it is in the git log and in `docs/plan/`.
   Format: [`docs/agent-answer.md`](docs/agent-answer.md).
 - The `page` line of an agent answer ends with the page's title, and the live view's session
   list shows it. A title longer than 1,024 characters is left out.
+- The `surf` library reads a page's forms: each form, each control's `name` and form, and the
+  options of each select with the one selected, as rows of the session log and the live view
+  (`FormAdded`, `OptionAdded`). It builds a form's submission the way the HTML Standard does
+  for `application/x-www-form-urlencoded`: a `GET` replaces the query of the form's action, a
+  `POST` sends the body. A submission that cannot be sent ends with its reason, such as a
+  required field left empty or a `multipart/form-data` form. No `surf-agent` command presses
+  a button yet.
 
 ### Changed
 
+- The session log keeps the first 256 rows a page adds, forms, links, controls and options
+  together, and counts the rest in one `EventsLeftOut` line, as it did for links and controls.
 - `surf <url>` no longer prints a password: the last field of the `element` line of a
   `password` control is `(set)` when it holds a value and `(empty)` when it does not, unquoted.
   Every other kind is printed as before. Output: [`docs/surf-command.md`](docs/surf-command.md).

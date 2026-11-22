@@ -228,7 +228,9 @@ surf.net.RequestStarted
 surf.net.ResponseReceived
 surf.net.FetchFailed
 surf.document.ParsingStarted
+surf.document.FormAdded
 surf.document.ElementAdded
+surf.document.OptionAdded
 surf.document.DocumentParsed
 surf.render.FramePainted
 surf.agent.ActionRecorded

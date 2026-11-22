@@ -338,7 +338,20 @@ above, and the list of standards itself was written from memory.
     (default `HtmlParser`, replaced with `Browser::with_parser`); `Browser::element_nodes` gives
     each element row's identity with its node; `surf::parse_page` is the default's work.
     `tests/parse.rs` 9.
-    Depends on the generated crates, `surf-ports`, `surf-fetch`, `surf-html` and `surf-page`.
+    Since round 2 (`story:agent-form-port`) the parser step also issues one `AddForm` per form,
+    each element's `name` and form owner in its `AddElement`, and one `AddOption` per option of
+    a select (`surf::Page::forms`, from `surf_page::forms`), and the library runs the
+    `document` component's submission step, the type parameter `F` of `Browser` (default
+    `FormSubmitter`, replaced with `Browser::with_submitter`; `conformance/src/target.rs` gives
+    `Unsubmitted`, which never answers): each `SubmissionStarted` whose submitter is a row of a
+    kept document gets `surf::Submission` (address, tree, forms, the rows' values) and the step
+    answers `SubmitForm` or `AbandonSubmission` with one of the seven `SubmissionEndReason`s.
+    `surf::submit_form` is the HTML Standard's form submission algorithm and entry list, from
+    memory, with `application/x-www-form-urlencoded` only (the crate documentation, "The
+    submission step", lists what is not taken). `tests/forms.rs` 18 (cases 5 to 20, the hidden
+    input, the rows of the parser step).
+    Depends on the generated crates, `surf-ports`, `surf-fetch`, `surf-html`, `surf-page` and
+    `surf-url`.
   - `crates/surf-cli` (`surf-cli`): the binary `surf` and its five tests, moved out of
     `crates/surf`, and since wave 7 `redirects` 2 (the `navigation` line holds the address the
     fetch ended at, the `request` line the address asked for). It loads one `http:` address,
@@ -417,11 +430,13 @@ above, and the list of standards itself was written from memory.
     most four times its length plus two bytes. Since wave 8 the entries of
     `NavigationStarted` and `RequestStarted` carry `method`, `body` as `<n> bytes` and
     `body_type`, an absent one as the field with no value; its transport is `surf::fetch_http`,
-    which since wave 9 sends a `Post` (no command of the session sends one yet). 92 tests:
-    `adversary_document_text` 7, `adversary_events` 1, `adversary_parse` 4, `adversary_view`
-    1, `built` 11, `core` 22, `e2e` 2 (runs the three built binaries, or those in
-    `SURF_BIN_DIR`), `events` 18, `follow` 17, `memory` 2, `redirect` 2 and `view` 5 (the live view of
-    `surfd` over the real session).
+    which since wave 9 sends a `Post` (no command of the session sends one yet). 101 tests:
+    `adversary_document_text` 7, `adversary_events` 1, `adversary_parse` 4, `adversary_values`
+    3, `adversary_view` 1, `built` 11, `core` 22, `e2e` 2 (runs the three built binaries, or
+    those in `SURF_BIN_DIR`), `events` 23, `follow` 17, `form_rows` 1, `memory` 2, `redirect` 2
+    and `view` 5 (the live view of `surfd` over the real session). The bound of 256 row entries
+    per request counts `FormAdded` and `OptionAdded` with `ElementAdded`
+    (`story:agent-form-port`).
     `open <url>`, `go <url>` and `look` take `--as tree|markdown [--from-line <n>]` and print the
     page as an outline or as Markdown in a `text` block, computed at each call from the tree
     `surf::Browser::document_tree` keeps for the document of the session's current navigation
@@ -587,13 +602,22 @@ above, and the list of standards itself was written from memory.
     the copy of the selected `option` the parser puts into a `selectedcontent`, from which
     `actionable_elements` lists no row (surf's reading, not the standard's rendering). Since
     `story:html-document-port` (round 1) `surf` depends on it, and `surf-page-text` too.
-    69 tests: 28 in `tests/elements.rs`, 35 in `tests/label.rs`, 3 in `tests/base_url.rs`,
-    1 each in `tests/tree_tables.rs` and `tests/tree_template.rs` (the parser unit's) and 1 in
-    `tests/adversary_select.rs` (the parser adversary's), modules of the one test binary
+    75 tests: 28 in `tests/elements.rs`, 35 in `tests/label.rs`, 3 in `tests/base_url.rs`,
+    5 in `tests/forms.rs`, 1 each in `tests/tree_tables.rs` and `tests/tree_template.rs` (the
+    parser unit's), 1 in `tests/adversary_select.rs` (the parser adversary's) and 1 in
+    `tests/adversary_values.rs`, modules of the one test binary
     (`story:one-test-binary-per-crate`). Since round 2 (`story:agent-follow-links`) it has
     `base_url::document_base_url`, the one owner of the document base URL (the first `base`
-    with `href`, parsed against the document address). Standard library, `surf-html` and
-    `surf-url` only.
+    with `href`, parsed against the document address). Since `story:agent-form-port` it has
+    `forms::forms`: the forms in tree order with `action`, `method`, `enctype` as written, each
+    submittable element (the Hidden `input` included) with its form owner (the `form`
+    attribute's ID, else the nearest ancestor `form`), `name`, `value` attribute, `disabled`,
+    `readonly` and `in_datalist`, and each select's list of options with value, label,
+    disabledness and selectedness after parsing; and `form_handles`, `F<n>` per form in
+    document order, apart from `handles`, which page text prints, so page text names no form.
+    The parser's form element pointer is not in the tree, so a control the parser associated
+    with a form it is not inside of has no owner here (the module documentation). Standard
+    library, `surf-html` and `surf-url` only.
   - `crates/page-text` (`surf-page-text`): a `surf-html` tree as text, the outline
     (`outline`) and Markdown (`markdown::markdown`, tables as GitHub tables since
     `story:page-text-tables`), each line without the answer's `> `, one at a time.
@@ -682,12 +706,15 @@ The page load: `Navigate` publishes `NavigationStarted`, which invokes `Fetch`. 
 publishes `ResponseReceived`, which invokes `CommitNavigation`. `NavigationCommitted` invokes
 `ParseDocument` when its media type is `text/html`; the document is `Parsing` and
 `ParsingStarted` carries the body. The parser step of `crates/surf`
-(`story:html-document-port`) issues `AddElement` once per actionable element in tree order,
-then `FinishParsing`, which sets the title and moves the document to `Parsed`. `surf-session`
-and `surf` parse every committed HTML body; `conformance/src/target.rs` gives every scenario
-browser the parser step `Unparsed`, which never answers. `FailRequest` publishes `FetchFailed`,
-which invokes `FailNavigation`. Nothing invokes `PaintFrame` yet. A fifth reaction,
-`navigate-on-form-submitted`: `FormSubmitted` invokes `Navigate`.
+(`story:html-document-port`) issues `AddForm` once per form, then `AddElement` once per
+actionable element in tree order, each select's followed by `AddOption` per option
+(`story:agent-form-port`), then `FinishParsing`, which sets the title and moves the document
+to `Parsed`. `surf-session` and `surf` parse every committed HTML body; `conformance/src/target.rs`
+gives every scenario browser the parser step `Unparsed` and the submission step `Unsubmitted`,
+which never answer. `FailRequest` publishes `FetchFailed`, which invokes `FailNavigation`.
+Nothing invokes `PaintFrame` yet. A fifth reaction, `navigate-on-form-submitted`:
+`FormSubmitted` invokes `Navigate`; the submission step of `crates/surf` issues `SubmitForm`
+or `AbandonSubmission` for each `SubmissionStarted`.
 
 A response names the address it came from, after the last redirect (`DeliverResponse.url`,
 `ResponseReceived.url`): the navigation commits there, the document is parsed at it, and the
