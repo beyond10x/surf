@@ -15,7 +15,7 @@ scope:
   path: crates/page/src/lib.rs
 - confidence: cited
   path: crates/page/tests/label.rs
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 4}
@@ -179,10 +179,13 @@ bytes the tree stores.
   and `aria-labelledby` naming one `span` of 65,536 bytes: every name at most 1,024 bytes, the
   first names the span's first 1,024 bytes and their sum at most `LABEL_WORK_MAX`, the last
   names the `title`, every row `label_cut`),
-  `hidden_flags_cost_one_walk_for_many_references` (50,000 comments before `html` and a `body`
-  with `aria-hidden` true holding a `span id=t` and 50,000 `input`s naming it; a closed
-  `details` with 50,000 children and then a `summary id=s` named by 50,000 `input`s: each
-  shape's `actionable_elements` within 10 seconds by `std::time::Instant` in the test profile),
+  `hidden_flags_cost_one_walk_for_many_references` (2,000 comments before `html` and a `body`
+  with `aria-hidden` true holding a `span id=t` and 2,000 `input`s naming it; a closed
+  `details` with 2,000 children and then a `summary id=s` named by 2,000 `input`s: for each
+  shape `attribute_visits()` of `actionable_elements` exceeds that of the same page with
+  `aria-label` on the `input`s by less than one visit per reference, and no time is asserted;
+  the unit built it with 50,000 each and a bound of 10 seconds by `std::time::Instant`, and
+  `story:test-step-holds-under-load` changed it to this form),
   `the_name_of_a_deep_subtree_is_computed_without_recursion` (`<a href=deep>d` and 100,000
   nested `span`: the name is `d`; it holds also once the depth limit stops the parse at 512).
 
@@ -206,8 +209,8 @@ the section "Steps not taken" with its six entries and no longer lists the label
 other stories". `git diff --stat` names no file outside `crates/page/`. Test time (the
 gate's test step has 2 minutes of wall time, a single test 60 s): `cargo test -p surf-page` ends within 20 s of wall time after the build in
 the test profile on the unit's machine, and the report names each test over 5 s with its time;
-the 10 seconds asserted in `hidden_flags_cost_one_walk_for_many_references` are the bound of a
-loaded machine, not the budget. `crates/page/tests/elements.rs` is not this story's: its test
+`hidden_flags_cost_one_walk_for_many_references` asserts a count and no time since
+`story:test-step-holds-under-load`. `crates/page/tests/elements.rs` is not this story's: its test
 `a_deep_tree_is_read_without_recursion` is adapted by `story:html-parser-limits` in the same
 wave.
 
