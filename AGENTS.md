@@ -872,7 +872,12 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   configuration in the user's home, a compiler cache it names (`rustc-wrapper`) included, and
   the operating system. cargo also reads the working tree's `.cargo/config.toml`, a parent
   directory of the export: a change to it is uncommitted, so only `ALLOW_DIRTY=1` lets it
-  through.
+  through. On the forge `task check` takes 167 s (release `0.3.0`); on a machine at a load
+  average of 106 to 113 `task check-runner` ran 832 s (2026-11-22), past the build pool's
+  limit of 10 minutes for a job, so there it names its time:
+  `slot --timeout 25m task check-runner`. `.out/runner/tree` is a clone inside the working
+  tree, and `worktree finish` refuses a managed tree that still holds it: remove `.out/runner`
+  before the tree is finished.
 - `task forge-watch COMMIT=<commit>`: `taskfiles/forge-watch.sh <commit>` waits until every
   workflow run of the commit is completed, reading through `b10x-gates ... api --method GET`
   with the policy file from `GATES_POLICY` (default `../gates-policy/policy.json`) and `jq`,
