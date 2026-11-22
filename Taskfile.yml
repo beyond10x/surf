@@ -63,6 +63,10 @@ includes:
     taskfile: taskfiles/agent-tasks.yml
     flatten: true
     optional: true
+  sh-echo:
+    taskfile: taskfiles/sh-echo.yml
+    flatten: true
+    optional: true
 
 vars:
   REFUSALS_MAX: 48
@@ -423,6 +427,7 @@ tasks:
       - task: build
       - task: test
       - task: agent-tasks-report
+      - task: sh-echo
       - task: view-stream-check
       - task: view-test
       - task: html-conformance
@@ -430,6 +435,7 @@ tasks:
       - task: forge-watch-test
       - task: planning-only-test
       - task: test-layout-test
+      - task: sh-echo-test
 
   slow:
     desc: Make the committed products of the TLS tests again and compare them with the committed files (the test certificates byte for byte, the recorded flights by outcome); needs openssl 3.4 or later; never a step of check.

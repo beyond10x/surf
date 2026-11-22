@@ -109,6 +109,11 @@ release; what came before it is in the git log and in `docs/plan/`.
 - `task test` no longer fails with exit status 141 after every test passed. Printing its ten
   slowest tests ended the sort early once the list of tests outgrew a pipe's buffer; the list
   now comes from `taskfiles/slowest-tests.sh`.
+- `task agent-tasks-model` counts the model's `surf-agent` calls where `sh` is dash (Debian,
+  Ubuntu). Its script wrote the program that logs each call with `echo`, which in dash turns
+  the program's backslashes into control characters: every task was written `0 calls`, and
+  `task check` failed there. `task check` now runs those tests under an `sh` whose `echo` does
+  as dash's (`task sh-echo`).
 
 ## [0.3.0] - 2026-11-22
 
