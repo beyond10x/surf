@@ -9,6 +9,7 @@ relations:
 - decomposes: epic:agent-cli-target
 - depends_on: story:agent-form-port
 - informed_by: decision-blocker:agent-session-history-home
+- depends_on: story:agent-press-submit
 scope:
 - confidence: inferred
   path: AGENTS.md
@@ -34,7 +35,7 @@ scope:
   path: spec/ess-inputs.yaml
 - confidence: cited
   path: spec/scenarios
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
@@ -62,9 +63,12 @@ loads of a tab. Since story `agent-request-body-spec` a navigation carries its m
 committed navigation carries the response URL (`spec/domains/navigation.yaml:138-139`, `:157`),
 which is the address of its entry.
 
-Place in the chain of specification stories: after `agent-form-port`, the last story that writes
-`crates/surf` and `conformance/src/target.rs` before it, so forms are not held back; story
-`agent-back-forward` and then `agent-change-and-log` stand on it.
+Place in the chain: after `agent-press-submit` (edge `depends_on`), the last story of the
+commands unit before it. The stories before it write the same files: `agent-form-port` writes
+`crates/surf` and `conformance/src/target.rs`, `story:values-and-labels-before-fill` and
+`agent-fill-pick` (its `readonly` field) write `spec/`, `generated/rust/` and
+`conformance/src/target.rs`. Story `agent-back-forward` and then `agent-change-and-log` stand on
+it.
 
 ## Domain relations
 
@@ -101,9 +105,11 @@ Place in the chain of specification stories: after `agent-form-port`, the last s
   `Go`; their events invoke the traversal for the tab of the session; the enum
   `surf.agent.ActionCommand` (`spec/domains/agent.yaml:31`) gains the variants `back` and
   `forward`, lower case as its other variants.
-- `crates/session/src/lib.rs:968`: `command_word`, an exhaustive `match` on `ActionCommand`,
-  gains `back` and `forward`, which the regenerated enum forces; so do `action_command` and
-  `action_command_named` of `conformance/src/target.rs` (`:512`, `:524`).
+- Every exhaustive `match` on `ActionCommand` at its base gains `back` and `forward`, which the
+  regenerated enum forces, written in the path form `agent-back-forward` gives (`<n> back`,
+  `<n> forward`, no argument). On `main` they are `command_word`
+  (`crates/session/src/lib.rs:968`) and `action_command` and `action_command_named` of
+  `conformance/src/target.rs` (`:512`, `:524`); the stories before it may add more.
 - `spec/components.yaml`: the `navigator` component accepts and publishes the new commands and
   events; bindings from the agent events to the traversal; whatever binding the entry bookkeeping
   needs inside the navigator.
@@ -119,10 +125,11 @@ Place in the chain of specification stories: after `agent-form-port`, the last s
 Surfaces written: `spec/domains/navigation.yaml`, `spec/domains/agent.yaml`,
 `spec/components.yaml`, `spec/scenarios/`, `spec/ess-inputs.yaml`, `generated/rust/`,
 `crates/ports/`, `crates/surf/src/lib.rs` (only if forced), `conformance/src/`,
-`crates/session/src/lib.rs` (`command_word` only).
+`crates/session/src/lib.rs` (its exhaustive `match` on `ActionCommand` only).
 
-Baseline the gate's numbers are measured against: 169 scenarios, 24 authored, 48 refusals
-(`AGENTS.md`, "The gate's numbers", after round 1).
+Baseline the gate's numbers are measured against: the counts at its base, which include the
+scenarios `agent-fill-pick`'s `readonly` field adds (on `main` after round 1: 169 scenarios, 24
+authored, 48 refusals, `AGENTS.md`, "The gate's numbers").
 
 ## For AGENTS.md (handed over in the unit report, decision D7)
 

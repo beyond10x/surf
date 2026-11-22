@@ -19,6 +19,8 @@ scope:
   path: cli/surf-agent.yaml
 - confidence: cited
   path: crates/agent/src/cli.rs
+- confidence: cited
+  path: crates/agent/src/wire.rs
 - confidence: inferred
   path: crates/agent/tests
 - confidence: cited
@@ -37,7 +39,7 @@ scope:
   path: generated/rust
 - confidence: inferred
   path: spec/domains/agent.yaml
-revision: 13
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 7}
@@ -79,9 +81,14 @@ shows; at most 10, each cut at 120 characters, and `+ text more <n>` for the res
 - `crates/answer`, `docs/agent-answer.md`: the `changed` block and the `log` answer, each with its
   `parse` beside its rendering (decision D20 of `docs/plan/agent-plan-revision-2.md`).
 - `log` is a read: it records no action and its answer has no `did` line. The lines it lists are
-  `path` entries in the form of `docs/agent-answer.md`: `<n> <command>`, and the argument as a
-  quoted field only when the action had one.
+  `path` entries in the form `story:agent-follow-links` gives them: `<n> go "<address>"` for an
+  address, `<n> follow l4 "Sign in"`, `<n> fill f1`, `<n> pick f3`, `<n> press b1` for an action
+  on an element (the handle bare, a `follow`'s label quoted), `<n> back`, `<n> forward`,
+  `<n> open` and `<n> close` without argument.
 - `cli/surf-agent.yaml`, `crates/agent`: `log`, together, so the drift test holds.
+  `crates/agent/src/wire.rs`: its module documentation lists the commands of a request
+  (`command <name>`, `:24`); `log` joins that list, and `log <n>` sends its number as an `arg`
+  (`:31-34` lists the arguments; the name is this story's).
 - `crates/session/tests/`, the counted cases, against a server the test starts:
   1. `fill` a field: `~ f1 value "" -> "ada"`; 2. `fill` a password: `(empty) -> (set)`;
   3. `pick` a checkbox: `~ f3 checked false -> true`; 4. `pick` a radio: one line per control
@@ -109,18 +116,20 @@ shows; at most 10, each cut at 120 characters, and `+ text more <n>` for the res
       answer of case 15 gives the typed answer, and rendering that gives the same lines byte for
       byte.
 
-- Every answer gains `changed 0` at least, so the golden files of whole answers gain that line:
-  the 14 of `crates/answer/tests/golden/` (`did-refused`, `did`, `head-died`, `head`,
+- Every answer gains `changed 0` at least, so every golden file and every exact-text test of a
+  whole answer in this story's base gains that line, including those the command stories before
+  it add (`agent-follow-links` case 4, `agent-fill-pick` case 1). On `main`, as an example: the
+  14 of `crates/answer/tests/golden/` (`did-refused`, `did`, `head-died`, `head`,
   `head-unknown`, `note-parser`, `page-failed`, `page-none`, `page`, `path`, `text-forged`,
-  `text-markdown`, `text-tree`, `token`, each `.txt`, where the file is a whole answer) and the 7
-  of `crates/session/tests/golden/` (`close`, `go-as-markdown`, `go`, `look-as-markdown`, `look`,
-  `open-as-tree`, `open`, each `.txt`); and the tests that compare an answer's exact text:
+  `text-markdown`, `text-tree`, `token`, each `.txt`, each a whole answer from its head line) and
+  the 7 of `crates/session/tests/golden/` (`close`, `go-as-markdown`, `go`, `look-as-markdown`,
+  `look`, `open-as-tree`, `open`, each `.txt`); and the tests that compare an answer's exact text:
   `crates/answer/tests/forging.rs`, `crates/surfd/tests/in_process.rs` and
   `crates/surfd/tests/common/mod.rs` (inferred, not read whether each asserts the whole text),
   `crates/agent/tests/stand_in.rs` (inferred).
 
 Surfaces written: `crates/session/`, `crates/answer/`, `docs/agent-answer.md`,
-`cli/surf-agent.yaml`, `crates/agent/`, `crates/surfd/tests/`.
+`cli/surf-agent.yaml`, `crates/agent/` (`src/wire.rs` included), `crates/surfd/tests/`.
 
 ## For AGENTS.md and README.md (handed over in the unit report, decision D7)
 

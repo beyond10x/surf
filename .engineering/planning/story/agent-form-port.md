@@ -47,7 +47,7 @@ scope:
   path: crates/surf/tests/forms.rs
 - confidence: cited
   path: crates/surf/tests/main.rs
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 4}
@@ -80,10 +80,12 @@ replaces the query of the action URL, `POST` sends the body); URL Standard
 - `crates/page/src/forms.rs` (new) and one `pub mod` line in `crates/page/src/lib.rs`: forms in
   document order with `action`, `method`, `enctype`; the form owner and `name` of each control; the
   options of each select with their selectedness.
-- `crates/page`: the form handles. `surf_page::handles` (`crates/page/src/lib.rs:368`, which gives
-  `l<n>`, `b<n>` and `f<n>` today) also gives `F<n>` to each form, counted from 1 in document
-  order, the order of the `Forms` view (`spec/domains/document.yaml:1312`). `story:agent-press-submit`
-  only prints them.
+- `crates/page`: the form handles, in a new function `surf_page::form_handles(tree)` that gives
+  `F<n>` to each form, counted from 1 in document order, the order of the `Forms` view
+  (`spec/domains/document.yaml:1312`). `surf_page::handles` (`crates/page/src/lib.rs:368`, `l<n>`,
+  `b<n>`, `f<n>`) stays unchanged: the outline and the Markdown read it
+  (`crates/page-text/src/outline.rs:30`, `markdown.rs:116`), and page text prints no `@F<n>`.
+  `story:agent-press-submit` only prints the form handles.
 - `crates/surf/src/lib.rs`: the parse step issues the new rows before `FinishParsing`
   (`crates/surf/src/lib.rs:1085`), which takes no rows: each form as `AddForm`
   (`spec/domains/document.yaml:561`), each option as `AddOption` (`:617`), and each control's
@@ -102,20 +104,40 @@ replaces the query of the action URL, `POST` sends the body); URL Standard
 - The counted cases, in `crates/page/tests/forms.rs` and `crates/surf/tests/forms.rs`:
   1. a control owned through the `form` attribute; 2. through nesting; 3. a control in no form;
   4. option selectedness of a `select` without `multiple`; 5. the entry list of a form with a text
-  field, a password, a checked and an unchecked checkbox, a radio group and a select;
-  6. a disabled control left out; 7. the submitter included and another submit button not;
-  8. `GET` puts the entries in the query; 9. `POST` with body `user=ada&remember=on` for a text
+  field `user` = `ada`, a password `pw` = `s3cret`, a checked checkbox `remember` without a
+  `value`, an unchecked checkbox `news`, a radio group `size` with `s` and `m` (`m` checked) and
+  a select `color` with the option `red` selected, in that tree order, is
+  `user=ada&pw=s3cret&remember=on&size=m&color=red`;
+  6. a disabled control left out; 7. the form of case 9 with two submit buttons
+  `<button name="go" value="1">` (the submitter) and `<button name="other" value="2">`: the
+  body is `user=ada&remember=on&go=1`;
+  8. `GET` with `action="results?x=1"` and a field `q` = `lighthouse` navigates to
+  `<document base>/results?q=lighthouse`: the entries replace the action's query;
+  9. `POST` with body `user=ada&remember=on` for a text
   field `user` = `ada` and a checked checkbox `remember`; 10. an empty `action`: the document
   address; 11. a relative `action` under a `base`; 12. `multipart/form-data`: ended
   `UnsupportedEnctype`; 13. `action="javascript:x"`: ended `UnsupportedScheme`;
-  14. `action="file:///x"`: ended `UnsupportedScheme`; 15. names and values with `&`, `=`, space
-  and bytes outside ASCII encoded as the standard says;
+  14. `action="file:///x"`: ended `UnsupportedScheme`; 15. a field named `n&a=me` with the
+  value `a b é` gives the body `n%26a%3Dme=a+b+%C3%A9`;
   16. a submit button with no form owner: ended `NoFormOwner`; 17. a `type=reset` and a
   `type=button` button pressed through `Press`: ended `NotSubmitButton`; 18. a `required` text
   field left empty: ended `InvalidControls`; 19. an `action` that does not parse as a URL
   (`http://[x`): ended `InvalidAction`; 20. `method="dialog"`: ended `DialogMethod`;
-  21. `handles` of a page with two forms and a link, a button and a field: `F1` and `F2` in
-  document order beside `l1`, `b1`, `f1`.
+  21. `form_handles` of a page with two forms gives `F1` and `F2` in document order, and
+  `handles` of the same page gives what it gave before (`l1`, `b1`, `f1`, no `F`).
+
+  Where the expected values come from: the bytes of cases 9 and 15 from the serializer of
+  `crates/url` (`crates/url/src/form_urlencoded.rs:9-19`: `&` between pairs, `=` inside; the
+  form-urlencoded set of `crates/url/src/percent.rs:45-47`, a space as `+`, `:64-73`), read in the
+  repository. The entry-list rules of cases 5, 7 and 8 (a checkbox without `value` submits `on`,
+  only the submitter's button is an entry, `GET` replaces the action's query) are the HTML
+  Standard's "constructing the entry list" and form submission algorithm, which are not in the
+  repository: to be confirmed by the implementor against the standard's text (see Context).
+
+  Case 17 drives `Press` from `crates/surf/tests` without a helper of `crates/session`: the
+  pattern of `opened` in `crates/surf/tests/forget_delivered.rs:41-71` builds a `Browser` with
+  `ComponentPorts::with_caller`, opens a session through `agent_mut().open_session` and sets the
+  caller; `Press` takes the button's `element_id` from the `Elements` view.
 
 Surfaces written: `crates/page/src/forms.rs`, `crates/page/src/lib.rs`,
 `crates/page/tests/forms.rs`, `crates/page/tests/main.rs` (one `mod` line), `crates/surf/src/lib.rs`,
