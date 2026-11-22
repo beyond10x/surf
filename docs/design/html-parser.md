@@ -661,6 +661,32 @@ open coercing-an-html-dom-into-an-infoset not-taken surf produces no XML infoset
 data coercing-an-html-dom-into-an-infoset html5lib-tests/tokenizer/xmlViolation.test
 ```
 
+### The marks after story `html-tree-complete`
+
+Every case that runs passes (`html-conformance: 9107 cases, 9095 run, 9095 passed`), and the 12
+`not-run` cases stay out by their reasons. No section is `complete`: each has an `open` or a
+`wpt` line of `html-sections`. The marks, with the harness's count (cases passed of the
+section's cases) and the reasons:
+
+- `the-input-byte-stream`: incomplete, 82/84, 2 not run (`needs-script` 1, `autodetect` 1); open
+  `transport-layer-encoding`, `encodings-without-decoder`, `insertion-point`; 17 wpt lines.
+- `tokenization`: incomplete, 2836/2836; 7 wpt lines.
+- `named-character-references`: incomplete, 4210/4210; 1 wpt line.
+- `tree-construction`: incomplete, 1803/1809, 6 not run (`needs-script`); open
+  `script-processing`, `custom-element-creation`, `declarative-shadow-roots`; 137 wpt lines.
+- `parsing-main-inforeign`: incomplete, 83/83; open `svg-script-processing`; 29 wpt lines.
+- `parsing-html-fragments`: incomplete, 81/81; open `sanitizer`; 4 wpt lines.
+- `the-end`: incomplete, no case; open `scripts-and-events`; 3 wpt lines.
+- `speculative-html-parsing`: incomplete, no case; 2 wpt lines.
+- `coercing-an-html-dom-into-an-infoset`: incomplete, 0/4, 4 not run (`xml-infoset`); open
+  `not-taken`.
+
+Two parts of the parser differ in form from the standard and are not `open` lines, as no case of
+the pinned data tells them apart: the snapshot's template content patching (the `for` attribute
+of a `template` start tag in head) is not taken, and the update of a `select`'s
+`selectedcontent` elements runs once at the end of a document's parse instead of from a queued
+microtask, which no script can observe here.
+
 ## 9. The inventory and the script hooks
 
 **Confirmed**: every data file of item 3 is inventoried below with its case count and its count

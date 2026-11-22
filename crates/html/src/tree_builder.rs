@@ -20,7 +20,9 @@
 //! the MathML and SVG adjustments are in the submodule `foreign`, and the fragment parsing
 //! algorithm (13.4) is [`parse_fragment`] (story `html-tree-foreign`): its context element and
 //! `html` root are nodes of the arena outside the tree, and the insertion target redirection
-//! map's one entry sends the `html` root's insertions to the fragment.
+//! map's one entry sends the `html` root's insertions to the fragment. The submodule
+//! `selectedcontent` copies each `select`'s selected `option` into its `selectedcontent`
+//! elements at the end of a document's parse (story `html-tree-complete`).
 //!
 //! Parse errors are not collected: neither the tokenizer's nor the tree builder's reach a
 //! caller. Scripts do not run: at a `script` end tag the text mode pops the element and returns
@@ -36,6 +38,7 @@
 mod foreign;
 mod formatting;
 mod modes;
+mod selectedcontent;
 mod tables;
 mod template;
 
@@ -409,6 +412,17 @@ fn run(mut builder: TreeBuilder) -> Parsed {
     }
     // "Stop parsing" pops every open element, also after a limit.
     builder.open.clear();
+    if builder.saw_selectedcontent
+        && builder.context.is_none()
+        && builder.tree.stopped_by().is_none()
+        && builder.reparse_with.is_none()
+    {
+        // The queued selectedcontent updates (the module `selectedcontent`): they create nodes,
+        // which a stopped parse refuses, so the flag is lifted for them.
+        builder.stopped = false;
+        builder.update_selectedcontents();
+        builder.stopped = true;
+    }
     builder.tree.set_steps(builder.steps.get());
     Parsed {
         tree: builder.tree,
@@ -462,6 +476,9 @@ struct TreeBuilder {
     /// The fragment parsing algorithm's `html` root element, a node of the arena outside the
     /// tree whose insertions go to the fragment; `None` for a document.
     fragment_html: Option<NodeId>,
+    /// An HTML `selectedcontent` element was created: the end of the parse updates the
+    /// `select` elements' copies of their selected option (the module `selectedcontent`).
+    saw_selectedcontent: bool,
 }
 
 const HTML_ELEMENT_SPECIAL: &[&str] = &[
@@ -650,6 +667,7 @@ impl TreeBuilder {
             context: None,
             template_modes: Vec::new(),
             fragment_html: None,
+            saw_selectedcontent: false,
         }
     }
 
@@ -872,6 +890,9 @@ impl TreeBuilder {
     /// (the adoption agency algorithm admits a whole iteration at once).
     fn create_admitted_element(&mut self, name: &str, attributes: &[TokenAttribute]) -> NodeId {
         let categories = categories_of(Namespace::Html, name);
+        if name == "selectedcontent" {
+            self.saw_selectedcontent = true;
+        }
         let element = self.tree.create_element(
             Namespace::Html,
             name,

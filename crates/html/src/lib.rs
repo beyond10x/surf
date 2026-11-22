@@ -54,7 +54,9 @@
 //!   and its reconstruction, the adoption agency algorithm, foster parenting, the stack of
 //!   template insertion modes, the rules for foreign content with the MathML and SVG
 //!   adjustments, the fragment parsing algorithm, and the `meta` rules that change the
-//!   encoding. Parse errors are not collected, and no script runs.
+//!   encoding. At the end of a document's parse each `select` updates its `selectedcontent`
+//!   elements' copy of the selected `option`, as the DOM's queued update would. Parse errors
+//!   are not collected, and no script runs.
 //! - [`limits`]: written. [`limits::Limits`] holds the six limits of
 //!   `docs/design/html-parser.md` item 7 with their defaults, [`ParseOptions::limits`] carries
 //!   them into a parse, and [`Tree::stopped_by`] names the [`limits::Limit`] that stopped one.

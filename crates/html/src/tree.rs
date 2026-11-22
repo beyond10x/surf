@@ -363,6 +363,15 @@ impl Tree {
         }
     }
 
+    /// Removes every child of `node` (the DOM's "replace all" with null). The children stay in
+    /// the arena. Each child removed is a step.
+    pub(crate) fn remove_children(&mut self, node: NodeId, steps: &Cell<usize>) {
+        for child in std::mem::take(&mut self.nodes[node.0].children) {
+            visit(steps);
+            self.nodes[child.0].parent = None;
+        }
+    }
+
     /// Moves every child of `from` to the end of `to`'s children, in order, in one pass (the
     /// adoption agency algorithm's "take all of the child nodes of furthestBlock and append them
     /// to newElement"). `to` is not `from` and not under it. Each child moved is a step.

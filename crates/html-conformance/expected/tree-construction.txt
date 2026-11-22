@@ -59,13 +59,13 @@ file wpt/html/syntax/parsing/resources/tests_innerHTML_1.dat 81/81/81
 file wpt/html/syntax/parsing/resources/tricky01.dat 9/9/9
 file wpt/html/syntax/parsing/resources/void-in-phrasing.dat 13/13/13
 file wpt/html/syntax/parsing/resources/webkit01.dat 52/52/52
-file wpt/html/syntax/parsing/resources/webkit02.dat 45/49/49
+file wpt/html/syntax/parsing/resources/webkit02.dat 49/49/49
 tag body 476/476/476
 tag formatting 22/22/22
 tag tables 39/39/39
 tag template 123/123/123
 tag foreign 222/222/222
-tag mixed 1081/1085/1085
+tag mixed 1085/1085/1085
 tag not-run 0/0/6
 section tree-construction incomplete
 section parsing-main-inforeign incomplete
