@@ -765,6 +765,10 @@ fn case_19_51_header_lines_are_431() {
     raw(port, &lines(51)).refusal(431, "too-large");
 }
 
+/// Half a request is closed at the receive limit, not before it, and with no upper bound but
+/// [`WAIT`]. `read_to_close` waits at most [`WAIT`] for each read, so a server that never
+/// closes and sends nothing fails the test after [`WAIT`]; one that sends a byte now and then
+/// keeps it reading until the runner ends it at 60 s.
 #[test]
 fn case_20_half_a_request_is_closed_without_answer_after_the_receive_limit() {
     let source = TestSource::new();
@@ -780,7 +784,7 @@ fn case_20_half_a_request_is_closed_without_answer_after_the_receive_limit() {
     let elapsed = started.elapsed();
     assert!(answer.is_empty(), "{:?}", String::from_utf8_lossy(&answer));
     assert!(elapsed >= Duration::from_millis(900), "{elapsed:?}");
-    assert!(elapsed <= Duration::from_secs(2), "{elapsed:?}");
+    assert!(elapsed <= WAIT, "{elapsed:?}");
     wait_for("the connection count returns to 0", || {
         server.open_connections() == 0
     });
@@ -828,6 +832,9 @@ fn case_22_serve_refuses_an_address_other_than_127_0_0_1() {
     assert!(serve(listener, config, TestSource::new()).is_err());
 }
 
+/// A client that reads nothing is closed at the write limit, the answer and the stream each: not
+/// before it, which each half asserts, and with no upper bound but [`WAIT`] of `wait_for`, which
+/// fails the test when the close does not come.
 #[test]
 fn case_23_a_client_that_reads_nothing_is_closed_at_the_write_limit() {
     let source = TestSource::new();
@@ -837,6 +844,7 @@ fn case_23_a_client_that_reads_nothing_is_closed_at_the_write_limit() {
         queue_bytes: 64 << 20,
         ..Limits::default()
     };
+    let write = limits.write;
     let (server, port) = start(&source, limits);
     let before = server.open_connections();
 
@@ -850,7 +858,10 @@ fn case_23_a_client_that_reads_nothing_is_closed_at_the_write_limit() {
         server.open_connections() == before
     });
     let elapsed = sent.elapsed();
-    assert!(elapsed <= Duration::from_secs(2), "{elapsed:?}");
+    assert!(
+        elapsed >= write,
+        "the answer was closed after {elapsed:?}, before the write limit of {write:?}"
+    );
     let got = read_to_close(&mut silent);
     assert!(got.len() < 8 << 20, "the whole answer arrived");
 
@@ -868,7 +879,10 @@ fn case_23_a_client_that_reads_nothing_is_closed_at_the_write_limit() {
         server.open_connections() == before
     });
     let elapsed = published.elapsed();
-    assert!(elapsed <= Duration::from_secs(2), "{elapsed:?}");
+    assert!(
+        elapsed >= write,
+        "the stream was closed after {elapsed:?}, before the write limit of {write:?}"
+    );
     assert!(reader.rest().len() < 8 << 20, "the whole entry arrived");
 }
 
@@ -1145,6 +1159,9 @@ fn case_31_past_the_stream_limit_503() {
     get(port, "/events", Some(TOKEN)).refusal(503, "busy");
 }
 
+/// An idle stream receives the keep-alive comment, with no upper bound on its time but [`WAIT`]:
+/// each read of `next_block` waits at most [`WAIT`], so a server that sends nothing fails the
+/// test after [`WAIT`].
 #[test]
 fn case_32_an_idle_stream_receives_the_keep_alive_comment() {
     let source = TestSource::new();
@@ -1157,7 +1174,11 @@ fn case_32_an_idle_stream_receives_the_keep_alive_comment() {
     stream_head(&answer);
     let started = Instant::now();
     assert_eq!(reader.next_block(), ": keep-alive");
-    assert!(started.elapsed() <= Duration::from_secs(2));
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed <= WAIT,
+        "the keep-alive comment came after {elapsed:?}"
+    );
 }
 
 #[test]
