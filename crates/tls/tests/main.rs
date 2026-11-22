@@ -6,6 +6,8 @@
 
 #![deny(unsafe_code)]
 
+#[path = "tls/adversary_anchors.rs"]
+mod adversary_anchors;
 #[path = "tls/adversary_layer.rs"]
 mod adversary_layer;
 #[path = "tls/adversary_x509.rs"]

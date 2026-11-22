@@ -144,8 +144,15 @@ fn bundle() -> &'static [TrustAnchor] {
 /// The anchors of a list in the form of the bundle, and the certificates read: each
 /// `CERTIFICATE` block through [`TrustAnchor::from_der`], so a root the reader refuses is taken
 /// as name and key when item 11 allows; a block of another label and a root that gives no
-/// anchor are left out. The bundle is the file of `SOURCE`, held to it by the tests; were it
-/// not PEM, the set would be empty and no path would reach an anchor.
+/// anchor are left out.
+///
+/// A list that does not parse as PEM gives no anchor at all. For the bundle that means: a caller
+/// of [`Anchors::bundled`] gets a set whose [`Anchors::count`] is 0, so every path ends at
+/// `NoPathToAnchor` (it fails closed, and the library does not panic). It cannot happen silently
+/// in a release: the bundle is compiled in, `task anchors-refresh` writes only a list whose
+/// blocks are whole, and the tests parse the compiled-in bytes and hold the count of anchors to
+/// `SOURCE`. The place that builds a verifier from the set refuses a count of 0
+/// (`story:tls-fetch-https`).
 fn read_list(text: &[u8]) -> (Vec<TrustAnchor>, usize) {
     let blocks = pem::parse(text).unwrap_or_default();
     let mut read = 0;
@@ -245,8 +252,23 @@ impl Anchors {
         BUNDLE_READS.load(Ordering::Relaxed)
     }
 
+    /// The line `surf --anchors` prints for the bundled list (item 8): `anchors <n> bundled
+    /// <yyyy-mm-dd> sha256:<64 hex>`, where `<n>` is the [`Anchors::count`] of
+    /// [`Anchors::bundled`] (117 for the list of 2026-11-05, whose `SOURCE` counts 118
+    /// certificates), the date and sha256 those of `SOURCE`.
+    pub fn bundled_line() -> String {
+        format!(
+            "anchors {} bundled {} sha256:{}",
+            bundle().len(),
+            Anchors::bundled_date(),
+            Anchors::bundled_sha256()
+        )
+    }
+
     /// The anchors of `text` read as the bundle is read, for the tests of that reading (the
-    /// bundle itself holds no root that is taken as name and key, and no other label).
+    /// bundle itself holds no root that is taken as name and key, and no other label). Behind
+    /// the crate's test seam, the feature `test-tooling`: no build of a release has it.
+    #[cfg(feature = "test-tooling")]
     #[doc(hidden)]
     pub fn from_list(text: &[u8]) -> Self {
         Anchors {

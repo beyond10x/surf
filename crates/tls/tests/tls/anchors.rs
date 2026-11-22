@@ -140,6 +140,25 @@ fn the_bundled_count_equals_source() {
     assert!(blocks.iter().all(|b| b.label == "CERTIFICATE"));
 }
 
+/// The line of `surf --anchors` counts the anchors, not the certificates of `SOURCE`.
+#[test]
+fn the_anchors_line_prints_the_count_of_anchors() {
+    let count: usize = source_field(SOURCE, "count").parse().expect("a count");
+    assert_eq!(
+        Anchors::bundled_line(),
+        format!(
+            "anchors {} bundled {} sha256:{}",
+            count - NO_ANCHOR.len(),
+            source_field(SOURCE, "date"),
+            source_field(SOURCE, "sha256")
+        )
+    );
+    assert_eq!(
+        Anchors::bundled_line().split(' ').nth(1),
+        Some(Anchors::bundled().count().to_string().as_str())
+    );
+}
+
 #[test]
 fn the_sha256_of_the_included_bytes_equals_source() {
     assert_eq!(Anchors::bundled_pem(), BUNDLE);
@@ -153,21 +172,27 @@ fn the_sha256_of_the_included_bytes_equals_source() {
 
 #[test]
 fn the_bundled_date_is_the_date_of_the_header_line() {
-    let date = Anchors::bundled_date();
-    assert_eq!(date, source_field(SOURCE, "date"));
-    let b = date.as_bytes();
-    assert!(
-        b.len() == 10
-            && b[4] == b'-'
-            && b[7] == b'-'
-            && b.iter()
-                .enumerate()
-                .all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit()),
-        "{date:?} is yyyy-mm-dd"
-    );
-    let header = source_field(SOURCE, "header");
+    // The date is computed here from the header line of the compiled-in bundle, not read back
+    // from SOURCE, so a SOURCE whose date is not the list's fails.
     let text = std::str::from_utf8(BUNDLE).expect("UTF-8");
-    assert!(text.contains(&format!("## {header}\n")), "{header:?}");
+    let prefix = "## Certificate data from Mozilla as of: ";
+    let headers: Vec<&str> = text.lines().filter(|l| l.starts_with(prefix)).collect();
+    assert_eq!(headers.len(), 1, "one header line");
+    let fields: Vec<&str> = headers[0][prefix.len()..].split_whitespace().collect();
+    assert_eq!(fields.len(), 6, "{:?}", headers[0]);
+    let months = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    let month = months
+        .iter()
+        .position(|m| *m == fields[1])
+        .expect("a month")
+        + 1;
+    let day: u32 = fields[2].parse().expect("a day");
+    let date = format!("{}-{month:02}-{day:02}", fields[4]);
+    assert_eq!(Anchors::bundled_date(), date);
+    assert_eq!(source_field(SOURCE, "date"), date);
+    assert_eq!(format!("## {}", source_field(SOURCE, "header")), headers[0]);
 }
 
 #[test]
@@ -647,7 +672,7 @@ fn anchors_copy(name: &str) -> PathBuf {
 fn run(args: &[&Path], env: &[(&str, &Path)], date: Option<&str>) -> Output {
     let mut command = Command::new("sh");
     command.arg(script()).args(args);
-    for var in ["FILE", "SHA256", "DATE"] {
+    for var in ["FILE", "SHA256", "DATE", "ANCHORS_REMOVED_MAX"] {
         command.env_remove(var);
     }
     for (key, value) in env {
@@ -730,9 +755,14 @@ fn refresh_with_a_matching_pair_writes_both() {
     let list = small_list();
     fs::write(&file, &list).expect("write");
     fs::write(&sum, sha256_line(&list)).expect("write");
+    // The small list removes the 118 titles of the bundle in place: the bound is named.
     let out = run(
         &[Path::new("refresh"), &dir],
-        &[("FILE", &file), ("SHA256", &sum)],
+        &[
+            ("FILE", &file),
+            ("SHA256", &sum),
+            ("ANCHORS_REMOVED_MAX", Path::new("1000")),
+        ],
         None,
     );
     assert_eq!(
@@ -903,6 +933,169 @@ fn refresh_refuses_a_sha256_file_not_in_its_form() {
     }
 }
 
+/// A list in curl's form whose blocks are the root of ok-ed25519 under the titles `titles`.
+fn titled_list(titles: &[String]) -> Vec<u8> {
+    let root = test_certs("ok-ed25519/root.pem");
+    let mut text =
+        b"## Certificate data from Mozilla as of: Mon Feb  2 10:00:00 2026 GMT\n\n".to_vec();
+    for title in titles {
+        text.extend_from_slice(format!("{title}\n{}\n", "=".repeat(title.len())).as_bytes());
+        text.extend_from_slice(&root);
+        text.push(b'\n');
+    }
+    text
+}
+
+/// Runs `refresh` of `new` over a directory whose `cacert.pem` is `old`, with the bound
+/// `ANCHORS_REMOVED_MAX` when given; the output and whether the old pair is still in place.
+fn refresh_over(name: &str, old: &[u8], new: &[u8], removed_max: Option<&str>) -> (Output, bool) {
+    let dir = anchors_copy(name);
+    fs::write(dir.join("cacert.pem"), old).expect("write");
+    let input = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("tls-anchors-{name}-in"));
+    let _ = fs::remove_dir_all(&input);
+    fs::create_dir_all(&input).expect("create");
+    let file = input.join("new.pem");
+    let sum = input.join("new.sha256");
+    fs::write(&file, new).expect("write");
+    fs::write(&sum, sha256_line(new)).expect("write");
+    let mut env: Vec<(&str, &Path)> = vec![("FILE", &file), ("SHA256", &sum)];
+    if let Some(max) = removed_max {
+        env.push(("ANCHORS_REMOVED_MAX", Path::new(max)));
+    }
+    let out = run(&[Path::new("refresh"), &dir], &env, None);
+    let unchanged = fs::read(dir.join("cacert.pem")).expect("read") == old
+        && fs::read_to_string(dir.join("SOURCE")).expect("read") == SOURCE;
+    (out, unchanged)
+}
+
+#[test]
+fn refresh_prints_the_titles_and_refuses_more_than_10_removed() {
+    let names = |range: std::ops::Range<usize>| -> Vec<String> {
+        range.map(|i| format!("Root {i:02}")).collect()
+    };
+    let new = titled_list(&[names(0..1), vec!["New Root".to_string()]].concat());
+    // 10 removed: accepted, each title printed before the list is written.
+    let (out, unchanged) = refresh_over("removed-10", &titled_list(&names(0..11)), &new, None);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}{}",
+        stdout(&out),
+        stderr(&out)
+    );
+    assert!(!unchanged);
+    let lines: Vec<String> = stdout(&out).lines().map(str::to_string).collect();
+    let mut expected = vec!["anchors-refresh: added New Root".to_string()];
+    expected.extend((1..11).map(|i| format!("anchors-refresh: removed Root {i:02}")));
+    expected.push("anchors-refresh: 2 certificates of 2026-02-02, sha256 ".to_string());
+    assert_eq!(lines.len(), expected.len(), "{lines:?}");
+    for (line, want) in lines.iter().zip(&expected) {
+        assert!(line.starts_with(want.as_str()), "{line:?} {want:?}");
+    }
+    // 11 removed: refused, nothing changed, the titles still printed and one refusal line.
+    let old = titled_list(&names(0..12));
+    let (out, unchanged) = refresh_over("removed-11", &old, &new, None);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "{}{}",
+        stdout(&out),
+        stderr(&out)
+    );
+    assert!(unchanged);
+    assert_eq!(
+        stdout(&out)
+            .lines()
+            .filter(|l| l.contains("removed"))
+            .count(),
+        11
+    );
+    assert_eq!(stderr(&out).lines().count(), 1, "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("removes 11 titles, more than 10"),
+        "{}",
+        stderr(&out)
+    );
+    // 11 removed with the bound named: accepted.
+    let (out, unchanged) = refresh_over("removed-11-named", &old, &new, Some("11"));
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}{}",
+        stdout(&out),
+        stderr(&out)
+    );
+    assert!(!unchanged);
+    // A bound that is not a number is refused.
+    let (out, unchanged) = refresh_over("removed-bad-bound", &old, &new, Some("eleven"));
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(unchanged);
+}
+
+#[test]
+fn refresh_refuses_a_target_that_is_not_a_regular_file() {
+    let dir = anchors_copy("refresh-target-dir");
+    fs::remove_file(dir.join("SOURCE")).expect("remove");
+    fs::create_dir(dir.join("SOURCE")).expect("a directory named SOURCE");
+    let list = small_list();
+    let input = Path::new(env!("CARGO_TARGET_TMPDIR")).join("tls-anchors-target-dir-in");
+    let _ = fs::remove_dir_all(&input);
+    fs::create_dir_all(&input).expect("create");
+    let file = input.join("new.pem");
+    let sum = input.join("new.sha256");
+    fs::write(&file, &list).expect("write");
+    fs::write(&sum, sha256_line(&list)).expect("write");
+    let out = run(
+        &[Path::new("refresh"), &dir],
+        &[
+            ("FILE", &file),
+            ("SHA256", &sum),
+            ("ANCHORS_REMOVED_MAX", Path::new("1000")),
+        ],
+        None,
+    );
+    let text = format!("{}{}", stdout(&out), stderr(&out));
+    assert_eq!(out.status.code(), Some(1), "{text}");
+    assert_eq!(text.lines().count(), 1, "{text}");
+    assert!(text.contains("is not a regular file"), "{text}");
+    assert_eq!(fs::read(dir.join("cacert.pem")).expect("read"), BUNDLE);
+    assert!(dir.join("SOURCE").is_dir());
+}
+
+#[test]
+fn refresh_refuses_blocks_out_of_order_and_a_header_not_spaced_as_curl_writes_it() {
+    let root = String::from_utf8(test_certs("ok-ed25519/root.pem")).expect("ASCII");
+    let header = "## Certificate data from Mozilla as of: Mon Feb  2 10:00:00 2026 GMT\n";
+    let end_first = root.replace("-----BEGIN CERTIFICATE-----\n", "");
+    let begin_twice = root.replace("-----END CERTIFICATE-----\n", "") + &root;
+    for (case, list) in [
+        (
+            "an END before its BEGIN",
+            format!("{header}{end_first}{root}"),
+        ),
+        ("a BEGIN inside a block", format!("{header}{begin_twice}")),
+        (
+            "a day not padded",
+            format!("## Certificate data from Mozilla as of: Mon Feb 2 10:00:00 2026 GMT\n{root}"),
+        ),
+        (
+            "a time of 24 hours",
+            format!("## Certificate data from Mozilla as of: Mon Feb  2 24:00:00 2026 GMT\n{root}"),
+        ),
+        (
+            "a year 0999",
+            format!("## Certificate data from Mozilla as of: Mon Feb  2 10:00:00 0999 GMT\n{root}"),
+        ),
+    ] {
+        let (out, unchanged) =
+            refresh_over("order-and-form", BUNDLE, list.as_bytes(), Some("1000"));
+        let text = format!("{}{}", stdout(&out), stderr(&out));
+        assert_eq!(out.status.code(), Some(1), "{case}: {text}");
+        assert_eq!(text.lines().count(), 1, "{case}: {text}");
+        assert!(unchanged, "{case}");
+    }
+}
+
 /// A directory with a `SOURCE` of the list date `date` and 118 certificates.
 fn source_of(name: &str, date: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("tls-anchors-age-{name}"));
@@ -1026,6 +1219,8 @@ fn age_refuses_what_it_cannot_read_with_one_line() {
             "2027-2-4",
         ),
         ("a month 13", vec![age, dir.as_path()], "2027-13-01"),
+        ("a year 0000", vec![age, dir.as_path()], "0000-01-01"),
+        ("a year 0800", vec![age, dir.as_path()], "0800-01-01"),
         (
             "a day 30 of February",
             vec![age, dir.as_path()],
