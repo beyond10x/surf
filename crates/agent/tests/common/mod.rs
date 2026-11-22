@@ -7,6 +7,7 @@
 mod base;
 
 pub use base::test_base;
+use surf_test_process::ended_within;
 
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, ErrorKind, Write};
@@ -16,7 +17,7 @@ use std::process::{Child, Command, Output, Stdio};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// A session identity with no letter in it, so that no window of [`TOKEN`] can occur in it.
 pub const SESSION: &str = "01234567-0123-4012-8012-012345678901";
@@ -115,8 +116,10 @@ impl Drop for TestDir {
     }
 }
 
-/// Send SIGKILL to `pid` and wait until it is gone, at most 2 seconds, if it is still a stand-in
-/// of these tests (a process id can be taken again by another program).
+/// Send SIGKILL to `pid` and wait until it has ended, at most 2 seconds (a cleanup: SIGKILL
+/// ends a stand-in within milliseconds), if it is still a stand-in of these tests (a process id
+/// can be taken again by another program). The stand-ins are started by `surf-agent`, not by
+/// the test, so no child handle of the test can kill them.
 pub fn kill(pid: u32) {
     let Ok(exe) = fs::read_link(format!("/proc/{pid}/exe")) else {
         return;
@@ -131,31 +134,7 @@ pub fn kill(pid: u32) {
         .arg(pid.to_string())
         .stderr(Stdio::null())
         .status();
-    let deadline = Instant::now() + Duration::from_secs(2);
-    while alive(pid) && Instant::now() < deadline {
-        thread::sleep(Duration::from_millis(20));
-    }
-}
-
-/// Whether `pid` runs, as `kill -0` says. A process whose `/proc/<pid>/stat` state is `Z`
-/// (zombie), `X` or `x` (dead, `proc_pid_stat(5)`) counts as gone: `X` is read while the parent
-/// reaps the zombie, before the process leaves `/proc`.
-pub fn alive(pid: u32) -> bool {
-    let status = fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
-    let state = status
-        .rsplit(')')
-        .next()
-        .unwrap_or("")
-        .trim_start()
-        .chars()
-        .next();
-    Command::new("kill")
-        .arg("-0")
-        .arg(pid.to_string())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
-        && !matches!(state, Some('Z' | 'X' | 'x'))
+    let _ = ended_within(pid, Duration::from_secs(2));
 }
 
 /// The stand-in `surfd` that `cargo test` built.

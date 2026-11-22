@@ -7,10 +7,13 @@
 
 mod common;
 
+use std::time::Duration;
+
 use common::{
-    PageServer, TestDir, agent, agent_call, alive, cmdline, contains, entries_under, golden,
-    opened, placeholders, run, stderr, stdout,
+    PageServer, TestDir, agent, agent_call, cmdline, contains, entries_under, golden, opened,
+    placeholders, run, stderr, stdout,
 };
+use surf_test_process::ended_within;
 
 /// The process id of the session process of `id`, found by its identity in its arguments.
 fn session_pid(dir: &TestDir, id: &str) -> u32 {
@@ -64,7 +67,11 @@ fn e2e_open_go_look_close() {
         stdout(&output),
         format!("surf 1 session {id} closed\ndid refused closed\n")
     );
-    assert!(!alive(pid), "the session process {pid} still runs");
+    // 5 s: the session process ends after its answer to `close` and surfd reaps it after that;
+    // no answer the test read waits for either.
+    if let Err(error) = ended_within(pid, Duration::from_secs(5)) {
+        panic!("the session process {pid} still runs: {error}");
+    }
     let left = entries_under(&dir.surf().join(id));
     assert!(
         left.is_empty(),

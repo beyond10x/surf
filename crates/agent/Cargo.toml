@@ -17,3 +17,6 @@ path = "src/main.rs"
 [dependencies]
 surf-answer = { path = "../answer" }
 surf-secret = { path = "../secret" }
+
+[dev-dependencies]
+surf-test-process = { path = "../test-process" }

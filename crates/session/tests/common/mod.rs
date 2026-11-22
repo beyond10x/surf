@@ -9,6 +9,7 @@
 mod base;
 
 pub use base::test_base;
+use surf_test_process::ended_within;
 
 use std::fs;
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
@@ -125,11 +126,10 @@ impl Drop for TestDir {
         for &pid in &pids {
             signal_kill(pid);
         }
+        // 10 s for all of them: a cleanup; SIGKILL ends each within milliseconds.
         let deadline = Instant::now() + Duration::from_secs(10);
         for pid in pids {
-            while alive(pid) && Instant::now() < deadline {
-                thread::sleep(Duration::from_millis(10));
-            }
+            let _ = ended_within(pid, deadline.saturating_duration_since(Instant::now()));
         }
         let _ = fs::remove_dir_all(&self.path);
     }
@@ -141,23 +141,6 @@ pub fn signal_kill(pid: u32) {
         .arg(pid.to_string())
         .stderr(Stdio::null())
         .status();
-}
-
-/// Whether `pid` runs. A process gone from `/proc` and one whose `stat` state is `Z` (zombie),
-/// `X` or `x` (dead, `proc_pid_stat(5)`) count as gone: `X` is read while the parent reaps the
-/// zombie, before the process leaves `/proc`.
-pub fn alive(pid: u32) -> bool {
-    let Ok(stat) = fs::read_to_string(format!("/proc/{pid}/stat")) else {
-        return false;
-    };
-    let state = stat
-        .rsplit(')')
-        .next()
-        .unwrap_or("")
-        .trim_start()
-        .chars()
-        .next();
-    state.is_some_and(|state| !matches!(state, 'Z' | 'X' | 'x'))
 }
 
 /// The arguments of process `pid`, split at their zero bytes.

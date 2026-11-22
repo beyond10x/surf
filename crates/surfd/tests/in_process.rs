@@ -12,6 +12,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use common::*;
 use surf_agent::wire;
+use surf_test_process::{alive, ended_within};
 use surfd::{Identities, State};
 
 /// The entries of the case's `surf/`, sorted.
@@ -179,7 +180,11 @@ fn case_09_a_session_that_never_reports_ready_is_killed() {
     let starts = dir.starts();
     assert_eq!(starts.len(), 1);
     assert!(dir.stand_in_ends(starts[0].0, ALLOWED), "the stand-in runs");
-    assert!(!alive(starts[0].0));
+    // ALLOWED: the stand-in released its lock during its exit, before its state is `Z`, and
+    // surfd reaps it after that.
+    if let Err(error) = ended_within(starts[0].0, ALLOWED) {
+        panic!("the stand-in that never reported ready was not killed: {error}");
+    }
     assert_eq!(surf_entries(&dir), ONLY_DAEMON);
     assert!(daemon.sessions().is_empty());
 }

@@ -1,0 +1,73 @@
+version: '3'
+
+set: [pipefail]
+
+tasks:
+  planning-only-test:
+    desc: Give taskfiles/planning-only.sh both sides, planning-only lists and lists that need the gate.
+    summary: |
+      Give taskfiles/planning-only.sh both sides, planning-only lists and lists that need the gate.
+
+      The workflow check skips building and testing a pull request whose changed files that
+      script calls planning or prose only. Each case pipes a list of paths into it and compares
+      its exit status: 0 for a list of planning and prose files only (.engineering/, docs/plan/,
+      README.md, AGENTS.md, another *.md outside website/), 1 for the same list with one file of
+      crates/, with one website/docs/*.md, with one *.md the gate reads (docs/view-stream.md,
+      docs/design/html-parser.md), with one *.md under crates/, and for an empty list.
+
+      SCRIPT names the script under test (default taskfiles/planning-only.sh), so that a planted
+      defect can be run in a copy. It prints one line per case that is decided otherwise and fails,
+      or one line with the count.
+    dir: '{{.TASKFILE_DIR}}/..'
+    silent: true
+    vars:
+      SCRIPT: '{{.SCRIPT | default "taskfiles/planning-only.sh"}}'
+    cmds:
+      - |
+        script='{{.SCRIPT}}'
+        test -f "$script" || { echo "$script: missing"; exit 1; }
+        planning='.engineering/planning/story/local-gate-equals-forge.md
+        .engineering/planning/epic/headless-rust-target.md
+        docs/plan/agent-wave-9.md
+        README.md
+        AGENTS.md
+        CHANGELOG.md
+        docs/releasing.md'
+        cases=0
+        wrong=0
+        check() {
+          expected=$1
+          name=$2
+          list=$3
+          cases=$((cases + 1))
+          status=0
+          if [ -n "$list" ]; then
+            printf '%s\n' "$list" | sh "$script" > /dev/null 2>&1 || status=$?
+          else
+            sh "$script" < /dev/null > /dev/null 2>&1 || status=$?
+          fi
+          if [ "$status" -ne "$expected" ]; then
+            echo "planning-only-test: $name: exit $status, expected $expected"
+            wrong=$((wrong + 1))
+          fi
+        }
+        check 0 "planning and prose files only" "$planning"
+        check 0 "one file of docs/plan/ in a subdirectory" "docs/plan/notes/a.json"
+        check 1 "with one file of crates/" "$planning
+        crates/agent/src/wire.rs"
+        check 1 "with one website/docs/*.md" "$planning
+        website/docs/status.md"
+        check 1 "with docs/view-stream.md, which the gate reads" "$planning
+        docs/view-stream.md"
+        check 1 "with docs/design/html-parser.md, which the gate reads" "$planning
+        docs/design/html-parser.md"
+        check 1 "with one *.md under crates/" "$planning
+        crates/url/tests/data/LICENSE.md"
+        check 1 "with the workflow check itself" "$planning
+        .github/workflows/check.yml"
+        check 1 "an empty list" ""
+        if [ "$wrong" -ne 0 ]; then
+          echo "planning-only-test: $wrong of $cases case(s) decided otherwise by $script"
+          exit 1
+        fi
+        echo "planning-only-test: $cases case(s), each decided as expected by $script"

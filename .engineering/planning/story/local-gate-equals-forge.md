@@ -2,12 +2,73 @@
 format: aep.planning-md/3
 id: story:local-gate-equals-forge
 kind: story
-status: draft
+status: implemented
 title: The local gate runs as the forge's runner does, and a red forge run fails the watch script
 summary: On 2026-11-21 the forge's check went red twice after a green local gate, both in a test that decides from one read whether another process has ended. One pinned rustc read by both, a task that runs the gate in the runner's form on a clean export, one tested helper with a bounded wait for an ended process, and a watch script in the repository that exits non-zero on a red run.
 relations:
 - decomposes: epic:headless-rust-target
-revision: 1
+scope:
+- confidence: cited
+  path: .github/workflows/check.yml
+- confidence: cited
+  path: .github/workflows/release.yml
+- confidence: cited
+  path: AGENTS.md
+- confidence: cited
+  path: Cargo.lock
+- confidence: cited
+  path: Cargo.toml
+- confidence: cited
+  path: README.md
+- confidence: cited
+  path: Taskfile.yml
+- confidence: cited
+  path: crates/agent/Cargo.toml
+- confidence: cited
+  path: crates/agent/tests
+- confidence: cited
+  path: crates/session/Cargo.toml
+- confidence: cited
+  path: crates/session/tests
+- confidence: cited
+  path: crates/surfd/Cargo.toml
+- confidence: cited
+  path: crates/surfd/tests
+- confidence: cited
+  path: crates/surfd/tests/log.rs
+- confidence: cited
+  path: crates/test-process
+- confidence: cited
+  path: crates/view-fixture/Cargo.toml
+- confidence: cited
+  path: crates/view-fixture/src/main.rs
+- confidence: cited
+  path: crates/view-fixture/tests
+- confidence: cited
+  path: docs/badges/make.sh
+- confidence: cited
+  path: docs/badges/tests.svg
+- confidence: cited
+  path: docs/releasing.md
+- confidence: cited
+  path: rust-toolchain.toml
+- confidence: cited
+  path: taskfiles/forge-watch.sh
+- confidence: cited
+  path: taskfiles/planning-only.sh
+- confidence: cited
+  path: view-tests/tests/adversary-detail.spec.mjs
+- confidence: cited
+  path: website/docs/how-it-is-built.md
+- confidence: cited
+  path: website/docs/status.md
+- confidence: cited
+  path: website/docs/what-works.md
+revision: 33
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-21T23:35:07Z", actor: "human:operator", revision: 21}
+- {from: "proposed", to: "active", at: "2026-11-21T23:35:08Z", actor: "human:operator", revision: 22}
+- {from: "active", to: "implemented", at: "2026-11-22T03:26:39Z", actor: "human:operator", revision: 33, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 
@@ -91,3 +152,14 @@ files only and fails for a list that holds one file of `crates/` or of `website/
 
 The forge's rulesets and branch protection. The other workflows, but for the rustc release
 `release` names. A second runner image.
+
+## Added while the unit ran
+
+Two tests failed while the story was built, each once and each on the loaded machine, and both were test faults.
+
+- `case_11_the_bound_over_all_sessions_drops_an_ended_log_whole` (`crates/surfd/tests/log.rs`) asserted that the log of a closed session is still kept; `surfd` keeps the entries of the `close` answer before or after it lists the session ended, and after it they drop the ended log under the bound of the test. 10 of 100 runs on one processor were red before, 0 of 100 after (e7c2abf).
+- The page test "a click on a mark beside its short name selects that event" read a box in two steps while the page drew its timeline again at the opening of its stream. 1 of 40 runs under four busy processes was red before, 0 of 40 after (ff19f1c).
+- `taskfiles/check-runner.sh` first emptied `RUSTC_WRAPPER`; it now leaves the compiler cache of the machine in use (a758451).
+- The planning-only path list excludes `*.md` under the code directories and two documents the gate reads.
+
+Found and not changed: the page of the live view writes "live" after its first load, before its stream is open (`crates/view/web/view.js`); `story:view-live-means-stream-open` is its draft.

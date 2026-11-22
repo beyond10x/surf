@@ -35,7 +35,7 @@ grey="#757575"
 
 badge spec.svg "spec" "ESS 0.96.0, valid" "$blue"
 badge conformance.svg "conformance" "95 of 95 scenarios" "$green"
-badge tests.svg "tests" "555 passed" "$green"
+badge tests.svg "tests" "561 passed" "$green"
 badge dependencies.svg "third-party crates shipped" "0" "$green"
 badge unsafe.svg "unsafe code" "forbidden" "$green"
 badge complete.svg "standard sections marked complete" "0" "$grey"

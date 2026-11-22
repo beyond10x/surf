@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T03:26:39Z",
+  "actor": "human:operator",
+  "artifact": "story:local-gate-equals-forge",
+  "kind": "story",
+  "revision": 32,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the coordinator's reading of the units' changes (6fabcfb, a758451, c0e5079, e7c2abf, ff19f1c, 9b8c0ca) and of their logs, and the repository's watch script run against the forge's runs of two commits",
+    "reference": "rust-toolchain.toml pins rustc 1.99.1 and the workflows check and release read it; task check-runner exports HEAD and runs task check with the runner's environment, and refused a tree with an untracked file a test read while task check in the tree passed; taskfiles/forge-watch.sh exited 1 on the runs of 61fb7a9 (check failed) and 0 on the runs of e47b1d1, read from the forge; 6 recorded run files and 9 path cases are decided in the gate; crates/test-process is the one helper for an ended process, 8 tests, 9 planted defects 9 red; with the helper of 61fb7a9 the state X was read 0 times in 22 runs on one processor, so the line tests are the catch; two test faults found on the way are fixed (10 of 100 red to 0 of 100; 1 of 40 red to 0 of 40); not checked before the forge runs it: the workflows' steps that read the toolchain file, the skipped steps of a planning-only pull request, sed on the macOS runner of release; verdict VERIFIED for the local side"
+  }
+}
