@@ -53,9 +53,9 @@ types:
   # 64 lower-case hexadecimal digits. It is not declared as an `alphabet:` or a length: the
   # command-line binding refuses a constrained type ("invariants are explicit refusals",
   # ess-cli/2), so the form is checked by the code that issues and reads it.
-  # It is named only by the four command-line shapes below that carry it (`SessionCall`,
-  # `LookCall`, `GoCall`, `OpenedSession`): no entity, command, event or view holds it, so no
-  # stored row and no published event carries the secret.
+  # It is named only by the five command-line shapes below that carry it (`SessionCall`,
+  # `LookCall`, `GoCall`, `FollowCall`, `OpenedSession`): no entity, command, event or view holds
+  # it, so no stored row and no published event carries the secret.
   # UNMAPPED: that a session's token is what makes its caller `surf.agent.SessionHolder`. The
   # session process issues the token when it opens its session, keeps only a hash of it, compares
   # a presented token with it in constant time, and sends the call as `SessionHolder` with that
@@ -146,6 +146,20 @@ types:
         type: Optional<surf.agent.PageForm>
       - name: from_line
         type: Optional<Integer>
+
+  # `handle` is a word the session gave in a `now` line (`l4`); the session process holds the map
+  # from handle to element, so the shape carries the word as typed.
+  - name: surf.agent.FollowCall
+    kind: struct
+    naming:
+      summary: The handle of the link to follow in a session, and the token that proves the caller holds it.
+    fields:
+      - name: session_id
+        type: String
+      - name: token
+        type: surf.agent.SessionToken
+      - name: handle
+        type: String
 
   - name: surf.agent.OpenedSession
     kind: struct

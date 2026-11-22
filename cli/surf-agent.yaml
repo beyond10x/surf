@@ -8,7 +8,8 @@
 # measurements A and B).
 #
 # The commands are those of docs/design/agent-interface.md, section 4, slice 1: `open [<url>]`,
-# `go <url>`, `look`, `close`. Every callable is `local`: the token is a credential and not an
+# `go <url>`, `look`, `close`; and of step 3 of its section 9: `follow <handle>`, a handle of the
+# answer's `now` block. Every callable is `local`: the token is a credential and not an
 # input of any specification command, so a `service_forward` callable could not carry it. Each
 # command's `about` names what the client asks the session for.
 #
@@ -45,6 +46,10 @@ callables:
   look:
     target: {kind: local, owner: surf.agent.cli, action: look}
     input: surf.agent.LookCall
+    result: surf.agent.SessionReadout
+  follow:
+    target: {kind: local, owner: surf.agent.cli, action: follow}
+    input: surf.agent.FollowCall
     result: surf.agent.SessionReadout
   close:
     target: {kind: local, owner: surf.agent.cli, action: close}
@@ -92,6 +97,16 @@ commands:
         source: {kind: option, long: as}
       - field: from_line
         source: {kind: option, long: from-line}
+  - path: [follow]
+    callable: follow
+    about: Follow the link of a handle of the now block and print the session's state
+    arguments:
+      - field: handle
+        source: {kind: positional, index: 1}
+      - field: session_id
+        source: {kind: option, long: session}
+      - field: token
+        source: {kind: protected, file: token-file, stdin: token-stdin, hidden_tty: token-prompt}
   - path: [close]
     callable: close
     about: Close the session and its tab and print its final state

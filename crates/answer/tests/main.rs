@@ -7,5 +7,6 @@ mod cut;
 mod forging;
 mod golden;
 mod note_parser;
+mod now;
 mod parse;
 mod unquote;

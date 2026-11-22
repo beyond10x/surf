@@ -1,0 +1,12 @@
+surf 1 session <id> open
+page 200 "text/html" "http://127.0.0.1:<port>/links/index.html" "Links"
+path 2 of 2
+  1 open
+  2 go "http://127.0.0.1:<port>/links/index.html"
+now 5 of 5
+  l1 link ? "Next page" -> "/links/next.html"
+  l2 link ? "Elsewhere" -> "http://other.example/x?y#z"
+  l3 link hid "Members" -> "/secret"
+  l4 link ? "Behind aria" -> "/aria"
+  l5 link ? "Broken" -> "http://[" unresolved
+note visibility: hidden attribute only

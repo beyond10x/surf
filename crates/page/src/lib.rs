@@ -166,6 +166,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod base_url;
 mod label;
 
 use surf_html::{Attribute, Namespace, NodeData, NodeId, Tree};

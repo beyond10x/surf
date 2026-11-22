@@ -246,7 +246,12 @@ above, and the list of standards itself was written from memory.
     every body line behind `>`, its characters checked by `escaped_in_text`
     (`escaped_at_run_start`, `quote_text`, `quote_text_cut`, `text_page`, `render_text_whole`;
     at most 200 body lines and 32,768 bytes, then a `more` line), and the notes `note text:
-    no-css`, `no-document` and `deep <n>` (`TextNote`). No dependency.
+    no-css`, `no-document` and `deep <n>` (`TextNote`). Since round 2
+    (`story:agent-follow-links`) the `now` block of links (`Now`, `Element`, `Visibility`,
+    `Target`; label cut at `LABEL_CHARS_MAX` 60, target at `TARGET_CHARS_MAX` 1,024, both read
+    back through `Cut`), `note visibility: hidden attribute only`, the `path` line of an action on
+    an element (`3 follow l1 "Sign in"`, `PathEntry::handle`) and the refusal reasons
+    `unknown-handle`, `hidden` and `unresolved`. No dependency.
   - `crates/secret` (`surf-secret`): the operating system random source, the comparison in
     constant time and the 32-byte token. Every secret and every random identity of the agent
     and the view comes from here. No dependency.
@@ -358,7 +363,7 @@ above, and the list of standards itself was written from memory.
     component and a relative path are refused. `tests/start.rs` has the six tests of the checks,
     each against a listener of the test. Since wave
     4 `surf-agent open`, `go`, `look` and `close` run against a real `surfd` and a real session
-    process; the package carries the release version, `0.4.0`, as do `surf-cli`, `surfd` and
+    process, and since round 2 `follow <handle>` (`story:agent-follow-links`); the package carries the release version, `0.4.0`, as do `surf-cli`, `surfd` and
     `surf-session`. `open` starts `surfd` from the directory of its own executable. Depends on
     `surf-answer` and `surf-secret`.
   - `crates/surfd` (`surfd`): a library and the binary `surfd`, the daemon the agent command line
@@ -392,7 +397,7 @@ above, and the list of standards itself was written from memory.
     `surf-answer`, `surf-secret` and `surf-view`.
   - `crates/session` (`surf-session`): one agent session. A library core over any transport
     and the binary `surf-session`, which `surfd` starts, one process per session. It draws the
-    session token, answers `open`, `go`, `look` and `close` in the format of
+    session token, answers `open`, `go`, `look`, `follow` and `close` in the format of
     `docs/agent-answer.md`, issues the model commands for each (`OpenSession`, `Go`,
     `CloseSession`, `RecordAction`) and loads pages through the `surf` library with
     `surf-fetch`: `http:` only. The token is compared in constant time and is in no command
@@ -412,19 +417,27 @@ above, and the list of standards itself was written from memory.
     most four times its length plus two bytes. Since wave 8 the entries of
     `NavigationStarted` and `RequestStarted` carry `method`, `body` as `<n> bytes` and
     `body_type`, an absent one as the field with no value; its transport is `surf::fetch_http`,
-    which since wave 9 sends a `Post` (no command of the session sends one yet). 73 tests:
+    which since wave 9 sends a `Post` (no command of the session sends one yet). 92 tests:
     `adversary_document_text` 7, `adversary_events` 1, `adversary_parse` 4, `adversary_view`
     1, `built` 11, `core` 22, `e2e` 2 (runs the three built binaries, or those in
-    `SURF_BIN_DIR`), `events` 17, `memory` 1, `redirect` 2 and `view` 5 (the live view of
+    `SURF_BIN_DIR`), `events` 18, `follow` 17, `memory` 2, `redirect` 2 and `view` 5 (the live view of
     `surfd` over the real session).
     `open <url>`, `go <url>` and `look` take `--as tree|markdown [--from-line <n>]` and print the
     page as an outline or as Markdown in a `text` block, computed at each call from the tree
     `surf::Browser::document_tree` keeps for the document of the session's current navigation
     (nothing fetched again); with no HTML document `note text: no-document` and no block; the
     call records the same action, events and path as without `--as`.
+    Since round 2 (`story:agent-follow-links`) the `page` line and the status record carry the
+    document's title (at most 1,024 characters, `TITLE_CHARS_MAX`), and an answer without `--as`
+    lists the current document's links in the `now` block (handles from `surf_page::handles`, `hid`
+    from the `hidden` attribute alone, targets resolved against
+    `surf_page::base_url::document_base_url`, at most `NOW_BYTES_MAX` bytes) with `note
+    visibility: hidden attribute only`; `follow <handle>` issues `Follow` and records `follow`
+    with the address, handle and label, or is refused `unknown-handle`, `hidden` or
+    `unresolved` (status 1).
     `cargo clippy -p surf-session` needs `--no-deps`: the generated `surf-types` fails clippy.
-    Depends on the `surf` library, `surf-ports`, `surf-fetch`, `surf-answer`,
-    `surf-page-text`, `surf-secret`, the
+    Depends on the `surf` library, `surf-ports`, `surf-fetch`, `surf-answer`, `surf-html`,
+    `surf-page`, `surf-page-text`, `surf-secret`, `surf-url`, the
     generated `surf-types`, and on `surf-agent` and `surfd` (the packages of the other two
     binaries, for the end-to-end test and the wire).
   - `crates/view` (`surf-view`): the live view's HTTP server, standard library only: `GET` only, a
@@ -574,10 +587,13 @@ above, and the list of standards itself was written from memory.
     the copy of the selected `option` the parser puts into a `selectedcontent`, from which
     `actionable_elements` lists no row (surf's reading, not the standard's rendering). Since
     `story:html-document-port` (round 1) `surf` depends on it, and `surf-page-text` too.
-    65 tests: 28 in `tests/elements.rs`, 34 in `tests/label.rs`, 1 each in
-    `tests/tree_tables.rs` and `tests/tree_template.rs` (the parser unit's) and 1 in
+    69 tests: 28 in `tests/elements.rs`, 35 in `tests/label.rs`, 3 in `tests/base_url.rs`,
+    1 each in `tests/tree_tables.rs` and `tests/tree_template.rs` (the parser unit's) and 1 in
     `tests/adversary_select.rs` (the parser adversary's), modules of the one test binary
-    (`story:one-test-binary-per-crate`). Standard library and `surf-html` only.
+    (`story:one-test-binary-per-crate`). Since round 2 (`story:agent-follow-links`) it has
+    `base_url::document_base_url`, the one owner of the document base URL (the first `base`
+    with `href`, parsed against the document address). Standard library, `surf-html` and
+    `surf-url` only.
   - `crates/page-text` (`surf-page-text`): a `surf-html` tree as text, the outline
     (`outline`) and Markdown (`markdown::markdown`, tables as GitHub tables since
     `story:page-text-tables`), each line without the answer's `> `, one at a time.
@@ -1165,8 +1181,9 @@ authored), 48 refusal(s)` (`slot task suite`; the document unit read the same on
 Against the interpreter and against the Rust system: `169 scenarios: 169 passed, 0 failed, 0
 error, 0 unsupported`; `conform-totals`: `the interpreter and the Rust system ran 169
 scenario(s) each, of suite
-sha256:81fd1b7b25c7e95459d58100a7a1b7fb30551921658349aba516bdf4b150459a` (the digest since
-`story:values-and-labels-before-fill`, which changed four events; no gate step compares it).
+sha256:95b3119d869d65aec04eaf21d4f9a762352056b6d22b23f0ad1e5a7678f2c672` (the digest since
+`story:agent-follow-links`, which added the shape `surf.agent.FollowCall`; no gate step
+compares it).
 The planted defect:
 `planted defect: 169 scenarios: 133 passed, 36 failed, 0 error, 0 unsupported`; the
 conformance crate's `tests/main.rs` ran 15 passed. `generated-check`: `generated/rust matches

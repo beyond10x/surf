@@ -88,17 +88,21 @@ last field is `-` for a row with neither target nor value.
 On Linux, `surf-agent` drives a browser session one call at a time, for an AI agent or a
 script. `surf-agent open <url>` opens a session, loads the address and prints the session's
 identity and a token, once. Export the two as `SURF_SESSION` and `SURF_TOKEN`; then `go <url>`,
-`look` and `close` take the session as their subject. Each call answers in a few plain lines. A
-run of `go`:
+`look`, `follow <handle>` and `close` take the session as their subject. Each call answers in a
+few plain lines. `now` lists every link with a handle such as `l3`; `follow l3` goes there. `?`
+means visibility is not computed; only the `hidden` attribute is known. A run of `go`:
 
 ```console
 $ surf-agent go http://example.org/
 surf 1 session cef9d223-7fdb-4151-85af-6c6d71d4fece open
 did go "http://example.org/"
-page 200 "text/html" "http://example.org/"
+page 200 "text/html" "http://example.org/" "Example Domain"
 path 2 of 2
   1 open
   2 go "http://example.org/"
+now 1 of 1
+  l1 link ? "Learn more" -> "https://iana.org/domains/example"
+note visibility: hidden attribute only
 ```
 
 What it does not do yet:
@@ -107,10 +111,11 @@ What it does not do yet:
 - Release `0.2.0` delivers a redirect status as the response. Since release `0.3.0`, a `go`
   follows redirects.
 - No JavaScript and no rendering.
-- An answer holds the status, the media type and the address, and no title. Since release
+- An answer holds the status, the media type, the address and the title. Since release
   `0.4.0`, `--as tree` or `--as markdown` adds the page as text.
-- A link cannot be followed and a form cannot be filled or submitted yet: the commands are
-  `open`, `go`, `look` and `close`.
+- A form cannot be filled or submitted yet: the commands are `open`, `go`, `look`, `follow`
+  and `close`. Visibility is not computed: `now` says `hid` for the `hidden` attribute and `?`
+  for every other link.
 - The agent binaries run on Linux only.
 
 The commands, the token, the exit statuses and the answer, one by one:
@@ -450,7 +455,7 @@ surf v1 — 9 file(s), 24 scenario(s), valid
   169 scenarios: 169 passed, 0 failed, 0 error, 0 unsupported
 169 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
   169 scenarios: 169 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 169 scenario(s) each, of suite sha256:81fd1b7b25c7e95459d58100a7a1b7fb30551921658349aba516bdf4b150459a
+the interpreter and the Rust system ran 169 scenario(s) each, of suite sha256:95b3119d869d65aec04eaf21d4f9a762352056b6d22b23f0ad1e5a7678f2c672
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 Cargo.lock: 26 package(s), none from outside this repository

@@ -7,6 +7,20 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ## [Unreleased]
 
+### Added
+
+- `surf-agent follow <handle>` follows a link of the current page. An answer without `--as`
+  lists the page's links in a `now` block, one line each, such as `l1 link ? "Opening hours" ->
+  "/about/hours.html"`: the handle, `hid` when the `hidden` attribute hides the link and `?`
+  otherwise (visibility is not computed, as `note visibility: hidden attribute only` says), the
+  label cut at 60 characters, and the target resolved against the page's base URL, as a path on
+  the page's own origin, or as written with `unresolved`. `follow` of a handle the page has not,
+  of a hidden link or of an unresolved target exits 1 with `did refused unknown-handle`,
+  `hidden` or `unresolved`. A followed link's `path` line is `3 follow l1 "Opening hours"`.
+  Format: [`docs/agent-answer.md`](docs/agent-answer.md).
+- The `page` line of an agent answer ends with the page's title, and the live view's session
+  list shows it. A title longer than 1,024 characters is left out.
+
 ### Changed
 
 - `surf <url>` no longer prints a password: the last field of the `element` line of a

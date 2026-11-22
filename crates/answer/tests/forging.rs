@@ -1,13 +1,15 @@
 //! The forging matrix: each of 10 forging values rendered into each of the 5 outside fields of
-//! step 1. Every answer holds only bytes from U+0020 to U+007E and line feeds, has exactly the
+//! step 1 and the 4 of `story:agent-follow-links` (the label and the target of a `now` line,
+//! resolved and unresolved, and the label of a `path` line). Every answer holds only bytes from U+0020 to U+007E and line feeds, has exactly the
 //! line count of the same answer with a plain value, and `parse` gives back exactly the values
 //! given. The body line of the `text` block is the sixth field: through `quote_text` every
 //! value renders and holds no character rule 2 escapes; written raw, a value that could end its
 //! line is refused by `render`.
 
 use surf_answer::{
-    Answer, Did, Form, Head, Note, Page, Path, PathEntry, SessionState, Text, TextNote,
-    escaped_at_run_start, escaped_in_text, parse, quote_text, quote_text_cut, render,
+    Answer, Cut, Did, Element, Form, Head, LABEL_CHARS_MAX, Note, Now, Page, Path, PathEntry,
+    SessionState, TARGET_CHARS_MAX, Target, Text, TextNote, Visibility, escaped_at_run_start,
+    escaped_in_text, parse, quote_text, quote_text_cut, render,
 };
 
 /// The 10 forging values, each with a name for the failure message.
@@ -53,12 +55,16 @@ fn plain_loaded(media_type: &str, address: &str, title: &str, argument: &str) ->
             PathEntry {
                 sequence: 1,
                 command: "open".to_string(),
+                handle: None,
                 argument: None,
+                argument_cut: false,
             },
             PathEntry {
                 sequence: 2,
                 command: "go".to_string(),
+                handle: None,
                 argument: Some(argument.to_string()),
+                argument_cut: false,
             },
         ],
     });
@@ -208,6 +214,79 @@ fn forging_text_body_line_raw_is_refused_or_kept_in_its_line() {
 fn forging_path_argument() {
     let equal = matrix("path argument", |value| {
         plain_loaded("text/html", "http://example.org/", "Home", value)
+    });
+    assert_eq!(equal, 10);
+}
+
+/// The plain answer with a `now` block of two link lines, the first with the label and target
+/// given, cut at their limits as the session cuts them, and `note visibility:`.
+fn with_now(label: &str, target: Target) -> Answer {
+    let mut answer = plain_loaded("text/html", "http://example.org/", "Home", "plain");
+    answer.now = Some(Now {
+        total: 2,
+        elements: vec![
+            Element {
+                handle: "l1".to_string(),
+                kind: "link".to_string(),
+                visibility: Visibility::Unknown,
+                label: Cut::of(label, LABEL_CHARS_MAX),
+                target,
+            },
+            Element {
+                handle: "l2".to_string(),
+                kind: "link".to_string(),
+                visibility: Visibility::Hidden,
+                label: Cut::of("after", LABEL_CHARS_MAX),
+                target: Target::Resolved(Cut::of("/after", TARGET_CHARS_MAX)),
+            },
+        ],
+    });
+    answer.notes = vec![Note::Visibility];
+    answer
+}
+
+#[test]
+fn forging_now_label() {
+    let equal = matrix("now label", |value| {
+        with_now(value, Target::Resolved(Cut::of("/", TARGET_CHARS_MAX)))
+    });
+    assert_eq!(equal, 10);
+}
+
+#[test]
+fn forging_now_target() {
+    let equal = matrix("now target", |value| {
+        with_now("plain", Target::Resolved(Cut::of(value, TARGET_CHARS_MAX)))
+    });
+    assert_eq!(equal, 10);
+}
+
+#[test]
+fn forging_now_target_unresolved() {
+    let equal = matrix("now target unresolved", |value| {
+        with_now(
+            "plain",
+            Target::Unresolved(Cut::of(value, TARGET_CHARS_MAX)),
+        )
+    });
+    assert_eq!(equal, 10);
+}
+
+#[test]
+fn forging_path_label() {
+    let equal = matrix("path label", |value| {
+        let mut answer = plain_loaded("text/html", "http://example.org/", "Home", "plain");
+        let label = Cut::of(value, LABEL_CHARS_MAX);
+        if let Some(path) = &mut answer.path {
+            path.entries[1] = PathEntry {
+                sequence: 2,
+                command: "follow".to_string(),
+                handle: Some("l1".to_string()),
+                argument: Some(label.kept),
+                argument_cut: label.cut,
+            };
+        }
+        answer
     });
     assert_eq!(equal, 10);
 }

@@ -12,6 +12,7 @@ mod common;
 mod core;
 mod e2e;
 mod events;
+mod follow;
 mod memory;
 mod redirect;
 mod view;

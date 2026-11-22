@@ -77,6 +77,53 @@ fn as_and_from_line_used_wrongly_exit_2_and_send_nothing() {
     assert!(dir.starts().is_empty());
 }
 
+/// `story:agent-follow-links`: `follow` takes one handle; without it, with two, or with an
+/// option it does not take it is usage, status 2, and nothing is sent. With one handle the
+/// parser sends `arg handle` and nothing else.
+#[test]
+fn follow_takes_one_handle() {
+    let dir = TestDir::new();
+    for (args, says) in [
+        (vec!["follow"], "follow needs a handle"),
+        (
+            vec!["follow", "l1", "l2"],
+            "follow takes at most 1 positional word",
+        ),
+        (
+            vec!["follow", "l1", "--as", "tree"],
+            "is not an option of follow",
+        ),
+    ] {
+        let output = run(agent(&dir)
+            .args(&args)
+            .env("SURF_SESSION", SESSION)
+            .env("SURF_TOKEN", TOKEN));
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert_eq!(stdout(&output), "", "{args:?}");
+        let printed = stderr(&output);
+        assert!(printed.contains(says), "{args:?}: {printed}");
+        assert!(printed.contains("surf-agent follow <handle>"), "{printed}");
+    }
+    assert!(!dir.runtime().join("surf").exists(), "nothing was sent");
+
+    let env = surf_agent::cli::Environment {
+        runtime_dir: Some(dir.runtime().into()),
+        session: Some(SESSION.into()),
+        token: Some(TOKEN.into()),
+        program_dir: None,
+    };
+    let call = surf_agent::cli::parse(&["follow".into(), "l3".into()], &env).expect("a call");
+    let request = call.request();
+    assert_eq!(request.command, "follow");
+    assert_eq!(request.session.as_deref(), Some(SESSION));
+    let args: Vec<(&str, &str)> = request
+        .args
+        .iter()
+        .map(|arg| (arg.name.as_str(), arg.value.as_str()))
+        .collect();
+    assert_eq!(args, vec![("handle", "l3")]);
+}
+
 /// A standard input that is a file the test holds open: a read by the child would move the
 /// offset the two share.
 fn stdin_file(dir: &TestDir) -> (File, File) {

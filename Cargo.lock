@@ -118,6 +118,7 @@ name = "surf-page"
 version = "0.1.0"
 dependencies = [
  "surf-html",
+ "surf-url",
 ]
 
 [[package]]
@@ -154,11 +155,14 @@ dependencies = [
  "surf-agent",
  "surf-answer",
  "surf-fetch",
+ "surf-html",
+ "surf-page",
  "surf-page-text",
  "surf-ports",
  "surf-secret",
  "surf-test-process",
  "surf-types",
+ "surf-url",
  "surfd",
 ]
 

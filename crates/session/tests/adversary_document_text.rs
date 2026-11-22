@@ -174,7 +174,9 @@ fn edges(total: u64) -> Vec<u64> {
 #[test]
 fn adversary_document_kept_pages_equal_a_fresh_rendering_at_every_edge() {
     let (mut session, token) = open();
-    for path in ["/split", "/cut", "/empty", "/fence", "/table", "/hostile", "/one"] {
+    for path in [
+        "/split", "/cut", "/empty", "/fence", "/table", "/hostile", "/one",
+    ] {
         for form in [Form::Markdown, Form::Tree] {
             let other = match form {
                 Form::Tree => "markdown",
@@ -229,7 +231,11 @@ fn adversary_document_no_kept_text_outlives_its_document() {
     for gone in ["/unreachable", "/plain"] {
         let (status, _) = call(
             &mut session,
-            &holder("go", &token, &[("url", &url("/split")), ("form", "markdown")]),
+            &holder(
+                "go",
+                &token,
+                &[("url", &url("/split")), ("form", "markdown")],
+            ),
         );
         assert_eq!(status, 0);
         for form in ["tree", "markdown"] {
@@ -247,8 +253,7 @@ fn adversary_document_no_kept_text_outlives_its_document() {
         let (_, text) = call(&mut session, &holder("go", &token, &[("url", &url(gone))]));
         assert!(text.contains("\npage "), "{text}");
         for form in ["tree", "markdown"] {
-            let (status, text) =
-                call(&mut session, &holder("look", &token, &[("form", form)]));
+            let (status, text) = call(&mut session, &holder("look", &token, &[("form", form)]));
             assert_eq!(status, 0, "{text}");
             assert!(
                 text.ends_with("note text: no-document\n"),
@@ -272,7 +277,11 @@ fn adversary_document_line_edges_of_the_wire() {
     let (mut session, token) = open();
     let (status, _) = call(
         &mut session,
-        &holder("go", &token, &[("url", &url("/split")), ("form", "markdown")]),
+        &holder(
+            "go",
+            &token,
+            &[("url", &url("/split")), ("form", "markdown")],
+        ),
     );
     assert_eq!(status, 0);
     let (status, text) = call(
@@ -289,7 +298,15 @@ fn adversary_document_line_edges_of_the_wire() {
         "{text}"
     );
     assert!(!text.contains("\nmore "), "{text}");
-    for line in ["18446744073709551616", "-1", " 1", "1 ", "\u{661}", "0x1", "0"] {
+    for line in [
+        "18446744073709551616",
+        "-1",
+        " 1",
+        "1 ",
+        "\u{661}",
+        "0x1",
+        "0",
+    ] {
         let (status, text) = call(
             &mut session,
             &holder("look", &token, &[("form", "markdown"), ("line", line)]),
@@ -383,7 +400,11 @@ fn adversary_document_hostile_page_text_keeps_the_lines_rule() {
 #[test]
 fn adversary_document_one_level_past_the_bound_says_deep_1() {
     let (mut session, token) = open();
-    let go = holder("go", &token, &[("url", &url("/deep1")), ("form", "markdown")]);
+    let go = holder(
+        "go",
+        &token,
+        &[("url", &url("/deep1")), ("form", "markdown")],
+    );
     let look = holder("look", &token, &[("form", "markdown")]);
     for request in [&go, &look] {
         let (status, text) = call(&mut session, request);
@@ -398,8 +419,10 @@ fn adversary_document_one_level_past_the_bound_says_deep_1() {
 }
 
 /// `story:agent-forms-spec` specifies `fill`, `pick`, `press` and `follow`; the session does not
-/// take them yet. A value sent with one, or beside `go` and `look`, is refused as usage and
-/// reaches no answer line, no reason and no entry.
+/// take the first three yet. A value sent with one, or beside `go` and `look`, is refused as usage
+/// and reaches no answer line, no reason and no entry. Since `story:agent-follow-links` the
+/// session takes `follow`: a handle it did not give is refused `unknown-handle` (status 1), and
+/// is in no output either.
 #[test]
 fn adversary_document_a_value_sent_to_a_command_the_session_does_not_take_is_in_no_output() {
     const MARKER: &str = "pw-7c1e-marker";
@@ -422,8 +445,12 @@ fn adversary_document_a_value_sent_to_a_command_the_session_does_not_take_is_in_
     for request in &requests {
         let reply = session.answer(request);
         let link = reply.to_link();
-        assert_eq!(link.status, 2, "{}: {}", request.command, link.text);
-        let all = format!("{} {:?} {:?} {:?}", link.text, link.reason, reply, link.entries);
+        let expected = if request.command == "follow" { 1 } else { 2 };
+        assert_eq!(link.status, expected, "{}: {}", request.command, link.text);
+        let all = format!(
+            "{} {:?} {:?} {:?}",
+            link.text, link.reason, reply, link.entries
+        );
         assert!(!all.contains(MARKER), "{}: {all}", request.command);
     }
 }
@@ -449,7 +476,11 @@ fn visits_to_read(n: usize, form: &str) -> (usize, usize) {
     let before = surf_page_text::node_visits();
     let (status, mut text) = call(
         &mut session,
-        &holder("go", &token, &[("url", &url(&format!("/{n}"))), ("form", form)]),
+        &holder(
+            "go",
+            &token,
+            &[("url", &url(&format!("/{n}"))), ("form", form)],
+        ),
     );
     assert_eq!(status, 0, "{text}");
     let mut looks = 0;
@@ -476,7 +507,10 @@ fn adversary_document_both_forms_read_to_their_end_are_linear() {
         eprintln!(
             "{form}: n {looks_n} looks {visits_n} visits; 2n {looks_2n} looks {visits_2n} visits"
         );
-        assert!(looks_n >= 5 && looks_2n >= 2 * looks_n, "{looks_n} {looks_2n}");
+        assert!(
+            looks_n >= 5 && looks_2n >= 2 * looks_n,
+            "{looks_n} {looks_2n}"
+        );
         assert!(
             visits_2n * 4 <= visits_n * 9,
             "{form}: {visits_n} node visits at n, {visits_2n} at 2n"
