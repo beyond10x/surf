@@ -30,7 +30,7 @@ scope:
   path: crates/tls/tests/tls/handshake_hostile.rs
 - confidence: cited
   path: taskfiles/tls-flights.yml
-revision: 6
+revision: 7
 ---
 ## Context
 
@@ -89,8 +89,15 @@ beside the rounds of surf.
     An alert before any ServerHello ends with `AlertReceived { description,
     before_server_hello: true }` (`protocol_version` there is the other kind of server of
     item 12).
-  - HelloRetryRequest once, for secp256r1 only, `cookie` echoed; the transcript as section
-    4.4.1.
+  - HelloRetryRequest once, `cookie` echoed; the transcript as section 4.4.1. The checks of
+    section 4.1.4, each `illegal_parameter` unless named otherwise: its `selected_group` must be
+    in `supported_groups` and not a group the first hello sent a share for, so only secp256r1
+    (`UnofferedGroup`); it must change the hello, by a `key_share` or a `cookie`
+    (`HelloRetryRequestNoChange`); it must carry `supported_versions`, else `missing_extension`
+    and `MissingExtension`, and that must hold 0x0304 (`UnofferedVersion`, the rule of the
+    ServerHello above; so the version cannot change before the ServerHello); its suite is an
+    offered TLS 1.3 suite (`UnofferedSuite`, `Tls12SuiteInTls13`), and the ServerHello that
+    follows must select the same suite (`SuiteChangedAfterRetry`).
   - Then, in this order only: EncryptedExtensions (only what was offered; ALPN absent or
     `http/1.1`), Certificate (not empty, at most the entries of item 9, handed with the host and
     the time to the verifier), CertificateVerify (an offered scheme that fits the `LeafKey`, RSA
@@ -178,34 +185,42 @@ hostile case below ends with the `Error` and the alert named.
       protocol_version, before_server_hello: true }`;
    6. suite 0x1304, not offered: `AlertSent { illegal_parameter, UnofferedSuite }`;
    7. a second HelloRetryRequest: `AlertSent { unexpected_message, SecondHelloRetryRequest }`;
-   8. a HelloRetryRequest for x25519, already offered: `AlertSent { illegal_parameter,
-      UnofferedGroup }`;
-   9. EncryptedExtensions with `max_fragment_length`, not offered: `AlertSent {
-      unsupported_extension, UnofferedExtension }`; ALPN `h2`: `AlertSent { illegal_parameter,
-      UnofferedAlpn }`;
-   10. CertificateVerify right after EncryptedExtensions (Certificate skipped): `AlertSent {
+   8. a HelloRetryRequest for x25519, already offered with a share: `AlertSent {
+      illegal_parameter, UnofferedGroup }`; one for x448, not in `supported_groups`: the same;
+   9. after a HelloRetryRequest that selected TLS_AES_128_GCM_SHA256, a ServerHello that
+      selects TLS_AES_256_GCM_SHA384 (also offered): `AlertSent { illegal_parameter,
+      SuiteChangedAfterRetry }` (RFC 8446 section 4.1.4);
+   10. a HelloRetryRequest with neither `key_share` nor `cookie` (it would not change the
+       hello): `AlertSent { illegal_parameter, HelloRetryRequestNoChange }`; a
+       HelloRetryRequest without `supported_versions`: `AlertSent { missing_extension,
+       MissingExtension }`; one whose `supported_versions` holds 0x0303: `AlertSent {
+       illegal_parameter, UnofferedVersion }`;
+   11. EncryptedExtensions with `max_fragment_length`, not offered: `AlertSent {
+       unsupported_extension, UnofferedExtension }`; ALPN `h2`: `AlertSent { illegal_parameter,
+       UnofferedAlpn }`;
+   12. CertificateVerify right after EncryptedExtensions (Certificate skipped): `AlertSent {
        unexpected_message, UnexpectedMessage { expected: Certificate, got: CertificateVerify }
        }`; Finished right after Certificate (CertificateVerify skipped): the same with
        `expected: CertificateVerify, got: Finished`;
-   11. a Certificate with an empty list: `AlertSent { decode_error, EmptyCertificate }`;
-   12. a Certificate message declaring 16 MiB: `AlertSent { illegal_parameter, MessageTooLarge
+   13. a Certificate with an empty list: `AlertSent { decode_error, EmptyCertificate }`;
+   14. a Certificate message declaring 16 MiB: `AlertSent { illegal_parameter, MessageTooLarge
        }` at its header, its body not read;
-   13. a CertificateVerify with one flipped byte: `AlertSent { decrypt_error,
+   15. a CertificateVerify with one flipped byte: `AlertSent { decrypt_error,
        BadCertificateVerify }`; a Finished with a wrong `verify_data`: `AlertSent {
        decrypt_error, BadFinished }`;
-   14. a `change_cipher_spec` after the server Finished: `AlertSent { unexpected_message,
+   16. a `change_cipher_spec` after the server Finished: `AlertSent { unexpected_message,
        UnexpectedChangeCipherSpec }`;
-   15. after the handshake, an unrequested CertificateRequest: `AlertSent { unexpected_message,
+   17. after the handshake, an unrequested CertificateRequest: `AlertSent { unexpected_message,
        UnexpectedMessage }`; an EncryptedExtensions: the same;
-   16. after the handshake, a `NewSessionTicket` (lifetime 7200 s, a 64-byte ticket), then
+   18. after the handshake, a `NewSessionTicket` (lifetime 7200 s, a 64-byte ticket), then
        application data `ok`, then `close_notify`: the reads return `ok` and then the end of
        stream, no alert is sent, and the client wrote no byte after its Finished (the ticket
        is dropped: no resumption, no answer);
-   17. a server that sends its ServerHello and then nothing, over a stream whose reads time out:
+   19. a server that sends its ServerHello and then nothing, over a stream whose reads time out:
        `TimedOut`;
-   18. application data then end of stream without `close_notify`: `Truncated`; end of stream
+   20. application data then end of stream without `close_notify`: `Truncated`; end of stream
        in the middle of the handshake: `ConnectionClosed`;
-   19. `KeyUpdate` with `update_requested`: answered, and the next record opens with the new
+   21. `KeyUpdate` with `update_requested`: answered, and the next record opens with the new
        keys.
 5. `tls-flights-check` passes; with one byte of a recording changed in a copy, it fails naming
    the file.

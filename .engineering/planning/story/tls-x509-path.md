@@ -23,7 +23,7 @@ scope:
   path: crates/tls/tests/tls/path.rs
 - confidence: cited
   path: taskfiles/tls-x509-conformance.yml
-revision: 6
+revision: 7
 ---
 ## Context
 
@@ -67,8 +67,9 @@ rounds of surf.
 - `crates/tls-conformance` (`surf-tls-conformance`, new, test tooling, not shipped): its binary
   runs every SERVER case of the limbo data through `PathVerifier` at the validation time of the
   case; a case without `validation_time` runs at `LIMBO_TIME`, a constant of
-  `crates/tls-conformance/src/lib.rs` equal to the commit date of the pinned limbo file (the
-  date in `crates/tls/tests/data/x509-limbo/SOURCE`, item 13), never at the wall clock, so
+  `crates/tls-conformance/src/lib.rs` equal to the `commit-date` that
+  `crates/tls/tests/data/x509-limbo/SOURCE` records for the pinned limbo commit
+  (`story:tls-x509`, item 13), never at the wall clock, so
   `expected/limbo.txt` does not move with the clock. It prints `x509-limbo: <exist> cases,
   <run> run, <pass> passed`, a line per limbo group,
   one per RFC 5280 section it maps cases to (`incomplete` unless every case of it passes), and
@@ -100,9 +101,13 @@ tls-x509-conformance` prints the `x509-limbo:` line and exits 0 against
    return the leaf key; `expired` and `not-yet-valid` give `Expired`; `wrong-host`,
    `wildcard-two-labels`, `common-name-only` and `ip-mismatch` give `NameMismatch`;
    `untrusted-root`, `bad-signature`, `intermediate-not-ca`, `path-too-long`,
+   `pathlen-exceeded`, `leaf-no-digital-signature`, `issuer-no-key-cert-sign`,
    `unknown-critical-extension`, `name-constraints-excluded` and `eku-client-only` give
    `NotTrusted` with the check `INDEX` names, which is one of the closed list of item 7 and
-   equal to the name `Check::ALL` prints for it.
+   equal to the name `Check::ALL` prints for it: among them `pathlen-exceeded` gives
+   `NotTrusted(PathTooLong)` (a pathLenConstraint of 0 broken, within the intermediates item 9
+   allows), and `leaf-no-digital-signature` and `issuer-no-key-cert-sign` give
+   `NotTrusted(KeyUsage)`.
 2. Weak algorithms by policy: `sha1` gives `NotTrusted(WeakAlgorithm)` and `rsa-1024`
    `NotTrusted(WeakKey)`, each different from the `NotTrusted(BadSignature)` of
    `bad-signature`; a copy of the `sha1` leaf with one signature byte flipped still gives
@@ -112,9 +117,9 @@ tls-x509-conformance` prints the `x509-limbo:` line and exits 0 against
    iPAddress 127.0.0.1 matches host `127.0.0.1`, a dNSName `127.0.0.1` does not; `::1` matches
    its 16 octets.
 4. `1000-sans` matches on its last entry in under 1 s (time in the report).
-5. Hostile: 50 certificates sent, 48 of them intermediates with one subject and different keys,
-   two of those cross-signed in a loop: `NotTrusted(CandidateLimit)` when the candidate bound of
-   item 9 is reached, in under 1 s.
+5. Hostile: `candidate-limit` (50 certificates sent, 48 of them intermediates with one subject
+   and different keys, two of those cross-signed in a loop): `NotTrusted(CandidateLimit)` when
+   the candidate bound of item 9 is reached, in under 1 s.
 6. limbo: the `x509-limbo:` line with the numbers of the run, written into `expected/limbo.txt`
    from it; every FAILURE case maps to one line of `limbo-kinds.txt`; every case limbo expects
    to fail that passes (a certificate wrongly accepted) is listed by id and kind in the report
@@ -124,9 +129,13 @@ tls-x509-conformance` prints the `x509-limbo:` line and exits 0 against
    fails; an unresolvable base fails; a count above passes and prints the raise line; a case id
    matched by no line of `limbo-kinds.txt` fails naming it.
 8. `slot task tls-x509-conformance` ends within 60 s (time in the report).
-9. `limbo_time`: `LIMBO_TIME` equals the date in `SOURCE`; the runner takes the time of each
-   case from the case or from `LIMBO_TIME` and reads no system clock (the test finds no
-   `SystemTime` under `crates/tls-conformance/src`).
+9. `limbo_time`: `LIMBO_TIME` equals the commit date of the pinned limbo commit as `SOURCE`
+   records it (`commit-date`, `story:tls-x509`); the runner takes the time of each case from the
+   case or from `LIMBO_TIME` and reads no system clock (the test finds no `SystemTime` under
+   `crates/tls-conformance/src`).
+10. `every_check_has_a_case`: each of the eleven check names of item 7 is the expected check of
+    at least one case of `INDEX`, and each such case gives `NotTrusted` with that check (the
+    test reads the names from `Check::ALL` and fails naming a check without a case).
 
 Budget: no test over 60 s, the test step within 120 s, no network, no model call; the limbo run
 is its own step, not part of `task test`; tests pass the time of the case, never the wall clock.

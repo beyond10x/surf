@@ -22,7 +22,7 @@ scope:
   path: crates/tls/tests/tls/record.rs
 - confidence: cited
   path: crates/tls/tests/tls/rfc8448.rs
-revision: 6
+revision: 7
 ---
 ## Context
 
@@ -97,6 +97,11 @@ sections 3, 5 and 7 reproduced byte for byte, and each hostile record below refu
    its 4 bytes, the peak of the counting allocator under 64 KiB; a sequence number at 2^64 - 1:
    `SequenceExhausted`, no record written.
 5. `sources_match_their_digests` for `rfc8448.txt`.
+6. Server direction, the side `story:tls-test-server` relies on: with the server handshake and
+   application traffic keys of section 3, our protection of each server-to-client record of the
+   trace (EncryptedExtensions, Certificate, CertificateVerify and Finished in their one record,
+   the NewSessionTicket, the application data) from its plaintext and sequence number gives the
+   bytes of the trace, byte for byte.
 
 Budget: each test under 1 s; no test over 60 s, the test step within 120 s, no network, no model
 call.

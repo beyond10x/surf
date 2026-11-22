@@ -10,7 +10,7 @@ relations:
 scope:
 - confidence: cited
   path: docs/design/tls.md
-revision: 5
+revision: 6
 ---
 ## Context
 
@@ -115,11 +115,15 @@ and `story:tls-lock-allow` waits for nothing but this story.
       `MessageTooLarge { declared, bound }`, `UnexpectedMessage { expected, got }`,
       `EmptyCertificate`, `TooManyCertificates`, `UnofferedSuite`, `Tls12SuiteInTls13` (a TLS
       1.3 ServerHello or HelloRetryRequest that selects one of the six TLS 1.2 suites),
-      `UnofferedVersion` (a `supported_versions` in a ServerHello that holds anything but
-      0x0304), `UnofferedExtension`, `UnofferedGroup`, `UnofferedAlpn`,
-      `SecondHelloRetryRequest`, `Downgrade`, `UnexpectedChangeCipherSpec`,
-      `BadCertificateVerify`, `BadFinished`; `SequenceExhausted`; and
-      `Certificate(CertificateRejection)`, which `story:tls-x509` adds.
+      `UnofferedVersion` (a `supported_versions` in a ServerHello or HelloRetryRequest that
+      holds anything but 0x0304), `UnofferedExtension`, `UnofferedGroup`, `UnofferedAlpn`,
+      `SecondHelloRetryRequest`, `SuiteChangedAfterRetry` (a ServerHello after a
+      HelloRetryRequest that selects another suite than it did, RFC 8446 section 4.1.4),
+      `HelloRetryRequestNoChange` (a HelloRetryRequest that would not change the hello, the
+      same section), `MissingExtension` (a HelloRetryRequest without `supported_versions`; a
+      ServerHello without it is TLS 1.2, alert `missing_extension`), `Downgrade`,
+      `UnexpectedChangeCipherSpec`, `BadCertificateVerify`, `BadFinished`; `SequenceExhausted`;
+      and `Certificate(CertificateRejection)`, which `story:tls-x509` adds.
       The seam: the operations of `crypto.rs`, the signature algorithms it refuses by name
       (`REFUSED`: every SHA-1 signature, RSA keys under 2048 bits), and behind the feature
       `test-tooling` (off by default; turned on by `surf-tls-test-certs`,
@@ -228,8 +232,9 @@ and `story:tls-lock-allow` waits for nothing but this story.
        surf never continues a TLS 1.2 handshake in this epic.
    13. The clock: validity is checked against a time the caller passes; `surf` and the session
        pass the system clock; library tests pass a fixed time (`2026-11-22T00:00:00Z`); a
-       limbo case without `validation_time` runs at `LIMBO_TIME`, the date of the pinned limbo
-       file (`story:tls-x509-path`); tests through a binary run on the system clock, with
+       limbo case without `validation_time` runs at `LIMBO_TIME`, the `commit-date` of the
+       pinned limbo commit as its `SOURCE` records it (`story:tls-x509`, `story:tls-x509-path`);
+       tests through a binary run on the system clock, with
        certificates valid until 2125 and an expired one whose end lies in 2001.
 2. The probe, on a branch `probe/tls-ring` that is never merged into `main`:
    `.github/workflows/tls-probe.yml` (`on: push` to that branch only, `permissions: contents:

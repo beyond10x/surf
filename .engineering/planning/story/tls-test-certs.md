@@ -16,7 +16,7 @@ scope:
   path: taskfiles/tls-certs-check.sh
 - confidence: cited
   path: taskfiles/tls-certs.yml
-revision: 5
+revision: 6
 ---
 ## Context
 
@@ -64,7 +64,13 @@ after `tls-lock-allow`, beside `tls-x509` and `tls-record`, beside the rounds of
     (`*.example.test` for `a.example.test`), `expired` (notAfter 2001-01-01), `not-yet-valid`
     (notBefore 2090), `wrong-host` (`other.test` for `localhost`), `untrusted-root`,
     `bad-signature` (one bit of the leaf signature flipped), `intermediate-not-ca`,
-    `path-too-long` (one intermediate more than item 9 allows), `unknown-critical-extension`,
+    `path-too-long` (one intermediate more than item 9 allows), `pathlen-exceeded` (an
+    intermediate with pathLenConstraint 0 that issues a second intermediate, which issues the
+    leaf; two intermediates, within the bound of item 9), `leaf-no-digital-signature` (a leaf
+    whose keyUsage holds keyEncipherment only), `issuer-no-key-cert-sign` (an intermediate,
+    basicConstraints cA, whose keyUsage holds digitalSignature only), `candidate-limit` (48
+    intermediates with one subject and different keys, two of them cross-signed in a loop,
+    sent with the leaf: 50 certificates), `unknown-critical-extension`,
     `wildcard-two-labels` (`*.example.test` for `a.b.example.test`), `common-name-only` (no
     `subjectAltName`, CN `localhost`), `ip-mismatch`, `name-constraints-excluded`,
     `eku-client-only`, `1000-sans` (the match is the last entry);
@@ -75,11 +81,13 @@ after `tls-lock-allow`, beside `tls-x509` and `tls-record`, beside the rounds of
     `INDEX`, one line per case: name, host, validation time (`2026-11-22T00:00:00Z`), expected
     outcome (`ok`, or the reason and, for `CertificateNotTrusted`, one check name of the closed
     list of item 7: `untrusted-root` `NoPathToAnchor`, `bad-signature` `BadSignature`,
-    `intermediate-not-ca` `IssuerNotCa`, `path-too-long` `PathTooLong`,
-    `unknown-critical-extension` `UnknownCriticalExtension`, `name-constraints-excluded`
-    `NameConstraint`, `eku-client-only` `NoServerAuth`, `sha1` `WeakAlgorithm`, `rsa-1024`
-    `WeakKey`). This crate is built beside `story:tls-x509`, so it writes the names as text,
-    not through the enum of `verify.rs`.
+    `intermediate-not-ca` `IssuerNotCa`, `path-too-long` and `pathlen-exceeded` `PathTooLong`,
+    `candidate-limit` `CandidateLimit`, `leaf-no-digital-signature` and
+    `issuer-no-key-cert-sign` `KeyUsage`, `unknown-critical-extension`
+    `UnknownCriticalExtension`, `name-constraints-excluded` `NameConstraint`, `eku-client-only`
+    `NoServerAuth`, `sha1` `WeakAlgorithm`, `rsa-1024` `WeakKey`: each of the eleven names has
+    at least one case). This crate is built beside `story:tls-x509`, so it writes the names as
+    text, not through the enum of `verify.rs`.
 - `crates/tls-test-certs/openssl/`: `make.sh` (POSIX `sh`; run only by the lane `slow`), which
   makes the two cases ring cannot sign, `sha1` (a leaf signed sha1WithRSAEncryption by the RSA
   2048 intermediate) and `rsa-1024` (a leaf with the RSA 1024 key, signed by the intermediate
@@ -107,8 +115,8 @@ no file that differs.
 
 1. `index`: `INDEX` names every case of `src/cases.rs` and the two of `openssl/` once, and every
    file it names exists; every check name in it is one of the eleven of item 7 (a constant of
-   the test, copied from item 7), and a copy of `INDEX` with `NotACa` in place of
-   `IssuerNotCa` fails naming the line.
+   the test, copied from item 7), each of the eleven is the check of at least one case, and a
+   copy of `INDEX` with `NotACa` in place of `IssuerNotCa` fails naming the line.
 2. `signatures`: each certificate the builder made verifies through the seam under its issuer
    key, except the leaf of `bad-signature`, which does not.
 3. `reproducible`: the builder run twice in the test makes the same bytes for every case it

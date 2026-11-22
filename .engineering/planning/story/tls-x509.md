@@ -32,7 +32,7 @@ scope:
   path: crates/tls/tests/tls/pem.rs
 - confidence: cited
   path: crates/tls/tests/tls/x509_parse.rs
-revision: 7
+revision: 8
 ---
 ## Context
 
@@ -83,8 +83,9 @@ after `tls-lock-allow`, beside `tls-test-certs` and `tls-record`, beside the rou
   `-----END <label>-----` with equal labels, base64 of RFC 4648 with line breaks, padding
   checked; text outside blocks ignored; each block returned with its label.
 - `crates/tls/tests/data/x509-limbo/`: `limbo.json` (or the subset of item 10), `LICENSE`,
-  `SOURCE` (repository, commit, date fetched, Apache-2.0, sha256 of each file, the case counts
-  at that commit) and `parse-counts.txt` (below).
+  `SOURCE` (repository, `commit` and `commit-date`, the date of that commit in UTC, which
+  `LIMBO_TIME` of `story:tls-x509-path` is; date fetched, Apache-2.0, sha256 of each file, the
+  case counts at that commit) and `parse-counts.txt` (below).
 - Tests in `crates/tls/tests/main.rs`, modules `der`, `x509_parse`, `pem`, `limbo_parse` (files
   in `tests/tls/`). The JSON of limbo is read with the reader `story:tls-lock-allow` made
   available.

@@ -22,7 +22,7 @@ scope:
   path: taskfiles/release-smoke.sh
 - confidence: cited
   path: website/docs
-revision: 5
+revision: 6
 ---
 ## Context
 
@@ -73,10 +73,11 @@ test certificates turn on `test-tooling` in every `cargo test` build of `surf-cl
   `fetch-failed <id> Unreachable https://127.0.0.1:1/`; `surf --anchors` exits 0 and prints
   `anchors <n> bundled <date> sha256:<hex>` with the count and date of
   `crates/tls/src/anchors/SOURCE` of the checkout. The header comment of the script says so.
-  Its step 3 (line 96, `--test e2e`) names the end-to-end case as
-  `story:one-test-binary-per-crate` left it (`--test e2e` when it kept its own binary, else
-  `--test main` with the filter of its module); it tests the unpacked binaries
-  (`SURF_BIN_DIR`), so its own build may carry `test-tooling`.
+  Its step 3 (lines 96-98, today `--test e2e`) runs the end-to-end case from the one test
+  binary of `crates/session`: `--test main` with the filter `e2e::` (`SURF_BIN_DIR=$dir cargo
+  test "$@" e2e::`), as `story:one-test-binary-per-crate` renames those lines before this
+  story; this story keeps them. It tests the unpacked binaries (`SURF_BIN_DIR`), so its own
+  build may carry `test-tooling`.
 - `docs/releasing.md`: "What a release holds" names ring and the compiler step; "Cutting a
   release" gains a step before the tag: `task anchors-age` passes, else `task anchors-refresh`
   and a commit on `main` first; the smoke test paragraph names the two new checks.
