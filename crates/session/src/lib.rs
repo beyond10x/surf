@@ -66,8 +66,10 @@
 //! attribute, read from the tree: `aria-hidden`, a closed `dialog` or `details` and a popover
 //! leave a link `?`, though the row's `hidden` flag is wider. The target is resolved with
 //! `surf-url` against [`surf_page::base_url::document_base_url`]; a line shows its path, query
-//! and fragment when it has the document's origin and the whole address otherwise, or the
-//! `href` as written and `unresolved`. The label is cut at [`surf_answer::LABEL_CHARS_MAX`]
+//! and fragment when it has the document's origin and a path that does not start with `//`
+//! (which would read as another host), and otherwise the whole address without its userinfo,
+//! so that scheme, host and port come first; or the `href` as written and `unresolved`. The
+//! label is cut at [`surf_answer::LABEL_CHARS_MAX`]
 //! characters, the target at [`surf_answer::TARGET_CHARS_MAX`]. The block shows the first lines
 //! that fit [`NOW_BYTES_MAX`] bytes, and its header `now <shown> of <total>` counts them all.
 //! The session computes the links once per document and keeps them while it is current.
@@ -76,6 +78,23 @@
 //! document has no link of that handle (or there is none), `hidden` for a link `hid` names, and
 //! `unresolved` for a target that does not resolve; each with status 1 and the state. The `path`
 //! line of a `follow` is `<n> follow <handle> "<label>"`, the label cut as in the `now` block.
+//!
+//! # Following a link
+//!
+//! Before any navigation, and so with the page and the path as they were, `follow` refuses a
+//! resolved target, with status 1 and the state:
+//!
+//! - longer than [`surf_fetch::MAX_ADDRESS_BYTES`] bytes: `address-too-long`, the bound of an
+//!   address a redirect leads to ("What it keeps");
+//! - with a scheme other than `http`, the one scheme the transport fetches (`javascript:`,
+//!   `mailto:`, `data:`, `file:`, `https:`): `unsupported-scheme`. `go` still navigates to such
+//!   an address and its page line says `failed UnsupportedScheme`;
+//! - from a document whose address is not local by its text, a target whose host is
+//!   (`host_is_local`: an IP address [`surf_fetch::is_local`] names, the rule a redirect's
+//!   destination is checked by, or `localhost` or a name under it): `forbidden-destination`. A
+//!   target that is another name is resolved only by the fetch, which applies its rule to
+//!   redirects only; and a document at such a name counts as public, as the session does not
+//!   know where its fetch connected.
 //!
 //! # Refusals
 //!
@@ -108,10 +127,12 @@
 //! # What it keeps
 //!
 //! The answer lines hold the page line, the `did` line and at most [`PATH_SHOWN`] path lines,
-//! seven addresses. An address comes from a request of at most
-//! [`surf_agent::wire::REQUEST_MAX`] bytes, which quotes it as the answer does, or is the
-//! address a response came from after redirects, at most [`surf_fetch::MAX_ADDRESS_BYTES`]
-//! bytes, the same 64 KiB, before quoting. Quoting writes a `"`, a `\` and each byte outside
+//! seven addresses. An address has one of three sources: a request of at most
+//! [`surf_agent::wire::REQUEST_MAX`] bytes, which quotes it as the answer does; the address a
+//! response came from after redirects, at most [`surf_fetch::MAX_ADDRESS_BYTES`] bytes, the
+//! same 64 KiB, before quoting; or the target of a link a `follow` took, which a page writes
+//! and `follow` refuses over [`surf_fetch::MAX_ADDRESS_BYTES`] bytes ("Following a link"), and
+//! which a redirect after it bounds the same way. Quoting writes a `"`, a `\` and each byte outside
 //! printable ASCII as four bytes (`\x5c` for a `\`), so a quoted address is at most four times
 //! its length and its two quotes; `surf-url` leaves a `\` in the query or fragment of a
 //! response URL as it is, so the quoted form of one comes to up to four times
@@ -188,8 +209,9 @@
 //! two identities and a position). An address, at most
 //! [`surf_agent::wire::REQUEST_MAX`] bytes when it comes from a request and at most
 //! [`surf_fetch::MAX_ADDRESS_BYTES`] bytes, the same 64 KiB, when it is the address a response
-//! came from after redirects, is at most 262,146 bytes once quoted, in at most nine action and
-//! event lines of one `open <url>` or `go` (`DocumentParsed` is the ninth), 2,359,314 bytes,
+//! came from after redirects or the target a `follow` took, is at most 262,146 bytes once
+//! quoted, in at most nine action and event lines of one `open <url>`, `go` or `follow`
+//! (`DocumentParsed` is the ninth), 2,359,314 bytes,
 //! with a few hundred bytes of other fields per line: below the 4,194,240, so no event of the
 //! page load itself is left out.
 
@@ -455,6 +477,9 @@ struct Link {
 struct Links {
     document: DocumentId,
     links: Vec<Link>,
+    /// The document's address has a host that is not local by its text ([`host_is_local`]):
+    /// `follow` refuses a local target from it ("Following a link" above).
+    from_public: bool,
 }
 
 /// One session: its identity, its token, the system it drives and its sequence number.
@@ -775,9 +800,12 @@ impl<T: Transport> Session<T> {
                 .element_nodes(&row.document_id)
                 .unwrap_or_default();
             let links = document_links(tree, &row.url.0, &rows, nodes);
+            let from_public =
+                !surf_url::Url::parse(&row.url.0, None).is_ok_and(|page| host_is_local(&page));
             self.links = Some(Links {
                 document: row.document_id,
                 links,
+                from_public,
             });
         }
         self.links.as_ref().map(|kept| kept.links.as_slice())
@@ -793,9 +821,11 @@ impl<T: Transport> Session<T> {
 
     /// `follow <handle>`: refused `closed` on a closed session, `unknown-handle` when the
     /// current document has no link of that handle, `hidden` when the link or an ancestor has
-    /// the `hidden` attribute, `unresolved` when its target does not resolve; otherwise
-    /// `Follow` as the holder with the resolved address, and when it is `requested`,
-    /// `RecordAction` `follow` with the address, the handle and the label.
+    /// the `hidden` attribute, `unresolved` when its target does not resolve,
+    /// `address-too-long`, `unsupported-scheme` or `forbidden-destination` for a target
+    /// "Following a link" names; otherwise `Follow` as the holder with the resolved address,
+    /// and when it is `requested`, `RecordAction` `follow` with the address, the handle and the
+    /// label.
     fn follow(&mut self, handle: &str) -> Result<Reply, Stop> {
         if self.is_closed() {
             return Ok(self.with_state(RefusalReason::Closed));
@@ -807,12 +837,23 @@ impl<T: Transport> Session<T> {
         else {
             return Ok(self.with_state(RefusalReason::UnknownHandle));
         };
+        let from_public = self.links.as_ref().is_none_or(|kept| kept.from_public);
         if link.hidden {
             return Ok(self.with_state(RefusalReason::Hidden));
         }
-        let Some(url) = link.resolved.as_ref().map(surf_url::Url::href) else {
+        let Some(target) = link.resolved.as_ref() else {
             return Ok(self.with_state(RefusalReason::Unresolved));
         };
+        let url = target.href();
+        if url.len() > surf_fetch::MAX_ADDRESS_BYTES {
+            return Ok(self.with_state(RefusalReason::AddressTooLong));
+        }
+        if target.scheme() != "http" {
+            return Ok(self.with_state(RefusalReason::UnsupportedScheme));
+        }
+        if from_public && host_is_local(target) {
+            return Ok(self.with_state(RefusalReason::ForbiddenDestination));
+        }
         let outcome = self.browser.agent_mut().follow(Follow {
             session_id: self.session_id.clone(),
             url: Url(url.clone()),
@@ -1187,7 +1228,10 @@ fn refusal_status(reason: RefusalReason) -> u8 {
         | RefusalReason::Closed
         | RefusalReason::UnknownHandle
         | RefusalReason::Hidden
-        | RefusalReason::Unresolved => 1,
+        | RefusalReason::Unresolved
+        | RefusalReason::AddressTooLong
+        | RefusalReason::UnsupportedScheme
+        | RefusalReason::ForbiddenDestination => 1,
         RefusalReason::Usage => 2,
         RefusalReason::NoSuchSession
         | RefusalReason::SessionDied
@@ -1351,12 +1395,17 @@ fn hidden_by_attribute(tree: &Tree) -> HashSet<NodeId> {
 }
 
 /// A resolved target as the `now` line writes it: its path, query and fragment when it has the
-/// origin of `page`, the whole address otherwise.
+/// origin of `page` and its path does not start with `//`, which reads as another host; the
+/// whole address without its userinfo otherwise, so that scheme, host and port come first and
+/// a cut at [`TARGET_CHARS_MAX`] keeps them whole (a host alone over the limit aside).
 fn shown_target(target: &surf_url::Url, page: Option<&surf_url::Url>) -> String {
-    if !page.is_some_and(|page| page.origin().same_origin(&target.origin())) {
-        return target.href();
+    let path = target.serialize_path();
+    if !page.is_some_and(|page| page.origin().same_origin(&target.origin()))
+        || path.starts_with("//")
+    {
+        return without_userinfo(target);
     }
-    let mut shown = target.serialize_path();
+    let mut shown = path;
     if let Some(query) = target.query() {
         shown.push('?');
         shown.push_str(query);
@@ -1366,6 +1415,45 @@ fn shown_target(target: &surf_url::Url, page: Option<&surf_url::Url>) -> String 
         shown.push_str(fragment);
     }
     shown
+}
+
+/// The URL serializer's output for `url` without the userinfo: `user:password@` follows
+/// `<scheme>://` and is left out; a URL without one is its `href`.
+fn without_userinfo(url: &surf_url::Url) -> String {
+    let mut href = url.href();
+    let (username, password) = (url.username(), url.password());
+    if url.host().is_some() && !(username.is_empty() && password.is_empty()) {
+        let start = url.scheme().len() + "://".len();
+        let length = username.len()
+            + if password.is_empty() {
+                0
+            } else {
+                1 + password.len()
+            }
+            + 1;
+        href.replace_range(start..start + length, "");
+    }
+    href
+}
+
+/// Whether the host of `url` is local by its text: an IP address [`surf_fetch::is_local`]
+/// names (the rule of a redirect's destination), or the name `localhost` or one under it, which
+/// the operating system resolves to a loopback address. Any other name is not: where it leads
+/// is known only when the fetch resolves it.
+fn host_is_local(url: &surf_url::Url) -> bool {
+    match url.host() {
+        Some(surf_url::Host::Ipv4(address)) => {
+            surf_fetch::is_local(std::net::IpAddr::V4(std::net::Ipv4Addr::from(*address)))
+        }
+        Some(surf_url::Host::Ipv6(pieces)) => {
+            surf_fetch::is_local(std::net::IpAddr::V6(std::net::Ipv6Addr::from(*pieces)))
+        }
+        Some(surf_url::Host::Domain(name)) => {
+            let name = name.strip_suffix('.').unwrap_or(name);
+            name == "localhost" || name.ends_with(".localhost")
+        }
+        _ => false,
+    }
 }
 
 /// The `now` block of `links`: a line per link in document order while the lines fit

@@ -164,6 +164,9 @@ refusal of the action, with a reason from this list:
 | `unknown-handle` | the current document has no element of that handle, or there is none | 1 |
 | `hidden` | the element or an ancestor has the `hidden` attribute | 1 |
 | `unresolved` | the link's target does not resolve against the document base URL | 1 |
+| `address-too-long` | the link's resolved target is longer than 65,536 bytes, the bound of an address `surf-fetch` follows | 1 |
+| `unsupported-scheme` | the link's resolved target has a scheme surf does not fetch: any but `http` (`javascript:`, `mailto:`, `data:`, `file:`, `https:`) | 1 |
+| `forbidden-destination` | the page was loaded from a public address and the link's target is a local one: a loopback, private, link-local, unique-local, shared or unspecified IP address, an IPv6 address that embeds one, or the name `localhost` or one under it | 1 |
 
 A reason not in the list is refused by the parser. A story that adds a reason adds it here, to
 `RefusalReason` and to a test.
@@ -225,11 +228,18 @@ lines stop before the block passes 1,048,576 bytes (paging is `agent-answer-pagi
 - `<label>`: the accessible name, cut at 60 characters (section "Quoting").
 - `<target>`: the `href` resolved against the document base URL (the first `base` element with
   an `href`, else the document's address), written as its path, query and fragment when it has
-  the page's origin and whole otherwise; an `href` that does not resolve is written as the page
-  wrote it, followed by `unresolved`. Cut at 1,024 characters.
+  the page's origin and whole otherwise; a path that starts with `//`, which would read as
+  another host, is written whole too. An `href` that does not resolve is written as the page
+  wrote it, followed by `unresolved`. Cut at 1,024 characters. A whole target never shows a
+  userinfo (`user:password@`): scheme, host and port come first and stay whole when the target
+  is cut, and `follow` still goes to the whole address, userinfo included.
 
 `follow <handle>` takes a handle of this block. It is refused `unknown-handle` for a handle the
-current document has not, `hidden` for a `hid` link and `unresolved` for an unresolved one.
+current document has not, `hidden` for a `hid` link and `unresolved` for an unresolved one;
+and, before any navigation and with the page left as it was, `address-too-long`,
+`unsupported-scheme` or `forbidden-destination` for a target the table of `did refused` names.
+
+The answer of a closed session has no `now` block.
 
 ### Note
 
@@ -343,7 +353,8 @@ did-refused   = "refused" SP reason
 did-action    = command [SP quoted]           ; command is not "refused"
 reason        = "token" / "closed" / "usage" / "no-such-session"
               / "session-died" / "session-timeout" / "unknown-handle" / "hidden"
-              / "unresolved"
+              / "unresolved" / "address-too-long" / "unsupported-scheme"
+              / "forbidden-destination"
 
 page-line     = "page" SP (page-none / page-failed / page-loaded) LF
 page-none     = "none"

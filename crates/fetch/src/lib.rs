@@ -875,8 +875,10 @@ fn connect(
 
 /// Whether `ip` is a local address in the sense of the crate documentation, "Destinations":
 /// loopback, private, link-local, unique-local, shared or unspecified, or an IPv6 address that
-/// embeds one of these ([`embedded_v4`]).
-fn is_local(ip: IpAddr) -> bool {
+/// embeds one of these (IPv4-mapped, IPv4-compatible, NAT64 or 6to4). The rule a redirect's
+/// destination is checked by, and
+/// the one `surf-session` applies to the target of `follow` when it is an IP address.
+pub fn is_local(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => is_local_v4(v4),
         IpAddr::V6(v6) => {

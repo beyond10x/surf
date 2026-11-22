@@ -17,7 +17,13 @@ release; what came before it is in the git log and in `docs/plan/`.
   the page's own origin, or as written with `unresolved`. `follow` of a handle the page has not,
   of a hidden link or of an unresolved target exits 1 with `did refused unknown-handle`,
   `hidden` or `unresolved`. A followed link's `path` line is `3 follow l1 "Opening hours"`.
-  Format: [`docs/agent-answer.md`](docs/agent-answer.md).
+  Before any navigation, and so with the page left as it was, `follow` also exits 1 with `did
+  refused address-too-long` for a target over 65,536 bytes, `unsupported-scheme` for a scheme
+  other than `http:` (`javascript:`, `mailto:`, `data:`, `file:`, `https:`), and, from a page
+  on a public address, `forbidden-destination` for a target on a loopback, private, link-local,
+  unique-local, shared or unspecified IP address or `localhost`. A target is never shown with
+  its `user:password@`, and a path on the page's own origin that starts with `//` is shown as
+  the whole address. Format: [`docs/agent-answer.md`](docs/agent-answer.md).
 - The `page` line of an agent answer ends with the page's title, and the live view's session
   list shows it. A title longer than 1,024 characters is left out.
 - The `surf` library reads a page's forms: each form, each control's `name` and form, and the

@@ -169,6 +169,49 @@ fn the_three_reasons_of_follow_read_back() {
     }
 }
 
+/// The fix round of the adversary's cases on `agent-follow-links`: the three refusals of
+/// `follow` before any navigation.
+#[test]
+fn the_three_reasons_follow_refuses_before_navigating_read_back() {
+    for (reason, word) in [
+        (RefusalReason::AddressTooLong, "address-too-long"),
+        (RefusalReason::UnsupportedScheme, "unsupported-scheme"),
+        (RefusalReason::ForbiddenDestination, "forbidden-destination"),
+    ] {
+        assert_eq!(reason.word(), word);
+        let text = format!("surf 1 session 7f3a open\ndid refused {word}\n");
+        let parsed = parse(&text).expect("the reason parses");
+        assert_eq!(parsed.did, Some(Did::Refused(reason)));
+        assert_eq!(render(&parsed).unwrap(), text);
+    }
+}
+
+/// A `path` entry with a handle, no argument and `argument_cut` set cannot be written so that it
+/// reads back: `render` refuses it.
+#[test]
+fn render_refuses_a_cut_mark_without_an_argument() {
+    let mut answer = Answer::new(Head {
+        session: "7f3a".to_string(),
+        state: SessionState::Open,
+    });
+    answer.path = Some(Path {
+        total: 1,
+        entries: vec![PathEntry {
+            sequence: 1,
+            command: "follow".to_string(),
+            handle: Some("l1".to_string()),
+            argument: None,
+            argument_cut: true,
+        }],
+    });
+    assert_eq!(
+        render(&answer),
+        Err(RenderError::CutLength {
+            field: "path label"
+        })
+    );
+}
+
 #[test]
 fn a_now_block_that_shows_fewer_lines_than_its_total_reads_back() {
     let mut answer = now_shop();

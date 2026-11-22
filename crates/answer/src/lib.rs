@@ -154,10 +154,18 @@ pub enum RefusalReason {
     Hidden,
     /// `unresolved`: the link's target does not resolve against the document base URL.
     Unresolved,
+    /// `address-too-long`: the link's resolved target is longer than the bound of an address
+    /// `surf-fetch` follows, 65,536 bytes.
+    AddressTooLong,
+    /// `unsupported-scheme`: the link's resolved target has a scheme surf does not fetch.
+    UnsupportedScheme,
+    /// `forbidden-destination`: the page came from a public address and the link's target is
+    /// a local one.
+    ForbiddenDestination,
 }
 
 impl RefusalReason {
-    const ALL: [RefusalReason; 9] = [
+    const ALL: [RefusalReason; 12] = [
         RefusalReason::Token,
         RefusalReason::Closed,
         RefusalReason::Usage,
@@ -167,6 +175,9 @@ impl RefusalReason {
         RefusalReason::UnknownHandle,
         RefusalReason::Hidden,
         RefusalReason::Unresolved,
+        RefusalReason::AddressTooLong,
+        RefusalReason::UnsupportedScheme,
+        RefusalReason::ForbiddenDestination,
     ];
 
     /// The word of the format.
@@ -181,6 +192,9 @@ impl RefusalReason {
             RefusalReason::UnknownHandle => "unknown-handle",
             RefusalReason::Hidden => "hidden",
             RefusalReason::Unresolved => "unresolved",
+            RefusalReason::AddressTooLong => "address-too-long",
+            RefusalReason::UnsupportedScheme => "unsupported-scheme",
+            RefusalReason::ForbiddenDestination => "forbidden-destination",
         }
     }
 }
@@ -722,7 +736,7 @@ pub enum RenderError {
     NowLongerThanTotal,
     /// A field with a length limit that its reading could not give back: a value marked cut
     /// that does not keep exactly its limit, an uncut one over it, or a `path` argument marked
-    /// cut on a line without a handle.
+    /// cut on a line without a handle or without an argument.
     CutLength {
         /// Which field, such as `now label`.
         field: &'static str,
@@ -885,13 +899,22 @@ fn render_path(path: &Path, out: &mut String) -> Result<(), RenderError> {
             Some(handle) => {
                 out.push(' ');
                 out.push_str(checked(handle, "path handle", is_handle_char)?);
-                if let Some(argument) = &entry.argument {
-                    let label = Cut {
-                        kept: argument.clone(),
-                        cut: entry.argument_cut,
-                    };
-                    out.push(' ');
-                    push_cut(&label, LABEL_CHARS_MAX, "path label", out)?;
+                match &entry.argument {
+                    Some(argument) => {
+                        let label = Cut {
+                            kept: argument.clone(),
+                            cut: entry.argument_cut,
+                        };
+                        out.push(' ');
+                        push_cut(&label, LABEL_CHARS_MAX, "path label", out)?;
+                    }
+                    // A cut mark goes after a label: without one it cannot be written.
+                    None if entry.argument_cut => {
+                        return Err(RenderError::CutLength {
+                            field: "path label",
+                        });
+                    }
+                    None => {}
                 }
             }
             None => {

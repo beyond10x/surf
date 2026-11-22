@@ -251,7 +251,9 @@ above, and the list of standards itself was written from memory.
     `Target`; label cut at `LABEL_CHARS_MAX` 60, target at `TARGET_CHARS_MAX` 1,024, both read
     back through `Cut`), `note visibility: hidden attribute only`, the `path` line of an action on
     an element (`3 follow l1 "Sign in"`, `PathEntry::handle`) and the refusal reasons
-    `unknown-handle`, `hidden` and `unresolved`. No dependency.
+    `unknown-handle`, `hidden` and `unresolved`; since its fix round `address-too-long`,
+    `unsupported-scheme` and `forbidden-destination`, and `render` refuses a `path` entry marked
+    cut without an argument. No dependency.
   - `crates/secret` (`surf-secret`): the operating system random source, the comparison in
     constant time and the 32-byte token. Every secret and every random identity of the agent
     and the view comes from here. No dependency.
@@ -260,7 +262,8 @@ above, and the list of standards itself was written from memory.
   - `crates/fetch` (`surf-fetch`): fetches an `http:` address with the standard library only and
     returns status, media type and body, or `Unreachable`, `UnsupportedScheme`,
     `MalformedResponse`, `TooManyRedirects` or `ForbiddenDestination`. Its documentation lists what
-    it does not do.
+    it does not do. `is_local`, the rule of a redirect's destination, is public: `surf-session`
+    applies it to the target of `follow`.
     Since wave 7 it follows up to 20 redirects (301, 302, 303, 307, 308 with a `Location`, for
     `GET`) inside one fetch, returns the address it ended at (`Response.url`, at most 64 KiB) and
     `TooManyRedirects` for a redirect after the twentieth; a redirect to an address that is not
@@ -430,11 +433,12 @@ above, and the list of standards itself was written from memory.
     most four times its length plus two bytes. Since wave 8 the entries of
     `NavigationStarted` and `RequestStarted` carry `method`, `body` as `<n> bytes` and
     `body_type`, an absent one as the field with no value; its transport is `surf::fetch_http`,
-    which since wave 9 sends a `Post` (no command of the session sends one yet). 101 tests:
-    `adversary_document_text` 7, `adversary_events` 1, `adversary_parse` 4, `adversary_values`
-    3, `adversary_view` 1, `built` 11, `core` 22, `e2e` 2 (runs the three built binaries, or
-    those in `SURF_BIN_DIR`), `events` 23, `follow` 17, `form_rows` 1, `memory` 2, `redirect` 2
-    and `view` 5 (the live view of `surfd` over the real session). The bound of 256 row entries
+    which since wave 9 sends a `Post` (no command of the session sends one yet). 118 tests:
+    `adversary_document_text` 7, `adversary_events` 1, `adversary_follow` 8, `adversary_parse`
+    4, `adversary_values` 3, `adversary_view` 1, `built` 11, `core` 22, `e2e` 2 (runs the three
+    built binaries, or those in `SURF_BIN_DIR`), `events` 23, `follow` 17, `follow_refusals` 9
+    (over an in-memory transport that stands at any address), `form_rows` 1, `memory` 2,
+    `redirect` 2 and `view` 5 (the live view of `surfd` over the real session). The bound of 256 row entries
     per request counts `FormAdded` and `OptionAdded` with `ElementAdded`
     (`story:agent-form-port`).
     `open <url>`, `go <url>` and `look` take `--as tree|markdown [--from-line <n>]` and print the
@@ -449,7 +453,12 @@ above, and the list of standards itself was written from memory.
     `surf_page::base_url::document_base_url`, at most `NOW_BYTES_MAX` bytes) with `note
     visibility: hidden attribute only`; `follow <handle>` issues `Follow` and records `follow`
     with the address, handle and label, or is refused `unknown-handle`, `hidden` or
-    `unresolved` (status 1).
+    `unresolved` (status 1). Since the fix round of its adversary's cases `follow` also refuses,
+    before any navigation, a target over `surf_fetch::MAX_ADDRESS_BYTES` (`address-too-long`),
+    one with a scheme other than `http` (`unsupported-scheme`), and from a page whose host is
+    not local by its text a target whose host is (`forbidden-destination`: an IP address
+    `surf_fetch::is_local` names, or `localhost`); a shown target holds no userinfo, and a
+    same-origin path that starts with `//` is shown whole.
     `cargo clippy -p surf-session` needs `--no-deps`: the generated `surf-types` fails clippy.
     Depends on the `surf` library, `surf-ports`, `surf-fetch`, `surf-answer`, `surf-html`,
     `surf-page`, `surf-page-text`, `surf-secret`, `surf-url`, the

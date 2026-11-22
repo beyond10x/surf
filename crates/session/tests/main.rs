@@ -15,6 +15,7 @@ mod core;
 mod e2e;
 mod events;
 mod follow;
+mod follow_refusals;
 mod form_rows;
 mod memory;
 mod redirect;

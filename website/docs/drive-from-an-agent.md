@@ -130,7 +130,11 @@ written as the page wrote it, followed by `unresolved`. Handles are numbered in 
 and start at 1 again on each new page. `follow` of a handle the page has not, of a `hid` link
 or of an unresolved target is refused with status 1 (`did refused unknown-handle`, `hidden`,
 `unresolved`); a followed link's `path` line names its handle and label,
-`3 follow l1 "Opening hours"`.
+`3 follow l1 "Opening hours"`. Three more refusals come before any navigation and leave the page
+as it was: a target over 65,536 bytes (`address-too-long`), a scheme surf does not fetch, such as
+`javascript:`, `mailto:` or `https:` (`unsupported-scheme`), and, from a page loaded from a
+public address, a target on a loopback or private address or `localhost`
+(`forbidden-destination`). A target never shows a `user:password@` part; `follow` still sends it.
 
 A script can take the two values from the answer of `open`:
 
@@ -159,7 +163,7 @@ Quoting lowers the risk of page text steering an agent; it does not remove it.
 | status | meaning |
 |---|---|
 | 0 | the action was taken |
-| 1 | the action was refused: the token does not belong to the session (`did refused token`), the session is closed (`did refused closed`), or `follow` names a handle the page has not (`unknown-handle`), a hidden link (`hidden`) or a target that does not resolve (`unresolved`) |
+| 1 | the action was refused: the token does not belong to the session (`did refused token`), the session is closed (`did refused closed`), or `follow` names a handle the page has not (`unknown-handle`), a hidden link (`hidden`), a target that does not resolve (`unresolved`), a target over 65,536 bytes (`address-too-long`), one with a scheme surf does not fetch (`unsupported-scheme`) or, from a public page, one on a local address (`forbidden-destination`) |
 | 2 | usage: a word, the session or the token is missing or malformed |
 | 3 | `surfd` lists no such session (`did refused no-such-session`), the session process ended (`did refused session-died`) or did not answer in time (`did refused session-timeout`), or `surfd` cannot be reached or started, or the runtime directory or the socket fails `surf-agent`'s check |
 
@@ -177,5 +181,9 @@ answer and says why on standard error.
   loopback, private, link-local, unique-local, shared or unspecified address, or to an IPv6
   address that embeds one, fails with `ForbiddenDestination`, before any connection to it; a session that starts at a local
   address follows its redirects as before.
+- `follow` loads `http:` targets only and refuses the others (`unsupported-scheme`); from a page
+  on a public address it refuses a target on a local IP address or `localhost`
+  (`forbidden-destination`), and it refuses a target over 65,536 bytes (`address-too-long`).
+  A target that is another name is resolved by the fetch and not checked by `follow`.
 - No JavaScript, and no rendering: the answer says what loaded, not what a page shows.
 - Linux only.

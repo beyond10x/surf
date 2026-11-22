@@ -116,6 +116,10 @@ What it does not do yet:
 - A form cannot be filled or submitted yet: the commands are `open`, `go`, `look`, `follow`
   and `close`. Visibility is not computed: `now` says `hid` for the `hidden` attribute and `?`
   for every other link.
+- `follow` refuses, before any navigation, a link to a scheme other than `http:`
+  (`unsupported-scheme`), a target over 65,536 bytes (`address-too-long`) and, from a page on a
+  public address, a target on a loopback or private address or `localhost`
+  (`forbidden-destination`). The page stays.
 - The agent binaries run on Linux only.
 
 The commands, the token, the exit statuses and the answer, one by one:

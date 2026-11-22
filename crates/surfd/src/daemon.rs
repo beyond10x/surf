@@ -817,7 +817,10 @@ fn own(id: &str, state: HeadState, reason: RefusalReason) -> wire::Answer {
         | RefusalReason::Closed
         | RefusalReason::UnknownHandle
         | RefusalReason::Hidden
-        | RefusalReason::Unresolved => 1,
+        | RefusalReason::Unresolved
+        | RefusalReason::AddressTooLong
+        | RefusalReason::UnsupportedScheme
+        | RefusalReason::ForbiddenDestination => 1,
         RefusalReason::Usage => 2,
         RefusalReason::NoSuchSession
         | RefusalReason::SessionDied
