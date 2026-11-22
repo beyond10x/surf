@@ -72,30 +72,75 @@ fn review1_unchanged_copy_passes() {
     assert_eq!(status, Some(0), "{text}");
 }
 
+/// Changes the byte in the middle of `file` and returns the bytes it held before.
+fn change_one_byte(file: &Path) -> Vec<u8> {
+    let original = fs::read(file).expect("read");
+    let mut bytes = original.clone();
+    let at = bytes.len() / 2;
+    bytes[at] ^= 0x01;
+    fs::write(file, &bytes).expect("write");
+    original
+}
+
 /// Story `generated-rust-workspace`, Acceptance: "exits non-zero naming the file after one byte
-/// of any file under `generated/rust` is changed". Every committed file, one at a time.
+/// of any file under `generated/rust` is changed", for every committed file.
+///
+/// The comparison of the files ess writes (step 1 of `task generated-compare`) checks every file
+/// and lists each one that differs before it fails, so one run with one byte changed in each of
+/// them must name all of them. The record under `.ess-output` is checked by step 2, which runs
+/// only when step 1 passes, so each of its files is changed alone. One file of step 1 changed
+/// alone shows that a single change fails too. Three runs of the check in one copy, whatever the
+/// number of files.
 #[test]
 fn review1_one_changed_byte_in_any_generated_file_fails_naming_it() {
     let root = repository().join("generated/rust");
     let mut all = Vec::new();
     files(&root, &root, &mut all);
     all.retain(|p| !p.starts_with("target") && p != Path::new("Cargo.lock"));
+    all.sort();
     assert!(all.len() >= 28, "{all:?}");
+    let (record, written): (Vec<_>, Vec<_>) =
+        all.iter().partition(|p| p.starts_with(".ess-output"));
+    assert!(!record.is_empty() && !written.is_empty(), "{all:?}");
+
+    let dir = copy("byte");
+    let generated = dir.join("generated/rust");
     let mut missed = Vec::new();
-    for (n, path) in all.iter().enumerate() {
-        let dir = copy(&format!("byte-{n}"));
-        let file = dir.join("generated/rust").join(path);
-        let mut bytes = fs::read(&file).expect("read");
-        let at = bytes.len() / 2;
-        bytes[at] ^= 0x01;
-        fs::write(&file, &bytes).expect("write");
+
+    let originals: Vec<_> = written
+        .iter()
+        .map(|path| change_one_byte(&generated.join(path)))
+        .collect();
+    let (status, text) = check(&dir);
+    if status == Some(0) {
+        missed.push(format!(
+            "every written file changed: exit {status:?}\n{text}"
+        ));
+    }
+    for path in &written {
+        let named = format!("generated/rust/{}:", path.display());
+        if !text.contains(&named) {
+            missed.push(format!(
+                "{named} not named among every written file changed\n{text}"
+            ));
+        }
+    }
+    for (path, original) in written.iter().zip(&originals) {
+        fs::write(generated.join(path), original).expect("put the byte back");
+    }
+
+    for path in record.iter().chain(written.first()) {
+        let file = generated.join(path);
+        let original = change_one_byte(&file);
         let (status, text) = check(&dir);
         let named = format!("generated/rust/{}", path.display());
         if status == Some(0) || !text.contains(&named) {
-            missed.push(format!("{named}: exit {status:?}\n{text}"));
+            missed.push(format!("{named} changed alone: exit {status:?}\n{text}"));
         }
-        let _ = fs::remove_dir_all(&dir);
+        fs::write(&file, &original).expect("put the byte back");
     }
+
+    let _ = fs::remove_dir_all(&dir);
     assert!(missed.is_empty(), "{}", missed.join("\n"));
 }
 

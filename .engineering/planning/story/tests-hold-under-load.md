@@ -13,8 +13,10 @@ scope:
 - confidence: cited
   path: crates/surf/tests/review1_generated_check.rs
 - confidence: cited
+  path: crates/view/src/sse.rs
+- confidence: cited
   path: crates/view/tests/stream_bounds.rs
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T05:27:49Z", actor: "human:operator", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-22T05:27:49Z", actor: "human:operator", revision: 6}
