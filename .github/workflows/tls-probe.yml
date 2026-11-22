@@ -1,0 +1,199 @@
+# Probe of story:tls-decisions, on the branch probe/tls-ring only, never merged into main.
+# It builds ring 0.17.14 (the crate probe/tls-ring, outside the root workspace, with its own
+# Cargo.lock) for the four release targets on the release runners with the release flags, and
+# for x86_64-unknown-linux-gnu on ubuntu-latest as the gate builds, and runs the binary, which
+# prints `probe ok`. The two musl targets build twice: with the C compiler step and without it
+# (the negative controls). It publishes nothing and writes nothing to the repository.
+name: tls-probe
+
+on:
+  push:
+    branches: [probe/tls-ring]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tls-probe-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CC_ENABLE_DEBUG_OUTPUT: "1"
+
+defaults:
+  run:
+    shell: bash
+    working-directory: probe/tls-ring
+
+jobs:
+  probe:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: release x86_64-unknown-linux-musl
+            target: x86_64-unknown-linux-musl
+            runner: ubuntu-22.04
+            profile: release
+            musl_step: true
+          - name: release aarch64-unknown-linux-musl
+            target: aarch64-unknown-linux-musl
+            runner: ubuntu-22.04-arm
+            profile: release
+            musl_step: true
+          - name: release x86_64-apple-darwin
+            target: x86_64-apple-darwin
+            runner: macos-15-intel
+            profile: release
+            musl_step: false
+          - name: release aarch64-apple-darwin
+            target: aarch64-apple-darwin
+            runner: macos-15
+            profile: release
+            musl_step: false
+          - name: gate x86_64-unknown-linux-gnu
+            target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            profile: gate
+            musl_step: false
+          - name: negative control x86_64-unknown-linux-musl without the compiler step
+            target: x86_64-unknown-linux-musl
+            runner: ubuntu-22.04
+            profile: release
+            musl_step: false
+          - name: negative control aarch64-unknown-linux-musl without the compiler step
+            target: aarch64-unknown-linux-musl
+            runner: ubuntu-22.04-arm
+            profile: release
+            musl_step: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Read the toolchain of rust-toolchain.toml
+        working-directory: .
+        run: |
+          set -euo pipefail
+          channel=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+          components=$(sed -n 's/^components = \[\(.*\)\]$/\1/p' rust-toolchain.toml | tr -d '" ')
+          test -n "$channel" || { echo "::error::rust-toolchain.toml names no channel" >&2; exit 1; }
+          echo "RUST_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
+          echo "RUST_COMPONENTS=$components" >> "$GITHUB_ENV"
+          echo "rust-toolchain.toml: $channel ($components)"
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: ${{ env.RUST_COMPONENTS }}
+          targets: ${{ matrix.target }}
+      - name: The C compiler step for musl
+        if: matrix.musl_step
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends musl-tools
+          echo "CC_${TARGET//-/_}=musl-gcc" >> "$GITHUB_ENV"
+          command -v musl-gcc
+          musl-gcc --version | head -n 1
+      - name: What the runner offers
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -uo pipefail
+          uname -a
+          rustc --version --verbose
+          for tool in cc gcc clang musl-gcc x86_64-linux-musl-gcc aarch64-linux-musl-gcc; do
+            if path=$(command -v "$tool"); then
+              echo "$tool: $path: $("$tool" --version 2>&1 | head -n 1)"
+            else
+              echo "$tool: not found"
+            fi
+          done
+          env | grep -E '^(CC|TARGET_CC|CC_[a-z0-9_]+)=' || echo "no CC variable set"
+      - name: Set the build flags
+        env:
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          set -euo pipefail
+          if [ "$PROFILE" = release ]; then
+            # The flags of the job `package` of release.yml.
+            echo "RUSTFLAGS=-D warnings --remap-path-prefix=$HOME=/build --remap-path-prefix=$GITHUB_WORKSPACE=/src -C strip=symbols" >> "$GITHUB_ENV"
+          else
+            # The flags of `task build` and `task test`.
+            echo "RUSTFLAGS=-D warnings" >> "$GITHUB_ENV"
+          fi
+      - name: Build ring alone, timed
+        env:
+          TARGET: ${{ matrix.target }}
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          set -euo pipefail
+          if [ "$PROFILE" = release ]; then
+            args=(--locked --release --target "$TARGET")
+          else
+            args=(--locked)
+          fi
+          log="$RUNNER_TEMP/ring-build.log"
+          start=$(date +%s)
+          set +e
+          cargo build "${args[@]}" -p ring -vv > "$log" 2>&1
+          status=$?
+          set -e
+          end=$(date +%s)
+          # The compiler cc chose, the variables it read, and the first compile commands.
+          grep -E '^\[ring [^]]*\] (CC_|TARGET_CC|CC =|CFLAGS)' "$log" | sort -u | head -n 20 || true
+          grep -E '^\[ring [^]]*\] running:' "$log" | head -n 3 || true
+          grep -E '^(error|warning)' "$log" | head -n 20 || true
+          echo "ring build: exit $status, $((end - start)) s"
+          if [ "$status" -ne 0 ]; then
+            echo "--- the end of the build log"
+            tail -n 60 "$RUNNER_TEMP/ring-build.log"
+            exit "$status"
+          fi
+      - name: Build the probe, timed
+        env:
+          TARGET: ${{ matrix.target }}
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          set -euo pipefail
+          start=$(date +%s)
+          if [ "$PROFILE" = release ]; then
+            cargo build --locked --release --target "$TARGET"
+          else
+            cargo build --locked
+          fi
+          end=$(date +%s)
+          echo "probe build: $((end - start)) s"
+      - name: Check the binary and run it
+        env:
+          TARGET: ${{ matrix.target }}
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          set -euo pipefail
+          if [ "$PROFILE" = release ]; then
+            bin="target/$TARGET/release/surf-tls-ring-probe"
+          else
+            bin="target/debug/surf-tls-ring-probe"
+          fi
+          ls -l "$bin"
+          file "$bin"
+          case "$TARGET" in
+            *-linux-musl)
+              if readelf -lW "$bin" | grep INTERP; then
+                echo "::error::$bin is dynamically linked" >&2
+                exit 1
+              fi
+              echo "readelf -lW: no program interpreter, the binary is static"
+              ;;
+            *-apple-darwin)
+              otool -L "$bin"
+              ;;
+          esac
+          "$bin"

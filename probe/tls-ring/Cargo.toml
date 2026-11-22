@@ -1,0 +1,12 @@
+[package]
+name = "surf-tls-ring-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+description = "Probe of story:tls-decisions: ring 0.17.14 builds and runs on the release targets. Never merged into main."
+
+[dependencies]
+ring = "=0.17.14"
+
+[workspace]
