@@ -10,7 +10,7 @@ relations:
 scope:
 - confidence: cited
   path: docs/design/tls.md
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:23Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:24Z", actor: "human:operator", revision: 11, decided_on: {"recorded":{"verification":1}}}
@@ -295,7 +295,7 @@ and `story:tls-lock-allow` waits for nothing but this story.
 
 ## Acceptance
 
-`docs/design/tls.md` is on the story branch with the thirteen items, and the probe run it cites
+`docs/design/tls.md` is on the story branch with the fourteen items, and the probe run it cites
 built and ran ring 0.17.14 on the four release targets and on the gate runner.
 
 1. The probe run named in item 3: its five build jobs conclude `success` and each log holds
