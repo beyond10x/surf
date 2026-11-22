@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-step-within-budget
 kind: story
-status: draft
+status: active
 title: The TLS tests run in a gate step of their own within 120 s
 summary: 'wave/tls-1 at 48f05c2: task test 130.1 s at load 110 to 127, over 120 s, 545 of its 1,432 tests in the four TLS packages; task test-tls runs those under the 60 s end with its own budget of 120 s; the wave merges when both steps hold'
 relations:
@@ -15,7 +15,10 @@ scope:
   path: AGENTS.md
 - confidence: cited
   path: Taskfile.yml
-revision: 2
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T21:57:12Z", actor: "human:operator", revision: 4}
+- {from: "proposed", to: "active", at: "2026-11-22T21:57:13Z", actor: "human:operator", revision: 5}
 ---
 ## Why
 
@@ -88,7 +91,9 @@ packages run in `test-tls`; their tests in other packages run in `task test`.
   `story:doc-tests-of-one-package` changes the bullet of `task test` (the doc tests); the merge
   keeps both sides.
 - `Taskfile.yml`: `story:doc-tests-of-one-package` changes the doc-test command of `test`, this
-  story its nextest command; the merge keeps both.
+  story its nextest command; the merge keeps both. `story:page-test-step-within-budget` (on
+  `wave/round-2`) makes the same task write `.out/test-step.seconds`; the merge of the two waves
+  keeps that line in `test` beside this story's `--exclude` flags.
 
 ## Acceptance
 
@@ -109,7 +114,16 @@ Every command runs in a tree of `wave/tls-1` at the story's commit, unless named
 5. The forge: the `check` run of the story's commit on its branch or pull request prints `test
    step: N s of its budget of 120 s` and `tls test step: N s of its budget of 120 s`. The evidence
    names the run id and quotes both lines.
-6. `grep -n 'task test-tls' AGENTS.md` shows the new bullet and the paragraph of `task check`.
+6. `grep -n 'task test-tls' AGENTS.md` shows the new bullet, the paragraph of `task check` and
+   the bullet of `task test`; `grep -n 'surf-tls-conformance' AGENTS.md` shows the bullet of
+   `task test` naming the four packages it leaves out.
+7. The 60 s end holds in the step: a test planted in one TLS package that sleeps 70 s (by hand,
+   removed after, `git diff --stat` equal before and after) makes `slot task test-tls` print
+   nextest's `TIMEOUT` line for that test and exit non-zero.
+8. Each step reads its own report: in `.out/check.log` of acceptance 1 the ten lines after `the
+   ten slowest tests:` of `test-tls` name only `surf-tls`, `surf-tls-test-server`,
+   `surf-tls-test-certs` and `surf-tls-conformance`, and the ten lines of `test` name none of
+   them.
 
 ## What it does not do
 

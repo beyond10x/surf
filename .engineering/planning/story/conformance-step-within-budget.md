@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:conformance-step-within-budget
 kind: story
-status: draft
+status: active
 title: The conformance step ends each test within 60 s and itself within 120 s
 summary: 'On wave/round-2 (170 scenarios): the conformance tests run under cargo-nextest with the 60 s end; one timed line over the tests and the suite run, own budget of 120 s; each planted defect runs 3 listed scenarios from a committed noticed.txt instead of the whole suite (about 31 runs)'
 relations:
@@ -21,7 +21,10 @@ scope:
   path: conformance/tests/main.rs
 - confidence: cited
   path: taskfiles/slowest-tests.sh
-revision: 12
+revision: 14
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-22T21:57:11Z", actor: "human:operator", revision: 13}
+- {from: "proposed", to: "active", at: "2026-11-22T21:57:12Z", actor: "human:operator", revision: 14}
 ---
 ## Why
 
