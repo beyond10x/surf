@@ -7,7 +7,7 @@ title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, in the session process, against a DOM generated from Web IDL and under limits per page, when the session's option asks for it, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 23
+revision: 32
 ---
 ## Context
 
@@ -55,28 +55,29 @@ What is read of swell, every figure from its published branch, `origin/main` at 
 
 ## Outcome
 
-A page that surf loads runs its inline classic scripts while it is parsed, inside the session's
-own process, and what the scripts wrote is what surf shows. Two examples, each served by a test on
-127.0.0.1:
+A page that a session of `surfd` loads runs its inline classic scripts while it is parsed, inside
+the session's own process, and what the scripts wrote is what the session shows. Two examples,
+each served by a test on 127.0.0.1:
 
-1. `<title>Before</title><script>document.title = "Written by script"</script>`: with the
-   scripting option on, `surf-agent look` answers `page 200 "text/html" "<address>" "Written by
-   script"`, and `surf <url>` prints `title <document-id> Written by script`. With the option off
-   (the default) both show `Before`, as today.
+1. `<title>Before</title><script>document.title = "Written by script"</script>`: in a session
+   opened with the scripting option, `surf-agent look` answers `page 200 "text/html" "<address>"
+   "Written by script"`. In a session without it (the default) it shows `Before`, as today, and
+   `surf <url>` always prints `title <document-id> Before`.
 2. `<ul id=l></ul><script>var a = document.createElement("a"); a.setAttribute("href", "/next");
-   a.textContent = "Next"; document.getElementById("l").appendChild(a);</script>`: `surf <url>`
-   prints an `element` row of kind `link`, label `Next`, target `/next`, which the markup does not
-   hold. `surf-agent` lists it once the session lists links (`story:agent-follow-links`).
+   a.textContent = "Next"; document.getElementById("l").appendChild(a);</script>`: in a session
+   with the option, the document holds an `Element` row of kind `link`, label `Next`, target
+   `/next`, which the markup does not hold (a test of `surf-session`'s core reads it);
+   `surf-agent` lists it once the session lists links (`story:agent-follow-links`).
 
 In detail:
 
 - surf depends on swell by a git dependency on a release tag (S1), and `lock-check` allows that
   one source by its exact address, tag and commit, and refuses every other source.
-- Scripts run only when the session's option says so: `surf-agent open --scripts` and
-  `surf --scripts <url>` (the spelling is `scripts-spec`'s), off by default (S3). Both modes are
-  tested.
-- The parser, the DOM and the engine are in one process: `surf-session` for an agent session,
-  `surf` for the command line (S2, option a). At a `script` end tag the tree builder calls a hook
+- Scripts run only in a session of `surfd` whose `open` asked for them: `surf-agent open
+  --scripts` (the spelling is `scripts-spec`'s), off by default (S3, S7). Both modes are tested.
+  `surf <url>` and `surf run` run no page script.
+- The parser, the DOM and the engine are in one process, `surf-session` (S2, option a). At a
+  `script` end tag the tree builder calls a hook
   with the tree; surf's hook evaluates the script with swell against that tree, on the parsing
   thread, and parsing goes on over the tree the script left.
 - The DOM is generated from Web IDL (S4, option b): the whole `Node`, `Element` and `Document`
@@ -97,10 +98,14 @@ In: inline classic scripts (no `src`, `type` absent or a JavaScript MIME type es
 synchronously at their end tag in document order, in one realm per document whose global is a
 `Window` host object; the generated interfaces of "The DOM from Web IDL", each member with its
 behaviour or its named `NotSupportedError`; per-page limits; the scripting option of S3 on
-`surf-agent open` and `surf`, off by default; parser scripting enabled for a document whose
-scripts run, and its effect on `noscript`; the reduced environment of the session process.
+`surf-agent open` only, off by default; parser scripting enabled for a document whose scripts
+run, and its effect on `noscript`; the reduced environment of the session process.
 
 Out, each with its reason:
+
+- Scripts in `surf <url>` and `surf run`: by the operator's pick S7, scripts run only in sessions
+  of `surfd`. `surf <url>` shows a page without its scripts until it is a thin client of `surfd`;
+  nothing is built for that here.
 
 - `async`, `defer` and module scripts (`type=module`): swell does not parse modules yet (slice 11,
   `README.md`), and `async`/`defer` need the end of parsing with its deferred scripts and events
@@ -228,7 +233,7 @@ What surf must add inside the process:
   enters only by a reviewed change of that selection.
 
 The process boundary (S2, option a): the parser, the DOM and the engine run in `surf-session`,
-one process per session (`AGENTS.md`, "Agent target"), and in `surf` for the command line. What a
+one process per session (`AGENTS.md`, "Agent target"), and nowhere else. What a
 script reaches if it escaped the language, today, in `surf-session`:
 
 - the environment `surfd` passes on: its own, which is the caller's, without `SURF_TOKEN` and
@@ -263,10 +268,9 @@ counting allocator, `AGENTS.md`, `crates/fetch`):
   is `unsafe` itself; `CommandExt::uid` needs a privilege `surfd` does not have. The options are
   S5: a helper program the session is started through, `unsafe` in one audited place, or none.
 
-`surf <url>` with the option on runs scripts in the caller's own process, with the caller's
-environment and rights; no start of a process stands in front of it to reduce them. That is S7.
-
-Scripts are off by default (S3): a session runs them only when `open` asked for it.
+Scripts are off by default (S3): a session runs them only when `open` asked for it. No other
+process runs page script (S7): `surf <url>` and `surf run` run in the caller's own process,
+which nothing reduces, and so run none.
 
 ## The gaps
 
@@ -342,10 +346,10 @@ seven are checked against S2 = a and S4 = b; 8 to 10 are new with S4:
 ## What must exist in surf first
 
 - The document: `story:html-document-port` (wave 11) gives `Browser` a parser step that parses
-  each committed HTML body and keeps the tree per document, in the session process (and in `surf`
-  for the command line). S2 = a keeps that: this epic runs scripts inside that step, on the same
-  thread as the parse, before its ending command, so the element rows are computed from the tree
-  the scripts left. `story:html-tree-tables` (wave 11) for the foster-parenting case below.
+  each committed HTML body and keeps the tree per document, in the session process (and in
+  `surf` for the command line, which runs no script, S7). S2 = a keeps that: this epic runs
+  scripts inside that step in a session's process, on the same thread as the parse, before its
+  ending command, so the element rows are computed from the tree the scripts left. `story:html-tree-tables` (wave 11) for the foster-parenting case below.
 - The tree builder at a `script` end tag: today it pops and returns (`crates/html/src/
   tree_builder.rs`, module doc). It must, when parser scripting is enabled, take the steps of the
   "text" insertion mode the first version keeps (pop, return to the original insertion mode,
@@ -390,7 +394,7 @@ story of those waves writes.
    boundary, the steps of the `script` end tag taken and left out, the limits with measured
    values, seeds and clock, the specification shape of a script's end and of the option, the
    Web IDL selection (each member's slice or its `NotSupportedError` reason, each deviation, the
-   selector subset), the session's environment allow-list, the answers to S5 to S7, and
+   selector subset), the session's environment allow-list, the answers to S5 and S6, and
    requirements 1 to 10 handed to the swell session. Depends on nothing. Writes only
    `docs/design/scripts.md`. **Can start now: the first story a unit takes.**
 2. `webidl-reader`: the DOM Standard's IDL Index (commit `e4f4f4f`) and Web IDL's `DOMException`
@@ -408,10 +412,10 @@ story of those waves writes.
    `NOTICE`, `AGENTS.md` ("Goals"). Beside 2 once the one shared line of `members` is merged by
    the first of them.
 4. `scripts-spec`: `surf.document` records each script's end; the session gains the scripting
-   option of S3 (`surf.agent`, `cli/surf-agent.yaml`: `open --scripts`), and
-   `docs/surf-command.md` states `surf --scripts`; `task generate`. Depends on 1. Writes
-   `spec/domains/document.yaml`, `spec/domains/agent.yaml`, `cli/surf-agent.yaml`,
-   `spec/scenarios/`, `generated/rust/`, `docs/surf-command.md`. Beside 2, 3, 5; after the open
+   option of S3 on `open` only (S7; `surf.agent`, `cli/surf-agent.yaml`: `open --scripts`);
+   `task generate`. Depends on 1. Writes `spec/domains/document.yaml`,
+   `spec/domains/agent.yaml`, `cli/surf-agent.yaml`, `spec/scenarios/`, `generated/rust/`.
+   Beside 2, 3, 5; after the open
    agent specification stories that write `spec/domains/agent.yaml` and `cli/surf-agent.yaml`
    (`agent-forms-spec`, `agent-history-spec`, `agent-links-spec`, `runner-record-option`), or
    scoped against them.
@@ -454,20 +458,22 @@ story of those waves writes.
     `surf-script` and the expected counts rise. Depends on 9, 10, 11 and
     `story:html-tree-tables`. Writes `crates/html-conformance/` (`src/`, `expected/`,
     `Cargo.toml`) and the `html-sections` block of `docs/design/html-parser.md`. Beside 13.
-13. `scripts-document-port`: with the option on, `Browser`'s parser step runs a document's
-    scripts in the session process (and in `surf`) on the parsing thread, with the per-page
-    limits and a wall-clock interrupt, writes each script's end, and `surf <url>` and
-    `surf-agent look` show the two examples of "Outcome"; the `noscript` rule. Depends on 4, 5, 7,
-    9, 10, `story:html-document-port`, and a swell tag with the review's fixes. Writes
-    `crates/surf/src/lib.rs`, `crates/surf-cli/`, `crates/session/`, `crates/page/src/lib.rs`,
-    `conformance/src/target.rs`, `docs/agent-answer.md`. **Waits for
+13. `scripts-document-port`: in a session opened with the option, `Browser`'s parser step runs a
+    document's scripts in the session process on the parsing thread, with the per-page limits
+    and a wall-clock interrupt, writes each script's end, and the session shows the two examples
+    of "Outcome" (`surf-agent look`, and the document's rows); `surf <url>` keeps running no
+    script, tested; the `noscript` rule. Depends on 4, 5, 7, 9, 10,
+    `story:html-document-port`, and a swell tag with the review's fixes. Writes
+    `crates/surf/src/lib.rs`, `crates/session/`, `crates/page/src/lib.rs`,
+    `conformance/src/target.rs`, `docs/agent-answer.md`, and only a test in
+    `crates/surf-cli/tests/`. **Waits for
     `story:html-document-port`.**
 14. `scripts-hostile-pages`: pages with an endless loop, endless allocation, endless node
     creation, a tree built deep by `appendChild`, deep recursion, 10,000 script elements, an
     attribute over the limit and a script over the source limit each end with a recorded limit
     and the rest of the page parsed, every test under 5 s; and a session at its process limits
     ends as a failure of the script, not of `surfd`. Depends on 13. Writes `crates/surf/tests/`,
-    `crates/surf-cli/tests/`, `crates/session/tests/`. **Waits for `story:html-document-port`**
+    `crates/session/tests/`. **Waits for `story:html-document-port`**
     (through 13).
 
 At the same time: 1 and 2 now; after 1, 3, 4 and 5 beside 2; 6 after 2 and 3, beside 7; after 8,
@@ -476,7 +482,7 @@ the slices 9, 10 and 11 beside each other (disjoint modules of `crates/script/sr
 
 ## Open decisions for the operator
 
-S1 to S4 are answered ("Decisions taken"). Three remain, each with its default, which is taken
+S1 to S4 and S7 are answered ("Decisions taken"). Two remain, each with its default, which is taken
 after 15 minutes without an answer (the organization folder's rule "A default proceeds"); none blocks
 `scripts-decisions` or `webidl-reader`.
 
@@ -508,19 +514,6 @@ S6. Which definitions of the HTML Standard are generated beside the DOM Standard
   `Document`'s named getter, which needs swell's slice 9 and stays a deviation.
 - c. No HTML IDL: a hand-written `Window` with `document` and a hand-written `title`. Cost: two
   members not generated, against S4's "generated from their Web IDL".
-Default: a.
-
-S7. `surf --scripts <url>` runs page script in the caller's own process ("End design named by the
-operator").
-- a. As S3 chose: `surf` runs them in its process, with the in-process limits only, and
-  `docs/surf-command.md` says that this process is not hardened. Cost: an escape reaches the
-  caller's environment and rights; nothing changes until `surf` becomes a client of `surfd`.
-- b. `surf` clears its own environment of everything but an allow-list by starting itself again
-  with `env_clear` before it runs a script, and takes the bounds of S5. Cost: a re-start of
-  `surf` per run, a second path to test; the caller's rights stay.
-- c. The option on `surf` waits until `surf` is a client of `surfd`; the first version has
-  `surf-agent open --scripts` only. Cost: changes S3's pick of both command lines, which only the
-  operator can do; `surf <url>` shows no script's work.
 Default: a.
 
 ## Out of scope
@@ -568,9 +561,10 @@ which is the swell session's, given requirements 1 to 10 of "The gaps".
    on an object of another brand throws a `TypeError`.
 4. `task html-conformance` prints the four DOM-only `needs-script` cases as run and passed, and
    `not-run:needs-script` counts 3 cases, each needing `document.write`.
-5. Named tests over the two examples of "Outcome": with the option on, `surf <url>` prints the
-   title the script wrote and the element row of the link it added, and `surf-agent look` prints
-   that title in its page line; with the option off, both print what the markup holds.
+5. Named tests over the two examples of "Outcome": in a session opened with the option,
+   `surf-agent look` prints the title the script wrote in its page line and the document holds
+   the element row of the link it added; in a session without it, and from `surf <url>` always,
+   what the markup holds.
 6. Each page of `scripts-hostile-pages` ends with its limit recorded and the page's other elements
    present, each test under 5 s.
 7. A test reads a running `surf-session`'s `/proc/<pid>/environ` and finds the allow-list only,
@@ -582,8 +576,9 @@ which is the swell session's, given requirements 1 to 10 of "The gaps".
 
 - S1, the form of the dependency: option a, a git dependency on a release tag of swell. The operator, 2026-11-22 04:51 CET, relayed by the session `host-operator`: "A: git dep on a swell tag". `lock-check` allows that one source by its exact address and tag, and the sentence on dependencies becomes "no third-party crate; one crate of the organization".
 - S2, where a page's scripts run: option a, in the session process (`surf-session`, one per session), engine and DOM together; there is no separate script process. The operator first picked b at about 04:55 CET, 2026-11-22, relayed by the session `host-operator`: "B: separate script process". He corrected it at 05:15 CET, relayed by the session `host-operator` (spoken, verbatim; "serve", "served" and "serve D" are the transcription of surf and `surfd`): "So for swell and serve, I think one process is actually enough. Yeah, just correct this last decision. Eventually, there will be served, and has an isolated multiple and the CLI just becomes a thin client. That's the actual end design. So where serve D is just a daemon, basically." The epic's default a stands.
-- S3, when scripts run: option b of the list above (put to the operator as "A"), per session, an option of `surf-agent open` and of `surf`, off by default, both modes tested. The operator, 2026-11-22 05:12 CET, relayed by the session `host-operator`: "A: option, off by default". It was the default the epic named.
+- S3, when scripts run: option b of the list above (put to the operator as "A"), per session, an option of `surf-agent open` and of `surf`, off by default, both modes tested. The operator, 2026-11-22 05:12 CET, relayed by the session `host-operator`: "A: option, off by default". It was the default the epic named. By S7 the option exists on `surf-agent open` only, not on `surf`.
 - S4, the DOM of the first version: option b, the whole `Node`, `Element` and `Document` interfaces generated from their Web IDL. The operator, 2026-11-22 05:14 CET, relayed by the session `host-operator`: "B: full Web IDL interfaces". This is not the default the epic named (a).
+- S7, `surf <url>` and page scripts: option c, scripts run only in sessions of `surfd` (`surf-agent open --scripts`); `surf <url>` gets no script option until `surf` is a thin client of `surfd`, and nothing is built for it. The operator, 2026-11-22 05:48 CET, relayed by the session `host-operator`: "C: scripts only in surfd". It was not the default the epic named (a).
 
 ## From the security review of 2026-11-22
 
@@ -795,11 +790,11 @@ Against this epic and the plan read for it:
 
 - S2 = a (engine, DOM and parser in the session process) matches "one process is actually
   enough", and `surfd` keeps one process per session.
-- `surf --scripts` (S3) runs untrusted script in the caller's own process, which is not a session
-  of `surfd`, so the session's hardening does not reach it: S7.
+- Scripts run only in sessions of `surfd` (S7, the operator's pick): `surf <url>` gets no script
+  option until it is a thin client of `surfd`, so no page script runs outside a hardened session.
 - `AGENTS.md` ("Implementation targets") names an isolation target of one process per component
   (blocked on beyond10x/ess#792) and then a micro VM per component. The end design isolates
   sessions inside `surfd`; the two are not reconciled in the plan. This epic depends on neither.
 - `epic:e2e-scenario-runner` plans `surf run` to run a scenario in process
-  (`story:runner-run`); once pages run scripts, that too is a `surf` command running page script
-  outside `surfd`. Not decided here.
+  (`story:runner-run`); by S7 it runs no page script, so a scenario of a page that needs its
+  scripts cannot run there until `surf run` is a client of `surfd`. That epic is not changed here.
