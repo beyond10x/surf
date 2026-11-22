@@ -19,7 +19,7 @@ On 2026-11-22, with ess 0.97.3, after round 1, which follows wave 10 of the curr
 | conformance scenarios | 169 of 169 pass, against the interpreter and against the Rust code |
 | tests | 877 passed |
 | agent tasks | 2 of 4 pass (`article`, `table`); `link` and `search` wait for later stories |
-| live view's page tests | 47 passed, in Chromium's headless shell |
+| live view's page tests | 53 passed, in Chromium's headless shell |
 | URL test data | 872 of 904 cases pass; 32 skipped, listed by name |
 | HTML parser test data | 9,107 cases counted, 9,095 run, 9,095 pass (82 encoding, 7,046 tokenizer and 1,967 tree construction cases); the parser decides the encoding, tokenizes, and builds a tree in every insertion mode, foreign content and fragments included, within six limits on untrusted input, and `surf` parses every `text/html` response with it; `task check` holds these counts |
 | third-party crates in what ships | 0 |

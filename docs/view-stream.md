@@ -252,7 +252,11 @@ An element,
   members adds them here.
 
 The view writes every one of these values as text (a label and a target come from the page);
-no target is a link the page follows.
+no target is a link the page follows. The stream carries each value unchanged; the page shows a
+bidirectional control in it (U+202A to U+202E, U+2066 to U+2069) as a mark that names it
+(`U+202E`), so a value cannot reorder what a person reads, and does so in every text that came
+from a session: a label, a target, a title, an address. Other format characters (U+200E,
+U+200F, joiners, a soft hyphen) are shown as they are.
 
 What the view holds of a value, in the words of D22 and D21: a field of bytes (a response body, a
 request body) is written by the session process as its length, `<n> bytes`, never as the bytes;

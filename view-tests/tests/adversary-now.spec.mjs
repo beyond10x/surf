@@ -83,8 +83,10 @@ test("adversary now: a bidirectional control in a label or a target does not reo
   await load(page, surf.view);
   await expect(elements(page)).toHaveCount(1);
   const held = elements(page).nth(0);
-  expect(await held.locator(".label").textContent()).toBe("go " + RLO + "abc");
-  expect(await held.locator(".target").textContent()).toBe("http://[" + RLO + "xyz");
+  // The control is shown as a mark that names it (crates/view/web/dom.js), not written.
+  expect(await held.locator(".label").textContent()).toBe("go U+202Eabc");
+  expect(await held.locator(".target").textContent()).toBe("http://[U+202Exyz");
+  expect(await held.locator(".bidi-mark").allTextContents()).toEqual(["U+202E", "U+202E"]);
   // Read left to right, the characters must come in the order of the value.
   expect({
     label: await held.locator(".label").evaluate(onScreen, "abc"),
@@ -148,4 +150,62 @@ test("adversary now: markup in every member of a forged stream element is text",
   expect(record.dialogs).toEqual([]);
   expect(record.errors).toEqual([]);
   expect(record.violations).toEqual([]);
+});
+
+// The cases of the fix: the mark is made in dom.js, so a title and an address show it as a label
+// does; a format character that is not a bidirectional control stays as it is.
+
+test("adversary now: a bidirectional control in a title and in an address shows as a mark", async ({
+  page,
+  surf,
+  record,
+}) => {
+  const id = await surf.open();
+  await surf.agent(id, "go", surf.pages + "/adversary-now/title.html");
+  // No address a session reaches holds the control (the URL parser encodes it), so the answer's
+  // address is forged on its way to the page.
+  const forged = "http://127.0.0.1:9/" + RLO + "xyz";
+  await page.route("**/api/sessions/" + id, async (route) => {
+    const response = await route.fetch();
+    const detail = await response.json();
+    for (const entry of detail.entries) {
+      if (entry.kind === "answer" && entry.page && entry.page.kind === "loaded") {
+        entry.page.address = forged;
+      }
+    }
+    await route.fulfill({ response, json: detail });
+  });
+  await load(page, surf.view);
+  const part = (name) =>
+    page
+      .locator("#page-line .part")
+      .filter({ has: page.locator("dt", { hasText: new RegExp("^" + name + "$") }) })
+      .locator("dd");
+  await expect(part("title")).toHaveCount(1);
+  const title = page.locator("#session-list .title");
+  await expect(title).toHaveCount(1);
+  for (const node of [part("title"), title, page.locator("#session-heading")]) {
+    expect(await node.textContent()).toBe("Title U+202Eabc");
+    expect(await node.locator(".bidi-mark").allTextContents()).toEqual(["U+202E"]);
+  }
+  expect(await part("address").textContent()).toBe("http://127.0.0.1:9/U+202Exyz");
+  expect(await part("address").locator(".bidi-mark").allTextContents()).toEqual(["U+202E"]);
+  expect({
+    title: await part("title").evaluate(onScreen, "abc"),
+    address: await part("address").evaluate(onScreen, "xyz"),
+  }).toEqual({ title: "abc", address: "xyz" });
+  const held = await page.locator("body").evaluate((body) => body.textContent.includes(String.fromCodePoint(0x202e)));
+  expect(held).toBe(false);
+  expect(record.errors).toEqual([]);
+  expect(record.violations).toEqual([]);
+});
+
+test("adversary now: a right-to-left mark in a label stays as it is", async ({ page, surf }) => {
+  const id = await surf.open();
+  await surf.agent(id, "go", surf.pages + "/adversary-now/mark.html");
+  await load(page, surf.view);
+  await expect(elements(page)).toHaveCount(1);
+  const label = elements(page).nth(0).locator(".label");
+  expect(await label.textContent()).toBe("go " + String.fromCodePoint(0x200f) + "abc");
+  expect(await panel(page).locator(".bidi-mark").count()).toBe(0);
 });

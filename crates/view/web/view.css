@@ -484,6 +484,20 @@ h3 {
   text-decoration: line-through;
 }
 
+/* A bidirectional control in a value from a session, shown as its name (dom.js). */
+.bidi-mark {
+  margin: 0 0.1em;
+  padding: 0 0.2em;
+  border: 1px solid var(--warn);
+  border-radius: 3px;
+  color: var(--warn);
+  font-family: var(--mono);
+  font-size: 0.75em;
+  font-style: normal;
+  font-weight: 600;
+  text-decoration: none;
+}
+
 .now-element.is-hidden .visibility {
   color: var(--warn);
   font-weight: 600;
