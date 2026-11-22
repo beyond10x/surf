@@ -43,7 +43,7 @@ scope:
   path: generated/rust
 - confidence: inferred
   path: spec/domains/agent.yaml
-revision: 14
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 5}
@@ -79,7 +79,10 @@ so the agent gets the reason and status 1 instead of a navigation that never sta
   entry whose address was refused never entered the history, since an entry is made only by a
   committed navigation of a push (`.engineering/planning/story/agent-history-spec.md:82-83`,
   `:97-98`)
-  and a refused target starts no navigation.
+  and a refused target commits none: a target refused by the session's checks starts no
+  navigation, and one the fetch refuses at its first request (`forbidden-destination` by the
+  address a host resolves to, `story:agent-press-submit`, "As decided after the adversary's
+  pass", decision 1) ends a navigation that fails before any connection and commits nothing.
 - `crates/answer`, `docs/agent-answer.md`: `did back`, `did forward`, the refusal reasons, the
   `path` lines `back` and `forward`, each with its `parse` beside its rendering (decision D20 of
   `docs/plan/agent-plan-revision-2.md`).

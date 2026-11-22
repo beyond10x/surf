@@ -41,6 +41,10 @@ scope:
 - confidence: inferred
   path: crates/answer/tests
 - confidence: cited
+  path: crates/fetch/src
+- confidence: cited
+  path: crates/fetch/tests
+- confidence: cited
   path: crates/page/Cargo.toml
 - confidence: cited
   path: crates/page/src/base_url.rs
@@ -66,7 +70,7 @@ scope:
   path: spec/domains/agent.yaml
 - confidence: inferred
   path: website/docs/drive-from-an-agent.md
-revision: 20
+revision: 23
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 6}
@@ -224,8 +228,8 @@ line), `crates/session/`, `crates/answer/`, `docs/agent-answer.md`, `cli/surf-ag
 
 ## Acceptance
 
-`cargo nextest run -p surf-page -p surf-session -p surf-answer -p surf-agent` passes with the 18
-numbered cases, each a test named after its case, case 4 equal to its golden text, and the drift
+`cargo nextest run -p surf-page -p surf-session -p surf-answer -p surf-agent -p surf-fetch` passes
+with the 19 numbered cases (case 19 in "As decided after the adversary's pass"), each a test named after its case, case 4 equal to its golden text, and the drift
 test holding with `follow` in both the document and the parser. The round's measure:
 `now_handle` reads the handle from the `now` line with the label asked,
 `crates/agent-tasks/status.txt` reads `link pass`, `tasks::every_task`
@@ -266,3 +270,20 @@ in `refusal_status` (`crates/session/src/lib.rs:924`), in the exhaustive `match`
 `crates/surfd/src/daemon.rs:815-821`, and in a test. `story:agent-press-submit` applies the same
 three refusals to a submission's address and uses these words; it adds no `RefusalReason` for
 them.
+
+After the adversary's pass on `story:agent-press-submit` (its section of that name, decision 1),
+the destination rule applies to the address a request connects to, not only to the host's
+text. From a page that counts as public, the fetch applies the rule it applies to a redirect to
+the first request of a `follow` too: the session tells the fetch that the request comes from a
+public page, and a host that resolves to a local address, any one of those resolved, is refused
+before a connection is made and before a byte is sent; the session answers `did refused
+forbidden-destination`. The session's text check (`crates/session/src/lib.rs:1208`,
+`host_is_local` at `:1829`, at `b11ed6c`) stays the first check. `go` with an address the agent
+typed is not changed. A page counts as public by its address text, as decided above: local only
+when its host is a local IP address or `localhost`. The path, the page and the filled values
+after this refusal are as after the text check's. Case 19: `follow` of a link to
+`http://ip6-localhost:<port>/` from a page that counts as public, with a server listening on
+`[::1]`: status 1, `did refused forbidden-destination`, the server reads no byte. If the name
+`ip6-localhost` is not portable to the forge's runner, the test uses a `Network` of its own
+(`crates/fetch/src/lib.rs:397`, `send_through`) with a resolver that maps a name to a local
+address. `crates/fetch/src` and `crates/fetch/tests` join the surfaces written.
