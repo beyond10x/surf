@@ -28,7 +28,7 @@ Linux an agent can open a session and send it to a page. It is growing into two 
   a server.
 
 surf has no JavaScript yet. The script engine it will embed is
-[swell](https://github.com/beyond10x/swell), an ECMAScript (JavaScript) engine written from
+[swell](https://beyond10x.github.io/swell/), an ECMAScript (JavaScript) engine written from
 scratch in Rust, a project of its own that is developed beside surf. A page that surf loads
 runs no script today.
 
@@ -366,7 +366,7 @@ plan is [`docs/plan/agent-waves.md`](docs/plan/agent-waves.md) and its design is
 Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `surf-agent`,
 `surfd` and `surf-session`, for Linux only at first. The releases are listed at
 <https://github.com/beyond10x/surf/releases>. After it, work moves to the script engine,
-[swell](https://github.com/beyond10x/swell), a project of its own. Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. The waves after them are planned and have no date.
+[swell](https://beyond10x.github.io/swell/), a project of its own. Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. The waves after them are planned and have no date.
 
 | after wave | what you can do |
 |---|---|
@@ -385,7 +385,7 @@ Next after that, wanted and not planned in detail yet:
 
 - **TLS 1.3**, and `https:` with it. Soon: most of the web is not reachable without it.
 - **Screenshots.** That takes CSS, layout, painting and text rendering, all written here.
-- **A JavaScript engine**: [swell](https://github.com/beyond10x/swell), an ECMAScript engine
+- **A JavaScript engine**: [swell](https://beyond10x.github.io/swell/), an ECMAScript engine
   written from scratch in Rust as a project of its own, which surf will embed.
 - One operating-system process per component.
 - The Chrome DevTools Protocol, so existing test tools can drive surf.
