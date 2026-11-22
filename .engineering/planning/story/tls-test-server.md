@@ -14,7 +14,7 @@ relations:
 scope:
 - confidence: cited
   path: crates/tls-test-server
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:29Z", actor: "human:operator", revision: 8, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:29Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"verification":1}}}
@@ -123,7 +123,7 @@ A server that ships; session tickets sent with meaning; client certificates; the
 
 ## Writes
 
-`crates/tls-test-server/`. Coordinator: `Cargo.lock`, `AGENTS.md` ("Layout"). Read later by
+`crates/tls-test-server/` (its `Cargo.toml` with `autotests = false` and `[[test]] name = "main"`, tests in `tests/main.rs`). Coordinator: `Cargo.lock`, `AGENTS.md` ("Layout"). Read later by
 `story:tls-fetch-https`, `story:tls-session-anchors`, `story:agent-tasks-https` and
 `story:agent-cookie-jar`; `story:agent-cookie-jar` also writes it after this story merged (it adds
 `TestServer::requests()`).

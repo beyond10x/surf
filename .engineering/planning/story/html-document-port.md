@@ -13,7 +13,8 @@ relations:
 - depends_on: story:agent-session-process
 - depends_on: story:runner-surf-cli-package
 - depends_on: story:agent-fetch-post
-revision: 6
+- depends_on: story:one-test-binary-per-crate
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 5}
@@ -86,8 +87,8 @@ for them.
     not empty; the expected line is built from `surf_html::NOT_YET_PARSED`, never written as a
     literal, so a tree story that shortens the list breaks no test here, D31).
 
-Writes: `crates/surf/src/lib.rs`, `crates/surf/tests/parse.rs` (new), `crates/surf-cli/src/main.rs`,
-`crates/surf-cli/tests/page.rs` (new), `conformance/src/target.rs`, `crates/session/` (the
+Writes: `crates/surf/src/lib.rs`, `crates/surf/tests/parse.rs` (new), `crates/surf/tests/main.rs` (one `mod` line), `crates/surf-cli/src/main.rs`,
+`crates/surf-cli/tests/page.rs` (new), `crates/surf-cli/tests/main.rs` (one `mod` line), `conformance/src/target.rs`, `crates/session/` (the
 `Browser` construction only).
 
 For `AGENTS.md`, handed over in the report (D7):

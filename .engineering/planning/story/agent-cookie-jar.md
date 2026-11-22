@@ -56,7 +56,7 @@ scope:
   path: spec/domains/net.yaml
 - confidence: cited
   path: spec/scenarios
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T07:42:31Z", actor: "human:operator", revision: 11, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T07:42:31Z", actor: "human:operator", revision: 12, decided_on: {"recorded":{"verification":1}}}
@@ -281,7 +281,7 @@ Where it is written:
   `task generate` (`generated/rust/`) and what the conformance target needs
   (`conformance/src/target.rs`).
 - `crates/cookie` (new, `surf-cookie`, shipped, standard library and `surf-url` only, Apache-2.0,
-  `#![forbid(unsafe_code)]`): `Jar` (one `Mutex` inside, so a `&Jar` is shared), `Jar::receive(url,
+  `#![forbid(unsafe_code)]`; `autotests = false` and `[[test]] name = "main"` in its `Cargo.toml`, tests in `tests/main.rs`): `Jar` (one `Mutex` inside, so a `&Jar` is shared), `Jar::receive(url,
   set_cookie_field, now)`, `Jar::cookie_field(url, site, method, now) -> Option<String>`,
   `Jar::count(now)`, `site(initiator, url) -> Site`, `parse_date`; the crate documentation names
   each rule's section and the memory bound.

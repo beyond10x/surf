@@ -9,7 +9,7 @@ relations:
 - decomposes: epic:html-parser
 - depends_on: story:html-tree-tables
 - depends_on: story:html-actionable-elements
-revision: 7
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 5}
@@ -45,7 +45,7 @@ The test of `crates/page` that reads template parsing is here, where the parsing
 - `crates/html-conformance/expected/tree-construction.txt`: the counts raised.
 
 Writes: `crates/html/src/tree.rs`, `crates/html/src/tree_builder.rs`,
-`crates/html/src/tree_builder/`, `crates/page/tests/tree_template.rs` (new),
+`crates/html/src/tree_builder/`, `crates/page/tests/tree_template.rs` (new), `crates/page/tests/main.rs` (one `mod` line),
 `crates/html-conformance/expected/tree-construction.txt`.
 
 ## Acceptance

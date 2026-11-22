@@ -23,7 +23,7 @@ scope:
   path: crates/tls/tests/tls/path.rs
 - confidence: cited
   path: taskfiles/tls-x509-conformance.yml
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:26Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:27Z", actor: "human:operator", revision: 11, decided_on: {"recorded":{"verification":1}}}
@@ -156,7 +156,7 @@ Revocation (CRL, OCSP), certificate transparency, client certificates, the ancho
 ## Writes
 
 `crates/tls/src/path.rs`, `src/names.rs`, `tests/tls/path.rs`, `tests/tls/names.rs`,
-`crates/tls-conformance/`, `taskfiles/tls-x509-conformance.yml`. Coordinator: `mod` lines of
+`crates/tls-conformance/` (its `Cargo.toml` with `autotests = false` and `[[test]] name = "main"`), `taskfiles/tls-x509-conformance.yml`. Coordinator: `mod` lines of
 `crates/tls/src/lib.rs` and `tests/main.rs` in a wave of more than one unit, the root
 `Taskfile.yml`, `Cargo.lock`, `AGENTS.md`. Beside it run `story:tls-anchors` and
 `story:tls-handshake` (other files of `crates/tls`).

@@ -34,7 +34,7 @@ scope:
   path: taskfiles/lock-allow.txt
 - confidence: cited
   path: taskfiles/lock-check.sh
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:24Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:24Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
@@ -209,7 +209,7 @@ of primitives.
 `taskfiles/lock-check.sh`, `taskfiles/lock-allow.txt`, the module `lock_check` of the test
 binary of `crates/surf` (where `story:one-test-binary-per-crate` put
 `crates/surf/tests/lock_check.rs`; this story starts after that one, by its `depends_on` edge,
-so that the two never rewrite the file side by side), `crates/tls/` (`Cargo.toml`,
+so that the two never rewrite the file side by side), `crates/tls/` (`Cargo.toml` with `autotests = false` and `[[test]] name = "main"`,
 `src/lib.rs`, `src/crypto.rs`, `src/error.rs`, `tests/main.rs`, `tests/tls/alloc.rs`,
 `tests/tls/seam.rs`, `tests/data/wycheproof/`), `.cargo/config.toml` when item 4 asks.
 Coordinator: the root `Taskfile.yml` (task body), `Cargo.lock`, `README.md`, `AGENTS.md`.

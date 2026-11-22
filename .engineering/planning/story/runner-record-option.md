@@ -14,7 +14,7 @@ relations:
 - depends_on: story:agent-surfd-supervisor
 - depends_on: story:agent-session-process
 - depends_on: story:agent-session-events
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 5}
@@ -100,7 +100,7 @@ so no synthesized scenario changes and `conformance/src/target.rs` needs nothing
      `open` of case 3, `surfd::Sessions` holds no entry for it and its session directory is gone.
 
 Surfaces: `cli/surf-agent.yaml`, `spec/domains/agent.yaml`, `generated/rust/`, `crates/agent/`,
-`crates/session/`, `crates/surfd/` (supervisor code and `tests/record.rs` only). Every agent
+`crates/session/`, `crates/surfd/` (supervisor code, `tests/record.rs` and its `mod` line in `tests/main.rs` only). Every agent
 story that writes these files precedes this one: `agent-cli-spec`, `agent-cli-client`,
 `agent-surfd-supervisor`, `agent-session-process`, `agent-session-events` and
 `agent-change-and-log`, each a direct edge. `runner-record-session` follows it on

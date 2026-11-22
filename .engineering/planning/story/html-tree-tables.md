@@ -9,7 +9,8 @@ relations:
 - decomposes: epic:html-parser
 - depends_on: story:html-parser-limits
 - depends_on: story:html-actionable-elements
-revision: 7
+- depends_on: story:one-test-binary-per-crate
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:12Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 5}
@@ -47,7 +48,7 @@ The test of `crates/page` that reads `select` parsing is here, where the parsing
 - `crates/html-conformance/expected/tree-construction.txt`: the counts raised.
 
 Writes: `crates/html/src/tree_builder.rs`, `crates/html/src/tree_builder/`,
-`crates/page/tests/tree_tables.rs` (new), `crates/html-conformance/expected/tree-construction.txt`.
+`crates/page/tests/tree_tables.rs` (new), `crates/page/tests/main.rs` (one `mod` line), `crates/html-conformance/expected/tree-construction.txt`.
 
 ## Acceptance
 

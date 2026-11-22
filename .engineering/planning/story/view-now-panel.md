@@ -9,7 +9,7 @@ relations:
 - decomposes: epic:live-view
 - depends_on: story:view-detail-panel
 - depends_on: story:agent-follow-links
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:15Z", actor: "human:timo", revision: 4}
@@ -75,7 +75,7 @@ Surfaces written: `docs/view-stream.md`, `crates/view/src/model.rs`, `crates/vie
 ## Acceptance
 
 `slot task view-test` passes with cases 2 to 6 of `view-tests/tests/now.spec.mjs`, `cargo test -p
-surf-view --test json` passes with case 1, each named after its case, and the earlier view tests
+surf-view --test main json::` passes with case 1, each named after its case, and the earlier view tests
 still pass.
 
 ## Out of scope

@@ -16,7 +16,7 @@ scope:
   path: taskfiles/tls-certs-check.sh
 - confidence: cited
   path: taskfiles/tls-certs.yml
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:26Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:26Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
@@ -166,7 +166,7 @@ Validating the certificates (`story:tls-x509-path`); certificates for client aut
 
 ## Writes
 
-`crates/tls-test-certs/` (`src/`, `keys/`, `openssl/`, `certs/`, `tests/`),
+`crates/tls-test-certs/` (`Cargo.toml` with `autotests = false` and `[[test]] name = "main"`, `src/`, `keys/`, `openssl/`, `certs/`, `tests/`),
 `taskfiles/tls-certs.yml`, `taskfiles/tls-certs-check.sh`. Coordinator: the root `Taskfile.yml`
 (include, `check` line, the task `slow`), `Cargo.lock`, `AGENTS.md`. No other story writes
 `crates/tls-test-certs/`; the stories named in Context read `certs/` by path. Beside it run

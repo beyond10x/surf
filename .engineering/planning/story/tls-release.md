@@ -22,7 +22,7 @@ scope:
   path: taskfiles/release-smoke.sh
 - confidence: cited
   path: website/docs
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:31Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:31Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
@@ -56,11 +56,11 @@ test certificates turn on `test-tooling` in every `cargo test` build of `surf-cl
   129-176): the compiler step of item 3 for each target that needs it, before the step, with a
   comment saying why; and the order of the step changed so that `test-tooling` never reaches a
   shipped binary. Today the build comes first (line 140 on Linux, line 148 on macOS), then
-  `cargo test ... --test cli` (line 152), which with the dev-dependencies of `story:tls-fetch-https`
+  `cargo test ... --test main cli:: -- --skip review1_cli::` (line 152), which with the dev-dependencies of `story:tls-fetch-https`
   rebuilds `target/$TARGET/release/surf` with `test-tooling`, then the copy from that path
   (lines 155-169). After this story, with the test line kept as it is at the base of the unit
-  (its `--test` argument is the one `story:one-test-binary-per-crate` left: `--test cli`, or the
-  target that story renamed it to); this story changes only the order of build and test and
+  (its `--test` argument is the one `story:one-test-binary-per-crate` left: `--test main cli::`
+  with `-- --skip review1_cli::`); this story changes only the order of build and test and
   the target directory of the build:
   1. the test line, first, unchanged;
   2. then the builds of lines 140 and 148, each with `--target-dir target/ship`: a build of
@@ -77,11 +77,10 @@ test certificates turn on `test-tooling` in every `cargo test` build of `surf-cl
   `fetch-failed <id> Unreachable https://127.0.0.1:1/`; `surf --anchors` exits 0 and prints
   `anchors <n> bundled <date> sha256:<hex>` with the count and date of
   `crates/tls/src/anchors/SOURCE` of the checkout. The header comment of the script says so.
-  Its step 3 (lines 96-98 today) runs the end-to-end case with the `--test` argument and any
-  filter it holds at the base of the unit, as `story:one-test-binary-per-crate` left them:
-  `--test e2e` when that story kept the end-to-end test in its own binary (it reads
-  `SURF_BIN_DIR`, an environment variable, which that story allows as a reason), or the target
-  and filter it wrote. This story does not change those lines. It tests the unpacked binaries
+  Its step 3 (lines 96-98 today) runs the end-to-end case with `--test main e2e::`, as
+  `story:one-test-binary-per-crate` left it (the case reads
+  `SURF_BIN_DIR`; the filter keeps the other tests of `surf-session` out of the smoke run).
+  This story does not change those lines. It tests the unpacked binaries
   (`SURF_BIN_DIR`), so its own build may carry `test-tooling`.
 - `docs/releasing.md`: "What a release holds" names ring and the compiler step; "Cutting a
   release" gains a step before the tag: `task anchors-age` passes, else `task anchors-refresh`

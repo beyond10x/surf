@@ -19,7 +19,7 @@ scope:
   path: taskfiles/agent-tasks-model.sh
 - confidence: cited
   path: taskfiles/agent-tasks.yml
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T07:42:29Z", actor: "human:operator", revision: 11, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T07:42:30Z", actor: "human:operator", revision: 12, decided_on: {"recorded":{"verification":1}}}
@@ -94,7 +94,7 @@ Taken by the coordinating agent on 2026-11-22, reversible, reported to the opera
    the panel: it starts after release 0.3.0 is published (the release comes before
    `one-test-binary-per-crate` in the plan). Round 3 of the panel: its merge is not ordered
    against `story:page-text-look`; case 1 gives the expected lines for each base.
-7. Tests go into the crate's one integration-test binary, `crates/agent-tasks/tests/main.rs`.
+7. Tests go into the crate's one integration-test binary, `crates/agent-tasks/tests/main.rs` (`autotests = false` and `[[test]] name = "main"` in its `Cargo.toml`).
 8. Round 2 of the panel: the run's file is the root `.out/agent-tasks.txt`; the test finds the
    `surfd` PID through `/proc`; `task build` builds `agent-tasks-serve`; the paged judge case is
    built in the test from named lines.
