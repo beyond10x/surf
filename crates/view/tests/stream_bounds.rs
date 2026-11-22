@@ -341,17 +341,20 @@ fn f2_a_frame_over_the_bound_alone_is_delivered_and_counted() {
 }
 
 /// The data of an entry no client that does not read can take: three times the largest send
-/// and receive buffers of TCP together (`/proc/sys/net/ipv4/tcp_wmem`, `tcp_rmem`), so the
-/// writer stays in its write of it until the client reads or goes away.
+/// buffer of TCP and the default receive buffer together (`/proc/sys/net/ipv4/tcp_wmem`, third
+/// field, and `tcp_rmem`, second field; 3 x (4 MiB + 128 KiB), 12.4 MiB, on a host of their
+/// usual values). A client that never reads keeps its receive buffer near its default, because
+/// the kernel grows it only for a reader that reads, so the writer stays in its write of it
+/// until the client reads or goes away. [`blocked_then_large`] checks that it does.
 fn blocking_size() -> usize {
-    let most = |path: &str| {
+    let field = |path: &str, at: usize| {
         std::fs::read_to_string(path)
             .ok()
-            .and_then(|text| text.split_whitespace().nth(2)?.parse::<usize>().ok())
+            .and_then(|text| text.split_whitespace().nth(at)?.parse::<usize>().ok())
     };
     match (
-        most("/proc/sys/net/ipv4/tcp_wmem"),
-        most("/proc/sys/net/ipv4/tcp_rmem"),
+        field("/proc/sys/net/ipv4/tcp_wmem", 2),
+        field("/proc/sys/net/ipv4/tcp_rmem", 1),
     ) {
         (Some(send), Some(receive)) => 3 * (send + receive),
         _ => 128 * MIB,
@@ -363,6 +366,12 @@ fn blocking_size() -> usize {
 /// which the writer cannot finish; entry 4 of 8 bytes, queued behind it; then entry 5, one byte
 /// over the bound, taken by the pump while entries 3 and 4 are queued. Returns the server, the
 /// client, the source and the sizes of entries 3 and 5.
+///
+/// It checks that entry 4 is still queued when the pump has taken entry 5, so the writer is
+/// still in entry 3: the pump queues a frame over the bound as soon as the queue is empty, so
+/// a peak still under entry 5's frame some polls of the pump later means the queue is not
+/// empty. A size that does not block the writer fails here instead of passing the cases that
+/// use it without a full queue.
 fn blocked_then_large() -> (Server, Client, Fed, usize, usize) {
     let blocking = blocking_size();
     let queue_bytes = blocking + MIB;
@@ -381,6 +390,17 @@ fn blocked_then_large() -> (Server, Client, Fed, usize, usize) {
     source.publish(entry(4, 8));
     source.publish(entry(5, large));
     wait_for("the pump took entry 5", WAIT, || source.handed(5));
+    // Three polls of the pump (100 ms each, `crates/view/src/sse.rs`).
+    thread::sleep(Duration::from_millis(300));
+    let peak = server.queued_bytes_peak();
+    assert!(
+        peak >= frame_len(3, blocking) + frame_len(4, 8) && peak < frame_len(5, large),
+        "entry 4 is still queued when the pump takes entry 5 (the writer is still in entry \
+         3 of {blocking} bytes): the peak is {peak} bytes, entries 3 and 4 are {} and entry 5 \
+         is {}",
+        frame_len(3, blocking) + frame_len(4, 8),
+        frame_len(5, large)
+    );
     (server, client, source, blocking, large)
 }
 
@@ -417,7 +437,8 @@ fn f2_a_large_frame_behind_a_full_queue_waits_and_comes_in_order() {
 /// pump and the watcher have ended. Its bound is [`WAIT`]: below the write limit, so a stream
 /// that only the write limit ends fails it, and below the runner's 60 s, so the failure says
 /// what was awaited. Ending takes well under a second: the pump finishes the frame of entry 5,
-/// up to 110 MiB, and sees the close within one wait of 100 ms.
+/// 1 MiB more than [`blocking_size`] (13.4 MiB on a host of the usual buffer sizes), and sees
+/// the close within one wait of 100 ms.
 #[test]
 fn f2_the_wait_for_an_empty_queue_ends_when_the_stream_closes() {
     let (server, client, _source, _, _) = blocked_then_large();

@@ -124,9 +124,9 @@ above, and the list of standards itself was written from memory.
 - `cli/surf-agent.yaml`: the `ess-cli/2` document of the agent command line, checked by
   `task cli`; the client parser is held to it.
 - `taskfiles/<name>.yml`: one file per task added since the agent interface plan, included by
-  the root `Taskfile.yml` with `flatten: true` and `optional: true`. Optional because four
-  tests copy the root `Taskfile.yml` alone into a temporary directory and run one task there;
-  a missing include must not stop them. `check` still fails when an included task is missing.
+  the root `Taskfile.yml` with `flatten: true` and `optional: true`. Optional because the four
+  tests of `crates/surf/tests/lock_check.rs` copy the root `Taskfile.yml` alone into a
+  temporary directory and run one task there; a missing include must not stop them. `check` still fails when an included task is missing.
   `taskfiles/cli.yml` holds the task `cli`, `taskfiles/site.yml` the task `site-build`,
   `taskfiles/html-conformance.yml` the task `html-conformance`, `taskfiles/view-stream-check.yml`
   the task `view-stream-check`, `taskfiles/view-test.yml` the task `view-test`, and
@@ -143,7 +143,10 @@ above, and the list of standards itself was written from memory.
   `taskfiles/agent-tasks.yml` the tasks `agent-tasks-report`, `agent-tasks-archive` and
   `agent-tasks-model` (over `taskfiles/agent-tasks-model.sh`); `taskfiles/sh-echo.yml` the tasks
   `sh-echo` and `sh-echo-test` over `taskfiles/sh-echo.sh`. `taskfiles/slowest-tests.sh` is
-  no task's own: `task test` calls it.
+  no task's own: `task test` calls it. Two tasks of the root `Taskfile.yml` run a script of
+  their own, so that their tests run it with `sh` and start no `task` per case:
+  `generated-compare` runs `taskfiles/generated-compare.sh <fresh tree>`, and `conform-totals`
+  runs `taskfiles/conform-totals.sh`.
 - Shell scripts, committed or written by a test: a value is printed with `printf '%s'`, never
   with `echo`. The forge's `sh` is dash, whose `echo` turns `\n`, `\\` and the other backslash
   sequences into control characters; this host's `/bin/sh` is bash, whose `echo` does not, so
@@ -210,7 +213,16 @@ above, and the list of standards itself was written from memory.
   `Cargo.toml` would not do: a cargo config file wins over the manifest, and one in a user's
   home may set `debug`. cargo reads it from the directory it runs in and its parents, so it
   holds for the root workspace, `conformance/` (run from the root with `--manifest-path`) and
-  `generated/rust/` alike.
+  `generated/rust/` alike. It also builds three packages at `opt-level = 1` in `dev`, which
+  `test` inherits (`story:test-step-holds-with-tls`, each taken by its rule: two builds per
+  level from `cargo clean -p`, the one at level 1 at most 30 s longer, and the counted tests'
+  summed time at most half): `surf-html`, the tokenizer and tree builder whose tests and the
+  session's large pages spent their time in checks of a build without optimisation (its
+  tests and nine of `surf-session`, 24.4 s and 25.7 s summed at level 0, 11.0 s and 7.5 s at
+  level 1); `surf-url` (12 tests, 3.4 s and 4.4 s, then 1.1 s and 1.2 s); `surf-page-text`
+  (its tests and `adversary_document_kept_pages_equal_a_fresh_rendering_at_every_edge`, 6.8 s
+  and 6.5 s, then 2.8 s and 2.6 s). `surf-page` was not taken: its summed time did not fall
+  (3.7 s and 3.7 s, then 3.9 s and 4.1 s).
 - Integration tests: each crate with a `tests/` directory, and `conformance/`, builds them into
   one test binary (`story:one-test-binary-per-crate`). Its `Cargo.toml` has `autotests = false`
   under `[package]` and one entry `[[test]]` with `name = "main"` and `path = "tests/main.rs"`;
@@ -1092,8 +1104,9 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   and why. It is two tasks: `generated-fresh` generates `spec/` into
   `.out/generated-check/fresh` (with `fresh.log` and a copy of `spec/` as `fresh.spec`), once per
   run of `task`; `generated-compare FRESH=<tree>` compares and regenerates `.ess-output` in
-  place. The tests of `crates/surf/tests/*generated_check*.rs` read that one generation
-  (`crates/surf/tests/common/mod.rs`) and run `generated-compare` in their copies; they fail,
+  place, by `taskfiles/generated-compare.sh`. The tests of
+  `crates/surf/tests/*generated_check*.rs` read that one generation
+  (`crates/surf/tests/common/mod.rs`) and run that script with `sh` in their copies; they fail,
   saying so, when it is missing or was made from another `spec/`. `cargo test -p surf` needs
   `slot task generated-fresh` first; `task test` depends on it.
 - `task build`: `cargo build` of the root workspace with `--locked` and `RUSTFLAGS=-D warnings`.
@@ -1290,11 +1303,17 @@ of the last of those runs: `review1_one_changed_byte_in_any_generated_file_fails
 (`surf-session` `adversary_events`) 7.2 s, `surfd_that_writes_nothing_exits_3_within_6_seconds`
 (`surf-agent` `start`) 5.1 s, `every_character_is_written_as_printable_ascii_and_reads_back`
 (`surf` `escape`) 4.8 s, then five tests of `surf-view` and `surf-session` between 2.3 and 3.7
-s. Three of them wait on purpose: `built` and `start` wait out a deadline of the product
-(`wire::REQUEST_TIMEOUT`, 10 s, and `wire::START_TIMEOUT`, 5 s, in `crates/agent/src/wire.rs`),
-and `adversary_events` waits out `surfd`'s answer timeout of 2 s, a server that answers after 4
-s and 5 s more, so that each step of the order it tests is 2 s or more apart from the next and
-the test does not depend on the runner's speed. In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
+s. Three of them waited on purpose. `built` waits out a deadline of the product
+(`wire::REQUEST_TIMEOUT`, 10 s, in `crates/agent/src/wire.rs`). Since
+`story:test-step-holds-with-tls` the other two wait less: `start`'s case, now
+`surfd_that_writes_nothing_exits_3_within_its_start_timeout`, runs `client::run` in the test
+process with a start timeout of 0.5 s instead of the binary's `wire::START_TIMEOUT` of 5 s (the
+stand-in `surfd` reads its control directory `c` beside `XDG_RUNTIME_DIR` when `STAND_IN_DIR`
+is unset); `adversary_events` gives `surfd` an answer timeout of 0.5 s and a server that answers
+1.5 s after it read the request, then sends `look` until the path shows the `go`, instead of a
+timeout of 2 s, a server that answered after 4 s and a sleep of 5 s. Each step of the order it
+tests is still 1 s or more apart from the next, so the test does not depend on the runner's
+speed. In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
 872 passed, 32 skipped`; the 32 are hosts outside ASCII, listed in
 `crates/url/tests/data/SKIPPED`. `view-stream-check`: `view-stream-check: 19 event name(s),
 each a message of the AsyncAPI projection`. `view-test`: `38 passed (15.8s)`; 12.9 s of it are

@@ -542,13 +542,20 @@ fn limit_name(limit: ParseLimit) -> &'static str {
 /// split a line nor reorder one. The standard library has no table of Unicode's general
 /// categories, so no character outside ASCII is let through: `surf-fetch` refuses such an
 /// address anyway.
+///
+/// Each escaped byte is written as its four bytes from a table of the hexadecimal digits, with
+/// no formatting machinery per byte.
 pub fn escape(address: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut escaped = String::with_capacity(address.len());
     for character in address.chars() {
         if character == '\\' || !matches!(character, ' '..='~') {
             let mut bytes = [0u8; 4];
-            for byte in character.encode_utf8(&mut bytes).bytes() {
-                escaped.push_str(&format!("\\x{byte:02x}"));
+            for &byte in character.encode_utf8(&mut bytes).as_bytes() {
+                escaped.push('\\');
+                escaped.push('x');
+                escaped.push(char::from(HEX[usize::from(byte >> 4)]));
+                escaped.push(char::from(HEX[usize::from(byte & 0x0f)]));
             }
         } else {
             escaped.push(character);

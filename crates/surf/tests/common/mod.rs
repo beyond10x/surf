@@ -2,8 +2,9 @@
 //!
 //! `task generated-fresh` writes it into `.out/generated-check/fresh` of the checkout, once per
 //! run of task: `task check` runs it for `generated-check`, and `task test` depends on it. The
-//! tests find it there and run `task generated-compare FRESH=<it>` in their copies, so no test
-//! and no case generates the workspace again. nextest starts one process per test, so a
+//! tests find it there and run the script of `task generated-compare`,
+//! `sh taskfiles/generated-compare.sh <it>`, in their copies, so no test and no case generates
+//! the workspace again, and no case starts `task`. nextest starts one process per test, so a
 //! `OnceLock` alone would still generate once per test.
 
 use std::fs;
@@ -58,15 +59,15 @@ pub fn fresh() -> &'static Path {
     })
 }
 
-/// `task generated-compare` in `dir` against the fresh tree: its exit status and everything it
-/// printed.
+/// `sh taskfiles/generated-compare.sh` of this checkout in `dir` against the fresh tree, as
+/// `task generated-compare` runs it: its exit status and everything it printed.
 pub fn check(dir: &Path) -> (Option<i32>, String) {
-    let output = Command::new("task")
-        .arg("generated-compare")
-        .arg(format!("FRESH={}", fresh().display()))
+    let output = Command::new("sh")
+        .arg(repository().join("taskfiles/generated-compare.sh"))
+        .arg(fresh())
         .current_dir(dir)
         .output()
-        .expect("run task");
+        .expect("run sh");
     let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
     text.push_str(&String::from_utf8_lossy(&output.stderr));
     (output.status.code(), text)
