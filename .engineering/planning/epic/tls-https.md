@@ -5,7 +5,7 @@ kind: epic
 status: draft
 title: 'surf loads https: addresses'
 summary: 'TLS 1.3 client written here over one audited source of primitives; X.509 path validation, host names, trust anchors; https: and redirects between schemes in surf-fetch, with TLS failure reasons in the answer.'
-revision: 9
+revision: 10
 ---
 ## Context
 
@@ -352,3 +352,11 @@ Taken by the coordinating agent on 2026-11-22, each reported to the operator, wh
 - U3, TLS 1.2: option C, out of this epic and drafted as the epic after it. Reason: this epic stays the size of one protocol version, and about one trusted site in four offers TLS 1.2 as its best protocol (SSL Pulse, 2025-06-01: 24.7 %), so the gap is closed next and not left open. Until then such a server fails with `TlsVersionUnsupported`.
 
 - TLS 1.2 suites in the ClientHello, taken by the coordinating agent on 2026-11-22 and reported to the operator: beside the three TLS 1.3 suites the ClientHello offers the six TLS 1.2 ECDHE AEAD suites of RFC 5289 and RFC 7905 (TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384, TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256, TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256), for one purpose: a server limited to TLS 1.2 then answers with a ServerHello that selects 1.2, and surf ends the handshake with a `protocol_version` alert and the reason `TlsVersionUnsupported`. surf never continues a TLS 1.2 handshake in this epic. A `handshake_failure` alert before any ServerHello stays `TlsHandshakeFailed`, with a detail that names the alert. Reason: about one site in four offers TLS 1.2 as its best, and an agent must be told which failure it met. `story:tls-decisions` checks it with two recordings (a server limited to TLS 1.2 against a hello with and without those suites) and may overturn it with the evidence.
+
+## Measured: the packages ring adds
+
+Measured by the coordinating agent on 2026-11-22 with `cargo generate-lockfile` and `cargo tree` in a scratch package whose one dependency is `ring = "=0.17.14"`:
+
+- `Cargo.lock` gains 19 entries: cc, cfg-if, find-msvc-tools, getrandom, libc, ring, shlex, untrusted, wasi, windows-sys, windows-targets and the eight `windows_*` crates of windows-targets.
+- 8 of them are compiled for each of x86_64 and aarch64 Linux (gnu and musl) and macOS: cc, cfg-if, find-msvc-tools, getrandom, libc, ring, shlex, untrusted. The other 11 belong to Windows and WASI targets; cargo records them in the lock and never downloads or builds them for surf's targets.
+- The count of 8 given with U1 was the compiled set for one target. The comparison of U1 counted every candidate that way, so the order of the candidates is the one the operator saw. The lock check of `tls-lock-allow` names all 19.
