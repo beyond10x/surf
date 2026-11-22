@@ -430,3 +430,9 @@ tasks:
       - task: forge-watch-test
       - task: planning-only-test
       - task: test-layout-test
+
+  slow:
+    desc: Make the committed products of the TLS tests again and compare them with the committed files (the test certificates byte for byte, the recorded flights by outcome); needs openssl 3.4 or later; never a step of check.
+    cmds:
+      - task: tls-certs-slow
+      - task: tls-flights-slow

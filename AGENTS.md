@@ -155,11 +155,12 @@ above, and the list of standards itself was written from memory.
   `check`) and `anchors-age` (`DATE`, default today; fails when the list is older than 90
   days) over `taskfiles/tls-anchors.sh`, POSIX sh; `taskfiles/tls-certs.yml` the tasks
   `tls-certs-check` (over `taskfiles/tls-certs-check.sh`, a step of `check`) and
-  `tls-certs-slow` (makes the test certificates again into `.out/tls-certs/` and compares
-  every file with the committed ones; `WRITE=1` writes them); `taskfiles/tls-flights.yml` the tasks
+  `tls-certs-slow` (a step of `slow`: makes the test certificates again into
+  `.out/tls-certs/` and compares every file with the committed ones; `WRITE=1` writes them);
+  `taskfiles/tls-flights.yml` the tasks
   `tls-flights-check` (over `taskfiles/tls-flights-check.sh`, a step of `check`) and
-  `tls-flights-slow` (records the flights again and replays them; `WRITE=1` writes them; no
-  task calls it). `taskfiles/slowest-tests.sh` is no task's own: `task test` calls it.
+  `tls-flights-slow` (a step of `slow`: records the flights again and replays them; `WRITE=1`
+  writes them). `taskfiles/slowest-tests.sh` is no task's own: `task test` calls it.
 - `rust-toolchain.toml`: the one pinned rustc, `1.99.1`, with the components `rustfmt` and
   `clippy` (the gate uses neither; units run `cargo fmt -p` and `cargo clippy`), profile
   `minimal`. rustup reads it in every directory of the checkout, so `rustc --version` there
@@ -697,7 +698,8 @@ above, and the list of standards itself was written from memory.
     message. `crates/tls/tests/data/flights/`: recorded flights of `openssl s_server` on
     127.0.0.1, pinned by `SOURCE` (sha256 per file) and `DIGEST` (sha256 of
     `crates/tls/examples/record-flights.rs`); `task tls-flights-check` in `check`, `task
-    tls-flights-slow` records them again and replays the new files (`WRITE=1` writes them).
+    tls-flights-slow` in `slow` records them again and replays the new files (`WRITE=1`
+    writes them).
     Tests: one binary, `tests/main.rs` declaring each module of `tests/tls/` with `#[path]`,
     among them `alloc` (a counting allocator, per thread, in the form of
     `crates/html/tests/common/mod.rs`, the third `unsafe` of the repository, test only; one
@@ -1170,6 +1172,17 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `crates/tls-test-certs` against `certs/DIGEST`. It prints `tls-certs: <n> cases, certs/
   matches its sources`, or `tls-certs: the sources changed since certs/ was generated; run task
   tls-certs-slow` with the sources that differ, and fails.
+- `task slow`: the lane that makes the committed products of the TLS tests again and compares
+  them with the committed files; never a step of `check`. It runs `tls-certs-slow`, which
+  builds and runs `surf-tls-test-certs` and `openssl/make.sh` into `.out/tls-certs/` and
+  compares every file with `crates/tls-test-certs/certs/` byte for byte, then
+  `tls-flights-slow`, which records the flights against `openssl s_server` on 127.0.0.1 into
+  `.out/tls-flights/` and replays them with the tests `flights::` (outcomes, not bytes: the
+  server draws its own randomness). It needs `openssl` 3.4 or later on `PATH`; the committed
+  files were made with the version their `SOURCE` files name. No workflow runs it: the forge's
+  runner pins no `openssl`, and the certificates `make.sh` writes come from that tool. Run it
+  by hand after a change to `crates/tls-test-certs/` or to
+  `crates/tls/examples/record-flights.rs`.
 - `task view-test`: the page tests in a browser (`taskfiles/view-test.yml`). It builds
   `surf-agent`, `surf-session` and `surf-view-fixture`, installs `view-tests/` from its
   `package-lock.json` with `npm ci`, and runs `npx playwright test --workers=2` in
