@@ -39,6 +39,10 @@ includes:
     taskfile: taskfiles/planning-only.yml
     flatten: true
     optional: true
+  test-layout:
+    taskfile: taskfiles/test-layout.yml
+    flatten: true
+    optional: true
 
 vars:
   REFUSALS_MAX: 28
@@ -97,8 +101,8 @@ tasks:
     cmds:
       - mkdir -p .out
       - cargo test --locked --manifest-path conformance/Cargo.toml -- --nocapture > .out/conform-rust-test.log 2>&1 || { cat .out/conform-rust-test.log; exit 1; }
-      - grep -q '^test a_navigation_storage_that_drops_every_put_fails_at_least_one_scenario \.\.\. ok$' .out/conform-rust-test.log || { cat .out/conform-rust-test.log; echo "the planted-defect test did not run"; exit 1; }
-      - grep -q '^test one_identity_for_every_instance_of_an_entity_is_noticed_for_each_entity \.\.\. ok$' .out/conform-rust-test.log && grep -q '^test a_view_cut_to_its_first_row_is_noticed_for_each_entity \.\.\. ok$' .out/conform-rust-test.log || { cat .out/conform-rust-test.log; echo "the per-entity planted-defect tests did not run"; exit 1; }
+      - grep -q '^test planted_defect::a_navigation_storage_that_drops_every_put_fails_at_least_one_scenario \.\.\. ok$' .out/conform-rust-test.log || { cat .out/conform-rust-test.log; echo "the planted-defect test did not run"; exit 1; }
+      - grep -q '^test two_of_each_entity::one_identity_for_every_instance_of_an_entity_is_noticed_for_each_entity \.\.\. ok$' .out/conform-rust-test.log && grep -q '^test two_of_each_entity::a_view_cut_to_its_first_row_is_noticed_for_each_entity \.\.\. ok$' .out/conform-rust-test.log || { cat .out/conform-rust-test.log; echo "the per-entity planted-defect tests did not run"; exit 1; }
       - cargo run --locked --manifest-path conformance/Cargo.toml -- .out/suite.json .out/conform-rust.json > .out/conform-rust.log 2>&1 || { grep -E '^  (failed|error|unsupported) ' .out/conform-rust.log || cat .out/conform-rust.log; tail -n 1 .out/conform-rust.log; exit 1; }
       - tail -n 1 .out/conform-rust.log
 
@@ -395,6 +399,7 @@ tasks:
       - task: generated-check
       - task: cli
       - task: lock-check
+      - task: test-layout
       - task: build
       - task: test
       - task: view-stream-check
@@ -402,3 +407,4 @@ tasks:
       - task: html-conformance
       - task: forge-watch-test
       - task: planning-only-test
+      - task: test-layout-test

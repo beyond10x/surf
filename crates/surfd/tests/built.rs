@@ -3,7 +3,7 @@
 //! `surf-session`, beside each other. They assert what an answer prints, exit statuses, files
 //! and processes, never the list (decision D29).
 
-mod common;
+use crate::common;
 
 use std::fs::{self, File};
 use std::io::Read;

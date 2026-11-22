@@ -6,6 +6,7 @@ edition = "2024"
 publish = false
 default-run = "surf-view-fixture"
 license = "Apache-2.0"
+autotests = false
 
 [[bin]]
 name = "surf-view-fixture"
@@ -21,3 +22,7 @@ test = false
 surfd = { path = "../surfd" }
 surf-view = { path = "../view" }
 surf-test-process = { path = "../test-process" }
+
+[[test]]
+name = "main"
+path = "tests/main.rs"

@@ -1,7 +1,7 @@
 //! Cases 3 to 10 and 29: where the token comes from, what is refused, and that it is never
 //! printed.
 
-mod common;
+use crate::common;
 
 use std::ffi::OsString;
 use std::os::unix::fs::symlink;

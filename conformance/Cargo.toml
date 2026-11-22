@@ -5,6 +5,7 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 license = "Apache-2.0"
+autotests = false
 
 [workspace]
 resolver = "3"
@@ -17,3 +18,7 @@ surf-system = { path = "../generated/rust/crates/surf-system" }
 ess-conformance = { git = "https://github.com/beyond10x/ess", tag = "0.96.0" }
 ess-primitives = { git = "https://github.com/beyond10x/ess", tag = "0.96.0" }
 ess-domain = { git = "https://github.com/beyond10x/ess", tag = "0.96.0" }
+
+[[test]]
+name = "main"
+path = "tests/main.rs"

@@ -5,6 +5,7 @@ version = "0.3.0"
 edition = "2024"
 publish = false
 license = "Apache-2.0"
+autotests = false
 
 [lib]
 name = "surf_agent"
@@ -20,3 +21,7 @@ surf-secret = { path = "../secret" }
 
 [dev-dependencies]
 surf-test-process = { path = "../test-process" }
+
+[[test]]
+name = "main"
+path = "tests/main.rs"

@@ -11,8 +11,10 @@
 //! system allocator unchanged and only counts sizes. No file under any `src/` holds `unsafe`;
 //! every hand-written crate forbids it.
 //!
-//! The allocator counts every thread of the test binary, so the cases of this file run one at a
-//! time, each holding `SERIAL`.
+//! The allocator is the global allocator of the one test binary of `surf-fetch` and counts every
+//! thread of it. cargo-nextest, which the gate runs, starts each test in its own process, so a
+//! case counts only its own allocations; the cases still hold `SERIAL`. Without cargo-nextest,
+//! run `cargo test -p surf-fetch -- --test-threads=1`.
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::io::{Read, Write};

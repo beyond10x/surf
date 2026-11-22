@@ -3,7 +3,7 @@
 
 #![forbid(unsafe_code)]
 
-mod common;
+use crate::common;
 
 use std::io::{Read, Write};
 use std::net::TcpListener;

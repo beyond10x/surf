@@ -11,7 +11,7 @@
 //! No test asserts a time (the fix unit of the review): the time test of the review now
 //! asserts the steps and the bytes allocated, and the runner's 60 s end is the only time bound.
 
-mod common;
+use crate::common;
 
 use std::collections::HashSet;
 use std::sync::{Mutex, MutexGuard};

@@ -5,6 +5,7 @@ version = "0.3.0"
 edition = "2024"
 publish = false
 license = "Apache-2.0"
+autotests = false
 
 [lib]
 name = "surfd"
@@ -22,3 +23,7 @@ surf-view = { path = "../view" }
 
 [dev-dependencies]
 surf-test-process = { path = "../test-process" }
+
+[[test]]
+name = "main"
+path = "tests/main.rs"
