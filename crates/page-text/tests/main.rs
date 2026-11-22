@@ -5,5 +5,7 @@
 #![forbid(unsafe_code)]
 
 mod common;
+#[path = "cases/markdown.rs"]
+mod markdown;
 #[path = "cases/outline.rs"]
 mod outline;
