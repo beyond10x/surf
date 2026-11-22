@@ -56,14 +56,71 @@
 //!   enumerated attributes) and is compared as HTML 2.3.3 says: an ASCII case-insensitive match,
 //!   the value not stripped (`TRUE` hides, ` true` does not). A node not in the document
 //!   (template contents) is judged only by the ancestors it has.
+//! - `label`: the accessible name of Accessible Name and Description Computation 1.2 (4.3.2
+//!   "Computation steps") with HTML-AAM 4.1 "Accessible Name Computations By HTML Element",
+//!   computed over the tree. The sources of each element, in order, the first that gives a
+//!   character other than ASCII whitespace wins: a link `a`: `aria-labelledby`, `aria-label`,
+//!   its subtree, `title` (4.1.13); `area`: `aria-labelledby`, `aria-label`, `alt`, `title`
+//!   (4.1.14); `button`: `aria-labelledby`, `aria-label`, its `label` elements, its subtree,
+//!   `title` (4.1.4); an `input` in the Submit Button, Reset Button or Button state:
+//!   `aria-labelledby`, `aria-label`, its `label` elements, `value`, `Submit` or `Reset` when
+//!   `value` is absent (Submit Button and Reset Button), `title` (4.1.2); Image Button:
+//!   `aria-labelledby`, `aria-label`, its `label` elements, `alt`, `title`, `Submit` (4.1.3);
+//!   Text, Search, Telephone, URL, Email, Password, Number and `textarea`: `aria-labelledby`,
+//!   `aria-label`, its `label` elements, `title`, `placeholder`, `aria-placeholder` (4.1.1);
+//!   every other `input` state and `select`: `aria-labelledby`, `aria-label`, its `label`
+//!   elements, `title` (4.1.7). A control's `label` elements are the HTML Standard's `labels`
+//!   (4.10.4): every `label` whose labeled control it is, in tree order, their names joined by
+//!   one space; a `label` with `for` labels the first element in tree order whose ID is the
+//!   value if that element is labelable, and nothing else; a `label` without `for` labels its
+//!   first labelable descendant. A control inside its label leaves itself out of that label's
+//!   name (its value, `alt` or subtree, HTML-AAM 4.1.1 to 4.1.4). The IDREFs of
+//!   `aria-labelledby` are its ASCII-whitespace-separated tokens, compared exactly with IDs; a
+//!   token that names no element is skipped, and the results are joined by one space. Inside a
+//!   subtree, a `label` or a referenced node, each node is read by the steps 2A to 2I: a hidden
+//!   node gives nothing unless the node that started the traversal (the referenced node, the
+//!   `label`) is hidden (2A); a descendant's own `aria-labelledby` is followed unless the walk is
+//!   already inside an `aria-labelledby` traversal (2B); a control embedded in the name of
+//!   another element gives its value (2C: a Text, Search, Telephone, URL, Email or Password
+//!   `input` and a `textarea` their default value, a Number or Range `input` `aria-valuetext`,
+//!   else `aria-valuenow`, else its `value` attribute); `aria-label` (2D); the element's own
+//!   attributes (2E: an `img`'s `alt`, even blank; an `area`'s `alt`; an Image Button's `alt`,
+//!   `title` or `Submit`; a Submit Button's, Reset Button's or Button's `value`, or `Submit` or
+//!   `Reset` without one; a nested control's `label` elements are not followed); text nodes
+//!   (2G); the children, joined without a space (2F, 2H); `title` (2I). Each node is read at
+//!   most once per name (the note under 2F), so a repeated or cyclic reference adds nothing.
+//!   The name is a flat string: ASCII whitespace stripped and collapsed. "Hidden" is the flag
+//!   of `hidden`, recorded by the walk of [`actionable_elements`].
 //!
 //! No function recurses over the depth of the tree: [`actionable_elements`] and [`title`] walk
-//! with their own stack over [`Tree::children`], [`is_hidden`] walks up [`Tree::parent`].
-//! [`actionable_elements`] computes the inherited flags (hidden, inside a disabling fieldset)
-//! in that one walk, so its time is linear in the number of nodes. [`is_hidden`] costs the depth
-//! of the node; it reads the children of the root or of the document element only at an
-//! ancestor with `aria-hidden` true that may be the document element or the body element, and
-//! the children of a closed `details` only at an ancestor that is a `summary` child of it.
+//! with their own stack over [`Tree::children`], [`is_hidden`] walks up [`Tree::parent`], and
+//! each label is computed with its own stack. [`actionable_elements`] computes the inherited
+//! flags (hidden, inside a disabling fieldset) in that one walk, and records there what the
+//! labels need: a dense index of the nodes with the hidden flag of each, the first element per
+//! ID, and each `label` element with its labeled control. The labels call [`is_hidden`] for no
+//! node. The time of a call is linear in the number of nodes, plus the labels: at most
+//! [`LABEL_WORK_MAX`] units of work for all of them (a unit is a node read or a byte read, each
+//! costing a hash lookup and the attribute scans of one element), plus, per row, its own
+//! attributes. The memory of the labels is at most [`LABEL_BYTES_MAX`] bytes per row, and in all
+//! at most [`LABEL_WORK_MAX`] bytes plus the attribute bytes the tree stores; what the walk
+//! records is linear in the number of nodes. [`is_hidden`] costs the depth of the node; it
+//! reads the children of the root or of the document element only at an ancestor with
+//! `aria-hidden` true that may be the document element or the body element, and the children
+//! of a closed `details` only at an ancestor that is a `summary` child of it.
+//!
+//! # Steps not taken
+//!
+//! - 4.3.2 2F.ii "Name From Generated Content" (`::before`, `::after`, `::marker`): surf has no
+//!   CSS.
+//! - Hiding by author CSS (`display`, `visibility`, `content-visibility` from a style sheet or a
+//!   `style` attribute): surf has no CSS; "hidden" is the rule of `hidden` above.
+//! - 2F.iii "Determine Child Nodes" for shadow roots and slots: the tree has none, so the
+//!   rendered child nodes are the children.
+//! - The spaces accname may join with by CSS `display` (its note under 2F, AccName #225):
+//!   children are joined without a space.
+//! - An explicit `role` attribute: the role is the one the kind implies (item 6 of the note).
+//! - The chosen option of a `select` in 2C: option selectedness is `story:agent-form-port`'s,
+//!   so an embedded `select` gives the empty string.
 //!
 //! # Deviations
 //!
@@ -73,10 +130,15 @@
 //!   becomes the empty string, or the range's default, or `#000000`) are not run.
 //! - Nothing that needs CSS is read: an author style sheet or `style` attribute that hides an
 //!   element does not make it hidden.
+//! - A hidden actionable element is named from its own subtree, hidden parts included, as a
+//!   hidden node referenced by `aria-labelledby` is (step 2A would give it the empty name): its
+//!   row is kept and flagged, and a hidden link is shown by its label.
+//! - A label is cut at [`LABEL_BYTES_MAX`] bytes, and the work for the labels of one call is
+//!   bounded by [`LABEL_WORK_MAX`]; past it a name comes from the element's own attributes. The
+//!   standards bound neither.
 //!
 //! # Left to other stories
 //!
-//! - Each element's label, the accessible name (`story:html-accessible-name`).
 //! - A control's form owner and the radio button group rule, by which a later checked radio
 //!   button unchecks the others of its group: here every radio button with a `checked`
 //!   attribute is `checked` (`story:agent-form-port`).
@@ -86,7 +148,11 @@
 
 #![forbid(unsafe_code)]
 
+mod label;
+
 use surf_html::{Attribute, Namespace, NodeData, NodeId, Tree};
+
+pub use label::{LABEL_BYTES_MAX, LABEL_WORK_MAX};
 
 /// The `document.title` value of the document: the child text content of the first HTML
 /// `title` element in tree order, ASCII whitespace stripped and collapsed; the empty string when
@@ -165,6 +231,12 @@ pub struct ActionableElement {
     pub checked: bool,
     /// The `required` attribute is present and applies to the element.
     pub required: bool,
+    /// The label: the accessible name, ASCII whitespace stripped and collapsed, at most
+    /// [`LABEL_BYTES_MAX`] bytes; the empty string when no source gives one.
+    pub label: String,
+    /// The label was cut at [`LABEL_BYTES_MAX`] bytes, or taken from the element's own
+    /// attributes only because [`LABEL_WORK_MAX`] was spent.
+    pub label_cut: bool,
 }
 
 /// Every actionable HTML element under the root of `tree`, in tree order as
@@ -178,24 +250,30 @@ pub fn actionable_elements(tree: &Tree) -> Vec<ActionableElement> {
         /// `node` is a descendant of a `fieldset` with a `disabled` attribute and not of that
         /// fieldset's first `legend` child.
         in_disabled_fieldset: bool,
+        /// The `label` elements without `for` around `node`.
+        labels: label::Labels,
     }
 
     let primary = Primary::of(tree);
     let exempt = |node| primary.contains(node);
     let mut found = Vec::new();
+    let mut facts = label::Facts::default();
     let mut pending = vec![Pending {
         node: tree.root(),
         hidden: false,
         in_disabled_fieldset: false,
+        labels: None,
     }];
     while let Some(Pending {
         node,
         hidden,
         in_disabled_fieldset,
+        labels,
     }) = pending.pop()
     {
         let this = element(tree, node);
         let hidden = hidden || this.as_ref().is_some_and(|e| hides(e, node, exempt));
+        let labels = facts.record(node, hidden, this.as_ref(), labels);
         if let Some(this) = &this
             && let Some(actionable) = actionable(tree, node, this, hidden, in_disabled_fieldset)
         {
@@ -228,9 +306,11 @@ pub fn actionable_elements(tree: &Tree) -> Vec<ActionableElement> {
                 hidden: hidden || (closed_details && Some(child) != first_summary),
                 in_disabled_fieldset: in_disabled_fieldset
                     || (disabling && Some(child) != first_legend),
+                labels,
             });
         }
     }
+    label::fill(tree, facts, &mut found);
     found
 }
 
@@ -392,6 +472,8 @@ fn actionable(
         disabled: false,
         checked: false,
         required: false,
+        label: String::new(),
+        label_cut: false,
     };
     match this.local_name {
         "a" | "area" => {
@@ -574,13 +656,13 @@ struct Element<'a> {
     attributes: &'a [Attribute],
 }
 
-impl Element<'_> {
+impl<'a> Element<'a> {
     fn is_html(&self, local_name: &str) -> bool {
         self.namespace == Namespace::Html && self.local_name == local_name
     }
 
     /// The value of the attribute in no namespace named `name`.
-    fn attribute(&self, name: &str) -> Option<&str> {
+    fn attribute(&self, name: &str) -> Option<&'a str> {
         self.attributes
             .iter()
             .find(|a| a.namespace.is_none() && a.local_name == name)
