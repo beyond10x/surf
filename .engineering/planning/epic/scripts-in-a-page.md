@@ -7,7 +7,7 @@ title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, against a minimal DOM and under limits per page, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 2
+revision: 3
 ---
 ## Context
 
@@ -377,3 +377,10 @@ is the swell session's, given the requirements above.
 ## Decisions taken
 
 - S1, the form of the dependency: option a, a git dependency on a release tag of swell. The operator, 2026-11-22 04:51 CET, relayed by the session `host-operator`: "A: git dep on a swell tag". `lock-check` allows that one source by its exact address and tag, and the sentence on dependencies becomes "no third-party crate; one crate of the organization".
+
+## From the security review of 2026-11-22
+
+A security review of surf and swell of 2026-11-22 names two conditions for running page scripts. The operator forwarded it: "Fix Swell's resource limits before Surf runs untrusted JavaScript."
+
+- surf runs page scripts only on a release tag of swell in which parsing and compilation are charged to the memory budget before they allocate, and property operations (enumeration of string and object keys, property lookup) charge their work and their temporary storage before they do it. The swell session has the findings and plans them as stories; the tag that holds the fixes is named here when it exists.
+- Before a session process runs a script, its environment is reduced to what it needs (today it inherits the caller's environment but two variables of surf), its privileges of the operating system are restricted, and it has resource limits of its own. This is part of the candidate story `scripts-hostile-pages` or a story before it.
