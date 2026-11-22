@@ -10,6 +10,7 @@
 use std::fmt;
 
 use crate::crypto::{self, Digest, HashAlgorithm, RunningHash};
+use crate::error::Violation;
 use crate::key_schedule::MESSAGE_HASH;
 
 enum State {
@@ -20,6 +21,7 @@ enum State {
 /// The running transcript of one handshake.
 pub struct Transcript {
     state: State,
+    retried: bool,
 }
 
 impl Default for Transcript {
@@ -33,6 +35,7 @@ impl Transcript {
     pub fn new() -> Self {
         Transcript {
             state: State::Holding(Vec::new()),
+            retried: false,
         }
     }
 
@@ -40,6 +43,7 @@ impl Transcript {
     pub fn with_hash(algorithm: HashAlgorithm) -> Self {
         Transcript {
             state: State::Hashing(Box::new(RunningHash::new(algorithm))),
+            retried: false,
         }
     }
 
@@ -68,13 +72,22 @@ impl Transcript {
 
     /// The HelloRetryRequest `hrr` (RFC 8446 section 4.4.1): the transcript so far, the first
     /// ClientHello, is replaced by the message `message_hash` that holds its hash under
-    /// `algorithm`, and `hrr` is added after it. False, changing nothing, when the transcript
-    /// already hashes with another algorithm.
-    pub fn hello_retry_request(&mut self, algorithm: HashAlgorithm, hrr: &[u8]) -> bool {
+    /// `algorithm`, and `hrr` is added after it. Refused, changing nothing, with
+    /// `SecondHelloRetryRequest` when a HelloRetryRequest came before (the replacement happens
+    /// once), and with `UnofferedSuite` when the transcript already hashes with another
+    /// algorithm (the suite of the HelloRetryRequest does not fit the hash selected before).
+    pub fn hello_retry_request(
+        &mut self,
+        algorithm: HashAlgorithm,
+        hrr: &[u8],
+    ) -> Result<(), Violation> {
+        if self.retried {
+            return Err(Violation::SecondHelloRetryRequest);
+        }
         let first = match &self.state {
             State::Holding(held) => crypto::hash(algorithm, held),
             State::Hashing(hash) if hash.algorithm() == algorithm => hash.current(),
-            State::Hashing(_) => return false,
+            State::Hashing(_) => return Err(Violation::UnofferedSuite),
         };
         let mut hash = RunningHash::new(algorithm);
         // The length of a digest is 32 or 48, so it fits the one byte of the uint24's last
@@ -84,7 +97,8 @@ impl Transcript {
         hash.update(first.as_ref());
         hash.update(hrr);
         self.state = State::Hashing(Box::new(hash));
-        true
+        self.retried = true;
+        Ok(())
     }
 
     /// The selected hash, if any.

@@ -191,7 +191,8 @@ pub enum Violation {
     EmptyContent,
     /// An alert record that is not one alert of two bytes.
     BadAlertRecord,
-    /// Application data without protection.
+    /// A record without protection where protection is required: application data before
+    /// the read keys are set, a handshake or alert record after.
     UnprotectedRecord,
     /// A downgrade value of RFC 8446 section 4.1.3 in the ServerHello random.
     Downgrade,
@@ -235,6 +236,8 @@ pub enum Error {
     },
     /// A sequence number would wrap.
     SequenceExhausted,
+    /// A write key reached the most records RFC 8446 section 5.5 lets it protect (AES-GCM).
+    KeyLimitReached,
 }
 
 impl fmt::Display for Error {
@@ -253,6 +256,7 @@ impl fmt::Display for Error {
                 violation,
             } => write!(f, "{description}: {violation:?}"),
             Error::SequenceExhausted => f.write_str("the sequence number would wrap"),
+            Error::KeyLimitReached => f.write_str("the write key reached its record limit"),
         }
     }
 }

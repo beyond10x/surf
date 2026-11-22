@@ -14,18 +14,20 @@ use surf_tls::crypto::{self, AeadKey, HashAlgorithm};
 use surf_tls::error::{AlertDescription, Error, Violation};
 use surf_tls::key_schedule::{self, CipherSuite, Secret};
 use surf_tls::record::{
-    AlertLevel, ContentType, MAX_CIPHERTEXT, MAX_HANDSHAKE_MESSAGE, MAX_PLAINTEXT, Message,
-    RecordLayer,
+    AES_GCM_RECORD_LIMIT, AlertLevel, ContentType, MAX_CIPHERTEXT, MAX_HANDSHAKE_MESSAGE,
+    MAX_PLAINTEXT, Message, RecordLayer, write_limit,
 };
 use surf_tls::transcript::Transcript;
 
-use crate::alloc::peak_while;
+use crate::alloc::{allocated_while, peak_while};
 use crate::rfc8448::Pipe;
 
 // ---------------------------------------------------------------------------------------------
 // Helpers.
 
 const SUITE: CipherSuite = CipherSuite::Aes128GcmSha256;
+/// The suite without a record limit of its own: only the sequence number bounds its keys.
+const CHACHA: CipherSuite = CipherSuite::ChaCha20Poly1305Sha256;
 const KIB: usize = 1024;
 
 fn crate_dir() -> PathBuf {
@@ -453,8 +455,9 @@ fn flipped_tag() {
 /// with one number left writes neither. A record to read at 2^64 - 1 is refused unopened.
 #[test]
 fn sequence_exhausted() {
+    let chacha_secret = secret(CHACHA, "the peer's traffic secret");
     let mut writer = RecordLayer::new(Pipe::default());
-    writer.set_write_keys(SUITE, &peer_secret()).expect("keys");
+    writer.set_write_keys(CHACHA, &chacha_secret).expect("keys");
     writer.set_write_sequence(u64::MAX);
     assert_eq!(
         writer.write_application_data(b"data"),
@@ -467,7 +470,7 @@ fn sequence_exhausted() {
     );
 
     let mut writer = RecordLayer::new(Pipe::default());
-    writer.set_write_keys(SUITE, &peer_secret()).expect("keys");
+    writer.set_write_keys(CHACHA, &chacha_secret).expect("keys");
     writer.set_write_sequence(u64::MAX - 1);
     writer
         .write_application_data(&vec![7u8; MAX_PLAINTEXT + 1])
@@ -475,13 +478,13 @@ fn sequence_exhausted() {
     assert!(writer.get_ref().output.is_empty(), "neither written");
 
     let mut writer = RecordLayer::new(Pipe::default());
-    writer.set_write_keys(SUITE, &peer_secret()).expect("keys");
+    writer.set_write_keys(CHACHA, &chacha_secret).expect("keys");
     writer.set_write_sequence(u64::MAX - 1);
     writer.write_application_data(b"last").expect("the last");
     assert_eq!(writer.write_sequence(), Some(u64::MAX));
     assert_eq!(
         writer.get_ref().output,
-        peer_record(u64::MAX - 1, b"last", 23)
+        sealed(CHACHA, &chacha_secret, u64::MAX - 1, b"last\x17")
     );
     assert_eq!(
         writer.write_handshake(&message(24, 1)),
@@ -494,6 +497,70 @@ fn sequence_exhausted() {
         layer.read_message().expect_err("refused"),
         Error::SequenceExhausted
     );
+}
+
+/// An AES-GCM write key protects at most `AES_GCM_RECORD_LIMIT` records (RFC 8446 section 5.5,
+/// 2^24.5 rounded down): the record past it is refused with `KeyLimitReached`, nothing of it
+/// is written, and the layer stays closed. ChaCha20-Poly1305 writes on at the same number; the
+/// read side has no such limit.
+#[test]
+fn aes_gcm_write_limit() {
+    assert_eq!(AES_GCM_RECORD_LIMIT, 23_726_566);
+    for suite in [CipherSuite::Aes128GcmSha256, CipherSuite::Aes256GcmSha384] {
+        assert_eq!(write_limit(suite), AES_GCM_RECORD_LIMIT, "{suite:?}");
+        let key = secret(suite, "the peer's traffic secret");
+        let mut writer = RecordLayer::new(Pipe::default());
+        writer.set_write_keys(suite, &key).expect("keys");
+        writer.set_write_sequence(AES_GCM_RECORD_LIMIT - 1);
+        writer.write_application_data(b"last").expect("the last");
+        assert_eq!(
+            writer.get_ref().output,
+            sealed(suite, &key, AES_GCM_RECORD_LIMIT - 1, b"last\x17")
+        );
+        let written = writer.get_ref().output.len();
+        assert_eq!(
+            writer.write_application_data(b"one more"),
+            Err(Error::KeyLimitReached)
+        );
+        assert_eq!(writer.get_ref().output.len(), written, "nothing written");
+        assert_eq!(
+            writer.write_handshake(&message(24, 1)),
+            Err(Error::KeyLimitReached)
+        );
+        assert_eq!(
+            writer.read_message().expect_err("closed"),
+            Error::KeyLimitReached
+        );
+        assert_eq!(writer.get_ref().output.len(), written, "nothing written");
+
+        let mut writer = RecordLayer::new(Pipe::default());
+        writer.set_write_keys(suite, &key).expect("keys");
+        writer.set_write_sequence(AES_GCM_RECORD_LIMIT - 1);
+        assert_eq!(
+            writer.write_application_data(&vec![7u8; MAX_PLAINTEXT + 1]),
+            Err(Error::KeyLimitReached),
+            "two records, one left"
+        );
+        assert!(writer.get_ref().output.is_empty(), "neither written");
+    }
+
+    assert_eq!(write_limit(CHACHA), u64::MAX);
+    let key = secret(CHACHA, "the peer's traffic secret");
+    let mut writer = RecordLayer::new(Pipe::default());
+    writer.set_write_keys(CHACHA, &key).expect("keys");
+    writer.set_write_sequence(AES_GCM_RECORD_LIMIT);
+    writer.write_application_data(b"past").expect("no limit");
+    assert_eq!(
+        writer.get_ref().output,
+        sealed(CHACHA, &key, AES_GCM_RECORD_LIMIT, b"past\x17")
+    );
+
+    let mut layer = reader(peer_record(AES_GCM_RECORD_LIMIT, b"x", 23), true);
+    layer.set_read_sequence(AES_GCM_RECORD_LIMIT);
+    match layer.read_message() {
+        Ok(Message::ApplicationData(data)) => assert_eq!(data, b"x"),
+        other => panic!("read past the write limit: {other:?}"),
+    }
 }
 
 /// Each record has its own nonce: the sequence number counts each record from 0 at each
@@ -659,6 +726,51 @@ fn handshake_message_too_large() {
     }
     let mut layer = reader(input, false);
     assert_eq!(handshake(&mut layer), largest);
+}
+
+/// The bytes allocated to read one record of `count` handshake messages of 8 bytes each and
+/// hand them up one at a time.
+fn allocated_for_messages(count: usize) -> usize {
+    let one = message(4, 4);
+    let content: Vec<u8> = one
+        .iter()
+        .copied()
+        .cycle()
+        .take(count * one.len())
+        .collect();
+    let mut layer = reader(plain(22, &content), false);
+    let (handed, allocated) = allocated_while(|| {
+        let mut handed = 0;
+        while layer.has_buffered_handshake() || handed == 0 {
+            match layer.read_message() {
+                Ok(Message::Handshake(m)) => assert_eq!(m, one),
+                other => panic!("a handshake message, got {other:?}"),
+            }
+            handed += 1;
+        }
+        handed
+    });
+    assert_eq!(handed, count);
+    allocated
+}
+
+/// Handing up the messages of one record allocates bytes linear in their number: twice the
+/// messages, in a record twice as long, allocate at most 2.5 times the bytes (a copy of what
+/// is left after each message would allocate about four times).
+#[test]
+fn coalesced_messages_allocate_linearly() {
+    let n = 1000;
+    let at_n = allocated_for_messages(n);
+    let at_2n = allocated_for_messages(2 * n);
+    eprintln!(
+        "allocated: {n} messages {at_n} bytes, {} messages {at_2n} bytes",
+        2 * n
+    );
+    assert!(
+        at_2n * 2 <= at_n * 5,
+        "{n} messages allocated {at_n} bytes, {} allocated {at_2n}",
+        2 * n
+    );
 }
 
 /// Handshake messages are reassembled across records, a header split one byte per record
@@ -862,7 +974,7 @@ fn transcript_message_hash() {
         let mut transcript = Transcript::new();
         transcript.add(&hello);
         assert!(transcript.current().is_none());
-        assert!(transcript.hello_retry_request(algorithm, &retry));
+        assert_eq!(transcript.hello_retry_request(algorithm, &retry), Ok(()));
         let first = crypto::hash(algorithm, &hello);
         let mut manual = vec![254, 0, 0, first.as_ref().len() as u8];
         manual.extend_from_slice(first.as_ref());
@@ -878,8 +990,20 @@ fn transcript_message_hash() {
             HashAlgorithm::Sha384 => HashAlgorithm::Sha256,
         };
         assert!(!transcript.select(other));
-        assert!(!transcript.hello_retry_request(other, &retry));
+        assert_eq!(
+            transcript.hello_retry_request(other, &retry),
+            Err(Violation::SecondHelloRetryRequest)
+        );
         assert!(transcript.select(algorithm));
+        let mut selected = Transcript::with_hash(other);
+        selected.add(&hello);
+        let before = selected.current().expect("hashing");
+        assert_eq!(
+            selected.hello_retry_request(algorithm, &retry),
+            Err(Violation::UnofferedSuite)
+        );
+        let after = selected.current().expect("hashing");
+        assert!(crypto::constant_time_eq(before.as_ref(), after.as_ref()));
     }
 }
 

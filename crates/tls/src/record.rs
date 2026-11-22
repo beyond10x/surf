@@ -7,7 +7,9 @@
 //! ([`RecordLayer::set_write_keys`]), its own and its peer's, from
 //! [`crate::key_schedule`]. Each direction counts its own sequence number from 0 at each key;
 //! the nonce of a record is the IV XOR that number (section 5.3), and a number that would
-//! wrap protects no record ([`Error::SequenceExhausted`]).
+//! wrap protects no record ([`Error::SequenceExhausted`]). Under an AES-GCM
+//! key the layer writes at most [`AES_GCM_RECORD_LIMIT`] records (RFC 8446 section 5.5) and
+//! then refuses with [`Error::KeyLimitReached`]; a key update before it is the caller's.
 //!
 //! What it refuses on reading, each with the alert it writes before it returns
 //! [`Error::AlertSent`] (the table "RFC 8446 record obligations" of `story:tls-record`):
@@ -58,6 +60,20 @@ pub const MAX_CIPHERTEXT: usize = MAX_PLAINTEXT + 256;
 pub const MAX_HANDSHAKE_MESSAGE: usize = 65_535;
 /// The `legacy_record_version` of every record written.
 pub const RECORD_VERSION: [u8; 2] = [3, 3];
+/// The most records written under one AES-GCM key: 2^24.5 full-size records (RFC 8446
+/// section 5.5), 23,726,566.4, taken down to the whole number. A write past it is refused with
+/// [`Error::KeyLimitReached`]; the layer sends no key update of its own.
+pub const AES_GCM_RECORD_LIMIT: u64 = 23_726_566;
+
+/// The most records written under one key of `suite`: [`AES_GCM_RECORD_LIMIT`] for AES-GCM;
+/// for ChaCha20-Poly1305 the sequence number wraps first (RFC 8446 section 5.5), so its bound
+/// is the wrap alone.
+pub fn write_limit(suite: CipherSuite) -> u64 {
+    match suite.aead() {
+        AeadAlgorithm::Aes128Gcm | AeadAlgorithm::Aes256Gcm => AES_GCM_RECORD_LIMIT,
+        AeadAlgorithm::ChaCha20Poly1305 => u64::MAX,
+    }
+}
 
 const HEADER_LEN: usize = 5;
 const TAG_LEN: usize = AeadAlgorithm::TAG_LEN;
@@ -154,17 +170,20 @@ impl fmt::Debug for Message {
 }
 
 /// The protection of one direction: the AEAD key and IV of a traffic secret, the secret for
-/// its key update, and the sequence number.
+/// its key update, the sequence number, and the most records it protects.
 struct Protection {
     suite: CipherSuite,
     secret: Secret,
     key: AeadKey,
     iv: [u8; AeadAlgorithm::NONCE_LEN],
     sequence: u64,
+    /// The sequence numbers below this one may be used: [`u64::MAX`], the wrap, or the limit
+    /// of a write key ([`write_limit`]).
+    limit: u64,
 }
 
 impl Protection {
-    fn new(suite: CipherSuite, secret: &Secret) -> Result<Protection, Error> {
+    fn new(suite: CipherSuite, secret: &Secret, limit: u64) -> Result<Protection, Error> {
         let keys = key_schedule::traffic_key(suite, secret).map_err(|_| primitives())?;
         let key = AeadKey::new(suite.aead(), keys.key()).map_err(|_| primitives())?;
         Ok(Protection {
@@ -173,6 +192,7 @@ impl Protection {
             key,
             iv: *keys.iv(),
             sequence: 0,
+            limit,
         })
     }
 
@@ -187,14 +207,24 @@ impl Protection {
         nonce
     }
 
-    /// The numbers left before the number would wrap; the last, 2^64 - 1, is never used.
+    /// The records left under this key: before the number would wrap (the last, 2^64 - 1, is
+    /// never used) or before the limit of the key.
     fn left(&self) -> u64 {
-        u64::MAX - self.sequence
+        self.limit.saturating_sub(self.sequence)
+    }
+
+    /// The error once no record is left: the limit of RFC 8446 section 5.5, or the wrap.
+    fn exhausted(&self) -> Error {
+        if self.limit < u64::MAX {
+            Error::KeyLimitReached
+        } else {
+            Error::SequenceExhausted
+        }
     }
 
     fn next(&self) -> Result<Protection, Error> {
         let secret = key_schedule::next_traffic_secret(&self.secret).map_err(|_| primitives())?;
-        Protection::new(self.suite, &secret)
+        Protection::new(self.suite, &secret, self.limit)
     }
 }
 
@@ -248,8 +278,11 @@ pub struct RecordLayer<S> {
     stream: S,
     read: Option<Protection>,
     write: Option<Protection>,
-    /// Handshake bytes received and not yet handed up.
+    /// Handshake bytes received; those from `handshake_start` on are not yet handed up.
     handshake: Vec<u8>,
+    /// Where the bytes not yet handed up begin: each message is copied out from here, and the
+    /// buffer is compacted once per record, so the work is linear in the bytes received.
+    handshake_start: usize,
     failed: Option<Error>,
 }
 
@@ -261,6 +294,7 @@ impl<S> RecordLayer<S> {
             read: None,
             write: None,
             handshake: Vec::new(),
+            handshake_start: 0,
             failed: None,
         }
     }
@@ -293,7 +327,7 @@ impl<S> RecordLayer<S> {
     /// Whether handshake bytes are received and not yet handed up: part of a message, or
     /// whole messages after the last one handed up.
     pub fn has_buffered_handshake(&self) -> bool {
-        !self.handshake.is_empty()
+        self.handshake.len() > self.handshake_start
     }
 
     /// Sets the sequence number of the next record read (test tooling only), to reach the
@@ -327,7 +361,7 @@ impl<S: Read + Write> RecordLayer<S> {
     pub fn set_read_keys(&mut self, suite: CipherSuite, secret: &Secret) -> Result<(), Error> {
         self.check()?;
         self.before_key_change()?;
-        let protection = Protection::new(suite, secret).map_err(|e| self.fail(e))?;
+        let protection = Protection::new(suite, secret, u64::MAX).map_err(|e| self.fail(e))?;
         self.read = Some(protection);
         Ok(())
     }
@@ -336,7 +370,8 @@ impl<S: Read + Write> RecordLayer<S> {
     /// number 0.
     pub fn set_write_keys(&mut self, suite: CipherSuite, secret: &Secret) -> Result<(), Error> {
         self.check()?;
-        let protection = Protection::new(suite, secret).map_err(|e| self.fail(e))?;
+        let protection =
+            Protection::new(suite, secret, write_limit(suite)).map_err(|e| self.fail(e))?;
         self.write = Some(protection);
         Ok(())
     }
@@ -375,7 +410,7 @@ impl<S: Read + Write> RecordLayer<S> {
     }
 
     fn before_key_change(&mut self) -> Result<(), Error> {
-        if self.handshake.is_empty() {
+        if !self.has_buffered_handshake() {
             Ok(())
         } else {
             Err(self.alert(
@@ -436,10 +471,12 @@ impl<S: Read + Write> RecordLayer<S> {
                             Violation::EmptyContent,
                         ));
                     }
+                    self.handshake.drain(..self.handshake_start);
+                    self.handshake_start = 0;
                     self.handshake.extend_from_slice(&content);
                     continue;
                 }
-                _ if !self.handshake.is_empty() => {
+                _ if self.has_buffered_handshake() => {
                     return Err(violation(
                         AlertDescription::UNEXPECTED_MESSAGE,
                         Violation::InterleavedHandshake,
@@ -470,7 +507,8 @@ impl<S: Read + Write> RecordLayer<S> {
     /// The first buffered handshake message, if it is whole; refused once its header
     /// declares more than the bound.
     fn take_handshake_message(&mut self) -> Result<Option<Vec<u8>>, Failure> {
-        let Some(header) = self.handshake.get(..4) else {
+        let start = self.handshake_start;
+        let Some(header) = self.handshake.get(start..start + 4) else {
             return Ok(None);
         };
         let declared =
@@ -484,12 +522,18 @@ impl<S: Read + Write> RecordLayer<S> {
                 },
             ));
         }
-        let len = 4 + declared;
-        if self.handshake.len() < len {
+        let end = start + 4 + declared;
+        let Some(message) = self.handshake.get(start..end) else {
             return Ok(None);
+        };
+        let message = message.to_vec();
+        if end == self.handshake.len() {
+            self.handshake.clear();
+            self.handshake_start = 0;
+        } else {
+            self.handshake_start = end;
         }
-        let rest = self.handshake.split_off(len);
-        Ok(Some(std::mem::replace(&mut self.handshake, rest)))
+        Ok(Some(message))
     }
 
     /// One record: its content type and content, opened when it is protected.
@@ -643,7 +687,8 @@ impl<S: Read + Write> RecordLayer<S> {
         if let Some(p) = &self.write
             && p.left() < records
         {
-            return Err(self.fail(Error::SequenceExhausted));
+            let error = p.exhausted();
+            return Err(self.fail(error));
         }
         for fragment in data.chunks(MAX_PLAINTEXT) {
             self.write_record(content_type, fragment)
@@ -665,7 +710,7 @@ impl<S: Read + Write> RecordLayer<S> {
             }
             Some(protection) => {
                 if protection.left() == 0 {
-                    return Err(Error::SequenceExhausted);
+                    return Err(protection.exhausted());
                 }
                 let len = u16::try_from(content.len() + 1 + TAG_LEN).map_err(|_| primitives())?;
                 let mut header = [ContentType::ApplicationData.code(), 0, 0, 0, 0];
@@ -693,7 +738,10 @@ impl<S> fmt::Debug for RecordLayer<S> {
         f.debug_struct("RecordLayer")
             .field("read", &self.read)
             .field("write", &self.write)
-            .field("buffered_handshake", &self.handshake.len())
+            .field(
+                "buffered_handshake",
+                &(self.handshake.len() - self.handshake_start),
+            )
             .field("failed", &self.failed)
             .finish()
     }

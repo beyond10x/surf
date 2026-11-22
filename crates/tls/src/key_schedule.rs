@@ -138,7 +138,8 @@ pub fn hkdf_extract(algorithm: HashAlgorithm, salt: &[u8], ikm: &[u8]) -> Secret
 
 /// The `HkdfLabel` of RFC 8446 section 7.1: the length, `"tls13 "` and `label`, and
 /// `context`, as HKDF-Expand-Label passes it as `info`. Refused with `OutputTooLong` when the
-/// label or the context is longer than the structure holds (249 and 255 bytes).
+/// label or the context is longer than the structure holds (249 and 255 bytes), and when the
+/// label is empty: with its prefix it holds 7 to 255 bytes.
 pub fn hkdf_label(length: u16, label: &[u8], context: &[u8]) -> Result<Vec<u8>, CryptoError> {
     let (label_len, context_len) = label_lengths(label, context)?;
     let mut info = Vec::with_capacity(2 + 1 + 6 + label.len() + 1 + context.len());
@@ -151,7 +152,13 @@ pub fn hkdf_label(length: u16, label: &[u8], context: &[u8]) -> Result<Vec<u8>, 
     Ok(info)
 }
 
+/// The lengths of `HkdfLabel.label`, `opaque label<7..255>` with its prefix `"tls13 "`, and of
+/// `context`, `opaque context<0..255>`; refused outside those bounds, an empty label among
+/// them.
 fn label_lengths(label: &[u8], context: &[u8]) -> Result<(u8, u8), CryptoError> {
+    if label.is_empty() {
+        return Err(CryptoError::OutputTooLong);
+    }
     let label_len = u8::try_from(6 + label.len()).map_err(|_| CryptoError::OutputTooLong)?;
     let context_len = u8::try_from(context.len()).map_err(|_| CryptoError::OutputTooLong)?;
     Ok((label_len, context_len))

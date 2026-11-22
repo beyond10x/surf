@@ -6,6 +6,8 @@
 
 #![deny(unsafe_code)]
 
+#[path = "tls/adversary_layer.rs"]
+mod adversary_layer;
 #[path = "tls/alloc.rs"]
 mod alloc;
 #[path = "tls/record.rs"]

@@ -444,9 +444,10 @@ The public `Error` of `error.rs`, a closed list:
   `decode_error`), and from `story:tls-record` `InterleavedHandshake`,
   `HandshakeSpansKeyChange`, `EmptyContent` (a handshake or alert record with no content),
   `BadAlertRecord` (an alert record that is not one alert of two bytes), `UnprotectedRecord`
-  (application data without protection), `Downgrade`, `UnexpectedChangeCipherSpec`,
-  `BadCertificateVerify`, `BadFinished`.
-- `SequenceExhausted`.
+  (a record without protection where protection is required: application data before the
+  read keys are set, a handshake or alert record after), `Downgrade`,
+  `UnexpectedChangeCipherSpec`, `BadCertificateVerify`, `BadFinished`.
+- `SequenceExhausted`, and from `story:tls-record` `KeyLimitReached` (item 9.6).
 - `Certificate(CertificateRejection)`, which `story:tls-x509` adds. A `CertificateRejection`
   sends `unknown_ca` (`NoPathToAnchor`), `certificate_expired` (`Expired`) or `bad_certificate`
   (every other).
@@ -538,7 +539,7 @@ Every other condition, each with one reason:
 | a ServerHello of TLS 1.2 or below with either downgrade value of RFC 8446 section 4.1.3 (`DOWNGRD` and 0x01 or 0x00): a downgrade to TLS 1.2 | `TlsHandshakeFailed` | `illegal_parameter` | `illegal_parameter: the ServerHello random holds a downgrade value` |
 | a ServerHello whose `supported_versions` holds anything but 0x0304 | `TlsHandshakeFailed` | `illegal_parameter` | `illegal_parameter: the ServerHello selects <version>` |
 | a handshake message that declares more bytes than item 9 allows (an oversized handshake message) | `TlsHandshakeFailed` | `illegal_parameter` | `illegal_parameter: a <message> of <declared> bytes, at most <bound>` |
-| every other alert received or protocol violation (`AlertReceived`, `AlertSent` with any other violation, `SequenceExhausted`) | `TlsHandshakeFailed` | the alert of the violation, or none | `<alert>: <violation>` for an alert surf sent, `the server sent <alert>` for one it received |
+| every other alert received or protocol violation (`AlertReceived`, `AlertSent` with any other violation, `SequenceExhausted`, `KeyLimitReached`) | `TlsHandshakeFailed` | the alert of the violation, or none | `<alert>: <violation>` for an alert surf sent, `the server sent <alert>` for one it received |
 | a server that never finishes the handshake or the response (`TimedOut`) | `Unreachable` | none | as for HTTP today |
 | the connection closed before the handshake ended (`ConnectionClosed`), a truncated record among them | `Unreachable` | none | as for HTTP today |
 | the connection closed after the handshake without `close_notify` (`Truncated`) | `Unreachable` | none | as for HTTP today |
@@ -645,6 +646,20 @@ the count, date and sha256 of the bundled list of item 11, and with a file a sec
    HelloRetryRequest in the same connection [...] it MUST abort the handshake with an
    "unexpected_message" alert" (`rfc8446.txt:1837-1840`): `unexpected_message`,
    `SecondHelloRetryRequest`.
+   `Transcript::hello_retry_request` refuses a second call with the same violation and leaves
+   the transcript as it was (`story:tls-record`); the handshake refuses the message before it.
+6. **The most records under one AES-GCM write key: 23,726,566.** RFC 8446 section 5.5 limits
+   AES-GCM to 2^24.5 full-size records under one key (`rfc8446.txt:4696-4700`); 2^24.5 is
+   23,726,566.4, rounded down. The record layer counts the records it writes under each write
+   key (`record::AES_GCM_RECORD_LIMIT`, `write_limit`); the write that would pass the limit is
+   refused before a byte of it is written, with the error `KeyLimitReached`, and the layer is
+   closed after it. The layer sends no KeyUpdate of its own: a caller that may write that many
+   records sends one before. ChaCha20-Poly1305 has no such limit (section 5.5: "the record
+   sequence number would wrap before the safety limit is reached"): its keys are bounded by the
+   sequence number alone (`SequenceExhausted`). Reading has no record limit: the limit guards
+   the keys surf encrypts with, and the read sequence still cannot wrap. Why a count and no
+   automatic update: a KeyUpdate is a handshake message of `story:tls-handshake`, which the
+   record layer does not write on its own.
 
 ## 10. The test design, per material
 

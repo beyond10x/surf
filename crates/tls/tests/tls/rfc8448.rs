@@ -453,6 +453,38 @@ struct Replay<'a> {
     /// Records whose `legacy_record_version` differed from the trace: the trace's first
     /// ClientHello carries 0x0301, surf writes 0x0303 on every record.
     version_differs: usize,
+    /// The trace's "construct a(n) X handshake message" blocks of each sender, client first,
+    /// in the trace's order, with their lines; each message written or handed up is compared
+    /// with the next one of its sender.
+    constructed: [Vec<(usize, &'a [u8])>; 2],
+    /// Messages compared with their "construct" block.
+    messages_compared: usize,
+}
+
+/// The index of `side` in `Replay::constructed`.
+fn side_index(side: Side) -> usize {
+    match side {
+        Side::Client => 0,
+        Side::Server => 1,
+    }
+}
+
+/// The "construct a(n) X handshake message" blocks of `section`, of each sender in order.
+fn constructed(section: &Section) -> [Vec<(usize, &[u8])>; 2] {
+    let mut out = [Vec::new(), Vec::new()];
+    for step in &section.steps {
+        let h = step.heading.as_str();
+        if h.contains("  construct a") && h.ends_with(" handshake message") {
+            assert_eq!(step.blocks.len(), 1, "line {}: {h}", step.line);
+            let sender = if step.client() {
+                Side::Client
+            } else {
+                Side::Server
+            };
+            out[side_index(sender)].push((step.line, step.blocks[0].bytes.as_slice()));
+        }
+    }
+    out
 }
 
 impl<'a> Replay<'a> {
@@ -472,6 +504,8 @@ impl<'a> Replay<'a> {
             change_cipher_specs: 0,
             secrets: 0,
             version_differs: 0,
+            constructed: constructed(section),
+            messages_compared: 0,
         }
     }
 
@@ -521,6 +555,19 @@ impl<'a> Replay<'a> {
             }
         }
         assert_eq!(self.layer.get_ref().unread(), 0, "every record read");
+        for (side, left) in [Side::Client, Side::Server]
+            .into_iter()
+            .zip(&self.constructed)
+        {
+            assert!(
+                left.is_empty(),
+                "section {}: {} constructed messages of the {side:?} never sent, the first at \
+                 line {}",
+                self.section.number,
+                left.len(),
+                left.first().map_or(0, |c| c.0)
+            );
+        }
         self
     }
 
@@ -615,10 +662,27 @@ impl<'a> Replay<'a> {
 
     /// One handshake message, written or read: the transcript, and the keys it brings.
     fn message(&mut self, sender: Side, message: &[u8]) {
+        let queue = &mut self.constructed[side_index(sender)];
+        assert!(
+            !queue.is_empty(),
+            "section {}: a message of the {sender:?} the trace does not construct",
+            self.section.number
+        );
+        let (line, expected) = queue.remove(0);
+        same(
+            &format!(
+                "section {} {:?}: the message constructed at line {line}",
+                self.section.number, self.side
+            ),
+            message,
+            expected,
+        );
+        self.messages_compared += 1;
         match message[0] {
             2 if is_hello_retry_request(message) => {
                 let suite = selected_suite(message);
-                assert!(self.transcript.hello_retry_request(suite.hash(), message));
+                let retried = self.transcript.hello_retry_request(suite.hash(), message);
+                assert_eq!(retried, Ok(()), "the HelloRetryRequest of the trace");
             }
             2 => self.server_hello(message),
             20 => self.finished(sender, message),
@@ -824,6 +888,15 @@ fn replay(number: u32, side: Side) -> (Section, usize, usize, usize, usize, usiz
     let section = section(number);
     let steps_checked = check_steps(&section);
     let done = Replay::new(&section, side).run();
+    let expected_messages = match number {
+        3 => 8,
+        5 => 9,
+        _ => 7,
+    };
+    assert_eq!(
+        done.messages_compared, expected_messages,
+        "section {number}: messages compared with their construct block"
+    );
     let counts = (
         steps_checked,
         done.records,
@@ -834,7 +907,8 @@ fn replay(number: u32, side: Side) -> (Section, usize, usize, usize, usize, usiz
     println!(
         "rfc8448 section {number} as the {side:?}: {} steps, {} blocks read, {} without an octet \
          count skipped; {} blocks of steps checked, {} records, {} secrets, {} \
-         change_cipher_spec, {} records of version 0x0301 in the trace",
+         change_cipher_spec, {} records of version 0x0301 in the trace, {} messages equal to \
+         their construct block",
         section.steps.len(),
         section.blocks(),
         section.skipped,
@@ -842,7 +916,8 @@ fn replay(number: u32, side: Side) -> (Section, usize, usize, usize, usize, usiz
         counts.1,
         counts.2,
         counts.3,
-        counts.4
+        counts.4,
+        done.messages_compared
     );
     (section, counts.0, counts.1, counts.2, counts.3, counts.4)
 }
@@ -854,7 +929,9 @@ fn replay(number: u32, side: Side) -> (Section, usize, usize, usize, usize, usiz
 /// every secret, traffic key and IV; the server's records open into its messages; our
 /// ClientHello, Finished, application data and alert records are the trace's bytes (the
 /// ClientHello's `legacy_record_version` aside: the trace writes 0x0301, surf 0x0303). Our
-/// records carry no padding: each record's length is the trace's.
+/// records carry no padding: each record's length is the trace's. In every replay each
+/// handshake message written or handed up equals, byte for byte, the trace's "construct a(n) X
+/// handshake message" block of its sender, in order, and every such block is sent.
 #[test]
 fn section_3() {
     let (_, steps, records, secrets, ccs, version) = replay(3, Side::Client);
