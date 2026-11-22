@@ -9,7 +9,7 @@ relations:
 - decomposes: epic:e2e-scenario-runner
 - depends_on: story:runner-formats
 - depends_on: story:agent-fetch-post
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:13Z", actor: "human:timo", revision: 4}
@@ -75,7 +75,7 @@ In `crates/scenario` (package `surf-scenario`), which gains a path dependency on
      the recording's bytes, `${PASSWORD_1}` is, and the replay matches the request body.
 
 Surfaces: `crates/scenario/src/` (new modules for the two transports, and `lib.rs`),
-`crates/scenario/Cargo.toml`, `crates/scenario/tests/replay.rs`. Follows `runner-formats` on
+`crates/scenario/Cargo.toml`, `crates/scenario/tests/replay.rs`, `crates/scenario/tests/main.rs` (one `mod` line). Follows `runner-formats` on
 `crates/scenario`; `runner-record-session` follows this story there.
 
 ## Acceptance

@@ -30,7 +30,7 @@ collision; a story that collides moves to the next wave. The table below is the 
 | 7 (delivered, [page](agent-wave-7.md)) | `agent-fetch-redirects`, `html-character-references`, `view-first-page` |
 | 8 (delivered, [page](agent-wave-8.md)) | `agent-request-body-spec`, `html-tree-body`, `view-detail-panel` |
 | 9 (delivered, [page](agent-wave-9.md)) | `agent-fetch-post`, `html-actionable-elements`, `html-tree-formatting` |
-| 10 (delivered, [page](agent-wave-10.md)) | `html-accessible-name`, `html-parser-limits` |
+| 10 (delivered, [page](agent-wave-10.md)) | `html-accessible-name`, `html-parser-limits`; then `one-test-binary-per-crate`, alone, on `main` after the merges of release 0.3.0, `fix/tests-hold-under-load` and this wave; round 1 (the rounds after wave 10) starts after its merge |
 | 11 | `html-document-port`, `html-tree-tables` |
 | 12 | `agent-links-spec`, `html-tree-template` |
 | 13 | `agent-follow-links`, `agent-forms-spec`, `html-tree-foreign` |

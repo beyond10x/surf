@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T08:20:55Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-decisions",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "adversary on docs/design/tls.md at 00ed44c",
+    "reference": "no blocker; 12 findings corrected in the following commit; lock, probe lines, timings and alert bytes found right"
+  }
+}

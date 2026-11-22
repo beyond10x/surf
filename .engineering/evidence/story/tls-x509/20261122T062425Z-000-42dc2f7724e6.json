@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T06:24:25Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-x509",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "plan critic panel: scope, design, acceptance, parallel safety",
+    "reference": "approve at b1cac2b after seven rounds"
+  }
+}

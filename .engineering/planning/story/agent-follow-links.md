@@ -14,7 +14,7 @@ relations:
 - depends_on: story:html-accessible-name
 - depends_on: story:agent-session-events
 - depends_on: story:page-text-outline
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 6}
@@ -108,7 +108,7 @@ and `html-tree-template` add test files there and touch neither.
   entry.
 
 Surfaces written: `crates/page/src/base_url.rs`, `crates/page/src/lib.rs` (one line),
-`crates/page/tests/base_url.rs`, `crates/session/`, `crates/answer/`, `docs/agent-answer.md`,
+`crates/page/tests/base_url.rs`, `crates/page/tests/main.rs` (one `mod` line), `crates/session/`, `crates/answer/`, `docs/agent-answer.md`,
 `cli/surf-agent.yaml`, `crates/agent/`.
 
 ## For README.md (handed over in the unit report, decision D7)

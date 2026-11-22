@@ -7,7 +7,8 @@ title: Tests for a refused start of the view server, the mode of view-url under 
 summary: Three things story:view-surfd-serves decided and no test holds; tests in crates/surfd/tests, no change of behaviour unless one shows a defect.
 relations:
 - decomposes: epic:live-view
-revision: 1
+- depends_on: story:one-test-binary-per-crate
+revision: 2
 ---
 ## Context
 
@@ -28,7 +29,7 @@ From the findings of wave 6 (`docs/plan/agent-wave-6.md`), sent on by the reader
 
 ## Change
 
-Tests in `crates/surfd/tests/` and no change of behaviour unless a test shows a defect:
+Tests in `crates/surfd/tests/` (a new file there gets its `mod` line in `crates/surfd/tests/main.rs`) and no change of behaviour unless a test shows a defect:
 
 - a start with the view's port taken or the runtime directory not writable is refused, the
   refusal names the address or the path and not the token, `surfd.sock` and the lock are

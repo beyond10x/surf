@@ -9,7 +9,7 @@ relations:
 - decomposes: epic:e2e-scenario-runner
 - depends_on: story:runner-formats
 - depends_on: story:runner-surf-cli-package
-revision: 6
+revision: 7
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 5}
@@ -77,7 +77,7 @@ The `surf` binary is in `crates/surf-cli` (`story:runner-surf-cli-package`).
 
 Surfaces: `crates/surf-cli/src/` (a new module and the subcommand dispatch in `main.rs`),
 `crates/surf-cli/Cargo.toml` (path dependency on `surf-scenario`),
-`crates/surf-cli/tests/scenario_from.rs`, `crates/surf-cli/tests/golden/scenario-from/`. It does
+`crates/surf-cli/tests/scenario_from.rs`, `crates/surf-cli/tests/main.rs` (one `mod` line), `crates/surf-cli/tests/golden/scenario-from/`. It does
 not write `crates/scenario`. On `crates/surf-cli` it follows `runner-surf-cli-package` and every
 agent and html story that writes the binary (`agent-fetch-redirects`, `agent-request-body-spec`,
 `agent-fetch-post`, `agent-form-port`, `html-document-port`, all ancestors through

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T07:42:28Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-tasks",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "plan critic panel: scope, design, acceptance, parallel safety",
+    "reference": "approve at 7f69246 after five rounds"
+  }
+}

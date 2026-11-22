@@ -10,7 +10,7 @@ relations:
 - depends_on: story:view-now-panel
 - depends_on: story:agent-fill-pick
 - depends_on: story:agent-change-and-log
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 4}
@@ -85,7 +85,7 @@ Surfaces written: `docs/view-stream.md`, `crates/view/src/`, `crates/view/tests/
 ## Acceptance
 
 `slot task view-test` passes with cases 3 to 7 of `view-tests/tests/controls.spec.mjs`, `cargo test
--p surf-view --test json` with case 1 and the `surfd` package's `--test view` with case 2, each
+-p surf-view --test main json::` with case 1 and the `surfd` package's `--test main view::` with case 2, each
 named after its case, and the earlier view tests still pass.
 
 ## Out of scope
