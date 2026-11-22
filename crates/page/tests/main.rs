@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+mod adversary_follow;
 mod adversary_select;
 mod adversary_values;
 mod base_url;
