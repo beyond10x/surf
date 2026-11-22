@@ -14,12 +14,12 @@ scope:
 - confidence: cited
   path: crates/tls/src/anchors
 - confidence: cited
-  path: crates/tls/tests/anchors.rs
+  path: crates/tls/tests/tls/anchors.rs
 - confidence: cited
   path: taskfiles/tls-anchors.sh
 - confidence: cited
   path: taskfiles/tls-anchors.yml
-revision: 4
+revision: 6
 ---
 ## Context
 
@@ -55,11 +55,11 @@ rounds of surf.
   test uses these); it never runs in `check`, `check-runner` or a workflow. `anchors-age` (no
   network) prints `anchors: <n> certificates of <date>, <d> days old` and fails when the list is
   older than 90 days at `DATE` (default today). For the coordinator: the include.
-- Tests in `crates/tls/tests/main.rs`, module `anchors`.
+- Tests in `crates/tls/tests/main.rs`, module `anchors` (file `tests/tls/anchors.rs`).
 
 ## Acceptance
 
-`cargo test -p surf-tls` passes with the cases below, `Anchors::bundled().count()` equals the
+`cargo nextest run -p surf-tls` passes with the cases below, `Anchors::bundled().count()` equals the
 count in `crates/tls/src/anchors/SOURCE`, and `slot task anchors-age` prints the age of the list
 and exits 0.
 
@@ -91,7 +91,7 @@ file reaches a fetch (`story:tls-fetch-https`, `story:tls-session-anchors`); the
 
 ## Writes
 
-`crates/tls/src/anchors/`, `crates/tls/tests/anchors.rs`, `taskfiles/tls-anchors.sh`,
+`crates/tls/src/anchors/`, `crates/tls/tests/tls/anchors.rs`, `taskfiles/tls-anchors.sh`,
 `taskfiles/tls-anchors.yml`. Coordinator: `mod` lines in a wave of more than one unit, the root
 `Taskfile.yml` include, `AGENTS.md`. Beside it run `story:tls-x509-path` and
 `story:tls-handshake`. `story:tls-release` adds the age check to `docs/releasing.md` and the

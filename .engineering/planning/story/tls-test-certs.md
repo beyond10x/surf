@@ -16,7 +16,7 @@ scope:
   path: taskfiles/tls-certs-check.sh
 - confidence: cited
   path: taskfiles/tls-certs.yml
-revision: 4
+revision: 5
 ---
 ## Context
 
@@ -55,7 +55,9 @@ after `tls-lock-allow`, beside `tls-x509` and `tls-record`, beside the rounds of
     a fixed random source, so every certificate it makes is reproducible byte for byte;
   - `keys/`: the private keys as PKCS#8 (RSA 1024, 2048 and 4096 bits, ECDSA P-256 and P-384,
     Ed25519), sources made once by the unit with `openssl genpkey` (the commands in
-    `keys/SOURCE`) and never regenerated;
+    `keys/SOURCE`) and never regenerated; `openssl genpkey` writes Ed25519 as PKCS#8 v1, which
+    the seam reads with `Ed25519KeyPair::from_pkcs8_maybe_unchecked` (item 6; ring
+    `from_pkcs8` takes v2 only, `ed25519/signing.rs:79-111`);
   - `src/cases.rs`, the cases, each a root, intermediates, a leaf, the host checked, and the
     expected outcome: `ok-rsa2048` (leaf `localhost` with `subjectAltName` dNSName `localhost`
     and iPAddress 127.0.0.1), `ok-ecdsa-p256`, `ok-ecdsa-p384`, `ok-ed25519`, `ok-wildcard`
@@ -71,7 +73,13 @@ after `tls-lock-allow`, beside `tls-x509` and `tls-record`, beside the rounds of
   - the binary `surf-tls-test-certs --out <dir>` writes per case `<case>/chain.pem` (leaf
     first), `<case>/root.pem` and, for the cases the test server uses, `<case>/leaf.pk8`; and
     `INDEX`, one line per case: name, host, validation time (`2026-11-22T00:00:00Z`), expected
-    outcome (`ok`, or the reason and the check of item 7).
+    outcome (`ok`, or the reason and, for `CertificateNotTrusted`, one check name of the closed
+    list of item 7: `untrusted-root` `NoPathToAnchor`, `bad-signature` `BadSignature`,
+    `intermediate-not-ca` `IssuerNotCa`, `path-too-long` `PathTooLong`,
+    `unknown-critical-extension` `UnknownCriticalExtension`, `name-constraints-excluded`
+    `NameConstraint`, `eku-client-only` `NoServerAuth`, `sha1` `WeakAlgorithm`, `rsa-1024`
+    `WeakKey`). This crate is built beside `story:tls-x509`, so it writes the names as text,
+    not through the enum of `verify.rs`.
 - `crates/tls-test-certs/openssl/`: `make.sh` (POSIX `sh`; run only by the lane `slow`), which
   makes the two cases ring cannot sign, `sha1` (a leaf signed sha1WithRSAEncryption by the RSA
   2048 intermediate) and `rsa-1024` (a leaf with the RSA 1024 key, signed by the intermediate
@@ -93,12 +101,14 @@ after `tls-lock-allow`, beside `tls-x509` and `tls-record`, beside the rounds of
 
 ## Acceptance
 
-`cargo test -p surf-tls-test-certs` passes and `slot task tls-certs-check` prints `tls-certs:
+`cargo nextest run -p surf-tls-test-certs` passes and `slot task tls-certs-check` prints `tls-certs:
 <n> cases, certs/ matches its sources`; `slot task tls-certs-slow` (outside the gate) ends with
 no file that differs.
 
 1. `index`: `INDEX` names every case of `src/cases.rs` and the two of `openssl/` once, and every
-   file it names exists.
+   file it names exists; every check name in it is one of the eleven of item 7 (a constant of
+   the test, copied from item 7), and a copy of `INDEX` with `NotACa` in place of
+   `IssuerNotCa` fails naming the line.
 2. `signatures`: each certificate the builder made verifies through the seam under its issuer
    key, except the leaf of `bad-signature`, which does not.
 3. `reproducible`: the builder run twice in the test makes the same bytes for every case it

@@ -5,7 +5,7 @@ kind: epic
 status: draft
 title: 'surf loads https: addresses'
 summary: 'TLS 1.3 client written here over one audited source of primitives; X.509 path validation, host names, trust anchors; https: and redirects between schemes in surf-fetch, with TLS failure reasons in the answer.'
-revision: 10
+revision: 13
 ---
 ## Context
 
@@ -294,21 +294,30 @@ The failure reasons above; the extra anchor file; the crate layout (`surf-tls`, 
 Drafted on 2026-11-22 as thirteen stories (`decomposes` this epic); the eight candidates of the
 first draft, with `tls-x509` split into `tls-x509`, `tls-test-certs` and `tls-x509-path`,
 `tls-handshake` into `tls-record`, `tls-handshake` and `tls-test-server`, and `tls-fetch-https`
-into `tls-fetch-https` and `tls-session-anchors`. Order, by the coordinator (2026-11-22):
+into `tls-fetch-https` and `tls-session-anchors`. Order, by the coordinator (2026-11-22, round 1
+decision 8 and round 2 decision 7):
 
 1. Nine stories write only `crates/tls*`, `taskfiles/tls-*`, `docs/design/tls.md`, the lock
-   check and its test, and are built beside the rounds 1 and 2 of surf: `tls-decisions` alone
-   first; then `tls-lock-allow`; then `tls-x509`, `tls-test-certs` and `tls-record` side by side;
-   then `tls-x509-path`, `tls-anchors` and `tls-handshake` side by side; then `tls-test-server`.
+   check and its test (`taskfiles/lock-check.sh`, `taskfiles/lock-allow.txt`, the module
+   `lock_check` of the test binary of `crates/surf`) and `.cargo/config.toml`; for them the
+   coordinator writes the root `Taskfile.yml`, `Cargo.lock`, `README.md` and `AGENTS.md`. They
+   are built beside the rounds 1 and 2 of surf: `tls-decisions` alone first; then
+   `tls-lock-allow`, after `story:one-test-binary-per-crate` (which moves
+   `crates/surf/tests/lock_check.rs`); then `tls-x509`, `tls-test-certs` and `tls-record` side
+   by side; then `tls-x509-path`, `tls-anchors` and `tls-handshake` side by side; then
+   `tls-test-server`.
 2. Four are one unit, in the order `tls-spec`, `tls-fetch-https`, `tls-session-anchors`,
    `tls-release`. It starts at the first boundary between two rounds after the nine are merged,
-   never beside a unit that writes `spec/`, `generated/`, `crates/session`, `crates/agent`,
-   `crates/surfd`, `crates/surf/src/lib.rs`, `conformance/src/target.rs` or
-   `docs/agent-answer.md`. `tls-fetch-https` also needs `story:one-test-binary-per-crate` and the
-   merge of `impl/security-review-fixes` (the destination rule, `story:security-review-fixes`).
+   never beside a unit that writes `spec/`, `generated/`, `crates/fetch`, `crates/session`,
+   `crates/agent`, `crates/surfd`, `crates/surf/src/lib.rs`, `conformance/src/target.rs` or
+   `docs/agent-answer.md`. `tls-fetch-https` also needs `story:one-test-binary-per-crate` and
+   the merge of `impl/security-review-fixes` (the destination rule,
+   `story:security-review-fixes`).
 
-The `mod` lines of `crates/tls/src/lib.rs` and `crates/tls/tests/main.rs` are the coordinator in
-a wave of more than one unit, so the stories of one step can share the crate.
+`crates/tls` is born with one integration-test binary: `tests/main.rs`, its modules in
+`tests/tls/`, no other `.rs` file beside `main.rs`. The `mod` lines of `crates/tls/src/lib.rs`
+and `crates/tls/tests/main.rs` are written by the coordinator in a wave of more than one unit,
+so the stories of one step can share the crate.
 
 ## Risks
 
@@ -333,9 +342,12 @@ a wave of more than one unit, so the stories of one step can share the crate.
 prints the allow-list line and fails a planted outside package (its test); the end-to-end test
 `surf-agent go https://localhost:<port>/` against the test server prints `page 200 "text/html"
 "https://localhost:<port>/"`; one test per reason of the negative suite prints `page failed
-<reason>` with the reason the suite names (`story:tls-session-anchors`); the x509-limbo and RFC
-8448 counts are held; the test step stays within 120 s. The release smoke test of the next
-release passes on the four targets.
+<reason>` with the reason the suite names (`story:tls-session-anchors`); the x509-limbo counts
+of `crates/tls-conformance/expected/limbo.txt` are held; the bytes of RFC 8448 sections 3, 5
+and 7 are reproduced (every secret, key, IV and protected record, `story:tls-record`, and the
+client Finished, `story:tls-handshake`); the test step stays within 120 s. The release smoke
+test of the next release passes on the four targets, and no shipped binary of it holds the
+`test-tooling` marker (`story:tls-release`).
 
 Agent task 5 of `story:agent-tasks` turning `pass` needs `story:agent-tasks` (draft,
 `epic:agent-cli-target`) and the page text of round 1 (`look --as markdown`), neither of this
@@ -351,7 +363,7 @@ Taken by the coordinating agent on 2026-11-22, each reported to the operator, wh
 - U2, trust anchors: option B, the bundled list of Mozilla as curl publishes it, built into the binary and refreshed before each release, plus an extra anchor file per session. Reason: the same list on Linux and macOS, and reading the macOS keychain needs unsafe calls, which principle 5 forbids.
 - U3, TLS 1.2: option C, out of this epic and drafted as the epic after it. Reason: this epic stays the size of one protocol version, and about one trusted site in four offers TLS 1.2 as its best protocol (SSL Pulse, 2025-06-01: 24.7 %), so the gap is closed next and not left open. Until then such a server fails with `TlsVersionUnsupported`.
 
-- TLS 1.2 suites in the ClientHello, taken by the coordinating agent on 2026-11-22 and reported to the operator: beside the three TLS 1.3 suites the ClientHello offers the six TLS 1.2 ECDHE AEAD suites of RFC 5289 and RFC 7905 (TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384, TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256, TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256), for one purpose: a server limited to TLS 1.2 then answers with a ServerHello that selects 1.2, and surf ends the handshake with a `protocol_version` alert and the reason `TlsVersionUnsupported`. surf never continues a TLS 1.2 handshake in this epic. A `handshake_failure` alert before any ServerHello stays `TlsHandshakeFailed`, with a detail that names the alert. Reason: about one site in four offers TLS 1.2 as its best, and an agent must be told which failure it met. `story:tls-decisions` checks it with two recordings (a server limited to TLS 1.2 against a hello with and without those suites) and may overturn it with the evidence.
+- TLS 1.2 suites in the ClientHello, taken by the coordinating agent on 2026-11-22 and reported to the operator: beside the three TLS 1.3 suites the ClientHello offers the six TLS 1.2 ECDHE AEAD suites of RFC 5289 and RFC 7905 (TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384, TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256, TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256), for one purpose: a server limited to TLS 1.2 then answers with a ServerHello that selects 1.2, and surf ends the handshake with a `protocol_version` alert and the reason `TlsVersionUnsupported`. surf never continues a TLS 1.2 handshake in this epic. A `handshake_failure` alert before any ServerHello stays `TlsHandshakeFailed`, with a detail that names the alert. Reason: about one site in four offers TLS 1.2 as its best, and an agent must be told which failure it met. The suites are for a server that does not read `supported_versions`: it chooses by `legacy_version` and answers `handshake_failure` when no suite is shared (RFC 5246 section 7.4.1.3, RFC 8446 appendix D). A current OpenSSL limited to TLS 1.2 reads the extension and answers `protocol_version` whatever the suites, so a recording against it shows that kind only and cannot overturn this decision (corrected on 2026-11-22 after the second critic round).
 
 ## Measured: the packages ring adds
 

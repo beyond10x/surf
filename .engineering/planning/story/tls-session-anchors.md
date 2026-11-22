@@ -21,17 +21,13 @@ scope:
 - confidence: cited
   path: crates/agent/src/wire.rs
 - confidence: cited
-  path: crates/agent/tests/ca_file.rs
-- confidence: cited
-  path: crates/agent/tests/main.rs
+  path: crates/agent/tests
 - confidence: cited
   path: crates/session/src/lib.rs
 - confidence: cited
   path: crates/session/src/process.rs
 - confidence: cited
-  path: crates/session/tests/https.rs
-- confidence: cited
-  path: crates/session/tests/main.rs
+  path: crates/session/tests
 - confidence: cited
   path: crates/surfd/src/daemon.rs
 - confidence: cited
@@ -42,7 +38,7 @@ scope:
   path: generated/rust
 - confidence: cited
   path: spec/domains/agent.yaml
-revision: 5
+revision: 8
 ---
 ## Context
 
@@ -71,8 +67,8 @@ of the negative suite prints `page failed <reason>`".
 
 Placement: the third of the four stories built as one unit (`tls-spec`, `tls-fetch-https`,
 `tls-session-anchors`, `tls-release`), at a boundary between two rounds of surf, never beside a
-unit that writes `spec/`, `generated/`, `crates/session`, `crates/agent`, `crates/surfd` or
-`docs/agent-answer.md`.
+unit that writes `spec/`, `generated/`, `crates/fetch`, `crates/session`, `crates/agent`,
+`crates/surfd` or `docs/agent-answer.md` (the path rule of `story:tls-decisions`).
 
 ## Domain relations
 
@@ -120,8 +116,10 @@ ended in 2001):
 2. A session opened without `--ca-file`: `page failed CertificateNotTrusted
    "https://localhost:<port>/"`.
 3. With the root of each case as the file: `expired`: `page failed CertificateExpired ...`;
-   `wrong-host`: `page failed CertificateNameMismatch ...`; mode `Tls12Only`: `page failed
-   TlsVersionUnsupported ...`; mode `BadFinished`: `page failed TlsHandshakeFailed ...`.
+   `wrong-host`: `page failed CertificateNameMismatch ...`; modes
+   `Tls12IgnoresSupportedVersions` and `Tls12ReadsSupportedVersions`: `page failed
+   TlsVersionUnsupported ...`; modes `BadFinished` and `RefuseHandshake`: `page failed
+   TlsHandshakeFailed ...`.
 4. Two sessions of one `surfd`, A with the file and B without: A loads, B fails
    `CertificateNotTrusted` (the anchors belong to the session, not to the daemon).
 5. Hostile: `--ca-file` naming a missing file, a file of 32 KiB plus one byte, a file holding a
@@ -149,10 +147,11 @@ server).
 ## Writes
 
 `spec/domains/agent.yaml`, `cli/surf-agent.yaml`, `generated/rust/`, `crates/agent/src/cli.rs`,
-`crates/agent/src/client.rs`, `crates/agent/src/wire.rs`, `crates/agent/tests/ca_file.rs`,
-`crates/surfd/src/daemon.rs`, `crates/surfd/src/link.rs`, `crates/session/src/lib.rs`,
-`crates/session/src/process.rs`, `crates/session/tests/https.rs`, the `mod` lines of the two
-`tests/main.rs`, `docs/agent-answer.md`. In the same unit before it: `spec/`, `generated/`,
+`crates/agent/src/client.rs`, `crates/agent/src/wire.rs`, the module `ca_file` of the test
+binary of `crates/agent`, `crates/surfd/src/daemon.rs`, `crates/surfd/src/link.rs`,
+`crates/session/src/lib.rs`, `crates/session/src/process.rs`, the module `https` of the test
+binary of `crates/session`, the `mod` lines of the two `tests/main.rs`, `docs/agent-answer.md`.
+In the same unit before it: `spec/`, `generated/`,
 `docs/agent-answer.md` (`tls-spec`) and `crates/session/src/lib.rs` (`tls-fetch-https`). Outside
 the epic the same files are written by many agent and view stories (`story:agent-cookie-jar`,
 `story:agent-fill-pick`, `story:agent-answer-format`, `story:view-now-panel` on `surfd`): kept

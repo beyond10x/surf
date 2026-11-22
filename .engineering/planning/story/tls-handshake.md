@@ -23,14 +23,14 @@ scope:
 - confidence: cited
   path: crates/tls/tests/data/flights
 - confidence: cited
-  path: crates/tls/tests/flights.rs
+  path: crates/tls/tests/tls/flights.rs
 - confidence: cited
-  path: crates/tls/tests/handshake.rs
+  path: crates/tls/tests/tls/handshake.rs
 - confidence: cited
-  path: crates/tls/tests/handshake_hostile.rs
+  path: crates/tls/tests/tls/handshake_hostile.rs
 - confidence: cited
   path: taskfiles/tls-flights.yml
-revision: 4
+revision: 6
 ---
 ## Context
 
@@ -42,10 +42,13 @@ HelloRetryRequest with its `cookie` and a second key share for P-256; EncryptedE
 Certificate, CertificateVerify, Finished), the middlebox compatibility mode of Appendix D.4 (a
 legacy session id and a tolerated `change_cipher_spec`), and a `NewSessionTicket` read and
 dropped". RFC 8446 sections 9.1 and 9.2. U3: no TLS 1.2 handshake. The coordinator, 2026-11-22,
-decision 1 (`docs/design/tls.md` item 12): the ClientHello also offers the six TLS 1.2 ECDHE
-AEAD suites, so that a TLS 1.2-only server answers with a ServerHello selecting 1.2, which surf
-ends with a `protocol_version` alert and `VersionUnsupported`; a `handshake_failure` alert before
-any ServerHello stays `TlsHandshakeFailed`, its detail naming the alert.
+decision 1 of rounds 1 and 2 (`docs/design/tls.md` items 7 and 12): the ClientHello also offers
+the six TLS 1.2 ECDHE AEAD suites, for a server limited to TLS 1.2 that does not read
+`supported_versions`; it answers with a ServerHello selecting 1.2, which surf ends with a
+`protocol_version` alert and `VersionUnsupported`. A server that reads `supported_versions`
+(OpenSSL 1.1.1 and later) sends a `protocol_version` alert before any ServerHello; both end
+in `TlsVersionUnsupported`. A `handshake_failure` alert before any ServerHello stays
+`TlsHandshakeFailed`, its detail naming the alert.
 
 The epic, testing: "our ClientHello is held by a golden file of its own"; "recorded server
 flights of an independent implementation (recorded in the `slow` lane on 127.0.0.1, replayed in
@@ -56,7 +59,7 @@ bytes. The client private key of a recording, and of the RFC 8448 trace, is made
 through a fixed random source (item 5). The RFC 8448 section 3 trace has an empty legacy session
 id (rfc8448.txt:241-245) and an EncryptedExtensions with `record_size_limit` (:376-378), which
 our own ClientHello neither sends nor offers: the trace runs in a test mode that takes its
-ClientHello as given (decision 4).
+ClientHellos as given bytes, over given bytes only (decision 4 of both rounds).
 
 `docs/design/tls.md` item 6: this story writes `handshake/` and `connection.rs` (the one
 connection layer) and calls the trait `ServerCertVerifier` of `crates/tls/src/verify.rs`, owned
@@ -76,11 +79,16 @@ beside the rounds of surf.
     `supported_versions` 0x0304 only, `supported_groups` x25519 and secp256r1, `key_share`
     x25519, `signature_algorithms` and `signature_algorithms_cert` (the schemes of the seam),
     `server_name` when the host is a name and not an IP literal, ALPN `http/1.1`.
-  - ServerHello: a TLS 1.2 ServerHello (no `supported_versions` 0x0304) ends with
-    `protocol_version` and `VersionUnsupported`, unless its random carries the downgrade value
-    of section 4.1.3, which ends with `illegal_parameter` and `Downgrade`; else an offered TLS
-    1.3 suite, the session id echoed, compression 0. An alert before any ServerHello ends with
-    `AlertReceived { description, before_server_hello: true }`.
+  - ServerHello, in this order: a `supported_versions` extension present that holds anything
+    but 0x0304 is `illegal_parameter` and `UnofferedVersion` (section 4.2.1); with no such
+    extension the server selected TLS 1.2 or below: when the last 8 bytes of its random are
+    either downgrade value of section 4.1.3 (`DOWNGRD` 0x01 or 0x00) it is `illegal_parameter`
+    and `Downgrade`, else `protocol_version` and `VersionUnsupported`; a TLS 1.3 ServerHello
+    or HelloRetryRequest that selects one of the six TLS 1.2 suites is `illegal_parameter` and
+    `Tls12SuiteInTls13`; else an offered TLS 1.3 suite, the session id echoed, compression 0.
+    An alert before any ServerHello ends with `AlertReceived { description,
+    before_server_hello: true }` (`protocol_version` there is the other kind of server of
+    item 12).
   - HelloRetryRequest once, for secp256r1 only, `cookie` echoed; the transcript as section
     4.4.1.
   - Then, in this order only: EncryptedExtensions (only what was offered; ALPN absent or
@@ -98,80 +106,106 @@ beside the rounds of surf.
     the server Finished; any other is `unexpected_message` and `UnexpectedChangeCipherSpec`.
   - Every failure sends the alert of section 6.2 and returns the `Error` of item 6.
 - `crates/tls/src/handshake/trace.rs`, behind the feature `test-tooling` only: the test mode
-  `GivenClientHello`, which takes a ClientHello as bytes, the extensions it offered and its key
-  shares (made from their private key bytes) as given, so that the RFC 8448 trace runs with its
-  empty session id and its `record_size_limit`. `connection.rs` has no path to it.
+  `GivenClientHello`, which takes the list of ClientHellos of a trace as bytes (RFC 8448 section
+  5 has two: the first, and the second after the HelloRetryRequest with its cookie,
+  renegotiation_info and `record_size_limit`, rfc8448.txt:1610-1618), the extensions each
+  offered and its key shares (made from their private key bytes), and the server flight as
+  bytes; it runs the state machine over those bytes only, in memory, never over a live stream,
+  and sends the given hellos in their order instead of building its own. So the RFC 8448 trace
+  runs with its empty session id and its `record_size_limit`. `connection.rs` has no path to
+  it; no other story uses it.
 - `crates/tls/src/connection.rs`: `Connection`, the client as a stream over any `Read + Write`,
   given a host, a `&dyn ServerCertVerifier` and the time; `Read` and `Write` of application data
   after the handshake; end of stream after `close_notify`; an end of stream without it after the
   handshake is `Truncated`, before its end `ConnectionClosed`; a read that times out `TimedOut`.
+  Under `test-tooling`, and only then, `Connection::new` reads `TEST_TOOLING_MARKER` of item 6
+  through `std::hint::black_box`, so a binary that connects carries the marker exactly when
+  the feature was compiled in (`story:tls-release` searches the shipped binaries for it).
 - `crates/tls/tests/data/client-hello.golden` (hex of our ClientHello with a fixed random,
   session id and key share).
 - Recorded flights: `crates/tls/examples/record-flights.rs` (run only by the lane `slow`) starts
   the independent server of item 10 on 127.0.0.1 with the `ok-*` certificates of
   `crates/tls-test-certs/certs/`, and records for each configuration the bytes both ways and the
   client private key bytes: the three suites with x25519, a HelloRetryRequest to secp256r1, an
-  RSA and an ECDSA certificate, and `openssl s_server -tls1_2` against our hello and against
-  the hello without the six TLS 1.2 suites. Output `crates/tls/tests/data/flights/<name>.bin`
-  with `SOURCE` (the implementation and its version, the command line, the date, the sha256 of
-  each recording) and `DIGEST` (the sha256 of the recorder sources).
+  RSA and an ECDSA certificate; `openssl s_server -tls1_2` against our hello (the
+  `protocol_version` kind of item 12, nothing more is read from it); and a stack that ignores
+  `supported_versions` against our hello only when item 12 names one that runs without a
+  network. Output `crates/tls/tests/data/flights/<name>.bin` with `SOURCE` (the implementation
+  and its version, the command line, the date, the sha256 of each recording) and `DIGEST` (the
+  sha256 of the recorder sources).
 - `taskfiles/tls-flights.yml`: `tls-flights-check` (the recordings against `SOURCE`, the
   recorder sources against `DIGEST`; a step of `check`) and `tls-flights-slow` (records again
   into `.out/` and requires that every new recording replays to the same outcome; in `slow`).
   For the coordinator: the include and the two lines.
-- Tests in `crates/tls/tests/main.rs`, modules `handshake`, `flights`, `handshake_hostile`. The
-  verifier in them is a test double that returns the `LeafKey` of the leaf of the case, read
-  from `crates/tls-test-certs/certs/` with the reader of `story:tls-x509`.
+- Tests in `crates/tls/tests/main.rs`, modules `handshake`, `flights`, `handshake_hostile`
+  (files in `tests/tls/`). The verifier in them is a test double that returns the `LeafKey` of
+  the leaf of the case, read from `crates/tls-test-certs/certs/` with the reader of
+  `story:tls-x509`.
 
 ## Acceptance
 
-`cargo test -p surf-tls` passes: our ClientHello equals `client-hello.golden`, RFC 8448
-sections 3, 5 and 7 and every recorded flight complete through the state machine, and each
+`cargo nextest run -p surf-tls` passes: our ClientHello equals `client-hello.golden`, RFC 8448
+sections 3, 5 and 7 and every recorded flight complete or end as item 12 quotes, and each
 hostile case below ends with the `Error` and the alert named.
 
 1. ClientHello with a fixed random source: byte for byte `client-hello.golden`, which lists the
    nine suites in the order above; with a host `127.0.0.1`: no `server_name` extension.
-2. RFC 8448 sections 3, 5 and 7 through `GivenClientHello`, the CertificateVerify check given
-   the answer of the trace (its server key is RSA-1024, which the seam refuses): the client
-   Finished equals the trace. `cargo tree -p surf-tls -e normal,build,features` (no
+2. RFC 8448 sections 3, 5 and 7 through `GivenClientHello`, given the ClientHellos of the trace
+   as bytes (section 5: both, the first and the one after the HelloRetryRequest), the server
+   flight as bytes, and the CertificateVerify check given the answer of the trace (its server
+   key is RSA-1024, which the seam refuses): the client Finished equals the trace. No test runs
+   the mode over a socket. `cargo tree -p surf-tls -e normal,build,features` (no
    dev-dependencies) shows no `test-tooling`.
 3. Each recorded TLS 1.3 flight: the handshake completes, our ClientHello equals the recorded
-   one, and the HTTP answer of the server decrypts. The TLS 1.2 flight against our hello:
-   `VersionUnsupported`, alert `protocol_version` sent; against the hello without the six
-   suites: what the server answered, as item 12 quotes it (`AlertReceived { handshake_failure,
-   before_server_hello: true }` if it sent that).
+   one, and the HTTP answer of the server decrypts. The recording against `openssl s_server
+   -tls1_2`: what item 12 quotes for it, `AlertReceived { protocol_version,
+   before_server_hello: true }` (the `protocol_version` kind). A recording from a stack that
+   ignores `supported_versions`, when item 12 names one: `VersionUnsupported`, alert
+   `protocol_version` sent.
 4. Hostile, each from crafted server bytes in memory:
-   1. a TLS 1.2 ServerHello: `VersionUnsupported`, alert `protocol_version`;
-   2. a TLS 1.2 ServerHello with `DOWNGRD` 0x01 at the end of its random: `AlertSent {
-      illegal_parameter, Downgrade }`;
-   3. `handshake_failure` as the first record: `AlertReceived { handshake_failure,
-      before_server_hello: true }`;
-   4. suite 0x1304, not offered: `AlertSent { illegal_parameter, UnofferedSuite }`;
-   5. a second HelloRetryRequest: `AlertSent { unexpected_message, SecondHelloRetryRequest }`;
-   6. a HelloRetryRequest for x25519, already offered: `AlertSent { illegal_parameter,
+   1. a TLS 1.2 ServerHello without `supported_versions` and without a downgrade value:
+      `VersionUnsupported`, alert `protocol_version` sent; the same with legacy version 0x0302
+      (TLS 1.1): the same;
+   2. a TLS 1.2 ServerHello with `DOWNGRD` 0x01 at the end of its random, and a TLS 1.1
+      ServerHello with `DOWNGRD` 0x00: each `AlertSent { illegal_parameter, Downgrade }`;
+   3. a ServerHello whose `supported_versions` holds 0x0303, and one that holds 0x7f1c (a
+      draft version): each `AlertSent { illegal_parameter, UnofferedVersion }` (RFC 8446
+      section 4.2.1);
+   4. a TLS 1.3 ServerHello that selects 0xC02F, and a HelloRetryRequest that selects 0xCCA8,
+      both offered as TLS 1.2 suites: each `AlertSent { illegal_parameter, Tls12SuiteInTls13 }`;
+   5. `handshake_failure` as the first record: `AlertReceived { handshake_failure,
+      before_server_hello: true }`; `protocol_version` as the first record: `AlertReceived {
+      protocol_version, before_server_hello: true }`;
+   6. suite 0x1304, not offered: `AlertSent { illegal_parameter, UnofferedSuite }`;
+   7. a second HelloRetryRequest: `AlertSent { unexpected_message, SecondHelloRetryRequest }`;
+   8. a HelloRetryRequest for x25519, already offered: `AlertSent { illegal_parameter,
       UnofferedGroup }`;
-   7. EncryptedExtensions with `max_fragment_length`, not offered: `AlertSent {
+   9. EncryptedExtensions with `max_fragment_length`, not offered: `AlertSent {
       unsupported_extension, UnofferedExtension }`; ALPN `h2`: `AlertSent { illegal_parameter,
       UnofferedAlpn }`;
-   8. CertificateVerify right after EncryptedExtensions (Certificate skipped): `AlertSent {
-      unexpected_message, UnexpectedMessage { expected: Certificate, got: CertificateVerify } }`;
-      Finished right after Certificate (CertificateVerify skipped): the same with `expected:
-      CertificateVerify, got: Finished`;
-   9. a Certificate with an empty list: `AlertSent { decode_error, EmptyCertificate }`;
-   10. a Certificate message declaring 16 MiB: `AlertSent { illegal_parameter, MessageTooLarge
+   10. CertificateVerify right after EncryptedExtensions (Certificate skipped): `AlertSent {
+       unexpected_message, UnexpectedMessage { expected: Certificate, got: CertificateVerify }
+       }`; Finished right after Certificate (CertificateVerify skipped): the same with
+       `expected: CertificateVerify, got: Finished`;
+   11. a Certificate with an empty list: `AlertSent { decode_error, EmptyCertificate }`;
+   12. a Certificate message declaring 16 MiB: `AlertSent { illegal_parameter, MessageTooLarge
        }` at its header, its body not read;
-   11. a CertificateVerify with one flipped byte: `AlertSent { decrypt_error,
+   13. a CertificateVerify with one flipped byte: `AlertSent { decrypt_error,
        BadCertificateVerify }`; a Finished with a wrong `verify_data`: `AlertSent {
        decrypt_error, BadFinished }`;
-   12. a `change_cipher_spec` after the server Finished: `AlertSent { unexpected_message,
+   14. a `change_cipher_spec` after the server Finished: `AlertSent { unexpected_message,
        UnexpectedChangeCipherSpec }`;
-   13. after the handshake, an unrequested CertificateRequest: `AlertSent { unexpected_message,
+   15. after the handshake, an unrequested CertificateRequest: `AlertSent { unexpected_message,
        UnexpectedMessage }`; an EncryptedExtensions: the same;
-   14. a server that sends its ServerHello and then nothing, over a stream whose reads time out:
+   16. after the handshake, a `NewSessionTicket` (lifetime 7200 s, a 64-byte ticket), then
+       application data `ok`, then `close_notify`: the reads return `ok` and then the end of
+       stream, no alert is sent, and the client wrote no byte after its Finished (the ticket
+       is dropped: no resumption, no answer);
+   17. a server that sends its ServerHello and then nothing, over a stream whose reads time out:
        `TimedOut`;
-   15. application data then end of stream without `close_notify`: `Truncated`; end of stream
+   18. application data then end of stream without `close_notify`: `Truncated`; end of stream
        in the middle of the handshake: `ConnectionClosed`;
-   16. `KeyUpdate` with `update_requested`: answered, and the next record opens with the new
+   19. `KeyUpdate` with `update_requested`: answered, and the next record opens with the new
        keys.
 5. `tls-flights-check` passes; with one byte of a recording changed in a copy, it fails naming
    the file.
@@ -188,8 +222,8 @@ Encrypted Client Hello; path validation itself (`story:tls-x509-path`); the test
 
 ## Writes
 
-`crates/tls/src/handshake/` (with `trace.rs`), `src/connection.rs`, `tests/handshake.rs`,
-`tests/flights.rs`, `tests/handshake_hostile.rs`, `tests/data/client-hello.golden`,
+`crates/tls/src/handshake/` (with `trace.rs`), `src/connection.rs`, `tests/tls/handshake.rs`,
+`tests/tls/flights.rs`, `tests/tls/handshake_hostile.rs`, `tests/data/client-hello.golden`,
 `tests/data/flights/`, `examples/record-flights.rs`, `taskfiles/tls-flights.yml`. Coordinator:
 `mod` lines in a wave of more than one unit, the root `Taskfile.yml`, `AGENTS.md`. Beside it run
 `story:tls-x509-path` and `story:tls-anchors`.

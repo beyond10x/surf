@@ -19,10 +19,10 @@ scope:
 - confidence: cited
   path: crates/tls/tests/data/rfc8448
 - confidence: cited
-  path: crates/tls/tests/record.rs
+  path: crates/tls/tests/tls/record.rs
 - confidence: cited
-  path: crates/tls/tests/rfc8448.rs
-revision: 4
+  path: crates/tls/tests/tls/rfc8448.rs
+revision: 6
 ---
 ## Context
 
@@ -42,7 +42,8 @@ client X25519 private key, and ring makes a key from given bytes through a fixed
 derived, not supplied. Items 6 (the `Error` kinds of `error.rs`) and 9 (the bound of a
 handshake message). RFC 8446 sections 5 (record protocol), 7 (key schedule) and 4.4.1
 (transcript hash, `message_hash` after a HelloRetryRequest). The counting allocator of
-`crates/tls/tests/alloc.rs` (`story:tls-lock-allow`) observes what a refusal allocates.
+`crates/tls/tests/tls/alloc.rs` (`story:tls-lock-allow`) observes what a refusal allocates on
+the thread of its test (the counts are per thread, read by `peak_while`).
 
 Placement: one of the nine stories that write only `crates/tls*`; built after
 `tls-lock-allow`, beside `tls-x509` and `tls-test-certs`, beside the rounds of surf.
@@ -61,14 +62,18 @@ Placement: one of the nine stories that write only `crates/tls*`; built after
   traffic secrets; finished keys and `verify_data`; traffic key and IV; for SHA-256 and SHA-384.
 - `crates/tls/src/transcript.rs`: the running transcript hash, with the `message_hash`
   replacement after a HelloRetryRequest.
+- `record`, `key_schedule` and `transcript` are public modules (item 6) and serve either side
+  of a connection: the caller gives the keys and says which direction a record travels, and
+  the key schedule returns client and server secrets alike, so `story:tls-test-server` builds
+  its server from them without a change under `crates/tls/src`.
 - `crates/tls/tests/data/rfc8448/rfc8448.txt` (the RFC text, unchanged) and `SOURCE` (URL, date
   fetched, sha256, the IETF Trust Legal Provisions).
 - Tests in `crates/tls/tests/main.rs`, modules `rfc8448` (reads the labelled hex blocks of
-  sections 3, 5 and 7 from the RFC text) and `record`.
+  sections 3, 5 and 7 from the RFC text) and `record`, files in `tests/tls/`.
 
 ## Acceptance
 
-`cargo test -p surf-tls` passes with every secret, key, IV and protected record of RFC 8448
+`cargo nextest run -p surf-tls` passes with every secret, key, IV and protected record of RFC 8448
 sections 3, 5 and 7 reproduced byte for byte, and each hostile record below refused with the
 `Error` named.
 
@@ -102,7 +107,7 @@ The client state machine, extensions and certificates (`story:tls-handshake`); R
 4 (resumption, 0-RTT) and 6 (client authentication).
 
 ## Writes
-
-`crates/tls/src/record.rs`, `src/key_schedule.rs`, `src/transcript.rs`, `tests/rfc8448.rs`,
-`tests/record.rs`, `tests/data/rfc8448/`. Coordinator: the `mod` lines in a wave of more than one
+`crates/tls/src/record.rs`, `src/key_schedule.rs`, `src/transcript.rs`, `tests/tls/rfc8448.rs`,
+`tests/tls/record.rs`, `tests/data/rfc8448/`. Coordinator: the `mod` lines in a wave of more
+than one unit. Beside it run `story:tls-x509` and `story:tls-test-certs`.
 unit. Beside it run `story:tls-x509` and `story:tls-test-certs`.

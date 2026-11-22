@@ -21,6 +21,8 @@ scope:
 - confidence: cited
   path: crates/session/src/lib.rs
 - confidence: cited
+  path: crates/surf-cli/Cargo.toml
+- confidence: cited
   path: crates/surf-cli/src/main.rs
 - confidence: cited
   path: crates/surf-cli/tests
@@ -28,7 +30,7 @@ scope:
   path: crates/surf/src/lib.rs
 - confidence: cited
   path: crates/surf/tests
-revision: 5
+revision: 7
 ---
 ## Context
 
@@ -64,7 +66,8 @@ tests go into `tests/main.rs` of each, as modules.
 
 Placement: the second of the four stories built as one unit (`tls-spec`, `tls-fetch-https`,
 `tls-session-anchors`, `tls-release`), at a boundary between two rounds of surf, never beside a
-unit that writes `crates/session`, `crates/surf/src/lib.rs` or the other paths of that rule.
+unit that writes `crates/fetch`, `crates/session`, `crates/surf/src/lib.rs` or the other paths
+of that rule (`story:tls-decisions`, "Order of the stories of the epic").
 
 ## Domain relations
 
@@ -79,7 +82,9 @@ unit that writes `crates/session`, `crates/surf/src/lib.rs` or the other paths o
 ## Change
 
 - `crates/fetch` (`Cargo.toml`: `surf-tls` by path, without `test-tooling`): `https:`
-  addresses, port 443 by default; after the connection, `surf_tls::Connection` over `Timed`,
+  addresses, port 443 by default; after the connection, made through the `Network` of
+  `story:security-review-fixes` with its destination rule checked before it, as for `http:`,
+  `surf_tls::Connection` over `Timed`,
   with the host, a `PathVerifier` over the anchors the request borrows, and the system clock;
   the handshake counts against the read timeout as the exchange does, summed over the hops; the
   stream is handed to `exchange` unchanged. `Request` borrows the anchors to use
@@ -90,7 +95,7 @@ unit that writes `crates/session`, `crates/surf/src/lib.rs` or the other paths o
   to `https:` and back are followed, each hop under the destination rule. The crate
   documentation: the first paragraph, "Addresses", "Limits" (the handshake inside the read
   timeout, the bounds of item 9), "Memory" (what a TLS connection adds, measured with the
-  counting allocator of `tests/adversary_redirect_memory.rs` as the crate measures today), "What
+  counting allocator of the module `adversary_redirect_memory` as the crate measures today), "What
   it does not do" (TLS 1.2, client certificates, resumption, and: "It does not check
   revocation: a revoked certificate that has not expired loads.").
 - `crates/surf/src/lib.rs`: `answer` maps the five failures; `fetch_http` takes the anchors to
@@ -98,13 +103,18 @@ unit that writes `crates/session`, `crates/surf/src/lib.rs` or the other paths o
   session the bundled set; `tls-session-anchors` adds the extra file).
 - `crates/surf-cli/src/main.rs`: `--ca-file <path>` and `--anchors` as `docs/surf-command.md`
   states them.
+- `crates/surf-cli/Cargo.toml`: `surf-tls-test-server` and `surf-tls-test-certs` as
+  dev-dependencies (both with `surf-tls` and its `test-tooling`); so a `cargo test` of
+  `surf-cli` builds the binary `surf` with `test-tooling`, which `story:tls-release` keeps out
+  of the shipped binaries. `crates/fetch/Cargo.toml` gains the same two dev-dependencies.
 - `conformance/Cargo.lock`: `surf-fetch` gains `surf-tls`, and the packages of ring enter it;
   the lock check does not read this lock.
-- `crates/fetch/tests/redirects.rs` case 10: rewritten as case 11 below.
+- The module `redirects` of the test binary of `crates/fetch` (from
+  `crates/fetch/tests/redirects.rs`), case 10: rewritten as case 11 below.
 
 ## Acceptance
 
-`cargo test -p surf-fetch -p surf -p surf-cli -p surf-session` passes with the cases below:
+`cargo nextest run -p surf-fetch -p surf -p surf-cli -p surf-session` passes with the cases below:
 `surf --ca-file <root> https://localhost:<port>/` against the test server commits the page, and
 each negative certificate case ends with its reason.
 
@@ -121,8 +131,12 @@ Each against `surf-tls-test-server` on 127.0.0.1 port 0, with the certificates o
 4. `wrong-host`: `CertificateNameMismatch`, its `Display` naming `localhost`.
 5. `ok-rsa2048` without the extra anchor: `CertificateNotTrusted`, its `Display` naming the
    check (no path to an anchor).
-6. Mode `Tls12Only` (a downgrade to TLS 1.2): `TlsVersionUnsupported`.
-7. Mode `BadFinished`: `TlsHandshakeFailed`, its `Display` naming `decrypt_error`.
+6. Mode `Tls12IgnoresSupportedVersions` (a server limited to TLS 1.2 that selects 1.2 in its
+   ServerHello): `TlsVersionUnsupported`; mode `Tls12ReadsSupportedVersions` (a
+   `protocol_version` alert before any ServerHello): `TlsVersionUnsupported`.
+7. Mode `BadFinished`: `TlsHandshakeFailed`, its `Display` naming `decrypt_error`; mode
+   `RefuseHandshake` (a `handshake_failure` alert before any ServerHello):
+   `TlsHandshakeFailed`, its `Display` naming `handshake_failure`.
 8. Mode `StallAfterServerHello` (a server that never finishes), read timeout 1 s:
    `Unreachable` within 2 s; mode `NeverAnswer`: the same.
 9. Mode `NoCloseNotify` with a body delimited by the end of the connection: `Unreachable`;
@@ -138,27 +152,36 @@ Each against `surf-tls-test-server` on 127.0.0.1 port 0, with the certificates o
     connection.
 16. Read timeout 1 s over an `https:` hop then an `http:` hop, each answering after 600 ms:
     `Unreachable` within 2 s.
+17. The destination rule on an `https:` hop (`story:security-review-fixes`, through its
+    `Network` trait and the `TestNetwork` of the `redirects` module): `https://a.example.test/a`
+    resolved to 203.0.113.5 and routed to the TLS test server (case `ok-wildcard`), answering
+    `Location: https://10.0.0.1/b`: `ForbiddenDestination`; the test network dialed only
+    `203.0.113.5:443` and the server counted one connection and one handshake. A public
+    `http:` start redirected to `https://127.0.0.1:<tls-port>/`: `ForbiddenDestination`, and
+    the TLS server accepted no connection, so no handshake began.
 
 In `crates/surf-cli/tests/main.rs` module `https`:
 
-17. `surf --ca-file <root.pem> https://localhost:<port>/`: exit 0, lines `navigation <id>
+18. `surf --ca-file <root.pem> https://localhost:<port>/`: exit 0, lines `navigation <id>
     Committed https://localhost:<port>/` and `request <id> Responded https://localhost:<port>/`.
-18. Without `--ca-file`: exit 1, `fetch-failed <id> CertificateNotTrusted
+19. Without `--ca-file`: exit 1, `fetch-failed <id> CertificateNotTrusted
     https://localhost:<port>/`, standard error naming the check.
-19. `surf --anchors`: exit 0, `anchors <n> bundled <date> sha256:<hex>` with the count and date
+20. `surf --anchors`: exit 0, `anchors <n> bundled <date> sha256:<hex>` with the count and date
     of `crates/tls/src/anchors/SOURCE`; with `--ca-file <root.pem>` also `anchors 1 file
     <root.pem>`.
-20. Hostile: `--ca-file` naming a missing file, and one holding a `PRIVATE KEY` block: exit 2,
+21. Hostile: `--ca-file` naming a missing file, and one holding a `PRIVATE KEY` block: exit 2,
     standard error naming the path and the error, no connection made.
 
 Elsewhere:
 
-21. `crates/surf/tests/main.rs`: each of the five new failures maps to the reason of the same
+22. `crates/surf/tests/main.rs`: each of the five new failures maps to the reason of the same
     name.
-22. `cargo test --locked --manifest-path conformance/Cargo.toml` exits 0 with the new
+23. `cargo test --locked --manifest-path conformance/Cargo.toml` exits 0 with the new
     `conformance/Cargo.lock`.
-23. `cargo tree -p surf-cli -e normal,build,features` lists `surf-tls` without `test-tooling`.
-24. `grep -c "does not check revocation" crates/fetch/src/lib.rs` prints at least 1.
+24. `cargo tree -p surf-cli -e normal,build,features` lists `surf-tls` without `test-tooling`;
+    `cargo tree -p surf-cli -e dev,features` lists it with `test-tooling` (the reason for the
+    order of steps in `story:tls-release`).
+25. `grep -c "does not check revocation" crates/fetch/src/lib.rs` prints at least 1.
 
 Budget: each test under 5 s; the cases together add at most 10 s to the test step (both in the
 report); no test over 60 s, the test step within 120 s; 127.0.0.1 only, no network, no model
@@ -172,13 +195,15 @@ HTTP/2; a TLS 1.2 handshake.
 
 ## Writes
 
-`crates/fetch/` (`src/lib.rs`, `Cargo.toml`, `tests/https.rs`, `tests/redirects.rs`,
-`tests/main.rs`), `crates/surf/src/lib.rs`, a module of `crates/surf/tests/`,
-`crates/surf-cli/src/main.rs`, `crates/surf-cli/tests/https.rs`, `crates/session/src/lib.rs`
-(the call of `fetch_http`), `conformance/Cargo.lock`. `crates/fetch/src/lib.rs` is also written
-by `story:security-review-fixes` (before this one, another branch), `story:fetch-early-answer`
-and `story:fetch-head-memory` (drafts); `crates/surf/src/lib.rs` and `crates/session/src/lib.rs`
-by `story:agent-form-port`, `story:agent-history-spec` and other round-2 stories: kept apart by
-the placement. `crates/*/tests/`: `story:one-test-binary-per-crate`, before. Coordinator:
-`Cargo.lock`, `AGENTS.md` ("Layout" of `crates/fetch`, "Commands": only `http:` loads),
-`README.md`.
+`crates/fetch/` (`src/lib.rs`, `Cargo.toml`, the modules `https` (new) and `redirects` of its
+one test binary, the `mod` line in `tests/main.rs`), `crates/surf/src/lib.rs`, a module of the
+test binary of `crates/surf`, `crates/surf-cli/src/main.rs`, `crates/surf-cli/Cargo.toml`
+(dev-dependencies), the module `https` of the test binary of `crates/surf-cli`,
+`crates/session/src/lib.rs` (the call of `fetch_http`), `conformance/Cargo.lock`.
+`crates/fetch/src/lib.rs` is also written by `story:security-review-fixes` (before this one,
+another branch), `story:fetch-early-answer` and `story:fetch-head-memory` (drafts);
+`crates/surf/src/lib.rs` and `crates/session/src/lib.rs` by `story:agent-form-port`,
+`story:agent-history-spec` and other round-2 stories: kept apart by the placement, whose path
+list names `crates/fetch`. `crates/*/tests/`: `story:one-test-binary-per-crate`, before.
+Coordinator: `Cargo.lock`, `AGENTS.md` ("Layout" of `crates/fetch`, "Commands": only `http:`
+loads), `README.md`.

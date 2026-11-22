@@ -26,7 +26,7 @@ scope:
   path: spec/domains/net.yaml
 - confidence: cited
   path: spec/scenarios
-revision: 4
+revision: 5
 ---
 ## Context
 
@@ -52,7 +52,7 @@ Placement: the first of the four stories built as one unit, in the order `tls-sp
 `tls-fetch-https`, `tls-session-anchors`, `tls-release`. The unit starts at the first boundary
 between two rounds of surf after the nine `crates/tls*` stories are merged (the edge to
 `tls-test-server` holds it there), never beside a unit that writes `spec/`, `generated/`,
-`crates/session`, `crates/agent`, `crates/surfd`, `crates/surf/src/lib.rs`,
+`crates/fetch`, `crates/session`, `crates/agent`, `crates/surfd`, `crates/surf/src/lib.rs`,
 `conformance/src/target.rs` or `docs/agent-answer.md`. In round 2, `story:agent-history-spec`
 writes `spec/`, `generated/rust/`, `navigation.yaml`, `conformance/src/target.rs` and
 `crates/surf/src/lib.rs`, `story:agent-form-port` the last two, and the agent command stories

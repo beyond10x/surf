@@ -14,7 +14,7 @@ relations:
 scope:
 - confidence: cited
   path: crates/tls-test-server
-revision: 4
+revision: 5
 ---
 ## Context
 
@@ -29,9 +29,12 @@ server of task 5.
 A defect the server and the client share passes every test of the server; the recorded flights
 of an independent implementation and RFC 8448 (`story:tls-handshake`, `story:tls-record`) are
 the answer the epic gives. `docs/design/tls.md` items 6 (signing through `crypto.rs` under the
-feature `test-tooling`; the `Error` kinds; `LeafKey` and the reader owned by `story:tls-x509`),
-7 (the error of each mode) and 12 (a TLS 1.2-only server answers our hello, which offers six TLS
-1.2 suites, with a ServerHello selecting 1.2, and a hello without them with `handshake_failure`).
+feature `test-tooling`; the `Error` kinds; the public modules; `LeafKey` and the reader owned by
+`story:tls-x509`), 7 (the error of each mode) and 12 (the two kinds of server limited to TLS 1.2:
+one that ignores `supported_versions` answers our hello, which offers six TLS 1.2 suites, with a
+ServerHello selecting 1.2 and a hello without them with `handshake_failure`; one that reads it
+answers `protocol_version` before any ServerHello). Both kinds are tested end to end here and in
+`story:tls-fetch-https`.
 The certificates and keys are those of `crates/tls-test-certs/certs/` (`story:tls-test-certs`).
 
 Placement: the last of the nine stories that write only `crates/tls*`; built alone after
@@ -41,23 +44,32 @@ Placement: the last of the nine stories that write only `crates/tls*`; built alo
 
 - `crates/tls-test-server` (`surf-tls-test-server`, new, test tooling, not shipped, Apache-2.0,
   `#![forbid(unsafe_code)]`, depends on `surf-tls` by path with `test-tooling`): the server side
-  of RFC 8446 section 4 as far as the tests need, over the record layer, the key schedule and the
-  signing of `surf-tls`. `TestServer::start(Config)` binds 127.0.0.1 port 0, serves one HTTP/1.1
-  response per path from a map (status, fields, body), counts the connections it accepts, and on
-  drop stops and joins its thread. `Config`: the certificate case, the suites and groups it
-  accepts, whether it asks for secp256r1 by HelloRetryRequest, the server name and ALPN it saw
-  (read back by the test), and a mode: `Normal`; `Tls12Only`, which answers as a real TLS
-  1.2-only server does: a hello that offers one of the six TLS 1.2 suites gets a TLS 1.2
-  ServerHello selecting it (without the downgrade value), a hello without them gets a
-  `handshake_failure` alert; `StallAfterServerHello`; `NeverAnswer` (accepts and reads, sends
-  nothing); `OversizedCertificate` (declares 16 MiB); `BadFinished`; `NoCloseNotify` (closes the
-  connection after a body delimited by its end).
+  of RFC 8446 section 4 as far as the tests need, built from the public modules of `surf-tls`
+  that item 6 lists (`record`, `key_schedule`, `transcript`, which serve either side, and the
+  signing of `crypto`); the server messages (ServerHello, EncryptedExtensions, Certificate,
+  CertificateVerify, Finished, NewSessionTicket, alerts) are written in this crate. Nothing
+  under `crates/tls/src` is made public or changed for it (item 6, `tls-decisions` acceptance
+  6); a need found there is a finding for the coordinator. `TestServer::start(Config)` binds
+  127.0.0.1 port 0, serves one HTTP/1.1 response per path from a map (status, fields, body),
+  counts the connections it accepts, and on drop stops and joins its thread. `Config`: the
+  certificate case, the suites and groups it accepts, whether it asks for secp256r1 by
+  HelloRetryRequest, the server name and ALPN it saw (read back by the test), and a mode:
+  `Normal` (sends one `NewSessionTicket` after its Finished, as servers commonly do);
+  the two kinds of server limited to TLS 1.2 of item 12, `Tls12IgnoresSupportedVersions`
+  (chooses by `legacy_version` and the suites: a hello that offers one of the six TLS 1.2
+  suites gets a TLS 1.2 ServerHello selecting it, without the downgrade value; a hello without
+  them a `handshake_failure` alert) and `Tls12ReadsSupportedVersions` (a `protocol_version`
+  alert before any ServerHello, whatever the suites, as OpenSSL 1.1.1 and later limited to 1.2
+  answer); `RefuseHandshake` (a `handshake_failure` alert at once); `StallAfterServerHello`;
+  `NeverAnswer` (accepts and reads, sends nothing); `OversizedCertificate` (declares 16 MiB);
+  `BadFinished`; `NoCloseNotify` (closes the connection after a body delimited by its end).
 - Tests in `crates/tls-test-server/tests/main.rs`, against `surf_tls::Connection` with a
-  verifier test double that returns the `LeafKey` of the case leaf.
+  verifier test double that returns the `LeafKey` of the case leaf. No test uses the trace mode
+  `GivenClientHello` (it runs over given bytes only, `story:tls-handshake`).
 
 ## Acceptance
 
-`cargo test -p surf-tls-test-server` passes: the `surf-tls` client completes a handshake with
+`cargo nextest run -p surf-tls-test-server` passes: the `surf-tls` client completes a handshake with
 the server for each suite and group, and each misbehaving mode ends the client with the `Error`
 `docs/design/tls.md` item 6 names.
 
@@ -67,9 +79,17 @@ the server for each suite and group, and each misbehaving mode ends the client w
 2. The certificate cases `ok-rsa2048`, `ok-ecdsa-p256`, `ok-ecdsa-p384`: the handshake
    completes.
 3. Modes, each with a read timeout of 200 ms on the client stream:
-   - `Tls12Only`: `VersionUnsupported`, the client sent `protocol_version`;
-   - `Tls12Only` against a `GivenClientHello` without the six TLS 1.2 suites (the test mode of
-     `story:tls-handshake`): `AlertReceived { handshake_failure, before_server_hello: true }`;
+   - `Tls12IgnoresSupportedVersions` against our client: the server answers a TLS 1.2
+     ServerHello selecting 0xC02F (the `ok-rsa2048` case) and the client ends
+     `VersionUnsupported`, having sent `protocol_version`; the same mode given a ClientHello
+     written as raw bytes over the socket (`client-hello.golden` with the six TLS 1.2 suites cut
+     out and its lengths fixed, a constant of the test; no client code runs) answers a
+     `handshake_failure` alert record;
+   - `Tls12ReadsSupportedVersions` against our client: `AlertReceived { protocol_version,
+     before_server_hello: true }`, no ServerHello sent;
+   - `RefuseHandshake`: `AlertReceived { handshake_failure, before_server_hello: true }`;
+   - `Normal` sends a `NewSessionTicket` after its Finished: the client reads the body `ok`
+     and sends no byte in answer to the ticket;
    - `StallAfterServerHello`: `TimedOut` within 1 s;
    - `NeverAnswer`: `TimedOut` within 1 s, no byte received;
    - `OversizedCertificate`: `AlertSent { illegal_parameter, MessageTooLarge }`;

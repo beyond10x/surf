@@ -25,14 +25,14 @@ scope:
 - confidence: cited
   path: crates/tls/tests/data/x509-limbo
 - confidence: cited
-  path: crates/tls/tests/der.rs
+  path: crates/tls/tests/tls/der.rs
 - confidence: cited
-  path: crates/tls/tests/limbo_parse.rs
+  path: crates/tls/tests/tls/limbo_parse.rs
 - confidence: cited
-  path: crates/tls/tests/pem.rs
+  path: crates/tls/tests/tls/pem.rs
 - confidence: cited
-  path: crates/tls/tests/x509_parse.rs
-revision: 5
+  path: crates/tls/tests/tls/x509_parse.rs
+revision: 7
 ---
 ## Context
 
@@ -50,7 +50,8 @@ certificate", and "A PEM reader for anchor files (base64 written here)". x509-li
 Apache-2.0, https://github.com/C2SP/x509-limbo): one `limbo.json`, 9,807 cases on 2026-11-22.
 `docs/design/tls.md` items 6 (the owners: this story owns the reader, `LeafKey`, `TrustAnchor`
 and `verify.rs`), 9 and 10 (`story:tls-decisions`). The counting allocator of
-`crates/tls/tests/alloc.rs` (`story:tls-lock-allow`) observes what a refusal allocates.
+`crates/tls/tests/tls/alloc.rs` (`story:tls-lock-allow`) observes what a refusal allocates on
+the thread of its test (the counts are per thread, read by `peak_while`).
 
 Placement: one of the nine stories that write only `crates/tls*` and `taskfiles/tls-*`; built
 after `tls-lock-allow`, beside `tls-test-certs` and `tls-record`, beside the rounds of surf.
@@ -73,22 +74,25 @@ after `tls-lock-allow`, beside `tls-test-certs` and `tls-record`, beside the rou
   reader refuses as name and key only) are defined here.
 - `crates/tls/src/verify.rs`: the trait `ServerCertVerifier` (the certificates the server sent,
   the host, the time; answers a `LeafKey` or a `CertificateRejection`) and
-  `CertificateRejection` with its kinds `NotTrusted(check)`, `Expired` and `NameMismatch`, the
-  checks named as item 7 names them (`WeakAlgorithm` and `WeakKey` among them). `src/error.rs`
-  gains the variant `Certificate(CertificateRejection)`.
+  `CertificateRejection` with its kinds `NotTrusted(check)`, `Expired` and `NameMismatch`;
+  `check` is an enum of the closed list of item 7 and no other name: `NoPathToAnchor`,
+  `BadSignature`, `IssuerNotCa`, `PathTooLong`, `CandidateLimit`, `KeyUsage`,
+  `UnknownCriticalExtension`, `NameConstraint`, `NoServerAuth`, `WeakAlgorithm`, `WeakKey`.
+  `src/error.rs` gains the variant `Certificate(CertificateRejection)`.
 - `crates/tls/src/pem.rs` and `src/base64.rs`: blocks between `-----BEGIN <label>-----` and
   `-----END <label>-----` with equal labels, base64 of RFC 4648 with line breaks, padding
   checked; text outside blocks ignored; each block returned with its label.
 - `crates/tls/tests/data/x509-limbo/`: `limbo.json` (or the subset of item 10), `LICENSE`,
   `SOURCE` (repository, commit, date fetched, Apache-2.0, sha256 of each file, the case counts
   at that commit) and `parse-counts.txt` (below).
-- Tests in `crates/tls/tests/main.rs`, modules `der`, `x509_parse`, `pem`, `limbo_parse`. The
-  JSON of limbo is read with the reader `story:tls-lock-allow` made available.
+- Tests in `crates/tls/tests/main.rs`, modules `der`, `x509_parse`, `pem`, `limbo_parse` (files
+  in `tests/tls/`). The JSON of limbo is read with the reader `story:tls-lock-allow` made
+  available.
 
 ## Acceptance
 
-`cargo test -p surf-tls` passes with the cases below, and every distinct certificate of the
-vendored x509-limbo data is read or refused with a named error, in the counts
+`cargo nextest run -p surf-tls` passes with the cases below, and every distinct certificate of
+the vendored x509-limbo data is read or refused with a named error, in the counts
 `crates/tls/tests/data/x509-limbo/parse-counts.txt` holds.
 
 1. One certificate of limbo, named by its case id in the test: version 3, its serial, issuer,
@@ -113,6 +117,9 @@ vendored x509-limbo data is read or refused with a named error, in the counts
    (not a number to reach); a refusal of a certificate in a case limbo expects to succeed is
    listed by case id in the report as a finding; no panic.
 6. `sources_match_their_digests` for the limbo files.
+7. `check_names`: the variants of the `check` enum are the eleven names of item 7, in its order
+   (`Check::ALL`, a constant of `verify.rs`, and the name each prints, compared with the list as
+   item 7 prints it).
 
 Budget: no test over 60 s, the test step within 120 s, no network, no model call.
 `limbo_parse` is the one test that reads the large file: its time is in the report, and over
@@ -126,8 +133,8 @@ the trust anchors of U2 (`story:tls-anchors`); writing DER (`story:tls-test-cert
 ## Writes
 
 `crates/tls/src/der.rs`, `src/x509/`, `src/verify.rs`, `src/pem.rs`, `src/base64.rs`, one
-variant of `src/error.rs`, `tests/der.rs`, `tests/x509_parse.rs`, `tests/pem.rs`,
-`tests/limbo_parse.rs`, `tests/data/x509-limbo/`. The `mod` lines of `crates/tls/src/lib.rs` and
+variant of `src/error.rs`, `tests/tls/der.rs`, `tests/tls/x509_parse.rs`, `tests/tls/pem.rs`,
+`tests/tls/limbo_parse.rs`, `tests/data/x509-limbo/`. The `mod` lines of `crates/tls/src/lib.rs` and
 `tests/main.rs` are handed to the coordinator in a wave of more than one unit. Beside it run
 `story:tls-record` and `story:tls-test-certs` (other files). Read later by `tls-x509-path`,
 `tls-anchors`, `tls-handshake` and `tls-test-server`, each with an edge to this story.

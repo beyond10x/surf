@@ -22,7 +22,7 @@ scope:
   path: taskfiles/release-smoke.sh
 - confidence: cited
   path: website/docs
-revision: 4
+revision: 5
 ---
 ## Context
 
@@ -42,18 +42,41 @@ probe of `story:tls-decisions`; item 11 the licences of ring and of the list. `t
 anchors-age` and `anchors-refresh`: `story:tls-anchors`.
 
 Placement: the last of the four stories built as one unit (`tls-spec`, `tls-fetch-https`,
-`tls-session-anchors`, `tls-release`), at a boundary between two rounds of surf.
+`tls-session-anchors`, `tls-release`), at a boundary between two rounds of surf, under the path
+rule of `story:tls-decisions` ("Order of the stories of the epic"). It follows
+`story:tls-fetch-https`, whose dev-dependencies of `crates/surf-cli` on the test server and the
+test certificates turn on `test-tooling` in every `cargo test` build of `surf-cli`.
 
 ## Change
 
-- `.github/workflows/release.yml`: the compiler step of item 3 for each target that needs it, in
-  the job `package` before the build, with a comment saying why; and after the build one line
-  `cargo tree -p surf-cli -e normal,build,features --target "$TARGET"` that fails the job when it
-  lists `test-tooling`.
+- `.github/workflows/release.yml`, job `package`, step "Build, test and package" (lines
+  129-176): the compiler step of item 3 for each target that needs it, before the step, with a
+  comment saying why; and the order of the step changed so that `test-tooling` never reaches a
+  shipped binary. Today the build comes first (line 140 on Linux, line 148 on macOS), then
+  `cargo test ... --test cli` (line 152), which with the dev-dependencies of `story:tls-fetch-https`
+  rebuilds `target/$TARGET/release/surf` with `test-tooling`, then the copy from that path
+  (lines 155-169). After this story:
+  1. the test, first: `cargo test --locked --release --package "$PACKAGE" --target "$TARGET"
+     --test main` (`--test main`: the one test target of `crates/surf-cli` after
+     `story:one-test-binary-per-crate`; `--test cli` no longer exists then);
+  2. then the builds of lines 140 and 148, each with `--target-dir target/ship`: a build of
+     `--bins` only turns on no dev-dependency feature, and no file of the test build lies in
+     that directory;
+  3. the copy loop reads `target/ship/$TARGET/release/$binary` (line 156); before each `cp`
+     (line 169) `grep -q -F "surf-tls test-tooling, never in a release" "$bin"` fails the job
+     naming the binary when it finds the marker of item 6; and once, as a check of the search
+     itself, the same search must find the marker in `target/$TARGET/release/surf`, the binary
+     the test built.
+  The comment of the step says why. The cost (ring and the crates built twice per target) is
+  in the report.
 - `taskfiles/release-smoke.sh` step 2: also `surf https://127.0.0.1:1/` exits 1 and prints
   `fetch-failed <id> Unreachable https://127.0.0.1:1/`; `surf --anchors` exits 0 and prints
   `anchors <n> bundled <date> sha256:<hex>` with the count and date of
   `crates/tls/src/anchors/SOURCE` of the checkout. The header comment of the script says so.
+  Its step 3 (line 96, `--test e2e`) names the end-to-end case as
+  `story:one-test-binary-per-crate` left it (`--test e2e` when it kept its own binary, else
+  `--test main` with the filter of its module); it tests the unpacked binaries
+  (`SURF_BIN_DIR`), so its own build may carry `test-tooling`.
 - `docs/releasing.md`: "What a release holds" names ring and the compiler step; "Cutting a
   release" gains a step before the tag: `task anchors-age` passes, else `task anchors-refresh`
   and a commit on `main` first; the smoke test paragraph names the two new checks.
@@ -86,9 +109,15 @@ A manual run of the release workflow on the story branch, started and watched by
 4. `slot task anchors-age` exits 0 on the story commit.
 5. `grep -c ring NOTICE` prints at least 1; `grep -c "does not check revocation"` prints at least
    1 in `website/docs/what-works.md` and in `website/docs/reference/surf-command.md`.
-6. In that run, the release build of `surf-cli` compiles `surf-tls` without its feature
-   `test-tooling` (`cargo tree -p surf-cli -e normal,build,features --target <t>` in the job
-   log).
+6. In that run, each `package` log shows the steps in the order above: the test first, then the
+   build into `target/ship`; the marker search finds `surf-tls test-tooling, never in a release`
+   in `target/<t>/release/surf` (the binary the test built) and in none of the copied
+   binaries.
+7. Hostile, here on the workstation, the same two builds by hand through `slot`: after `cargo
+   test --release -p surf-cli --test main`, `grep -c -F "surf-tls test-tooling, never in a
+   release" target/release/surf` prints at least 1 (a release that copied the test build would
+   be refused); after `cargo build --release -p surf-cli --bins --target-dir target/ship`, the
+   same search in `target/ship/release/surf` prints 0. Times in the report.
 
 Budget: no test of the root workspace is added; the smoke test runs in the release workflow and
 by hand, never in `task test`; no model call.

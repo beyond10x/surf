@@ -10,7 +10,7 @@ relations:
 scope:
 - confidence: cited
   path: docs/design/tls.md
-revision: 4
+revision: 5
 ---
 ## Context
 
@@ -20,9 +20,10 @@ version and only for the crate `surf-tls`; this story checks the C compiler setu
 release build on the forge runners before anything else is built. U2 is option B (the root list
 of Mozilla as curl publishes it, compiled in, plus one extra anchor file per session). U3 is
 option C (no TLS 1.2 handshake in this epic). The coordinating agent, 2026-11-22: the
-ClientHello also offers six TLS 1.2 suites so that a server limited to TLS 1.2 answers with a
-ServerHello and surf can name the failure `TlsVersionUnsupported` (item 12 checks it and may
-overturn it with evidence).
+ClientHello also offers six TLS 1.2 suites, for a server limited to TLS 1.2 that does not read
+`supported_versions` and would otherwise answer `handshake_failure`; it then answers with a
+ServerHello and surf names the failure `TlsVersionUnsupported`. The decision rests on RFC 5246
+section 7.4.1.3 and RFC 8446 appendix D; no recording overturns it (round 2, decision 1).
 
 What the forge runs today:
 
@@ -50,32 +51,35 @@ Read on 2026-11-22 in ring 0.17.14 and its dependencies (the cargo registry):
   is `pub(super)`, for legacy verification only); RSA signing refuses a modulus under 2048 bits
   (`src/rsa/keypair.rs:283`).
 - AES-128-GCM and AES-256-GCM only, no AES-192 (`src/aead/algorithm.rs:149-163`).
-- The lock gets more than 8 packages: ring declares `windows-sys` 0.52 for Windows on Arm
-  (`Cargo.toml:256-261`), which brings `windows-targets` 0.52 and its eight platform crates
-  (`windows-targets-0.52.6/Cargo.toml:32-53`), and getrandom 0.2.17 declares `wasi` 0.11
-  (`Cargo.toml:115-116`). About 19 in all by these manifests; cargo decides.
+- The lock gets 19 packages, 8 of them compiled on each release target: measured by the
+  coordinator (epic section "Measured: the packages ring adds"). ring declares `windows-sys`
+  0.52 for Windows (`Cargo.toml:256-261`), which brings `windows-targets` 0.52 and its eight
+  platform crates, and getrandom 0.2.17 declares `wasi` 0.11 (`Cargo.toml:115-116`); cargo
+  records them and never builds them for the targets of surf.
+- `SecureRandom` is sealed (`src/rand.rs:23`): no random source of our own can be written;
+  every draw goes through `SystemRandom` or, in tests, the fixed sources of `ring::test::rand`.
 
 Still unknown: whether `cc` finds a compiler that targets musl on the two Linux runners without
-a step; what one RSA-2048 and one P-384 verification cost at opt-level 0; what a real TLS
-1.2-only server answers to the ClientHello of item 12 (RFC 5246 section 7.4.1.3 allows
-`handshake_failure` when no suite is shared; OpenSSL 1.1.1 and later answer `protocol_version`,
-not measured). `surf_agent::wire::REQUEST_MAX` is 64 KiB (`crates/agent/src/wire.rs:86`): an
-extra anchor file that travels in an `open` request must fit in it.
+a step; what one RSA-2048 and one P-384 verification cost at opt-level 0; whether a stack that
+ignores `supported_versions` can be run without a network (item 12). `surf_agent::wire::REQUEST_MAX`
+is 64 KiB (`crates/agent/src/wire.rs:86`): an extra anchor file that travels in an `open`
+request must fit in it.
 
 ## Change
 
 First act: in a scratch workspace (the root workspace copied plus one crate with `ring =
-"=0.17.14"`), `cargo generate-lockfile`; the count of packages with a `source` line goes to the
-coordinator at once, and when it is not 8 (the operator was told 8) the coordinator puts it to
-`host-operator` with default A: allow every package cargo writes for ring, each depended on only
-by ring or another allowed package. Nothing waits on the answer but `story:tls-lock-allow`.
+"=0.17.14"`), `cargo generate-lockfile`, to read the version, source and checksum of the 19
+packages the coordinator measured; a count other than 19 is reported to the coordinator. The
+count is settled (19 in the lock, 8 compiled per target); no question goes to `host-operator`
+and `story:tls-lock-allow` waits for nothing but this story.
 
 1. `docs/design/tls.md` (new), numbered items, each a decision with its reason or a measurement
    with how it was made:
    1. U1, U2, U3 and the decision on TLS 1.2 suites, quoted with date and who took them.
-   2. The lock: every package with a `source` line of the scratch lock, with version, source,
-      checksum and its dependents; these are the lines of `taskfiles/lock-allow.txt`; the
-      answer of `host-operator` when there was a question.
+   2. The lock: the 19 packages of the epic section "Measured: the packages ring adds", each
+      with version, source, checksum and its dependents, and which 8 of them are compiled on
+      each of the four release targets (the other 11 belong to Windows and WASI targets and are
+      recorded in the lock only); these are the lines of `taskfiles/lock-allow.txt`.
    3. The toolchain per runner, from the probe run (below, cited by run id and commit): the C
       compiler `cc` used, the step each target needs (the exact lines for `release.yml`),
       static or not, the build time of ring; the same for `ubuntu-latest` and the workstation.
@@ -97,9 +101,9 @@ by ring or another allowed package. Nothing waits on the answer but `story:tls-l
       (`story:tls-lock-allow`); `der.rs`, `x509/`, `pem.rs`, `base64.rs`, the leaf-key type
       `LeafKey`, the trust-anchor type `TrustAnchor` and `verify.rs`, the verifier interface
       (trait `ServerCertVerifier`: the certificates the server sent, the host, the time; answers
-      the `LeafKey` or a `CertificateRejection` of kind `NotTrusted(check)`, `Expired` or
-      `NameMismatch`) (`story:tls-x509`); `path.rs`, the implementation of that trait over a
-      set of `TrustAnchor`s, and `names.rs` (`story:tls-x509-path`); `anchors/`
+      the `LeafKey` or a `CertificateRejection` of kind `NotTrusted(check)` with a check of item
+      7, `Expired` or `NameMismatch`) (`story:tls-x509`); `path.rs`, the implementation of that
+      trait over a set of `TrustAnchor`s, and `names.rs` (`story:tls-x509-path`); `anchors/`
       (`story:tls-anchors`); `record.rs`, `key_schedule.rs`, `transcript.rs`
       (`story:tls-record`); `handshake/` and `connection.rs`, the one connection layer: a
       client over any `Read + Write` given a host, a `&dyn ServerCertVerifier` and the time
@@ -109,32 +113,57 @@ by ring or another allowed package. Nothing waits on the answer but `story:tls-l
       before_server_hello }`, `AlertSent { description, violation }` with `violation` one of
       `RecordOverflow`, `BadRecordMac`, `UnknownContentType`, `EmptyInnerPlaintext`,
       `MessageTooLarge { declared, bound }`, `UnexpectedMessage { expected, got }`,
-      `EmptyCertificate`, `TooManyCertificates`, `UnofferedSuite`, `UnofferedExtension`,
-      `UnofferedGroup`, `UnofferedAlpn`, `SecondHelloRetryRequest`, `Downgrade`,
-      `UnexpectedChangeCipherSpec`, `BadCertificateVerify`, `BadFinished`;
-      `SequenceExhausted`; and `Certificate(CertificateRejection)`, which `story:tls-x509` adds.
+      `EmptyCertificate`, `TooManyCertificates`, `UnofferedSuite`, `Tls12SuiteInTls13` (a TLS
+      1.3 ServerHello or HelloRetryRequest that selects one of the six TLS 1.2 suites),
+      `UnofferedVersion` (a `supported_versions` in a ServerHello that holds anything but
+      0x0304), `UnofferedExtension`, `UnofferedGroup`, `UnofferedAlpn`,
+      `SecondHelloRetryRequest`, `Downgrade`, `UnexpectedChangeCipherSpec`,
+      `BadCertificateVerify`, `BadFinished`; `SequenceExhausted`; and
+      `Certificate(CertificateRejection)`, which `story:tls-x509` adds.
       The seam: the operations of `crypto.rs`, the signature algorithms it refuses by name
       (`REFUSED`: every SHA-1 signature, RSA keys under 2048 bits), and behind the feature
       `test-tooling` (off by default; turned on by `surf-tls-test-certs`,
       `surf-tls-test-server` and the dev-dependency of `surf-tls` on itself) the signing from
-      PKCS#8 that ring offers (ECDSA P-256 and P-384, Ed25519, RSA PKCS#1 and PSS from 2048
-      bits), the fixed random sources, and the RFC 8448 trace mode of `story:tls-handshake`; a
-      release build never compiles them. The test tooling crates `surf-tls-test-certs`,
-      `surf-tls-conformance`, `surf-tls-test-server`, none shipped. In a wave of more than one
-      unit, the `mod` lines of `crates/tls/src/lib.rs` and `crates/tls/tests/main.rs` are the
-      coordinator.
+      PKCS#8 that ring offers (ECDSA P-256 and P-384 by `EcdsaKeyPair::from_pkcs8`, Ed25519 by
+      `Ed25519KeyPair::from_pkcs8_maybe_unchecked`, which reads the PKCS#8 v1 that `openssl
+      genpkey` writes where `from_pkcs8` wants v2 (`ed25519/signing.rs:79-111`), RSA PKCS#1
+      and PSS from 2048 bits by `RsaKeyPair::from_pkcs8`), the fixed random sources, the RFC
+      8448 trace mode of `story:tls-handshake`, and `TEST_TOOLING_MARKER`, a fixed string
+      (`surf-tls test-tooling, never in a release`) that `Connection` reads through
+      `std::hint::black_box` when the feature is on, so that a binary that connects carries it
+      exactly then; a release build never compiles them. The public modules of `surf-tls`:
+      `crypto`, `error`, `der`, `x509`, `pem`, `verify`, `path`, `anchors`, `record`,
+      `key_schedule`, `transcript` and `connection`; `handshake` is private but for
+      `handshake::trace` under `test-tooling`. `record.rs`, `key_schedule.rs` and
+      `transcript.rs` serve either side of a connection (keys and direction given by the
+      caller), so `crates/tls-test-server` builds the server from them and from `crypto` and
+      writes its own server messages; it writes nothing under `crates/tls/src`, and a need it
+      finds there is a finding for the owner of the file. The test tooling crates
+      `surf-tls-test-certs`, `surf-tls-conformance`, `surf-tls-test-server`, none shipped. In
+      a wave of more than one unit, the coordinator writes the `mod` lines of
+      `crates/tls/src/lib.rs` and `crates/tls/tests/main.rs`.
    7. The failure reasons and their detail: the five names of the epic, and a table from each
-      condition to its reason and to the detail text printed after it. Rows: no path to an
-      anchor, a bad signature on the path, an issuer that is no CA, a path over the bound, an
-      unknown critical extension, a broken name constraint, an extended key usage without
-      serverAuth: `CertificateNotTrusted`; a SHA-1 signature or an RSA key under 2048 bits:
-      `CertificateNotTrusted` with the kind `WeakAlgorithm` or `WeakKey`, decided before any
-      verification; outside the validity, either side: `CertificateExpired`; no
-      `subjectAltName` entry for the host: `CertificateNameMismatch`; a ServerHello that
-      selects TLS 1.2 (no `supported_versions` 0x0304) without the downgrade value, a
-      `protocol_version` alert: `TlsVersionUnsupported`; a TLS 1.2 ServerHello with the
-      downgrade value of RFC 8446 section 4.1.3: `TlsHandshakeFailed` (`illegal_parameter`);
-      a `handshake_failure` alert before any ServerHello: `TlsHandshakeFailed`, the detail
+      condition to its reason and to the detail text printed after it. The checks of
+      `NotTrusted(check)`, a closed list; `INDEX` of `story:tls-test-certs` and
+      `CertificateRejection` of `story:tls-x509` take these names and no other:
+      `NoPathToAnchor` (no path to an anchor), `BadSignature` (a signature on the path does not
+      verify), `IssuerNotCa` (an issuer without basicConstraints cA), `PathTooLong` (more
+      intermediates than item 9 allows, or a pathLenConstraint broken), `CandidateLimit` (the
+      most path candidates of item 9 tried), `KeyUsage` (keyUsage without keyCertSign on an
+      issuer or digitalSignature on the leaf), `UnknownCriticalExtension`, `NameConstraint`
+      (a name outside a nameConstraints of an issuer or the anchor), `NoServerAuth`
+      (extKeyUsage without serverAuth), `WeakAlgorithm` (a SHA-1 signature) and `WeakKey` (an
+      RSA key under 2048 bits), the last two decided before any verification. All give
+      `CertificateNotTrusted`. Further rows: outside the validity, either side:
+      `CertificateExpired`; no `subjectAltName` entry for the host: `CertificateNameMismatch`;
+      the two kinds of server limited to TLS 1.2 of item 12, a ServerHello that selects TLS 1.2
+      or below (no `supported_versions`) without a downgrade value, and a `protocol_version`
+      alert before any ServerHello: `TlsVersionUnsupported`; a ServerHello of TLS 1.2 or below
+      with either downgrade value of RFC 8446 section 4.1.3 (`DOWNGRD` 0x01 or 0x00):
+      `TlsHandshakeFailed` (`illegal_parameter`); a ServerHello whose `supported_versions`
+      holds anything but 0x0304, and a TLS 1.3 ServerHello or HelloRetryRequest that selects
+      one of the six TLS 1.2 suites: `TlsHandshakeFailed` (`illegal_parameter`); a
+      `handshake_failure` alert before any ServerHello: `TlsHandshakeFailed`, the detail
       naming the alert; every other alert or protocol violation: `TlsHandshakeFailed`;
       `TimedOut`, `ConnectionClosed`, `Truncated`, `Io`: `Unreachable`, as for HTTP today
       (net.yaml: "it ended before a response was complete"). Revocation is not checked: a
@@ -172,17 +201,36 @@ by ring or another allowed package. Nothing waits on the answer but `story:tls-l
        TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 (0xC02C), TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
        (0xC02F), TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 (0xC030) (RFC 5289),
        TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 (0xCCA8) and
-       TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 (0xCCA9) (RFC 7905), for one purpose: a
-       server limited to TLS 1.2 then selects 1.2 in its ServerHello, and surf ends with a
-       `protocol_version` alert and `TlsVersionUnsupported`. surf never continues a TLS 1.2
-       handshake in this epic. Checked by two recordings against `openssl s_server -tls1_2` on
-       127.0.0.1, one with these suites in the hello and one without, each answer quoted; when
-       the evidence shows the suites change nothing or harm a TLS 1.3 server, this item says so
-       and the coordinator revises the decision.
+       TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 (0xCCA9) (RFC 7905). The decision was
+       taken by the coordinator on 2026-11-22 and rests on two texts, cited here: RFC 5246
+       section 7.4.1.3 (a TLS 1.2 server picks a suite from the client list and answers
+       `handshake_failure` when it shares none) and RFC 8446 appendix D.1 (a server without TLS
+       1.3 answers a TLS 1.3 ClientHello with a ServerHello of an older version). Two kinds of
+       server limited to TLS 1.2, both ending in `TlsVersionUnsupported`:
+       - a stack that does not read `supported_versions` chooses by `legacy_version` and a
+         suite in common: with the six suites it sends a ServerHello selecting 1.2, and surf
+         answers `protocol_version` (`VersionUnsupported`); without them it would answer
+         `handshake_failure`, which is why the suites stay;
+       - a stack that reads `supported_versions` (OpenSSL 1.1.1 and later) finds no version in
+         common and sends a `protocol_version` alert before any ServerHello, whatever the
+         suites (`AlertReceived { protocol_version, before_server_hello: true }`, reason
+         `TlsVersionUnsupported`).
+       The recording against `openssl s_server -tls1_2` (its version named, 3.6.5 on the
+       workstation) on 127.0.0.1 is quoted as an example of the second kind and of nothing
+       else; no recording can overturn the decision. A recording of the first kind is added
+       to the lane `slow` only from a stack that can be named and run without a network: the
+       item says whether one can. Looked at on 2026-11-22, not run: the workstation has mbed
+       TLS 2.28.10 as a library only (`mbedtls2`, no TLS 1.3 code), and server programs of mbed
+       TLS 3.6.7 (`mbedtls3_ssl_server2`) and 4.2 (`mbedtls_ssl_server2`) and GnuTLS 3.8.13
+       (`gnutls-serv`), all three with TLS 1.3 code, whose answer under a 1.2 limit is not
+       known. When none is of the first kind, the item says so, and the mode
+       `Tls12IgnoresSupportedVersions` of `story:tls-test-server` is the only test of that kind.
+       surf never continues a TLS 1.2 handshake in this epic.
    13. The clock: validity is checked against a time the caller passes; `surf` and the session
-       pass the system clock; library tests pass a fixed time (`2026-11-22T00:00:00Z`); tests
-       through a binary run on the system clock, with certificates valid until 2125 and an
-       expired one whose end lies in 2001.
+       pass the system clock; library tests pass a fixed time (`2026-11-22T00:00:00Z`); a
+       limbo case without `validation_time` runs at `LIMBO_TIME`, the date of the pinned limbo
+       file (`story:tls-x509-path`); tests through a binary run on the system clock, with
+       certificates valid until 2125 and an expired one whose end lies in 2001.
 2. The probe, on a branch `probe/tls-ring` that is never merged into `main`:
    `.github/workflows/tls-probe.yml` (`on: push` to that branch only, `permissions: contents:
    read`, every action pinned by commit as `release.yml` pins them, the toolchain read from
@@ -204,23 +252,30 @@ built and ran ring 0.17.14 on the four release targets and on the gate runner.
    `probe ok`; the two Linux musl jobs print no `INTERP` line.
 2. The two negative-control jobs end as item 3 says: `failure` with the compiler error quoted, or
    `success`, and then item 3 says no step is needed.
-3. Item 2 lists every package with a `source` line of the scratch lock with its checksum; their
-   number equals `grep -c "^source = "` of that lock; when it is not 8, the report quotes the
-   question put to `host-operator` and its answer, or "taken on default".
+3. Item 2 lists the 19 packages of the epic section "Measured: the packages ring adds", each with
+   version, source and checksum, and names the 8 compiled on each release target; their number
+   equals `grep -c "^source = "` of the scratch lock. No question goes to `host-operator`.
 4. Item 4 gives the ten timings, and the `opt-level` line with the times under it or the
    sentence that none is over 50 ms.
 5. Item 5: a scratch test, run once and quoted, makes the X25519 key of RFC 8448 section 3 from
-   its bytes through a fixed source and derives the shared secret the trace prints; and signs one
-   message twice with ECDSA P-256 under one fixed source and gets equal bytes.
+   its bytes through a fixed source and derives the shared secret the trace prints; signs one
+   message twice with ECDSA P-256 under one fixed source and gets equal bytes; and loads an
+   Ed25519 key written by `openssl genpkey` with `Ed25519KeyPair::from_pkcs8_maybe_unchecked`
+   (the output of `from_pkcs8` on the same key quoted beside it).
 6. Item 6 names, for each signing algorithm the cases of `story:tls-test-certs` need, the ring
-   function that makes it, and lists the cases ring cannot make; each later story of the epic
-   names a file of item 6 only as its owner writes it.
+   function that makes it, and lists the cases ring cannot make; it lists the public modules of
+   `surf-tls` and says that `crates/tls-test-server` reads them and writes nothing under
+   `crates/tls/src`; each later story of the epic names a file of item 6 only as its owner
+   writes it.
 7. Item 7 has a row for each hostile input the later stories name (a bad certificate, a
    truncated record, a downgrade to TLS 1.2, a wrong host name, an oversized handshake message, a
-   server that never finishes, a weak algorithm), each with one reason and its detail text.
-8. Item 12 quotes the two recorded answers of `openssl s_server -tls1_2` (its version named):
-   with the six suites a ServerHello selecting TLS 1.2, or what it was instead; without them the
-   alert it sent.
+   server that never finishes, a weak algorithm, a `handshake_failure` alert, each of the two
+   kinds of server limited to TLS 1.2), each with one reason and its detail text; and the closed
+   list of the eleven names of the `NotTrusted` checks, each with its condition.
+8. Item 12 cites RFC 5246 section 7.4.1.3 and RFC 8446 appendix D for the six suites, and quotes
+   the recording against `openssl s_server -tls1_2` (its version named) as the
+   `protocol_version` kind; it names a stack that ignores `supported_versions` and can run
+   without a network, with its recording, or says that none was found and what was looked at.
 9. The change to `main` is `docs/design/tls.md` alone (`git diff --stat main`), and `printf
    "docs/design/tls.md\n" | sh taskfiles/planning-only.sh` exits 0.
 
@@ -236,25 +291,35 @@ Code on `main`; the change to `release.yml` (`story:tls-release`); taking U1 to 
 `docs/design/tls.md` on `main`; on the branch `probe/tls-ring` only,
 `.github/workflows/tls-probe.yml` and `probe/tls-ring/`. No other story writes
 `docs/design/tls.md`: a later story that finds an item wrong says so in its report, and the
-coordinator revises the note. For the coordinator: the line of `AGENTS.md`, "Commands",
-"Documents", that names `docs/design/tls.md`.
+coordinator revises the note; a test result cannot overturn the decision on the TLS 1.2 suites
+(item 12). For the coordinator: the line of `AGENTS.md`, "Commands", "Documents", that names
+`docs/design/tls.md`.
 
 ## Order of the stories of the epic
 
-Thirteen stories, each depending on this one (the coordinator, decision 8 of 2026-11-22):
+Thirteen stories, each depending on this one (the coordinator, decision 8 of 2026-11-22, and
+decision 7 of round 2):
 
 - Nine write only `crates/tls*`, `taskfiles/tls-*`, `docs/design/tls.md`, the lock check and
-  its test (`taskfiles/lock-check.sh`, `taskfiles/lock-allow.txt`,
-  `crates/surf/tests/lock_check.rs`) and `.cargo/config.toml`, and are built beside the rounds 1
-  and 2 of surf: `tls-decisions` alone first; then `tls-lock-allow`; then `tls-x509`,
-  `tls-test-certs` and `tls-record` side by side; then `tls-x509-path`, `tls-anchors` and
-  `tls-handshake` side by side; then `tls-test-server`.
+  its test (`taskfiles/lock-check.sh`, `taskfiles/lock-allow.txt`, the module `lock_check` of
+  the test binary of `crates/surf`) and `.cargo/config.toml`; for them the coordinator writes
+  the root `Taskfile.yml`, `Cargo.lock`, `README.md` and `AGENTS.md`. They are built beside the
+  rounds 1 and 2 of surf: `tls-decisions` alone first; then `tls-lock-allow` (after
+  `story:one-test-binary-per-crate`, which moves `crates/surf/tests/lock_check.rs`); then
+  `tls-x509`, `tls-test-certs` and `tls-record` side by side; then `tls-x509-path`,
+  `tls-anchors` and `tls-handshake` side by side; then `tls-test-server`.
 - Four are one unit, built in this order: `tls-spec`, `tls-fetch-https`, `tls-session-anchors`,
   `tls-release`. The unit starts at the first boundary between two rounds after the nine are
   merged (after round 1 or after round 2), never beside a unit that writes `spec/`,
-  `generated/`, `crates/session`, `crates/agent`, `crates/surfd`, `crates/surf/src/lib.rs`,
-  `conformance/src/target.rs` or `docs/agent-answer.md`. `tls-fetch-https` also needs
-  `story:one-test-binary-per-crate` and the merge of `impl/security-review-fixes`.
+  `generated/`, `crates/fetch`, `crates/session`, `crates/agent`, `crates/surfd`,
+  `crates/surf/src/lib.rs`, `conformance/src/target.rs` or `docs/agent-answer.md`.
+  `tls-fetch-https` also needs `story:one-test-binary-per-crate` and the merge of
+  `impl/security-review-fixes`.
+
+`crates/tls` is born with one integration-test binary: `crates/tls/tests/main.rs`, which
+declares each module as `#[path = "tls/<name>.rs"] mod <name>;`, the modules in
+`crates/tls/tests/tls/`, the data in `crates/tls/tests/data/`; no `.rs` file lies beside
+`main.rs`. The other new crates of the epic have `tests/main.rs` alone.
 
 The longest chain is nine stories: `tls-decisions`, `tls-lock-allow`, `tls-record`,
 `tls-handshake`, `tls-test-server`, `tls-spec`, `tls-fetch-https`, `tls-session-anchors`,
