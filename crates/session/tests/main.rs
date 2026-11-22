@@ -5,6 +5,7 @@
 
 mod adversary_document_text;
 mod adversary_events;
+mod adversary_fill_pick;
 mod adversary_follow;
 mod adversary_parse;
 mod adversary_values;
