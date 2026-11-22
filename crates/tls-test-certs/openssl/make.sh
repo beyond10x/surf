@@ -8,6 +8,10 @@
 #   md5       a leaf signed md5WithRSAEncryption by the same intermediate
 #   rsa-1024  a leaf with the RSA 1024 key, signed by the same intermediate with SHA-256
 #
+# The 1024-bit key of rsa-1024 is the leaf's own and verifies no signature on the path: a
+# validator must apply the weak-key rule to the leaf's own key, not only to keys that verify a
+# signature.
+#
 # Each leaf is for localhost (subjectAltName dNSName localhost and iPAddress 127.0.0.1), valid
 # from 2025-01-01 to 2125-01-01, with a fixed serial number and subject. The intermediate and the
 # root are those of ok-rsa2048, its key keys/rsa2048-0.pk8. RSA PKCS#1 v1.5 signing is

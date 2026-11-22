@@ -5,5 +5,6 @@
 
 #![forbid(unsafe_code)]
 
+mod adversary;
 mod certs;
 mod check;

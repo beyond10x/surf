@@ -153,57 +153,129 @@ fn key_of(spki_cert: &inspect::Certificate<'_>) -> (PublicKeyKind, Vec<u8>) {
     (kind, bytes.to_vec())
 }
 
+/// The cases of a root, one intermediate and a leaf: the leaf (0) is signed by the
+/// intermediate (1), the intermediate by the root (2, `root.pem`), the root by itself.
+const THREE: [&str; 26] = [
+    "ok-rsa2048",
+    "ok-ecdsa-p256",
+    "ok-ecdsa-p384",
+    "ok-ed25519",
+    "ok-wildcard",
+    "expired",
+    "not-yet-valid",
+    "wrong-host",
+    "bad-signature",
+    "intermediate-not-ca",
+    "leaf-no-digital-signature",
+    "issuer-no-key-cert-sign",
+    "unknown-critical-extension",
+    "wildcard-two-labels",
+    "common-name-only",
+    "ip-mismatch",
+    "name-constraints-excluded",
+    "eku-client-only",
+    "1000-sans",
+    "ok-rsa-pss",
+    "ok-rsa-pss-sha384",
+    "ok-rsa-pss-sha512",
+    "ok-rsa-pkcs1-sha384",
+    "ok-rsa-pkcs1-sha512",
+    "leaf-v1",
+    "rsa-1024",
+];
+
+/// For each certificate of a case, `chain.pem` then `root.pem` counted from 0, the one whose
+/// key signed it, stated here per case and not read from `src/cases.rs`. A case of `INDEX`
+/// missing here fails.
+fn signed_by(case: &str) -> Vec<usize> {
+    match case {
+        c if THREE.contains(&c) || c == "sha1" || c == "md5" => vec![1, 2, 2],
+        // The leaf, the intermediate, the untrusted root it sends (self-signed), the anchor.
+        "untrusted-root" => vec![1, 2, 2, 3],
+        // The leaf, the intermediates 7 down to 1 (each by the next), the root.
+        "path-too-long" => vec![1, 2, 3, 4, 5, 6, 7, 8, 8],
+        // The leaf, the intermediate below pathLenConstraint 0, the one with it, the root.
+        "pathlen-exceeded" => vec![1, 2, 3, 3],
+        // The leaf by I0 (at 48); I47 (at 1) by I46 (at 2) and I46 by I47, the loop; every
+        // other I(n), at 48 - n, by I(n + 1), the certificate before it; the bridge (49) by
+        // the root (50).
+        "candidate-limit" => (0..51)
+            .map(|n| match n {
+                0 => 48,
+                1 => 2,
+                49 | 50 => 50,
+                n => n - 1,
+            })
+            .collect(),
+        // The leaf and the 48 intermediates by the one loop key (each intermediate by itself);
+        // the root (49) by itself.
+        "candidate-limit-no-anchor" => (0..50).map(|n| if n == 0 { 1 } else { n }).collect(),
+        other => panic!("{other}: a case of INDEX this test does not know"),
+    }
+}
+
+/// What the check of a certificate under the key of [`signed_by`] gives.
+fn signature_outcome(case: &str, n: usize) -> &'static str {
+    match (case, n) {
+        ("bad-signature", 0) => "BadSignature",
+        ("sha1" | "md5", 0) => "WeakAlgorithm",
+        _ => "verifies",
+    }
+}
+
 #[test]
 fn signatures() {
-    let mut verified = 0;
-    let mut refused = 0;
-    for spec in cases::specs() {
-        let mut ders = pem_file(spec.name, "chain.pem");
-        let chain_len = ders.len();
-        ders.extend(pem_file(spec.name, "root.pem"));
+    let mut counts = std::collections::BTreeMap::new();
+    let index = read_text(&certs_dir().join("INDEX"));
+    for case in index.lines().map(|l| l.split(' ').next().unwrap()) {
+        let mut ders = pem_file(case, "chain.pem");
+        ders.extend(pem_file(case, "root.pem"));
         let parsed: Vec<inspect::Certificate<'_>> = ders
             .iter()
             .map(|d| inspect::certificate(d).unwrap())
             .collect();
-        for (n, cert) in parsed.iter().enumerate() {
+        let by = signed_by(case);
+        assert_eq!(by.len(), parsed.len(), "{case}: certificates");
+        let check = |cert: &inspect::Certificate<'_>, issuer: &inspect::Certificate<'_>| {
             let algorithm = inspect::signature_algorithm(cert.signature_algorithm).unwrap();
-            let issuers: Vec<&inspect::Certificate<'_>> =
-                parsed.iter().filter(|c| c.subject == cert.issuer).collect();
-            assert!(
-                !issuers.is_empty(),
-                "{} certificate {n}: no certificate of the case has its issuer's name",
-                spec.name
-            );
-            let ok = issuers.iter().any(|issuer| {
-                let (kind, bytes) = key_of(issuer);
-                crypto::check_signature(
-                    &ShippedVerifier,
-                    algorithm,
-                    &PublicKey {
-                        kind,
-                        bytes: &bytes,
-                    },
-                    cert.tbs,
-                    cert.signature,
-                )
-                .is_ok()
-            });
-            let flipped = spec.name == "bad-signature" && n == 0;
-            if flipped {
-                assert!(!ok, "the leaf of bad-signature verifies");
-                refused += 1;
-            } else {
-                assert!(
-                    ok,
-                    "{} certificate {n} (of {chain_len} sent) does not verify under its issuer",
-                    spec.name
-                );
-                verified += 1;
+            let (kind, bytes) = key_of(issuer);
+            let key = PublicKey {
+                kind,
+                bytes: &bytes,
+            };
+            match crypto::check_signature(
+                &ShippedVerifier,
+                algorithm,
+                &key,
+                cert.tbs,
+                cert.signature,
+            ) {
+                Ok(_) => "verifies",
+                Err(SignatureError::Refused(r)) => r.check(),
+                Err(SignatureError::BadSignature) => "BadSignature",
+                Err(SignatureError::Unsupported) => "Unsupported",
             }
+        };
+        for (n, cert) in parsed.iter().enumerate() {
+            let issuer = &parsed[by[n]];
+            assert!(
+                issuer.subject == cert.issuer,
+                "{case} certificate {n}: its issuer's name is not that of {}",
+                by[n]
+            );
+            let got = check(cert, issuer);
+            let want = signature_outcome(case, n);
+            assert_eq!(got, want, "{case} certificate {n} under {}", by[n]);
+            *counts.entry(got).or_insert(0) += 1;
+        }
+        if case == "bad-signature" {
+            // No certificate of the case verifies the flipped leaf.
+            assert!(parsed.iter().all(|c| check(&parsed[0], c) != "verifies"));
         }
     }
-    assert_eq!(refused, 1);
-    println!("signatures: {verified} verified, {refused} refused");
+    assert_eq!(counts.get("BadSignature"), Some(&1));
+    assert_eq!(counts.get("WeakAlgorithm"), Some(&2));
+    println!("signatures: {counts:?}");
 }
 
 #[test]

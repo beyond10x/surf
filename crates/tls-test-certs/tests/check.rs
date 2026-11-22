@@ -103,3 +103,78 @@ fn one_byte_of_a_key_or_the_manifest_fails() {
     fails_after_changing("keys/p256-00.pk8");
     fails_after_changing("Cargo.toml");
 }
+
+/// The check on a copy with one entry added by `add`: exit 1, a line that names the entry by
+/// `named` and the line [`FAILED`].
+fn refuses_an_added_entry(add: impl FnOnce(&Path), named: &str) {
+    let dir = copy_crate();
+    add(&dir);
+    let (code, stdout) = run(&dir);
+    fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(code, Some(1), "{named}: {stdout}");
+    assert!(stdout.contains(named), "{named}: {stdout}");
+    assert!(stdout.lines().any(|l| l == FAILED), "{named}: {stdout}");
+}
+
+#[test]
+fn a_symlink_under_the_crate_fails() {
+    refuses_an_added_entry(
+        |dir| std::os::unix::fs::symlink("p256-00.pk8", dir.join("keys/p256-99.pk8")).unwrap(),
+        "keys/p256-99.pk8",
+    );
+    refuses_an_added_entry(
+        |dir| std::os::unix::fs::symlink("cases.rs", dir.join("src/more.rs")).unwrap(),
+        "src/more.rs",
+    );
+}
+
+#[test]
+fn a_name_with_a_line_feed_fails() {
+    refuses_an_added_entry(
+        |dir| {
+            fs::copy(dir.join("keys/p256-00.pk8"), dir.join("keys/p256\n99.pk8")).unwrap();
+        },
+        "keys/p256",
+    );
+}
+
+#[test]
+fn an_entry_neither_file_nor_directory_fails() {
+    refuses_an_added_entry(
+        |dir| {
+            let made = Command::new("mkfifo")
+                .arg(dir.join("src/pipe"))
+                .status()
+                .unwrap();
+            assert!(made.success());
+        },
+        "src/pipe",
+    );
+}
+
+/// A missing or empty `DIGEST` or `INDEX`: one line naming it, exit 1.
+fn fails_without(file: &str, empty: bool) {
+    let dir = copy_crate();
+    let path = dir.join("certs").join(file);
+    if empty {
+        fs::write(&path, b"").unwrap();
+    } else {
+        fs::remove_file(&path).unwrap();
+    }
+    let (code, stdout) = run(&dir);
+    fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(code, Some(1), "{file}: {stdout}");
+    assert_eq!(
+        stdout,
+        format!("tls-certs: certs/{file} is missing or empty; run task tls-certs-slow\n"),
+        "{file} empty {empty}"
+    );
+}
+
+#[test]
+fn a_missing_or_empty_digest_or_index_fails() {
+    fails_without("DIGEST", false);
+    fails_without("DIGEST", true);
+    fails_without("INDEX", false);
+    fails_without("INDEX", true);
+}
