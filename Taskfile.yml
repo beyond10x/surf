@@ -27,6 +27,18 @@ includes:
     taskfile: taskfiles/view-test.yml
     flatten: true
     optional: true
+  check-runner:
+    taskfile: taskfiles/check-runner.yml
+    flatten: true
+    optional: true
+  forge-watch:
+    taskfile: taskfiles/forge-watch.yml
+    flatten: true
+    optional: true
+  planning-only:
+    taskfile: taskfiles/planning-only.yml
+    flatten: true
+    optional: true
 
 vars:
   REFUSALS_MAX: 28
@@ -388,3 +400,5 @@ tasks:
       - task: view-stream-check
       - task: view-test
       - task: html-conformance
+      - task: forge-watch-test
+      - task: planning-only-test
