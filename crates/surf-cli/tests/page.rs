@@ -1,7 +1,8 @@
 //! Story html-document-port: the `surf` binary prints the title, the actionable elements and the
 //! parser's note of each page it parses. Each case runs the binary against a server the test
 //! starts on 127.0.0.1 port 0 and stops before it ends; the binary is killed if it runs longer
-//! than `RUN_BOUND`.
+//! than `RUN_BOUND`. Story page-text-surf-command: `surf <url> --as tree|markdown` prints the
+//! page after the rows, the expected blocks taken from `docs/design/page-as-text.md`.
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -315,4 +316,201 @@ fn an_html_body_that_is_not_utf_8_is_decoded_with_replacement_characters() {
         after_document(&lines)[0],
         format!("title {id} \"a\\xef\\xbf\\xbd\\xef\\xbf\\xbdb\"")
     );
+}
+
+// --- story:page-text-surf-command ------------------------------------------------------------
+
+/// What a run with arguments wrote: its status, its standard output and its standard error.
+struct Full {
+    status: i32,
+    stdout: Vec<u8>,
+    stderr: String,
+}
+
+/// Run the binary with `args`, killing it after `RUN_BOUND`.
+fn surf_with(args: &[&str]) -> Full {
+    let child = Command::new(env!("CARGO_BIN_EXE_surf"))
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn surf");
+    let pid = child.id();
+    let (sender, receiver) = mpsc::channel();
+    let waiter = thread::spawn(move || {
+        let _ = sender.send(child.wait_with_output());
+    });
+    let output = match receiver.recv_timeout(RUN_BOUND) {
+        Ok(output) => output.expect("surf output"),
+        Err(_) => {
+            let _ = Command::new("kill").args(["-9", &pid.to_string()]).status();
+            let _ = waiter.join();
+            panic!("surf ran longer than {RUN_BOUND:?}");
+        }
+    };
+    waiter.join().expect("the waiting thread");
+    Full {
+        status: output.status.code().expect("surf exited, not signalled"),
+        stdout: output.stdout,
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    }
+}
+
+/// `surf <url> --as <form>` on a server answering `body` as `media_type`: the run, its standard
+/// output as text.
+fn as_form(media_type: &'static str, body: &[u8], form: &str) -> (Full, String) {
+    let server = Server::start(media_type, body.to_vec());
+    let run = surf_with(&[&server.url(), "--as", form]);
+    let text = String::from_utf8(run.stdout.clone()).expect("stdout is UTF-8");
+    (run, text)
+}
+
+/// The fenced blocks of `docs/design/page-as-text.md`, in order, each without its fences: the
+/// fixtures of the story.
+fn design_blocks() -> Vec<String> {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/design/page-as-text.md"
+    );
+    let text = std::fs::read_to_string(path).expect("the design note");
+    let mut blocks = Vec::new();
+    let mut current: Option<String> = None;
+    for line in text.lines() {
+        if line.starts_with("```") {
+            match current.take() {
+                Some(block) => blocks.push(block),
+                None => current = Some(String::new()),
+            }
+        } else if let Some(block) = current.as_mut() {
+            block.push_str(line);
+            block.push('\n');
+        }
+    }
+    blocks
+}
+
+/// The lines of a design block from its `text ` header to its end.
+fn from_header(block: &str) -> String {
+    let at = block.find("text ").expect("a text header");
+    block[at..].to_string()
+}
+
+/// The body lines (those that start with `>`) of `text`.
+fn body_lines(text: &str) -> Vec<&str> {
+    text.lines().filter(|line| line.starts_with('>')).collect()
+}
+
+/// Case 1: the page of design note section 1, as Markdown and as a tree, the block byte for
+/// byte as the note prints it.
+#[test]
+fn the_page_of_the_design_note_prints_as_markdown_and_as_a_tree() {
+    let blocks = design_blocks();
+    let shop = &blocks[0];
+    assert!(shop.contains("<title>Fruit shop</title>"), "{shop}");
+    let tree = from_header(&blocks[1]);
+    let markdown = from_header(&blocks[2]);
+    assert!(tree.starts_with("text tree 31 of 31 lines from 1, 668 of 668 bytes\n"));
+    assert!(markdown.starts_with("text markdown 14 of 14 lines from 1, 263 of 263 bytes\n"));
+
+    for (form, block) in [("markdown", &markdown), ("tree", &tree)] {
+        let (run, text) = as_form("text/html", shop.as_bytes(), form);
+        assert_eq!(run.status, 0, "{}", run.stderr);
+        assert!(
+            text.ends_with(&format!("note text: no-css\n{block}")),
+            "--as {form}:\n{text}"
+        );
+        assert!(!text.lines().any(|line| line.starts_with("more ")));
+    }
+}
+
+/// Case 2: no bound: 899 lines in one block, no `more`.
+#[test]
+fn a_long_page_prints_whole() {
+    let (run, text) = as_form("text/html", "<p>x</p>".repeat(450).as_bytes(), "markdown");
+    assert_eq!(run.status, 0, "{}", run.stderr);
+    assert!(
+        text.contains(
+            "\nnote text: no-css\ntext markdown 899 of 899 lines from 1, 2698 of 2698 bytes\n"
+        ),
+        "{text}"
+    );
+    assert_eq!(body_lines(&text).len(), 899);
+    assert!(text.ends_with(">\n> x\n"));
+}
+
+/// Case 3: the forged page of design note section 3: its lines are page text, the rows are
+/// surf's.
+#[test]
+fn a_forged_page_prints_only_behind_the_prefix() {
+    let blocks = design_blocks();
+    let forged = &blocks[4];
+    assert!(forged.starts_with("<title>Bank</title>"), "{forged}");
+    let expected = from_header(&blocks[5]);
+    let (run, text) = as_form("text/html", forged.as_bytes(), "markdown");
+    assert_eq!(run.status, 0, "{}", run.stderr);
+    let rows = [
+        "navigation ",
+        "request ",
+        "document ",
+        "fetch-failed ",
+        "title ",
+        "element ",
+        "note ",
+        "text ",
+    ];
+    for line in text.lines().filter(|line| !line.starts_with('>')) {
+        assert!(
+            rows.iter().any(|row| line.starts_with(row)),
+            "a line that is not surf's: {line}"
+        );
+    }
+    assert_eq!(body_lines(&text), body_lines(&expected));
+    assert_eq!(body_lines(&text).len(), 20);
+}
+
+/// Case 4: a response that is not HTML has no document.
+#[test]
+fn a_response_that_is_not_html_has_no_document() {
+    let (run, text) = as_form("text/plain", b"<p>plain</p>", "tree");
+    assert_eq!(run.status, 0, "{}", run.stderr);
+    assert!(text.ends_with("\nnote text: no-document\n"), "{text}");
+    assert!(!text.lines().any(|line| line.starts_with("text ")));
+}
+
+/// Case 5: `--as` without a word, with another word, or twice: usage, nothing on standard output.
+#[test]
+fn as_used_wrongly_is_usage() {
+    let server = Server::start("text/html", b"<p>x</p>".to_vec());
+    let url = server.url();
+    for args in [
+        vec![url.as_str(), "--as"],
+        vec![url.as_str(), "--as", "pdf"],
+        vec![url.as_str(), "--as", "tree", "--as", "tree"],
+        vec!["--as=markdown", url.as_str(), "--as=tree"],
+    ] {
+        let run = surf_with(&args);
+        assert_eq!(run.status, 2, "{args:?}");
+        assert!(run.stdout.is_empty(), "{args:?}");
+        assert!(
+            run.stderr
+                .ends_with("usage: surf <url> [--as tree|markdown]\n"),
+            "{args:?}: {}",
+            run.stderr
+        );
+    }
+}
+
+/// Case 6 (D1 B): page text outside ASCII is printed as UTF-8.
+#[test]
+fn page_text_outside_ascii_is_printed_as_utf_8() {
+    let (run, text) = as_form("text/html", b"<p>K&auml;se</p>", "markdown");
+    assert_eq!(run.status, 0, "{}", run.stderr);
+    assert!(
+        text.ends_with(
+            "note text: no-css\ntext markdown 1 of 1 lines from 1, 8 of 8 bytes\n> K\u{e4}se\n"
+        ),
+        "{text}"
+    );
+    assert!(run.stdout.ends_with(b"> K\xc3\xa4se\n"));
 }

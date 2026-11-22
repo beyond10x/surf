@@ -80,8 +80,11 @@ name = "surf-cli"
 version = "0.3.0"
 dependencies = [
  "surf",
+ "surf-answer",
  "surf-fetch",
+ "surf-page-text",
  "surf-ports",
+ "surf-types",
 ]
 
 [[package]]

@@ -47,13 +47,59 @@ fetch-failed <request-id> <reason> <address>
 
 A document is parsed for every response with the media type `text/html`, whatever its status.
 
+## The page as text: `--as`
+
+`surf <url> --as tree|markdown` (also `--as=<form>`, before or after the address) prints, after
+the rows, the page as the outline of its tree or as Markdown, in the `text` block of the agent
+answer (`docs/agent-answer.md`, section "Text"):
+
+```text
+note text: no-css
+text <form> <n> of <n> lines from 1, <b> of <b> bytes
+> <line>
+>
+```
+
+- `note text: no-css`: the text is computed from the tree without CSS, so text a style sheet
+  hides is shown. Then the header and all `<n>` lines, each `>` alone for an empty line or `> `
+  and the line; `<b>` counts them with their prefix and line feed. There is no bound and no
+  `more` line: `surf` runs once, and the tree is bounded by the parser's limits.
+- Every line of page text starts with `>`, and no row does, so a line a page wrote cannot pass
+  for a row. A body line holds printable ASCII and UTF-8 characters; control, invisible,
+  bidirectional and private-use characters are written as `\x` and two hexadecimal digits per
+  byte (rule 2 of `docs/design/page-as-text.md`, section 3).
+- With no HTML document (a failed load, a response that is not `text/html`) the last line is
+  `note text: no-document` and there is no block. The exit status is the one without `--as`.
+
+The page of `docs/design/page-as-text.md` section 1, `surf http://shop.example/ --as markdown`,
+after its rows:
+
+```text
+note text: no-css
+text markdown 14 of 14 lines from 1, 263 of 263 bytes
+> # Fruit shop
+>
+> Fresh fruit, *picked today*. See [our offers](</offers>) [@l1].
+>
+> - Apples
+> - Pears
+>
+> | Fruit | Price | Stock |
+> | --- | --- | --- |
+> | Apple | 0.50 | 120 |
+>
+> ![A basket of apples]
+>
+> E-mail [@f1 text: E-mail] [@b1 button: Subscribe]
+```
+
 ## Exit statuses
 
 | exit status | when |
 |---|---|
 | 0 | the navigation is `Committed` |
 | 1 | the navigation is not `Committed`: `Failed` |
-| 2 | usage error: not exactly one argument, or an argument that is not UTF-8; a usage line on standard error |
+| 2 | usage error: not exactly one address, an address that is not UTF-8, or `--as` without `tree` or `markdown` or given twice; a usage line on standard error |
 | 3 | the run stopped: an unmet obligation of the generated code, or `OpenTab` refused the window just opened; the reason on standard error and nothing on standard output. Also when writing to standard output reports an error, such as a full disk or a reader that has gone, whatever the navigation's state: the reason on standard error, and the rows may be partly written |
 
 A standard error that cannot be written changes none of these.
