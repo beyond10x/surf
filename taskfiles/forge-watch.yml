@@ -1,0 +1,78 @@
+version: '3'
+
+set: [pipefail]
+
+tasks:
+  forge-watch:
+    desc: Wait for the forge's workflow runs of COMMIT (default HEAD) and fail when one did not pass.
+    summary: |
+      Wait for the forge's workflow runs of COMMIT (default HEAD) and fail when one did not pass.
+
+      Runs taskfiles/forge-watch.sh COMMIT, which reads the runs through the organization bot
+      (b10x-gates ... api --method GET, the policy file from GATES_POLICY, default
+      ../gates-policy/policy.json), waits until every run is completed, prints one line per run
+      (name, status, conclusion, id) and exits non-zero when a run did not conclude success,
+      skipped or neutral, or when no run of the workflow check was listed for the commit. The
+      script's head names the other variables. It reaches the network; no step of check runs it.
+    dir: '{{.TASKFILE_DIR}}/..'
+    vars:
+      COMMIT: '{{.COMMIT | default "HEAD"}}'
+    cmds:
+      - sh taskfiles/forge-watch.sh '{{.COMMIT}}'
+
+  forge-watch-test:
+    desc: Check the decision of taskfiles/forge-watch.sh on the recorded runs under taskfiles/forge-watch-test/.
+    summary: |
+      Check the decision of taskfiles/forge-watch.sh on the recorded runs under
+      taskfiles/forge-watch-test/, without the network.
+
+      Each case runs sh taskfiles/forge-watch.sh --runs <file> and compares its exit status, and
+      for a red run the line naming it:
+      - runs-61fb7a9.json, the runs of 61fb7a9 as the forge listed them, its check run
+        concluded failure: 1, and the line "check: completed failure 44947513891";
+      - runs-e47b1d1.json, the runs of e47b1d1, every one success: 0;
+      - runs-in-progress.json, the check run still in_progress: 3 (not done);
+      - runs-no-check.json, every run completed and none of check: 4;
+      - runs-skipped-neutral.json, a run skipped and one neutral beside check's success: 0;
+      - runs-cancelled.json, check cancelled: 1.
+
+      SCRIPT names the script under test (default taskfiles/forge-watch.sh), so that a planted
+      defect can be run in a copy. It prints one line per case decided otherwise and fails, or
+      one line with the count.
+    dir: '{{.TASKFILE_DIR}}/..'
+    silent: true
+    vars:
+      SCRIPT: '{{.SCRIPT | default "taskfiles/forge-watch.sh"}}'
+    cmds:
+      - |
+        script='{{.SCRIPT}}'
+        test -f "$script" || { echo "$script: missing"; exit 1; }
+        dir=taskfiles/forge-watch-test
+        cases=0
+        wrong=0
+        check() {
+          expected=$1
+          file=$2
+          line=$3
+          cases=$((cases + 1))
+          status=0
+          out=$(sh "$script" --runs "$dir/$file" 2>&1) || status=$?
+          if [ "$status" -ne "$expected" ]; then
+            echo "forge-watch-test: $file: exit $status, expected $expected"
+            wrong=$((wrong + 1))
+          elif [ -n "$line" ] && ! printf '%s\n' "$out" | grep -qxF "$line"; then
+            echo "forge-watch-test: $file: no line \"$line\""
+            wrong=$((wrong + 1))
+          fi
+        }
+        check 1 runs-61fb7a9.json "check: completed failure 44947513891"
+        check 0 runs-e47b1d1.json "check: completed success 44952421391"
+        check 3 runs-in-progress.json "check: in_progress - 44952421391"
+        check 4 runs-no-check.json ""
+        check 0 runs-skipped-neutral.json ""
+        check 1 runs-cancelled.json "check: completed cancelled 44952421391"
+        if [ "$wrong" -ne 0 ]; then
+          echo "forge-watch-test: $wrong of $cases case(s) decided otherwise by $script"
+          exit 1
+        fi
+        echo "forge-watch-test: $cases case(s), each decided as expected by $script"

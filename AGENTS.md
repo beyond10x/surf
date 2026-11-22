@@ -125,7 +125,19 @@ above, and the list of standards itself was written from memory.
   the task `view-stream-check`, `taskfiles/view-test.yml` the task `view-test`, and
   `taskfiles/release.yml` the task `release-smoke`
   (`DIR=<unpacked archive>`, optional `TARGET`), which runs `taskfiles/release-smoke.sh`; the
-  release workflow calls that script with `sh`.
+  release workflow calls that script with `sh`. `taskfiles/check-runner.yml` holds the task
+  `check-runner`, which runs `taskfiles/check-runner.sh`; `taskfiles/forge-watch.yml` the tasks
+  `forge-watch` and `forge-watch-test` over `taskfiles/forge-watch.sh` and the recorded runs
+  under `taskfiles/forge-watch-test/` (`runs-61fb7a9.json` and `runs-e47b1d1.json` as the forge
+  listed them, four written by hand); `taskfiles/planning-only.yml` the task
+  `planning-only-test` over `taskfiles/planning-only.sh`, the one list of planning and prose
+  paths, which `.github/workflows/check.yml` calls.
+- `rust-toolchain.toml`: the one pinned rustc, `1.99.1`, with the components `rustfmt` and
+  `clippy` (the gate uses neither; units run `cargo fmt -p` and `cargo clippy`), profile
+  `minimal`. rustup reads it in every directory of the checkout, so `rustc --version` there
+  prints that release; `.github/workflows/check.yml` and `release.yml` read the channel and the
+  components from it and name no release of their own. A `RUSTUP_TOOLCHAIN` in the environment
+  wins over the file; `task check-runner` unsets it.
 - `spec/scenarios/*.yaml`: fourteen authored scenario files (`ess-scenario/6`), for what synthesis
   does not write. Two cover the flows synthesis refuses (the page load that commits and the one that
   fails); both also read the request's address back from `Requests`. The third,
@@ -625,7 +637,10 @@ is on that old history too, and stays local.
       b10x-gates ... publish --receipt <receipt.json> --remote-ref refs/heads/main
 
   The receipt file lives in the session's scratch directory. `main` is published after
-  `task check` is green on it, never before.
+  `task check-runner` is green on it, never before. After the push, `task forge-watch
+  COMMIT=<commit>` (with `GATES_POLICY` naming the policy file when `../gates-policy/` is not
+  beside the checkout) waits for the forge's runs of that commit and exits non-zero when one
+  did not pass.
 - `crates/url/tests/data/urltestdata.json` is vendored test data whose inputs hold
   a `file:` address with a home directory path; the policy carries six exceptions for it. Replacing the file with a
   newer copy needs the exceptions made again (`b10x-gates ... policy except`).
@@ -758,7 +773,45 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `view-stream-check`), and last holds the HTML conformance counts (`html-conformance`). Each
   step's failure fails it. Because of `view-test`, `task check` needs Node and Chromium's
   headless shell on the machine (below); the forge's workflow installs Node 22 and the shell
-  before it.
+  before it. Since `story:local-gate-equals-forge` it ends with `forge-watch-test` and
+  `planning-only-test`.
+- `task check-runner`: the gate to run before a merge, `task check` as the forge's runner runs
+  it (`taskfiles/check-runner.sh`; `slot task check-runner`). What it does differently from
+  `task check`: it runs in `.out/runner/tree`, a clean export of `HEAD` (a clone sharing this
+  repository's objects, brought to `HEAD` by `git checkout --force` and `git clean -ffdx -e
+  target/`, so an unchanged file keeps its time and the export's own `target/` is reused), so
+  that a file that exists only in the working tree, changed, untracked or ignored, cannot make
+  it pass; it refuses, naming the files, when the working tree has uncommitted changes, unless
+  `ALLOW_DIRTY=1` is given, which it prints; and it sets the runner's environment: `CI=true`,
+  `GITHUB_ACTIONS=true`, `CARGO_TERM_COLOR=always`, `CARGO_INCREMENTAL=0`, `RUSTC_WRAPPER`
+  empty (no compiler cache), `ESS_TOOLCHAIN` read from `requires:` of `spec/ess-inputs.yaml`
+  (no need to set it by hand), `HTML_BASE=origin/main` (the export's `origin` is this
+  repository, so that is the local `main`), and it unsets `RUSTUP_TOOLCHAIN`,
+  `CARGO_TARGET_DIR`, `CARGO_BUILD_TARGET_DIR`, `RUSTFLAGS`, `CARGO_ENCODED_RUSTFLAGS` and
+  `RUSTDOCFLAGS`. `view-tests/node_modules` is not committed: `task view-test` installs it in the
+  export with `npm ci`, as on the forge. What stays the machine's: the cargo caches of the user,
+  the Playwright browser cache, the cargo configuration in the user's home (but the
+  `rustc-wrapper` the variable empties) and the operating system. cargo also reads the working
+  tree's `.cargo/config.toml`, a parent directory of the export: a change to it is uncommitted,
+  so only `ALLOW_DIRTY=1` lets it through.
+- `task forge-watch COMMIT=<commit>`: `taskfiles/forge-watch.sh <commit>` waits until every
+  workflow run of the commit is completed, reading through `b10x-gates ... api --method GET`
+  with the policy file from `GATES_POLICY` (default `../gates-policy/policy.json`) and `jq`,
+  prints one line per run (`<name>: <status> <conclusion> <id>`) and exits non-zero when a run
+  did not conclude `success`, `skipped` or `neutral`, when no run of the workflow `check` was
+  listed within 180 s, or when a run was not completed within an hour. The script's head names
+  the variables that change those bounds. It reaches the forge; no step of `check` runs it.
+- `task forge-watch-test`: the decision of that script on the recorded files under
+  `taskfiles/forge-watch-test/`, without the network (`sh taskfiles/forge-watch.sh --runs
+  <file>`: 0 passed, 1 red, 3 not completed, 4 no run of `check`). `61fb7a9`, whose `check`
+  concluded `failure`, exits 1; `e47b1d1` exits 0.
+- `task planning-only-test`: both sides of `taskfiles/planning-only.sh`, which reads changed
+  paths on standard input and exits 0 when all are planning or prose files: `.engineering/`,
+  `docs/plan/`, and `*.md` outside `website/`, the code directories (`crates/`,
+  `conformance/`, `generated/`, `spec/`, `cli/`, `view-tests/`) and the two documents the gate
+  reads (`docs/design/html-parser.md`, `docs/view-stream.md`). An empty list is not planning
+  only. On a pull request whose files are all such, the workflow `check` skips every step after
+  the listing and ends green; a push to `main` always runs the whole gate.
 - `task view-test`: the page tests in a browser (`taskfiles/view-test.yml`). It builds
   `surf-agent`, `surf-session` and `surf-view-fixture`, installs `view-tests/` from its
   `package-lock.json` with `npm ci`, and runs `npx playwright test --workers=2` in
