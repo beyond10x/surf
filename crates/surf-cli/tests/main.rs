@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+mod adversary_document_command;
 mod cli;
 mod output_streams;
 mod page;
