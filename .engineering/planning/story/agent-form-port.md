@@ -32,6 +32,8 @@ scope:
 - confidence: cited
   path: crates/page/src/lib.rs
 - confidence: cited
+  path: crates/page/tests/adversary_forms.rs
+- confidence: cited
   path: crates/page/tests/forms.rs
 - confidence: cited
   path: crates/page/tests/main.rs
@@ -44,10 +46,16 @@ scope:
 - confidence: cited
   path: crates/surf/src/lib.rs
 - confidence: cited
+  path: crates/surf/tests/adversary_forms.rs
+- confidence: cited
   path: crates/surf/tests/forms.rs
 - confidence: cited
   path: crates/surf/tests/main.rs
-revision: 10
+- confidence: cited
+  path: generated/rust
+- confidence: cited
+  path: spec/domains/document.yaml
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 4}
@@ -153,5 +161,54 @@ No test runs over 60 s, and the test step ends within 120 s.
 ## Out of scope
 
 The session commands (`agent-fill-pick`, `agent-press-submit`); `multipart/form-data`,
-`text/plain`; file upload; `formaction`, `formmethod` and `formenctype` on a submitter (named in the
-crate documentation as not taken).
+`text/plain`; file upload; `formenctype` on a submitter (named in the crate documentation as not
+taken); `formaction` and `formmethod` on a submitter, which `agent-press-submit` takes.
+
+- A `required` checkbox, radio button or `select` with `multiple` is not checked: only a
+  `required` control with an empty value ends `InvalidControls`.
+- Values of the Range, Color, Number and date and time states are not sanitised as the HTML
+  Standard's value sanitization algorithms do: the entry holds the value as filled.
+- A `mailto:` or `about:` action ends `UnsupportedScheme`, where the HTML Standard gives each a
+  submission of its own.
+
+## As decided after the adversary's pass
+
+The adversary's cases on the built port (`265a30a` on `adv/form-port`:
+`crates/surf/tests/adversary_forms.rs`, `crates/page/tests/adversary_forms.rs`) showed four
+defects red and one note. Decided by the coordinator; line numbers are those at `58ed9b4`:
+
+1. An address over `surf_fetch::MAX_ADDRESS_BYTES` (65,536 bytes, `crates/fetch/src/lib.rs:572`)
+   ends the submission in the port itself: the `GET` address built from the entry list
+   (`crates/surf/src/lib.rs:515-518`, `with_query` at `:642`) and the action of a `POST`
+   (`:531`). The end reason is a new variant of the specification, `AddressTooLong`, beside
+   `InvalidAction` and the others in `surf.document.SubmissionEndReason`
+   (`spec/domains/document.yaml:105-121`), so the enum has eight; nothing is navigated and no
+   request is made. The port is public (`start_submission`, then `run`), and the session's
+   refusal `address-too-long` (`story:agent-press-submit`, case 18) covers only the session. The
+   specification change brings `spec/domains/document.yaml`, `generated/rust/`, the end-reason
+   names of `conformance/src/target.rs` (`end_reason` and `end_reason_named`, `:862` and `:874`
+   at `d5d7426`) and, when the suite's counts change, the files that state them (`AGENTS.md`
+   "The gate's numbers", `README.md`, `docs/badges/make.sh` and its svg,
+   `website/docs/{status,what-works,principles,how-it-is-built}.md`, `Taskfile.yml`
+   `REFUSALS_MAX`). Red today: `a_get_submission_makes_no_address_longer_than_64_kib`,
+   `a_submission_to_an_action_longer_than_64_kib_is_not_navigated`.
+2. A `required` `select` whose submitted value is empty (its placeholder option selected, or no
+   option selected) ends `InvalidControls`, as this story's sentence says ("only a `required`
+   control with an empty value is checked"). Red today:
+   `a_required_select_left_on_its_placeholder_is_not_submitted`.
+3. The `Debug` output of `Filled` (`crates/surf/src/lib.rs:393`), `Submission` (`:375`) and of
+   the body of `Submit::Navigate` (`:407`) prints a value's length, never its bytes. The address
+   in `Submit::Navigate` stays whole: a `GET` with a filled password is refused by the session
+   (`password-in-query`, `story:agent-press-submit`). Red today:
+   `the_submission_steps_input_prints_no_password`.
+4. `form_handles` (`crates/page/src/forms.rs:163`) numbers the forms without building the
+   options and their text; it gives the same `F<n>` as before, so
+   `adversary_forms_probe_form_handles_name_the_submitted_form` stays green.
+5. Tests: no test asserts wall time. The three probes on pages of 100,000 forms, options or
+   controls (`adversary_forms_probe_100k_forms` and `adversary_forms_probe_100k_options` in
+   `crates/surf/tests/adversary_forms.rs`, `adversary_forms_probe_100k` in
+   `crates/page/tests/adversary_forms.rs`; 7 s to 14 s each) go to a size at which each runs
+   under 3 s alone, and keep their assertions on counts; `adversary_forms_probe_one_mib_value`
+   loses its assertion on time too. The size is measured by the implementor and named in the
+   unit report with each probe's time.
+6. Named as differing from the HTML Standard and not promised: see "Out of scope".
