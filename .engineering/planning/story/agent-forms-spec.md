@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-forms-spec
 kind: story
-status: active
+status: implemented
 title: Specify filling, picking and submitting a form, from the agent to the navigation
 summary: surf.document gains form rows, form owners, options and commands that fill, pick and submit; surf.agent gains Fill, Pick and Press mapped to them; a submission navigates with POST or GET.
 relations:
@@ -31,10 +31,11 @@ scope:
   path: spec/ess-inputs.yaml
 - confidence: cited
   path: spec/scenarios
-revision: 12
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-11-22T16:29:26Z", actor: "human:operator", revision: 14, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 
@@ -161,3 +162,57 @@ From wave 9 (`docs/plan/agent-wave-9.md`), for this story's own reading before i
 - The media type check of `surf_fetch::send` takes `type/subtype` of RFC 9110 tokens and
   refuses a parameter; `surf.net.MediaType` is specified without parameters (the finding of
   wave 8 about `multipart/form-data` and its `boundary` stands).
+
+## As built
+
+What differs from the text above, as of 2418d48:
+
+- Acceptance, "at most 12 above" does not hold as written: `.out/synthesize.log` holds 48
+  `refused:` lines, 20 above the 28 before the story, and `REFUSALS_MAX` in `Taskfile.yml` is 48;
+  ESS 0.97.3 gives the same 48 lines. SYNTH-014 refuses `Check/radio-checked`, `Check/unchecked`,
+  `Check/checked` and `SetValue/set` (the `Elements` view orders the rows they update); SYNTH-008
+  `Check/radio-checked` (its `affects:` filter reads the subject's stored fields); SYNTH-001
+  `SelectOption/selected` (the disabled and hidden refusals answer first on every subject
+  synthesis arranges); SYNTH-010 14 cases of the five bindings, all `at_most_once` with `drop`:
+  10 of delivery and failure, 3 of flow, 1 a false condition of `select-on-pick-requested`.
+- Change item 1, "The command that ends a submission": two commands end it. `SubmitForm` carries
+  the tab, the resolved action URL, the method, the body and `body_type`; `AbandonSubmission`
+  carries the reason; `FormSubmitted` invokes `surf.navigation.Navigate` through
+  `navigate-on-form-submitted` (`spec/domains/document.yaml`, `spec/components.yaml`).
+- Change item 2, the inputs: `Fill(session_id, element_id, value, handle)`,
+  `Pick(session_id, element_id, option_id, handle)`, `Press(session_id, element_id, handle)`.
+- Change item 1, "set the checkedness": `Check` takes only `element_id`; a checkbox toggles, a
+  radio is checked and the others of its group (same document, form owner and name) unchecked.
+- Change item 1, "set the selectedness of an option": `SelectOption` takes only `option_id` and
+  unselects the other options of its select. It refuses an unknown option, a disabled and a hidden
+  one, from copies `disabled` and `hidden` on the option row, naming the select; it has no refusal
+  for a control of another kind (`crates/ports/tests/adversary_document_forms.rs`).
+- Change item 1, the refusals: `ControlKindConflict` carries the `element_id`.
+- Change item 1, the options of a select: the entity `surf.document.Option` has the code name
+  `ListOption` (`naming: code:`), as the Rust target would otherwise shadow the standard `Option`
+  its generated code uses (comment in `spec/domains/document.yaml`).
+- Change item 4, `agent-press-submits-post` and `agent-press-submission-ends-without-body`: the
+  submission they end is an arranged `Started` one, not the one `StartSubmission` mints, which a
+  scenario cannot name (comment at the top of `spec/scenarios/agent-press-submits-post.yaml`).
+- Not in the story: a review after the first implementation found error texts of the conformance
+  target that could hold a filled value or a form body. They name events and invocations by type
+  and identities, and a body that is not base64 is refused without its text
+  (`no_error_text_holds_a_filled_value_or_a_form_body` and
+  `a_body_that_is_not_base64_is_refused_without_its_text` in `conformance/src/target.rs`).
+- Not in the story: `Browser::held` counts a form's body in `FormSubmitted` and in both `Navigate`
+  invocations (`a_submitted_form_body_is_held_in_every_place_that_carries_it` in
+  `crates/surf/tests/held.rs`).
+- Surfaces written: files outside the list changed. `crates/session/src/entries.rs` writes the new
+  events, a filled value as its length; `crates/session/tests/events.rs`,
+  `crates/surf/tests/held.rs`, `conformance/tests/planted_defect.rs`,
+  `conformance/tests/review2_planted_defects.rs` and `conformance/tests/two_of_each_entity.rs`
+  follow the new entities and events.
+- Left open: the `Controls` and `Elements` views (`spec/domains/document.yaml`) and
+  `surf::Report::lines` print a stored value, so a filled password would be printed once a command
+  fills a control (recorded nowhere else).
+- Left open: the `handle` of `Fill`, `Pick` and `Press` is an input with no effect on their
+  outcomes (recorded nowhere else).
+- Left open: a select with `multiple`, `readonly`, and the radio group of a button with no form
+  owner or no name (`UNMAPPED:` comments in `spec/domains/document.yaml`).
+- Left open: form, option and submission rows stay for the life of the session, with no bound
+  over all documents (a draft story on the session's memory).

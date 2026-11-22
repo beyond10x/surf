@@ -21,11 +21,14 @@ use surf::{MemoryBrowser, SystemEvent};
 use surf_answer::Page;
 use surf_ports::{Caller, ComponentPorts};
 use surf_types::agent::{
-    ActionCommand, ActionId, ActionRecorded, Go, NavigationRequested, OpenSession, RecordAction,
-    SessionClosed, SessionId, SessionNavigationChanged, SessionOpened,
+    ActionCommand, ActionId, ActionRecorded, FillRequested, Go, NavigationRequested, OpenSession,
+    PickRequested, PressRequested, RecordAction, SessionClosed, SessionId,
+    SessionNavigationChanged, SessionOpened,
 };
 use surf_types::document::{
-    DocumentId, DocumentParsed, ElementAdded, ElementId, EncodingName, ParseLimit, ParsingStarted,
+    CheckednessSet, DocumentId, DocumentParsed, ElementAdded, ElementId, EncodingName, FormAdded,
+    FormId, FormSubmitted, OptionAdded, OptionId, OptionSelected, ParseLimit, ParsingStarted,
+    SubmissionAbandoned, SubmissionEndReason, SubmissionId, SubmissionStarted, ValueSet,
 };
 use surf_types::navigation::{
     NavigationCancelled, NavigationCommitted, NavigationFailed, NavigationStarted, NavigationState,
@@ -49,9 +52,11 @@ use surfd::{Daemon, State};
 /// entry. Measured by this unit (story: counted from `spec/` as 6).
 const OPEN_ENTRIES: usize = 6;
 
-/// The entries of `go` to a served HTML page: the action entry, its nine events, the answer
-/// entry. Measured by this unit (story: counted from `spec/` as 11).
-const GO_ENTRIES: usize = 11;
+/// The entries of `go` to a served HTML page: the action entry, its ten events, the answer
+/// entry. Measured by this unit (story: counted from `spec/` as 11); since
+/// `story:html-document-port` the parser step adds `surf.document.DocumentParsed` (the page has
+/// no actionable element, so no `surf.document.ElementAdded`).
+const GO_ENTRIES: usize = 12;
 
 // --- Reading entries ---------------------------------------------------------------------------
 
@@ -188,6 +193,8 @@ fn reference_names(url: &str) -> (Vec<String>, Vec<String>) {
             sequence: 1,
             command: ActionCommand::Open,
             url: None,
+            handle: None,
+            label: None,
         })
         .unwrap();
     browser.run().unwrap();
@@ -207,6 +214,8 @@ fn reference_names(url: &str) -> (Vec<String>, Vec<String>) {
             sequence: 2,
             command: ActionCommand::Go,
             url: Some(Url(url.to_string())),
+            handle: None,
+            label: None,
         })
         .unwrap();
     browser.run().unwrap();
@@ -420,6 +429,98 @@ fn case_05_look_adds_no_entry() {
     assert_eq!(wire_as(&dir, &session, "look", &[]).status, 0);
     assert_eq!(kept(&daemon, &session), before);
     assert_eq!(daemon.newest_entry(), newest);
+}
+
+/// `text` with each UUID in it replaced by `#<n>`, n the order of its first appearance in
+/// `seen`, which the calls of one session share.
+fn numbered(text: &str, seen: &mut Vec<String>) -> String {
+    let is_uuid = |word: &[u8]| {
+        word.len() == 36
+            && word.iter().enumerate().all(|(at, b)| match at {
+                8 | 13 | 18 | 23 => *b == b'-',
+                _ => b.is_ascii_digit() || (b'a'..=b'f').contains(b),
+            })
+    };
+    let bytes = text.as_bytes();
+    let mut out = String::new();
+    let mut at = 0;
+    while at < bytes.len() {
+        if at + 36 <= bytes.len() && is_uuid(&bytes[at..at + 36]) {
+            let uuid = &text[at..at + 36];
+            let n = match seen.iter().position(|known| known == uuid) {
+                Some(n) => n,
+                None => {
+                    seen.push(uuid.to_string());
+                    seen.len() - 1
+                }
+            };
+            out.push_str(&format!("#{n}"));
+            at += 36;
+        } else {
+            let c = text[at..].chars().next().unwrap();
+            out.push(c);
+            at += c.len_utf8();
+        }
+    }
+    out
+}
+
+/// Case 10 of `story:page-text-look`: a call with a form records what the same call records
+/// without it.
+#[test]
+fn a_call_with_a_form_records_the_same() {
+    let dir = TestDir::new();
+    let pages = PageServer::start();
+    let daemon = surfd_in_process(&dir, |_| {});
+    let (a, b) = (pages.url("/a"), pages.url("/b"));
+    let mut paths = Vec::new();
+    let mut sessions = Vec::new();
+    for with_form in [true, false] {
+        let form = |value: &'static str| -> Vec<(&'static str, &'static str)> {
+            if with_form {
+                vec![("form", value)]
+            } else {
+                Vec::new()
+            }
+        };
+        let mut args = vec![("url", a.as_str())];
+        args.extend(form("tree"));
+        let answer = common::wire_call(&dir, &common::request("open", None, None, &args));
+        assert_eq!(answer.status, 0, "{answer:?}");
+        let session = common::opened(&answer.text);
+        let mut args = vec![("url", b.as_str())];
+        args.extend(form("markdown"));
+        let answer = wire_as(&dir, &session, "go", &args);
+        assert_eq!(answer.status, 0, "{answer:?}");
+        let answer = wire_as(&dir, &session, "look", &form("tree"));
+        assert_eq!(answer.status, 0, "{answer:?}");
+        assert_eq!(answer.text.contains("\nnote text: no-css\n"), with_form);
+        paths.push(common::path_block(&answer.text));
+        sessions.push(session);
+    }
+    assert_eq!(paths[0], paths[1], "the path lines");
+    let with = kept(&daemon, &sessions[0]);
+    let without = kept(&daemon, &sessions[1]);
+    assert_eq!(with.len(), without.len(), "{with:#?}\n{without:#?}");
+    let (mut seen_with, mut seen_without) = (Vec::new(), Vec::new());
+    let mut answers = 0;
+    for (one, other) in with.iter().zip(&without) {
+        assert_eq!((one.index, one.kind), (other.index, other.kind));
+        let mut text = one.text.clone();
+        if one.kind == EntryKind::Answer {
+            answers += 1;
+            let at = text.find("note text: ").expect("a note text line");
+            assert!(text[at..].contains("\ntext "), "{text}");
+            text.truncate(at);
+        }
+        assert_eq!(
+            numbered(&text, &mut seen_with),
+            numbered(&other.text, &mut seen_without),
+            "entry {}",
+            one.index
+        );
+    }
+    assert_eq!(answers, 2, "the answer entries of open and go");
 }
 
 #[test]
@@ -745,8 +846,12 @@ const BODY: &[u8] = b"q#~";
 const ADDRESS: &str = "http://example.org/a b";
 /// A title holding a double quote, a backslash and a character outside ASCII.
 const TITLE: &str = "Say \"hi\" \\ caf\u{e9}";
+/// A link label holding a double quote and a character outside ASCII (`agent-links-spec`).
+const LABEL: &str = "Sign \"in\" \u{e9}";
 /// The media type of a request body (`agent-request-body-spec`).
 const FORM: &str = "application/x-www-form-urlencoded";
+/// What an agent typed into a control (`agent-forms-spec`): its entry gives its length only.
+const TYPED: &str = "s3cret";
 
 /// Every `SystemEvent` variant this mapping covers, one value each; a story that maps an event
 /// adds it here.
@@ -757,8 +862,10 @@ fn covered() -> Vec<SystemEvent> {
             action_id: ActionId(uuid(1)),
             session_id: SessionId(uuid(2)),
             sequence: 7,
-            command: ActionCommand::Go,
+            command: ActionCommand::Follow,
             url: None,
+            handle: Some("l4".to_string()),
+            label: Some(LABEL.to_string()),
         }),
         SystemEvent::NavigationRequested(NavigationRequested {
             session_id: SessionId(uuid(2)),
@@ -860,6 +967,57 @@ fn covered() -> Vec<SystemEvent> {
         SystemEvent::WindowOpened(WindowOpened {
             window_id: WindowId(uuid(4)),
         }),
+        SystemEvent::FillRequested(FillRequested {
+            session_id: SessionId(uuid(2)),
+            element_id: ElementId(uuid(8)),
+            value: TYPED.to_string(),
+        }),
+        SystemEvent::PickRequested(PickRequested {
+            session_id: SessionId(uuid(2)),
+            element_id: ElementId(uuid(8)),
+            option_id: Some(OptionId(uuid(10))),
+        }),
+        SystemEvent::PressRequested(PressRequested {
+            session_id: SessionId(uuid(2)),
+            element_id: ElementId(uuid(8)),
+        }),
+        SystemEvent::FormAdded(FormAdded {
+            form_id: FormId(uuid(9)),
+            document_id: DocumentId(uuid(6)),
+            position: 3,
+        }),
+        SystemEvent::OptionAdded(OptionAdded {
+            option_id: OptionId(uuid(10)),
+            select_id: ElementId(uuid(8)),
+            position: 3,
+        }),
+        SystemEvent::ValueSet(ValueSet {
+            element_id: ElementId(uuid(8)),
+        }),
+        SystemEvent::CheckednessSet(CheckednessSet {
+            element_id: ElementId(uuid(8)),
+            checked: true,
+        }),
+        SystemEvent::OptionSelected(OptionSelected {
+            option_id: OptionId(uuid(10)),
+            select_id: ElementId(uuid(8)),
+        }),
+        SystemEvent::SubmissionStarted(SubmissionStarted {
+            submission_id: SubmissionId(uuid(11)),
+            submitter: ElementId(uuid(8)),
+        }),
+        SystemEvent::FormSubmitted(FormSubmitted {
+            submission_id: SubmissionId(uuid(11)),
+            tab_id: TabId(uuid(3)),
+            url: url(),
+            method: Method::Post,
+            body: Some(BODY.to_vec()),
+            body_type: Some(MediaType(FORM.to_string())),
+        }),
+        SystemEvent::SubmissionAbandoned(SubmissionAbandoned {
+            submission_id: SubmissionId(uuid(11)),
+            reason: SubmissionEndReason::InvalidControls,
+        }),
     ]
 }
 
@@ -876,14 +1034,22 @@ fn expected_value(event: &str, field: &str) -> Option<String> {
         (_, "navigation_id" | "request_id") => id(5),
         (_, "document_id") => id(6),
         (_, "frame_id") => id(7),
-        (_, "element_id") => id(8),
-        ("surf.document.ElementAdded", "position") => text("3"),
+        (_, "element_id" | "select_id" | "submitter") => id(8),
+        (_, "form_id") => id(9),
+        (_, "option_id") => id(10),
+        (_, "submission_id") => id(11),
+        (_, "position") => text("3"),
+        ("surf.document.CheckednessSet", "checked") => text("true"),
+        ("surf.document.SubmissionAbandoned", "reason") => text("InvalidControls"),
+        ("surf.agent.FillRequested", "value") => text("6 bytes"),
         ("surf.document.DocumentParsed", "title") => text(TITLE),
         ("surf.document.DocumentParsed", "encoding") => text("windows-1252"),
         ("surf.document.DocumentParsed", "unsupported_encoding") => text("EUC-KR"),
         ("surf.document.DocumentParsed", "stopped_by") => text("Depth"),
         ("surf.agent.ActionRecorded", "sequence") => text("7"),
-        ("surf.agent.ActionRecorded", "command") => text("go"),
+        ("surf.agent.ActionRecorded", "command") => text("follow"),
+        ("surf.agent.ActionRecorded", "handle") => text("l4"),
+        ("surf.agent.ActionRecorded", "label") => text(LABEL),
         ("surf.agent.ActionRecorded", "url") => None,
         (_, "url") => text(ADDRESS),
         ("surf.agent.SessionNavigationChanged", "state") => text("Committed"),
@@ -910,16 +1076,31 @@ fn case_17_every_event_maps_with_all_its_fields() {
         .map(|event| event.name().to_string())
         .collect();
     assert_eq!(names.len(), covered.len(), "a variant listed twice");
+    // No command publishes `surf.agent.EventsLeftOut`: the session writes it
+    // (`entries::left_out_line`), and `spec/` declares its name and field.
+    let left_out = "surf.agent.EventsLeftOut";
     assert_eq!(
         names,
-        spec.keys().cloned().collect::<BTreeSet<_>>(),
+        spec.keys()
+            .filter(|name| *name != left_out)
+            .cloned()
+            .collect::<BTreeSet<_>>(),
         "the variants covered and the events of spec/"
     );
     assert_eq!(
         names.len(),
-        19,
-        "the events of spec/ after story:html-document-spec"
+        30,
+        "the events of spec/ after story:agent-forms-spec"
     );
+    assert_eq!(spec.len(), 31, "and surf.agent.EventsLeftOut");
+    let line = surf_session::entries::left_out_line(3);
+    assert!(line.starts_with(&format!("event {left_out} ")), "{line}");
+    let mapped = fields(&line).expect("a mapped event");
+    let declared: Vec<&str> = spec[left_out].iter().map(|(f, _)| f.as_str()).collect();
+    let written: Vec<&str> = mapped.iter().map(|(f, _)| f.as_str()).collect();
+    assert_eq!(written, declared, "the fields of {left_out}");
+    assert_eq!(mapped[0].1.as_deref(), Some("\"3\""));
+    assert!(surfd::link::Entry::line(&line).is_some(), "{line}");
     for field in [
         ("surf.net.ResponseReceived", "url"),
         ("surf.navigation.NavigationCommitted", "url"),
@@ -939,6 +1120,10 @@ fn case_17_every_event_maps_with_all_its_fields() {
                 "{event}.{field} of agent-request-body-spec"
             );
         }
+    }
+    for event in &covered {
+        let line = surf_session::entries::event_line(event);
+        assert!(!line.contains(TYPED), "a typed value in an entry: {line}");
     }
     for event in &covered {
         let name = event.name();
@@ -1009,12 +1194,13 @@ fn case_17_every_event_maps_with_all_its_fields() {
 #[test]
 fn byte_fields_are_lengths() {
     // A story that adds a field of type Bytes or Optional<Bytes> adds it here.
-    const BYTES_FIELDS: [&str; 5] = [
+    const BYTES_FIELDS: [&str; 6] = [
         "surf.net.ResponseReceived.body",
         "surf.navigation.NavigationCommitted.body",
         "surf.document.ParsingStarted.body",
         "surf.navigation.NavigationStarted.body",
         "surf.net.RequestStarted.body",
+        "surf.document.FormSubmitted.body",
     ];
     let bytes = |kind: &str| kind == "Bytes" || kind == "Optional<Bytes>";
     let spec = spec_events();

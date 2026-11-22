@@ -32,13 +32,31 @@
 //! `GET` without a body, and a `POST` with its body and media type, through `surf-fetch`, and
 //! refuses a `GET` with a body or a media type before connecting.
 //!
+//! The `document` component leaves one step to its parser (`spec/domains/document.yaml`, the
+//! comment above `surf.document.AddElement`; `docs/design/html-parser.md`, items 1 and 2): after
+//! `surf.document.ParseDocument` made a document `Parsing`, something parses the body, issues
+//! `surf.document.AddElement` once per actionable element in tree order and then
+//! `surf.document.FinishParsing`. [`Browser::run`] is that step too. It hands each
+//! `surf.document.ParsingStarted` whose document is still `Parsing` to the [`Parser`], a
+//! parameter of [`Browser`] like the transport, and issues what it answers on the `document`
+//! port and on no other. The default, [`HtmlParser`], decodes and parses the body with
+//! `surf-html` at its default limits and computes the title and the actionable elements with
+//! their labels with `surf-page` ([`parse_page`]). [`Browser`] keeps the tree of each parsed
+//! document, keyed by the document's identity, with the node of each element row: read only,
+//! through [`Browser::document_tree`] and [`Browser::element_nodes`]. No component's port
+//! receives the tree. The tree is not changed after parsing (decision D2 of
+//! `docs/plan/agent-plan-revision-1.md`), and it is kept for the life of the [`Browser`], as the
+//! document's rows are.
+//!
 //! [`Browser::load`] is what the `surf` binary does: `OpenWindow`, `OpenTab`, `Navigate`, run, and
-//! the rows of the `Navigations`, `Requests` and `Documents` views with every published
-//! `FetchFailed`, as a [`Report`]. [`exit_status`] turns its result into the binary's exit status.
+//! the rows of the `Navigations`, `Requests`, `Documents` and `Elements` views with every
+//! published `FetchFailed`, as a [`Report`]. [`exit_status`] turns its result into the binary's
+//! exit status.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+use std::collections::BTreeMap;
 use std::fmt;
 
 use agent::Agent;
@@ -51,7 +69,10 @@ use surf_ports::{
     AgentPorts, ComponentPorts, DocumentPorts, NavigatorPorts, NetPorts, RendererPorts, ShellPorts,
 };
 use surf_types::behaviour::Generated;
-use surf_types::document::Documents;
+use surf_types::document::{
+    AddElement, AddElementOutcome, DocumentId, DocumentState, Documents, ElementId, ElementKind,
+    Elements, EncodingName, FinishParsing, FinishParsingOutcome, ParseLimit,
+};
 use surf_types::navigation::{Navigate, NavigateOutcome, NavigationState, Navigations};
 use surf_types::net::{
     DeliverResponse, FailRequest, FailureReason, FetchFailed, MediaType, RequestId, RequestState,
@@ -60,8 +81,10 @@ use surf_types::net::{
 use surf_types::shell::{OpenTab, OpenTabOutcome, OpenWindow, OpenWindowOutcome};
 use surf_types::url::Url;
 
+pub use surf_html::{NOT_YET_PARSED, NodeId, Tree};
 use surf_system::BindingInvocation;
 pub use surf_system::{System, SystemEvent};
+pub use surf_types::document::ParsingStarted;
 pub use surf_types::net::{Method, RequestStarted};
 pub use surf_types::obligation::UnmetObligation;
 
@@ -174,6 +197,139 @@ pub fn answer(result: Result<surf_fetch::Response, surf_fetch::Failure>) -> Answ
     }
 }
 
+/// One parsed page: its tree and the values the `document` component's rows take from it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Page {
+    /// The document's node tree.
+    pub tree: Tree,
+    /// `document.title`: the empty string when the document has no title.
+    pub title: String,
+    /// The actionable elements in tree order, each with its node in [`Page::tree`]. Issued as one
+    /// `surf.document.AddElement` each, with the position from 1.
+    pub elements: Vec<surf_page::ActionableElement>,
+    /// The encoding the text was decoded with, as the Encoding Standard writes its name.
+    pub encoding: String,
+    /// The encoding the encoding sniffing algorithm chose when `surf-html` has no decoder for it
+    /// and the text was decoded as windows-1252.
+    pub unsupported_encoding: Option<String>,
+    /// The limit that stopped parsing, if one did.
+    pub stopped_by: Option<surf_html::limits::Limit>,
+}
+
+/// What a [`Parser`] answers for one started parse.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Parse {
+    /// The page: issued as one `surf.document.AddElement` per element and then
+    /// `surf.document.FinishParsing`.
+    Parsed(Box<Page>),
+    /// No answer. Nothing is issued and the document stays `Parsing`.
+    Unanswered,
+}
+
+/// Parses the body a started parse carries, for the `document` component.
+///
+/// It is handed the `surf.document.ParsingStarted` the `document` component published: the
+/// document's identity and the body. A closure `FnMut(&ParsingStarted) -> Parse` is a parser.
+pub trait Parser {
+    /// Parses `started`'s body and answers what came of it.
+    fn parse(&mut self, started: &ParsingStarted) -> Parse;
+}
+
+impl<F: FnMut(&ParsingStarted) -> Parse> Parser for F {
+    fn parse(&mut self, started: &ParsingStarted) -> Parse {
+        self(started)
+    }
+}
+
+/// The parser step of the binaries: [`parse_page_with`] over every body, with its options.
+///
+/// [`HtmlParser::default`] parses with `surf-html`'s default options (scripting disabled, the
+/// default limits); [`HtmlParser::with_options`] takes others, such as small limits.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HtmlParser {
+    options: surf_html::ParseOptions,
+}
+
+impl HtmlParser {
+    /// The parser step that parses with `options`.
+    pub fn with_options(options: surf_html::ParseOptions) -> HtmlParser {
+        HtmlParser { options }
+    }
+
+    /// The parser step that parses with the default options but `limits`.
+    pub fn with_limits(limits: surf_html::limits::Limits) -> HtmlParser {
+        HtmlParser::with_options(surf_html::ParseOptions {
+            limits,
+            ..surf_html::ParseOptions::default()
+        })
+    }
+
+    /// The options it parses with.
+    pub fn options(&self) -> &surf_html::ParseOptions {
+        &self.options
+    }
+}
+
+impl Parser for HtmlParser {
+    fn parse(&mut self, started: &ParsingStarted) -> Parse {
+        Parse::Parsed(Box::new(parse_page_with(&started.body, &self.options)))
+    }
+}
+
+/// [`parse_page_with`] with `surf-html`'s default options: scripting disabled, the default
+/// limits.
+pub fn parse_page(body: &[u8]) -> Page {
+    parse_page_with(body, &surf_html::ParseOptions::default())
+}
+
+/// Decodes and parses `body` as an HTML document with `surf-html` under `options`
+/// ([`surf_html::parse_document_bytes`]), and computes its title and its actionable elements
+/// with their labels with `surf-page`. A parse a limit stopped keeps the tree built before it
+/// (`surf-html`, "Limits"), and the title and the elements are read from that tree.
+pub fn parse_page_with(body: &[u8], options: &surf_html::ParseOptions) -> Page {
+    let parsed = surf_html::parse_document_bytes(body, options);
+    // The sniffing algorithm always chooses an encoding; windows-1252 is its default.
+    let chosen = parsed.encoding.unwrap_or("windows-1252");
+    let decoded_with = surf_html::encoding::decode_with(b"", chosen)
+        .map_or("windows-1252", |decoded| decoded.decoded_with);
+    let unsupported_encoding = (decoded_with != chosen).then(|| chosen.to_owned());
+    let title = surf_page::title(&parsed.tree);
+    let elements = surf_page::actionable_elements(&parsed.tree);
+    Page {
+        stopped_by: parsed.tree.stopped_by(),
+        tree: parsed.tree,
+        title,
+        elements,
+        encoding: decoded_with.to_owned(),
+        unsupported_encoding,
+    }
+}
+
+fn element_kind(kind: surf_page::Kind) -> ElementKind {
+    match kind {
+        surf_page::Kind::Link => ElementKind::Link,
+        surf_page::Kind::Button => ElementKind::Button,
+        surf_page::Kind::Text => ElementKind::Text,
+        surf_page::Kind::Password => ElementKind::Password,
+        surf_page::Kind::Checkbox => ElementKind::Checkbox,
+        surf_page::Kind::Radio => ElementKind::Radio,
+        surf_page::Kind::File => ElementKind::File,
+        surf_page::Kind::Select => ElementKind::Select,
+        surf_page::Kind::Textarea => ElementKind::Textarea,
+    }
+}
+
+fn parse_limit(limit: surf_html::limits::Limit) -> ParseLimit {
+    match limit {
+        surf_html::limits::Limit::InputBytes => ParseLimit::InputBytes,
+        surf_html::limits::Limit::Depth => ParseLimit::Depth,
+        surf_html::limits::Limit::Nodes => ParseLimit::Nodes,
+        surf_html::limits::Limit::Attributes => ParseLimit::Attributes,
+        surf_html::limits::Limit::StoredBytes => ParseLimit::StoredBytes,
+        surf_html::limits::Limit::Steps => ParseLimit::Steps,
+    }
+}
+
 /// Why a load stopped before its report.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
@@ -212,8 +368,14 @@ pub struct Report {
     pub requests: Vec<Requests>,
     /// The rows of `surf.document.Documents`.
     pub documents: Vec<Documents>,
+    /// The rows of `surf.document.Elements` of each document, in the order of
+    /// [`Report::documents`], each document's in position order.
+    pub elements: Vec<Elements>,
     /// Every published `surf.net.FetchFailed`, in publication order.
     pub fetch_failures: Vec<FetchFailed>,
+    /// What the parser does not yet parse as the HTML Standard says
+    /// ([`Browser::parser_not_yet_parsed`]).
+    pub not_yet_parsed: &'static [&'static str],
 }
 
 impl Report {
@@ -226,17 +388,30 @@ impl Report {
     }
 
     /// The output lines, without line terminators: every navigation, then every request, every
-    /// document and every `FetchFailed`, each in the order its view or the log holds it.
+    /// document, then for each `Parsed` document its title, its elements and the limit that
+    /// stopped it, then every `FetchFailed`, each in the order its view or the log holds it, and
+    /// last, when a document is `Parsed` and [`Report::not_yet_parsed`] is not empty, the
+    /// parser's note.
     ///
     /// ```text
     /// navigation <navigation-id> <state> <address>
     /// request <request-id> <state> <address>
     /// document <document-id> <address>
+    /// title <document-id> "<title>"
+    /// element <document-id> <position> <kind> <flags> "<label>" "<target or value>"
+    /// note limit <document-id> <limit>
     /// fetch-failed <request-id> <reason> <address>
+    /// note parser: <parts>
     /// ```
     ///
     /// Fields are separated by one space. The address is the rest of the line, written by
-    /// [`escape`].
+    /// [`escape`]. A title, a label, a target and a value are quoted fields: written by
+    /// [`escape`] with `"` written as `\x22`, between two `"`. `<flags>` is the flags of the row
+    /// that are set, in the order `hidden`, `disabled`, `checked`, `required`, joined by `,`, or
+    /// `-` when none is. The last field is a link's target or a control's value, or `-` when the
+    /// row has neither. `<kind>` is a name of `surf.document.ElementKind`, `<limit>` one of
+    /// `surf.document.ParseLimit`, and `<parts>` the entries of [`Report::not_yet_parsed`]
+    /// joined by `,`.
     pub fn lines(&self) -> Vec<String> {
         let mut lines = Vec::new();
         for row in &self.navigations {
@@ -262,6 +437,28 @@ impl Report {
                 escape(&row.url.0)
             ));
         }
+        let parsed = || {
+            self.documents
+                .iter()
+                .filter(|row| row.state == DocumentState::Parsed)
+        };
+        for row in parsed() {
+            let id = &row.document_id.0.0;
+            lines.push(format!(
+                "title {id} {}",
+                quoted(row.title.as_deref().unwrap_or(""))
+            ));
+            for element in self
+                .elements
+                .iter()
+                .filter(|element| element.document_id == row.document_id)
+            {
+                lines.push(element_line(element));
+            }
+            if let Some(limit) = row.stopped_by {
+                lines.push(format!("note limit {id} {}", limit_name(limit)));
+            }
+        }
         for event in &self.fetch_failures {
             lines.push(format!(
                 "fetch-failed {} {} {}",
@@ -270,7 +467,70 @@ impl Report {
                 escape(&event.url.0)
             ));
         }
+        if parsed().next().is_some() && !self.not_yet_parsed.is_empty() {
+            lines.push(format!("note parser: {}", self.not_yet_parsed.join(",")));
+        }
         lines
+    }
+}
+
+/// The `element` line of one row of `surf.document.Elements` ([`Report::lines`]).
+fn element_line(element: &Elements) -> String {
+    let flags: Vec<&str> = [
+        (element.hidden, "hidden"),
+        (element.disabled, "disabled"),
+        (element.checked, "checked"),
+        (element.required, "required"),
+    ]
+    .into_iter()
+    .filter_map(|(set, name)| set.then_some(name))
+    .collect();
+    let flags = if flags.is_empty() {
+        "-".to_owned()
+    } else {
+        flags.join(",")
+    };
+    let last = match element.target.as_deref().or(element.value.as_deref()) {
+        Some(text) => quoted(text),
+        None => "-".to_owned(),
+    };
+    format!(
+        "element {} {} {} {flags} {} {last}",
+        element.document_id.0.0,
+        element.position,
+        kind_name(element.kind),
+        quoted(&element.label),
+    )
+}
+
+/// A value from a page as one quoted field: [`escape`], with `"` written as `\x22`, between two
+/// `"`. The escape writes no `"` of its own, so the field ends at the first `"`.
+fn quoted(text: &str) -> String {
+    format!("\"{}\"", escape(text).replace('"', "\\x22"))
+}
+
+fn kind_name(kind: ElementKind) -> &'static str {
+    match kind {
+        ElementKind::Link => "link",
+        ElementKind::Button => "button",
+        ElementKind::Text => "text",
+        ElementKind::Password => "password",
+        ElementKind::Checkbox => "checkbox",
+        ElementKind::Radio => "radio",
+        ElementKind::File => "file",
+        ElementKind::Select => "select",
+        ElementKind::Textarea => "textarea",
+    }
+}
+
+fn limit_name(limit: ParseLimit) -> &'static str {
+    match limit {
+        ParseLimit::InputBytes => "InputBytes",
+        ParseLimit::Depth => "Depth",
+        ParseLimit::Nodes => "Nodes",
+        ParseLimit::Attributes => "Attributes",
+        ParseLimit::StoredBytes => "StoredBytes",
+        ParseLimit::Steps => "Steps",
     }
 }
 
@@ -340,12 +600,16 @@ pub fn exit_status(result: &Result<Report, Error>) -> u8 {
 /// The behaviours the `agent` component's port needs to be part of a [`System`].
 pub trait AgentBehaviors:
     surf_types::agent::obligations::CloseSessionBehavior
+    + surf_types::agent::obligations::FillBehavior
+    + surf_types::agent::obligations::FollowBehavior
     + surf_types::agent::obligations::GoBehavior
     + surf_types::agent::obligations::NoteNavigationCommittedBehavior
     + surf_types::agent::obligations::NoteNavigationEndedBehavior
     + surf_types::agent::obligations::NoteNavigationFailedBehavior
     + surf_types::agent::obligations::NoteNavigationStartedBehavior
     + surf_types::agent::obligations::OpenSessionBehavior
+    + surf_types::agent::obligations::PickBehavior
+    + surf_types::agent::obligations::PressBehavior
     + surf_types::agent::obligations::RecordActionBehavior
     + surf_types::agent::obligations::SessionLogQuery
     + surf_types::agent::obligations::SessionStateViewQuery
@@ -355,12 +619,16 @@ pub trait AgentBehaviors:
 
 impl<B> AgentBehaviors for B where
     B: surf_types::agent::obligations::CloseSessionBehavior
+        + surf_types::agent::obligations::FillBehavior
+        + surf_types::agent::obligations::FollowBehavior
         + surf_types::agent::obligations::GoBehavior
         + surf_types::agent::obligations::NoteNavigationCommittedBehavior
         + surf_types::agent::obligations::NoteNavigationEndedBehavior
         + surf_types::agent::obligations::NoteNavigationFailedBehavior
         + surf_types::agent::obligations::NoteNavigationStartedBehavior
         + surf_types::agent::obligations::OpenSessionBehavior
+        + surf_types::agent::obligations::PickBehavior
+        + surf_types::agent::obligations::PressBehavior
         + surf_types::agent::obligations::RecordActionBehavior
         + surf_types::agent::obligations::SessionLogQuery
         + surf_types::agent::obligations::SessionStateViewQuery
@@ -370,20 +638,44 @@ impl<B> AgentBehaviors for B where
 
 /// The behaviours the `document` component's port needs to be part of a [`System`].
 pub trait DocumentBehaviors:
-    surf_types::document::obligations::AddElementBehavior
+    surf_types::document::obligations::AbandonSubmissionBehavior
+    + surf_types::document::obligations::AddElementBehavior
+    + surf_types::document::obligations::AddFormBehavior
+    + surf_types::document::obligations::AddOptionBehavior
+    + surf_types::document::obligations::CheckBehavior
     + surf_types::document::obligations::FinishParsingBehavior
     + surf_types::document::obligations::ParseDocumentBehavior
+    + surf_types::document::obligations::SelectOptionBehavior
+    + surf_types::document::obligations::SetValueBehavior
+    + surf_types::document::obligations::StartSubmissionBehavior
+    + surf_types::document::obligations::SubmitFormBehavior
+    + surf_types::document::obligations::ControlsQuery
     + surf_types::document::obligations::DocumentsQuery
     + surf_types::document::obligations::ElementsQuery
+    + surf_types::document::obligations::FormsQuery
+    + surf_types::document::obligations::OptionsQuery
+    + surf_types::document::obligations::SubmissionsQuery
 {
 }
 
 impl<B> DocumentBehaviors for B where
-    B: surf_types::document::obligations::AddElementBehavior
+    B: surf_types::document::obligations::AbandonSubmissionBehavior
+        + surf_types::document::obligations::AddElementBehavior
+        + surf_types::document::obligations::AddFormBehavior
+        + surf_types::document::obligations::AddOptionBehavior
+        + surf_types::document::obligations::CheckBehavior
         + surf_types::document::obligations::FinishParsingBehavior
         + surf_types::document::obligations::ParseDocumentBehavior
+        + surf_types::document::obligations::SelectOptionBehavior
+        + surf_types::document::obligations::SetValueBehavior
+        + surf_types::document::obligations::StartSubmissionBehavior
+        + surf_types::document::obligations::SubmitFormBehavior
+        + surf_types::document::obligations::ControlsQuery
         + surf_types::document::obligations::DocumentsQuery
         + surf_types::document::obligations::ElementsQuery
+        + surf_types::document::obligations::FormsQuery
+        + surf_types::document::obligations::OptionsQuery
+        + surf_types::document::obligations::SubmissionsQuery
 {
 }
 
@@ -454,16 +746,29 @@ impl<B> ShellBehaviors for B where
 {
 }
 
-/// The generated [`System`] and the transport of its `net` component.
+/// The generated [`System`], the transport of its `net` component and the parser step of its
+/// `document` component.
 ///
 /// The type parameters are the behaviours behind each component's port, in the order
 /// [`System::new`] takes the ports (`agent`, `document`, `navigator`, `net`, `renderer`,
-/// `shell`), and the transport.
-pub struct Browser<A, D, N, Ne, R, S, T> {
+/// `shell`), the transport and the parser step, [`HtmlParser`] unless
+/// [`Browser::with_parser`] gave another.
+pub struct Browser<A, D, N, Ne, R, S, T, P = HtmlParser> {
     system: System<A, D, N, Ne, R, S>,
     transport: T,
+    parser: P,
     /// How far into [`System::published`] the run has read.
     cursor: usize,
+    /// The tree of each parsed document and the node of each of its element rows, by the
+    /// document's identity.
+    kept: BTreeMap<String, Kept>,
+}
+
+/// What a [`Browser`] keeps of one parsed document.
+struct Kept {
+    tree: Tree,
+    /// The identity of each element row, in position order, with its node in `tree`.
+    nodes: Vec<(ElementId, NodeId)>,
 }
 
 /// A [`Browser`] over the in-memory ports of `surf-ports` and the operating system's random
@@ -496,18 +801,56 @@ impl<T> MemoryBrowser<T> {
 }
 
 impl<A, D, N, Ne, R, S, T> Browser<A, D, N, Ne, R, S, T> {
-    /// `system` with `transport`. The first [`Browser::run`] reads `system`'s log from its start.
+    /// `system` with `transport` and the parser step [`HtmlParser`]. The first [`Browser::run`]
+    /// reads `system`'s log from its start.
     pub fn new(system: System<A, D, N, Ne, R, S>, transport: T) -> Self {
         Self {
             system,
             transport,
+            parser: HtmlParser::default(),
             cursor: 0,
+            kept: BTreeMap::new(),
+        }
+    }
+}
+
+impl<A, D, N, Ne, R, S, T, P> Browser<A, D, N, Ne, R, S, T, P> {
+    /// The same browser with the parser step `parser` in place of its own. What it ran and kept
+    /// stays.
+    pub fn with_parser<Q>(self, parser: Q) -> Browser<A, D, N, Ne, R, S, T, Q> {
+        Browser {
+            system: self.system,
+            transport: self.transport,
+            parser,
+            cursor: self.cursor,
+            kept: self.kept,
         }
     }
 
     /// The system: its components' views, [`System::published`] and [`System::invocations`].
     pub fn system(&self) -> &System<A, D, N, Ne, R, S> {
         &self.system
+    }
+
+    /// The node tree of the document `document_id`, kept since its parser step answered; `None`
+    /// for a document that was not parsed here. Read only: nothing changes a kept tree.
+    pub fn document_tree(&self, document_id: &DocumentId) -> Option<&Tree> {
+        self.kept.get(&document_id.0.0).map(|kept| &kept.tree)
+    }
+
+    /// The identity of each element row of the document `document_id`, in position order, with
+    /// the element's node in [`Browser::document_tree`]; `None` for a document that was not
+    /// parsed here. An element row keeps its identity and its node for the life of the browser.
+    pub fn element_nodes(&self, document_id: &DocumentId) -> Option<&[(ElementId, NodeId)]> {
+        self.kept
+            .get(&document_id.0.0)
+            .map(|kept| kept.nodes.as_slice())
+    }
+
+    /// What the parser does not yet parse as the HTML Standard says:
+    /// [`surf_html::NOT_YET_PARSED`].
+    pub fn parser_not_yet_parsed(&self) -> &'static [&'static str] {
+        NOT_YET_PARSED
     }
 
     /// The `agent` component's port. A command issued on it is published by the next run, and
@@ -575,37 +918,81 @@ pub struct Held {
     pub events: usize,
     /// The binding invocations recorded, [`System::invocations`].
     pub invocations: usize,
-    /// The bytes of the request and response bodies those events and invocations carry.
+    /// The bytes of the request, form and response bodies those events and invocations carry.
     pub body_bytes: usize,
 }
 
-/// The bytes of the body `event` carries, a request's or a response's, 0 for an event that
-/// carries none.
+/// The bytes of the body `event` carries, a request's, a form's or a response's, 0 for an event
+/// that carries none. Every event is named, so an event a later story adds is sorted here.
 fn event_body(event: &SystemEvent) -> usize {
     match event {
         SystemEvent::NavigationStarted(started) => started.body.as_ref().map_or(0, Vec::len),
         SystemEvent::RequestStarted(started) => started.body.as_ref().map_or(0, Vec::len),
+        SystemEvent::FormSubmitted(submitted) => submitted.body.as_ref().map_or(0, Vec::len),
         SystemEvent::ResponseReceived(received) => received.body.len(),
         SystemEvent::NavigationCommitted(committed) => committed.body.len(),
         SystemEvent::ParsingStarted(started) => started.body.len(),
-        _ => 0,
+        SystemEvent::ActionRecorded(_)
+        | SystemEvent::FillRequested(_)
+        | SystemEvent::NavigationRequested(_)
+        | SystemEvent::PickRequested(_)
+        | SystemEvent::PressRequested(_)
+        | SystemEvent::SessionClosed(_)
+        | SystemEvent::SessionNavigationChanged(_)
+        | SystemEvent::SessionOpened(_)
+        | SystemEvent::CheckednessSet(_)
+        | SystemEvent::DocumentParsed(_)
+        | SystemEvent::ElementAdded(_)
+        | SystemEvent::FormAdded(_)
+        | SystemEvent::OptionAdded(_)
+        | SystemEvent::OptionSelected(_)
+        | SystemEvent::SubmissionAbandoned(_)
+        | SystemEvent::SubmissionStarted(_)
+        | SystemEvent::ValueSet(_)
+        | SystemEvent::NavigationCancelled(_)
+        | SystemEvent::NavigationFailed(_)
+        | SystemEvent::FetchFailed(_)
+        | SystemEvent::FramePainted(_)
+        | SystemEvent::TabClosed(_)
+        | SystemEvent::TabOpened(_)
+        | SystemEvent::WindowOpened(_) => 0,
     }
 }
 
 /// The bytes of the body `invocation` passed, a request's or a response's, 0 for one that
-/// passed none.
+/// passed none. Every binding is named, so a binding a later story adds is sorted here.
 fn invocation_body(invocation: &BindingInvocation) -> usize {
     match invocation {
         BindingInvocation::FetchOnNavigationStarted(fetch) => {
             fetch.body.as_ref().map_or(0, Vec::len)
         }
+        BindingInvocation::NavigateOnFormSubmitted(navigate)
+        | BindingInvocation::NavigateOnNavigationRequested(navigate) => {
+            navigate.body.as_ref().map_or(0, Vec::len)
+        }
         BindingInvocation::CommitOnResponse(commit) => commit.body.len(),
         BindingInvocation::ParseOnNavigationCommitted(parse) => parse.body.len(),
-        _ => 0,
+        BindingInvocation::CheckOnPickRequested(_)
+        | BindingInvocation::CloseTabOnSessionClosed(_)
+        | BindingInvocation::FailOnFetchFailed(_)
+        | BindingInvocation::NoteOnNavigationCancelled(_)
+        | BindingInvocation::NoteOnNavigationCommitted(_)
+        | BindingInvocation::NoteOnNavigationFailed(_)
+        | BindingInvocation::NoteOnNavigationStarted(_)
+        | BindingInvocation::SelectOnPickRequested(_)
+        | BindingInvocation::SetValueOnFillRequested(_)
+        | BindingInvocation::SubmitOnPressRequested(_) => 0,
     }
 }
 
-impl<A, D, N, Ne, R, S, T> Browser<A, D, N, Ne, R, S, T>
+/// A step [`Browser::run`] hands on: a started request to the transport, a started parse to the
+/// parser step.
+enum Step {
+    Request(RequestStarted),
+    Parse(ParsingStarted),
+}
+
+impl<A, D, N, Ne, R, S, T, P> Browser<A, D, N, Ne, R, S, T, P>
 where
     A: AgentBehaviors,
     D: DocumentBehaviors,
@@ -614,32 +1001,99 @@ where
     R: RendererBehaviors,
     S: ShellBehaviors,
     T: Transport,
+    P: Parser,
 {
-    /// Runs the system until no event is undelivered and no request started since the last run
-    /// is left unasked: pump, hand every `surf.net.RequestStarted` published since the last pass
-    /// whose request is `Pending` to the transport once, issue its answer on the `net` port, and
-    /// pump again.
+    /// Runs the system until no event is undelivered and no request or parse started since the
+    /// last run is left unasked: pump, hand every `surf.net.RequestStarted` published since the
+    /// last pass whose request is `Pending` to the transport once and issue its answer on the
+    /// `net` port, hand every `surf.document.ParsingStarted` published since the last pass whose
+    /// document is `Parsing` to the parser step once and issue its answer on the `document` port,
+    /// in the order they were published, and pump again.
     ///
-    /// `Err` is the first unmet obligation of a pump or of a `net` command, returned at once.
+    /// `Err` is the first unmet obligation of a pump or of a `net` or `document` command,
+    /// returned at once.
     pub fn run(&mut self) -> Result<(), UnmetObligation> {
         loop {
             self.system.pump()?;
             let published = self.system.published();
-            let started: Vec<RequestStarted> = published[self.cursor..]
+            let steps: Vec<Step> = published[self.cursor..]
                 .iter()
                 .filter_map(|event| match event {
-                    SystemEvent::RequestStarted(started) => Some(started.clone()),
+                    SystemEvent::RequestStarted(started) => Some(Step::Request(started.clone())),
+                    SystemEvent::ParsingStarted(started) => Some(Step::Parse(started.clone())),
                     _ => None,
                 })
                 .collect();
             self.cursor = published.len();
-            if started.is_empty() {
+            if steps.is_empty() {
                 return Ok(());
             }
-            for request in started {
-                self.answer(request)?;
+            for step in steps {
+                match step {
+                    Step::Request(request) => self.answer(request)?,
+                    Step::Parse(started) => self.parse(started)?,
+                }
             }
         }
+    }
+
+    /// Asks the parser step for one started parse, if its document is still `Parsing`, and
+    /// issues the answer on the `document` port: one `AddElement` per element in tree order,
+    /// positions from 1, then `FinishParsing`. The tree is kept with the node of each element
+    /// whose row was added once `FinishParsing` moved the document to `Parsed`. A declared
+    /// refusal of either command is the `document` component's outcome and is left as it is.
+    fn parse(&mut self, started: ParsingStarted) -> Result<(), UnmetObligation> {
+        let parsing = self.system.document.documents()?.iter().any(|row| {
+            row.document_id == started.document_id && row.state == DocumentState::Parsing
+        });
+        if !parsing {
+            return Ok(());
+        }
+        let Parse::Parsed(page) = self.parser.parse(&started) else {
+            return Ok(());
+        };
+        let Page {
+            tree,
+            title,
+            elements,
+            encoding,
+            unsupported_encoding,
+            stopped_by,
+        } = *page;
+        let mut nodes = Vec::with_capacity(elements.len());
+        for (position, element) in (1..).zip(elements) {
+            let outcome = self.system.document.add_element(AddElement {
+                document_id: started.document_id.clone(),
+                position,
+                kind: element_kind(element.kind),
+                label: element.label,
+                target: element.target,
+                value: element.value,
+                hidden: element.hidden,
+                disabled: element.disabled,
+                checked: element.checked,
+                required: element.required,
+                // The parser step adds no form yet: filling the form rows, a control's name and
+                // its form owner from the page is `story:agent-form-port`'s.
+                name: None,
+                form_id: None,
+            })?;
+            if let AddElementOutcome::Added { element_added } = outcome {
+                nodes.push((element_added.element_id, element.node));
+            }
+        }
+        let outcome = self.system.document.finish_parsing(FinishParsing {
+            document_id: started.document_id.clone(),
+            title,
+            encoding: EncodingName(encoding),
+            unsupported_encoding: unsupported_encoding.map(EncodingName),
+            stopped_by: stopped_by.map(parse_limit),
+        })?;
+        if let FinishParsingOutcome::Parsed { .. } = outcome {
+            self.kept
+                .insert(started.document_id.0.0, Kept { tree, nodes });
+        }
+        Ok(())
     }
 
     /// Asks the transport for one started request, if it is still `Pending`, and issues the
@@ -709,14 +1163,25 @@ where
         Ok(navigation_id)
     }
 
-    /// The rows of the `Navigations`, `Requests` and `Documents` views and every published
-    /// `FetchFailed`, for the navigation `navigation_id`.
+    /// The rows of the `Navigations`, `Requests` and `Documents` views, the `Elements` of each
+    /// document and every published `FetchFailed`, for the navigation `navigation_id`.
     pub fn report(&self, navigation_id: RequestId) -> Result<Report, UnmetObligation> {
+        let documents = self.system.document.documents()?;
+        let mut elements = Vec::new();
+        for document in &documents {
+            elements.extend(
+                self.system
+                    .document
+                    .elements(document.document_id.clone())?,
+            );
+        }
         Ok(Report {
             navigation_id,
             navigations: self.system.navigator.navigations()?,
             requests: self.system.net.requests()?,
-            documents: self.system.document.documents()?,
+            documents,
+            elements,
+            not_yet_parsed: self.parser_not_yet_parsed(),
             fetch_failures: self
                 .system
                 .published()

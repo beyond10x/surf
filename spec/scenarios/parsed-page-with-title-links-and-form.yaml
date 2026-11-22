@@ -22,6 +22,7 @@ timeline:
       url: https://example.org/shop
       body: PHRpdGxlPlNob3A8L3RpdGxlPg==
       navigation_id: 3f1d5b7e-0000-4000-8000-000000000101
+      tab_id: 3f1d5b7e-0000-4000-8000-000000000041
     outcome: started
     events:
       - event: surf.document.ParsingStarted
@@ -206,6 +207,7 @@ assert:
       document_id: {$instance: page}
       url: https://example.org/shop
       navigation_id: 3f1d5b7e-0000-4000-8000-000000000101
+      tab_id: 3f1d5b7e-0000-4000-8000-000000000041
       state: Parsed
       title: Shop
       encoding: UTF-8

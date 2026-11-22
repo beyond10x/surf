@@ -1,0 +1,4 @@
+article pass
+table pass
+link pending story:agent-follow-links
+search pending story:agent-fill-pick story:agent-press-submit

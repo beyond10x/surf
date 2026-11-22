@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-tasks
 kind: story
-status: active
+status: implemented
 title: 'Agent tasks: fixture sites solved with surf-agent alone, measured in the gate and run by a model outside it'
 summary: Tasks read from tasks.txt (four without TLS here; https and login added by other stories); a scripted agent in the gate measures each, fails a listed pass that fails and raises a pending task that passes; a sh driver runs a model outside the gate.
 relations:
@@ -18,10 +18,11 @@ scope:
   path: taskfiles/agent-tasks-model.sh
 - confidence: cited
   path: taskfiles/agent-tasks.yml
-revision: 27
+revision: 29
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T07:42:29Z", actor: "human:operator", revision: 11, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T07:42:30Z", actor: "human:operator", revision: 12, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-22T16:29:27Z", actor: "human:operator", revision: 29, decided_on: {"recorded":{"test_result":1,"verification":2}}}
 ---
 ## Context
 
@@ -411,3 +412,116 @@ count the gate measures, in the order the operator's question led to (D85, the b
 above). The tasks span rounds of other epics (`epic:tls-https`, the page text), which this story
 only names as what makes a task pass; the epic lifts its HTTPS exclusion for test fixtures of
 `epic:tls-https`.
+
+## As built
+
+What differs from the text above, as of 264c962:
+
+- Acceptance 1, the bases: on `wave/round1`, with round 1's `surf-agent`, the gate lane writes
+  `agent-tasks: 4 tasks, 2 pass, 2 fail, 0 skipped, lane gate, binaries target/debug`; `article`
+  and `table` pass and `crates/agent-tasks/status.txt` lists both `pass`, while `link` waits for
+  `story:agent-follow-links` and `search` for `story:agent-fill-pick` and
+  `story:agent-press-submit` (both fail with `no now line labelled ...`).
+
+- Change, "The reporting function": its signature is `report(results, status, lane: &Lane, out:
+  &Path)` (`crates/agent-tasks/src/report.rs`), and its first line ends
+  `, lane <gate|archive>, binaries <directory>` after the skipped count:
+  `agent-tasks: 4 tasks, 0 pass, 4 fail, 0 skipped, lane gate, binaries target/debug` on base A.
+- Change, the model lane's `<out file>`: its first line holds `lane model, binaries <directory>`
+  between the model and the date (`taskfiles/agent-tasks-model.sh`, the line that writes
+  `agent-tasks-model:`). The notes lines of `docs/releasing.md` steps 7 and 8 keep the story's
+  form.
+- The directory on a first line is never a path of the machine and never holds a user's name: a
+  directory inside the repository is written relative to its root (`target/debug`), a relative
+  one as given, the home directory itself and `/` as `-`, any other absolute directory by its
+  last component only (`report::shown_binaries`; the same rule in
+  `taskfiles/agent-tasks-model.sh`; `docs/releasing.md` step 7; tests
+  `status::the_gate_lane_names_its_binaries_from_the_root`,
+  `status::the_archive_lane_names_its_dir_as_typed`,
+  `adversary2::a_directory_in_the_home_directory_is_named_without_the_user`).
+- Acceptance 1 does not hold as written: the four `task` lines of each base are as listed, but the
+  first line carries `, lane gate, binaries target/debug` (see the first bullet).
+- Acceptance 7 does not hold as written: the first line is
+  `agent-tasks-model: 4 tasks, 1 pass, 3 fail, 0 skipped, command stub-model.sh, model stub,
+  lane model, binaries target/debug, <date>` (`model_driver::a_stub_model_is_counted`).
+- Acceptance 8 does not hold as written: the archive run prints the four `task` lines of base A,
+  and its first line is `agent-tasks: 4 tasks, 0 pass, 4 fail, 0 skipped, lane archive, binaries
+  surf-0.3.0-x86_64-unknown-linux-musl`.
+- Acceptance 9 does not hold as written: the branch's diff also names `Cargo.lock`, which gains
+  the `surf-agent-tasks` package entry (commit `387ac4f`).
+- Change, the judge, `match row <cell>`: a line that starts with `|` and holds both strings is
+  not enough. A row counts only inside a table in the form the page output writes (a header row,
+  the delimiter row directly under it, then rows with the header's number of cells), and one of
+  its cells must equal `<cell>` and another the answer, whole cells, trimmed of spaces
+  (`judge::table_rows`, `judge::row_cells`; tests
+  `adversary::a_pears_row_whose_price_only_contains_the_answer_fails`,
+  `adversary2::a_table_flattened_into_one_row_of_cells_fails`).
+- A table row is split at every `|` that an even number of backslashes (none included) precedes;
+  a line whose last `|` is escaped is no row
+  (`adversary2::a_last_pipe_escaped_after_an_escaped_backslash_ends_no_row`).
+- Change, the judge's reasons: two more, `no answer within <n> s on <command word>` and `output
+  over <cap> bytes on <command word>` (`StepFailure::Timeout`, `StepFailure::TooLarge` in
+  `crates/agent-tasks/src/judge.rs`).
+- Every `surf-agent` call of the scripted lane is bounded: 10 s (`agent::CALL_BOUND`), a
+  parameter of the lane (`lane::Config::call_bound`, 1 s in its test). The bound covers the call
+  and the reading of its output; at the bound its process group is sent SIGKILL and its task
+  fails (`tasks::a_call_that_never_answers_ends_at_its_bound`,
+  `adversary2::a_call_whose_child_keeps_its_output_open_ends_at_its_bound`).
+- What is kept of a call's output is capped at 1 MiB (`agent::OUTPUT_CAP`); a call over it is
+  killed with its group and its task fails naming the cap
+  (`calls::a_call_whose_output_passes_the_cap_fails_naming_it`, at a cap of 64 bytes).
+- Change, the scripted lane: its code is the library's `lane::run` (`src/lane.rs`), which
+  `tasks::every_task` calls. A second test, `tasks::a_call_that_never_answers_ends_at_its_bound`,
+  runs the lane once more with a `surf-agent` whose first `look --as` never answers, so a test
+  run starts the fixture server and a `surfd` twice, not once.
+- `tasks::every_task` refuses a `SURF_BIN_DIR` that is not an absolute path
+  (`crates/agent-tasks/tests/tasks.rs`, `bin_dir`).
+- Both lanes remove their file before they start and write it whole at their end, to
+  `<file>.part.<pid>` and then renamed, so a file of an earlier run is never read as this run's
+  (`report::report`, `lane::run`, the end of `taskfiles/agent-tasks-model.sh`).
+- Change, `agent-tasks-archive`: a relative `DIR` is taken from the directory `task` was called
+  in (`USER_WORKING_DIR`), and the run is given `DIR` as typed in `SURF_BIN_DIR_GIVEN` for its
+  first line (`taskfiles/agent-tasks.yml`;
+  `archive_task::a_relative_dir_is_taken_from_the_caller_and_named_as_typed` runs that step's
+  own text with a stand-in `cargo`).
+- Change, the model lane: the model command is looked for before the first task. A command that
+  is missing, exits other than 0 or passes its bound ends the lane with exit 1 and one line
+  naming the command, the task and the status, and no `<out file>` is written
+  (`model_driver::a_model_that_exits_non_zero_fails_the_lane`,
+  `adversary::a_model_command_that_does_not_exist_fails_the_lane`).
+- Each model run is bounded: `AGENT_TASKS_MODEL_TIMEOUT` seconds, default 300, set by the task
+  variable `TIMEOUT` of `agent-tasks-model`; a value that is not a number of at least 1 ends the
+  lane before any model runs (`model_driver::a_model_over_its_bound_fails_the_lane`,
+  `adversary2::a_bound_of_zero_or_no_number_ends_the_lane_before_any_model_runs`).
+- Change, `src/bin/agent-tasks-serve.rs`: the program has a second mode,
+  `agent-tasks-serve --bounded <seconds> <state dir> -- <command>`, which runs the model command
+  in a process group of its own (made in Rust, not by the shell) and sends the whole group
+  SIGKILL when the command ends or the bound passes, so no child the model left in its group
+  stays (`bounded::a_command_that_leaves_a_child_leaves_no_process`,
+  `bounded::a_command_over_its_bound_is_ended_with_its_group`,
+  `adversary2::a_model_that_leaves_a_child_leaves_no_process`).
+- A passed bound is told by the file `bound-passed` in the runner's state directory, not by its
+  exit status (124), so a model command that exits 124 by itself is reported as exiting 124
+  (`bounded::a_command_that_exits_124_by_itself_did_not_pass_its_bound`,
+  `model_driver::a_model_that_exits_124_by_itself_is_not_over_its_bound`).
+- The model script is POSIX sh with no job control: no `set -m`, no `timeout`, no timer of its
+  own (`bounded::the_model_script_asks_its_sh_for_nothing_outside_posix` reads its text).
+- Change, the model lane's wrapper log and `answered` line: each call is one line, and in a
+  word or the answer a backslash is written `\\`, a line feed `\n`, a carriage return `\r` and
+  every other byte below 0x20 and 0x7F `\xNN` (`adversary2::every_call_is_one_line_that_reads_back`,
+  `model_driver::a_control_character_in_an_answer_is_written_as_hex`).
+- Tests beyond the Acceptance, in the crate's one test binary: the modules `adversary`,
+  `adversary2`, `archive_task`, `bounded` and `calls` of `crates/agent-tasks/tests/main.rs`.
+- Change, the `Taskfile.yml` item: on the unit's branch the root `Taskfile.yml` is unchanged; on
+  `wave/round1` it includes `taskfiles/agent-tasks.yml`, the step `test` sets
+  `SURF_BIN_DIR: '{{.ROOT_DIR}}/target/debug'`, and `check` runs `agent-tasks-report` after
+  `test`.
+- Left open: the model lane is outside the gate and has not been run by a model; only stand-in
+  commands have run it (`crates/agent-tasks/tests/model_driver.rs`, `adversary2.rs`). Recorded
+  nowhere else.
+- Left open: the script was run with `sh` being bash, `bash --posix` and `zsh --emulate sh`;
+  `dash`, the `sh` of Ubuntu, was not on the machine where it was tested, though the script's
+  header names it. Recorded nowhere else.
+- Left open: a process the model command moves into a new session (`setsid`) leaves its group
+  and is not ended (the header of `taskfiles/agent-tasks-model.sh` and the summary of
+  `agent-tasks-model` in `taskfiles/agent-tasks.yml`).

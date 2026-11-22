@@ -27,7 +27,7 @@ types:
       summary: The identity of one recorded action.
 
   # The command word of an action as the `path` and `did` lines print it (`docs/agent-answer.md`).
-  # `agent-links-spec`, `agent-forms-spec` and `agent-history-spec` add their commands here.
+  # `agent-history-spec` adds its commands here.
   - name: surf.agent.ActionCommand
     kind: enum
     variants:
@@ -35,6 +35,14 @@ types:
         summary: The session was opened (`OpenSession`).
       - name: go
         summary: An address was requested (`Go`).
+      - name: follow
+        summary: A link of the page was followed (`Follow`).
+      - name: fill
+        summary: A control of the page was given a value (`Fill`).
+      - name: pick
+        summary: A choice of the page was changed (`Pick`).
+      - name: press
+        summary: A button of the page was pressed (`Press`).
       - name: close
         summary: The session was closed (`CloseSession`).
     naming:
@@ -45,9 +53,9 @@ types:
   # 64 lower-case hexadecimal digits. It is not declared as an `alphabet:` or a length: the
   # command-line binding refuses a constrained type ("invariants are explicit refusals",
   # ess-cli/2), so the form is checked by the code that issues and reads it.
-  # It is named only by the three command-line shapes below that carry it (`SessionCall`,
-  # `GoCall`, `OpenedSession`): no entity, command, event or view holds it, so no stored row and no
-  # published event carries the secret.
+  # It is named only by the four command-line shapes below that carry it (`SessionCall`,
+  # `LookCall`, `GoCall`, `OpenedSession`): no entity, command, event or view holds it, so no
+  # stored row and no published event carries the secret.
   # UNMAPPED: that a session's token is what makes its caller `surf.agent.SessionHolder`. The
   # session process issues the token when it opens its session, keeps only a hash of it, compares
   # a presented token with it in constant time, and sends the call as `SessionHolder` with that
@@ -70,13 +78,48 @@ types:
   # `session_id` is `String` in each, not `SessionId`: the binding refuses a `Uuid` underneath
   # ("unsupported CLI primitive `Uuid`", ess 0.96.0), so the client parses the text into the
   # identity and answers a malformed one as an invalid input.
+  # How `--as` prints the page a call loaded or shows (`docs/design/page-as-text.md`, section 2):
+  # the outline of its node tree or its text as Markdown, in the `text` block of the answer.
+  # `as` is a Rust keyword, so the fields that carry it are named `form`.
+  - name: surf.agent.PageForm
+    kind: enum
+    variants:
+      - name: tree
+        summary: The outline of the page's node tree, one line per element and text.
+      - name: markdown
+        summary: The page's text as Markdown, with its links and controls named by their handles.
+    naming:
+      summary: The form in which an answer prints the page.
+
+  # `form` and `from_line` are two fields on each of `OpenCall`, `GoCall` and `LookCall`, not one
+  # shared record: an `ess-cli/2` argument binds a field of the callable's input by name, and a
+  # field inside a nested record is not a source the binding is measured to take. `from_line`
+  # counts the lines of the form asked for, from 1; the client takes it only beside `form`.
   - name: surf.agent.OpenCall
     kind: struct
     naming:
-      summary: The input of `open`, the address to load first if one is given.
+      summary: The input of `open`, the address to load first if one is given, and the form to print it in.
     fields:
       - name: url
         type: Optional<surf.url.Url>
+      - name: form
+        type: Optional<surf.agent.PageForm>
+      - name: from_line
+        type: Optional<Integer>
+
+  - name: surf.agent.LookCall
+    kind: struct
+    naming:
+      summary: Which session `look` reads, the token that proves the caller holds it, and the form to print the page in.
+    fields:
+      - name: session_id
+        type: String
+      - name: token
+        type: surf.agent.SessionToken
+      - name: form
+        type: Optional<surf.agent.PageForm>
+      - name: from_line
+        type: Optional<Integer>
 
   - name: surf.agent.SessionCall
     kind: struct
@@ -91,7 +134,7 @@ types:
   - name: surf.agent.GoCall
     kind: struct
     naming:
-      summary: The address to load into a session, and the token that proves the caller holds it.
+      summary: The address to load into a session, the token that proves the caller holds it, and the form to print the page in.
     fields:
       - name: session_id
         type: String
@@ -99,6 +142,10 @@ types:
         type: surf.agent.SessionToken
       - name: url
         type: surf.url.Url
+      - name: form
+        type: Optional<surf.agent.PageForm>
+      - name: from_line
+        type: Optional<Integer>
 
   - name: surf.agent.OpenedSession
     kind: struct
@@ -234,8 +281,9 @@ entities:
   # what came of it is the state of the navigation, which the session shows on the `page` line,
   # so the design's "outcome" is not stored a second time.
   # The value the agent gave is stored as the specification types it, never as text the session
-  # process rendered: `url` is the address of `go`, absent for `open` and `close`. A later action
-  # with another kind of argument (a handle, a control value) adds its own optional field.
+  # process rendered: `url` is the address of `go` and `follow`, absent for the others. A control's
+  # value is never stored: `fill` is recorded with its handle alone, so a password the agent typed
+  # stays out of the log.
   - name: surf.agent.Action
     naming:
       summary: One accepted action of a session, in the order the session took them.
@@ -251,6 +299,13 @@ entities:
         type: surf.agent.ActionCommand
       - name: url
         type: Optional<surf.url.Url>
+      # The handle of the element a `follow`, `fill`, `pick` or `press` acted on (`l4`, `f1`), and
+      # a `follow`'s link label as the page wrote it, for the `path` line (`2 follow l4 "Sign
+      # in"`, `3 fill f1`, design section 5.1); absent for every other command.
+      - name: handle
+        type: Optional<String>
+      - name: label
+        type: Optional<String>
     lifecycle:
       initial: Recorded
       states:
@@ -281,6 +336,10 @@ actors:
         type: surf.agent.SessionId
     may:
       - surf.agent.Go
+      - surf.agent.Follow
+      - surf.agent.Fill
+      - surf.agent.Pick
+      - surf.agent.Press
       - surf.agent.CloseSession
       - surf.agent.SessionState
       - surf.agent.SessionLog
@@ -413,6 +472,236 @@ commands:
             tab_id: {subject: tab_id}
             url: input.url
         summary: The navigator is asked to load the address into the session's tab.
+
+  # `follow <handle>` (design section 4, step 3 of section 9). Handles are not modelled: a handle
+  # is a name inside one session, assigned in document order by the session process, which holds
+  # the map from handle to element and resolves the link's target with `surf-url`
+  # (`agent-follow-links`). So `Follow` takes the resolved address, and the handle and the label
+  # for the action the session then records (`RecordAction` with `command: follow`, as `go` is
+  # recorded after `Go`, decision D19); it reads nothing of the node tree. Its outcomes are
+  # `Go`'s, and an accepted one emits `NavigationRequested`, which navigates with `Get` and no
+  # body (`navigate-on-navigation-requested`).
+  - name: surf.agent.Follow
+    naming:
+      wire: follow
+      display: Follow a link
+      summary: Start loading a link's target into the session's tab.
+    input:
+      - name: session_id
+        type: surf.agent.SessionId
+      - name: url
+        type: surf.url.Url
+        example: "http://example.org/offers"
+      - name: handle
+        type: String
+        example: "l1"
+      - name: label
+        type: String
+        example: "Offers"
+    outcomes:
+      - name: not-holder
+        when_subject: {predicate: holder != caller.session_id}
+        error: surf.agent.NotSessionHolder
+        payload:
+          surf.agent.NotSessionHolder:
+            session_id: input.session_id
+        summary: The caller's token is another session's.
+
+      - name: no-such-session
+        unknown_instance: true
+        error: surf.agent.SessionNotFound
+        payload:
+          surf.agent.SessionNotFound:
+            session_id: input.session_id
+        summary: No session has this identity.
+
+      - name: closed
+        when_subject_state: Closed
+        error: surf.agent.SessionStateConflict
+        payload:
+          surf.agent.SessionStateConflict:
+            state: {subject: state}
+        summary: The session is Closed; nothing was requested.
+
+      - name: requested
+        updates: surf.agent.Session
+        instance: session_id
+        emits:
+          - surf.agent.NavigationRequested
+        payload:
+          surf.agent.NavigationRequested:
+            session_id: input.session_id
+            tab_id: {subject: tab_id}
+            url: input.url
+        summary: The navigator is asked to load the link's target into the session's tab.
+
+  # `fill <handle> <text>`, `pick <handle> [<option>]` and `press <handle>` (design section 4, step
+  # 4 of section 9). As for `Follow`, handles are not modelled: the session process resolves the
+  # handle to the element's identity, and `pick`'s option word to the identity of an option of the
+  # select, from the rows of `surf.document`, and records the action after an accepted command
+  # (`RecordAction`) with the handle and never the value. Each is refused as `Go` is. An accepted
+  # one publishes a request that a binding maps onto the `document` component's command
+  # (`spec/components.yaml`): this component reads no element row, so whether the element exists
+  # and takes the action is that command's answer.
+  # The value of `fill` travels in `FillRequested` to `surf.document.SetValue`, so an event of this
+  # component carries what the agent typed, a password included. The session's entries
+  # (`docs/view-stream.md`) write its length, never the value; no row of this component stores it.
+  - name: surf.agent.Fill
+    naming:
+      wire: fill
+      display: Fill a control
+      summary: Give a text control of the session's page a value.
+    input:
+      - name: session_id
+        type: surf.agent.SessionId
+      - name: element_id
+        type: surf.document.ElementId
+      - name: value
+        type: String
+        example: "ada"
+      - name: handle
+        type: String
+        example: "f1"
+    outcomes:
+      - name: not-holder
+        when_subject: {predicate: holder != caller.session_id}
+        error: surf.agent.NotSessionHolder
+        payload:
+          surf.agent.NotSessionHolder:
+            session_id: input.session_id
+        summary: The caller's token is another session's.
+
+      - name: no-such-session
+        unknown_instance: true
+        error: surf.agent.SessionNotFound
+        payload:
+          surf.agent.SessionNotFound:
+            session_id: input.session_id
+        summary: No session has this identity.
+
+      - name: closed
+        when_subject_state: Closed
+        error: surf.agent.SessionStateConflict
+        payload:
+          surf.agent.SessionStateConflict:
+            state: {subject: state}
+        summary: The session is Closed; nothing was requested.
+
+      - name: requested
+        updates: surf.agent.Session
+        instance: session_id
+        emits:
+          - surf.agent.FillRequested
+        payload:
+          surf.agent.FillRequested:
+            session_id: input.session_id
+            element_id: input.element_id
+            value: input.value
+        summary: The document is asked to give the control the value.
+
+  # `pick` without an option activates a checkbox or a radio button (`surf.document.Check`); with
+  # one it selects that option of a select (`surf.document.SelectOption`). Which of the two the
+  # request goes to is the binding's condition on `option_id`.
+  - name: surf.agent.Pick
+    naming:
+      wire: pick
+      display: Pick a choice
+      summary: Toggle a checkbox, check a radio button or select an option of the session's page.
+    input:
+      - name: session_id
+        type: surf.agent.SessionId
+      - name: element_id
+        type: surf.document.ElementId
+      - name: option_id
+        type: Optional<surf.document.OptionId>
+      - name: handle
+        type: String
+        example: "f3"
+    outcomes:
+      - name: not-holder
+        when_subject: {predicate: holder != caller.session_id}
+        error: surf.agent.NotSessionHolder
+        payload:
+          surf.agent.NotSessionHolder:
+            session_id: input.session_id
+        summary: The caller's token is another session's.
+
+      - name: no-such-session
+        unknown_instance: true
+        error: surf.agent.SessionNotFound
+        payload:
+          surf.agent.SessionNotFound:
+            session_id: input.session_id
+        summary: No session has this identity.
+
+      - name: closed
+        when_subject_state: Closed
+        error: surf.agent.SessionStateConflict
+        payload:
+          surf.agent.SessionStateConflict:
+            state: {subject: state}
+        summary: The session is Closed; nothing was requested.
+
+      - name: requested
+        updates: surf.agent.Session
+        instance: session_id
+        emits:
+          - surf.agent.PickRequested
+        payload:
+          surf.agent.PickRequested:
+            session_id: input.session_id
+            element_id: input.element_id
+            option_id: input.option_id
+        summary: The document is asked to change the control's choice.
+
+  - name: surf.agent.Press
+    naming:
+      wire: press
+      display: Press a button
+      summary: Activate a button of the session's page, which submits its form.
+    input:
+      - name: session_id
+        type: surf.agent.SessionId
+      - name: element_id
+        type: surf.document.ElementId
+      - name: handle
+        type: String
+        example: "b1"
+    outcomes:
+      - name: not-holder
+        when_subject: {predicate: holder != caller.session_id}
+        error: surf.agent.NotSessionHolder
+        payload:
+          surf.agent.NotSessionHolder:
+            session_id: input.session_id
+        summary: The caller's token is another session's.
+
+      - name: no-such-session
+        unknown_instance: true
+        error: surf.agent.SessionNotFound
+        payload:
+          surf.agent.SessionNotFound:
+            session_id: input.session_id
+        summary: No session has this identity.
+
+      - name: closed
+        when_subject_state: Closed
+        error: surf.agent.SessionStateConflict
+        payload:
+          surf.agent.SessionStateConflict:
+            state: {subject: state}
+        summary: The session is Closed; nothing was requested.
+
+      - name: requested
+        updates: surf.agent.Session
+        instance: session_id
+        emits:
+          - surf.agent.PressRequested
+        payload:
+          surf.agent.PressRequested:
+            session_id: input.session_id
+            element_id: input.element_id
+        summary: The document is asked to activate the button.
 
   # The next four commands are the agent component's side of the navigator's events: the bindings
   # `note-on-navigation-*` invoke them, and no actor is granted them. A navigation event names its
@@ -593,7 +882,9 @@ commands:
 
   # The session process records each action it took, after the agent's command was accepted and
   # before it answers: `OpenSession/opened` records `open`, `Go/requested` records `go` with its
-  # address, `CloseSession/closed` records `close`. `open <url>` is two actions, `open` and then
+  # address, `Follow/requested` records `follow` with its address, handle and label,
+  # `Fill/requested`, `Pick/requested` and `Press/requested` record `fill`, `pick` and `press` with
+  # the handle, `CloseSession/closed` records `close`. `open <url>` is two actions, `open` and then
   # `go` with the address, because it is `OpenSession` and then `Go` (design section 4). The
   # session process holds one session and is the only writer of its log, so it supplies the
   # sequence number, from 1. A refused command records nothing. No actor is granted it: like
@@ -612,6 +903,10 @@ commands:
         type: surf.agent.ActionCommand
       - name: url
         type: Optional<surf.url.Url>
+      - name: handle
+        type: Optional<String>
+      - name: label
+        type: Optional<String>
     outcomes:
       # An action belongs to a session (`Session.actions`, `owns`), so one for a session that does
       # not exist is refused.
@@ -631,6 +926,8 @@ commands:
           sequence: input.sequence
           command: input.command
           url: input.url
+          handle: input.handle
+          label: input.label
         emits:
           - surf.agent.ActionRecorded
         payload:
@@ -640,6 +937,8 @@ commands:
             sequence: input.sequence
             command: input.command
             url: input.url
+            handle: input.handle
+            label: input.label
         summary: The action is a row of its session's log.
 
 events:
@@ -694,6 +993,44 @@ events:
         type: surf.agent.ActionCommand
       - name: url
         type: Optional<surf.url.Url>
+      - name: handle
+        type: Optional<String>
+      - name: label
+        type: Optional<String>
+
+  - name: surf.agent.FillRequested
+    fields:
+      - name: session_id
+        type: surf.agent.SessionId
+      - name: element_id
+        type: surf.document.ElementId
+      - name: value
+        type: String
+
+  - name: surf.agent.PickRequested
+    fields:
+      - name: session_id
+        type: surf.agent.SessionId
+      - name: element_id
+        type: surf.document.ElementId
+      - name: option_id
+        type: Optional<surf.document.OptionId>
+
+  - name: surf.agent.PressRequested
+    fields:
+      - name: session_id
+        type: surf.agent.SessionId
+      - name: element_id
+        type: surf.document.ElementId
+
+  # No command publishes it: the session process writes it into the entries of one request, after
+  # an action's events, when it left `count` of them out to keep the entries within the link's
+  # bounds (`crates/session/src/lib.rs`, "The entries"). It is declared here so that its name and
+  # field are `spec/`'s, as every other event entry's are (`docs/view-stream.md`, "Event names").
+  - name: surf.agent.EventsLeftOut
+    fields:
+      - name: count
+        type: Integer
 
 views:
   # Every session, as the local user lists them: every stored field but `holder`, which repeats
@@ -786,6 +1123,10 @@ views:
         type: surf.agent.ActionCommand
       - name: url
         type: Optional<surf.url.Url>
+      - name: handle
+        type: Optional<String>
+      - name: label
+        type: Optional<String>
     naming:
       wire: session-log
       display: Session log

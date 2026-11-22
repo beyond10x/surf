@@ -1,0 +1,22 @@
+surf 1 session 7f3a open
+did look
+page 200 "text/html" "http://shop.example/" "Fruit shop"
+path 2 of 2
+  1 open
+  2 go "http://shop.example/"
+note text: no-css
+text markdown 14 of 14 lines from 1, 263 of 263 bytes
+> # Fruit shop
+>
+> Fresh fruit, *picked today*. See [our offers](</offers>) [@l1].
+>
+> - Apples
+> - Pears
+>
+> | Fruit | Price | Stock |
+> | --- | --- | --- |
+> | Apple | 0.50 | 120 |
+>
+> ![A basket of apples]
+>
+> E-mail [@f1 text: E-mail] [@b1 button: Subscribe]

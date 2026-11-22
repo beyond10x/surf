@@ -10,9 +10,10 @@
 //!   nothing and sleeps.
 //! - `behaviour`, per connection: `answer` (the default) answers; `close` reads the request
 //!   and closes; `stall` reads the request and sleeps; `oversize` sends an answer one byte over
-//!   `ANSWER_TEXT_MAX`.
+//!   `ANSWER_TEXT_MAX`; `unchecked` sends status 0 and the bytes of `answer` as the answer lines
+//!   without the checks of `Answer::encode`, so that the client's own check is what reads them.
 //! - `status` (default `0`), `reason` (default none) and `answer` (default one head line): the
-//!   answer.
+//!   answer. A request with an argument but `url`, `form` and `line` is answered status 2.
 //!
 //! What it records there: `starts`, one line with its process id per start; `requests`, the
 //! bytes of every request it read, one after the other.
@@ -119,6 +120,12 @@ fn serve(stream: UnixStream, control: &Path) {
                 sent += part.len();
             }
         }
+        "unchecked" => {
+            let text = fs::read(control.join("answer")).unwrap_or_default();
+            let head = format!("{}\nstatus 0\nanswer {}\n", wire::VERSION_LINE, text.len());
+            let _ = stream.write_all(head.as_bytes());
+            let _ = stream.write_all(&text);
+        }
         _ => {
             let answer = match Request::decode(&raw) {
                 Err(error) => Answer {
@@ -126,7 +133,7 @@ fn serve(stream: UnixStream, control: &Path) {
                     reason: Some(error.to_string()),
                     text: String::new(),
                 },
-                Ok(request) => match request.unknown_arg(&["url"]) {
+                Ok(request) => match request.unknown_arg(&["url", "form", "line"]) {
                     Some(name) => Answer {
                         status: 2,
                         reason: Some(format!(

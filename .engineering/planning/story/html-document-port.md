@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:html-document-port
 kind: story
-status: active
+status: implemented
 title: Parse every HTML response into the document's rows
 summary: Browser parses each committed HTML body, keeps the tree per document and writes the title and element rows; surf <url> prints them.
 relations:
@@ -33,10 +33,11 @@ scope:
   path: crates/surf/tests/main.rs
 - confidence: cited
   path: crates/surf/tests/parse.rs
-revision: 11
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:11Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-11-22T16:29:18Z", actor: "human:operator", revision: 13, decided_on: {"recorded":{"test_result":1,"verification":1}}}
 ---
 ## Context
 
@@ -151,3 +152,52 @@ parser `note` in an agent answer (the answer format's fixed list of notes); what
 two states of a page; resolving link targets (`story:agent-follow-links`). Scripts: a `script`
 element is in the tree and never run; a page that builds its content with script shows only
 what its markup holds.
+
+## As built
+
+What differs from the text above, as of 2418d48:
+
+- Change item 1, "a trait parameter of `Browser`": the parser step is the type parameter `P` of
+  `Browser`, default `HtmlParser`, replaced with `Browser::with_parser`; the default's work is the
+  function `surf::parse_page` (`crates/surf/src/lib.rs`).
+- Change item 1, "the map from each element row's identity": it is `Browser::element_nodes`,
+  which answers the pairs of one document.
+- Change item 2, the `Report` lines: a title, label, target and value are quoted fields written
+  like an address, `"` as `\x22`: `title <document-id> "<title>"` and
+  `element <document-id> <position> <kind> <flags> "<label>" "<target or value>"`. `<flags>` is
+  the set flags among `hidden,disabled,checked,required` joined by `,`, or `-`; the last field is
+  `-` for a row with neither target nor value (`Report::lines`, `crates/surf/src/lib.rs`).
+- Change item 2 names no line for a parse a limit stopped: `Report` adds
+  `note limit <document-id> <limit>`, the `surf.document.ParseLimit` that stopped it (test
+  `a_page_over_the_depth_limit_names_the_limit` in `crates/surf-cli/tests/page.rs`).
+- Change item 1, "parses it with the default limits": the limits can be set.
+  `HtmlParser::with_options` and `HtmlParser::with_limits` take `surf-html`'s options or limits,
+  `surf::parse_page_with` parses under them, and `crates/surf/tests/parse.rs` has one test per
+  limit, `a_page_over_the_input_limit_is_parsed_up_to_it` to
+  `a_page_over_the_step_limit_is_parsed_up_to_it`.
+- Change, the tests of `page.rs`: it also has `a_response_without_a_content_type_is_not_parsed`,
+  `an_error_status_with_an_html_body_is_parsed` and
+  `an_html_body_that_is_not_utf_8_is_decoded_with_replacement_characters`.
+- Not in the story: a review after the first implementation found that a long title took the
+  entries of one request past `surfd::link::ENTRIES_MAX`, so `go` answered status 3 and the
+  session ended. The `DocumentParsed` entry holds at most `TITLE_ENTRY_BYTES` (1,024) bytes of the
+  title, with the field `title_bytes` when it was cut (`crates/session/src/entries.rs`; test
+  `a_page_with_a_long_title_leaves_go_answering_and_the_session_open`).
+- Not in the story: one request carries at most `ELEMENT_ENTRIES_MAX` (256) `ElementAdded`
+  entries, and its action and event entries at most `ACTION_AND_EVENT_BYTES_MAX` bytes; one line
+  `event surf.agent.EventsLeftOut count="<n>"` counts what was left out
+  (`crates/session/src/lib.rs`, tests in `crates/session/tests/adversary_parse.rs`).
+- Not in the story: the in-memory store keeps an index from identity to row (`Rows`,
+  `crates/ports/src/store.rs`). Before it, one `go` to a page of 10,001 links took 7.8 to 12.9 s,
+  after it 0.22 to 0.48 s (message of commit f9f111b; test
+  `a_page_with_more_links_than_a_request_carries_answers_and_keeps_the_session_open`).
+- Writes, "`crates/session/` (the `Browser` construction only)": `crates/session/src/lib.rs` and
+  `crates/session/src/entries.rs` also hold the bounds above.
+- Writes: files outside the list changed. `conformance/src/lib.rs` exports `Unparsed`;
+  `crates/surf/tests/held.rs`, `crates/surf-cli/tests/cli.rs`, `crates/surf-cli/tests/redirects.rs`
+  and `crates/session/tests/events.rs` count the new `title` and `note` lines and the new events;
+  `crates/ports/src/store.rs`, `crates/ports/src/ports.rs` and
+  `crates/session/tests/adversary_parse.rs` carry the index and the bounds above.
+- Left open: `Browser` keeps the tree of every parsed document, and the components keep its
+  element rows, for the life of the session, with no bound over all documents
+  (`crates/session/src/lib.rs`, "What it keeps"; a draft story on the session's memory).

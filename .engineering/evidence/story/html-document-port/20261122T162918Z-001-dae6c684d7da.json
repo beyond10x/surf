@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T16:29:18Z",
+  "actor": "human:operator",
+  "artifact": "story:html-document-port",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "review after the implementation, on 598b670",
+    "reference": "findings closed in f9f111b; a second review on 2418d48 found nothing broken in the port"
+  }
+}

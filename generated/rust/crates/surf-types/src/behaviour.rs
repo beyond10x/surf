@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 9cf563aeb85e0ebaf274c9cab36fdfa5c94c5872239a1808e0be06ff915e5e98
+// contract digest 1fa135dfaf753fab3e34de8ae9a4a7052216d1878fc9d395075ce5cd5ac673a6
 // do not edit: regenerate with `ess synthesize`
 
 //! What the specification fully determines, generated: the behaviour of every command the plan
@@ -89,6 +89,60 @@ pub trait ElementStorage {
     /// Every stored instance, in the order the store keeps them: the order a generated query
     /// answers an unordered view in.
     fn list(&self) -> Vec<crate::document::ElementSnapshot>;
+}
+
+/// Where `surf.document.Form` is stored — a port the implementor provides.
+///
+/// Keyed by the identity `form_id`. Generated network entries supply an ephemeral implementation; durable storage remains a port.
+pub trait FormStorage {
+    /// The instance with this identity, or `None` where none is stored.
+    fn get(&self, identity: &crate::document::FormId) -> Option<crate::document::FormSnapshot>;
+
+    /// Stores this instance under its identity, replacing what was held.
+    fn put(&mut self, snapshot: crate::document::FormSnapshot);
+
+    /// Removes the instance with this identity.
+    fn delete(&mut self, identity: &crate::document::FormId);
+
+    /// Every stored instance, in the order the store keeps them: the order a generated query
+    /// answers an unordered view in.
+    fn list(&self) -> Vec<crate::document::FormSnapshot>;
+}
+
+/// Where `surf.document.Option` is stored — a port the implementor provides.
+///
+/// Keyed by the identity `option_id`. Generated network entries supply an ephemeral implementation; durable storage remains a port.
+pub trait ListOptionStorage {
+    /// The instance with this identity, or `None` where none is stored.
+    fn get(&self, identity: &crate::document::OptionId) -> Option<crate::document::ListOptionSnapshot>;
+
+    /// Stores this instance under its identity, replacing what was held.
+    fn put(&mut self, snapshot: crate::document::ListOptionSnapshot);
+
+    /// Removes the instance with this identity.
+    fn delete(&mut self, identity: &crate::document::OptionId);
+
+    /// Every stored instance, in the order the store keeps them: the order a generated query
+    /// answers an unordered view in.
+    fn list(&self) -> Vec<crate::document::ListOptionSnapshot>;
+}
+
+/// Where `surf.document.Submission` is stored — a port the implementor provides.
+///
+/// Keyed by the identity `submission_id`. Generated network entries supply an ephemeral implementation; durable storage remains a port.
+pub trait SubmissionStorage {
+    /// The instance with this identity, or `None` where none is stored.
+    fn get(&self, identity: &crate::document::SubmissionId) -> Option<crate::document::SubmissionSnapshot>;
+
+    /// Stores this instance under its identity, replacing what was held.
+    fn put(&mut self, snapshot: crate::document::SubmissionSnapshot);
+
+    /// Removes the instance with this identity.
+    fn delete(&mut self, identity: &crate::document::SubmissionId);
+
+    /// Every stored instance, in the order the store keeps them: the order a generated query
+    /// answers an unordered view in.
+    fn list(&self) -> Vec<crate::document::SubmissionSnapshot>;
 }
 
 /// Where `surf.navigation.Navigation` is stored — a port the implementor provides.
@@ -201,6 +255,18 @@ pub trait Context {
     /// `{generated: true}` value, or an event field the model leaves undetermined.
     fn generate_surf_document_element_id(&mut self) -> crate::document::ElementId;
 
+    /// A new `surf.document.FormId`, which the model says the implementation assigns — a created identity, a
+    /// `{generated: true}` value, or an event field the model leaves undetermined.
+    fn generate_surf_document_form_id(&mut self) -> crate::document::FormId;
+
+    /// A new `surf.document.OptionId`, which the model says the implementation assigns — a created identity, a
+    /// `{generated: true}` value, or an event field the model leaves undetermined.
+    fn generate_surf_document_option_id(&mut self) -> crate::document::OptionId;
+
+    /// A new `surf.document.SubmissionId`, which the model says the implementation assigns — a created identity, a
+    /// `{generated: true}` value, or an event field the model leaves undetermined.
+    fn generate_surf_document_submission_id(&mut self) -> crate::document::SubmissionId;
+
     /// A new `surf.net.RequestId`, which the model says the implementation assigns — a created identity, a
     /// `{generated: true}` value, or an event field the model leaves undetermined.
     fn generate_surf_net_request_id(&mut self) -> crate::net::RequestId;
@@ -230,6 +296,12 @@ fn try_generate_surf_document_document_id(&mut self) -> Result<crate::document::
 /// Assigns the value, or names the unavailable answer.
 fn try_generate_surf_document_element_id(&mut self) -> Result<crate::document::ElementId, UnmetObligation>;
 /// Assigns the value, or names the unavailable answer.
+fn try_generate_surf_document_form_id(&mut self) -> Result<crate::document::FormId, UnmetObligation>;
+/// Assigns the value, or names the unavailable answer.
+fn try_generate_surf_document_option_id(&mut self) -> Result<crate::document::OptionId, UnmetObligation>;
+/// Assigns the value, or names the unavailable answer.
+fn try_generate_surf_document_submission_id(&mut self) -> Result<crate::document::SubmissionId, UnmetObligation>;
+/// Assigns the value, or names the unavailable answer.
 fn try_generate_surf_net_request_id(&mut self) -> Result<crate::net::RequestId, UnmetObligation>;
 /// Assigns the value, or names the unavailable answer.
 fn try_generate_surf_render_frame_id(&mut self) -> Result<crate::render::FrameId, UnmetObligation>;
@@ -244,6 +316,9 @@ fn try_caller_session_id(&self) -> Result<Option<crate::agent::SessionId>, Unmet
 fn try_generate_surf_agent_action_id(&mut self) -> Result<crate::agent::ActionId, UnmetObligation> { Ok(Context::generate_surf_agent_action_id(self)) }
 fn try_generate_surf_document_document_id(&mut self) -> Result<crate::document::DocumentId, UnmetObligation> { Ok(Context::generate_surf_document_document_id(self)) }
 fn try_generate_surf_document_element_id(&mut self) -> Result<crate::document::ElementId, UnmetObligation> { Ok(Context::generate_surf_document_element_id(self)) }
+fn try_generate_surf_document_form_id(&mut self) -> Result<crate::document::FormId, UnmetObligation> { Ok(Context::generate_surf_document_form_id(self)) }
+fn try_generate_surf_document_option_id(&mut self) -> Result<crate::document::OptionId, UnmetObligation> { Ok(Context::generate_surf_document_option_id(self)) }
+fn try_generate_surf_document_submission_id(&mut self) -> Result<crate::document::SubmissionId, UnmetObligation> { Ok(Context::generate_surf_document_submission_id(self)) }
 fn try_generate_surf_net_request_id(&mut self) -> Result<crate::net::RequestId, UnmetObligation> { Ok(Context::generate_surf_net_request_id(self)) }
 fn try_generate_surf_render_frame_id(&mut self) -> Result<crate::render::FrameId, UnmetObligation> { Ok(Context::generate_surf_render_frame_id(self)) }
 fn try_generate_surf_shell_tab_id(&mut self) -> Result<crate::shell::TabId, UnmetObligation> { Ok(Context::generate_surf_shell_tab_id(self)) }
@@ -303,6 +378,79 @@ where
         };
         let next = moved.snapshot();
         let answer = crate::agent::CloseSessionOutcome::Closed { session_closed: crate::agent::SessionClosed { session_id: input.session_id.clone(), window_id: before.window_id.clone(), tab_id: before.tab_id.clone() } };
+        SessionStorage::put(&mut self.ports, next);
+        return Ok(answer);
+    }
+}
+
+/// `surf.agent.Fill`, generated: every outcome is one the specification fully determines.
+impl<P> crate::agent::obligations::FillBehavior for Generated<P>
+where
+    P: TryContext + SessionStorage,
+{
+    fn fill(&mut self, input: crate::agent::Fill) -> Result<crate::agent::FillOutcome, UnmetObligation> {
+        let _ = &input;
+        // The addressed row's existence, at step 2 of the one precedence rule.
+        if SessionStorage::get(&self.ports, &input.session_id).is_none() {
+            return Ok(crate::agent::FillOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        }
+        // The addressed row, read before the branches that select by it.
+        let Some(held) = SessionStorage::get(&self.ports, &input.session_id) else {
+            return Ok(crate::agent::FillOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        };
+        let _ = &held;
+        // `not-holder`: selected by the addressed row.
+        if decided(equal(Some(&held.data.holder).map(|value| &value.0).map(|value| value.0.clone()), self.ports.try_caller_session_id()?.as_ref().map(|value| &value.0).map(|value| value.0.clone())).map(|value| !value), "surf.agent.Fill")? {
+            return Ok(crate::agent::FillOutcome::NotHolder { error: crate::agent::NotSessionHolder { session_id: input.session_id.clone() } });
+        }
+        // `closed`: selected by the addressed row.
+        if decided(Some(matches!(held.state, crate::agent::SessionState::Closed)), "surf.agent.Fill")? {
+            return Ok(crate::agent::FillOutcome::Closed { error: crate::agent::SessionStateConflict { state: held.state } });
+        }
+        // `requested`: the default.
+        let Some(held) = SessionStorage::get(&self.ports, &input.session_id) else {
+            return Ok(crate::agent::FillOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        };
+        let _ = &held;
+        let next = held;
+        let answer = crate::agent::FillOutcome::Requested { fill_requested: crate::agent::FillRequested { session_id: input.session_id.clone(), element_id: input.element_id.clone(), value: input.value.clone() } };
+        SessionStorage::put(&mut self.ports, next);
+        return Ok(answer);
+    }
+}
+
+/// `surf.agent.Follow`, generated: every outcome is one the specification fully determines.
+impl<P> crate::agent::obligations::FollowBehavior for Generated<P>
+where
+    P: TryContext + SessionStorage,
+{
+    fn follow(&mut self, input: crate::agent::Follow) -> Result<crate::agent::FollowOutcome, UnmetObligation> {
+        let _ = &input;
+        // The addressed row's existence, at step 2 of the one precedence rule.
+        if SessionStorage::get(&self.ports, &input.session_id).is_none() {
+            return Ok(crate::agent::FollowOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        }
+        // The addressed row, read before the branches that select by it.
+        let Some(held) = SessionStorage::get(&self.ports, &input.session_id) else {
+            return Ok(crate::agent::FollowOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        };
+        let _ = &held;
+        // `not-holder`: selected by the addressed row.
+        if decided(equal(Some(&held.data.holder).map(|value| &value.0).map(|value| value.0.clone()), self.ports.try_caller_session_id()?.as_ref().map(|value| &value.0).map(|value| value.0.clone())).map(|value| !value), "surf.agent.Follow")? {
+            return Ok(crate::agent::FollowOutcome::NotHolder { error: crate::agent::NotSessionHolder { session_id: input.session_id.clone() } });
+        }
+        // `closed`: selected by the addressed row.
+        if decided(Some(matches!(held.state, crate::agent::SessionState::Closed)), "surf.agent.Follow")? {
+            return Ok(crate::agent::FollowOutcome::Closed { error: crate::agent::SessionStateConflict { state: held.state } });
+        }
+        // `requested`: the default.
+        let Some(held) = SessionStorage::get(&self.ports, &input.session_id) else {
+            return Ok(crate::agent::FollowOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        };
+        let _ = &held;
+        let before = held.data.clone();
+        let next = held;
+        let answer = crate::agent::FollowOutcome::Requested { navigation_requested: crate::agent::NavigationRequested { session_id: input.session_id.clone(), tab_id: before.tab_id.clone(), url: input.url.clone() } };
         SessionStorage::put(&mut self.ports, next);
         return Ok(answer);
     }
@@ -400,6 +548,78 @@ where
     }
 }
 
+/// `surf.agent.Pick`, generated: every outcome is one the specification fully determines.
+impl<P> crate::agent::obligations::PickBehavior for Generated<P>
+where
+    P: TryContext + SessionStorage,
+{
+    fn pick(&mut self, input: crate::agent::Pick) -> Result<crate::agent::PickOutcome, UnmetObligation> {
+        let _ = &input;
+        // The addressed row's existence, at step 2 of the one precedence rule.
+        if SessionStorage::get(&self.ports, &input.session_id).is_none() {
+            return Ok(crate::agent::PickOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        }
+        // The addressed row, read before the branches that select by it.
+        let Some(held) = SessionStorage::get(&self.ports, &input.session_id) else {
+            return Ok(crate::agent::PickOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        };
+        let _ = &held;
+        // `not-holder`: selected by the addressed row.
+        if decided(equal(Some(&held.data.holder).map(|value| &value.0).map(|value| value.0.clone()), self.ports.try_caller_session_id()?.as_ref().map(|value| &value.0).map(|value| value.0.clone())).map(|value| !value), "surf.agent.Pick")? {
+            return Ok(crate::agent::PickOutcome::NotHolder { error: crate::agent::NotSessionHolder { session_id: input.session_id.clone() } });
+        }
+        // `closed`: selected by the addressed row.
+        if decided(Some(matches!(held.state, crate::agent::SessionState::Closed)), "surf.agent.Pick")? {
+            return Ok(crate::agent::PickOutcome::Closed { error: crate::agent::SessionStateConflict { state: held.state } });
+        }
+        // `requested`: the default.
+        let Some(held) = SessionStorage::get(&self.ports, &input.session_id) else {
+            return Ok(crate::agent::PickOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        };
+        let _ = &held;
+        let next = held;
+        let answer = crate::agent::PickOutcome::Requested { pick_requested: crate::agent::PickRequested { session_id: input.session_id.clone(), element_id: input.element_id.clone(), option_id: input.option_id.clone() } };
+        SessionStorage::put(&mut self.ports, next);
+        return Ok(answer);
+    }
+}
+
+/// `surf.agent.Press`, generated: every outcome is one the specification fully determines.
+impl<P> crate::agent::obligations::PressBehavior for Generated<P>
+where
+    P: TryContext + SessionStorage,
+{
+    fn press(&mut self, input: crate::agent::Press) -> Result<crate::agent::PressOutcome, UnmetObligation> {
+        let _ = &input;
+        // The addressed row's existence, at step 2 of the one precedence rule.
+        if SessionStorage::get(&self.ports, &input.session_id).is_none() {
+            return Ok(crate::agent::PressOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        }
+        // The addressed row, read before the branches that select by it.
+        let Some(held) = SessionStorage::get(&self.ports, &input.session_id) else {
+            return Ok(crate::agent::PressOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        };
+        let _ = &held;
+        // `not-holder`: selected by the addressed row.
+        if decided(equal(Some(&held.data.holder).map(|value| &value.0).map(|value| value.0.clone()), self.ports.try_caller_session_id()?.as_ref().map(|value| &value.0).map(|value| value.0.clone())).map(|value| !value), "surf.agent.Press")? {
+            return Ok(crate::agent::PressOutcome::NotHolder { error: crate::agent::NotSessionHolder { session_id: input.session_id.clone() } });
+        }
+        // `closed`: selected by the addressed row.
+        if decided(Some(matches!(held.state, crate::agent::SessionState::Closed)), "surf.agent.Press")? {
+            return Ok(crate::agent::PressOutcome::Closed { error: crate::agent::SessionStateConflict { state: held.state } });
+        }
+        // `requested`: the default.
+        let Some(held) = SessionStorage::get(&self.ports, &input.session_id) else {
+            return Ok(crate::agent::PressOutcome::NoSuchSession { error: crate::agent::SessionNotFound { session_id: input.session_id.clone() } });
+        };
+        let _ = &held;
+        let next = held;
+        let answer = crate::agent::PressOutcome::Requested { press_requested: crate::agent::PressRequested { session_id: input.session_id.clone(), element_id: input.element_id.clone() } };
+        SessionStorage::put(&mut self.ports, next);
+        return Ok(answer);
+    }
+}
+
 /// `surf.agent.RecordAction`, generated: every outcome is one the specification fully determines.
 impl<P> crate::agent::obligations::RecordActionBehavior for Generated<P>
 where
@@ -428,9 +648,39 @@ where
             sequence: input.sequence.clone(),
             command: input.command.clone(),
             url: input.url.clone(),
+            handle: input.handle.clone(),
+            label: input.label.clone(),
         };
-        let answer = crate::agent::RecordActionOutcome::Recorded { action_recorded: crate::agent::ActionRecorded { action_id: identity.clone(), session_id: input.session_id.clone(), sequence: input.sequence.clone(), command: input.command.clone(), url: input.url.clone() } };
+        let answer = crate::agent::RecordActionOutcome::Recorded { action_recorded: crate::agent::ActionRecorded { action_id: identity.clone(), session_id: input.session_id.clone(), sequence: input.sequence.clone(), command: input.command.clone(), url: input.url.clone(), handle: input.handle.clone(), label: input.label.clone() } };
         ActionStorage::put(&mut self.ports, crate::agent::AnyAction::Recorded(crate::agent::Action::new(data)).snapshot());
+        return Ok(answer);
+    }
+}
+
+/// `surf.document.AbandonSubmission`, generated: every outcome is one the specification fully determines.
+impl<P> crate::document::obligations::AbandonSubmissionBehavior for Generated<P>
+where
+    P: SubmissionStorage,
+{
+    fn abandon_submission(&mut self, input: crate::document::AbandonSubmission) -> Result<crate::document::AbandonSubmissionOutcome, UnmetObligation> {
+        let _ = &input;
+        // The addressed row's existence, at step 2 of the one precedence rule.
+        if SubmissionStorage::get(&self.ports, &input.submission_id).is_none() {
+            return Ok(crate::document::AbandonSubmissionOutcome::NoSuchSubmission { error: crate::document::SubmissionNotFound { submission_id: input.submission_id.clone() } });
+        }
+        // `abandoned`: the default.
+        let Some(held) = SubmissionStorage::get(&self.ports, &input.submission_id) else {
+            return Ok(crate::document::AbandonSubmissionOutcome::NoSuchSubmission { error: crate::document::SubmissionNotFound { submission_id: input.submission_id.clone() } });
+        };
+        let _ = &held;
+        let held_state = held.state;
+        let moved = match held.refine() {
+            crate::document::AnySubmission::Started(instance) => crate::document::AnySubmission::Abandoned(instance.abandon()),
+            _ => return Ok(crate::document::AbandonSubmissionOutcome::WrongState { error: crate::document::SubmissionStateConflict { state: held_state } }),
+        };
+        let next = moved.snapshot();
+        let answer = crate::document::AbandonSubmissionOutcome::Abandoned { submission_abandoned: crate::document::SubmissionAbandoned { submission_id: input.submission_id.clone(), reason: input.reason.clone() } };
+        SubmissionStorage::put(&mut self.ports, next);
         return Ok(answer);
     }
 }
@@ -475,10 +725,104 @@ where
             disabled: input.disabled.clone(),
             checked: input.checked.clone(),
             required: input.required.clone(),
+            name: input.name.clone(),
+            form_id: input.form_id.clone(),
         };
         let answer = crate::document::AddElementOutcome::Added { element_added: crate::document::ElementAdded { element_id: identity.clone(), document_id: input.document_id.clone(), position: input.position.clone() } };
         ElementStorage::put(&mut self.ports, crate::document::AnyElement::Added(crate::document::Element::new(data)).snapshot());
         return Ok(answer);
+    }
+}
+
+/// `surf.document.AddForm`, generated: every outcome is one the specification fully determines.
+impl<P> crate::document::obligations::AddFormBehavior for Generated<P>
+where
+    P: TryContext + DocumentStorage + FormStorage,
+{
+    fn add_form(&mut self, input: crate::document::AddForm) -> Result<crate::document::AddFormOutcome, UnmetObligation> {
+        let _ = &input;
+        // `when_related:` reads the `surf.document.Document` row `input.document_id` names, through its storage port; an absent
+        // reference reads no row and selects no related branch.
+        let reference = Some(&input.document_id);
+        let related = reference.and_then(|identity| DocumentStorage::get(&self.ports, identity));
+        let _ = &related;
+        // The addressed row's existence and held state, for the branch the request selects
+        // before any present related row's refusal.
+        {
+        }
+        // `no-such-document`: the reference names an identity no row carries.
+        if reference.is_some() && related.is_none() {
+            return Ok(crate::document::AddFormOutcome::NoSuchDocument { error: crate::document::DocumentNotFound { document_id: input.document_id.clone() } });
+        }
+        // `already-parsed`: a present related row's refusal, before every accepting branch.
+        if let Some(related) = &related {
+        if decided(equal(Some(&related.state).map(|value| match value { crate::document::DocumentState::Parsed => "Parsed", crate::document::DocumentState::Parsing => "Parsing" }.to_owned()), Some("Parsed".to_owned())), "surf.document.AddForm")? {
+            return Ok(crate::document::AddFormOutcome::AlreadyParsed { error: crate::document::DocumentStateConflict { state: crate::document::DocumentState::Parsed } });
+        }
+        }
+        // `added`: the default.
+        let identity: crate::document::FormId = self.ports.try_generate_surf_document_form_id()?;
+        let data = crate::document::FormData {
+            form_id: identity.clone(),
+            document_id: input.document_id.clone(),
+            position: input.position.clone(),
+            action: input.action.clone(),
+            method: input.method.clone(),
+            enctype: input.enctype.clone(),
+        };
+        let answer = crate::document::AddFormOutcome::Added { form_added: crate::document::FormAdded { form_id: identity.clone(), document_id: input.document_id.clone(), position: input.position.clone() } };
+        FormStorage::put(&mut self.ports, crate::document::AnyForm::Added(crate::document::Form::new(data)).snapshot());
+        return Ok(answer);
+    }
+}
+
+/// `surf.document.AddOption`, generated: every outcome is one the specification fully determines.
+impl<P> crate::document::obligations::AddOptionBehavior for Generated<P>
+where
+    P: TryContext + ElementStorage + ListOptionStorage,
+{
+    fn add_option(&mut self, input: crate::document::AddOption) -> Result<crate::document::AddOptionOutcome, UnmetObligation> {
+        let _ = &input;
+        // `when_related:` reads the `surf.document.Element` row `input.select_id` names, through its storage port; an absent
+        // reference reads no row and selects no related branch.
+        let reference = Some(&input.select_id);
+        let related = reference.and_then(|identity| ElementStorage::get(&self.ports, identity));
+        let _ = &related;
+        // The addressed row's existence and held state, for the branch the request selects
+        // before any present related row's refusal.
+        {
+        }
+        // `no-such-select`: the reference names an identity no row carries.
+        if reference.is_some() && related.is_none() {
+            return Ok(crate::document::AddOptionOutcome::NoSuchSelect { error: crate::document::ElementNotFound { element_id: input.select_id.clone() } });
+        }
+        // `not-a-select`: a present related row's refusal, before every accepting branch.
+        if let Some(related) = &related {
+        if decided(equal(Some(&related.data.kind).map(|value| match value { crate::document::ElementKind::Link => "link", crate::document::ElementKind::Button => "button", crate::document::ElementKind::Text => "text", crate::document::ElementKind::Password => "password", crate::document::ElementKind::Checkbox => "checkbox", crate::document::ElementKind::Radio => "radio", crate::document::ElementKind::File => "file", crate::document::ElementKind::Select => "select", crate::document::ElementKind::Textarea => "textarea" }.to_owned()), Some("select".to_owned())).map(|value| !value), "surf.document.AddOption")? {
+            return Ok(crate::document::AddOptionOutcome::NotASelect { error: crate::document::ControlKindConflict { element_id: input.select_id.clone() } });
+        }
+        }
+        // `added`: the default.
+        let identity: crate::document::OptionId = self.ports.try_generate_surf_document_option_id()?;
+        let data = crate::document::ListOptionData {
+            option_id: identity.clone(),
+            select_id: input.select_id.clone(),
+            position: input.position.clone(),
+            value: input.value.clone(),
+            label: input.label.clone(),
+            selected: input.selected.clone(),
+            disabled: input.disabled.clone(),
+            hidden: input.hidden.clone(),
+        };
+        let answer = crate::document::AddOptionOutcome::Added { option_added: crate::document::OptionAdded { option_id: identity.clone(), select_id: input.select_id.clone(), position: input.position.clone() } };
+        ListOptionStorage::put(&mut self.ports, crate::document::AnyListOption::Added(crate::document::ListOption::new(data)).snapshot());
+        return Ok(answer);
+    }
+}
+
+impl<P: crate::document::obligations::CheckBehavior> crate::document::obligations::CheckBehavior for Generated<P> {
+    fn check(&mut self, input: crate::document::Check) -> Result<crate::document::CheckOutcome, UnmetObligation> {
+        crate::document::obligations::CheckBehavior::check(&mut self.ports, input)
     }
 }
 
@@ -528,6 +872,7 @@ where
             document_id: identity.clone(),
             url: input.url.clone(),
             navigation_id: input.navigation_id.clone(),
+            tab_id: input.tab_id.clone(),
             title: None,
             encoding: None,
             unsupported_encoding: None,
@@ -535,6 +880,131 @@ where
         };
         let answer = crate::document::ParseDocumentOutcome::Started { parsing_started: crate::document::ParsingStarted { document_id: identity.clone(), body: input.body.clone() } };
         DocumentStorage::put(&mut self.ports, crate::document::AnyDocument::Parsing(crate::document::Document::new(data)).snapshot());
+        return Ok(answer);
+    }
+}
+
+impl<P: crate::document::obligations::SelectOptionBehavior> crate::document::obligations::SelectOptionBehavior for Generated<P> {
+    fn select_option(&mut self, input: crate::document::SelectOption) -> Result<crate::document::SelectOptionOutcome, UnmetObligation> {
+        crate::document::obligations::SelectOptionBehavior::select_option(&mut self.ports, input)
+    }
+}
+
+/// `surf.document.SetValue`, generated: every outcome is one the specification fully determines.
+impl<P> crate::document::obligations::SetValueBehavior for Generated<P>
+where
+    P: ElementStorage,
+{
+    fn set_value(&mut self, input: crate::document::SetValue) -> Result<crate::document::SetValueOutcome, UnmetObligation> {
+        let _ = &input;
+        // The addressed row's existence, at step 2 of the one precedence rule.
+        if ElementStorage::get(&self.ports, &input.element_id).is_none() {
+            return Ok(crate::document::SetValueOutcome::NoSuchElement { error: crate::document::ElementNotFound { element_id: input.element_id.clone() } });
+        }
+        // The addressed row, read before the branches that select by it.
+        let Some(held) = ElementStorage::get(&self.ports, &input.element_id) else {
+            return Ok(crate::document::SetValueOutcome::NoSuchElement { error: crate::document::ElementNotFound { element_id: input.element_id.clone() } });
+        };
+        let _ = &held;
+        // `not-text-entry`: selected by the addressed row.
+        if decided(all(&[equal(Some(&held.data.kind).map(|value| match value { crate::document::ElementKind::Link => "link", crate::document::ElementKind::Button => "button", crate::document::ElementKind::Text => "text", crate::document::ElementKind::Password => "password", crate::document::ElementKind::Checkbox => "checkbox", crate::document::ElementKind::Radio => "radio", crate::document::ElementKind::File => "file", crate::document::ElementKind::Select => "select", crate::document::ElementKind::Textarea => "textarea" }.to_owned()), Some("text".to_owned())).map(|value| !value), equal(Some(&held.data.kind).map(|value| match value { crate::document::ElementKind::Link => "link", crate::document::ElementKind::Button => "button", crate::document::ElementKind::Text => "text", crate::document::ElementKind::Password => "password", crate::document::ElementKind::Checkbox => "checkbox", crate::document::ElementKind::Radio => "radio", crate::document::ElementKind::File => "file", crate::document::ElementKind::Select => "select", crate::document::ElementKind::Textarea => "textarea" }.to_owned()), Some("password".to_owned())).map(|value| !value), equal(Some(&held.data.kind).map(|value| match value { crate::document::ElementKind::Link => "link", crate::document::ElementKind::Button => "button", crate::document::ElementKind::Text => "text", crate::document::ElementKind::Password => "password", crate::document::ElementKind::Checkbox => "checkbox", crate::document::ElementKind::Radio => "radio", crate::document::ElementKind::File => "file", crate::document::ElementKind::Select => "select", crate::document::ElementKind::Textarea => "textarea" }.to_owned()), Some("textarea".to_owned())).map(|value| !value)]), "surf.document.SetValue")? {
+            return Ok(crate::document::SetValueOutcome::NotTextEntry { error: crate::document::ControlKindConflict { element_id: input.element_id.clone() } });
+        }
+        // `disabled`: selected by the addressed row.
+        if decided(equal(Some(&held.data.disabled).map(|value| *value), Some(true)), "surf.document.SetValue")? {
+            return Ok(crate::document::SetValueOutcome::Disabled { error: crate::document::ControlDisabled { element_id: input.element_id.clone() } });
+        }
+        // `hidden`: selected by the addressed row.
+        if decided(equal(Some(&held.data.hidden).map(|value| *value), Some(true)), "surf.document.SetValue")? {
+            return Ok(crate::document::SetValueOutcome::Hidden { error: crate::document::ControlHidden { element_id: input.element_id.clone() } });
+        }
+        // `set`: the default.
+        let Some(held) = ElementStorage::get(&self.ports, &input.element_id) else {
+            return Ok(crate::document::SetValueOutcome::NoSuchElement { error: crate::document::ElementNotFound { element_id: input.element_id.clone() } });
+        };
+        let _ = &held;
+        let mut next = held;
+        next.data.value = Some(input.value.clone());
+        let answer = crate::document::SetValueOutcome::Set { value_set: crate::document::ValueSet { element_id: input.element_id.clone() } };
+        ElementStorage::put(&mut self.ports, next);
+        return Ok(answer);
+    }
+}
+
+/// `surf.document.StartSubmission`, generated: every outcome is one the specification fully determines.
+impl<P> crate::document::obligations::StartSubmissionBehavior for Generated<P>
+where
+    P: TryContext + ElementStorage + SubmissionStorage,
+{
+    fn start_submission(&mut self, input: crate::document::StartSubmission) -> Result<crate::document::StartSubmissionOutcome, UnmetObligation> {
+        let _ = &input;
+        // `when_related:` reads the `surf.document.Element` row `input.element_id` names, through its storage port; an absent
+        // reference reads no row and selects no related branch.
+        let reference = Some(&input.element_id);
+        let related = reference.and_then(|identity| ElementStorage::get(&self.ports, identity));
+        let _ = &related;
+        // The addressed row's existence and held state, for the branch the request selects
+        // before any present related row's refusal.
+        {
+        }
+        // `no-such-element`: the reference names an identity no row carries.
+        if reference.is_some() && related.is_none() {
+            return Ok(crate::document::StartSubmissionOutcome::NoSuchElement { error: crate::document::ElementNotFound { element_id: input.element_id.clone() } });
+        }
+        // `not-a-button`: a present related row's refusal, before every accepting branch.
+        if let Some(related) = &related {
+        if decided(equal(Some(&related.data.kind).map(|value| match value { crate::document::ElementKind::Link => "link", crate::document::ElementKind::Button => "button", crate::document::ElementKind::Text => "text", crate::document::ElementKind::Password => "password", crate::document::ElementKind::Checkbox => "checkbox", crate::document::ElementKind::Radio => "radio", crate::document::ElementKind::File => "file", crate::document::ElementKind::Select => "select", crate::document::ElementKind::Textarea => "textarea" }.to_owned()), Some("button".to_owned())).map(|value| !value), "surf.document.StartSubmission")? {
+            return Ok(crate::document::StartSubmissionOutcome::NotAButton { error: crate::document::ControlKindConflict { element_id: input.element_id.clone() } });
+        }
+        }
+        // `disabled`: a present related row's refusal, before every accepting branch.
+        if let Some(related) = &related {
+        if decided(equal(Some(&related.data.disabled).map(|value| *value), Some(true)), "surf.document.StartSubmission")? {
+            return Ok(crate::document::StartSubmissionOutcome::Disabled { error: crate::document::ControlDisabled { element_id: input.element_id.clone() } });
+        }
+        }
+        // `hidden`: a present related row's refusal, before every accepting branch.
+        if let Some(related) = &related {
+        if decided(equal(Some(&related.data.hidden).map(|value| *value), Some(true)), "surf.document.StartSubmission")? {
+            return Ok(crate::document::StartSubmissionOutcome::Hidden { error: crate::document::ControlHidden { element_id: input.element_id.clone() } });
+        }
+        }
+        // `started`: the default.
+        let identity: crate::document::SubmissionId = self.ports.try_generate_surf_document_submission_id()?;
+        let data = crate::document::SubmissionData {
+            submission_id: identity.clone(),
+            submitter: input.element_id.clone(),
+        };
+        let answer = crate::document::StartSubmissionOutcome::Started { submission_started: crate::document::SubmissionStarted { submission_id: identity.clone(), submitter: input.element_id.clone() } };
+        SubmissionStorage::put(&mut self.ports, crate::document::AnySubmission::Started(crate::document::Submission::new(data)).snapshot());
+        return Ok(answer);
+    }
+}
+
+/// `surf.document.SubmitForm`, generated: every outcome is one the specification fully determines.
+impl<P> crate::document::obligations::SubmitFormBehavior for Generated<P>
+where
+    P: SubmissionStorage,
+{
+    fn submit_form(&mut self, input: crate::document::SubmitForm) -> Result<crate::document::SubmitFormOutcome, UnmetObligation> {
+        let _ = &input;
+        // The addressed row's existence, at step 2 of the one precedence rule.
+        if SubmissionStorage::get(&self.ports, &input.submission_id).is_none() {
+            return Ok(crate::document::SubmitFormOutcome::NoSuchSubmission { error: crate::document::SubmissionNotFound { submission_id: input.submission_id.clone() } });
+        }
+        // `submitted`: the default.
+        let Some(held) = SubmissionStorage::get(&self.ports, &input.submission_id) else {
+            return Ok(crate::document::SubmitFormOutcome::NoSuchSubmission { error: crate::document::SubmissionNotFound { submission_id: input.submission_id.clone() } });
+        };
+        let _ = &held;
+        let held_state = held.state;
+        let moved = match held.refine() {
+            crate::document::AnySubmission::Started(instance) => crate::document::AnySubmission::Submitted(instance.submit()),
+            _ => return Ok(crate::document::SubmitFormOutcome::WrongState { error: crate::document::SubmissionStateConflict { state: held_state } }),
+        };
+        let next = moved.snapshot();
+        let answer = crate::document::SubmitFormOutcome::Submitted { form_submitted: crate::document::FormSubmitted { submission_id: input.submission_id.clone(), tab_id: input.tab_id.clone(), url: input.url.clone(), method: input.method.clone(), body: input.body.clone(), body_type: input.body_type.clone() } };
+        SubmissionStorage::put(&mut self.ports, next);
         return Ok(answer);
     }
 }
@@ -852,6 +1322,8 @@ where
                 sequence: held.data.sequence,
                 command: held.data.command,
                 url: held.data.url,
+                handle: held.data.handle,
+                label: held.data.label,
             })
             .collect())
     }
@@ -906,6 +1378,31 @@ where
     }
 }
 
+/// `surf.document.Controls`, generated: every row is one the specification fully determines from the stored `surf.document.Element`s.
+impl<P> crate::document::obligations::ControlsQuery for Generated<P>
+where
+    P: ElementStorage,
+{
+    fn controls(&self) -> Result<Vec<crate::document::Controls>, UnmetObligation> {
+        let admitted = ElementStorage::list(&self.ports);
+        Ok(admitted
+            .into_iter()
+            .map(|held| crate::document::Controls {
+                element_id: held.data.element_id,
+                document_id: held.data.document_id,
+                state: held.state,
+                kind: held.data.kind,
+                value: held.data.value,
+                hidden: held.data.hidden,
+                disabled: held.data.disabled,
+                checked: held.data.checked,
+                name: held.data.name,
+                form_id: held.data.form_id,
+            })
+            .collect())
+    }
+}
+
 /// `surf.document.Documents`, generated: every row is one the specification fully determines from the stored `surf.document.Document`s.
 impl<P> crate::document::obligations::DocumentsQuery for Generated<P>
 where
@@ -919,6 +1416,7 @@ where
                 document_id: held.data.document_id,
                 url: held.data.url,
                 navigation_id: held.data.navigation_id,
+                tab_id: held.data.tab_id,
                 state: held.state,
                 title: held.data.title,
                 encoding: held.data.encoding,
@@ -954,6 +1452,72 @@ where
                 disabled: held.data.disabled,
                 checked: held.data.checked,
                 required: held.data.required,
+                name: held.data.name,
+                form_id: held.data.form_id,
+            })
+            .collect())
+    }
+}
+
+/// `surf.document.Forms`, generated: every row is one the specification fully determines from the stored `surf.document.Form`s.
+impl<P> crate::document::obligations::FormsQuery for Generated<P>
+where
+    P: FormStorage,
+{
+    fn forms(&self) -> Result<Vec<crate::document::Forms>, UnmetObligation> {
+        let admitted = FormStorage::list(&self.ports);
+        Ok(admitted
+            .into_iter()
+            .map(|held| crate::document::Forms {
+                form_id: held.data.form_id,
+                document_id: held.data.document_id,
+                state: held.state,
+                position: held.data.position,
+                action: held.data.action,
+                method: held.data.method,
+                enctype: held.data.enctype,
+            })
+            .collect())
+    }
+}
+
+/// `surf.document.Options`, generated: every row is one the specification fully determines from the stored `surf.document.Option`s.
+impl<P> crate::document::obligations::OptionsQuery for Generated<P>
+where
+    P: ListOptionStorage,
+{
+    fn options(&self) -> Result<Vec<crate::document::Options>, UnmetObligation> {
+        let admitted = ListOptionStorage::list(&self.ports);
+        Ok(admitted
+            .into_iter()
+            .map(|held| crate::document::Options {
+                option_id: held.data.option_id,
+                select_id: held.data.select_id,
+                state: held.state,
+                position: held.data.position,
+                value: held.data.value,
+                label: held.data.label,
+                selected: held.data.selected,
+                disabled: held.data.disabled,
+                hidden: held.data.hidden,
+            })
+            .collect())
+    }
+}
+
+/// `surf.document.Submissions`, generated: every row is one the specification fully determines from the stored `surf.document.Submission`s.
+impl<P> crate::document::obligations::SubmissionsQuery for Generated<P>
+where
+    P: SubmissionStorage,
+{
+    fn submissions(&self) -> Result<Vec<crate::document::Submissions>, UnmetObligation> {
+        let admitted = SubmissionStorage::list(&self.ports);
+        Ok(admitted
+            .into_iter()
+            .map(|held| crate::document::Submissions {
+                submission_id: held.data.submission_id,
+                submitter: held.data.submitter,
+                state: held.state,
             })
             .collect())
     }
@@ -1060,6 +1624,17 @@ fn undeclared(source: &'static str) -> UnmetObligation {
 /// A guard's truth, where it has one: Unknown selects no branch, so the model declares no outcome.
 fn decided(truth: Option<bool>, command: &'static str) -> Result<bool, UnmetObligation> {
     truth.ok_or_else(|| undeclared(command))
+}
+
+/// Three-valued conjunction: false wins, then Unknown.
+fn all(truths: &[Option<bool>]) -> Option<bool> {
+    if truths.contains(&Some(false)) {
+        Some(false)
+    } else if truths.contains(&None) {
+        None
+    } else {
+        Some(true)
+    }
 }
 
 /// Three-valued disjunction: true wins, then Unknown.

@@ -38,7 +38,13 @@
 //!   elements `base, basefont, datalist, head, link, meta, noembed, noframes, param, rp, script,
 //!   style, template, title`; the `hidden` attribute on any element but `embed`, whatever its
 //!   value; an `input` whose `type` is `hidden` compared ASCII case-insensitively. In 15.3.3
-//!   "Flow content": `dialog:not([open])`, a `dialog` without an `open` attribute. In 15.5.5
+//!   "Flow content": `dialog:not([open])`, a `dialog` without an `open` attribute, and
+//!   `[popover]:not(:popover-open):not(dialog[open])`, an element with a `popover` attribute,
+//!   whatever its value, but an open `dialog`: surf runs no script and no user action, so no
+//!   popover is ever open. The copy of the selected `option` that the parser puts into a
+//!   `selectedcontent` (one with a single `select` without `multiple` above it and no `option`
+//!   or `selectedcontent` above it) is hidden, lists no row and records no `id`: surf's reading,
+//!   not the standard's rendering, which shows the copy in the closed control. In 15.5.5
 //!   "The details and summary elements": a `details` without an `open` attribute gives
 //!   `content-visibility: hidden` to the slot that takes every child but its first `summary`
 //!   element child, so each such child is hidden and that `summary` is not (a `details` with no
@@ -91,6 +97,10 @@
 //!   most once per name (the note under 2F), so a repeated or cyclic reference adds nothing.
 //!   The name is a flat string: ASCII whitespace stripped and collapsed. "Hidden" is the flag
 //!   of `hidden`, recorded by the walk of [`actionable_elements`].
+//!
+//! - [`handles`]: surf's own numbering of the rows, not a standard's: `l<n>`, `b<n>`, `f<n>`
+//!   (`docs/design/page-as-text.md` section 5). [`hidden_roots`]: the rule of [`is_hidden`] for a
+//!   whole tree in one walk.
 //!
 //! No function recurses over the depth of the tree: [`actionable_elements`] and [`title`] walk
 //! with their own stack over [`Tree::children`], [`is_hidden`] walks up [`Tree::parent`], and
@@ -273,6 +283,10 @@ pub fn actionable_elements(tree: &Tree) -> Vec<ActionableElement> {
         in_disabled_fieldset: bool,
         /// The `label` elements without `for` around `node`.
         labels: label::Labels,
+        /// The `selectedcontent` state above `node`.
+        mirror: Mirror,
+        /// `node` is in the copy a `selectedcontent` holds of the selected option.
+        copy: bool,
     }
 
     let primary = Primary::of(tree);
@@ -284,18 +298,27 @@ pub fn actionable_elements(tree: &Tree) -> Vec<ActionableElement> {
         hidden: false,
         in_disabled_fieldset: false,
         labels: None,
+        mirror: Mirror::default(),
+        copy: false,
     }];
     while let Some(Pending {
         node,
         hidden,
         in_disabled_fieldset,
         labels,
+        mirror,
+        copy,
     }) = pending.pop()
     {
         let this = element(tree, node);
-        let hidden = hidden || this.as_ref().is_some_and(|e| hides(e, node, exempt));
-        let labels = facts.record(node, hidden, this.as_ref(), labels);
+        let (mirror, mirrored) = mirror.below(this.as_ref());
+        // A copy of the selected option's content is hidden; its elements are the option's,
+        // listed once, from the option, and its ids are not recorded for the names.
+        let copy = copy || mirrored;
+        let hidden = hidden || copy || this.as_ref().is_some_and(|e| hides(e, node, exempt));
+        let labels = facts.record(node, hidden, this.as_ref(), labels, copy);
         if let Some(this) = &this
+            && !copy
             && let Some(actionable) = actionable(tree, node, this, hidden, in_disabled_fieldset)
         {
             found.push(actionable);
@@ -328,6 +351,8 @@ pub fn actionable_elements(tree: &Tree) -> Vec<ActionableElement> {
                 in_disabled_fieldset: in_disabled_fieldset
                     || (disabling && Some(child) != first_legend),
                 labels,
+                mirror,
+                copy,
             });
         }
     }
@@ -335,10 +360,65 @@ pub fn actionable_elements(tree: &Tree) -> Vec<ActionableElement> {
     found
 }
 
+/// The handle of each actionable element, the one numbering the outline, the Markdown and the
+/// `now` block print (`docs/design/page-as-text.md` section 5): `l<n>` for a link, `b<n>` for a
+/// button, `f<n>` for the other seven kinds, each letter counted from 1 in document order over
+/// [`actionable_elements`], hidden elements included. Written without the `@` the text puts
+/// before it. The tree does not change after parsing, so the numbering is stable.
+pub fn handles(tree: &Tree) -> Vec<(NodeId, String)> {
+    let (mut links, mut buttons, mut fields) = (0u64, 0u64, 0u64);
+    actionable_elements(tree)
+        .into_iter()
+        .map(|row| {
+            let (letter, count) = match row.kind {
+                Kind::Link => ('l', &mut links),
+                Kind::Button => ('b', &mut buttons),
+                _ => ('f', &mut fields),
+            };
+            *count += 1;
+            (row.node, format!("{letter}{count}"))
+        })
+        .collect()
+}
+
+/// The nodes [`is_hidden`] calls hidden whose parent it does not: a node is hidden exactly when
+/// it or an ancestor is in the set. One walk with its own stack that does not enter a hidden
+/// subtree, so the time is linear in the number of nodes and of their attributes, where calling
+/// [`is_hidden`] for every node costs the depth of each.
+pub fn hidden_roots(tree: &Tree) -> std::collections::HashSet<NodeId> {
+    let primary = Primary::of(tree);
+    let exempt = |node| primary.contains(node);
+    let mut roots = std::collections::HashSet::new();
+    // Each node with whether it is slotted out of a closed `details` parent, and the
+    // `selectedcontent` state above it.
+    let mut pending = vec![(tree.root(), false, Mirror::default())];
+    while let Some((node, slotted_out, mirror)) = pending.pop() {
+        let this = element(tree, node);
+        let (below, mirrored) = mirror.below(this.as_ref());
+        if slotted_out || mirrored || this.as_ref().is_some_and(|e| hides(e, node, exempt)) {
+            roots.insert(node);
+            continue;
+        }
+        let first = match &this {
+            Some(e) if is_closed_details(e) => Some(first_summary(tree, node)),
+            _ => None,
+        };
+        for &child in tree.children(node).iter().rev() {
+            pending.push((
+                child,
+                first.is_some_and(|summary| summary != Some(child)),
+                below,
+            ));
+        }
+    }
+    roots
+}
+
 /// Whether `node` is hidden: it or an ancestor element has `aria-hidden="true"` (not read on
 /// the document element and the body element), or matches a rule of the HTML Standard's
 /// user-agent style sheet that needs no style computation (15.3.1 "Hidden elements", a closed
-/// `dialog`, the content of a closed `details` but its first `summary`; see the crate
+/// `dialog`, a popover, the copy in a `selectedcontent`, the content of a closed `details` but
+/// its first `summary`; see the crate
 /// documentation). A walk up [`Tree::parent`]: without `aria-hidden="true"` on the path a call
 /// costs the depth of `node`.
 ///
@@ -346,6 +426,9 @@ pub fn actionable_elements(tree: &Tree) -> Vec<ActionableElement> {
 ///
 /// When `node` is not of `tree`.
 pub fn is_hidden(tree: &Tree, node: NodeId) -> bool {
+    if in_mirror(tree, node) {
+        return true;
+    }
     let exempt = |node| is_primary(tree, node);
     let mut current = Some(node);
     while let Some(next) = current {
@@ -429,7 +512,8 @@ fn is_primary(tree: &Tree, node: NodeId) -> bool {
 }
 
 /// Whether the element `this`, the node `node`, is itself hidden by `aria-hidden` or by a rule
-/// of the style sheet on the element itself (15.3.1, a closed `dialog`), ancestors not read.
+/// of the style sheet on the element itself (15.3.1, a closed `dialog`, a popover), ancestors
+/// not read.
 /// `exempt` says whether `node` is the document element or the body element.
 fn hides(this: &Element<'_>, node: NodeId, exempt: impl Fn(NodeId) -> bool) -> bool {
     if this
@@ -449,6 +533,7 @@ fn hides(this: &Element<'_>, node: NodeId, exempt: impl Fn(NodeId) -> bool) -> b
                 .attribute("type")
                 .is_some_and(|t| t.eq_ignore_ascii_case("hidden")))
         || (this.local_name == "dialog" && !this.has("open"))
+        || (this.has("popover") && !(this.local_name == "dialog" && this.has("open")))
 }
 
 /// An HTML `details` element without an `open` attribute.
@@ -674,6 +759,61 @@ impl State {
                 | State::FileUpload
         )
     }
+}
+
+/// What a walk from the root knows of the `select`, `option` and `selectedcontent` elements
+/// above a node, to tell a `selectedcontent` the parser fills with a copy of the selected
+/// option (`surf_html`'s `tree_builder/selectedcontent.rs`, 4.10.12 "update a select's
+/// descendant selectedcontent elements") from one it leaves as parsed.
+#[derive(Clone, Copy, Default)]
+struct Mirror {
+    /// A `select` without `multiple` is above, and no second `select`.
+    select: bool,
+    /// An `option`, a `selectedcontent`, a second `select` or a `select` with `multiple` is
+    /// above: a `selectedcontent` below gets no copy.
+    disabled: bool,
+}
+
+impl Mirror {
+    /// The state below `this`, and whether `this` is a `selectedcontent` the parser fills: the
+    /// same steps as the parser's walk, so its subtree is a mirror of an option's content.
+    fn below(self, this: Option<&Element<'_>>) -> (Mirror, bool) {
+        let Some(this) = this.filter(|e| e.namespace == Namespace::Html) else {
+            return (self, false);
+        };
+        let mut below = self;
+        match this.local_name {
+            "selectedcontent" => {
+                below.disabled = true;
+                return (below, self.select && !self.disabled);
+            }
+            "option" => below.disabled = true,
+            "select" if self.select || this.has("multiple") => below.disabled = true,
+            "select" => below.select = true,
+            _ => {}
+        }
+        (below, false)
+    }
+}
+
+/// Whether `node` is in the subtree of a `selectedcontent` the parser fills (see [`Mirror`]):
+/// one walk up to the root, then the steps of [`Mirror`] down the path.
+fn in_mirror(tree: &Tree, node: NodeId) -> bool {
+    let mut path = Vec::new();
+    let mut current = Some(node);
+    while let Some(next) = current {
+        path.push(next);
+        current = tree.parent(next);
+    }
+    let mut state = Mirror::default();
+    for &step in path.iter().rev() {
+        let (below, mirror) = state.below(element(tree, step).as_ref());
+        if mirror {
+            return true;
+        }
+        state = below;
+    }
+    false
 }
 
 /// An element's namespace, local name and attributes.

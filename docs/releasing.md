@@ -65,7 +65,9 @@ The commands use the gates as the bot, from a checkout of this repository:
    `surf`; `surf-cli` starts at that version, so the next release is above it.
 2. **Changelog.** In `CHANGELOG.md`, rename `## [Unreleased]` to `## [<version>] - <date>` and
    put an empty `## [Unreleased]` above it. Commit both on `main`; `slot task check-runner` is
-   green on that commit.
+   green on that commit, and the gate's output holds no line that starts with `raise:` (a task
+   of `crates/agent-tasks/status.txt` listed `pending` that passes; give it its `pass` row
+   first).
 3. **Try it.** Run the workflow by hand on `main`, wait for it, and take steps 6 and 7 on its
    run:
 
@@ -114,11 +116,27 @@ The commands use the gates as the bot, from a checkout of this repository:
 
        sh taskfiles/release-smoke.sh <dir>/surf-<version>-x86_64-unknown-linux-musl
 
+   Then measure the agent tasks with the same binaries (the listed states of
+   `crates/agent-tasks/status.txt` play no part):
+
+       slot task agent-tasks-archive DIR=<dir>/surf-<version>-x86_64-unknown-linux-musl
+
+   Its first line, `agent-tasks: <n> tasks, <p> pass, <f> fail, <s> skipped, lane archive,
+   binaries <dir>`, goes into the notes (step 8) as `agent tasks (scripted): <n> tasks, <p>
+   pass, <f> fail, <s> skipped`. `<dir>` is `DIR` as typed; an absolute `DIR` is named by its
+   last component (`surf-<version>-x86_64-unknown-linux-musl`), the home directory itself and
+   `/` by `-`, so the line holds no path of this machine and no user's name. The model lane's
+   line names its binaries the same way (`target/debug`).
+
    `scan-artifact` reads ELF only, so the macOS binaries are covered by the workflow's own
    home-path check and not by it; whether that is accepted for surf is open, the operator's to
    decide.
-8. **Release.** Write the notes from the annotated tag to a file, scan it, then create the
-   release as the bot with the five files, and view it:
+8. **Release.** Write the notes from the annotated tag to a file, add the line of the agent
+   tasks of step 7 to it, scan it, then create the release as the bot with the five files, and
+   view it. When the model lane (`task agent-tasks-model MODEL=<model>`) was run on the release
+   commit, the notes also carry `agent tasks: <n> tasks, <p> pass, <f> fail, <s> skipped, model
+   <model>, <YYYY-MM-DD>`, the numbers, model and date copied from the first line of
+   `.out/agent-tasks-model.txt`:
 
        git tag -l --format='%(contents)' <version> > <notes-file>
        $gates scan-text <notes-file>

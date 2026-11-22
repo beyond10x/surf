@@ -84,6 +84,8 @@ fn record<T: Transport>(
             sequence,
             command,
             url: url.map(|url| Url(url.to_owned())),
+            handle: None,
+            label: None,
         })
         .unwrap();
     assert!(matches!(outcome, RecordActionOutcome::Recorded { .. }));

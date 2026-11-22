@@ -60,7 +60,7 @@ tasks:
           if [ "$status" -ne "$expected" ]; then
             echo "forge-watch-test: $file: exit $status, expected $expected"
             wrong=$((wrong + 1))
-          elif [ -n "$line" ] && ! printf '%s\n' "$out" | grep -qxF "$line"; then
+          elif [ -n "$line" ] && ! printf '%s\n' "$out" | grep -xF "$line" > /dev/null; then
             echo "forge-watch-test: $file: no line \"$line\""
             wrong=$((wrong + 1))
           fi

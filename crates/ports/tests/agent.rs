@@ -355,6 +355,8 @@ fn record(id: u32, sequence: i64, command: ActionCommand, url: Option<Url>) -> R
         sequence,
         command,
         url,
+        handle: None,
+        label: None,
     }
 }
 
@@ -413,6 +415,8 @@ fn record_action_stores_each_action_and_session_log_reads_a_sessions_own_in_sequ
                 sequence: 1,
                 command: ActionCommand::Open,
                 url: None,
+                handle: None,
+                label: None,
             },
             SessionLog {
                 action_id: go,
@@ -420,6 +424,8 @@ fn record_action_stores_each_action_and_session_log_reads_a_sessions_own_in_sequ
                 sequence: 2,
                 command: ActionCommand::Go,
                 url: Some(address()),
+                handle: None,
+                label: None,
             },
         ])
     );
@@ -431,6 +437,8 @@ fn record_action_stores_each_action_and_session_log_reads_a_sessions_own_in_sequ
             sequence: 1,
             command: ActionCommand::Open,
             url: None,
+            handle: None,
+            label: None,
         }])
     );
 }

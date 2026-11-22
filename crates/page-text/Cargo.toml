@@ -1,0 +1,19 @@
+[package]
+name = "surf-page-text"
+description = "A document parsed by surf-html as text: the outline of its tree and its content as Markdown, every page text escaped for the agent answer."
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+autotests = false
+
+[dependencies]
+surf-answer = { path = "../answer" }
+surf-html = { path = "../html" }
+surf-page = { path = "../page" }
+
+[dev-dependencies]
+
+[[test]]
+name = "main"
+path = "tests/main.rs"

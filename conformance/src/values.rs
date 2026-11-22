@@ -157,14 +157,21 @@ impl<'a> Input<'a> {
         }
     }
 
-    /// A `Bytes` field.
+    /// A `Bytes` field. A value that is not padded base64 is refused with its length, never its
+    /// text: a body can be a form's, and a form's body can hold a password.
     pub fn bytes(&mut self, name: &'static str) -> Result<Vec<u8>, TargetError> {
         let value = self.field(name, "padded base64 text")?;
+        let refused = |what: String| {
+            TargetError::unavailable(
+                format!("reading the input of `{}`", self.command),
+                format!("`{name}` is not padded base64 text: {what}"),
+            )
+        };
         match value {
             Node::Text(text) => {
-                decode(text).ok_or_else(|| self.wrong(name, "padded base64 text", value))
+                decode(text).ok_or_else(|| refused(format!("{} bytes of text", text.len())))
             }
-            other => Err(self.wrong(name, "padded base64 text", other)),
+            _ => Err(refused("a value of another type".to_owned())),
         }
     }
 

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T16:29:15Z",
+  "actor": "human:operator",
+  "artifact": "story:html-tree-complete",
+  "kind": "story",
+  "revision": 9,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "review after the implementation, on 4039cd0",
+    "reference": "findings closed in 280e8a7: the selectedcontent pass had no step limit, foster parenting was quadratic, size=-0 was read as a size, 11 one-line changes passed the tests; after it html-conformance prints 9107 cases, 9095 run, 9095 passed and foster parenting takes 2000, 4000 and 8000 steps at 1000, 2000 and 4000 rows"
+  }
+}

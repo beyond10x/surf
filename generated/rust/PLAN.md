@@ -1,13 +1,13 @@
 <!--
   generated from surf v1
-  contract digest 9cf563aeb85e0ebaf274c9cab36fdfa5c94c5872239a1808e0be06ff915e5e98
+  contract digest 1fa135dfaf753fab3e34de8ae9a4a7052216d1878fc9d395075ce5cd5ac673a6
   do not edit: regenerate with `ess synthesize`
 -->
 # Synthesis plan — surf v1
 
 Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synthesize`.
 
-168 capabilities: **160 generated**, **4 obligations**, **4 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
+241 capabilities: **231 generated**, **6 obligations**, **4 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
 
 ## Generated
 
@@ -17,8 +17,10 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | domain type | `surf.agent.ActionCommand` |
 | domain type | `surf.agent.ActionId` |
 | domain type | `surf.agent.GoCall` |
+| domain type | `surf.agent.LookCall` |
 | domain type | `surf.agent.OpenCall` |
 | domain type | `surf.agent.OpenedSession` |
+| domain type | `surf.agent.PageForm` |
 | domain type | `surf.agent.Session.State` |
 | domain type | `surf.agent.SessionCall` |
 | domain type | `surf.agent.SessionId` |
@@ -30,7 +32,14 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | domain type | `surf.document.ElementId` |
 | domain type | `surf.document.ElementKind` |
 | domain type | `surf.document.EncodingName` |
+| domain type | `surf.document.Form.State` |
+| domain type | `surf.document.FormId` |
+| domain type | `surf.document.Option.State` |
+| domain type | `surf.document.OptionId` |
 | domain type | `surf.document.ParseLimit` |
+| domain type | `surf.document.Submission.State` |
+| domain type | `surf.document.SubmissionEndReason` |
+| domain type | `surf.document.SubmissionId` |
 | domain type | `surf.navigation.Navigation.State` |
 | domain type | `surf.net.FailureReason` |
 | domain type | `surf.net.MediaType` |
@@ -49,6 +58,9 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | entity lifecycle | `surf.agent.Session` |
 | entity lifecycle | `surf.document.Document` |
 | entity lifecycle | `surf.document.Element` |
+| entity lifecycle | `surf.document.Form` |
+| entity lifecycle | `surf.document.Option` |
+| entity lifecycle | `surf.document.Submission` |
 | entity lifecycle | `surf.navigation.Navigation` |
 | entity lifecycle | `surf.net.Request` |
 | entity lifecycle | `surf.render.Frame` |
@@ -56,6 +68,10 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | entity lifecycle | `surf.shell.Window` |
 | command contract | `surf.agent.CloseSession` |
 | command behaviour | `surf.agent.CloseSession` |
+| command contract | `surf.agent.Fill` |
+| command behaviour | `surf.agent.Fill` |
+| command contract | `surf.agent.Follow` |
+| command behaviour | `surf.agent.Follow` |
 | command contract | `surf.agent.Go` |
 | command behaviour | `surf.agent.Go` |
 | command contract | `surf.agent.NoteNavigationCommitted` |
@@ -64,14 +80,32 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | command contract | `surf.agent.NoteNavigationStarted` |
 | command contract | `surf.agent.OpenSession` |
 | command behaviour | `surf.agent.OpenSession` |
+| command contract | `surf.agent.Pick` |
+| command behaviour | `surf.agent.Pick` |
+| command contract | `surf.agent.Press` |
+| command behaviour | `surf.agent.Press` |
 | command contract | `surf.agent.RecordAction` |
 | command behaviour | `surf.agent.RecordAction` |
+| command contract | `surf.document.AbandonSubmission` |
+| command behaviour | `surf.document.AbandonSubmission` |
 | command contract | `surf.document.AddElement` |
 | command behaviour | `surf.document.AddElement` |
+| command contract | `surf.document.AddForm` |
+| command behaviour | `surf.document.AddForm` |
+| command contract | `surf.document.AddOption` |
+| command behaviour | `surf.document.AddOption` |
+| command contract | `surf.document.Check` |
 | command contract | `surf.document.FinishParsing` |
 | command behaviour | `surf.document.FinishParsing` |
 | command contract | `surf.document.ParseDocument` |
 | command behaviour | `surf.document.ParseDocument` |
+| command contract | `surf.document.SelectOption` |
+| command contract | `surf.document.SetValue` |
+| command behaviour | `surf.document.SetValue` |
+| command contract | `surf.document.StartSubmission` |
+| command behaviour | `surf.document.StartSubmission` |
+| command contract | `surf.document.SubmitForm` |
+| command behaviour | `surf.document.SubmitForm` |
 | command contract | `surf.navigation.CancelNavigation` |
 | command behaviour | `surf.navigation.CancelNavigation` |
 | command contract | `surf.navigation.CommitNavigation` |
@@ -95,13 +129,25 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | command contract | `surf.shell.OpenWindow` |
 | command behaviour | `surf.shell.OpenWindow` |
 | event type | `surf.agent.ActionRecorded` |
+| event type | `surf.agent.EventsLeftOut` |
+| event type | `surf.agent.FillRequested` |
 | event type | `surf.agent.NavigationRequested` |
+| event type | `surf.agent.PickRequested` |
+| event type | `surf.agent.PressRequested` |
 | event type | `surf.agent.SessionClosed` |
 | event type | `surf.agent.SessionNavigationChanged` |
 | event type | `surf.agent.SessionOpened` |
+| event type | `surf.document.CheckednessSet` |
 | event type | `surf.document.DocumentParsed` |
 | event type | `surf.document.ElementAdded` |
+| event type | `surf.document.FormAdded` |
+| event type | `surf.document.FormSubmitted` |
+| event type | `surf.document.OptionAdded` |
+| event type | `surf.document.OptionSelected` |
 | event type | `surf.document.ParsingStarted` |
+| event type | `surf.document.SubmissionAbandoned` |
+| event type | `surf.document.SubmissionStarted` |
+| event type | `surf.document.ValueSet` |
 | event type | `surf.navigation.NavigationCancelled` |
 | event type | `surf.navigation.NavigationCommitted` |
 | event type | `surf.navigation.NavigationFailed` |
@@ -117,8 +163,15 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | error type | `surf.agent.SessionExists` |
 | error type | `surf.agent.SessionNotFound` |
 | error type | `surf.agent.SessionStateConflict` |
+| error type | `surf.document.ControlDisabled` |
+| error type | `surf.document.ControlHidden` |
+| error type | `surf.document.ControlKindConflict` |
 | error type | `surf.document.DocumentNotFound` |
 | error type | `surf.document.DocumentStateConflict` |
+| error type | `surf.document.ElementNotFound` |
+| error type | `surf.document.OptionNotFound` |
+| error type | `surf.document.SubmissionNotFound` |
+| error type | `surf.document.SubmissionStateConflict` |
 | error type | `surf.navigation.NavigationNotFound` |
 | error type | `surf.navigation.NavigationStateConflict` |
 | error type | `surf.net.RequestNotFound` |
@@ -133,10 +186,18 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | view query | `surf.agent.SessionState` |
 | view type | `surf.agent.Sessions` |
 | view query | `surf.agent.Sessions` |
+| view type | `surf.document.Controls` |
+| view query | `surf.document.Controls` |
 | view type | `surf.document.Documents` |
 | view query | `surf.document.Documents` |
 | view type | `surf.document.Elements` |
 | view query | `surf.document.Elements` |
+| view type | `surf.document.Forms` |
+| view query | `surf.document.Forms` |
+| view type | `surf.document.Options` |
+| view query | `surf.document.Options` |
+| view type | `surf.document.Submissions` |
+| view query | `surf.document.Submissions` |
 | view type | `surf.navigation.Navigations` |
 | view query | `surf.navigation.Navigations` |
 | view type | `surf.net.Requests` |
@@ -147,6 +208,8 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | view query | `surf.shell.Tabs` |
 | view type | `surf.shell.Windows` |
 | view query | `surf.shell.Windows` |
+| binding transformation | `check-on-pick-requested` |
+| binding delivery | `check-on-pick-requested` |
 | binding transformation | `close-tab-on-session-closed` |
 | binding delivery | `close-tab-on-session-closed` |
 | binding transformation | `commit-on-response` |
@@ -155,6 +218,8 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | binding delivery | `fail-on-fetch-failed` |
 | binding transformation | `fetch-on-navigation-started` |
 | binding delivery | `fetch-on-navigation-started` |
+| binding transformation | `navigate-on-form-submitted` |
+| binding delivery | `navigate-on-form-submitted` |
 | binding transformation | `navigate-on-navigation-requested` |
 | binding delivery | `navigate-on-navigation-requested` |
 | binding transformation | `note-on-navigation-cancelled` |
@@ -167,6 +232,12 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | binding delivery | `note-on-navigation-started` |
 | binding transformation | `parse-on-navigation-committed` |
 | binding delivery | `parse-on-navigation-committed` |
+| binding transformation | `select-on-pick-requested` |
+| binding delivery | `select-on-pick-requested` |
+| binding transformation | `set-value-on-fill-requested` |
+| binding delivery | `set-value-on-fill-requested` |
+| binding transformation | `submit-on-press-requested` |
+| binding delivery | `submit-on-press-requested` |
 | component port | `agent` |
 | component port | `document` |
 | component port | `navigator` |
@@ -191,12 +262,14 @@ What the specification fully determines is generated; what it cannot determine i
 | command behaviour | `surf.agent.NoteNavigationEnded` | kept an obligation by a set outcome over filtered rows (`instances:`), in `noted` | given `surf.agent.NoteNavigationEnded` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `navigation_id == input.navigation_id`, setting `navigation_state`, emits `surf.agent.SessionNavigationChanged` |
 | command behaviour | `surf.agent.NoteNavigationFailed` | kept an obligation by a set outcome over filtered rows (`instances:`), in `noted` | given `surf.agent.NoteNavigationFailed` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `navigation_id == input.navigation_id`, setting `navigation_state`, `failure_reason`, emits `surf.agent.SessionNavigationChanged` |
 | command behaviour | `surf.agent.NoteNavigationStarted` | kept an obligation by a set outcome over filtered rows (`instances:`), in `noted` | given `surf.agent.NoteNavigationStarted` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `noted` otherwise, changes every `surf.agent.Session` where `tab_id == input.tab_id`, setting `navigation_id`, `url`, `navigation_state`, `status`, `media_type`, `failure_reason`, emits `surf.agent.SessionNavigationChanged` |
+| command behaviour | `surf.document.Check` | kept an obligation by effects on filtered rows (`affects:`), in `radio-checked` | given `surf.document.Check` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `no-such-element` for an identity no record carries, error `surf.document.ElementNotFound`; `not-checkable` when the existing subject's stored fields satisfy `(kind != checkbox and kind != radio)`, error `surf.document.ControlKindConflict`; `disabled` when the existing subject's stored fields satisfy `disabled == true`, error `surf.document.ControlDisabled`; `hidden` when the existing subject's stored fields satisfy `hidden == true`, error `surf.document.ControlHidden`; `radio-checked` when the existing subject's stored fields satisfy `kind == radio`, updates `surf.document.Element`, changes, beside its subject, every `surf.document.Element` where `(kind == radio and document_id == subject.document_id and form_id == subject.form_id and name == subject.name)`, setting `checked`, emits `surf.document.CheckednessSet`; `unchecked` when the existing subject's stored fields satisfy `checked == true`, updates `surf.document.Element`, emits `surf.document.CheckednessSet`; `checked` otherwise, updates `surf.document.Element`, emits `surf.document.CheckednessSet` |
+| command behaviour | `surf.document.SelectOption` | kept an obligation by effects on filtered rows (`affects:`), in `selected` | given `surf.document.SelectOption` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `no-such-option` for an identity no record carries, error `surf.document.OptionNotFound`; `disabled` when the existing subject's stored fields satisfy `disabled == true`, error `surf.document.ControlDisabled`; `hidden` when the existing subject's stored fields satisfy `hidden == true`, error `surf.document.ControlHidden`; `selected` otherwise, updates `surf.document.Option`, changes, beside its subject, every `surf.document.Option` where `select_id == subject.select_id`, setting `selected`, emits `surf.document.OptionSelected` |
 
 ## Refused — not represented by this synthesis
 
 | capability | source | stage | why |
 | --- | --- | --- | --- |
 | actor grants | `surf.agent.Opener` | planning | may invoke `surf.agent.OpenSession`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry |
-| actor grants | `surf.agent.SessionHolder` | planning | may invoke `surf.agent.CloseSession`, `surf.agent.Go`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry |
+| actor grants | `surf.agent.SessionHolder` | planning | may invoke `surf.agent.CloseSession`, `surf.agent.Fill`, `surf.agent.Follow`, `surf.agent.Go`, `surf.agent.Pick`, `surf.agent.Press`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry |
 | actor grants | `surf.navigation.User` | planning | may invoke `surf.navigation.CancelNavigation`, `surf.navigation.Navigate`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry |
 | actor grants | `surf.shell.User` | planning | may invoke `surf.shell.CloseTab`, `surf.shell.OpenTab`, `surf.shell.OpenWindow`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry |

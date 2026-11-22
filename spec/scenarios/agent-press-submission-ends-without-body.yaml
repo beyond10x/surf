@@ -1,0 +1,75 @@
+# An agent presses a submit button whose form fails constraint validation (a required control is
+# empty): the press starts a submission as in `agent-press-submits-post.yaml`, and the submission
+# step, played by the scenario on a submission of the same button arranged `Started`, ends it with
+# `AbandonSubmission` and the reason, without a request and so without a body. Nothing navigates:
+# no navigation starts and no request is made.
+type: ess-scenario/6
+domain: surf.agent
+scenario: agent-press-submission-ends-without-body
+summary: A submission that ends with a reason navigates nowhere and makes no request.
+
+arrange:
+  - instance: session
+    entity: surf.agent.Session
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-0000000000d1
+      fields:
+        window_id: 5a7c1e00-0000-4000-8000-0000000000d2
+        tab_id: 5a7c1e00-0000-4000-8000-0000000000d3
+        holder: 5a7c1e00-0000-4000-8000-0000000000d1
+      state: Open
+  - instance: send
+    entity: surf.document.Element
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-0000000000d4
+      fields:
+        document_id: 5a7c1e00-0000-4000-8000-0000000000d5
+        position: 2
+        kind: button
+        label: Send
+        hidden: false
+        disabled: false
+        checked: false
+        required: false
+        form_id: 5a7c1e00-0000-4000-8000-0000000000d6
+      state: Added
+  - instance: submission
+    entity: surf.document.Submission
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-0000000000d7
+      fields:
+        submitter: 5a7c1e00-0000-4000-8000-0000000000d4
+      state: Started
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.agent.Press
+    actor: surf.agent.SessionHolder
+    caller: {session_id: {$instance: session}}
+    input:
+      session_id: {$instance: session}
+      element_id: {$instance: send}
+      handle: b1
+    outcome: requested
+
+  - at: 2026-01-06T09:00:01Z
+    command: surf.document.AbandonSubmission
+    input:
+      submission_id: {$instance: submission}
+      reason: InvalidControls
+    outcome: abandoned
+    events:
+      - event: surf.document.SubmissionAbandoned
+        payload:
+          submission_id: {$instance: submission}
+          reason: InvalidControls
+
+assert:
+  - view: surf.document.Submissions
+    contains: {submitter: {$instance: send}, state: Started}
+  - view: surf.document.Submissions
+    contains: {submission_id: {$instance: submission}, submitter: {$instance: send}, state: Abandoned}
+  - view: surf.navigation.Navigations
+    counts: {at_least: 0, at_most: 0}
+  - view: surf.net.Requests
+    counts: {at_least: 0, at_most: 0}

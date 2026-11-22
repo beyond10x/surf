@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:page-text-tables
 kind: story
-status: active
+status: implemented
 title: Tables in a page's Markdown
 summary: 'An HTML table becomes a GitHub table: header row, colspan and rowspan as empty cells, nested tables after their outer one, cells escaped and cut.'
 relations:
@@ -22,10 +22,11 @@ scope:
   path: crates/page-text/tests/cases/tables.rs
 - confidence: inferred
   path: crates/page-text/tests/main.rs
-revision: 8
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T04:59:51Z", actor: "human:operator", revision: 6, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T04:59:51Z", actor: "human:operator", revision: 7, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-22T16:29:18Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"test_result":1,"verification":2}}}
 ---
 ## Context
 
@@ -113,3 +114,37 @@ builds and test runs inside it carry it. No test runs over 60 s and the test ste
 
 Layout of a table (widths, alignment from CSS); `align` attributes; a table in `template`
 contents (not walked).
+
+## As built
+
+What differs from the text above, as of 64c6621:
+
+- Change, "the `caption`'s text as a paragraph before it": every visible `caption` child is a
+  paragraph before the table, in tree order; the first is the table's caption by "forming a
+  table". See `every_caption_is_written_in_document_order` in
+  `crates/page-text/tests/cases/tables.rs`.
+- Change, columns: the header row, the delimiter row and every other row have the same number of
+  cells, that of the widest row (at most 20, then `[cut]`), so each row reads as a row of the
+  table under the header (`wide_and_long_cells_are_cut`).
+- Change, "the HTML Standard's table processing model ..., from memory, confirmed here": checked
+  against "forming a table" as published on 2026-11-22; the crate documentation of
+  `crates/page-text/src/lib.rs` names the differences kept, one per bullet below.
+- Every `thead`'s rows come first; the algorithm places a `thead` after a `tbody` in tree order.
+- A `rowspan` past the rows of its row group ends there, as a browser lays it out; the algorithm
+  adds empty rows to the table.
+- `col` and `colgroup` add no columns.
+- Hidden rows and cells take no slot, as `display: none` removes them from the layout.
+- A cell, "cut at 200 characters": a link, image or code span in a cell spends the characters of
+  page text it shows (at least 1), and the cut falls between them; one over 864 bytes is cut
+  before `[cut]` (`adversary_a_cell_and_a_heading_keep_200_characters`).
+- A table row is not wrapped and can pass 1,024 bytes (21 cells of at most 200 characters of
+  page text and their escapes), the one line that can; stated in `docs/design/page-as-text.md`
+  section 6 and the crate documentation.
+- The rows left in a row group are counted once per table, so the table code's work is linear in
+  its rows; `table_visits()` (hidden from the documentation) counts it, and
+  `a_long_row_group_costs_linear_work` holds the count at 2,000 rows to at most twice that at
+  1,000 plus 16.
+- A table inside a heading is a run of its text, not a table (the crate documentation).
+- No alignment (`:`) is written in the delimiter row (the crate documentation).
+- Writes: besides the files listed, `crates/page-text/src/lib.rs` (the documentation of tables
+  and `table_visits()`).

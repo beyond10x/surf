@@ -43,9 +43,13 @@ includes:
     taskfile: taskfiles/test-layout.yml
     flatten: true
     optional: true
+  agent-tasks:
+    taskfile: taskfiles/agent-tasks.yml
+    flatten: true
+    optional: true
 
 vars:
-  REFUSALS_MAX: 28
+  REFUSALS_MAX: 48
   SYNTHESIZE: ess generate synthesize --strict-requires --path spec --target rust
 
 tasks:
@@ -343,10 +347,12 @@ tasks:
     deps: [cli, generated-fresh]
     env:
       RUSTFLAGS: -D warnings
+      SURF_BIN_DIR: '{{.ROOT_DIR}}/target/debug'
     vars:
       TEST_BUDGET: '{{.TEST_BUDGET | default "120"}}'
     silent: true
     cmds:
+      - task: build
       - mkdir -p .out
       - |
         junit=target/nextest/default/junit.xml
@@ -361,7 +367,7 @@ tasks:
         if [ "$docs" -ne 0 ]; then cat .out/test-doc.log; fi
         if [ -f "$junit" ]; then
           echo "the ten slowest tests:"
-          tr '\n' ' ' < "$junit" | sed 's/<testcase /\n<testcase /g' | sed -n 's/^<testcase name="\([^"]*\)" classname="\([^"]*\)"[^>]*time="\([0-9.]*\)".*/\3 \2 \1/p' | sort -rn | head -n 10 | awk '{ printf "  %8.3fs %s %s\n", $1, $2, $3 }'
+          sh taskfiles/slowest-tests.sh "$junit" 10
         fi
         summary=$(grep -E '^ *Summary \[' .out/test.log | tail -n 1)
         test -n "$summary" && echo "$summary" | sed 's/^ *//'
@@ -398,6 +404,7 @@ tasks:
       - task: test-layout
       - task: build
       - task: test
+      - task: agent-tasks-report
       - task: view-stream-check
       - task: view-test
       - task: html-conformance

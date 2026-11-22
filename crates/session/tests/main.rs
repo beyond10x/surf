@@ -3,7 +3,9 @@
 
 #![forbid(unsafe_code)]
 
+mod adversary_document_text;
 mod adversary_events;
+mod adversary_parse;
 mod adversary_view;
 mod built;
 mod common;

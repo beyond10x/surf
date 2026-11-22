@@ -2,12 +2,19 @@
 //! quoting function for every value from a page, a server or an address, and the reverse of
 //! both, [`unquote`] and [`parse`].
 //!
-//! The grammar is `docs/agent-answer.md`. Every line is printable ASCII (U+0020 to U+007E) and
-//! ends in a line feed. A value from outside is written only through [`quote`] (or
-//! [`quote_cut`] for a field with a length limit), so it stands inside double quotes and holds
-//! no `"`, no `\` and no character outside U+0020 to U+007E. Every other part of a line is a
-//! number or a word of the format, and [`render`] refuses a word outside its character set
-//! rather than write it.
+//! The grammar is `docs/agent-answer.md`. Every line ends in a line feed and, but for the body
+//! lines of the `text` block, is printable ASCII (U+0020 to U+007E). A value from outside is
+//! written only through [`quote`] (or [`quote_cut`] for a field with a length limit), so it
+//! stands inside double quotes and holds no `"`, no `\` and no character outside U+0020 to
+//! U+007E. Every other part of a line is a number or a word of the format, and [`render`]
+//! refuses a word outside its character set rather than write it.
+//!
+//! Page text in bulk is the `text` block ([`Text`]): every line of it behind `>` or `> `, so no
+//! line of page text can stand where a line of the format stands. A body line holds printable
+//! ASCII and UTF-8 characters but those [`escaped_in_text`] names, and does not start with one
+//! [`escaped_at_run_start`] names; [`render`] refuses another. [`text_page`] cuts a rendering
+//! into pages of at most [`TEXT_LINES_MAX`] lines and [`TEXT_BYTES_MAX`] bytes, and
+//! [`quote_text`] writes a value of the tree outline.
 //!
 //! [`parse`] accepts exactly what [`render`] writes: parsing a rendered answer gives the value
 //! back, and every answer [`parse`] accepts renders to the same text. `surfd`, the live view and
@@ -46,6 +53,9 @@ pub struct Answer {
     pub path: Option<Path>,
     /// `note` lines, in order.
     pub notes: Vec<Note>,
+    /// The `text` block: a page's text, every line behind `>`, then the `more` line when lines
+    /// are left. Last in the answer.
+    pub text: Option<Text>,
 }
 
 impl Answer {
@@ -58,6 +68,7 @@ impl Answer {
             page: None,
             path: None,
             notes: Vec::new(),
+            text: None,
         }
     }
 }
@@ -209,6 +220,196 @@ pub enum Note {
     /// `note parser: <parts>`: the parts of the tree builder not implemented yet, at least one,
     /// each a word of `[a-z-]+`, joined by `,`.
     Parser(Vec<String>),
+    /// `note text: <what>`: what the `text` block cannot show.
+    Text(TextNote),
+}
+
+/// What a `note text:` line says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextNote {
+    /// `no-css`: the text is computed from the tree without CSS, so text a style sheet hides is
+    /// shown.
+    NoCss,
+    /// `no-document`: the load failed or the page is not HTML, so there is no text block.
+    NoDocument,
+    /// `deep <n>`: the Markdown wrote up to `n` levels of nested lists and quotes, at least 1,
+    /// at the indentation of the level above them, without their markers, because the prefix of
+    /// their lines would pass its bound (`surf_page_text::markdown::PREFIX_BYTES_MAX`).
+    Deep(u64),
+}
+
+impl TextNote {
+    const WORDS: [TextNote; 2] = [TextNote::NoCss, TextNote::NoDocument];
+
+    /// The word of the format.
+    pub fn word(self) -> &'static str {
+        match self {
+            TextNote::NoCss => "no-css",
+            TextNote::NoDocument => "no-document",
+            TextNote::Deep(_) => "deep",
+        }
+    }
+}
+
+/// The most body lines one `text` block shows.
+pub const TEXT_LINES_MAX: usize = 200;
+
+/// The most bytes the body lines of one `text` block hold, each counted with its `>` or `> `
+/// and its line feed.
+pub const TEXT_BYTES_MAX: u64 = 32_768;
+
+/// What `[cut]` adds to a line cut on the block's byte bound.
+const CUT_MARK: &str = "[cut]";
+
+/// The form of the page text in a `text` block.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Form {
+    /// `tree`: the outline of the document's tree.
+    Tree,
+    /// `markdown`: the content as Markdown.
+    Markdown,
+}
+
+impl Form {
+    const ALL: [Form; 2] = [Form::Tree, Form::Markdown];
+
+    /// The word of the format.
+    pub fn word(self) -> &'static str {
+        match self {
+            Form::Tree => "tree",
+            Form::Markdown => "markdown",
+        }
+    }
+}
+
+/// The `text` block: one page of the lines of a rendering.
+///
+/// The header is `text <form> <shown> of <total> lines from <first>, <bytes shown> of <bytes
+/// total> bytes`; `<shown>` is `lines.len()` and `<bytes shown>` is counted from `lines`. Each
+/// line is written `>` when it is empty and `> ` and the line otherwise. When `first + shown`
+/// is at most `total`, the block ends in `more <n> lines: look --as <form> --from-line <m>`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Text {
+    /// The form of the lines.
+    pub form: Form,
+    /// The number of the first line shown, counted from 1 over the whole rendering.
+    pub first: u64,
+    /// How many lines the whole rendering has.
+    pub total: u64,
+    /// How many bytes the whole rendering has as body lines (prefix and line feed counted).
+    pub bytes_total: u64,
+    /// The lines shown, without their prefix.
+    pub lines: Vec<String>,
+}
+
+// --- Characters of page text ----------------------------------------------------------------
+
+/// Whether a character of page text is written as `\x` and two lower-case hexadecimal digits
+/// per UTF-8 byte in a `text` block, wherever it stands.
+///
+/// The ranges are rule 2 of section 3 of `docs/design/page-as-text.md` (decision D1, B), the one
+/// place of the rule: C0, DEL and C1 (U+0000 to U+001F, U+007F to U+009F); the invisible,
+/// format, bidirectional and separator characters and variation selectors (U+00AD, U+034F,
+/// U+061C, U+115F to U+1160, U+17B4 to U+17B5, U+180B to U+180F, U+200B to U+200F, U+2028 to
+/// U+202E, U+2060 to U+206F, U+3164, U+FE00 to U+FE0F, U+FEFF, U+FFA0, U+FFF0 to U+FFFB, U+1BCA0
+/// to U+1BCA3, U+1D173 to U+1D17A); private use (U+E000 to U+F8FF, U+F0000 to U+10FFFF);
+/// U+40000 to U+EFFFF; the noncharacters U+FDD0 to U+FDEF and U+nFFFE, U+nFFFF of planes 0 to
+/// 3; and the ten fullwidth forms of surf's syntax (U+FF02, U+FF08, U+FF09, U+FF1C, U+FF1E,
+/// U+FF20, U+FF3B, U+FF3C, U+FF3D, U+FF5C). U+FFFD is kept. Unassigned code points of planes 0
+/// to 3 are not detected.
+pub fn escaped_in_text(c: char) -> bool {
+    let u = c as u32;
+    matches!(
+        u,
+        0x0000..=0x001F
+            | 0x007F..=0x009F
+            | 0x00AD
+            | 0x034F
+            | 0x061C
+            | 0x115F..=0x1160
+            | 0x17B4..=0x17B5
+            | 0x180B..=0x180F
+            | 0x200B..=0x200F
+            | 0x2028..=0x202E
+            | 0x2060..=0x206F
+            | 0x3164
+            | 0xFE00..=0xFE0F
+            | 0xFEFF
+            | 0xFFA0
+            | 0xFFF0..=0xFFFB
+            | 0x1BCA0..=0x1BCA3
+            | 0x1D173..=0x1D17A
+            | 0xE000..=0xF8FF
+            | 0xF0000..=0x10FFFF
+            | 0x40000..=0xEFFFF
+            | 0xFDD0..=0xFDEF
+            | 0xFF02
+            | 0xFF08
+            | 0xFF09
+            | 0xFF1C
+            | 0xFF1E
+            | 0xFF20
+            | 0xFF3B
+            | 0xFF3C
+            | 0xFF3D
+            | 0xFF5C
+    ) || (u & 0xFFFE == 0xFFFE && u >> 16 <= 3)
+}
+
+/// Whether a character is escaped when it starts a run of page text (the first code point after
+/// a character surf wrote): the combining marks U+0300 to U+036F, U+1AB0 to U+1AFF, U+1DC0 to
+/// U+1DFF, U+20D0 to U+20FF and U+FE20 to U+FE2F (rule 2 of `docs/design/page-as-text.md`
+/// section 3). Inside a run they are kept.
+pub fn escaped_at_run_start(c: char) -> bool {
+    matches!(
+        c as u32,
+        0x0300..=0x036F | 0x1AB0..=0x1AFF | 0x1DC0..=0x1DFF | 0x20D0..=0x20FF | 0xFE20..=0xFE2F
+    )
+}
+
+/// Write a character as `\x` and two lower-case hexadecimal digits per UTF-8 byte.
+fn push_escaped(character: char, out: &mut String) {
+    let mut bytes = [0u8; 4];
+    for byte in character.encode_utf8(&mut bytes).bytes() {
+        out.push_str(&format!("\\x{byte:02x}"));
+    }
+}
+
+/// Write one value from a page as a quoted field of a `text` block (the tree's texts and
+/// attribute values).
+///
+/// As [`quote`], but a character above U+007F is written as itself unless [`escaped_in_text`]
+/// names it, or it is the first character of the value and [`escaped_at_run_start`] names it.
+/// `"` and `\` are escaped, so the field ends at its closing quote.
+pub fn quote_text(value: &str) -> String {
+    let mut field = String::with_capacity(value.len() + 2);
+    field.push('"');
+    for (index, character) in value.chars().enumerate() {
+        if character == '"'
+            || character == '\\'
+            || escaped_in_text(character)
+            || (index == 0 && escaped_at_run_start(character))
+        {
+            push_escaped(character, &mut field);
+        } else {
+            field.push(character);
+        }
+    }
+    field.push('"');
+    field
+}
+
+/// [`quote_text`] with a length limit of `limit` characters, cut as [`quote_cut`] cuts: a longer
+/// value keeps its first `limit` characters and the field is followed by `...`.
+pub fn quote_text_cut(value: &str, limit: usize) -> String {
+    match value.char_indices().nth(limit) {
+        Some((end, _)) => {
+            let mut field = quote_text(&value[..end]);
+            field.push_str("...");
+            field
+        }
+        None => quote_text(value),
+    }
 }
 
 // --- Quoting ------------------------------------------------------------------------------
@@ -388,8 +589,20 @@ pub enum RenderError {
     TokenForm,
     /// The `path` block shows more actions than its total.
     PathLongerThanTotal,
-    /// A `note parser` line with no part.
+    /// A `note parser` line with no part, or a `note text: deep` line of 0 levels.
     EmptyNote,
+    /// A body line of the `text` block holds a line feed or a character [`escaped_in_text`]
+    /// names, or starts with one [`escaped_at_run_start`] names.
+    TextLine {
+        /// The body line, counted from 1 in the block.
+        line: u64,
+    },
+    /// The `text` block shows more than [`TEXT_LINES_MAX`] lines or more than
+    /// [`TEXT_BYTES_MAX`] bytes.
+    TextOverBound,
+    /// The counts of the `text` block contradict its lines: more lines shown than the total,
+    /// more bytes shown than the total, a first line of 0, or lines shown past the total.
+    TextCounts,
 }
 
 impl fmt::Display for RenderError {
@@ -405,7 +618,20 @@ impl fmt::Display for RenderError {
             RenderError::PathLongerThanTotal => {
                 f.write_str("the path shows more actions than its total")
             }
-            RenderError::EmptyNote => f.write_str("a note parser line has no part"),
+            RenderError::EmptyNote => {
+                f.write_str("a note parser line has no part, or a note text deep line 0 levels")
+            }
+            RenderError::TextLine { line } => {
+                write!(
+                    f,
+                    "body line {line} of the text block holds a character it must escape"
+                )
+            }
+            RenderError::TextOverBound => write!(
+                f,
+                "the text block shows more than {TEXT_LINES_MAX} lines or {TEXT_BYTES_MAX} bytes"
+            ),
+            RenderError::TextCounts => f.write_str("the counts of the text block contradict it"),
         }
     }
 }
@@ -430,6 +656,9 @@ pub fn render(answer: &Answer) -> Result<String, RenderError> {
     }
     for note in &answer.notes {
         render_note(note, &mut out)?;
+    }
+    if let Some(text) = &answer.text {
+        render_text(text, &mut out)?;
     }
     Ok(out)
 }
@@ -523,9 +752,239 @@ fn render_note(note: &Note, out: &mut String) -> Result<(), RenderError> {
             out.push_str("note parser: ");
             out.push_str(&parts.join(","));
         }
+        Note::Text(what) => {
+            out.push_str("note text: ");
+            out.push_str(what.word());
+            if let TextNote::Deep(levels) = what {
+                if *levels == 0 {
+                    return Err(RenderError::EmptyNote);
+                }
+                out.push_str(&format!(" {levels}"));
+            }
+        }
     }
     out.push('\n');
     Ok(())
+}
+
+/// The bytes a line takes as a body line: `>` and a line feed when it is empty, `> `, the line
+/// and a line feed otherwise.
+fn body_bytes(line: &str) -> u64 {
+    if line.is_empty() {
+        2
+    } else {
+        line.len() as u64 + 3
+    }
+}
+
+/// Whether a line may stand behind `> `: no character [`escaped_in_text`] names (a line feed
+/// among them), and no character [`escaped_at_run_start`] names as its first.
+fn is_body_line(line: &str) -> bool {
+    !line.chars().next().is_some_and(escaped_at_run_start) && !line.chars().any(escaped_in_text)
+}
+
+fn push_body_line(line: &str, out: &mut String) {
+    if line.is_empty() {
+        out.push_str(">\n");
+    } else {
+        out.push_str("> ");
+        out.push_str(line);
+        out.push('\n');
+    }
+}
+
+fn text_header(
+    form: Form,
+    shown: u64,
+    total: u64,
+    first: u64,
+    bytes: u64,
+    bytes_total: u64,
+) -> String {
+    format!(
+        "text {} {shown} of {total} lines from {first}, {bytes} of {bytes_total} bytes",
+        form.word()
+    )
+}
+
+/// The `more` line of a page whose lines from `first + shown` on are left, or `None` when none
+/// is left.
+fn more_line(form: Form, first: u64, shown: u64, total: u64) -> Option<String> {
+    let next = first.checked_add(shown)?;
+    (next <= total).then(|| {
+        format!(
+            "more {} lines: look --as {} --from-line {next}",
+            total - next + 1,
+            form.word()
+        )
+    })
+}
+
+/// Check a `text` block and return the bytes of its body lines.
+fn check_text(text: &Text) -> Result<u64, RenderError> {
+    for (index, line) in text.lines.iter().enumerate() {
+        if !is_body_line(line) {
+            return Err(RenderError::TextLine {
+                line: index as u64 + 1,
+            });
+        }
+    }
+    let shown = text.lines.len() as u64;
+    let bytes: u64 = text.lines.iter().map(|line| body_bytes(line)).sum();
+    if text.lines.len() > TEXT_LINES_MAX || bytes > TEXT_BYTES_MAX {
+        return Err(RenderError::TextOverBound);
+    }
+    counts_hold(shown, text.total, text.first, bytes, text.bytes_total)
+        .then_some(bytes)
+        .ok_or(RenderError::TextCounts)
+}
+
+/// Whether the counts of a header agree with each other.
+fn counts_hold(shown: u64, total: u64, first: u64, bytes: u64, bytes_total: u64) -> bool {
+    let past_total = shown > 0 && first.checked_add(shown - 1).is_none_or(|last| last > total);
+    shown <= total && bytes <= bytes_total && first >= 1 && !past_total
+}
+
+fn render_text(text: &Text, out: &mut String) -> Result<(), RenderError> {
+    let bytes = check_text(text)?;
+    let shown = text.lines.len() as u64;
+    out.push_str(&text_header(
+        text.form,
+        shown,
+        text.total,
+        text.first,
+        bytes,
+        text.bytes_total,
+    ));
+    out.push('\n');
+    for line in &text.lines {
+        push_body_line(line, out);
+    }
+    if let Some(more) = more_line(text.form, text.first, shown, text.total) {
+        out.push_str(&more);
+        out.push('\n');
+    }
+    Ok(())
+}
+
+/// One page of a rendering's lines, from line `from` (counted from 1; 0 reads as 1).
+///
+/// Reads the lines one at a time and keeps those from `from` on while the page holds at most
+/// [`TEXT_LINES_MAX`] lines and [`TEXT_BYTES_MAX`] bytes; every line is counted, with its bytes
+/// as a body line, so the caller keeps only the lines shown. A line that alone exceeds the byte
+/// bound is shown alone when it is the page's first, cut at the last escape unit that leaves
+/// room for `[cut]`: a unit is one character, a `\` with the character after it, or the `\x`
+/// escapes of one UTF-8 character, so the cut never leaves a bare `\` or part of a character.
+pub fn text_page(form: Form, lines: impl Iterator<Item = String>, from: u64) -> Text {
+    let first = from.max(1);
+    let mut kept = Vec::new();
+    let mut kept_bytes = 0;
+    let mut keeping = true;
+    let mut total = 0;
+    let mut bytes_total = 0;
+    for line in lines {
+        total += 1;
+        let bytes = body_bytes(&line);
+        bytes_total += bytes;
+        if !keeping || total < first {
+            continue;
+        }
+        if kept.len() < TEXT_LINES_MAX && kept_bytes + bytes <= TEXT_BYTES_MAX {
+            kept_bytes += bytes;
+            kept.push(line);
+        } else {
+            if kept.is_empty() {
+                kept.push(cut_line(&line));
+            }
+            keeping = false;
+        }
+    }
+    Text {
+        form,
+        first,
+        total,
+        bytes_total,
+        lines: kept,
+    }
+}
+
+/// A line cut so that `> `, the line, `[cut]` and a line feed fit [`TEXT_BYTES_MAX`].
+fn cut_line(line: &str) -> String {
+    let room = TEXT_BYTES_MAX as usize - 3 - CUT_MARK.len();
+    let mut end = 0;
+    while end < line.len() {
+        let next = end + escape_unit(&line[end..]);
+        if next > room {
+            break;
+        }
+        end = next;
+    }
+    let mut cut = line[..end].to_string();
+    cut.push_str(CUT_MARK);
+    cut
+}
+
+/// The length in bytes of the escape unit `rest` starts with (`rest` not empty): `\x` and two
+/// hexadecimal digits, with the escapes that follow for the rest of that UTF-8 character; a `\`
+/// with the character after it; or one character.
+fn escape_unit(rest: &str) -> usize {
+    let bytes = rest.as_bytes();
+    if bytes[0] != b'\\' {
+        return rest.chars().next().map_or(1, char::len_utf8);
+    }
+    let Some(lead) = hex_escape(bytes) else {
+        return 1 + rest[1..].chars().next().map_or(0, char::len_utf8);
+    };
+    let width = match lead {
+        0xC0..=0xDF => 2,
+        0xE0..=0xEF => 3,
+        0xF0..=0xFF => 4,
+        _ => 1,
+    };
+    let mut length = 4;
+    for _ in 1..width {
+        match bytes.get(length..).and_then(hex_escape) {
+            Some(0x80..=0xBF) => length += 4,
+            _ => break,
+        }
+    }
+    length
+}
+
+/// The byte `\x` and two hexadecimal digits at the start of `bytes` stand for.
+fn hex_escape(bytes: &[u8]) -> Option<u8> {
+    match bytes {
+        [b'\\', b'x', high, low, ..] => {
+            let digit = |b: u8| (b as char).to_digit(16);
+            Some((digit(*high)? * 16 + digit(*low)?) as u8)
+        }
+        _ => None,
+    }
+}
+
+/// Every line of a rendering behind `>`, after the header `text <form> <n> of <n> lines from 1,
+/// <b> of <b> bytes`, without the bounds of [`text_page`] and without a `more` line: for
+/// `surf <url> --as`, which prints a whole page. Each line is checked as [`render`] checks a
+/// body line.
+pub fn render_text_whole(
+    form: Form,
+    lines: impl Iterator<Item = String>,
+) -> Result<String, RenderError> {
+    let mut body = String::new();
+    let mut count = 0u64;
+    let mut bytes = 0u64;
+    for line in lines {
+        count += 1;
+        if !is_body_line(&line) {
+            return Err(RenderError::TextLine { line: count });
+        }
+        bytes += body_bytes(&line);
+        push_body_line(&line, &mut body);
+    }
+    let mut out = text_header(form, count, count, 1, bytes, bytes);
+    out.push('\n');
+    out.push_str(&body);
+    Ok(out)
 }
 
 /// ` "<value>"` when there is a value.
@@ -642,7 +1101,14 @@ pub fn parse(text: &str) -> Result<Answer, ParseError> {
 /// one of its own and leaves the lines alone otherwise.
 type Block = fn(&mut Lines<'_>, &mut Answer) -> Result<(), ParseError>;
 
-const BLOCKS: [Block; 5] = [parse_token, parse_did, parse_page, parse_path, parse_notes];
+const BLOCKS: [Block; 6] = [
+    parse_token,
+    parse_did,
+    parse_page,
+    parse_path,
+    parse_notes,
+    parse_text,
+];
 
 fn parse_head(line: Line<'_>) -> Result<Head, ParseError> {
     let mut cursor = line.cursor();
@@ -777,6 +1243,25 @@ fn parse_path(lines: &mut Lines<'_>, answer: &mut Answer) -> Result<(), ParseErr
 
 fn parse_notes(lines: &mut Lines<'_>, answer: &mut Answer) -> Result<(), ParseError> {
     while let Some(line) = lines.take_if_starts("note ") {
+        if let Some(word) = line.text.strip_prefix("note text: ") {
+            if word.starts_with("deep ") {
+                let mut cursor = line.cursor();
+                cursor.at = "note text: deep ".len();
+                let levels: u64 = cursor.number()?;
+                cursor.end()?;
+                if levels == 0 {
+                    return Err(line.error(ParseErrorKind::OutsideGrammar));
+                }
+                answer.notes.push(Note::Text(TextNote::Deep(levels)));
+                continue;
+            }
+            let what = TextNote::WORDS
+                .into_iter()
+                .find(|what| what.word() == word)
+                .ok_or_else(|| line.error(ParseErrorKind::OutsideGrammar))?;
+            answer.notes.push(Note::Text(what));
+            continue;
+        }
         let Some(parts) = line.text.strip_prefix("note parser: ") else {
             return Err(line.error(ParseErrorKind::OutsideGrammar));
         };
@@ -786,6 +1271,78 @@ fn parse_notes(lines: &mut Lines<'_>, answer: &mut Answer) -> Result<(), ParseEr
         }
         answer.notes.push(Note::Parser(parts));
     }
+    Ok(())
+}
+
+fn parse_text(lines: &mut Lines<'_>, answer: &mut Answer) -> Result<(), ParseError> {
+    let Some(header) = lines.take_if_starts("text ") else {
+        return Ok(());
+    };
+    let mut cursor = header.cursor();
+    cursor.at = "text ".len();
+    let word = cursor.word(|c| c.is_ascii_lowercase())?;
+    let form = Form::ALL
+        .into_iter()
+        .find(|form| form.word() == word)
+        .ok_or_else(|| header.error(ParseErrorKind::OutsideGrammar))?;
+    cursor.space()?;
+    let shown: u64 = cursor.number()?;
+    cursor.literal(" of ")?;
+    let total: u64 = cursor.number()?;
+    cursor.literal(" lines from ")?;
+    let first: u64 = cursor.number_before(',')?;
+    cursor.literal(", ")?;
+    let bytes: u64 = cursor.number()?;
+    cursor.literal(" of ")?;
+    let bytes_total: u64 = cursor.number()?;
+    cursor.literal(" bytes")?;
+    cursor.end()?;
+    let outside = || header.error(ParseErrorKind::OutsideGrammar);
+    if shown > TEXT_LINES_MAX as u64
+        || bytes > TEXT_BYTES_MAX
+        || !counts_hold(shown, total, first, bytes, bytes_total)
+    {
+        return Err(outside());
+    }
+    let mut body = Vec::new();
+    for _ in 0..shown {
+        let Some(line) = lines.next() else {
+            return Err(ParseError {
+                line: lines.last_number(),
+                kind: ParseErrorKind::OutsideGrammar,
+            });
+        };
+        let content = match line.text {
+            ">" => "",
+            text => match text.strip_prefix("> ") {
+                Some(rest) if !rest.is_empty() && is_body_line(rest) => rest,
+                _ => return Err(line.error(ParseErrorKind::OutsideGrammar)),
+            },
+        };
+        body.push(content.to_string());
+    }
+    if body.iter().map(|line| body_bytes(line)).sum::<u64>() != bytes {
+        return Err(outside());
+    }
+    if let Some(expected) = more_line(form, first, shown, total) {
+        match lines.next() {
+            Some(line) if line.text == expected => {}
+            Some(line) => return Err(line.error(ParseErrorKind::OutsideGrammar)),
+            None => {
+                return Err(ParseError {
+                    line: lines.last_number(),
+                    kind: ParseErrorKind::OutsideGrammar,
+                });
+            }
+        }
+    }
+    answer.text = Some(Text {
+        form,
+        first,
+        total,
+        bytes_total,
+        lines: body,
+    });
     Ok(())
 }
 
@@ -818,6 +1375,11 @@ impl<'a> Lines<'a> {
     /// The number the next line has.
     fn number(&self) -> usize {
         self.next + 1
+    }
+
+    /// The number of the last line, where a block that ends too early is refused.
+    fn last_number(&self) -> usize {
+        self.lines.len().max(1)
     }
 
     fn next(&mut self) -> Option<Line<'a>> {
@@ -910,6 +1472,18 @@ impl<'a> Cursor<'a> {
         if digits.len() > 1 && digits.starts_with('0') {
             return Err(self.outside());
         }
+        digits.parse().map_err(|_| self.outside())
+    }
+
+    /// A number as [`Cursor::number`] reads it, ending at `end` instead of a space.
+    fn number_before<T: std::str::FromStr>(&mut self, end: char) -> Result<T, ParseError> {
+        let rest = self.rest();
+        let digits = rest.split(end).next().unwrap_or("");
+        if !is_word(digits, |c| c.is_ascii_digit()) || (digits.len() > 1 && digits.starts_with('0'))
+        {
+            return Err(self.outside());
+        }
+        self.at += digits.len();
         digits.parse().map_err(|_| self.outside())
     }
 

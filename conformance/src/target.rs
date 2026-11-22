@@ -5,7 +5,9 @@
 //! it ends. A command is issued on its component's port, and [`Browser::run`] then delivers what it
 //! published through the generated bindings before the answer returns. The transport is
 //! [`Unanswered`]: the suite ends a request itself, with `surf.net.DeliverResponse` or
-//! `surf.net.FailRequest`, so no request is ever answered from the network.
+//! `surf.net.FailRequest`, so no request is ever answered from the network. The parser step is
+//! [`Unparsed`]: the suite ends a parse itself, with `surf.document.AddElement` and
+//! `surf.document.FinishParsing`, so no body is ever parsed by `surf-html`.
 //!
 //! What the target reports, and where it reads it:
 //!
@@ -36,22 +38,30 @@ use ess_domain::command::OutcomeName;
 use ess_primitives::consistency::ConsistencyToken;
 use ess_primitives::node::Node;
 use surf::{
-    AgentBehaviors, Answer, Browser, DocumentBehaviors, NavigatorBehaviors, NetBehaviors,
-    RendererBehaviors, RequestStarted, ShellBehaviors, SystemEvent, Transport, UnmetObligation,
+    AgentBehaviors, Answer, Browser, DocumentBehaviors, NavigatorBehaviors, NetBehaviors, Parse,
+    Parser, ParsingStarted, RendererBehaviors, RequestStarted, ShellBehaviors, SystemEvent,
+    Transport, UnmetObligation,
 };
-use surf_ports::{AgentPorts, Caller};
+use surf_ports::{AgentPorts, Caller, DocumentPorts};
 use surf_system::BindingInvocation;
 use surf_types::agent::{
-    ActionCommand, CloseSession, CloseSessionOutcome, Go, GoOutcome, NoteNavigationCommitted,
-    NoteNavigationCommittedOutcome, NoteNavigationEnded, NoteNavigationEndedOutcome,
-    NoteNavigationFailed, NoteNavigationFailedOutcome, NoteNavigationStarted,
-    NoteNavigationStartedOutcome, OpenSession, OpenSessionOutcome, RecordAction,
-    RecordActionOutcome, SessionData, SessionId, SessionSnapshot, SessionState,
+    ActionCommand, CloseSession, CloseSessionOutcome, Fill, FillOutcome, Follow, FollowOutcome, Go,
+    GoOutcome, NoteNavigationCommitted, NoteNavigationCommittedOutcome, NoteNavigationEnded,
+    NoteNavigationEndedOutcome, NoteNavigationFailed, NoteNavigationFailedOutcome,
+    NoteNavigationStarted, NoteNavigationStartedOutcome, OpenSession, OpenSessionOutcome, Pick,
+    PickOutcome, Press, PressOutcome, RecordAction, RecordActionOutcome, SessionData, SessionId,
+    SessionSnapshot, SessionState,
 };
-use surf_types::behaviour::SessionStorage;
+use surf_types::behaviour::{ElementStorage, ListOptionStorage, SessionStorage, SubmissionStorage};
 use surf_types::document::{
-    AddElement, AddElementOutcome, DocumentId, DocumentState, ElementKind, EncodingName,
-    FinishParsing, FinishParsingOutcome, ParseDocument, ParseDocumentOutcome, ParseLimit,
+    AbandonSubmission, AbandonSubmissionOutcome, AddElement, AddElementOutcome, AddForm,
+    AddFormOutcome, AddOption, AddOptionOutcome, Check, CheckOutcome, DocumentId, DocumentState,
+    ElementData, ElementId, ElementKind, ElementSnapshot, ElementState, EncodingName,
+    FinishParsing, FinishParsingOutcome, FormId, FormState, ListOptionData, ListOptionSnapshot,
+    OptionId, OptionState, ParseDocument, ParseDocumentOutcome, ParseLimit, SelectOption,
+    SelectOptionOutcome, SetValue, SetValueOutcome, StartSubmission, StartSubmissionOutcome,
+    SubmissionData, SubmissionEndReason, SubmissionId, SubmissionSnapshot, SubmissionState,
+    SubmitForm, SubmitFormOutcome,
 };
 use surf_types::navigation::{
     CancelNavigation, CancelNavigationOutcome, CommitNavigation, CommitNavigationOutcome,
@@ -81,24 +91,45 @@ impl Transport for Unanswered {
     }
 }
 
+/// A parser step that never answers: every document stays `Parsing` until the suite ends its
+/// parse itself, with `surf.document.AddElement` and `surf.document.FinishParsing`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Unparsed;
+
+impl Parser for Unparsed {
+    fn parse(&mut self, _started: &ParsingStarted) -> Parse {
+        Parse::Unanswered
+    }
+}
+
 /// A [`Browser`] over component ports `A`, `D`, `N`, `Ne`, `R` and `S`, with the
-/// [`Unanswered`] transport.
+/// [`Unanswered`] transport: what the function a [`SurfTarget`] is built with returns. The
+/// target replaces its parser step with [`Unparsed`] before the scenario's first command.
 pub type ConformanceBrowser<A, D, N, Ne, R, S> = Browser<A, D, N, Ne, R, S, Unanswered>;
+
+/// The browser a scenario runs: a [`ConformanceBrowser`] with the parser step [`Unparsed`].
+type Running<A, D, N, Ne, R, S> = Browser<A, D, N, Ne, R, S, Unanswered, Unparsed>;
 
 type Assemble<A, D, N, Ne, R, S> = Box<dyn Fn(&Setup) -> ConformanceBrowser<A, D, N, Ne, R, S>>;
 
 type Open<A, D, N, Ne, R, S> = RefCell<Option<Scenario<A, D, N, Ne, R, S>>>;
 
 /// What a scenario's system is assembled with beyond fresh ports: the [`Caller`] the target sends
-/// every command as, and the sessions the scenario establishes before its first command
+/// every command as, and the entities the scenario establishes before its first command
 /// (`setup:` in an authored scenario).
 ///
-/// Only `surf.agent.Session` can be established: the other entities are reached through commands
-/// in every scenario of the suite.
+/// `surf.agent.Session`, `surf.document.Element`, `surf.document.Option` and
+/// `surf.document.Submission` can be established: an authored scenario arranges the controls an
+/// agent acts on, and a submission the submission step ends, because a scenario cannot name the
+/// identity a binding's command mints. The other entities are reached through commands in every
+/// scenario of the suite.
 #[derive(Debug, Default)]
 pub struct Setup {
     caller: Caller,
     sessions: Vec<SessionSnapshot>,
+    elements: Vec<ElementSnapshot>,
+    options: Vec<ListOptionSnapshot>,
+    submissions: Vec<SubmissionSnapshot>,
 }
 
 impl Setup {
@@ -108,6 +139,31 @@ impl Setup {
         let mut ports = AgentPorts::with_caller(self.caller.clone());
         for session in &self.sessions {
             SessionStorage::put(&mut ports, session.clone());
+        }
+        ports
+    }
+
+    /// The `document` component's in-memory ports, holding the elements, options and
+    /// submissions this setup established.
+    pub fn document_ports(&self) -> DocumentPorts {
+        self.document_entities(DocumentPorts::new())
+    }
+
+    /// `ports` with the elements, options and submissions this setup established put into them,
+    /// each kind in the order it was established: for a test that wraps the `document`
+    /// component's ports.
+    pub fn document_entities<P>(&self, mut ports: P) -> P
+    where
+        P: ElementStorage + ListOptionStorage + SubmissionStorage,
+    {
+        for element in &self.elements {
+            ElementStorage::put(&mut ports, element.clone());
+        }
+        for option in &self.options {
+            ListOptionStorage::put(&mut ports, option.clone());
+        }
+        for submission in &self.submissions {
+            SubmissionStorage::put(&mut ports, submission.clone());
         }
         ports
     }
@@ -122,7 +178,7 @@ pub struct SurfTarget<A, D, N, Ne, R, S> {
 }
 
 struct Scenario<A, D, N, Ne, R, S> {
-    browser: ConformanceBrowser<A, D, N, Ne, R, S>,
+    browser: Running<A, D, N, Ne, R, S>,
     /// Who the next command is sent as, set from each command's caller before it is issued, and
     /// the sessions established so far.
     setup: Setup,
@@ -134,7 +190,8 @@ impl<A, D, N, Ne, R, S> SurfTarget<A, D, N, Ne, R, S> {
     ///
     /// `assemble` is handed the scenario's [`Setup`]; the `agent` component's ports it builds
     /// come from [`Setup::agent_ports`], so they answer the caller the target sends each command
-    /// as and hold the sessions the scenario established. A scenario that establishes a session
+    /// as and hold the sessions the scenario established, and the `document` component's hold
+    /// what [`Setup::document_entities`] puts into them. A scenario that establishes an entity
     /// has its system assembled again, before its first command.
     pub fn new(
         identity: ImplementationIdentity,
@@ -154,6 +211,20 @@ struct Answered {
     outcome: &'static str,
     error: Option<DeclaredErrorValue>,
     events: Vec<SystemEvent>,
+}
+
+/// A refusal whose error names one element: a control that is missing, of another kind,
+/// disabled or hidden.
+fn refused_element(
+    outcome: &'static str,
+    error: &str,
+    element_id: &ElementId,
+) -> Result<Answered, TargetError> {
+    refused(
+        outcome,
+        error,
+        vec![("element_id", values::uuid(&element_id.0))],
+    )
 }
 
 fn took(outcome: &'static str, event: SystemEvent) -> Answered {
@@ -209,13 +280,24 @@ fn receiver(command: &str) -> Option<Component> {
 fn publisher(event: &SystemEvent) -> Component {
     match event {
         SystemEvent::ActionRecorded(_)
+        | SystemEvent::FillRequested(_)
         | SystemEvent::NavigationRequested(_)
+        | SystemEvent::PickRequested(_)
+        | SystemEvent::PressRequested(_)
         | SystemEvent::SessionClosed(_)
         | SystemEvent::SessionNavigationChanged(_)
         | SystemEvent::SessionOpened(_) => Component::Agent,
-        SystemEvent::DocumentParsed(_)
+        SystemEvent::CheckednessSet(_)
+        | SystemEvent::DocumentParsed(_)
         | SystemEvent::ElementAdded(_)
-        | SystemEvent::ParsingStarted(_) => Component::Document,
+        | SystemEvent::FormAdded(_)
+        | SystemEvent::FormSubmitted(_)
+        | SystemEvent::OptionAdded(_)
+        | SystemEvent::OptionSelected(_)
+        | SystemEvent::ParsingStarted(_)
+        | SystemEvent::SubmissionAbandoned(_)
+        | SystemEvent::SubmissionStarted(_)
+        | SystemEvent::ValueSet(_) => Component::Document,
         SystemEvent::NavigationCancelled(_)
         | SystemEvent::NavigationCommitted(_)
         | SystemEvent::NavigationFailed(_)
@@ -235,9 +317,14 @@ fn invoked_on(invocation: &BindingInvocation) -> Component {
     match invocation {
         BindingInvocation::CommitOnResponse(_)
         | BindingInvocation::FailOnFetchFailed(_)
+        | BindingInvocation::NavigateOnFormSubmitted(_)
         | BindingInvocation::NavigateOnNavigationRequested(_) => Component::Navigator,
         BindingInvocation::FetchOnNavigationStarted(_) => Component::Net,
-        BindingInvocation::ParseOnNavigationCommitted(_) => Component::Document,
+        BindingInvocation::CheckOnPickRequested(_)
+        | BindingInvocation::ParseOnNavigationCommitted(_)
+        | BindingInvocation::SelectOnPickRequested(_)
+        | BindingInvocation::SetValueOnFillRequested(_)
+        | BindingInvocation::SubmitOnPressRequested(_) => Component::Document,
         BindingInvocation::CloseTabOnSessionClosed(_) => Component::Shell,
         BindingInvocation::NoteOnNavigationCancelled(_)
         | BindingInvocation::NoteOnNavigationCommitted(_)
@@ -250,6 +337,11 @@ fn invoked_on(invocation: &BindingInvocation) -> Component {
 /// gives it.
 fn trigger(invocation: &BindingInvocation) -> &'static str {
     match invocation {
+        BindingInvocation::CheckOnPickRequested(_)
+        | BindingInvocation::SelectOnPickRequested(_) => "surf.agent.PickRequested",
+        BindingInvocation::SetValueOnFillRequested(_) => "surf.agent.FillRequested",
+        BindingInvocation::SubmitOnPressRequested(_) => "surf.agent.PressRequested",
+        BindingInvocation::NavigateOnFormSubmitted(_) => "surf.document.FormSubmitted",
         BindingInvocation::CloseTabOnSessionClosed(_) => "surf.agent.SessionClosed",
         BindingInvocation::CommitOnResponse(_) => "surf.net.ResponseReceived",
         BindingInvocation::FailOnFetchFailed(_) => "surf.net.FetchFailed",
@@ -269,9 +361,38 @@ fn names(events: &[SystemEvent]) -> String {
     }
     events
         .iter()
-        .map(|event| format!("{event:?}"))
+        .map(named_event)
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// Whether the field `name` of a payload or an input holds an identity: what an error about it
+/// may print. A value an agent filled in, a form's body, an address and page text are never
+/// printed, so a password typed into a form reaches no error text.
+fn is_identity(name: &str) -> bool {
+    name.ends_with("_id") || name == "submitter" || name == "holder"
+}
+
+/// `fields` as `{ <name>=<value>, ... }`, the identities only.
+fn identities(fields: Vec<(&'static str, Node)>) -> String {
+    let named: Vec<String> = fields
+        .into_iter()
+        .filter(|(field, _)| is_identity(field))
+        .map(|(field, node)| format!("{field}={}", ess_conformance::report::quote(&node)))
+        .collect();
+    format!("{{ {} }}", named.join(", "))
+}
+
+/// An event for an error text: its name and its identities, never its other fields; the
+/// generated types derive a `Debug` that prints all of them.
+fn named_event(event: &SystemEvent) -> String {
+    format!("{} {}", event.name(), identities(payload(event)))
+}
+
+/// A binding's invocation for an error text, as [`named_event`] writes an event.
+fn named_invocation(invoked: &BindingInvocation) -> String {
+    let (binding, command, input) = invocation(invoked);
+    format!("{binding} invoking {command} {}", identities(input))
 }
 
 /// The events a command of `command` published itself, read from `gained`, what the system's log
@@ -315,9 +436,10 @@ fn reported_events(
             .any(|event| event.name() == cause && publisher(event) != component);
         if !delivered {
             return Err(format!(
-                "a binding invoked {invocation:?} on the component `{command}` was issued on, and \
+                "a binding invoked {} on the component `{command}` was issued on, and \
                  no `{cause}` of another component reached the log after the command's own \
-                 events, so the log does not tell the command's own events from that one's"
+                 events, so the log does not tell the command's own events from that one's",
+                named_invocation(invocation)
             ));
         }
     }
@@ -327,8 +449,9 @@ fn reported_events(
             .find(|event| publisher(event) == component)
     {
         return Err(format!(
-            "{later:?} reached the log after a binding delivery, from the component `{command}` \
-             was issued on, and no binding invoked that component"
+            "{} reached the log after a binding delivery, from the component `{command}` \
+             was issued on, and no binding invoked that component",
+            named_event(later)
         ));
     }
     let logged = &gained[..direct];
@@ -390,14 +513,26 @@ fn action_command(command: ActionCommand) -> &'static str {
     match command {
         ActionCommand::Open => "open",
         ActionCommand::Go => "go",
+        ActionCommand::Follow => "follow",
+        ActionCommand::Fill => "fill",
+        ActionCommand::Pick => "pick",
+        ActionCommand::Press => "press",
         ActionCommand::Close => "close",
     }
 }
 
 fn action_command_named(name: &str) -> Option<ActionCommand> {
-    [ActionCommand::Open, ActionCommand::Go, ActionCommand::Close]
-        .into_iter()
-        .find(|command| action_command(*command) == name)
+    [
+        ActionCommand::Open,
+        ActionCommand::Go,
+        ActionCommand::Follow,
+        ActionCommand::Fill,
+        ActionCommand::Pick,
+        ActionCommand::Press,
+        ActionCommand::Close,
+    ]
+    .into_iter()
+    .find(|command| action_command(*command) == name)
 }
 
 /// An optional value: `null` where it is absent.
@@ -574,13 +709,16 @@ fn request_fields(
     ]
 }
 
+/// The method of a request, its body and the body's media type.
+type RequestParts = (Method, Option<Vec<u8>>, Option<MediaType>);
+
 /// The method, the body and its media type of the input of `Navigate` or `Fetch`, whose fields
 /// without `null` are `present`: an absent body or media type and one sent as `null` read the
 /// same.
 fn request_input(
     input: &mut Input<'_>,
     present: &BTreeMap<String, Node>,
-) -> Result<(Method, Option<Vec<u8>>, Option<MediaType>), TargetError> {
+) -> Result<RequestParts, TargetError> {
     let request_method = input.variant("method", method_named)?;
     let body = if present.contains_key("body") {
         Some(input.bytes("body")?)
@@ -670,6 +808,207 @@ fn element_kind_named(name: &str) -> Option<ElementKind> {
     .find(|kind| element_kind(*kind) == name)
 }
 
+fn element_state(state: ElementState) -> &'static str {
+    match state {
+        ElementState::Added => "Added",
+    }
+}
+
+fn form_state(state: FormState) -> &'static str {
+    match state {
+        FormState::Added => "Added",
+    }
+}
+
+fn option_state(state: OptionState) -> &'static str {
+    match state {
+        OptionState::Added => "Added",
+    }
+}
+
+fn submission_state(state: SubmissionState) -> &'static str {
+    match state {
+        SubmissionState::Abandoned => "Abandoned",
+        SubmissionState::Started => "Started",
+        SubmissionState::Submitted => "Submitted",
+    }
+}
+
+fn submission_state_named(name: &str) -> Option<SubmissionState> {
+    [
+        SubmissionState::Abandoned,
+        SubmissionState::Started,
+        SubmissionState::Submitted,
+    ]
+    .into_iter()
+    .find(|state| submission_state(*state) == name)
+}
+
+fn end_reason(reason: SubmissionEndReason) -> &'static str {
+    match reason {
+        SubmissionEndReason::NoFormOwner => "NoFormOwner",
+        SubmissionEndReason::NotSubmitButton => "NotSubmitButton",
+        SubmissionEndReason::InvalidControls => "InvalidControls",
+        SubmissionEndReason::InvalidAction => "InvalidAction",
+        SubmissionEndReason::UnsupportedScheme => "UnsupportedScheme",
+        SubmissionEndReason::UnsupportedEnctype => "UnsupportedEnctype",
+        SubmissionEndReason::DialogMethod => "DialogMethod",
+    }
+}
+
+fn end_reason_named(name: &str) -> Option<SubmissionEndReason> {
+    [
+        SubmissionEndReason::NoFormOwner,
+        SubmissionEndReason::NotSubmitButton,
+        SubmissionEndReason::InvalidControls,
+        SubmissionEndReason::InvalidAction,
+        SubmissionEndReason::UnsupportedScheme,
+        SubmissionEndReason::UnsupportedEnctype,
+        SubmissionEndReason::DialogMethod,
+    ]
+    .into_iter()
+    .find(|reason| end_reason(*reason) == name)
+}
+
+/// The text field `name` of `input`, whose fields without `null` are `present`; `None` where it
+/// is absent or `null`.
+fn optional_text(
+    input: &mut Input<'_>,
+    present: &BTreeMap<String, Node>,
+    name: &'static str,
+) -> Result<Option<String>, TargetError> {
+    if present.contains_key(name) {
+        input.text(name).map(Some)
+    } else {
+        Ok(None)
+    }
+}
+
+/// The identity of an entity setup, as text.
+fn identity_text(entity: &str, identity: &Node) -> Result<String, TargetError> {
+    match identity {
+        Node::Text(value) => Ok(value.clone()),
+        other => Err(TargetError::unavailable(
+            format!("establishing a `{entity}`"),
+            format!(
+                "the identity is not text: {}",
+                ess_conformance::report::quote(other)
+            ),
+        )),
+    }
+}
+
+/// The state `state` of an entity setup, read by `named`; an adapter failure naming it where the
+/// entity declares no such state.
+fn established_state<T>(
+    entity: &str,
+    state: &impl std::fmt::Display,
+    named: fn(&str) -> Option<T>,
+) -> Result<T, TargetError> {
+    let name = state.to_string();
+    named(&name).ok_or_else(|| {
+        TargetError::unavailable(
+            format!("establishing a `{entity}`"),
+            format!("`{name}` is no state of the entity"),
+        )
+    })
+}
+
+/// The entities a scenario can establish without a command.
+const ESTABLISHED: [&str; 4] = [
+    "surf.agent.Session",
+    "surf.document.Element",
+    "surf.document.Option",
+    "surf.document.Submission",
+];
+
+/// Appends `snapshot` to `held` unless an entity of its identity, read by `id`, is held already;
+/// that identity where one is.
+fn hold<T>(held: &mut Vec<T>, snapshot: T, id: fn(&T) -> &Uuid) -> Option<String> {
+    if held.iter().any(|other| id(other) == id(&snapshot)) {
+        return Some(id(&snapshot).0.clone());
+    }
+    held.push(snapshot);
+    None
+}
+
+/// A `surf.document.Element` from an entity setup: its identity, every declared field and its
+/// state. A field the entity does not declare, a required field that is missing, a value of
+/// another type and a state it does not declare are each an adapter failure naming it. An
+/// optional field may be absent or `null`.
+fn element_snapshot(
+    identity: &Node,
+    fields: &BTreeMap<String, Node>,
+    state: &impl std::fmt::Display,
+) -> Result<ElementSnapshot, TargetError> {
+    const ENTITY: &str = "surf.document.Element";
+    let present = present(fields);
+    let mut input = Input::new(ENTITY, &present);
+    let data = ElementData {
+        element_id: ElementId(Uuid(identity_text(ENTITY, identity)?)),
+        document_id: DocumentId(input.uuid("document_id")?),
+        position: input.integer("position")?,
+        kind: input.variant("kind", element_kind_named)?,
+        label: input.text("label")?,
+        target: optional_text(&mut input, &present, "target")?,
+        value: optional_text(&mut input, &present, "value")?,
+        hidden: input.boolean("hidden")?,
+        disabled: input.boolean("disabled")?,
+        checked: input.boolean("checked")?,
+        required: input.boolean("required")?,
+        name: optional_text(&mut input, &present, "name")?,
+        form_id: optional_text(&mut input, &present, "form_id")?.map(|id| FormId(Uuid(id))),
+    };
+    input.finish()?;
+    let state = established_state(ENTITY, state, |name| {
+        (name == element_state(ElementState::Added)).then_some(ElementState::Added)
+    })?;
+    Ok(ElementSnapshot { state, data })
+}
+
+/// A `surf.document.Option` from an entity setup, read as [`element_snapshot`] reads an element.
+fn option_snapshot(
+    identity: &Node,
+    fields: &BTreeMap<String, Node>,
+    state: &impl std::fmt::Display,
+) -> Result<ListOptionSnapshot, TargetError> {
+    const ENTITY: &str = "surf.document.Option";
+    let mut input = Input::new(ENTITY, fields);
+    let data = ListOptionData {
+        option_id: OptionId(Uuid(identity_text(ENTITY, identity)?)),
+        select_id: ElementId(input.uuid("select_id")?),
+        position: input.integer("position")?,
+        value: input.text("value")?,
+        label: input.text("label")?,
+        selected: input.boolean("selected")?,
+        disabled: input.boolean("disabled")?,
+        hidden: input.boolean("hidden")?,
+    };
+    input.finish()?;
+    let state = established_state(ENTITY, state, |name| {
+        (name == option_state(OptionState::Added)).then_some(OptionState::Added)
+    })?;
+    Ok(ListOptionSnapshot { state, data })
+}
+
+/// A `surf.document.Submission` from an entity setup, read as [`element_snapshot`] reads an
+/// element.
+fn submission_snapshot(
+    identity: &Node,
+    fields: &BTreeMap<String, Node>,
+    state: &impl std::fmt::Display,
+) -> Result<SubmissionSnapshot, TargetError> {
+    const ENTITY: &str = "surf.document.Submission";
+    let mut input = Input::new(ENTITY, fields);
+    let data = SubmissionData {
+        submission_id: SubmissionId(Uuid(identity_text(ENTITY, identity)?)),
+        submitter: ElementId(input.uuid("submitter")?),
+    };
+    input.finish()?;
+    let state = established_state(ENTITY, state, submission_state_named)?;
+    Ok(SubmissionSnapshot { state, data })
+}
+
 fn parse_limit(limit: ParseLimit) -> &'static str {
     match limit {
         ParseLimit::InputBytes => "InputBytes",
@@ -704,11 +1043,30 @@ fn payload(event: &SystemEvent) -> Vec<(&'static str, Node)> {
             ("sequence", integer(e.sequence)),
             ("command", text(action_command(e.command))),
             ("url", optional(e.url.as_ref(), |url| text(&url.0))),
+            ("handle", optional(e.handle.as_deref(), text)),
+            ("label", optional(e.label.as_deref(), text)),
+        ],
+        SystemEvent::FillRequested(e) => vec![
+            ("session_id", uuid(&e.session_id.0)),
+            ("element_id", uuid(&e.element_id.0)),
+            ("value", text(&e.value)),
         ],
         SystemEvent::NavigationRequested(e) => vec![
             ("session_id", uuid(&e.session_id.0)),
             ("tab_id", uuid(&e.tab_id.0)),
             ("url", text(&e.url.0)),
+        ],
+        SystemEvent::PickRequested(e) => vec![
+            ("session_id", uuid(&e.session_id.0)),
+            ("element_id", uuid(&e.element_id.0)),
+            (
+                "option_id",
+                optional(e.option_id.as_ref(), |id| uuid(&id.0)),
+            ),
+        ],
+        SystemEvent::PressRequested(e) => vec![
+            ("session_id", uuid(&e.session_id.0)),
+            ("element_id", uuid(&e.element_id.0)),
         ],
         SystemEvent::SessionClosed(e) => vec![
             ("session_id", uuid(&e.session_id.0)),
@@ -749,6 +1107,46 @@ fn payload(event: &SystemEvent) -> Vec<(&'static str, Node)> {
             ("document_id", uuid(&e.document_id.0)),
             ("body", bytes(&e.body)),
         ],
+        SystemEvent::CheckednessSet(e) => vec![
+            ("element_id", uuid(&e.element_id.0)),
+            ("checked", values::boolean(e.checked)),
+        ],
+        SystemEvent::FormAdded(e) => vec![
+            ("form_id", uuid(&e.form_id.0)),
+            ("document_id", uuid(&e.document_id.0)),
+            ("position", integer(e.position)),
+        ],
+        SystemEvent::FormSubmitted(e) => {
+            let mut fields = vec![
+                ("submission_id", uuid(&e.submission_id.0)),
+                ("tab_id", uuid(&e.tab_id.0)),
+                ("url", text(&e.url.0)),
+            ];
+            fields.extend(request_fields(
+                e.method,
+                e.body.as_ref(),
+                e.body_type.as_ref(),
+            ));
+            fields
+        }
+        SystemEvent::OptionAdded(e) => vec![
+            ("option_id", uuid(&e.option_id.0)),
+            ("select_id", uuid(&e.select_id.0)),
+            ("position", integer(e.position)),
+        ],
+        SystemEvent::OptionSelected(e) => vec![
+            ("option_id", uuid(&e.option_id.0)),
+            ("select_id", uuid(&e.select_id.0)),
+        ],
+        SystemEvent::SubmissionAbandoned(e) => vec![
+            ("submission_id", uuid(&e.submission_id.0)),
+            ("reason", text(end_reason(e.reason))),
+        ],
+        SystemEvent::SubmissionStarted(e) => vec![
+            ("submission_id", uuid(&e.submission_id.0)),
+            ("submitter", uuid(&e.submitter.0)),
+        ],
+        SystemEvent::ValueSet(e) => vec![("element_id", uuid(&e.element_id.0))],
         SystemEvent::NavigationCancelled(e) => vec![
             ("navigation_id", uuid_of(&e.navigation_id)),
             ("tab_id", uuid(&e.tab_id.0)),
@@ -888,7 +1286,45 @@ fn invocation(
                 ("url", text(&input.url.0)),
                 ("body", bytes(&input.body)),
                 ("navigation_id", uuid_of(&input.navigation_id)),
+                ("tab_id", values::uuid(&input.tab_id.0)),
             ],
+        ),
+        BindingInvocation::NavigateOnFormSubmitted(input) => {
+            ("navigate-on-form-submitted", "surf.navigation.Navigate", {
+                let mut fields = vec![
+                    ("tab_id", values::uuid(&input.tab_id.0)),
+                    ("url", text(&input.url.0)),
+                ];
+                fields.extend(request_fields(
+                    input.method,
+                    input.body.as_ref(),
+                    input.body_type.as_ref(),
+                ));
+                fields
+            })
+        }
+        BindingInvocation::SetValueOnFillRequested(input) => (
+            "set-value-on-fill-requested",
+            "surf.document.SetValue",
+            vec![
+                ("element_id", values::uuid(&input.element_id.0)),
+                ("value", text(&input.value)),
+            ],
+        ),
+        BindingInvocation::CheckOnPickRequested(input) => (
+            "check-on-pick-requested",
+            "surf.document.Check",
+            vec![("element_id", values::uuid(&input.element_id.0))],
+        ),
+        BindingInvocation::SelectOnPickRequested(input) => (
+            "select-on-pick-requested",
+            "surf.document.SelectOption",
+            vec![("option_id", values::uuid(&input.option_id.0))],
+        ),
+        BindingInvocation::SubmitOnPressRequested(input) => (
+            "submit-on-press-requested",
+            "surf.document.StartSubmission",
+            vec![("element_id", values::uuid(&input.element_id.0))],
         ),
         BindingInvocation::NavigateOnNavigationRequested(input) => (
             "navigate-on-navigation-requested",
@@ -973,7 +1409,7 @@ where
     /// Issues one command on its component's port.
     #[allow(clippy::too_many_lines)]
     fn issue(
-        browser: &mut ConformanceBrowser<A, D, N, Ne, R, S>,
+        browser: &mut Running<A, D, N, Ne, R, S>,
         command: &str,
         fields: &BTreeMap<String, Node>,
     ) -> Result<Answered, TargetError> {
@@ -1032,6 +1468,154 @@ where
                         vec![("session_id", uuid(&error.session_id.0))],
                     )?,
                     GoOutcome::Closed { error } => refused(
+                        "closed",
+                        "surf.agent.SessionStateConflict",
+                        vec![("state", values::text(session_state(error.state)))],
+                    )?,
+                }
+            }
+            "surf.agent.Follow" => {
+                let session_id = SessionId(input.uuid("session_id")?);
+                let url = Url(input.text("url")?);
+                let handle = input.text("handle")?;
+                let label = input.text("label")?;
+                input.finish()?;
+                match browser
+                    .agent_mut()
+                    .follow(Follow {
+                        session_id,
+                        url,
+                        handle,
+                        label,
+                    })
+                    .map_err(unmet)?
+                {
+                    FollowOutcome::Requested {
+                        navigation_requested,
+                    } => took(
+                        "requested",
+                        SystemEvent::NavigationRequested(navigation_requested),
+                    ),
+                    FollowOutcome::NotHolder { error } => refused(
+                        "not-holder",
+                        "surf.agent.NotSessionHolder",
+                        vec![("session_id", uuid(&error.session_id.0))],
+                    )?,
+                    FollowOutcome::NoSuchSession { error } => refused(
+                        "no-such-session",
+                        "surf.agent.SessionNotFound",
+                        vec![("session_id", uuid(&error.session_id.0))],
+                    )?,
+                    FollowOutcome::Closed { error } => refused(
+                        "closed",
+                        "surf.agent.SessionStateConflict",
+                        vec![("state", values::text(session_state(error.state)))],
+                    )?,
+                }
+            }
+            "surf.agent.Fill" => {
+                let session_id = SessionId(input.uuid("session_id")?);
+                let element_id = ElementId(input.uuid("element_id")?);
+                let value = input.text("value")?;
+                let handle = input.text("handle")?;
+                input.finish()?;
+                match browser
+                    .agent_mut()
+                    .fill(Fill {
+                        session_id,
+                        element_id,
+                        value,
+                        handle,
+                    })
+                    .map_err(unmet)?
+                {
+                    FillOutcome::Requested { fill_requested } => {
+                        took("requested", SystemEvent::FillRequested(fill_requested))
+                    }
+                    FillOutcome::NotHolder { error } => refused(
+                        "not-holder",
+                        "surf.agent.NotSessionHolder",
+                        vec![("session_id", uuid(&error.session_id.0))],
+                    )?,
+                    FillOutcome::NoSuchSession { error } => refused(
+                        "no-such-session",
+                        "surf.agent.SessionNotFound",
+                        vec![("session_id", uuid(&error.session_id.0))],
+                    )?,
+                    FillOutcome::Closed { error } => refused(
+                        "closed",
+                        "surf.agent.SessionStateConflict",
+                        vec![("state", values::text(session_state(error.state)))],
+                    )?,
+                }
+            }
+            "surf.agent.Pick" => {
+                let present = present(fields);
+                let mut input = Input::new(command, &present);
+                let session_id = SessionId(input.uuid("session_id")?);
+                let element_id = ElementId(input.uuid("element_id")?);
+                let option_id =
+                    optional_text(&mut input, &present, "option_id")?.map(|id| OptionId(Uuid(id)));
+                let handle = input.text("handle")?;
+                input.finish()?;
+                match browser
+                    .agent_mut()
+                    .pick(Pick {
+                        session_id,
+                        element_id,
+                        option_id,
+                        handle,
+                    })
+                    .map_err(unmet)?
+                {
+                    PickOutcome::Requested { pick_requested } => {
+                        took("requested", SystemEvent::PickRequested(pick_requested))
+                    }
+                    PickOutcome::NotHolder { error } => refused(
+                        "not-holder",
+                        "surf.agent.NotSessionHolder",
+                        vec![("session_id", uuid(&error.session_id.0))],
+                    )?,
+                    PickOutcome::NoSuchSession { error } => refused(
+                        "no-such-session",
+                        "surf.agent.SessionNotFound",
+                        vec![("session_id", uuid(&error.session_id.0))],
+                    )?,
+                    PickOutcome::Closed { error } => refused(
+                        "closed",
+                        "surf.agent.SessionStateConflict",
+                        vec![("state", values::text(session_state(error.state)))],
+                    )?,
+                }
+            }
+            "surf.agent.Press" => {
+                let session_id = SessionId(input.uuid("session_id")?);
+                let element_id = ElementId(input.uuid("element_id")?);
+                let handle = input.text("handle")?;
+                input.finish()?;
+                match browser
+                    .agent_mut()
+                    .press(Press {
+                        session_id,
+                        element_id,
+                        handle,
+                    })
+                    .map_err(unmet)?
+                {
+                    PressOutcome::Requested { press_requested } => {
+                        took("requested", SystemEvent::PressRequested(press_requested))
+                    }
+                    PressOutcome::NotHolder { error } => refused(
+                        "not-holder",
+                        "surf.agent.NotSessionHolder",
+                        vec![("session_id", uuid(&error.session_id.0))],
+                    )?,
+                    PressOutcome::NoSuchSession { error } => refused(
+                        "no-such-session",
+                        "surf.agent.SessionNotFound",
+                        vec![("session_id", uuid(&error.session_id.0))],
+                    )?,
+                    PressOutcome::Closed { error } => refused(
                         "closed",
                         "surf.agent.SessionStateConflict",
                         vec![("state", values::text(session_state(error.state)))],
@@ -1143,6 +1727,16 @@ where
                 } else {
                     None
                 };
+                let handle = if present.contains_key("handle") {
+                    Some(input.text("handle")?)
+                } else {
+                    None
+                };
+                let label = if present.contains_key("label") {
+                    Some(input.text("label")?)
+                } else {
+                    None
+                };
                 input.finish()?;
                 match browser
                     .agent_mut()
@@ -1151,6 +1745,8 @@ where
                         sequence,
                         command,
                         url,
+                        handle,
+                        label,
                     })
                     .map_err(unmet)?
                 {
@@ -1435,6 +2031,7 @@ where
                 let url = Url(input.text("url")?);
                 let body = input.bytes("body")?;
                 let navigation_id = RequestId(input.uuid("navigation_id")?);
+                let tab_id = TabId(input.uuid("tab_id")?);
                 input.finish()?;
                 match browser
                     .document_mut()
@@ -1442,6 +2039,7 @@ where
                         url,
                         body,
                         navigation_id,
+                        tab_id,
                     })
                     .map_err(unmet)?
                 {
@@ -1471,6 +2069,9 @@ where
                 let disabled = input.boolean("disabled")?;
                 let checked = input.boolean("checked")?;
                 let required = input.boolean("required")?;
+                let name = optional_text(&mut input, &present, "name")?;
+                let form_id =
+                    optional_text(&mut input, &present, "form_id")?.map(|id| FormId(Uuid(id)));
                 input.finish()?;
                 match browser
                     .document_mut()
@@ -1485,6 +2086,8 @@ where
                         disabled,
                         checked,
                         required,
+                        name,
+                        form_id,
                     })
                     .map_err(unmet)?
                 {
@@ -1546,6 +2149,271 @@ where
                     )?,
                 }
             }
+            "surf.document.AddForm" => {
+                let present = present(fields);
+                let mut input = Input::new(command, &present);
+                let document_id = DocumentId(input.uuid("document_id")?);
+                let position = input.integer("position")?;
+                let action = optional_text(&mut input, &present, "action")?;
+                let method = optional_text(&mut input, &present, "method")?;
+                let enctype = optional_text(&mut input, &present, "enctype")?;
+                input.finish()?;
+                match browser
+                    .document_mut()
+                    .add_form(AddForm {
+                        document_id,
+                        position,
+                        action,
+                        method,
+                        enctype,
+                    })
+                    .map_err(unmet)?
+                {
+                    AddFormOutcome::Added { form_added } => {
+                        took("added", SystemEvent::FormAdded(form_added))
+                    }
+                    AddFormOutcome::NoSuchDocument { error } => refused(
+                        "no-such-document",
+                        "surf.document.DocumentNotFound",
+                        vec![("document_id", uuid(&error.document_id.0))],
+                    )?,
+                    AddFormOutcome::AlreadyParsed { error } => refused(
+                        "already-parsed",
+                        "surf.document.DocumentStateConflict",
+                        vec![("state", values::text(document_state(error.state)))],
+                    )?,
+                }
+            }
+            "surf.document.AddOption" => {
+                let select_id = ElementId(input.uuid("select_id")?);
+                let position = input.integer("position")?;
+                let value = input.text("value")?;
+                let label = input.text("label")?;
+                let selected = input.boolean("selected")?;
+                let disabled = input.boolean("disabled")?;
+                let hidden = input.boolean("hidden")?;
+                input.finish()?;
+                match browser
+                    .document_mut()
+                    .add_option(AddOption {
+                        select_id,
+                        position,
+                        value,
+                        label,
+                        selected,
+                        disabled,
+                        hidden,
+                    })
+                    .map_err(unmet)?
+                {
+                    AddOptionOutcome::Added { option_added } => {
+                        took("added", SystemEvent::OptionAdded(option_added))
+                    }
+                    AddOptionOutcome::NoSuchSelect { error } => refused_element(
+                        "no-such-select",
+                        "surf.document.ElementNotFound",
+                        &error.element_id,
+                    )?,
+                    AddOptionOutcome::NotASelect { error } => refused_element(
+                        "not-a-select",
+                        "surf.document.ControlKindConflict",
+                        &error.element_id,
+                    )?,
+                }
+            }
+            "surf.document.SetValue" => {
+                let element_id = ElementId(input.uuid("element_id")?);
+                let value = input.text("value")?;
+                input.finish()?;
+                match browser
+                    .document_mut()
+                    .set_value(SetValue { element_id, value })
+                    .map_err(unmet)?
+                {
+                    SetValueOutcome::Set { value_set } => {
+                        took("set", SystemEvent::ValueSet(value_set))
+                    }
+                    SetValueOutcome::NoSuchElement { error } => refused_element(
+                        "no-such-element",
+                        "surf.document.ElementNotFound",
+                        &error.element_id,
+                    )?,
+                    SetValueOutcome::NotTextEntry { error } => refused_element(
+                        "not-text-entry",
+                        "surf.document.ControlKindConflict",
+                        &error.element_id,
+                    )?,
+                    SetValueOutcome::Disabled { error } => refused_element(
+                        "disabled",
+                        "surf.document.ControlDisabled",
+                        &error.element_id,
+                    )?,
+                    SetValueOutcome::Hidden { error } => {
+                        refused_element("hidden", "surf.document.ControlHidden", &error.element_id)?
+                    }
+                }
+            }
+            "surf.document.Check" => {
+                let element_id = ElementId(input.uuid("element_id")?);
+                input.finish()?;
+                match browser
+                    .document_mut()
+                    .check(Check { element_id })
+                    .map_err(unmet)?
+                {
+                    CheckOutcome::RadioChecked { checkedness_set } => took(
+                        "radio-checked",
+                        SystemEvent::CheckednessSet(checkedness_set),
+                    ),
+                    CheckOutcome::Unchecked { checkedness_set } => {
+                        took("unchecked", SystemEvent::CheckednessSet(checkedness_set))
+                    }
+                    CheckOutcome::Checked { checkedness_set } => {
+                        took("checked", SystemEvent::CheckednessSet(checkedness_set))
+                    }
+                    CheckOutcome::NoSuchElement { error } => refused_element(
+                        "no-such-element",
+                        "surf.document.ElementNotFound",
+                        &error.element_id,
+                    )?,
+                    CheckOutcome::NotCheckable { error } => refused_element(
+                        "not-checkable",
+                        "surf.document.ControlKindConflict",
+                        &error.element_id,
+                    )?,
+                    CheckOutcome::Disabled { error } => refused_element(
+                        "disabled",
+                        "surf.document.ControlDisabled",
+                        &error.element_id,
+                    )?,
+                    CheckOutcome::Hidden { error } => {
+                        refused_element("hidden", "surf.document.ControlHidden", &error.element_id)?
+                    }
+                }
+            }
+            "surf.document.SelectOption" => {
+                let option_id = OptionId(input.uuid("option_id")?);
+                input.finish()?;
+                match browser
+                    .document_mut()
+                    .select_option(SelectOption { option_id })
+                    .map_err(unmet)?
+                {
+                    SelectOptionOutcome::Selected { option_selected } => {
+                        took("selected", SystemEvent::OptionSelected(option_selected))
+                    }
+                    SelectOptionOutcome::NoSuchOption { error } => refused(
+                        "no-such-option",
+                        "surf.document.OptionNotFound",
+                        vec![("option_id", uuid(&error.option_id.0))],
+                    )?,
+                    SelectOptionOutcome::Disabled { error } => refused_element(
+                        "disabled",
+                        "surf.document.ControlDisabled",
+                        &error.element_id,
+                    )?,
+                    SelectOptionOutcome::Hidden { error } => {
+                        refused_element("hidden", "surf.document.ControlHidden", &error.element_id)?
+                    }
+                }
+            }
+            "surf.document.StartSubmission" => {
+                let element_id = ElementId(input.uuid("element_id")?);
+                input.finish()?;
+                match browser
+                    .document_mut()
+                    .start_submission(StartSubmission { element_id })
+                    .map_err(unmet)?
+                {
+                    StartSubmissionOutcome::Started { submission_started } => took(
+                        "started",
+                        SystemEvent::SubmissionStarted(submission_started),
+                    ),
+                    StartSubmissionOutcome::NoSuchElement { error } => refused_element(
+                        "no-such-element",
+                        "surf.document.ElementNotFound",
+                        &error.element_id,
+                    )?,
+                    StartSubmissionOutcome::NotAButton { error } => refused_element(
+                        "not-a-button",
+                        "surf.document.ControlKindConflict",
+                        &error.element_id,
+                    )?,
+                    StartSubmissionOutcome::Disabled { error } => refused_element(
+                        "disabled",
+                        "surf.document.ControlDisabled",
+                        &error.element_id,
+                    )?,
+                    StartSubmissionOutcome::Hidden { error } => {
+                        refused_element("hidden", "surf.document.ControlHidden", &error.element_id)?
+                    }
+                }
+            }
+            "surf.document.SubmitForm" => {
+                let present = present(fields);
+                let mut input = Input::new(command, &present);
+                let submission_id = SubmissionId(input.uuid("submission_id")?);
+                let tab_id = TabId(input.uuid("tab_id")?);
+                let url = Url(input.text("url")?);
+                let (method, body, body_type) = request_input(&mut input, &present)?;
+                input.finish()?;
+                match browser
+                    .document_mut()
+                    .submit_form(SubmitForm {
+                        submission_id,
+                        tab_id,
+                        url,
+                        method,
+                        body,
+                        body_type,
+                    })
+                    .map_err(unmet)?
+                {
+                    SubmitFormOutcome::Submitted { form_submitted } => {
+                        took("submitted", SystemEvent::FormSubmitted(form_submitted))
+                    }
+                    SubmitFormOutcome::NoSuchSubmission { error } => refused(
+                        "no-such-submission",
+                        "surf.document.SubmissionNotFound",
+                        vec![("submission_id", uuid(&error.submission_id.0))],
+                    )?,
+                    SubmitFormOutcome::WrongState { error } => refused(
+                        "wrong-state",
+                        "surf.document.SubmissionStateConflict",
+                        vec![("state", values::text(submission_state(error.state)))],
+                    )?,
+                }
+            }
+            "surf.document.AbandonSubmission" => {
+                let submission_id = SubmissionId(input.uuid("submission_id")?);
+                let reason = input.variant("reason", end_reason_named)?;
+                input.finish()?;
+                match browser
+                    .document_mut()
+                    .abandon_submission(AbandonSubmission {
+                        submission_id,
+                        reason,
+                    })
+                    .map_err(unmet)?
+                {
+                    AbandonSubmissionOutcome::Abandoned {
+                        submission_abandoned,
+                    } => took(
+                        "abandoned",
+                        SystemEvent::SubmissionAbandoned(submission_abandoned),
+                    ),
+                    AbandonSubmissionOutcome::NoSuchSubmission { error } => refused(
+                        "no-such-submission",
+                        "surf.document.SubmissionNotFound",
+                        vec![("submission_id", uuid(&error.submission_id.0))],
+                    )?,
+                    AbandonSubmissionOutcome::WrongState { error } => refused(
+                        "wrong-state",
+                        "surf.document.SubmissionStateConflict",
+                        vec![("state", values::text(submission_state(error.state)))],
+                    )?,
+                }
+            }
             "surf.render.PaintFrame" => {
                 let document_id = surf_types::document::DocumentId(input.uuid("document_id")?);
                 let width = input.integer("width")?;
@@ -1585,7 +2453,7 @@ where
     /// The rows of one view, by projected field name, for `params`, its parameters by declared
     /// name. A parameter the view does not declare is an adapter failure naming it.
     fn rows(
-        browser: &ConformanceBrowser<A, D, N, Ne, R, S>,
+        browser: &Running<A, D, N, Ne, R, S>,
         view: &str,
         params: &BTreeMap<String, Node>,
     ) -> Result<Vec<ViewRow>, TargetError> {
@@ -1640,6 +2508,8 @@ where
                         ("sequence", integer(row.sequence)),
                         ("command", text(action_command(row.command))),
                         ("url", optional(row.url.as_ref(), |url| text(&url.0))),
+                        ("handle", optional(row.handle.as_deref(), text)),
+                        ("label", optional(row.label.as_deref(), text)),
                     ])
                 })
                 .collect();
@@ -1669,6 +2539,8 @@ where
                         ("disabled", values::boolean(row.disabled)),
                         ("checked", values::boolean(row.checked)),
                         ("required", values::boolean(row.required)),
+                        ("name", optional(row.name.as_deref(), text)),
+                        ("form_id", optional(row.form_id.as_ref(), |id| uuid(&id.0))),
                     ])
                 })
                 .collect();
@@ -1718,6 +2590,7 @@ where
                         ("document_id", uuid(&row.document_id.0)),
                         ("url", text(&row.url.0)),
                         ("navigation_id", uuid_of(&row.navigation_id)),
+                        ("tab_id", uuid(&row.tab_id.0)),
                         ("state", text(document_state(row.state))),
                         ("title", optional(row.title.as_ref(), |title| text(title))),
                         (
@@ -1732,6 +2605,75 @@ where
                             "stopped_by",
                             optional(row.stopped_by, |limit| text(parse_limit(limit))),
                         ),
+                    ]
+                })
+                .collect(),
+            "surf.document.Controls" => system
+                .document
+                .controls()
+                .map_err(unmet)?
+                .into_iter()
+                .map(|row| {
+                    vec![
+                        ("element_id", uuid(&row.element_id.0)),
+                        ("document_id", uuid(&row.document_id.0)),
+                        ("state", text(element_state(row.state))),
+                        ("kind", text(element_kind(row.kind))),
+                        ("value", optional(row.value.as_deref(), text)),
+                        ("hidden", values::boolean(row.hidden)),
+                        ("disabled", values::boolean(row.disabled)),
+                        ("checked", values::boolean(row.checked)),
+                        ("name", optional(row.name.as_deref(), text)),
+                        ("form_id", optional(row.form_id.as_ref(), |id| uuid(&id.0))),
+                    ]
+                })
+                .collect(),
+            "surf.document.Forms" => system
+                .document
+                .forms()
+                .map_err(unmet)?
+                .into_iter()
+                .map(|row| {
+                    vec![
+                        ("form_id", uuid(&row.form_id.0)),
+                        ("document_id", uuid(&row.document_id.0)),
+                        ("state", text(form_state(row.state))),
+                        ("position", integer(row.position)),
+                        ("action", optional(row.action.as_deref(), text)),
+                        ("method", optional(row.method.as_deref(), text)),
+                        ("enctype", optional(row.enctype.as_deref(), text)),
+                    ]
+                })
+                .collect(),
+            "surf.document.Options" => system
+                .document
+                .options()
+                .map_err(unmet)?
+                .into_iter()
+                .map(|row| {
+                    vec![
+                        ("option_id", uuid(&row.option_id.0)),
+                        ("select_id", uuid(&row.select_id.0)),
+                        ("state", text(option_state(row.state))),
+                        ("position", integer(row.position)),
+                        ("value", text(&row.value)),
+                        ("label", text(&row.label)),
+                        ("selected", values::boolean(row.selected)),
+                        ("disabled", values::boolean(row.disabled)),
+                        ("hidden", values::boolean(row.hidden)),
+                    ]
+                })
+                .collect(),
+            "surf.document.Submissions" => system
+                .document
+                .submissions()
+                .map_err(unmet)?
+                .into_iter()
+                .map(|row| {
+                    vec![
+                        ("submission_id", uuid(&row.submission_id.0)),
+                        ("submitter", uuid(&row.submitter.0)),
+                        ("state", text(submission_state(row.state))),
                     ]
                 })
                 .collect(),
@@ -1828,7 +2770,7 @@ where
     fn begin_scenario(&self, _scenario: &ScenarioContext) -> Result<(), TargetError> {
         let setup = Setup::default();
         *self.scenario.borrow_mut() = Some(Scenario {
-            browser: (self.assemble)(&setup),
+            browser: (self.assemble)(&setup).with_parser(Unparsed),
             setup,
             writes: 0,
         });
@@ -1839,35 +2781,52 @@ where
         self.with(|scenario| {
             let entity = request.entity.to_string();
             let establishing = format!("establishing a `{entity}`");
-            if entity != "surf.agent.Session" {
+            if !ESTABLISHED.contains(&entity.as_str()) {
                 return Err(TargetError::unsupported(
                     establishing,
-                    "the surf system establishes only `surf.agent.Session` without a command",
+                    format!(
+                        "the surf system establishes only {} without a command",
+                        ESTABLISHED.join(", ")
+                    ),
                 ));
             }
             if scenario.writes > 0 || !scenario.browser.system().published().is_empty() {
                 return Err(TargetError::unsupported(
                     establishing,
-                    "a session is established before the scenario's first command, and one ran",
+                    "an entity is established before the scenario's first command, and one ran",
                 ));
             }
-            let session = session_snapshot(&request.identity, &request.fields, &request.state)?;
-            if scenario
-                .setup
-                .sessions
-                .iter()
-                .any(|held| held.data.session_id == session.data.session_id)
-            {
+            let (identity, fields, state) = (&request.identity, &request.fields, &request.state);
+            let setup = &mut scenario.setup;
+            let duplicate = match entity.as_str() {
+                "surf.agent.Session" => hold(
+                    &mut setup.sessions,
+                    session_snapshot(identity, fields, state)?,
+                    |held| &held.data.session_id.0,
+                ),
+                "surf.document.Element" => hold(
+                    &mut setup.elements,
+                    element_snapshot(identity, fields, state)?,
+                    |held| &held.data.element_id.0,
+                ),
+                "surf.document.Option" => hold(
+                    &mut setup.options,
+                    option_snapshot(identity, fields, state)?,
+                    |held| &held.data.option_id.0,
+                ),
+                _ => hold(
+                    &mut setup.submissions,
+                    submission_snapshot(identity, fields, state)?,
+                    |held| &held.data.submission_id.0,
+                ),
+            };
+            if let Some(identity) = duplicate {
                 return Err(TargetError::unavailable(
                     establishing,
-                    format!(
-                        "a session `{}` is already established",
-                        session.data.session_id.0.0
-                    ),
+                    format!("a `{entity}` `{identity}` is already established"),
                 ));
             }
-            scenario.setup.sessions.push(session);
-            scenario.browser = (self.assemble)(&scenario.setup);
+            scenario.browser = (self.assemble)(&scenario.setup).with_parser(Unparsed);
             Ok(())
         })
     }
@@ -2025,10 +2984,13 @@ mod tests {
     };
     use surf_system::BindingInvocation;
     use surf_types::agent::{
-        NavigationRequested, NoteNavigationStarted, SessionId, SessionNavigationChanged,
+        FillRequested, NavigationRequested, NoteNavigationStarted, SessionId,
+        SessionNavigationChanged,
     };
     use surf_types::behaviour::Generated;
-    use surf_types::document::{DocumentId, ParsingStarted};
+    use surf_types::document::{
+        DocumentId, ElementId, FormSubmitted, ParsingStarted, SetValue, SubmissionId,
+    };
     use surf_types::navigation::{
         CommitNavigation, Navigate, NavigationCancelled, NavigationCommitted, NavigationStarted,
         NavigationState,
@@ -2037,7 +2999,7 @@ mod tests {
         Fetch, MediaType, Method, RequestId, RequestStarted, ResponseReceived, Status,
     };
     use surf_types::primitives::Uuid;
-    use surf_types::shell::TabId;
+    use surf_types::shell::{TabId, TabOpened, WindowId};
     use surf_types::url::Url;
 
     const NAVIGATION: &str = "3f1d5b7e-0000-4000-8000-000000000010";
@@ -2286,7 +3248,8 @@ mod tests {
     /// The `NavigationStarted` and the `Fetch` invocation of `Navigate` with `fields`, over a
     /// fresh system.
     fn navigated(fields: &[(&str, Node)]) -> (NavigationStarted, Fetch) {
-        let mut browser = Browser::from_ports(ComponentPorts::new(), super::Unanswered);
+        let mut browser = Browser::from_ports(ComponentPorts::new(), super::Unanswered)
+            .with_parser(super::Unparsed);
         let fields: BTreeMap<String, Node> = fields
             .iter()
             .map(|(name, node)| ((*name).to_owned(), node.clone()))
@@ -2375,5 +3338,109 @@ mod tests {
             &[navigate()],
         );
         assert!(answer.is_err(), "{answer:?}");
+    }
+
+    /// What an agent types and what a form sends: a password can be either.
+    const MARKER: &str = "s3cret-marker-7f";
+
+    /// Whether `text` holds the marker, as text or as the `Debug` form of its bytes.
+    fn leaks(text: &str) -> bool {
+        let bytes = format!("{:?}", MARKER.as_bytes());
+        text.contains(MARKER) || text.contains(bytes.trim_start_matches('[').trim_end_matches(']'))
+    }
+
+    fn uuid(n: u8) -> Uuid {
+        Uuid(format!("3f1d5b7e-0000-4000-8000-0000000000{n:02x}"))
+    }
+
+    /// The events that carry a filled value or a form's body, each with the marker, and a
+    /// command of the component that publishes it.
+    fn marked_events() -> [(&'static str, SystemEvent); 2] {
+        [
+            (
+                "surf.agent.Fill",
+                SystemEvent::FillRequested(FillRequested {
+                    session_id: SessionId(uuid(1)),
+                    element_id: ElementId(uuid(2)),
+                    value: MARKER.to_owned(),
+                }),
+            ),
+            (
+                "surf.document.SubmitForm",
+                SystemEvent::FormSubmitted(FormSubmitted {
+                    submission_id: SubmissionId(uuid(3)),
+                    tab_id: TabId(uuid(4)),
+                    url: Url(ADDRESS.to_owned()),
+                    method: Method::Post,
+                    body: Some(MARKER.as_bytes().to_vec()),
+                    body_type: Some(MediaType("application/x-www-form-urlencoded".to_owned())),
+                }),
+            ),
+        ]
+    }
+
+    /// The invocations that pass a filled value or a form's body, each with the marker, and a
+    /// command of the component they invoke.
+    fn marked_invocations() -> [(&'static str, BindingInvocation); 2] {
+        [
+            (
+                "surf.document.SetValue",
+                BindingInvocation::SetValueOnFillRequested(SetValue {
+                    element_id: ElementId(uuid(2)),
+                    value: MARKER.to_owned(),
+                }),
+            ),
+            (
+                "surf.navigation.Navigate",
+                BindingInvocation::NavigateOnFormSubmitted(Navigate {
+                    tab_id: TabId(uuid(4)),
+                    url: Url(ADDRESS.to_owned()),
+                    method: Method::Post,
+                    body: Some(MARKER.as_bytes().to_vec()),
+                    body_type: Some(MediaType("application/x-www-form-urlencoded".to_owned())),
+                }),
+            ),
+        ]
+    }
+
+    fn tab_opened() -> SystemEvent {
+        SystemEvent::TabOpened(TabOpened {
+            tab_id: TabId(uuid(4)),
+            window_id: WindowId(uuid(5)),
+        })
+    }
+
+    /// The fix round of round 1: every error the target writes about an event or an invocation
+    /// names its type and its identities, never a filled value or a form's body. Each of the
+    /// three errors that write one: the outcome and the log disagree, a binding invoked back
+    /// without its cause, a later event of the commanding component.
+    #[test]
+    fn no_error_text_holds_a_filled_value_or_a_form_body() {
+        let mut errors = Vec::new();
+        for (command, event) in marked_events() {
+            let disagree = reported_events(command, std::slice::from_ref(&event), &[], &[]);
+            let later = reported_events(command, &[], &[tab_opened(), event.clone()], &[]);
+            errors.extend([disagree, later]);
+        }
+        for (command, invocation) in marked_invocations() {
+            errors.push(reported_events(command, &[], &[], &[invocation]));
+        }
+        assert_eq!(errors.len(), 6);
+        for error in errors {
+            let text = error.expect_err("an error");
+            assert!(!leaks(&text), "{text}");
+            assert!(text.contains("_id="), "the identities are named: {text}");
+        }
+    }
+
+    /// A form body the runner sends that is not padded base64 is refused without its text.
+    #[test]
+    fn a_body_that_is_not_base64_is_refused_without_its_text() {
+        let fields = BTreeMap::from([("body".to_owned(), Node::Text(MARKER.to_owned()))]);
+        let mut input = crate::values::Input::new("surf.document.SubmitForm", &fields);
+        let error = input.bytes("body").expect_err("not base64");
+        let text = format!("{error} {error:?}");
+        assert!(!leaks(&text), "{text}");
+        assert!(text.contains("`body`"), "{text}");
     }
 }

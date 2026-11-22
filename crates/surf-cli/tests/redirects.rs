@@ -141,7 +141,11 @@ fn case_21_surf_prints_the_address_the_navigation_ended_at() {
     drop(server);
     assert_eq!(run.status, 0, "stderr: {}", run.stderr);
     let lines: Vec<&str> = run.stdout.lines().collect();
-    assert_eq!(lines.len(), 3, "{}", run.stdout);
+    // Since `story:html-document-port` the page is parsed: a `title` line, and the parser's
+    // note while `NOT_YET_PARSED` is not empty.
+    let note = usize::from(!surf::NOT_YET_PARSED.is_empty());
+    assert_eq!(lines.len(), 4 + note, "{}", run.stdout);
+    assert_eq!(split(lines[3]), ("title", split(lines[2]).1, "\"\""));
     assert_eq!(
         split(lines[0]),
         ("navigation", split(lines[0]).1, format!("Committed {ended}").as_str())

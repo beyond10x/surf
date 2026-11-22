@@ -5,12 +5,12 @@ use ess_conformance::target::ImplementationIdentity;
 use surf::{Browser, System};
 use surf_conformance::{SurfTarget, Unanswered, run};
 use surf_ports::{
-    DocumentPorts, NavigatorPorts, NetPorts, RendererPorts, ShellPorts, agent_port, document_port,
-    navigator_port, net_port, renderer_port, shell_port,
+    NavigatorPorts, NetPorts, RendererPorts, ShellPorts, agent_port, document_port, navigator_port,
+    net_port, renderer_port, shell_port,
 };
 use surf_types::agent::{ActionId, SessionId};
 use surf_types::behaviour::{NavigationStorage, TryContext};
-use surf_types::document::{DocumentId, ElementId};
+use surf_types::document::{DocumentId, ElementId, FormId, OptionId, SubmissionId};
 use surf_types::navigation::NavigationSnapshot;
 use surf_types::net::RequestId;
 use surf_types::obligation::UnmetObligation;
@@ -56,6 +56,20 @@ impl TryContext for DropsEveryPut {
         self.0.try_generate_surf_document_element_id()
     }
 
+    fn try_generate_surf_document_form_id(&mut self) -> Result<FormId, UnmetObligation> {
+        self.0.try_generate_surf_document_form_id()
+    }
+
+    fn try_generate_surf_document_option_id(&mut self) -> Result<OptionId, UnmetObligation> {
+        self.0.try_generate_surf_document_option_id()
+    }
+
+    fn try_generate_surf_document_submission_id(
+        &mut self,
+    ) -> Result<SubmissionId, UnmetObligation> {
+        self.0.try_generate_surf_document_submission_id()
+    }
+
     fn try_generate_surf_net_request_id(&mut self) -> Result<RequestId, UnmetObligation> {
         self.0.try_generate_surf_net_request_id()
     }
@@ -83,7 +97,7 @@ fn a_navigation_storage_that_drops_every_put_fails_at_least_one_scenario() {
             Browser::new(
                 System::new(
                     agent_port(setup.agent_ports()),
-                    document_port(DocumentPorts::new()),
+                    document_port(setup.document_ports()),
                     navigator_port(DropsEveryPut(NavigatorPorts::new())),
                     net_port(NetPorts::new()),
                     renderer_port(RendererPorts::new()),

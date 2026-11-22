@@ -125,7 +125,8 @@ fn lines(stdout: &str) -> Vec<Line> {
             let (kind, rest) = line.split_once(' ').expect("a line has a kind and fields");
             let fixed = match kind {
                 "navigation" | "request" | "fetch-failed" => 2,
-                "document" => 1,
+                "document" | "title" => 1,
+                "note" => 0,
                 other => panic!("unknown line kind {other:?} in {line:?}"),
             };
             let mut fields: Vec<String> = rest.splitn(fixed + 1, ' ').map(str::to_owned).collect();
@@ -192,7 +193,18 @@ fn case_1_html_response_commits_and_parses_one_document() {
     assert_eq!(documents[0].fields[1], address);
     assert!(!documents[0].fields[0].is_empty());
     assert!(of_kind(&lines, "fetch-failed").is_empty(), "{lines:?}");
-    assert_eq!(lines.len(), 3, "{lines:?}");
+    // Since `story:html-document-port` the page is parsed: its empty title, no element, and the
+    // parser's note while `NOT_YET_PARSED` is not empty.
+    let titles = of_kind(&lines, "title");
+    assert_eq!(titles.len(), 1, "{lines:?}");
+    assert_eq!(titles[0].fields, [documents[0].fields[0].as_str(), "\"\""]);
+    let notes = of_kind(&lines, "note");
+    assert_eq!(
+        notes.len(),
+        usize::from(!surf::NOT_YET_PARSED.is_empty()),
+        "{lines:?}"
+    );
+    assert_eq!(lines.len(), 4 + notes.len(), "{lines:?}");
 }
 
 #[test]
@@ -249,5 +261,5 @@ fn case_6_no_argument_is_a_usage_error() {
         run.stdout, run.stderr
     );
     assert_eq!(run.stdout, "");
-    assert_eq!(run.stderr, "usage: surf <url>\n");
+    assert_eq!(run.stderr, "usage: surf <url> [--as tree|markdown]\n");
 }

@@ -137,13 +137,16 @@ pub(crate) type Labels = Option<usize>;
 
 impl<'a> Facts<'a> {
     /// Records `node`, reached by the walk with the hidden flag `hidden`, inside the `label`
-    /// elements `labels`. Returns the `labels` for the children of `node`.
+    /// elements `labels`; `copy` when it is in the copy a `selectedcontent` holds of the selected
+    /// option, whose `id` is then not recorded (the option's own element has it). Returns the
+    /// `labels` for the children of `node`.
     pub(crate) fn record(
         &mut self,
         node: NodeId,
         hidden: bool,
         this: Option<&Element<'a>>,
         labels: Labels,
+        copy: bool,
     ) -> Labels {
         self.index.insert(node, self.hidden.len());
         self.hidden.push(hidden);
@@ -160,7 +163,7 @@ impl<'a> Facts<'a> {
             }
             None => self.place_of.push(NONE),
         }
-        if let Some(id) = this.attribute("id").filter(|id| !id.is_empty()) {
+        if let Some(id) = this.attribute("id").filter(|id| !copy && !id.is_empty()) {
             self.by_id.entry(id).or_insert(node);
         }
         let labelable = is_labelable(this);

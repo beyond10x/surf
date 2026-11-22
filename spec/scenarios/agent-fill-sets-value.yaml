@@ -1,0 +1,67 @@
+# An agent fills a text control: `Fill` publishes the request with the element and the value, and
+# `set-value-on-fill-requested` gives the document's control the value through
+# `surf.document.SetValue`. Synthesis refuses that binding's flow ("whose branch is decided by an
+# input the event fills") and `SetValue/set` (`Elements` declares an order over one row), so this
+# scenario is the evidence of both. The control's other state is unchanged.
+type: ess-scenario/6
+domain: surf.agent
+scenario: agent-fill-sets-value
+summary: A fill gives the document's text control the value, through the binding to SetValue.
+
+arrange:
+  - instance: session
+    entity: surf.agent.Session
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-000000000061
+      fields:
+        window_id: 5a7c1e00-0000-4000-8000-000000000062
+        tab_id: 5a7c1e00-0000-4000-8000-000000000063
+        holder: 5a7c1e00-0000-4000-8000-000000000061
+      state: Open
+  - instance: user-name
+    entity: surf.document.Element
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-000000000064
+      fields:
+        document_id: 5a7c1e00-0000-4000-8000-000000000065
+        position: 1
+        kind: text
+        label: User name
+        value: ""
+        hidden: false
+        disabled: false
+        checked: false
+        required: true
+        name: user
+        form_id: 5a7c1e00-0000-4000-8000-000000000066
+      state: Added
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.agent.Fill
+    actor: surf.agent.SessionHolder
+    caller: {session_id: {$instance: session}}
+    input:
+      session_id: {$instance: session}
+      element_id: {$instance: user-name}
+      value: ada
+      handle: f1
+    outcome: requested
+    events:
+      - event: surf.agent.FillRequested
+        payload:
+          session_id: {$instance: session}
+          element_id: {$instance: user-name}
+          value: ada
+
+assert:
+  - view: surf.document.Controls
+    contains:
+      element_id: {$instance: user-name}
+      kind: text
+      value: ada
+      hidden: false
+      disabled: false
+      checked: false
+      name: user
+      form_id: 5a7c1e00-0000-4000-8000-000000000066

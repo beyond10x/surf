@@ -1,0 +1,23 @@
+note text: no-css
+text tree 21 of 21 lines from 1, 481 of 481 bytes
+> html lang="en"
+>   head hid 4
+>   body
+>     h1 "Fruit shop"
+>     p
+>       "Fresh fruit,"
+>       em "picked today"
+>       ". See"
+>       a @l1 href="/offers" "our offers"
+>       "."
+>     ul
+>       li "Apples"
+>       li "Pears"
+>     img src="/basket.jpg" alt="A basket of apples"
+>     form action="/subscribe" method="post"
+>       label
+>         "E-mail"
+>         input @f1 type="email" name="email"
+>       button @b1 "Subscribe"
+>     script hid 1
+>     div hid 1

@@ -48,9 +48,11 @@ set -u
 #   .github/workflows/release.yml       cargo test -p surf-cli --test main cli:: -- --skip review1_cli::
 #   taskfiles/release-smoke.sh          cargo test -p surf-session --test main e2e::
 #   crates/view/tests/prototype.rs      cargo test -p surf-view --test main prototype::
+#   taskfiles/agent-tasks.yml           cargo nextest run -p surf-agent-tasks -E 'test(=tasks::every_task)'
 SELECTIONS='crates/surf-cli cli review1_cli
 crates/session e2e
-crates/view prototype'
+crates/view prototype
+crates/agent-tasks tasks'
 
 root=${1:?usage: test-layout.sh <root>}
 cd "$root" || exit 1
