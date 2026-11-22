@@ -707,17 +707,17 @@ above, and the list of standards itself was written from memory.
     `crates/tls/examples/record-flights.rs`); `task tls-flights-check` in `check`, `task
     tls-flights-slow` in `slow` records them again and replays the new files (`WRITE=1`
     writes them).
-    Tests: one binary, `tests/main.rs` declaring each module of `tests/tls/` with `#[path]`,
-    among them `alloc` (a counting allocator, per thread, in the form of
+    Tests: 465 in one binary, `tests/main.rs` declaring each module of `tests/tls/` with
+    `#[path]`, among them `alloc` (2: a counting allocator, per thread, in the form of
     `crates/html/tests/common/mod.rs`, the third `unsafe` of the repository, test only; one
     case of `seam`, `adversary_the_seam_allocates_at_most_its_output`, reads it: AEAD seal and
     open of a 16 KiB record, a hash and an HKDF expand allocate nothing, an agreement at most
-    64 bytes) and `seam` (one test per Wycheproof file of `tests/data/wycheproof/`, 14 files
+    64 bytes) and `seam` (48: one test per Wycheproof file of `tests/data/wycheproof/`, 14 files
     of commit `65ca494` with `LICENSE` and `SOURCE`; the 103 AES-192 vectors and the AES-GCM
     nonces other than 96 bits skipped by name; the hashes, signing under `test-tooling`, the
     refusals, the lengths and code points, the digests of the vendored files; and, read with
     comments and strings left out, that no file under `src/` but `crypto.rs` holds `ring` as
-    an identifier); `record` (28: hostile records built in memory, one test per row of
+    an identifier); `record` (29: hostile records built in memory, one test per row of
     `tests/tls/rfc8446-record-musts.txt`, which `record::musts_rows_name_tests` holds to its
     tests), `rfc8448` (6: RFC 8448 sections 3, 5 and 7 replayed as the client and as the
     server from the RFC's text in `tests/data/rfc8448/`, with `SOURCE`) and `adversary_layer`
