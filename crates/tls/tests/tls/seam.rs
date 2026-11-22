@@ -836,34 +836,434 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-#[test]
-fn only_crypto_names_ring() {
-    let src = crate_dir().join("src");
+/// `text` with every comment and the content of every string and char literal replaced by
+/// spaces, newlines kept, so that a line number still points at its line. Knows `//`, nested
+/// `/* */`, `"…"` with escapes, raw strings `r#"…"#`, byte strings, and char literals apart
+/// from lifetimes.
+fn code_only(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let blank = |c: char| if c == '\n' { '\n' } else { ' ' };
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        let next = chars.get(i + 1).copied();
+        if c == '/' && next == Some('/') {
+            while i < chars.len() && chars[i] != '\n' {
+                out.push(' ');
+                i += 1;
+            }
+        } else if c == '/' && next == Some('*') {
+            let mut depth = 0;
+            while i < chars.len() {
+                if chars[i] == '/' && chars.get(i + 1) == Some(&'*') {
+                    depth += 1;
+                    out.push_str("  ");
+                    i += 2;
+                } else if chars[i] == '*' && chars.get(i + 1) == Some(&'/') {
+                    depth -= 1;
+                    out.push_str("  ");
+                    i += 2;
+                    if depth == 0 {
+                        break;
+                    }
+                } else {
+                    out.push(blank(chars[i]));
+                    i += 1;
+                }
+            }
+        } else if c == 'r'
+            && (next == Some('"') || next == Some('#'))
+            && (i == 0 || !(chars[i - 1].is_alphanumeric() || chars[i - 1] == '_'))
+            && {
+                let mut j = i + 1;
+                while chars.get(j) == Some(&'#') {
+                    j += 1;
+                }
+                chars.get(j) == Some(&'"')
+            }
+        {
+            let mut hashes = 0;
+            i += 1;
+            while chars[i] == '#' {
+                hashes += 1;
+                i += 1;
+            }
+            i += 1;
+            out.push(' ');
+            out.extend(std::iter::repeat_n(' ', hashes + 1));
+            while i < chars.len() {
+                if chars[i] == '"' && (0..hashes).all(|k| chars.get(i + 1 + k) == Some(&'#')) {
+                    out.extend(std::iter::repeat_n(' ', hashes + 1));
+                    i += hashes + 1;
+                    break;
+                }
+                out.push(blank(chars[i]));
+                i += 1;
+            }
+        } else if c == '"' {
+            out.push(' ');
+            i += 1;
+            while i < chars.len() && chars[i] != '"' {
+                if chars[i] == '\\' {
+                    out.push(' ');
+                    i += 1;
+                }
+                if i < chars.len() {
+                    out.push(blank(chars[i]));
+                    i += 1;
+                }
+            }
+            out.push(' ');
+            i += 1;
+        } else if c == '\'' && (next == Some('\\') || chars.get(i + 2) == Some(&'\'')) {
+            // A char literal; a lifetime has no closing quote two places on.
+            out.push(' ');
+            i += 1;
+            while i < chars.len() && chars[i] != '\'' {
+                if chars[i] == '\\' {
+                    out.push(' ');
+                    i += 1;
+                }
+                if i < chars.len() {
+                    out.push(blank(chars[i]));
+                    i += 1;
+                }
+            }
+            out.push(' ');
+            i += 1;
+        } else {
+            out.push(c);
+            i += 1;
+        }
+    }
+    out
+}
+
+/// Whether `line` holds `word` as a whole identifier (`r#word` included).
+fn holds_word(line: &str, word: &str) -> bool {
+    let ident = |c: char| c.is_alphanumeric() || c == '_';
+    line.match_indices(word).any(|(at, _)| {
+        let before = line[..at].chars().next_back();
+        let after = line[at + word.len()..].chars().next();
+        !before.is_some_and(ident) && !after.is_some_and(ident)
+    })
+}
+
+/// The lines of the files under `src/` but `crypto.rs` that hold `ring` as an identifier in
+/// code, comments and strings left out.
+fn files_naming_ring(src: &Path) -> Vec<String> {
     let mut files = Vec::new();
-    rust_files(&src, &mut files);
+    rust_files(src, &mut files);
     assert!(files.contains(&src.join("crypto.rs")), "{files:?}");
     let mut naming = Vec::new();
     for file in files.iter().filter(|f| **f != src.join("crypto.rs")) {
         let text = fs::read_to_string(file).expect("read a source file");
-        for (n, line) in text.lines().enumerate() {
-            if line.contains("ring::")
-                || line.contains("extern crate ring")
-                || line.contains("use ring ")
-            {
+        for (n, line) in code_only(&text).lines().enumerate() {
+            if holds_word(line, "ring") {
                 naming.push(format!(
                     "{}:{}: {}",
                     file.strip_prefix(crate_dir()).unwrap_or(file).display(),
                     n + 1,
-                    line.trim()
+                    text.lines().nth(n).unwrap_or("").trim()
                 ));
             }
         }
     }
+    naming
+}
+
+#[test]
+fn only_crypto_names_ring() {
+    let naming = files_naming_ring(&crate_dir().join("src"));
     assert!(
         naming.is_empty(),
         "only src/crypto.rs may name ring:\n{}",
         naming.join("\n")
     );
+}
+
+/// The reader of `only_crypto_names_ring` finds ring in every spelling a planted file could use,
+/// and not in a comment, a string or a longer name.
+#[test]
+fn the_ring_search_sees_every_spelling() {
+    let named = [
+        "use ring::digest;",
+        "use {ring as r};",
+        "use ::ring::aead;",
+        "extern crate ring;",
+        "use std::{io, ring};",
+        "type T = r#ring::rand::SystemRandom;",
+        "fn f() -> ring\n::aead::Tag { todo!() }",
+    ];
+    for code in named {
+        assert!(
+            code_only(code).lines().any(|l| holds_word(l, "ring")),
+            "not seen: {code:?}"
+        );
+    }
+    let not_named = [
+        "// ring 0.17.14",
+        "/* use ring::digest; /* nested */ */",
+        "const S: &str = \"ring::aead\";",
+        "const R: &str = r#\"ring \"quoted\"\"#;",
+        "fn string() {}",
+        "let c = 'r'; let ring_count = 1; let q = '\\'';",
+    ];
+    for code in not_named {
+        assert!(
+            !code_only(code).lines().any(|l| holds_word(l, "ring")),
+            "seen where it is not code: {code:?}"
+        );
+    }
+}
+
+/// The ring modules `crypto.rs` names, as path roots.
+const RING_ROOTS: [&str; 8] = [
+    "ring",
+    "aead",
+    "agreement",
+    "digest",
+    "hkdf",
+    "hmac",
+    "rand",
+    "signature",
+];
+
+/// The public items of `crypto.rs` whose signature names a ring path: every `pub` item (`fn`,
+/// `struct`, `enum`, `type`, `const`, `static`, `trait`, a `pub` field) up to its `{`, `;` or
+/// `=`, and every `impl` header of a public type.
+fn public_ring_paths(crypto: &str) -> Vec<String> {
+    let code = code_only(crypto);
+    let public_types: Vec<String> = code
+        .lines()
+        .filter_map(|l| {
+            let l = l.trim_start();
+            ["pub struct ", "pub enum ", "pub trait ", "pub type "]
+                .iter()
+                .find_map(|p| l.strip_prefix(p))
+                .map(|rest| {
+                    rest.chars()
+                        .take_while(|c| c.is_alphanumeric() || *c == '_')
+                        .collect()
+                })
+        })
+        .collect();
+    let lines: Vec<&str> = code.lines().collect();
+    let mut found = Vec::new();
+    for (n, line) in lines.iter().enumerate() {
+        let trimmed = line.trim_start();
+        let public = trimmed.starts_with("pub ") || trimmed.starts_with("pub(");
+        let impl_of_public = trimmed.starts_with("impl")
+            && public_types.iter().any(|t| {
+                let header: String = lines[n..]
+                    .iter()
+                    .take(4)
+                    .copied()
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let header = header.split('{').next().unwrap_or("");
+                let target = header.rsplit(" for ").next().unwrap_or(header);
+                holds_word(target, t)
+            });
+        if !public && !impl_of_public {
+            continue;
+        }
+        // A field ends with its line; a constant or static before its value; any other item
+        // at its body or its `;`.
+        let field = public
+            && trimmed
+                .trim_start_matches("pub ")
+                .split_once(':')
+                .is_some_and(|(name, _)| {
+                    name.chars().all(|c| c.is_alphanumeric() || c == '_') && !name.is_empty()
+                });
+        let value_follows = trimmed.starts_with("pub const ")
+            && !trimmed.starts_with("pub const fn")
+            || trimmed.starts_with("pub static ");
+        let mut signature = String::new();
+        for l in &lines[n..] {
+            let mut end = l.find(['{', ';']).unwrap_or(l.len());
+            if value_follows {
+                end = l.find('=').map_or(end, |e| e.min(end));
+            }
+            signature.push_str(&l[..end]);
+            signature.push(' ');
+            if field || end < l.len() {
+                break;
+            }
+        }
+        let names_ring = RING_ROOTS.iter().any(|root| {
+            signature
+                .match_indices(&format!("{root}::"))
+                .any(|(at, _)| {
+                    !signature[..at]
+                        .chars()
+                        .next_back()
+                        .is_some_and(|c| c.is_alphanumeric() || c == '_')
+                })
+        }) || holds_word(&signature, "ring");
+        if names_ring {
+            found.push(format!("crypto.rs:{}: {}", n + 1, signature.trim()));
+        }
+    }
+    found
+}
+
+#[test]
+fn no_public_item_of_crypto_names_ring() {
+    let crypto = fs::read_to_string(crate_dir().join("src/crypto.rs")).expect("read crypto.rs");
+    let found = public_ring_paths(&crypto);
+    assert!(
+        found.is_empty(),
+        "a public item of crypto.rs names ring:\n{}",
+        found.join("\n")
+    );
+    // The search itself, on planted items.
+    for planted in [
+        "pub struct Leak(pub aead::LessSafeKey);",
+        "pub fn leak(&self) -> &ring::aead::LessSafeKey {",
+        "pub struct S {\n    pub key: hmac::Key,\n}",
+        "pub type T = digest::Digest;",
+        "pub struct D;\nimpl From<digest::Digest> for D {",
+    ] {
+        assert!(
+            !public_ring_paths(planted).is_empty(),
+            "not seen: {planted:?}"
+        );
+    }
+    for clean in [
+        "fn ring(&self) -> &dyn rand::SecureRandom {",
+        "pub fn hash(algorithm: HashAlgorithm, data: &[u8]) -> Digest {",
+        "struct OutputLen(usize);\nimpl hkdf::KeyType for OutputLen {",
+    ] {
+        assert!(
+            public_ring_paths(clean).is_empty(),
+            "seen in a clean item: {clean:?}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Secrets and tags compare only in constant time.
+
+#[test]
+fn secrets_and_digests_have_no_equality_operator() {
+    let crypto =
+        code_only(&fs::read_to_string(crate_dir().join("src/crypto.rs")).expect("read crypto.rs"));
+    let lines: Vec<&str> = crypto.lines().collect();
+    for name in ["Secret", "Digest"] {
+        let at = lines
+            .iter()
+            .position(|l| l.trim_start().starts_with(&format!("pub struct {name}")))
+            .unwrap_or_else(|| panic!("no pub struct {name}"));
+        let derives: String = lines[..at]
+            .iter()
+            .rev()
+            .take_while(|l| l.trim_start().starts_with("#["))
+            .copied()
+            .collect();
+        assert!(
+            !holds_word(&derives, "PartialEq") && !holds_word(&derives, "Eq"),
+            "{name} derives an equality: {derives}"
+        );
+        let implemented = crypto
+            .lines()
+            .any(|l| l.contains("impl") && l.contains("Eq") && holds_word(l, name));
+        assert!(!implemented, "{name} implements an equality");
+    }
+}
+
+#[test]
+fn constant_time_equality_tells_bytes_apart() {
+    let tag = crypto::hmac_sign(HashAlgorithm::Sha256, b"key", b"data");
+    let same = crypto::hmac_sign(HashAlgorithm::Sha256, b"key", b"data");
+    let other = crypto::hmac_sign(HashAlgorithm::Sha256, b"key", b"date");
+    assert!(crypto::constant_time_eq(tag.as_ref(), same.as_ref()));
+    assert!(!crypto::constant_time_eq(tag.as_ref(), other.as_ref()));
+    assert!(!crypto::constant_time_eq(tag.as_ref(), &tag.as_ref()[1..]));
+    assert!(crypto::constant_time_eq(b"", b""));
+    assert!(!crypto::constant_time_eq(b"", b"\0"));
+}
+
+// ---------------------------------------------------------------------------------------------
+// The lengths and code points the seam states.
+
+#[test]
+fn lengths_are_those_of_the_algorithms() {
+    assert_eq!(HashAlgorithm::Sha256.output_len(), 32);
+    assert_eq!(HashAlgorithm::Sha384.output_len(), 48);
+    for algorithm in [HashAlgorithm::Sha256, HashAlgorithm::Sha384] {
+        assert_eq!(
+            crypto::hash(algorithm, b"").as_ref().len(),
+            algorithm.output_len()
+        );
+        assert_eq!(
+            crypto::hkdf_extract(algorithm, b"", b"").as_ref().len(),
+            algorithm.output_len()
+        );
+    }
+    assert_eq!(AeadAlgorithm::Aes128Gcm.key_len(), 16);
+    assert_eq!(AeadAlgorithm::Aes256Gcm.key_len(), 32);
+    assert_eq!(AeadAlgorithm::ChaCha20Poly1305.key_len(), 32);
+    assert_eq!(AeadAlgorithm::NONCE_LEN, 12);
+    assert_eq!(AeadAlgorithm::TAG_LEN, 16);
+    for algorithm in [
+        AeadAlgorithm::Aes128Gcm,
+        AeadAlgorithm::Aes256Gcm,
+        AeadAlgorithm::ChaCha20Poly1305,
+    ] {
+        let len = algorithm.key_len();
+        assert!(
+            AeadKey::new(algorithm, &vec![1u8; len]).is_ok(),
+            "{algorithm:?}"
+        );
+        assert_eq!(
+            AeadKey::new(algorithm, &vec![1u8; len - 1]).map(|_| ()),
+            Err(CryptoError::KeyLength),
+            "{algorithm:?}"
+        );
+        let key = AeadKey::new(algorithm, &vec![1u8; len]).expect("key");
+        let mut sealed = b"x".to_vec();
+        key.seal(&[0u8; AeadAlgorithm::NONCE_LEN], b"", &mut sealed)
+            .expect("seal");
+        assert_eq!(sealed.len(), 1 + AeadAlgorithm::TAG_LEN, "{algorithm:?}");
+    }
+}
+
+/// The code points and names of RFC 8446 section 4.2.3.
+#[test]
+fn schemes_have_the_code_points_of_rfc_8446() {
+    let table = [
+        (Scheme::RsaPkcs1Sha256, 0x0401, "rsa_pkcs1_sha256"),
+        (Scheme::RsaPkcs1Sha384, 0x0501, "rsa_pkcs1_sha384"),
+        (Scheme::RsaPkcs1Sha512, 0x0601, "rsa_pkcs1_sha512"),
+        (
+            Scheme::EcdsaSecp256r1Sha256,
+            0x0403,
+            "ecdsa_secp256r1_sha256",
+        ),
+        (
+            Scheme::EcdsaSecp384r1Sha384,
+            0x0503,
+            "ecdsa_secp384r1_sha384",
+        ),
+        (Scheme::RsaPssRsaeSha256, 0x0804, "rsa_pss_rsae_sha256"),
+        (Scheme::RsaPssRsaeSha384, 0x0805, "rsa_pss_rsae_sha384"),
+        (Scheme::RsaPssRsaeSha512, 0x0806, "rsa_pss_rsae_sha512"),
+        (Scheme::Ed25519, 0x0807, "ed25519"),
+    ];
+    assert_eq!(Scheme::ALL.len(), table.len());
+    for (scheme, code, name) in table {
+        assert!(Scheme::ALL.contains(&scheme), "{name}");
+        assert_eq!(scheme.code(), code, "{name}");
+        assert_eq!(scheme.name(), name);
+        assert_eq!(Scheme::from_code(code), Some(scheme), "{name}");
+    }
+    // ecdsa_sha1 (0x0203), rsa_pkcs1_sha1 (0x0201) and ed448 (0x0808) are not the seam's.
+    for code in [0x0201, 0x0203, 0x0808, 0x0000] {
+        assert_eq!(Scheme::from_code(code), None, "{code:#06x}");
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -903,3 +1303,191 @@ const RSA2048_PKCS8: &str = concat!(
     "e84682ae395ad6ff5e36f00d41f5d86acc59202bc7c01ee61aac1ecf27d15783ee0e1a01663c0125d3f2ea2b",
     "9f15f357a55428a2ec14010a30d0740f4bbd4cc24b5a854d65a09ba5",
 );
+
+// ---------------------------------------------------------------------------------------------
+// Adversary cases. Each names the change to src/ that it goes red on; the cases above stay
+// green under that change.
+
+/// `hmac_verify` (the Finished check) refuses a tag with one bit flipped, a truncated tag and
+/// an empty one. Red when `hmac_verify` answers `Ok(())`.
+#[test]
+fn adversary_hmac_verify_refuses_a_wrong_tag() {
+    let (key, data) = (b"finished key".as_slice(), b"transcript hash".as_slice());
+    for algorithm in [HashAlgorithm::Sha256, HashAlgorithm::Sha384] {
+        let tag = crypto::hmac_sign(algorithm, key, data);
+        assert_eq!(
+            crypto::hmac_verify(algorithm, key, data, tag.as_ref()),
+            Ok(())
+        );
+        let mut flipped = tag.as_ref().to_vec();
+        flipped[0] ^= 0x01;
+        for wrong in [&flipped[..], &tag.as_ref()[1..], &[][..]] {
+            assert_eq!(
+                crypto::hmac_verify(algorithm, key, data, wrong),
+                Err(CryptoError::BadSignature),
+                "{algorithm:?}: tag of {} bytes",
+                wrong.len()
+            );
+        }
+    }
+}
+
+/// HKDF-Expand with `info` in two parts equals RFC 5869 A.1, whose info is the two parts
+/// concatenated (a TLS HkdfLabel is given in parts). Red when only the first part is read.
+#[test]
+fn adversary_hkdf_expand_reads_every_part_of_info() {
+    let prk = hex("077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5");
+    let okm =
+        "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865";
+    let info = hex("f0f1f2f3f4f5f6f7f8f9");
+    let mut out = [0u8; 42];
+    crypto::hkdf_expand(
+        HashAlgorithm::Sha256,
+        &prk,
+        &[&info[..4], &info[4..]],
+        &mut out,
+    )
+    .expect("expand");
+    assert_eq!(to_hex(&out), okm);
+}
+
+/// rsa_pss_rsae_sha512, which no Wycheproof file covers, signs and verifies; and so do the
+/// RSA schemes the signing tests above leave out. Red when the verification of
+/// rsa_pss_rsae_sha512 uses another hash.
+#[test]
+fn adversary_every_rsa_scheme_signs_and_the_seam_checks_it() {
+    for scheme in [
+        Scheme::RsaPkcs1Sha384,
+        Scheme::RsaPkcs1Sha512,
+        Scheme::RsaPssRsaeSha384,
+        Scheme::RsaPssRsaeSha512,
+    ] {
+        sign_and_check(scheme, &rsa2048_pkcs8(), &Random::system());
+    }
+}
+
+/// "A weak algorithm is named before a weak key" (`refusal`): SHA-1 under RSA-1024 is
+/// `WeakAlgorithm`. Red when the two rules are swapped.
+#[test]
+fn adversary_a_weak_algorithm_is_named_before_a_weak_key() {
+    assert_eq!(
+        crypto::refusal(
+            SignatureAlgorithm::RsaPkcs1(SignatureHash::Sha1),
+            PublicKeyKind::Rsa { bits: 1024 }
+        ),
+        Some(Refusal::WeakAlgorithm {
+            algorithm: "sha1WithRSAEncryption"
+        })
+    );
+}
+
+/// No secret byte in the `Debug` form of a shared secret or an HMAC tag. Red when either
+/// prints its bytes.
+#[test]
+fn adversary_debug_forms_hold_no_secret_bytes() {
+    let ours = EphemeralKey::generate(Group::X25519, &Random::system()).expect("key");
+    let theirs = EphemeralKey::generate(Group::X25519, &Random::system()).expect("key");
+    let secret = ours.agree(theirs.public_key()).expect("agree");
+    assert_eq!(format!("{secret:?}"), "Secret(32 bytes)");
+    let tag = crypto::hmac_sign(HashAlgorithm::Sha384, b"key", b"data");
+    assert_eq!(format!("{tag:?}"), "Digest(48 bytes)");
+}
+
+/// The seam's per-record and per-message operations allocate nothing on the heap, an agreement
+/// no more than its shared secret, read with the counting allocator of `tls/alloc.rs` (which
+/// no case above uses). Red when the seam allocates, say, 1 MiB in `open`.
+#[test]
+fn adversary_the_seam_allocates_at_most_its_output() {
+    use crate::alloc::allocated_while;
+    let key = AeadKey::new(AeadAlgorithm::Aes128Gcm, &[7u8; 16]).expect("key");
+    let nonce = [1u8; 12];
+    let mut record = Vec::with_capacity(16_384 + 16);
+    record.resize(16_384, 0x41);
+    let (sealed, n) = allocated_while(|| key.seal(&nonce, b"aad", &mut record));
+    sealed.expect("seal");
+    assert_eq!(n, 0, "seal allocated {n} bytes");
+    let (opened, n) = allocated_while(|| key.open(&nonce, b"aad", &mut record).map(|p| p.len()));
+    assert_eq!(opened, Ok(16_384));
+    assert_eq!(n, 0, "open allocated {n} bytes");
+    let (_, n) = allocated_while(|| crypto::hash(HashAlgorithm::Sha384, &record));
+    assert_eq!(n, 0, "hash allocated {n} bytes");
+    let mut out = [0u8; 48];
+    let (_, n) = allocated_while(|| {
+        crypto::hkdf_expand(HashAlgorithm::Sha384, &[3u8; 48], &[b"x"], &mut out)
+    });
+    assert_eq!(n, 0, "hkdf_expand allocated {n} bytes");
+    let theirs = EphemeralKey::generate(Group::Secp256r1, &Random::system()).expect("key");
+    let (_, n) = allocated_while(|| {
+        EphemeralKey::generate(Group::Secp256r1, &Random::system())
+            .expect("key")
+            .agree(theirs.public_key())
+            .expect("agree")
+    });
+    assert!(n <= 64, "an agreement allocated {n} bytes");
+}
+
+/// A fixed sequence of random draws that is dropped before every slice was drawn does not
+/// panic: ring's `FixedSliceSequenceRandom` asserts in its `Drop` that each slice was drawn,
+/// so a test that stops early (or fails, and unwinds) panics again in the drop, which aborts.
+/// Red today.
+#[test]
+fn adversary_a_fixed_sequence_dropped_early_does_not_panic() {
+    let first = [1u8; 32];
+    let second = [2u8; 32];
+    let slices: [&[u8]; 2] = [&first, &second];
+    let dropped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let random = Random::fixed_sequence(&slices);
+        let _key = EphemeralKey::generate(Group::X25519, &random).expect("one draw");
+    }));
+    assert!(
+        dropped.is_ok(),
+        "dropping a fixed sequence with one slice left panicked"
+    );
+}
+
+/// The alert descriptions of RFC 8446 section 6 by value and name. Red when `name` maps a value
+/// to another name.
+#[test]
+fn adversary_alert_descriptions_have_the_names_of_rfc_8446() {
+    use surf_tls::error::AlertDescription as A;
+    let table = [
+        (A::CLOSE_NOTIFY, 0, "close_notify"),
+        (A::UNEXPECTED_MESSAGE, 10, "unexpected_message"),
+        (A::BAD_RECORD_MAC, 20, "bad_record_mac"),
+        (A::RECORD_OVERFLOW, 22, "record_overflow"),
+        (A::HANDSHAKE_FAILURE, 40, "handshake_failure"),
+        (A::BAD_CERTIFICATE, 42, "bad_certificate"),
+        (A::UNSUPPORTED_CERTIFICATE, 43, "unsupported_certificate"),
+        (A::CERTIFICATE_REVOKED, 44, "certificate_revoked"),
+        (A::CERTIFICATE_EXPIRED, 45, "certificate_expired"),
+        (A::CERTIFICATE_UNKNOWN, 46, "certificate_unknown"),
+        (A::ILLEGAL_PARAMETER, 47, "illegal_parameter"),
+        (A::UNKNOWN_CA, 48, "unknown_ca"),
+        (A::ACCESS_DENIED, 49, "access_denied"),
+        (A::DECODE_ERROR, 50, "decode_error"),
+        (A::DECRYPT_ERROR, 51, "decrypt_error"),
+        (A::PROTOCOL_VERSION, 70, "protocol_version"),
+        (A::INSUFFICIENT_SECURITY, 71, "insufficient_security"),
+        (A::INTERNAL_ERROR, 80, "internal_error"),
+        (A::INAPPROPRIATE_FALLBACK, 86, "inappropriate_fallback"),
+        (A::USER_CANCELED, 90, "user_canceled"),
+        (A::MISSING_EXTENSION, 109, "missing_extension"),
+        (A::UNSUPPORTED_EXTENSION, 110, "unsupported_extension"),
+        (A::UNRECOGNIZED_NAME, 112, "unrecognized_name"),
+        (
+            A::BAD_CERTIFICATE_STATUS_RESPONSE,
+            113,
+            "bad_certificate_status_response",
+        ),
+        (A::UNKNOWN_PSK_IDENTITY, 115, "unknown_psk_identity"),
+        (A::CERTIFICATE_REQUIRED, 116, "certificate_required"),
+        (A::NO_APPLICATION_PROTOCOL, 120, "no_application_protocol"),
+    ];
+    for (constant, value, name) in table {
+        assert_eq!(constant.0, value, "{name}");
+        assert_eq!(A(value).name(), name, "{value}");
+        assert_eq!(A(value).to_string(), name, "{value}");
+    }
+    assert_eq!(A(21).name(), "unknown");
+    assert_eq!(A(21).to_string(), "unknown alert 21");
+}

@@ -162,8 +162,9 @@ there instead.
    the rustls audit of Cure53, 2020 (<https://cure53.de/pentest-report_rustls.pdf>). Only the
    crate `surf-tls` may depend on it, and the checks pin its packages by name, version and
    checksum.
-5. **No unsafe code.** Every hand-written crate forbids it. The exceptions are in tests: two
-   counting allocators that measure what a fetch holds and what a parse allocates.
+5. **No unsafe code.** Every hand-written crate forbids it. The exceptions are in tests: three
+   counting allocators that measure what a fetch holds, what a parse allocates and what the
+   TLS code allocates.
 6. **Text from the web stays text.** Anything from a page, a server or an address is escaped
    before it is printed, so a page cannot forge a line of surf's output.
 7. **A passing test must be able to fail.** Tests are tried against planted defects. A storage

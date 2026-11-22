@@ -244,6 +244,25 @@ fn a_listed_package_the_lock_lacks_fails_naming_it() {
     assert_fails_with("listed-missing", &dir, &format!("{line:?}"), |l| l == line);
 }
 
+/// A line in no form cargo writes fails, named with its line number, also where cargo would
+/// read it.
+#[test]
+fn a_line_cargo_does_not_write_fails_naming_it() {
+    let n = lock().lines().count() + 1;
+    for (case, extra) in [
+        ("foreign-metadata", "[metadata]\n"),
+        ("foreign-patch", "[[patch.unused]]\n"),
+        ("foreign-spaces", "name  = \"surf\"\n"),
+    ] {
+        let dir = copy(case, extra);
+        let line = format!(
+            "Cargo.lock:{n}: not in the form cargo writes: {}",
+            extra.trim_end()
+        );
+        assert_fails_with(case, &dir, &format!("{line:?}"), |l| l == line);
+    }
+}
+
 /// No root lock at all proves nothing, so it fails too.
 #[test]
 fn a_missing_lock_fails() {
@@ -252,4 +271,92 @@ fn a_missing_lock_fails() {
     let (status, text) = check(&dir);
     assert_ne!(status, Some(0), "{text}");
     let _ = fs::remove_dir_all(&dir);
+}
+
+// Adversary cases: cargo reads Cargo.lock as TOML, and under `--locked` (the gate's build and
+// test) it compares the lock it would write with the one on disk as parsed values, so a lock
+// that differs from cargo's own layout but means the same is accepted and not rewritten. Each
+// lock below was shown to pass `cargo tree --locked --offline` unchanged in a copy of the
+// workspace whose manifest asked for the package. The check must read these as cargo does.
+
+/// An unlisted registry crate whose `source` and `checksum` keys have no spaces around `=`.
+#[test]
+fn adversary_an_unlisted_package_with_keys_without_spaces_fails() {
+    assert_fails_naming(
+        "adversary-nospace",
+        concat!(
+            "\n[[package]]\n",
+            "name = \"either\"\n",
+            "version = \"1.19.0\"\n",
+            "source=\"registry+https://github.com/rust-lang/crates.io-index\"\n",
+            "checksum=\"0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be\"\n",
+        ),
+        "Cargo.lock: either 1.19.0 from registry+https://github.com/rust-lang/crates.io-index: not on the allow-list",
+    );
+}
+
+/// An unlisted registry crate after a `[[package]]` header with a comment.
+#[test]
+fn adversary_an_unlisted_package_under_a_commented_header_fails() {
+    assert_fails_naming(
+        "adversary-header-comment",
+        concat!(
+            "\n[[package]] # x\n",
+            "name = \"either\"\n",
+            "version = \"1.19.0\"\n",
+            "source = \"registry+https://github.com/rust-lang/crates.io-index\"\n",
+            "checksum = \"0e9c71c2167ca323c882b99918929403426e2373ea17242ff5653e0d5e1058be\"\n",
+        ),
+        "Cargo.lock: either 1.19.0 from registry+https://github.com/rust-lang/crates.io-index: not on the allow-list",
+    );
+}
+
+/// surf-fetch with ring in a dependency array whose first entry stands on its opening line.
+#[test]
+fn adversary_another_crate_depending_on_ring_in_an_inline_array_fails() {
+    let lock = lock_with_package_edited("surf-fetch", |b| {
+        b.replace("dependencies = [\n", "dependencies = [\"ring\",\n")
+    });
+    let dir = copy_with("adversary-fetch-ring-inline", &lock, &allow_list());
+    let line = "Cargo.lock: surf-fetch depends on ring; only surf-tls may";
+    assert_fails_with(
+        "adversary-fetch-ring-inline",
+        &dir,
+        &format!("{line:?}"),
+        |l| l == line,
+    );
+}
+
+/// surf-fetch with untrusted, a package of ring, as the last of its dependencies, where cargo's
+/// sorting puts it. Green today; red when the check reads only the first dependency of a crate
+/// (the case above with ring first stays green under that change).
+#[test]
+fn adversary_another_crate_depending_on_a_package_of_ring_last_fails() {
+    let lock = lock_with_package_edited("surf-fetch", |b| {
+        b.replace(" \"surf-url\",\n]", " \"surf-url\",\n \"untrusted\",\n]")
+    });
+    let dir = copy_with("adversary-fetch-untrusted-last", &lock, &allow_list());
+    let line = "Cargo.lock: surf-fetch depends on untrusted; only surf-tls may";
+    assert_fails_with(
+        "adversary-fetch-untrusted-last",
+        &dir,
+        &format!("{line:?}"),
+        |l| l == line,
+    );
+}
+
+/// surf-fetch with ring as a TOML literal string, `'ring'`.
+#[test]
+fn adversary_another_crate_depending_on_ring_as_a_literal_string_fails() {
+    let lock = lock_with_package_edited("surf-fetch", |b| {
+        b.replace("dependencies = [\n", "dependencies = [\n 'ring',\n")
+    });
+    let dir = copy_with("adversary-fetch-ring-literal", &lock, &allow_list());
+    let line = "Cargo.lock: surf-fetch depends on ring; only surf-tls may";
+    assert_fails_with(
+        "adversary-fetch-ring-literal",
+        &dir,
+        &format!("{line:?}"),
+        |l| l == line,
+    );
 }

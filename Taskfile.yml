@@ -153,6 +153,8 @@ tasks:
         matches a line of taskfiles/lock-allow.txt on name, version, source and checksum;
       - no crate of this repository but surf-tls depends on a package of that list.
       A line of the list that no package matches fails too, and so does a missing Cargo.lock.
+      The lock is read only in the form cargo writes: a line in any other form fails with its
+      number, also where cargo would accept it as another spelling of the same TOML.
       taskfiles/lock-check.sh does the work and names each finding; its head states the format
       of the list.
 

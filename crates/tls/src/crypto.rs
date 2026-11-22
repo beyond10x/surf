@@ -2,7 +2,8 @@
 //!
 //! It offers what TLS 1.3 needs and nothing else: AEAD seal and open for AES-128-GCM,
 //! AES-256-GCM and ChaCha20-Poly1305; SHA-256 and SHA-384, one-shot and running; HMAC, HKDF
-//! extract and expand; X25519 and P-256 agreement with a key drawn from a [`Random`] source;
+//! extract and expand; a comparison of secrets in constant time ([`constant_time_eq`]); X25519
+//! and P-256 agreement with a key drawn from a [`Random`] source;
 //! signature checks for the nine schemes of item 14 behind the trait [`SignatureVerifier`]; and
 //! [`REFUSED`], the signature algorithms it refuses by name before any verification.
 //!
@@ -117,7 +118,10 @@ impl<'a> Random<'a> {
     }
 
     /// A source that answers each draw with the next of `slices`, each of the exact length of
-    /// its draw (test tooling only).
+    /// its draw (test tooling only). A draw of another length, or one more draw than there are
+    /// slices, panics. Slices not drawn when the source is dropped are left unused: dropping
+    /// never panics, also not while a failed test unwinds (ring's own type asserts in its
+    /// `Drop` that every slice was drawn; this source marks them drawn first).
     #[cfg(feature = "test-tooling")]
     #[allow(deprecated)]
     pub fn fixed_sequence(slices: &'a [&'a [u8]]) -> Random<'a> {
@@ -126,6 +130,18 @@ impl<'a> Random<'a> {
                 bytes: slices,
                 current: core::cell::UnsafeCell::new(0),
             }),
+        }
+    }
+}
+
+impl Drop for Random<'_> {
+    fn drop(&mut self) {
+        // ring's fixed sequence asserts in its own `Drop` that every slice was drawn; a panic
+        // there while a test unwinds aborts the process. Its count is reached safely through
+        // `&mut`, and set to the end, so that assertion holds.
+        #[cfg(feature = "test-tooling")]
+        if let Source::FixedSequence(sequence) = &mut self.source {
+            *sequence.current.get_mut() = sequence.bytes.len();
         }
     }
 }
@@ -173,8 +189,9 @@ impl HashAlgorithm {
     }
 }
 
-/// A digest or an HMAC tag: at most 48 bytes.
-#[derive(Clone, PartialEq, Eq)]
+/// A digest or an HMAC tag: at most 48 bytes. It has no `==`: a tag or a hash that stands
+/// for a secret is compared with [`constant_time_eq`] or [`hmac_verify`].
+#[derive(Clone)]
 pub struct Digest {
     bytes: [u8; 48],
     len: usize,
@@ -265,6 +282,19 @@ pub fn hmac_verify(
 ) -> Result<(), CryptoError> {
     hmac::verify(&hmac::Key::new(algorithm.hmac(), key), data, tag)
         .map_err(|ring::error::Unspecified| CryptoError::BadSignature)
+}
+
+/// The key under which [`constant_time_eq`] compares; any fixed key serves, since equal HMACs
+/// of two inputs under one key mean equal inputs.
+const COMPARISON_KEY: &[u8] = b"surf-tls constant-time comparison";
+
+/// Whether `a` and `b` hold the same bytes, compared in constant time: `hmac::verify` of ring,
+/// which compares in constant time, checks the HMAC of `b` against the HMAC of `a`. The one
+/// way the seam compares a secret or a tag; [`Secret`] and [`Digest`] have no `==`.
+pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    let key = hmac::Key::new(hmac::HMAC_SHA256, COMPARISON_KEY);
+    let tag = hmac::sign(&key, a);
+    hmac::verify(&key, b, tag.as_ref()).is_ok()
 }
 
 /// HKDF-Extract (RFC 5869 section 2.2): the pseudorandom key of `ikm` under `salt`, which is
@@ -406,8 +436,9 @@ impl Group {
     }
 }
 
-/// A shared secret of an agreement, or another secret the caller derives keys from.
-#[derive(Clone, PartialEq, Eq)]
+/// A shared secret of an agreement, or another secret the caller derives keys from. It has no
+/// `==`; a comparison goes through [`constant_time_eq`].
+#[derive(Clone)]
 pub struct Secret(Vec<u8>);
 
 impl AsRef<[u8]> for Secret {
