@@ -82,6 +82,9 @@
 //! media type, address, failure reason). What stays across commands are the components' rows,
 //! none of which holds a body: per `go` one action, one navigation, one request and, for an
 //! HTML page, one document, each with its address and identities; and the session's row.
+//! Since `story:html-document-port` an HTML page also leaves its document's title, one element
+//! row per actionable element, and its node tree, which `surf::Browser` keeps for the life of
+//! the session (each tree within `surf-html`'s limits; no bound over all documents yet).
 //!
 //! # The entries
 //!
@@ -96,14 +99,30 @@
 //! (`look`, a refusal) has no entry.
 //!
 //! The entries of one request through the wire stay below [`surfd::link::ENTRIES_MAX`],
-//! 8,388,608 bytes: an event field holds no body, only its length, and an address, at most
-//! [`surf_agent::wire::REQUEST_MAX`] bytes long when it comes from a request and at most
+//! 8,388,608 bytes, whatever the page holds. The answer entry is the answer lines, at most
+//! [`surfd::link::ANSWER_TEXT_MAX`] (4,194,304 bytes; it holds at most seven addresses, `did`,
+//! `page` and [`PATH_SHOWN`] path lines, each at most 262,146 bytes once quoted, "What it
+//! keeps"), and its `answer-entry <m>` line. The action and event entries take at most
+//! [`ACTION_AND_EVENT_BYTES_MAX`], 4,194,240 bytes, the rest: the action entries (at most two,
+//! `open <url>` records `open` and `go`, each with at most one address) are written whole and
+//! their bytes, with 64 bytes for a left-out line after each, are set aside first; an event
+//! entry that would take the event entries past what is left is left out, and so is every
+//! `surf.document.ElementAdded` entry after the first [`ELEMENT_ENTRIES_MAX`] (256) of the
+//! request. After an action's events, one line `event surf.session.EventsLeftOut
+//! count="<n>"` ([`entries::left_out_line`]) counts the entries left out of them; it is absent
+//! when none was. So a request carries at most 256 element entries, and `surfd`'s bounds of a
+//! session's log (10,000 entries) and of a reader's queue (1,024) are not reached by one page.
+//! An event field holds no body, only its length; the one field that holds text from a page,
+//! the title of `surf.document.DocumentParsed`, holds at most
+//! [`entries::TITLE_ENTRY_BYTES`] (1,024) bytes of it, at most 4,098 bytes quoted, with the
+//! field `title_bytes` when it was cut. An element's label, target and value are in no entry
+//! (`surf.document.ElementAdded` carries two identities and a position). An address, at most
+//! [`surf_agent::wire::REQUEST_MAX`] bytes when it comes from a request and at most
 //! [`surf_fetch::MAX_ADDRESS_BYTES`] bytes, the same 64 KiB, when it is the address a response
-//! came from after redirects, is in at most eight event and action lines of one `open <url>`
-//! or `go`, and the answer entry holds at most seven addresses (`did`, `page` and
-//! [`PATH_SHOWN`] path lines). Each address is at most 262,146 bytes once quoted ("What it
-//! keeps"), so the fifteen come to at most 3,932,190 bytes, with a few hundred bytes of other
-//! fields per line.
+//! came from after redirects, is at most 262,146 bytes once quoted, in at most nine action and
+//! event lines of one `open <url>` or `go` (`DocumentParsed` is the ninth), 2,359,314 bytes,
+//! with a few hundred bytes of other fields per line: below the 4,194,240, so no event of the
+//! page load itself is left out.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -134,6 +153,20 @@ use surfd::link;
 
 /// The most actions the `path` block shows: the last five (design section 5.1).
 pub const PATH_SHOWN: usize = 5;
+
+/// The most `surf.document.ElementAdded` entries one request carries ("The entries" above): the
+/// first 256 of the request; the others are left out and counted.
+pub const ELEMENT_ENTRIES_MAX: usize = 256;
+
+/// The most bytes the action and event entries of one request take together, left-out lines
+/// included ("The entries" above): [`surfd::link::ENTRIES_MAX`] less
+/// [`surfd::link::ANSWER_TEXT_MAX`], the most the answer entry holds, and 64 bytes for its
+/// `answer-entry <m>` line: 4,194,240 bytes.
+pub const ACTION_AND_EVENT_BYTES_MAX: usize = link::ENTRIES_MAX - link::ANSWER_TEXT_MAX - 64;
+
+/// The most bytes of a left-out line ([`entries::left_out_line`]) with its line feed: the line
+/// with the 20 digits of the largest count is 61 bytes.
+const LEFT_OUT_LINE_MAX: usize = 64;
 
 /// The transport of the binary: [`surf::fetch_http`] at `surf-fetch`'s default limits, through
 /// [`surf::answer`]. An address that is not `http:` is `UnsupportedScheme` and nothing is read;
@@ -330,14 +363,26 @@ impl<T: Transport> Session<T> {
             .agent
             .session_log(self.session_id.clone())
             .unwrap_or_default();
-        let mut out = Vec::new();
-        let mut from = start.min(published.len());
-        for (at, sequence) in self.recorded.iter().enumerate() {
+        let mut actions = Vec::with_capacity(self.recorded.len());
+        for sequence in &self.recorded {
             let row = log.iter().find(|row| row.sequence == *sequence);
             let Some(action) = row.and_then(|row| link::Entry::line(&entries::action_line(row)))
             else {
                 return Vec::new();
             };
+            actions.push(action);
+        }
+        // What the event entries may take: the bytes of the request's entries beside the answer
+        // entry, less its action entries and a left-out line after each.
+        let reserved: usize = actions
+            .iter()
+            .map(|action| action.text.len() + LEFT_OUT_LINE_MAX)
+            .sum();
+        let mut room = ACTION_AND_EVENT_BYTES_MAX.saturating_sub(reserved);
+        let mut elements = 0;
+        let mut out = Vec::new();
+        let mut from = start.min(published.len());
+        for (at, action) in actions.into_iter().enumerate() {
             out.push(action);
             let end = if at + 1 == self.recorded.len() {
                 published.len()
@@ -348,11 +393,29 @@ impl<T: Transport> Session<T> {
                     .unwrap_or(published.len())
                     .clamp(from, published.len())
             };
-            out.extend(
-                published[from..end]
-                    .iter()
-                    .filter_map(|event| link::Entry::line(&entries::event_line(event))),
-            );
+            let mut left_out = 0u64;
+            for event in &published[from..end] {
+                let element = matches!(event, surf::SystemEvent::ElementAdded(_));
+                if element && elements >= ELEMENT_ENTRIES_MAX {
+                    left_out += 1;
+                    continue;
+                }
+                let Some(entry) = link::Entry::line(&entries::event_line(event)) else {
+                    continue;
+                };
+                if entry.text.len() > room {
+                    left_out += 1;
+                    continue;
+                }
+                room -= entry.text.len();
+                elements += usize::from(element);
+                out.push(entry);
+            }
+            if left_out > 0
+                && let Some(line) = link::Entry::line(&entries::left_out_line(left_out))
+            {
+                out.push(line);
+            }
             from = end;
         }
         out

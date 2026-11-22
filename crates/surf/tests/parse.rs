@@ -1,5 +1,6 @@
-//! Story html-document-port: the parser step of `Browser`. Each case loads pages from a server the
-//! test starts on 127.0.0.1 port 0 and stops before it ends.
+//! Story html-document-port: the parser step of `Browser`. The first cases load pages from a
+//! server the test starts on 127.0.0.1 port 0 and stops before it ends; the cases of the parser's
+//! limits answer from a transport in memory, each with one limit set small.
 
 use std::cell::Cell;
 use std::io::{Read, Write};
@@ -14,7 +15,7 @@ use surf::{Answer, Browser, HtmlParser, Parse, Parser, ParsingStarted, RequestSt
 use surf::{Report, fetch_http};
 use surf_html::NodeData;
 use surf_ports::ComponentPorts;
-use surf_types::document::{DocumentId, DocumentState, Documents, ElementKind};
+use surf_types::document::{DocumentId, DocumentState, Documents, ElementKind, ParseLimit};
 
 /// The longest the server waits for a request's head.
 const BOUND: Duration = Duration::from_secs(5);
@@ -226,7 +227,7 @@ fn a_non_html_response_is_not_parsed() {
     let server = Server::start("text/plain", "<title>Not a page</title><a href=\"/\">x</a>");
     let calls = Rc::new(Cell::new(0));
     let mut browser = Browser::from_ports(ComponentPorts::new(), http)
-        .with_parser(counting(HtmlParser, Rc::clone(&calls)));
+        .with_parser(counting(HtmlParser::default(), Rc::clone(&calls)));
     let report = browser.load(&server.url("/")).expect("load");
     assert_eq!(calls.get(), 0);
     assert!(report.documents.is_empty(), "{:?}", report.documents);
@@ -237,4 +238,130 @@ fn a_non_html_response_is_not_parsed() {
             .all(|line| line.starts_with("navigation ") || line.starts_with("request ")),
         "{lines:?}"
     );
+}
+
+// --- The parser's limits, each set small ---------------------------------------------------------
+
+/// The page every limit case starts with: a title and the link `/a`, both before the limit.
+const BEFORE: &str = "<title>T</title><a href=\"/a\">A</a>";
+
+/// The link every limit case ends with, past the limit.
+const AFTER: &str = "<a href=\"/z\">Z</a>";
+
+/// `body` served as `text/html` by a transport in memory and parsed with `limits`: the report,
+/// its lines and the identity of its document. The load must end with its navigation
+/// committed and its document `Parsed`, stopped by `limit`.
+fn parsed_within(
+    limits: surf_html::limits::Limits,
+    body: String,
+    limit: ParseLimit,
+) -> (Vec<String>, String) {
+    let transport = move |request: &RequestStarted| Answer::Response {
+        url: request.url.0.clone(),
+        status: 200,
+        media_type: "text/html".to_owned(),
+        body: body.clone().into_bytes(),
+    };
+    let mut browser = Browser::from_ports(ComponentPorts::new(), transport)
+        .with_parser(HtmlParser::with_limits(limits));
+    let result = browser.load("http://127.0.0.1/page");
+    assert_eq!(
+        surf::exit_status(&result),
+        surf::EXIT_COMMITTED,
+        "{result:?}"
+    );
+    let report = result.expect("load");
+    let document = only_document(&report).clone();
+    assert_eq!(document.state, DocumentState::Parsed);
+    assert_eq!(document.stopped_by, Some(limit));
+    let id = document.document_id.0.0.clone();
+    let tree = browser
+        .document_tree(&document.document_id)
+        .expect("the tree is kept");
+    assert_eq!(
+        tree.stopped_by().map(|l| format!("{l:?}")),
+        Some(format!("{limit:?}"))
+    );
+    (report.lines(), id)
+}
+
+/// The lines of a page stopped by `limit`: the title and the link `/a` before it are kept, the
+/// link `/z` after it is not, and `note limit <id> <limit>` names it.
+fn assert_kept_before(lines: &[String], id: &str, limit: &str) {
+    assert!(lines.contains(&format!("title {id} \"T\"")), "{lines:?}");
+    assert!(
+        lines.contains(&format!("element {id} 1 link - \"A\" \"/a\"")),
+        "{lines:?}"
+    );
+    assert!(!lines.iter().any(|l| l.ends_with("\"/z\"")), "{lines:?}");
+    assert!(
+        lines.contains(&format!("note limit {id} {limit}")),
+        "{lines:?}"
+    );
+}
+
+#[test]
+fn a_page_over_the_input_limit_is_parsed_up_to_it() {
+    let limits = surf_html::limits::Limits {
+        max_input_bytes: 64,
+        ..surf_html::limits::Limits::default()
+    };
+    let body = format!("{BEFORE}<p>{}</p>{AFTER}", "x".repeat(100));
+    let (lines, id) = parsed_within(limits, body, ParseLimit::InputBytes);
+    assert_kept_before(&lines, &id, "InputBytes");
+}
+
+#[test]
+fn a_page_over_the_depth_limit_is_parsed_up_to_it() {
+    let limits = surf_html::limits::Limits {
+        max_depth: 8,
+        ..surf_html::limits::Limits::default()
+    };
+    let body = format!("{BEFORE}{}{AFTER}", "<div>".repeat(20));
+    let (lines, id) = parsed_within(limits, body, ParseLimit::Depth);
+    assert_kept_before(&lines, &id, "Depth");
+}
+
+#[test]
+fn a_page_over_the_node_limit_is_parsed_up_to_it() {
+    let limits = surf_html::limits::Limits {
+        max_nodes: 12,
+        ..surf_html::limits::Limits::default()
+    };
+    let body = format!("{BEFORE}{}{AFTER}", "<p>x</p>".repeat(20));
+    let (lines, id) = parsed_within(limits, body, ParseLimit::Nodes);
+    assert_kept_before(&lines, &id, "Nodes");
+}
+
+#[test]
+fn a_page_over_the_attribute_limit_is_parsed_up_to_it() {
+    let limits = surf_html::limits::Limits {
+        max_attributes: 2,
+        ..surf_html::limits::Limits::default()
+    };
+    let body = format!("{BEFORE}<p a=1 b=2 c=3>x</p>{AFTER}");
+    let (lines, id) = parsed_within(limits, body, ParseLimit::Attributes);
+    assert_kept_before(&lines, &id, "Attributes");
+}
+
+#[test]
+fn a_page_over_the_stored_byte_limit_is_parsed_up_to_it() {
+    let limits = surf_html::limits::Limits {
+        max_stored_bytes: 400,
+        ..surf_html::limits::Limits::default()
+    };
+    let body = format!("{BEFORE}<p>{}</p>{AFTER}", "x".repeat(1000));
+    let (lines, id) = parsed_within(limits, body, ParseLimit::StoredBytes);
+    assert_kept_before(&lines, &id, "StoredBytes");
+}
+
+#[test]
+fn a_page_over_the_step_limit_is_parsed_up_to_it() {
+    let limits = surf_html::limits::Limits {
+        max_steps: 64,
+        ..surf_html::limits::Limits::default()
+    };
+    let body = format!("{BEFORE}{}{AFTER}", "<p>x</p>".repeat(200));
+    let (lines, id) = parsed_within(limits, body, ParseLimit::Steps);
+    assert_kept_before(&lines, &id, "Steps");
 }

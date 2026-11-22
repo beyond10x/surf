@@ -34,6 +34,10 @@ macro_rules! keyed {
             fn key(&self) -> &$key {
                 &self.data.$field
             }
+
+            fn text(key: &$key) -> &str {
+                &key.0.0
+            }
         }
     };
 }

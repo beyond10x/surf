@@ -18,8 +18,8 @@ const RUN_BOUND: Duration = Duration::from_secs(20);
 /// The longest the server waits for a request's head.
 const BOUND: Duration = Duration::from_secs(5);
 
-/// An HTTP server that answers every request with 200, `media_type` and `body`. Stopped when
-/// dropped.
+/// An HTTP server that answers every request with one status line, `Content-Type` when it has
+/// one, and one body. Stopped when dropped.
 struct Server {
     port: u16,
     stop: Arc<AtomicBool>,
@@ -27,7 +27,14 @@ struct Server {
 }
 
 impl Server {
+    /// 200 with `media_type` and `body`.
     fn start(media_type: &'static str, body: Vec<u8>) -> Server {
+        Server::answering("200 OK", Some(media_type), body)
+    }
+
+    /// `status` (such as `404 Not Found`), `media_type` as `Content-Type` when it is given, and
+    /// `body`.
+    fn answering(status: &'static str, media_type: Option<&'static str>, body: Vec<u8>) -> Server {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
         let port = listener.local_addr().expect("local address").port();
         let stop = Arc::new(AtomicBool::new(false));
@@ -38,7 +45,7 @@ impl Server {
                     break;
                 }
                 if let Ok(stream) = stream {
-                    reply(stream, media_type, &body);
+                    reply(stream, status, media_type, &body);
                 }
             }
         });
@@ -64,7 +71,7 @@ impl Drop for Server {
     }
 }
 
-fn reply(mut stream: TcpStream, media_type: &str, body: &[u8]) {
+fn reply(mut stream: TcpStream, status: &str, media_type: Option<&str>, body: &[u8]) {
     let _ = stream.set_read_timeout(Some(BOUND));
     let mut head = Vec::new();
     let mut buf = [0u8; 1024];
@@ -74,9 +81,11 @@ fn reply(mut stream: TcpStream, media_type: &str, body: &[u8]) {
             Ok(n) => head.extend_from_slice(&buf[..n]),
         }
     }
+    let content_type = media_type
+        .map(|media_type| format!("Content-Type: {media_type}\r\n"))
+        .unwrap_or_default();
     let mut reply = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: {media_type}\r\nContent-Length: {}\r\nConnection: \
-         close\r\n\r\n",
+        "HTTP/1.1 {status}\r\n{content_type}Content-Length: {}\r\nConnection: close\r\n\r\n",
         body.len()
     )
     .into_bytes();
@@ -249,4 +258,61 @@ fn the_parser_note_lists_what_is_not_yet_parsed() {
         }
         None => assert!(notes.is_empty(), "{lines:?}"),
     }
+}
+
+/// A response without `Content-Type` has the media type `application/octet-stream`
+/// (`surf-fetch`), so it is not parsed, whatever its body: the navigation commits, exit 0, no
+/// document and no line of the parser.
+#[test]
+fn a_response_without_a_content_type_is_not_parsed() {
+    let server = Server::answering(
+        "200 OK",
+        None,
+        b"<title>Not read</title><a href=\"/\">x</a>".to_vec(),
+    );
+    let run = surf(&server.url());
+    let lines: Vec<&str> = run.stdout.lines().collect();
+    assert_eq!(run.status, 0, "{lines:?}");
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert!(lines[0].starts_with("navigation ") && lines[0].contains(" Committed "));
+    assert!(lines[1].starts_with("request ") && lines[1].contains(" Responded "));
+}
+
+/// A document is parsed for every `text/html` response, whatever its status
+/// (`docs/surf-command.md`): a 404 with an HTML body commits, exit 0, and prints its title and
+/// its link.
+#[test]
+fn an_error_status_with_an_html_body_is_parsed() {
+    let server = Server::answering(
+        "404 Not Found",
+        Some("text/html"),
+        b"<title>Missing</title><a href=\"/\">Home</a>".to_vec(),
+    );
+    let run = surf(&server.url());
+    let lines: Vec<String> = run.stdout.lines().map(str::to_owned).collect();
+    assert_eq!(run.status, 0, "{lines:?}");
+    let id = lines
+        .iter()
+        .find_map(|l| l.strip_prefix("document "))
+        .and_then(|rest| rest.split(' ').next())
+        .expect("a document line")
+        .to_owned();
+    let mut expected = vec![
+        format!("title {id} \"Missing\""),
+        format!("element {id} 1 link - \"Home\" \"/\""),
+    ];
+    expected.extend(parser_note());
+    assert_eq!(after_document(&lines), expected);
+}
+
+/// Bytes that are not UTF-8 in a page declared UTF-8 decode as U+FFFD, each written escaped;
+/// the page is parsed and the load commits.
+#[test]
+fn an_html_body_that_is_not_utf_8_is_decoded_with_replacement_characters() {
+    let (status, lines, id) = page(b"<meta charset=\"utf-8\"><title>a\xff\xfeb</title>");
+    assert_eq!(status, 0, "{lines:?}");
+    assert_eq!(
+        after_document(&lines)[0],
+        format!("title {id} \"a\\xef\\xbf\\xbd\\xef\\xbf\\xbdb\"")
+    );
 }

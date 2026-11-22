@@ -241,21 +241,53 @@ impl<F: FnMut(&ParsingStarted) -> Parse> Parser for F {
     }
 }
 
-/// The parser step of the binaries: [`parse_page`] over every body.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct HtmlParser;
+/// The parser step of the binaries: [`parse_page_with`] over every body, with its options.
+///
+/// [`HtmlParser::default`] parses with `surf-html`'s default options (scripting disabled, the
+/// default limits); [`HtmlParser::with_options`] takes others, such as small limits.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HtmlParser {
+    options: surf_html::ParseOptions,
+}
 
-impl Parser for HtmlParser {
-    fn parse(&mut self, started: &ParsingStarted) -> Parse {
-        Parse::Parsed(Box::new(parse_page(&started.body)))
+impl HtmlParser {
+    /// The parser step that parses with `options`.
+    pub fn with_options(options: surf_html::ParseOptions) -> HtmlParser {
+        HtmlParser { options }
+    }
+
+    /// The parser step that parses with the default options but `limits`.
+    pub fn with_limits(limits: surf_html::limits::Limits) -> HtmlParser {
+        HtmlParser::with_options(surf_html::ParseOptions {
+            limits,
+            ..surf_html::ParseOptions::default()
+        })
+    }
+
+    /// The options it parses with.
+    pub fn options(&self) -> &surf_html::ParseOptions {
+        &self.options
     }
 }
 
-/// Decodes and parses `body` as an HTML document with `surf-html` at its default limits
-/// ([`surf_html::parse_document_bytes`], scripting disabled), and computes its title and its
-/// actionable elements with their labels with `surf-page`.
+impl Parser for HtmlParser {
+    fn parse(&mut self, started: &ParsingStarted) -> Parse {
+        Parse::Parsed(Box::new(parse_page_with(&started.body, &self.options)))
+    }
+}
+
+/// [`parse_page_with`] with `surf-html`'s default options: scripting disabled, the default
+/// limits.
 pub fn parse_page(body: &[u8]) -> Page {
-    let parsed = surf_html::parse_document_bytes(body, &surf_html::ParseOptions::default());
+    parse_page_with(body, &surf_html::ParseOptions::default())
+}
+
+/// Decodes and parses `body` as an HTML document with `surf-html` under `options`
+/// ([`surf_html::parse_document_bytes`]), and computes its title and its actionable elements
+/// with their labels with `surf-page`. A parse a limit stopped keeps the tree built before it
+/// (`surf-html`, "Limits"), and the title and the elements are read from that tree.
+pub fn parse_page_with(body: &[u8], options: &surf_html::ParseOptions) -> Page {
+    let parsed = surf_html::parse_document_bytes(body, options);
     // The sniffing algorithm always chooses an encoding; windows-1252 is its default.
     let chosen = parsed.encoding.unwrap_or("windows-1252");
     let decoded_with = surf_html::encoding::decode_with(b"", chosen)
@@ -743,7 +775,7 @@ impl<A, D, N, Ne, R, S, T> Browser<A, D, N, Ne, R, S, T> {
         Self {
             system,
             transport,
-            parser: HtmlParser,
+            parser: HtmlParser::default(),
             cursor: 0,
             kept: BTreeMap::new(),
         }
