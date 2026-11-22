@@ -6,12 +6,16 @@
 
 #![deny(unsafe_code)]
 
+#[path = "tls/adversary_anchors.rs"]
+mod adversary_anchors;
 #[path = "tls/adversary_layer.rs"]
 mod adversary_layer;
 #[path = "tls/adversary_x509.rs"]
 mod adversary_x509;
 #[path = "tls/alloc.rs"]
 mod alloc;
+#[path = "tls/anchors.rs"]
+mod anchors;
 #[path = "tls/der.rs"]
 mod der;
 #[path = "tls/limbo_parse.rs"]
