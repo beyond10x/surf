@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T21:13:25Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-test-server",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "closing check of the acceptance against the tree at 6cff209 by the coordinating agent's sub-agent: each statement mapped to the test or run that shows it",
+    "reference": "15 statements (lead, 1, 2, the nine modes of 3, 4, 5, budget); not shown: the time bounds of 2 to 5 (printed), the thread joined of 4, the suite 0xC02F of SelectsTls12, the alert of the compression case, each test under 5 s; listed in As built"
+  }
+}

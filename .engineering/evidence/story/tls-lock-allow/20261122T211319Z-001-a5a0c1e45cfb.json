@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T21:13:19Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-lock-allow",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "security review of the seams of surf-tls on wave/tls-1: 6 findings and one on writes, fixed in bdbcd4f, ee6c101, 7f0ad05, 2047347, d299d0d, 36e50b2, 8de6ce4",
+    "reference": "this story's fix: d299d0d, crypto::Secret and crypto::Digest filled with zeros on drop, a compile-time check that each secret-holding type has a Drop"
+  }
+}
