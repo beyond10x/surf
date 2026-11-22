@@ -20,6 +20,11 @@ release; what came before it is in the git log and in `docs/plan/`.
   Format: [`docs/agent-answer.md`](docs/agent-answer.md).
 - The `page` line of an agent answer ends with the page's title, and the live view's session
   list shows it. A title longer than 1,024 characters is left out.
+- The live view has a panel "Now": the links of the answer at the playhead, grouped by kind,
+  each with its handle, label, target and visibility word, a hidden one marked, and the
+  visibility note. A `follow` shows its handle on the timeline. The view's `answer` entry
+  gains the member `now`, and each action of its `path` the members `handle` and
+  `argument_cut`. Format: [`docs/view-stream.md`](docs/view-stream.md).
 
 ### Changed
 

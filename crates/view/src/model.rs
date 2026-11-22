@@ -88,8 +88,7 @@ pub struct Detail {
     pub entries: Vec<Entry>,
 }
 
-/// One action: of an `action` entry, or one of the `path` of an `answer` entry,
-/// `{"sequence","command","argument"}`.
+/// The action of an `action` entry, `{"sequence","command","argument"}`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Action {
     /// Its sequence number.
@@ -100,6 +99,23 @@ pub struct Action {
     pub argument: Option<String>,
 }
 
+/// One action of the `path` of an `answer` entry,
+/// `{"sequence","command","handle","argument","argument_cut"}`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PathAction {
+    /// Its sequence number.
+    pub sequence: u64,
+    /// Its command.
+    pub command: String,
+    /// The handle of the element it took (`l1`); `None` for an action on no element.
+    pub handle: Option<String>,
+    /// Its argument, the exact text: an address, or with a handle the element's label as the
+    /// answer cut it; `None` when it has none.
+    pub argument: Option<String>,
+    /// Whether the label was cut at 60 characters.
+    pub argument_cut: bool,
+}
+
 /// The `path` of an `answer` entry, `{"shown","total","actions"}`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Path {
@@ -108,7 +124,47 @@ pub struct Path {
     /// How many actions the session has taken.
     pub total: u64,
     /// The actions shown, oldest first.
-    pub actions: Vec<Action>,
+    pub actions: Vec<PathAction>,
+}
+
+/// The `now` of an `answer` entry, `{"shown","total","elements","visibility_note"}`: the
+/// actionable elements of the current document, the first ones in document order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Now {
+    /// How many elements the answer shows.
+    pub shown: u64,
+    /// How many the document has.
+    pub total: u64,
+    /// The elements shown, one per line of the block.
+    pub elements: Vec<NowElement>,
+    /// `hidden attribute only` when the answer holds that visibility note.
+    pub visibility_note: Option<String>,
+}
+
+/// One element of a `now`,
+/// `{"handle","kind","visibility","label","label_cut","target","target_cut","unresolved","text"}`.
+/// A link has the members from `label` to `unresolved` and no `text`; a line of a kind the view
+/// does not know has `text`, the line as the answer writes it, and none of the others.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NowElement {
+    /// Its handle (`l1`).
+    pub handle: String,
+    /// The kind word of its line (`link`).
+    pub kind: String,
+    /// The answer's visibility word: `vis`, `hid` or `?`.
+    pub visibility: String,
+    /// A link's label, as the answer cut it.
+    pub label: Option<String>,
+    /// Whether the label was cut.
+    pub label_cut: Option<bool>,
+    /// A link's target, as the answer cut it.
+    pub target: Option<String>,
+    /// Whether the target was cut.
+    pub target_cut: Option<bool>,
+    /// Whether the target did not resolve and is the `href` as the page wrote it.
+    pub unresolved: Option<bool>,
+    /// The line of a kind the view does not know, without its indentation.
+    pub text: Option<String>,
 }
 
 /// What follows the five members every entry starts with.
@@ -126,12 +182,14 @@ pub enum EntryKind {
         /// absent value.
         fields: Vec<(String, Option<String>)>,
     },
-    /// `"kind":"answer"`, then `"page"` and `"path"`.
+    /// `"kind":"answer"`, then `"page"`, `"path"` and `"now"`.
     Answer {
         /// The page line.
         page: Option<PageLine>,
         /// The path.
         path: Option<Path>,
+        /// The `now` block; `None` when the answer has none.
+        now: Option<Now>,
     },
 }
 

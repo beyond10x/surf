@@ -506,7 +506,9 @@ impl Data {
                 &Object::new()
                     .number("sequence", *sequence)
                     .text("command", command)
+                    .raw("handle", "null")
                     .maybe_text("argument", argument.as_deref())
+                    .raw("argument_cut", "false")
                     .end(),
             );
         }
@@ -517,7 +519,12 @@ impl Data {
             .raw("actions", &actions)
             .end();
         record.page = Some(page.clone());
-        let rest = Self::members(Object::new().raw("page", &page.json()).raw("path", &path));
+        let rest = Self::members(
+            Object::new()
+                .raw("page", &page.json())
+                .raw("path", &path)
+                .raw("now", "null"),
+        );
         self.keep(session, at, "answer", &rest);
     }
 

@@ -1,11 +1,12 @@
-//! Cases 1 to 9 and 22 of `story:view-surfd-serves`: the JSON writer of `surf-view` from model
-//! values, held to the fenced examples of `docs/view-stream.md`, read from the document itself so
-//! that no copy can drift.
+//! Cases 1 to 9 and 22 of `story:view-surfd-serves`, and case 1 of `story:view-now-panel`
+//! (`case_01_now_…`): the JSON writer of `surf-view` from model values, held to the fenced
+//! examples of `docs/view-stream.md`, read from the document itself so that no copy can drift.
 
 #![forbid(unsafe_code)]
 
 use surf_view::model::{
-    Action, Detail, Entry, EntryKind, PageLine, Path, Reset, SessionList, SessionState, Summary,
+    Action, Detail, Entry, EntryKind, Now, NowElement, PageLine, Path, PathAction, Reset,
+    SessionList, SessionState, Summary,
 };
 use surf_view::to_json;
 
@@ -141,6 +142,17 @@ fn action(sequence: u64, command: &str, argument: Option<&str>) -> Action {
     }
 }
 
+/// One action of an answer's `path`, on no element.
+fn path_action(sequence: u64, command: &str, argument: Option<&str>) -> PathAction {
+    PathAction {
+        sequence,
+        command: command.to_string(),
+        handle: None,
+        argument: argument.map(str::to_string),
+        argument_cut: false,
+    }
+}
+
 fn entry(number: u64, session: &str, index: u64, kind: EntryKind) -> Entry {
     let base = if number <= 6 {
         1_795_226_400_009
@@ -201,8 +213,9 @@ fn entries_a() -> Vec<Entry> {
             path: Some(Path {
                 shown: 1,
                 total: 1,
-                actions: vec![action(1, "open", None)],
+                actions: vec![path_action(1, "open", None)],
             }),
+            now: None,
         },
         EntryKind::Action(action(2, "go", Some(PAGE))),
         event(
@@ -311,8 +324,12 @@ fn answer_17() -> EntryKind {
         path: Some(Path {
             shown: 2,
             total: 2,
-            actions: vec![action(1, "open", None), action(2, "go", Some(PAGE))],
+            actions: vec![
+                path_action(1, "open", None),
+                path_action(2, "go", Some(PAGE)),
+            ],
         }),
+        now: None,
     }
 }
 
@@ -341,7 +358,7 @@ fn case_02_a_detail_whose_page_is_committed_is_the_documents_example() {
     };
     let written = to_json(&detail);
     let expected = body_of(&format!("/api/sessions/{A}"));
-    assert_eq!(expected.len(), 5_406, "the document's example");
+    assert_eq!(expected.len(), 5_533, "the document's example");
     assert_eq!(text(&written), text(&expected));
 }
 
@@ -358,11 +375,12 @@ fn case_03_a_detail_whose_page_failed_names_its_reason() {
                 shown: 3,
                 total: 3,
                 actions: vec![
-                    action(1, "open", None),
-                    action(2, "go", Some(NOWHERE)),
-                    action(3, "close", None),
+                    path_action(1, "open", None),
+                    path_action(2, "go", Some(NOWHERE)),
+                    path_action(3, "close", None),
                 ],
             }),
+            now: None,
         },
     };
     let detail = Detail {
@@ -381,9 +399,12 @@ fn case_03_a_detail_whose_page_failed_names_its_reason() {
         r#"{"number":38,"session":"0b7d4e21-9c3a-4f58-b6e2-7a1d9c8e5f30","index":21,"#,
         r#""kept_at":1795226403004,"kind":"answer","#,
         r#""page":{"kind":"failed","reason":"Unreachable","address":"http://127.0.0.1:9/"},"#,
-        r#""path":{"shown":3,"total":3,"actions":[{"sequence":1,"command":"open","argument":null},"#,
-        r#"{"sequence":2,"command":"go","argument":"http://127.0.0.1:9/"},"#,
-        r#"{"sequence":3,"command":"close","argument":null}]}}]}"#,
+        r#""path":{"shown":3,"total":3,"actions":["#,
+        r#"{"sequence":1,"command":"open","handle":null,"argument":null,"argument_cut":false},"#,
+        r#"{"sequence":2,"command":"go","handle":null,"argument":"http://127.0.0.1:9/","#,
+        r#""argument_cut":false},"#,
+        r#"{"sequence":3,"command":"close","handle":null,"argument":null,"argument_cut":false}]},"#,
+        r#""now":null}]}"#,
     );
     assert_eq!(text(&to_json(&detail)), expected);
 }
@@ -412,7 +433,8 @@ fn case_04_a_detail_before_the_first_page_has_the_page_none() {
         r#""kept_at":1795226400010,"kind":"action","sequence":1,"command":"open","argument":null},"#,
         r#"{"number":6,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":6,"#,
         r#""kept_at":1795226400015,"kind":"answer","page":{"kind":"none"},"#,
-        r#""path":{"shown":1,"total":1,"actions":[{"sequence":1,"command":"open","argument":null}]}}]}"#,
+        r#""path":{"shown":1,"total":1,"actions":[{"sequence":1,"command":"open","handle":null,"#,
+        r#""argument":null,"argument_cut":false}]},"now":null}]}"#,
     );
     assert_eq!(text(&to_json(&detail)), expected);
 }
@@ -440,7 +462,7 @@ fn case_06_the_event_entry_13_has_every_value_a_string() {
 fn case_07_the_answer_entry_17_has_its_status_a_number() {
     let written = to_json(&entries_a()[16]);
     let expected = json_block(r#"{"number":17,"#);
-    assert_eq!(expected.len(), 393);
+    assert_eq!(expected.len(), 474);
     assert_eq!(text(&written), text(&expected));
     assert!(text(&written).contains(r#""status":200,"#));
 }
@@ -547,6 +569,126 @@ fn case_22_the_data_of_the_session_and_reset_events() {
     let reset = stream_data("reset");
     assert_eq!(text(&reset), r#"{"newest":38}"#);
     assert_eq!(text(&to_json(&Reset { newest: 38 })), text(&reset));
+}
+
+// --- story:view-now-panel, case 1 -------------------------------------------------------------
+
+const LINKS: &str = "http://127.0.0.1:41000/now/links.html";
+const C: &str = "3d5f7b91-2a4c-4e6f-8b0d-1f3a5c7e9b20";
+
+fn link(handle: &str, visibility: &str, label: &str, target: &str, unresolved: bool) -> NowElement {
+    NowElement {
+        handle: handle.to_string(),
+        kind: "link".to_string(),
+        visibility: visibility.to_string(),
+        label: Some(label.to_string()),
+        label_cut: Some(false),
+        target: Some(target.to_string()),
+        target_cut: Some(false),
+        unresolved: Some(unresolved),
+        text: None,
+    }
+}
+
+/// A line of a kind the view does not know, with its kind and its text only.
+fn other(handle: &str, kind: &str, line: &str) -> NowElement {
+    NowElement {
+        handle: handle.to_string(),
+        kind: kind.to_string(),
+        visibility: "?".to_string(),
+        label: None,
+        label_cut: None,
+        target: None,
+        target_cut: None,
+        unresolved: None,
+        text: Some(line.to_string()),
+    }
+}
+
+fn three_links() -> PageLine {
+    PageLine::Loaded {
+        status: 200,
+        media_type: "text/html".to_string(),
+        address: LINKS.to_string(),
+        title: Some("Three links".to_string()),
+    }
+}
+
+#[test]
+fn case_01_now_the_answer_of_the_three_link_page_is_the_documents_example() {
+    let answer = Entry {
+        number: 14,
+        session: C.to_string(),
+        index: 14,
+        kept_at: 1_795_226_500_014,
+        kind: EntryKind::Answer {
+            page: Some(three_links()),
+            path: Some(Path {
+                shown: 2,
+                total: 2,
+                actions: vec![
+                    path_action(1, "open", None),
+                    path_action(2, "go", Some(LINKS)),
+                ],
+            }),
+            now: Some(Now {
+                shown: 3,
+                total: 3,
+                elements: vec![
+                    link("l1", "?", "Next page", "/now/next.html", false),
+                    link("l2", "hid", "Members", "/now/members.html", false),
+                    link("l3", "?", "Broken", "http://[", true),
+                ],
+                visibility_note: Some("hidden attribute only".to_string()),
+            }),
+        },
+    };
+    let expected = json_block(r#"{"number":14,"#);
+    assert_eq!(expected.len(), 1_047, "the document's example");
+    assert_eq!(text(&to_json(&answer)), text(&expected));
+}
+
+#[test]
+fn case_01_now_the_page_line_holds_the_title() {
+    let expected = json_block(r#"{"kind":"loaded","#);
+    assert_eq!(text(&to_json(&three_links())), text(&expected));
+}
+
+#[test]
+fn case_01_now_a_path_action_on_an_element_has_its_handle() {
+    let follow = PathAction {
+        sequence: 3,
+        command: "follow".to_string(),
+        handle: Some("l1".to_string()),
+        argument: Some("Next page".to_string()),
+        argument_cut: false,
+    };
+    let expected = json_block(r#"{"sequence":3,"#);
+    assert_eq!(text(&to_json(&follow)), text(&expected));
+}
+
+#[test]
+fn case_01_now_a_control_line_and_a_button_line_go_out_with_kind_and_text() {
+    let now = Now {
+        shown: 2,
+        total: 2,
+        elements: vec![
+            other("f1", "text", r#"f1 text ? "Email" "<b>x</b>" required"#),
+            other("b1", "button", r#"b1 button ? "Sign in""#),
+        ],
+        visibility_note: None,
+    };
+    let expected = concat!(
+        r#"{"shown":2,"total":2,"elements":["#,
+        r#"{"handle":"f1","kind":"text","visibility":"?","label":null,"label_cut":null,"#,
+        r#""target":null,"target_cut":null,"unresolved":null,"#,
+        "\"text\":\"f1 text ? \\u0022Email\\u0022 \\u0022\\u003cb\\u003ex\\u003c/b\\u003e\\u0022 required\"},",
+        r#"{"handle":"b1","kind":"button","visibility":"?","label":null,"label_cut":null,"#,
+        r#""target":null,"target_cut":null,"unresolved":null,"#,
+        "\"text\":\"b1 button ? \\u0022Sign in\\u0022\"}],",
+        r#""visibility_note":null}"#,
+    );
+    assert_eq!(text(&to_json(&now)), expected);
 }
 
 /// A JSON reader for the tests: the values `surf-view` writes (no fraction, no exponent, no

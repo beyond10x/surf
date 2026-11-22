@@ -1,6 +1,7 @@
 // The page: loads /api/sessions, selects a session (the one the address's fragment names, or the
 // first), loads it, follows /events, and keeps the live marker (live and the time of the last
-// update, or reconnecting), and renders the detail panel. The selection is written into the
+// update, or reconnecting), and renders the panel "Now" (now.js) and the detail panel. The
+// selection is written into the
 // fragment, #session=<id>&at=<sequence>, or #session=<id>&at=<sequence>&event=<number> while an
 // event is selected (the event entry's number across all sessions), with history.replaceState,
 // and read at load: never the query, which the route table answers 404. An event named at load
@@ -14,6 +15,7 @@ import * as state from "./state.js";
 import { api, follow, refusal, takeToken } from "./stream.js";
 import { renderSessions, tick } from "./sessions.js";
 import { renderPage } from "./page.js";
+import { renderNow } from "./now.js";
 import { renderControls, renderTimeline, resetTimeline } from "./timeline.js";
 import { renderDetail } from "./detail.js";
 
@@ -25,6 +27,7 @@ const nodes = {
   heading: byId("session-heading"),
   facts: byId("session-facts"),
   page: byId("page-line"),
+  now: byId("now"),
   timeline: byId("actions"),
   latest: byId("latest"),
   newer: byId("newer"),
@@ -128,6 +131,7 @@ function renderSelected() {
     text(nodes.heading, "No session selected");
     text(nodes.facts, "");
     renderPage(nodes.page, null);
+    renderNow(nodes.now, null);
     resetTimeline(nodes.timeline);
     renderControls(nodes.latest, nodes.newer, true, 0);
     renderDetail(nodes.selection, nodes.requests, null, null, []);
@@ -153,6 +157,7 @@ function renderSelected() {
   const at = state.playheadIndex(list);
   const event = state.eventEntry(list);
   renderPage(nodes.page, state.pageAt(id));
+  renderNow(nodes.now, state.nowAt(id));
   renderTimeline(nodes.timeline, list, at, state.drops(id), state.latest(), moveTo, event ? event.number : null, pick);
   renderControls(nodes.latest, nodes.newer, state.latest(), at < 0 ? 0 : list.length - 1 - at);
   renderDetail(nodes.selection, nodes.requests, at < 0 ? null : list[at], event, state.entries(id));

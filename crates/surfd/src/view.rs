@@ -3,7 +3,10 @@
 //! hold of the daemon's lock ([`Tables::hold`]) and converts it after: an address, a title, an
 //! action's argument and an event field through [`surf_answer::unquote`], an answer entry
 //! through [`surf_answer::parse`] (decisions D20 and D26); a value they refuse is `null`, the
-//! entry is kept and counted in `unreadable`. Nothing here reads or writes a token.
+//! entry is kept and counted in `unreadable`. Nothing here reads or writes a token. Of an
+//! answer's `now` block a link goes out with its label and target, and a line of any other kind
+//! with its kind and its text as [`surf_answer::render`] writes it: there is no `match` on the
+//! kind, so a story that adds one changes nothing here.
 //!
 //! - `/api/sessions`: the newest number and the list, in one hold; per session its newest kept
 //!   action entry (`last_action_at`) and answer entry (`page`), read in place ([`Log::newest_of`]).
@@ -28,9 +31,10 @@ use std::sync::Arc;
 use std::sync::mpsc::{RecvTimeoutError, TryRecvError};
 use std::time::{Duration, SystemTime};
 
-use surf_answer::Page;
+use surf_answer::{Element, Note, Page, Target};
 use surf_view::model::{
-    Action, Detail, Entry, EntryKind, PageLine, Path, SessionList, SessionState, Summary,
+    Action, Detail, Entry, EntryKind, Now, NowElement, PageLine, Path, PathAction, SessionList,
+    SessionState, Summary,
 };
 use surf_view::{EventKind, Item, Next, Reader, Source, TooOld, to_json};
 
@@ -141,6 +145,83 @@ fn page_line(page: Page) -> PageLine {
     }
 }
 
+/// The kind word of a link's `now` line. Every other kind goes out as its line's text.
+const LINK: &str = "link";
+
+/// The lines `surf_answer::render` writes for `now` and `notes` alone, without the head line;
+/// `None` when it refuses them. A `now` line and a note are written here as the answer writes
+/// them, never by `surfd` (D20).
+fn rendered(session: &str, now: Option<surf_answer::Now>, notes: Vec<Note>) -> Option<String> {
+    let mut answer = surf_answer::Answer::new(surf_answer::Head {
+        session: session.to_string(),
+        state: surf_answer::SessionState::Open,
+    });
+    answer.now = now;
+    answer.notes = notes;
+    let text = surf_answer::render(&answer).ok()?;
+    let (_, rest) = text.split_once('\n')?;
+    Some(rest.to_string())
+}
+
+/// The words after `note visibility: ` of the note the answer writes, `hidden attribute only`.
+fn visibility_note_words(session: &str) -> Option<String> {
+    let line = rendered(session, None, vec![Note::Visibility])?;
+    let line = line.strip_suffix('\n').unwrap_or(&line);
+    line.strip_prefix("note visibility: ").map(str::to_string)
+}
+
+/// The view's element of one `now` line. A link has its label and target; a line of any other
+/// kind (a control, a button, a form, which later stories add) goes out with its kind and its
+/// text, the line as `surf_answer::render` writes it, so that a new kind changes nothing here.
+fn now_element(session: &str, element: Element) -> NowElement {
+    let handle = element.handle.clone();
+    let kind = element.kind.clone();
+    let visibility = element.visibility.word().to_string();
+    let link = if element.kind == LINK {
+        if let Target::Resolved(target) = &element.target {
+            Some((target.clone(), false))
+        } else if let Target::Unresolved(target) = &element.target {
+            Some((target.clone(), true))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    if let Some((target, unresolved)) = link {
+        return NowElement {
+            handle,
+            kind,
+            visibility,
+            label: Some(element.label.kept),
+            label_cut: Some(element.label.cut),
+            target: Some(target.kept),
+            target_cut: Some(target.cut),
+            unresolved: Some(unresolved),
+            text: None,
+        };
+    }
+    let now = surf_answer::Now {
+        total: 1,
+        elements: vec![element],
+    };
+    let text = rendered(session, Some(now), Vec::new()).and_then(|lines| {
+        let line = lines.lines().nth(1)?;
+        line.strip_prefix("  ").map(str::to_string)
+    });
+    NowElement {
+        handle,
+        kind,
+        visibility,
+        label: None,
+        label_cut: None,
+        target: None,
+        target_cut: None,
+        unresolved: None,
+        text,
+    }
+}
+
 /// The view's entry of a kept entry; each value it cannot read is `None` and counted in
 /// `unreadable`.
 fn entry(kept: &log::Entry, unreadable: &mut u64) -> Entry {
@@ -195,27 +276,45 @@ fn entry(kept: &log::Entry, unreadable: &mut u64) -> Entry {
             }
         },
         Kind::Answer => match surf_answer::parse(&kept.text) {
-            Ok(answer) => EntryKind::Answer {
-                page: answer.page.map(page_line),
-                path: answer.path.map(|path| Path {
-                    shown: path.entries.len() as u64,
-                    total: path.total,
-                    actions: path
-                        .entries
-                        .into_iter()
-                        .map(|action| Action {
-                            sequence: Some(action.sequence),
-                            command: Some(action.command),
-                            argument: action.argument,
-                        })
-                        .collect(),
-                }),
-            },
+            Ok(answer) => {
+                let visibility_note = answer.notes.contains(&Note::Visibility);
+                EntryKind::Answer {
+                    page: answer.page.map(page_line),
+                    path: answer.path.map(|path| Path {
+                        shown: path.entries.len() as u64,
+                        total: path.total,
+                        actions: path
+                            .entries
+                            .into_iter()
+                            .map(|action| PathAction {
+                                sequence: action.sequence,
+                                command: action.command,
+                                handle: action.handle,
+                                argument: action.argument,
+                                argument_cut: action.argument_cut,
+                            })
+                            .collect(),
+                    }),
+                    now: answer.now.map(|now| Now {
+                        shown: now.elements.len() as u64,
+                        total: now.total,
+                        elements: now
+                            .elements
+                            .into_iter()
+                            .map(|element| now_element(&kept.session, element))
+                            .collect(),
+                        visibility_note: visibility_note
+                            .then(|| visibility_note_words(&kept.session))
+                            .flatten(),
+                    }),
+                }
+            }
             Err(_) => {
                 refused = true;
                 EntryKind::Answer {
                     page: None,
                     path: None,
+                    now: None,
                 }
             }
         },
@@ -573,7 +672,9 @@ mod tests {
             "{detail}"
         );
         assert!(
-            detail.contains(r#""index":4,"kept_at":1,"kind":"answer","page":null,"path":null}"#),
+            detail.contains(
+                r#""index":4,"kept_at":1,"kind":"answer","page":null,"path":null,"now":null}"#
+            ),
             "{detail}"
         );
         let entries = tables.hold(|_, log| log.session_entries(ID).unwrap());
@@ -583,5 +684,53 @@ mod tests {
             "the summary's page of an answer parse refuses: {detail}"
         );
         assert_eq!(view.session("bbbbbbbb-0000-4000-8000-000000000002"), None);
+    }
+
+    /// `story:view-now-panel`: the title, the handle of a path action and the `now` block reach
+    /// the view; a `now` line of a kind the view does not know goes out with its kind and its
+    /// text, so a story that adds a kind changes nothing here.
+    #[test]
+    fn now_block_title_and_handle_reach_the_view_and_other_kinds_go_out_as_text() {
+        let tables = fixed(Bounds::default());
+        keep(&tables, action(2));
+        keep(
+            &tables,
+            link::Entry::answer(concat!(
+                "surf 1 session aaaaaaaa-0000-4000-8000-000000000001 open\n",
+                "page 200 \"text/html\" \"http://a.example/next\" \"Next <page>\"\n",
+                "path 2 of 2\n",
+                "  1 go \"http://a.example/\"\n",
+                "  2 follow l1 \"012345678901234567890123456789012345678901234567890123456789\"...\n",
+                "now 3 of 4\n",
+                "  l1 link ? \"Back\" -> \"/\"\n",
+                "  f1 text hid \"Email\" -> \"x\"\n",
+                "  b1 button ? \"Sign in\" -> \"http://[\" unresolved\n",
+                "note visibility: hidden attribute only\n",
+            )),
+        );
+        let view = View::new(Arc::clone(&tables), 256);
+        let detail = String::from_utf8(view.session(ID).expect("listed")).unwrap();
+        let expected = concat!(
+            r#""kind":"answer","page":{"kind":"loaded","status":200,"#,
+            r#""media_type":"text/html","address":"http://a.example/next","#,
+            "\"title\":\"Next \\u003cpage\\u003e\"},",
+            r#""path":{"shown":2,"total":2,"actions":["#,
+            r#"{"sequence":1,"command":"go","handle":null,"argument":"http://a.example/","#,
+            r#""argument_cut":false},"#,
+            r#"{"sequence":2,"command":"follow","handle":"l1","argument":"012345678901234567890123456789012345678901234567890123456789","#,
+            r#""argument_cut":true}]},"#,
+            r#""now":{"shown":3,"total":4,"elements":["#,
+            r#"{"handle":"l1","kind":"link","visibility":"?","label":"Back","label_cut":false,"#,
+            r#""target":"/","target_cut":false,"unresolved":false,"text":null},"#,
+            r#"{"handle":"f1","kind":"text","visibility":"hid","label":null,"label_cut":null,"#,
+            r#""target":null,"target_cut":null,"unresolved":null,"#,
+            "\"text\":\"f1 text hid \\u0022Email\\u0022 -\\u003e \\u0022x\\u0022\"},",
+            r#"{"handle":"b1","kind":"button","visibility":"?","label":null,"label_cut":null,"#,
+            r#""target":null,"target_cut":null,"unresolved":null,"#,
+            "\"text\":\"b1 button ? \\u0022Sign in\\u0022 -\\u003e \\u0022http://[\\u0022 unresolved\"}],",
+            r#""visibility_note":"hidden attribute only"}}"#,
+        );
+        assert!(detail.contains(expected), "{detail}");
+        assert!(detail.contains(r#""unreadable":0,"#), "{detail}");
     }
 }
