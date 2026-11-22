@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T11:45:44Z",
+  "actor": "human:operator",
+  "artifact": "story:limit-tests-at-small-limits",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate",
+    "reference": "beed2da: 662 tests: 662 passed, 0 failed, 0 ignored (cargo-nextest 660, doc tests 2); test step: 17.9 s of its budget of 120 s; task check exit 0 in 63 s; load average 37.58 before, 29.49 after; over 5 s: request_slower_than_its_deadline_is_closed 10.5 s, adversary_an_action_recorded_after_a_session_timeout_has_its_entries_kept 7.1 s, surfd_that_writes_nothing_exits_3_within_6_seconds 5.0 s, none of the two files; on f448715: 17.7 s, exit 0 in 150 s, load 11.96 to 28.97"
+  }
+}

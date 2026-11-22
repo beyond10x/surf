@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T11:45:44Z",
+  "actor": "human:operator",
+  "artifact": "story:limit-tests-at-small-limits",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "planted defects, each removed again with cmp of the full diff equal",
+    "reference": "each of the eight checks planted false, the node check off by one, each of the six defaults changed by one, a clone of the entry per comparison (490 MB against a bound of 19 MB), the depth check false against the count of 7 outcomes, an end tag scanning past special elements: each red on an assertion"
+  }
+}

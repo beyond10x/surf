@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T11:45:44Z",
+  "actor": "human:operator",
+  "artifact": "story:limit-tests-at-small-limits",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "adversary on f448715, 12 mutants",
+    "reference": "three findings introduced, closed in 7f8885f with the mutants red again: a stored-byte limit lowered by the node limit, the node limit proved on one seeded input, three small limits equal to another default; no renamed test asserts less; two gaps there before are named in As built"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T11:45:44Z",
+  "actor": "human:operator",
+  "artifact": "story:limit-tests-at-small-limits",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the unit's runs of the two files, before and after, back to back (f448715)",
+    "reference": "three runs each: 37.2, 41.8, 29.2 s before and 3.56, 3.71, 4.22 s after (108.2 s to 11.5 s), load average 33 to 37; after 7f8885f limits 0.69, 0.69, 0.73 s and adversary_limits 0.54, 0.53, 0.53 s at load average 6 to 8"
+  }
+}

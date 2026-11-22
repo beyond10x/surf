@@ -464,12 +464,14 @@ above, and the list of standards itself was written from memory.
     one token before the step check, end tags in the public `tokenizer::tokenize`, and the
     decoded text of `parse_document_bytes` (up to 3 bytes per input byte). No crate of the
     product depends on `surf-html` until `story:html-document-port` (wave 11): only the
-    conformance harness and the tests of `surf-page` run the tree builder. 95 tests: 18 unit
+    conformance harness and the tests of `surf-page` run the tree builder. 96 tests: 18 unit
     tests, 13 in `tests/encoding.rs`, 1 in `tests/not_yet_parsed.rs`, 8 in `tests/tree_body.rs`,
-    8 in `tests/tree_formatting.rs`, 36 in `tests/limits.rs` and 11 in
+    8 in `tests/tree_formatting.rs`, 37 in `tests/limits.rs` and 11 in
     `tests/adversary_limits.rs`. The last two share `tests/common/mod.rs`, a counting allocator
     per thread, and assert the limit that stopped a parse, its steps and the bytes it allocated,
-    no wall time. Each test file is a test binary of its own until
+    no wall time. A test of a limit sets a small limit, the default values are asserted as
+    numbers, and no test builds input of a default size (`story:limit-tests-at-small-limits`).
+    Each test file is a test binary of its own until
     `story:one-test-binary-per-crate`.
   - `crates/page` (`surf-page`): since wave 9, the title and the actionable elements of a
     `surf-html` tree (`title`, `actionable_elements`), with their kind, target or value and the

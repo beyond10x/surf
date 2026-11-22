@@ -29,7 +29,7 @@
         {"title": "Components that share no state", "description": "Each component keeps its own data, accepts commands and publishes events. Nothing reaches into another component's memory.", "href": "/docs/principles"},
         {"title": "Headless first", "description": "Its first interface is a command line, for people and for agents.", "href": "/docs/reference/surf-command"},
         {"title": "No runtime dependencies", "description": "An experiment: how far does a browser get with no third-party code in what ships?", "href": "/docs/principles"},
-        {"title": "swell, the script engine", "description": "An ECMAScript (JavaScript) engine written from scratch in Rust, a project of its own that surf will embed. surf runs no script today.", "href": "https://github.com/beyond10x/swell"}
+        {"title": "swell, the script engine", "description": "An ECMAScript (JavaScript) engine written from scratch in Rust, a project of its own that surf will embed. surf runs no script today.", "href": "https://beyond10x.github.io/swell/"}
       ]
     },
     {
