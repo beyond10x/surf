@@ -18,7 +18,7 @@ scope:
   path: crates/page-text/tests/cases/markdown.rs
 - confidence: inferred
   path: crates/page-text/tests/main.rs
-revision: 2
+revision: 3
 ---
 ## Context
 
@@ -33,8 +33,11 @@ paragraphs, links, lists, controls and every rule against forged text land here.
 `page-text-outline` creates `crates/page-text` and `handles`; the labels are those of
 `html-accessible-name` (the label field of `surf_page::ActionableElement`); hidden is
 `surf_page::is_hidden`. Page text is untrusted input to a language model
-(`docs/agent-answer.md`): every line this story writes is printable ASCII, and page text can
-write neither an unescaped Markdown construct nor a line of its own.
+(`docs/agent-answer.md`): page text can write neither an unescaped Markdown construct nor a line
+of its own, and its characters outside ASCII follow rule 2 of design note section 3 (D1, with
+the operator; acceptance case 8 is the line B changes).
+
+Round 1, after `page-text-outline` and `html-accessible-name`: it writes only `crates/page-text`.
 
 ## Change
 
@@ -49,7 +52,7 @@ write neither an unescaped Markdown construct nor a line of its own.
     `[<handle> <kind>[ disabled][ required][ checked]: <label>]`;
   - dropped: hidden nodes, comments, doctypes, processing instructions, `svg` and `math`;
   - whitespace stripped and collapsed per block; the escapes of design note section 3 rules 2
-    to 4 (non-ASCII as `\x..`, the always-escaped set, the line-start set, code without the
+    to 4 (the characters of rule 2, the always-escaped set, the line-start set, code without the
     punctuation escapes, fences and spans one backtick longer than the longest run inside);
   - bounds of section 6: a line wrapped at the last space before 1,024 bytes (a longer word
     broken), heading, link text and `alt` cut at 200 characters and a label at 60, each ending
@@ -58,10 +61,12 @@ write neither an unescaped Markdown construct nor a line of its own.
 - The crate documentation lists the rules, the deviations (`\\` and `\x..` in code; a word
   broken at 1,024 bytes reads as two in a renderer; `href` as written, not resolved) and what is
   not claimed (no CSS, no script).
-- Tests in `crates/page-text/tests/cases/markdown.rs`, a module of the one test binary `tests/main.rs`, no server.
+- Tests in `crates/page-text/tests/cases/markdown.rs`, a module of the one test binary
+  `tests/main.rs`, no server.
 
 Writes: `crates/page-text/src/markdown.rs` (new), `crates/page-text/src/lib.rs`,
-`crates/page-text/tests/cases/markdown.rs` (new), `crates/page-text/tests/main.rs` (one module line).
+`crates/page-text/tests/cases/markdown.rs` (new), `crates/page-text/tests/main.rs` (one module
+line).
 
 ## Acceptance
 
@@ -100,9 +105,11 @@ Writes: `crates/page-text/src/markdown.rs` (new), `crates/page-text/src/lib.rs`,
 7. `long_runs_are_wrapped_and_cut`: a `p` of 3,000 bytes of words gives three lines, none over
    1,024 bytes; an `h1` of 300 characters gives `# `, 200 characters and `[cut]`; a control label
    of 100 characters is cut at 60 and ends in `[cut]`.
-8. `every_line_is_printable_ascii`: over the pages of cases 1 to 7 and one holding U+0000 to
-   U+001F, U+007F to U+009F, U+200B, U+2028 and U+E0041 (a tag character), every line holds
-   only bytes U+0020 to U+007E, and the tag character is written `\xf3\xa0\x81\x81`.
+8. (D1) `every_line_is_printable_ascii`: over the pages of cases 1 to 7 and one holding
+   `K&auml;se`, U+0000 to U+001F, U+007F to U+009F, U+200B, U+2028 and U+E0041 (a tag
+   character), every line holds only bytes U+0020 to U+007E, `K\xc3\xa4se` is written and the tag
+   character is `\xf3\xa0\x81\x81`; under D1 B `Käse` is written as is and the others stay
+   escaped.
 
 `cargo fmt -p surf-page-text -- --check` exits 0.
 

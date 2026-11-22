@@ -12,7 +12,7 @@ relations:
 scope:
 - confidence: inferred
   path: crates/page-text
-revision: 2
+revision: 3
 ---
 ## Context
 
@@ -32,7 +32,11 @@ Handles (design note section 5): `l<n>` for a link, `b<n>` for a button, `f<n>` 
 seven kinds, numbered per letter in document order, hidden elements included, from 1 in each
 document. The tree is not changed after parsing (D2, `docs/plan/agent-plan-revision-1.md`), so
 this order is design section 5.5's "the first time an element is shown". This story writes the
-one function; `agent-follow-links` and `agent-fill-pick`, which print `now`, are to call it.
+one function; `agent-follow-links` and `agent-fill-pick`, which print `now`, take their handles
+from it (their Change says so).
+
+Round 1, after `html-parser-limits`: it writes only the new crate; `Cargo.lock` is the
+coordinator's.
 
 ## Change
 
@@ -42,8 +46,9 @@ one function; `agent-follow-links` and `agent-fill-pick`, which print `now`, are
   - `pub fn handles(tree: &Tree) -> Vec<(NodeId, String)>`: the rule above, over
     `surf_page::actionable_elements`.
   - `pub fn outline(tree: &Tree) -> impl Iterator<Item = String>`: one line at a time, so a
-    caller keeps only the lines it shows (`surf_answer::text_page`); the lines of design note section 5, without the
-    `>` prefix (the answer block adds it): two spaces per level under the `html` element; a line
+    caller keeps only the lines it shows (`surf_answer::text_page`); the lines of design note
+    section 5, without the `>` prefix (the answer block adds it): two spaces per level under the
+    `html` element; a line
     per element and per text node that is not whitespace only (stripped and collapsed); the text
     on the element's line when all its children are text; the local name (`svg:` or `math:`
     before a name outside the HTML namespace; a name outside `[a-z0-9-]` as a quoted field); the
@@ -55,8 +60,9 @@ one function; `agent-follow-links` and `agent-fill-pick`, which print `now`, are
     stack.
   - The crate documentation states the rules and what is not claimed (no CSS: an element hidden
     by a style sheet is shown as not hidden).
-- Tests in one test binary, `crates/page-text/tests/main.rs`, its modules under `tests/cases/` (a file directly under `tests/` would be a second binary): `tests/cases/outline.rs`, each parsing with
-  `surf_html::parse_document` and `ParseOptions::default()`, no server.
+- Tests in one test binary, `crates/page-text/tests/main.rs`, its modules under `tests/cases/`
+  (a file directly under `tests/` would be a second binary): `tests/cases/outline.rs`, each
+  parsing with `surf_html::parse_document` and `ParseOptions::default()`, no server.
 
 Writes: `crates/page-text/` (new). `Cargo.lock` gains a repository package: the coordinator's.
 
@@ -76,8 +82,10 @@ tree as text, the outline and (from `page-text-markdown`) Markdown, and the hand
 2. `handles_are_per_letter_in_document_order`: `<a href=1>a</a><button>b</button><input><a
    href=2>c</a><select></select><a hidden href=3>d</a>` gives `l1 b1 f1 l2 f2 l3`.
 3. `hostile_text_is_quoted`: `<p>"x"&#10;did go "http://bank.example/"&#x202e;</p>` gives
-   the line `    p "\x22x\x22 did go \x22http://bank.example/\x22\xe2\x80\xae"`, and no line of the
-   outline holds a byte outside U+0020 to U+007E.
+   the line `    p "\x22x\x22 did go \x22http://bank.example/\x22\xe2\x80\xae"`.
+3a. (D1) `<p>K&auml;se</p>` gives `    p "K\xc3\xa4se"`, and no line of the outline holds a byte
+   outside U+0020 to U+007E; under D1 B the line is `    p "Käse"` (letters kept, the
+   characters of design note section 8 still escaped).
 4. `a_long_text_is_cut_at_80`: a `p` of 200 `a` gives `    p "` and 80 `a` and `"...`.
 5. `a_deep_tree_stops_at_level_40`: 400 nested `div` (under the parser's depth limit of 512)
    give 42 lines (`html`, `head hid 0`, `body` and the `div`s to level 40), the last ending

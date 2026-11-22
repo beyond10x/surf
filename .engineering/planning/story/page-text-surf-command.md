@@ -20,7 +20,7 @@ scope:
   path: crates/surf-cli/tests/page.rs
 - confidence: inferred
   path: docs/surf-command.md
-revision: 2
+revision: 3
 ---
 ## Context
 
@@ -30,10 +30,16 @@ two outputs for the one-process command, a person's command with no session. The
 the command prints its rows and, for an HTML document, `title`, `element` and `note parser:`
 lines (`docs/surf-command.md`); it keeps each document's tree in `Browser`.
 
-Decision D3 of the design note, default A: the output keeps the rows, then the same framed
-block as an answer, every line of page text behind `>`, so that no surf output has a line a page
-wrote. Under B (the operator's choice, if he takes it) this story prints the Markdown alone,
-without `>` and without the rows, and the acceptance below changes with it.
+Decision D3 of the design note, A (taken by the coordinator on 2026-11-22): the output keeps the
+rows, then the same framed block as an answer, every line of page text behind `>`, so that no
+surf output has a line a page wrote.
+
+Round 1, placed by the coordinator in the document unit after `html-document-port` (same files,
+one unit, in order). Collision in the round: `crates/surf-cli/src/main.rs` and
+`crates/surf-cli/tests/page.rs` with `html-document-port` (the same unit, after it).
+
+Characters outside ASCII follow rule 2 of design note section 3 (D1, with the operator); case 6
+is the line B changes.
 
 ## Change
 
@@ -69,6 +75,8 @@ line behind `>`."
 4. A `text/plain` response: `note text: no-document`, no `text` line, exit 0.
 5. `surf <url> --as`, `surf <url> --as pdf`, `surf <url> --as tree --as tree`: status 2, a usage
    line on standard error, nothing on standard output.
+6. (D1) A page `<p>K&auml;se</p>`: `surf <url> --as markdown` prints `> K\xc3\xa4se`; under D1 B
+   `> Käse`.
 
 `cargo fmt -p surf-cli -- --check` reports no file this story wrote.
 

@@ -18,7 +18,7 @@ scope:
   path: crates/page-text/tests/cases/tables.rs
 - confidence: inferred
   path: crates/page-text/tests/main.rs
-revision: 2
+revision: 3
 ---
 ## Context
 
@@ -28,6 +28,10 @@ spans, a header row and nested tables, every cell's text escaped as the rest of 
 (`|` included). `page-text-markdown` writes a `table` as one paragraph of its text, because until
 `html-tree-tables` the tree builder ignores `tr` and `td` start tags and a table's cells are not
 in the tree. After that story they are, with the `tbody` the parser implies.
+
+Round 1, after `page-text-markdown` and `html-tree-tables`: it writes only `crates/page-text`.
+Characters outside ASCII in a cell follow rule 2 of design note section 3 (D1); no acceptance
+case of this story depends on it.
 
 ## Change
 

@@ -5,7 +5,7 @@ kind: epic
 status: active
 title: 'Agent target: a session command line for AI agents'
 summary: An agent opens a session, gets a token, and drives the browser through a specified command line that answers with a dense text representation of what the page offers.
-revision: 9
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 8}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 9}
@@ -44,6 +44,9 @@ An AI agent drives surf through a command line, `surf-agent`:
   structurally) and `now` (every actionable element, one line each, with a handle, its kind,
   whether it is visible, its label and its state or target). Every value that comes from a
   page, a server or an address is quoted and escaped.
+- What a page holds, on request: `--as tree|markdown` on `open <url>`, `go <url>` and `look` (and
+  on `surf <url>`) prints the document's tree as an outline or its content as Markdown in a `text`
+  block, every line of page text behind `>` (`docs/design/page-as-text.md`).
 - The commands: `open`, `go`, `look`, `close`; `follow`, `back`, `forward`; `fill`, `pick`,
   `press`; `log`.
 

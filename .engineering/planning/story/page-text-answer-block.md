@@ -15,7 +15,7 @@ scope:
   path: crates/answer/tests
 - confidence: inferred
   path: docs/agent-answer.md
-revision: 2
+revision: 3
 ---
 ## Context
 
@@ -38,6 +38,15 @@ What exists: `crates/answer` renders and parses the blocks `token`, `did`, `page
 `note parser:` (`BLOCKS`, five parse functions), `quote` and `quote_cut`, golden files under
 `tests/golden/`, the forging matrix in `tests/forging.rs`. Nothing writes a `text` block.
 
+The bytes a body line may hold are rule 2 of design note section 3, decision D1 (with the
+operator, default B: UTF-8 kept but for the invisible characters). This story is written under
+rule 2 as it stands; the grammar's `body-line` and acceptance case 5a are the lines B changes,
+together with the checks of `crates/surfd/src/link.rs` and `crates/agent/src/wire.rs` that the
+note's section 8 names.
+
+Round 1 (`docs/plan/agent-waves.md`, rounds after wave 10): no other story of the round writes
+`crates/answer` or `docs/agent-answer.md`.
+
 ## Change
 
 - `docs/agent-answer.md`: a section "Text" for the block and the `more` line; its place in
@@ -45,7 +54,7 @@ What exists: `crates/answer` renders and parses the blocks `token`, `did`, `page
   "Note"; the rules in "Grammar":
   `text-block = text-line *body-line [more-line]`,
   `text-line = "text" SP form SP number SP "of" SP number SP "from" SP number LF`,
-  `form = "tree" / "markdown"`, `body-line = ">" [SP 1*%x20-7E] LF` (exactly `<shown>`),
+  `form = "tree" / "markdown"`, `body-line = ">" [SP 1*%x20-7E] LF` (exactly `<shown>`; D1),
   `more-line = "more" SP number SP "lines:" SP "look" SP "--as" SP form SP "--from" SP number LF`,
   `note-text = "text:" SP ("no-css" / "no-document")`. The section states what a body line holds
   for each form by pointing to the rules of `docs/design/page-as-text.md` sections 3 to 5 (the
@@ -56,7 +65,7 @@ What exists: `crates/answer` renders and parses the blocks `token`, `did`, `page
   u64) -> Text`, which reads the lines one at a time, keeps those from `from` (1-based) while
   both bounds hold and only counts the others, and cuts a single line that alone
   exceeds 32,768 bytes to fit, at a character boundary, ending in `[cut]`; `render_text`, which
-  refuses a body line holding a byte outside U+0020 to U+007E (a line feed included), a block
+  refuses a body line holding a line feed or a byte rule 2 (D1) does not allow, a block
   over either bound, and a `<shown>` above `<total>`, and writes `more` when
   `first + shown <= total`; `parse_text` in `BLOCKS` after `parse_notes`, accepting exactly
   what `render_text` writes. For `page-text-surf-command`, `pub fn render_text_whole(form,
@@ -90,6 +99,8 @@ with these cases among those run:
    `more` naming the next line.
 5. Hostile values, each refused by `render` with `RenderError` and none written: a body line
    holding a line feed, one holding U+202E, one holding the byte 0x7F.
+5a. (D1) A body line holding `K` U+00E4 `se` is refused by `render` the same way; under D1 B it
+   is written as is, and `parse` reads it back.
 6. Hostile text, each refused by `parse` with the number of the line: a body line without `>`
    (`did go "http://bank.example/"` where line 3 of the block should be), a block with one body
    line fewer than its header says, a `>` line after `more`, `>x` without the space.
