@@ -21,11 +21,14 @@ use surf::{MemoryBrowser, SystemEvent};
 use surf_answer::Page;
 use surf_ports::{Caller, ComponentPorts};
 use surf_types::agent::{
-    ActionCommand, ActionId, ActionRecorded, Go, NavigationRequested, OpenSession, RecordAction,
-    SessionClosed, SessionId, SessionNavigationChanged, SessionOpened,
+    ActionCommand, ActionId, ActionRecorded, FillRequested, Go, NavigationRequested, OpenSession,
+    PickRequested, PressRequested, RecordAction, SessionClosed, SessionId,
+    SessionNavigationChanged, SessionOpened,
 };
 use surf_types::document::{
-    DocumentId, DocumentParsed, ElementAdded, ElementId, EncodingName, ParseLimit, ParsingStarted,
+    CheckednessSet, DocumentId, DocumentParsed, ElementAdded, ElementId, EncodingName, FormAdded,
+    FormId, FormSubmitted, OptionAdded, OptionId, OptionSelected, ParseLimit, ParsingStarted,
+    SubmissionAbandoned, SubmissionEndReason, SubmissionId, SubmissionStarted, ValueSet,
 };
 use surf_types::navigation::{
     NavigationCancelled, NavigationCommitted, NavigationFailed, NavigationStarted, NavigationState,
@@ -847,6 +850,8 @@ const TITLE: &str = "Say \"hi\" \\ caf\u{e9}";
 const LABEL: &str = "Sign \"in\" \u{e9}";
 /// The media type of a request body (`agent-request-body-spec`).
 const FORM: &str = "application/x-www-form-urlencoded";
+/// What an agent typed into a control (`agent-forms-spec`): its entry gives its length only.
+const TYPED: &str = "s3cret";
 
 /// Every `SystemEvent` variant this mapping covers, one value each; a story that maps an event
 /// adds it here.
@@ -962,6 +967,57 @@ fn covered() -> Vec<SystemEvent> {
         SystemEvent::WindowOpened(WindowOpened {
             window_id: WindowId(uuid(4)),
         }),
+        SystemEvent::FillRequested(FillRequested {
+            session_id: SessionId(uuid(2)),
+            element_id: ElementId(uuid(8)),
+            value: TYPED.to_string(),
+        }),
+        SystemEvent::PickRequested(PickRequested {
+            session_id: SessionId(uuid(2)),
+            element_id: ElementId(uuid(8)),
+            option_id: Some(OptionId(uuid(10))),
+        }),
+        SystemEvent::PressRequested(PressRequested {
+            session_id: SessionId(uuid(2)),
+            element_id: ElementId(uuid(8)),
+        }),
+        SystemEvent::FormAdded(FormAdded {
+            form_id: FormId(uuid(9)),
+            document_id: DocumentId(uuid(6)),
+            position: 3,
+        }),
+        SystemEvent::OptionAdded(OptionAdded {
+            option_id: OptionId(uuid(10)),
+            select_id: ElementId(uuid(8)),
+            position: 3,
+        }),
+        SystemEvent::ValueSet(ValueSet {
+            element_id: ElementId(uuid(8)),
+        }),
+        SystemEvent::CheckednessSet(CheckednessSet {
+            element_id: ElementId(uuid(8)),
+            checked: true,
+        }),
+        SystemEvent::OptionSelected(OptionSelected {
+            option_id: OptionId(uuid(10)),
+            select_id: ElementId(uuid(8)),
+        }),
+        SystemEvent::SubmissionStarted(SubmissionStarted {
+            submission_id: SubmissionId(uuid(11)),
+            submitter: ElementId(uuid(8)),
+        }),
+        SystemEvent::FormSubmitted(FormSubmitted {
+            submission_id: SubmissionId(uuid(11)),
+            tab_id: TabId(uuid(3)),
+            url: url(),
+            method: Method::Post,
+            body: Some(BODY.to_vec()),
+            body_type: Some(MediaType(FORM.to_string())),
+        }),
+        SystemEvent::SubmissionAbandoned(SubmissionAbandoned {
+            submission_id: SubmissionId(uuid(11)),
+            reason: SubmissionEndReason::InvalidControls,
+        }),
     ]
 }
 
@@ -978,8 +1034,14 @@ fn expected_value(event: &str, field: &str) -> Option<String> {
         (_, "navigation_id" | "request_id") => id(5),
         (_, "document_id") => id(6),
         (_, "frame_id") => id(7),
-        (_, "element_id") => id(8),
-        ("surf.document.ElementAdded", "position") => text("3"),
+        (_, "element_id" | "select_id" | "submitter") => id(8),
+        (_, "form_id") => id(9),
+        (_, "option_id") => id(10),
+        (_, "submission_id") => id(11),
+        (_, "position") => text("3"),
+        ("surf.document.CheckednessSet", "checked") => text("true"),
+        ("surf.document.SubmissionAbandoned", "reason") => text("InvalidControls"),
+        ("surf.agent.FillRequested", "value") => text("6 bytes"),
         ("surf.document.DocumentParsed", "title") => text(TITLE),
         ("surf.document.DocumentParsed", "encoding") => text("windows-1252"),
         ("surf.document.DocumentParsed", "unsupported_encoding") => text("EUC-KR"),
@@ -1027,10 +1089,10 @@ fn case_17_every_event_maps_with_all_its_fields() {
     );
     assert_eq!(
         names.len(),
-        19,
-        "the events of spec/ after story:html-document-spec"
+        30,
+        "the events of spec/ after story:agent-forms-spec"
     );
-    assert_eq!(spec.len(), 20, "and surf.agent.EventsLeftOut");
+    assert_eq!(spec.len(), 31, "and surf.agent.EventsLeftOut");
     let line = surf_session::entries::left_out_line(3);
     assert!(line.starts_with(&format!("event {left_out} ")), "{line}");
     let mapped = fields(&line).expect("a mapped event");
@@ -1058,6 +1120,10 @@ fn case_17_every_event_maps_with_all_its_fields() {
                 "{event}.{field} of agent-request-body-spec"
             );
         }
+    }
+    for event in &covered {
+        let line = surf_session::entries::event_line(event);
+        assert!(!line.contains(TYPED), "a typed value in an entry: {line}");
     }
     for event in &covered {
         let name = event.name();
@@ -1128,12 +1194,13 @@ fn case_17_every_event_maps_with_all_its_fields() {
 #[test]
 fn byte_fields_are_lengths() {
     // A story that adds a field of type Bytes or Optional<Bytes> adds it here.
-    const BYTES_FIELDS: [&str; 5] = [
+    const BYTES_FIELDS: [&str; 6] = [
         "surf.net.ResponseReceived.body",
         "surf.navigation.NavigationCommitted.body",
         "surf.document.ParsingStarted.body",
         "surf.navigation.NavigationStarted.body",
         "surf.net.RequestStarted.body",
+        "surf.document.FormSubmitted.body",
     ];
     let bytes = |kind: &str| kind == "Bytes" || kind == "Optional<Bytes>";
     let spec = spec_events();

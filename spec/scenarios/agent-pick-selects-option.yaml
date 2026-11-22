@@ -1,0 +1,86 @@
+# An agent picks an option of a select: `Pick` with the option publishes the request, and
+# `select-on-pick-requested` selects it through `surf.document.SelectOption`, which unselects the
+# other options of the same select (D11: the select's state is its options' selectedness). An
+# option of another select stays selected. Synthesis refuses `SelectOption/selected` (its
+# refusals answer first on every subject it arranges) and the binding's flow, so this scenario is
+# their evidence.
+type: ess-scenario/6
+domain: surf.agent
+scenario: agent-pick-selects-option
+summary: A pick with an option selects it and unselects the other options of its select only.
+
+arrange:
+  - instance: session
+    entity: surf.agent.Session
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-000000000091
+      fields:
+        window_id: 5a7c1e00-0000-4000-8000-000000000092
+        tab_id: 5a7c1e00-0000-4000-8000-000000000093
+        holder: 5a7c1e00-0000-4000-8000-000000000091
+      state: Open
+  - instance: austria
+    entity: surf.document.Option
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-000000000094
+      fields:
+        select_id: 5a7c1e00-0000-4000-8000-000000000090
+        position: 1
+        value: at
+        label: Austria
+        selected: true
+        disabled: false
+        hidden: false
+      state: Added
+  - instance: germany
+    entity: surf.document.Option
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-000000000095
+      fields:
+        select_id: 5a7c1e00-0000-4000-8000-000000000090
+        position: 2
+        value: de
+        label: Germany
+        selected: false
+        disabled: false
+        hidden: false
+      state: Added
+  - instance: other-select
+    entity: surf.document.Option
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-000000000096
+      fields:
+        select_id: 5a7c1e00-0000-4000-8000-000000000099
+        position: 1
+        value: eur
+        label: Euro
+        selected: true
+        disabled: false
+        hidden: false
+      state: Added
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.agent.Pick
+    actor: surf.agent.SessionHolder
+    caller: {session_id: {$instance: session}}
+    input:
+      session_id: {$instance: session}
+      element_id: 5a7c1e00-0000-4000-8000-000000000090
+      option_id: {$instance: germany}
+      handle: f3
+    outcome: requested
+    events:
+      - event: surf.agent.PickRequested
+        payload:
+          session_id: {$instance: session}
+          element_id: 5a7c1e00-0000-4000-8000-000000000090
+          option_id: {$instance: germany}
+
+assert:
+  - view: surf.document.Options
+    contains: {option_id: {$instance: germany}, selected: true}
+  - view: surf.document.Options
+    contains: {option_id: {$instance: austria}, selected: false}
+  - view: surf.document.Options
+    contains: {option_id: {$instance: other-select}, selected: true}

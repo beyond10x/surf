@@ -1,0 +1,96 @@
+# An agent presses a submit button: `Press` publishes the request, and `submit-on-press-requested`
+# starts a submission of the button through `surf.document.StartSubmission`. The submission step
+# (`agent-form-port`) is played by the scenario: it ends a submission of the same button with
+# `SubmitForm`, giving the document's tab, the resolved action, `Post`, the body and
+# `application/x-www-form-urlencoded`. A scenario cannot name the identity `StartSubmission`
+# mints (a binding's events are not the act's to capture), so the submission it ends is one
+# arranged `Started`. `navigate-on-form-submitted` then navigates the tab with that request, and
+# the request `fetch-on-navigation-started` makes has the same method and media type.
+type: ess-scenario/6
+domain: surf.agent
+scenario: agent-press-submits-post
+summary: A press starts a submission, and an ended submission navigates the tab with Post, the body and its media type.
+
+arrange:
+  - instance: session
+    entity: surf.agent.Session
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-0000000000c1
+      fields:
+        window_id: 5a7c1e00-0000-4000-8000-0000000000c2
+        tab_id: 5a7c1e00-0000-4000-8000-0000000000c3
+        holder: 5a7c1e00-0000-4000-8000-0000000000c1
+      state: Open
+  - instance: sign-in
+    entity: surf.document.Element
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-0000000000c4
+      fields:
+        document_id: 5a7c1e00-0000-4000-8000-0000000000c5
+        position: 3
+        kind: button
+        label: Sign in
+        hidden: false
+        disabled: false
+        checked: false
+        required: false
+        form_id: 5a7c1e00-0000-4000-8000-0000000000c6
+      state: Added
+  - instance: submission
+    entity: surf.document.Submission
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-0000000000c7
+      fields:
+        submitter: 5a7c1e00-0000-4000-8000-0000000000c4
+      state: Started
+  - instance: load
+    entity: surf.navigation.Navigation
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.agent.Press
+    actor: surf.agent.SessionHolder
+    caller: {session_id: {$instance: session}}
+    input:
+      session_id: {$instance: session}
+      element_id: {$instance: sign-in}
+      handle: b1
+    outcome: requested
+    events:
+      - event: surf.agent.PressRequested
+        payload:
+          session_id: {$instance: session}
+          element_id: {$instance: sign-in}
+
+  # The body is `user=ada&password=s3cret`.
+  - at: 2026-01-06T09:00:01Z
+    command: surf.document.SubmitForm
+    input:
+      submission_id: {$instance: submission}
+      tab_id: 5a7c1e00-0000-4000-8000-0000000000c3
+      url: http://example.org/session
+      method: Post
+      body: dXNlcj1hZGEmcGFzc3dvcmQ9czNjcmV0
+      body_type: application/x-www-form-urlencoded
+    outcome: submitted
+    events:
+      - event: surf.document.FormSubmitted
+        payload:
+          submission_id: {$instance: submission}
+          tab_id: 5a7c1e00-0000-4000-8000-0000000000c3
+          url: http://example.org/session
+          method: Post
+          body: dXNlcj1hZGEmcGFzc3dvcmQ9czNjcmV0
+          body_type: application/x-www-form-urlencoded
+
+assert:
+  - view: surf.document.Submissions
+    counts: {at_least: 2, at_most: 2}
+  - view: surf.document.Submissions
+    contains: {submitter: {$instance: sign-in}, state: Started}
+  - view: surf.document.Submissions
+    contains: {submission_id: {$instance: submission}, submitter: {$instance: sign-in}, state: Submitted}
+  - view: surf.navigation.Navigations
+    contains: {tab_id: 5a7c1e00-0000-4000-8000-0000000000c3, url: http://example.org/session, state: Started}
+  - view: surf.net.Requests
+    contains: {url: http://example.org/session, method: Post, body_type: application/x-www-form-urlencoded, state: Pending}

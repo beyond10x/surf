@@ -858,6 +858,9 @@ fn command_word(command: ActionCommand) -> &'static str {
         ActionCommand::Go => "go",
         ActionCommand::Close => "close",
         ActionCommand::Follow => "follow",
+        ActionCommand::Fill => "fill",
+        ActionCommand::Pick => "pick",
+        ActionCommand::Press => "press",
     }
 }
 

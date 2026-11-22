@@ -13,10 +13,18 @@ use surf_types::agent::{
     SessionId, SessionNavigationChanged, SessionSnapshot,
 };
 use surf_types::behaviour::{
-    ActionStorage, DocumentStorage, ElementStorage, FrameStorage, NavigationStorage,
-    RequestStorage, SessionStorage, TabStorage, TryContext, WindowStorage, unmet_context,
+    ActionStorage, DocumentStorage, ElementStorage, FormStorage, FrameStorage, ListOptionStorage,
+    NavigationStorage, RequestStorage, SessionStorage, SubmissionStorage, TabStorage, TryContext,
+    WindowStorage, unmet_context,
 };
-use surf_types::document::{DocumentId, DocumentSnapshot, ElementId, ElementSnapshot};
+use surf_types::document::obligations::{CheckBehavior, SelectOptionBehavior};
+use surf_types::document::{
+    Check, CheckOutcome, CheckednessSet, ControlDisabled, ControlHidden, ControlKindConflict,
+    DocumentId, DocumentSnapshot, ElementData, ElementId, ElementKind, ElementNotFound,
+    ElementSnapshot, FormId, FormSnapshot, ListOptionData, ListOptionSnapshot, OptionId,
+    OptionNotFound, OptionSelected, SelectOption, SelectOptionOutcome, SubmissionId,
+    SubmissionSnapshot,
+};
 use surf_types::navigation::{NavigationSnapshot, NavigationState};
 use surf_types::net::{RequestId, RequestSnapshot};
 use surf_types::obligation::UnmetObligation;
@@ -48,6 +56,9 @@ keyed!(NavigationSnapshot, RequestId, navigation_id);
 keyed!(RequestSnapshot, RequestId, request_id);
 keyed!(DocumentSnapshot, DocumentId, document_id);
 keyed!(ElementSnapshot, ElementId, element_id);
+keyed!(FormSnapshot, FormId, form_id);
+keyed!(ListOptionSnapshot, OptionId, option_id);
+keyed!(SubmissionSnapshot, SubmissionId, submission_id);
 keyed!(FrameSnapshot, FrameId, frame_id);
 keyed!(SessionSnapshot, SessionId, session_id);
 keyed!(ActionSnapshot, ActionId, action_id);
@@ -83,9 +94,9 @@ macro_rules! storage {
 
 /// Implements `TryContext` for a ports type over its random source.
 ///
-/// `TryContext` asks for all seven kinds of identity. These ports assign each of the six that
-/// belong to the page load, a document's element included; the generated behaviours of a
-/// component ask only for their own.
+/// `TryContext` asks for all ten kinds of identity. These ports assign each of the nine that
+/// belong to the page load, a document's elements, forms, options and submissions included; the
+/// generated behaviours of a component ask only for their own.
 ///
 /// It also asks for the caller's `session_id` and an action's identity, which only the `agent`
 /// component's commands read. These ports know no caller and record no action, so they answer
@@ -111,6 +122,22 @@ macro_rules! context {
                 &mut self,
             ) -> Result<ElementId, UnmetObligation> {
                 assign(&mut self.random, "surf.document.ElementId").map(ElementId)
+            }
+
+            fn try_generate_surf_document_form_id(&mut self) -> Result<FormId, UnmetObligation> {
+                assign(&mut self.random, "surf.document.FormId").map(FormId)
+            }
+
+            fn try_generate_surf_document_option_id(
+                &mut self,
+            ) -> Result<OptionId, UnmetObligation> {
+                assign(&mut self.random, "surf.document.OptionId").map(OptionId)
+            }
+
+            fn try_generate_surf_document_submission_id(
+                &mut self,
+            ) -> Result<SubmissionId, UnmetObligation> {
+                assign(&mut self.random, "surf.document.SubmissionId").map(SubmissionId)
             }
 
             fn try_generate_surf_net_request_id(&mut self) -> Result<RequestId, UnmetObligation> {
@@ -208,12 +235,18 @@ impl NetPorts {
 
 storage!(RequestStorage for NetPorts, requests: RequestSnapshot, RequestId);
 
-/// The `document` component's ports: its documents and their elements, and the random source
-/// their identities come from.
+/// The `document` component's ports: its documents, their forms, elements and options, the
+/// submissions of their forms, and the random source their identities come from.
+///
+/// It also meets the two obligations the generation leaves to it, `Check` and `SelectOption`,
+/// which change other rows beside their subject (`affects:`).
 #[derive(Debug)]
 pub struct DocumentPorts<R = OsRandom> {
     documents: Rows<DocumentSnapshot>,
+    forms: Rows<FormSnapshot>,
     elements: Rows<ElementSnapshot>,
+    options: Rows<ListOptionSnapshot>,
+    submissions: Rows<SubmissionSnapshot>,
     random: R,
 }
 
@@ -222,15 +255,171 @@ impl<R: RandomSource> DocumentPorts<R> {
     pub fn with_source(source: R) -> Self {
         Self {
             documents: Rows::default(),
+            forms: Rows::default(),
             elements: Rows::default(),
+            options: Rows::default(),
+            submissions: Rows::default(),
             random: source,
         }
     }
 }
 
+impl<R> DocumentPorts<R> {
+    /// Writes `change` into every stored element `selects` picks.
+    fn change_elements(
+        &mut self,
+        selects: impl Fn(&ElementData) -> bool,
+        change: impl Fn(&mut ElementData),
+    ) {
+        for mut snapshot in self.elements.list() {
+            if selects(&snapshot.data) {
+                change(&mut snapshot.data);
+                self.elements.put(snapshot);
+            }
+        }
+    }
+
+    /// Writes `change` into every stored option `selects` picks.
+    fn change_options(
+        &mut self,
+        selects: impl Fn(&ListOptionData) -> bool,
+        change: impl Fn(&mut ListOptionData),
+    ) {
+        for mut snapshot in self.options.list() {
+            if selects(&snapshot.data) {
+                change(&mut snapshot.data);
+                self.options.put(snapshot);
+            }
+        }
+    }
+}
+
 storage!(DocumentStorage for DocumentPorts<R>, documents: DocumentSnapshot, DocumentId, R);
+storage!(FormStorage for DocumentPorts<R>, forms: FormSnapshot, FormId, R);
 storage!(ElementStorage for DocumentPorts<R>, elements: ElementSnapshot, ElementId, R);
+storage!(ListOptionStorage for DocumentPorts<R>, options: ListOptionSnapshot, OptionId, R);
+storage!(SubmissionStorage for DocumentPorts<R>, submissions: SubmissionSnapshot, SubmissionId, R);
 context!(DocumentPorts);
+
+/// A checkbox's or a radio button's activation, its outcomes chosen in the order `spec/` declares
+/// them: an element no row holds, one neither a checkbox nor a radio button, a disabled one and
+/// a hidden one are refused; a radio button is checked and every other radio button of its group
+/// (same document, same form owner, same name) unchecked, where a group with no form owner or no
+/// name selects no other (the marker at `surf.document.Check`); a checked checkbox is unchecked,
+/// and an unchecked one checked.
+impl<R> CheckBehavior for DocumentPorts<R> {
+    fn check(&mut self, input: Check) -> Result<CheckOutcome, UnmetObligation> {
+        let Some(mut subject) = self.elements.get(&input.element_id) else {
+            return Ok(CheckOutcome::NoSuchElement {
+                error: ElementNotFound {
+                    element_id: input.element_id,
+                },
+            });
+        };
+        let element = &subject.data;
+        if element.kind != ElementKind::Checkbox && element.kind != ElementKind::Radio {
+            return Ok(CheckOutcome::NotCheckable {
+                error: ControlKindConflict {
+                    element_id: input.element_id,
+                },
+            });
+        }
+        if element.disabled {
+            return Ok(CheckOutcome::Disabled {
+                error: ControlDisabled {
+                    element_id: input.element_id,
+                },
+            });
+        }
+        if element.hidden {
+            return Ok(CheckOutcome::Hidden {
+                error: ControlHidden {
+                    element_id: input.element_id,
+                },
+            });
+        }
+        if element.kind == ElementKind::Radio {
+            let group = element.clone();
+            subject.data.checked = true;
+            self.elements.put(subject);
+            self.change_elements(
+                |other| {
+                    other.element_id != group.element_id
+                        && other.kind == ElementKind::Radio
+                        && other.document_id == group.document_id
+                        && other.form_id.is_some()
+                        && other.form_id == group.form_id
+                        && other.name.is_some()
+                        && other.name == group.name
+                },
+                |other| other.checked = false,
+            );
+            return Ok(CheckOutcome::RadioChecked {
+                checkedness_set: CheckednessSet {
+                    element_id: input.element_id,
+                    checked: true,
+                },
+            });
+        }
+        let checked = !element.checked;
+        subject.data.checked = checked;
+        self.elements.put(subject);
+        let checkedness_set = CheckednessSet {
+            element_id: input.element_id,
+            checked,
+        };
+        Ok(if checked {
+            CheckOutcome::Checked { checkedness_set }
+        } else {
+            CheckOutcome::Unchecked { checkedness_set }
+        })
+    }
+}
+
+/// An option's selection, its outcomes chosen in the order `spec/` declares them: an option no
+/// row holds, a disabled one and a hidden one are refused, naming its select; otherwise it is
+/// selected and every other option of its select unselected.
+impl<R> SelectOptionBehavior for DocumentPorts<R> {
+    fn select_option(
+        &mut self,
+        input: SelectOption,
+    ) -> Result<SelectOptionOutcome, UnmetObligation> {
+        let Some(mut subject) = self.options.get(&input.option_id) else {
+            return Ok(SelectOptionOutcome::NoSuchOption {
+                error: OptionNotFound {
+                    option_id: input.option_id,
+                },
+            });
+        };
+        let select_id = subject.data.select_id.clone();
+        if subject.data.disabled {
+            return Ok(SelectOptionOutcome::Disabled {
+                error: ControlDisabled {
+                    element_id: select_id,
+                },
+            });
+        }
+        if subject.data.hidden {
+            return Ok(SelectOptionOutcome::Hidden {
+                error: ControlHidden {
+                    element_id: select_id,
+                },
+            });
+        }
+        subject.data.selected = true;
+        self.options.put(subject);
+        self.change_options(
+            |other| other.option_id != input.option_id && other.select_id == select_id,
+            |other| other.selected = false,
+        );
+        Ok(SelectOptionOutcome::Selected {
+            option_selected: OptionSelected {
+                option_id: input.option_id,
+                select_id,
+            },
+        })
+    }
+}
 
 /// The `renderer` component's ports: its frames, and the random source its identities come
 /// from.
@@ -380,6 +569,20 @@ impl<R: RandomSource> TryContext for AgentPorts<R> {
 
     fn try_generate_surf_document_element_id(&mut self) -> Result<ElementId, UnmetObligation> {
         Err(unmet_context("surf.document.ElementId"))
+    }
+
+    fn try_generate_surf_document_form_id(&mut self) -> Result<FormId, UnmetObligation> {
+        Err(unmet_context("surf.document.FormId"))
+    }
+
+    fn try_generate_surf_document_option_id(&mut self) -> Result<OptionId, UnmetObligation> {
+        Err(unmet_context("surf.document.OptionId"))
+    }
+
+    fn try_generate_surf_document_submission_id(
+        &mut self,
+    ) -> Result<SubmissionId, UnmetObligation> {
+        Err(unmet_context("surf.document.SubmissionId"))
     }
 
     fn try_generate_surf_net_request_id(&mut self) -> Result<RequestId, UnmetObligation> {

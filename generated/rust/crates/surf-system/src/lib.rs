@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 49f60222a83939f6aea402a84c409f0a11ea6e9e7cdf407c392a74230af919be
+// contract digest 1fa135dfaf753fab3e34de8ae9a4a7052216d1878fc9d395075ce5cd5ac673a6
 // do not edit: regenerate with `ess synthesize`
 
 //! The `surf` system, v1: its components assembled, its bindings wired, and its one transport.
@@ -22,20 +22,42 @@
 pub enum SystemEvent {
     /// `surf.agent.ActionRecorded`.
     ActionRecorded(surf_types::agent::ActionRecorded),
+    /// `surf.agent.FillRequested`.
+    FillRequested(surf_types::agent::FillRequested),
     /// `surf.agent.NavigationRequested`.
     NavigationRequested(surf_types::agent::NavigationRequested),
+    /// `surf.agent.PickRequested`.
+    PickRequested(surf_types::agent::PickRequested),
+    /// `surf.agent.PressRequested`.
+    PressRequested(surf_types::agent::PressRequested),
     /// `surf.agent.SessionClosed`.
     SessionClosed(surf_types::agent::SessionClosed),
     /// `surf.agent.SessionNavigationChanged`.
     SessionNavigationChanged(surf_types::agent::SessionNavigationChanged),
     /// `surf.agent.SessionOpened`.
     SessionOpened(surf_types::agent::SessionOpened),
+    /// `surf.document.CheckednessSet`.
+    CheckednessSet(surf_types::document::CheckednessSet),
     /// `surf.document.DocumentParsed`.
     DocumentParsed(surf_types::document::DocumentParsed),
     /// `surf.document.ElementAdded`.
     ElementAdded(surf_types::document::ElementAdded),
+    /// `surf.document.FormAdded`.
+    FormAdded(surf_types::document::FormAdded),
+    /// `surf.document.FormSubmitted`.
+    FormSubmitted(surf_types::document::FormSubmitted),
+    /// `surf.document.OptionAdded`.
+    OptionAdded(surf_types::document::OptionAdded),
+    /// `surf.document.OptionSelected`.
+    OptionSelected(surf_types::document::OptionSelected),
     /// `surf.document.ParsingStarted`.
     ParsingStarted(surf_types::document::ParsingStarted),
+    /// `surf.document.SubmissionAbandoned`.
+    SubmissionAbandoned(surf_types::document::SubmissionAbandoned),
+    /// `surf.document.SubmissionStarted`.
+    SubmissionStarted(surf_types::document::SubmissionStarted),
+    /// `surf.document.ValueSet`.
+    ValueSet(surf_types::document::ValueSet),
     /// `surf.navigation.NavigationCancelled`.
     NavigationCancelled(surf_types::navigation::NavigationCancelled),
     /// `surf.navigation.NavigationCommitted`.
@@ -65,13 +87,24 @@ impl SystemEvent {
     pub fn name(&self) -> &'static str {
         match self {
             Self::ActionRecorded(_) => "surf.agent.ActionRecorded",
+            Self::FillRequested(_) => "surf.agent.FillRequested",
             Self::NavigationRequested(_) => "surf.agent.NavigationRequested",
+            Self::PickRequested(_) => "surf.agent.PickRequested",
+            Self::PressRequested(_) => "surf.agent.PressRequested",
             Self::SessionClosed(_) => "surf.agent.SessionClosed",
             Self::SessionNavigationChanged(_) => "surf.agent.SessionNavigationChanged",
             Self::SessionOpened(_) => "surf.agent.SessionOpened",
+            Self::CheckednessSet(_) => "surf.document.CheckednessSet",
             Self::DocumentParsed(_) => "surf.document.DocumentParsed",
             Self::ElementAdded(_) => "surf.document.ElementAdded",
+            Self::FormAdded(_) => "surf.document.FormAdded",
+            Self::FormSubmitted(_) => "surf.document.FormSubmitted",
+            Self::OptionAdded(_) => "surf.document.OptionAdded",
+            Self::OptionSelected(_) => "surf.document.OptionSelected",
             Self::ParsingStarted(_) => "surf.document.ParsingStarted",
+            Self::SubmissionAbandoned(_) => "surf.document.SubmissionAbandoned",
+            Self::SubmissionStarted(_) => "surf.document.SubmissionStarted",
+            Self::ValueSet(_) => "surf.document.ValueSet",
             Self::NavigationCancelled(_) => "surf.navigation.NavigationCancelled",
             Self::NavigationCommitted(_) => "surf.navigation.NavigationCommitted",
             Self::NavigationFailed(_) => "surf.navigation.NavigationFailed",
@@ -91,7 +124,10 @@ impl From<agent::PublishedEvent> for SystemEvent {
     fn from(event: agent::PublishedEvent) -> Self {
         match event {
             agent::PublishedEvent::ActionRecorded(event) => Self::ActionRecorded(event),
+            agent::PublishedEvent::FillRequested(event) => Self::FillRequested(event),
             agent::PublishedEvent::NavigationRequested(event) => Self::NavigationRequested(event),
+            agent::PublishedEvent::PickRequested(event) => Self::PickRequested(event),
+            agent::PublishedEvent::PressRequested(event) => Self::PressRequested(event),
             agent::PublishedEvent::SessionClosed(event) => Self::SessionClosed(event),
             agent::PublishedEvent::SessionNavigationChanged(event) => Self::SessionNavigationChanged(event),
             agent::PublishedEvent::SessionOpened(event) => Self::SessionOpened(event),
@@ -102,9 +138,17 @@ impl From<agent::PublishedEvent> for SystemEvent {
 impl From<document::PublishedEvent> for SystemEvent {
     fn from(event: document::PublishedEvent) -> Self {
         match event {
+            document::PublishedEvent::CheckednessSet(event) => Self::CheckednessSet(event),
             document::PublishedEvent::DocumentParsed(event) => Self::DocumentParsed(event),
             document::PublishedEvent::ElementAdded(event) => Self::ElementAdded(event),
+            document::PublishedEvent::FormAdded(event) => Self::FormAdded(event),
+            document::PublishedEvent::FormSubmitted(event) => Self::FormSubmitted(event),
+            document::PublishedEvent::OptionAdded(event) => Self::OptionAdded(event),
+            document::PublishedEvent::OptionSelected(event) => Self::OptionSelected(event),
             document::PublishedEvent::ParsingStarted(event) => Self::ParsingStarted(event),
+            document::PublishedEvent::SubmissionAbandoned(event) => Self::SubmissionAbandoned(event),
+            document::PublishedEvent::SubmissionStarted(event) => Self::SubmissionStarted(event),
+            document::PublishedEvent::ValueSet(event) => Self::ValueSet(event),
         }
     }
 }
@@ -155,6 +199,8 @@ impl From<shell::PublishedEvent> for SystemEvent {
 /// without instrumenting the component underneath.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BindingInvocation {
+    /// `check-on-pick-requested` invoked `surf.document.Check`.
+    CheckOnPickRequested(surf_types::document::Check),
     /// `close-tab-on-session-closed` invoked `surf.shell.CloseTab`.
     CloseTabOnSessionClosed(surf_types::shell::CloseTab),
     /// `commit-on-response` invoked `surf.navigation.CommitNavigation`.
@@ -163,6 +209,8 @@ pub enum BindingInvocation {
     FailOnFetchFailed(surf_types::navigation::FailNavigation),
     /// `fetch-on-navigation-started` invoked `surf.net.Fetch`.
     FetchOnNavigationStarted(surf_types::net::Fetch),
+    /// `navigate-on-form-submitted` invoked `surf.navigation.Navigate`.
+    NavigateOnFormSubmitted(surf_types::navigation::Navigate),
     /// `navigate-on-navigation-requested` invoked `surf.navigation.Navigate`.
     NavigateOnNavigationRequested(surf_types::navigation::Navigate),
     /// `note-on-navigation-cancelled` invoked `surf.agent.NoteNavigationEnded`.
@@ -175,6 +223,23 @@ pub enum BindingInvocation {
     NoteOnNavigationStarted(surf_types::agent::NoteNavigationStarted),
     /// `parse-on-navigation-committed` invoked `surf.document.ParseDocument`.
     ParseOnNavigationCommitted(surf_types::document::ParseDocument),
+    /// `select-on-pick-requested` invoked `surf.document.SelectOption`.
+    SelectOnPickRequested(surf_types::document::SelectOption),
+    /// `set-value-on-fill-requested` invoked `surf.document.SetValue`.
+    SetValueOnFillRequested(surf_types::document::SetValue),
+    /// `submit-on-press-requested` invoked `surf.document.StartSubmission`.
+    SubmitOnPressRequested(surf_types::document::StartSubmission),
+}
+
+/// The binding `check-on-pick-requested`: `surf.agent.PickRequested`, read as `surf.document.Check` input.
+///
+/// Fully determined by the specification: every input is filled from an event field — through the
+/// declared crossing where one is named — from a literal the target admits, or left absent
+/// where the input is optional and the binding says nothing.
+pub fn check_on_pick_requested(event: &surf_types::agent::PickRequested) -> surf_types::document::Check {
+    surf_types::document::Check {
+        element_id: event.element_id.clone(),
+    }
 }
 
 /// The binding `close-tab-on-session-closed`: `surf.agent.SessionClosed`, read as `surf.shell.CloseTab` input.
@@ -223,6 +288,21 @@ pub fn fail_on_fetch_failed(event: &surf_types::net::FetchFailed) -> surf_types:
 pub fn fetch_on_navigation_started(event: &surf_types::navigation::NavigationStarted) -> surf_types::net::Fetch {
     surf_types::net::Fetch {
         request_id: event.navigation_id.clone(),
+        url: event.url.clone(),
+        method: event.method.clone(),
+        body: event.body.clone(),
+        body_type: event.body_type.clone(),
+    }
+}
+
+/// The binding `navigate-on-form-submitted`: `surf.document.FormSubmitted`, read as `surf.navigation.Navigate` input.
+///
+/// Fully determined by the specification: every input is filled from an event field — through the
+/// declared crossing where one is named — from a literal the target admits, or left absent
+/// where the input is optional and the binding says nothing.
+pub fn navigate_on_form_submitted(event: &surf_types::document::FormSubmitted) -> surf_types::navigation::Navigate {
+    surf_types::navigation::Navigate {
+        tab_id: event.tab_id.clone(),
         url: event.url.clone(),
         method: event.method.clone(),
         body: event.body.clone(),
@@ -306,12 +386,56 @@ pub fn parse_on_navigation_committed(event: &surf_types::navigation::NavigationC
         url: event.url.clone(),
         body: event.body.clone(),
         navigation_id: event.navigation_id.clone(),
+        tab_id: event.tab_id.clone(),
+    }
+}
+
+/// The binding `select-on-pick-requested`: `surf.agent.PickRequested`, read as `surf.document.SelectOption` input, where its condition holds.
+///
+/// Fully determined by the specification, as every generated transformation is. A required
+/// input read from an Optional member the condition proves present is checked rather than
+/// unwrapped: `None` is that member absent, which a sound proof never lets through to here.
+pub fn select_on_pick_requested(event: &surf_types::agent::PickRequested) -> Option<surf_types::document::SelectOption> {
+    Some(surf_types::document::SelectOption {
+        option_id: match event.option_id.clone() { Some(value) => value, None => return None },
+    })
+}
+
+/// The binding `set-value-on-fill-requested`: `surf.agent.FillRequested`, read as `surf.document.SetValue` input.
+///
+/// Fully determined by the specification: every input is filled from an event field — through the
+/// declared crossing where one is named — from a literal the target admits, or left absent
+/// where the input is optional and the binding says nothing.
+pub fn set_value_on_fill_requested(event: &surf_types::agent::FillRequested) -> surf_types::document::SetValue {
+    surf_types::document::SetValue {
+        element_id: event.element_id.clone(),
+        value: event.value.clone(),
+    }
+}
+
+/// The binding `submit-on-press-requested`: `surf.agent.PressRequested`, read as `surf.document.StartSubmission` input.
+///
+/// Fully determined by the specification: every input is filled from an event field — through the
+/// declared crossing where one is named — from a literal the target admits, or left absent
+/// where the input is optional and the binding says nothing.
+pub fn submit_on_press_requested(event: &surf_types::agent::PressRequested) -> surf_types::document::StartSubmission {
+    surf_types::document::StartSubmission {
+        element_id: event.element_id.clone(),
     }
 }
 
 /// Every binding's event-payload condition (ess/22), evaluated before its transformation, its
 /// invocation record and its port, as the specification orders them.
 pub mod conditions {
+    /// The condition of `check-on-pick-requested`: `not (defined(event.option_id))` over the `surf.agent.PickRequested` it reacts to.
+    ///
+    /// `Some(true)` invokes, `Some(false)` skips this binding alone, and `None` — a comparison
+    /// reading an absent member — is Unknown: this binding's unmet obligation, never a skip.
+    pub fn check_on_pick_requested(event: &surf_types::agent::PickRequested) -> Option<bool> {
+        let _ = event;
+        (Some(Some(&event.option_id).and_then(|value| value.as_ref()).map(|value| &value.0).is_some())).map(|holds| !holds)
+    }
+
     /// The condition of `parse-on-navigation-committed`: `event.media_type == text/html` over the `surf.navigation.NavigationCommitted` it reacts to.
     ///
     /// `Some(true)` invokes, `Some(false)` skips this binding alone, and `None` — a comparison
@@ -319,6 +443,15 @@ pub mod conditions {
     pub fn parse_on_navigation_committed(event: &surf_types::navigation::NavigationCommitted) -> Option<bool> {
         let _ = event;
         Some(&event.media_type).map(|value| &value.0).map(|value| value.as_str() == "text/html")
+    }
+
+    /// The condition of `select-on-pick-requested`: `defined(event.option_id)` over the `surf.agent.PickRequested` it reacts to.
+    ///
+    /// `Some(true)` invokes, `Some(false)` skips this binding alone, and `None` — a comparison
+    /// reading an absent member — is Unknown: this binding's unmet obligation, never a skip.
+    pub fn select_on_pick_requested(event: &surf_types::agent::PickRequested) -> Option<bool> {
+        let _ = event;
+        Some(Some(&event.option_id).and_then(|value| value.as_ref()).map(|value| &value.0).is_some())
     }
 }
 
@@ -394,8 +527,8 @@ impl<AgentBehaviors, DocumentBehaviors, NavigatorBehaviors, NetBehaviors, Render
 
 impl<AgentBehaviors, DocumentBehaviors, NavigatorBehaviors, NetBehaviors, RendererBehaviors, ShellBehaviors> System<AgentBehaviors, DocumentBehaviors, NavigatorBehaviors, NetBehaviors, RendererBehaviors, ShellBehaviors>
 where
-    AgentBehaviors: surf_types::agent::obligations::CloseSessionBehavior + surf_types::agent::obligations::FollowBehavior + surf_types::agent::obligations::GoBehavior + surf_types::agent::obligations::NoteNavigationCommittedBehavior + surf_types::agent::obligations::NoteNavigationEndedBehavior + surf_types::agent::obligations::NoteNavigationFailedBehavior + surf_types::agent::obligations::NoteNavigationStartedBehavior + surf_types::agent::obligations::OpenSessionBehavior + surf_types::agent::obligations::RecordActionBehavior + surf_types::agent::obligations::SessionLogQuery + surf_types::agent::obligations::SessionStateViewQuery + surf_types::agent::obligations::SessionsQuery,
-    DocumentBehaviors: surf_types::document::obligations::AddElementBehavior + surf_types::document::obligations::FinishParsingBehavior + surf_types::document::obligations::ParseDocumentBehavior + surf_types::document::obligations::DocumentsQuery + surf_types::document::obligations::ElementsQuery,
+    AgentBehaviors: surf_types::agent::obligations::CloseSessionBehavior + surf_types::agent::obligations::FillBehavior + surf_types::agent::obligations::FollowBehavior + surf_types::agent::obligations::GoBehavior + surf_types::agent::obligations::NoteNavigationCommittedBehavior + surf_types::agent::obligations::NoteNavigationEndedBehavior + surf_types::agent::obligations::NoteNavigationFailedBehavior + surf_types::agent::obligations::NoteNavigationStartedBehavior + surf_types::agent::obligations::OpenSessionBehavior + surf_types::agent::obligations::PickBehavior + surf_types::agent::obligations::PressBehavior + surf_types::agent::obligations::RecordActionBehavior + surf_types::agent::obligations::SessionLogQuery + surf_types::agent::obligations::SessionStateViewQuery + surf_types::agent::obligations::SessionsQuery,
+    DocumentBehaviors: surf_types::document::obligations::AbandonSubmissionBehavior + surf_types::document::obligations::AddElementBehavior + surf_types::document::obligations::AddFormBehavior + surf_types::document::obligations::AddOptionBehavior + surf_types::document::obligations::CheckBehavior + surf_types::document::obligations::FinishParsingBehavior + surf_types::document::obligations::ParseDocumentBehavior + surf_types::document::obligations::SelectOptionBehavior + surf_types::document::obligations::SetValueBehavior + surf_types::document::obligations::StartSubmissionBehavior + surf_types::document::obligations::SubmitFormBehavior + surf_types::document::obligations::ControlsQuery + surf_types::document::obligations::DocumentsQuery + surf_types::document::obligations::ElementsQuery + surf_types::document::obligations::FormsQuery + surf_types::document::obligations::OptionsQuery + surf_types::document::obligations::SubmissionsQuery,
     NavigatorBehaviors: surf_types::navigation::obligations::CancelNavigationBehavior + surf_types::navigation::obligations::CommitNavigationBehavior + surf_types::navigation::obligations::FailNavigationBehavior + surf_types::navigation::obligations::NavigateBehavior + surf_types::navigation::obligations::NavigationsQuery,
     NetBehaviors: surf_types::net::obligations::DeliverResponseBehavior + surf_types::net::obligations::FailRequestBehavior + surf_types::net::obligations::FetchBehavior + surf_types::net::obligations::RequestsQuery,
     RendererBehaviors: surf_types::render::obligations::PaintFrameBehavior + surf_types::render::obligations::FramesQuery,
@@ -482,8 +615,26 @@ where
         let mut failed = None;
         match event {
             SystemEvent::ActionRecorded(_) => {}
+            SystemEvent::FillRequested(event) => {
+                if let Err(failure) = self.deliver_set_value_on_fill_requested(event) {
+                    failed = failed.or(Some(failure));
+                }
+            }
             SystemEvent::NavigationRequested(event) => {
                 if let Err(failure) = self.deliver_navigate_on_navigation_requested(event) {
+                    failed = failed.or(Some(failure));
+                }
+            }
+            SystemEvent::PickRequested(event) => {
+                if let Err(failure) = self.deliver_check_on_pick_requested(event) {
+                    failed = failed.or(Some(failure));
+                }
+                if let Err(failure) = self.deliver_select_on_pick_requested(event) {
+                    failed = failed.or(Some(failure));
+                }
+            }
+            SystemEvent::PressRequested(event) => {
+                if let Err(failure) = self.deliver_submit_on_press_requested(event) {
                     failed = failed.or(Some(failure));
                 }
             }
@@ -494,9 +645,21 @@ where
             }
             SystemEvent::SessionNavigationChanged(_) => {}
             SystemEvent::SessionOpened(_) => {}
+            SystemEvent::CheckednessSet(_) => {}
             SystemEvent::DocumentParsed(_) => {}
             SystemEvent::ElementAdded(_) => {}
+            SystemEvent::FormAdded(_) => {}
+            SystemEvent::FormSubmitted(event) => {
+                if let Err(failure) = self.deliver_navigate_on_form_submitted(event) {
+                    failed = failed.or(Some(failure));
+                }
+            }
+            SystemEvent::OptionAdded(_) => {}
+            SystemEvent::OptionSelected(_) => {}
             SystemEvent::ParsingStarted(_) => {}
+            SystemEvent::SubmissionAbandoned(_) => {}
+            SystemEvent::SubmissionStarted(_) => {}
+            SystemEvent::ValueSet(_) => {}
             SystemEvent::NavigationCancelled(event) => {
                 if let Err(failure) = self.deliver_note_on_navigation_cancelled(event) {
                     failed = failed.or(Some(failure));
@@ -550,6 +713,25 @@ where
         Ok(())
     }
 
+    /// `check-on-pick-requested`'s attempt at one `surf.agent.PickRequested`: transform, record the invocation, invoke the
+    /// acceptor's port, and answer a declared refusal with the declared policy.
+    fn deliver_check_on_pick_requested(&mut self, event: &surf_types::agent::PickRequested) -> Result<(), surf_types::obligation::UnmetObligation> {
+        // `check-on-pick-requested`: at_most_once, on failure drop.
+        // The condition first (ess/22): false skips this binding alone, and Unknown invokes
+        // nothing and is this binding's unmet obligation — the bindings beside it still run.
+        match conditions::check_on_pick_requested(event) {
+            Some(true) => {}
+            Some(false) => return Ok(()),
+            None => return Err(surf_types::obligation::UnmetObligation { capability: "binding condition", source: "check-on-pick-requested" }.into()),
+        }
+        let input = check_on_pick_requested(event);
+        self.invocations.push(BindingInvocation::CheckOnPickRequested(input.clone()));
+        // `drop`: a declared refusal is given up silently, because that is what the author
+        // wrote; an unmet obligation still propagates.
+        let _ = self.document.check(input)?;
+        Ok(())
+    }
+
     /// `close-tab-on-session-closed`'s attempt at one `surf.agent.SessionClosed`: transform, record the invocation, invoke the
     /// acceptor's port, and answer a declared refusal with the declared policy.
     fn deliver_close_tab_on_session_closed(&mut self, event: &surf_types::agent::SessionClosed) -> Result<(), surf_types::obligation::UnmetObligation> {
@@ -594,6 +776,17 @@ where
         self.invocations.push(BindingInvocation::FetchOnNavigationStarted(input.clone()));
         // No declared refusal exists, so this invocation cannot fail.
         let _ = self.net.fetch(input)?;
+        Ok(())
+    }
+
+    /// `navigate-on-form-submitted`'s attempt at one `surf.document.FormSubmitted`: transform, record the invocation, invoke the
+    /// acceptor's port, and answer a declared refusal with the declared policy.
+    fn deliver_navigate_on_form_submitted(&mut self, event: &surf_types::document::FormSubmitted) -> Result<(), surf_types::obligation::UnmetObligation> {
+        // `navigate-on-form-submitted`: at_most_once, on failure drop.
+        let input = navigate_on_form_submitted(event);
+        self.invocations.push(BindingInvocation::NavigateOnFormSubmitted(input.clone()));
+        // No declared refusal exists, so this invocation cannot fail.
+        let _ = self.navigator.navigate(input)?;
         Ok(())
     }
 
@@ -667,6 +860,51 @@ where
         self.invocations.push(BindingInvocation::ParseOnNavigationCommitted(input.clone()));
         // No declared refusal exists, so this invocation cannot fail.
         let _ = self.document.parse_document(input)?;
+        Ok(())
+    }
+
+    /// `select-on-pick-requested`'s attempt at one `surf.agent.PickRequested`: transform, record the invocation, invoke the
+    /// acceptor's port, and answer a declared refusal with the declared policy.
+    fn deliver_select_on_pick_requested(&mut self, event: &surf_types::agent::PickRequested) -> Result<(), surf_types::obligation::UnmetObligation> {
+        // `select-on-pick-requested`: at_most_once, on failure drop.
+        // The condition first (ess/22): false skips this binding alone, and Unknown invokes
+        // nothing and is this binding's unmet obligation — the bindings beside it still run.
+        match conditions::select_on_pick_requested(event) {
+            Some(true) => {}
+            Some(false) => return Ok(()),
+            None => return Err(surf_types::obligation::UnmetObligation { capability: "binding condition", source: "select-on-pick-requested" }.into()),
+        }
+        let Some(input) = select_on_pick_requested(event) else {
+            return Err(surf_types::obligation::UnmetObligation { capability: "binding input", source: "select-on-pick-requested" }.into());
+        };
+        self.invocations.push(BindingInvocation::SelectOnPickRequested(input.clone()));
+        // `drop`: a declared refusal is given up silently, because that is what the author
+        // wrote; an unmet obligation still propagates.
+        let _ = self.document.select_option(input)?;
+        Ok(())
+    }
+
+    /// `set-value-on-fill-requested`'s attempt at one `surf.agent.FillRequested`: transform, record the invocation, invoke the
+    /// acceptor's port, and answer a declared refusal with the declared policy.
+    fn deliver_set_value_on_fill_requested(&mut self, event: &surf_types::agent::FillRequested) -> Result<(), surf_types::obligation::UnmetObligation> {
+        // `set-value-on-fill-requested`: at_most_once, on failure drop.
+        let input = set_value_on_fill_requested(event);
+        self.invocations.push(BindingInvocation::SetValueOnFillRequested(input.clone()));
+        // `drop`: a declared refusal is given up silently, because that is what the author
+        // wrote; an unmet obligation still propagates.
+        let _ = self.document.set_value(input)?;
+        Ok(())
+    }
+
+    /// `submit-on-press-requested`'s attempt at one `surf.agent.PressRequested`: transform, record the invocation, invoke the
+    /// acceptor's port, and answer a declared refusal with the declared policy.
+    fn deliver_submit_on_press_requested(&mut self, event: &surf_types::agent::PressRequested) -> Result<(), surf_types::obligation::UnmetObligation> {
+        // `submit-on-press-requested`: at_most_once, on failure drop.
+        let input = submit_on_press_requested(event);
+        self.invocations.push(BindingInvocation::SubmitOnPressRequested(input.clone()));
+        // `drop`: a declared refusal is given up silently, because that is what the author
+        // wrote; an unmet obligation still propagates.
+        let _ = self.document.start_submission(input)?;
         Ok(())
     }
 }

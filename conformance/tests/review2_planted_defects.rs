@@ -14,10 +14,15 @@ use surf_ports::{
 };
 use surf_types::agent::{ActionId, SessionId};
 use surf_types::behaviour::{
-    DocumentStorage, ElementStorage, FrameStorage, NavigationStorage, RequestStorage, TabStorage,
-    TryContext, WindowStorage,
+    DocumentStorage, ElementStorage, FormStorage, FrameStorage, ListOptionStorage,
+    NavigationStorage, RequestStorage, SubmissionStorage, TabStorage, TryContext, WindowStorage,
 };
-use surf_types::document::{DocumentId, DocumentSnapshot, ElementId, ElementSnapshot};
+use surf_types::document::obligations::{CheckBehavior, SelectOptionBehavior};
+use surf_types::document::{
+    Check, CheckOutcome, DocumentId, DocumentSnapshot, ElementId, ElementSnapshot, FormId,
+    FormSnapshot, ListOptionSnapshot, OptionId, SelectOption, SelectOptionOutcome, SubmissionId,
+    SubmissionSnapshot,
+};
 use surf_types::navigation::{NavigationSnapshot, NavigationState};
 use surf_types::net::{RequestId, RequestSnapshot};
 use surf_types::obligation::UnmetObligation;
@@ -135,7 +140,27 @@ mutant_storage!(NavigationStorage, NavigationSnapshot, RequestId);
 mutant_storage!(RequestStorage, RequestSnapshot, RequestId);
 mutant_storage!(DocumentStorage, DocumentSnapshot, DocumentId);
 mutant_storage!(ElementStorage, ElementSnapshot, ElementId);
+mutant_storage!(FormStorage, FormSnapshot, FormId);
+mutant_storage!(ListOptionStorage, ListOptionSnapshot, OptionId);
+mutant_storage!(SubmissionStorage, SubmissionSnapshot, SubmissionId);
 mutant_storage!(FrameStorage, FrameSnapshot, FrameId);
+
+/// The `document` component's obligations, handed through to the ports the mutant wraps: they
+/// read and write its tables without the policy.
+impl<P: CheckBehavior> CheckBehavior for Mutant<P> {
+    fn check(&mut self, input: Check) -> Result<CheckOutcome, UnmetObligation> {
+        self.inner.check(input)
+    }
+}
+
+impl<P: SelectOptionBehavior> SelectOptionBehavior for Mutant<P> {
+    fn select_option(
+        &mut self,
+        input: SelectOption,
+    ) -> Result<SelectOptionOutcome, UnmetObligation> {
+        self.inner.select_option(input)
+    }
+}
 
 /// `TryContext` handed through to `$field` of `$ty`.
 macro_rules! context_through {
@@ -159,6 +184,22 @@ macro_rules! context_through {
                 &mut self,
             ) -> Result<ElementId, UnmetObligation> {
                 self.$field.try_generate_surf_document_element_id()
+            }
+
+            fn try_generate_surf_document_form_id(&mut self) -> Result<FormId, UnmetObligation> {
+                self.$field.try_generate_surf_document_form_id()
+            }
+
+            fn try_generate_surf_document_option_id(
+                &mut self,
+            ) -> Result<OptionId, UnmetObligation> {
+                self.$field.try_generate_surf_document_option_id()
+            }
+
+            fn try_generate_surf_document_submission_id(
+                &mut self,
+            ) -> Result<SubmissionId, UnmetObligation> {
+                self.$field.try_generate_surf_document_submission_id()
             }
 
             fn try_generate_surf_net_request_id(&mut self) -> Result<RequestId, UnmetObligation> {
@@ -188,7 +229,7 @@ fn every_storage(label: &'static str, policy: Policy) -> (usize, usize, Vec<Stri
         Browser::new(
             System::new(
                 agent_port(setup.agent_ports()),
-                document_port(Mutant::new(DocumentPorts::new(), policy)),
+                document_port(Mutant::new(setup.document_ports(), policy)),
                 navigator_port(Mutant::new(NavigatorPorts::new(), policy)),
                 net_port(Mutant::new(NetPorts::new(), policy)),
                 renderer_port(Mutant::new(RendererPorts::new(), policy)),
@@ -216,7 +257,7 @@ fn review2_a_net_storage_that_drops_every_put_is_noticed() {
             Browser::new(
                 System::new(
                     agent_port(setup.agent_ports()),
-                    document_port(DocumentPorts::new()),
+                    document_port(setup.document_ports()),
                     navigator_port(NavigatorPorts::new()),
                     net_port(Mutant::new(
                         NetPorts::new(),
@@ -244,7 +285,7 @@ fn review2_a_document_storage_that_drops_every_put_is_noticed() {
                 System::new(
                     agent_port(setup.agent_ports()),
                     document_port(Mutant::new(
-                        DocumentPorts::new(),
+                        setup.document_ports(),
                         Policy {
                             drop_puts: true,
                             ..Policy::default()
@@ -270,7 +311,7 @@ fn review2_a_navigations_view_one_row_short_is_noticed() {
             Browser::new(
                 System::new(
                     agent_port(setup.agent_ports()),
-                    document_port(DocumentPorts::new()),
+                    document_port(setup.document_ports()),
                     navigator_port(Mutant::new(
                         NavigatorPorts::new(),
                         Policy {
@@ -326,7 +367,7 @@ fn review2_every_assigned_identity_the_same_is_noticed() {
             Browser::new(
                 System::new(
                     agent_port(setup.agent_ports()),
-                    document_port(DocumentPorts::with_source(Zeros)),
+                    document_port(setup.document_entities(DocumentPorts::with_source(Zeros))),
                     navigator_port(NavigatorPorts::with_source(Zeros)),
                     net_port(NetPorts::new()),
                     renderer_port(RendererPorts::with_source(Zeros)),
@@ -417,7 +458,7 @@ fn navigations_over(
         Browser::new(
             System::new(
                 agent_port(setup.agent_ports()),
-                document_port(DocumentPorts::new()),
+                document_port(setup.document_ports()),
                 navigator_port(navigations()),
                 net_port(NetPorts::new()),
                 renderer_port(RendererPorts::new()),
@@ -549,7 +590,7 @@ fn review2_open_tab_into_a_window_never_opened_is_noticed() {
             Browser::new(
                 System::new(
                     agent_port(setup.agent_ports()),
-                    document_port(DocumentPorts::new()),
+                    document_port(setup.document_ports()),
                     navigator_port(NavigatorPorts::new()),
                     net_port(NetPorts::new()),
                     renderer_port(RendererPorts::new()),

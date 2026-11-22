@@ -28,3 +28,10 @@ scenarios:
   - scenarios/navigation-get-has-no-body.yaml
   - scenarios/agent-follow-navigates.yaml
   - scenarios/agent-follow-records-handle-and-label.yaml
+  - scenarios/agent-fill-sets-value.yaml
+  - scenarios/agent-pick-unchecks-radio-group.yaml
+  - scenarios/agent-pick-selects-option.yaml
+  - scenarios/document-refuses-disabled-control.yaml
+  - scenarios/document-refuses-hidden-control.yaml
+  - scenarios/agent-press-submits-post.yaml
+  - scenarios/agent-press-submission-ends-without-body.yaml

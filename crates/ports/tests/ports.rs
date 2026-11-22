@@ -13,12 +13,16 @@ use surf_types::agent::{
     ActionCommand, ActionData, ActionId, ActionSnapshot, ActionState, SessionId,
 };
 use surf_types::behaviour::{
-    ActionStorage, DocumentStorage, ElementStorage, FrameStorage, NavigationStorage,
-    RequestStorage, TabStorage, TryContext, WindowStorage,
+    ActionStorage, DocumentStorage, ElementStorage, FormStorage, FrameStorage, ListOptionStorage,
+    NavigationStorage, RequestStorage, SubmissionStorage, TabStorage, TryContext, WindowStorage,
 };
+use surf_types::document::obligations::{CheckBehavior, SelectOptionBehavior};
 use surf_types::document::{
-    DocumentData, DocumentId, DocumentSnapshot, DocumentState, ElementData, ElementId, ElementKind,
-    ElementSnapshot, ElementState, EncodingName, ParseLimit,
+    Check, CheckOutcome, DocumentData, DocumentId, DocumentSnapshot, DocumentState, ElementData,
+    ElementId, ElementKind, ElementSnapshot, ElementState, EncodingName, FormData, FormId,
+    FormSnapshot, FormState, ListOptionData, ListOptionSnapshot, OptionId, OptionState, ParseLimit,
+    SelectOption, SelectOptionOutcome, SubmissionData, SubmissionId, SubmissionSnapshot,
+    SubmissionState,
 };
 use surf_types::navigation::{NavigationData, NavigationSnapshot, NavigationState};
 use surf_types::net::{Method, RequestData, RequestId, RequestSnapshot, RequestState};
@@ -31,7 +35,7 @@ use surf_types::shell::{
 };
 use surf_types::url::Url;
 
-// ---- test 1: the eight storages --------------------------------------------------------------
+// ---- test 1: the eleven storages, and the two obligations of the document component ---------
 
 /// One storage trait of one ports type, as plain functions.
 struct Table<P, K, S> {
@@ -218,6 +222,7 @@ fn storage_document_put_get_list_in_insertion_order_replace_in_place_delete() {
             document_id,
             url: url("a"),
             navigation_id: RequestId(uuid(9)),
+            tab_id: TabId(uuid(8)),
             title: None,
             encoding: None,
             unsupported_encoding: None,
@@ -262,6 +267,8 @@ fn storage_element_put_get_list_in_insertion_order_replace_in_place_delete() {
             disabled: false,
             checked: false,
             required: false,
+            name: None,
+            form_id: None,
         },
     });
     // An element has one state, so the replacement differs in its fields.
@@ -286,6 +293,239 @@ fn storage_element_put_get_list_in_insertion_order_replace_in_place_delete() {
 }
 
 #[test]
+fn storage_form_put_get_list_in_insertion_order_replace_in_place_delete() {
+    let keys = [1, 2, 3].map(|n| FormId(uuid(n)));
+    let rows = keys.clone().map(|form_id| FormSnapshot {
+        state: FormState::Added,
+        data: FormData {
+            form_id,
+            document_id: DocumentId(uuid(9)),
+            position: 1,
+            action: Some("/session".to_owned()),
+            method: Some("post".to_owned()),
+            enctype: None,
+        },
+    });
+    // A form has one state, so the replacement differs in its fields.
+    let mut replacement = rows[1].clone();
+    replacement.data.position = 2;
+    replacement.data.method = None;
+    replacement.data.enctype = Some("text/plain".to_owned());
+    exercise(
+        DocumentPorts::new(),
+        Table {
+            get: <DocumentPorts as FormStorage>::get,
+            put: <DocumentPorts as FormStorage>::put,
+            delete: <DocumentPorts as FormStorage>::delete,
+            list: <DocumentPorts as FormStorage>::list,
+        },
+        keys,
+        rows,
+        replacement,
+    );
+}
+
+#[test]
+fn storage_option_put_get_list_in_insertion_order_replace_in_place_delete() {
+    let keys = [1, 2, 3].map(|n| OptionId(uuid(n)));
+    let rows = keys.clone().map(|option_id| ListOptionSnapshot {
+        state: OptionState::Added,
+        data: ListOptionData {
+            option_id,
+            select_id: ElementId(uuid(9)),
+            position: 1,
+            value: "at".to_owned(),
+            label: "Austria".to_owned(),
+            selected: false,
+            disabled: false,
+            hidden: false,
+        },
+    });
+    let mut replacement = rows[1].clone();
+    replacement.data.selected = true;
+    replacement.data.label = "Germany".to_owned();
+    exercise(
+        DocumentPorts::new(),
+        Table {
+            get: <DocumentPorts as ListOptionStorage>::get,
+            put: <DocumentPorts as ListOptionStorage>::put,
+            delete: <DocumentPorts as ListOptionStorage>::delete,
+            list: <DocumentPorts as ListOptionStorage>::list,
+        },
+        keys,
+        rows,
+        replacement,
+    );
+}
+
+#[test]
+fn storage_submission_put_get_list_in_insertion_order_replace_in_place_delete() {
+    let keys = [1, 2, 3].map(|n| SubmissionId(uuid(n)));
+    let rows = keys.clone().map(|submission_id| SubmissionSnapshot {
+        state: SubmissionState::Started,
+        data: SubmissionData {
+            submission_id,
+            submitter: ElementId(uuid(9)),
+        },
+    });
+    let mut replacement = rows[1].clone();
+    replacement.state = SubmissionState::Submitted;
+    exercise(
+        DocumentPorts::new(),
+        Table {
+            get: <DocumentPorts as SubmissionStorage>::get,
+            put: <DocumentPorts as SubmissionStorage>::put,
+            delete: <DocumentPorts as SubmissionStorage>::delete,
+            list: <DocumentPorts as SubmissionStorage>::list,
+        },
+        keys,
+        rows,
+        replacement,
+    );
+}
+
+/// A control of document 9 at `n`, unchecked, shown and enabled.
+fn control(n: u8, kind: ElementKind, name: Option<&str>, form: Option<u8>) -> ElementSnapshot {
+    ElementSnapshot {
+        state: ElementState::Added,
+        data: ElementData {
+            element_id: ElementId(uuid(u64::from(n))),
+            document_id: DocumentId(uuid(9)),
+            position: i64::from(n),
+            kind,
+            label: format!("control {n}"),
+            target: None,
+            value: None,
+            hidden: false,
+            disabled: false,
+            checked: false,
+            required: false,
+            name: name.map(str::to_owned),
+            form_id: form.map(|form| FormId(uuid(u64::from(form)))),
+        },
+    }
+}
+
+fn checked(ports: &DocumentPorts, n: u8) -> bool {
+    ElementStorage::get(ports, &ElementId(uuid(u64::from(n))))
+        .expect("a stored element")
+        .data
+        .checked
+}
+
+#[test]
+fn check_on_a_radio_unchecks_its_group_only_and_toggles_a_checkbox() {
+    let mut ports = DocumentPorts::new();
+    let radios = [
+        (1, Some("ship"), Some(7)),
+        (2, Some("ship"), Some(7)),
+        (3, Some("ship"), Some(8)),
+        (4, Some("pay"), Some(7)),
+        (5, None, Some(7)),
+        (6, Some("ship"), None),
+    ];
+    for (n, name, form) in radios {
+        let mut radio = control(n, ElementKind::Radio, name, form);
+        radio.data.checked = true;
+        ElementStorage::put(&mut ports, radio);
+    }
+    ElementStorage::put(&mut ports, control(10, ElementKind::Checkbox, None, None));
+    let outcome = ports.check(Check {
+        element_id: ElementId(uuid(2)),
+    });
+    assert!(
+        matches!(outcome, Ok(CheckOutcome::RadioChecked { .. })),
+        "{outcome:?}"
+    );
+    let after: Vec<bool> = [1, 2, 3, 4, 5, 6]
+        .into_iter()
+        .map(|n| checked(&ports, n))
+        .collect();
+    // Only the radio of the same document, form owner and name is unchecked; a group with no
+    // name or no form owner selects no other (the marker at `surf.document.Check`).
+    assert_eq!(after, [false, true, true, true, true, true]);
+    for expected in [true, false] {
+        let outcome = ports.check(Check {
+            element_id: ElementId(uuid(10)),
+        });
+        assert!(outcome.is_ok(), "{outcome:?}");
+        assert_eq!(checked(&ports, 10), expected);
+    }
+}
+
+#[test]
+fn check_refuses_a_link_a_disabled_and_a_hidden_control_and_changes_none() {
+    let mut ports = DocumentPorts::new();
+    ElementStorage::put(&mut ports, control(1, ElementKind::Link, None, None));
+    let mut disabled = control(2, ElementKind::Checkbox, None, None);
+    disabled.data.disabled = true;
+    disabled.data.hidden = true;
+    ElementStorage::put(&mut ports, disabled);
+    let mut hidden = control(3, ElementKind::Checkbox, None, None);
+    hidden.data.hidden = true;
+    ElementStorage::put(&mut ports, hidden);
+    let before = ElementStorage::list(&ports);
+    let answers = [1, 2, 3, 4].map(|n| {
+        ports.check(Check {
+            element_id: ElementId(uuid(n)),
+        })
+    });
+    assert!(
+        matches!(answers[0], Ok(CheckOutcome::NotCheckable { .. })),
+        "{answers:?}"
+    );
+    // Disabled is answered before hidden, in the order `spec/` declares them.
+    assert!(
+        matches!(answers[1], Ok(CheckOutcome::Disabled { .. })),
+        "{answers:?}"
+    );
+    assert!(
+        matches!(answers[2], Ok(CheckOutcome::Hidden { .. })),
+        "{answers:?}"
+    );
+    assert!(
+        matches!(answers[3], Ok(CheckOutcome::NoSuchElement { .. })),
+        "{answers:?}"
+    );
+    assert_eq!(ElementStorage::list(&ports), before);
+}
+
+#[test]
+fn select_option_selects_one_and_unselects_the_others_of_its_select_only() {
+    let mut ports = DocumentPorts::new();
+    for (n, select, selected) in [(1, 8, true), (2, 8, false), (3, 9, true)] {
+        ListOptionStorage::put(
+            &mut ports,
+            ListOptionSnapshot {
+                state: OptionState::Added,
+                data: ListOptionData {
+                    option_id: OptionId(uuid(n)),
+                    select_id: ElementId(uuid(select)),
+                    position: 1,
+                    value: format!("v{n}"),
+                    label: format!("Option {n}"),
+                    selected,
+                    disabled: false,
+                    hidden: false,
+                },
+            },
+        );
+    }
+    let outcome = ports.select_option(SelectOption {
+        option_id: OptionId(uuid(2)),
+    });
+    assert!(
+        matches!(outcome, Ok(SelectOptionOutcome::Selected { .. })),
+        "{outcome:?}"
+    );
+    let selected: Vec<bool> = ListOptionStorage::list(&ports)
+        .into_iter()
+        .map(|option| option.data.selected)
+        .collect();
+    assert_eq!(selected, [false, true, true]);
+}
+
+#[test]
 fn storage_document_and_element_tables_of_one_ports_value_are_apart() {
     let mut ports = DocumentPorts::new();
     DocumentStorage::put(
@@ -296,6 +536,7 @@ fn storage_document_and_element_tables_of_one_ports_value_are_apart() {
                 document_id: DocumentId(uuid(1)),
                 url: url("a"),
                 navigation_id: RequestId(uuid(9)),
+                tab_id: TabId(uuid(8)),
                 title: None,
                 encoding: None,
                 unsupported_encoding: None,
@@ -320,6 +561,8 @@ fn storage_document_and_element_tables_of_one_ports_value_are_apart() {
                 disabled: false,
                 checked: false,
                 required: false,
+                name: None,
+                form_id: None,
             },
         },
     );

@@ -600,6 +600,7 @@ pub fn exit_status(result: &Result<Report, Error>) -> u8 {
 /// The behaviours the `agent` component's port needs to be part of a [`System`].
 pub trait AgentBehaviors:
     surf_types::agent::obligations::CloseSessionBehavior
+    + surf_types::agent::obligations::FillBehavior
     + surf_types::agent::obligations::FollowBehavior
     + surf_types::agent::obligations::GoBehavior
     + surf_types::agent::obligations::NoteNavigationCommittedBehavior
@@ -607,6 +608,8 @@ pub trait AgentBehaviors:
     + surf_types::agent::obligations::NoteNavigationFailedBehavior
     + surf_types::agent::obligations::NoteNavigationStartedBehavior
     + surf_types::agent::obligations::OpenSessionBehavior
+    + surf_types::agent::obligations::PickBehavior
+    + surf_types::agent::obligations::PressBehavior
     + surf_types::agent::obligations::RecordActionBehavior
     + surf_types::agent::obligations::SessionLogQuery
     + surf_types::agent::obligations::SessionStateViewQuery
@@ -616,6 +619,7 @@ pub trait AgentBehaviors:
 
 impl<B> AgentBehaviors for B where
     B: surf_types::agent::obligations::CloseSessionBehavior
+        + surf_types::agent::obligations::FillBehavior
         + surf_types::agent::obligations::FollowBehavior
         + surf_types::agent::obligations::GoBehavior
         + surf_types::agent::obligations::NoteNavigationCommittedBehavior
@@ -623,6 +627,8 @@ impl<B> AgentBehaviors for B where
         + surf_types::agent::obligations::NoteNavigationFailedBehavior
         + surf_types::agent::obligations::NoteNavigationStartedBehavior
         + surf_types::agent::obligations::OpenSessionBehavior
+        + surf_types::agent::obligations::PickBehavior
+        + surf_types::agent::obligations::PressBehavior
         + surf_types::agent::obligations::RecordActionBehavior
         + surf_types::agent::obligations::SessionLogQuery
         + surf_types::agent::obligations::SessionStateViewQuery
@@ -632,20 +638,44 @@ impl<B> AgentBehaviors for B where
 
 /// The behaviours the `document` component's port needs to be part of a [`System`].
 pub trait DocumentBehaviors:
-    surf_types::document::obligations::AddElementBehavior
+    surf_types::document::obligations::AbandonSubmissionBehavior
+    + surf_types::document::obligations::AddElementBehavior
+    + surf_types::document::obligations::AddFormBehavior
+    + surf_types::document::obligations::AddOptionBehavior
+    + surf_types::document::obligations::CheckBehavior
     + surf_types::document::obligations::FinishParsingBehavior
     + surf_types::document::obligations::ParseDocumentBehavior
+    + surf_types::document::obligations::SelectOptionBehavior
+    + surf_types::document::obligations::SetValueBehavior
+    + surf_types::document::obligations::StartSubmissionBehavior
+    + surf_types::document::obligations::SubmitFormBehavior
+    + surf_types::document::obligations::ControlsQuery
     + surf_types::document::obligations::DocumentsQuery
     + surf_types::document::obligations::ElementsQuery
+    + surf_types::document::obligations::FormsQuery
+    + surf_types::document::obligations::OptionsQuery
+    + surf_types::document::obligations::SubmissionsQuery
 {
 }
 
 impl<B> DocumentBehaviors for B where
-    B: surf_types::document::obligations::AddElementBehavior
+    B: surf_types::document::obligations::AbandonSubmissionBehavior
+        + surf_types::document::obligations::AddElementBehavior
+        + surf_types::document::obligations::AddFormBehavior
+        + surf_types::document::obligations::AddOptionBehavior
+        + surf_types::document::obligations::CheckBehavior
         + surf_types::document::obligations::FinishParsingBehavior
         + surf_types::document::obligations::ParseDocumentBehavior
+        + surf_types::document::obligations::SelectOptionBehavior
+        + surf_types::document::obligations::SetValueBehavior
+        + surf_types::document::obligations::StartSubmissionBehavior
+        + surf_types::document::obligations::SubmitFormBehavior
+        + surf_types::document::obligations::ControlsQuery
         + surf_types::document::obligations::DocumentsQuery
         + surf_types::document::obligations::ElementsQuery
+        + surf_types::document::obligations::FormsQuery
+        + surf_types::document::obligations::OptionsQuery
+        + surf_types::document::obligations::SubmissionsQuery
 {
 }
 
@@ -1006,6 +1036,10 @@ where
                 disabled: element.disabled,
                 checked: element.checked,
                 required: element.required,
+                // The parser step adds no form yet: filling the form rows, a control's name and
+                // its form owner from the page is `story:agent-form-port`'s.
+                name: None,
+                form_id: None,
             })?;
             if let AddElementOutcome::Added { element_added } = outcome {
                 nodes.push((element_added.element_id, element.node));

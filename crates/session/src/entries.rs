@@ -7,11 +7,13 @@
 //! document declares them, each value quoted, by the field's type:
 //!
 //! - an `Integer` (and `surf.net.Status`) in decimal;
-//! - an enum by its variant name as `spec/` spells it: `open`, `go`, `follow` and `close` for
-//!   `surf.agent.ActionCommand`, the generated variant's name for `surf.navigation.Navigation.State`,
-//!   `surf.net.FailureReason`, `surf.net.Method` and `surf.document.ParseLimit`, which `spec/`
-//!   spells the same (`Committed`, `Unreachable`, `Post`, `Depth`), so that a variant a
+//! - an enum by its variant name as `spec/` spells it: `open`, `go`, `follow`, `fill`, `pick`,
+//!   `press` and `close` for `surf.agent.ActionCommand`, the generated variant's name for
+//!   `surf.navigation.Navigation.State`, `surf.net.FailureReason`, `surf.net.Method`,
+//!   `surf.document.ParseLimit` and `surf.document.SubmissionEndReason`, which `spec/` spells the
+//!   same (`Committed`, `Unreachable`, `Post`, `Depth`, `InvalidControls`), so that a variant a
 //!   specification story adds is written without a change here;
+//! - a `Boolean` as `true` or `false`;
 //! - an identity in its text form, an address, a media type and an encoding's name as their
 //!   text;
 //! - a document's title, the one field that holds text from a page, as at most
@@ -22,8 +24,10 @@
 //! - a field of the type `Bytes` (the `body` of `surf.net.ResponseReceived`, of
 //!   `surf.navigation.NavigationCommitted` and of `surf.document.ParsingStarted`) and a present
 //!   one of the type `Optional<Bytes>` (the request body of `surf.navigation.NavigationStarted`
-//!   and of `surf.net.RequestStarted`) as its length, the text `<n> bytes`, never the bytes
-//!   (decision D22);
+//!   and of `surf.net.RequestStarted`, the form's body of `surf.document.FormSubmitted`) as its
+//!   length, the text `<n> bytes`, never the bytes (decision D22);
+//! - the `value` of `surf.agent.FillRequested`, what the agent typed into a control and so
+//!   perhaps a password, as its length in UTF-8 bytes in the same form, never the text;
 //! - an absent `Optional` value as the field with nothing after its `=`.
 //!
 //! An event this function does not map is written with its name, the word `unmapped` and no
@@ -235,6 +239,48 @@ pub fn event_line(event: &SystemEvent) -> String {
             .text("tab_id", &e.tab_id.0.0)
             .text("window_id", &e.window_id.0.0),
         SystemEvent::WindowOpened(e) => line.text("window_id", &e.window_id.0.0),
+        SystemEvent::FillRequested(e) => line
+            .text("session_id", &e.session_id.0.0)
+            .text("element_id", &e.element_id.0.0)
+            .bytes("value", e.value.as_bytes()),
+        SystemEvent::PickRequested(e) => line
+            .text("session_id", &e.session_id.0.0)
+            .text("element_id", &e.element_id.0.0)
+            .optional("option_id", e.option_id.as_ref().map(|id| id.0.0.as_str())),
+        SystemEvent::PressRequested(e) => line
+            .text("session_id", &e.session_id.0.0)
+            .text("element_id", &e.element_id.0.0),
+        SystemEvent::FormAdded(e) => line
+            .text("form_id", &e.form_id.0.0)
+            .text("document_id", &e.document_id.0.0)
+            .integer("position", e.position),
+        SystemEvent::OptionAdded(e) => line
+            .text("option_id", &e.option_id.0.0)
+            .text("select_id", &e.select_id.0.0)
+            .integer("position", e.position),
+        SystemEvent::ValueSet(e) => line.text("element_id", &e.element_id.0.0),
+        SystemEvent::CheckednessSet(e) => line
+            .text("element_id", &e.element_id.0.0)
+            .text("checked", if e.checked { "true" } else { "false" }),
+        SystemEvent::OptionSelected(e) => line
+            .text("option_id", &e.option_id.0.0)
+            .text("select_id", &e.select_id.0.0),
+        SystemEvent::SubmissionStarted(e) => line
+            .text("submission_id", &e.submission_id.0.0)
+            .text("submitter", &e.submitter.0.0),
+        SystemEvent::FormSubmitted(e) => line
+            .text("submission_id", &e.submission_id.0.0)
+            .text("tab_id", &e.tab_id.0.0)
+            .text("url", &e.url.0)
+            .text("method", &variant(e.method))
+            .optional_bytes("body", e.body.as_deref())
+            .optional(
+                "body_type",
+                e.body_type.as_ref().map(|media_type| media_type.0.as_str()),
+            ),
+        SystemEvent::SubmissionAbandoned(e) => line
+            .text("submission_id", &e.submission_id.0.0)
+            .text("reason", &variant(e.reason)),
         // `SystemEvent` is not `#[non_exhaustive]`: while every variant is mapped this arm is
         // not reached, and an event a specification story adds lands here until it is mapped.
         #[allow(unreachable_patterns)]

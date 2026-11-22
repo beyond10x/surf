@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 49f60222a83939f6aea402a84c409f0a11ea6e9e7cdf407c392a74230af919be
+// contract digest 1fa135dfaf753fab3e34de8ae9a4a7052216d1878fc9d395075ce5cd5ac673a6
 // do not edit: regenerate with `ess synthesize`
 
 //! The typed refusal of an unmet obligation, and the conversion seams owed between contexts.

@@ -2,8 +2,8 @@
   "provenance": {
     "system": "surf",
     "specification_version": "v1",
-    "source_digest": "998916b5707b1728dcfa349b715fa968ef95518f90fbd0b22151662844d1b21f",
-    "contract_digest": "49f60222a83939f6aea402a84c409f0a11ea6e9e7cdf407c392a74230af919be"
+    "source_digest": "60e083d63cd21d156c492362f3e2a91463ab823d2f8866a6aa7da4cad52fcaff",
+    "contract_digest": "1fa135dfaf753fab3e34de8ae9a4a7052216d1878fc9d395075ce5cd5ac673a6"
   },
   "scope": {
     "profile": "component-skeletons"
@@ -144,7 +144,56 @@
     },
     {
       "kind": "domain_type",
+      "source": "surf.document.Form.State",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.document.FormId",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.document.Option.State",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.document.OptionId",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
       "source": "surf.document.ParseLimit",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.document.Submission.State",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.document.SubmissionEndReason",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.document.SubmissionId",
       "disposition": {
         "disposition": "generated"
       }
@@ -277,6 +326,27 @@
     },
     {
       "kind": "entity_lifecycle",
+      "source": "surf.document.Form",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "entity_lifecycle",
+      "source": "surf.document.Option",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "entity_lifecycle",
+      "source": "surf.document.Submission",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "entity_lifecycle",
       "source": "surf.navigation.Navigation",
       "disposition": {
         "disposition": "generated"
@@ -320,6 +390,20 @@
     {
       "kind": "command_behavior",
       "source": "surf.agent.CloseSession",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_contract",
+      "source": "surf.agent.Fill",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "surf.agent.Fill",
       "disposition": {
         "disposition": "generated"
       }
@@ -444,6 +528,34 @@
     },
     {
       "kind": "command_contract",
+      "source": "surf.agent.Pick",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "surf.agent.Pick",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_contract",
+      "source": "surf.agent.Press",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "surf.agent.Press",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_contract",
       "source": "surf.agent.RecordAction",
       "disposition": {
         "disposition": "generated"
@@ -452,6 +564,20 @@
     {
       "kind": "command_behavior",
       "source": "surf.agent.RecordAction",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_contract",
+      "source": "surf.document.AbandonSubmission",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "surf.document.AbandonSubmission",
       "disposition": {
         "disposition": "generated"
       }
@@ -468,6 +594,53 @@
       "source": "surf.document.AddElement",
       "disposition": {
         "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_contract",
+      "source": "surf.document.AddForm",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "surf.document.AddForm",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_contract",
+      "source": "surf.document.AddOption",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "surf.document.AddOption",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_contract",
+      "source": "surf.document.Check",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "surf.document.Check",
+      "disposition": {
+        "disposition": "obligation",
+        "reason": {
+          "class": "undetermined",
+          "construct": "effects on filtered rows (`affects:`), in `radio-checked`"
+        },
+        "contract": "given `surf.document.Check` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `no-such-element` for an identity no record carries, error `surf.document.ElementNotFound`; `not-checkable` when the existing subject's stored fields satisfy `(kind != checkbox and kind != radio)`, error `surf.document.ControlKindConflict`; `disabled` when the existing subject's stored fields satisfy `disabled == true`, error `surf.document.ControlDisabled`; `hidden` when the existing subject's stored fields satisfy `hidden == true`, error `surf.document.ControlHidden`; `radio-checked` when the existing subject's stored fields satisfy `kind == radio`, updates `surf.document.Element`, changes, beside its subject, every `surf.document.Element` where `(kind == radio and document_id == subject.document_id and form_id == subject.form_id and name == subject.name)`, setting `checked`, emits `surf.document.CheckednessSet`; `unchecked` when the existing subject's stored fields satisfy `checked == true`, updates `surf.document.Element`, emits `surf.document.CheckednessSet`; `checked` otherwise, updates `surf.document.Element`, emits `surf.document.CheckednessSet`"
       }
     },
     {
@@ -494,6 +667,67 @@
     {
       "kind": "command_behavior",
       "source": "surf.document.ParseDocument",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_contract",
+      "source": "surf.document.SelectOption",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "surf.document.SelectOption",
+      "disposition": {
+        "disposition": "obligation",
+        "reason": {
+          "class": "undetermined",
+          "construct": "effects on filtered rows (`affects:`), in `selected`"
+        },
+        "contract": "given `surf.document.SelectOption` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `no-such-option` for an identity no record carries, error `surf.document.OptionNotFound`; `disabled` when the existing subject's stored fields satisfy `disabled == true`, error `surf.document.ControlDisabled`; `hidden` when the existing subject's stored fields satisfy `hidden == true`, error `surf.document.ControlHidden`; `selected` otherwise, updates `surf.document.Option`, changes, beside its subject, every `surf.document.Option` where `select_id == subject.select_id`, setting `selected`, emits `surf.document.OptionSelected`"
+      }
+    },
+    {
+      "kind": "command_contract",
+      "source": "surf.document.SetValue",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "surf.document.SetValue",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_contract",
+      "source": "surf.document.StartSubmission",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "surf.document.StartSubmission",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_contract",
+      "source": "surf.document.SubmitForm",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "surf.document.SubmitForm",
       "disposition": {
         "disposition": "generated"
       }
@@ -668,7 +902,28 @@
     },
     {
       "kind": "event_type",
+      "source": "surf.agent.FillRequested",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "event_type",
       "source": "surf.agent.NavigationRequested",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "event_type",
+      "source": "surf.agent.PickRequested",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "event_type",
+      "source": "surf.agent.PressRequested",
       "disposition": {
         "disposition": "generated"
       }
@@ -696,6 +951,13 @@
     },
     {
       "kind": "event_type",
+      "source": "surf.document.CheckednessSet",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "event_type",
       "source": "surf.document.DocumentParsed",
       "disposition": {
         "disposition": "generated"
@@ -710,7 +972,56 @@
     },
     {
       "kind": "event_type",
+      "source": "surf.document.FormAdded",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "event_type",
+      "source": "surf.document.FormSubmitted",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "event_type",
+      "source": "surf.document.OptionAdded",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "event_type",
+      "source": "surf.document.OptionSelected",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "event_type",
       "source": "surf.document.ParsingStarted",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "event_type",
+      "source": "surf.document.SubmissionAbandoned",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "event_type",
+      "source": "surf.document.SubmissionStarted",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "event_type",
+      "source": "surf.document.ValueSet",
       "disposition": {
         "disposition": "generated"
       }
@@ -822,6 +1133,27 @@
     },
     {
       "kind": "error_type",
+      "source": "surf.document.ControlDisabled",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "error_type",
+      "source": "surf.document.ControlHidden",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "error_type",
+      "source": "surf.document.ControlKindConflict",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "error_type",
       "source": "surf.document.DocumentNotFound",
       "disposition": {
         "disposition": "generated"
@@ -830,6 +1162,34 @@
     {
       "kind": "error_type",
       "source": "surf.document.DocumentStateConflict",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "error_type",
+      "source": "surf.document.ElementNotFound",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "error_type",
+      "source": "surf.document.OptionNotFound",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "error_type",
+      "source": "surf.document.SubmissionNotFound",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "error_type",
+      "source": "surf.document.SubmissionStateConflict",
       "disposition": {
         "disposition": "generated"
       }
@@ -934,6 +1294,20 @@
     },
     {
       "kind": "view_type",
+      "source": "surf.document.Controls",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "view_query",
+      "source": "surf.document.Controls",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "view_type",
       "source": "surf.document.Documents",
       "disposition": {
         "disposition": "generated"
@@ -956,6 +1330,48 @@
     {
       "kind": "view_query",
       "source": "surf.document.Elements",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "view_type",
+      "source": "surf.document.Forms",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "view_query",
+      "source": "surf.document.Forms",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "view_type",
+      "source": "surf.document.Options",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "view_query",
+      "source": "surf.document.Options",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "view_type",
+      "source": "surf.document.Submissions",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "view_query",
+      "source": "surf.document.Submissions",
       "disposition": {
         "disposition": "generated"
       }
@@ -1047,7 +1463,7 @@
         "disposition": "refused",
         "reason": "needs_caller_identity",
         "stage": "planning",
-        "detail": "may invoke `surf.agent.CloseSession`, `surf.agent.Follow`, `surf.agent.Go`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry"
+        "detail": "may invoke `surf.agent.CloseSession`, `surf.agent.Fill`, `surf.agent.Follow`, `surf.agent.Go`, `surf.agent.Pick`, `surf.agent.Press`; generated as data, not enforced: the grant is available as the declared actors and the qualified commands each may invoke, and enforcement stays with the caller, because a grant is checked against a caller identity, which types do not carry"
       }
     },
     {
@@ -1072,6 +1488,20 @@
     },
     {
       "kind": "binding_transformation",
+      "source": "check-on-pick-requested",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "binding_delivery",
+      "source": "check-on-pick-requested",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "binding_transformation",
       "source": "close-tab-on-session-closed",
       "disposition": {
         "disposition": "generated"
@@ -1122,6 +1552,20 @@
     {
       "kind": "binding_delivery",
       "source": "fetch-on-navigation-started",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "binding_transformation",
+      "source": "navigate-on-form-submitted",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "binding_delivery",
+      "source": "navigate-on-form-submitted",
       "disposition": {
         "disposition": "generated"
       }
@@ -1206,6 +1650,48 @@
     {
       "kind": "binding_delivery",
       "source": "parse-on-navigation-committed",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "binding_transformation",
+      "source": "select-on-pick-requested",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "binding_delivery",
+      "source": "select-on-pick-requested",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "binding_transformation",
+      "source": "set-value-on-fill-requested",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "binding_delivery",
+      "source": "set-value-on-fill-requested",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "binding_transformation",
+      "source": "submit-on-press-requested",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "binding_delivery",
+      "source": "submit-on-press-requested",
       "disposition": {
         "disposition": "generated"
       }

@@ -9,7 +9,7 @@
 //! | [`ShellPorts`] | `shell` | `Window`, `Tab` | yes |
 //! | [`NavigatorPorts`] | `navigator` | `Navigation` | yes |
 //! | [`NetPorts`] | `net` | `Request` | no |
-//! | [`DocumentPorts`] | `document` | `Document`, `Element` | yes |
+//! | [`DocumentPorts`] | `document` | `Document`, `Element`, `Form`, `Option`, `Submission` | yes |
 //! | [`RendererPorts`] | `renderer` | `Frame` | yes |
 //! | [`AgentPorts`] | `agent` | `Session`, `Action` | the caller and an action's identity |
 //!
@@ -27,7 +27,9 @@
 //! assigns an action's identity; the other ports types answer that as unmet too. [`AgentPorts`]
 //! also meets the four obligations the generation leaves to the component:
 //! `NoteNavigationStarted`, `NoteNavigationCommitted`, `NoteNavigationFailed` and
-//! `NoteNavigationEnded`, which change every session their filter selects.
+//! `NoteNavigationEnded`, which change every session their filter selects. [`DocumentPorts`]
+//! meets the two the generation leaves to the `document` component, `Check` and `SelectOption`,
+//! which change a control and the others of its group or select.
 //!
 //! [`shell_port`], [`navigator_port`], [`net_port`], [`document_port`], [`renderer_port`] and
 //! [`agent_port`] build each component's generated port over a ports type;
@@ -96,9 +98,11 @@ use surf_types::agent::obligations::{
     NoteNavigationStartedBehavior,
 };
 use surf_types::behaviour::{
-    ActionStorage, DocumentStorage, ElementStorage, FrameStorage, Generated, NavigationStorage,
-    RequestStorage, SessionStorage, TabStorage, TryContext, WindowStorage,
+    ActionStorage, DocumentStorage, ElementStorage, FormStorage, FrameStorage, Generated,
+    ListOptionStorage, NavigationStorage, RequestStorage, SessionStorage, SubmissionStorage,
+    TabStorage, TryContext, WindowStorage,
 };
+use surf_types::document::obligations::{CheckBehavior, SelectOptionBehavior};
 
 /// The `shell` component's generated port over [`ShellPorts`].
 pub type ShellPort<R = OsRandom> = shell::Shell<Generated<ShellPorts<R>>>;
@@ -137,10 +141,18 @@ where
     net::Net::new(Generated::new(ports))
 }
 
-/// The `document` component's port, its behaviours generated over `ports`.
+/// The `document` component's port, its behaviours generated over `ports`, and the two its
+/// generation leaves owed taken from `ports`.
 pub fn document_port<P>(ports: P) -> document::Document<Generated<P>>
 where
-    P: TryContext + DocumentStorage + ElementStorage,
+    P: TryContext
+        + DocumentStorage
+        + ElementStorage
+        + FormStorage
+        + ListOptionStorage
+        + SubmissionStorage
+        + CheckBehavior
+        + SelectOptionBehavior,
 {
     document::Document::new(Generated::new(ports))
 }
