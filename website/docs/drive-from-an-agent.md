@@ -15,7 +15,7 @@ answer in plain lines, written to be read by a language model.
 <AgentTerminal
   id="agent-session"
   session={agentSession}
-  caption="An agent session recorded on 2026-11-22 against a local copy of this site on 127.0.0.1:43117, with the token replaced."
+  caption="An agent session recorded on 2026-11-22 against a local copy of this site on 127.0.0.1:43117, with the token replaced. An answer names a page's status, media type and address. It shows no title and no content yet: no command parses a page so far."
 />
 
 It runs on Linux only: the agent binaries read the caller's user id from `/proc/self` and need
