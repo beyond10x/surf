@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T17:17:33Z",
+  "actor": "human:operator",
+  "artifact": "story:page-step-holds-under-load",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate: task check-runner on 9d38a27, whose tree equals the merge 3b0fc83 on main, 2026-11-23 17:45 to 18:09 CET (acceptance 8)",
+    "reference": "exit 0 in 718 s at a load of 45.16 to 91.89; 1240 tests passed, test step 50.0 s; 545 tls tests, 21.4 s; conformance step 8.7 s; 71 passed (1.8m), page step: 114.1 s of its budget of 120 s"
+  }
+}

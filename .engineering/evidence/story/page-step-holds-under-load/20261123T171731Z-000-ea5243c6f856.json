@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T17:17:31Z",
+  "actor": "human:operator",
+  "artifact": "story:page-step-holds-under-load",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the base measurement on 03f25c9, 2026-11-23, before the first commit of the change (acceptance 1)",
+    "reference": "three runs of the page step: 115.6 s at a 1-minute load of 97.85 to 106.78, 161.2 s at 106.78 to 121.49, 163.7 s at 121.49 to 105.58 (controls case 6 failed once); CPU seconds by perf stat -e task-clock 68.9, 78.4 and 76.8; shares in the third run: Chromium 59 %, node 28.5 %, the Rust programs 12 %"
+  }
+}
