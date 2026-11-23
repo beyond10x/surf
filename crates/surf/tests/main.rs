@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 mod adversary_forms;
+mod adversary_page_budget;
 mod common;
 mod conform_totals;
 mod escape;

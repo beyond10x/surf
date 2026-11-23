@@ -8,9 +8,11 @@ tasks:
     summary: |
       Install view-tests/ from its package-lock.json, only when node_modules is not that install.
 
-      sh taskfiles/view-test-setup.sh compares the sha256 of view-tests/package-lock.json with
-      the digest the last install stored in view-tests/node_modules/.surf-lock.sha256. Equal, it
-      prints "view-tests: node_modules matches package-lock.json" and starts no npm. Otherwise
+      sh taskfiles/view-test-setup.sh compares the digest of view-tests/package.json and
+      view-tests/package-lock.json with the one the last install stored in
+      view-tests/node_modules/.surf-lock.sha256, and checks that each package the lock names has
+      its directory. Both hold, it prints "view-tests: node_modules matches package-lock.json"
+      and starts no npm. Otherwise
       it runs npm --prefix view-tests ci --prefer-offline --no-audit --no-fund and writes the
       digest. task view-test runs it before its timed part; the forge's check runs it in place
       of its own npm ci.
@@ -28,7 +30,7 @@ tasks:
       Removes .out/page-step.seconds, builds surf-agent, surf-session and surf-view-fixture with
       the flags of task build, so it rebuilds nothing check built, and runs task
       view-test-setup (npm ci only when view-tests/node_modules is not the install of its
-      package-lock.json). Then the timed part: ./node_modules/.bin/playwright test --workers=2
+      package.json and package-lock.json). Then the timed part: ./node_modules/.bin/playwright test --workers=2
       in view-tests/, no npx and no npm, so no request to a registry. Each test starts its own
       target/debug/surf-view-fixture: a page server, surfd in process and sessions, under a
       directory of its own in $XDG_RUNTIME_DIR. view-tests/playwright.config.mjs ends a test

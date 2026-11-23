@@ -1370,8 +1370,9 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `HTML_BASE=origin/main` (the export's `origin` is this repository, so that is the local
   `main`), and it unsets `RUSTUP_TOOLCHAIN`, `CARGO_TARGET_DIR`, `CARGO_BUILD_TARGET_DIR`,
   `RUSTFLAGS`, `CARGO_ENCODED_RUSTFLAGS` and `RUSTDOCFLAGS`. `view-tests/node_modules` is not
-  committed: `task view-test` installs it in the export through `task view-test-setup`
-  (`npm ci` when the export's install is not that of its `package-lock.json`), as on the forge. What
+  committed: `task view-test` installs it in the export through `task view-test-setup`, as on
+  the forge; `git clean` removes the export's `node_modules` on every run, so `npm ci` runs
+  every time there. What
   stays the machine's: the cargo caches of the user, the Playwright browser cache, the cargo
   configuration in the user's home, a compiler cache it names (`rustc-wrapper`) included, and
   the operating system. cargo also reads the working tree's `.cargo/config.toml`, a parent
@@ -1471,10 +1472,12 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
 - `task view-test`: the page tests in a browser (`taskfiles/view-test.yml`), the page step,
   within a budget of 120 s of its own (`story:page-test-step-within-budget`). It removes
   `.out/page-step.seconds`, builds `surf-agent`, `surf-session` and `surf-view-fixture`, and
-  runs `task view-test-setup` (`taskfiles/view-test-setup.sh`): it compares the sha256 of
-  `view-tests/package-lock.json` with the digest the last install stored in
-  `view-tests/node_modules/.surf-lock.sha256`; equal, it prints `view-tests: node_modules
-  matches package-lock.json` and starts no `npm`; otherwise it runs `npm --prefix view-tests
+  runs `task view-test-setup` (`taskfiles/view-test-setup.sh`): it compares the digest of
+  `view-tests/package.json` and `view-tests/package-lock.json` with the one the last install
+  stored in `view-tests/node_modules/.surf-lock.sha256` and checks that each package the lock
+  names (`node_modules/<name>` of its `packages`, read with `jq`) has its directory; both
+  hold, it prints `view-tests: node_modules matches package-lock.json` and starts no `npm`
+  (`crates/surf/tests/adversary_page_budget.rs`); otherwise it runs `npm --prefix view-tests
   ci --prefer-offline --no-audit --no-fund` and writes the digest. The forge's workflow runs
   the same task in place of its own `npm ci`. Then the timed part, the build and the setup
   left out: `./node_modules/.bin/playwright test --workers=2` in `view-tests/`, no `npx` and no
@@ -1976,8 +1979,8 @@ printed `59 passed (41.3s)`, `(45.5s)` and `(1.5m)` and `page step: 42.6 s`, `47
 `91.2 s of its budget of 120 s`, at load averages of 61.60 to 59.06, 59.06 to 68.47 and 68.47
 to 82.03; `adversary: a refused token on the stream stops the page` took 3.5, 3.5 and 4.3 s.
 `an entry over 1 MiB` took 10.9, 11.9 and 27.2 s, over the story's 20 s in the third run (and
-34.2 s in a run beside a planted test of 70 s at a load of about 100): its size is a story of
-its own.
+34.2 s in a run beside a planted test of 70 s at a load of about 100): the story landed without
+that bound (D317), and `story:view-large-entry-test-time` takes the test's time.
 `html-conformance`, the last
 step of `check`: `html-conformance: 9107 cases, 9095 run, 8428 passed` (82 encoding cases,
 7,046 tokenizer cases and 1,300 tree construction cases), with `tag markup 1979/1979/1979`,

@@ -127,8 +127,9 @@ test("a new session appears without a reload", async ({ page, surf, record }) =>
   const roots = record.requestsOf("/").length;
   const id = await surf.open(surf.pages + "/first/b.html");
   const summary = (await surf.api("/api/sessions")).sessions.find((s) => s.id === id);
-  await expect(items(page)).toHaveCount(2);
-  await expect(items(page).last().locator(".address")).toHaveText(summary.address);
+  // Each bound of 2 s below is the sentence's "listed within 2 s", named beside it.
+  await expect(items(page)).toHaveCount(2, { timeout: 2000 }); // .engineering/planning/story/view-first-page.md:213-214
+  await expect(items(page).last().locator(".address")).toHaveText(summary.address, { timeout: 2000 }); // .engineering/planning/story/view-first-page.md:213-214
   expect(record.requestsOf("/").length).toBe(roots);
 });
 

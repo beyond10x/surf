@@ -149,8 +149,18 @@ test("adversary: with Latest off the playhead stays after its action is dropped 
 // docs/design/live-view.md item 6: the token is valid until surfd exits. A stream refused with
 // 401 after the page loaded is not asked again (another program may listen on the old port): the
 // page reads offline, says the token was refused, and makes no further request.
+//
+// The page's timers run on Playwright's clock, installed before the page loads and flowing as
+// usual until the refusal. The page asks /events again after a delay of 500, 1,000, 2,000, 4,000
+// and then 5,000 ms (FIRST_DELAY and LAST_DELAY, crates/view/web/stream.js:9-10, doubled at
+// :140-141), so runFor(12_500), their sum, fires every timer a page that asks again would set,
+// in no time; the network is not on that clock. A request of the test's own after it is the
+// mark: the page's requests started before it are recorded before it.
+const AFTER = "/after-the-delays";
 test("adversary: a refused token on the stream stops the page", async ({ page, surf, record }) => {
   test.setTimeout(60_000);
+  await page.route(/\/after-the-delays$/, (route) => route.fulfill({ status: 204, body: "" }));
+  await page.clock.install();
   await surf.open();
   await load(page, surf.piped);
   await expect(segments(page)).toHaveCount(1);
@@ -168,10 +178,9 @@ test("adversary: a refused token on the stream stops the page", async ({ page, s
   await surf.mend();
   const refusedAt = record.requests.length;
   await items(page).nth(0).locator("button").click();
-  // A page that asks again after a refusal does so after FIRST_DELAY, 500 ms
-  // (crates/view/web/stream.js): 2,000 ms, four times that, show that no request follows.
-  await page.waitForTimeout(2_000);
-  expect(record.requests.slice(refusedAt).map((request) => request.path)).toEqual([]);
+  await page.clock.runFor(12_500);
+  await page.evaluate((after) => fetch(after).then(() => {}, () => {}), AFTER);
+  expect(record.requests.slice(refusedAt).map((request) => request.path)).toEqual([AFTER]);
   await expect(page.locator("#live-word")).toHaveText("offline");
   await expect(page.locator("#message")).toHaveText(REFUSED);
 });
