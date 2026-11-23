@@ -2,14 +2,17 @@
 format: aep.planning-md/3
 id: story:page-step-holds-under-load
 kind: story
-status: draft
+status: active
 title: The page step holds its 120 s at a load over 100
 summary: the page step took 124.0 s of 120 s with 71 tests at a load of 70 to 107 and costs a median of 76.8 CPU seconds; four cuts bring it to at most 53.8 s (70 %), target 46.1 s; a flaky test is fixed
 relations:
 - decomposes: epic:live-view
 - informed_by: story:page-test-step-within-budget
 - informed_by: story:view-large-entry-test-time
-revision: 3
+revision: 5
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T09:26:33Z", actor: "human:operator", revision: 4}
+- {from: "proposed", to: "active", at: "2026-11-23T09:26:33Z", actor: "human:operator", revision: 5}
 ---
 ## Why
 
