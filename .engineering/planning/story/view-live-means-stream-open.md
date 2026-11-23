@@ -25,7 +25,7 @@ scope:
   path: website/docs/how-it-is-built.md
 - confidence: cited
   path: website/docs/status.md
-revision: 15
+revision: 16
 ---
 ## Context
 
@@ -114,7 +114,9 @@ session list, and the lines it cites in the spec files shift.
      waits for `live`, for the end of the second answer of `GET /api/sessions/<id>` and two
      frames, and reads 0.
   5. `no word is written while the page does not follow`: one session is open. A script added
-     before the page runs records every word `#live-word` takes. A route answers the first
+     before the page runs records every word `#live-word` takes, from the nodes each mutation
+     record adds (`written()` in `dom.js:39` puts a new text node on each write), not from the
+     word's text when its callback runs. A route answers the first
      `/events` with `route.fulfill` (status 200, `text/event-stream`, a body of one comment
      block, `: keep-alive` and an empty line): the stream opens, gives one comment and ends,
      and the API stays reachable (no `cut`, which would refuse the requests of the load too).
@@ -122,10 +124,13 @@ session list, and the lines it cites in the spec files shift.
      the next `/events`. Two assertions, each with its message:
      - "a keep-alive before the draw writes no word": the word reads `reconnecting` and the
        recorded words hold no `live`;
-     - "a load whose stream closed writes no word": the held answer is released
-       (`route.continue()`), the test waits for the end of the `GET /api/sessions/<id>` that
-       follows and for two frames, the word reads `reconnecting` and the recorded words hold
-       no `live`.
+     - "a load whose stream closed writes no word": the script records the clears of
+       `#actions` too, in the same list and in the order of the mutation records. The test
+       reads the length of the list, releases the held answer (`route.continue()`) and waits
+       until a clear is recorded after that length: the draw of the released load, which the
+       page does in a task of its own after the answers are parsed. Then the word reads
+       `reconnecting` and the list holds no `live`; a `live` written by the continuation of
+       `open()` that drew is in the list by then, because it is written in that task.
      Then the held `/events` is continued, and the word becomes `live`.
 - Documents, written by the unit as the units before it on this branch did (`ba9d465`,
   `936d45d`):
@@ -137,7 +142,7 @@ session list, and the lines it cites in the spec files shift.
     `README.md:214`, `website/docs/status.md:23`; they get the new count. Five are a recorded
     run, `54 passed (2.7m)` with its load: `AGENTS.md:1625`, `README.md:481` and `:492`,
     `website/docs/how-it-is-built.md:57` and `:69`; each is replaced by the line, the task
-    time and the load of one run of acceptance 4, the same run in all five. `40 passed, 54
+    time and the load of the last run of acceptance 4, the same run in all five. `40 passed, 54
     skipped` (`README.md:479`, `how-it-is-built.md:55`) is another count and stays;
   - `docs/design/agent-interface.md:465` ("a "live" marker with the time of the last update")
     stays true and is not written.
@@ -160,19 +165,24 @@ output before each quoted result.
    the report quotes the five failures. With the change the five pass.
 2. The rule on `onEvent` and `alive()` is held by two plants, each by hand, removed after,
    `git diff --stat` equal before and after:
-   - with `onEvent` left calling `updated()`, test 2 fails with `live` received;
-   - with `alive()` left calling `updated()`, test 5 fails at "a keep-alive before the draw
-     writes no word" with `live` among the recorded words.
+   - with `setLive("live", Date.now())` called directly as the first line of `onEvent`, test 2
+     fails with `live` received;
+   - with `setLive("live", Date.now())` called directly in `alive()`, test 5 fails at "a
+     keep-alive before the draw writes no word" with `live` among the recorded words.
+   A plant is named by what it writes, not by a call of `updated()`, because the unit may put
+   the rule inside `updated()`.
    The report quotes both.
 3. The rule on the opening is held by test 5: with the check that the stream of the load is
    still the open one taken out (planted, removed after), test 5 passes its first assertion and
    fails at "a load whose stream closed writes no word" with `live` received; the report
    quotes it.
-4. `slot npx playwright test --workers=2` in `view-tests/`, all spec files, after the build
-   line of `taskfiles/view-test.yml`: every test passes, three times in a row; the report gives
-   the count (59), the time of each run, the time of each new test, the
-   load of the host (`/proc/loadavg`) before each run, and the ten slowest tests of the last
-   run. No test runs over 60 s; a new test over 5 s is named with its time. The time of the
+4. `slot task --taskfile taskfiles/view-test.yml view-test`, the whole task with its build
+   line, three times in a row, each timed: every test passes each time; the report gives the
+   count (59), Playwright's line and the task's seconds of each run, the time of each new test,
+   the load of the host (`/proc/loadavg`) before and after each run, and the ten slowest tests
+   of the last run. The last run is the one the five recorded lines of the documents take:
+   its line, its task seconds, its load and its slowest test, also in the sentences beside
+   those lines that name the old run's slowest test (`an entry over 1 MiB` 29.7 s). No test runs over 60 s; a new test over 5 s is named with its time. The time of the
    whole step is reported and not bounded here (`story:page-test-step-within-budget`).
 5. `git diff --stat` of the change lists only the surfaces written above. No added line of
    `view-tests/` holds `waitForTimeout`, `setTimeout`, `retries`, `retry` or `toPass`, and no
