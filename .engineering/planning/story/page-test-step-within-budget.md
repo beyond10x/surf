@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:page-test-step-within-budget
 kind: story
-status: active
+status: implemented
 title: The page-test step ends each test within 60 s
 summary: 'On main (ff6431f, 59 page tests; gate on b00d02d: 59 passed (1.6m) at load 111 to 117, on 9f096f3: 59 passed (40.0s) at load 90 to 53): test timeout 60 s, own budget and ten slowest, npm ci out of the timed part, a shared fixture if fixture starts sum over 10 s, largest costs cut'
 relations:
@@ -25,10 +25,11 @@ scope:
   path: view-tests/playwright.config.mjs
 - confidence: cited
   path: view-tests/tests
-revision: 14
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T21:48:50Z", actor: "human:operator", revision: 11}
 - {from: "proposed", to: "active", at: "2026-11-22T21:48:51Z", actor: "human:operator", revision: 12}
+- {from: "active", to: "implemented", at: "2026-11-23T08:09:43Z", actor: "human:operator", revision: 16, decided_on: {"recorded":{"test_result":4,"verification":2}}, executor: "agent:coordinator"}
 ---
 ## Why
 
@@ -309,3 +310,39 @@ The files of `aep plan artifact scope`. In `AGENTS.md` the bullets of `task view
 check` and the paragraph of the page tests' times; not the bullet of `task conform-rust`
 (`story:conformance-step-within-budget`) and not the waits of `built`
 (`story:session-request-timeout-option`).
+
+## As decided after the adversary's pass
+
+The adversary's pass on `60531ef` left three tests of `crates/surf/tests/adversary_page_budget.rs`
+(two red) and two page tests of `view-tests/tests/adversary-budget.spec.mjs` (both red). The
+decisions, built in `ba0c584`:
+
+- D317: the story lands without the bound of 20 s that statement 7 sets for `an entry over 1 MiB`.
+  The test took 10.9, 11.9 and 27.2 s in the three runs on `1555f58` (load 61.60 to 82.03) and
+  11.4, 14.1 and 15.2 s in the three runs on `ba0c584` (load 58.30 to 77.95). Its size is
+  `story:view-large-entry-test-time` (draft).
+- D318: the refused-token test fails for a page that asks again at any delay of the stream, 500
+  doubling to 5,000 ms. With the wait of 2,000 ms of `1555f58` a page that asked again after 5 s
+  passed. The test installs Playwright's clock before the page loads, runs it 12,500 ms after the
+  refusal and then fetches `/after-the-delays` itself; the requests it expects are that one
+  address alone. Two plants (a request after 5 s, a request at once) fail it with `["/events",
+  "/after-the-delays"]`. It took 2.3 to 2.9 s, 14.6 s before the story.
+- D319: a removed `timeout: 2000` comes back where a story sentence states the 2 s. Of the seven
+  removed, two do: `view-tests/tests/first-page.spec.mjs` session count and session address
+  (`view-first-page.md`:213-214, "listed within 2 s"). With them a session listed 4 s late fails
+  `toHaveCount(2)` at 2,000 ms; without them it passed at 4,578 ms. The other five have no such
+  sentence and stay removed. Acceptance 7 after this pass: the count of `first-page.spec.mjs` is
+  two higher than statement 7 expects.
+- D320: the digest of `view-test-setup` covers `view-tests/package.json` and
+  `view-tests/package-lock.json`, and the task runs `npm ci` when a `node_modules/<name>` key of
+  the lock has no directory. Before, a tree missing a package of the lock and a `package.json`
+  that left the lock both started no `npm ci`. The script has a mode `digest` that
+  prints the digest. It reads the lock with `jq`, which `taskfiles/forge-watch.sh` needs already.
+- D321: a test of the adversary stays only under 5 s. Kept: the refused-token test on a page
+  served with the 5 s plant, on the clock of D318 (1.9 to 2.5 s). Left out: the test of a session
+  listed 4 s late, red by design, which needs a real window of 2 s; the two restored bounds of
+  D319 carry its claim.
+
+The page step on `ba0c584`, three consecutive runs: 57.9, 76.6 and 57.2 s of 120 s at a load of
+58.30 to 67.55, 67.55 to 77.95 and 77.95 to 68.72; 60 page tests, the only one over 5 s is `an
+entry over 1 MiB`.

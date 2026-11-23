@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T07:17:36Z",
+  "actor": "human:operator",
+  "artifact": "story:conformance-step-within-budget",
+  "kind": "story",
+  "revision": 17,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate: slot --timeout 25m task check-runner on f66a164 (fix/conformance-step-budget), 2026-11-23 07:44 to 07:50 CET, load 84.11 at the start, 98.88 at the end",
+    "reference": "exit 0 in 337 s; conformance step: 19.2 s of its budget of 120 s, 39 tests run: 39 passed, 0 skipped; 1224 tests: 1224 passed, 0 failed, 0 ignored (cargo-nextest 1222, doc tests 2); test step: 52.2 s of its budget of 120 s; tls 545 passed, 18.8 s; 59 page tests passed. The run on 92ab623 ended with exit 201 on slowest_tests::no_sort_feeds_a_head, which counted two callers of taskfiles/slowest-tests.sh; fixed in 21adcdc, whose run ended with exit 0 in 400 s, conformance step 17.4 s at a load of 96.39 to 132.24"
+  }
+}

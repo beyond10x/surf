@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T08:09:42Z",
+  "actor": "human:operator",
+  "artifact": "story:page-test-step-within-budget",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate: slot --timeout 25m task check-runner on ba0c584 and on 2a4fe3c (fix/page-test-step-budget), 2026-11-23 08:44 to 08:48 and 08:56 to 08:59 CET (acceptance 9)",
+    "reference": "ba0c584: exit 0 in 283 s, load 66.62 to 87.70, page step: 60.6 s of its budget of 120 s, 60 passed (58.5s), 1233 tests passed (cargo-nextest 1231, doc tests 2), test step 38.1 s, tls test step 18.0 s, conformance step 20.8 s, four steps: 137.5 s; 2a4fe3c: exit 0 in 156 s, load 62.92 to 53.93, page step: 28.0 s, 60 passed (27.3s), four steps: 89.7 s; no line starting with raise: in either"
+  }
+}

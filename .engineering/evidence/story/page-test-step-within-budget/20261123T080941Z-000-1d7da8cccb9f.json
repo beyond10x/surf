@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T08:09:41Z",
+  "actor": "human:operator",
+  "artifact": "story:page-test-step-within-budget",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the implementing unit's plants on 1555f58, each removed with the tree's status equal before and after (acceptances 2 to 7)",
+    "reference": "timeout: 60_000 in view-tests/playwright.config.mjs, seven test.setTimeout(60_000) left and none of 120_000; a test waiting 70 s: Test timeout of 60000ms exceeded, 1 failed, exit 201; PAGE_BUDGET=1: page step: 89.6 s, over its budget of 1 s, exit 201; view-test-setup with an equal digest: node_modules matches package-lock.json, the install's mtime unchanged; with a changed stored digest: added 3 packages in 4s; the refused-token plant: 1 failed, exit 1; waitForTimeout 12_000 before, none after ba0c584"
+  }
+}

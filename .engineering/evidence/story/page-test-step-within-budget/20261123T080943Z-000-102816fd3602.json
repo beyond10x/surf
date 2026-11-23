@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T08:09:43Z",
+  "actor": "human:operator",
+  "artifact": "story:page-test-step-within-budget",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "forge: check run 45135338000 on main at eec1ae7, the merge of fix/page-test-step-budget (acceptance 11)",
+    "reference": "success; page step: 19.0 s of its budget of 120 s, 60 passed (18.5s); four steps: 42.2 s (test step 15.1 s, tls test step 5.6 s, conformance step 2.5 s, page step 19.0 s); 1233 tests passed; Shared source gates 45135338705, Documentation validation 45135338122 and Documentation site 45135758582 success"
+  }
+}

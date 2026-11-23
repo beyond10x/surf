@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T07:17:35Z",
+  "actor": "human:operator",
+  "artifact": "story:conformance-step-within-budget",
+  "kind": "story",
+  "revision": 17,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the implementing unit's plants on 4c03f2a and 7db71c5, each removed, git diff --stat equal before and after (acceptances 2, 3, 5 and 6)",
+    "reference": "a test sleeping 70 s: TIMEOUT 60.031 s, 33 tests run: 32 passed, 1 timed out, exit 201; CONFORM_BUDGET=1: conformance step: 26.5 s, over its budget of 1 s, exit 201; an ignore on the planted-defect test and on a per-entity test, each with its digest line: the two messages of the story, exit 201 each; six digest plants: each prints the sources of conformance/tests/noticed.txt changed; run task conform-slow, exit 201; 31 count lines, 29 with 3 scenarios and the two controls with 196; a defect taken out of its wrapper: the suite passed all 3 scenarios over a system with this defect"
+  }
+}

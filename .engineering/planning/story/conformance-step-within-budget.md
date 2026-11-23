@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:conformance-step-within-budget
 kind: story
-status: active
+status: implemented
 title: The conformance step ends each test within 60 s and itself within 120 s
 summary: 'On main (ff6431f, 196 scenarios): the conformance tests run under cargo-nextest with the 60 s end; one timed line over the tests and the suite run, own budget of 120 s; each planted defect runs 3 listed scenarios from a committed noticed.txt instead of the whole suite (about 31 runs)'
 relations:
@@ -21,10 +21,11 @@ scope:
   path: conformance/tests/main.rs
 - confidence: cited
   path: taskfiles/slowest-tests.sh
-revision: 16
+revision: 18
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T21:57:11Z", actor: "human:operator", revision: 13}
 - {from: "proposed", to: "active", at: "2026-11-22T21:57:12Z", actor: "human:operator", revision: 14}
+- {from: "active", to: "implemented", at: "2026-11-23T07:17:36Z", actor: "human:operator", revision: 18, decided_on: {"recorded":{"test_result":4,"verification":2}}, executor: "agent:coordinator"}
 ---
 ## Why
 
@@ -267,3 +268,39 @@ What is still open on `main` and touches the same files (the scopes of the stori
 The files of `aep plan artifact scope`. In `AGENTS.md` the bullets of `task conform-rust`, of `task slow` and of
 `conformance/`; not the waits of `built` (`story:session-request-timeout-option`) and not the
 bullets of `task view-test` and `task check` (`story:page-test-step-within-budget`).
+
+## As decided after the adversary's pass
+
+The adversary's pass on `4c03f2a` added four tests (`conformance/tests/adversary_noticed.rs`, kept,
+commit `117b227`) and six findings; none made the step green over a defect that is not noticed.
+The decisions, built in `e05e65f` and `7db71c5`, documents in `92ab623`:
+
+- D311, over D309: the digest of `conformance/tests/noticed.txt` covers `.out/suite.json`, every
+  file under `conformance/src` and `conformance/tests` except the list itself (read from the
+  directories, sorted), `conformance/Cargo.toml` and `conformance/Cargo.lock` whole. Before, the
+  fast check passed after `NOTICED_PER_DEFECT` went from 3 to 1. The digest does not cover the
+  crates the runner is built against and not the list's own lines.
+- D312: for those two cases the planted test's failure names the place: when the listed scenarios
+  of a defect all pass, when a label has no line and when a line names a scenario the suite has
+  not, the message says the list may be stale and names `task conform-slow WRITE=1`.
+- D313: the suite is admitted once per run, not once per test. Measured at a load of 91 to 108:
+  admitting the whole suite (2.8 MB, 196 scenarios) took 17.5, 8.7 and 6.0 s, a narrowed suite
+  (16 KB, 3 scenarios) 7, 135 and 20 ms. `conform-rust` writes the narrowed suites of the 29
+  planted defects once per digest to `conformance/target/noticed/<digest>/` before the timed
+  part, and a planted test fails naming that step when its file is missing. The two controls keep
+  the whole suite. The step's N went from 41.9, 33.3 and 52.0 s to 37.9, 24.0 and 25.7 s (load
+  93.8 to 108.5).
+- D314: the step fails when nextest reports a skipped test. Before, an `#[ignore]` on 10 of the 13
+  planted tests left it green (there before this story).
+- D315: the suite run against the Rust system ends after 60 s (`CONFORM_SUITE_BOUND`) with a line
+  that names the step. Before, only the pool ended it.
+- D316: `taskfiles/doc-tests-check.sh` reads `conformance/src` too: cargo-nextest runs no doc
+  tests, and the crate has none.
+
+Acceptance 7 after this pass: `cargo nextest list` gives 39 tests (32 before the story, 4 of the
+adversary, 3 of D312). Acceptance 5 as built: an `#[ignore]` changes a source of the digest, so
+each plant is made together with the matching digest line. `task --dry slow` lists `conform-slow`
+only with `--verbose`, as it does the other silent tasks of the lane.
+
+Not built: a check that `CONFORM_BUDGET` is a number. The adversary's probe found that 0, 1, -5,
+`abc` and `2e3` fail the step and an empty value means 120.

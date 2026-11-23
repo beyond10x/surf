@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T07:17:35Z",
+  "actor": "human:operator",
+  "artifact": "story:conformance-step-within-budget",
+  "kind": "story",
+  "revision": 17,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the adversary's pass on 4c03f2a and the fix round, commits 117b227, e05e65f, 7db71c5, 92ab623 (decisions D311 to D316)",
+    "reference": "four adversary tests added and kept, no red case; with them the step ran 63.8 s at a load of 93.6 to 107.4; fixes each red first: the digest over the crate's sources, tests, manifest and lock; three messages that name task conform-slow, 3 of 3 red against a mutant; narrowed suites once per digest, admitting the whole suite 17.5, 8.7 and 6.0 s against 7, 135 and 20 ms narrowed; an ignore on a review2 test fails the step; the suite run ended at a bound of 1 s; doc-tests-check with 14 cases"
+  }
+}

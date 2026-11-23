@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T08:09:42Z",
+  "actor": "human:operator",
+  "artifact": "story:page-test-step-within-budget",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "three consecutive runs of slot --timeout 15m task view-test on 1555f58 and three on ba0c584, 2026-11-23 (acceptance 8)",
+    "reference": "on 1555f58: page step 42.6 s, 47.6 s and 91.2 s of 120 s, 59 passed each, load 61.60 to 59.06, 59.06 to 68.47 and 68.47 to 82.03; on ba0c584: 57.9 s, 76.6 s and 57.2 s, 60 passed each, load 58.30 to 67.55, 67.55 to 77.95 and 77.95 to 68.72; the only test over 5 s: an entry over 1 MiB, 10.9, 11.9, 27.2 s and 11.4, 14.1, 15.2 s (over the 20 s of statement 7 once: D317, story:view-large-entry-test-time)"
+  }
+}
