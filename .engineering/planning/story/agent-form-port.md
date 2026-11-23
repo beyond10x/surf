@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-form-port
 kind: story
-status: active
+status: implemented
 title: Fill the form rows from the page and compute a submission body
 summary: surf-page finds forms, form owners, names and options; a submission step in crates/surf builds the entry list, encodes it with surf-url and resolves the action.
 relations:
@@ -55,10 +55,11 @@ scope:
   path: generated/rust
 - confidence: cited
   path: spec/domains/document.yaml
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-23T04:21:57Z", actor: "human:operator", revision: 14, decided_on: {"recorded":{"test_result":1,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 

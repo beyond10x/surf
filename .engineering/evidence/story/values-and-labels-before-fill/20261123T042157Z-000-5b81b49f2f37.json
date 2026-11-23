@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T04:21:57Z",
+  "actor": "human:operator",
+  "artifact": "story:values-and-labels-before-fill",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate: slot --timeout 25m task check-runner on b00d02d (impl/round2-commands), 2026-11-23 04:55 to 05:03 CET, load 110.75 at the start, 116.83 at the end",
+    "reference": "parse::a_password_value_is_printed_as_set_or_empty, label::an_embedded_password_input_gives_nothing_to_a_name, events::a_recorded_label_is_cut_at_the_entry_bound and memory::kept_text_is_dropped_on_a_request_other_than_look passed; adversary_values 5 tests and the 5 handle cut tests passed; slowest adversary_values::a_gos_action_recorded_has_the_fields_of_the_view_stream_example 0.086 s, none over 5 s; 196 scenarios: 196 passed, 0 failed, 0 error, 0 unsupported on both runners; exit 0 in 472 s; 1224 tests: 1224 passed, 0 failed, 0 ignored (cargo-nextest 1222, doc tests 2); test step: 41.0 s of its budget of 120 s"
+  }
+}

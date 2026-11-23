@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T04:21:51Z",
+  "actor": "human:operator",
+  "artifact": "story:values-and-labels-before-fill",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the implementing unit's report of its plants, 2026-11-22, each removed after (acceptances 4 and 5)",
+    "reference": "acceptance 4: with another value passed in conformance/src/target.rs each run read 169 scenarios: 167 passed, 2 failed, the named scenario and the synthesized one: Follow.handle and Follow.label failed agent-follow-navigates, Fill.handle agent-fill-sets-value, Pick.handle agent-pick-selects-option, Press.handle agent-press-submits-post; the file was put back, cmp equal. acceptance 5: memory::kept_text_is_dropped_on_a_request_other_than_look red with the line self.rendered = None commented out (after go, left 4, right 0), green with the line restored"
+  }
+}

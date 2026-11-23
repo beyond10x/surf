@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T04:21:54Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-back-forward",
+  "kind": "story",
+  "revision": 19,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "file at b4a7481: cli/surf-agent.yaml, crates/agent/src/cli.rs",
+    "reference": "back and forward in the binding at cli/surf-agent.yaml lines 69 and 73 and in the parser at crates/agent/src/cli.rs lines 244 and 248"
+  }
+}

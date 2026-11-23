@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T04:21:54Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-press-submit",
+  "kind": "story",
+  "revision": 22,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "file at b4a7481: crates/agent-tasks/status.txt; git diff 79a96d4 b4a7481 of crates/surf/tests/forms.rs",
+    "reference": "status.txt line 4 reads search pass; the diff adds tests and one helper line and changes no case function of agent-form-port"
+  }
+}

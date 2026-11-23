@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T04:21:52Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-follow-links",
+  "kind": "story",
+  "revision": 23,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "file at b4a7481: crates/agent-tasks/status.txt, cli/surf-agent.yaml, crates/agent/src/cli.rs",
+    "reference": "status.txt line 3 reads link pass; follow in the binding at cli/surf-agent.yaml line 53 and in the parser at crates/agent/src/cli.rs line 228"
+  }
+}

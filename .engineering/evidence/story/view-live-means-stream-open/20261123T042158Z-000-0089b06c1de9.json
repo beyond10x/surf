@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T04:21:58Z",
+  "actor": "human:operator",
+  "artifact": "story:view-live-means-stream-open",
+  "kind": "story",
+  "revision": 20,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the story's section As found while building",
+    "reference": "on 505f60e acceptances 1 to 3 and 5 to 7 hold; acceptance 4 third run had one failure at adversary-page.spec.mjs:74, decided D287"
+  }
+}

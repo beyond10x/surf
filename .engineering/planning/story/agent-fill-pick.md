@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-fill-pick
 kind: story
-status: active
+status: implemented
 title: now lists form controls, and fill and pick change them
 summary: Control lines with handles, kinds, flags and values, passwords never printed; fill (also from standard input) and pick, refusing hidden, disabled and wrong-kind controls.
 relations:
@@ -83,10 +83,11 @@ scope:
   path: website/docs/status.md
 - confidence: inferred
   path: website/docs/what-works.md
-revision: 25
+revision: 26
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-11-23T04:21:53Z", actor: "human:operator", revision: 26, decided_on: {"recorded":{"test_result":1,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 

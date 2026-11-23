@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T04:21:56Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-form-port",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "file at b4a7481: crates/surf/tests/forms.rs line 333",
+    "reference": "case_09 expects a POST with the body user=ada&remember=on"
+  }
+}
