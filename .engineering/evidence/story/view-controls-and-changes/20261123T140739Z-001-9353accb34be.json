@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T14:07:39Z",
+  "actor": "human:operator",
+  "artifact": "story:view-controls-and-changes",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the adversary's pass on 851fda9 and the fix round, commit 03f25c9 (decisions D322 to D326)",
+    "reference": "no path found that puts a typed password into the view; seven tests of the adversary kept, each under 5 s; they fail on four mutants the story's own tests passed (disabled and readonly swapped, checked before and after swapped, a password's length before the action taken from after it, readonly dropped from the flags shown); after the fix round: surfd 52, surf-session 289, surf-view 70 tests and 71 page tests passed"
+  }
+}
