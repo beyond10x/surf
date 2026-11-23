@@ -1970,7 +1970,14 @@ entry over 1 MiB` 12.9, 4.8 and 17.3 s. Each page test keeps a fixture of its ow
 of `target/debug/surf-view-fixture`, from its spawn to its ready line, took 8.7 ms, the median
 of 10 starts in a row, so 0.51 s for the 59 page tests, under the 10 s over which they would
 share one (`node fixture-starts.mjs <tree> 10 59`, a probe not committed, at a load average of
-101.67 before and 106.02 after).
+101.67 before and 106.02 after). With the story (on `1555f58`, 2026-11-23, three consecutive
+runs of `slot --timeout 15m task --taskfile taskfiles/view-test.yml view-test`) the step
+printed `59 passed (41.3s)`, `(45.5s)` and `(1.5m)` and `page step: 42.6 s`, `47.6 s` and
+`91.2 s of its budget of 120 s`, at load averages of 61.60 to 59.06, 59.06 to 68.47 and 68.47
+to 82.03; `adversary: a refused token on the stream stops the page` took 3.5, 3.5 and 4.3 s.
+`an entry over 1 MiB` took 10.9, 11.9 and 27.2 s, over the story's 20 s in the third run (and
+34.2 s in a run beside a planted test of 70 s at a load of about 100): its size is a story of
+its own.
 `html-conformance`, the last
 step of `check`: `html-conformance: 9107 cases, 9095 run, 8428 passed` (82 encoding cases,
 7,046 tokenizer cases and 1,300 tree construction cases), with `tag markup 1979/1979/1979`,
