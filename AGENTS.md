@@ -1355,8 +1355,12 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   which reads the seconds the four timed steps wrote, `.out/test-step.seconds` (`test`),
   `.out/tls-test-step.seconds` (`test-tls`), `.out/conform-step.seconds` (`conform-rust`) and
   `.out/page-step.seconds` (`view-test`), and prints `four steps: N s (test step A s, tls test
-  step B s, conformance step C s, page step D s)`, N their sum; it fails naming the file when
-  one is missing and has no budget of its own: each step fails over its own 120 s.
+  step B s, conformance step C s, page step D s)`, N their sum with one decimal, as the last
+  line of `task check`. It is a printed sum, not a budget: D247 sets 120 s per step, and each
+  of the four steps fails over its own 120 s, while the sum may pass 120 s (137.5 s on
+  `ba0c584`). It fails only on its input, with one line naming the file: `no such file` when
+  one of the four is missing, and `not a number of seconds` when one is empty or holds
+  anything but digits and one inner decimal point.
 - `task check-runner`: the gate to run before a merge, `task check` as the forge's runner runs
   it (`taskfiles/check-runner.sh`; `slot task check-runner`). What it does differently from
   `task check`: it runs in `.out/runner/tree`, a clean export of `HEAD` (a clone sharing this
@@ -1718,7 +1722,25 @@ interpreter and against the Rust system: `196 scenarios: 196 passed, 0 failed, 0
 unsupported`; `conform-totals`: `the interpreter and the Rust system ran 196 scenario(s) each,
 of suite sha256:dcc7e7c2c534eb6f98ef03cbd07da620efd16fbe16e8d448de697919b0a56bf3`.
 `generated-check`: `generated/rust matches spec/ (30 artifact(s) and .ess-output)`.
-`test-layout`: `23 test directories, 148 test files, one test binary each`.
+`test-layout`: `23 test directories, 150 test files, one test binary each`.
+
+The gate in runner form on `ba0c584` (2026-11-23, `start 08:44:15 CET` to `end 08:48:58 CET`)
+printed `check-runner: task check exit 0 in 283 s, export included`, with `rustc 1.99.1` and
+`ess 0.97.4`: the scenario, suite, interpreter, Rust-system, digest and `Cargo.lock` lines as on
+`b00d02d` below; the conformance step `Summary [   8.819s] 39 tests run: 39 passed, 0 skipped`,
+`conformance step: 20.8 s of its budget of 120 s` (slowest
+`two_of_each_entity::nothing_planted_fails_no_scenario`, 7.6 s); `test-layout: 23 test
+directories, 150 test files, one test binary each`, `1233 tests: 1233 passed, 0 failed, 0
+ignored (cargo-nextest 1231, doc tests 2)`, `test step: 38.1 s of its budget of 120 s` (slowest
+`adversary_change_log::adversary_cl_log_at_its_byte_bound_keeps_the_newest`, 9.8 s), `545
+tests: 545 passed, 0 failed, 0 ignored (cargo-nextest 545)`, `tls test step: 18.0 s of its
+budget of 120 s` (slowest `limbo_parse::bettertls_1`, 5.2 s), `agent-tasks: 4 tasks, 4 pass, 0
+fail, 0 skipped, lane gate, binaries target/debug`, `view-stream-check: 23 event name(s)`,
+`view-tests: node_modules installed from package-lock.json`, `60 passed (58.5s)` (slowest `an
+entry over 1 MiB`, 9.7 s), `page step: 60.6 s of its budget of 120 s`, `html-conformance: 9107
+cases, 9095 run, 9095 passed`, `x509-limbo: 5143 cases, 5089 run, 5060 passed`,
+`doc-tests-check-test: 14 case(s)`, `four steps: 137.5 s (test step 38.1 s, tls test step
+18.0 s, conformance step 20.8 s, page step 60.6 s)`, and no line starting with `raise:`.
 
 The gate in runner form on `21adcdc` (2026-11-23, 07:35 to 07:41 CET, a load average of 96 to
 132 on 20 CPUs) printed `check-runner: task check exit 0 in 400 s, export included`, with
