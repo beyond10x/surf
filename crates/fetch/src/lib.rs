@@ -198,6 +198,18 @@
 //!   the response, the request target and the URL parsed as above. No bound is stated for
 //!   this moment: a header section of many short fields holds many times the header limit.
 //!
+//! An `https:` request holds, beside the above: the verifier's copy of the trust anchors, made
+//! before its first connection; the TLS connection, whose record layer holds at most one record
+//! and one handshake message (`surf_tls::record`: about 2^14 + 256 and 65,535 + 2^14 bytes);
+//! and, during the handshake, the server's certificates while they are verified. Measured by
+//! counting allocations on the fetch's thread (the module `https` of the tests): a `GET` of a
+//! 64 KiB body from the TLS test server (a chain of two certificates, the bundled anchors and
+//! one more) held 173,747 bytes at its peak, the same `GET` over `http:` 73,738, so the TLS
+//! connection added 100,009 bytes; that test holds it to at most 131,072. No bound is stated
+//! for a server's chain at the bounds of item 9 of `docs/design/tls.md` (a Certificate message
+//! of 65,535 bytes, up to 64 certificates): what parsing and verifying it takes was not
+//! measured.
+//!
 //! # What it does not do
 //!
 //! It is not a complete HTTP client. It does not do any scheme other than `http:` and `https:`

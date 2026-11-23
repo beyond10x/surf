@@ -622,5 +622,6 @@ fn a_tls_connection_adds_at_most_the_documented_bytes() {
     );
 }
 
-/// What the crate documentation, "Memory", states a TLS connection adds at most.
-const TLS_ADDS_MAX: usize = 1 << 20;
+/// What the crate documentation, "Memory", states a TLS connection adds at most in this case:
+/// 128 KiB (100,009 bytes measured when it was written).
+const TLS_ADDS_MAX: usize = 131_072;
