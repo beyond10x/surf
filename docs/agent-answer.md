@@ -177,7 +177,7 @@ refusal of the action, with a reason from this list:
 | `hidden` | the element or an ancestor has the `hidden` attribute | 1 |
 | `unresolved` | the link's target does not resolve against the document base URL | 1 |
 | `address-too-long` | the link's resolved target is longer than 65,536 bytes, the bound of an address `surf-fetch` follows | 1 |
-| `unsupported-scheme` | the link's resolved target has a scheme surf does not fetch: any but `http` (`javascript:`, `mailto:`, `data:`, `file:`, `https:`) | 1 |
+| `unsupported-scheme` | the link's resolved target has a scheme a session does not follow: any but `http` (`javascript:`, `mailto:`, `data:`, `file:`, `https:`). `go` and `open` load an `https:` address, but `follow` and `press` refuse an `https:` target with `did refused unsupported-scheme`, while the one-shot `surf` command loads `https:` | 1 |
 | `forbidden-destination` | the page was loaded from a public address and the link's target is a local one: a loopback, private, link-local, unique-local, shared or unspecified IP address, an IPv6 address that embeds one, or the name `localhost` or one under it | 1 |
 | `disabled` | the control, or the option `pick` names, is disabled | 1 |
 | `wrong-kind` | the element is not of a kind the command acts on: `fill` takes `text`, `password` and `textarea`, `pick` takes `select`, `checkbox` and `radio` | 1 |

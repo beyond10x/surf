@@ -1772,7 +1772,7 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   error, before any connection. `surf --anchors [--ca-file <path>]` prints `anchors <n> bundled
   <yyyy-mm-dd> sha256:<hex>` and with a file `anchors <m> file <path>`, exit 0. Revocation is
   not checked: a revoked certificate that has not expired loads. The usage line printed on a
-  usage error names neither option.
+  usage error names both options (`crates/surf-cli/src/main.rs`, `USAGE`).
 - Driving a session from a build tree, after `task build`: `target/debug/surf-agent open [<url>]`
   prints the session's identity and its token once; export them as `SURF_SESSION` and
   `SURF_TOKEN`, then `target/debug/surf-agent go <url>`, `look` and `close`. The three binaries

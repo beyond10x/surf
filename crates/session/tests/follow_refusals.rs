@@ -197,6 +197,33 @@ fn a_target_with_a_scheme_surf_does_not_fetch_is_refused_unsupported_scheme() {
     );
 }
 
+/// What `README.md`, `docs/surf-command.md` and `docs/agent-answer.md` say of `https:` inside a
+/// session until `story:tls-session-anchors`, whitespace aside.
+const HTTPS_IN_A_SESSION: &str =
+    "`follow` and `press` refuse an `https:` target with `did refused unsupported-scheme`";
+
+/// `follow` refuses an `https:` target, as the three documents say (`press`: the case
+/// `adversary_press_an_https_action_is_refused_before_a_submission_starts`). When a session
+/// follows `https:`, this fails, and the sentence leaves the documents with it.
+#[test]
+fn an_https_target_is_refused_unsupported_scheme_as_the_documents_say() {
+    refused(
+        LOCAL_PAGE,
+        "https://shop.example/x",
+        RefusalReason::UnsupportedScheme,
+    );
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for document in ["README.md", "docs/surf-command.md", "docs/agent-answer.md"] {
+        let text = std::fs::read_to_string(root.join(document))
+            .unwrap_or_else(|error| panic!("{document}: {error}"));
+        let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            flat.contains(HTTPS_IN_A_SESSION),
+            "{document} no longer says: {HTTPS_IN_A_SESSION}"
+        );
+    }
+}
+
 #[test]
 fn from_a_public_page_a_local_address_is_refused_forbidden_destination() {
     for href in [

@@ -24,7 +24,8 @@ use surf_ports::ComponentPorts;
 use surf_types::document::DocumentState;
 use surf_types::navigation::NavigationState;
 
-const USAGE: &str = "usage: surf <url> [--as tree|markdown]";
+const USAGE: &str =
+    "usage: surf <url> [--as tree|markdown] [--ca-file <path>] | surf --anchors [--ca-file <path>]";
 
 /// Write one line to standard error. A standard error that cannot be written is ignored: the
 /// exit status still says what happened.

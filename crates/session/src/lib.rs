@@ -121,9 +121,11 @@
 //!
 //! - longer than [`surf_fetch::MAX_ADDRESS_BYTES`] bytes: `address-too-long`, the bound of an
 //!   address a redirect leads to ("What it keeps");
-//! - with a scheme other than `http`, the one scheme the transport fetches (`javascript:`,
-//!   `mailto:`, `data:`, `file:`, `https:`): `unsupported-scheme`. `go` still navigates to such
-//!   an address and its page line says `failed UnsupportedScheme`;
+//! - with a scheme other than `http` (`javascript:`, `mailto:`, `data:`, `file:`, `https:`):
+//!   `unsupported-scheme`. `go` still navigates to such an address: an `https:` one loads
+//!   against the bundled trust anchors, any other ends with the page line `failed
+//!   UnsupportedScheme`. `follow` and `press` refuse `https:` until a session takes an extra
+//!   anchor file (`story:tls-session-anchors`);
 //! - from a document whose address is not local by its text, a target whose host is
 //!   (`host_is_local`: an IP address [`surf_fetch::is_local`] names, the rule a redirect's
 //!   destination is checked by, or `localhost` or a name under it): `forbidden-destination`. A

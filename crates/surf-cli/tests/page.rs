@@ -513,7 +513,7 @@ fn as_used_wrongly_is_usage() {
         assert!(run.stdout.is_empty(), "{args:?}");
         assert!(
             run.stderr
-                .ends_with("usage: surf <url> [--as tree|markdown]\n"),
+                .ends_with("usage: surf <url> [--as tree|markdown] [--ca-file <path>] | surf --anchors [--ca-file <path>]\n"),
             "{args:?}: {}",
             run.stderr
         );

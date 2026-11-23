@@ -121,6 +121,10 @@ port. The server is authenticated against the bundled trust anchors and the anch
 Redirects between `http:` and `https:` are followed both ways; a redirect to any other scheme
 fails the load with `UnsupportedScheme`.
 
+This is the one-shot `surf` command. An agent session (`surf-agent`) loads an `https:` address
+with `go` and `open`, against the bundled trust anchors only, but `follow` and `press` refuse an
+`https:` target with `did refused unsupported-scheme` (`docs/agent-answer.md`).
+
 `surf --ca-file <path> <url>` adds the certificates of a PEM file to the trust anchors of that
 load. The file holds at most 32 KiB (32,768 bytes) and 64 certificates; every block is a
 `CERTIFICATE`, and every certificate a CA (basicConstraints cA). A file is refused whole when it
@@ -143,7 +147,7 @@ anchors <m> file <path>
 |---|---|
 | 0 | the navigation is `Committed`; or `--anchors` printed its lines |
 | 1 | the navigation is not `Committed`: `Failed` |
-| 2 | usage error: not exactly one address, an address that is not UTF-8, or `--as` without `tree` or `markdown` or given twice; a usage line on standard error |
+| 2 | usage error: not exactly one address (none with `--anchors`), an address that is not UTF-8, `--as` without `tree` or `markdown` or given twice, `--ca-file` without a path or given twice, `--anchors` given twice or with an address or `--as`; a usage line on standard error. Also a refused `--ca-file`, before any connection: a file that cannot be opened or read (the operating system's error), or one `surf_tls` refuses (`TooLarge`, `TooMany`, `NoCertificate`, `NotACertificate`, `BadPem`, `BadCertificate`, `NotACa`); one line `surf: --ca-file <path>: <error>` on standard error, no usage line, nothing on standard output |
 | 3 | the run stopped: an unmet obligation of the generated code, or `OpenTab` refused the window just opened; the reason on standard error and nothing on standard output. Also when writing to standard output reports an error, such as a full disk or a reader that has gone, whatever the navigation's state: the reason on standard error, and the rows may be partly written |
 
 A standard error that cannot be written changes none of these.

@@ -137,7 +137,9 @@ note visibility: hidden attribute only
 What it does not do yet:
 
 - `go` and `open` load `https:` addresses against the bundled trust anchors only: a session
-  takes no extra anchor file yet, and no release has `https:` yet.
+  takes no extra anchor file yet, and no release has `https:` yet. Inside a session, `follow`
+  and `press` refuse an `https:` target with `did refused unsupported-scheme`; the one-shot
+  `surf` command loads `https:`.
 - Release `0.2.0` delivers a redirect status as the response. Since release `0.3.0`, a `go`
   follows redirects.
 - No JavaScript and no rendering.
