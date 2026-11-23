@@ -116,11 +116,12 @@ fn listed_ring() -> String {
 
 /// The lock as committed passes, and names the packages from outside this repository, each on
 /// the allow-list. `task lock-check` runs the line the other cases run: the task is `silent`, so
-/// `task --dry --verbose` prints its line, on standard error.
+/// `task --dry --verbose` prints its line, on standard error. `--color=false`, because task
+/// colours its lines when `CI=true` (as the gate's runner form sets it), even into a pipe.
 #[test]
 fn the_unchanged_lock_passes() {
     let dry = Command::new("task")
-        .args(["--dry", "--verbose", "lock-check"])
+        .args(["--color=false", "--dry", "--verbose", "lock-check"])
         .current_dir(repository())
         .output()
         .expect("run task");
@@ -128,7 +129,7 @@ fn the_unchanged_lock_passes() {
     let wanted = format!("task: [lock-check] {LINE}");
     assert!(
         dry.status.success() && stderr.lines().any(|l| l == wanted),
-        "task --dry --verbose lock-check: no line {wanted:?} in\n{stderr}{}",
+        "task --color=false --dry --verbose lock-check: no line {wanted:?} in\n{stderr}{}",
         String::from_utf8_lossy(&dry.stdout)
     );
     let lock = lock();

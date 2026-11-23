@@ -1347,7 +1347,8 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   path dependency outside the repository has no `source` line and is not caught. The tests of
   `crates/surf/tests/lock_check.rs` run that line with `sh` in their copies, without `task`
   (no `Taskfile.yml` in a copy); `the_unchanged_lock_passes` holds the task to the line with
-  `task --dry --verbose lock-check`, which prints it on standard error.
+  `task --color=false --dry --verbose lock-check`, which prints it on standard error
+  (`--color=false`: with `CI=true`, as `task check-runner` sets it, task colours the line).
 - `task generate`: rewrite `generated/rust/` from `spec/`, in place. `ess` refuses, naming the
   file, when a file it wrote was edited since; delete that file or restore it from git, then run
   it again.
