@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-test-certs
 kind: story
-status: active
+status: implemented
 title: A generated set of test certificates, made once in the slow lane and held by a digest
 summary: crates/tls-test-certs writes the positive cases and the negative suite (badssl names) into committed files with a DIGEST; tls-certs-check in the gate, tls-certs-slow regenerates and compares.
 relations:
@@ -16,10 +16,11 @@ scope:
   path: taskfiles/tls-certs-check.sh
 - confidence: cited
   path: taskfiles/tls-certs.yml
-revision: 11
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:26Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:26Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-22T21:13:21Z", actor: "human:operator", revision: 13, decided_on: {"recorded":{"test_result":1,"verification":3}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -171,3 +172,30 @@ Validating the certificates (`story:tls-x509-path`); certificates for client aut
 (include, `check` line, the task `slow`), `Cargo.lock`, `AGENTS.md`. No other story writes
 `crates/tls-test-certs/`; the stories named in Context read `certs/` by path. Beside it run
 `story:tls-x509` and `story:tls-record`.
+
+## As built
+
+What differs from the text above, as of 6cff209 (branch `wave/tls-1`):
+
+- `ok-wildcard` has a P-256 leaf key of its own, `keys/p256-60.pk8`
+  (`crates/tls-test-certs/src/cases.rs:268-278`, `keys/SOURCE`); every other P-256 leaf shares
+  `p256-02` (`cases.rs:211`, `:250`). A finding of the review of the seams (36e50b2): without it
+  no test could tell whether CertificateVerify is checked with the key of the leaf the verifier
+  judged.
+- `INDEX` has 33 cases: `candidate-limit-no-anchor` (`cases.rs:90-94`) is a case the list
+  above does not name.
+- `leaf.pk8` is written for every case, not only for the cases the test server uses.
+- The lane `slow` (`tls-certs-slow`, `tls-flights-slow`) is `task slow` (`Taskfile.yml:376-380`),
+  run by hand; the forge has no lane `slow` for surf yet, because its runner pins no `openssl`
+  (`AGENTS.md:1232-1233`).
+
+Acceptance 7: `task slow` ran on 32df67f and again on 6cff209 (no change to
+`crates/tls-test-certs` between them), each `OpenSSL 3.6.5`, `tls-certs-slow: 100 files, none
+differs`; the times are not printed.
+
+Not shown by a test or a run:
+
+- Acceptance 3 and the budget, "its time in the report, under 5 s": `certs::reproducible`
+  prints no time; it took 0.58 s in the gate run on 32df67f.
+- The two runs of the lane were not "right after" each other; a second run on the same commit
+  would show that.

@@ -31,11 +31,16 @@ wanted, not mandatory: "I'm not saying we have to follow a spec, but would be gr
     system are allowed.
   - One exception: audited cryptographic primitives (ciphers, hashes, key exchange, signature
     verification) come from a third-party crate, because hand-written ones leak keys through
-    timing. Which crate is not chosen yet. The TLS protocol code on top of them is written here.
+    timing. The crate is ring 0.17.14 (the operator, 2026-11-22: "A: ring 0.17.14"), used by
+    `surf-tls` alone and allowed by `taskfiles/lock-allow.txt`. The TLS protocol code on top of
+    it is written here.
   - Build and test tooling (`ess`, `task`, test suites) is not runtime and is not covered.
   - `conformance/` is the one place in the repository where a third-party crate is allowed: the
     `ess-conformance` runner and what it brings, in a Cargo workspace of its own. The root
-    `Cargo.lock` proves the rest: it lists no package from outside this repository.
+    `Cargo.lock` proves the rest: every package in it from outside this repository is one of
+    the 19 packages of ring on `taskfiles/lock-allow.txt`, matched on name, version, source and
+    checksum, and no crate of this repository but `surf-tls` depends on one (`task
+    lock-check`).
 
 Status on 2026-11-20: `spec/` was drafted by reasoning over the page load. No standard was read
 for it. Its names, lifecycle states and command boundaries are not checked against the standards
@@ -124,11 +129,13 @@ above, and the list of standards itself was written from memory.
 - `cli/surf-agent.yaml`: the `ess-cli/2` document of the agent command line, checked by
   `task cli`; the client parser is held to it.
 - `taskfiles/<name>.yml`: one file per task added since the agent interface plan, included by
-  the root `Taskfile.yml` with `flatten: true` and `optional: true`. Optional because four
-  tests copy the root `Taskfile.yml` alone into a temporary directory and run one task there;
-  a missing include must not stop them. `check` still fails when an included task is missing.
+  the root `Taskfile.yml` with `flatten: true` and `optional: true`. Optional because the four
+  tests of `crates/surf/tests/lock_check.rs` copy the root `Taskfile.yml` alone into a
+  temporary directory and run one task there; a missing include must not stop them. `check` still fails when an included task is missing.
   `taskfiles/cli.yml` holds the task `cli`, `taskfiles/site.yml` the task `site-build`,
-  `taskfiles/html-conformance.yml` the task `html-conformance`, `taskfiles/view-stream-check.yml`
+  `taskfiles/html-conformance.yml` the task `html-conformance`,
+  `taskfiles/tls-x509-conformance.yml` the task `tls-x509-conformance`,
+  `taskfiles/view-stream-check.yml`
   the task `view-stream-check`, `taskfiles/view-test.yml` the task `view-test`, and
   `taskfiles/release.yml` the task `release-smoke`
   (`DIR=<unpacked archive>`, optional `TARGET`), which runs `taskfiles/release-smoke.sh`; the
@@ -142,8 +149,24 @@ above, and the list of standards itself was written from memory.
   `test-layout` and `test-layout-test` over `taskfiles/test-layout.sh`;
   `taskfiles/agent-tasks.yml` the tasks `agent-tasks-report`, `agent-tasks-archive` and
   `agent-tasks-model` (over `taskfiles/agent-tasks-model.sh`); `taskfiles/sh-echo.yml` the tasks
-  `sh-echo` and `sh-echo-test` over `taskfiles/sh-echo.sh`. `taskfiles/slowest-tests.sh` is
-  no task's own: `task test` calls it.
+  `sh-echo` and `sh-echo-test` over `taskfiles/sh-echo.sh`; `taskfiles/doc-tests.yml` the tasks
+  `doc-tests-check` and `doc-tests-check-test` over `taskfiles/doc-tests-check.sh`;
+  `taskfiles/tls-anchors.yml` the tasks `anchors-refresh` (fetches curl's `cacert.pem` and
+  its `.sha256` with curl, or takes `FILE=<pem> SHA256=<file>`, refuses a sha256 that
+  differs, writes `cacert.pem` and `SOURCE`; it reaches the network and is never a step of
+  `check`) and `anchors-age` (`DATE`, default today; fails when the list is older than 90
+  days) over `taskfiles/tls-anchors.sh`, POSIX sh; `taskfiles/tls-certs.yml` the tasks
+  `tls-certs-check` (over `taskfiles/tls-certs-check.sh`, a step of `check`) and
+  `tls-certs-slow` (a step of `slow`: makes the test certificates again into
+  `.out/tls-certs/` and compares every file with the committed ones; `WRITE=1` writes them);
+  `taskfiles/tls-flights.yml` the tasks
+  `tls-flights-check` (over `taskfiles/tls-flights-check.sh`, a step of `check`) and
+  `tls-flights-slow` (a step of `slow`: records the flights again and replays them; `WRITE=1`
+  writes them). `taskfiles/slowest-tests.sh` is no task's own: `task test` calls it. Two
+  tasks of the root `Taskfile.yml` run a script of their own, so that their tests run it with
+  `sh` and start no `task` per case: `generated-compare` runs
+  `taskfiles/generated-compare.sh <fresh tree>`, and `conform-totals` runs
+  `taskfiles/conform-totals.sh`.
 - Shell scripts, committed or written by a test: a value is printed with `printf '%s'`, never
   with `echo`. The forge's `sh` is dash, whose `echo` turns `\n`, `\\` and the other backslash
   sequences into control characters; this host's `/bin/sh` is bash, whose `echo` does not, so
@@ -192,7 +215,7 @@ above, and the list of standards itself was written from memory.
   `agent-pick-selects-option.yaml`, `document-refuses-disabled-control.yaml`,
   `document-refuses-hidden-control.yaml`, `agent-press-submits-post.yaml` and
   `agent-press-submission-ends-without-body.yaml`.
-- `spec/ess-inputs.yaml`: the list of every file above, and the pin `requires: ess 0.97.3`. A new
+- `spec/ess-inputs.yaml`: the list of every file above, and the pin `requires: ess 0.97.4`. A new
   file under `spec/` is not read until it is listed there.
 - `generated/rust/`: the workspace `ess generate synthesize` writes, its own `Cargo.toml`
   included, with the record `.ess-output/state.json`. Eight crates under `crates/`: `surf-types`,
@@ -202,20 +225,31 @@ above, and the list of standards itself was written from memory.
   `generated/rust/crates/*`, so a crate joins by creating its directory. `Cargo.lock` is
   committed. `task build` and `task test` pass `--locked`, so a new crate fails them until
   `cargo generate-lockfile --offline` has run.
-- `.config/nextest.toml`: the configuration of cargo-nextest, which `task test` runs: at least
-  0.9.143, a run that does not stop at the first failure, a test ended after 60 s, and the
-  JUnit report the task reads the ten slowest tests from.
+- `.config/nextest.toml`: the configuration of cargo-nextest, which `task test` and `task
+  test-tls` run: at least 0.9.143, a run that does not stop at the first failure, a test ended
+  after 60 s, and the JUnit report each task copies and reads the ten slowest tests from.
 - `.cargo/config.toml`: `debug = false` for the profiles `dev` and `test`, so no build of this
   repository carries debug info (the folder's rule: no debug info in test builds). A setting in
   `Cargo.toml` would not do: a cargo config file wins over the manifest, and one in a user's
   home may set `debug`. cargo reads it from the directory it runs in and its parents, so it
   holds for the root workspace, `conformance/` (run from the root with `--manifest-path`) and
-  `generated/rust/` alike.
+  `generated/rust/` alike. It also builds three packages at `opt-level = 1` in `dev`, which
+  `test` inherits (`story:test-step-holds-with-tls`, each taken by its rule: two builds per
+  level from `cargo clean -p`, the one at level 1 at most 30 s longer, and the counted tests'
+  summed time at most half): `surf-html`, the tokenizer and tree builder whose tests and the
+  session's large pages spent their time in checks of a build without optimisation (its
+  tests and nine of `surf-session`, 24.4 s and 25.7 s summed at level 0, 11.0 s and 7.5 s at
+  level 1); `surf-url` (12 tests, 3.4 s and 4.4 s, then 1.1 s and 1.2 s); `surf-page-text`
+  (its tests and `adversary_document_kept_pages_equal_a_fresh_rendering_at_every_edge`, 6.8 s
+  and 6.5 s, then 2.8 s and 2.6 s). `surf-page` was not taken: its summed time did not fall
+  (3.7 s and 3.7 s, then 3.9 s and 4.1 s). A fourth package override compiles ring at
+  `opt-level = 3` (`crates/tls`, below), so the file holds four.
 - Integration tests: each crate with a `tests/` directory, and `conformance/`, builds them into
   one test binary (`story:one-test-binary-per-crate`). Its `Cargo.toml` has `autotests = false`
   under `[package]` and one entry `[[test]]` with `name = "main"` and `path = "tests/main.rs"`;
-  `tests/main.rs` holds a head comment, `#![forbid(unsafe_code)]` (not in `crates/fetch` and
-  `crates/html`, whose counting allocators are `unsafe`; each stays in its module file) and one
+  `tests/main.rs` holds a head comment, `#![forbid(unsafe_code)]` (not in `crates/fetch`,
+  `crates/html` and `crates/tls`, whose counting allocators are `unsafe`; each stays in its
+  module file, and `crates/tls/tests/main.rs` holds `#![deny(unsafe_code)]`) and one
   sorted `mod <file>;` line per file of `tests/`, `mod common;` included. A file reaches the
   shared helpers with `use crate::common;`. A new test file gets its `mod` line in
   `tests/main.rs`: cargo builds no file that is not declared there. A module file may also lie
@@ -285,8 +319,9 @@ above, and the list of standards itself was written from memory.
     case of other spellings over a `TestNetwork` of the test, no real name resolved), `review1_fetch` 5,
     `review1_security_fetch` 13 and
     `review2_fetch_limits` 7. `adversary_redirect_memory` holds an `unsafe`, a counting
-    allocator, test only; since wave 10 `crates/html/tests/common/mod.rs` holds the only other
-    one, also a counting allocator of tests; no file under a `src/` holds any. Depends on
+    allocator, test only; since wave 10 `crates/html/tests/common/mod.rs` holds another, and
+    since `story:tls-lock-allow` `crates/tls/tests/tls/alloc.rs` the third, each a counting
+    allocator of tests; no file under a `src/` holds any. Depends on
     `surf-url`.
   - `crates/ports` (`surf-ports`): in-memory storage and version 4 identities for the generated
     components, one ports type per component. `AgentPorts<R = OsRandom>` stores `Session` and
@@ -616,6 +651,147 @@ above, and the list of standards itself was written from memory.
     `task check`; `.github/workflows/check.yml` fetches the full history and sets
     `HTML_BASE: origin/main`. 27 tests in `surf-html-conformance` (`check` 17,
     `entities_table` 2, `inventory` 4, `readers` 2, `tree_format` 2).
+  - `crates/tls-conformance` (`surf-tls-conformance`, test tooling, not shipped): runs the
+    x509-limbo cases of `crates/tls/tests/data/x509-limbo/` through `surf_tls::path::PathVerifier`
+    at each case's `validation_time` or at `LIMBO_TIME` (the limbo commit date), never at the
+    clock. `expected/limbo.txt` holds the counts (`x509-limbo: 5143 cases, 5089 run, 5060
+    passed`, per group, per RFC 5280 section) and one `open <id> <reason>` line per case that
+    runs and does not pass; `expected/limbo-kinds.txt` the kind each FAILURE case must end
+    with. `surf-tls-conformance --check --base <revision>` holds a run to them with the rules
+    of `surf-html-conformance --check`; the task `tls-x509-conformance` runs it (`TLS_BASE`,
+    default `HTML_BASE`) and is part of `task check`. A case not run is printed with its
+    reason (`client`, `crl`, `pedantic`, `policy`, `no-peer-name`). 16 tests (`check`).
+  - `crates/tls` (`surf-tls`): TLS 1.3 for `https:`, being built (`epic:tls-https`, design
+    note `docs/design/tls.md`). Its one dependency is ring 0.17.14, the one third-party crate in
+    what ships, and `src/crypto.rs`, the seam, is the one file that names it: AEAD seal and
+    open for AES-128-GCM, AES-256-GCM and ChaCha20-Poly1305, SHA-256 and SHA-384 one-shot and
+    running, HMAC, HKDF extract and expand, X25519 and P-256 agreement from a `Random` source,
+    the signature checks of nine schemes behind the trait `SignatureVerifier`, and `REFUSED`
+    (every MD5 or SHA-1 signature, RSA keys under 2048 bits), named before any verification.
+    `crypto.rs` names every ring item by its full path `ring::…` where it uses it: no `use`
+    or `extern crate` of ring, no alias of a ring item. No public item of it holds `ring`:
+    the signature of a `pub fn`, the whole of a `pub struct`, `pub enum`, `pub union`,
+    `pub trait`, `pub type`, `pub const`, `pub static` or `pub use`, a `pub` field, the header
+    of an `impl` block of a type that is not private to the file; `pub(crate)` counts as
+    public. `Secret`, `Digest`, `RunningHash`, `AeadKey`, `EphemeralKey`, `SigningKey` and
+    `Random` implement none of `PartialEq`, `PartialOrd` and `Hash`, which the test crate
+    asserts at compile time: a secret or a tag is compared with `constant_time_eq` (ring's
+    `hmac::verify`) or `hmac_verify`. `src/error.rs` holds the public `Error` of item 6 of the note. The feature
+    `test-tooling`, off by default and never in a release, adds signing from PKCS#8, ring's
+    fixed random sources (a fixed sequence dropped before every slice was drawn does not
+    panic), `TEST_TOOLING_MARKER`, `Anchors::from_list`, the module `handshake` with its trace
+    mode `handshake::trace::GivenClientHello`, and `Connection::set_write_sequence`; the
+    crate's dev-dependency on itself turns it on for its tests. `.cargo/config.toml` compiles
+    ring at `opt-level = 3` in the dev and test profiles (item 4 of the note).
+    Since `story:tls-record` `src/record.rs`, `src/key_schedule.rs` and `src/transcript.rs`
+    are the record layer over any `Read + Write` (keys given by the caller for each
+    direction, sequence numbers that refuse to wrap, handshake messages reassembled up to
+    65,535 bytes, the record rules of RFC 8446 section 5 each refused with its alert, at most
+    23,726,566 records under one AES-GCM write key), the key schedule for SHA-256 and SHA-384
+    and the transcript hash with `message_hash`, replaced once.
+    Since `story:tls-x509` it reads certificates: `src/der.rs` (a DER reader over a slice,
+    never past it and never allocating by a declared length; `DEPTH_MAX` 32,
+    `LENGTH_BYTES_MAX` 4), `src/x509/` (`Certificate::from_der`, version 3 only,
+    `SERIAL_BYTES_MAX` 20, `LeafKey`, and `TrustAnchor`, which a root the reader refuses still
+    gives as name and key when it holds no nameConstraints), `src/pem.rs` and the private
+    `src/base64.rs`, and `src/verify.rs` (the trait `ServerCertVerifier`,
+    `CertificateRejection`, `Check` with the twelve checks of item 7); `Error::Certificate`.
+    Since `story:tls-x509-path` `src/path.rs` and `src/names.rs`: `PathVerifier`, the one
+    implementation of the trait `ServerCertVerifier` of `src/verify.rs`, `verify(certificates,
+    host, now) -> Result<LeafKey, CertificateRejection>`, the certificates as the server sent
+    them, leaf first; path building within the bounds of item 9 of the note
+    (`INTERMEDIATES_MAX` 6, `SIGNATURE_CHECKS_MAX` 100, `CANDIDATES_MAX` 25,000,
+    `NAME_CONSTRAINT_COMPARISONS_MAX` 250,000); `add_root` makes an anchor of a root
+    certificate and keeps the certificate, so its own extensions are checked as an issuer's;
+    `names::host` is the reference identifier of a host. When no path is found and
+    certificates after the leaf were left out as unreadable, the refusal is `Unreadable`
+    naming the first of them and how many were left out (`left_out`).
+    Since `story:tls-anchors` it carries the root list of Mozilla as curl publishes it:
+    `src/anchors/cacert.pem`, unchanged, and its record `src/anchors/SOURCE` (address, date of
+    the list, sha256, count, licence MPL-2.0), both written only by `task anchors-refresh`.
+    `Anchors::bundled()` reads it once per process; `with_extra_pem` adds an extra file of at
+    most 32 KiB and 64 blocks, every one a CA certificate, or refuses it whole with an
+    `AnchorError` naming the block. One root of the list of 2026-11-05, e-Szigno TLS Root CA
+    2023 (P-521), gives no anchor: 117 anchors of 118 certificates.
+    Since `story:tls-handshake` `src/handshake/` (the client's state machine; private, public
+    under `test-tooling` for its trace mode) and `src/connection.rs`: `Connection` over any
+    `Read + Write`, given a host, a `&dyn ServerCertVerifier` and the time, runs the whole
+    handshake in `Connection::new` and calls the verifier once, for the server's Certificate
+    message. `crates/tls/tests/data/flights/`: recorded flights of `openssl s_server` on
+    127.0.0.1, pinned by `SOURCE` (sha256 per file) and `DIGEST` (sha256 of
+    `crates/tls/examples/record-flights.rs`); `task tls-flights-check` in `check`, `task
+    tls-flights-slow` in `slow` records them again and replays the new files (`WRITE=1`
+    writes them).
+    Tests: 465 in one binary, `tests/main.rs` declaring each module of `tests/tls/` with
+    `#[path]`, among them `alloc` (2: a counting allocator, per thread, in the form of
+    `crates/html/tests/common/mod.rs`, the third `unsafe` of the repository, test only; one
+    case of `seam`, `adversary_the_seam_allocates_at_most_its_output`, reads it: AEAD seal and
+    open of a 16 KiB record, a hash and an HKDF expand allocate nothing, an agreement at most
+    64 bytes) and `seam` (48: one test per Wycheproof file of `tests/data/wycheproof/`, 14 files
+    of commit `65ca494` with `LICENSE` and `SOURCE`; the 103 AES-192 vectors and the AES-GCM
+    nonces other than 96 bits skipped by name; the hashes, signing under `test-tooling`, the
+    refusals, the lengths and code points, the digests of the vendored files; and, read with
+    comments and strings left out, that no file under `src/` but `crypto.rs` holds `ring` as
+    an identifier); `record` (29: hostile records built in memory, one test per row of
+    `tests/tls/rfc8446-record-musts.txt`, which `record::musts_rows_name_tests` holds to its
+    tests), `rfc8448` (6: RFC 8448 sections 3, 5 and 7 replayed as the client and as the
+    server from the RFC's text in `tests/data/rfc8448/`, with `SOURCE`) and `adversary_layer`
+    (10); `der` (34), `pem` (13), `x509_parse` (30: the DER writer of the tests and the checks
+    of item 7, `check_names` read against the table of item 7), `limbo_parse` (7: the vendored
+    x509-limbo subset of `tests/data/x509-limbo/`, five files by case group, one test per
+    file, each read once; `parse-counts.txt`) and `adversary_x509` (24); `anchors` (40 tests) and `adversary_anchors` (9: the bundle against
+    `SOURCE`, the extra file and its refusals, the two tasks run with `sh` on local files under
+    `CARGO_TARGET_TMPDIR`); `names` (11), `path` (71) and `adversary_path` (11); `handshake`
+    (16, among them `handshake_through_the_path_verifier`, a whole handshake through
+    `PathVerifier` over a test root of `crates/tls-test-certs`), `handshake_hostile` (73),
+    `flights` (3) and `adversary_handshake` (8); `security_seams` (20: the security review of
+    the seams, its 13 cases and the 7 of its fixes: the host normalised once and refused before
+    the first byte, every anchor with its certificate held to item 9.4, refusal texts as cut
+    excerpts, CertificateVerify bound to `ok-wildcard`'s own P-256 key, each client flight one
+    write and one flush; and a compile-time
+    check that the four secret-holding types have a `Drop`). Depends on `ring`; its tests on
+    `surf-html-conformance` for its JSON reader.
+  - `crates/tls-test-certs` (`surf-tls-test-certs`): test tooling, not shipped: the test
+    certificates of `epic:tls-https` (`story:tls-test-certs`). A DER writer and a certificate
+    builder that sign through the seam of `surf-tls` (feature `test-tooling`) under a fixed
+    random source, so every certificate is reproducible byte for byte; the cases in
+    `src/cases.rs`; the private keys in `keys/` (PKCS#8 DER, made once by `openssl genpkey`,
+    `keys/SOURCE`, never regenerated: a certificate made from them is reproducible only while
+    they stay); `openssl/make.sh`, which makes `sha1`, `md5` and `rsa-1024` (ring cannot sign
+    them) with `openssl` 3.4 or later, with `openssl/SOURCE` (the version that made them and
+    the sha256 of each file). The output is committed in `certs/`: per case `chain.pem` (the
+    leaf first), `root.pem` (the one anchor of the case) and `leaf.pk8`, and `INDEX`, one
+    line per case (`<case> <host> 2026-11-22T00:00:00Z <outcome>`, the outcome `ok`,
+    `CertificateExpired`, `CertificateNameMismatch` or `CertificateNotTrusted <check>` with a
+    check of item 7), 33 cases; and `DIGEST`, the sha256 of `src/`, `keys/`, `openssl/` and
+    `Cargo.toml`. Tests read `certs/`; only `certs::reproducible` builds the cases, in memory,
+    and compares them with `certs/`. A change to `src/`, `keys/`, `openssl/` or `Cargo.toml`
+    fails `task tls-certs-check` until `task tls-certs-slow WRITE=1` has made `certs/`,
+    `openssl/SOURCE` and `certs/DIGEST` again. 18 tests (`adversary` 4, `certs` 6, `check`
+    8). Depends on `surf-tls`.
+  - `crates/tls-test-server` (`surf-tls-test-server`): test tooling, not shipped
+    (`story:tls-test-server`): a TLS 1.3 server on 127.0.0.1 port 0 that the client of
+    `surf-tls` is tested against end to end. The server side of RFC 8446 section 4 as far as
+    the tests need it, over the public `record`, `key_schedule` and `transcript` of `surf-tls`
+    and the signing of its `crypto` (feature `test-tooling`); the server's messages are
+    written in `src/wire.rs`, a connection runs in `src/conn.rs`, with the certificates and
+    keys of `crates/tls-test-certs/certs/`. `TestServer::start(Config)` serves one HTTP/1.1
+    response per connection from a map of paths, counts the connections it accepts
+    (`accepted`) and gives back what it saw on each (`wait_seen`, `Seen`: server name, ALPN,
+    suite, group, scheme, ticket, request line, the records after the handshake, the
+    alerts, how it ended). A client silent for `IDLE` (2 s) is closed. A drop stops every
+    connection and joins its threads; when the connection that wakes the accepting thread
+    cannot be made, it returns without joining. It refuses a TLS 1.3 hello whose compression
+    methods are not `[0]` (`illegal_parameter`), a session id over 32 bytes
+    (`decode_error`) and a `change_cipher_spec` RFC 8446 section 5 does not let it drop
+    (`unexpected_message`). Modes: `Normal` (one `NewSessionTicket` after its Finished),
+    `Tls12ReadsSupportedVersions`, `Tls12IgnoresSupportedVersions` and `SelectsTls12` (kinds
+    (a), (b) and (c) of item 7 of the design note), `StallAfterServerHello` (the ServerHello,
+    and the compatibility `change_cipher_spec` to a hello with a session id), `NeverAnswer`
+    (reads raw bytes, writes nothing), `OversizedCertificate`, `BadFinished` and
+    `NoCloseNotify`. The tests assert outcomes and counts, never an upper bound on wall
+    time; each prints its time. 46 tests (`adversary_server` 17, `handshake` 12, `hostile`
+    7, `hundred` 1, `modes` 9). Depends on `surf-tls` with `test-tooling`.
 - `view-tests/`: the Playwright tests of the live view's page (`@playwright/test` 1.65.0,
   Chromium's headless shell, a committed `package-lock.json`), each case with its own
   `surf-view-fixture`: 38 cases, 18 in `tests/first-page.spec.mjs`, 6 in
@@ -625,7 +801,7 @@ above, and the list of standards itself was written from memory.
   with the runner of `ess-conformance`. A Cargo workspace of its own, outside the root one, with
   its own committed `Cargo.lock` and its own `target/`. It depends on `surf`, `surf-ports` and the
   generated crates by path, and on `ess-conformance`, `ess-primitives` and `ess-domain` from
-  `https://github.com/beyond10x/ess` at tag `0.97.3`; its lock pins the third-party packages
+  `https://github.com/beyond10x/ess` at tag `0.97.4`; its lock pins the third-party packages
   those bring to the versions ESS's own lock holds at that tag. Nothing in the root workspace
   depends on it.
   - `src/target.rs`: `SurfTarget`, the hand-written adapter between the runner's named values
@@ -944,15 +1120,16 @@ the others were written to a scratch directory and not compiled:
 Run everything through the build pool: `slot task <name>`.
 
 On a machine whose installed `ess` is newer than the pin of `spec/ess-inputs.yaml`, set
-`ESS_TOOLCHAIN=0.97.3` for every task that runs `ess`: the tasks run it from the repository's
+`ESS_TOOLCHAIN=0.97.4` for every task that runs `ess`: the tasks run it from the repository's
 root, where the pin under `spec/` is not found, and `--strict-requires` then refuses the newer
 release (`ess toolchain which` says which release runs and why; seen with ess 0.97.1 on
-2026-11-21). The forge's workflow installs 0.97.3.
+2026-11-21). The forge's workflow installs 0.97.4.
 
 - `task check`: the gate. Validates (a warning fails it), synthesizes the suite and runs it
   against the interpreter built into `ess`, then against the Rust system (`conform-rust`),
   compares the two runs' suite and total (`conform-totals`), checks `generated/rust/` against
-  `spec/`, checks the root `Cargo.lock` for third-party packages (`lock-check`), then builds and
+  `spec/` (`generated-check`), checks `cli/surf-agent.yaml` against `spec/` (`cli`), checks
+  the root `Cargo.lock` for third-party packages (`lock-check`), then builds and
   tests the root workspace with warnings denied, checks the live view's event names
   (`view-stream-check`, after `test`), runs the page tests in a browser (`view-test`, after
   `view-stream-check`), and last holds the HTML conformance counts (`html-conformance`). Each
@@ -963,7 +1140,12 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `lock-check` and `test-layout-test` after `planning-only-test`. Since `story:agent-tasks`
   `test` runs `task build` first and sets `SURF_BIN_DIR` to `target/debug` for its tests, and
   `check` runs `agent-tasks-report` after `test`. Since 0.4.0 it runs `sh-echo` after
-  `agent-tasks-report` and ends with `sh-echo-test`.
+  `agent-tasks-report` and ends with `sh-echo-test`. Since the TLS stories it runs
+  `tls-certs-check` and `tls-flights-check` after `test-layout` and `tls-x509-conformance`
+  after `html-conformance`. The tests of the four TLS packages run in `test-tls`, right after
+  `test`, with a budget of 120 s of its own: the two steps' times are not added up. Since
+  `story:doc-tests-of-one-package` it runs `doc-tests-check` after `tls-flights-check`, before
+  `build`, and ends with `doc-tests-check-test`, after `sh-echo-test`.
 - `task check-runner`: the gate to run before a merge, `task check` as the forge's runner runs
   it (`taskfiles/check-runner.sh`; `slot task check-runner`). What it does differently from
   `task check`: it runs in `.out/runner/tree`, a clean export of `HEAD` (a clone sharing this
@@ -1040,6 +1222,22 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   pass (a comment that names `#![cfg(any())]`, `mod x;` inside a string literal and in a
   trailing comment, a fixture crate below `tests/data/`), and each of twenty-seven planted
   defects fails naming its path or module. `SCRIPT=<path>` runs a copy of the script.
+- `task tls-certs-check`: `sh taskfiles/tls-certs-check.sh crates/tls-test-certs`, no build and
+  no `openssl`: the sha256 of `src/`, `keys/`, `openssl/` and `Cargo.toml` of
+  `crates/tls-test-certs` against `certs/DIGEST`. It prints `tls-certs: <n> cases, certs/
+  matches its sources`, or `tls-certs: the sources changed since certs/ was generated; run task
+  tls-certs-slow` with the sources that differ, and fails.
+- `task slow`: the lane that makes the committed products of the TLS tests again and compares
+  them with the committed files; never a step of `check`. It runs `tls-certs-slow`, which
+  builds and runs `surf-tls-test-certs` and `openssl/make.sh` into `.out/tls-certs/` and
+  compares every file with `crates/tls-test-certs/certs/` byte for byte, then
+  `tls-flights-slow`, which records the flights against `openssl s_server` on 127.0.0.1 into
+  `.out/tls-flights/` and replays them with the tests `flights::` (outcomes, not bytes: the
+  server draws its own randomness). It needs `openssl` 3.4 or later on `PATH`; the committed
+  files were made with the version their `SOURCE` files name. No workflow runs it: the forge's
+  runner pins no `openssl`, and the certificates `make.sh` writes come from that tool. Run it
+  by hand after a change to `crates/tls-test-certs/` or to
+  `crates/tls/examples/record-flights.rs`.
 - `task view-test`: the page tests in a browser (`taskfiles/view-test.yml`). It builds
   `surf-agent`, `surf-session` and `surf-view-fixture`, installs `view-tests/` from its
   `package-lock.json` with `npm ci`, and runs `npx playwright test --workers=2` in
@@ -1069,21 +1267,56 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   script on a copy of `taskfiles/agent-tasks-model.sh` (`ADVERSARY_MODEL_SCRIPT`): the copy as
   it is passes, the copy whose wrapper's awk program is written with `echo` fails.
   `SCRIPT=<path>` runs a copy of the script.
+- `task doc-tests-check`: `sh taskfiles/doc-tests-check.sh .`. `task test` runs the doc tests of
+  `surf-ports` only, so in a doc comment outside `crates/ports` a code block is fenced and
+  marked `text` (` ```text ` or `~~~text`), which rustdoc does not run; a doc test belongs in
+  `crates/ports`. The script reads every `*.rs` under `crates/` and `generated/` but those under
+  `crates/ports/` (`target` and dot directories not entered), follows the fences of the `///`
+  and `//!` lines of each file (a line that starts, after the mark and blanks, with three
+  backticks or three tildes opens a block when none is open and closes it otherwise), and
+  fails, naming `<file>:<line>`, on an opening fence whose mark is not `text` and on a line
+  that holds `#[doc =` or `#![doc =`. Else it prints `doc-tests-check: no doc test outside
+  crates/ports`. A code block written by indentation in a doc comment is outside its reach:
+  rustdoc would run it and the gate would not, so write every code block with a fence. Not seen
+  either: a block doc comment (`/** */`, `/*! */`) and a doc attribute through `cfg_attr` or a
+  macro. It calls no cargo.
+- `task doc-tests-check-test`: that script on small trees under `.out/doc-tests-check-test/`,
+  thirteen cases, each compared on its exit status and the line printed: a fence without a
+  mark, `rust,no_run`, a fence of tildes without a mark, a `text` block followed by a block
+  without a mark (named at the second block's line), `#[doc = "…"]`, `#![doc = "…"]` and a
+  `//!` fence without a mark under `generated/` fail; fences marked `text` pass, and so does
+  each failing form under `crates/ports/`, a `target` directory, a dot directory and in a
+  `////` comment; a root without `crates/` and `generated/` exits 2. `SCRIPT=<path>` runs a
+  copy of the script.
 - `task release-smoke DIR=<unpacked archive>`: `taskfiles/release-smoke.sh` on a release
   archive, as the release workflow runs it (`docs/releasing.md`).
 - `task validate`, `task suite`, `task conform`: the specification steps on their own.
 - `task conform-rust`: the crate `conformance/`, warnings denied. Its tests, the planted-defect
   test included, then the suite against the Rust system: log `.out/conform-rust.log`, report
   `.out/conform-rust.json` (`ess-conformance-report/2`). Fails when any scenario failed, errored
-  or was unsupported. cargo fetches `github.com/beyond10x/ess` at tag `0.97.3` when its cache
+  or was unsupported. cargo fetches `github.com/beyond10x/ess` at tag `0.97.4` when its cache
   does not hold it. `task --summary conform-rust` says more.
 - `task conform-totals`: fail, printing both, when `.out/report.json` (interpreter) and
   `.out/conform-rust.json` (Rust) are of different suites by digest or differ in
   `counts.total`. Needs both runs first.
-- `task lock-check`: fail, naming each as `Cargo.lock: <name> <version> from <source>`, when the
-  root `Cargo.lock` holds a package with a `source` line, that is one from a registry or a git
-  repository. It does not read `conformance/Cargo.lock`. A path dependency outside the
-  repository has no `source` line and is not caught.
+- `task lock-check`: runs `sh taskfiles/lock-check.sh Cargo.lock taskfiles/lock-allow.txt`.
+  It fails, one line per finding, when the root `Cargo.lock` holds a package with a `source`
+  line (one from a registry or a git repository) that matches no line of
+  `taskfiles/lock-allow.txt` on name, version, source and checksum (`Cargo.lock: <name>
+  <version> from <source>: not on the allow-list`, with the listed line when the name is
+  listed); when a crate of this repository other than `surf-tls` depends on a listed package
+  (`Cargo.lock: <package> depends on <allowed>; only surf-tls may`); when a listed line is in
+  no package (`taskfiles/lock-allow.txt: <name> <version> is in no package of Cargo.lock`);
+  when a line of the lock is in no form cargo writes (`Cargo.lock:<n>: not in the form cargo
+  writes: <line>`); and when the lock is missing. The check refuses a lock that cargo would
+  accept in another spelling (keys without spaces, a comment after `[[package]]`, a
+  dependency array on one line, literal strings, `[metadata]`, `[[patch.unused]]`, the
+  `replace = "…"` line cargo writes for `[replace]`); it still reads such a lock for the
+  other findings, so its packages are named too. Else it prints `Cargo.lock: <n> package(s),
+  19 from outside this repository, each on the allow-list`. The list holds the 19 packages of ring 0.17.14
+  (`docs/design/tls.md`, item 2), one line `<name> <version> <source> <checksum>` each,
+  sorted; the script's head states the format. It does not read `conformance/Cargo.lock`. A
+  path dependency outside the repository has no `source` line and is not caught.
 - `task generate`: rewrite `generated/rust/` from `spec/`, in place. `ess` refuses, naming the
   file, when a file it wrote was edited since; delete that file or restore it from git, then run
   it again.
@@ -1092,21 +1325,28 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   and why. It is two tasks: `generated-fresh` generates `spec/` into
   `.out/generated-check/fresh` (with `fresh.log` and a copy of `spec/` as `fresh.spec`), once per
   run of `task`; `generated-compare FRESH=<tree>` compares and regenerates `.ess-output` in
-  place. The tests of `crates/surf/tests/*generated_check*.rs` read that one generation
-  (`crates/surf/tests/common/mod.rs`) and run `generated-compare` in their copies; they fail,
+  place, by `taskfiles/generated-compare.sh`. The tests of
+  `crates/surf/tests/*generated_check*.rs` read that one generation
+  (`crates/surf/tests/common/mod.rs`) and run that script with `sh` in their copies; they fail,
   saying so, when it is missing or was made from another `spec/`. `cargo test -p surf` needs
   `slot task generated-fresh` first; `task test` depends on it.
 - `task build`: `cargo build` of the root workspace with `--locked` and `RUSTFLAGS=-D warnings`.
-- `task test`: `cargo nextest run --workspace --locked` (cargo-nextest 0.9.143, installed as a
-  tool; no crate of the workspace changes) and `cargo test --doc --workspace --locked`, which
-  nextest does not run, with `RUSTFLAGS=-D warnings`. The ten slowest tests come from
+- `task test`: `cargo nextest run --workspace --locked` without the four TLS packages
+  (`--exclude` for each name of `TLS_PACKAGES` in `Taskfile.yml`: `surf-tls`,
+  `surf-tls-test-server`, `surf-tls-test-certs`, `surf-tls-conformance`, whose tests `task
+  test-tls` runs, below; cargo-nextest 0.9.143,
+  installed as a tool; no crate of the workspace changes) and `cargo test --doc -p surf-ports
+  --locked`, the doc tests of `surf-ports` only (the two of the workspace; `task
+  doc-tests-check` holds that no other package has one), which nextest does not run, with
+  `RUSTFLAGS=-D warnings`. The ten slowest tests come from
   `taskfiles/slowest-tests.sh <junit file> [count]` (POSIX sh, pipefail where the shell has
   it), held by `crates/surf/tests/slowest_tests.rs` on a report of 2,000 cases. Under
   `pipefail` no pipeline of a task ends its reader before its input (no `| head`, `grep -q` or
   `sed q` after a command that may write more than a pipe's 64 KiB): the reader stops, the
   writer dies of SIGPIPE and the task fails with 141 (2026-11-22, the list of 892 tests, 70,331
   bytes, under `sort -rn | head -n 10`). Logs `.out/test.log` and
-  `.out/test-doc.log`, JUnit report `target/nextest/default/junit.xml`. Two bounds, from the
+  `.out/test-doc.log`; nextest writes its JUnit report to `target/nextest/default/junit.xml`,
+  and the task copies it to `.out/test-junit.xml` and reads that copy. Two bounds, from the
   rules of the folder this repository is worked in: `.config/nextest.toml` ends a test still
   running after 60 s and counts it failed (`slow-timeout` with `terminate-after`), and the task
   fails when its two commands together run over 120 s of wall time (`TEST_BUDGET`, not counting
@@ -1117,6 +1357,18 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   test over the budget is. A test bounds a time only by a wait for the event with a limit at
   least 10 times the time it takes alone, and proves a cost by a count (such as
   `surf_page::attribute_visits()`), not by a wall time.
+- `task test-tls`: `cargo nextest run --locked` with `-p` for each of the four TLS packages, the
+  ones `task test` leaves out, under the same `.config/nextest.toml` and environment
+  (`RUSTFLAGS=-D warnings`, `SURF_BIN_DIR`). They hold no doc test. No other package depends on
+  them and only they set a feature of `surf-tls`, so its build and the one of `task test` share
+  every artifact. Log `.out/test-tls.log`, JUnit report copied to `.out/test-tls-junit.xml`. It
+  prints the ten slowest tests, nextest's `Summary` line, `N tests: P passed, F failed, I ignored
+  (cargo-nextest N)` and `tls test step: <s> s of its budget of 120 s`; it fails when a test
+  failed and when the nextest run took over 120 s (`TLS_TEST_BUDGET`), printing `tls test step:
+  <s> s, over its budget of 120 s`. The budget is its own and not shared with `task test`: on
+  2026-11-22, with the TLS packages inside it, `task test` ran 1,432 tests in 130 to 147 s at a
+  load average of 110 to 153 (over its budget on that line alone, every test passed), and on
+  `main`, which holds no TLS package, 76 to 82 s at the same load.
 - `task open`: every `UNMAPPED:` marker, in `spec/` and `cli/`.
 - `task cli`: check `cli/surf-agent.yaml` against `spec/` and write what `ess` reads from it into
   `.out/cli/` (`binding.json`, `help.txt`). `task test` depends on it.
@@ -1158,6 +1410,20 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `what-works.md`, `roadmap.md`, `how-it-is-built.md`, `principles.md`) in the same commit.
 
 ## The gate's numbers
+
+With `story:ess-0-97-4` (2026-11-22, on `afba5e3`), surf builds on ess 0.97.4: `surf v1 — 9
+file(s), 24 scenario(s), valid` and `169 scenario(s) (24 authored), 48 refusal(s)`, as with
+0.97.3. The suite is byte for byte the one 0.97.3 writes, digest
+`sha256:0aead5f74409f8c561f544df8056b9e6b6fe146c13ba2e5e3a3fbf0ffdea733c`, and the 48
+`refused:` lines are the same (the release names no breaking change). `generated/rust/` is
+what 0.97.4 generates, unchanged, 30 artifacts. Against the interpreter and against the Rust
+system: `169 scenarios: 169 passed, 0 failed, 0 error, 0 unsupported`; `conform-totals`: `the
+interpreter and the Rust system ran 169 scenario(s) each`; the planted defect `169 scenarios:
+133 passed, 36 failed, 0 error, 0 unsupported`, on both releases. The conformance crate's lock
+changed only in the eight `ess-*` packages of the tag; no third-party package moved. `ess
+verify conform synthesize` of `spec/` at `afba5e3`, five runs of each release in turn at a load
+average of 109 to 133: 0.97.3 3,574 to 4,430 ms (median 3,848 ms), 0.97.4 3,612 to 4,049 ms
+(median 3,706 ms), a difference inside the spread of either release's runs.
 
 After round 1 (2026-11-22, on the wave branch at `fe5c723`: the parser, text and document units
 and `story:agent-tasks` merged on `main` at `5415f27`), with ess 0.97.3: `169 scenario(s) (24
@@ -1276,11 +1542,19 @@ of the last of those runs: `review1_one_changed_byte_in_any_generated_file_fails
 (`surf-session` `adversary_events`) 7.2 s, `surfd_that_writes_nothing_exits_3_within_6_seconds`
 (`surf-agent` `start`) 5.1 s, `every_character_is_written_as_printable_ascii_and_reads_back`
 (`surf` `escape`) 4.8 s, then five tests of `surf-view` and `surf-session` between 2.3 and 3.7
-s. Three of them wait on purpose: `built` and `start` wait out a deadline of the product
-(`wire::REQUEST_TIMEOUT`, 10 s, and `wire::START_TIMEOUT`, 5 s, in `crates/agent/src/wire.rs`),
-and `adversary_events` waits out `surfd`'s answer timeout of 2 s, a server that answers after 4
-s and 5 s more, so that each step of the order it tests is 2 s or more apart from the next and
-the test does not depend on the runner's speed. In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
+s. Three of them waited on purpose. `built` waits out a deadline of the product, the read
+deadline of one request; since `story:session-request-timeout-option` it starts `surf-session`
+with `--request-timeout 1` and waits 1 s instead of the shipped `wire::REQUEST_TIMEOUT` of 10 s
+(`crates/agent/src/wire.rs`), which `the_shipped_read_deadline_is_10_seconds` asserts. Since
+`story:test-step-holds-with-tls` the other two wait less: `start`'s case, now
+`surfd_that_writes_nothing_exits_3_within_its_start_timeout`, runs `client::run` in the test
+process with a start timeout of 0.5 s instead of the binary's `wire::START_TIMEOUT` of 5 s (the
+stand-in `surfd` reads its control directory `c` beside `XDG_RUNTIME_DIR` when `STAND_IN_DIR`
+is unset); `adversary_events` gives `surfd` an answer timeout of 0.5 s and a server that answers
+1.5 s after it read the request, then sends `look` until the path shows the `go`, instead of a
+timeout of 2 s, a server that answered after 4 s and a sleep of 5 s. Each step of the order it
+tests is still 1 s or more apart from the next, so the test does not depend on the runner's
+speed. In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
 872 passed, 32 skipped`; the 32 are hosts outside ASCII, listed in
 `crates/url/tests/data/SKIPPED`. `view-stream-check`: `view-stream-check: 19 event name(s),
 each a message of the AsyncAPI projection`. `view-test`: `38 passed (15.8s)`; 12.9 s of it are

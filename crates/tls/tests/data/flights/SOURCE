@@ -1,0 +1,32 @@
+Recorded flights of an independent TLS 1.3 server, OpenSSL's s_server, against surf's
+client, on 127.0.0.1 (story tls-handshake, docs/design/tls.md item 10.5). Recorded by
+crates/tls/examples/record-flights.rs in the lane slow (task tls-flights-slow); the
+tests of tests/tls/flights.rs replay them and start no process.
+
+implementation: OpenSSL 3.6.5 29 Sep 2026 (Library: OpenSSL 3.6.5 29 Sep 2026)
+recorded: 2026-11-22
+recordings: 6
+
+A file holds: SFLT, the format version 1, the number of draws, each draw (32 bytes),
+the client's bytes and the server's bytes, each after a 4-byte length. The draws are
+the client's random, session id, x25519 key and secp256r1 key from /dev/urandom:
+secrets of a test session on loopback, used by nothing else. The server's private keys
+are those of crates/tls-test-certs/certs/ and are not in these files.
+
+command of each recording (PORT a free port of 127.0.0.1, WORK the work directory):
+
+aes128-x25519-ecdsa: openssl s_server -accept 127.0.0.1:PORT -naccept 1 -www -cert WORK/ok-ecdsa-p256-leaf.pem -cert_chain WORK/ok-ecdsa-p256-chain.pem -key crates/tls-test-certs/certs/ok-ecdsa-p256/leaf.pk8 -keyform DER -tls1_3 -ciphersuites TLS_AES_128_GCM_SHA256 -groups X25519
+aes256-x25519-ecdsa: openssl s_server -accept 127.0.0.1:PORT -naccept 1 -www -cert WORK/ok-ecdsa-p256-leaf.pem -cert_chain WORK/ok-ecdsa-p256-chain.pem -key crates/tls-test-certs/certs/ok-ecdsa-p256/leaf.pk8 -keyform DER -tls1_3 -ciphersuites TLS_AES_256_GCM_SHA384 -groups X25519
+chacha20-x25519-ecdsa: openssl s_server -accept 127.0.0.1:PORT -naccept 1 -www -cert WORK/ok-ecdsa-p256-leaf.pem -cert_chain WORK/ok-ecdsa-p256-chain.pem -key crates/tls-test-certs/certs/ok-ecdsa-p256/leaf.pk8 -keyform DER -tls1_3 -ciphersuites TLS_CHACHA20_POLY1305_SHA256 -groups X25519
+retry-secp256r1-ecdsa: openssl s_server -accept 127.0.0.1:PORT -naccept 1 -www -cert WORK/ok-ecdsa-p256-leaf.pem -cert_chain WORK/ok-ecdsa-p256-chain.pem -key crates/tls-test-certs/certs/ok-ecdsa-p256/leaf.pk8 -keyform DER -tls1_3 -ciphersuites TLS_AES_128_GCM_SHA256 -groups P-256
+aes128-x25519-rsa: openssl s_server -accept 127.0.0.1:PORT -naccept 1 -www -cert WORK/ok-rsa2048-leaf.pem -cert_chain WORK/ok-rsa2048-chain.pem -key crates/tls-test-certs/certs/ok-rsa2048/leaf.pk8 -keyform DER -tls1_3 -ciphersuites TLS_AES_128_GCM_SHA256 -groups X25519
+tls12-only: openssl s_server -accept 127.0.0.1:PORT -naccept 1 -www -cert WORK/ok-ecdsa-p256-leaf.pem -cert_chain WORK/ok-ecdsa-p256-chain.pem -key crates/tls-test-certs/certs/ok-ecdsa-p256/leaf.pk8 -keyform DER -tls1_2
+
+sha256 of each file, path relative to this directory:
+
+bcdd7cd2f4420aba2dacc987bddb978a119fe10b9f93afa5ebab6e5e2b406ac5  aes128-x25519-ecdsa.bin
+14d4874c64593739b803677d69cccc2ecf352b5a7db9151383cf5f919f8d18a0  aes256-x25519-ecdsa.bin
+6ee1688c9b04a4277f9896f17c6ca0d40d9e4181c85fa81d40dd8b0f4928146a  chacha20-x25519-ecdsa.bin
+aa25aa739ca5ecf4aefc1475ec3dccc52af45c4b802c8ba73bd8b6bb9e094ac1  retry-secp256r1-ecdsa.bin
+96df67441b3a7e02f1da7e703de35fee1902dd14b70df4b856f53e9cd78c3aaa  aes128-x25519-rsa.bin
+011d61fc4279f24a5202f1245e309fe3dd623f6fa9dbec8f898d430ff662847e  tls12-only.bin

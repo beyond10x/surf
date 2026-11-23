@@ -1,0 +1,68 @@
+bettertls::nameconstraints::* CertificateNotTrusted NameConstraint | CertificateNameMismatch
+cve::cve-2025-61727* CertificateNotTrusted NameConstraint
+invalid::invalid-issuer-key CertificateNotTrusted Unreadable
+pathlen::* CertificateNotTrusted PathTooLong
+pathological::intermediate-cycle-* CertificateNotTrusted NoPathToAnchor | CertificateNotTrusted BadSignature
+pathological::nc-dos-* CertificateNotTrusted NameConstraint | CertificateNameMismatch
+pathological::pathological-chain-* CertificateNotTrusted PathTooLong | CertificateNotTrusted CandidateLimit
+rfc5280::aki::critical-aki CertificateNotTrusted UnknownCriticalExtension
+rfc5280::aki::*-missing-aki CertificateNotTrusted MissingAuthorityKeyIdentifier
+rfc5280::ski::critical-ski CertificateNotTrusted UnknownCriticalExtension
+rfc5280::ski::*-missing-ski CertificateNotTrusted MissingSubjectKeyIdentifier
+rfc5280::eku::ee-wrong-eku CertificateNotTrusted NoServerAuth
+rfc5280::eku::ee-eku-empty CertificateNotTrusted Unreadable
+rfc5280::nc::invalid-ipv*-address CertificateNotTrusted NoPathToAnchor
+rfc5280::nc::nc-permits-invalid-ip-san CertificateNotTrusted Unreadable
+rfc5280::nc::permitted-*mismatch CertificateNotTrusted NameConstraint
+rfc5280::nc::permitted-dns-match-noncritical CertificateNotTrusted NameConstraintsNotCritical
+rfc5280::nc::excluded-* CertificateNotTrusted NameConstraint
+rfc5280::nc::invalid-dnsname-* CertificateNotTrusted NameConstraint
+rfc5280::nc::not-allowed-in-ee-* CertificateNotTrusted NameConstraint
+rfc5280::nc::intermediate-with-san-rejected-by-* CertificateNotTrusted NameConstraint
+rfc5280::nc::restrictive-permits-in-intermediates-* CertificateNotTrusted NameConstraint
+rfc5280::nc::nc-permits-invalid-dns-san CertificateNotTrusted NameConstraint
+rfc5280::nc::nc-permits-email-* CertificateNotTrusted NameConstraint
+rfc5280::nc::nc-permits-uri-* CertificateNotTrusted NameConstraint
+rfc5280::nc::nc-forbids-* CertificateNotTrusted NameConstraint
+rfc5280::san::malformed CertificateNotTrusted Unreadable
+rfc5280::san::noncritical-with-empty-subject CertificateNotTrusted Unreadable
+rfc5280::san::underscore-dns CertificateNameMismatch
+rfc5280::san::ip-in-dns CertificateNameMismatch
+rfc5280::validity::* CertificateExpired
+rfc5280::ee-empty-issuer CertificateNotTrusted NoPathToAnchor
+rfc5280::ca-empty-subject CertificateNotTrusted IssuerNotCa
+rfc5280::unknown-critical-extension-* CertificateNotTrusted UnknownCriticalExtension
+rfc5280::chain-untrusted-root CertificateNotTrusted NoPathToAnchor
+rfc5280::intermediate-ca-without-ca-bit CertificateNotTrusted IssuerNotCa
+rfc5280::intermediate-ca-missing-basic-constraints CertificateNotTrusted NoPathToAnchor
+rfc5280::root-missing-basic-constraints CertificateNotTrusted IssuerNotCa
+rfc5280::root-non-critical-basic-constraints CertificateNotTrusted IssuerNotCa
+rfc5280::root-inconsistent-ca-extensions CertificateNotTrusted Unreadable
+rfc5280::ica-ku-keycertsign CertificateNotTrusted NoPathToAnchor
+rfc5280::leaf-ku-keycertsign CertificateNotTrusted KeyCertSignWithoutCa
+rfc5280::ee-critical-aia-invalid CertificateNotTrusted UnknownCriticalExtension
+rfc5280::duplicate-extensions CertificateNotTrusted Unreadable
+rfc5280::mismatching-signature-algorithm CertificateNotTrusted Unreadable
+rfc5280::ca-as-leaf-wrong-san CertificateNameMismatch
+rfc9881::ml-dsa-44-bad-signature CertificateNotTrusted BadSignature
+webpki::aki::root-with-aki-missing-keyidentifier CertificateNotTrusted AuthorityKeyIdentifierWithoutKeyIdentifier
+webpki::aki::root-with-aki-a* CertificateNotTrusted Unreadable
+webpki::aki::root-with-aki-ski-mismatch CertificateNotTrusted Unreadable
+webpki::cn::* CertificateNotTrusted CommonNameNotInSubjectAltName
+webpki::nc::intermediate-permitted-excluded-subtrees-both-* CertificateNotTrusted Unreadable
+webpki::san::mismatch-* CertificateNameMismatch
+webpki::san::wildcard-* CertificateNameMismatch
+webpki::san::no-san CertificateNameMismatch
+webpki::san::san-wildcard-only* CertificateNameMismatch
+webpki::san::unicode-emoji-san CertificateNotTrusted Unreadable
+webpki::san::san-critical-with-nonempty-subject CertificateNotTrusted SubjectAltNameCriticalWithSubject
+webpki::explicit-curve CertificateNotTrusted Unreadable
+webpki::cryptographydotio-chain-missing-intermediate CertificateNotTrusted NoPathToAnchor
+webpki::malformed-aia CertificateNotTrusted MalformedAuthorityInfoAccess
+webpki::forbidden-p192-root CertificateNotTrusted NoPathToAnchor
+webpki::forbidden-dsa-root CertificateNotTrusted Unreadable
+webpki::forbidden-weak-rsa-key-in-root CertificateNotTrusted WeakKey
+webpki::forbidden-rsa-not-divisible-by-8-in-root CertificateNotTrusted RsaModulusNotWholeOctets
+webpki::v1-cert CertificateNotTrusted Unreadable
+webpki::ee-basicconstraints-ca CertificateNotTrusted CaAsEndEntity
+webpki::ca-as-leaf CertificateNotTrusted KeyUsage

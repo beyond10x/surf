@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T19:52:19Z",
+  "actor": "human:operator",
+  "artifact": "story:slow-tests-at-small-bounds",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the coordinator's reading of story:test-step-holds-with-tls at 4ce3d2c and the scope critic's third read",
+    "reference": "superseded: four Change bullets taken by story:test-step-holds-with-tls, the conformance one by story:conformance-step-within-budget, the page-test one by story:page-test-step-within-budget; its acceptance 1 to 6 map to those three"
+  }
+}

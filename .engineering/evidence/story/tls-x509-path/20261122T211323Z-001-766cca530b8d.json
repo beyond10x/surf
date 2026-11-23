@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T21:13:23Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-x509-path",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "closing check of the acceptance against the tree at 6cff209 by the coordinating agent's sub-agent: each statement mapped to the test or run that shows it",
+    "reference": "12 statements (lead, 1 to 10, budget); not shown: the kind on the line of a wrongly accepted case (6), the times of 4 and 5 (printed); listed in As built"
+  }
+}

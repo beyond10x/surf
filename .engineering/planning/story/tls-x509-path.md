@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-x509-path
 kind: story
-status: active
+status: implemented
 title: surf-tls validates a server certificate path and its host name, held to x509-limbo in the gate
 summary: RFC 5280 path building and validation with bounds, RFC 9525 name checks; every negative case ends with its reason; tls-x509-conformance holds the limbo counts as html-conformance holds the parser counts.
 relations:
@@ -23,10 +23,11 @@ scope:
   path: crates/tls/tests/tls/path.rs
 - confidence: cited
   path: taskfiles/tls-x509-conformance.yml
-revision: 12
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:26Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:27Z", actor: "human:operator", revision: 11, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-22T21:13:23Z", actor: "human:operator", revision: 14, decided_on: {"recorded":{"test_result":1,"verification":3}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -160,3 +161,40 @@ Revocation (CRL, OCSP), certificate transparency, client certificates, the ancho
 `crates/tls/src/lib.rs` and `tests/main.rs` in a wave of more than one unit, the root
 `Taskfile.yml`, `Cargo.lock`, `AGENTS.md`. Beside it run `story:tls-anchors` and
 `story:tls-handshake` (other files of `crates/tls`).
+
+## As built
+
+What differs from the text above, as of 6cff209 (branch `wave/tls-1`):
+
+- `PathVerifier` is the one implementation of `ServerCertVerifier::verify(&self, certificates:
+  &[&[u8]], host: &str, now: Time) -> Result<LeafKey, CertificateRejection>`
+  (`crates/tls/src/verify.rs:18-27`, `crates/tls/src/path.rs:311-319`); it is generic over its
+  `SignatureVerifier` and has `add_root`, `verify_counting`, `with_limits` and `with_verifier`
+  (`path.rs:189-237`).
+- Every anchor that holds its certificate is checked as an issuer (validity, keyCertSign when
+  keyUsage is present, CA) however it was made: from the bundled list
+  (`crates/tls/src/anchors/mod.rs:165`), from `with_extra_pem` (`:226`) or by `add_root`
+  (`path.rs:567-577`; 7f0ad05, the review of the seams). A bundled root the reader refuses
+  would be a name-and-key anchor without a certificate and get none of these checks
+  (`crates/tls/src/x509/anchor.rs:79-94`); none is today.
+- `names` normalises the host once, one trailing dot removed and ASCII lowered
+  (`crates/tls/src/names.rs:71-73`), and `connection_host` (`:149-161`) refuses a host that is
+  neither an IP address nor a DNS name in the preferred name syntax, a name over 253 bytes
+  among them (`:196`), with `HostRefusal` (bdbcd4f, ee6c101).
+- Acceptance 5: the case `candidate-limit` ends at the signature-check bound
+  (`Limit::SignatureChecks { bound: 100 }`); 50 certificates cannot reach `CANDIDATES_MAX`
+  25,000 (`path.rs:121`). `path::the_candidate_limit_is_reached` reaches that bound on a chain
+  built in the test.
+- `limbo-kinds.txt` allows alternatives separated by `|` and kinds outside the twelve
+  (`MissingAuthorityKeyIdentifier`, `MissingSubjectKeyIdentifier`,
+  `NameConstraintsNotCritical`).
+
+Acceptance 8: the gate on 6cff209 printed `tls-x509-conformance: 3 s` and
+`x509-limbo: 5143 cases, 5089 run, 5060 passed`.
+
+Not shown by a test or a run:
+
+- Acceptance 6, "listed by id and kind": a case limbo expects to fail that passes is an
+  `open <id> accepted: <reason>` line of `crates/tls-conformance/expected/limbo.txt`; its kind
+  is not on that line. A kind column on those lines would show it.
+- Acceptance 4 and 5, the times: printed, not asserted.

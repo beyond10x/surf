@@ -1,5 +1,6 @@
-//! `taskfiles/slowest-tests.sh`, which task test runs on its JUnit report: a report whose list
-//! is larger than a pipe's buffer prints its ten slowest tests and exits 0. Before, the task's
+//! `taskfiles/slowest-tests.sh`, which task test and task test-tls run on their JUnit reports: a
+//! report whose list is larger than a pipe's buffer prints its ten slowest tests and exits 0.
+//! Before, the task's
 //! pipeline ended `sort -rn | head -n 10`, and under pipefail `sort` died of SIGPIPE once `head`
 //! had its ten lines: the task failed with 141 although every test passed (2026-11-22, 892
 //! tests, a list of 70,331 bytes). The script sets pipefail where its shell has it. Each case
@@ -115,8 +116,13 @@ fn no_sort_feeds_a_head() {
         }
     }
     let task = fs::read_to_string(repository().join("Taskfile.yml")).expect("read Taskfile.yml");
-    assert!(
-        task.contains("sh taskfiles/slowest-tests.sh \"$junit\" 10"),
-        "task test no longer runs taskfiles/slowest-tests.sh"
+    // task test and task test-tls each print their ten slowest tests, each from its own copy.
+    assert_eq!(
+        task.matches("sh taskfiles/slowest-tests.sh \"$junit\" 10").count(),
+        2,
+        "task test and task test-tls no longer each run taskfiles/slowest-tests.sh"
     );
+    for copy in ["junit=.out/test-junit.xml", "junit=.out/test-tls-junit.xml"] {
+        assert!(task.contains(copy), "Taskfile.yml no longer reads {copy}");
+    }
 }
