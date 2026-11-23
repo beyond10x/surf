@@ -160,7 +160,8 @@ pub enum RefusalReason {
     /// `unsupported-scheme`: the link's resolved target has a scheme surf does not fetch.
     UnsupportedScheme,
     /// `forbidden-destination`: the page came from a public address and the link's target is
-    /// a local one.
+    /// a local one; for `back` and `forward`, the entry was reached so from a public page and
+    /// its name now resolves to a local address.
     ForbiddenDestination,
     /// `disabled`: the control, or the option picked, is disabled.
     Disabled,

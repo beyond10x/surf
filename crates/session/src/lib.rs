@@ -174,11 +174,19 @@
 //! with no event, no request and the path as it was: `closed`; `at-start` or `at-end` when there
 //! is no such row; `post-entry` when its `method` is `Post`, an entry the navigator would not
 //! load again (`TraverseHistory`), since surf has no cache. Otherwise the session sends `GoBack`
-//! or `GoForward` as the holder, records `<n> back` or `<n> forward` and runs the system: the
-//! navigator loads the entry's address with `GET`, and the answer is `did back` or `did
-//! forward` with the page it committed, or `page failed`, the tab's current entry left where it
-//! was. The checks of a target ("Following a link") do not apply: an entry is made only by a
-//! committed navigation, and a refused target commits none (`story:agent-back-forward`).
+//! or `GoForward` as the holder and runs the system: the navigator loads the entry's address
+//! with `GET`.
+//!
+//! The session's own checks of a target ("Following a link") are not made again: they read the
+//! address text, and an entry's address passed them when the entry was made. What a name
+//! resolves to is not settled by that, so the fetch's rule is applied again (decision D279): the
+//! run goes out under the rule of the request that made the entry, the rule of a page that
+//! counts as public for an entry a `follow` or a `press` made from such a page, the rule of `go`
+//! for one `go` made, whatever page the session is on. A first request that rule refuses is
+//! answered `did refused forbidden-destination`, status 1, with nothing recorded and the page
+//! and the path as they were ([`Kept`]), as for a `follow`. Otherwise the session records `<n>
+//! back` or `<n> forward`, and the answer is `did back` or `did forward` with the page it
+//! committed, or `page failed`, the tab's current entry left where it was.
 //!
 //! # Refusals
 //!
@@ -687,6 +695,12 @@ pub struct Session<T> {
     /// The state before a `follow` or a `press` whose first request the fetch refused, kept
     /// while that navigation is the session's last ([`Session::run_from`]).
     kept: Option<Kept>,
+    /// The navigations whose first request went out under the rule of a page that counts as
+    /// public: a `follow` or a `press` from such a page ([`Session::run_from`]). An entry of the
+    /// history has the identity of the navigation that made it, so `back` and `forward` fetch
+    /// it again under the same rule (decision D279); an entry made by `go` is not here. A
+    /// traversal under the rule is noted too; it makes no entry, so it is never looked up.
+    from_public: Vec<RequestId>,
 }
 
 /// What the session showed before a navigation whose first request the fetch refused
@@ -741,6 +755,7 @@ impl<T: Transport> Session<T> {
             rendered: None,
             links: None,
             kept: None,
+            from_public: Vec::new(),
         })
     }
 
@@ -1374,9 +1389,10 @@ impl<T: Transport> Session<T> {
     /// on a closed session; otherwise the history of the session's tab is read from the
     /// navigator's view `Navigations` before anything is issued ("Back and forward" above): no
     /// entry at `step` is refused `at-start` or `at-end`, an entry made by `POST` `post-entry`.
-    /// Otherwise `GoBack` or `GoForward` as the holder, and when it is `requested`, the run and
-    /// `RecordAction` `back` or `forward`. No check of a target applies: the entry is one of the
-    /// session's own history, which no refused target entered (`story:agent-back-forward`).
+    /// Otherwise `GoBack` or `GoForward` as the holder, and when it is `requested`, the run
+    /// ([`Session::run_from`]) under the rule of the request that made the entry (decision
+    /// D279): `forbidden-destination` when the fetch refused it, otherwise `RecordAction` `back`
+    /// or `forward`.
     fn traverse(&mut self, step: Standing) -> Result<Reply, Stop> {
         let (command, at_edge, word) = match step {
             Standing::Forward => (ActionCommand::Forward, RefusalReason::AtEnd, "forward"),
@@ -1385,11 +1401,11 @@ impl<T: Transport> Session<T> {
         if self.is_closed() {
             return Ok(self.with_state(RefusalReason::Closed));
         }
-        match self.entry_at(step)? {
+        let from_public = match self.entry_at(step)? {
             None => return Ok(self.with_state(at_edge)),
-            Some(Method::Post) => return Ok(self.with_state(RefusalReason::PostEntry)),
-            Some(Method::Get) => {}
-        }
+            Some((_, Method::Post)) => return Ok(self.with_state(RefusalReason::PostEntry)),
+            Some((entry, Method::Get)) => self.from_public.contains(&entry),
+        };
         let not_holder = Stop::Unexpected("not-holder to the holder");
         let no_session = Stop::Unexpected("no such session to the open session");
         let session_id = self.session_id.clone();
@@ -1414,6 +1430,9 @@ impl<T: Transport> Session<T> {
         if closed {
             return Ok(self.with_state(RefusalReason::Closed));
         }
+        if self.run_from(from_public)? {
+            return Ok(self.with_state(RefusalReason::ForbiddenDestination));
+        }
         self.record_and_run(command, None, None)?;
         Ok(self.state_reply(
             0,
@@ -1424,9 +1443,9 @@ impl<T: Transport> Session<T> {
         ))
     }
 
-    /// The method of the entry at `step` in the history of the session's tab, from the
-    /// navigator's view `Navigations`; `None` when the tab has no entry there.
-    fn entry_at(&self, step: Standing) -> Result<Option<Method>, Stop> {
+    /// The identity and the method of the entry at `step` in the history of the session's tab,
+    /// from the navigator's view `Navigations`; `None` when the tab has no entry there.
+    fn entry_at(&self, step: Standing) -> Result<Option<(RequestId, Method)>, Stop> {
         let system = self.browser.system();
         let Some(tab_id) = system
             .agent
@@ -1442,7 +1461,7 @@ impl<T: Transport> Session<T> {
             .navigations()?
             .into_iter()
             .find(|row| row.tab_id == tab_id && row.standing == Some(step))
-            .map(|row| row.method))
+            .map(|row| (row.navigation_id, row.method)))
     }
 
     /// Status 0 with `did <command> "<handle>"` and the state.
@@ -1691,11 +1710,13 @@ impl<T: Transport> Session<T> {
         (kept.refused == last).then_some(kept)
     }
 
-    /// The run of a `follow` or a `press` before anything is recorded, with the session's
-    /// transport told whether the first request comes from a page that counts as public
-    /// ("Following a link" above): `true` when the fetch refused that request
-    /// `ForbiddenDestination` before any connection. Then the state before the run is kept
-    /// ([`Kept`]) and the caller records nothing, as for a refusal of its own checks.
+    /// The run of a `follow`, a `press`, a `back` or a `forward` before anything is recorded,
+    /// with the session's transport told whether the first request goes out under the rule of a
+    /// page that counts as public ("Following a link" above, "Back and forward"): `true` when the
+    /// fetch refused that request `ForbiddenDestination` before any connection. Then the state
+    /// before the run is kept ([`Kept`]) and the caller records nothing, as for a refusal of its
+    /// own checks. Otherwise, under that rule, the navigation it started is noted in
+    /// [`Session::from_public`], so that the entry it makes keeps the rule.
     fn run_from(&mut self, from_public: bool) -> Result<bool, Stop> {
         let (navigation, navigation_state) = self.navigation().unwrap_or((None, None));
         let row = self.row();
@@ -1727,6 +1748,21 @@ impl<T: Transport> Session<T> {
                 navigation_state,
                 row,
             });
+        } else if from_public
+            && let Some(started) = self
+                .browser
+                .system()
+                .agent
+                .sessions()
+                .ok()
+                .and_then(|rows| {
+                    rows.into_iter()
+                        .find(|row| row.session_id == self.session_id)
+                })
+                .and_then(|row| row.navigation_id)
+            && !self.from_public.contains(&started)
+        {
+            self.from_public.push(started);
         }
         Ok(refused)
     }

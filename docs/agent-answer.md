@@ -184,7 +184,9 @@ refusal of the action, with a reason from this list:
 | `post-entry` | `back` or `forward`: the page it would go to is the answer to a form `POST`, which surf does not send again | 1 |
 
 `address-too-long`, `unsupported-scheme` and `forbidden-destination` are given for the address a
-`press` would submit to as for a link's target.
+`press` would submit to as for a link's target. `back` and `forward` are refused
+`forbidden-destination` for a page a `follow` or a `press` reached from a public page, when its
+name now resolves to a local address (section "Now", `back` and `forward`).
 
 A reason not in the list is refused by the parser. A story that adds a reason adds it here, to
 `RefusalReason` and to a test.
@@ -316,9 +318,17 @@ the session's place in its history where it was; the handles start at 1 again. B
 request, with the page left as it was, each is refused, status 1: `at-start` for `back` on the
 first page, `at-end` for `forward` on the last, and `post-entry` for a page that is the answer
 to a form `POST`. A page a `POST` was redirected to (301, 302, 303) was fetched with `GET` and
-is gone back to like any other. A `go`, `follow` or `press` after `back` drops the pages after the current one. The
-checks of a target (`address-too-long`, `unsupported-scheme`, `forbidden-destination`) do not
-apply: a page of the history was loaded once, and a refused target never entered it.
+is gone back to like any other. A `go`, `follow` or `press` after `back` that loads a page
+drops the pages after the current one; one that fails or is refused drops none.
+
+The session's own checks of a target (`address-too-long`, `unsupported-scheme`, the address
+text of `forbidden-destination`) are not made again: a page of the history was loaded once, at
+an address that passed them. What a name resolves to can change, though. A page a `follow` or
+a `press` reached from a page loaded from a public address is fetched again under the same
+rule: when its name now resolves to a local address, `back` or `forward` is refused
+`forbidden-destination`, status 1, before any connection, with the page and the path as they
+were. A page the agent typed with `go` is fetched again as `go` fetches it, from whatever page
+the session is on.
 
 The answer of a closed session has no `now` block.
 
