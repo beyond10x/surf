@@ -656,7 +656,11 @@ above, and the list of standards itself was written from memory.
       `(empty)`, `(set)`, or the length of the newest `FillRequested` entry of its handle since
       its document loaded (`12 bytes`), never its value; text a server sends back is page
       text, so a page that prints a posted password shows it in the `+ text` lines, as the
-      agent's own answer does. Without a `changed` block the panel reads `no changed block`;
+      agent's own answer does. A finding that exists only on a page written for the test (a
+      fixture page, an adversary's page) and has no observed case on a real site is recorded
+      in the document or the story that states the limit. It is not put to the operator as a
+      decision. Decided 2026-11-23 on the adversary's page that printed a typed test value
+      back (D326). Without a `changed` block the panel reads `no changed block`;
       it has no `+` or `-` element lines (D2 of `docs/plan/agent-plan-revision-1.md`). No
       target or action is a link.
       A value from a session is set
@@ -1517,6 +1521,18 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   taskfiles/view-test.yml view-test-setup`, then `npx --prefix view-tests playwright install
   --only-shell chromium`. A change to what a `go` records is checked with `task view-test`
   too, because the crate tests do not run the page tests.
+- `task page-step-cpu`: the page step's CPU seconds (`taskfiles/page-step-cpu.yml`,
+  `story:page-step-holds-under-load`), not a step of `check`. It builds and sets up as `task
+  view-test` does, then `taskfiles/page-step-cpu.sh` runs the same Playwright call in the same
+  directory under `perf stat -e task-clock` as one slot job and prints the load before and
+  after, the ten slowest tests, the step's line and `page step cpu: T s`, and writes T to
+  `.out/page-step.cpu`. The counter is inherited on fork, not on wait, so it counts every
+  process under the call, also the ones nobody reaps (Chromium's), user and kernel time;
+  `time` saw about 57 % of it. A user scope of systemd (`systemd-run --user --scope`) read 11
+  to 12 % less in three runs of the same call (the kernel accounts interrupt time apart,
+  and the step's loopback traffic is softirq work), and it would take the call out of the
+  pool's cgroup and its limit of 16 CPUs. Compare commits by these CPU seconds: the wall
+  time follows the host's load. Needs `perf` and `kernel.perf_event_paranoid` of 2 or less.
 - `task view-stream-check`: the event names of `docs/view-stream.md` against the AsyncAPI
   projection of `spec/` (`taskfiles/view-stream-check.yml`). It fails, naming each, for a name
   that is no message of the projection; a new event whose name nobody adds to the document
@@ -2024,6 +2040,38 @@ to 82.03; `adversary: a refused token on the stream stops the page` took 3.5, 3.
 `an entry over 1 MiB` took 10.9, 11.9 and 27.2 s, over the story's 20 s in the third run (and
 34.2 s in a run beside a planted test of 70 s at a load of about 100): the story landed without
 that bound (D317), and `story:view-large-entry-test-time` takes the test's time.
+`story:page-step-holds-under-load` measured the step in CPU seconds. On the base, `03f25c9`
+with 71 tests, three runs took 115.6, 161.2 and 163.7 s at loads of 97.85 to 106.78, 106.78
+to 121.49 and 121.49 to 105.58. Their CPU seconds (`perf record -s -e task-clock`, the
+per-thread counts summed) were 68.9, 78.4 and 76.8, median 76.8. In the third run:
+- Chromium's renderers 28.8 s (one per test, a median of 0.31 s);
+- the Playwright workers and runner 21.9 s;
+- Chromium's browser, GPU, zygote and utility processes 16.8 s;
+- `surf-view-fixture` 7.9 s, of it 4.6 s in one run reading `/proc/<pid>/environ` of every
+  process of the host at its exit;
+- `surf-session` 1.0 s and `surf-agent` 0.3 s.
+Each cut below is a commit; the CPU seconds are from `task page-step-cpu`, one run on each
+side:
+- (a) `an entry over 1 MiB` goes once instead of three times. Its size and the four actions
+  of three goes are asserted in `crates/session/tests/view.rs`
+  (`large_entry_one_go_makes_an_answer_over_1_mib_and_three_make_four_actions`, over the real
+  session, because the stand-in of `crates/surfd/tests` answers a `go` without a page line or
+  a path). 71.6 to 66.9 s, at loads of 107.70 to 100.63 and 110.36 to 95.17.
+- (b) the fixture kills its descendants (`/proc/<pid>/task/<tid>/children`) and scans
+  `environ` only on a kernel without those files. 66.9 to 61.4 s (83.10 to 99.01).
+- (c) the record of `fixture.mjs` asks a request's headers and body only when a test reads
+  them, found by a run with `NODE_OPTIONS=--cpu-prof`: its listener was 2.2 s of the workers'
+  44 s. 61.4 to 58.9 s (78.84 to 92.53).
+- (d) not kept:
+  - `--disable-gpu`: 56.9 and 58.4 s against 58.9 and 58.2 s without it, under the 2 s a flag
+    has to save;
+  - `--renderer-process-limit=1`: 62.2 s, no saving.
+After the cuts, on `c301a84`, three consecutive runs took 73.2, 64.0 and 70.6 s at loads of
+78.51 to 94.31, 94.31 to 77.68 and 77.68 to 83.70. All 71 tests of the base passed in each run.
+The CPU seconds were 55.5, 55.6 and 56.5 s, 72 to 74 % of the base median: over the story's
+bound of 53.8 s and its target of 46.1 s. A `perf record` run then, at load 80, gave renderers
+22.9 s, workers 14.0 s, browser 7.7 s, GPU 3.8 s and the fixture 1.7 s. The rest is about 1 CPU
+second per test of a fresh page (a renderer of 0.18 to 0.3 s) and Playwright's own work.
 `html-conformance`, the last
 step of `check`: `html-conformance: 9107 cases, 9095 run, 8428 passed` (82 encoding cases,
 7,046 tokenizer cases and 1,300 tree construction cases), with `tag markup 1979/1979/1979`,
