@@ -23,15 +23,26 @@ set -u
 budget=${PAGE_BUDGET:-120}
 junit=.out/view-test/junit.xml
 counts=$(pwd)/.out/page-step.perf.csv
+times=$(pwd)/.out/page-step.times
 mkdir -p .out/view-test
-rm -f "$junit" "$counts" .out/page-step.cpu .out/page-step.seconds
-echo "load before: $(cut -d ' ' -f 1 /proc/loadavg)"
-start=$(date +%s%N)
+rm -f "$junit" "$counts" "$times" .out/page-step.cpu .out/page-step.seconds
 tests=0
-(cd view-tests && slot --timeout 15m perf stat -e task-clock -x , -o "$counts" -- \
-  ./node_modules/.bin/playwright test --workers=2) || tests=1
-elapsed=$(( ($(date +%s%N) - start) / 1000000 ))
-echo "load after: $(cut -d ' ' -f 1 /proc/loadavg)"
+# The load and the start and end are read inside the slot job, so the time the job waited in
+# the pool's queue is neither in the step's seconds nor between the two loads.
+(cd view-tests && slot --timeout 15m sh -c '
+  echo "load before: $(cut -d " " -f 1 /proc/loadavg)"
+  date +%s%N > "$2"
+  perf stat -e task-clock -x , -o "$1" -- ./node_modules/.bin/playwright test --workers=2
+  status=$?
+  date +%s%N >> "$2"
+  echo "load after: $(cut -d " " -f 1 /proc/loadavg)"
+  exit "$status"
+' page-step "$counts" "$times") || tests=1
+if [ "$(wc -l < "$times" 2>/dev/null)" != 2 ]; then
+  echo "page step: no start and end in $times"
+  exit 1
+fi
+elapsed=$(( ($(sed -n 2p "$times") - $(sed -n 1p "$times")) / 1000000 ))
 if [ -f "$junit" ]; then
   echo "the ten slowest tests:"
   sh taskfiles/slowest-tests.sh "$junit" 10
