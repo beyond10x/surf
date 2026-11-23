@@ -313,8 +313,17 @@ fn serve(mut stream: UnixStream, session: &Session) {
         answer.text = control_answer(id, &request.command, handle);
         answer.entries = entries(session, &request.command, None, &answer.text);
         if request.command == "fill" {
-            // As the session does (`crates/session/src/entries.rs`): the value as its length.
-            let length = request.arg("value").map_or(0, str::len);
+            // As the session does (`crates/session/src/entries.rs`): the value as its length,
+            // counted after `sanitized` in `crates/session/src/lib.rs`, which removes every
+            // U+000A and U+000D from the value of a `text` or `password` control. The one
+            // fillable control of [`FORM`] is a password.
+            let length = request.arg("value").map_or(0, |value| {
+                value
+                    .chars()
+                    .filter(|c| !matches!(c, '\n' | '\r'))
+                    .map(char::len_utf8)
+                    .sum()
+            });
             let line = format!(
                 "event surf.agent.FillRequested session_id={} element_id={} value={} handle={}",
                 surf_answer::quote(id),

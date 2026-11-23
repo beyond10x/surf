@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+mod adversary_controls;
 mod adversary_link;
 mod built;
 mod common;

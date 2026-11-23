@@ -290,8 +290,14 @@ shapes, by `kind`:
   one's, `null` for `none`; `texts` the `+ text` lines, each the text of the new page cut at 120
   characters with `cut`; `more` the count of `+ text more <n>`, 0 without that line.
 
-The answer has no line for an element that appears or goes (`+` and `-` lines wait for the
-script engine and the detailed mode, `docs/agent-answer.md`), so neither has this member.
+What is built: this member holds `~` control lines and `+ text` lines, nothing else. A
+document's tree does not change before scripts exist (D2 of
+`docs/plan/agent-plan-revision-1.md`), so the answer has no `+` or `-` line for an element that
+appears or goes, and neither has this member. The page's panel "Changed by <action>" shows a
+control line as `<handle> <what> <before> -> <after>` and a page change as its `page` line and
+its `+ text` lines; for an action whose answer has no `changed` block it shows
+`no changed block`. A refused command records no action (above), so it has no entry and the
+panel never shows it.
 
 What the view holds of a value, in the words of D22 and D21: a field of bytes (a response body, a
 request body) is written by the session process as its length, `<n> bytes`, never as the bytes.
@@ -301,9 +307,15 @@ password's value as `(set)` or `(empty)`, never the value, and the event
 `surf.agent.FillRequested` holds the length of what a `fill` typed, `<n> bytes`, never its text.
 So the length the page shows for a password, in the panel "Now" and in the panel "Changed by
 <action>", comes from the `FillRequested` entry, not from the answer: the `value` of the newest
-`FillRequested` entry of that handle since the answer that loaded the document (`12 bytes`), or
-`(set)` when no `fill` of that document typed it. The token is not kept: the answer entry of
-`open` omits the `token` line, and no route and no stream event holds a session's token.
+`FillRequested` entry of that handle since the answer that loaded the document, as `<n> bytes`
+(`12 bytes`), or `(set)` when no `fill` of that document typed it. The token is not kept: the
+answer entry of `open` omits the `token` line, and no route and no stream event holds a
+session's token.
+
+This rule covers the value the agent types into a password control: the view and the stream
+never carry it from the `fill`. Text a server sends back is page text. A page that prints a
+posted value has that text in the `changed` block's `+ text` lines, in the stream and in
+`/api/sessions/<id>`, as the agent's own answer prints it.
 
 ### Event names
 
