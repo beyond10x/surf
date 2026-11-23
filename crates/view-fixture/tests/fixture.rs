@@ -9,7 +9,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::net::TcpStream;
 use std::os::unix::fs::MetadataExt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
@@ -18,41 +18,6 @@ use std::time::{Duration, Instant};
 use surf_test_process::{alive, ended_within};
 
 const WAIT: Duration = Duration::from_secs(10);
-
-/// `target/<profile>/` of this test, where `surf-agent` and `surf-session` are built with the
-/// cargo running these tests (nothing is built when they are fresh), as `bin_dir()` of
-/// `crates/session/tests/common/mod.rs` does.
-fn bin_dir() -> PathBuf {
-    let exe = std::env::current_exe().expect("the test's executable");
-    let profile_dir = exe
-        .parent()
-        .and_then(Path::parent)
-        .expect("target/<profile>")
-        .to_path_buf();
-    let profile = match profile_dir.file_name().and_then(|name| name.to_str()) {
-        Some("debug") => "dev".to_string(),
-        Some(other) => other.to_string(),
-        None => panic!("no profile directory above {}", exe.display()),
-    };
-    let status = Command::new(env!("CARGO"))
-        .args([
-            "build",
-            "--locked",
-            "--quiet",
-            "-p",
-            "surf-agent",
-            "-p",
-            "surf-session",
-            "--profile",
-            &profile,
-        ])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .stdin(Stdio::null())
-        .status()
-        .expect("cargo runs");
-    assert!(status.success(), "building surf-agent and surf-session: {status}");
-    profile_dir
-}
 
 /// The running fixture. When dropped while it runs (a failed assertion), its standard input is
 /// closed so that it stops everything and removes its directory; killed only when it has not
@@ -65,7 +30,7 @@ struct Fixture {
 
 impl Fixture {
     fn start() -> Fixture {
-        let bin = bin_dir();
+        let bin = crate::common::bin_dir();
         for program in ["surf-agent", "surf-session"] {
             assert!(bin.join(program).is_file(), "{program} beside the fixture");
         }

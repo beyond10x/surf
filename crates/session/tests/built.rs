@@ -294,12 +294,47 @@ fn the_two_options_in_either_order() {
     }
 }
 
+/// Asserts that `process::arguments` refuses each shape of `shapes`, in this process, and that
+/// the built `surf-session` started once, with the first of them that names `socket`, exits 2,
+/// writes nothing on standard output and binds no socket there.
+fn assert_refused_and_exit_2(dir: &TestDir, socket: &str, shapes: &[Vec<OsString>]) {
+    for args in shapes {
+        assert!(
+            process::arguments(args).is_none(),
+            "{args:?} is accepted by process::arguments"
+        );
+    }
+    let args = shapes
+        .iter()
+        .find(|args| args.iter().any(|word| word == socket))
+        .expect("a shape that names the socket");
+    let output = Command::new(session_program())
+        .args(args)
+        .env_clear()
+        .env("XDG_RUNTIME_DIR", dir.runtime())
+        .current_dir(dir.runtime())
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2), "{args:?}");
+    assert!(
+        output.stdout.is_empty(),
+        "{args:?} wrote {:?}",
+        output.stdout
+    );
+    assert!(
+        !std::path::Path::new(socket).exists(),
+        "{args:?} bound the socket"
+    );
+}
+
 #[test]
 fn other_argument_shapes_exit_2() {
     let dir = TestDir::new();
     let socket = dir.session_socket("0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b");
     let socket = socket.to_str().unwrap();
-    for args in [
+    let shapes: Vec<Vec<OsString>> = [
         vec![],
         vec!["0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b"],
         vec!["0B0E4F5A-6C7D-4E8F-9A0B-1C2D3E4F5A6B", socket],
@@ -344,26 +379,11 @@ fn other_argument_shapes_exit_2() {
         ],
         vec!["--verbose", "0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b", socket],
         vec!["0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b", socket, "extra"],
-    ] {
-        let output = Command::new(session_program())
-            .args(&args)
-            .env_clear()
-            .env("XDG_RUNTIME_DIR", dir.runtime())
-            .stdin(Stdio::null())
-            .stderr(Stdio::null())
-            .output()
-            .unwrap();
-        assert_eq!(output.status.code(), Some(2), "{args:?}");
-        assert!(
-            output.stdout.is_empty(),
-            "{args:?} wrote {:?}",
-            output.stdout
-        );
-        assert!(
-            !std::path::Path::new(socket).exists(),
-            "{args:?} bound the socket"
-        );
-    }
+    ]
+    .into_iter()
+    .map(|words| words.into_iter().map(OsString::from).collect())
+    .collect();
+    assert_refused_and_exit_2(&dir, socket, &shapes);
 }
 
 /// The identity the argument cases below use.
@@ -505,23 +525,7 @@ fn more_argument_shapes_exit_2() {
         OsString::from(id),
         OsString::from(socket),
     ]);
-    for args in shapes {
-        let output = Command::new(session_program())
-            .args(&args)
-            .env_clear()
-            .env("XDG_RUNTIME_DIR", dir.runtime())
-            .current_dir(dir.runtime())
-            .stdin(Stdio::null())
-            .stderr(Stdio::null())
-            .output()
-            .unwrap();
-        assert_eq!(output.status.code(), Some(2), "{args:?}");
-        assert!(
-            output.stdout.is_empty(),
-            "{args:?} wrote {:?}",
-            output.stdout
-        );
-    }
+    assert_refused_and_exit_2(&dir, socket, &shapes);
 }
 
 /// One request over one connection to the session socket, and every byte of its reply.
