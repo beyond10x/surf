@@ -43,7 +43,7 @@ scope:
   path: generated/rust
 - confidence: inferred
   path: spec/domains/agent.yaml
-revision: 16
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 5}
@@ -146,7 +146,7 @@ Surfaces written: `crates/session/`, `crates/answer/`, `docs/agent-answer.md`,
 
 ## Acceptance
 
-`cargo nextest run -p surf-session -p surf-answer -p surf-agent` passes with the 12 numbered
+`cargo nextest run -p surf-session -p surf-answer -p surf-agent` passes with the 13 numbered
 cases, each a test named after its case, case 1 answering the page line of A and case 2 that of
 B, and the drift test holding with `back` and `forward` in both the document and the parser. No
 test runs over 60 s, and the test step ends within 120 s.
