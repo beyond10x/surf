@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:select-once-test-waits-for-load
 kind: story
-status: active
+status: implemented
 title: The test of one selection per key holds the event stream shut, so the page loads once
 summary: 'The gate of 4047c68 ended red by one page test: the page renders its timeline again when its stream opens, and that render was counted as a second selection. The test holds /events unanswered; the page is not changed.'
 relations:
@@ -13,10 +13,11 @@ relations:
 scope:
 - confidence: cited
   path: view-tests/tests/adversary-detail.spec.mjs
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T23:27:36Z", actor: "human:operator", revision: 7, executor: "agent:coordinator"}
 - {from: "proposed", to: "active", at: "2026-11-22T23:27:36Z", actor: "human:operator", revision: 8, executor: "agent:coordinator"}
+- {from: "active", to: "implemented", at: "2026-11-23T00:05:29Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"test_result":3,"verification":3}}, executor: "agent:coordinator"}
 ---
 ## Why
 

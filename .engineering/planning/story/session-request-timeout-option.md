@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:session-request-timeout-option
 kind: story
-status: active
+status: implemented
 title: surf-session takes --request-timeout for a test that starts it
 summary: request_slower_than_its_deadline_is_closed waits the 10 s read deadline in every run (10.3 to 11.8 s at load 88 to 218); --request-timeout lets it set 1 s; lands on main before story:tls-session-anchors
 relations:
@@ -16,10 +16,11 @@ scope:
   path: crates/session/src/process.rs
 - confidence: cited
   path: crates/session/tests/built.rs
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T21:48:50Z", actor: "human:operator", revision: 8}
 - {from: "proposed", to: "active", at: "2026-11-22T21:48:50Z", actor: "human:operator", revision: 9}
+- {from: "active", to: "implemented", at: "2026-11-23T00:05:25Z", actor: "human:operator", revision: 12, decided_on: {"recorded":{"test_result":4,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Why
 
