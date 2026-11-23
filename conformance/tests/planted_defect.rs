@@ -1,11 +1,20 @@
 //! The planted defect: the suite over a system whose `Navigation` storage drops every `put` must
 //! fail. A suite that passes over this system would pass over a navigator that keeps nothing.
 //! It runs over the scenarios its line of `tests/noticed.txt` names (`task conform-slow` writes
-//! the list), or over the whole suite when `SURF_NOTICED_OUT` is set.
+//! the list), from the narrowed suite the setup step of `task conform-rust` wrote, or over the
+//! whole suite when `SURF_NOTICED_OUT` is set.
+//!
+//! Beside it, one test for each message a stale list gives: listed scenarios that all pass over
+//! the defect, a label without a line, and a line that names a scenario the suite does not hold.
+//! Each ends with [`STALE`]; the list is planted through the argument, never in the committed
+//! file.
 
 use ess_conformance::target::ImplementationIdentity;
 use surf::{Browser, System};
-use surf_conformance::{SurfTarget, Unanswered, admit, note_noticed, planted_suite, run};
+use surf_conformance::{
+    Conformance, STALE, SurfTarget, Unanswered, admit, listed, listed_suite, narrowed, not_noticed,
+    note_noticed, run,
+};
 use surf_ports::{
     NavigatorPorts, NetPorts, RendererPorts, ShellPorts, agent_port, commit_navigation,
     document_port, navigator_port, net_port, renderer_port, shell_port, traverse_history,
@@ -22,9 +31,6 @@ use surf_types::net::{MediaType, RequestId};
 use surf_types::obligation::UnmetObligation;
 use surf_types::render::FrameId;
 use surf_types::shell::{TabId, WindowId};
-
-/// The suite `task suite` writes.
-const SUITE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../.out/suite.json");
 
 /// The navigator's in-memory ports, except that `put` stores nothing.
 struct DropsEveryPut(NavigatorPorts);
@@ -130,12 +136,12 @@ impl TryContext for DropsEveryPut {
 /// The defect's label, and its line of `tests/noticed.txt`.
 const LABEL: &str = "navigation storage drops every put";
 
-#[test]
-fn a_navigation_storage_that_drops_every_put_fails_at_least_one_scenario() {
-    let suite = std::fs::read_to_string(SUITE)
-        .unwrap_or_else(|error| panic!("{SUITE}: {error}; run `task suite` first"));
-    let admitted = admit(&suite).expect("the suite is admitted");
-    let suite = planted_suite(&admitted, LABEL).unwrap_or_else(|error| panic!("{error}"));
+/// The label of another defect, whose one listed scenario passes over this one: its narrowed
+/// suite plants a stale list for this defect.
+const PASSES_HERE: &str = "every window identity is found";
+
+/// `suite` over the system whose navigation storage drops every put.
+fn over(suite: &str) -> Conformance {
     let target = SurfTarget::new(ImplementationIdentity::new("surf", LABEL), |setup| {
         Browser::new(
             System::new(
@@ -149,8 +155,12 @@ fn a_navigation_storage_that_drops_every_put_fails_at_least_one_scenario() {
             Unanswered,
         )
     });
-    let conformance = run(&suite, &target).expect("the suite runs");
-    note_noticed(LABEL, &conformance.report).unwrap_or_else(|error| panic!("{error}"));
+    run(suite, &target).expect("the suite runs")
+}
+
+/// Whether a run over the defect noticed it: at least one scenario failed. Prints the count line
+/// and the failed scenarios.
+fn noticed(conformance: &Conformance) -> Result<(), String> {
     let counts = conformance.report.counts();
     let failed: Vec<String> = conformance
         .report
@@ -166,8 +176,53 @@ fn a_navigation_storage_that_drops_every_put_fails_at_least_one_scenario() {
     for scenario in &failed {
         eprintln!("  failed {scenario}");
     }
+    if counts.failed >= 1 {
+        return Ok(());
+    }
+    Err(not_noticed(
+        LABEL,
+        &format!("none of {} scenarios failed", counts.total),
+    ))
+}
+
+#[test]
+fn a_navigation_storage_that_drops_every_put_fails_at_least_one_scenario() {
+    let suite = listed_suite(LABEL).unwrap_or_else(|error| panic!("{error}"));
+    let conformance = over(&suite);
+    note_noticed(LABEL, &conformance.report).unwrap_or_else(|error| panic!("{error}"));
+    noticed(&conformance).unwrap_or_else(|error| panic!("{error}"));
+}
+
+#[test]
+fn listed_scenarios_that_all_pass_over_the_defect_say_the_list_may_be_stale() {
+    let suite = listed_suite(PASSES_HERE).unwrap_or_else(|error| panic!("{error}"));
+    let message = noticed(&over(&suite)).expect_err("the scenario passes over this defect");
     assert!(
-        counts.failed >= 1,
-        "no scenario failed over a navigation storage that drops every put"
+        message.starts_with(LABEL) && message.ends_with(STALE),
+        "{message}"
+    );
+}
+
+#[test]
+fn a_label_without_a_line_says_the_list_may_be_stale() {
+    let list = format!("sources 00\n{PASSES_HERE}: surf.shell.OpenTab/outcome/no-such-window\n");
+    let message = listed(&list, LABEL).expect_err("no line for the label");
+    assert!(
+        message.starts_with(LABEL) && message.ends_with(STALE),
+        "{message}"
+    );
+}
+
+#[test]
+fn a_line_naming_a_scenario_the_suite_lacks_says_the_list_may_be_stale() {
+    let suite = listed_suite(PASSES_HERE).unwrap_or_else(|error| panic!("{error}"));
+    let admitted = admit(&suite).expect("the narrowed suite is admitted");
+    let message =
+        narrowed(&admitted, LABEL, &["no/such/scenario"]).expect_err("the suite lacks it");
+    assert!(
+        message.starts_with(LABEL)
+            && message.contains("no/such/scenario")
+            && message.ends_with(STALE),
+        "{message}"
     );
 }

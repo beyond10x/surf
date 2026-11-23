@@ -17,7 +17,7 @@
 use ess_conformance::target::ImplementationIdentity;
 use surf::{Browser, System};
 use surf_conformance::{
-    SurfTarget, Unanswered, admit, each_planted, note_noticed, planted_suite, run,
+    SurfTarget, Unanswered, each_planted, listed_suite, not_noticed, note_noticed, run, whole_suite,
 };
 use surf_ports::{
     NavigatorPorts, NetPorts, RendererPorts, ShellPorts, agent_port, commit_navigation,
@@ -54,9 +54,6 @@ use surf_types::obligation::UnmetObligation;
 use surf_types::primitives::Uuid;
 use surf_types::render::{FrameId, FrameSnapshot};
 use surf_types::shell::{TabId, TabSnapshot, WindowId, WindowSnapshot};
-
-/// The suite `task suite` writes.
-const SUITE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../.out/suite.json");
 
 /// The one identity every instance of the planted entity gets.
 const SAME: &str = "00000000-0000-4000-8000-000000000000";
@@ -330,12 +327,6 @@ impl<P: TryContext> TryContext for Planted<P> {
     }
 }
 
-/// The suite `task suite` writes.
-fn whole_suite() -> String {
-    std::fs::read_to_string(SUITE)
-        .unwrap_or_else(|error| panic!("{SUITE}: {error}; run `task suite` first"))
-}
-
 /// `suite` over every component's ports with `defect` planted: the scenarios that failed.
 fn failed_with(defect: Defect, suite: &str) -> Vec<String> {
     let label = format!("{defect:?}");
@@ -399,12 +390,11 @@ fn failed_with(defect: Defect, suite: &str) -> Vec<String> {
 /// Each of `defects` over the scenarios its line of `tests/noticed.txt` names, or over the whole
 /// suite, each on a thread of its own, when `SURF_NOTICED_OUT` is set.
 fn assert_each_noticed(defects: &[Defect]) {
-    let admitted = admit(&whole_suite()).expect("the suite is admitted");
     let planted: Vec<(Defect, String)> = defects
         .iter()
         .map(|defect| {
-            let suite = planted_suite(&admitted, &format!("{defect:?}"))
-                .unwrap_or_else(|error| panic!("{error}"));
+            let suite =
+                listed_suite(&format!("{defect:?}")).unwrap_or_else(|error| panic!("{error}"));
             (*defect, suite)
         })
         .collect();
@@ -416,16 +406,23 @@ fn assert_each_noticed(defects: &[Defect]) {
     .into_iter()
     .flatten()
     .collect();
-    assert!(
-        missed.is_empty(),
-        "the suite passed every scenario over a system with each of {missed:?}"
-    );
+    let messages: Vec<String> = missed
+        .iter()
+        .map(|label| {
+            not_noticed(
+                label,
+                "every scenario passed over a system with this defect",
+            )
+        })
+        .collect();
+    assert!(missed.is_empty(), "{}", messages.join("\n"));
 }
 
 /// Control: nothing planted, nothing fails, so a failure above is the defect's.
 #[test]
 fn nothing_planted_fails_no_scenario() {
-    let failed = failed_with(Defect::Nothing, &whole_suite());
+    let suite = whole_suite().unwrap_or_else(|error| panic!("{error}"));
+    let failed = failed_with(Defect::Nothing, &suite);
     assert!(failed.is_empty(), "{failed:?}");
 }
 

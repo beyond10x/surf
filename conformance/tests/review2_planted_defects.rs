@@ -11,7 +11,8 @@
 use ess_conformance::target::ImplementationIdentity;
 use surf::{Browser, System};
 use surf_conformance::{
-    ConformanceBrowser, Setup, SurfTarget, Unanswered, admit, note_noticed, planted_suite, run,
+    ConformanceBrowser, Setup, SurfTarget, Unanswered, listed_suite, not_noticed, note_noticed,
+    run, whole_suite,
 };
 use surf_ports::{
     DocumentPorts, NavigatorPorts, NetPorts, RandomSource, RendererPorts, ShellPorts, agent_port,
@@ -42,9 +43,6 @@ use surf_types::shell::{
 };
 use surf_types::url::Url;
 
-/// The suite `task suite` writes.
-const SUITE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../.out/suite.json");
-
 /// The label of the control, which runs the whole suite; every other label is a planted defect's
 /// and runs over the scenarios its line of `tests/noticed.txt` names.
 const CONTROL: &str = "control";
@@ -64,12 +62,12 @@ where
     R: surf::RendererBehaviors + 'static,
     S: surf::ShellBehaviors + 'static,
 {
-    let mut suite = std::fs::read_to_string(SUITE)
-        .unwrap_or_else(|error| panic!("{SUITE}: {error}; run `task suite` first"));
-    if label != CONTROL {
-        let admitted = admit(&suite).expect("the suite is admitted");
-        suite = planted_suite(&admitted, label).unwrap_or_else(|error| panic!("{error}"));
+    let suite = if label == CONTROL {
+        whole_suite()
+    } else {
+        listed_suite(label)
     }
+    .unwrap_or_else(|error| panic!("{error}"));
     let target = SurfTarget::new(ImplementationIdentity::new("surf", label), assemble);
     let conformance = run(&suite, &target).expect("the suite runs");
     if label != CONTROL {
@@ -97,7 +95,11 @@ fn assert_noticed(label: &str, (total, passed, _): (usize, usize, Vec<String>)) 
     assert!(total > 0, "[{label}] the suite holds no scenario");
     assert!(
         passed < total,
-        "[{label}] the suite passed all {total} scenarios over a system with this defect"
+        "{}",
+        not_noticed(
+            label,
+            &format!("all {total} scenarios passed over a system with this defect")
+        )
     );
 }
 

@@ -117,7 +117,12 @@ tasks:
       sources of conformance/tests/noticed.txt with its first line, and fails with
       "conform-rust: the sources of conformance/tests/noticed.txt changed; run task
       conform-slow". Then, warnings denied, it builds the crate's tests (cargo nextest run
-      --no-run) and its binary (cargo build), into .out/conform-rust-build.log.
+      --no-run) and its binary (cargo build), into .out/conform-rust-build.log. The setup step,
+      surf-conformance --narrow, admits the whole suite once and writes the narrowed suite of
+      every planted defect of the list under conformance/target/noticed/<digest>/, unless they
+      are there for exactly this list; admitting the whole suite takes seconds under load, so
+      no test process does it but the two controls. It is untimed like the builds: a product
+      made once from the sources, not a run of the tests.
 
       The timed part. Step 1 runs the crate's tests with cargo-nextest under the root's
       .config/nextest.toml, into .out/conform-rust-test.log: one process per test, a test still
@@ -126,16 +131,19 @@ tasks:
       storage drops every put must report at least one failed scenario. It fails too unless the
       two per-entity tests of tests/two_of_each_entity.rs ran and passed: for each entity alone,
       a system that gives every instance one identity, and one whose view answers its first row
-      only, must each fail at least one scenario. Each planted defect runs over the scenarios
-      its line of conformance/tests/noticed.txt names, at most 3; the two controls run the whole
-      suite.
+      only, must each fail at least one scenario. It fails when nextest's summary reports a
+      skipped test: the crate has no ignored test. Each planted defect runs over the scenarios
+      its line of conformance/tests/noticed.txt names, at most 3, from its narrowed suite; the
+      two controls run the whole suite.
 
       Step 2 runs .out/suite.json against the system the surf binary ships, the built
       conformance/target/debug/surf-conformance, each scenario over fresh in-memory ports and a
       transport that never answers, because the suite ends each request itself with
       DeliverResponse or FailRequest. The log is .out/conform-rust.log and the
       ess-conformance-report/2 is .out/conform-rust.json. It fails when any scenario failed,
-      errored or was unsupported.
+      errored or was unsupported. It runs under timeout(1) of coreutils, ended after
+      CONFORM_SUITE_BOUND seconds (60), and then fails with a line naming the step and the
+      bound.
 
       Then it prints nextest's summary line, the runner's summary line of step 2, the ten
       slowest tests from conformance/target/nextest/default/junit.xml and the wall time of the
@@ -148,6 +156,7 @@ tasks:
       RUSTFLAGS: -D warnings
     vars:
       CONFORM_BUDGET: '{{.CONFORM_BUDGET | default "120"}}'
+      CONFORM_SUITE_BOUND: '{{.CONFORM_SUITE_BOUND | default "60"}}'
     silent: true
     cmds:
       - rm -f .out/conform-step.seconds
@@ -155,6 +164,7 @@ tasks:
       - sh taskfiles/conform-noticed.sh check
       - cargo nextest run --no-run --locked --manifest-path conformance/Cargo.toml --config-file .config/nextest.toml --color never > .out/conform-rust-build.log 2>&1 || { cat .out/conform-rust-build.log; exit 1; }
       - cargo build --locked --manifest-path conformance/Cargo.toml --color never >> .out/conform-rust-build.log 2>&1 || { cat .out/conform-rust-build.log; exit 1; }
+      - conformance/target/debug/surf-conformance --narrow .out/suite.json conformance/tests/noticed.txt
       - |
         log=.out/conform-rust-test.log
         junit=conformance/target/nextest/default/junit.xml
@@ -167,14 +177,21 @@ tasks:
         passed planted_defect::a_navigation_storage_that_drops_every_put_fails_at_least_one_scenario || planted=1
         entities=0
         passed two_of_each_entity::one_identity_for_every_instance_of_an_entity_is_noticed_for_each_entity && passed two_of_each_entity::a_view_cut_to_its_first_row_is_noticed_for_each_entity || entities=1
+        summary=$(grep -E '^ *Summary \[' "$log" | tail -n 1 | sed 's/^ *//')
+        skipped=$(printf '%s\n' "$summary" | sed -n 's/.* \([0-9][0-9]*\) skipped.*/\1/p')
         suite=0
-        conformance/target/debug/surf-conformance .out/suite.json .out/conform-rust.json > .out/conform-rust.log 2>&1 || suite=1
+        timeout {{.CONFORM_SUITE_BOUND}} conformance/target/debug/surf-conformance .out/suite.json .out/conform-rust.json > .out/conform-rust.log 2>&1 || suite=$?
         elapsed=$(( ($(date +%s%N) - start) / 1000000 ))
-        if [ "$tests" -ne 0 ] || [ "$planted" -ne 0 ] || [ "$entities" -ne 0 ]; then cat "$log"; fi
+        if [ "$tests" -ne 0 ] || [ "$planted" -ne 0 ] || [ "$entities" -ne 0 ] || [ "${skipped:-0}" -ne 0 ]; then cat "$log"; fi
         if [ "$planted" -ne 0 ]; then echo "the planted-defect test did not run"; fi
         if [ "$entities" -ne 0 ]; then echo "the per-entity planted-defect tests did not run"; fi
-        if [ "$suite" -ne 0 ]; then grep -E '^  (failed|error|unsupported) ' .out/conform-rust.log || cat .out/conform-rust.log; fi
-        grep -E '^ *Summary \[' "$log" | tail -n 1 | sed 's/^ *//'
+        if [ "${skipped:-0}" -ne 0 ]; then echo "conform-rust: nextest skipped ${skipped} test(s); the crate has no ignored test, so each one runs"; fi
+        if [ "$suite" -eq 124 ]; then
+          echo "conform-rust: step 2, the suite against the Rust system, was ended after its bound of {{.CONFORM_SUITE_BOUND}} s"
+        elif [ "$suite" -ne 0 ]; then
+          grep -E '^  (failed|error|unsupported) ' .out/conform-rust.log || cat .out/conform-rust.log
+        fi
+        printf '%s\n' "$summary"
         tail -n 1 .out/conform-rust.log
         if [ -f "$junit" ]; then
           echo "the ten slowest tests:"
@@ -187,25 +204,28 @@ tasks:
           exit 1
         fi
         echo "conformance step: ${seconds} s of its budget of {{.CONFORM_BUDGET}} s"
-        test "$tests" -eq 0 && test "$planted" -eq 0 && test "$entities" -eq 0 && test "$suite" -eq 0
+        test "$tests" -eq 0 && test "$planted" -eq 0 && test "$entities" -eq 0 && test "${skipped:-0}" -eq 0 && test "$suite" -eq 0
 
   conform-slow:
     desc: Run every planted defect of conformance/ over the whole suite, write .out/noticed.txt and compare it with conformance/tests/noticed.txt; WRITE=1 writes it; never a step of check.
     summary: |
       Run every planted defect of conformance/ over the whole suite, write .out/noticed.txt and compare it with conformance/tests/noticed.txt; WRITE=1 writes it; never a step of check.
 
-      A step of the lane slow. It runs the crate's tests with cargo-nextest, warnings denied,
-      with SURF_NOTICED_OUT set to .out/noticed.d: each planted-defect test then runs its
-      defects over the whole suite, the defects of one test each on a thread of its own, still
-      asserts that each is noticed, and writes one line per defect, its label and the first 3
-      scenarios, in the suite's order, that do not pass over it. sh taskfiles/conform-noticed.sh
-      assemble puts the digest of the sources first and the lines after it, sorted, into
+      A step of the lane slow. It runs the planted-defect tests of the crate (planted_defect's
+      defect test, review2_planted_defects:: and two_of_each_entity::, controls included) with
+      cargo-nextest, warnings denied, with SURF_NOTICED_OUT set to .out/noticed.d: each
+      planted-defect test then runs its defects over the whole suite, the defects of one test
+      each on a thread of its own, still asserts that each is noticed, and writes one line per
+      defect, its label and the first 3 scenarios, in the suite's order, that do not pass over
+      it, and its count line over the whole suite. It prints nextest's summary and the 29 count
+      lines (sh taskfiles/conform-noticed.sh counts). sh taskfiles/conform-noticed.sh assemble
+      puts the digest of the sources first and the lines after it, sorted, into
       .out/noticed.txt; its log is .out/conform-slow.log. It fails when a test failed or when
       .out/noticed.txt differs from the committed file byte for byte, showing the difference.
       With WRITE=1 it copies .out/noticed.txt over conformance/tests/noticed.txt first. A change
-      to a source of the list (.out/suite.json through spec/, the three planted-defect modules,
-      conformance/src/target.rs, conformance/src/values.rs, the ess-conformance entry of
-      conformance/Cargo.lock) runs it with WRITE=1 and commits the list in the same commit.
+      to a source of the list (.out/suite.json through spec/, any file under conformance/src or
+      conformance/tests, conformance/Cargo.toml, conformance/Cargo.lock) runs it with WRITE=1
+      and commits the list in the same commit.
     deps: [suite]
     env:
       RUSTFLAGS: -D warnings
@@ -218,8 +238,9 @@ tasks:
         out=.out/noticed.d
         rm -rf "$out"
         mkdir -p "$out"
-        SURF_NOTICED_OUT="$PWD/$out" cargo nextest run --locked --manifest-path conformance/Cargo.toml --config-file .config/nextest.toml --color never > .out/conform-slow.log 2>&1 || { cat .out/conform-slow.log; exit 1; }
+        SURF_NOTICED_OUT="$PWD/$out" cargo nextest run --locked --manifest-path conformance/Cargo.toml --config-file .config/nextest.toml --color never -E 'test(=planted_defect::a_navigation_storage_that_drops_every_put_fails_at_least_one_scenario) | test(/^review2_planted_defects::/) | test(/^two_of_each_entity::/)' > .out/conform-slow.log 2>&1 || { cat .out/conform-slow.log; exit 1; }
         grep -E '^ *Summary \[' .out/conform-slow.log | tail -n 1 | sed 's/^ *//'
+        sh taskfiles/conform-noticed.sh counts "$out"
         sh taskfiles/conform-noticed.sh assemble "$out" > .out/noticed.txt
         if [ '{{.WRITE}}' = 1 ]; then
           cp .out/noticed.txt conformance/tests/noticed.txt

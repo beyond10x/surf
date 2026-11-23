@@ -4,6 +4,12 @@
 //!
 //! Exit status 0 when every scenario passed, 1 when any failed, errored or was unsupported, or
 //! when the suite has none, and 2 when the run could not be made.
+//!
+//! `surf-conformance --narrow <suite.json> <noticed.txt>`, the setup step of `task
+//! conform-rust`: admits the suite once and writes the narrowed suite of every planted defect
+//! the list names under `conformance/target/noticed/<digest>/`
+//! (`surf_conformance::write_narrowed`), unless they are there for exactly this list; prints
+//! one line. Exit status 0, or 2 with one line on standard error.
 
 #![forbid(unsafe_code)]
 
@@ -11,10 +17,37 @@ use std::process::ExitCode;
 
 use ess_conformance::Status;
 
+const USAGE: &str = "usage: surf-conformance <suite.json> <report.json>\n       \
+                     surf-conformance --narrow <suite.json> <noticed.txt>";
+
+/// The setup step: the narrowed suites of the planted defects.
+fn narrow(suite: &str, list: &str) -> ExitCode {
+    let read =
+        |path: &str| std::fs::read_to_string(path).map_err(|error| format!("{path}: {error}"));
+    match read(suite)
+        .and_then(|suite| Ok((suite, read(list)?)))
+        .and_then(|(suite, list)| surf_conformance::write_narrowed(&suite, &list))
+    {
+        Ok(line) => {
+            println!("{line}");
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("surf-conformance --narrow: {error}");
+            ExitCode::from(2)
+        }
+    }
+}
+
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if let [flag, suite, list] = arguments.as_slice()
+        && flag == "--narrow"
+    {
+        return narrow(suite, list);
+    }
     let [suite, report] = arguments.as_slice() else {
-        eprintln!("usage: surf-conformance <suite.json> <report.json>");
+        eprintln!("{USAGE}");
         return ExitCode::from(2);
     };
     let text = match std::fs::read_to_string(suite) {
