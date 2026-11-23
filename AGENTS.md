@@ -973,7 +973,15 @@ above, and the list of standards itself was written from memory.
   generated crates by path, and on `ess-conformance`, `ess-primitives` and `ess-domain` from
   `https://github.com/beyond10x/ess` at tag `0.97.4`; its lock pins the third-party packages
   those bring to the versions ESS's own lock holds at that tag. Nothing in the root workspace
-  depends on it.
+  depends on it. `tests/noticed.txt`, committed and written by `task conform-slow`, holds on
+  its first line `sources <sha256>`, the digest of its five sources (`.out/suite.json`; the
+  planted-defect modules `tests/planted_defect.rs`, `tests/review2_planted_defects.rs` and
+  `tests/two_of_each_entity.rs`; `src/target.rs`; `src/values.rs`, which `target.rs` uses; the
+  `[[package]]` entry of `ess-conformance` in `Cargo.lock`), and then one line per planted
+  defect, `<label>: ` and the first 3 scenarios, in the suite's order, that do not pass over
+  it. Each planted-defect test runs its defect over those scenarios only
+  (`surf_conformance::planted_suite`) and asserts that at least one does not pass, so a stale
+  list can only turn a test red; the two controls run the whole suite.
   - `src/target.rs`: `SurfTarget`, the hand-written adapter between the runner's named values
     and the generated typed commands, outcomes, view rows, events and binding invocations. A
     fresh `Browser` per scenario; a command is issued on its component's port and `Browser::run`
@@ -987,13 +995,15 @@ above, and the list of standards itself was written from memory.
     optional input sent as `null` reads as one left out. Since `story:agent-fill-pick` it maps
     the element's `readonly` (in `AddElement`, an `Element` setup and the `Elements` view) and
     the outcome `readonly` of `SetValue`.
-  - `src/main.rs`: the binary `conform-rust` runs. `tests/planted_defect.rs`: the same suite over
-    a `Navigation` storage that drops every `put` must fail at least one scenario.
+  - `src/main.rs`: the binary `conform-rust` runs. `tests/planted_defect.rs`: the scenarios of
+    its line in `tests/noticed.txt` over a `Navigation` storage that drops every `put` must
+    fail at least one scenario.
     `tests/two_of_each_entity.rs`: for each entity alone, one identity for every instance, and
     a view cut to its first row, must each fail at least one scenario; since wave 3 it plants
     `SameIdentity(Action)` (3 scenarios fail), `FirstRowOnly(Session)` (15) and
     `FirstRowOnly(Action)` (2), as the unit reported; since wave 6 also `SameIdentity(Element)`
-    (1) and `FirstRowOnly(Element)` (1), as that unit reported. Its tests need
+    (1) and `FirstRowOnly(Element)` (1), as that unit reported, each count over the whole
+    suite of its day. Its tests need
     `.out/suite.json` in a fresh tree: run `slot task suite` first.
 
 ## Components
@@ -1419,8 +1429,9 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `crates/tls-test-certs` against `certs/DIGEST`. It prints `tls-certs: <n> cases, certs/
   matches its sources`, or `tls-certs: the sources changed since certs/ was generated; run task
   tls-certs-slow` with the sources that differ, and fails.
-- `task slow`: the lane that makes the committed products of the TLS tests again and compares
-  them with the committed files; never a step of `check`. It runs `tls-certs-slow`, which
+- `task slow`: the lane that makes the committed products of the TLS tests and the
+  conformance crate's `tests/noticed.txt` again and compares them with the committed files;
+  never a step of `check`. It runs `tls-certs-slow`, which
   builds and runs `surf-tls-test-certs` and `openssl/make.sh` into `.out/tls-certs/` and
   compares every file with `crates/tls-test-certs/certs/` byte for byte, then
   `tls-flights-slow`, which records the flights against `openssl s_server` on 127.0.0.1 into
@@ -1429,7 +1440,10 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   files were made with the version their `SOURCE` files name. No workflow runs it: the forge's
   runner pins no `openssl`, and the certificates `make.sh` writes come from that tool. Run it
   by hand after a change to `crates/tls-test-certs/` or to
-  `crates/tls/examples/record-flights.rs`.
+  `crates/tls/examples/record-flights.rs`. Its third step is `conform-slow`, which runs every
+  planted defect of `conformance/` over the whole suite and compares the list it writes,
+  `.out/noticed.txt`, with `conformance/tests/noticed.txt` byte for byte; it needs no
+  `openssl`, and `task conform-slow` runs it alone after a change to a source of the list.
 - `task view-test`: the page tests in a browser (`taskfiles/view-test.yml`). It builds
   `surf-agent`, `surf-session` and `surf-view-fixture`, installs `view-tests/` from its
   `package-lock.json` with `npm ci`, and runs `npx playwright test --workers=2` in
@@ -1483,11 +1497,32 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
 - `task release-smoke DIR=<unpacked archive>`: `taskfiles/release-smoke.sh` on a release
   archive, as the release workflow runs it (`docs/releasing.md`).
 - `task validate`, `task suite`, `task conform`: the specification steps on their own.
-- `task conform-rust`: the crate `conformance/`, warnings denied. Its tests, the planted-defect
-  test included, then the suite against the Rust system: log `.out/conform-rust.log`, report
-  `.out/conform-rust.json` (`ess-conformance-report/2`). Fails when any scenario failed, errored
-  or was unsupported. cargo fetches `github.com/beyond10x/ess` at tag `0.97.4` when its cache
-  does not hold it. `task --summary conform-rust` says more.
+- `task conform-rust`: the crate `conformance/`, warnings denied. First the fast check, `sh
+  taskfiles/conform-noticed.sh check`: the sha256 of the sources of
+  `conformance/tests/noticed.txt` against its first line; when they differ it fails with
+  `conform-rust: the sources of conformance/tests/noticed.txt changed; run task conform-slow`.
+  Then it builds the tests (`cargo nextest run --no-run`) and the binary (`cargo build`),
+  untimed. The timed part: its tests under cargo-nextest with the root's
+  `.config/nextest.toml` (a test still running after 60 s is ended and fails), into
+  `.out/conform-rust-test.log`, the planted-defect tests included (it fails, naming them, when
+  their `PASS` lines are missing); each planted defect runs over the at most 3 scenarios its
+  line of `noticed.txt` names, the two controls over the whole suite. Then the suite against
+  the Rust system, the built `conformance/target/debug/surf-conformance`: log
+  `.out/conform-rust.log`, report `.out/conform-rust.json` (`ess-conformance-report/2`). Fails
+  when any scenario failed, errored or was unsupported. It prints the ten slowest tests from
+  `conformance/target/nextest/default/junit.xml` (`taskfiles/slowest-tests.sh`) and
+  `conformance step: N s of its budget of 120 s`, N the wall time of the tests and the suite
+  run, the builds left out; over the budget (`CONFORM_BUDGET`, default 120) it prints
+  `conformance step: N s, over its budget of 120 s` and fails. It writes N to
+  `.out/conform-step.seconds`. cargo fetches `github.com/beyond10x/ess` at tag `0.97.4` when
+  its cache does not hold it. `task --summary conform-rust` says more.
+- `task conform-slow`: a step of the lane `slow`, never of `check`. Every planted defect of
+  `conformance/` over the whole suite (`SURF_NOTICED_OUT=.out/noticed.d`; the defects of one
+  test each on a thread of its own), each still held to being noticed; it writes
+  `.out/noticed.txt` (`sh taskfiles/conform-noticed.sh assemble`) and fails when that differs
+  from `conformance/tests/noticed.txt` byte for byte. `WRITE=1` writes the committed file. A
+  change to a source of the list runs `task conform-slow WRITE=1` and commits `noticed.txt` in
+  the same commit; the fast check of `conform-rust` names the task.
 - `task conform-totals`: fail, printing both, when `.out/report.json` (interpreter) and
   `.out/conform-rust.json` (Rust) are of different suites by digest or differ in
   `counts.total`. Needs both runs first.
