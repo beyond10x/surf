@@ -2,13 +2,16 @@
 format: aep.planning-md/3
 id: story:view-live-marker-under-load
 kind: story
-status: draft
+status: active
 title: The view's live marker reaches live at a load over 100
 summary: two runs of the page step at a start load of 107 and 121 failed with one test each that waited 10 s for the live marker and found connecting; one wait with a diagnostic in every spec file, the cause, the fix, 10 runs at a load of 100 or more
 relations:
 - decomposes: epic:live-view
 - informed_by: story:page-step-holds-under-load
-revision: 2
+revision: 4
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T17:19:28Z", actor: "human:operator", revision: 3}
+- {from: "proposed", to: "active", at: "2026-11-23T17:19:29Z", actor: "human:operator", revision: 4}
 ---
 ## Why
 
