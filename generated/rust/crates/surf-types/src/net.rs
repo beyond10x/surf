@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest aac42d8ac87218cacd79d661cdfc6da87c457bcea21b6e55cbec893553faf526
+// contract digest d1c52719a2a3d23e1b3fddb385c1c4961d34fead444a37b656a71d40ae3746eb
 // do not edit: regenerate with `ess synthesize`
 
 //! Network — `surf.net`.
@@ -23,6 +23,16 @@ pub enum FailureReason {
     TooManyRedirects,
     /// `ForbiddenDestination`.
     ForbiddenDestination,
+    /// `CertificateNotTrusted`.
+    CertificateNotTrusted,
+    /// `CertificateExpired`.
+    CertificateExpired,
+    /// `CertificateNameMismatch`.
+    CertificateNameMismatch,
+    /// `TlsVersionUnsupported`.
+    TlsVersionUnsupported,
+    /// `TlsHandshakeFailed`.
+    TlsHandshakeFailed,
 }
 
 /// MediaType — `surf.net.MediaType`: a distinct wrapper around `String`.

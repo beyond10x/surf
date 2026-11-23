@@ -1,7 +1,7 @@
 # The `surf` command
 
 `surf <url>` loads one address: it opens a window and a tab, navigates the tab to the address,
-fetches it over `http:` and runs the page load to its end. Each release has a pre-built binary
+fetches it over `http:` or `https:` and runs the page load to its end. Each release has a pre-built binary
 for Linux and macOS (see the installation steps). A run on 2026-11-20 against a
 local server:
 
@@ -49,8 +49,10 @@ fetch-failed <request-id> <reason> <address>
   navigation and its request have the same identity.
 - `<state>` is `Started`, `Committed`, `Failed` or `Cancelled` for a navigation and `Pending`,
   `Responded` or `Failed` for a request. `<reason>` is `Unreachable`, `UnsupportedScheme`,
-  `MalformedResponse`, `TooManyRedirects` or `ForbiddenDestination`. A document has one
-  state, and its line has no state field.
+  `MalformedResponse`, `TooManyRedirects`, `ForbiddenDestination`, `CertificateNotTrusted`,
+  `CertificateExpired`, `CertificateNameMismatch`, `TlsVersionUnsupported` or
+  `TlsHandshakeFailed`; `docs/agent-answer.md`, section "Page", says when each is given. A
+  document has one state, and its line has no state field.
 - After redirects, the `navigation` and `document` lines hold the address of the last response,
   and the `request` and `fetch-failed` lines the address asked for.
 - `<address>` is the rest of the line. Printable ASCII (U+0020 to U+007E) other than the
@@ -111,11 +113,35 @@ text markdown 14 of 14 lines from 1, 263 of 263 bytes
 > E-mail [@f1 text: E-mail] [@b1 button: Subscribe]
 ```
 
+## `https:` and the trust anchors
+
+An `https:` address is fetched over TLS 1.3 (RFC 8446), on port 443 when the address names no
+port. The server is authenticated against the bundled trust anchors and the anchors of
+`--ca-file`. surf does not check revocation: a revoked certificate that has not expired loads.
+Redirects between `http:` and `https:` are followed both ways; a redirect to any other scheme
+fails the load with `UnsupportedScheme`.
+
+`surf --ca-file <path> <url>` adds the certificates of a PEM file to the trust anchors of that
+load. The file holds at most 32 KiB (32,768 bytes) and 64 certificates; every block is a
+`CERTIFICATE`, and every certificate a CA (basicConstraints cA). A file is refused whole when it
+holds no PEM block, a block of another label (its content is not decoded), a block that is not
+valid PEM, a certificate the X.509 reader refuses or one that is no CA, when it is over 32,768
+bytes (before any block is read), or when it holds over 64 blocks (before any is decoded).
+
+`surf --anchors [--ca-file <path>]` prints the count, the date and the sha256 of the bundled
+list of trust anchors, and with a file a second line with the count of its certificates and its
+path; exit 0:
+
+```text
+anchors <n> bundled <yyyy-mm-dd> sha256:<64 hex>
+anchors <m> file <path>
+```
+
 ## Exit statuses
 
 | exit status | when |
 |---|---|
-| 0 | the navigation is `Committed` |
+| 0 | the navigation is `Committed`; or `--anchors` printed its lines |
 | 1 | the navigation is not `Committed`: `Failed` |
 | 2 | usage error: not exactly one address, an address that is not UTF-8, or `--as` without `tree` or `markdown` or given twice; a usage line on standard error |
 | 3 | the run stopped: an unmet obligation of the generated code, or `OpenTab` refused the window just opened; the reason on standard error and nothing on standard output. Also when writing to standard output reports an error, such as a full disk or a reader that has gone, whatever the navigation's state: the reason on standard error, and the rows may be partly written |

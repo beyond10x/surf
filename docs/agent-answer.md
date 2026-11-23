@@ -214,11 +214,23 @@ page failed <reason> "<address>"
 
 `page none` before the first load. A loaded page: its status, a number from 0 to 65535; its
 media type, from the server; its address; and its title when it has one. A failed load: the
-reason, a word of `[A-Za-z]+` (the variants of `surf.net.FailureReason`: `Unreachable`,
-`UnsupportedScheme`, `MalformedResponse`, `TooManyRedirects` and `ForbiddenDestination`, a
-redirect from a public address to a loopback or private one, as `docs/surf-command.md`, "Limits",
-says), and the address. The media type, the
-address and the title are quoted fields.
+reason, a word of `[A-Za-z]+`, and the address. The media type, the address and the title are
+quoted fields. The reason is a variant of `surf.net.FailureReason`:
+
+| reason | when |
+|---|---|
+| `Unreachable` | no connection could be made, or it ended before a response was complete; for `https:` also a server that never finishes the handshake, a connection closed before the handshake ended or after it without `close_notify`, and an error of the socket |
+| `UnsupportedScheme` | the address, or the `Location` of a redirect, has a scheme other than `http:` and `https:` |
+| `MalformedResponse` | bytes arrived that are not an HTTP response |
+| `TooManyRedirects` | a redirect arrived after 20 redirects of the same request were followed |
+| `ForbiddenDestination` | a redirect led from a public address to a loopback or private one, as `docs/surf-command.md`, "Limits", says |
+| `CertificateNotTrusted` | the server's certificate has no path to a trust anchor, or a certificate on its path is refused: unreadable, a signature that does not verify, an issuer that is no CA, a path too long, a limit of the path search, a key usage, an unknown critical extension, a name constraint, no `serverAuth`, a weak algorithm or a weak key |
+| `CertificateExpired` | a certificate on the path is outside its validity, either side |
+| `CertificateNameMismatch` | no `subjectAltName` entry of the server's certificate matches the host (no Common Name is read), or the host is one no certificate can match |
+| `TlsVersionUnsupported` | the server offers at best TLS 1.2: it sent `protocol_version` before its ServerHello, or its ServerHello selects TLS 1.2 or below |
+| `TlsHandshakeFailed` | every other alert or violation of the protocol in the handshake: a server that sent `handshake_failure` before its ServerHello (a server limited to TLS 1.2 answers this way), a downgrade value in the ServerHello, a `supported_versions` other than TLS 1.3, an oversized handshake message |
+
+surf does not check revocation: a revoked certificate that has not expired loads.
 
 ### Path
 

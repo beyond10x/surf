@@ -1233,6 +1233,11 @@ fn failure_reason(reason: FailureReason) -> &'static str {
         FailureReason::MalformedResponse => "MalformedResponse",
         FailureReason::TooManyRedirects => "TooManyRedirects",
         FailureReason::ForbiddenDestination => "ForbiddenDestination",
+        FailureReason::CertificateNotTrusted => "CertificateNotTrusted",
+        FailureReason::CertificateExpired => "CertificateExpired",
+        FailureReason::CertificateNameMismatch => "CertificateNameMismatch",
+        FailureReason::TlsVersionUnsupported => "TlsVersionUnsupported",
+        FailureReason::TlsHandshakeFailed => "TlsHandshakeFailed",
     }
 }
 

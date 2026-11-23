@@ -830,6 +830,11 @@ fn failure_reason(reason: FailureReason) -> &'static str {
         FailureReason::MalformedResponse => "MalformedResponse",
         FailureReason::TooManyRedirects => "TooManyRedirects",
         FailureReason::ForbiddenDestination => "ForbiddenDestination",
+        FailureReason::CertificateNotTrusted => "CertificateNotTrusted",
+        FailureReason::CertificateExpired => "CertificateExpired",
+        FailureReason::CertificateNameMismatch => "CertificateNameMismatch",
+        FailureReason::TlsVersionUnsupported => "TlsVersionUnsupported",
+        FailureReason::TlsHandshakeFailed => "TlsHandshakeFailed",
     }
 }
 
@@ -840,6 +845,11 @@ fn failure_reason_named(name: &str) -> Option<FailureReason> {
         FailureReason::MalformedResponse,
         FailureReason::TooManyRedirects,
         FailureReason::ForbiddenDestination,
+        FailureReason::CertificateNotTrusted,
+        FailureReason::CertificateExpired,
+        FailureReason::CertificateNameMismatch,
+        FailureReason::TlsVersionUnsupported,
+        FailureReason::TlsHandshakeFailed,
     ]
     .into_iter()
     .find(|reason| failure_reason(*reason) == name)

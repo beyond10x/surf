@@ -70,7 +70,8 @@ entities:
     # commits. The HTML Standard navigates otherwise: it fetches with the redirect mode "manual",
     # follows each redirect itself ("create navigation params by fetching"), and hands a redirect
     # to a scheme it does not fetch (`mailto:`) on instead of failing it. Here every redirect stays
-    # inside the request, and one that leaves `http:` fails it with UnsupportedScheme.
+    # inside the request, and one that leaves `http:` and `https:` fails it with
+    # UnsupportedScheme.
     identity:
       name: navigation_id
       type: surf.net.RequestId

@@ -47,6 +47,40 @@ types:
         summary: >-
           A redirect led from a public address to a loopback, private, link-local,
           unique-local, shared or unspecified one.
+      # The Fetch Standard returns a network error when the TLS handshake of an `https:` request
+      # fails, and gives it no name of its own. This one has a name, so that an agent can tell it
+      # from a host that cannot be reached (Unreachable). surf does not check revocation: a
+      # revoked certificate that has not expired loads.
+      - name: CertificateNotTrusted
+        summary: >-
+          The server's certificate has no path to a trust anchor, or a certificate on that path
+          is refused.
+      # The Fetch Standard returns a network error here and gives it no name of its own. This one
+      # has a name, so that an agent can tell it from a host that cannot be reached.
+      - name: CertificateExpired
+        summary: A certificate on the server's path is outside its validity, either side.
+      # The Fetch Standard returns a network error here and gives it no name of its own. This one
+      # has a name, so that an agent can tell it from a host that cannot be reached.
+      - name: CertificateNameMismatch
+        summary: >-
+          No subjectAltName entry of the server's certificate matches the host, or the host is
+          one no certificate can match.
+      # The Fetch Standard returns a network error here and gives it no name of its own. This one
+      # has a name, so that an agent can tell it from a host that cannot be reached. A server
+      # that offers at best TLS 1.2 ends with it when it reads `supported_versions` and sends
+      # `protocol_version` before its ServerHello, or when it answers with a ServerHello of TLS
+      # 1.2 or below (kinds (a) and (c) of item 7 of `docs/design/tls.md`).
+      - name: TlsVersionUnsupported
+        summary: The server offers no version of TLS above 1.2.
+      # The Fetch Standard returns a network error here and gives it no name of its own. This one
+      # has a name, so that an agent can tell it from a host that cannot be reached. A server
+      # that offers at best TLS 1.2 and ignores `supported_versions` ends with it: it sends
+      # `handshake_failure` before its ServerHello, and the detail says that a server limited to
+      # TLS 1.2 answers this way (kind (b) of item 7 of `docs/design/tls.md`).
+      - name: TlsHandshakeFailed
+        summary: >-
+          The TLS handshake ended with an alert or a violation of the protocol that no other
+          reason names.
     naming:
       summary: Why a request ended without a response.
 
@@ -58,15 +92,20 @@ types:
     naming:
       summary: The request method.
 
-# http is the only scheme fetched. Every other scheme ends the request with UnsupportedScheme.
+# http and https are fetched. Every other scheme ends the request with UnsupportedScheme. https
+# is fetched over TLS 1.3 (RFC 8446), on port 443 when the address names no port, and the server
+# is authenticated against the bundled trust anchors and the extra anchors of the session;
+# revocation is not checked.
 # A redirect is followed inside the one request, as the Fetch Standard's "HTTP-redirect fetch"
 # follows it inside one fetch: the request keeps its identity and its address (the one asked
 # for), and its asker gets one answer, the response after the last redirect together with the
 # address that response came from (`DeliverResponse`, `ResponseReceived`). The transport follows
 # a response whose status is a redirect status (301, 302, 303, 307 or 308) and that has a
 # `Location`, at most 20 times in one request; a redirect after the twentieth ends the request
-# with TooManyRedirects. A `Location` whose scheme is not `http:` ends the request with
-# UnsupportedScheme: the Fetch Standard follows `https:` as well, which this slice does not fetch.
+# with TooManyRedirects. Redirects between `http:` and `https:` are followed both ways, as the
+# Fetch Standard follows them, under the destination rule below (`story:security-review-fixes`).
+# A `Location` whose scheme is neither `http:` nor `https:` ends the request with
+# UnsupportedScheme.
 # A redirect status without a `Location` is a response like any other.
 # A `Location` that does not parse as a URL, is not UTF-8 or comes in more than one field, and a
 # `Location` that resolves to an address longer than 64 KiB, end the request with
@@ -95,7 +134,7 @@ types:
 # public addresses only, as a redirect does (`surf-fetch` `Origin::PublicPage`,
 # `story:agent-press-submit`, decision 1 after the adversary's pass). The asker's origin is not
 # an input of `Fetch` yet; the session tells its transport.
-# UNMAPPED: request headers, cookies, caching and TLS.
+# UNMAPPED: request headers, cookies and caching.
 entities:
   - name: surf.net.Request
     naming:
