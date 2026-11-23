@@ -43,7 +43,7 @@ scope:
   path: generated/rust
 - confidence: inferred
   path: spec/domains/agent.yaml
-revision: 12
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 5}
@@ -73,7 +73,16 @@ so the agent gets the reason and status 1 instead of a navigation that never sta
   later entry `did refused at-end`, an entry made by `POST` `did refused post-entry`, all status
   1 with the current state. Otherwise `GoBack` or `GoForward`, then the answer of the page the
   traversal committed at, or `page failed` when it failed. Handles start at 1 again, as for any
-  new document.
+  new document. `back` and `forward` go to an entry of the session's own history, so the three
+  refusals of a target (`address-too-long`, `unsupported-scheme`, `forbidden-destination`,
+  `story:agent-follow-links`, "As decided after the adversary's pass") do not apply to them: an
+  entry whose address was refused never entered the history, since an entry is made only by a
+  committed navigation of a push (`.engineering/planning/story/agent-history-spec.md:82-83`,
+  `:97-98`)
+  and a refused target commits none: a target refused by the session's checks starts no
+  navigation, and one the fetch refuses at its first request (`forbidden-destination` by the
+  address a host resolves to, `story:agent-press-submit`, "As decided after the adversary's
+  pass", decision 1) ends a navigation that fails before any connection and commits nothing.
 - `crates/answer`, `docs/agent-answer.md`: `did back`, `did forward`, the refusal reasons, the
   `path` lines `back` and `forward`, each with its `parse` beside its rendering (decision D20 of
   `docs/plan/agent-plan-revision-2.md`).
@@ -113,12 +122,18 @@ so the agent gets the reason and status 1 instead of a navigation that never sta
   12. `history_events_map_with_their_fields`: after cases 1 and 2, with `surfd` run in the test
       process (decision D29), the session log holds the `GoBack` and the `GoForward` event entries
       with every field of the specification and no `unmapped` mark, each between its action entry
-      and its answer entry.
+      and its answer entry;
+  13. after a form `POST` answered by a 303 to the page R, and a `follow` from R to B, `back`: the
+      page line of R, fetched with `GET`. The entry of R was committed by the `GET` that followed
+      the redirect, so it is no `POST` entry (decision D267, `story:agent-history-spec`). The
+      same holds for a 301 and a 302, after which `surf-fetch` continues with `GET` too; the case
+      uses the 303.
 
   The cases stand on commands built before this story in the commands unit: cases 1, 2, 5, 7, 8,
-  9, 10, 11 and 12 reach a second page with `follow` (`story:agent-follow-links`); case 6 makes
-  its `POST` entry with `press` (`story:agent-press-submit`, and `fill`,
-  `story:agent-fill-pick`, where its form has a field); cases 3 and 4 need neither.
+  9, 10, 11 and 12 reach a second page with `follow` (`story:agent-follow-links`); cases 6 and 13 make
+  their `POST` with `press` (`story:agent-press-submit`, and `fill`,
+  `story:agent-fill-pick`, where the form has a field), and case 13 goes on with `follow`; cases
+  3 and 4 need neither.
 
 Surfaces written: `crates/session/`, `crates/answer/`, `docs/agent-answer.md`,
 `cli/surf-agent.yaml`, `crates/agent/` (`src/wire.rs` included), `crates/surfd/src/daemon.rs`,
@@ -131,7 +146,7 @@ Surfaces written: `crates/session/`, `crates/answer/`, `docs/agent-answer.md`,
 
 ## Acceptance
 
-`cargo nextest run -p surf-session -p surf-answer -p surf-agent` passes with the 12 numbered
+`cargo nextest run -p surf-session -p surf-answer -p surf-agent` passes with the 13 numbered
 cases, each a test named after its case, case 1 answering the page line of A and case 2 that of
 B, and the drift test holding with `back` and `forward` in both the document and the parser. No
 test runs over 60 s, and the test step ends within 120 s.
