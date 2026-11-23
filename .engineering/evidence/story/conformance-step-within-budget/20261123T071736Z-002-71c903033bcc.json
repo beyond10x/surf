@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T07:17:36Z",
+  "actor": "human:operator",
+  "artifact": "story:conformance-step-within-budget",
+  "kind": "story",
+  "revision": 17,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "forge: check run 45127191776 on main at ecfaaf8, the merge of fix/conformance-step-budget (acceptance 8)",
+    "reference": "success; conformance step: 2.1 s of its budget of 120 s, 39 tests run: 39 passed, 0 skipped; test step: 13.9 s; tls test step: 5.1 s; 59 passed (19.2s)"
+  }
+}

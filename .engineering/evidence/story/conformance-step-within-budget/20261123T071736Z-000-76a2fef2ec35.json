@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T07:17:36Z",
+  "actor": "human:operator",
+  "artifact": "story:conformance-step-within-budget",
+  "kind": "story",
+  "revision": 17,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "three runs of slot --timeout 15m task conform-rust in a row on 92ab623 and one of task conform-slow, 2026-11-23 (acceptances 4, 6 and 7)",
+    "reference": "39 passed, 0 skipped each; conformance step 37.9 s, 24.0 s and 25.7 s of its budget of 120 s at a load of 93.8 to 99.8, 99.8 to 103.1 and 103.1 to 108.5; tests over 5 s: the two controls, 7.0 to 14.8 s; cargo nextest list 39 tests, 32 before the story; conform-slow: 29 planted defects, .out/noticed.txt equals conformance/tests/noticed.txt, slowest test 25.8 s"
+  }
+}

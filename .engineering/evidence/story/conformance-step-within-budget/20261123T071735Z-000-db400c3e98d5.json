@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T07:17:35Z",
+  "actor": "human:operator",
+  "artifact": "story:conformance-step-within-budget",
+  "kind": "story",
+  "revision": 17,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the implementing unit's runs before any change, on e2fdef7, 2026-11-23 (acceptance 1)",
+    "reference": "three runs of slot --timeout 15m task conform-rust: the test binary 54.94 s, 58.80 s and 65.79 s at a 1-minute load of 64.29 to 62.25, 62.25 to 68.12 and 68.12 to 94.53; under nextest Summary 70.523 s for 32 tests, slowest a_view_cut_to_its_first_row_is_noticed_for_each_entity 50.692 s; step 2 alone 8653 ms; the probe: narrowed suite admitted, 3 scenarios run; a test sleeping 70 s under cargo test passed, finished in 70.00s"
+  }
+}
