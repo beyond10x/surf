@@ -201,9 +201,10 @@ test("fixes: Enter and Space on a focused mark's button select its event once", 
   const id = await surf.open();
   await surf.agent(id, "go", surf.pages + "/first/a.html");
   // /events is never answered: no stream opens, so open() does not load and render the timeline
-  // again between the two reads of the count. "live" is written after the first load.
+  // again between the two reads of the count. The word stays "connecting" without an open
+  // stream, so the first wait is the two segments of the first load.
   await page.route(/\/events$/, () => {});
-  await load(page, surf.view);
+  await page.goto(surf.view);
   await expect(segments(page)).toHaveCount(2);
   await page.evaluate(() => {
     window.surfTestRenders = 0;

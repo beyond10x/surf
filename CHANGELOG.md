@@ -44,6 +44,10 @@ release; what came before it is in the git log and in `docs/plan/`.
   of the link a `follow` takes (the label cut as above), and `FillRequested`, `PickRequested` and
   `PressRequested` the `handle` of the control, once the session runs those commands.
 - The specification, and the code generated from it, is checked with ESS 0.97.4 instead of 0.97.3.
+- The live view's page writes `live` only when its stream of events is open and the load that
+  the stream's opening started is drawn. Until then it reads `connecting` over the first load,
+  and after a lost stream `reconnecting` until the next opening's load is drawn; a keep-alive or
+  an event before that draw writes no word, and neither does a load whose stream has closed.
 
 ## [0.4.0] - 2026-11-22
 

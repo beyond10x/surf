@@ -1,6 +1,8 @@
 // The page: loads /api/sessions, selects a session (the one the address's fragment names, or the
-// first), loads it, follows /events, and keeps the live marker (live and the time of the last
-// update, or reconnecting), and renders the panel "Now" (now.js) and the detail panel. The
+// first), loads it, follows /events, and keeps the live marker (connecting until the first
+// stream is open and the load of its opening is drawn, then live and the time of the last
+// update; reconnecting from a stream's end until the load of the next opening is drawn; offline
+// after a refusal), and renders the panel "Now" (now.js) and the detail panel. The
 // selection is written into the
 // fragment, #session=<id>&at=<sequence>, or #session=<id>&at=<sequence>&event=<number> while an
 // event is selected (the event entry's number across all sessions), with history.replaceState,
@@ -45,6 +47,12 @@ let written = null;
 let stream = null;
 // Whether the view refused the token after the page loaded: nothing is asked again.
 let refused = false;
+// How many streams opened, and the number of the one that is open (0 while none is).
+let openings = 0;
+let openStream = 0;
+// Whether the page follows: a stream is open and the load its opening started is drawn. Only
+// then is `live` written.
+let following = false;
 
 function clock(ms) {
   return new Date(ms).toLocaleTimeString([], { hour12: false });
@@ -59,8 +67,11 @@ function setLive(kind, at) {
   text(nodes.liveTime, at ? clock(at) : "");
 }
 
+// `live` with the time, while the page follows; otherwise the word stays.
 function updated() {
-  setLive("live", Date.now());
+  if (following) {
+    setLive("live", Date.now());
+  }
 }
 
 function say(message) {
@@ -335,18 +346,29 @@ async function start() {
     return;
   }
   say("");
-  updated();
   stream = follow(token, newest, {
     open() {
       say("");
-      updated();
-      loadAll().catch(failed);
+      openings += 1;
+      const opening = openings;
+      openStream = opening;
+      // Loads and draws, then writes live, only if this stream is still the open one.
+      loadAll()
+        .then(() => {
+          if (openStream === opening) {
+            following = true;
+            updated();
+          }
+        })
+        .catch(failed);
     },
     alive() {
       updated();
     },
     event: onEvent,
     closed() {
+      openStream = 0;
+      following = false;
       setLive("reconnecting", null);
     },
     refused: failed,
