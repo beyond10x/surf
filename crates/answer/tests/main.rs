@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+mod adversary_changed;
 mod adversary_follow;
 mod back_forward;
 mod changed;

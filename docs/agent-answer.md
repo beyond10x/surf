@@ -264,8 +264,13 @@ next one compares with as it was.
   exactly `<n>` lines. `value` for a `text`, `textarea`, `file` or `password` control, each
   value as the `now` block writes it: quoted and cut at 1,024 characters, for a password
   `(set)` or `(empty)` and never the value. `checked` for a checkbox or a radio button, `true` or
-  `false`. `selected` for a select: the label of its selected option before and after, quoted
-  and cut at 1,024 characters, `""` when none was selected. A radio button turned on gives one
+  `false`. `selected` for a select whose selected options changed, compared by their places in
+  the select, not by their labels (decision D298): each side the labels of all its selected
+  options in document order, joined by `, ` in the one quoted string and cut at 1,024
+  characters, `""` when none was selected. A `select multiple` with Red and Green selected that
+  a `pick` leaves with Red alone gives `~ f1 selected "Red, Green" -> "Red"`. A pick that moves
+  the selection between two options of one label gives a line whose two sides read the same:
+  the line says that the selection moved. A radio button turned on gives one
   line for each button of its group that changed: `~ f6 checked true -> false` and `~ f7 checked
   false -> true`. Values are compared whole, so a change past the first 1,024 characters gives a
   line whose two values read the same. Before scripts an action changes no element of a page,

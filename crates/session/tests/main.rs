@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 mod adversary_back_forward;
+mod adversary_change_log;
 mod adversary_document_text;
 mod adversary_events;
 mod adversary_fill_pick;

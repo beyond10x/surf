@@ -202,8 +202,8 @@
 //! the navigation its page came from (the view `Sessions`, or the one before a refused first
 //! request, [`Kept`]), the address of its `page` line, its current document, and for each
 //! control of that document, in document order, its handle, its kind, its row's value and
-//! checkedness and the label of its selected option (the first selected by position), each
-//! whole. Before the first answer it keeps no navigation, no address and no control. Every
+//! checkedness and its selected options, each by its place in the select with its label
+//! (decision D298), each whole. Before the first answer it keeps no navigation, no address and no control. Every
 //! answer that shows the state (`state_reply`: actions, reads and refusals with the state)
 //! compares that with the same reading now and holds the `changed` block, then keeps the new
 //! reading; a refusal without the token, a `usage` refusal of `open` or of a request that does
@@ -219,8 +219,10 @@
 //!   none.
 //! - The same navigation: one line per control whose state differs, in document order: its value
 //!   for a text, textarea, file or password control (a password's `(set)` or `(empty)`, never the
-//!   value), its checkedness for a checkbox or a radio button, the label of its selected option
-//!   for a select. Before scripts nothing but a control's state changes within a document
+//!   value), its checkedness for a checkbox or a radio button, and for a select the set of its
+//!   selected options, compared by their places (decision D298), each side written as their
+//!   labels in document order joined by `, `, `""` for none. Two options of one label give a line
+//!   whose two sides read the same: the selection moved. Before scripts nothing but a control's state changes within a document
 //!   (decision D2 of `story:agent-change-and-log`), so nothing else is compared.
 //!
 //! An action changes at most two controls: `fill` and `pick` one, a radio button turned on the
@@ -284,16 +286,19 @@
 //! bytes each are 2,359,314 bytes. The `did` line of `follow` holds the handle as typed, from a
 //! request like an address, and a `follow` path line holds a label of at most 60 characters
 //! (at most 965 bytes quoted), so the nine still bound them. The title adds at most
-//! [`TITLE_CHARS_MAX`] characters, at most 16,386 bytes quoted. The rest of the `changed` block
-//! adds at most 10 `+ text` lines of 120 characters, at most 495 bytes each quoted, and a `more`
-//! line; or at most two `~` lines ("What changed"), each with two values of at most 1,024
-//! characters, under 8,300 bytes each quoted. A `text` block adds at most
+//! [`TITLE_CHARS_MAX`] characters, at most 16,386 bytes quoted. A character of four UTF-8 bytes
+//! quotes to 16 bytes, so the rest of the `changed` block adds at most 10 `+ text` lines of 120
+//! characters, at most 1,935 bytes each with the cut mark and the line feed, and a `more` line
+//! under 40 bytes; or `changed 2` and at most two `~` lines ("What changed"), each with a handle
+//! of `f` and at most 20 digits and two values of at most 1,024 characters and their cut marks,
+//! under 32,820 bytes each (decision D299). A `text` block adds at most
 //! [`surf_answer::TEXT_BYTES_MAX`] (32,768) bytes of body lines, its header, a `more` line and a
 //! `note text:` line, each under 200 bytes; or, in an answer without text, the `now` block adds
 //! at most [`NOW_BYTES_MAX`] (1,048,576) bytes and `note visibility:` and `note parser:` lines
 //! under 200 bytes each. So an answer stays below [`surfd::link::ANSWER_TEXT_MAX`], 4,194,304
-//! bytes: about 3,441,000 at most. The answer of `log` has no `did` line and in place of the five
-//! path lines at most [`LOG_BYTES_MAX`] (1,048,576) bytes of them, so it stays below 3,000,000.
+//! bytes: about 3,491,000 at most. The answer of `log` has no `did` line and in place of the five
+//! path lines at most [`LOG_BYTES_MAX`] (1,048,576) bytes of them, so it stays below 3,000,000
+//! (about 2,967,000 at most).
 //!
 //! A status record whose quoted address does not fit [`surfd::link::RECORD_MAX`] (65,536 bytes,
 //! with the record's other lines) is sent without the address, and `surfd` lists the session
@@ -319,12 +324,14 @@
 //! the fix round of round 1 a call with `--as` also leaves the lines of the current document in
 //! the forms asked for ("The page as text"), until the next request that is not a `look`.
 //! Since `story:agent-change-and-log` the session keeps what its last answer showed ("What
-//! changed"): two addresses and identities, and the handle, value and selected label of each
-//! control of the current document, values the element and option rows hold as well; it is
-//! replaced at each answer that shows the state. Like the identities of the navigations made
-//! from a page that counts as public, the session keeps for the life of the session the
-//! identity of each navigation whose fetch connected first to a public address and was
-//! redirected ("Back and forward", decision D293).
+//! changed"): two addresses and identities, and the handle, value and selected options' places
+//! and labels of each control of the current document, values the element and option rows hold
+//! as well; it is
+//! replaced at each answer that shows the state. It keeps the identity of each navigation made
+//! from a page that counts as public, and of each navigation whose fetch connected first to a
+//! public address and was redirected ("Back and forward", decision D293), while the entry it
+//! made is in the history: after each run it drops those of entries a load after `back`
+//! dropped and of navigations that made no entry (decision D300).
 //!
 //! # The entries
 //!
@@ -797,12 +804,14 @@ pub struct Session<T> {
     /// public: a `follow` or a `press` from such a page ([`Session::run_from`]). An entry of the
     /// history has the identity of the navigation that made it, so `back` and `forward` fetch
     /// it again under the same rule (decision D279); an entry made by `go` is not here. A
-    /// traversal under the rule is noted too; it makes no entry, so it is never looked up.
+    /// traversal under the rule is noted too; it makes no entry, so it is never looked up, and
+    /// the next run drops it, as it drops an entry a load after `back` dropped (decision D300,
+    /// [`Session::note_redirected_public`]).
     from_public: Vec<RequestId>,
     /// The navigations whose fetch connected first to a public address and was redirected
     /// (decision D293), as the session's transport noted them ([`fetch`]): `back` and `forward`
     /// fetch the entry such a navigation made under the rule of a page that counts as public
-    /// ([`Session::redirected_by_public`]).
+    /// ([`Session::redirected_by_public`]). Only those whose entry is in the history (D300).
     redirected_public: Vec<RequestId>,
     /// What the last answer that showed the session's state showed, for the `changed` block of
     /// the next ("What changed" above).
@@ -820,14 +829,15 @@ struct Shown {
 }
 
 /// The state of one control: its handle, its kind, and from its rows its value, its checkedness
-/// and the label of its selected option, each whole.
+/// and its selected options, each by its place in the select and with its label (decision
+/// D298), each whole.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct ShownControl {
     handle: String,
     kind: ElementKind,
     value: Option<String>,
     checked: bool,
-    selected: Option<String>,
+    selected: Vec<(i64, String)>,
 }
 
 /// What the session showed before a navigation whose first request the fetch refused
@@ -1638,6 +1648,9 @@ impl<T: Transport> Session<T> {
 
     /// Takes from the session's transport the navigations of the last run whose fetch
     /// connected first to a public address and was redirected ([`Session::redirected_public`]).
+    /// Then keeps in it and in [`Session::from_public`] only the navigations that are entries of
+    /// the history (decision D300): one a load after `back` dropped, or one that never made an
+    /// entry (a traversal, a failed load), is never looked up again.
     fn note_redirected_public(&mut self) {
         let noted = FIRST_REQUEST.with(|first| first.redirected_public.take());
         for navigation in noted {
@@ -1645,6 +1658,21 @@ impl<T: Transport> Session<T> {
                 self.redirected_public.push(navigation);
             }
         }
+        let Ok(rows) = self.browser.system().navigator.navigations() else {
+            return;
+        };
+        let entries: HashSet<&str> = rows
+            .iter()
+            .filter(|row| {
+                row.standing
+                    .is_some_and(|standing| standing != Standing::Dropped)
+            })
+            .map(|row| row.navigation_id.0.0.as_str())
+            .collect();
+        self.from_public
+            .retain(|navigation| entries.contains(navigation.0.0.as_str()));
+        self.redirected_public
+            .retain(|navigation| entries.contains(navigation.0.0.as_str()));
     }
 
     /// Status 0 with `did <command> "<handle>"` and the state.
@@ -2143,11 +2171,7 @@ impl<T: Transport> Session<T> {
             .into_iter()
             .map(|row| (row.element_id.0.0.clone(), row))
             .collect();
-        let options = document.options().unwrap_or_default();
-        let selected: HashMap<String, String> = selected_labels(&options)
-            .into_iter()
-            .map(|(select, label)| (select.to_string(), label.to_string()))
-            .collect();
+        let mut selected = selected_options(&document.options().unwrap_or_default());
         let Some(links) = self.links() else {
             return Vec::new();
         };
@@ -2161,7 +2185,7 @@ impl<T: Transport> Session<T> {
                     kind: row.kind,
                     value: row.value,
                     checked: row.checked,
-                    selected: selected.get(&link.element_id.0.0).cloned(),
+                    selected: selected.remove(&link.element_id.0.0).unwrap_or_default(),
                 })
             })
             .collect()
@@ -2686,10 +2710,28 @@ fn selected_labels(options: &[Options]) -> HashMap<&str, &str> {
         .collect()
 }
 
+/// The selected options of each select, by the select's element identity: each option's place
+/// in the select and its label, in document order (decision D298).
+fn selected_options(options: &[Options]) -> HashMap<String, Vec<(i64, String)>> {
+    let mut selected: HashMap<String, Vec<(i64, String)>> = HashMap::new();
+    for option in options.iter().filter(|option| option.selected) {
+        selected
+            .entry(option.select_id.0.0.clone())
+            .or_default()
+            .push((option.position, option.label.clone()));
+    }
+    for options in selected.values_mut() {
+        options.sort();
+    }
+    selected
+}
+
 /// The `~` line of a control from `before` to `after`, or `None` when its state is the same
 /// ("What changed" above): `value` for a text, textarea, file or password control, a password's
 /// written `(set)` or `(empty)`; `checked` for a checkbox or a radio button; `selected` for a
-/// select, `""` for none selected.
+/// select when the set of its selected options changed, compared by their places (decision
+/// D298), each side the labels of its selected options in document order joined by `, `, `""`
+/// for none selected.
 fn control_change(before: &ShownControl, after: &ShownControl) -> Option<Change> {
     match after.kind {
         ElementKind::Text | ElementKind::Textarea | ElementKind::File
@@ -2720,8 +2762,10 @@ fn control_change(before: &ShownControl, after: &ShownControl) -> Option<Change>
             })
         }
         ElementKind::Select if before.selected != after.selected => {
-            let label =
-                |label: &Option<String>| Cut::of(label.as_deref().unwrap_or(""), VALUE_CHARS_MAX);
+            let label = |selected: &[(i64, String)]| {
+                let labels: Vec<&str> = selected.iter().map(|(_, label)| label.as_str()).collect();
+                Cut::of(&labels.join(", "), VALUE_CHARS_MAX)
+            };
             Some(Change::Selected {
                 before: label(&before.selected),
                 after: label(&after.selected),

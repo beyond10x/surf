@@ -223,6 +223,53 @@ fn case_05_pick_a_select_option_changes_selected() {
     );
 }
 
+/// A session at a page whose only control is the select `select`, after a first `look`, and the
+/// answer of `pick f1 <option>`.
+fn picked(select: &str, option: &str) -> String {
+    let page = format!("<!doctype html><title>S</title><form action=\"/got\">{select}</form>");
+    let site = Site::start(vec![("/form", HTML, page.into_bytes())]);
+    let (mut session, token) = at_form(&site);
+    let (status, text, typed) = ask(
+        &mut session,
+        &token,
+        "pick",
+        &[("handle", "f1"), ("option", option)],
+    );
+    assert_eq!(status, 0, "{text}");
+    round_trip(&text, &typed);
+    text
+}
+
+/// Decision D298: a `select multiple` compares the set of its selected options, each side the
+/// labels of all of them in document order joined by `, `.
+#[test]
+fn d298_a_multiple_select_writes_every_selected_label_on_each_side() {
+    let text = picked(
+        "<select name=\"c\" multiple><option selected>Red</option>\
+         <option selected>Green</option><option>Blue</option></select>",
+        "Red",
+    );
+    assert_eq!(
+        changed_block(&text),
+        ["changed 1", "  ~ f1 selected \"Red, Green\" -> \"Red\""]
+    );
+}
+
+/// Decision D298: options are compared by their places, so a move between two options of one
+/// label gives a line whose two sides read the same.
+#[test]
+fn d298_a_move_between_two_options_of_one_label_reads_the_same_on_both_sides() {
+    let text = picked(
+        "<select name=\"c\"><option value=\"a\">Same</option>\
+         <option value=\"b\">Same</option></select>",
+        "b",
+    );
+    assert_eq!(
+        changed_block(&text),
+        ["changed 1", "  ~ f1 selected \"Same\" -> \"Same\""]
+    );
+}
+
 #[test]
 fn case_06_look_after_look_changes_nothing() {
     let site = pages_site();
