@@ -184,7 +184,7 @@ above, and the list of standards itself was written from memory.
   prints that release; `.github/workflows/check.yml` and `release.yml` read the channel and the
   components from it and name no release of their own. A `RUSTUP_TOOLCHAIN` in the environment
   wins over the file; `task check-runner` unsets it.
-- `spec/scenarios/*.yaml`: thirty-seven authored scenario files (`ess-scenario/6`), for what
+- `spec/scenarios/*.yaml`: forty-two authored scenario files (`ess-scenario/6`), for what
   synthesis does not write. Two cover the flows synthesis refuses (the page load that commits and the one that
   fails); both also read the request's address back from `Requests`. The third,
   `two-of-each-entity.yaml`, creates two windows, two tabs in one window, two page loads, two
@@ -226,7 +226,15 @@ above, and the list of standards itself was written from memory.
   `navigation-traverse-failed-keeps-current.yaml`, `navigation-traverse-refused-at-end.yaml`,
   `navigation-traverse-refused-at-start.yaml`, `navigation-traverse-refused-for-post-entry.yaml`
   and the five `adversary-history-*.yaml` (back twice, forward then push, a `POST` redirected
-  to `GET`, a push during a traversal, two tabs).
+  to `GET`, a push during a traversal, two tabs). Since `story:tls-spec` five more, one per TLS
+  failure reason: `page-load-fails-certificate-not-trusted.yaml`,
+  `page-load-fails-certificate-expired.yaml`, `page-load-fails-certificate-name-mismatch.yaml`,
+  `page-load-fails-tls-version-unsupported.yaml` and `page-load-fails-tls-handshake-failed.yaml`.
+  Each navigates a session's tab to an `https:` address, sends `FailRequest` with its reason and
+  reads it back from `Requests`, `Navigations` and `SessionState`;
+  `page-load-fails-certificate-expired.yaml` also sends `CertificateExpired` for a request
+  already `Responded`, which ends in `wrong-state`, and reads the committed navigation back as
+  `Committed`.
 - `spec/ess-inputs.yaml`: the list of every file above, and the pin `requires: ess 0.97.4`. A new
   file under `spec/` is not read until it is listed there.
 - `generated/rust/`: the workspace `ess generate synthesize` writes, its own `Cargo.toml`
