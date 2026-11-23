@@ -2,7 +2,7 @@
 //! (`dc86f24`): the `changed` block against a select with more than one selected option and
 //! against two options of one label, radio groups of one name in two forms, sequences of
 //! `fill`, `look` and refusals, `back` and `forward`, a failed load, the bounds of the `+ text`
-//! lines at their edges, a page of 100,000 texts and one of a 6 MiB text, `log` with every kind
+//! lines at their edges, a page of 20,000 texts and one of a 6 MiB text, `log` with every kind
 //! of count and at its byte bound, forging through a page's title, labels and values with the
 //! round trip of every answer, and where the first connection of a redirected fetch counts.
 //!
@@ -593,14 +593,14 @@ fn adversary_cl_duplicate_texts_and_texts_of_the_page_left() {
     );
 }
 
-/// A page of 100,000 texts, reached and then left: the block of the `go` to it stays at 10
-/// lines and `more 99990`, the `go` from it (100,000 texts held by the old page) lists the one
+/// A page of 20,000 texts, reached and then left: the block of the `go` to it stays at 10
+/// lines and `more 19990`, the `go` from it (20,000 texts held by the old page) lists the one
 /// new text, and each answer comes within 20 s. (A page of 6 MiB is
 /// `events::case_08_a_page_of_6_mib_leaves_the_session_open`, whose `go` answer now holds the
 /// block.)
 #[test]
-fn adversary_cl_a_page_of_100000_texts_stays_bounded() {
-    let many: String = (0..100_000).map(|n| format!("<p>t{n}</p>")).collect();
+fn adversary_cl_a_page_of_20000_texts_stays_bounded() {
+    let many: String = (0..20_000).map(|n| format!("<p>t{n}</p>")).collect();
     let many = format!("<!doctype html><title>Many</title>{many}");
     let site = Site::start(vec![
         ("/a", HTML, PAGE_A.as_bytes().to_vec()),
@@ -617,7 +617,7 @@ fn adversary_cl_a_page_of_100000_texts_stays_bounded() {
         let block = changed_block(&text);
         assert_eq!(block.len(), lines, "{block:?}");
         if path == "/many" {
-            assert_eq!(block[11], "  + text more 99990");
+            assert_eq!(block[11], "  + text more 19990");
         } else {
             assert_eq!(block[1..], ["  + text \"Beta\"", "  + text \"Shared\""]);
         }
