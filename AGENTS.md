@@ -487,7 +487,7 @@ above, and the list of standards itself was written from memory.
     `fill f1 -- -`), and a value from standard input whose request is over 65,536 bytes is
     refused naming its quoted size (`client::STDIN_VALUE_FITS`, 16,000 bytes, always fits beside
     a handle of up to 1,364); the `Debug` of a wire `Arg` writes its value's length. The
-    package carries the release version, `0.5.0`, as do `surf-cli`, `surfd` and
+    package carries the release version, `0.6.0`, as do `surf-cli`, `surfd` and
     `surf-session`. `open` starts `surfd` from the directory of its own executable. Depends on
     `surf-answer` and `surf-secret`.
   - `crates/surfd` (`surfd`): a library and the binary `surfd`, the daemon the agent command line
@@ -1229,6 +1229,11 @@ is on that old history too, and stays local.
   COMMIT=<commit>` (with `GATES_POLICY` naming the policy file when `../gates-policy/` is not
   beside the checkout) waits for the forge's runs of that commit and exits non-zero when one
   did not pass.
+- A pull request cannot be merged into `main` on the forge: the forge refuses with "the base
+  branch policy prohibits the merge", because the rules of `main` restrict updates to the
+  organization bot's push (found on 2026-11-23). A pull request is opened for its checks; the
+  commit reaches `main` by the bot's push through the gates route above, after a green local
+  gate, and the pull request then shows as merged.
 - `crates/url/tests/data/urltestdata.json` is vendored test data whose inputs hold
   a `file:` address with a home directory path; the policy carries six exceptions for it. Replacing the file with a
   newer copy needs the exceptions made again (`b10x-gates ... policy except`).
@@ -1314,8 +1319,8 @@ the others were written to a scratch directory and not compiled:
   repository. The waves after 4 stay in the plan; they are planned and not scheduled.
 - Present state: wave 10 and rounds 1 and 2 are delivered (10 of 22 waves, and the stories of
   rounds 1 and 2); release `0.2.0` follows wave 4, release `0.3.0` wave 9, release `0.4.0`
-  round 1 and release `0.5.0` round 2 (the
-  releases are listed at https://github.com/beyond10x/surf/releases). The
+  round 1, release `0.5.0` round 2 and release `0.6.0` the view's control states and changed
+  panel (the releases are listed at https://github.com/beyond10x/surf/releases). The
   operator session ordered the continuation after the checkpoint on 2026-11-21, for the
   operator: "continue as its `AGENTS.md` says". The next is round 3 of
   `docs/plan/agent-waves.md` ("Rounds after wave 10": the waves 11 to 22 in three rounds). The stories
@@ -1383,9 +1388,9 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   step B s, conformance step C s, page step D s)`, N their sum with one decimal, as the last
   line of `task check`. It is a printed sum, not a budget: D247 sets 120 s per step, and each
   of the four steps fails over its own 120 s, while the sum may pass 120 s (137.5 s on
-  `ba0c584`). It fails only on its input, with one line naming the file: `no such file` when
-  one of the four is missing, and `not a number of seconds` when one is empty or holds
-  anything but digits and one inner decimal point.
+  `ba0c584`, 159.8 s on `58656b1`). It fails only on its input, with one line naming the
+  file: `no such file` when one of the four is missing, and `not a number of seconds` when one
+  is empty or holds anything but digits and one inner decimal point.
 - `task check-runner`: the gate to run before a merge, `task check` as the forge's runner runs
   it (`taskfiles/check-runner.sh`; `slot task check-runner`). What it does differently from
   `task check`: it runs in `.out/runner/tree`, a clean export of `HEAD` (a clone sharing this
@@ -1772,6 +1777,32 @@ of suite sha256:dcc7e7c2c534eb6f98ef03cbd07da620efd16fbe16e8d448de697919b0a56bf3
 `generated-check`: `generated/rust matches spec/ (30 artifact(s) and .ess-output)`.
 `test-layout`: `23 test directories, 150 test files, one test binary each`.
 
+After the view's control states and changed panel (`story:view-controls-and-changes`, merged at
+`41f842f`), the gate in runner form on `58656b1`, whose tree equals `41f842f` (2026-11-23,
+`start 14:40:09 CET` to `end 15:00:43 CET`, `slot: job 58126 waited 633s for a build slot, ran
+599s`, a 1-minute load of 89.87 at the start and 86.57 at the end on 20 CPUs), printed
+`check-runner: task check exit 0 in 600 s, export included`, with `rustc 1.99.1` and `ess
+0.97.4`: the scenario, suite, interpreter, Rust-system, digest and `Cargo.lock` lines as on
+`b00d02d` below; the conformance step `conform-rust: the narrowed suites of 29 planted defects
+written to conformance/target/noticed/6d99491696333b9a70c2b009b42634243f65bbe23190765d981e5e6ab8c09ee1`,
+`Summary [   6.576s] 39 tests run: 39 passed, 0 skipped`, `conformance step: 14.7 s of its
+budget of 120 s` (slowest
+`review2_planted_defects::review2_control_the_unplanted_system_passes_every_scenario`, 5.8 s);
+`test-layout: 23 test directories, 152 test files, one test binary each`, `1240 tests: 1240
+passed, 0 failed, 0 ignored (cargo-nextest 1238, doc tests 2)`, `test step: 44.9 s of its
+budget of 120 s` (slowest `tasks::a_call_that_never_answers_ends_at_its_bound`, 12.9 s), `545
+tests: 545 passed, 0 failed, 0 ignored (cargo-nextest 545)`, `tls test step: 15.7 s of its
+budget of 120 s` (slowest `seam::wycheproof_ecdsa_secp384r1_sha384`, 3.2 s), `agent-tasks: 4
+tasks, 4 pass, 0 fail, 0 skipped, lane gate, binaries target/debug`,
+`sh-echo: Summary [  13.489s] 41 tests run: 41 passed, 112 skipped`,
+`view-stream-check: 23 event name(s)`,
+`view-tests: node_modules installed from package-lock.json`, `71 passed (1.4m)` (slowest `reset
+after a long absence`, 5.6 s; `an entry over 1 MiB` 4.7 s), `page step: 84.5 s of its budget
+of 120 s`, `html-conformance: 9107 cases, 9095 run, 9095 passed`, `x509-limbo: 5143 cases, 5089
+run, 5060 passed`, `tls-x509-conformance: 6 s`, `doc-tests-check-test: 14 case(s)`, `four
+steps: 159.8 s (test step 44.9 s, tls test step 15.7 s, conformance step 14.7 s, page step
+84.5 s)`, and no line starting with `raise:`.
+
 The gate in runner form on `ba0c584` (2026-11-23, `start 08:44:15 CET` to `end 08:48:58 CET`)
 printed `check-runner: task check exit 0 in 283 s, export included`, with `rustc 1.99.1` and
 `ess 0.97.4`: the scenario, suite, interpreter, Rust-system, digest and `Cargo.lock` lines as on
@@ -2014,7 +2045,17 @@ program (`agent()`, `Surfd::start`, `Started::start`; each calls `mark_built_pro
 `environ` of every process of the host, since such a program can leave the test process's tree.
 Any other directory reads only the descendants of the test process, found through
 `/proc/<pid>/task/<tid>/children` followed down, and every process of the host when one of those
-files cannot be read. In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
+files cannot be read. The lane of `surf-agent-tasks` (`lane::run`) decides that the processes of
+its private `XDG_RUNTIME_DIR` have ended by a wait with a bound, never by one read of `/proc`:
+`RuntimeDir::left_within` reads every 10 ms, at most `END_BOUND` (5 s), and lists what is still
+there with its `stat`. It waits after the last task for every process but `surfd` (`after_tasks`:
+`surfd` relays the answer to `close` before the session has exited) and after the SIGKILL to
+`surfd` for every process (`left`); `tasks::assert_clean` fails on either list, and a test that
+asserts that the processes of a directory ended uses the same wait. One read made
+`tasks::a_call_that_never_answers_ends_at_its_bound` fail at a load of 37 to 263 on 20 CPUs
+(2026-11-23), naming a process that had ended by the time its `comm` was read. That test holds
+the real calls to `CALL_BOUND`: with 1 s an `open` did not answer in time at a load of 98 to 136.
+In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
 872 passed, 32 skipped`; the 32 are hosts outside ASCII, listed in
 `crates/url/tests/data/SKIPPED`. `view-stream-check`: `view-stream-check: 23 event name(s),
 each a message of the AsyncAPI projection` (19 before round 2). `view-test`: `38 passed

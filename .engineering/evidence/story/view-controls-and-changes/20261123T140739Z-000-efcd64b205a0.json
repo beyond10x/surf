@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T14:07:39Z",
+  "actor": "human:operator",
+  "artifact": "story:view-controls-and-changes",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate: task check-runner on 851fda9 (impl/view-controls-and-changes), 2026-11-23 09:40 to 09:49 CET",
+    "reference": "exit 0 in 517 s; 1237 tests passed; 65 page tests passed; page step: 63.7 s of its budget of 120 s"
+  }
+}

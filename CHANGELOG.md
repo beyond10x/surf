@@ -7,6 +7,34 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-23
+
+### Added
+
+- The live view's panel "Now" lists a page's buttons and form fields beside its links, in the
+  groups `links`, `buttons` and `fields`: a field with its kind, label, value and the flags
+  `disabled`, `checked`, `required` and `readonly`; a button with the form, method and action
+  it submits to. A password shows `(empty)`, the length a `fill` typed (`12 bytes`, from the
+  `FillRequested` entry), or `(set)` when no `fill` of that page typed it, never its value.
+- The live view has a panel `Changed by <action>` below "Now" (`Changed by fill f2`): what the
+  action at the playhead changed, from the `changed` block of its answer. On the same page one
+  line per control, such as `f1 value "" -> "ada"`, `f3 checked true -> false` or
+  `f2 value (empty) -> 12 bytes`; after a load `page "<old>" -> "<new>"`, the new page's
+  `+ text` lines and `+ text more <n>`. It shows `nothing changed` for `changed 0` and
+  `no changed block` for an answer without one. The value the agent typed into a password is in
+  neither the page, the stream nor a session's detail; text a server sends back is page text
+  and shows in the `+ text` lines.
+- The view's `answer` entry gains the member `changed`, `{"kind":"controls","lines":[…]}` or
+  `{"kind":"page","from","to","texts","more"}`, and each element of its `now` member the member
+  `state`: a control's value, its flags and what a button submits, `null` for a link. Format:
+  [`docs/view-stream.md`](docs/view-stream.md).
+
+### Changed
+
+- In the view's `now` member, a control or a button has its `label` and `label_cut`, which were
+  `null`; its `text` is still the line as the answer writes it. No member is removed or
+  renamed.
+
 ## [0.5.0] - 2026-11-23
 
 ### Added
