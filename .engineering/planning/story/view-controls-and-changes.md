@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:view-controls-and-changes
 kind: story
-status: active
+status: implemented
 title: Form controls and buttons in the now panel, and what the last action changed
 summary: Controls and buttons join the now panel, password values never reach the view, and a changed panel shows the answer's changed block at the playhead.
 relations:
@@ -10,10 +10,11 @@ relations:
 - depends_on: story:view-now-panel
 - depends_on: story:agent-fill-pick
 - depends_on: story:agent-change-and-log
-revision: 7
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-23T14:07:40Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"test_result":3,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -92,3 +93,42 @@ named after its case, and the earlier view tests still pass.
 ## Out of scope
 
 The detailed lines (`epic:detailed-mode`); acting from the view; computed visibility.
+
+## As built, and as decided after the adversary's pass
+
+Built in `851fda9`, fix round in `03f25c9`. Where the build differs from the text above:
+
+- D325: the `changed` member holds `~` control lines and `+ text` lines, as the answer has them
+  since `docs/plan/agent-plan-revision-1.md` D2; there are no `+` or `-` element lines. A
+  password's length comes from the `FillRequested` entry and is shown as `<n> bytes`; the answer
+  prints `(set)` or `(empty)`. An answer without a `changed` block shows "no changed block". A
+  refused command records no action, so the panel has nothing to show for it.
+- Outside the surfaces listed: `crates/view-fixture/src/main.rs` answers POST and has the command
+  `agent-stdin` (a GET form with a password is refused as `password-in-query`, and the fixture had
+  no standard input); `crates/surfd/examples/agent.rs` reads standard input;
+  `crates/surfd/examples/stand_in_session.rs` answers `fill` and `press`.
+- Case 2 runs against `surfd`'s stand-in session. The adversary's page test "two fills and a
+  press" makes the same claim against the real session: no byte of the stream, the detail, the
+  list, the page or the request fields holds either password.
+
+The adversary's pass on `851fda9` found no path that puts a typed password into the view. Decided:
+
+- D322: the stand-in removes CR and LF before it counts a filled value, as `sanitized()` in
+  `crates/session/src/lib.rs` does. Before, it recorded 13 bytes for `hunter2-view` followed by
+  CR LF and the session 12.
+- D323: seven tests of the adversary stay, each under 5 s: six page tests of
+  `view-tests/tests/adversary-controls.spec.mjs`, one test of `crates/surfd/tests/adversary_controls.rs`
+  and one of `crates/session/tests/adversary_controls.rs`. They fail on four mutants that the
+  story's own tests passed: `disabled` and `readonly` swapped, checked before and after swapped, a
+  password's length before the action taken from after it, `readonly` dropped from the flags
+  shown. The page test of a server that prints the posted body is left out: it is red by design.
+- D324: `docs/view-stream.md` says that D22 covers the value the agent types, and that text a
+  server sends back is page text: a page that prints a posted value has it in a `+ text` line, on
+  the stream and in `/api/sessions/<id>`.
+- D326 (answered "A" on 2026-11-23): that text is shown. The case was the adversary's own test
+  page printing a typed test value, not a password of a real site;
+  `story:password-printed-back-by-a-server` is archived with no further work.
+
+Not built: the adversary's two notes read from the code, a control that changes from password to
+text (no page can do it without a script) and the changed panel saying "running" with the
+playhead on the `open` of a session, as the other panels do.

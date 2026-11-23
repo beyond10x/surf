@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T14:07:40Z",
+  "actor": "human:operator",
+  "artifact": "story:view-controls-and-changes",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the forge's runs on main at 41f842f (the merge of impl/view-controls-and-changes at 58656b1), 2026-11-23 15:03 to 15:07 CET",
+    "reference": "check 45190050235 success, Shared source gates 45190050304 success, Documentation validation 45190049829 success, Documentation site 45190178105 success"
+  }
+}

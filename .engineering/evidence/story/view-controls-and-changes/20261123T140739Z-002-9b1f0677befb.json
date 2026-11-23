@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T14:07:39Z",
+  "actor": "human:operator",
+  "artifact": "story:view-controls-and-changes",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate: task check-runner on 58656b1, whose tree equals the merge 41f842f on main, 2026-11-23 14:40 to 15:00 CET, 1-minute load 89.87 to 86.57",
+    "reference": "exit 0 in 600 s; 1240 tests: 1240 passed (cargo-nextest 1238, doc tests 2), test step 44.9 s; 545 tls tests, 15.7 s; conformance step 14.7 s; 71 passed (1.4m), page step: 84.5 s of its budget of 120 s"
+  }
+}
