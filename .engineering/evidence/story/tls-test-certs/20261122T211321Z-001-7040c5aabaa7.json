@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T21:13:21Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-test-certs",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "security review of the seams of surf-tls on wave/tls-1: 6 findings and one on writes, fixed in bdbcd4f, ee6c101, 7f0ad05, 2047347, d299d0d, 36e50b2, 8de6ce4",
+    "reference": "this story's fix: 36e50b2, ok-wildcard gets its own P-256 leaf key keys/p256-60.pk8, certs/ made again"
+  }
+}

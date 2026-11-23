@@ -1,0 +1,39 @@
+version: '3'
+
+set: [pipefail]
+
+tasks:
+  tls-x509-conformance:
+    desc: Run the x509-limbo cases through the certificate path validation of surf-tls and hold the counts of crates/tls-conformance/expected/limbo.txt.
+    summary: |
+      Run the x509-limbo cases through the certificate path validation of surf-tls and hold
+      the counts of crates/tls-conformance/expected/limbo.txt.
+
+      Runs surf-tls-conformance --check --base TLS_BASE (a git revision; default HTML_BASE,
+      whose default is main; set it on the command line, task tls-x509-conformance
+      TLS_BASE=<revision>, or in the environment). It fails when a pass or run count drops
+      below the expected file, a case count differs from it, an expected count is below its
+      value in the same file at TLS_BASE, a section marked complete is not, a case that runs
+      and does not pass has no open line, or a FAILURE case matches no line, or two lines, of
+      crates/tls-conformance/expected/limbo-kinds.txt. A revision git cannot resolve fails.
+
+      The log is .out/tls-x509-conformance.log. It prints the x509-limbo: line, one line per
+      group and per section, a raise: line for each count above the expected file, and the
+      seconds the run took.
+
+      It runs from the repository root, alone (task --taskfile taskfiles/tls-x509-conformance.yml
+      tls-x509-conformance) and included from the root Taskfile.yml alike.
+    dir: '{{.TASKFILE_DIR}}/..'
+    vars:
+      HTML_BASE: '{{.HTML_BASE | default "main"}}'
+      TLS_BASE: '{{.TLS_BASE | default .HTML_BASE}}'
+    env:
+      RUSTFLAGS: -D warnings
+    cmds:
+      - mkdir -p .out
+      - cargo build --quiet --locked -p surf-tls-conformance
+      - |
+        started=$(date +%s)
+        cargo run --quiet --locked -p surf-tls-conformance -- --check --base '{{.TLS_BASE}}' > .out/tls-x509-conformance.log 2>&1 || { cat .out/tls-x509-conformance.log; exit 1; }
+        grep -E '^(group|section|raise:) |^x509-limbo:' .out/tls-x509-conformance.log
+        echo "tls-x509-conformance: $(( $(date +%s) - started )) s"

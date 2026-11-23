@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T19:02:54Z",
+  "actor": "human:operator",
+  "artifact": "story:ess-0-97-4",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task generated-check and conformance/Cargo.lock on ESS 0.97.3 and 0.97.4",
+    "reference": "generated-check 'generated/rust matches spec/ (30 artifact(s) and .ess-output)' on both releases, generated/rust/ unchanged; cargo update of the ess packages moved only the eight ess-* packages from tag 0.97.3 (cd9698fd) to tag 0.97.4 (b076ef00), no third-party package moved; workflow sha256 235ad6a9... of ess-0.97.4-x86_64-unknown-linux-gnu.tar.gz from SHA256SUMS, checked against the downloaded archive"
+  }
+}

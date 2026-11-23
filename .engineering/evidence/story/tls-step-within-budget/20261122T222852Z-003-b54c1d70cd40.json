@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T22:28:52Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-step-within-budget",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the coordinator's reading of AGENTS.md at cb22b79",
+    "reference": "test-tls is named at :1144 (the paragraph of task check), :1312-1313 (the bullet of task test, with the four packages it leaves out) and :1334-1338 (the bullet of task test-tls) (acceptance 6)"
+  }
+}

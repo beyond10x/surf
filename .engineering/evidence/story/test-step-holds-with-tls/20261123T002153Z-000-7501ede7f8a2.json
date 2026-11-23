@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T00:21:53Z",
+  "actor": "human:operator",
+  "artifact": "story:test-step-holds-with-tls",
+  "kind": "story",
+  "revision": 51,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "four runs started first with the pin ESS_TOOLCHAIN=0.97.3, 2026-11-23 01:06 to 01:07 CET (none dropped)",
+    "reference": "each exit 201 within 5 s before any test: spec/ess-inputs.yaml requires ess 0.97.4 and this is ess 0.97.3; load 185 to 196"
+  }
+}

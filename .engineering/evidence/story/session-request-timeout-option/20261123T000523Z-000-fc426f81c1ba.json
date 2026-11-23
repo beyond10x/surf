@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T00:05:23Z",
+  "actor": "human:operator",
+  "artifact": "story:session-request-timeout-option",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the implementing unit's plant on the tree of d82eb1c: the option parsed and the default of 10 s kept in serve, removed after (acceptance 5)",
+    "reference": "FAIL [10.830s] built::request_slower_than_its_deadline_is_closed: the next request waited 10.342825583s, five times the read deadline of 1 second is 5; FAIL [0.714s] built::other_argument_shapes_exit_2"
+  }
+}

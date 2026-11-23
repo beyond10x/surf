@@ -11,6 +11,8 @@ use surf_agent_tasks::{Run, Verdict, judge, tasks_file};
 
 use surf_answer::{Answer, Form, Head, SessionState, render, text_page};
 
+use crate::model_driver::{ONE_TASK, assert_one_task};
+
 fn task(name: &str) -> Task {
     read_tasks(&fs::read_to_string(tasks_file()).unwrap())
         .unwrap()
@@ -64,13 +66,16 @@ fn a_table_flattened_into_one_row_fails() {
     assert_ne!(judge(&task("table"), &one_answer(&rows)), Verdict::Pass);
 }
 
-fn run_driver(model_command: &str, name: &str) -> (Option<i32>, String) {
+/// Runs the driver with `model_command`, over `tasks` (`AGENT_TASKS_FILE`) when given: its exit
+/// status and the out file.
+fn run_driver(model_command: &str, name: &str, tasks: Option<&str>) -> (Option<i32>, String) {
     let bin = std::env::var_os("SURF_BIN_DIR").map(PathBuf::from).unwrap();
     let manifest = env!("CARGO_MANIFEST_DIR");
     let out = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
         .join(format!("adversary-{name}-{}.txt", std::process::id()));
     let _ = fs::remove_file(&out);
-    let output = Command::new("sh")
+    let mut command = Command::new("sh");
+    command
         .arg(format!("{manifest}/../../taskfiles/agent-tasks-model.sh"))
         .arg(&bin)
         .arg(&out)
@@ -78,9 +83,11 @@ fn run_driver(model_command: &str, name: &str) -> (Option<i32>, String) {
         .env("AGENT_TASKS_MODEL_COMMAND", model_command)
         .env("AGENT_TASKS_MODEL", "stub")
         .current_dir(manifest)
-        .stdin(Stdio::null())
-        .output()
-        .unwrap();
+        .stdin(Stdio::null());
+    if let Some(tasks) = tasks {
+        command.env("AGENT_TASKS_FILE", tasks);
+    }
+    let output = command.output().unwrap();
     let written = fs::read_to_string(&out).unwrap_or_default();
     let _ = fs::remove_file(&out);
     (output.status.code(), written)
@@ -88,7 +95,7 @@ fn run_driver(model_command: &str, name: &str) -> (Option<i32>, String) {
 
 #[test]
 fn a_model_command_that_does_not_exist_fails_the_lane() {
-    let (code, written) = run_driver("/nonexistent/adversary-model", "missing");
+    let (code, written) = run_driver("/nonexistent/adversary-model", "missing", None);
     assert_ne!(
         code,
         Some(0),
@@ -102,8 +109,9 @@ fn a_call_with_a_line_feed_in_a_word_is_one_call() {
         env!("CARGO_MANIFEST_DIR"),
         "/tests/adversary-newline-model.sh"
     );
-    let (code, written) = run_driver(stub, "newline");
+    let (code, written) = run_driver(stub, "newline", Some(ONE_TASK));
     assert_eq!(code, Some(0), "{written}");
+    assert_one_task(&written);
     let article = written
         .lines()
         .find(|line| line.starts_with("task article "))

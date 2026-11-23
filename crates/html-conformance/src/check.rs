@@ -16,8 +16,9 @@
 //! The check fails, naming the file, tag or section and both numbers, when the harness's case
 //! count per file or per tag differs from the `html-inventory` block; when a run or pass count is
 //! below the expected one; when an expected count is below its value in the same file at the
-//! base revision (read with `git show`; a file that does not exist there is not compared, a
-//! revision git cannot resolve fails); when the sections of an expected file differ from the
+//! base revision (the three files read with one `git cat-file --batch`, an object that is no
+//! blob with `git show`; a file that does not exist there is not compared, a revision git cannot
+//! resolve fails); when the sections of an expected file differ from the
 //! note's, a data file or a case tagged `not-run` belongs to no section, or a section with no
 //! `data` line has neither an `open` nor a `wpt` line; and when a section marked `complete` has
 //! a case that does not pass or does not run, an `open` line or a `wpt` line. A count above the
@@ -33,8 +34,9 @@
 //! section (its variants `?file=<f>`); a `wpt` path ending in `/` counts as one.
 
 use std::fmt::Write as _;
+use std::io::Write as _;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use crate::inventory::{self, Group, Inventory};
 use crate::runner::{self, Count, Report};
@@ -241,9 +243,10 @@ pub fn check(root: &Path, base: &str) -> Result<Outcome, String> {
     against_inventory(&inventory, &report, &mut out.failures);
     let groups = section_groups(&inventory, &report, &sections, &mut out.failures);
     let base = resolve(root, base, &mut out.failures);
+    let at_base = base.as_ref().map(|base| read_at_base(root, base));
     let mut marks: Vec<(String, Mark)> = Vec::new();
     let mut expected_tags: Vec<(Group, Vec<(String, Count)>)> = Vec::new();
-    for group in Group::ALL {
+    for (index, group) in Group::ALL.into_iter().enumerate() {
         let path = expected_path(group);
         let files: Vec<&runner::FileReport> = report
             .files
@@ -292,8 +295,12 @@ pub fn check(root: &Path, base: &str) -> Result<Outcome, String> {
         }
         marks.extend(expected.sections.iter().cloned());
         expected_tags.push((group, expected.tags.clone()));
-        if let Some(base) = &base {
-            against_base(root, base, &path, &expected, &mut out.failures);
+        if let (Some(base), Some(at_base)) = (&base, &at_base) {
+            let answer = match at_base {
+                Ok(answers) => Ok(&answers[index]),
+                Err(e) => Err(e.as_str()),
+            };
+            against_base(root, base, &path, answer, &expected, &mut out.failures);
         }
     }
     tag_sums(&report, &expected_tags, &mut out.failures);
@@ -622,38 +629,117 @@ fn resolve(root: &Path, base: &str, failures: &mut Vec<String>) -> Option<String
     }
 }
 
-/// The expected file `path` at `base` against its counts now.
+/// What `git cat-file --batch` answered for one expected file at the base.
+#[derive(Debug)]
+enum AtBase {
+    /// No object at that path (`missing`, or another answer that names no object): the file is
+    /// not compared.
+    Missing,
+    /// A blob: its bytes.
+    Blob(Vec<u8>),
+    /// An object of another type: read with `git show`, whose text the parser refuses.
+    Other,
+    /// The batch ended before it answered this file: its standard error.
+    Unanswered(String),
+}
+
+/// The expected files of [`Group::ALL`] at `base`, in that order, read with one `git cat-file
+/// --batch`; `Err` when git cannot run.
+fn read_at_base(root: &Path, base: &str) -> Result<Vec<AtBase>, String> {
+    let paths: Vec<String> = Group::ALL.into_iter().map(expected_path).collect();
+    let mut child = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["cat-file", "--batch"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("git could not run: {e}"))?;
+    let mut input = String::new();
+    for path in &paths {
+        let _ = writeln!(input, "{base}:{path}");
+    }
+    // A few hundred bytes, below a pipe's buffer: written whole before the answer is read. A
+    // git that ended early makes this fail, and its answers end early.
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(input.as_bytes());
+    }
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("git could not run: {e}"))?;
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let mut rest: &[u8] = &output.stdout;
+    let mut answers = Vec::new();
+    for _ in &paths {
+        let Some(end) = rest.iter().position(|&b| b == b'\n') else {
+            answers.push(AtBase::Unanswered(stderr.clone()));
+            rest = &[];
+            continue;
+        };
+        let header = String::from_utf8_lossy(&rest[..end]).into_owned();
+        rest = &rest[end + 1..];
+        let fields: Vec<&str> = header.split(' ').collect();
+        let answer = match fields.as_slice() {
+            [_, kind, size] => match size.parse::<usize>() {
+                Ok(size) if rest.len() > size => {
+                    let content = rest[..size].to_vec();
+                    rest = &rest[size + 1..];
+                    if *kind == "blob" {
+                        AtBase::Blob(content)
+                    } else {
+                        AtBase::Other
+                    }
+                }
+                Ok(_) => {
+                    rest = &[];
+                    AtBase::Unanswered(stderr.clone())
+                }
+                Err(_) => AtBase::Missing,
+            },
+            _ => AtBase::Missing,
+        };
+        answers.push(answer);
+    }
+    Ok(answers)
+}
+
+/// The expected file `path` at `base`, as `at_base` answered it, against its counts now.
 fn against_base(
     root: &Path,
     base: &str,
     path: &str,
+    at_base: Result<&AtBase, &str>,
     expected: &Expected,
     failures: &mut Vec<String>,
 ) {
-    let object = format!("{base}:{path}");
-    match git(root, &["cat-file", "-e", &object]) {
-        Ok(output) if output.status.success() => {}
-        Ok(_) => return,
+    let text = match at_base {
         Err(e) => {
             failures.push(format!("{path} at {base}: {e}"));
             return;
         }
-    }
-    let text = match git(root, &["show", &object]) {
-        Ok(output) if output.status.success() => {
-            String::from_utf8_lossy(&output.stdout).into_owned()
-        }
-        Ok(output) => {
-            failures.push(format!(
-                "{path} at {base}: git show: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            ));
+        Ok(AtBase::Missing) => return,
+        Ok(AtBase::Unanswered(stderr)) => {
+            failures.push(format!("{path} at {base}: git cat-file: {stderr}"));
             return;
         }
-        Err(e) => {
-            failures.push(format!("{path} at {base}: {e}"));
-            return;
-        }
+        Ok(AtBase::Blob(bytes)) => String::from_utf8_lossy(bytes).into_owned(),
+        Ok(AtBase::Other) => match git(root, &["show", &format!("{base}:{path}")]) {
+            Ok(output) if output.status.success() => {
+                String::from_utf8_lossy(&output.stdout).into_owned()
+            }
+            Ok(output) => {
+                failures.push(format!(
+                    "{path} at {base}: git show: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                ));
+                return;
+            }
+            Err(e) => {
+                failures.push(format!("{path} at {base}: {e}"));
+                return;
+            }
+        },
     };
     let then = match parse_expected(&text) {
         Ok(then) => then,

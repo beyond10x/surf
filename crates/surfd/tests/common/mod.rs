@@ -14,12 +14,12 @@ use surf_test_process::ended_within;
 use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -38,8 +38,16 @@ pub const ALLOWED: Duration = Duration::from_secs(5);
 
 /// A directory of one case, removed when it is dropped, after every process of the case is
 /// stopped: `r`, the `XDG_RUNTIME_DIR` of the case, and `c`, the stand-in's directory.
+///
+/// The processes of the case are those whose environment names `c` as `STAND_IN_DIR`. A helper
+/// that starts a built program (`agent`, `Surfd::start`) marks the directory, and its drop looks
+/// for them among every process of the host: such a program can leave the test's tree (the
+/// `surfd` a `surf-agent` starts is reparented when it exits). An unmarked directory's drop looks
+/// only among the descendants of the test process, where an in-process daemon's sessions are.
 pub struct TestDir {
     pub path: PathBuf,
+    /// Set by a helper that started a built program in this case.
+    pub started_a_built_program: AtomicBool,
 }
 
 impl TestDir {
@@ -65,7 +73,10 @@ impl TestDir {
         );
         fs::create_dir(&path).expect("a new test directory");
         // From here on the drop guard removes the directory, also when a case panics.
-        let dir = TestDir { path };
+        let dir = TestDir {
+            path,
+            started_a_built_program: AtomicBool::new(false),
+        };
         fs::set_permissions(&dir.path, fs::Permissions::from_mode(0o700)).unwrap();
         fs::create_dir(dir.runtime()).expect("the runtime directory");
         fs::set_permissions(dir.runtime(), fs::Permissions::from_mode(0o700)).unwrap();
@@ -79,6 +90,11 @@ impl TestDir {
 
     pub fn control(&self) -> PathBuf {
         self.path.join("c")
+    }
+
+    /// Marks the case as one that started a built program: its drop reads every process.
+    pub fn mark_built_program(&self) {
+        self.started_a_built_program.store(true, Ordering::SeqCst);
     }
 
     /// `$XDG_RUNTIME_DIR/surf` of the case.
@@ -167,8 +183,82 @@ impl TestDir {
 
 impl Drop for TestDir {
     fn drop(&mut self) {
-        stop_processes_of(&self.control());
+        if self.started_a_built_program.load(Ordering::SeqCst) {
+            stop_processes_of(&self.control());
+        } else {
+            stop_descendants_of(&self.control());
+        }
         let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
+/// Every descendant of this process: the process ids in `/proc/<pid>/task/<tid>/children` of
+/// each of its threads, followed down. `None` when one of those files cannot be read (a process
+/// or thread ended while it was read, so that a child of it may have left the tree).
+pub fn descendants() -> Option<Vec<u32>> {
+    let mut found: Vec<u32> = Vec::new();
+    let mut pending = vec![std::process::id()];
+    while let Some(pid) = pending.pop() {
+        for task in fs::read_dir(format!("/proc/{pid}/task")).ok()? {
+            let children = fs::read_to_string(task.ok()?.path().join("children")).ok()?;
+            for child in children.split_whitespace() {
+                let child: u32 = child.parse().ok()?;
+                if !found.contains(&child) {
+                    found.push(child);
+                    pending.push(child);
+                }
+            }
+        }
+    }
+    Some(found)
+}
+
+/// The processes of `candidates` whose environment names `control` as `STAND_IN_DIR`.
+fn processes_of(control: &Path, candidates: impl IntoIterator<Item = u32>) -> Vec<u32> {
+    let mut needle = b"STAND_IN_DIR=".to_vec();
+    needle.extend_from_slice(control.as_os_str().as_encoded_bytes());
+    let own = std::process::id();
+    candidates
+        .into_iter()
+        .filter(|&pid| pid != own)
+        .filter(|pid| {
+            fs::read(format!("/proc/{pid}/environ"))
+                .unwrap_or_default()
+                .split(|&b| b == 0)
+                .any(|pair| pair == needle.as_slice())
+        })
+        .collect()
+}
+
+/// Every process id of the host.
+fn every_process() -> Vec<u32> {
+    let Ok(entries) = fs::read_dir("/proc") else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter_map(|entry| entry.file_name().to_str()?.parse::<u32>().ok())
+        .collect()
+}
+
+/// SIGKILL every process of `pids` and wait until each is gone.
+fn kill_all(pids: Vec<u32>) {
+    for &pid in &pids {
+        signal_kill(pid);
+    }
+    // 5 s for all of them: a cleanup; SIGKILL ends each within milliseconds.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    for pid in pids {
+        let _ = ended_within(pid, deadline.saturating_duration_since(Instant::now()));
+    }
+}
+
+/// [`stop_processes_of`] over the descendants of this process only; over every process when
+/// they cannot be read.
+pub fn stop_descendants_of(control: &Path) {
+    match descendants() {
+        Some(pids) => kill_all(processes_of(control, pids)),
+        None => stop_processes_of(control),
     }
 }
 
@@ -189,39 +279,7 @@ pub fn wait_unlocked(path: &Path, within: Duration) -> bool {
 /// SIGKILL every process whose environment names `control` as `STAND_IN_DIR` (the stand-ins,
 /// and the `surfd` and `surf-agent` of a built case), and wait until each is gone.
 pub fn stop_processes_of(control: &Path) {
-    let mut needle = b"STAND_IN_DIR=".to_vec();
-    needle.extend_from_slice(control.as_os_str().as_encoded_bytes());
-    let own = std::process::id();
-    let mut pids = Vec::new();
-    if let Ok(entries) = fs::read_dir("/proc") {
-        for entry in entries.flatten() {
-            let Some(pid) = entry
-                .file_name()
-                .to_str()
-                .and_then(|n| n.parse::<u32>().ok())
-            else {
-                continue;
-            };
-            if pid == own {
-                continue;
-            }
-            let environ = fs::read(entry.path().join("environ")).unwrap_or_default();
-            if environ
-                .split(|&b| b == 0)
-                .any(|pair| pair == needle.as_slice())
-            {
-                pids.push(pid);
-            }
-        }
-    }
-    for &pid in &pids {
-        signal_kill(pid);
-    }
-    // 5 s for all of them: a cleanup; SIGKILL ends each within milliseconds.
-    let deadline = Instant::now() + Duration::from_secs(5);
-    for pid in pids {
-        let _ = ended_within(pid, deadline.saturating_duration_since(Instant::now()));
-    }
+    kill_all(processes_of(control, every_process()));
 }
 
 pub fn signal_kill(pid: u32) {
@@ -334,8 +392,9 @@ pub fn refusal(id: &str, state: &str, reason: &str) -> String {
 
 // --- Built ------------------------------------------------------------------------------------
 
-/// A directory holding copies of `examples/agent` as `surf-agent`, of the built `surfd`, and of
-/// the stand-in as `surf-session`, made once per test program.
+/// A directory holding `examples/agent` as `surf-agent`, the built `surfd`, and the stand-in as
+/// `surf-session`, each a hard link to its program, made once per test run: an entry that is
+/// already a link to its program is left as it is ([`link_program`]).
 pub fn bin_dir() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
@@ -349,19 +408,35 @@ pub fn bin_dir() -> &'static Path {
         fs::create_dir_all(&dir).unwrap();
         let agent = examples_dir().join("agent");
         assert!(agent.exists(), "{} is not built", agent.display());
-        copy(&agent, &dir.join("surf-agent"));
-        copy(Path::new(env!("CARGO_BIN_EXE_surfd")), &dir.join("surfd"));
-        copy(&stand_in_program(), &dir.join("surf-session"));
+        link_program(&agent, &dir.join("surf-agent"));
+        link_program(Path::new(env!("CARGO_BIN_EXE_surfd")), &dir.join("surfd"));
+        link_program(&stand_in_program(), &dir.join("surf-session"));
         dir
     })
 }
 
-/// Copies `from` to `to` through a partial file of this process: nextest runs each test in a
-/// process of its own, so several processes copy the same program at once.
-fn copy(from: &Path, to: &Path) {
+/// Makes the entry `to` a hard link to the program `from`, left as it is when it already is
+/// one (the same inode). A missing or stale entry is linked under a partial name of this process,
+/// `<entry>.part-<pid>`, and renamed over it, so that a test process that starts the program
+/// while another replaces the entry finds the old entry or the new one, never none; copied
+/// through the same partial name when a hard link fails. nextest runs each test in a process of
+/// its own, so several processes may make the same entry at once.
+pub fn link_program(from: &Path, to: &Path) {
+    let program = fs::metadata(from).unwrap();
+    if fs::metadata(to)
+        .is_ok_and(|entry| entry.dev() == program.dev() && entry.ino() == program.ino())
+    {
+        return;
+    }
     let part = to.with_extension(format!("part-{}", std::process::id()));
-    fs::copy(from, &part).unwrap();
+    let _ = fs::remove_file(&part);
+    if fs::hard_link(from, &part).is_err() {
+        fs::copy(from, &part).unwrap();
+    }
     fs::rename(&part, to).unwrap();
+    // A rename between two links of one file does nothing (rename(2)): another process linked
+    // the same program first, and the partial name is left.
+    let _ = fs::remove_file(&part);
 }
 
 /// The environment the client gives `surfd` and the stand-in reads: an empty one but
@@ -374,8 +449,9 @@ fn case_env(command: &mut Command, dir: &TestDir) {
         .stdin(Stdio::null());
 }
 
-/// The copied `surf-agent` in the case's environment.
+/// The linked `surf-agent` in the case's environment; marks the directory.
 pub fn agent(dir: &TestDir) -> Command {
+    dir.mark_built_program();
     let mut command = Command::new(bin_dir().join("surf-agent"));
     case_env(&mut command, dir);
     command
@@ -431,9 +507,10 @@ pub struct Surfd {
 }
 
 impl Surfd {
-    /// Start the copied `surfd` with `args` in the case's environment, changed by `env`, and read
-    /// its one line.
+    /// Start the linked `surfd` with `args` in the case's environment, changed by `env`, and read
+    /// its one line; marks the directory.
     pub fn start(dir: &TestDir, args: &[&str], env: impl FnOnce(&mut Command)) -> Surfd {
+        dir.mark_built_program();
         let mut command = Command::new(bin_dir().join("surfd"));
         case_env(&mut command, dir);
         command

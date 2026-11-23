@@ -11,7 +11,8 @@
 //!   [`Limits::queue_bytes`](crate::Limits::queue_bytes) bytes, or one frame alone when that
 //!   frame is larger, the one being written included; such a frame waits until the queue is
 //!   empty. Any other entry past either bound closes this stream alone, and its reader resumes
-//!   with `Last-Event-ID`;
+//!   with `Last-Event-ID`; before the stream has written one frame whole it waits instead, so
+//!   a resumed reader gets at least its next entry;
 //! - the watcher reads the client's side: a client sends nothing after its request, so any byte,
 //!   the end of the connection or an error closes the stream at once, and a reader that is gone
 //!   frees its stream without waiting for a write to fail.
@@ -91,6 +92,10 @@ struct Queue {
     bytes: usize,
     closed: bool,
     ended: bool,
+    /// A frame was written whole on this stream. Until then a frame past a bound waits like a
+    /// larger one instead of closing the stream: a close cuts the frame in its write, and a
+    /// reader that resumes at the same number each time would never get its next entry.
+    written: bool,
 }
 
 struct Line {
@@ -213,8 +218,9 @@ fn frame(item: &Item) -> Option<Vec<u8>> {
 /// queue would pass its bound, or an item's data holds a line end.
 ///
 /// A frame alone over [`Limits::queue_bytes`](crate::Limits::queue_bytes), and any frame behind
-/// one, waits until the writer has emptied the queue and then goes in alone; the wait ends when
-/// the stream closes or the server stops.
+/// one, waits until the writer has emptied the queue and then goes in alone; a frame past either
+/// bound before the writer has written one frame whole waits until it is within them. The wait
+/// ends when the stream closes or the server stops.
 fn pump(mut reader: Box<dyn Reader>, line: &Line, shared: &Shared, socket: &TcpStream) {
     let limits = &shared.config.limits;
     loop {
@@ -233,8 +239,16 @@ fn pump(mut reader: Box<dyn Reader>, line: &Line, shared: &Shared, socket: &TcpS
                     return line.close(socket);
                 };
                 let large = frame.len() > limits.queue_bytes;
+                let past = |queue: &Queue| {
+                    queue.entries >= limits.queue_entries
+                        || queue.bytes.saturating_add(frame.len()) > limits.queue_bytes
+                };
                 let mut queue = line.lock();
-                while (large || queue.bytes > limits.queue_bytes) && queue.entries > 0 {
+                while (large
+                    || queue.bytes > limits.queue_bytes
+                    || (!queue.written && past(&queue)))
+                    && queue.entries > 0
+                {
                     if queue.closed || shared.stopping.load(Ordering::SeqCst) {
                         return;
                     }
@@ -320,6 +334,7 @@ fn write_queue(stream: &mut TcpStream, line: &Line, shared: &Shared) {
             Job::Write(frame) => {
                 let written = write_by(stream, &frame, later(Instant::now(), limits.write));
                 let mut queue = line.lock();
+                queue.written |= written.is_ok();
                 queue.entries = queue.entries.saturating_sub(1);
                 queue.bytes = queue.bytes.saturating_sub(frame.len());
                 drop(queue);

@@ -1,0 +1,15 @@
+[package]
+name = "surf-tls-test-certs"
+description = "Test tooling of surf-tls, never shipped: the test certificates, made once, committed under certs/ with the digest of their sources."
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+autotests = false
+
+[dependencies]
+surf-tls = { path = "../tls", features = ["test-tooling"] }
+
+[[test]]
+name = "main"
+path = "tests/main.rs"
