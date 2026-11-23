@@ -148,6 +148,15 @@ of three forms:
   `title` `null` when the answer has none;
 - `{"kind":"failed","reason":"<reason>","address":"<text>"}`.
 
+Since `story:agent-follow-links` the session writes a loaded page's title on its page line (at
+most 1,024 characters; a longer title is left out and `title` is `null`), and the session
+summary's `title` is the same title. The page line of the three-link page of the page tests'
+fixture (`crates/view-fixture/pages/now/links.html`), served on 127.0.0.1:41000:
+
+```json
+{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/now/links.html","title":"Three links"}
+```
+
 ### A session summary
 
 `{"id","state","address","title","opened_at","last_action_at","ended_at","page"}`:
@@ -198,11 +207,56 @@ identity; `index` its number within the session, from 1; `kept_at` the time `sur
   the `ess/1` document declares them. Each value is a string: the exact value
   `surf_answer::unquote` reads from the quoted text the log keeps (D26). A field of bytes is the
   text `<n> bytes`, never the bytes (D22).
-- `answer`: then `"page"`, the page line, and `"path"`,
-  `{"shown":<n>,"total":<n>,"actions":[{"sequence","command","argument"},…]}`, both as
-  `surf_answer::parse` reads them from the answer's lines (D20). A later story adds a member after
-  `path` (`now` by `story:view-now-panel`, `changed` by `story:view-controls-and-changes`); no
-  member is removed or renamed.
+- `answer`: then `"page"`, the page line, `"path"`,
+  `{"shown":<n>,"total":<n>,"actions":[{"sequence","command","handle","argument","argument_cut"},…]}`,
+  and `"now"` (below), each as `surf_answer::parse` reads it from the answer's lines (D20), or
+  `null` when the answer has none. In a `path` action, `handle` is the handle of the element the
+  action took (`follow l1`), `null` for an action on no element; `argument` is the address, or
+  with a handle the element's label, cut at 60 characters, and `argument_cut` is `true` when the
+  label was cut there (the answer writes `...` after it). A later story adds a member after
+  `now` (`changed` by `story:view-controls-and-changes`); no member is removed or renamed.
+
+### The `now` member
+
+The `now` block of an answer (`docs/agent-answer.md`, "Now"): what can be done on the current
+document, the first elements in document order. `null` when the answer has no `now` block: before
+the first page, when the session has no current HTML document or it has no link, for a closed
+session, and in an answer with page text (`--as`). A refused `follow` records no action, so it
+adds no entry.
+
+`{"shown":<n>,"total":<n>,"elements":[<element>,…],"visibility_note":"<text>"}`:
+
+- `shown`, `total`: the block's head, `now <shown> of <total>`; the session lists the first
+  `<shown>` of the document's `<total>` elements, the block within 1,048,576 bytes;
+- `elements`: one per line of the block, in its order;
+- `visibility_note`: `"hidden attribute only"` when the answer holds `note visibility: hidden
+  attribute only`, otherwise `null`. It says that the visibility words are not computed: `hid`
+  when the element or an ancestor has the `hidden` attribute, `?` otherwise; `aria-hidden`, a
+  closed `dialog` or `details` and a popover leave an element `?`.
+
+An element,
+`{"handle","kind","visibility","label","label_cut","target","target_cut","unresolved","text"}`:
+
+- `handle`: `l<n>` for a link, numbered over the document's actionable elements;
+- `kind`: the kind word of the line, `link` for a link;
+- `visibility`: the answer's word, `vis`, `hid` or `?`;
+- of a link: `label`, the accessible name cut at 60 characters, with `label_cut`; `target`, the
+  address resolved against the document base URL, written as its path, query and fragment when it
+  has the page's origin and whole otherwise, or, when it does not resolve, the `href` as the page
+  wrote it with `unresolved` `true`; cut at 1,024 characters, with `target_cut`. `text` is
+  `null`;
+- of a line whose kind the view does not know (a control, a button, a form, which later stories
+  add): `label`, `label_cut`, `target`, `target_cut` and `unresolved` are `null`, and `text` is
+  the line as the answer writes it, without its indentation, its quoted fields still quoted. A
+  story that adds a kind changes neither `surfd` nor this shape; one that wants the kind's own
+  members adds them here.
+
+The view writes every one of these values as text (a label and a target come from the page);
+no target is a link the page follows. The stream carries each value unchanged; the page shows a
+bidirectional control in it (U+202A to U+202E, U+2066 to U+2069) as a mark that names it
+(`U+202E`), so a value cannot reorder what a person reads, and does so in every text that came
+from a session: a label, a target, a title, an address. Other format characters (U+200E,
+U+200F, joiners, a soft hyphen) are shown as they are.
 
 What the view holds of a value, in the words of D22 and D21: a field of bytes (a response body, a
 request body) is written by the session process as its length, `<n> bytes`, never as the bytes;
@@ -295,7 +349,8 @@ alone, so the queue holds at most 1 MiB or that one event; its size is bounded b
 
 The run behind every example: view port 41873, view token
 `0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`, a page server on
-127.0.0.1:41000 that serves `/a.html` with 5,000 bytes of `text/html`. Session `5f0c2a9e-…`
+127.0.0.1:41000 that serves `/a.html` with 5,000 bytes of `text/html`, without a title and
+without a link, so its answers have `title` and `now` `null`. Session `5f0c2a9e-…`
 ran `open` without an address and then `go http://127.0.0.1:41000/a.html` (numbers 1 to 17).
 Session `0b7d4e21-…` then ran `open`, `go http://127.0.0.1:9/`, where nothing listens, and
 `close` (numbers 18 to 38). A request shows the lines the server reads; a browser sends more
@@ -397,7 +452,7 @@ Authorization: Bearer 0123456789abcdef0123456789abcdef0123456789abcdef0123456789
 ```http
 HTTP/1.1 200 OK
 Content-Type: application/json
-Content-Length: 5406
+Content-Length: 5533
 Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 X-Content-Type-Options: nosniff
 Referrer-Policy: no-referrer
@@ -406,7 +461,7 @@ Cross-Origin-Resource-Policy: same-origin
 Date: Sat, 21 Nov 2026 02:00:00 GMT
 Connection: close
 
-{"session":{"id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","state":"open","address":"http://127.0.0.1:41000/a.html","title":null,"opened_at":1795226400000,"last_action_at":1795226401500,"ended_at":null,"page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/a.html","title":null}},"dropped":0,"log_dropped":false,"unreadable":0,"entries":[{"number":1,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":1,"kept_at":1795226400010,"kind":"action","sequence":1,"command":"open","argument":null},{"number":2,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":2,"kept_at":1795226400011,"kind":"event","name":"surf.shell.WindowOpened","unmapped":false,"fields":{"window_id":"2c4e6a80-1b3d-4f57-9a2c-4e6a8b0d2f41"}},{"number":3,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":3,"kept_at":1795226400012,"kind":"event","name":"surf.shell.TabOpened","unmapped":false,"fields":{"tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","window_id":"2c4e6a80-1b3d-4f57-9a2c-4e6a8b0d2f41"}},{"number":4,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":4,"kept_at":1795226400013,"kind":"event","name":"surf.agent.SessionOpened","unmapped":false,"fields":{"session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","window_id":"2c4e6a80-1b3d-4f57-9a2c-4e6a8b0d2f41","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72"}},{"number":5,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":5,"kept_at":1795226400014,"kind":"event","name":"surf.agent.ActionRecorded","unmapped":false,"fields":{"action_id":"e5a7c9e1-3b5d-4f71-9a3c-5e7a9c1e3b51","session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","sequence":"1","command":"open","url":null,"handle":null,"label":null}},{"number":6,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":6,"kept_at":1795226400015,"kind":"answer","page":{"kind":"none"},"path":{"shown":1,"total":1,"actions":[{"sequence":1,"command":"open","argument":null}]}},{"number":7,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":7,"kept_at":1795226401500,"kind":"action","sequence":2,"command":"go","argument":"http://127.0.0.1:41000/a.html"},{"number":8,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":8,"kept_at":1795226401501,"kind":"event","name":"surf.agent.NavigationRequested","unmapped":false,"fields":{"session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","url":"http://127.0.0.1:41000/a.html","handle":null,"label":null}},{"number":9,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":9,"kept_at":1795226401502,"kind":"event","name":"surf.agent.ActionRecorded","unmapped":false,"fields":{"action_id":"e5a7c9e1-3b5d-4f71-9a3c-5e7a9c1e3b52","session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","sequence":"2","command":"go","url":"http://127.0.0.1:41000/a.html","handle":null,"label":null}},{"number":10,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":10,"kept_at":1795226401503,"kind":"event","name":"surf.navigation.NavigationStarted","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","url":"http://127.0.0.1:41000/a.html","method":"Get","body":null,"body_type":null}},{"number":11,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":11,"kept_at":1795226401504,"kind":"event","name":"surf.agent.SessionNavigationChanged","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","state":"Started","sessions":"1"}},{"number":12,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":12,"kept_at":1795226401505,"kind":"event","name":"surf.net.RequestStarted","unmapped":false,"fields":{"request_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","url":"http://127.0.0.1:41000/a.html","method":"Get","body":null,"body_type":null}},{"number":13,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":13,"kept_at":1795226401506,"kind":"event","name":"surf.net.ResponseReceived","unmapped":false,"fields":{"request_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","url":"http://127.0.0.1:41000/a.html","status":"200","media_type":"text/html","body":"5000 bytes"}},{"number":14,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":14,"kept_at":1795226401507,"kind":"event","name":"surf.navigation.NavigationCommitted","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","url":"http://127.0.0.1:41000/a.html","status":"200","media_type":"text/html","body":"5000 bytes"}},{"number":15,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":15,"kept_at":1795226401508,"kind":"event","name":"surf.agent.SessionNavigationChanged","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","state":"Committed","sessions":"1"}},{"number":16,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":16,"kept_at":1795226401509,"kind":"event","name":"surf.document.ParsingStarted","unmapped":false,"fields":{"document_id":"d2f4b6d8-0a2c-4e4a-9b6d-8f0a2c4e6b84","body":"5000 bytes"}},{"number":17,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":17,"kept_at":1795226401510,"kind":"answer","page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/a.html","title":null},"path":{"shown":2,"total":2,"actions":[{"sequence":1,"command":"open","argument":null},{"sequence":2,"command":"go","argument":"http://127.0.0.1:41000/a.html"}]}}]}
+{"session":{"id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","state":"open","address":"http://127.0.0.1:41000/a.html","title":null,"opened_at":1795226400000,"last_action_at":1795226401500,"ended_at":null,"page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/a.html","title":null}},"dropped":0,"log_dropped":false,"unreadable":0,"entries":[{"number":1,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":1,"kept_at":1795226400010,"kind":"action","sequence":1,"command":"open","argument":null},{"number":2,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":2,"kept_at":1795226400011,"kind":"event","name":"surf.shell.WindowOpened","unmapped":false,"fields":{"window_id":"2c4e6a80-1b3d-4f57-9a2c-4e6a8b0d2f41"}},{"number":3,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":3,"kept_at":1795226400012,"kind":"event","name":"surf.shell.TabOpened","unmapped":false,"fields":{"tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","window_id":"2c4e6a80-1b3d-4f57-9a2c-4e6a8b0d2f41"}},{"number":4,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":4,"kept_at":1795226400013,"kind":"event","name":"surf.agent.SessionOpened","unmapped":false,"fields":{"session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","window_id":"2c4e6a80-1b3d-4f57-9a2c-4e6a8b0d2f41","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72"}},{"number":5,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":5,"kept_at":1795226400014,"kind":"event","name":"surf.agent.ActionRecorded","unmapped":false,"fields":{"action_id":"e5a7c9e1-3b5d-4f71-9a3c-5e7a9c1e3b51","session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","sequence":"1","command":"open","url":null,"handle":null,"label":null}},{"number":6,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":6,"kept_at":1795226400015,"kind":"answer","page":{"kind":"none"},"path":{"shown":1,"total":1,"actions":[{"sequence":1,"command":"open","handle":null,"argument":null,"argument_cut":false}]},"now":null},{"number":7,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":7,"kept_at":1795226401500,"kind":"action","sequence":2,"command":"go","argument":"http://127.0.0.1:41000/a.html"},{"number":8,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":8,"kept_at":1795226401501,"kind":"event","name":"surf.agent.NavigationRequested","unmapped":false,"fields":{"session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","url":"http://127.0.0.1:41000/a.html","handle":null,"label":null}},{"number":9,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":9,"kept_at":1795226401502,"kind":"event","name":"surf.agent.ActionRecorded","unmapped":false,"fields":{"action_id":"e5a7c9e1-3b5d-4f71-9a3c-5e7a9c1e3b52","session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","sequence":"2","command":"go","url":"http://127.0.0.1:41000/a.html","handle":null,"label":null}},{"number":10,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":10,"kept_at":1795226401503,"kind":"event","name":"surf.navigation.NavigationStarted","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","url":"http://127.0.0.1:41000/a.html","method":"Get","body":null,"body_type":null}},{"number":11,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":11,"kept_at":1795226401504,"kind":"event","name":"surf.agent.SessionNavigationChanged","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","state":"Started","sessions":"1"}},{"number":12,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":12,"kept_at":1795226401505,"kind":"event","name":"surf.net.RequestStarted","unmapped":false,"fields":{"request_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","url":"http://127.0.0.1:41000/a.html","method":"Get","body":null,"body_type":null}},{"number":13,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":13,"kept_at":1795226401506,"kind":"event","name":"surf.net.ResponseReceived","unmapped":false,"fields":{"request_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","url":"http://127.0.0.1:41000/a.html","status":"200","media_type":"text/html","body":"5000 bytes"}},{"number":14,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":14,"kept_at":1795226401507,"kind":"event","name":"surf.navigation.NavigationCommitted","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","url":"http://127.0.0.1:41000/a.html","status":"200","media_type":"text/html","body":"5000 bytes"}},{"number":15,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":15,"kept_at":1795226401508,"kind":"event","name":"surf.agent.SessionNavigationChanged","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","state":"Committed","sessions":"1"}},{"number":16,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":16,"kept_at":1795226401509,"kind":"event","name":"surf.document.ParsingStarted","unmapped":false,"fields":{"document_id":"d2f4b6d8-0a2c-4e4a-9b6d-8f0a2c4e6b84","body":"5000 bytes"}},{"number":17,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":17,"kept_at":1795226401510,"kind":"answer","page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/a.html","title":null},"path":{"shown":2,"total":2,"actions":[{"sequence":1,"command":"open","handle":null,"argument":null,"argument_cut":false},{"sequence":2,"command":"go","handle":null,"argument":"http://127.0.0.1:41000/a.html","argument_cut":false}]},"now":null}]}
 ```
 
 The second session after the bound over all sessions dropped its log (D24), body only (264
@@ -442,7 +497,7 @@ Connection: close
 
 id: 38
 event: entry
-data: {"number":38,"session":"0b7d4e21-9c3a-4f58-b6e2-7a1d9c8e5f30","index":21,"kept_at":1795226403004,"kind":"answer","page":{"kind":"failed","reason":"Unreachable","address":"http://127.0.0.1:9/"},"path":{"shown":3,"total":3,"actions":[{"sequence":1,"command":"open","argument":null},{"sequence":2,"command":"go","argument":"http://127.0.0.1:9/"},{"sequence":3,"command":"close","argument":null}]}}
+data: {"number":38,"session":"0b7d4e21-9c3a-4f58-b6e2-7a1d9c8e5f30","index":21,"kept_at":1795226403004,"kind":"answer","page":{"kind":"failed","reason":"Unreachable","address":"http://127.0.0.1:9/"},"path":{"shown":3,"total":3,"actions":[{"sequence":1,"command":"open","handle":null,"argument":null,"argument_cut":false},{"sequence":2,"command":"go","handle":null,"argument":"http://127.0.0.1:9/","argument_cut":false},{"sequence":3,"command":"close","handle":null,"argument":null,"argument_cut":false}]},"now":null}
 
 : keep-alive
 
@@ -485,21 +540,37 @@ Connection: close
 {"number":13,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":13,"kept_at":1795226401506,"kind":"event","name":"surf.net.ResponseReceived","unmapped":false,"fields":{"request_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","url":"http://127.0.0.1:41000/a.html","status":"200","media_type":"text/html","body":"5000 bytes"}}
 ```
 
-`answer`, entry 17 (393 bytes):
+`answer`, entry 17 (474 bytes):
 
 ```json
-{"number":17,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":17,"kept_at":1795226401510,"kind":"answer","page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/a.html","title":null},"path":{"shown":2,"total":2,"actions":[{"sequence":1,"command":"open","argument":null},{"sequence":2,"command":"go","argument":"http://127.0.0.1:41000/a.html"}]}}
+{"number":17,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":17,"kept_at":1795226401510,"kind":"answer","page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/a.html","title":null},"path":{"shown":2,"total":2,"actions":[{"sequence":1,"command":"open","handle":null,"argument":null,"argument_cut":false},{"sequence":2,"command":"go","handle":null,"argument":"http://127.0.0.1:41000/a.html","argument_cut":false}]},"now":null}
+```
+
+An `answer` entry with a `now` member, from another run: session `3d5f7b91-…` ran `open` and
+`go http://127.0.0.1:41000/now/links.html`, the three-link page of the page tests' fixture
+(`crates/view-fixture/pages/now/links.html`): a link to `next.html`, one inside an element with
+the `hidden` attribute, and one whose `href` is `http://[`, which does not resolve. Its answer
+entry, number 14 (1,047 bytes):
+
+```json
+{"number":14,"session":"3d5f7b91-2a4c-4e6f-8b0d-1f3a5c7e9b20","index":14,"kept_at":1795226500014,"kind":"answer","page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/now/links.html","title":"Three links"},"path":{"shown":2,"total":2,"actions":[{"sequence":1,"command":"open","handle":null,"argument":null,"argument_cut":false},{"sequence":2,"command":"go","handle":null,"argument":"http://127.0.0.1:41000/now/links.html","argument_cut":false}]},"now":{"shown":3,"total":3,"elements":[{"handle":"l1","kind":"link","visibility":"?","label":"Next page","label_cut":false,"target":"/now/next.html","target_cut":false,"unresolved":false,"text":null},{"handle":"l2","kind":"link","visibility":"hid","label":"Members","label_cut":false,"target":"/now/members.html","target_cut":false,"unresolved":false,"text":null},{"handle":"l3","kind":"link","visibility":"?","label":"Broken","label_cut":false,"target":"http://[","target_cut":false,"unresolved":true,"text":null}],"visibility_note":"hidden attribute only"}}
+```
+
+The same session's `follow l1` then has this action in the `path` of its answer:
+
+```json
+{"sequence":3,"command":"follow","handle":"l1","argument":"Next page","argument_cut":false}
 ```
 
 ### The three stream events
 
-`entry`, as it arrives live after the second session's `close` (422 bytes, the empty line
+`entry`, as it arrives live after the second session's `close` (538 bytes, the empty line
 included):
 
 ```text
 id: 38
 event: entry
-data: {"number":38,"session":"0b7d4e21-9c3a-4f58-b6e2-7a1d9c8e5f30","index":21,"kept_at":1795226403004,"kind":"answer","page":{"kind":"failed","reason":"Unreachable","address":"http://127.0.0.1:9/"},"path":{"shown":3,"total":3,"actions":[{"sequence":1,"command":"open","argument":null},{"sequence":2,"command":"go","argument":"http://127.0.0.1:9/"},{"sequence":3,"command":"close","argument":null}]}}
+data: {"number":38,"session":"0b7d4e21-9c3a-4f58-b6e2-7a1d9c8e5f30","index":21,"kept_at":1795226403004,"kind":"answer","page":{"kind":"failed","reason":"Unreachable","address":"http://127.0.0.1:9/"},"path":{"shown":3,"total":3,"actions":[{"sequence":1,"command":"open","handle":null,"argument":null,"argument_cut":false},{"sequence":2,"command":"go","handle":null,"argument":"http://127.0.0.1:9/","argument_cut":false},{"sequence":3,"command":"close","handle":null,"argument":null,"argument_cut":false}]},"now":null}
 
 ```
 

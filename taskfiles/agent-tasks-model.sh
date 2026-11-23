@@ -2,7 +2,11 @@
 # agent-tasks-model.sh <bin dir> <out file>: the model lane of the agent tasks, outside the gate.
 #
 # Puts every task of crates/agent-tasks/tasks.txt whose server is http to a model that has
-# surf-agent and nothing else, and writes what it did and answered to <out file>. It waits on a
+# surf-agent and nothing else, and writes what it did and answered to <out file>. The tasks are
+# read from AGENT_TASKS_FILE when it is set, in the same format; it is refused, exit 1 with one
+# line naming both variables and before <out file> is removed, unless AGENT_TASKS_MODEL_COMMAND
+# is set too, so that a run of the default model command writes the lane's count of tasks.txt
+# alone (the gate's tests give one task to a stand-in model). It waits on a
 # model and builds nothing: start it without the slot prefix. No step of check, check-runner or
 # a forge workflow runs it; the gate tests it with stand-in models (crates/agent-tasks,
 # model_driver and adversary).
@@ -76,7 +80,7 @@ case $bin in
   *) shown=$bin; bin=$(pwd)/$bin ;;
 esac
 case $out in /*) ;; *) out=$(pwd)/$out ;; esac
-tasks=$root/crates/agent-tasks/tasks.txt
+tasks=${AGENT_TASKS_FILE:-$root/crates/agent-tasks/tasks.txt}
 sites=$root/crates/agent-tasks/sites
 serve=${AGENT_TASKS_SERVE:-$root/target/debug/agent-tasks-serve}
 model=${AGENT_TASKS_MODEL:-}
@@ -87,6 +91,9 @@ fail() {
   exit 1
 }
 
+if [ -n "${AGENT_TASKS_FILE:-}" ] && [ -z "${AGENT_TASKS_MODEL_COMMAND:-}" ]; then
+  fail 'AGENT_TASKS_FILE is set without AGENT_TASKS_MODEL_COMMAND: another task list is only for a stand-in model'
+fi
 rm -f "$out" || fail "cannot remove $out"
 [ -x "$bin/surf-agent" ] || fail "$bin/surf-agent is not there"
 [ -x "$serve" ] || fail "$serve is not there; task build builds it"

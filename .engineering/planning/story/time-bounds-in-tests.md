@@ -8,7 +8,7 @@ summary: The wide bounds of story:test-step-holds-under-load let a limit applied
 relations:
 - decomposes: epic:headless-rust-target
 - depends_on: story:one-test-binary-per-crate
-revision: 4
+revision: 5
 ---
 ## Context
 
@@ -21,6 +21,8 @@ Gaps that were there before, found by the adversary on `01a40e2`:
 - `case_32` of `crates/view/tests/http.rs` has no lower bound: a keep-alive comment sent at once passes.
 - No test of `crates/fetch` sends to a server that reads slowly: a send timeout applied per write and not to the whole send (`crates/fetch/src/lib.rs:719`) passes. A server that reads 64 KiB every half read timeout would catch it: a correct send ends at the read timeout, the defect runs about 25 s.
 - `case_20` has a lower bound of 900 ms for a limit of 1 s: a receive limit at 0.9 of its value passes.
+  After `story:test-harness-fewer-processes` (statement 4) the limit is 250 ms and the lower
+  bound 225 ms, 90 % again: a receive limit at 0.9 of its value still passes.
 
 Assertions that still bound a wall time from above, found with `git grep -n -E 'assert!\(.*(elapsed|took).* <' -- crates conformance` on the commit of that story (11 in 6 files; the waits for an event in `crates/view/tests/http.rs:389` and `crates/view/tests/stream_bounds.rs:183` are not of this form), and one more of another spelling:
 
@@ -30,6 +32,9 @@ Assertions that still bound a wall time from above, found with `git grep -n -E '
 - `crates/fetch/tests/review1_security_fetch.rs:215`, `:236`: under 3 s; `:264`: under 400 ms.
 - `crates/fetch/tests/review2_fetch_limits.rs:199`: under 1 s.
 - `crates/surfd/tests/in_process.rs:179`, `:206`: under `ALLOWED`.
+  `story:test-harness-fewer-processes` keeps the 1 s of `session_ready_timeout` in `case_09` and
+  of `session_answer_timeout` in `case_10` (its statement 4, D280), so these bounds stay as they
+  are.
 - `crates/fetch/tests/fetch_bounds.rs:108` (`assert_ends_unreachable_in_time`, the drip tests): 5 times the read timeout.
 
 None of them failed in the gate of wave 10 or in the four runs measured after it. Whether a bound is close to the time its test needs is not measured yet.

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T00:21:52Z",
+  "actor": "human:operator",
+  "artifact": "story:test-step-holds-with-tls",
+  "kind": "story",
+  "revision": 51,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "four runs of slot --timeout 15m task test on c35fe2a (the code of main at 96145a2, after the doc tests of one package), 2026-11-23 01:07 to 01:19 CET (acceptance 1; none dropped)",
+    "reference": "run 0, right after the build of the test binaries: test step: 131.6 s, over its budget of 120 s, load 205.06 to 126.87, nextest 117.3 s; run 1: 71.4 s, load 126.87 to 105.79, nextest 62.4 s; run 2: 132.6 s, over its budget, load 105.79 to 136.57, nextest 112.0 s; run 3: 102.9 s, load 136.57 to 153.25, nextest 91.0 s; 893 tests passed in each; summed test time of runs 1 to 3 from JUnit 306.7 s, 545.3 s, 446.1 s; no test over 14 s; the statement stays open: two of three consecutive runs at a load of 100 or more are over 90 s"
+  }
+}

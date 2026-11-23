@@ -10,6 +10,8 @@ relations:
 - informed_by: story:time-bounds-in-tests
 - supersedes: story:slow-tests-at-small-bounds
 - depends_on: story:doc-tests-of-one-package
+- depends_on: story:test-step-scripts-and-binaries
+- depends_on: story:test-harness-fewer-processes
 scope:
 - confidence: cited
   path: .cargo/config.toml
@@ -57,7 +59,7 @@ scope:
   path: taskfiles/conform-totals.sh
 - confidence: cited
   path: taskfiles/generated-compare.sh
-revision: 50
+revision: 52
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T19:52:19Z", actor: "human:operator", revision: 48, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T19:52:19Z", actor: "human:operator", revision: 49, decided_on: {"recorded":{"verification":1}}}
@@ -311,10 +313,11 @@ read the profile it leaves; then statements 1, 2 and 4 to 14 in any order.
 13. The class-(c) tests of `surf` that use a process only as a vehicle (c; 19 tests, 70.7 s
     summed in the baseline: `review1_generated_check` 4 tests 29.0 s, `generated_check_links` 6
     17.6 s, `review2_generated_check` 2 9.4 s, `conform_totals` 5 7.7 s, `generated_check_modes` 2
-    7.0 s; 1.0 to 12.5 s per test alone). `lock_check` (4 tests, 4.1 s) stays as it is on `main`:
-    `wave/tls-1` (`story:tls-lock-allow`, `87fd19f`) already adds `taskfiles/lock-check.sh` and
-    rewrites `crates/surf/tests/lock_check.rs` and the task; its switch from `task` to `sh` is in
-    `story:tls-tests-as-tables`. Each case runs `task <name>` in a
+    7.0 s; 1.0 to 12.5 s per test alone). `lock_check` (4 tests, 4.1 s) is not changed by this
+    story: `wave/tls-1` (`story:tls-lock-allow`, `87fd19f`) added `taskfiles/lock-check.sh` and
+    rewrote `crates/surf/tests/lock_check.rs` and the task; its switch from `task` to `sh` is
+    statement 3 of `story:test-step-scripts-and-binaries`, which changes `lock_check.rs` on
+    `main` (it took the switch from `story:tls-tests-as-tables`). Each case runs `task <name>` in a
     copy: `task` parses the whole `Taskfile.yml` with its 12 includes (`task --list` 0.15 s at load
     125 outside the pool), then the task's shell; `generated-compare` also runs `ess` in step 2
     when step 1 passes (0.56 to 0.66 s for the whole task outside the pool at load 125). The copy
@@ -353,10 +356,16 @@ read the profile it leaves; then statements 1, 2 and 4 to 14 in any order.
   (8 to 11 s in the baseline, 0.7 to 25.1 s alone; d): pages and addresses at the product's
   bounds, parsed and rendered; served by statement 3 (`surf-html`, `surf-page-text`).
 - `surf-agent-tasks` lanes (c): the claim is the shell driver and the processes it starts.
+  `story:test-harness-fewer-processes` (statement 3) lets five driver tests run one task through
+  `AGENT_TASKS_FILE`; the lanes keep their claim.
 - `surfd` idle-exit tests and `surf-session` `built::idle_timeout_ends_the_session` (b, c): about
   the process; 1 s is the smallest value `--idle-exit` and `--idle-timeout` take.
 - `surf-view-fixture` (c): the pipe between processes is the claim.
-- `surf-view` `case_23` (b): waits the write limit of 1 s, the event it is about.
+  `story:test-harness-fewer-processes` (statement 6) takes the programs from `SURF_BIN_DIR`
+  instead of a cargo build per test; the pipe stays the claim.
+- `surf-view` `case_23` (b): waits the write limit, the event it is about.
+  `story:test-harness-fewer-processes` (statement 4) sets that limit to 250 ms instead of 1 s,
+  with both lower bounds kept.
 
 ### Overlap with round 2 and the merge order
 
@@ -401,14 +410,16 @@ under 20) is replaced by acceptance 3 here; 2 (load over 100, no test over 20 s,
 - The wall-time upper bounds left in tests: `story:time-bounds-in-tests`.
 - No change of `crates/agent/src/client.rs`.
 - The conformance runner's tests and `task conform-rust`: `story:conformance-step-within-budget`.
-- `lock-check`, its script and `crates/surf/tests/lock_check.rs`: unchanged on `main`; the wave
-  owns them (`story:tls-lock-allow`, `story:tls-tests-as-tables`).
+- `lock-check`, its script and `crates/surf/tests/lock_check.rs`: unchanged by this story. The
+  wave owns the task and the script (`story:tls-lock-allow`);
+  `story:test-step-scripts-and-binaries` changes `lock_check.rs` on `main` (its statement 3:
+  `sh` in place of `task`).
 
 ## Acceptance
 
 1. Step time on `main`. Every gate or `task test` run started for this story is in the evidence
    with `cat /proc/loadavg` before and after it; none is dropped. Three consecutive runs of
-   `ESS_TOOLCHAIN=0.97.3 slot --timeout 15m task test` on the story's commit, whose two readings
+   `slot --timeout 15m task test` (the pin `ESS_TOOLCHAIN=0.97.3` this statement named is refused since `spec/ess-inputs.yaml` requires ess 0.97.4) on the story's commit, whose two readings
    are each at least 100, each print `test step: N s` with N at most 90. If the host's load is
    under 100 while the unit works, the runs are reported with their load and this statement stays
    open. Stop: if after all changes such a run is over 90 s, the unit reports the ten largest
@@ -438,7 +449,8 @@ under 20) is replaced by acceptance 3 here; 2 (load over 100, no test over 20 s,
    (`crates/html/tests/tree_body.rs`:118-143, `crates/page/tests/elements.rs`:736) turns that
    test red; the measured frame size is in the evidence.
 6. `cargo nextest list --workspace` before and after gives the same 875 tests: no test is removed
-   or merged. Each test changed in statements 1, 4, 5, 7 and 11 names its new size in its comment
+   or merged. (875 is the count when this was written; at `96145a2` the step holds 893.) Each
+   test changed in statements 1, 4, 5, 7 and 11 names its new size in its comment
    (the body of 4 KiB and 5 `go`s; the blocking size from the default receive buffer; the
    entries published until the close; the queue of 64 KiB and 4,000 ampersands; the stack and
    the depth), shown by `sed -n` of each in the evidence.
@@ -447,8 +459,9 @@ under 20) is replaced by acceptance 3 here; 2 (load over 100, no test over 20 s,
    `task conform-rust` before and after. `git diff <base> -- .config/nextest.toml` is empty, and
    the overrides are in `.cargo/config.toml` only.
 8. (Moved to `story:conformance-step-within-budget`.)
-9. `git diff <base> -- crates/agent/src/client.rs crates/tls* crates/surf/tests/lock_check.rs
-   conformance` is empty.
+9. `git diff <base> -- crates/agent/src/client.rs crates/tls* conformance` is empty.
+   (`crates/surf/tests/lock_check.rs` left out: `story:test-step-scripts-and-binaries`, on which
+   this story depends, changes it.)
 10. Statement 9: `adversary_events::adversary_an_action_recorded_after_a_session_timeout_has_its_entries_kept`
     passes 20 consecutive filtered runs (`cargo nextest run -p surf-session -E
     'test(=adversary_events::adversary_an_action_recorded_after_a_session_timeout_has_its_entries_kept)'`)

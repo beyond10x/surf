@@ -159,10 +159,23 @@ of its actions with a playhead: the page line is that of the action at the playh
 follows the newest action, and the arrow keys move the playhead one action. The selection is
 kept in the address, so a reload shows the same action.
 
+The word at the top says whether the page follows: `connecting` until its stream of events is
+open and what it loaded then is shown, `live` with the time of the last update while it follows,
+`reconnecting` from a lost stream until the next one is open and its load shown, and `offline`
+after the view refused the token.
+
 Since the eighth wave, shipped in release `0.3.0`, the right column shows the action at the playhead
 or, after a click on a mark of the timeline, that event with its fields, and the session's
 requests, one row per request. The selected event is kept in the address too. The requests
 list and the selection scroll inside themselves.
+
+Since round 2 a panel "Now" under the page line lists what the agent could do at the playhead:
+the links of that action's answer with their handles, labels, targets and visibility (`hid`
+for a link the `hidden` attribute hides, `?` where visibility is not computed), and the page's
+title shows in the session list and on the page line. A `follow` shows its handle on the
+timeline (`follow l1`). Labels, targets and titles are shown as text; no target is a link. A
+bidirectional control (U+202A to U+202E, U+2066 to U+2069) in a value from a session shows as a
+mark that names it (`U+202E`), so it cannot reorder what a person reads.
 
 The view only reads: nothing on the page changes a session. It listens on 127.0.0.1 only. The
 token in the address is valid until `surfd` exits, and the browser may keep that address in its
@@ -223,7 +236,7 @@ there instead.
   and hard limits on header and body size.
 - **170 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **877 tests**, built with warnings treated as errors, and 38 tests of the live view's page in
+- **877 tests**, built with warnings treated as errors, and 59 tests of the live view's page in
   a browser.
 
 New with round 1 after the tenth wave of the current plan, shipped in release `0.4.0`:
@@ -378,8 +391,9 @@ New with the third wave, the parts the agent commands and the live view build on
 
 - **The daemon, `surfd`.** It keeps the list of sessions (open, closed or died), passes each
   request to the session's own process and the answer back, and exits when it has been idle.
-- **The live view's page.** Nine plain files (ten since the eighth wave), with no framework,
-  nothing from another origin and every value shown as text, fitting screens from 360 px to
+- **The live view's page.** Nine plain files (ten since the eighth wave, eleven since round
+  2), with no framework, nothing from another origin and every value shown as text, fitting
+  screens from 360 px to
   1,400 px wide. One command from a source checkout, the `prototype` example of the `surf-view` crate, serves it over three
   scripted sessions and prints an address to open in a browser on the same machine. It shows
   example data only; since the seventh wave `surfd` serves the page over real sessions (above).
@@ -489,7 +503,7 @@ test step: 62.3 s of its budget of 120 s
 agent-tasks: 4 tasks, 2 pass, 2 fail, 0 skipped, lane gate, binaries target/debug
 sh-echo: Summary [   2.623s] 40 tests run: 40 passed, 54 skipped
 view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
-  38 passed (15.8s)
+  59 passed (3.0m)
 html-conformance: 9107 cases, 9095 run, 9095 passed
 ```
 
@@ -500,7 +514,11 @@ name of the live view's stream is an event of the specification, runs the live v
 tests in a browser, and last holds the HTML parser's test counts where they are. The tests run
 under cargo-nextest; a test still running after 60 seconds is ended and fails, the test step
 fails when it takes over 120 seconds, and the block leaves out the ten slowest tests the step
-also prints and the agent tasks' rows after their counts. The page tests need Node and
+also prints and the agent tasks' rows after their counts. The page tests' line, `59 passed
+(3.0m)` (the task 220 s), was measured at a load average of 126 to 127 on 20 CPUs, its slowest
+test (`an entry over 1 MiB`) 35.0 s; `53 passed` took 1.1m at a load average of 55 to 65;
+`47 passed` took 2.5m at a load average of 110 to 140, and the 38 of before took 15.8 s.
+The page tests need Node and
 Chromium's headless shell; with Node there, install the shell once with `npm --prefix view-tests ci`, then `npx --prefix view-tests playwright
 install --only-shell chromium`. The scenario runner in
 [`conformance/`](conformance/) is the one place a third-party crate is used; nothing that

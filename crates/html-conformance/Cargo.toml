@@ -8,6 +8,19 @@ default-run = "surf-html-conformance"
 license = "Apache-2.0"
 autotests = false
 
+[lib]
+test = false
+
+[[bin]]
+name = "surf-html-conformance"
+path = "src/main.rs"
+test = false
+
+[[bin]]
+name = "entities-table"
+path = "src/bin/entities-table.rs"
+test = false
+
 [dependencies]
 surf-html = { path = "../html" }
 

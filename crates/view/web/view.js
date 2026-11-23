@@ -1,6 +1,9 @@
 // The page: loads /api/sessions, selects a session (the one the address's fragment names, or the
-// first), loads it, follows /events, and keeps the live marker (live and the time of the last
-// update, or reconnecting), and renders the detail panel. The selection is written into the
+// first), loads it, follows /events, and keeps the live marker (connecting until the first
+// stream is open and the load of its opening is drawn, then live and the time of the last
+// update; reconnecting from a stream's end until the load of the next opening is drawn; offline
+// after a refusal), and renders the panel "Now" (now.js) and the detail panel. The
+// selection is written into the
 // fragment, #session=<id>&at=<sequence>, or #session=<id>&at=<sequence>&event=<number> while an
 // event is selected (the event entry's number across all sessions), with history.replaceState,
 // and read at load: never the query, which the route table answers 404. An event named at load
@@ -14,6 +17,7 @@ import * as state from "./state.js";
 import { api, follow, refusal, takeToken } from "./stream.js";
 import { renderSessions, tick } from "./sessions.js";
 import { renderPage } from "./page.js";
+import { renderNow } from "./now.js";
 import { renderControls, renderTimeline, resetTimeline } from "./timeline.js";
 import { renderDetail } from "./detail.js";
 
@@ -25,6 +29,7 @@ const nodes = {
   heading: byId("session-heading"),
   facts: byId("session-facts"),
   page: byId("page-line"),
+  now: byId("now"),
   timeline: byId("actions"),
   latest: byId("latest"),
   newer: byId("newer"),
@@ -42,6 +47,12 @@ let written = null;
 let stream = null;
 // Whether the view refused the token after the page loaded: nothing is asked again.
 let refused = false;
+// How many streams opened, and the number of the one that is open (0 while none is).
+let openings = 0;
+let openStream = 0;
+// Whether the page follows: a stream is open and the load its opening started is drawn. Only
+// then is `live` written.
+let following = false;
 
 function clock(ms) {
   return new Date(ms).toLocaleTimeString([], { hour12: false });
@@ -56,8 +67,11 @@ function setLive(kind, at) {
   text(nodes.liveTime, at ? clock(at) : "");
 }
 
+// `live` with the time, while the page follows; otherwise the word stays.
 function updated() {
-  setLive("live", Date.now());
+  if (following) {
+    setLive("live", Date.now());
+  }
 }
 
 function say(message) {
@@ -128,6 +142,7 @@ function renderSelected() {
     text(nodes.heading, "No session selected");
     text(nodes.facts, "");
     renderPage(nodes.page, null);
+    renderNow(nodes.now, null);
     resetTimeline(nodes.timeline);
     renderControls(nodes.latest, nodes.newer, true, 0);
     renderDetail(nodes.selection, nodes.requests, null, null, []);
@@ -153,6 +168,7 @@ function renderSelected() {
   const at = state.playheadIndex(list);
   const event = state.eventEntry(list);
   renderPage(nodes.page, state.pageAt(id));
+  renderNow(nodes.now, state.nowAt(id));
   renderTimeline(nodes.timeline, list, at, state.drops(id), state.latest(), moveTo, event ? event.number : null, pick);
   renderControls(nodes.latest, nodes.newer, state.latest(), at < 0 ? 0 : list.length - 1 - at);
   renderDetail(nodes.selection, nodes.requests, at < 0 ? null : list[at], event, state.entries(id));
@@ -330,18 +346,29 @@ async function start() {
     return;
   }
   say("");
-  updated();
   stream = follow(token, newest, {
     open() {
       say("");
-      updated();
-      loadAll().catch(failed);
+      openings += 1;
+      const opening = openings;
+      openStream = opening;
+      // Loads and draws, then writes live, only if this stream is still the open one.
+      loadAll()
+        .then(() => {
+          if (openStream === opening) {
+            following = true;
+            updated();
+          }
+        })
+        .catch(failed);
     },
     alive() {
       updated();
     },
     event: onEvent,
     closed() {
+      openStream = 0;
+      following = false;
       setLive("reconnecting", null);
     },
     refused: failed,

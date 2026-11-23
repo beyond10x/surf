@@ -773,7 +773,7 @@ fn case_19_51_header_lines_are_431() {
 fn case_20_half_a_request_is_closed_without_answer_after_the_receive_limit() {
     let source = TestSource::new();
     let limits = Limits {
-        receive: Duration::from_secs(1),
+        receive: Duration::from_millis(250),
         ..Limits::default()
     };
     let (server, port) = start(&source, limits);
@@ -783,7 +783,8 @@ fn case_20_half_a_request_is_closed_without_answer_after_the_receive_limit() {
     let answer = read_to_close(&mut stream);
     let elapsed = started.elapsed();
     assert!(answer.is_empty(), "{:?}", String::from_utf8_lossy(&answer));
-    assert!(elapsed >= Duration::from_millis(900), "{elapsed:?}");
+    // 90 % of the limit, as the bound of 900 ms was of a limit of 1 s.
+    assert!(elapsed >= Duration::from_millis(225), "{elapsed:?}");
     assert!(elapsed <= WAIT, "{elapsed:?}");
     wait_for("the connection count returns to 0", || {
         server.open_connections() == 0
@@ -840,7 +841,7 @@ fn case_23_a_client_that_reads_nothing_is_closed_at_the_write_limit() {
     let source = TestSource::new();
     source.state().sessions = vec![b'a'; 8 << 20];
     let limits = Limits {
-        write: Duration::from_secs(1),
+        write: Duration::from_millis(250),
         queue_bytes: 64 << 20,
         ..Limits::default()
     };

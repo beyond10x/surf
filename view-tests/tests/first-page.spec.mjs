@@ -1,6 +1,7 @@
-// The 18 cases of story:view-first-page, each a test named after it, each with its own
-// surf-view-fixture (fixture.mjs). Every wait is on the thing itself; the deadline is the
-// story's where it names one (2 s, 5 s), otherwise the config's 10 s.
+// The 18 cases of story:view-first-page and the 5 of story:view-live-means-stream-open, each a
+// test named after it, each with its own surf-view-fixture (fixture.mjs). Every wait is on the
+// thing itself; the deadline is the story's where it names one (2 s, 5 s), otherwise the
+// config's 10 s.
 
 import { test, expect } from "./fixture.mjs";
 
@@ -61,6 +62,34 @@ async function playheadAt(page) {
 
 async function texts(locator) {
   return locator.evaluateAll((nodes) => nodes.map((node) => node.textContent));
+}
+
+// Two animation frames: whatever the page changed has been laid out and painted.
+function frames(page) {
+  return page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+}
+
+// Holds the `nth` request (from 1) whose address matches `pattern` until release(); every other
+// one goes on. `asked` settles when the held request has arrived.
+async function hold(page, pattern, nth) {
+  const held = { asked: null, release: null };
+  let arrived = null;
+  held.asked = new Promise((resolve) => {
+    arrived = resolve;
+  });
+  const released = new Promise((resolve) => {
+    held.release = resolve;
+  });
+  let seen = 0;
+  await page.route(pattern, async (route) => {
+    seen += 1;
+    if (seen === nth) {
+      arrived();
+      await released;
+    }
+    await route.continue();
+  });
+  return held;
 }
 
 test("loads without an error", async ({ page, surf, record }) => {
@@ -487,4 +516,135 @@ test("an entry over 1 MiB", async ({ page, surf }) => {
   await expect(segments(page)).toHaveCount(4, { timeout: 30_000 });
   await expect(pageAddress(page)).toHaveCount(1, { timeout: 30_000 });
   await expect.poll(() => pageAddress(page).textContent(), { timeout: 30_000 }).toBe(address);
+});
+
+// story:view-live-means-stream-open: the word `live` says the page follows. It is written when a
+// stream is open and the load its opening started is drawn, and not before.
+
+test("the word is connecting until the stream is open", async ({ page, surf }) => {
+  const id = await surf.open(surf.pages + "/first/a.html");
+  const summary = (await surf.api("/api/sessions")).sessions.find((s) => s.id === id);
+  const stream = await hold(page, /\/events$/, 1);
+  await page.goto(surf.view);
+  await stream.asked;
+  await expect(items(page)).toHaveCount(1);
+  await expect(items(page).nth(0).locator(".address")).toHaveText(summary.address);
+  await expect(page.locator("#live-word"), "the first load is shown, the stream is not open").toHaveText("connecting");
+  stream.release();
+  await expect(page.locator("#live-word")).toHaveText("live");
+});
+
+test("the word is live after the load of the opening is drawn", async ({ page, surf }) => {
+  const id = await surf.open();
+  const list = await hold(page, /\/api\/sessions$/, 2);
+  await page.goto(surf.view);
+  await list.asked;
+  await expect(segments(page)).toHaveCount(1);
+  await surf.agent(id, "go", surf.pages + "/first/a.html");
+  await expect(segments(page), "an event of the open stream arrived and was drawn").toHaveCount(2);
+  await expect(page.locator("#live-word"), "the load of the opening is not drawn yet").toHaveText("connecting");
+  list.release();
+  await expect(page.locator("#live-word")).toHaveText("live");
+});
+
+test("after a reconnect the word is live when its load is drawn", async ({ page, surf }) => {
+  const id = await surf.open();
+  await surf.agent(id, "go", surf.pages + "/first/a.html");
+  await load(page, surf.piped);
+  await expect(segments(page)).toHaveCount(2);
+  await surf.cut();
+  await expect(page.locator("#live-word")).toHaveText("reconnecting", { timeout: 5000 });
+  const list = await hold(page, /\/api\/sessions$/, 1);
+  await surf.mend();
+  await list.asked;
+  await expect(page.locator("#live-word"), "the load of the new opening is not drawn yet").toHaveText("reconnecting");
+  list.release();
+  await expect(page.locator("#live-word")).toHaveText("live");
+});
+
+test("no render of the timeline follows live", async ({ page, surf, record }) => {
+  const id = await surf.open();
+  await surf.agent(id, "go", surf.pages + "/first/a.html");
+  // One observer over the document: its records come in the order of the mutations, so a clear
+  // of #actions counts when the record that wrote `live` into #live-word came before it.
+  await page.addInitScript(() => {
+    window.surfTestClearsAfterLive = 0;
+    let live = false;
+    new MutationObserver((records) => {
+      for (const record of records) {
+        if (record.target.id === "live-word") {
+          if ([...record.addedNodes].some((node) => node.textContent === "live")) {
+            live = true;
+          }
+        } else if (live && record.target.id === "actions" && record.removedNodes.length > 0) {
+          window.surfTestClearsAfterLive += 1;
+        }
+      }
+    }).observe(document, { childList: true, subtree: true });
+  });
+  await load(page, surf.view);
+  await expect.poll(() => record.requestsOf("/api/sessions/" + id).length).toBeGreaterThanOrEqual(2);
+  await record.requestsOf("/api/sessions/" + id)[1].body;
+  await frames(page);
+  expect(await page.evaluate(() => window.surfTestClearsAfterLive), "clears of #actions after live").toBe(0);
+});
+
+test("no word is written while the page does not follow", async ({ page, surf }) => {
+  await surf.open();
+  // Every word #live-word takes, from the text node each write adds (dom.js written()), and
+  // every clear of #actions, in one list in the order of the mutation records.
+  await page.addInitScript(() => {
+    window.surfTestWritten = [];
+    new MutationObserver((records) => {
+      for (const record of records) {
+        if (record.target.id === "live-word") {
+          for (const node of record.addedNodes) {
+            window.surfTestWritten.push("word " + node.textContent);
+          }
+        } else if (record.target.id === "actions" && record.removedNodes.length > 0) {
+          window.surfTestWritten.push("clear");
+        }
+      }
+    }).observe(document, { childList: true, subtree: true });
+  });
+  // The first stream opens, gives one keep-alive comment and ends; the next one is held.
+  const stream = { asked: null, release: null };
+  let arrived = null;
+  stream.asked = new Promise((resolve) => {
+    arrived = resolve;
+  });
+  const released = new Promise((resolve) => {
+    stream.release = resolve;
+  });
+  let streams = 0;
+  await page.route(/\/events$/, async (route) => {
+    streams += 1;
+    if (streams === 1) {
+      await route.fulfill({ status: 200, headers: { "Content-Type": "text/event-stream" }, body: ": keep-alive\n\n" });
+      return;
+    }
+    if (streams === 2) {
+      arrived();
+      await released;
+    }
+    await route.continue();
+  });
+  // The load of the first opening is held.
+  const list = await hold(page, /\/api\/sessions$/, 2);
+  const word = page.locator("#live-word");
+  const written = () => page.evaluate(() => window.surfTestWritten.slice());
+  await page.goto(surf.view);
+  await list.asked;
+  await stream.asked;
+  await expect(word, "a keep-alive before the draw writes no word").toHaveText("reconnecting");
+  expect(await written(), "a keep-alive before the draw writes no word").not.toContain("word live");
+  const before = (await written()).length;
+  list.release();
+  await expect
+    .poll(async () => (await written()).slice(before), { message: "the released load is drawn" })
+    .toContain("clear");
+  await expect(word, "a load whose stream closed writes no word").toHaveText("reconnecting");
+  expect(await written(), "a load whose stream closed writes no word").not.toContain("word live");
+  stream.release();
+  await expect(word).toHaveText("live");
 });

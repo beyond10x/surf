@@ -10,10 +10,12 @@ autotests = false
 [lib]
 name = "surf_session"
 path = "src/lib.rs"
+test = false
 
 [[bin]]
 name = "surf-session"
 path = "src/main.rs"
+test = false
 
 [dependencies]
 surf = { path = "../surf" }

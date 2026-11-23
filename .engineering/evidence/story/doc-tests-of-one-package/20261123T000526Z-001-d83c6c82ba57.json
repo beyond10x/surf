@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T00:05:26Z",
+  "actor": "human:operator",
+  "artifact": "story:doc-tests-of-one-package",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the implementing unit's runs on the tree of 4047c68 before its commit (acceptances 3 to 7)",
+    "reference": "task doc-tests-check: no doc test outside crates/ports (0.53 s); task doc-tests-check-test: 13 case(s), each decided as expected (0.76 s); the script planted to accept every mark: 5 of 13 case(s) decided otherwise; a doc test of surf-ports planted to fail: slot task test exit 101 with FAILED; task --dry --verbose check lists doc-tests-check before build and doc-tests-check-test; Taskfile.yml runs cargo test --doc -p surf-ports; AGENTS.md :152-153, :1147-1148, :1270-1283, :1338-1339"
+  }
+}

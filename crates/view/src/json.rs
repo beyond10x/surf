@@ -5,7 +5,8 @@
 //! character as itself in UTF-8. So no output holds a line end, a raw `<`, `>` or `&`.
 
 use crate::model::{
-    Action, Detail, Entry, EntryKind, PageLine, Path, Reset, SessionList, SessionState, Summary,
+    Action, Detail, Entry, EntryKind, Now, NowElement, PageLine, Path, PathAction, Reset,
+    SessionList, SessionState, Summary,
 };
 
 /// A value the writer writes.
@@ -207,12 +208,51 @@ impl ToJson for Action {
     }
 }
 
+impl ToJson for PathAction {
+    fn write_json(&self, out: &mut String) {
+        Object::open(out)
+            .member("sequence", &self.sequence)
+            .member("command", &self.command)
+            .member("handle", &self.handle)
+            .member("argument", &self.argument)
+            .member("argument_cut", &self.argument_cut)
+            .close();
+    }
+}
+
 impl ToJson for Path {
     fn write_json(&self, out: &mut String) {
         Object::open(out)
             .member("shown", &self.shown)
             .member("total", &self.total)
             .member("actions", &self.actions)
+            .close();
+    }
+}
+
+impl ToJson for NowElement {
+    fn write_json(&self, out: &mut String) {
+        Object::open(out)
+            .member("handle", &self.handle)
+            .member("kind", &self.kind)
+            .member("visibility", &self.visibility)
+            .member("label", &self.label)
+            .member("label_cut", &self.label_cut)
+            .member("target", &self.target)
+            .member("target_cut", &self.target_cut)
+            .member("unresolved", &self.unresolved)
+            .member("text", &self.text)
+            .close();
+    }
+}
+
+impl ToJson for Now {
+    fn write_json(&self, out: &mut String) {
+        Object::open(out)
+            .member("shown", &self.shown)
+            .member("total", &self.total)
+            .member("elements", &self.elements)
+            .member("visibility_note", &self.visibility_note)
             .close();
     }
 }
@@ -249,10 +289,11 @@ impl ToJson for Entry {
                 .member("unmapped", unmapped)
                 .member("fields", &Fields(if *unmapped { &[] } else { fields }))
                 .close(),
-            EntryKind::Answer { page, path } => object
+            EntryKind::Answer { page, path, now } => object
                 .member("kind", "answer")
                 .member("page", page)
                 .member("path", path)
+                .member("now", now)
                 .close(),
         }
     }

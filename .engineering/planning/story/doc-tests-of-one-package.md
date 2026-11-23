@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:doc-tests-of-one-package
 kind: story
-status: active
+status: implemented
 title: The test step runs the doc tests of surf-ports only, and a check holds that no other package has one
 summary: The doc command of task test took about 21 s of a step of 121.9 s at a load of 142 to 177; alone it takes 20.0 to 47.2 s for the workspace and 3.9 to 13.4 s for surf-ports, where both doc tests are; run -p surf-ports and fail the gate on a doc test elsewhere
 relations:
@@ -18,10 +18,11 @@ scope:
   path: taskfiles/doc-tests-check.sh
 - confidence: cited
   path: taskfiles/doc-tests.yml
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T23:00:33Z", actor: "human:operator", revision: 10}
 - {from: "proposed", to: "active", at: "2026-11-22T23:00:33Z", actor: "human:operator", revision: 11}
+- {from: "active", to: "implemented", at: "2026-11-23T00:05:26Z", actor: "human:operator", revision: 13, decided_on: {"recorded":{"test_result":3,"verification":2}}, executor: "agent:coordinator"}
 ---
 ## Why
 

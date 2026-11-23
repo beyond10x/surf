@@ -1,10 +1,11 @@
 //! The one generation of `spec/` the tests of `task generated-check` compare against.
 //!
-//! `task generated-fresh` writes it into `.out/generated-check/fresh` of the checkout, once per
-//! run of task: `task check` runs it for `generated-check`, and `task test` depends on it. The
-//! tests find it there and run the script of `task generated-compare`,
+//! `task generated-fresh` writes it into `.out/generated-check/fresh` of the checkout, with its
+//! three listings `fresh.list`, `fresh.all` and `fresh.executable` beside it, once per run of
+//! task: `task check` runs it for `generated-check`, and `task test` depends on it. The tests
+//! find it there and run the script of `task generated-compare`,
 //! `sh taskfiles/generated-compare.sh <it>`, in their copies, so no test and no case generates
-//! the workspace again, and no case starts `task`. nextest starts one process per test, so a
+//! or lists the tree again, and no case starts `task`. nextest starts one process per test, so a
 //! `OnceLock` alone would still generate once per test.
 
 use std::fs;
@@ -38,7 +39,8 @@ fn tree(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     out
 }
 
-/// The fresh tree, after checking that it was generated from the `spec/` of this checkout.
+/// The fresh tree, after checking that it was generated from the `spec/` of this checkout and
+/// that its three listings lie beside it.
 pub fn fresh() -> &'static Path {
     static FRESH: OnceLock<PathBuf> = OnceLock::new();
     FRESH.get_or_init(|| {
@@ -49,6 +51,18 @@ pub fn fresh() -> &'static Path {
             fresh.is_dir() && dir.join("fresh.log").is_file() && dir.join("fresh.spec").is_dir(),
             "{}: no generation; run `task generated-fresh` first (`task test` does)",
             fresh.display()
+        );
+        let missing: Vec<String> = ["fresh.list", "fresh.all", "fresh.executable"]
+            .iter()
+            .map(|name| dir.join(name))
+            .filter(|listing| !listing.is_file())
+            .map(|listing| listing.display().to_string())
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "{}: the listings of the generation are missing; run `task generated-fresh` (`task \
+             test` does)",
+            missing.join(", ")
         );
         assert!(
             tree(&dir.join("fresh.spec")) == tree(&root.join("spec")),

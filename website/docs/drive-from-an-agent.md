@@ -211,9 +211,9 @@ $ surf-agent look
 
 Every answer starts with its head line, `surf 1 session <id> <state>`, then the action it is
 for (`did`), the page (`page`: `none` before the first load, the status, media type, address and
-title of a loaded page, or `failed` with the reason), the session's last actions (`path`) and
-the page's links and form fields (`now`); with `--as`, a `note text:` line and the `text`
-block with the page follow. Every
+title of a loaded page, or `failed` with the reason) and the session's last actions (`path`);
+without `--as` the page's links and form fields (`now`) follow, with `--as` the `note text:`
+lines and the `text` block with the page. Every
 value that comes from a page, a server or an address stands in double quotes, with every
 character that could start a line or look like a field escaped. The format, line by line, with
 its grammar:

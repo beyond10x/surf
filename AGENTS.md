@@ -129,9 +129,10 @@ above, and the list of standards itself was written from memory.
 - `cli/surf-agent.yaml`: the `ess-cli/2` document of the agent command line, checked by
   `task cli`; the client parser is held to it.
 - `taskfiles/<name>.yml`: one file per task added since the agent interface plan, included by
-  the root `Taskfile.yml` with `flatten: true` and `optional: true`. Optional because the four
-  tests of `crates/surf/tests/lock_check.rs` copy the root `Taskfile.yml` alone into a
-  temporary directory and run one task there; a missing include must not stop them. `check` still fails when an included task is missing.
+  the root `Taskfile.yml` with `flatten: true` and `optional: true`. Optional because a test
+  copied the root `Taskfile.yml` alone into a temporary directory and ran one task there; no test
+  does now (`lock_check` runs its script with `sh`), and the includes stay optional. `check`
+  still fails when an included task is missing.
   `taskfiles/cli.yml` holds the task `cli`, `taskfiles/site.yml` the task `site-build`,
   `taskfiles/html-conformance.yml` the task `html-conformance`,
   `taskfiles/tls-x509-conformance.yml` the task `tls-x509-conformance`,
@@ -162,11 +163,12 @@ above, and the list of standards itself was written from memory.
   `taskfiles/tls-flights.yml` the tasks
   `tls-flights-check` (over `taskfiles/tls-flights-check.sh`, a step of `check`) and
   `tls-flights-slow` (a step of `slow`: records the flights again and replays them; `WRITE=1`
-  writes them). `taskfiles/slowest-tests.sh` is no task's own: `task test` calls it. Two
+  writes them). `taskfiles/slowest-tests.sh` is no task's own: `task test` calls it. Three
   tasks of the root `Taskfile.yml` run a script of their own, so that their tests run it with
   `sh` and start no `task` per case: `generated-compare` runs
-  `taskfiles/generated-compare.sh <fresh tree>`, and `conform-totals` runs
-  `taskfiles/conform-totals.sh`.
+  `taskfiles/generated-compare.sh <fresh tree>`, `conform-totals` runs
+  `taskfiles/conform-totals.sh`, and `lock-check` runs `taskfiles/lock-check.sh Cargo.lock
+  taskfiles/lock-allow.txt`.
 - Shell scripts, committed or written by a test: a value is printed with `printf '%s'`, never
   with `echo`. The forge's `sh` is dash, whose `echo` turns `\n`, `\\` and the other backslash
   sequences into control characters; this host's `/bin/sh` is bash, whose `echo` does not, so
@@ -263,6 +265,18 @@ above, and the list of standards itself was written from memory.
   --skip review1_cli::`). The selections of the repository are listed in
   `taskfiles/test-layout.sh` (`SELECTIONS`), and a stem added to the skipped list of a selection
   gets its `--skip <stem>::` in that selection. `task test-layout` holds this form.
+  A target without a test of its own has `test = false` in its `[lib]` or `[[bin]]` entry, so
+  that nextest neither builds nor lists an empty test binary for it
+  (`story:test-step-scripts-and-binaries`): the libraries of `surf`, `surf-agent`,
+  `surf-agent-tasks`, `surf-answer`, `surf-html-conformance`, `surf-page`, `surf-page-text`,
+  `surf-ports` (its `doctest` stays, so its two doc tests run), `surf-secret`, `surf-session`,
+  `surf-url`, `surf-view` and `surf-test-process`, and the binaries of `surf-agent`, `surf-cli`,
+  `surf-html-conformance` (both), `surf-session`, `surfd`, `surf-view-fixture` (both) and
+  `surf-agent-tasks`. The eight generated packages hold no test either; ess writes their
+  manifests, so `task test` excludes them (`GENERATED_PACKAGES`). A new test of such a target
+  goes into `tests/`, or the entry loses `test = false`: `task test-layout` fails, naming the
+  file and line, on `#[test]` in a file of a target with `test = false` or of a generated
+  package (`#[cfg(test)]` is allowed, as in `crates/secret/src/compare.rs`).
 - `crates/<name>/`: one hand-written crate each. One that uses a generated crate depends on it
   by path, `../../generated/rust/crates/<name>`. cargo 1.99.1 refuses a member glob that matches
   nothing (measured 2026-11-20), so `crates/` always holds at least one crate. Format one crate
@@ -462,7 +476,10 @@ above, and the list of standards itself was written from memory.
     the entries its sessions send with each answer (`src/log.rs`). Since wave 6 it serves the
     live view: `crates/view` over its sessions and kept logs (`src/view.rs`), on 127.0.0.1,
     address and token in `$XDG_RUNTIME_DIR/surf/view-url` (mode 0600, removed at exit); it reads
-    a session's text only through `surf_answer::parse` and `surf_answer::unquote`. The server
+    a session's text only through `surf_answer::parse` and `surf_answer::unquote`. Since round 2
+    (`story:view-now-panel`) an answer entry's `now` block reaches the view: a link with its
+    label and target, a line of any other kind with its kind and its text as
+    `surf_answer::render` writes it (no `match` on the kind). The server
     starts in `Daemon`'s `begin` with a view token drawn by `surf-secret`; the token is in that
     file and, only with `surfd --print-view-url`, in the line the binary writes to standard
     error (`Config::view_line`), in no answer, refusal, entry or log line. Without the option the
@@ -478,7 +495,7 @@ above, and the list of standards itself was written from memory.
     (`LATE_ANSWER_TIMEOUT`) while the session's turn stays taken, a log of at most 10,000
     entries and 16 MiB per session and 64 MiB over all sessions, a reader queue of 1,024
     entries, 256 ended sessions listed; open sessions are not bounded. It starts `surf-session`
-    from the directory of its own executable. Its 49 tests (3 unit tests of `src/view.rs`,
+    from the directory of its own executable. Its 50 tests (4 unit tests of `src/view.rs`,
     `adversary_link` 3, `built` 14, `in_process` 14, `log` 6, `view` 9) run a stand-in session
     or none; the real one is run by the `e2e`, `events`, `view`, `adversary_events` and
     `adversary_view` tests of `surf-session`. Depends on `surf-agent` (for `wire`),
@@ -558,8 +575,8 @@ above, and the list of standards itself was written from memory.
     binaries, for the end-to-end test and the wire).
   - `crates/view` (`surf-view`): the live view's HTTP server, standard library only: `GET` only, a
     fixed route table, the `Host` and view-token checks, and server-sent events with a bound per
-    reader. `docs/view-stream.md` is what it answers. `web/` holds the page's ten files, with
-    `detail.js` since wave 8 (no
+    reader. `docs/view-stream.md` is what it answers. `web/` holds the page's eleven files, with
+    `detail.js` since wave 8 and `now.js` since round 2 (no
     framework, no build step, nothing from another origin, no inline script or style), compiled
     in by `page_files()` in `src/assets.rs`; the page fits 360 px to 1,400 px. The example
     `prototype` serves them over three scripted sessions; it shows example data only, and since
@@ -571,8 +588,9 @@ above, and the list of standards itself was written from memory.
     sessions; since wave 7 the page shows them. `Source::read_newest` gives the newest number and a
     reader from it in one call, so a stream always answers. A stream's queue holds at most
     `Limits::queue_entries` (256) entries and `Limits::queue_bytes` (1 MiB), or one larger frame
-    alone: such a frame waits until the queue is empty and is then written alone. 61 tests
-    (`adversary_view` 2, `http` 33, `json` 10, `prototype` 8, `stream_bounds` 6, `web` 2).
+    alone: such a frame waits until the queue is empty and is then written alone. 66 tests
+    (`adversary_now` 1, `adversary_view` 2, `http` 33, `json` 14, `prototype` 8,
+    `stream_bounds` 6, `web` 2).
     Depends on `surf-secret`.
     - `crates/view/web/`: the live view's page, plain HTML, CSS and JavaScript modules compiled
       into `surfd`; the selection in the address's fragment (`#session=<id>&at=<sequence>`).
@@ -587,10 +605,18 @@ above, and the list of standards itself was written from memory.
       with its fields, and the session's requests, one row per request; the selected event is
       kept in the address (`#session=<id>&at=<sequence>&event=<number>`); the requests list
       and the selection scroll inside themselves. A mark holds a button for the keyboard, and a
-      click anywhere on the mark selects its event. A value from a session is set
+      click anywhere on the mark selects its event. Since round 2 (`story:view-now-panel`) the
+      centre panel "Now" (`now.js`) lists the `now` member of the answer entry at the playhead,
+      grouped by kind, each element with its handle, the answer's visibility word (`hid` marked
+      hidden), label and target, and the visibility note; a line of a kind it does not know is
+      its text; a segment of an action on an element shows its handle (`follow l1`) from the
+      path of its answer entry. No target is a link. A value from a session is set
       only as `textContent` or as the value of an attribute of the list in `dom.js`, and
       `dom.js` is the only module that sets an attribute (it throws for any other name); its
-      nine attribute names are unchanged. The static attributes of `index.html` (`tabindex`,
+      nine attribute names are unchanged. Every text goes through `written` in `dom.js`: a
+      bidirectional control (U+202A to U+202E, U+2066 to U+2069) is shown as a span of class
+      `bidi-mark` whose text names it (`U+202E`), in a `title` attribute as that name; U+200E,
+      U+200F, joiners and a soft hyphen stay. The static attributes of `index.html` (`tabindex`,
       `role`, `aria-labelledby` on the two scrolling regions) are not set by a script.
   - `crates/view-fixture` (`surf-view-fixture`): test tooling, not shipped: a binary that
     starts a page server, `surfd` in process and sessions for the page tests, under a
@@ -604,7 +630,9 @@ above, and the list of standards itself was written from memory.
     `surf-view-foreign`, waits until it is killed: `tests/fixture.rs` starts it under the name
     `surf-session` as a process that is not the fixture's and that `kill` must leave alive. A
     test starts no program of the system under another name: on the forge's runner `tail`
-    started as `surf-session` exited at once. 2 tests (`fixture` 1, `adversary_commands` 1).
+    started as `surf-session` exited at once. 5 tests (`acceptance` 3, `fixture` 1,
+    `adversary_commands` 1); `acceptance` is the HTTP part of the live view's acceptance case
+    (`story:view-acceptance`), over the pages of `pages/acceptance/`.
     Depends on `surfd`, `surf-view` and `surf-test-process`.
   - `crates/test-process` (`surf-test-process`): test tooling, not shipped and not published: no
     binary that ships depends on it. Whether another process has ended, decided once from
@@ -905,9 +933,13 @@ above, and the list of standards itself was written from memory.
     7, `hundred` 1, `modes` 9). Depends on `surf-tls` with `test-tooling`.
 - `view-tests/`: the Playwright tests of the live view's page (`@playwright/test` 1.65.0,
   Chromium's headless shell, a committed `package-lock.json`), each case with its own
-  `surf-view-fixture`: 38 cases, 18 in `tests/first-page.spec.mjs`, 6 in
-  `tests/adversary-page.spec.mjs`, 6 in `tests/detail.spec.mjs` and 8 in
-  `tests/adversary-detail.spec.mjs`. Node and Playwright are gate tooling only.
+  `surf-view-fixture`: 59 cases, 23 in `tests/first-page.spec.mjs`, 6 in
+  `tests/adversary-page.spec.mjs`, 6 in `tests/detail.spec.mjs`, 8 in
+  `tests/adversary-detail.spec.mjs`, 5 in `tests/now.spec.mjs` (over the pages of
+  `crates/view-fixture/pages/now/`), 7 in `tests/adversary-now.spec.mjs` (over
+  `crates/view-fixture/pages/adversary-now/`) and 4 in `tests/acceptance.spec.mjs` (the page
+  part of the live view's acceptance case, over `crates/view-fixture/pages/acceptance/`). Node
+  and Playwright are gate tooling only.
 - `conformance/` (`surf-conformance`): runs `.out/suite.json` against the Rust system in process,
   with the runner of `ess-conformance`. A Cargo workspace of its own, outside the root one, with
   its own committed `Cargo.lock` and its own `target/`. It depends on `surf`, `surf-ports` and the
@@ -1328,16 +1360,30 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   of `tests/main.rs` other than the selected or a skipped one, or any module declared inside a
   file of the binary (inline or out of line, any visibility, any attribute before it on its line,
   the selected module's own file included), has a name that ends with the selected or a skipped
-  name, so that the selection's filter or its `--skip` would match its tests. Not seen by the
-  check: a module that a macro expands to, a file pulled in by `include!`, `autotests = false`
-  inside a multi-line string of `[package]`, and a crate reached through a symbolic link. It
-  calls no cargo and prints `test-layout: <d> test directories, <f> test files, one test binary
-  each`.
-- `task test-layout-test`: that script on a copy of the manifests, the `src/*.rs` and the test
-  files under `.out/test-layout/`, thirty-two cases: the copy as it is and four right layouts
-  pass (a comment that names `#![cfg(any())]`, `mod x;` inside a string literal and in a
-  trailing comment, a fixture crate below `tests/data/`), and each of twenty-seven planted
-  defects fails naming its path or module. `SCRIPT=<path>` runs a copy of the script.
+  name, so that the selection's filter or its `--skip` would match its tests. It also fails,
+  naming the file and line, on `#[test]` in the code of a line of a file of a target that runs
+  no test: a `[lib]` or `[[bin]]` entry with `test = false` in any `Cargo.toml` it reads (the
+  same directories not entered, a `Cargo.toml` below `tests/` a fixture), and the library and
+  binaries of every package under `generated/rust/crates`. The files of such a target are its
+  `path` (`src/lib.rs`, or `src/main.rs` or `src/bin/<name>.rs` for a binary, when none is
+  given) and every child module it declares out of line, followed as for a test binary; a child
+  it cannot read fails. `#[cfg(test)]` is not flagged, and a library's modules are not files of
+  a binary of the same package (`surfd`'s library keeps its tests in `src/view.rs`). Not seen
+  by the check: a module that a macro expands to, a file pulled in by `include!`, `autotests =
+  false` inside a multi-line string of `[package]`, and a crate reached through a symbolic link.
+  It calls no cargo and prints `test-layout: <d> test directories, <f> test files, one test
+  binary each`.
+- `task test-layout-test`: that script on a copy of the manifests of `crates/*`,
+  `conformance` and `generated/rust/crates/*`, every `*.rs` under `crates/*/src` and
+  `generated/rust/crates/*/src`, and the test files under `.out/test-layout/`, thirty-nine
+  cases: the copy as it is and eight right layouts pass (a comment that names
+  `#![cfg(any())]`, `mod x;` inside a string literal and in a trailing comment, a fixture crate
+  below `tests/data/`, `#[test]` in `crates/html/src`, `#[test]` in a comment and a string of
+  a library with `test = false`, `#[cfg(test)]` in `crates/secret/src/compare.rs`, `#[test]`
+  in a module of `surfd`'s library), and each of thirty planted defects fails naming its path
+  or module (three of them `#[test]` in a target without tests: `src/lib.rs` of a library with
+  `test = false`, a module that a binary with `test = false` declares, `src/lib.rs` of a
+  generated package). `SCRIPT=<path>` runs a copy of the script.
 - `task tls-certs-check`: `sh taskfiles/tls-certs-check.sh crates/tls-test-certs`, no build and
   no `openssl`: the sha256 of `src/`, `keys/`, `openssl/` and `Cargo.toml` of
   `crates/tls-test-certs` against `certs/DIGEST`. It prints `tls-certs: <n> cases, certs/
@@ -1432,7 +1478,11 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   19 from outside this repository, each on the allow-list`. The list holds the 19 packages of ring 0.17.14
   (`docs/design/tls.md`, item 2), one line `<name> <version> <source> <checksum>` each,
   sorted; the script's head states the format. It does not read `conformance/Cargo.lock`. A
-  path dependency outside the repository has no `source` line and is not caught.
+  path dependency outside the repository has no `source` line and is not caught. The tests of
+  `crates/surf/tests/lock_check.rs` run that line with `sh` in their copies, without `task`
+  (no `Taskfile.yml` in a copy); `the_unchanged_lock_passes` holds the task to the line with
+  `task --color=false --dry --verbose lock-check`, which prints it on standard error
+  (`--color=false`: with `CI=true`, as `task check-runner` sets it, task colours the line).
 - `task generate`: rewrite `generated/rust/` from `spec/`, in place. `ess` refuses, naming the
   file, when a file it wrote was edited since; delete that file or restore it from git, then run
   it again.
@@ -1440,21 +1490,37 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   that differs from `generated/rust/`, in its bytes or its executable bit. `task --summary generated-check` names what it leaves out
   and why. It is two tasks: `generated-fresh` generates `spec/` into
   `.out/generated-check/fresh` (with `fresh.log` and a copy of `spec/` as `fresh.spec`), once per
-  run of `task`; `generated-compare FRESH=<tree>` compares and regenerates `.ess-output` in
-  place, by `taskfiles/generated-compare.sh`. The tests of
-  `crates/surf/tests/*generated_check*.rs` read that one generation
-  (`crates/surf/tests/common/mod.rs`) and run that script with `sh` in their copies; they fail,
-  saying so, when it is missing or was made from another `spec/`. `cargo test -p surf` needs
-  `slot task generated-fresh` first; `task test` depends on it.
+  run of `task`, and then lists the tree once with `sh taskfiles/generated-compare.sh --lists`
+  into `fresh.list` (its files but `.ess-output/`), `fresh.all` and `fresh.executable` beside
+  it; `generated-compare FRESH=<tree>` compares and regenerates `.ess-output` in place, by
+  `taskfiles/generated-compare.sh`. The script reads the three listings of `<tree>` and refuses
+  them, exit 1 with one line naming the listing and `task generated-fresh`, when `<tree>`, a file
+  or directory in it, or `<tree>.log` is newer than one of them (a file written or removed in the
+  tree changes the time of the file or of its directory); when they are not all there it lists
+  the tree into its own `.out/generated-check/compare`, never beside the tree. It compares the
+  bytes with one `diff -rq --no-dereference` and lists the committed side with one `find`, so a
+  run starts at most 25 programs when step 1 fails (72 before; GNU `find -printf` and `diff`,
+  as on the forge's `ubuntu-latest`). The tests of `crates/surf/tests/*generated_check*.rs` read
+  that one generation (`crates/surf/tests/common/mod.rs`) and run that script with `sh` in their
+  copies; they fail, saying so, when it or one of its listings is missing or it was made from
+  another `spec/`. `cargo test -p surf` needs `slot task generated-fresh` first; `task test`
+  depends on it.
 - `task build`: `cargo build` of the root workspace with `--locked` and `RUSTFLAGS=-D warnings`.
 - `task test`: `cargo nextest run --workspace --locked` without the four TLS packages
   (`--exclude` for each name of `TLS_PACKAGES` in `Taskfile.yml`: `surf-tls`,
   `surf-tls-test-server`, `surf-tls-test-certs`, `surf-tls-conformance`, whose tests `task
-  test-tls` runs, below; cargo-nextest 0.9.143,
+  test-tls` runs, below) and without the eight generated packages, which hold no test
+  (`--exclude` for each name of `GENERATED_PACKAGES`: `agent`, `document`, `navigator`, `net`,
+  `renderer`, `shell`, `surf-system`, `surf-types`; ess writes their manifests, so they get no
+  `test = false`; Layout); cargo-nextest 0.9.143,
   installed as a tool; no crate of the workspace changes) and `cargo test --doc -p surf-ports
   --locked`, the doc tests of `surf-ports` only (the two of the workspace; `task
   doc-tests-check` holds that no other package has one), which nextest does not run, with
-  `RUSTFLAGS=-D warnings`. The ten slowest tests come from
+  `RUSTFLAGS=-D warnings`. The doc tests start in the background before nextest, and the step
+  waits for both and fails when either fails (`story:test-step-scripts-and-binaries`: in three
+  alternating pairs of `slot --timeout 15m task test` the step minus nextest's `Summary` was
+  4.6, 3.3 and 2.5 s with it, 13.0, 12.3 and 8.5 s without; `slot status` showed one job for
+  the step). The ten slowest tests come from
   `taskfiles/slowest-tests.sh <junit file> [count]` (POSIX sh, pipefail where the shell has
   it), held by `crates/surf/tests/slowest_tests.rs` on a report of 2,000 cases. Under
   `pipefail` no pipeline of a task ends its reader before its input (no `| head`, `grep -q` or
@@ -1579,6 +1645,24 @@ held the 20 entries four `go`s dropped before `story:html-document-port`; the pa
 records `DocumentParsed` and one `ElementAdded` per actionable element, 28 are dropped now,
 and the test derives the number from the entries' `index` since.
 
+With round 2's view unit (`story:view-now-panel`, `story:view-acceptance`, 2026-11-22) `task
+view-test` runs 47 page tests (38 before), 7 more since the adversary pass on
+`story:view-now-panel` (4 of the adversary's cases and 3 of its fix) and 59 since
+`story:view-live-means-stream-open` (5 in `tests/first-page.spec.mjs`). The live view's
+acceptance case of `epic:live-view` is seven tests named after its sentences, all in the
+gate: in `task test`, the binary
+`surf-view-fixture::main` (5 tests, 2 before) runs `acceptance::api_sessions_lists_both_with_token_and_401_without`,
+`acceptance::request_with_another_host_is_refused` and `acceptance::events_deliver_a_go_in_order`
+(each under 1.2 s at a load average of about 90); in `task view-test`,
+`tests/acceptance.spec.mjs` runs `page lists both sessions`, `page line and three links after
+go`, `latest marker moves on second go` and `script in title is shown as text`. The three
+slowest page tests, at a load average of 106 to 140: `an entry over 1 MiB` 29.7 s (three `go`s
+to a 60,000-byte address, then waits up to 30 s each for four segments and the page line of an
+answer over 1 MiB), `adversary: a refused token on the stream stops the page` 15.5 s (a fixed
+`page.waitForTimeout(12_000)` to see that no request follows a refusal) and `dropped entries
+are a gap` 9.7 s (two fixtures of their own, four `go`s, a poll of `/api/sessions` until a
+session reads `closed`).
+
 With `story:ess-0-97-3` (2026-11-22, on `896c64d`), surf builds on ess 0.97.3: `surf v1 — 9
 file(s), 15 scenario(s), valid` and `96 scenario(s) (15 authored), 28 refusal(s)`, as with
 0.96.0. The suite is byte for byte the one 0.96.0 writes, digest
@@ -1678,11 +1762,41 @@ is unset); `adversary_events` gives `surfd` an answer timeout of 0.5 s and a ser
 1.5 s after it read the request, then sends `look` until the path shows the `go`, instead of a
 timeout of 2 s, a server that answered after 4 s and a sleep of 5 s. Each step of the order it
 tests is still 1 s or more apart from the next, so the test does not depend on the runner's
-speed. In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
+speed. Since `story:test-harness-fewer-processes` the two limits of `surf-view` `http` that a
+case waits out are 250 ms: the write limit of `case_23`, which keeps its lower bounds `elapsed >=
+write`, and the receive limit of `case_20`, whose lower bound is 225 ms, 90 % of the limit as
+900 ms was of 1 s. `surfd` `in_process::case_09` keeps its `session_ready_timeout` of 1 s and
+`case_10` its `session_answer_timeout` of 1 s: `surfd` applies both to the `open` exchange
+(`crates/surfd/src/daemon.rs`), so a freshly started stand-in would have to answer within 250 ms
+in the pool, less than 10 times the time the test takes alone.
+`surfd_started_by_hand_writes_no_view_token_unless_asked` runs its two `surfd` at the same time,
+each in a directory of its own. The drop of a test directory of `surfd` and `surf-session`
+(`tests/common/mod.rs`) kills only the case's processes: those whose `environ` holds
+`STAND_IN_DIR=<its control directory>` (`surfd`) or `XDG_RUNTIME_DIR=<its runtime directory>`
+(`surf-session`), never the test process itself. A directory in which a helper started a built
+program (`agent()`, `Surfd::start`, `Started::start`; each calls `mark_built_program`) reads the
+`environ` of every process of the host, since such a program can leave the test process's tree.
+Any other directory reads only the descendants of the test process, found through
+`/proc/<pid>/task/<tid>/children` followed down, and every process of the host when one of those
+files cannot be read. In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
 872 passed, 32 skipped`; the 32 are hosts outside ASCII, listed in
 `crates/url/tests/data/SKIPPED`. `view-stream-check`: `view-stream-check: 19 event name(s),
 each a message of the AsyncAPI projection`. `view-test`: `38 passed (15.8s)`; 12.9 s of it are
-the case that waits to see that a refused token is not sent again. `html-conformance`, the last
+the case that waits to see that a refused token is not sent again. Since `story:view-now-panel`
+it printed `43 passed (2.7m)` on 2026-11-22 at a load average of about 140 on 20 CPUs, the
+five cases of `now.spec.mjs` 2.2 to 3.8 s each and `an entry over 1 MiB` 29.9 s at a load
+average of about 140. Since `story:view-acceptance` it prints `47 passed`: `47 passed (2.5m)`
+(the task 174 s with its build and `npm ci`) on 2026-11-22 at a load average of 106 to 140,
+the four cases of `acceptance.spec.mjs` 1.9 to 6.0 s each and `an entry over 1 MiB` 29.7 s at
+that load. Since the adversary pass on `story:view-now-panel` it prints `53 passed`: `53 passed
+(1.1m)` (the task 71 s) on 2026-11-22 at a load average of 55 to 65, the six cases of
+`adversary-now.spec.mjs` 0.7 to 1.4 s each and `an entry over 1 MiB` 17.7 s at that load.
+With the seventh case of `adversary-now.spec.mjs` (a control in an event field, named in the
+mark's `title`) and the five cases of `story:view-live-means-stream-open` in
+`first-page.spec.mjs` it prints `59 passed (3.0m)` (the task 220 s) on 2026-11-23 at a load
+average of 126 to 127 on 20 CPUs, the five cases 5.7 to 11.1 s each and the slowest case,
+`an entry over 1 MiB`, 35.0 s at that load.
+`html-conformance`, the last
 step of `check`: `html-conformance: 9107 cases, 9095 run, 8428 passed` (82 encoding cases,
 7,046 tokenizer cases and 1,300 tree construction cases), with `tag markup 1979/1979/1979`,
 `tag text 328/328/328`, `tag charref

@@ -67,6 +67,13 @@ release; what came before it is in the git log and in `docs/plan/`.
   required field or a required select left empty, a `multipart/form-data` form, or an address
   over 65,536 bytes (`AddressTooLong`), which is not requested. No `surf-agent` command
   presses a button yet.
+- The live view has a panel "Now": the links of the answer at the playhead, grouped by kind,
+  each with its handle, label, target and visibility word, a hidden one marked, and the
+  visibility note. A `follow` shows its handle on the timeline. A bidirectional control in a
+  label, a target, a title or an address shows as a mark that names it (`U+202E`), so a page
+  cannot reorder what a person reads in the view. The view's `answer` entry
+  gains the member `now`, and each action of its `path` the members `handle` and
+  `argument_cut`. Format: [`docs/view-stream.md`](docs/view-stream.md).
 
 ### Changed
 
@@ -86,6 +93,10 @@ release; what came before it is in the git log and in `docs/plan/`.
   fields, `handle` and `label`, both empty after a `go`. They will hold the handle and the label
   of the link a `follow` takes (the label cut as above), and `FillRequested`, `PickRequested` and
   `PressRequested` the `handle` of the control, once the session runs those commands.
+- The live view's page writes `live` only when its stream of events is open and the load that
+  the stream's opening started is drawn. Until then it reads `connecting` over the first load,
+  and after a lost stream `reconnecting` until the next opening's load is drawn; a keep-alive or
+  an event before that draw writes no word, and neither does a load whose stream has closed.
 
 ## [0.4.0] - 2026-11-22
 

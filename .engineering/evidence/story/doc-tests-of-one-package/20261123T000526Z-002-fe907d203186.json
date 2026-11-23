@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T00:05:26Z",
+  "actor": "human:operator",
+  "artifact": "story:doc-tests-of-one-package",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "forge: check run 45084918388 on main at 96145a2, the merge of fix/doc-tests-of-ports (acceptance 9)",
+    "reference": "success; doc-tests-check: no doc test outside crates/ports; test step: 12.5 s of its budget of 120 s, 895 tests: 895 passed (cargo-nextest 893, doc tests 2); tls test step: 4.7 s of its budget of 120 s; page tests 38 passed (17.8s)"
+  }
+}

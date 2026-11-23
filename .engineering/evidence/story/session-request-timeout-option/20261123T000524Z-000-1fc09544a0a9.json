@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T00:05:24Z",
+  "actor": "human:operator",
+  "artifact": "story:session-request-timeout-option",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the adversary's pass on d82eb1c, commit 0813e2b",
+    "reference": "three tests added: each_option_sets_only_its_own_deadline 0.064 s, a_request_within_its_deadline_is_answered 2.516 s, more_argument_shapes_exit_2 0.658 s; 78 tests of surf-session passed; the draft story:session-argument-checks holds what it left open"
+  }
+}
