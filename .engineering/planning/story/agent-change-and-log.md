@@ -39,7 +39,7 @@ scope:
   path: generated/rust
 - confidence: inferred
   path: spec/domains/agent.yaml
-revision: 16
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 7}
@@ -153,3 +153,24 @@ over 60 s, and the test step ends within 120 s.
 The detailed mode and `--detail` (`epic:detailed-mode`, decision D3); changes that need a script
 (elements appearing or going, labels, targets, visibility, text inside one document); computed
 style.
+
+## As decided while building
+
+The change is `cf9a6ba` on `impl/round2-commands`. Three places where the text above and the
+tree did not agree, each decided:
+
+1. Decision D290. The `+ text` lines put page text into the answer, and surfd's log keeps the
+   answer as printed (`crates/surfd/src/link.rs`, `events::case_02`). The test
+   `events::case_07_a_body_is_kept_as_its_length` forbade every kept entry to hold 8 bytes of
+   the page in a row. Its claim is about what the session records of a response, so its check
+   applies to action entries and event entries. The answer entry is the answer byte for byte
+   and may hold `+ text` lines; the same test asserts that it holds one, so the test says where
+   page text may be and where not.
+2. Decision D291. "Every answer has the block" holds for an answer that has a page state. An
+   answer without one carries no `changed` block: a bare refusal (the token refusal, `open`'s
+   usage refusal, a malformed request), an answer with status 3, and surfd's own answers
+   (closed, no such session, session died, timeout). `docs/agent-answer.md` states this rule in
+   one place.
+3. The 14 golden files of `crates/answer/tests/golden/` keep their text: they are answers
+   rendered from typed values without a page state. Three golden files are added for the
+   block: `changed-controls`, `changed-page`, `changed-none`.
