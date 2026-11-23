@@ -1,7 +1,7 @@
 // Adversary cases against story:view-first-page, and the cases of the fixes that answer them:
 // each names the statement it holds.
 
-import { test, expect } from "./fixture.mjs";
+import { test, expect, expectLive } from "./fixture.mjs";
 
 const HOSTILE = '"><img src=x onerror=alert(1)>';
 const REFUSED = "The view refused the token. Open the address the program printed, with its #token.";
@@ -13,7 +13,7 @@ const pageAddress = (page) => page.locator("#page-line .part.address dd, #page-l
 
 async function load(page, address) {
   await page.goto(address);
-  await expect(page.locator("#live-word")).toHaveText("live");
+  await expectLive(page);
 }
 
 // The index of the segment that carries the playhead, or -1.
@@ -93,7 +93,7 @@ test("adversary: an action streamed while the detail loads after a reset is not 
   held.release();
   // The state is read once both loads are in: live (the load of the opening is drawn), the end
   // of both answers, and two frames; not a deadline from the release (story D287).
-  await expect(page.locator("#live-word")).toHaveText("live");
+  await expectLive(page);
   await Promise.all(answers.map((answer) => answer.body));
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   expect(await segments(page).count(), "the go streamed while the detail loaded after the reset is lost").toBe(27);
@@ -128,7 +128,7 @@ test("adversary: with Latest off the playhead stays after its action is dropped 
   await surf.cut();
   await expect(page.locator("#live-word")).toHaveText("reconnecting", { timeout: 5000 });
   await surf.mend();
-  await expect(page.locator("#live-word")).toHaveText("live");
+  await expectLive(page);
   await expect(page.locator("#actions > li.gap")).toHaveText(/ dropped$/);
   await expect(segments(page)).toHaveCount(kept.length);
   await expect.poll(() => playheadAt(page), "the playhead is on the oldest action held").toBe(0);
