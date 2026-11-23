@@ -593,19 +593,36 @@ fn case_07_a_body_is_kept_as_its_length() {
             "{name}"
         );
     }
-    // Every 8 bytes of the page's letters, put in a set once; each window of each entry is
-    // looked up in it.
+    // Every 8 bytes of the page's letters, put in a set once; each window of an entry is looked
+    // up in it. What the session records about the response, its action and event entries,
+    // holds none of them (decision D290).
     let letters: std::collections::BTreeSet<&[u8]> = body[18..].windows(8).collect();
+    let holds_letters = |text: &str| {
+        text.as_bytes()
+            .windows(8)
+            .any(|part| letters.contains(part))
+    };
     for entry in &entries {
-        assert!(
-            !entry
-                .text
-                .as_bytes()
-                .windows(8)
-                .any(|part| letters.contains(part)),
-            "an entry holds bytes of the page: {entry:?}"
-        );
+        if matches!(entry.kind, EntryKind::Action | EntryKind::Event) {
+            assert!(
+                !holds_letters(&entry.text),
+                "an entry holds bytes of the page: {entry:?}"
+            );
+        }
     }
+    // The answer entry is the answer as printed, and its `+ text` lines are page text
+    // (story:agent-change-and-log): the one place an entry holds letters of the page.
+    let answer = entries
+        .iter()
+        .find(|entry| entry.kind == EntryKind::Answer && entry.text.contains("\ndid go "))
+        .expect("the answer entry of the go");
+    assert!(
+        answer
+            .text
+            .lines()
+            .any(|line| line.starts_with("  + text \"") && holds_letters(line)),
+        "the go's answer entry has no `+ text` line with letters of the page: {answer:?}"
+    );
 }
 
 #[test]
