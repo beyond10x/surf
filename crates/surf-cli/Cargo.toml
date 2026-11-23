@@ -20,6 +20,10 @@ surf-page-text = { path = "../page-text" }
 surf-ports = { path = "../ports" }
 surf-types = { path = "../../generated/rust/crates/surf-types" }
 
+[dev-dependencies]
+surf-tls-test-certs = { path = "../tls-test-certs" }
+surf-tls-test-server = { path = "../tls-test-server" }
+
 [[test]]
 name = "main"
 path = "tests/main.rs"

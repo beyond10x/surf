@@ -221,13 +221,19 @@ impl<F: FnMut(&RequestStarted) -> Answer> Transport for F {
 /// the body). A [`Method::Get`] with a body or a media type ends with
 /// [`surf_fetch::Failure::UnsupportedScheme`], whose detail names the method, before any
 /// connection is attempted.
+///
+/// An `https:` request, and an `https:` redirect, authenticate the server against `anchors`:
+/// the bundled list with the anchors of an extra file ([`surf_fetch::Anchors::with_extra_pem`]),
+/// or the bundled list alone with `None`.
 pub fn fetch_http(
     request: &RequestStarted,
     limits: &surf_fetch::Limits,
+    anchors: Option<&surf_fetch::Anchors>,
 ) -> Result<surf_fetch::Response, surf_fetch::Failure> {
     fetch_http_from(
         request,
         limits,
+        anchors,
         &surf_fetch::OsNetwork,
         surf_fetch::Origin::Given,
     )
@@ -239,6 +245,7 @@ pub fn fetch_http(
 pub fn fetch_http_from(
     request: &RequestStarted,
     limits: &surf_fetch::Limits,
+    anchors: Option<&surf_fetch::Anchors>,
     network: &dyn surf_fetch::Network,
     origin: surf_fetch::Origin,
 ) -> Result<surf_fetch::Response, surf_fetch::Failure> {
@@ -260,7 +267,7 @@ pub fn fetch_http_from(
                 .body_type
                 .as_ref()
                 .map(|media_type| media_type.0.as_str()),
-            anchors: None,
+            anchors,
         },
         limits,
         network,

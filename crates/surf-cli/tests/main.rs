@@ -5,6 +5,7 @@
 
 mod adversary_document_command;
 mod cli;
+mod https;
 mod output_streams;
 mod page;
 mod redirects;

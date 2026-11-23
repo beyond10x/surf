@@ -467,8 +467,9 @@ pub const ACTION_AND_EVENT_BYTES_MAX: usize = link::ENTRIES_MAX - link::ANSWER_T
 const LEFT_OUT_LINE_MAX: usize = 64;
 
 /// The transport of the binary: [`surf::fetch_http`] at `surf-fetch`'s default limits, through
-/// [`surf::answer`]. An address that is not `http:` is `UnsupportedScheme` and nothing is read;
-/// so is a `Get` with a body or a media type, before any connection. A `Post` is sent with its
+/// [`surf::answer`]. An `https:` server is authenticated against the bundled trust anchors. An
+/// address that is neither `http:` nor `https:` is `UnsupportedScheme` and nothing is read; so
+/// is a `Get` with a body or a media type, before any connection. A `Post` is sent with its
 /// body and media type (an agent's `go` navigates with `Get`). Redirects are followed inside the
 /// one fetch, up to 20, and the answer carries the address of the last response. The first
 /// request of a `follow` or a `press` from a page that counts as public goes to public addresses
@@ -494,7 +495,14 @@ pub fn fetch_through(
         dialed: Cell::new(false),
         first_local: Cell::new(None),
     };
-    let result = surf::fetch_http_from(request, &surf_fetch::Limits::default(), &dialing, origin);
+    // The bundled trust anchors: an agent session's extra file is `story:tls-session-anchors`.
+    let result = surf::fetch_http_from(
+        request,
+        &surf_fetch::Limits::default(),
+        None,
+        &dialing,
+        origin,
+    );
     if from_public
         && !dialing.dialed.get()
         && matches!(result, Err(surf_fetch::Failure::ForbiddenDestination(_)))
