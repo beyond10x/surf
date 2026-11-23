@@ -2,14 +2,16 @@
 format: aep.planning-md/3
 id: story:password-printed-back-by-a-server
 kind: story
-status: draft
+status: archived
 title: A typed password that a server prints back
 summary: D22 covers the value the agent types; a page that prints the posted body puts it into a + text line of the changed block, which the view shows since story:view-controls-and-changes; draft, candidates not chosen
 relations:
 - decomposes: epic:agent-cli-target
 - informed_by: story:view-controls-and-changes
 - informed_by: story:agent-change-and-log
-revision: 1
+revision: 2
+transitions:
+- {from: "draft", to: "archived", at: "2026-11-23T10:08:28Z", actor: "human:operator", revision: 2}
 ---
 ## Why
 
