@@ -1,9 +1,11 @@
 //! The planted defect: the suite over a system whose `Navigation` storage drops every `put` must
 //! fail. A suite that passes over this system would pass over a navigator that keeps nothing.
+//! It runs over the scenarios its line of `tests/noticed.txt` names (`task conform-slow` writes
+//! the list), or over the whole suite when `SURF_NOTICED_OUT` is set.
 
 use ess_conformance::target::ImplementationIdentity;
 use surf::{Browser, System};
-use surf_conformance::{SurfTarget, Unanswered, run};
+use surf_conformance::{SurfTarget, Unanswered, admit, note_noticed, planted_suite, run};
 use surf_ports::{
     NavigatorPorts, NetPorts, RendererPorts, ShellPorts, agent_port, commit_navigation,
     document_port, navigator_port, net_port, renderer_port, shell_port, traverse_history,
@@ -125,27 +127,30 @@ impl TryContext for DropsEveryPut {
     }
 }
 
+/// The defect's label, and its line of `tests/noticed.txt`.
+const LABEL: &str = "navigation storage drops every put";
+
 #[test]
 fn a_navigation_storage_that_drops_every_put_fails_at_least_one_scenario() {
     let suite = std::fs::read_to_string(SUITE)
         .unwrap_or_else(|error| panic!("{SUITE}: {error}; run `task suite` first"));
-    let target = SurfTarget::new(
-        ImplementationIdentity::new("surf", "navigation storage drops every put"),
-        |setup| {
-            Browser::new(
-                System::new(
-                    agent_port(setup.agent_ports()),
-                    document_port(setup.document_ports()),
-                    navigator_port(DropsEveryPut(NavigatorPorts::new())),
-                    net_port(NetPorts::new()),
-                    renderer_port(RendererPorts::new()),
-                    shell_port(ShellPorts::new()),
-                ),
-                Unanswered,
-            )
-        },
-    );
+    let admitted = admit(&suite).expect("the suite is admitted");
+    let suite = planted_suite(&admitted, LABEL).unwrap_or_else(|error| panic!("{error}"));
+    let target = SurfTarget::new(ImplementationIdentity::new("surf", LABEL), |setup| {
+        Browser::new(
+            System::new(
+                agent_port(setup.agent_ports()),
+                document_port(setup.document_ports()),
+                navigator_port(DropsEveryPut(NavigatorPorts::new())),
+                net_port(NetPorts::new()),
+                renderer_port(RendererPorts::new()),
+                shell_port(ShellPorts::new()),
+            ),
+            Unanswered,
+        )
+    });
     let conformance = run(&suite, &target).expect("the suite runs");
+    note_noticed(LABEL, &conformance.report).unwrap_or_else(|error| panic!("{error}"));
     let counts = conformance.report.counts();
     let failed: Vec<String> = conformance
         .report

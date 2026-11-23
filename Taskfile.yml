@@ -103,9 +103,9 @@ tasks:
       - tail -n 1 .out/conform.log
 
   conform-rust:
-    desc: Run the suite against the Rust system in process, and the planted-defect test beside it.
+    desc: Run the suite against the Rust system in process, and the planted-defect tests beside it, within 120 s.
     summary: |
-      Run the suite against the Rust system in process, and the planted-defect test beside it.
+      Run the suite against the Rust system in process, and the planted-defect tests beside it, within 120 s.
 
       Both live in the crate conformance/ (surf-conformance), a Cargo workspace of its own with
       its own Cargo.lock and target/: it is the one place third-party crates are allowed, the
@@ -113,28 +113,123 @@ tasks:
       root workspace, and so task build and task test, do not reach it. cargo fetches the tag
       when its cache does not hold it.
 
-      Step 1 runs the crate's tests with warnings denied, into .out/conform-rust-test.log. It
-      fails unless the planted-defect test ran and passed: the suite over a system whose
-      Navigation storage drops every put must report at least one failed scenario. It fails too
-      unless the two per-entity tests of tests/two_of_each_entity.rs ran and passed: for each
-      entity alone, a system that gives every instance one identity, and one whose view answers
-      its first row only, must each fail at least one scenario.
+      First the fast check: sh taskfiles/conform-noticed.sh check compares the digest of the
+      sources of conformance/tests/noticed.txt with its first line, and fails with
+      "conform-rust: the sources of conformance/tests/noticed.txt changed; run task
+      conform-slow". Then, warnings denied, it builds the crate's tests (cargo nextest run
+      --no-run) and its binary (cargo build), into .out/conform-rust-build.log.
 
-      Step 2 runs .out/suite.json against the system the surf binary ships, each scenario over
-      fresh in-memory ports and a transport that never answers, because the suite ends each
-      request itself with DeliverResponse or FailRequest. The log is .out/conform-rust.log and
-      the ess-conformance-report/2 is .out/conform-rust.json. It fails when any scenario failed,
-      errored or was unsupported, and prints the runner's summary line.
+      The timed part. Step 1 runs the crate's tests with cargo-nextest under the root's
+      .config/nextest.toml, into .out/conform-rust-test.log: one process per test, a test still
+      running after 60 s is ended and fails, and a failure does not stop the run. It fails
+      unless the planted-defect test ran and passed: the suite over a system whose Navigation
+      storage drops every put must report at least one failed scenario. It fails too unless the
+      two per-entity tests of tests/two_of_each_entity.rs ran and passed: for each entity alone,
+      a system that gives every instance one identity, and one whose view answers its first row
+      only, must each fail at least one scenario. Each planted defect runs over the scenarios
+      its line of conformance/tests/noticed.txt names, at most 3; the two controls run the whole
+      suite.
+
+      Step 2 runs .out/suite.json against the system the surf binary ships, the built
+      conformance/target/debug/surf-conformance, each scenario over fresh in-memory ports and a
+      transport that never answers, because the suite ends each request itself with
+      DeliverResponse or FailRequest. The log is .out/conform-rust.log and the
+      ess-conformance-report/2 is .out/conform-rust.json. It fails when any scenario failed,
+      errored or was unsupported.
+
+      Then it prints nextest's summary line, the runner's summary line of step 2, the ten
+      slowest tests from conformance/target/nextest/default/junit.xml and the wall time of the
+      two steps, the builds left out: "conformance step: N s of its budget
+      of 120 s", or "conformance step: N s, over its budget of 120 s" and it fails. The budget
+      is CONFORM_BUDGET seconds (120). It writes N to .out/conform-step.seconds, which it
+      removes first.
     deps: [suite]
     env:
       RUSTFLAGS: -D warnings
+    vars:
+      CONFORM_BUDGET: '{{.CONFORM_BUDGET | default "120"}}'
+    silent: true
     cmds:
+      - rm -f .out/conform-step.seconds
       - mkdir -p .out
-      - cargo test --locked --manifest-path conformance/Cargo.toml -- --nocapture > .out/conform-rust-test.log 2>&1 || { cat .out/conform-rust-test.log; exit 1; }
-      - grep -q '^test planted_defect::a_navigation_storage_that_drops_every_put_fails_at_least_one_scenario \.\.\. ok$' .out/conform-rust-test.log || { cat .out/conform-rust-test.log; echo "the planted-defect test did not run"; exit 1; }
-      - grep -q '^test two_of_each_entity::one_identity_for_every_instance_of_an_entity_is_noticed_for_each_entity \.\.\. ok$' .out/conform-rust-test.log && grep -q '^test two_of_each_entity::a_view_cut_to_its_first_row_is_noticed_for_each_entity \.\.\. ok$' .out/conform-rust-test.log || { cat .out/conform-rust-test.log; echo "the per-entity planted-defect tests did not run"; exit 1; }
-      - cargo run --locked --manifest-path conformance/Cargo.toml -- .out/suite.json .out/conform-rust.json > .out/conform-rust.log 2>&1 || { grep -E '^  (failed|error|unsupported) ' .out/conform-rust.log || cat .out/conform-rust.log; tail -n 1 .out/conform-rust.log; exit 1; }
-      - tail -n 1 .out/conform-rust.log
+      - sh taskfiles/conform-noticed.sh check
+      - cargo nextest run --no-run --locked --manifest-path conformance/Cargo.toml --config-file .config/nextest.toml --color never > .out/conform-rust-build.log 2>&1 || { cat .out/conform-rust-build.log; exit 1; }
+      - cargo build --locked --manifest-path conformance/Cargo.toml --color never >> .out/conform-rust-build.log 2>&1 || { cat .out/conform-rust-build.log; exit 1; }
+      - |
+        log=.out/conform-rust-test.log
+        junit=conformance/target/nextest/default/junit.xml
+        rm -f "$junit"
+        start=$(date +%s%N)
+        tests=0
+        cargo nextest run --locked --manifest-path conformance/Cargo.toml --config-file .config/nextest.toml --color never > "$log" 2>&1 || tests=1
+        passed() { grep -q "^ *PASS \[.*\] .*surf-conformance::main $1\$" "$log"; }
+        planted=0
+        passed planted_defect::a_navigation_storage_that_drops_every_put_fails_at_least_one_scenario || planted=1
+        entities=0
+        passed two_of_each_entity::one_identity_for_every_instance_of_an_entity_is_noticed_for_each_entity && passed two_of_each_entity::a_view_cut_to_its_first_row_is_noticed_for_each_entity || entities=1
+        suite=0
+        conformance/target/debug/surf-conformance .out/suite.json .out/conform-rust.json > .out/conform-rust.log 2>&1 || suite=1
+        elapsed=$(( ($(date +%s%N) - start) / 1000000 ))
+        if [ "$tests" -ne 0 ] || [ "$planted" -ne 0 ] || [ "$entities" -ne 0 ]; then cat "$log"; fi
+        if [ "$planted" -ne 0 ]; then echo "the planted-defect test did not run"; fi
+        if [ "$entities" -ne 0 ]; then echo "the per-entity planted-defect tests did not run"; fi
+        if [ "$suite" -ne 0 ]; then grep -E '^  (failed|error|unsupported) ' .out/conform-rust.log || cat .out/conform-rust.log; fi
+        grep -E '^ *Summary \[' "$log" | tail -n 1 | sed 's/^ *//'
+        tail -n 1 .out/conform-rust.log
+        if [ -f "$junit" ]; then
+          echo "the ten slowest tests:"
+          sh taskfiles/slowest-tests.sh "$junit" 10
+        fi
+        seconds=$(( elapsed / 1000 )).$(( elapsed % 1000 / 100 ))
+        echo "$seconds" > .out/conform-step.seconds
+        if [ "$elapsed" -gt $(( {{.CONFORM_BUDGET}} * 1000 )) ]; then
+          echo "conformance step: ${seconds} s, over its budget of {{.CONFORM_BUDGET}} s"
+          exit 1
+        fi
+        echo "conformance step: ${seconds} s of its budget of {{.CONFORM_BUDGET}} s"
+        test "$tests" -eq 0 && test "$planted" -eq 0 && test "$entities" -eq 0 && test "$suite" -eq 0
+
+  conform-slow:
+    desc: Run every planted defect of conformance/ over the whole suite, write .out/noticed.txt and compare it with conformance/tests/noticed.txt; WRITE=1 writes it; never a step of check.
+    summary: |
+      Run every planted defect of conformance/ over the whole suite, write .out/noticed.txt and compare it with conformance/tests/noticed.txt; WRITE=1 writes it; never a step of check.
+
+      A step of the lane slow. It runs the crate's tests with cargo-nextest, warnings denied,
+      with SURF_NOTICED_OUT set to .out/noticed.d: each planted-defect test then runs its
+      defects over the whole suite, the defects of one test each on a thread of its own, still
+      asserts that each is noticed, and writes one line per defect, its label and the first 3
+      scenarios, in the suite's order, that do not pass over it. sh taskfiles/conform-noticed.sh
+      assemble puts the digest of the sources first and the lines after it, sorted, into
+      .out/noticed.txt; its log is .out/conform-slow.log. It fails when a test failed or when
+      .out/noticed.txt differs from the committed file byte for byte, showing the difference.
+      With WRITE=1 it copies .out/noticed.txt over conformance/tests/noticed.txt first. A change
+      to a source of the list (.out/suite.json through spec/, the three planted-defect modules,
+      conformance/src/target.rs, conformance/src/values.rs, the ess-conformance entry of
+      conformance/Cargo.lock) runs it with WRITE=1 and commits the list in the same commit.
+    deps: [suite]
+    env:
+      RUSTFLAGS: -D warnings
+    vars:
+      WRITE: '{{.WRITE | default ""}}'
+    silent: true
+    cmds:
+      - |
+        set -eu
+        out=.out/noticed.d
+        rm -rf "$out"
+        mkdir -p "$out"
+        SURF_NOTICED_OUT="$PWD/$out" cargo nextest run --locked --manifest-path conformance/Cargo.toml --config-file .config/nextest.toml --color never > .out/conform-slow.log 2>&1 || { cat .out/conform-slow.log; exit 1; }
+        grep -E '^ *Summary \[' .out/conform-slow.log | tail -n 1 | sed 's/^ *//'
+        sh taskfiles/conform-noticed.sh assemble "$out" > .out/noticed.txt
+        if [ '{{.WRITE}}' = 1 ]; then
+          cp .out/noticed.txt conformance/tests/noticed.txt
+        fi
+        if ! cmp -s .out/noticed.txt conformance/tests/noticed.txt; then
+          diff conformance/tests/noticed.txt .out/noticed.txt || true
+          echo "conform-slow: .out/noticed.txt differs from conformance/tests/noticed.txt; run task conform-slow WRITE=1 and commit it"
+          exit 1
+        fi
+        echo "conform-slow: $(( $(wc -l < .out/noticed.txt) - 1 )) planted defects, .out/noticed.txt equals conformance/tests/noticed.txt"
 
   conform-totals:
     desc: Fail when the Rust run and the interpreter's run are of different suites or totals.
@@ -464,7 +559,8 @@ tasks:
       - task: doc-tests-check-test
 
   slow:
-    desc: Make the committed products of the TLS tests again and compare them with the committed files (the test certificates byte for byte, the recorded flights by outcome); needs openssl 3.4 or later; never a step of check.
+    desc: Make the committed products of the TLS tests and the conformance crate's list of noticed scenarios again and compare them with the committed files (the test certificates byte for byte, the recorded flights by outcome, conformance/tests/noticed.txt byte for byte); needs openssl 3.4 or later; never a step of check.
     cmds:
       - task: tls-certs-slow
       - task: tls-flights-slow
+      - task: conform-slow

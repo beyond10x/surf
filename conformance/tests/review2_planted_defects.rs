@@ -3,11 +3,16 @@
 //! scenario does not pass. A test that is red here names a defect the gate lets through.
 //!
 //! Every mutant lives in this file, in a storage port or a random source handed to the generated
-//! behaviours; nothing under `crates/`, `generated/` or `conformance/src` is touched.
+//! behaviours; nothing under `crates/`, `generated/` or `conformance/src` is touched. Each runs
+//! over the scenarios its line of `tests/noticed.txt` names (`task conform-slow` writes the
+//! list), or over the whole suite when `SURF_NOTICED_OUT` is set; the control runs the whole
+//! suite.
 
 use ess_conformance::target::ImplementationIdentity;
 use surf::{Browser, System};
-use surf_conformance::{ConformanceBrowser, Setup, SurfTarget, Unanswered, run};
+use surf_conformance::{
+    ConformanceBrowser, Setup, SurfTarget, Unanswered, admit, note_noticed, planted_suite, run,
+};
 use surf_ports::{
     DocumentPorts, NavigatorPorts, NetPorts, RandomSource, RendererPorts, ShellPorts, agent_port,
     commit_navigation, document_port, navigator_port, net_port, renderer_port, shell_port,
@@ -40,7 +45,13 @@ use surf_types::url::Url;
 /// The suite `task suite` writes.
 const SUITE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../.out/suite.json");
 
+/// The label of the control, which runs the whole suite; every other label is a planted defect's
+/// and runs over the scenarios its line of `tests/noticed.txt` names.
+const CONTROL: &str = "control";
+
 /// The suite over the system `assemble` builds: (total, passed, the scenarios that did not pass).
+/// The control runs the whole suite; a planted defect the scenarios its line of
+/// `tests/noticed.txt` names, or the whole suite when `SURF_NOTICED_OUT` is set.
 fn suite_over<A, D, N, Ne, R, S>(
     label: &str,
     assemble: impl Fn(&Setup) -> ConformanceBrowser<A, D, N, Ne, R, S> + 'static,
@@ -53,10 +64,17 @@ where
     R: surf::RendererBehaviors + 'static,
     S: surf::ShellBehaviors + 'static,
 {
-    let suite = std::fs::read_to_string(SUITE)
+    let mut suite = std::fs::read_to_string(SUITE)
         .unwrap_or_else(|error| panic!("{SUITE}: {error}; run `task suite` first"));
+    if label != CONTROL {
+        let admitted = admit(&suite).expect("the suite is admitted");
+        suite = planted_suite(&admitted, label).unwrap_or_else(|error| panic!("{error}"));
+    }
     let target = SurfTarget::new(ImplementationIdentity::new("surf", label), assemble);
     let conformance = run(&suite, &target).expect("the suite runs");
+    if label != CONTROL {
+        note_noticed(label, &conformance.report).unwrap_or_else(|error| panic!("{error}"));
+    }
     let counts = conformance.report.counts();
     let not_passed: Vec<String> = conformance
         .report
@@ -293,7 +311,7 @@ fn every_storage(label: &'static str, policy: Policy) -> (usize, usize, Vec<Stri
 /// the defect's and not the harness's.
 #[test]
 fn review2_control_the_unplanted_system_passes_every_scenario() {
-    let (total, passed, not_passed) = every_storage("control", Policy::default());
+    let (total, passed, not_passed) = every_storage(CONTROL, Policy::default());
     assert!(total > 0 && passed == total, "{not_passed:?}");
 }
 
