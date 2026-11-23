@@ -1966,7 +1966,17 @@ program (`agent()`, `Surfd::start`, `Started::start`; each calls `mark_built_pro
 `environ` of every process of the host, since such a program can leave the test process's tree.
 Any other directory reads only the descendants of the test process, found through
 `/proc/<pid>/task/<tid>/children` followed down, and every process of the host when one of those
-files cannot be read. In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
+files cannot be read. The lane of `surf-agent-tasks` (`lane::run`) decides that the processes of
+its private `XDG_RUNTIME_DIR` have ended by a wait with a bound, never by one read of `/proc`:
+`RuntimeDir::left_within` reads every 10 ms, at most `END_BOUND` (5 s), and lists what is still
+there with its `stat`. It waits after the last task for every process but `surfd` (`after_tasks`:
+`surfd` relays the answer to `close` before the session has exited) and after the SIGKILL to
+`surfd` for every process (`left`); `tasks::assert_clean` fails on either list, and a test that
+asserts that the processes of a directory ended uses the same wait. One read made
+`tasks::a_call_that_never_answers_ends_at_its_bound` fail at a load of 37 to 263 on 20 CPUs
+(2026-11-23), naming a process that had ended by the time its `comm` was read. That test holds
+the real calls to `CALL_BOUND`: with 1 s an `open` did not answer in time at a load of 98 to 136.
+In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
 872 passed, 32 skipped`; the 32 are hosts outside ASCII, listed in
 `crates/url/tests/data/SKIPPED`. `view-stream-check`: `view-stream-check: 23 event name(s),
 each a message of the AsyncAPI projection` (19 before round 2). `view-test`: `38 passed
