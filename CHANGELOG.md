@@ -43,6 +43,7 @@ release; what came before it is in the git log and in `docs/plan/`.
   fields, `handle` and `label`, both empty after a `go`. They will hold the handle and the label
   of the link a `follow` takes (the label cut as above), and `FillRequested`, `PickRequested` and
   `PressRequested` the `handle` of the control, once the session runs those commands.
+- The specification, and the code generated from it, is checked with ESS 0.97.4 instead of 0.97.3.
 
 ## [0.4.0] - 2026-11-22
 

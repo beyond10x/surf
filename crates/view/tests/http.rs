@@ -1103,6 +1103,10 @@ fn case_29_session_items_are_live_only() {
     }
 }
 
+/// Entries of 16 KiB are published, each read by the reading client, until the silent reader
+/// is closed, at most 2,000 (32 MiB): the kernel's buffers of the silent connection and the
+/// queue bound of 256 KiB fill after a few hundred. The entries published until the close are
+/// counted, and fewer than those reached the silent reader.
 #[test]
 fn case_30_a_reader_that_never_reads_is_closed_alone_at_the_queue_bound() {
     const ENTRIES: u64 = 2000;
@@ -1119,18 +1123,23 @@ fn case_30_a_reader_that_never_reads_is_closed_alone_at_the_queue_bound() {
     let (mut reading, answer) = Stream::open(port, None);
     stream_head(&answer);
     let data = |number: u64| format!("{number:>16384}").into_bytes();
+    let mut published = 0;
     for number in 1..=ENTRIES {
         source.publish(Item {
             number,
             kind: EventKind::Entry,
             data: data(number),
         });
+        published = number;
         let block = reading.next_block();
         let expected = format!(
             "id: {number}\nevent: entry\ndata: {}",
             String::from_utf8(data(number)).expect("UTF-8")
         );
         assert!(block == expected, "entry {number} differs");
+        if server.open_streams() == 1 {
+            break;
+        }
     }
     wait_for("the silent reader is closed", || server.open_streams() == 1);
     let peak = server.queued_bytes_peak();
@@ -1138,8 +1147,8 @@ fn case_30_a_reader_that_never_reads_is_closed_alone_at_the_queue_bound() {
     let rest = silent.rest();
     let arrived = rest.windows(4).filter(|w| w == b"id: ").count() as u64;
     assert!(
-        arrived < ENTRIES,
-        "{arrived} entries reached the silent reader"
+        arrived < published,
+        "{arrived} of the {published} entries published reached the silent reader"
     );
 }
 

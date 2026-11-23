@@ -15,6 +15,10 @@ includes:
     taskfile: taskfiles/html-conformance.yml
     flatten: true
     optional: true
+  tls-x509-conformance:
+    taskfile: taskfiles/tls-x509-conformance.yml
+    flatten: true
+    optional: true
   release:
     taskfile: taskfiles/release.yml
     flatten: true
@@ -43,6 +47,18 @@ includes:
     taskfile: taskfiles/test-layout.yml
     flatten: true
     optional: true
+  tls-anchors:
+    taskfile: taskfiles/tls-anchors.yml
+    flatten: true
+    optional: true
+  tls-certs:
+    taskfile: taskfiles/tls-certs.yml
+    flatten: true
+    optional: true
+  tls-flights:
+    taskfile: taskfiles/tls-flights.yml
+    flatten: true
+    optional: true
   agent-tasks:
     taskfile: taskfiles/agent-tasks.yml
     flatten: true
@@ -51,9 +67,14 @@ includes:
     taskfile: taskfiles/sh-echo.yml
     flatten: true
     optional: true
+  doc-tests:
+    taskfile: taskfiles/doc-tests.yml
+    flatten: true
+    optional: true
 
 vars:
   REFUSALS_MAX: 48
+  TLS_PACKAGES: [surf-tls, surf-tls-test-server, surf-tls-test-certs, surf-tls-conformance]
   SYNTHESIZE: ess generate synthesize --strict-requires --path spec --target rust
 
 tasks:
@@ -87,7 +108,7 @@ tasks:
 
       Both live in the crate conformance/ (surf-conformance), a Cargo workspace of its own with
       its own Cargo.lock and target/: it is the one place third-party crates are allowed, the
-      ess-conformance runner from github.com/beyond10x/ess at tag 0.97.3 and what it brings. The
+      ess-conformance runner from github.com/beyond10x/ess at tag 0.97.4 and what it brings. The
       root workspace, and so task build and task test, do not reach it. cargo fetches the tag
       when its cache does not hold it.
 
@@ -128,54 +149,36 @@ tasks:
 
       Each run fails on its own when a scenario did not pass; this catches a runner or a suite
       change that drops scenarios on one side only. task check runs it after both.
+
+      The script is taskfiles/conform-totals.sh; the tests of crates/surf/tests/conform_totals.rs
+      run it with sh, without task.
     silent: true
     cmds:
-      - |
-        for report in .out/report.json .out/conform-rust.json; do
-          test -f "$report" || { echo "$report: missing; run task conform and task conform-rust first"; exit 1; }
-        done
-        interpreter=$(tr -d ' \n' < .out/report.json)
-        rust=$(tr -d ' \n' < .out/conform-rust.json)
-        interpreter_total=$(printf '%s\n' "$interpreter" | sed -n 's/.*"counts":{[^}]*"total":\([0-9][0-9]*\).*/\1/p')
-        rust_total=$(printf '%s\n' "$rust" | sed -n 's/.*"counts":{[^}]*"total":\([0-9][0-9]*\).*/\1/p')
-        interpreter_suite=$(printf '%s\n' "$interpreter" | sed -n 's/.*"suite":{"digest":"\([^"]*\)".*/\1/p')
-        rust_suite=$(printf '%s\n' "$rust" | sed -n 's/.*"suite":{"digest":"\([^"]*\)".*/\1/p')
-        if [ -n "$interpreter_total" ] && [ -n "$interpreter_suite" ] && [ "$interpreter_total" = "$rust_total" ] && [ "$interpreter_suite" = "$rust_suite" ]; then
-          echo "the interpreter and the Rust system ran $rust_total scenario(s) each, of suite $rust_suite"
-          exit 0
-        fi
-        echo "interpreter: ${interpreter_total:-no} scenario(s) of suite ${interpreter_suite:-unknown} (.out/report.json)"
-        echo "rust: ${rust_total:-no} scenario(s) of suite ${rust_suite:-unknown} (.out/conform-rust.json)"
-        echo "the two runs differ; each must run every scenario of the same suite"
-        exit 1
+      - sh taskfiles/conform-totals.sh
 
   lock-check:
-    desc: Fail, naming each package, when the root Cargo.lock holds one from outside this repository.
+    desc: Fail, naming each package, when the root Cargo.lock holds one from outside this repository that is not on taskfiles/lock-allow.txt, or a crate other than surf-tls depends on one that is.
     summary: |
-      Fail, naming each package, when the root Cargo.lock holds one from outside this repository.
+      Fail, naming each package, when the root Cargo.lock holds one from outside this repository
+      that is not on taskfiles/lock-allow.txt, or a crate other than surf-tls depends on one that is.
 
-      Nothing that ships uses a third-party crate (AGENTS.md, Goals), and the root Cargo.lock
-      proves it. cargo writes a source line for every package it takes from a registry or a git
-      repository, and none for a crate it reaches by path. Each package with a source line is
-      named as "Cargo.lock: <name> <version> from <source>". A missing Cargo.lock fails too.
+      Nothing that ships uses a third-party crate but ring, the one source of cryptographic
+      primitives (AGENTS.md, Goals), and the root Cargo.lock proves it with two rules:
+      - every package with a source line (one cargo took from a registry or a git repository)
+        matches a line of taskfiles/lock-allow.txt on name, version, source and checksum;
+      - no crate of this repository but surf-tls depends on a package of that list.
+      A line of the list that no package matches fails too, and so does a missing Cargo.lock.
+      The lock is read only in the form cargo writes: a line in any other form fails with its
+      number, also where cargo would accept it as another spelling of the same TOML.
+      taskfiles/lock-check.sh does the work and names each finding; its head states the format
+      of the list.
 
       conformance/ has a lock of its own, which this does not read: it is the one place a
-      third-party crate is allowed. A path dependency on a directory outside this repository has
-      no source line either, and is not caught here.
+      third-party crate is allowed beside ring. A path dependency on a directory outside this
+      repository has no source line, and is not caught here.
     silent: true
     cmds:
-      - |
-        test -f Cargo.lock || { echo "Cargo.lock: missing; the root workspace's lock is committed"; exit 1; }
-        awk '
-          /^\[\[package\]\]$/ { packages++; name = ""; version = "" }
-          /^name = / { name = $3; gsub(/"/, "", name) }
-          /^version = / { version = $3; gsub(/"/, "", version) }
-          /^source = / { source = $3; gsub(/"/, "", source); print "Cargo.lock: " name " " version " from " source; outside++ }
-          END {
-            if (outside) { print outside " package(s) from outside this repository; nothing that ships may use a third-party crate"; exit 1 }
-            print "Cargo.lock: " packages " package(s), none from outside this repository"
-          }
-        ' Cargo.lock
+      - sh taskfiles/lock-check.sh Cargo.lock taskfiles/lock-allow.txt
 
   generate:
     desc: Rewrite generated/rust from spec/ with ess, in place.
@@ -242,8 +245,8 @@ tasks:
       into fresh.spec. It runs once per run of task: task check runs it for generated-check, and
       task test, which depends on it, then finds it done. The tests of generated-check in
       crates/surf/tests read this one generation, check that fresh.spec is the spec/ of the
-      checkout, and run task generated-compare FRESH=<this tree> in their copies, so no test
-      generates the tree again.
+      checkout, and run taskfiles/generated-compare.sh <this tree> (the script of task
+      generated-compare) in their copies, so no test generates the tree again.
     run: once
     silent: true
     vars:
@@ -263,64 +266,14 @@ tasks:
       .out/generated-check/fresh) is the fresh tree and FRESH.log the output ess printed for it.
       Its own files go to .out/generated-check/compare, which it removes first. Step 2 still runs
       ess, over a copy of the committed generated/rust.
+
+      The script is taskfiles/generated-compare.sh; the tests of
+      crates/surf/tests/*generated_check*.rs run it with sh in their copies, without task.
     silent: true
     vars:
       FRESH: '{{.FRESH | default ".out/generated-check/fresh"}}'
-      DIR: .out/generated-check/compare
     cmds:
-      - rm -rf {{.DIR}}
-      - mkdir -p {{.DIR}}
-      - |
-        test -d "{{.FRESH}}" && test -f "{{.FRESH}}.log" || { echo "{{.FRESH}}: no generation; run task generated-fresh"; exit 1; }
-        export LC_ALL=C
-        (cd "{{.FRESH}}" && find . -path ./.ess-output -prune -o -type f -print) | sed 's|^\./||' | sort > {{.DIR}}/fresh.list
-        reported=$(sed -n 's/^\([0-9][0-9]*\) artifact(s), written to .*/\1/p' "{{.FRESH}}.log")
-        found=$(wc -l < {{.DIR}}/fresh.list)
-        if [ "$found" -ne "${reported:-0}" ]; then
-          echo "ess reports ${reported:-no} artifact(s) and wrote $found file(s) besides .ess-output; the check would not cover what ess reports"
-          exit 1
-        fi
-        : > {{.DIR}}/drift.txt
-        if [ -L generated/rust ]; then
-          echo "generated/rust: a symbolic link, not a directory" >> {{.DIR}}/drift.txt
-        fi
-        (cd "{{.FRESH}}" && find . -type f -print) | sed 's|^\./||' | sort > {{.DIR}}/fresh.all
-        (cd "{{.FRESH}}" && find . -type f -perm /111 -print) | sed 's|^\./||' | sort > {{.DIR}}/fresh.executable
-        if [ -d generated/rust ]; then
-          (cd generated/rust && find . \( -path ./.ess-output -o -path ./target -o -path ./Cargo.lock \) -prune -o -type f -print) | sed 's|^\./||' | sort > {{.DIR}}/committed.list
-          (cd generated/rust && find . \( -path ./target -type d \) -prune -o ! -type f ! -type d -print) | sed 's|^\./||' | sort | sed 's|^|generated/rust/|; s|$|: not a regular file|' >> {{.DIR}}/drift.txt
-          (cd generated/rust && find . \( -path ./target -o -path ./Cargo.lock \) -prune -o -type f -print) | sed 's|^\./||' | sort > {{.DIR}}/committed.all
-          (cd generated/rust && find . \( -path ./target -o -path ./Cargo.lock \) -prune -o -type f -perm /111 -print) | sed 's|^\./||' | sort > {{.DIR}}/committed.executable
-        else
-          : > {{.DIR}}/committed.list
-          : > {{.DIR}}/committed.all
-          : > {{.DIR}}/committed.executable
-        fi
-        comm -23 {{.DIR}}/fresh.list {{.DIR}}/committed.list | sed 's|^|generated/rust/|; s|$|: missing|' >> {{.DIR}}/drift.txt
-        comm -13 {{.DIR}}/fresh.list {{.DIR}}/committed.list | sed 's|^|generated/rust/|; s|$|: not written by ess|' >> {{.DIR}}/drift.txt
-        comm -12 {{.DIR}}/fresh.list {{.DIR}}/committed.list | while read -r path; do
-          cmp -s "{{.FRESH}}/$path" "generated/rust/$path" || echo "generated/rust/$path: differs from what ess generates"
-        done >> {{.DIR}}/drift.txt
-        comm -12 {{.DIR}}/fresh.all {{.DIR}}/committed.all > {{.DIR}}/both.all
-        comm -13 {{.DIR}}/fresh.executable {{.DIR}}/committed.executable | comm -12 - {{.DIR}}/both.all | sed 's|^|generated/rust/|; s|$|: executable, and ess writes it not executable|' >> {{.DIR}}/drift.txt
-        comm -23 {{.DIR}}/fresh.executable {{.DIR}}/committed.executable | comm -12 - {{.DIR}}/both.all | sed 's|^|generated/rust/|; s|$|: not executable, and ess writes it executable|' >> {{.DIR}}/drift.txt
-        if [ -s {{.DIR}}/drift.txt ]; then
-          cat {{.DIR}}/drift.txt
-          echo "$(wc -l < {{.DIR}}/drift.txt) path(s) differ from spec/; run task generate"
-          exit 1
-        fi
-      - |
-        test -f generated/rust/.ess-output/state.json || { echo "generated/rust/.ess-output/state.json: missing; restore it from git, or remove generated/rust and run task generate"; exit 1; }
-        mkdir -p {{.DIR}}/in-place
-        { echo .ess-output; cat {{.DIR}}/committed.list; } > {{.DIR}}/copy.list
-        tar -cf - -C generated/rust -T {{.DIR}}/copy.list | tar -xf - -C {{.DIR}}/in-place
-        {{.SYNTHESIZE}} --out {{.DIR}}/in-place > {{.DIR}}/in-place.log 2>&1 || {
-          cat {{.DIR}}/in-place.log
-          echo "generated/rust/.ess-output/state.json: ess refuses to regenerate over this record; restore it from git, or remove generated/rust and run task generate"
-          exit 1
-        }
-        diff -rq generated/rust/.ess-output {{.DIR}}/in-place/.ess-output || { echo "generated/rust/.ess-output: regeneration rewrites it; run task generate"; exit 1; }
-      - echo "generated/rust matches spec/ ($(wc -l < {{.DIR}}/fresh.list) artifact(s) and .ess-output)"
+      - sh taskfiles/generated-compare.sh '{{.FRESH}}'
 
   build:
     desc: Build the root workspace, hand-written and generated crates, with warnings denied.
@@ -332,20 +285,25 @@ tasks:
       - tail -n 1 .out/build.log
 
   test:
-    desc: Test the root workspace with cargo-nextest and its doc tests with cargo test, warnings denied, within 120 s.
+    desc: Test the root workspace but the four TLS packages with cargo-nextest and the doc tests of surf-ports with cargo test, warnings denied, within 120 s.
     summary: |
-      Test the root workspace with cargo-nextest and its doc tests with cargo test, warnings denied, within 120 s.
+      Test the root workspace but the four TLS packages with cargo-nextest and the doc tests of surf-ports with cargo test, warnings denied, within 120 s.
 
-      cargo nextest run --workspace runs every test but the doc tests, one process per test, as
-      .config/nextest.toml sets it: a test still running after 60 s is ended and fails, and a
-      failure does not stop the run. Its log is .out/test.log, its JUnit report
-      target/nextest/default/junit.xml. cargo test --doc --workspace runs the doc tests, which
-      nextest does not run, into .out/test-doc.log.
+      cargo nextest run --workspace --exclude <each of TLS_PACKAGES> runs every test but the doc
+      tests and the tests of surf-tls, surf-tls-test-server, surf-tls-test-certs and
+      surf-tls-conformance, which task test-tls runs in a step and budget of its own. One process
+      per test, as .config/nextest.toml sets it: a test still running after 60 s is ended and
+      fails, and a failure does not stop the run. Its log is .out/test.log; nextest writes its
+      JUnit report to target/nextest/default/junit.xml, which the task copies to
+      .out/test-junit.xml. cargo test --doc -p surf-ports runs the doc tests, which nextest does
+      not run, into .out/test-doc.log: surf-ports holds the two doc tests of the workspace, and
+      task doc-tests-check fails on a doc test in any other package, so rustdoc is not started
+      for the others.
 
-      It prints the ten slowest tests from the JUnit report, nextest's summary line, and one
-      count line for the whole workspace: "N tests: P passed, F failed, I ignored", where N is
-      what nextest ran and skipped plus every doc test, a test nextest ended counts as failed and
-      a test nextest skips (#[ignore]) as ignored; after it how many came from each runner.
+      It prints the ten slowest tests from .out/test-junit.xml, nextest's summary line, and one
+      count line for what it ran: "N tests: P passed, F failed, I ignored", where N is what
+      nextest ran and skipped plus every doc test, a test nextest ended counts as failed and a
+      test nextest skips (#[ignore]) as ignored; after it how many came from each runner.
       Then the wall time of the two commands together, without the time before the task
       started. It fails when a test failed, and when that time is over TEST_BUDGET seconds
       (120), naming the time.
@@ -363,14 +321,15 @@ tasks:
       - task: build
       - mkdir -p .out
       - |
-        junit=target/nextest/default/junit.xml
-        rm -f "$junit"
+        junit=.out/test-junit.xml
+        rm -f target/nextest/default/junit.xml "$junit"
         start=$(date +%s%N)
         tests=0
-        cargo nextest run --workspace --locked --color never > .out/test.log 2>&1 || tests=1
+        cargo nextest run --workspace{{range .TLS_PACKAGES}} --exclude {{.}}{{end}} --locked --color never > .out/test.log 2>&1 || tests=1
         docs=0
-        cargo test --doc --workspace --locked --color never > .out/test-doc.log 2>&1 || docs=1
+        cargo test --doc -p surf-ports --locked --color never > .out/test-doc.log 2>&1 || docs=1
         elapsed=$(( ($(date +%s%N) - start) / 1000000 ))
+        if [ -f target/nextest/default/junit.xml ]; then cp target/nextest/default/junit.xml "$junit"; fi
         if [ "$tests" -ne 0 ]; then cat .out/test.log; fi
         if [ "$docs" -ne 0 ]; then cat .out/test-doc.log; fi
         if [ -f "$junit" ]; then
@@ -394,6 +353,64 @@ tasks:
         echo "test step: ${seconds} s of its budget of {{.TEST_BUDGET}} s"
         test "$tests" -eq 0 && test "$docs" -eq 0
 
+  test-tls:
+    desc: Test the four TLS packages with cargo-nextest, warnings denied, within 120 s of their own.
+    summary: |
+      Test the four TLS packages with cargo-nextest, warnings denied, within 120 s of their own.
+
+      cargo nextest run -p <each of TLS_PACKAGES> runs the tests of surf-tls,
+      surf-tls-test-server, surf-tls-test-certs and surf-tls-conformance, the packages task test
+      leaves out, under the same .config/nextest.toml: one process per test, a test still running
+      after 60 s is ended and fails, and a failure does not stop the run. These packages hold no
+      doc test. No other package depends on them and only they set a feature of surf-tls, so
+      this build and the one of task test share every artifact. Its log is .out/test-tls.log;
+      nextest writes its JUnit report to target/nextest/default/junit.xml, which the task copies
+      to .out/test-tls-junit.xml, beside the copy of task test.
+
+      It prints the ten slowest tests from .out/test-tls-junit.xml, nextest's summary line, and
+      the count line "N tests: P passed, F failed, I ignored (cargo-nextest N)", a test nextest
+      ended counted as failed and a test it skips (#[ignore]) as ignored. Then the wall time of
+      the nextest run, without the time before the task started. It fails when a test failed,
+      and when that time is over TLS_TEST_BUDGET seconds (120), naming the time. The budget is
+      its own: the time of task test does not count against it, nor its time against task test.
+    env:
+      RUSTFLAGS: -D warnings
+      SURF_BIN_DIR: '{{.ROOT_DIR}}/target/debug'
+    vars:
+      TLS_TEST_BUDGET: '{{.TLS_TEST_BUDGET | default "120"}}'
+    silent: true
+    cmds:
+      - task: build
+      - mkdir -p .out
+      - |
+        junit=.out/test-tls-junit.xml
+        rm -f target/nextest/default/junit.xml "$junit"
+        start=$(date +%s%N)
+        tests=0
+        cargo nextest run{{range .TLS_PACKAGES}} -p {{.}}{{end}} --locked --color never > .out/test-tls.log 2>&1 || tests=1
+        elapsed=$(( ($(date +%s%N) - start) / 1000000 ))
+        if [ -f target/nextest/default/junit.xml ]; then cp target/nextest/default/junit.xml "$junit"; fi
+        if [ "$tests" -ne 0 ]; then cat .out/test-tls.log; fi
+        if [ -f "$junit" ]; then
+          echo "the ten slowest tests:"
+          sh taskfiles/slowest-tests.sh "$junit" 10
+        fi
+        summary=$(grep -E '^ *Summary \[' .out/test-tls.log | tail -n 1)
+        test -n "$summary" && echo "$summary" | sed 's/^ *//'
+        printf '%s\n' "$summary" | sed 's/([^)]*)//g; s/.* run: //' | tr ',' '\n' | awk '
+          $1 ~ /^[0-9]+$/ { if ($2 == "passed") p += $1; else if ($2 == "skipped") i += $1; else f += $1 }
+          END {
+            n = p + f + i
+            printf "%d tests: %d passed, %d failed, %d ignored (cargo-nextest %d)\n", n, p, f, i, n
+          }'
+        seconds=$(( elapsed / 1000 )).$(( elapsed % 1000 / 100 ))
+        if [ "$elapsed" -gt $(( {{.TLS_TEST_BUDGET}} * 1000 )) ]; then
+          echo "tls test step: ${seconds} s, over its budget of {{.TLS_TEST_BUDGET}} s"
+          exit 1
+        fi
+        echo "tls test step: ${seconds} s of its budget of {{.TLS_TEST_BUDGET}} s"
+        test "$tests" -eq 0
+
   open:
     desc: List every open question the specification marks.
     cmds:
@@ -410,14 +427,26 @@ tasks:
       - task: cli
       - task: lock-check
       - task: test-layout
+      - task: tls-certs-check
+      - task: tls-flights-check
+      - task: doc-tests-check
       - task: build
       - task: test
+      - task: test-tls
       - task: agent-tasks-report
       - task: sh-echo
       - task: view-stream-check
       - task: view-test
       - task: html-conformance
+      - task: tls-x509-conformance
       - task: forge-watch-test
       - task: planning-only-test
       - task: test-layout-test
       - task: sh-echo-test
+      - task: doc-tests-check-test
+
+  slow:
+    desc: Make the committed products of the TLS tests again and compare them with the committed files (the test certificates byte for byte, the recorded flights by outcome); needs openssl 3.4 or later; never a step of check.
+    cmds:
+      - task: tls-certs-slow
+      - task: tls-flights-slow

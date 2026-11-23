@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-record
 kind: story
-status: active
+status: implemented
 title: surf-tls protects TLS 1.3 records and derives the key schedule, checked against RFC 8448
 summary: Record layer, key schedule and transcript hash; every secret and record of RFC 8448 sections 3, 5 and 7 reproduced byte for byte; hostile records refused with their alert.
 relations:
@@ -24,10 +24,11 @@ scope:
   path: crates/tls/tests/tls/rfc8446-record-musts.txt
 - confidence: cited
   path: crates/tls/tests/tls/rfc8448.rs
-revision: 13
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:28Z", actor: "human:operator", revision: 12, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:28Z", actor: "human:operator", revision: 13, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-22T21:13:22Z", actor: "human:operator", revision: 15, decided_on: {"recorded":{"test_result":1,"verification":3}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -179,3 +180,33 @@ The client state machine, extensions and certificates (`story:tls-handshake`); R
 `tests/tls/record.rs`, `tests/tls/rfc8446-record-musts.txt`, `tests/data/rfc8448/`.
 Coordinator: the `mod` lines in a wave of more than one unit. Beside it run `story:tls-x509`
 and `story:tls-test-certs`.
+
+## As built
+
+What differs from the text above, as of 6cff209 (branch `wave/tls-1`):
+
+- The record layer hands the records of one write to the stream in one `write_all` and one
+  `flush`, and between `RecordLayer::cork` and `uncork` holds the records of several writes;
+  an alert ends the hold (`crates/tls/src/record.rs:14-19`, `:296`, `:696-721`). The client
+  corks its last flight and a KeyUpdate with its data (8de6ce4, after the review of the
+  seams; 48.8 ms per handshake on a socket without `TCP_NODELAY` before).
+- At most 23,726,566 records under one AES-GCM write key (`AES_GCM_RECORD_LIMIT`,
+  `crates/tls/src/record.rs:73`, RFC 8446 section 5.5); the write past it is
+  `Error::KeyLimitReached` (`crates/tls/src/error.rs:284`), added in the fix round after the
+  adversary (e3bfaa7), which also wrote `src/error.rs`.
+- The limits are written as expressions (`1 << 14`, `MAX_PLAINTEXT + 1`); the test
+  `record::record_limits_are_the_literals_of_rfc8446` (`crates/tls/tests/tls/record.rs:352-363`,
+  8780590, from the adversary's pass on the test server, which frames its records with this
+  layer) holds each as a literal of RFC 8446. The module `record` has 29 tests.
+
+Not shown by a test or a run:
+
+- Acceptance 7, "an unprotected application data record after the keys are set": once read
+  keys are set, an application data record is the protected form
+  (`crates/tls/src/record.rs:564-575`), so such a record ends as `BadRecordMac`
+  (`record::flipped_tag`); the member cannot be built as written.
+  `record::unprotected_application_data` (`crates/tls/tests/tls/record.rs:365-390`) holds the
+  rule's other members: application data before any key, and a plaintext handshake or alert
+  record after the keys.
+- Budget, "each test under 1 s": not asserted; no test of the module is among the ten slowest
+  of the gate on 6cff209 (the tenth took 1.6 s).

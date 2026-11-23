@@ -15,9 +15,9 @@ surf = { path = "../crates/surf" }
 surf-ports = { path = "../crates/ports" }
 surf-types = { path = "../generated/rust/crates/surf-types" }
 surf-system = { path = "../generated/rust/crates/surf-system" }
-ess-conformance = { git = "https://github.com/beyond10x/ess", tag = "0.97.3" }
-ess-primitives = { git = "https://github.com/beyond10x/ess", tag = "0.97.3" }
-ess-domain = { git = "https://github.com/beyond10x/ess", tag = "0.97.3" }
+ess-conformance = { git = "https://github.com/beyond10x/ess", tag = "0.97.4" }
+ess-primitives = { git = "https://github.com/beyond10x/ess", tag = "0.97.4" }
+ess-domain = { git = "https://github.com/beyond10x/ess", tag = "0.97.4" }
 
 [[test]]
 name = "main"

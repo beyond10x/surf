@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T21:13:22Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-record",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "security review of the seams of surf-tls on wave/tls-1: 6 findings and one on writes, fixed in bdbcd4f, ee6c101, 7f0ad05, 2047347, d299d0d, 36e50b2, 8de6ce4; and the adversary's pass on the test server (8780590)",
+    "reference": "this story's fix: 8de6ce4, the record layer hands the records of a write, or of a corked flight, to the stream in one write and one flush; and 8780590 from the adversary of the test server, the record limits held as literals of RFC 8446"
+  }
+}

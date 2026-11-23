@@ -1,9 +1,10 @@
 //! Review 1 (adversary): `task generated-check` (Taskfile.yml) against its own summary and the
-//! acceptance of story `generated-rust-workspace`. Each case copies `Taskfile.yml`, `spec/` and
+//! acceptance of story `generated-rust-workspace`. Each case copies `spec/` and
 //! `generated/rust` (without `target/` and `Cargo.lock`) into a directory of its own under
 //! `CARGO_TARGET_TMPDIR`, changes the copy, and runs the comparison of `task generated-check`
-//! there (`task generated-compare`) against the one generation `task generated-fresh` wrote
-//! (`common`). Needs `task` and `ess` 0.96.0 on `PATH`, as `task check` does.
+//! there (the script of `task generated-compare`, `taskfiles/generated-compare.sh`, with `sh`)
+//! against the one generation `task generated-fresh` wrote (`common`). Needs `ess` on `PATH`,
+//! as `task check` does.
 
 use crate::common;
 
@@ -37,13 +38,12 @@ fn copy_tree(from: &Path, to: &Path, skip_top: &[&str]) {
     }
 }
 
-/// A fresh copy named `name`, ready for `task generated-check`.
+/// A fresh copy named `name`, ready for the comparison of `task generated-check`.
 fn copy(name: &str) -> PathBuf {
     let root = repository();
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("review1-generated-check").join(name);
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("create copy");
-    fs::copy(root.join("Taskfile.yml"), dir.join("Taskfile.yml")).expect("copy Taskfile.yml");
     copy_tree(&root.join("spec"), &dir.join("spec"), &[]);
     copy_tree(
         &root.join("generated/rust"),

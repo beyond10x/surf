@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T22:28:52Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-step-within-budget",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the implementing unit's runs on the tree of 336f3d0 before its commit, 2026-11-22, load 105 to 173",
+    "reference": "TLS_TEST_BUDGET=1 slot task test-tls: tls test step: 29.4 s, over its budget of 1 s, exit 201 (acceptance 3); a failing test planted in crates/tls-test-certs/tests/certs.rs: FAIL certs::index, test-tls exit 201, task test exit 0 on its second run (119.4 s; the first took 130.4 s at a load of 119 to 173, all tests passed) (acceptance 4); a test planted to sleep 70 s: TIMEOUT [ 60.033s] certs::planted_sleep_70_s, exit 201 (acceptance 7); plants removed; at a load of 105 to 108: test step 67.0 s, tls test step 27.5 s"
+  }
+}

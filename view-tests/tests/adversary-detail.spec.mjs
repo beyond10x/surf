@@ -197,9 +197,12 @@ test("fixes: a click on a segment outside every mark clears the selected event",
 
 // Decision 1: Enter and Space on a focused mark's button select its event once (one render of
 // the timeline, counted by the clears of #actions) and keep the focus on that button.
-test("fixes: Enter and Space on a focused mark's button select its event once", async ({ page, surf }) => {
+test("fixes: Enter and Space on a focused mark's button select its event once", async ({ page, surf, record }) => {
   const id = await surf.open();
   await surf.agent(id, "go", surf.pages + "/first/a.html");
+  // /events is never answered: no stream opens, so open() does not load and render the timeline
+  // again between the two reads of the count. "live" is written after the first load.
+  await page.route(/\/events$/, () => {});
   await load(page, surf.view);
   await expect(segments(page)).toHaveCount(2);
   await page.evaluate(() => {
@@ -228,6 +231,7 @@ test("fixes: Enter and Space on a focused mark's button select its event once", 
     });
     expect(focused, key + " keeps the focus on the mark's button").toBe("button mark-select " + number);
   }
+  expect(record.requestsOf("/api/sessions"), "the page loaded once: /events is held, so no stream opened").toHaveLength(1);
 });
 
 // Decision 2: every value the panel writes wraps inside it. A session whose action has a

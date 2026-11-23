@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-anchors
 kind: story
-status: active
+status: implemented
 title: surf-tls carries the root list of Mozilla as curl publishes it, and takes one extra anchor file
 summary: cacert.pem compiled in with its SOURCE, an extra PEM file checked against bounds, anchors-refresh outside the gate and anchors-age for the release.
 relations:
@@ -19,10 +19,11 @@ scope:
   path: taskfiles/tls-anchors.sh
 - confidence: cited
   path: taskfiles/tls-anchors.yml
-revision: 8
+revision: 10
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:27Z", actor: "human:operator", revision: 7, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:27Z", actor: "human:operator", revision: 8, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-22T21:13:24Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"test_result":1,"verification":3}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -99,3 +100,35 @@ file reaches a fetch (`story:tls-fetch-https`, `story:tls-session-anchors`); the
 `Taskfile.yml` include, `AGENTS.md`. Beside it run `story:tls-x509-path` and
 `story:tls-handshake`. `story:tls-release` adds the age check to `docs/releasing.md` and the
 licence of the list to `NOTICE`.
+
+## As built
+
+What differs from the text above, as of 6cff209 (branch `wave/tls-1`):
+
+- 117 anchors of the 118 certificates `SOURCE` counts: e-Szigno TLS Root CA 2023
+  (ecdsa-with-SHA512, a P-521 key) gives no anchor, neither whole nor as name and key
+  (`NO_ANCHOR`, `crates/tls/tests/tls/anchors.rs:28-36`). The lead and acceptance 1, "the
+  bundled count equals `SOURCE`", are held as `SOURCE` minus the roots of `NO_ANCHOR`
+  (`anchors::the_bundled_count_equals_source`, `anchors.rs:132`).
+- Every anchor keeps the certificate it was read from (`TrustAnchor::certificate`,
+  `crates/tls/src/x509/anchor.rs:50`), the bundled ones (`crates/tls/src/anchors/mod.rs:165`)
+  and those of `with_extra_pem` (`:226`), so the path verifier checks them as issuers
+  (validity, keyCertSign, CA; 7f0ad05, the review of the seams).
+- `AnchorError::NotACertificate` shows the block's label as a cut, escaped excerpt of at most
+  64 bytes (`crates/tls/src/anchors/mod.rs:103`, 2047347).
+- The tests run `sh taskfiles/tls-anchors.sh age|refresh` on local files, not the tasks;
+  `refresh` refuses more than 10 removed roots unless `ANCHORS_REMOVED_MAX` raises the bound
+  (`anchors::refresh_prints_the_titles_and_refuses_more_than_10_removed`).
+- An extra file whose root the reader refuses is refused
+  (`anchors::a_root_the_reader_refuses_is_not_taken_from_an_extra_file`).
+- Beyond the Change: `bundled_pem`, `bundled_certificates_read`, `bundled_line` and, under
+  `test-tooling`, `from_list` (`crates/tls/src/anchors/mod.rs:245-274`); `with_extra_pem`
+  answers the number added.
+
+The lead, `task anchors-age`: run by hand on 6cff209, exit 0, `anchors: 118 certificates of
+2026-11-05, 17 days old`; no step of `check` runs it.
+
+Not shown by a test or a run:
+
+- Budget, "reading the bundled list in a test takes under 1 s": printed, not asserted
+  (`anchors::the_bundled_count_equals_source` took 0.14 s in the gate run on 32df67f).

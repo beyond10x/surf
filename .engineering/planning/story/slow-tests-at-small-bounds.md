@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:slow-tests-at-small-bounds
 kind: story
-status: draft
+status: archived
 title: The slow tests run at small bounds and the conformance tests end at 60 s
 summary: Seven old tests take 5 s to 11 s unloaded and up to 48 s under load; they set their deadline or bound small, and the conformance runner's tests run under cargo-nextest
 relations:
@@ -20,7 +20,9 @@ scope:
   path: crates/surf/tests
 - confidence: cited
   path: view-tests/tests
-revision: 7
+revision: 8
+transitions:
+- {from: "draft", to: "archived", at: "2026-11-22T19:52:28Z", actor: "human:operator", revision: 8, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Why
 

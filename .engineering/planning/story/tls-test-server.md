@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-test-server
 kind: story
-status: active
+status: implemented
 title: A TLS 1.3 test server on 127.0.0.1 for end-to-end tests, with the misbehaviours the negative cases need
 summary: crates/tls-test-server serves HTTP over TLS 1.3 with the generated certificates, and on order answers TLS 1.2, stalls, sends an oversized Certificate, a bad Finished or no close_notify.
 relations:
@@ -14,10 +14,11 @@ relations:
 scope:
 - confidence: cited
   path: crates/tls-test-server
-revision: 11
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:29Z", actor: "human:operator", revision: 8, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:29Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-22T21:13:25Z", actor: "human:operator", revision: 13, decided_on: {"recorded":{"test_result":1,"verification":3}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -127,3 +128,50 @@ A server that ships; session tickets sent with meaning; client certificates; the
 `story:tls-fetch-https`, `story:tls-session-anchors`, `story:agent-tasks-https` and
 `story:agent-cookie-jar`; `story:agent-cookie-jar` also writes it after this story merged (it adds
 `TestServer::requests()`).
+
+## As built
+
+What differs from the text above, as of 6cff209 (branch `wave/tls-1`):
+
+- The tests assert outcomes and counts, no upper bound on wall time (3a0aac6: the hundred
+  handshakes took 0.077 s to 2.3 s for the same code on a loaded host).
+  `hundred_handshakes_under_five_seconds` is `hundred::hundred_handshakes`
+  (`crates/tls-test-server/tests/hundred.rs:19`): 100 accepted, 100 ended, each with a ticket,
+  the request line, one record of data and `close_notify`; it prints its time.
+- `NeverAnswer` reads raw bytes off the socket and writes nothing, whatever arrives
+  (`crates/tls-test-server/src/conn.rs:113-142`; 405ba33).
+- `StallAfterServerHello` sends the ServerHello and, to a hello with a session id, the
+  compatibility change_cipher_spec (`crates/tls-test-server/src/conn.rs:351-358`,
+  `src/lib.rs:62-66`; f92461e).
+- The drop joins the accepting thread only when its wake-up connection was made; otherwise it
+  returns without joining (`crates/tls-test-server/src/lib.rs:318-326`; e4a31c3, test
+  `hostile::drop_returns_when_the_wake_up_connect_fails`).
+- `OversizedCertificate` "declares 16 MiB" is the length 0xFFFFFF, the most a uint24 holds
+  (`crates/tls-test-server/src/conn.rs:378-382`; `modes::oversized_certificate_is_refused`).
+- What the server saw is `Seen`, read through `TestServer::wait_seen`
+  (`crates/tls-test-server/src/lib.rs:292-294`); it is not part of `Config`
+  (`src/lib.rs:131-150`).
+- The server refuses a TLS 1.3 hello whose compression methods are not `[0]`
+  (`illegal_parameter`) and a session id over 32 bytes (`decode_error`) (9dca042), and a
+  change_cipher_spec RFC 8446 section 5 does not let it drop (`unexpected_message`, 160f5c0).
+- 46 tests: `adversary_server` 17, `handshake` 12, `hostile` 7, `hundred` 1, `modes` 9.
+- Nothing under `crates/tls/src` changed for the server; the record limits it shares with the
+  client are held as literals by `record::record_limits_are_the_literals_of_rfc8446` in
+  `surf-tls` (8780590).
+
+Times in the gate run on 32df67f (load 105 to 143): the six `handshake::scheme_*` 0.01 to
+0.03 s each, `hundred::hundred_handshakes` 0.31 s, all 46 tests 9.8 s together.
+
+Not shown by a test or a run:
+
+- Acceptance 2, 3 and 4, "under 1 s", "within 1 s", "within 3 s", and 5, "in under 5 s":
+  printed or read from the gate's report, not asserted; the modes that time out assert a
+  lower bound of 200 ms.
+- Acceptance 4, "its thread joined": the test sees the drop return and the socket end, which it
+  would also see if the drop returned without joining.
+- Acceptance 3, `SelectsTls12`: the test asserts `VersionUnsupported`, the ServerHello sent and
+  the client's `protocol_version`; the suite 0xC02F in that ServerHello is not asserted.
+- The compression case asserts a fatal alert, not that it is `illegal_parameter`.
+- Budget, "each test under 5 s": `adversary_server::adversary_garbage_of_each_length_ends_every_connection`
+  (1,359 connections one after another) took 6.8 s in the unit's last full run and 1.6 s in
+  the gate run on 32df67f; on 6cff209 it is not among the ten slowest (the tenth took 1.6 s).

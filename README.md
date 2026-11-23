@@ -6,7 +6,7 @@
 
 **A web browser written from scratch, where the specification comes first.**
 
-![spec: ESS 0.97.3, valid](docs/badges/spec.svg)
+![spec: ESS 0.97.4, valid](docs/badges/spec.svg)
 ![conformance: 169 of 169 scenarios](docs/badges/conformance.svg)
 ![tests: 877 passed](docs/badges/tests.svg)
 ![third-party crates shipped: 0](docs/badges/dependencies.svg)
@@ -187,10 +187,14 @@ there instead.
 3. **Isolation over speed.** A component is a security boundary. A design that needs two
    components to share memory is refused.
 4. **No third-party code in what ships.** The Rust standard library and the operating system
-   are allowed. The checks fail if the lock file lists an outside package. One exception is
-   planned: audited cryptographic primitives for TLS.
-5. **No unsafe code.** Every hand-written crate forbids it. The exceptions are in tests: two
-   counting allocators that measure what a fetch holds and what a parse allocates.
+   are allowed. The checks fail if the lock file lists an outside package. One exception:
+   audited cryptographic primitives for TLS come from ring 0.17.14, reviewed as a dependency in
+   the rustls audit of Cure53, 2020 (<https://cure53.de/pentest-report_rustls.pdf>). Only the
+   crate `surf-tls` may depend on it, and the checks pin its packages by name, version and
+   checksum.
+5. **No unsafe code.** Every hand-written crate forbids it. The exceptions are in tests: three
+   counting allocators that measure what a fetch holds, what a parse allocates and what the
+   TLS code allocates.
 6. **Text from the web stays text.** Anything from a page, a server or an address is escaped
    before it is printed, so a page cannot forge a line of surf's output.
 7. **A passing test must be able to fail.** Tests are tried against planted defects. A storage
@@ -450,7 +454,7 @@ talking to the network, keeping each component's data, the command lines and the
 | `document` | parses response bodies into documents |
 | `renderer` | styles, lays out and paints a document into a frame (specified, not rendering yet) |
 
-To build surf from source you need [`ess`](https://github.com/beyond10x/ess) 0.97.3,
+To build surf from source you need [`ess`](https://github.com/beyond10x/ess) 0.97.4,
 [`task`](https://taskfile.dev) and a Rust toolchain (built with 1.99.1); `task build` builds
 the four binaries. `task check` also needs [`cargo-nextest`](https://nexte.st) 0.9.143 or later.
 That is for working on surf, not for using it.
