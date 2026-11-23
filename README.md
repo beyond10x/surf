@@ -42,7 +42,7 @@ archive (Apple silicon and Intel) holds `surf`: the agent binaries read the call
 file.
 
 ```console
-$ version=0.5.0 target=x86_64-unknown-linux-musl
+$ version=0.6.0 target=x86_64-unknown-linux-musl
 $ base=https://github.com/beyond10x/surf/releases/download/$version
 $ curl -fsSLO $base/surf-$version-$target.tar.gz -fsSLO $base/SHA256SUMS
 $ grep " surf-$version-$target.tar.gz\$" SHA256SUMS | sha256sum --check
@@ -194,7 +194,7 @@ timeline (`follow l1`). Labels, targets and titles are shown as text; no target 
 bidirectional control (U+202A to U+202E, U+2066 to U+2069) in a value from a session shows as a
 mark that names it (`U+202E`), so it cannot reorder what a person reads.
 
-Since the view's control states (after round 2, in no release yet) the panel "Now" lists the
+Since the view's control states, shipped in release `0.6.0`, the panel "Now" lists the
 page's buttons and fields too, each with its state: a field's kind, label, value and flags, a
 button's form, method and the address it submits to. Below it, the panel
 `Changed by <action>` shows what the action at the playhead changed, a line per control
@@ -268,7 +268,7 @@ there instead.
 - **1,785 tests** (1,240, and 545 of the TLS crates in a step of their own), built with
   warnings treated as errors, and 71 tests of the live view's page in a browser.
 
-New after round 2, in no release yet:
+New after round 2, shipped in release `0.6.0`:
 
 - **The live view shows a page's controls and what an action changed.** The panel "Now" lists
   the page's links, buttons and fields in groups: a field with its kind, label, value and flags
@@ -498,7 +498,7 @@ plan is [`docs/plan/agent-waves.md`](docs/plan/agent-waves.md) and its design is
 Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `surf-agent`,
 `surfd` and `surf-session`, for Linux only at first. The releases are listed at
 <https://github.com/beyond10x/surf/releases>. After it, work moves to the script engine,
-[swell](https://beyond10x.github.io/swell/), a project of its own. Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. Wave 10 and round 1, which builds the stories of wave 11 and some of the waves after it, followed, and release `0.4.0` follows round 1: it adds the HTML parser on real pages and the page as text. Round 2 followed, and release `0.5.0` follows it: it adds following links, filling and submitting forms, going back and forward, and what changed. The waves after them are planned and have no date.
+[swell](https://beyond10x.github.io/swell/), a project of its own. Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. Wave 10 and round 1, which builds the stories of wave 11 and some of the waves after it, followed, and release `0.4.0` follows round 1: it adds the HTML parser on real pages and the page as text. Round 2 followed, and release `0.5.0` follows it: it adds following links, filling and submitting forms, going back and forward, and what changed. The live view's control states followed, and release `0.6.0` follows them: the live view shows a page's controls and what an action changed. The waves after them are planned and have no date.
 
 | after wave | what you can do |
 |---|---|

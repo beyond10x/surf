@@ -16,7 +16,7 @@ description: What surf does today, and what it does not do yet.
 - **1,785 tests** (1,240, and 545 of the TLS crates in a step of their own), built with
   warnings treated as errors, and 71 tests of the live view's page in a browser.
 
-New after round 2, in no release yet:
+New after round 2, shipped in release `0.6.0`:
 
 - **The live view shows a page's controls and what an action changed.** The panel "Now" lists
   the page's links, buttons and fields in groups: a field with its kind, label, value and flags

@@ -487,7 +487,7 @@ above, and the list of standards itself was written from memory.
     `fill f1 -- -`), and a value from standard input whose request is over 65,536 bytes is
     refused naming its quoted size (`client::STDIN_VALUE_FITS`, 16,000 bytes, always fits beside
     a handle of up to 1,364); the `Debug` of a wire `Arg` writes its value's length. The
-    package carries the release version, `0.5.0`, as do `surf-cli`, `surfd` and
+    package carries the release version, `0.6.0`, as do `surf-cli`, `surfd` and
     `surf-session`. `open` starts `surfd` from the directory of its own executable. Depends on
     `surf-answer` and `surf-secret`.
   - `crates/surfd` (`surfd`): a library and the binary `surfd`, the daemon the agent command line
@@ -1319,8 +1319,8 @@ the others were written to a scratch directory and not compiled:
   repository. The waves after 4 stay in the plan; they are planned and not scheduled.
 - Present state: wave 10 and rounds 1 and 2 are delivered (10 of 22 waves, and the stories of
   rounds 1 and 2); release `0.2.0` follows wave 4, release `0.3.0` wave 9, release `0.4.0`
-  round 1 and release `0.5.0` round 2 (the
-  releases are listed at https://github.com/beyond10x/surf/releases). The
+  round 1, release `0.5.0` round 2 and release `0.6.0` the view's control states and changed
+  panel (the releases are listed at https://github.com/beyond10x/surf/releases). The
   operator session ordered the continuation after the checkpoint on 2026-11-21, for the
   operator: "continue as its `AGENTS.md` says". The next is round 3 of
   `docs/plan/agent-waves.md` ("Rounds after wave 10": the waves 11 to 22 in three rounds). The stories
