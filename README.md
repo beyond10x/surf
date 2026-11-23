@@ -241,8 +241,10 @@ there instead.
    TLS code allocates.
 6. **Text from the web stays text.** Anything from a page, a server or an address is escaped
    before it is printed, so a page cannot forge a line of surf's output.
-7. **A passing test must be able to fail.** Tests are tried against planted defects. A storage
-   that drops every write fails 50 of the 196 scenarios.
+7. **A passing test must be able to fail.** Tests are tried against planted defects. Over the
+   whole suite (`task conform-slow`), a navigation storage that drops every write fails 50 of
+   the 196 scenarios; the gate runs each of the 29 planted defects over the first 3 scenarios
+   that notice it.
 8. **Small.** A standard is followed for what surf does, not implemented whole.
 
 ## What works today

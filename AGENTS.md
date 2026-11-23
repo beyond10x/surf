@@ -235,8 +235,11 @@ above, and the list of standards itself was written from memory.
   committed. `task build` and `task test` pass `--locked`, so a new crate fails them until
   `cargo generate-lockfile --offline` has run.
 - `.config/nextest.toml`: the configuration of cargo-nextest, which `task test` and `task
-  test-tls` run: at least 0.9.143, a run that does not stop at the first failure, a test ended
-  after 60 s, and the JUnit report each task copies and reads the ten slowest tests from.
+  test-tls` run, and `task conform-rust` and `task conform-slow` for the crate `conformance/`
+  (a workspace of its own, so they pass `--config-file .config/nextest.toml`; the crate has no
+  nextest configuration of its own): at least 0.9.143, a run that does not stop at the first
+  failure, a test ended after 60 s, and the JUnit report each task reads the ten slowest tests
+  from (`conform-rust` in place, `conformance/target/nextest/default/junit.xml`).
 - `.cargo/config.toml`: `debug = false` for the profiles `dev` and `test`, so no build of this
   repository carries debug info (the folder's rule: no debug info in test builds). A setting in
   `Cargo.toml` would not do: a cargo config file wins over the manifest, and one in a user's
@@ -974,14 +977,23 @@ above, and the list of standards itself was written from memory.
   `https://github.com/beyond10x/ess` at tag `0.97.4`; its lock pins the third-party packages
   those bring to the versions ESS's own lock holds at that tag. Nothing in the root workspace
   depends on it. `tests/noticed.txt`, committed and written by `task conform-slow`, holds on
-  its first line `sources <sha256>`, the digest of its five sources (`.out/suite.json`; the
-  planted-defect modules `tests/planted_defect.rs`, `tests/review2_planted_defects.rs` and
-  `tests/two_of_each_entity.rs`; `src/target.rs`; `src/values.rs`, which `target.rs` uses; the
-  `[[package]]` entry of `ess-conformance` in `Cargo.lock`), and then one line per planted
-  defect, `<label>: ` and the first 3 scenarios, in the suite's order, that do not pass over
-  it. Each planted-defect test runs its defect over those scenarios only
-  (`surf_conformance::planted_suite`) and asserts that at least one does not pass, so a stale
-  list can only turn a test red; the two controls run the whole suite.
+  its first line `sources <sha256>`, the digest of its sources (`.out/suite.json`; every file
+  under `src/` and `tests/` but `noticed.txt` itself, a list read from the directories and
+  sorted, so a new file counts; `Cargo.toml`; `Cargo.lock` whole), and then one line per
+  planted defect, `<label>: ` and the first 3 scenarios, in the suite's order, that do not pass
+  over it. The digest does not cover the surf crates the crate is built against (`crates/`,
+  `generated/`) nor the list's own lines: after such a change a planted-defect test whose
+  listed scenarios all pass fails naming its defect and ends with `the list
+  tests/noticed.txt may be stale (…); task conform-slow WRITE=1 regenerates it`, and so do a
+  label without a line and a line naming a scenario the suite does not hold (one test each in
+  `tests/planted_defect.rs`). Each planted-defect test runs its defect over its listed
+  scenarios only and asserts that at least one does not pass; the two controls run the whole
+  suite. The narrowed suites are made once per digest by the setup step of `task conform-rust`
+  (`surf-conformance --narrow`, `src/noticed.rs`) under `target/noticed/<digest>/`, and each
+  test reads its own (`surf_conformance::listed_suite`); a missing one fails the test naming
+  that step, never falling back to the whole suite, and a test whose run differs from its line
+  fails too. Admitting the whole 2.8 MB suite took 6.0 to 17.5 s alone at a load average near
+  104, a narrowed suite of 3 scenarios 7 to 135 ms.
   - `src/target.rs`: `SurfTarget`, the hand-written adapter between the runner's named values
     and the generated typed commands, outcomes, view rows, events and binding invocations. A
     fresh `Browser` per scenario; a command is issued on its component's port and `Browser::run`
@@ -1502,15 +1514,22 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   taskfiles/conform-noticed.sh check`: the sha256 of the sources of
   `conformance/tests/noticed.txt` against its first line; when they differ it fails with
   `conform-rust: the sources of conformance/tests/noticed.txt changed; run task conform-slow`.
-  Then it builds the tests (`cargo nextest run --no-run`) and the binary (`cargo build`),
-  untimed. The timed part: its tests under cargo-nextest with the root's
-  `.config/nextest.toml` (a test still running after 60 s is ended and fails), into
-  `.out/conform-rust-test.log`, the planted-defect tests included (it fails, naming them, when
-  their `PASS` lines are missing); each planted defect runs over the at most 3 scenarios its
-  line of `noticed.txt` names, the two controls over the whole suite. Then the suite against
-  the Rust system, the built `conformance/target/debug/surf-conformance`: log
+  Then it builds the tests (`cargo nextest run --no-run`) and the binary (`cargo build`), and
+  the setup step `surf-conformance --narrow .out/suite.json conformance/tests/noticed.txt`
+  writes the narrowed suites once per digest (`conform-rust: the narrowed suites of 29 planted
+  defects written to …` or `… are current`), all untimed. The timed part: its tests under
+  cargo-nextest with the root's `.config/nextest.toml` (a test still running after 60 s is
+  ended and fails), into `.out/conform-rust-test.log`, the planted-defect tests included (it
+  fails, naming them, when their `PASS` lines are missing, and with `conform-rust: nextest
+  skipped N test(s); …` when nextest's summary reports a skipped test: the crate has none);
+  each planted defect runs over the at most 3 scenarios its line of `noticed.txt` names, the
+  two controls over the whole suite. Then the suite against the Rust system, the built
+  `conformance/target/debug/surf-conformance` under `timeout` of coreutils: log
   `.out/conform-rust.log`, report `.out/conform-rust.json` (`ess-conformance-report/2`). Fails
-  when any scenario failed, errored or was unsupported. It prints the ten slowest tests from
+  when any scenario failed, errored or was unsupported, and when it runs past
+  `CONFORM_SUITE_BOUND` (default 60) seconds: `conform-rust: step 2, the suite against the
+  Rust system, was ended after its bound of 60 s`. It prints nextest's summary line, the
+  runner's summary line, the ten slowest tests from
   `conformance/target/nextest/default/junit.xml` (`taskfiles/slowest-tests.sh`) and
   `conformance step: N s of its budget of 120 s`, N the wall time of the tests and the suite
   run, the builds left out; over the budget (`CONFORM_BUDGET`, default 120) it prints
@@ -1518,8 +1537,11 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `.out/conform-step.seconds`. cargo fetches `github.com/beyond10x/ess` at tag `0.97.4` when
   its cache does not hold it. `task --summary conform-rust` says more.
 - `task conform-slow`: a step of the lane `slow`, never of `check`. Every planted defect of
-  `conformance/` over the whole suite (`SURF_NOTICED_OUT=.out/noticed.d`; the defects of one
-  test each on a thread of its own), each still held to being noticed; it writes
+  `conformance/` over the whole suite (`SURF_NOTICED_OUT=.out/noticed.d`; the planted-defect
+  tests and the controls only, by a nextest filter; the defects of one test each on a thread
+  of its own), each still held to being noticed. It prints one count line per defect over the
+  whole suite (`sh taskfiles/conform-noticed.sh counts`), for example `navigation storage
+  drops every put: 196 scenarios: 146 passed, 50 failed, 0 error, 0 unsupported`, writes
   `.out/noticed.txt` (`sh taskfiles/conform-noticed.sh assemble`) and fails when that differs
   from `conformance/tests/noticed.txt` byte for byte. `WRITE=1` writes the committed file. A
   change to a source of the list runs `task conform-slow WRITE=1` and commits `noticed.txt` in
