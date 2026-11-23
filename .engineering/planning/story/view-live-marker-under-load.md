@@ -8,7 +8,7 @@ summary: two runs of the page step at a start load of 107 and 121 failed with on
 relations:
 - decomposes: epic:live-view
 - informed_by: story:page-step-holds-under-load
-revision: 1
+revision: 2
 ---
 ## Why
 
@@ -55,23 +55,41 @@ browser, and whether its answer's head arrived.
 
 ## Acceptance
 
+A wait for `live` is an expectation of `#live-word` to have the text `live`, in a spec file's
+`load()` or anywhere else in the page tests. A counted run is a run of `task view-test` with a
+start load of 100 or more, from the commit of the diagnostic to the close of the story; every
+such run is listed, none is left out, whatever its step line says. Each is listed with its
+commit, its loads, its step line, its exit status and its count of passed and failed tests; a
+test that fails on anything other than a wait for `live` is named with its failure. A plant is
+made by hand and is not committed: `git status --short` is empty after it.
+
 1. With the `/events` request planted never to answer in one test of each spec file that waits
-   for `live`, that test's failure text holds the live marker's word, its class, `#message`, the
-   segments drawn and the state of the `/events` request. Without the plant the same tests pass.
-2. The story's record names the cause and quotes the failure text of at least one failed run at
-   a start load of 100 or more that shows it. If 10 consecutive runs of the page step at a start
-   load of 100 or more show no such failure, the record lists the 10 runs with their loads, and
-   statement 3 is met by that list.
-3. After the fix, 10 consecutive runs of `task view-test` at a start load of 100 or more: no test
-   fails on the wait for `live`. Each run is listed with its commit, its loads, its step line and
-   its count of passed and failed tests.
-4. A test fails when the cause is planted, if the cause is in the page, in `surfd` or in the
-   fixture.
-5. Unchanged: `--workers=2`, `retries: 0`, the 60 s bound of a test, the 120 s budget of the
-   step, and every test title of the base. The step's instructions stay within the bound of
-   `story:page-step-holds-under-load`.
+   for `live`, that test's failure text holds the live marker's word, its class, `#message` and
+   the segments drawn, names `/events` as sent with its milliseconds from the navigation, and
+   names its head as not arrived. Without the plant the same tests pass, and the record of
+   `fixture.mjs` shows no request beyond those of the base.
+2. The record names the cause and quotes the failure text of at least one counted run that shows
+   it. If no counted run fails on a wait for `live`, the record says "cause not found"; once 10
+   counted runs in a row have passed, the title says "no failure seen in 10 runs", and the cause
+   moves to a named follow-up story that keeps the diagnostic. Statement 3 is then not met by
+   that list and moves with it.
+3. After the fix, 10 counted runs in a row: no failure text holds a wait for `live`.
+4. With the cause planted, the test named in the record fails with the text quoted in the
+   record. If the cause is in the test, the record quotes the failing line before the fix and
+   the passing line after it.
+5. If the highest start load of the listed runs is under 100 when the story closes, the title
+   says "at the measured load", and the claim at a load of 100 moves to a named follow-up story.
+6. Unchanged: `--workers=2`, `retries: 0`, the 60 s bound of a test, `expect.timeout` of
+   10 000 ms, the 120 s budget of the step, and every test title of the base. If the fix is a
+   longer wait, it is in the one wait of `fixture.mjs`, it names the measured time, and the
+   record quotes a failure text in which `/events` was not yet sent.
+7. The instructions of three runs of the page step (`task page-step-cpu`) on the story's last
+   commit and on its base are listed. The last commit's median is within the instruction bound
+   of `story:page-step-holds-under-load`, or within 2 % of the base median if that story names
+   no bound when this one closes.
 
 ## Out of scope
 
-- The step's seconds at a load over 100: `story:page-step-holds-under-load`.
+- The step's seconds at a load over 100: `story:page-step-holds-under-load`. That story's item on
+  `controls case 6` is this story's; a longer wait is allowed here only under statement 6.
 - The load of the host.
