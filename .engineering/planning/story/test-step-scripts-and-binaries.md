@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:test-step-scripts-and-binaries
 kind: story
-status: draft
+status: active
 title: The test step's scripts start fewer programs and it lists no empty test binary
 summary: generated-compare starts at most 25 programs per run (72 today) from listings made once and refused when stale, lock_check runs its script without task (4.2 s per call in the pool), 18 targets get test = false and 8 generated packages leave the step, and the doc step runs beside nextest if it gains in three of three pairs
 relations:
@@ -51,7 +51,10 @@ scope:
   path: taskfiles/test-layout.sh
 - confidence: cited
   path: taskfiles/test-layout.yml
-revision: 24
+revision: 26
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T01:22:28Z", actor: "human:operator", revision: 25}
+- {from: "proposed", to: "active", at: "2026-11-23T01:22:29Z", actor: "human:operator", revision: 26}
 ---
 ## Why
 
