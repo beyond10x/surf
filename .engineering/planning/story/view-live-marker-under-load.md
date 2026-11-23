@@ -8,7 +8,7 @@ summary: two runs of the page step at a start load of 107 and 121 failed with on
 relations:
 - decomposes: epic:live-view
 - informed_by: story:page-step-holds-under-load
-revision: 4
+revision: 5
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-23T17:19:28Z", actor: "human:operator", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-23T17:19:29Z", actor: "human:operator", revision: 4}
@@ -96,3 +96,28 @@ made by hand and is not committed: `git status --short` is empty after it.
 - The step's seconds at a load over 100: `story:page-step-holds-under-load`. That story's item on
   `controls case 6` is this story's; a longer wait is allowed here only under statement 6.
 - The load of the host.
+
+## Found so far
+
+First unit, 2026-11-23, branch `fix/view-live-marker` from `3b0fc83`:
+
+- Change 1 is built in `7f646a5` and `941f7fa`: `expectLive(page)` in
+  `view-tests/tests/fixture.mjs` is the one wait for `live`, used by every spec file. A failed
+  wait prints the live marker's word and class, `#message`, the segments drawn, whether `/events`
+  was sent and its head arrived with the milliseconds from the navigation, the page's other
+  fetches, the browser's requests with their status, page errors, console errors, and a `GET /`
+  of the view made by the test. Acceptance 1: with `/events` planted never to answer, one test
+  per spec file fails with that text (10 on `7f646a5`, 9 of 10 on `941f7fa`: `controls case 6`
+  was not selected in that run); on the base the same plant prints `Received "connecting"` only.
+- Acceptance 7: base median 117.47 G instructions (120.93, 117.47, 116.16), `941f7fa` median
+  117.37 G (117.37, 116.79, 119.11), all runs within the budget, 71 passed each.
+- No counted run: the host was restarted at 20:30 CET and its load stayed under 100 afterwards
+  (highest seen 92.32) through 3,600 s of waiting.
+- A failure at a low load, not counted: on `7f646a5`, load 21.76 to 37.66, `page lists both
+  sessions` waited 10 s and printed: live marker `connecting`, segments drawn 0, `/events` not
+  sent, no other fetch of the page, 12 files loaded by the browser, the view's `/` from the test
+  200 in 54 ms. The page's script made no request in 10 s. So the failure is not bound to a load
+  of 100. Decision D337: the second unit looks for the cause by repeating page starts at the
+  load the host has.
+- A probe of `crates/view/src/http.rs` (a plant, removed): in one full run at most 9 connections
+  were open, no 503, no connection closed without an answer, a head within 71 ms.
