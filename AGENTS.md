@@ -1476,8 +1476,9 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
 - `task doc-tests-check`: `sh taskfiles/doc-tests-check.sh .`. `task test` runs the doc tests of
   `surf-ports` only, so in a doc comment outside `crates/ports` a code block is fenced and
   marked `text` (` ```text ` or `~~~text`), which rustdoc does not run; a doc test belongs in
-  `crates/ports`. The script reads every `*.rs` under `crates/` and `generated/` but those under
-  `crates/ports/` (`target` and dot directories not entered), follows the fences of the `///`
+  `crates/ports`. The script reads every `*.rs` under `crates/`, `generated/` and
+  `conformance/src/` (whose tests run under cargo-nextest, which runs no doc test) but those
+  under `crates/ports/` (`target` and dot directories not entered), follows the fences of the `///`
   and `//!` lines of each file (a line that starts, after the mark and blanks, with three
   backticks or three tildes opens a block when none is open and closes it otherwise), and
   fails, naming `<file>:<line>`, on an opening fence whose mark is not `text` and on a line
@@ -1487,10 +1488,10 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   either: a block doc comment (`/** */`, `/*! */`) and a doc attribute through `cfg_attr` or a
   macro. It calls no cargo.
 - `task doc-tests-check-test`: that script on small trees under `.out/doc-tests-check-test/`,
-  thirteen cases, each compared on its exit status and the line printed: a fence without a
+  fourteen cases, each compared on its exit status and the line printed: a fence without a
   mark, `rust,no_run`, a fence of tildes without a mark, a `text` block followed by a block
   without a mark (named at the second block's line), `#[doc = "…"]`, `#![doc = "…"]` and a
-  `//!` fence without a mark under `generated/` fail; fences marked `text` pass, and so does
+  `//!` fence without a mark under `generated/` and under `conformance/src/` fail; fences marked `text` pass, and so does
   each failing form under `crates/ports/`, a `target` directory, a dot directory and in a
   `////` comment; a root without `crates/` and `generated/` exits 2. `SCRIPT=<path>` runs a
   copy of the script.
