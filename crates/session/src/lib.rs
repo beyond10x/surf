@@ -179,10 +179,13 @@
 //!
 //! The session's own checks of a target ("Following a link") are not made again: they read the
 //! address text, and an entry's address passed them when the entry was made. What a name
-//! resolves to is not settled by that, so the fetch's rule is applied again (decision D279): the
-//! run goes out under the rule of the request that made the entry, the rule of a page that
-//! counts as public for an entry a `follow` or a `press` made from such a page, the rule of `go`
-//! for one `go` made, whatever page the session is on. A first request that rule refuses is
+//! resolves to is not settled by that, so the fetch's rule is applied again (decisions D279 and
+//! D283): the run goes out under the rule of a page that counts as public when a public page or
+//! a public server chose the entry's address, by link, form or redirect: an entry a `follow` or
+//! a `press` made from such a page, and an entry a redirect moved to from an address that counts
+//! as public, whatever command started it. Only an entry the agent's own address reached without
+//! a redirect, or by a redirect from a local address, goes out under the rule of `go`, whatever
+//! page the session is on. A first request that rule refuses is
 //! answered `did refused forbidden-destination`, status 1, with nothing recorded and the page
 //! and the path as they were ([`Kept`]), as for a `follow`. Otherwise the session records `<n>
 //! back` or `<n> forward`, and the answer is `did back` or `did forward` with the page it
@@ -1404,7 +1407,9 @@ impl<T: Transport> Session<T> {
         let from_public = match self.entry_at(step)? {
             None => return Ok(self.with_state(at_edge)),
             Some((_, Method::Post)) => return Ok(self.with_state(RefusalReason::PostEntry)),
-            Some((entry, Method::Get)) => self.from_public.contains(&entry),
+            Some((entry, Method::Get)) => {
+                self.from_public.contains(&entry) || self.redirected_by_public(&entry)?
+            }
         };
         let not_holder = Stop::Unexpected("not-holder to the holder");
         let no_session = Stop::Unexpected("no such session to the open session");
@@ -1462,6 +1467,36 @@ impl<T: Transport> Session<T> {
             .into_iter()
             .find(|row| row.tab_id == tab_id && row.standing == Some(step))
             .map(|row| (row.navigation_id, row.method)))
+    }
+
+    /// Whether a redirect moved the navigation that made the entry `entry` from an address that
+    /// counts as public ("Following a link" above) to another one (decision D283): its request
+    /// in the view `Requests` asked for an address other than the one the entry committed at,
+    /// and that address's host is not local by its text. The fetch keeps neither the addresses
+    /// between the first and the last of a chain of redirects nor where it connected, so the
+    /// first address of the chain stands for the one that redirected.
+    fn redirected_by_public(&self, entry: &RequestId) -> Result<bool, Stop> {
+        let system = self.browser.system();
+        let Some(committed) = system
+            .navigator
+            .navigations()?
+            .into_iter()
+            .find(|row| row.navigation_id == *entry)
+            .map(|row| row.url)
+        else {
+            return Ok(false);
+        };
+        let Some(asked) = system
+            .net
+            .requests()?
+            .into_iter()
+            .find(|row| row.request_id == *entry)
+            .map(|row| row.url)
+        else {
+            return Ok(false);
+        };
+        Ok(asked != committed
+            && surf_url::Url::parse(&asked.0, None).is_ok_and(|asked| !host_is_local(&asked)))
     }
 
     /// Status 0 with `did <command> "<handle>"` and the state.

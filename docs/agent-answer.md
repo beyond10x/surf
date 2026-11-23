@@ -185,8 +185,9 @@ refusal of the action, with a reason from this list:
 
 `address-too-long`, `unsupported-scheme` and `forbidden-destination` are given for the address a
 `press` would submit to as for a link's target. `back` and `forward` are refused
-`forbidden-destination` for a page a `follow` or a `press` reached from a public page, when its
-name now resolves to a local address (section "Now", `back` and `forward`).
+`forbidden-destination` for a page a `follow` or a `press` reached from a public page, or a
+redirect from a public address led to, when its name now resolves to a local address (section
+"Now", `back` and `forward`).
 
 A reason not in the list is refused by the parser. A story that adds a reason adds it here, to
 `RefusalReason` and to a test.
@@ -323,12 +324,14 @@ drops the pages after the current one; one that fails or is refused drops none.
 
 The session's own checks of a target (`address-too-long`, `unsupported-scheme`, the address
 text of `forbidden-destination`) are not made again: a page of the history was loaded once, at
-an address that passed them. What a name resolves to can change, though. A page a `follow` or
-a `press` reached from a page loaded from a public address is fetched again under the same
-rule: when its name now resolves to a local address, `back` or `forward` is refused
-`forbidden-destination`, status 1, before any connection, with the page and the path as they
-were. A page the agent typed with `go` is fetched again as `go` fetches it, from whatever page
-the session is on.
+an address that passed them. What a name resolves to can change, though. A page whose address
+a public page or a public server chose is fetched again under the rule of a page loaded from a
+public address: one a `follow` or a `press` reached from such a page, and one a redirect led to
+from an address that is not local by its text, whichever command started the load. When its
+name now resolves to a local address, `back` or `forward` is refused `forbidden-destination`,
+status 1, before any connection, with the page and the path as they were. A page the agent's own
+address reached without a redirect, or by a redirect from a local address, is fetched again as
+`go` fetches it, from whatever page the session is on.
 
 The answer of a closed session has no `now` block.
 

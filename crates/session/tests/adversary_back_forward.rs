@@ -49,7 +49,7 @@ fn html(body: &str) -> String {
 }
 
 /// An HTTP server on `127.0.0.1` with the pages above at `/a`, `/b`, `/c`, `/form` and `/sent`,
-/// 404 otherwise; it records the request line of each request it reads. While it is down it
+/// `/to-b` a 302 to `http://rebind.test:<its port>/b`, 404 otherwise; it records the request line of each request it reads. While it is down it
 /// closes every connection before reading it.
 struct Site {
     port: u16,
@@ -78,7 +78,7 @@ impl Site {
                     drop(stream);
                     continue;
                 }
-                serve(stream, &recording);
+                serve(stream, &recording, port);
             }
         });
         Site {
@@ -114,7 +114,7 @@ impl Drop for Site {
     }
 }
 
-fn serve(mut stream: TcpStream, lines: &Mutex<Vec<String>>) {
+fn serve(mut stream: TcpStream, lines: &Mutex<Vec<String>>, port: u16) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
     let mut head = Vec::new();
     let mut byte = [0u8; 1];
@@ -148,6 +148,10 @@ fn serve(mut stream: TcpStream, lines: &Mutex<Vec<String>>) {
         "/c" => html(PAGE_C),
         "/form" => html(FORM),
         "/sent" => html(SENT),
+        "/to-b" => format!(
+            "HTTP/1.1 302 Found\r\nLocation: http://rebind.test:{port}/b\r\nContent-Length: \
+             0\r\nConnection: close\r\n\r\n"
+        ),
         _ => "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: 4\r\n\
               Connection: close\r\n\r\nnone"
             .to_string(),
@@ -846,5 +850,212 @@ fn d279_the_entries_of_a_refused_traversal_and_of_the_next() {
             .text
             .starts_with("event surf.agent.TraversalRequested ")),
         "{entries:#?}"
+    );
+}
+
+// --- Decision D283: an entry a public server chose by a redirect -------------------------------
+
+/// A session over pages in memory at public P and at local L (both never dialed), every other
+/// address through `rebind`. P is a page with no link; L links to and has a `GET` form for X, a
+/// name of the site whose `/to-b` redirects to Y, `rebind.test`'s `/b`.
+fn over_pages(site: &Site, rebind: &Arc<Rebind>, start: &str) -> (Session<Memory>, String) {
+    let x = format!("http://x.test:{}/to-b", site.port);
+    let page_l = format!(
+        "<!doctype html><title>L</title><a href=\"{x}\">to X</a>\
+         <form action=\"{x}\"><button>Go</button></form>"
+    );
+    let network: Arc<dyn surf_fetch::Network> = rebind.clone();
+    open_over(
+        memory_then(
+            vec![
+                (
+                    public_p(),
+                    "<!doctype html><title>P</title><p>Public.".to_string(),
+                ),
+                (LOCAL_L.to_string(), page_l),
+            ],
+            network,
+        ),
+        start,
+    )
+}
+
+const LOCAL_L: &str = "http://127.0.0.1:9/l";
+
+fn public_p() -> String {
+    format!("{PUBLIC}/p")
+}
+
+/// `command` must be refused `forbidden-destination`, status 1, with the page line `page`, and
+/// `rebind` must have dialed no local address.
+fn refused_forbidden(
+    session: &mut Session<Memory>,
+    token: &str,
+    command: &str,
+    page: &str,
+    rebind: &Rebind,
+) {
+    let (status, text, typed, _) = ask(session, token, command, &[]);
+    assert_eq!(
+        local_dialed(rebind),
+        Vec::<SocketAddr>::new(),
+        "{command} dialed a local address\n{text}"
+    );
+    assert_eq!(
+        refused(&typed),
+        Some(RefusalReason::ForbiddenDestination),
+        "{text}"
+    );
+    assert_eq!(status, 1, "{text}");
+    assert_eq!(page_line(&text), page, "{text}");
+}
+
+/// Step I, question 1, `back`: the agent typed `go` to X, a name public then; X redirected to Y
+/// on a name public then too (a local one is refused after a public first request). After a
+/// `go` to P, Y's name resolves to `127.0.0.1`; `back` to Y must dial no local address: the
+/// agent never typed Y, a public server chose it.
+#[test]
+fn d283_back_to_an_entry_a_public_redirect_chose_dials_no_local_address() {
+    let site = Site::start();
+    let rebind = Arc::new(Rebind::new("93.184.216.35", 2, "127.0.0.1"));
+    let (mut session, token) = over_pages(&site, &rebind, &public_p());
+    let y = format!("http://rebind.test:{}/b", site.port);
+    let x = format!("http://x.test:{}/to-b", site.port);
+    lands_with(&mut session, &token, "go", &[("url", &x)], &loaded(&y, "B"));
+    lands_with(
+        &mut session,
+        &token,
+        "go",
+        &[("url", &public_p())],
+        &loaded(&public_p(), "P"),
+    );
+    refused_forbidden(
+        &mut session,
+        &token,
+        "back",
+        &loaded(&public_p(), "P"),
+        &rebind,
+    );
+    assert_eq!(site.lines(), ["GET /to-b HTTP/1.1", "GET /b HTTP/1.1"]);
+}
+
+/// Step I, question 1, `forward`: open at P, `go` to X redirected to Y, `back` to P, `forward`
+/// to Y with Y's name local now.
+#[test]
+fn d283_forward_to_an_entry_a_public_redirect_chose_dials_no_local_address() {
+    let site = Site::start();
+    let rebind = Arc::new(Rebind::new("93.184.216.35", 2, "127.0.0.1"));
+    let (mut session, token) = over_pages(&site, &rebind, &public_p());
+    let y = format!("http://rebind.test:{}/b", site.port);
+    let x = format!("http://x.test:{}/to-b", site.port);
+    lands_with(&mut session, &token, "go", &[("url", &x)], &loaded(&y, "B"));
+    lands(&mut session, &token, "back", &loaded(&public_p(), "P"));
+    refused_forbidden(
+        &mut session,
+        &token,
+        "forward",
+        &loaded(&public_p(), "P"),
+        &rebind,
+    );
+}
+
+/// D283, control: a redirect given by a local address does not set the rule. `go` to the
+/// site's `/to-b` at `127.0.0.1`, redirected to Y; after a `go` to P, Y's name is local and
+/// `back` loads Y.
+#[test]
+fn d283_an_entry_a_local_address_redirected_to_is_fetched_as_go_fetches() {
+    let site = Site::start();
+    let rebind = Arc::new(Rebind::new("93.184.216.35", 1, "127.0.0.1"));
+    let (mut session, token) = over_pages(&site, &rebind, &public_p());
+    let y = format!("http://rebind.test:{}/b", site.port);
+    lands_with(
+        &mut session,
+        &token,
+        "go",
+        &[("url", &site.url("/to-b"))],
+        &loaded(&y, "B"),
+    );
+    lands_with(
+        &mut session,
+        &token,
+        "go",
+        &[("url", &public_p())],
+        &loaded(&public_p(), "P"),
+    );
+    lands(&mut session, &token, "back", &loaded(&y, "B"));
+    assert_eq!(
+        site.lines(),
+        ["GET /to-b HTTP/1.1", "GET /b HTTP/1.1", "GET /b HTTP/1.1"]
+    );
+}
+
+/// D283, control: an entry made by `go` without a redirect stays as D279 has it. `go` to Y; after
+/// a `go` to P, Y's name is local and `back` loads Y.
+#[test]
+fn d283_an_entry_typed_with_go_and_not_redirected_is_fetched_as_go_fetches() {
+    let site = Site::start();
+    let rebind = Arc::new(Rebind::new("93.184.216.35", 1, "127.0.0.1"));
+    let (mut session, token) = over_pages(&site, &rebind, &public_p());
+    let y = format!("http://rebind.test:{}/b", site.port);
+    lands_with(&mut session, &token, "go", &[("url", &y)], &loaded(&y, "B"));
+    lands_with(
+        &mut session,
+        &token,
+        "go",
+        &[("url", &public_p())],
+        &loaded(&public_p(), "P"),
+    );
+    lands(&mut session, &token, "back", &loaded(&y, "B"));
+    assert_eq!(site.lines(), ["GET /b HTTP/1.1", "GET /b HTTP/1.1"]);
+}
+
+/// Step I, question 3: a `follow` from the local page L to X, which a public server redirects to
+/// Y: the entry of Y was chosen by that server, so `forward` to it, its name local now, dials no
+/// local address.
+#[test]
+fn d283_a_follow_from_a_local_page_redirected_by_a_public_server() {
+    let site = Site::start();
+    let rebind = Arc::new(Rebind::new("93.184.216.35", 2, "127.0.0.1"));
+    let (mut session, token) = over_pages(&site, &rebind, LOCAL_L);
+    let y = format!("http://rebind.test:{}/b", site.port);
+    lands_with(
+        &mut session,
+        &token,
+        "follow",
+        &[("handle", "l1")],
+        &loaded(&y, "B"),
+    );
+    lands(&mut session, &token, "back", &loaded(LOCAL_L, "L"));
+    refused_forbidden(
+        &mut session,
+        &token,
+        "forward",
+        &loaded(LOCAL_L, "L"),
+        &rebind,
+    );
+}
+
+/// Step I, question 3, for a `GET` `press` from the local page L, its form's action X redirected
+/// by a public server to Y.
+#[test]
+fn d283_a_press_from_a_local_page_redirected_by_a_public_server() {
+    let site = Site::start();
+    let rebind = Arc::new(Rebind::new("93.184.216.35", 2, "127.0.0.1"));
+    let (mut session, token) = over_pages(&site, &rebind, LOCAL_L);
+    let y = format!("http://rebind.test:{}/b", site.port);
+    lands_with(
+        &mut session,
+        &token,
+        "press",
+        &[("handle", "b1")],
+        &loaded(&y, "B"),
+    );
+    lands(&mut session, &token, "back", &loaded(LOCAL_L, "L"));
+    refused_forbidden(
+        &mut session,
+        &token,
+        "forward",
+        &loaded(LOCAL_L, "L"),
+        &rebind,
     );
 }
