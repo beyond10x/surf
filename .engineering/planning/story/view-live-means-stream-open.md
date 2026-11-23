@@ -20,12 +20,14 @@ scope:
 - confidence: cited
   path: view-tests/tests/adversary-detail.spec.mjs
 - confidence: cited
+  path: view-tests/tests/adversary-page.spec.mjs
+- confidence: cited
   path: view-tests/tests/first-page.spec.mjs
 - confidence: cited
   path: website/docs/how-it-is-built.md
 - confidence: cited
   path: website/docs/status.md
-revision: 18
+revision: 20
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-23T00:29:33Z", actor: "human:operator", revision: 17}
 - {from: "proposed", to: "active", at: "2026-11-23T00:29:33Z", actor: "human:operator", revision: 18}
@@ -200,6 +202,46 @@ output before each quoted result.
    file, line and reason; the list the design critic read has one entry.
 8. The gate: `slot --timeout 25m task check-runner` exits 0 on `impl/round2-view` at the commit
    that carries the change; the coordinating session runs it.
+
+## As found while building
+
+The change is `505f60e` on `impl/round2-view`. Acceptances 1 to 3 and 5 to 7 hold there. Of the
+three runs of acceptance 4, the third had one failure: `adversary-page.spec.mjs`:74, "an action
+streamed while the detail loads after a reset is not lost", expected 27 segments and received 0
+within its 5 s.
+
+Diagnosed on `505f60e` with a log planted in the page (removed after), 32 executions of that
+test, one of them red:
+
+- No stream closed and no load failed in any of the 32.
+- After `held.release()` the page runs two loads, the one of the opening and the one of the
+  reset, and each draws the whole session (331 entries, 27 actions). In the red execution the
+  first draw was one task of 2.9 s of the page's main thread and the second 1.2 s, and the
+  second answer reached the page 4 s after the first. Playwright's check of the count runs on
+  that thread; its call log shows no completed check within the 5 s.
+- Over the 32 executions the first draw of 27 came 27 ms to 3,322 ms after the release.
+- `505f60e` takes no part: after the release it runs the same loads and draws as `353daf2`.
+  The word `reconnecting` in the snapshot of the red run says only that the load of the
+  opening was not drawn yet.
+
+Decided (D287):
+
+1. The test at `adversary-page.spec.mjs`:74 waits for the state it reads, not for a deadline
+   from the release: after `held.release()` it waits for `#live-word` to read `live` (on this
+   branch: the load of the opening is drawn), for the end of both held answers of
+   `GET /api/sessions/<id>` and for two frames, and then reads the count of 27, the sequence
+   numbers and the address. Its `{ timeout: 5000 }` on the count goes; no timeout is raised
+   above the configuration's and no retry is added.
+2. The test still holds its claim: with a streamed entry dropped while the detail loads
+   (planted in `state.js`, `setDetail` or `addEntry`, removed after, the fixture rebuilt before
+   and after), it fails with a count other than 27 or a gap in the sequence numbers; the
+   report quotes it.
+3. Acceptance 4 is run again after 1: three runs of the whole task in a row. The five recorded
+   lines of the documents take the last of them.
+4. The cost of a draw (a whole session drawn again by each load, hundreds of milliseconds of
+   the main thread, two loads at once after a reset) is `story:view-draw-cost`, a draft.
+
+`view-tests/tests/adversary-page.spec.mjs` joins the surfaces written (the test at :74 only).
 
 ## Out of scope
 
