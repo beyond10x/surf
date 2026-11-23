@@ -4,12 +4,12 @@ id: story:page-step-holds-under-load
 kind: story
 status: draft
 title: The page step holds its 120 s at a load over 100
-summary: the page step took 124.0 s of 120 s with 71 tests at a load of 70 to 107, 19.0 s on the forge; a page test costs about 3 worker-seconds under load; measure where it goes, then cut the CPU seconds of the step by 40 %
+summary: the page step took 124.0 s of 120 s with 71 tests at a load of 70 to 107 and costs a median of 76.8 CPU seconds; four cuts bring it to at most 53.8 s (70 %), target 46.1 s; a flaky test is fixed
 relations:
 - decomposes: epic:live-view
 - informed_by: story:page-test-step-within-budget
 - informed_by: story:view-large-entry-test-time
-revision: 1
+revision: 3
 ---
 ## Why
 
@@ -30,38 +30,86 @@ the bound and the line in place; it did not make a test cheaper. Where a test's 
 measured: the start of `surfd`, of the fixture and of the session, each `surf` command (a process
 of a debug build), the browser's context and page, the draw, the assertions.
 
+## Measured on the base commit
+
+On `03f25c9`, before any change (2026-11-23, tree clean, the commands of `task view-test`
+unchanged; evidence under the story):
+
+- Three runs of the page step, 1-minute load before and after: 115.6 s (97.85 to 106.78),
+  161.2 s (106.78 to 121.49, over the budget) and 163.7 s (121.49 to 105.58, over the budget; one
+  test, `controls case 6`, failed once: `#live-word` read "connecting" after 10 s).
+- CPU seconds of the Playwright call with all its descendants (user and system; `perf record -s
+  -e task-clock`, the per-thread counters summed): 68.9, 78.4 and 76.8 s; the median is 76.8 s.
+  `time` counts reaped children only and showed about 57 % of that.
+- By program in the third run: Chromium renderers 28.8 s (71 processes, a median of 0.31 s per
+  test; 5.2 s for `an entry over 1 MiB`), the two Playwright workers and their runner 21.9 s,
+  Chromium's browser, GPU, zygote and utility processes 16.8 s, `surf-view-fixture` with `surfd`
+  inside 7.9 s (72 processes), `surf-session` 1.0 s, `surf-agent` 0.3 s (245 processes).
+- The fixture's exit reads `/proc/<pid>/environ` of every process of the host (`kill_left`),
+  about 4,000 at this load: 4.6 s in one run, 112 to 174 ms per fixture.
+- `an entry over 1 MiB` alone: 6.0 s, of it three `go` of about 250 ms, 2.0 s for the detail's
+  JSON in Node and 2.9 s for two count expectations.
+
+So the step spends 77 CPU seconds in 116 to 164 s of wall time on two workers: at a load of 100
+on 20 CPUs it waits for a CPU more than it computes. The cuts are in CPU seconds; the wall time
+follows the load.
+
 ## Change
 
-1. Measure first, before any change, on the story's base commit: the CPU seconds (user and
-   system, of the whole process tree) and the wall seconds of the page step, three runs, each
-   with the load before and after; and for five tests (the slowest, two of
-   `controls.spec.mjs`, one of `first-page.spec.mjs`, one of `now.spec.mjs`) the wall time of each
-   phase: fixture and `surfd` start, session open, each `surf` command, `page.goto`, each
-   expectation. No load is made on purpose. CPU seconds are the measure that is compared between
-   commits, since wall time follows the host's load.
-2. Cut the largest costs the measurement shows, largest first, until statement 3 holds. Candidates,
-   none chosen before statement 1: a build setting for the crates the page tests run
-   (`.cargo/config.toml` holds such settings for four packages already), measured with its compile
-   time before and after; fewer processes per test (one `surfd` per worker with a session per
-   test, if the tests' claims allow it); a cheaper page test of the entry over 1 MiB
-   (`story:view-large-entry-test-time`, whose statement 1 this measurement serves).
-   Not candidates: a higher budget, more workers, shards, a retry, a wait for a lower load, and
-   removing a test's claim.
-3. Target: the CPU seconds of the page step fall by at least 40 % against statement 1 with the
-   same 71 tests, and the step prints its line within 120 s in a run that starts at a load of
-   100 or more when the host has one.
+CPU seconds here: the user plus system time of the Playwright call of `task view-test` with all
+its descendants, measured after a build that compiled nothing, by the script this story commits
+(`taskfiles/page-step-cpu.sh`, POSIX sh): the call runs in a cgroup of its own and the script
+reads `usage_usec` of its `cpu.stat`, if one run agrees with the `perf` sum within 3 %; else the
+`perf` sum. The script is not a step of `task check`.
+
+1. The cuts, each a commit with the CPU seconds before and after, largest first:
+   a. `an entry over 1 MiB`: one `go` instead of three; the size of the answer and the four
+      actions are asserted in a Rust test of the detail in `crates/surfd/tests/view.rs`; the page
+      test keeps the claim that the view draws an entry over 1,048,576 bytes with an address of
+      60,000 bytes.
+   b. `crates/view-fixture/src/main.rs`, `kill_left`: the fixture ends the processes it started,
+      found without reading `environ` of every process of the host. Its claim (no process of the
+      test is left) stays and is shown red against a plant.
+   c. The Playwright workers: one run with `NODE_OPTIONS=--cpu-prof`, then the largest cost it
+      shows. A named candidate: the record fixture of `view-tests/tests/fixture.mjs` asks every
+      response for its body; it takes a body only when a test reads it.
+   d. Chromium launch arguments in `view-tests/playwright.config.mjs`, each kept only when it
+      saves 2 CPU seconds or more and no test changes: `--disable-gpu`; a limit of renderer
+      processes so that pages of a worker share one.
+2. `controls case 6`: the cause of the one failure is found (the trace of the failed run, the
+   page's stream code) and fixed in the page or the test; a longer timeout is not the fix.
+3. Not part of this story and not a fix: a higher budget, more workers, shards, a retry, a wait
+   for a lower load, removing a test's claim, one page shared by the tests of a worker.
+4. `AGENTS.md` records the measurement, the method and what was cut.
 
 ## Acceptance
 
-1. Statement 1's numbers are in the evidence, with the commands.
-2. Three consecutive runs of the page step after the change: CPU seconds at most 60 % of the
-   median of statement 1; each within 120 s; 71 or more tests passed, none skipped.
-3. Every claim of a test that was changed is shown red against a plant after the change.
-4. The gate in runner form passes on the story's commit, with the compile times of its build
-   steps before and after when a build setting changed.
-5. `AGENTS.md` records the measurement and what was cut.
+1. The base measurement above is in the evidence with its commands and the base commit's hash,
+   recorded before the first commit of the change.
+2. CPU: in each of three consecutive runs after the last cut the CPU seconds are at most 53.8 s
+   (70 % of the base median of 76.8 s). The target of the cuts is 46.1 s (60 %); what was reached
+   is stated.
+3. Line: each of these three runs prints `page step: N s of its budget of 120 s` and exits 0, and
+   the evidence records its 1-minute load at start and end.
+4. Tests: every test title of the base commit's `.out/view-test/junit.xml` passes in each of the
+   three runs, none skipped and none flaky; a title that statement 1a changes is named.
+5. Every run of the page step on the story's branch after the last cut, to the close, is listed
+   with start load, end load and wall seconds. None is over 120 s, and the list names its highest
+   start load. If that load is under 100, the story's title says "at the measured load" and the
+   claim at a load of 100 moves to a named follow-up story.
+6. Claims: for 1a the page test and the Rust test are each shown red against a plant; for 1b the
+   fixture's test of a left process is shown red against a plant; when
+   `view-tests/tests/fixture.mjs` changed, every test that reads what changed counts as changed
+   and one test per reader is shown red against a plant. Plants are made by hand, not committed,
+   and `git status --short` is empty after.
+7. `git diff <base> -- taskfiles/view-test.yml view-tests/playwright.config.mjs` shows
+   `--workers=2`, no `retries`, `timeout: 60_000` and the budget of 120 s unchanged.
+8. The gate in runner form (`task check-runner`) passes on the story's last commit.
+9. When a build setting changed, the evidence holds the compile time of each build step before
+   and after, each with its load.
 
 ## Out of scope
 
 The bound per test and the step's line (`story:page-test-step-within-budget`). The test step of
-the Rust tests under load (`story:test-step-holds-with-tls`).
+the Rust tests under load (`story:test-step-holds-with-tls`). The draw cost of a large entry in
+the page (`story:view-draw-cost`, `story:view-large-entry-test-time` for what 1a leaves).
