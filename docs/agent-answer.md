@@ -251,9 +251,10 @@ changed page "<old address>" -> "<new address>"
 What the last action changed: the session compares the state its previous answer showed with
 the state after the action (design section 5.3, `agent-change-and-log`). Every answer of the
 session that shows the session's state has the block, reads (`look`, `log`) and refusals
-included, `changed 0` when nothing changed. An answer that shows no state has none: the head
-line and `did` line of a `token` refusal and of a `usage` refusal without the token (section
-"Exit status and refusals"), the head line alone of status 3, and the answers `surfd` gives
+included, `changed 0` when nothing changed. An answer that shows no state has none (decision
+D291): the head line and `did` line of a `token` refusal, of a `usage` refusal of `open` and of
+a request not in the format of the wire (section "Exit status and refusals"), the head line
+alone of status 3, and the answers `surfd` gives
 without the session process (`no-such-session`, `session-died`, `session-timeout`, and the
 `did refused closed` of a session whose process has ended). Such an answer leaves the state the
 next one compares with as it was.
