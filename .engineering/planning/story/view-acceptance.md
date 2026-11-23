@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:view-acceptance
 kind: story
-status: active
+status: implemented
 title: The live view's acceptance case, as named tests in the gate
 summary: Seven tests named after the epic's acceptance sentences, three over HTTP and four driving the page, run by slot task check against a surfd the fixture starts.
 relations:
@@ -23,10 +23,11 @@ scope:
   path: view-tests/tests/acceptance.spec.mjs
 - confidence: inferred
   path: website/docs/status.md
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-23T04:21:59Z", actor: "human:operator", revision: 12, decided_on: {"recorded":{"test_result":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 

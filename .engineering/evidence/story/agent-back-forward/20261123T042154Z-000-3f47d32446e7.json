@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T04:21:54Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-back-forward",
+  "kind": "story",
+  "revision": 19,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate: slot --timeout 25m task check-runner on b00d02d (impl/round2-commands), 2026-11-23 04:55 to 05:03 CET, load 110.75 at the start, 116.83 at the end",
+    "reference": "13 numbered cases passed: surf-session back_forward case_01 to case_13; 25 adversary_back_forward tests passed: 13 adversary_bf, 4 d279 of decision 1, 6 d283 and 2 d293 of decision 4; surf-answer back_forward 2 tests passed; drift::drift passed; slowest adversary_bf_two_steps_each_way_and_a_push_from_the_first 0.312 s, none over 5 s; exit 0 in 472 s; 1224 tests: 1224 passed, 0 failed, 0 ignored (cargo-nextest 1222, doc tests 2); test step: 41.0 s of its budget of 120 s"
+  }
+}

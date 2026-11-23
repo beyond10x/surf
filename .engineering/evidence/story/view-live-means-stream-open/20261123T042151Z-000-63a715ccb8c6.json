@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T04:21:51Z",
+  "actor": "human:operator",
+  "artifact": "story:view-live-means-stream-open",
+  "kind": "story",
+  "revision": 20,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the body of commit 620a96b: three runs of the view-test task in a row and one plant, removed (acceptance 4, decision D287)",
+    "reference": "59 passed in 98 s, 53 s and 220 s at a load of 123 to 127; the recorded lines take the last: 59 passed (3.0m), the task 220 s, the slowest test an entry over 1 MiB at 35.0 s; with a streamed entry dropped in state.js the changed test fails with 26 received; alone it passed 8 of 8 at 9.1 to 17.1 s"
+  }
+}

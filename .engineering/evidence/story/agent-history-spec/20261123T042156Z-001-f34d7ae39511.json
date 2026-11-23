@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T04:21:56Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-history-spec",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "file at b4a7481: AGENTS.md lines 1625, 1651, 1882 and 1935 to 1950; Taskfile.yml line 76",
+    "reference": "170 scenarios and 48 refusals before, 196 and 56 after: plus 26 scenarios, plus 8 refusals; REFUSALS_MAX 56; the 8 new refusals listed with cause"
+  }
+}

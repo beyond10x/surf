@@ -4,7 +4,7 @@ id: story:conformance-step-within-budget
 kind: story
 status: active
 title: The conformance step ends each test within 60 s and itself within 120 s
-summary: 'On wave/round-2 (170 scenarios): the conformance tests run under cargo-nextest with the 60 s end; one timed line over the tests and the suite run, own budget of 120 s; each planted defect runs 3 listed scenarios from a committed noticed.txt instead of the whole suite (about 31 runs)'
+summary: 'On main (ff6431f, 196 scenarios): the conformance tests run under cargo-nextest with the 60 s end; one timed line over the tests and the suite run, own budget of 120 s; each planted defect runs 3 listed scenarios from a committed noticed.txt instead of the whole suite (about 31 runs)'
 relations:
 - decomposes: epic:headless-rust-target
 - informed_by: story:test-step-holds-with-tls
@@ -21,7 +21,7 @@ scope:
   path: conformance/tests/main.rs
 - confidence: cited
   path: taskfiles/slowest-tests.sh
-revision: 14
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T21:57:11Z", actor: "human:operator", revision: 13}
 - {from: "proposed", to: "active", at: "2026-11-22T21:57:12Z", actor: "human:operator", revision: 14}
@@ -33,49 +33,63 @@ test at 60 s and counts it as failed, the step prints its ten slowest tests, and
 when it runs over its budget, locally and in CI.
 
 Budget: the conformance step has a budget of 120 s of its own and fails over it, locally and in
-CI; `task test` and the page step have one each; `task check` prints the sum of the three (D247).
-Every other mention of the budget in this story reads "its budget" and takes the number from this
-sentence.
+CI; `task test`, `task test-tls` and the page step have one each; `task check` prints the sum of
+the four (D247). Every other mention of the budget in this story reads "its budget" and takes the
+number from this sentence.
 
-The tree (D246). This story is built on the branch `wave/round-2` after `impl/round2-commands` and
-`impl/round2-view` are merged into it, and before that wave merges to `main`. Every baseline,
-statement and acceptance line names that tree. Its suite holds the 170 scenarios of
-`impl/round2-commands`. Both round-2 branches change `conformance/tests/planted_defect.rs`,
-`review2_planted_defects.rs` and `two_of_each_entity.rs`, and `impl/round2-commands` changes
-`conformance/src/target.rs`; building after their merge leaves no conflict in those files. `ess`
-takes its release from `requires:` of `spec/ess-inputs.yaml`: `ess 0.97.4` on `main` and on
-`impl/round2-commands`.
+The tree (D302, which moves the branch D246 named). This story is built on `main` from `ff6431f`,
+where round 2 (`b4a7481`) and `wave/tls-1` are merged. Every baseline, statement and acceptance
+line names that tree. Its suite holds 196 scenarios, 37 of them authored, and `task suite` writes
+56 refusals (`AGENTS.md`:1626-1628 and :1637-1638, "The gate's numbers"; `Taskfile.yml`:76,
+`REFUSALS_MAX: 56`). Round 2 changed `conformance/tests/planted_defect.rs`,
+`review2_planted_defects.rs`, `two_of_each_entity.rs` and `conformance/src/target.rs` (`git diff
+--stat 0f0c157 ff6431f -- conformance`). `ess` takes its release from `requires:` of
+`spec/ess-inputs.yaml` (:2): `ess 0.97.4`; the crate pins `ess-conformance` at tag `0.97.4`
+(`conformance/Cargo.toml`:18).
 
-What the step is today (`Taskfile.yml`:83-115 on `main`; no round-2 branch and not `wave/tls-1`
-changes these lines):
+What the step is today (`Taskfile.yml`:105-137 on `main`):
 
-- Step 1 (:111) runs the crate's tests with `cargo test --locked --manifest-path
+- Step 1 (:133) runs the crate's tests with `cargo test --locked --manifest-path
   conformance/Cargo.toml`, which ends no test at 60 s, prints no ten slowest and has no budget.
-  The checks at :112 and :113 grep `cargo test`'s lines for the planted-defect test and the two
+  The checks at :134 and :135 grep `cargo test`'s lines for the planted-defect test and the two
   per-entity tests.
-- Step 2 (:114) runs the suite against the Rust system with `cargo run`, outside every budget.
-- `task test` (`Taskfile.yml`:270-331) is the pattern: it times its run after `task build`, prints
+- Step 2 (:136) runs the suite against the Rust system with `cargo run`, outside every budget.
+- `task test` (`Taskfile.yml`:295-372) is the pattern: it times its run after `task build`, prints
   the ten slowest through `taskfiles/slowest-tests.sh`, and prints `test step: N s, over its
-  budget of 120 s` (:327) and fails, or `test step: N s of its budget of 120 s` (:330).
+  budget of 120 s` (:368) and fails, or `test step: N s of its budget of 120 s` (:371). `task
+  test-tls` (:374-430) does the same with `tls test step` (:426, :429).
 
 Measured: the crate's test binary took 169 s at a load average of about 130 on
 `impl/round2-commands` on 2026-11-22, and `task conform-rust` as a whole 194 s.
-`story:slow-tests-at-small-bounds` measured 56.8 s for its 15 tests on `main` in one run.
+`story:slow-tests-at-small-bounds` measured 56.8 s for its 15 tests on `main` in one run. In the
+gate in runner form on `b00d02d` (2026-11-23, 04:55 to 05:03 CET, a load average of 110.75 at the
+start and 116.83 at the end), `.out/conform-rust-test.log` shows the binary of `tests/main.rs`
+ending `test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in
+88.20s` (its line 531), and
+`two_of_each_entity::a_view_cut_to_its_first_row_is_noticed_for_each_entity` and
+`two_of_each_entity::one_identity_for_every_instance_of_an_entity_is_noticed_for_each_entity`
+each `has been running for over 60 seconds` (lines 511 and 512), outside any 60 s end. The planted
+run of `planted_defect.rs` printed `planted defect: 196 scenarios: 146 passed, 50 failed, 0
+error, 0 unsupported` (line 127).
 
-Where the time goes. The crate has 15 tests in one binary (`conformance/tests/main.rs`): 1 in
-`planted_defect.rs`, 11 in `review2_planted_defects.rs`, 3 in `two_of_each_entity.rs`. Each
-planted defect runs the whole suite once (`run`, `conformance/src/lib.rs`:64-70), so the cost is
-defects times scenarios. `two_of_each_entity.rs` runs it 19 times in 3 tests: the control once,
-7 identity defects in `one_identity_for_every_instance_of_an_entity_is_noticed_for_each_entity`,
-11 view defects in `a_view_cut_to_its_first_row_is_noticed_for_each_entity`
-(`assert_each_noticed`, one `failed_with` per defect). `review2_planted_defects.rs` runs it once
-per test, its control included (`suite_over`). `planted_defect.rs` runs it once. That is about 31
-runs of the 170 scenarios, against one run in step 2. The two controls run the unplanted system
-over the whole suite, as step 2 does.
+Where the time goes. The crate has 15 integration tests in one binary (`conformance/tests/main.rs`):
+1 in `planted_defect.rs`, 11 in `review2_planted_defects.rs`, 3 in `two_of_each_entity.rs`; 13 of
+them plant a defect and 2 are controls (`review2_control_the_unplanted_system_passes_every_scenario`
+and `nothing_planted_fails_no_scenario`). Its library has 17 unit tests of its own (15 in
+`conformance/src/target.rs`, 2 in `conformance/src/values.rs`; `running 17 tests`, line 4 of the
+same log), which run no suite. Each planted defect runs the whole suite once (`run`,
+`conformance/src/lib.rs`:64-70), so the cost is defects times scenarios. `two_of_each_entity.rs`
+runs it 19 times in 3 tests: the control once, 7 identity defects in
+`one_identity_for_every_instance_of_an_entity_is_noticed_for_each_entity`, 11 view defects in
+`a_view_cut_to_its_first_row_is_noticed_for_each_entity` (`assert_each_noticed`, :386, one
+`failed_with`, :328, per defect). `review2_planted_defects.rs` runs it once per test, its control
+included (`suite_over`, :44). `planted_defect.rs` runs it once. That is 31 runs of the 196
+scenarios (31 lines `…: 196 scenarios: …` in that log: 29 planted, 2 controls), against one run in
+step 2. The two controls run the unplanted system over the whole suite, as step 2 does.
 
 ## Decisions taken
 
-- D246: the tree above.
+- D246: the tree above, moved by D302.
 - D247: the budget sentence above.
 - D250: the step's line covers the run of the conformance tests and the run of the suite against
   the Rust system (step 2), builds excluded, the same way `task test` times its run after the
@@ -86,6 +100,14 @@ over the whole suite, as step 2 does.
 - D251: every time target here is read on three consecutive runs that print `/proc/loadavg`
   before and after. The story closes on those three runs at the load that is present, and names
   that load. A later run over the budget at a higher load is a new defect with its own story.
+- D302: round 2 went to `main` when its gate was green, so this story is built on `main`
+  (`ff6431f`), not on `wave/round-2`, before the next feature.
+- D307: the sentences that sum the steps name four (`test step`, `tls test step`, the
+  conformance step, the page-test step); D247 stays 120 s per step.
+- D308: statements that described a merge order that has happened are written to the state of
+  `main` (statements 4 and 6, "Overlap and order"); no remedy changes.
+- D309: the digest of `conformance/tests/noticed.txt` takes `conformance/src/values.rs` as a fifth
+  source, since `target.rs` uses it (`target.rs`:87).
 
 ## Change
 
@@ -99,7 +121,8 @@ Statement 1 comes first; the others follow in any order.
    `conformance/tests/probe.rs` with its `mod` line in `tests/main.rs`. Its one test,
    `probe::a_narrowed_suite_is_admitted`, keeps the first 3 scenarios of the `scenarios` map of
    `.out/suite.json`, runs that suite through `surf_conformance::run` (`AdmittedSuite::from_json`
-   of `ess-conformance` 0.97.4) against `memory_target()`, and prints one line. The command is
+   of `ess-conformance` 0.97.4) against `memory_target()` (`conformance/src/lib.rs`:45), and
+   prints one line. The command is
    `cargo nextest run --locked --manifest-path conformance/Cargo.toml --config-file
    .config/nextest.toml --no-capture -E 'test(=probe::a_narrowed_suite_is_admitted)'`. The
    expected line is `probe: narrowed suite admitted, 3 scenarios run`. On a refusal the test prints
@@ -118,7 +141,7 @@ Statement 1 comes first; the others follow in any order.
    default the number of the budget sentence. The step removes `.out/conform-step.seconds` at its
    start and writes N there at its end, for `step-budgets` of
    `story:page-test-step-within-budget`. `RUSTFLAGS: -D warnings` stays.
-3. The checks at `Taskfile.yml`:112 and :113 read nextest's log: each of
+3. The checks at `Taskfile.yml`:134 and :135 read nextest's log: each of
    `planted_defect::a_navigation_storage_that_drops_every_put_fails_at_least_one_scenario`,
    `two_of_each_entity::one_identity_for_every_instance_of_an_entity_is_noticed_for_each_entity`
    and `two_of_each_entity::a_view_cut_to_its_first_row_is_noticed_for_each_entity` must have its
@@ -129,26 +152,26 @@ Statement 1 comes first; the others follow in any order.
    When the probe fails, the unit stops and reports the runner's refusal text; remedy B is not
    built without a new decision.
    - A. `conformance/tests/noticed.txt` holds on its first line `sources <sha256>`, the digest of
-     its four sources: `.out/suite.json`; the planted-defect test modules
+     its five sources: `.out/suite.json`; the planted-defect test modules
      `conformance/tests/planted_defect.rs`, `review2_planted_defects.rs` and
-     `two_of_each_entity.rs`; `conformance/src/target.rs`; and the `[[package]]` entry of
-     `ess-conformance` in `conformance/Cargo.lock`. Then it holds one line per planted defect:
-     its label and the ids of the first 3 scenarios, in the suite's order, that do not pass over
-     it. Each planted-defect test runs its defect over those scenarios only and asserts that at
-     least one does not pass, which is the claim "the suite notices the defect". A stale list can
-     only turn a test red, never green.
+     `two_of_each_entity.rs`; `conformance/src/target.rs`; `conformance/src/values.rs`, which
+     `target.rs` uses (`target.rs`:87, D309); and the `[[package]]` entry of
+     `ess-conformance` in `conformance/Cargo.lock` (:100-102). Then it holds one line per planted
+     defect: its label and the ids of the first 3 scenarios, in the suite's order, that do not
+     pass over it. Each planted-defect test runs its defect over those scenarios only and asserts
+     that at least one does not pass, which is the claim "the suite notices the defect". A stale
+     list can only turn a test red, never green.
    - The fast check, a step of `conform-rust` before the timed part, POSIX sh: it computes the
-     digest of the four sources and compares it with the first line. When they differ it fails
+     digest of the five sources and compares it with the first line. When they differ it fails
      with the line `conform-rust: the sources of conformance/tests/noticed.txt changed; run task
      conform-slow`.
    - The task `conform-slow`, not part of `check`, runs every planted defect over the whole
      suite, writes `.out/noticed.txt` and compares its bytes with the committed file. It is a
      subtask of the lane `slow` (statement 6).
-   - Who regenerates the file. Whichever change alters one of the four sources runs `task
-     conform-slow` and commits `noticed.txt` in the same commit. `story:tls-spec` changes
-     `conformance/src/target.rs` and, through `spec/`, `.out/suite.json` on `wave/tls-1`; at the
-     merge of `wave/tls-1` and `wave/round-2` the merge commit does it. The fast check's failure
-     line names the task.
+   - Who regenerates the file (D308). From this story on, the change that touches one of the
+     five sources (through `spec/` for `.out/suite.json`) runs `task conform-slow` in the lane
+     `slow` and commits `noticed.txt` in the same commit. The fast check's failure line names
+     the task.
    - The two controls keep the whole suite. Expected: the 29 planted runs fall to 3 scenarios each;
      the step costs about 3 runs of the suite (two controls and step 2). A narrowed suite is the
      probe's question: `SuiteInput::select` of 0.97.4 (`coverage.rs`:964) needs a coverage block
@@ -157,35 +180,35 @@ Statement 1 comes first; the others follow in any order.
    - B, not built without a new decision: a cache on disk under `conformance/target/` keyed by the
      digest of its sources. It saves nothing on the forge, which starts without the cache, nor
      after any change of a source.
-5. `AGENTS.md`, the bullet of `task conform-rust` (:1087-1091 on `main`): its tests run under
+5. `AGENTS.md`, the bullet of `task conform-rust` (:1486-1490 on `main`): its tests run under
    cargo-nextest with the 60 s end; one timed part covers the tests and the suite run; the budget
    line and the ten slowest; the fast check, `conformance/tests/noticed.txt` and `task
-   conform-slow`. The bullet of `conformance/` (:654-661 on `main`) names `noticed.txt` and its
-   four sources.
-6. The lane `slow`. The order of `wave/tls-1` and `wave/round-2` onto `main` is open, so the
-   story is written for both trees.
-   - When `Taskfile.yml` of the tree holds a task `slow` (`wave/tls-1` defines it at :376 there,
-     with the subtasks `tls-certs-slow` and `tls-flights-slow`), the story adds `conform-slow` as
-     its third subtask and extends the bullet of `task slow` in `AGENTS.md` (:1225-1235 on
-     `wave/tls-1`) with it.
-   - When it holds none, the story creates `slow` in `Taskfile.yml` after the list of `check`
-     (:338-359 on `main`), with `conform-slow` as its only subtask, never a step of `check`, and
-     a bullet of `task slow` in `AGENTS.md`. The later merge with `wave/tls-1` keeps one `slow`
-     that calls all three subtasks and one bullet that names them.
+   conform-slow`. The bullet of `conformance/` (its head, :970-976 on `main`) names `noticed.txt`
+   and its five sources.
+6. The lane `slow` (D308). `main` defines the task `slow` at `Taskfile.yml`:466-470, with the
+   subtasks `tls-certs-slow` and `tls-flights-slow`, never a step of `check`. The story adds
+   `conform-slow` as its third subtask and extends the bullet of `task slow` in `AGENTS.md`
+   (:1422-1432 on `main`) with it.
 
 ### Overlap and order
 
-- `wave/tls-1` changes `Taskfile.yml` at :15 and :43 (includes and tasks of its own), `lock-check`
-  (:136-167), the list of `check` (:338-359 on `main`) and adds `slow:` after :359; not
-  `conform-rust` (:83-115). Statement 6 says how the two `slow` meet. In `AGENTS.md` the wave
-  changes the paragraph of `task check` (:966-968 and :977-980 on `main`), inserts bullets before
-  the bullet of `task view-test` (after :1054 on `main`), and changes from :1092, the bullet of
-  `task lock-check` right after this story's bullet of `task conform-rust`; the merge keeps both
-  sides.
-- `story:session-request-timeout-option` changes `AGENTS.md` at the waits of `built` (:1306-1307
-  on `main`); this story changes the bullet of `task conform-rust` and the bullet of
-  `conformance/`. The sections do not overlap.
-- `story:tls-spec` and round 2 change `conformance/src/target.rs`; this story does not.
+What is still open on `main` and touches the same files (the scopes of the stories not
+`implemented` on `ff6431f`, round 2's eleven stories left out: their code is on `main`):
+
+- A source of the digest: `story:tls-spec` and `story:agent-cookie-jar` change
+  `conformance/src/target.rs`; `story:conformance-lock-and-lints` (draft) changes
+  `conformance/src/target.rs` and `conformance/Cargo.lock`; `story:tls-fetch-https` changes
+  `conformance/Cargo.lock`, whose `ess-conformance` entry alone is read. Whichever of them lands
+  after this story regenerates `noticed.txt` (statement 4).
+- `Taskfile.yml`: `story:test-step-holds-with-tls`, `story:agent-cookie-public-suffixes` and
+  `story:conformance-lock-and-lints`; by their bodies none changes `slow` (:466-470).
+  `story:conformance-lock-and-lints` adds a clippy run on `conformance/` to the gate without
+  naming its task; if it goes into `conform-rust` (:105-137), it stays outside the timed line of
+  statement 2, and a merge keeps both. `story:test-step-holds-with-tls` statement 3 puts
+  overrides in `.cargo/config.toml`, which the conformance build reads too.
+- `AGENTS.md`: `story:test-step-holds-with-tls` (active), `story:conformance-lock-and-lints`,
+  `story:tls-tests-as-tables` and `story:session-argument-checks` (drafts); this story changes
+  only the bullets of `task conform-rust`, `task slow` and `conformance/`.
 - `story:page-test-step-within-budget` reads `.out/conform-step.seconds` and lands after this
   story on the same tree.
 
@@ -213,20 +236,20 @@ Statement 1 comes first; the others follow in any order.
    - Scenarios per planted run: one run of the crate's tests with `--no-capture` prints the count
      line each run already writes (`planted defect: N scenarios`, `review2 [<label>]: N
      scenarios`, `<label>: N scenarios`): 29 lines for the 29 planted defects, each with N at
-     most 3, and the 2 lines of the controls with the suite's 170.
+     most 3, and the 2 lines of the controls with the suite's 196.
    - The digest check: with the first line of `conformance/tests/noticed.txt` edited by hand, and
-     then with one byte changed in each of the four sources in turn (`.out/suite.json`,
-     `conformance/tests/two_of_each_entity.rs`, `conformance/src/target.rs`, the
-     `ess-conformance` entry of `conformance/Cargo.lock`), `task conform-rust` fails with the line
-     `conform-rust: the sources of conformance/tests/noticed.txt changed; run task conform-slow`.
-     Five runs, each output in the evidence.
+     then with one byte changed in each of the five sources in turn (`.out/suite.json`,
+     `conformance/tests/two_of_each_entity.rs`, `conformance/src/target.rs`,
+     `conformance/src/values.rs`, the `ess-conformance` entry of `conformance/Cargo.lock`), `task
+     conform-rust` fails with the line `conform-rust: the sources of conformance/tests/noticed.txt
+     changed; run task conform-slow`. Six runs, each output in the evidence.
    - `task conform-slow` on the story's commit writes `.out/noticed.txt` equal byte for byte to the
      committed file, and `task --dry slow` lists `conform-slow`.
    - With one planted defect taken out of its wrapper (by hand), its test fails naming the
      defect.
    Each plant is removed after (`git diff --stat` equal before and after).
-7. `cargo nextest list --manifest-path conformance/Cargo.toml` before and after gives the same 15
-   tests.
+7. `cargo nextest list --manifest-path conformance/Cargo.toml` before and after gives the same 32
+   tests: the 15 of `tests/main.rs` and the 17 unit tests of the library.
 8. The forge: the `check` run of the story's commit on its branch or pull request prints
    `conformance step: N s of its budget of <budget> s`. The evidence names the run id and quotes
    the line.

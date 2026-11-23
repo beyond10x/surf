@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T04:21:58Z",
+  "actor": "human:operator",
+  "artifact": "story:view-live-means-stream-open",
+  "kind": "story",
+  "revision": 20,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "file at b4a7481: AGENTS.md line 1834, README.md lines 535 to 536, website/docs/how-it-is-built.md line 69; git grep -w 54 at b4a7481",
+    "reference": "recorded run 59 passed (3.0m), the task 220 s, load 126 to 127; 54 remains only in the two lines 40 passed, 54 skipped"
+  }
+}

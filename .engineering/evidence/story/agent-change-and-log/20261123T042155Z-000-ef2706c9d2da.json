@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T04:21:55Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-change-and-log",
+  "kind": "story",
+  "revision": 18,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate: slot --timeout 25m task check-runner on b00d02d (impl/round2-commands), 2026-11-23 04:55 to 05:03 CET, load 110.75 at the start, 116.83 at the end",
+    "reference": "16 numbered cases passed: surf-session change_and_log case_01 to case_16, the walk case_15 in 0.371 s; 2 d298 tests of decision 1 passed; the adversary 22 tests passed: adversary_change_log 20, adversary_changed 2; surf-answer changed 4 tests passed; slowest adversary_cl_log_at_its_byte_bound_keeps_the_newest 7.701 s, the one story test over 5 s, next adversary_cl_a_page_of_20000_texts_stays_bounded 2.467 s; exit 0 in 472 s; 1224 tests: 1224 passed, 0 failed, 0 ignored (cargo-nextest 1222, doc tests 2); test step: 41.0 s of its budget of 120 s"
+  }
+}

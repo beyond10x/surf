@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T04:21:52Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-fill-pick",
+  "kind": "story",
+  "revision": 25,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate: slot --timeout 25m task check-runner on b00d02d (impl/round2-commands), 2026-11-23 04:55 to 05:03 CET, load 110.75 at the start, 116.83 at the end",
+    "reference": "21 numbered cases passed: surf-session fill_pick case_01 to case_20, surf forms::fill_pick_case_21_radio_group_two_checked_submits_the_last; the 5 adversary tests named in decisions 1 to 4 passed, 22 adversary_fill_pick tests in all (16 surf-session, 6 surf-agent); slowest adversary_fill_pick::a_now_block_of_long_values_stays_within_its_bound 0.701 s, none over 5 s; 196 scenario(s) (37 authored), 56 refusal(s); 196 scenarios: 196 passed, 0 failed, 0 error, 0 unsupported on the interpreter and on the Rust system; exit 0 in 472 s; 1224 tests: 1224 passed, 0 failed, 0 ignored (cargo-nextest 1222, doc tests 2); test step: 41.0 s of its budget of 120 s"
+  }
+}

@@ -4,7 +4,7 @@ id: story:page-test-step-within-budget
 kind: story
 status: active
 title: The page-test step ends each test within 60 s
-summary: 'On wave/round-2 after round 2 merges (54 page tests; impl/round2-view: 54 passed (2.7m), task 189 s at load 55 to 81): test timeout 60 s, own budget and ten slowest, npm ci out of the timed part, a shared fixture if fixture starts sum over 10 s, largest costs cut'
+summary: 'On main (ff6431f, 59 page tests; gate on b00d02d: 59 passed (1.6m) at load 111 to 117, on 9f096f3: 59 passed (40.0s) at load 90 to 53): test timeout 60 s, own budget and ten slowest, npm ci out of the timed part, a shared fixture if fixture starts sum over 10 s, largest costs cut'
 relations:
 - decomposes: epic:live-view
 - informed_by: story:test-step-holds-with-tls
@@ -25,7 +25,7 @@ scope:
   path: view-tests/playwright.config.mjs
 - confidence: cited
   path: view-tests/tests
-revision: 12
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T21:48:50Z", actor: "human:operator", revision: 11}
 - {from: "proposed", to: "active", at: "2026-11-22T21:48:51Z", actor: "human:operator", revision: 12}
@@ -35,58 +35,72 @@ transitions:
 The folder's rule ("Tests stay fast"): no single test runs longer than 60 s, the runner ends a
 test at 60 s, the step prints its ten slowest tests, and the step fails over its budget, locally
 and in CI. The page step is `task view-test` (`taskfiles/view-test.yml`), run by `task check`
-after `view-stream-check`.
+after `view-stream-check` (`Taskfile.yml`:456-457).
 
 Budget: the page step has a budget of 120 s of its own and fails over it, locally and in CI; `task
-test` and the conformance step have one each; `task check` prints the sum of the three (D247).
-Every other mention of the budget in this story reads "its budget" and takes the number from this
-sentence.
+test`, `task test-tls` and the conformance step have one each; `task check` prints the sum of the
+four (D247). Every other mention of the budget in this story reads "its budget" and takes the
+number from this sentence.
 
-The tree (D246). This story is built on the branch `wave/round-2` after `impl/round2-commands` and
-`impl/round2-view` are merged into it, and before that wave merges to `main`. Every baseline,
-statement and acceptance line names that tree. The page tests on it are the 54 of
-`impl/round2-view` (`20ab15b`): 18 in `first-page.spec.mjs`, 8 in `adversary-detail.spec.mjs`, 7
-in `adversary-now.spec.mjs`, 6 in `adversary-page.spec.mjs`, 6 in `detail.spec.mjs`, 5 in
-`now.spec.mjs`, 4 in `acceptance.spec.mjs`. `main` (`0f0c157`) has 38 of them.
+The tree (D302, which moves the branch D246 named). This story is built on `main` from `ff6431f`,
+where round 2 (`b4a7481`) and `wave/tls-1` are merged. Every baseline, statement and acceptance
+line names that tree. The page tests on it are 59 (`grep -cE '^test\(' view-tests/tests/*.spec.mjs`;
+`Running 59 tests using 2 workers` in both gate logs below): 23 in `first-page.spec.mjs`, 8 in
+`adversary-detail.spec.mjs`, 7 in `adversary-now.spec.mjs`, 6 in `adversary-page.spec.mjs`, 6 in
+`detail.spec.mjs`, 5 in `now.spec.mjs`, 4 in `acceptance.spec.mjs`. `impl/round2-view`
+(`20ab15b`) had 54 of them and `main` before round 2 (`0f0c157`) 38.
 
 Measured so far:
 
 - `main` (`0f0c157`), the forge's check 45069730446: `38 passed (16.5s)`; the forge's load is not
   known.
-- `impl/round2-view`, recorded in its `AGENTS.md` (the paragraph after the waits of `built`):
-  `54 passed (2.7m)`, the task 189 s with its build and `npm ci`, at a load average of 55 to 81 on
-  2026-11-22. At a load average of 106 to 140 the three slowest were `an entry over 1 MiB` 29.7 s,
-  `adversary: a refused token on the stream stops the page` 15.5 s and `dropped entries are a
-  gap` 9.7 s.
+- `impl/round2-view`, recorded in its `AGENTS.md`: `54 passed (2.7m)`, the task 189 s with its
+  build and `npm ci`, at a load average of 55 to 81 on 2026-11-22. At a load average of 106 to
+  140 the three slowest were `an entry over 1 MiB` 29.7 s, `adversary: a refused token on the
+  stream stops the page` 15.5 s and `dropped entries are a gap` 9.7 s.
+- `AGENTS.md` on `main` (:1853-1856): `59 passed (3.0m)`, the task 220 s, on 2026-11-23 at a load
+  average of 126 to 127 on 20 CPUs; `an entry over 1 MiB` 35.0 s.
+- The gate in runner form on `b00d02d` (2026-11-23, 04:55 to 05:03 CET, a load average of 110.75
+  at the start and 116.83 at the end): `59 passed (1.6m)`; the three slowest `an entry over 1
+  MiB` 16.0 s, `adversary: a refused token on the stream stops the page` 15.2 s and `fixes: the
+  requests list follows a new row at its end and stays where a reader scrolled` 6.4 s; `npm ci`
+  printed `added 3 packages in 7s`. The same run: `test step: 41.0 s of its budget of 120 s`,
+  `tls test step: 19.9 s of its budget of 120 s`.
+- The gate in runner form on the release commit `9f096f3` (2026-11-23, 05:19 to 05:24 CET, a load
+  average of 90.35 before and 53.02 after): `59 passed (40.0s)`; the two slowest `adversary: a
+  refused token on the stream stops the page` 13.5 s and `an entry over 1 MiB` 8.1 s; `npm ci`
+  printed `added 3 packages in 3s`. The same run: `test step: 22.5 s of its budget of 120 s`,
+  `tls test step: 8.7 s of its budget of 120 s`, `task check exit 0 in 302 s`.
 
-What the step does today, on `main` and on `impl/round2-view` alike (neither round-2 branch
-changes `taskfiles/view-test.yml`, `view-tests/playwright.config.mjs`,
-`view-tests/tests/fixture.mjs` or `crates/view-fixture/src`):
+What the step does today, on `main` at `ff6431f` (no commit since `0f0c157` changed
+`taskfiles/view-test.yml`, `view-tests/playwright.config.mjs`, `view-tests/tests/fixture.mjs`,
+`crates/view-fixture/src` or `.github/workflows/check.yml`: `git diff --stat 0f0c157 ff6431f` over
+them is empty):
 
-- `taskfiles/view-test.yml`:25 builds `surf-agent`, `surf-session` and `surf-view-fixture`; :26
+- `taskfiles/view-test.yml`:26 builds `surf-agent`, `surf-session` and `surf-view-fixture`; :27
   runs `npm --prefix view-tests ci --prefer-offline`, which reaches the registry when the npm
-  cache does not hold the pin; :27 runs `npx playwright test --workers=2`.
+  cache does not hold the pin; :28 runs `npx playwright test --workers=2`.
 - The step prints no budget line and no ten slowest tests. Its reporter is `list`
   (`view-tests/playwright.config.mjs`:12), which writes no file of per-test times.
 - `view-tests/playwright.config.mjs`:13 sets `timeout: 90_000`, over the rule's 60 s. Six tests
-  set `test.setTimeout(120_000)`: `adversary-detail.spec.mjs`:287, `adversary-page.spec.mjs`:75 and
-  :104, `first-page.spec.mjs`:405, :431 and :474. One sets 60,000 (`adversary-page.spec.mjs`:148).
+  set `test.setTimeout(120_000)`: `adversary-detail.spec.mjs`:292, `adversary-page.spec.mjs`:75 and
+  :109, `first-page.spec.mjs`:434, :460 and :503. One sets 60,000 (`adversary-page.spec.mjs`:153).
 - Each test starts its own `surf-view-fixture` (`view-tests/tests/fixture.mjs`:220-227, the
   fixture `surf`), a page server, `surfd` in process and sessions; `startFixture` (:208-218) starts
   more in one test.
 - `adversary: a refused token on the stream stops the page` waits a fixed 12 s
-  (`adversary-page.spec.mjs`:166, `page.waitForTimeout(12_000)`).
+  (`adversary-page.spec.mjs`:171, `page.waitForTimeout(12_000)`).
 - `view-tests/tests` holds 12 assertions with `timeout: 2000`: 6 in `first-page.spec.mjs`, 3 in
   `detail.spec.mjs`, 3 in `adversary-detail.spec.mjs` (`git grep -c "timeout: 2000"
-  view-tests/tests`, the same on both trees). One of them failed once at a load of 110
-  (`story:slow-tests-at-small-bounds`).
+  view-tests/tests`, the same on `impl/round2-view` and on `main` at `ff6431f`). One of them
+  failed once at a load of 110 (`story:slow-tests-at-small-bounds`).
 
 ## Decisions taken
 
-- D246: the tree above.
+- D246: the tree above, moved by D302.
 - D247: the budget sentence above.
 - D253 (replaces D248): the start of one `surf-view-fixture` is measured first. If its median
-  times the 54 page tests is over 10 s, the tests that use no process-wide part of the fixture
+  times the 59 page tests is over 10 s, the tests that use no process-wide part of the fixture
   share one fixture process per run; otherwise each test keeps its own, and `AGENTS.md` records
   why. Statement 6.
 - D249: `npm ci` leaves the timed step. A setup task runs it only when
@@ -95,6 +109,12 @@ changes `taskfiles/view-test.yml`, `view-tests/playwright.config.mjs`,
 - D251: every time target here is read on three consecutive runs that print `/proc/loadavg`
   before and after. The story closes on those three runs at the load that is present, and names
   that load. A later run over the budget at a higher load is a new defect with its own story.
+- D302: round 2 went to `main` when its gate was green, so this story is built on `main`
+  (`ff6431f`), not on `wave/round-2`, before the next feature.
+- D307: the sentences that sum the steps name four (`test step`, `tls test step`, the
+  conformance step, the page-test step); D247 stays 120 s per step. Statement 8, acceptance 9.
+- D308: statements that described a merge order that has happened are written to the state of
+  `main` ("Overlap and order"); no remedy changes.
 
 ## Change
 
@@ -108,7 +128,7 @@ Statement 1 comes first; the others follow in any order.
    run as a whole. Then a script, not committed and started without the `slot` prefix, starts
    `target/debug/surf-view-fixture` 10 times in a row, each from its spawn to its ready line (its
    first line of JSON) and then closes its input. It prints `cat /proc/loadavg` before and after,
-   the median of the 10 starts, and the sum for the tree: the median times 54, the count of page
+   the median of the 10 starts, and the sum for the tree: the median times 59, the count of page
    tests. That sum decides statement 6.
 2. `view-tests/playwright.config.mjs`: `timeout: 60_000`. The six `test.setTimeout(120_000)`
    become at most `60_000`; the one at 60,000 stays.
@@ -135,28 +155,28 @@ Statement 1 comes first; the others follow in any order.
    evidence names the branch taken.
 
    The process-wide parts of a fixture. Commands come over its standard input
-   (`crates/view-fixture/src/main.rs`:184-231) from the process that spawned it (`fixture.mjs`:21
-   and :67). One `surfd` lists every session it holds. `stop-surfd` (`main.rs`:215-218) drops the
-   one daemon. `cut` and `mend` (`main.rs`:219-226) act on the one pipe. The log bounds are
-   options of the process (`--entries-per-session`, `--bytes-total`, `main.rs`:117-131). A test
+   (`crates/view-fixture/src/main.rs`:187-231) from the process that spawned it (`fixture.mjs`:21
+   and :67). One `surfd` lists every session it holds. `stop-surfd` (`main.rs`:216-219) drops the
+   one daemon. `cut` and `mend` (`main.rs`:220-227) act on the one pipe. The log bounds are
+   options of the process (`--entries-per-session`, `--bytes-total`, `main.rs`:121-135). A test
    uses a process-wide part when it calls `stop-surfd`, `cut` or `mend`, starts a fixture with
    other log bounds, or reads the list of sessions as a whole: its count, a session by its place
    in it, or a locator over every entry of it.
 
-   The tests that use one, on the tree (21 of 54):
+   The tests that use one, on the tree (23 of 59):
    - `acceptance.spec.mjs`:40, :48, :67 and :82: a count of the listed sessions, through
      `twoSessions` (:30-35).
    - `adversary-now.spec.mjs`:158: a locator over every title of the list (:185).
-   - `adversary-page.spec.mjs`:52 (a count, :56), :74 (`cut` and `mend`, :79-85), :103 (other log
-     bounds, :105; `cut` and `mend`, :123-125) and :147 (`cut` and `mend`, :159-163).
-   - `first-page.spec.mjs`:66, :78, :94 and :106 (counts, :70 to :117), :120 (a count, :126), :256
-     (`stop-surfd`, :260), :264 (a place in the list, :281), :293 (a place in the list, :331),
-     :364 (`cut` and `mend`, :377-380), :404 (`cut` and `mend`, :409-415) and :430 (other log
-     bounds, :433 and :453).
+   - `adversary-page.spec.mjs`:52 (a count, :56), :74 (`cut` and `mend`, :79-85), :108 (other log
+     bounds, :110; `cut` and `mend`, :128-130) and :152 (`cut` and `mend`, :164-168).
+   - `first-page.spec.mjs`:95, :107, :123 and :135 (counts, :99 to :146), :149 (a count, :155),
+     :285 (`stop-surfd`, :289), :293 (a place in the list, :310), :322 (a place in the list,
+     :360), :393 (`cut` and `mend`, :406-409), :433 (`cut` and `mend`, :438-444), :459 (other log
+     bounds, :462 and :482), :524 (a count, :530) and :550 (`cut` and `mend`, :555-558).
    - `now.spec.mjs`:107: a locator over every title of the list (:112).
 
-   Branch "shared", when the sum is over 10 s. The 33 other tests share one `surf-view-fixture`
-   per run; the 21 tests above keep a fixture of their own each, as today.
+   Branch "shared", when the sum is over 10 s. The 36 other tests share one `surf-view-fixture`
+   per run; the 23 tests above keep a fixture of their own each, as today.
    - `crates/view-fixture` (Rust): an option `--listen` binds a listener on 127.0.0.1, port 0, and
      the ready line gains `"control":"127.0.0.1:<port>"`. Each connection to it takes the
      commands `open`, `agent` and `kill` in the protocol of standard input, one JSON answer per
@@ -168,58 +188,65 @@ Statement 1 comes first; the others follow in any order.
      hands its ready line to the workers in an environment variable; the teardown closes its input
      and waits for it to exit.
    - `view-tests/tests/fixture.mjs` gets a second way to reach a fixture: the fixture `surf`
-     connects to the shared process's listener. The 21 tests above take the fixture `ownSurf`,
+     connects to the shared process's listener. The 23 tests above take the fixture `ownSurf`,
      today's start of a process per test, or `startFixture`.
    - `fixture.mjs` appends one line per start of a `surf-view-fixture` to
      `.out/view-test/fixture-starts.txt`, which the step removes at its start.
 
    Branch "own", when the sum is 10 s or less. Each test keeps its own fixture. `AGENTS.md`, in the
    paragraph of the page tests' times, records the reason in one sentence: the median start, the
-   sum for the 54 tests, the load before and after, and the command that printed them.
+   sum for the 59 tests, the load before and after, and the command that printed them.
 7. The largest costs, each with its time now and expected:
-   - `adversary: a refused token on the stream stops the page` (`adversary-page.spec.mjs`:147-171,
-     15.5 s at a load of 106 to 140). Its `page.waitForTimeout(12_000)` (:166) waits to see that no
-     request follows the refusal. The page's stream asks again after `FIRST_DELAY`, 500 ms,
-     doubling to `LAST_DELAY`, 5,000 ms (`crates/view/web/stream.js`:9-10 and :138-141), so a page
-     that asks again does so within 500 ms. The wait becomes 2,000 ms, four times `FIRST_DELAY`,
-     and its comment says so. Expected: under 5 s.
-   - `an entry over 1 MiB` (`first-page.spec.mjs`:473-490, 29.7 s at a load of 106 to 140). The
-     address of 60,000 bytes and the answer over 1,048,576 bytes are its claim, so the size stays.
-     Statement 1 shows where its time goes. The page step's `cargo build` reads the overrides
-     `story:test-step-holds-with-tls` statement 3 puts in `.cargo/config.toml`. If it is over 20 s
-     in one of the three runs of acceptance 8, the unit stops and reports, and its size is decided
-     in a story of its own.
+   - `adversary: a refused token on the stream stops the page` (`adversary-page.spec.mjs`:152-175,
+     15.5 s at a load of 106 to 140 on `impl/round2-view`; 15.2 s on `b00d02d` at a load of 111
+     to 117 and 13.5 s on `9f096f3` at a load of 90 to 53). Its `page.waitForTimeout(12_000)`
+     (:171) waits to see that no request follows the refusal. The page's stream asks again after
+     `FIRST_DELAY`, 500 ms, doubling to `LAST_DELAY`, 5,000 ms (`crates/view/web/stream.js`:9-10
+     and :138-141), so a page that asks again does so within 500 ms. The wait becomes 2,000 ms,
+     four times `FIRST_DELAY`, and its comment says so. Expected: under 5 s.
+   - `an entry over 1 MiB` (`first-page.spec.mjs`:502-519, 29.7 s at a load of 106 to 140 on
+     `impl/round2-view`; 35.0 s at a load of 126 to 127, `AGENTS.md`:1856; 16.0 s on `b00d02d` at
+     111 to 117 and 8.1 s on `9f096f3` at 90 to 53). The address of 60,000 bytes and the answer
+     over 1,048,576 bytes are its claim, so the size stays. Statement 1 shows where its time
+     goes. The page step's `cargo build` reads the overrides `story:test-step-holds-with-tls`
+     statement 3 puts in `.cargo/config.toml`. If it is over 20 s in one of the three runs of
+     acceptance 8, the unit stops and reports, and its size is decided in a story of its own.
    - Waits. A test that waits for the view to show an entry waits on that entry under the
      expect timeout of 10 s (`playwright.config.mjs`:14) or the test's own timeout, never a fixed
      sleep. A `timeout: 2000` stays only where a sentence of a story or a document states 2 s,
      and a comment beside it names that sentence as path:line. Two such sentences are known:
-     `.engineering/planning/story/view-first-page.md`:226-227 ("latest follows", `first-page.spec.mjs`:173-176)
-     and `.engineering/planning/story/view-detail-panel.md`:157-158 ("a go adds a row live",
-     `detail.spec.mjs`:164). Every other `timeout: 2000` goes.
-8. The sum (D247). `task test` (`Taskfile.yml`:325-331 on `main`) also writes its seconds to
-   `.out/test-step.seconds`; the conformance step writes `.out/conform-step.seconds`
+     `.engineering/planning/story/view-first-page.md`:225-226 ("latest follows",
+     `first-page.spec.mjs`:202-205) and `.engineering/planning/story/view-detail-panel.md`:156-157
+     ("a go adds a row live", `detail.spec.mjs`:164). Every other `timeout: 2000` goes.
+8. The sum (D247). `task test` (`Taskfile.yml`:366-372 on `main`) also writes its seconds to
+   `.out/test-step.seconds`; `task test-tls` (:424-430) writes its seconds to
+   `.out/tls-test-step.seconds`; the conformance step writes `.out/conform-step.seconds`
    (`story:conformance-step-within-budget`); the page step writes `.out/page-step.seconds`. A task
-   `step-budgets`, the last of `check`, POSIX sh, prints `three steps: N s (test step A s,
-   conformance step B s, page step C s)` and fails naming the file when one of the three is
-   missing. It fails on no budget of its own.
-9. `AGENTS.md`: the bullet of `task view-test` (:1055-1062 on `main`) says the setup task, the
+   `step-budgets`, the last of `check` (`Taskfile.yml`:437-462), POSIX sh, prints `four steps: N s
+   (test step A s, tls test step B s, conformance step C s, page step D s)` and fails naming the
+   file when one of the four is missing. It fails on no budget of its own.
+9. `AGENTS.md`: the bullet of `task view-test` (:1433-1440 on `main`) says the setup task, the
    timed part, the budget line, the ten slowest and the JUnit file; the paragraph of the page
-   tests' times (:1319-1320 on `main`, rewritten by `impl/round2-view`) gains the three runs of
-   acceptance 8 with their loads; the description of `task check` (:964-974 on `main`) names `step-budgets`.
+   tests' times (:1842-1856 on `main`) gains the three runs of acceptance 8 with their loads; the
+   description of `task check` (:1306-1326 on `main`) names `step-budgets`.
 
 ### Overlap and order
 
-- `impl/round2-view` changes `AGENTS.md` at the page tests' count (:631-633 on `main`) and their
-  times (:1319-1320 on `main`); this story writes over the merged text.
-- `wave/tls-1` changes `Taskfile.yml` in the list of `check` (:338-359 on `main`) and adds the
-  task `slow:` after :359. `step-budgets` goes in as the last item of `check`; the merge keeps
-  both.
-- `wave/tls-1` changes `AGENTS.md` in the paragraph of `task check` (:966-968 and :977-980 on
-  `main`), which statement 9 also changes, and inserts bullets before the bullet of `task
-  view-test` (after :1054 on `main`), next to statement 9's edit of that bullet. The merge keeps
-  both sides of each.
-- `story:test-step-holds-with-tls` changes `Taskfile.yml` at `generated-compare` and
-  `conform-totals`, not at `test`'s budget lines (:327 and :330).
+What is still open on `main` and touches the same files (the scopes of the stories not
+`implemented` on `ff6431f`, round 2's eleven stories left out: their code is on `main`). No open
+story touches `view-tests/`, `crates/view-fixture`, `taskfiles/view-test.yml` or
+`.github/workflows/check.yml`.
+
+- `Taskfile.yml`: `story:test-step-holds-with-tls` changes it at `generated-compare` and
+  `conform-totals`, not at `test`'s budget lines (:368 and :371) that statement 8 extends;
+  `story:agent-cookie-public-suffixes` adds the step `psl-check` to the list of `check`
+  (:437-462), where `step-budgets` goes last, and a merge keeps both;
+  `story:conformance-lock-and-lints` (draft) adds a clippy run on `conformance/` without naming
+  its task. By their bodies neither changes `test`, `test-tls` or `view-test`.
+- `AGENTS.md`: `story:test-step-holds-with-tls` (active), `story:conformance-lock-and-lints`,
+  `story:tls-tests-as-tables` and `story:session-argument-checks` (drafts); this story changes
+  only the bullets of `task view-test` and `task check` and the paragraph of the page tests'
+  times.
 - `story:conformance-step-within-budget` lands on the same tree first: statement 8 reads its
   seconds file.
 
@@ -248,19 +275,19 @@ Statement 1 comes first; the others follow in any order.
    is in the evidence; each `timeout: 2000` left has a comment naming its sentence as path:line;
    `git grep -n waitForTimeout view-tests/tests` shows only the wait of 2,000 ms.
 8. Three consecutive runs of `slot --timeout 15m task --taskfile taskfiles/view-test.yml
-   view-test` on the story's commit, each with `cat /proc/loadavg` before and after: all 54 tests
+   view-test` on the story's commit, each with `cat /proc/loadavg` before and after: all 59 tests
    pass, each prints its budget line with N within the budget, and no test takes over 20 s in the
    JUnit file. The evidence names the load of the three runs (D251).
-9. `slot --timeout 30m task check > .out/check.log 2>&1` on the story's commit on `wave/round-2`
-   passes, and `.out/check.log` holds the line `three steps: N s (test step A s, conformance step
-   B s, page step C s)`. A, B and C equal the numbers of the lines `test step: …`, `conformance
-   step: …` and `page step: …` in the same log, and N is their sum. The evidence names the commit
-   and quotes the four lines.
+9. `slot --timeout 30m task check > .out/check.log 2>&1` on the story's commit on `main` passes,
+   and `.out/check.log` holds the line `four steps: N s (test step A s, tls test step B s,
+   conformance step C s, page step D s)`. A, B, C and D equal the numbers of the lines `test step:
+   …`, `tls test step: …`, `conformance step: …` and `page step: …` in the same log, and N is
+   their sum. The evidence names the commit and quotes the five lines.
 10. Statement 6: the evidence holds statement 1's output of the 10 starts (median, sum, both load
     readings) and names the branch taken, "shared" or "own".
     - "shared": after each run of acceptance 8, `wc -l < .out/view-test/fixture-starts.txt`
-      prints 23: 1 shared process, 1 for each of the 21 tests of statement 6, and 1 more for the
-      second fixture of `first-page.spec.mjs`:430. On the listener, `stop-surfd`, `cut` and `mend`
+      prints 25: 1 shared process, 1 for each of the 23 tests of statement 6, and 1 more for the
+      second fixture of `first-page.spec.mjs`:459. On the listener, `stop-surfd`, `cut` and `mend`
       are answered `{"error":"command"}`, shown by a test of `crates/view-fixture/tests`.
     - "own": `grep -n` on `AGENTS.md` shows the sentence of statement 6 with its median, its sum
       and its load, and the command that printed them.
@@ -271,8 +298,8 @@ Statement 1 comes first; the others follow in any order.
 
 - No more workers than 2, no retries, no raised timeout or budget.
 - No change of the view's product code; the plant of acceptance 6 is removed.
-- No change of the root workspace's test step beyond writing its seconds file:
-  `story:test-step-holds-with-tls`.
+- No change of the root workspace's test step beyond writing its seconds file, nor of the TLS
+  test step beyond writing its own: `story:test-step-holds-with-tls`.
 - No browser install in the step; the forge's step at `.github/workflows/check.yml`:134 stays.
 - No Python: the setup task and `step-budgets` are POSIX sh; the tests stay JavaScript.
 

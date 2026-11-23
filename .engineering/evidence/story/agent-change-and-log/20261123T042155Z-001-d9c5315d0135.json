@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T04:21:55Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-change-and-log",
+  "kind": "story",
+  "revision": 18,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "file at b4a7481: crates/session/tests/change_and_log.rs lines 684 to 767; crates/answer/tests/golden",
+    "reference": "case_15 asserts the press answer holds changed page from the login page to the session page and one + text line with the server message, and log holds path 7 of 7 with 7 actions, back among them; golden files changed-controls, changed-none, changed-page"
+  }
+}

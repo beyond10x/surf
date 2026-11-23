@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T04:21:52Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-follow-links",
+  "kind": "story",
+  "revision": 23,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate: slot --timeout 25m task check-runner on b00d02d (impl/round2-commands), 2026-11-23 04:55 to 05:03 CET, load 110.75 at the start, 116.83 at the end",
+    "reference": "19 numbered cases passed: surf-page base_url case_01 to case_03, surf-session follow case_04 to case_19; drift::drift and drift::planted_drift passed; tasks::every_task passed in 1.828 s; agent-tasks: 4 tasks, 4 pass, 0 fail, 0 skipped; task link pass 5 calls 2 connections; no raise line; slowest story test follow::a_now_block_over_its_byte_bound_shows_its_first_lines 0.715 s, none over 5 s; exit 0 in 472 s; 1224 tests: 1224 passed, 0 failed, 0 ignored (cargo-nextest 1222, doc tests 2); test step: 41.0 s of its budget of 120 s"
+  }
+}

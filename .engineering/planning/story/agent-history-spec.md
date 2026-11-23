@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-history-spec
 kind: story
-status: active
+status: implemented
 title: Specify session history per tab in the navigator, and GoBack and GoForward
 summary: surf.navigation holds the session history entries of each tab and its current entry; a push drops the entries after it; traversal by one step, refused at either end and for a POST entry; agent GoBack and GoForward map to it.
 relations:
@@ -35,10 +35,11 @@ scope:
   path: spec/ess-inputs.yaml
 - confidence: cited
   path: spec/scenarios
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
+- {from: "active", to: "implemented", at: "2026-11-23T04:21:56Z", actor: "human:operator", revision: 14, decided_on: {"recorded":{"test_result":1,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 

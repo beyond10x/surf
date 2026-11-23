@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-follow-links
 kind: story
-status: active
+status: implemented
 title: now lists links, and follow <handle> navigates to one
 summary: The session lists the links of the current document with deterministic handles, labels, hidden flags and resolved targets, and follows one by its handle.
 relations:
@@ -70,10 +70,11 @@ scope:
   path: spec/domains/agent.yaml
 - confidence: inferred
   path: website/docs/drive-from-an-agent.md
-revision: 23
+revision: 24
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-11-23T04:21:52Z", actor: "human:operator", revision: 24, decided_on: {"recorded":{"test_result":1,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 

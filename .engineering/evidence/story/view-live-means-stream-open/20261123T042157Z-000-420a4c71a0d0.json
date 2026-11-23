@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T04:21:57Z",
+  "actor": "human:operator",
+  "artifact": "story:view-live-means-stream-open",
+  "kind": "story",
+  "revision": 20,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate: slot --timeout 25m task check-runner on b00d02d (impl/round2-commands), 2026-11-23 04:55 to 05:03 CET, load 110.75 at the start, 116.83 at the end",
+    "reference": "first-page.spec.mjs new tests passed: the word is connecting until the stream is open 790ms, the word is live after the load of the opening is drawn 2.0s, after a reconnect the word is live when its load is drawn 3.2s, no render of the timeline follows live 1.7s, no word is written while the page does not follow 2.4s; adversary-page.spec.mjs:74 passed in 5.1s, the one story test over 5 s; 59 passed (1.6m); exit 0 in 472 s; 1224 tests: 1224 passed, 0 failed, 0 ignored (cargo-nextest 1222, doc tests 2); test step: 41.0 s of its budget of 120 s"
+  }
+}

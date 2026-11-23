@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T04:21:59Z",
+  "actor": "human:operator",
+  "artifact": "story:view-acceptance",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate: slot --timeout 25m task check-runner on b00d02d (impl/round2-commands), 2026-11-23 04:55 to 05:03 CET, load 110.75 at the start, 116.83 at the end",
+    "reference": "surf-view-fixture acceptance 3 tests passed: api_sessions_lists_both_with_token_and_401_without 0.817 s, request_with_another_host_is_refused 0.716 s, events_deliver_a_go_in_order 0.770 s; acceptance.spec.mjs 4 tests passed: page lists both sessions 2.5s, page line and three links after go 3.4s, latest marker moves on second go 3.2s, script in title is shown as text 2.8s; none over 5 s; 59 passed (1.6m); exit 0 in 472 s; 1224 tests: 1224 passed, 0 failed, 0 ignored (cargo-nextest 1222, doc tests 2); test step: 41.0 s of its budget of 120 s"
+  }
+}

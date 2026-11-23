@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:view-now-panel
 kind: story
-status: active
+status: implemented
 title: 'What can be done now: the session''s links and title, at the playhead'
 summary: The answer's title and now block reach the view; a centre panel lists the elements grouped by kind with handle, label, target and visibility, as after the selected action.
 relations:
@@ -36,10 +36,11 @@ scope:
   path: view-tests/tests/now.spec.mjs
 - confidence: inferred
   path: website/docs/status.md
-revision: 14
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:15Z", actor: "human:timo", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-23T04:21:59Z", actor: "human:operator", revision: 15, decided_on: {"recorded":{"test_result":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 

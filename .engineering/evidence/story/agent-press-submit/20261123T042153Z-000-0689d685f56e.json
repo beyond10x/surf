@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T04:21:53Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-press-submit",
+  "kind": "story",
+  "revision": 22,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate: slot --timeout 25m task check-runner on b00d02d (impl/round2-commands), 2026-11-23 04:55 to 05:03 CET, load 110.75 at the start, 116.83 at the end",
+    "reference": "23 numbered cases passed: surf-session press case_01 to case_23 (case_23 0.223 s); 22 adversary_press tests passed, among them adversary_press_a_host_name_of_a_local_address_from_a_public_page_is_refused and adversary_press_an_unresolved_action_shows_no_userinfo; surf forms case_05 to case_20 of agent-form-port passed; tasks::every_task passed in 1.828 s; task search pass 6 calls 2 connections; no raise line; slowest adversary_press_an_address_of_exactly_64_kib_is_submitted_and_one_byte_more_is_refused 0.525 s, none over 5 s; exit 0 in 472 s; 1224 tests: 1224 passed, 0 failed, 0 ignored (cargo-nextest 1222, doc tests 2); test step: 41.0 s of its budget of 120 s"
+  }
+}

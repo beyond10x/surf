@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T04:21:53Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-fill-pick",
+  "kind": "story",
+  "revision": 25,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "file at b4a7481: AGENTS.md section The gate's numbers, lines 1648 to 1653; Taskfile.yml line 76",
+    "reference": "base 169 scenario(s) (24 authored), 48 refusal(s) after round 1; since agent-fill-pick 170 scenario(s) (24 authored), 48 refusal(s); REFUSALS_MAX 56 now, equal to the refused count after agent-history-spec"
+  }
+}

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-change-and-log
 kind: story
-status: active
+status: implemented
 title: changed in every answer, text changes, and log
 summary: The session computes what the last action changed over actionable elements and text, prints it in every answer, and log prints the whole action path.
 relations:
@@ -39,10 +39,11 @@ scope:
   path: generated/rust
 - confidence: inferred
   path: spec/domains/agent.yaml
-revision: 18
+revision: 19
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 7}
+- {from: "active", to: "implemented", at: "2026-11-23T04:21:55Z", actor: "human:operator", revision: 19, decided_on: {"recorded":{"test_result":1,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 

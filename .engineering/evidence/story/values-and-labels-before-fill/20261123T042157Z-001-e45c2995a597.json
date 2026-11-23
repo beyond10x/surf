@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T04:21:57Z",
+  "actor": "human:operator",
+  "artifact": "story:values-and-labels-before-fill",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "file at b4a7481: docs/surf-command.md lines 44 to 45, crates/session/src/entries.rs lines 22 to 24 and 52 to 53, AGENTS.md lines 1648 to 1650",
+    "reference": "a password element prints (set) or (empty), never the value; label cut at TITLE_ENTRY_BYTES 1024 with label_bytes; 169 scenario(s) (24 authored), 48 refusal(s) after round 1, unchanged by this story"
+  }
+}

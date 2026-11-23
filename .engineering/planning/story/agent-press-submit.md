@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-press-submit
 kind: story
-status: active
+status: implemented
 title: press submits a form and the session lands on the answer
 summary: press <handle> on a submit button submits through the document and navigates with GET or POST; the test server receives the encoded entries.
 relations:
@@ -52,10 +52,11 @@ scope:
   path: spec/domains/agent.yaml
 - confidence: inferred
   path: website/docs/drive-from-an-agent.md
-revision: 22
+revision: 23
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 5}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:10Z", actor: "human:timo", revision: 6}
+- {from: "active", to: "implemented", at: "2026-11-23T04:21:54Z", actor: "human:operator", revision: 23, decided_on: {"recorded":{"test_result":1,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 
