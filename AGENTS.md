@@ -1624,10 +1624,9 @@ that load. Since the adversary pass on `story:view-now-panel` it prints `53 pass
 `adversary-now.spec.mjs` 0.7 to 1.4 s each and `an entry over 1 MiB` 17.7 s at that load.
 With the seventh case of `adversary-now.spec.mjs` (a control in an event field, named in the
 mark's `title`) and the five cases of `story:view-live-means-stream-open` in
-`first-page.spec.mjs` it prints `59 passed (2.2m)` (the task 178 s) on 2026-11-23 at a load
-average of 104 to 173 on 20 CPUs, the five cases 0.7 to 2.0 s each and the slowest case,
-`fixes: the requests list follows a new row at its end and stays where a reader scrolled`,
-15.6 s at that load (`an entry over 1 MiB` 12.1 s).
+`first-page.spec.mjs` it prints `59 passed (3.0m)` (the task 220 s) on 2026-11-23 at a load
+average of 126 to 127 on 20 CPUs, the five cases 5.7 to 11.1 s each and the slowest case,
+`an entry over 1 MiB`, 35.0 s at that load.
 `html-conformance`, the last
 step of `check`: `html-conformance: 9107 cases, 9095 run, 8428 passed` (82 encoding cases,
 7,046 tokenizer cases and 1,300 tree construction cases), with `tag markup 1979/1979/1979`,

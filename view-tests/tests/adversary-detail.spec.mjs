@@ -43,10 +43,10 @@ test("adversary-detail: a click on a mark beside its short name selects that eve
   await expect(segments(page)).toHaveCount(2);
   const mark = segments(page).nth(1).locator("li.mark").filter({ hasText: /^ResponseReceived$/ });
   await expect(mark).toBeVisible();
-  // The page draws the timeline again when its stream opens (view.js, open()), which can be after
-  // #live-word reads "live": a mark found and then measured in two steps may be the one taken
-  // away. Both boxes are read in one step of the page, from a mark still in the document, and
-  // read again until they are.
+  // #live-word reads "live" once the load of the stream's opening is drawn (view.js, open()), but
+  // each later draw of the timeline (an event of the stream) replaces its marks: a mark found and
+  // then measured in two steps may be the one taken away. Both boxes are read in one step of the
+  // page, from a mark still in the document, and read again until they are.
   let line = null;
   await expect
     .poll(async () => {
