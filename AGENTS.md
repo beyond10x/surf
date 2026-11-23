@@ -1601,7 +1601,23 @@ is unset); `adversary_events` gives `surfd` an answer timeout of 0.5 s and a ser
 1.5 s after it read the request, then sends `look` until the path shows the `go`, instead of a
 timeout of 2 s, a server that answered after 4 s and a sleep of 5 s. Each step of the order it
 tests is still 1 s or more apart from the next, so the test does not depend on the runner's
-speed. In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
+speed. Since `story:test-harness-fewer-processes` the two limits of `surf-view` `http` that a
+case waits out are 250 ms: the write limit of `case_23`, which keeps its lower bounds `elapsed >=
+write`, and the receive limit of `case_20`, whose lower bound is 225 ms, 90 % of the limit as
+900 ms was of 1 s. `surfd` `in_process::case_09` keeps its `session_ready_timeout` of 1 s and
+`case_10` its `session_answer_timeout` of 1 s: `surfd` applies both to the `open` exchange
+(`crates/surfd/src/daemon.rs`), so a freshly started stand-in would have to answer within 250 ms
+in the pool, less than 10 times the time the test takes alone.
+`surfd_started_by_hand_writes_no_view_token_unless_asked` runs its two `surfd` at the same time,
+each in a directory of its own. The drop of a test directory of `surfd` and `surf-session`
+(`tests/common/mod.rs`) kills only the case's processes: those whose `environ` holds
+`STAND_IN_DIR=<its control directory>` (`surfd`) or `XDG_RUNTIME_DIR=<its runtime directory>`
+(`surf-session`), never the test process itself. A directory in which a helper started a built
+program (`agent()`, `Surfd::start`, `Started::start`; each calls `mark_built_program`) reads the
+`environ` of every process of the host, since such a program can leave the test process's tree.
+Any other directory reads only the descendants of the test process, found through
+`/proc/<pid>/task/<tid>/children` followed down, and every process of the host when one of those
+files cannot be read. In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
 872 passed, 32 skipped`; the 32 are hosts outside ASCII, listed in
 `crates/url/tests/data/SKIPPED`. `view-stream-check`: `view-stream-check: 19 event name(s),
 each a message of the AsyncAPI projection`. `view-test`: `38 passed (15.8s)`; 12.9 s of it are
