@@ -1035,6 +1035,69 @@ fn d283_a_follow_from_a_local_page_redirected_by_a_public_server() {
     );
 }
 
+// --- Decision D293: the rule follows where the fetch connected first --------------------------
+
+/// D293: `go` to X, a name not local by its text that resolves to `127.0.0.1` (a development
+/// server reached by a name), which redirects to Y, a name that resolves there too. The fetch
+/// connected first to a local address, so the entry of Y is fetched again as `go` fetches it:
+/// `back` and, after a step further back, `forward` load it.
+#[test]
+fn d293_an_entry_a_name_resolving_local_redirected_to_is_fetched_as_go_fetches() {
+    let site = Site::start();
+    let rebind = Arc::new(Rebind::new("127.0.0.1", 0, "127.0.0.1"));
+    let (mut session, token) = over_pages(&site, &rebind, &public_p());
+    let x = format!("http://dev.test:{}/to-b", site.port);
+    let y = format!("http://rebind.test:{}/b", site.port);
+    lands_with(&mut session, &token, "go", &[("url", &x)], &loaded(&y, "B"));
+    lands_with(
+        &mut session,
+        &token,
+        "go",
+        &[("url", &public_p())],
+        &loaded(&public_p(), "P"),
+    );
+    lands(&mut session, &token, "back", &loaded(&y, "B"));
+    lands(&mut session, &token, "back", &loaded(&public_p(), "P"));
+    lands(&mut session, &token, "forward", &loaded(&y, "B"));
+    assert_eq!(
+        site.lines(),
+        [
+            "GET /to-b HTTP/1.1",
+            "GET /b HTTP/1.1",
+            "GET /b HTTP/1.1",
+            "GET /b HTTP/1.1"
+        ]
+    );
+}
+
+/// D293, the other side: `go` to X at a public address literal, whose first connection is so
+/// public, redirected to Y, a name public then; after a `go` to P, Y's name resolves to
+/// `127.0.0.1`, and `back` to Y is refused `forbidden-destination` with no local address dialed.
+#[test]
+fn d293_a_redirect_after_a_public_first_connection_keeps_the_public_rule() {
+    let site = Site::start();
+    let rebind = Arc::new(Rebind::new("93.184.216.35", 1, "127.0.0.1"));
+    let (mut session, token) = over_pages(&site, &rebind, &public_p());
+    let x = format!("http://93.184.216.40:{}/to-b", site.port);
+    let y = format!("http://rebind.test:{}/b", site.port);
+    lands_with(&mut session, &token, "go", &[("url", &x)], &loaded(&y, "B"));
+    lands_with(
+        &mut session,
+        &token,
+        "go",
+        &[("url", &public_p())],
+        &loaded(&public_p(), "P"),
+    );
+    refused_forbidden(
+        &mut session,
+        &token,
+        "back",
+        &loaded(&public_p(), "P"),
+        &rebind,
+    );
+    assert_eq!(site.lines(), ["GET /to-b HTTP/1.1", "GET /b HTTP/1.1"]);
+}
+
 /// Step I, question 3, for a `GET` `press` from the local page L, its form's action X redirected
 /// by a public server to Y.
 #[test]

@@ -181,13 +181,16 @@
 //!
 //! The session's own checks of a target ("Following a link") are not made again: they read the
 //! address text, and an entry's address passed them when the entry was made. What a name
-//! resolves to is not settled by that, so the fetch's rule is applied again (decisions D279 and
-//! D283): the run goes out under the rule of a page that counts as public when a public page or
-//! a public server chose the entry's address, by link, form or redirect: an entry a `follow` or
-//! a `press` made from such a page, and an entry a redirect moved to from an address that counts
-//! as public, whatever command started it. Only an entry the agent's own address reached without
-//! a redirect, or by a redirect from a local address, goes out under the rule of `go`, whatever
-//! page the session is on. A first request that rule refuses is
+//! resolves to is not settled by that, so the fetch's rule is applied again (decisions D279,
+//! D283 and D293): the run goes out under the rule of a page that counts as public when a public
+//! page or a public server chose the entry's address, by link, form or redirect: an entry a
+//! `follow` or a `press` made from such a page, and an entry a redirect moved to after the fetch
+//! connected first to a public address, whatever command started it. The session's transport
+//! notes where the fetch connected first ([`fetch`]); the text of the address asked for does
+//! not decide it, so a name that resolved to a local address counts as local. Only an entry the
+//! agent's own address reached without a redirect, or by a redirect after a first connection to
+//! a local address, goes out under the rule of `go`, whatever page the session is on. A first
+//! request that rule refuses is
 //! answered `did refused forbidden-destination`, status 1, with nothing recorded and the page
 //! and the path as they were ([`Kept`]), as for a `follow`. Otherwise the session records `<n>
 //! back` or `<n> forward`, and the answer is `did back` or `did forward` with the page it
@@ -318,7 +321,10 @@
 //! Since `story:agent-change-and-log` the session keeps what its last answer showed ("What
 //! changed"): two addresses and identities, and the handle, value and selected label of each
 //! control of the current document, values the element and option rows hold as well; it is
-//! replaced at each answer that shows the state.
+//! replaced at each answer that shows the state. Like the identities of the navigations made
+//! from a page that counts as public, the session keeps for the life of the session the
+//! identity of each navigation whose fetch connected first to a public address and was
+//! redirected ("Back and forward", decision D293).
 //!
 //! # The entries
 //!
@@ -370,7 +376,7 @@
 pub mod entries;
 pub mod process;
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io;
@@ -479,6 +485,7 @@ pub fn fetch_through(
     let dialing = Dialing {
         network,
         dialed: Cell::new(false),
+        first_local: Cell::new(None),
     };
     let result = surf::fetch_http_from(request, &surf_fetch::Limits::default(), &dialing, origin);
     if from_public
@@ -486,6 +493,19 @@ pub fn fetch_through(
         && matches!(result, Err(surf_fetch::Failure::ForbiddenDestination(_)))
     {
         FIRST_REQUEST.with(|first| first.refused.set(true));
+    }
+    // A response from another address than the one asked for came after a redirect.
+    if dialing.first_local.get() == Some(false)
+        && result
+            .as_ref()
+            .is_ok_and(|response| response.url != request.url.0)
+    {
+        FIRST_REQUEST.with(|first| {
+            first
+                .redirected_public
+                .borrow_mut()
+                .push(request.request_id.clone());
+        });
     }
     surf::answer(result)
 }
@@ -498,6 +518,10 @@ struct FirstRequest {
     from_public: Cell<bool>,
     /// That request was refused `ForbiddenDestination` before any connection.
     refused: Cell<bool>,
+    /// The requests of the run whose fetch connected first to a public address and answered
+    /// from another address, after a redirect (decision D293); the session takes them after
+    /// the run ([`Session::note_redirected_public`]).
+    redirected_public: RefCell<Vec<RequestId>>,
 }
 
 thread_local! {
@@ -505,14 +529,18 @@ thread_local! {
         FirstRequest {
             from_public: Cell::new(false),
             refused: Cell::new(false),
+            redirected_public: RefCell::new(Vec::new()),
         }
     };
 }
 
-/// A [`surf_fetch::Network`] that notes whether a connection was attempted.
+/// A [`surf_fetch::Network`] that notes whether a connection was attempted, and whether the
+/// first connection made went to a local address ([`surf_fetch::is_local`]), as the fetch's
+/// own rule judges it.
 struct Dialing<'a> {
     network: &'a dyn surf_fetch::Network,
     dialed: Cell<bool>,
+    first_local: Cell<Option<bool>>,
 }
 
 impl surf_fetch::Network for Dialing<'_> {
@@ -531,7 +559,12 @@ impl surf_fetch::Network for Dialing<'_> {
         timeout: std::time::Duration,
     ) -> io::Result<std::net::TcpStream> {
         self.dialed.set(true);
-        self.network.connect(address, timeout)
+        let connected = self.network.connect(address, timeout);
+        if connected.is_ok() && self.first_local.get().is_none() {
+            self.first_local
+                .set(Some(surf_fetch::is_local(address.ip())));
+        }
+        connected
     }
 }
 
@@ -766,6 +799,11 @@ pub struct Session<T> {
     /// it again under the same rule (decision D279); an entry made by `go` is not here. A
     /// traversal under the rule is noted too; it makes no entry, so it is never looked up.
     from_public: Vec<RequestId>,
+    /// The navigations whose fetch connected first to a public address and was redirected
+    /// (decision D293), as the session's transport noted them ([`fetch`]): `back` and `forward`
+    /// fetch the entry such a navigation made under the rule of a page that counts as public
+    /// ([`Session::redirected_by_public`]).
+    redirected_public: Vec<RequestId>,
     /// What the last answer that showed the session's state showed, for the `changed` block of
     /// the next ("What changed" above).
     shown: Shown,
@@ -845,6 +883,7 @@ impl<T: Transport> Session<T> {
             links: None,
             kept: None,
             from_public: Vec::new(),
+            redirected_public: Vec::new(),
             shown: Shown::default(),
         })
     }
@@ -1564,13 +1603,17 @@ impl<T: Transport> Session<T> {
             .map(|row| (row.navigation_id, row.method)))
     }
 
-    /// Whether a redirect moved the navigation that made the entry `entry` from an address that
-    /// counts as public ("Following a link" above) to another one (decision D283): its request
-    /// in the view `Requests` asked for an address other than the one the entry committed at,
-    /// and that address's host is not local by its text. The fetch keeps neither the addresses
-    /// between the first and the last of a chain of redirects nor where it connected, so the
-    /// first address of the chain stands for the one that redirected.
+    /// Whether a redirect moved the navigation that made the entry `entry` after a first
+    /// connection to a public address (decisions D283 and D293): its request in the view
+    /// `Requests` asked for an address other than the one the entry committed at, and the
+    /// session's transport noted that the fetch connected first to a public address
+    /// ([`Session::redirected_public`]). That is the fetch's own rule: after a first connection
+    /// to a public address no redirect may lead to a local one. A first connection to a local
+    /// address, whatever the address's text, leaves the entry to the rule of `go` (D279, D294).
     fn redirected_by_public(&self, entry: &RequestId) -> Result<bool, Stop> {
+        if !self.redirected_public.contains(entry) {
+            return Ok(false);
+        }
         let system = self.browser.system();
         let Some(committed) = system
             .navigator
@@ -1590,8 +1633,18 @@ impl<T: Transport> Session<T> {
         else {
             return Ok(false);
         };
-        Ok(asked != committed
-            && surf_url::Url::parse(&asked.0, None).is_ok_and(|asked| !host_is_local(&asked)))
+        Ok(asked != committed)
+    }
+
+    /// Takes from the session's transport the navigations of the last run whose fetch
+    /// connected first to a public address and was redirected ([`Session::redirected_public`]).
+    fn note_redirected_public(&mut self) {
+        let noted = FIRST_REQUEST.with(|first| first.redirected_public.take());
+        for navigation in noted {
+            if !self.redirected_public.contains(&navigation) {
+                self.redirected_public.push(navigation);
+            }
+        }
     }
 
     /// Status 0 with `did <command> "<handle>"` and the state.
@@ -1751,7 +1804,9 @@ impl<T: Transport> Session<T> {
         element: Option<(&str, Option<&str>)>,
     ) -> Result<(), Stop> {
         self.record(command, url, element)?;
-        self.browser.run()?;
+        let ran = self.browser.run();
+        self.note_redirected_public();
+        ran?;
         self.marks.push(self.browser.system().published().len());
         Ok(())
     }
@@ -1855,6 +1910,7 @@ impl<T: Transport> Session<T> {
             first.refused.set(false);
         });
         let ran = self.browser.run();
+        self.note_redirected_public();
         let refused = FIRST_REQUEST.with(|first| {
             first.from_public.set(false);
             first.refused.replace(false)
