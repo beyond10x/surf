@@ -146,8 +146,9 @@ tasks:
       bound.
 
       Then it prints nextest's summary line, the runner's summary line of step 2, the ten
-      slowest tests from conformance/target/nextest/default/junit.xml and the wall time of the
-      two steps, the builds left out: "conformance step: N s of its budget
+      slowest tests from .out/conform-rust-junit.xml (its copy of nextest's report
+      conformance/target/nextest/default/junit.xml, which task conform-slow writes too) and the
+      wall time of the two steps, the builds left out: "conformance step: N s of its budget
       of 120 s", or "conformance step: N s, over its budget of 120 s" and it fails. The budget
       is CONFORM_BUDGET seconds (120). It writes N to .out/conform-step.seconds, which it
       removes first.
@@ -167,11 +168,12 @@ tasks:
       - conformance/target/debug/surf-conformance --narrow .out/suite.json conformance/tests/noticed.txt
       - |
         log=.out/conform-rust-test.log
-        junit=conformance/target/nextest/default/junit.xml
-        rm -f "$junit"
+        junit=.out/conform-rust-junit.xml
+        rm -f conformance/target/nextest/default/junit.xml "$junit"
         start=$(date +%s%N)
         tests=0
         cargo nextest run --locked --manifest-path conformance/Cargo.toml --config-file .config/nextest.toml --color never > "$log" 2>&1 || tests=1
+        if [ -f conformance/target/nextest/default/junit.xml ]; then cp conformance/target/nextest/default/junit.xml "$junit"; fi
         passed() { grep -q "^ *PASS \[.*\] .*surf-conformance::main $1\$" "$log"; }
         planted=0
         passed planted_defect::a_navigation_storage_that_drops_every_put_fails_at_least_one_scenario || planted=1

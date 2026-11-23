@@ -163,8 +163,9 @@ above, and the list of standards itself was written from memory.
   `taskfiles/tls-flights.yml` the tasks
   `tls-flights-check` (over `taskfiles/tls-flights-check.sh`, a step of `check`) and
   `tls-flights-slow` (a step of `slow`: records the flights again and replays them; `WRITE=1`
-  writes them). `taskfiles/slowest-tests.sh` is no task's own: `task test` calls it. Three
-  tasks of the root `Taskfile.yml` run a script of their own, so that their tests run it with
+  writes them). `taskfiles/slowest-tests.sh` is no task's own: `task test`, `task test-tls`
+  and `task conform-rust` call it, each on a copy of its own of nextest's report. Three tasks
+  of the root `Taskfile.yml` run a script of their own, so that their tests run it with
   `sh` and start no `task` per case: `generated-compare` runs
   `taskfiles/generated-compare.sh <fresh tree>`, `conform-totals` runs
   `taskfiles/conform-totals.sh`, and `lock-check` runs `taskfiles/lock-check.sh Cargo.lock
@@ -239,7 +240,8 @@ above, and the list of standards itself was written from memory.
   (a workspace of its own, so they pass `--config-file .config/nextest.toml`; the crate has no
   nextest configuration of its own): at least 0.9.143, a run that does not stop at the first
   failure, a test ended after 60 s, and the JUnit report each task reads the ten slowest tests
-  from (`conform-rust` in place, `conformance/target/nextest/default/junit.xml`).
+  from, each from a copy of its own (`conform-rust`: `.out/conform-rust-junit.xml`, copied from
+  `conformance/target/nextest/default/junit.xml`).
 - `.cargo/config.toml`: `debug = false` for the profiles `dev` and `test`, so no build of this
   repository carries debug info (the folder's rule: no debug info in test builds). A setting in
   `Cargo.toml` would not do: a cargo config file wins over the manifest, and one in a user's
@@ -1529,8 +1531,8 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   when any scenario failed, errored or was unsupported, and when it runs past
   `CONFORM_SUITE_BOUND` (default 60) seconds: `conform-rust: step 2, the suite against the
   Rust system, was ended after its bound of 60 s`. It prints nextest's summary line, the
-  runner's summary line, the ten slowest tests from
-  `conformance/target/nextest/default/junit.xml` (`taskfiles/slowest-tests.sh`) and
+  runner's summary line, the ten slowest tests from `.out/conform-rust-junit.xml`, its copy of
+  `conformance/target/nextest/default/junit.xml` (`taskfiles/slowest-tests.sh`), and
   `conformance step: N s of its budget of 120 s`, N the wall time of the tests and the suite
   run, the builds left out; over the budget (`CONFORM_BUDGET`, default 120) it prints
   `conformance step: N s, over its budget of 120 s` and fails. It writes N to
@@ -1610,7 +1612,9 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   4.6, 3.3 and 2.5 s with it, 13.0, 12.3 and 8.5 s without; `slot status` showed one job for
   the step). The ten slowest tests come from
   `taskfiles/slowest-tests.sh <junit file> [count]` (POSIX sh, pipefail where the shell has
-  it), held by `crates/surf/tests/slowest_tests.rs` on a report of 2,000 cases. Under
+  it), held by `crates/surf/tests/slowest_tests.rs` on a report of 2,000 cases; it also checks
+  that `test`, `test-tls` and `conform-rust`, and no other task, run it, each on a copy of
+  nextest's report it removes before its run and copies after. Under
   `pipefail` no pipeline of a task ends its reader before its input (no `| head`, `grep -q` or
   `sed q` after a command that may write more than a pipe's 64 KiB): the reader stops, the
   writer dies of SIGPIPE and the task fails with 141 (2026-11-22, the list of 892 tests, 70,331

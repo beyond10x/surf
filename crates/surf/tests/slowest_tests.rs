@@ -1,4 +1,5 @@
-//! `taskfiles/slowest-tests.sh`, which task test and task test-tls run on their JUnit reports: a
+//! `taskfiles/slowest-tests.sh`, which task test, task test-tls and task conform-rust run on
+//! their JUnit reports: a
 //! report whose list is larger than a pipe's buffer prints its ten slowest tests and exits 0.
 //! Before, the task's
 //! pipeline ended `sort -rn | head -n 10`, and under pipefail `sort` died of SIGPIPE once `head`
@@ -116,13 +117,59 @@ fn no_sort_feeds_a_head() {
         }
     }
     let task = fs::read_to_string(repository().join("Taskfile.yml")).expect("read Taskfile.yml");
-    // task test and task test-tls each print their ten slowest tests, each from its own copy.
+    // task test, task test-tls and task conform-rust each print their ten slowest tests, each
+    // from its own copy of nextest's report, removed before the run.
+    let call = "sh taskfiles/slowest-tests.sh \"$junit\" 10";
     assert_eq!(
-        task.matches("sh taskfiles/slowest-tests.sh \"$junit\" 10").count(),
-        2,
-        "task test and task test-tls no longer each run taskfiles/slowest-tests.sh"
+        task.matches(call).count(),
+        3,
+        "task test, task test-tls and task conform-rust no longer each run \
+         taskfiles/slowest-tests.sh, and no other task"
     );
-    for copy in ["junit=.out/test-junit.xml", "junit=.out/test-tls-junit.xml"] {
-        assert!(task.contains(copy), "Taskfile.yml no longer reads {copy}");
+    for (name, copy) in [
+        ("test", ".out/test-junit.xml"),
+        ("test-tls", ".out/test-tls-junit.xml"),
+        ("conform-rust", ".out/conform-rust-junit.xml"),
+    ] {
+        let entry = task_entry(&task, name);
+        assert!(entry.contains(call), "task {name} no longer runs {call}");
+        assert!(
+            entry.contains(&format!("junit={copy}\n")),
+            "task {name} no longer reads its own copy {copy}"
+        );
+        assert!(
+            entry.lines().any(|line| {
+                let line = line.trim();
+                line.starts_with("rm -f ") && line.ends_with(" \"$junit\"")
+            }),
+            "task {name} no longer removes {copy} before its run"
+        );
+        assert!(
+            entry.contains(&format!("cp {}/junit.xml \"$junit\"", nextest_dir(name))),
+            "task {name} no longer copies nextest's report to {copy}"
+        );
     }
+}
+
+/// The directory cargo-nextest writes the JUnit report of task `name` into.
+fn nextest_dir(name: &str) -> &'static str {
+    match name {
+        "conform-rust" => "conformance/target/nextest/default",
+        _ => "target/nextest/default",
+    }
+}
+
+/// The lines of task `name` in Taskfile.yml, from its key up to the next task's.
+fn task_entry(taskfile: &str, name: &str) -> String {
+    let key = format!("  {name}:");
+    let mut lines = taskfile.lines().skip_while(|line| *line != key);
+    let first = lines
+        .next()
+        .unwrap_or_else(|| panic!("Taskfile.yml has no task {name}"));
+    let mut entry = format!("{first}\n");
+    for line in lines.take_while(|line| !(line.starts_with("  ") && !line.starts_with("   "))) {
+        entry.push_str(line);
+        entry.push('\n');
+    }
+    entry
 }
