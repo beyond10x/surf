@@ -16,11 +16,17 @@
 //! - a `Boolean` as `true` or `false`;
 //! - an identity in its text form, an address, a media type and an encoding's name as their
 //!   text;
-//! - a document's title, the one field that holds text from a page, as at most
-//!   [`TITLE_ENTRY_BYTES`] bytes of it: a longer title is cut at the last UTF-8 character
-//!   boundary at or below that, and the field `title_bytes`, right after `title`, gives the whole
-//!   title's length in bytes; `title_bytes` is absent when the title is whole. Quoted, the title
-//!   field is at most 4 × 1,024 + 2 = 4,098 bytes;
+//! - the fields that hold text from a page, the `title` of `surf.document.DocumentParsed` and the
+//!   link's or control's `label` of `surf.agent.ActionRecorded` and of
+//!   `surf.agent.NavigationRequested`, as at most [`TITLE_ENTRY_BYTES`] (1,024) bytes of it: a
+//!   longer text is cut at the last UTF-8 character boundary at or below that, and the field
+//!   `title_bytes` or `label_bytes`, right after `title` or `label`, gives the whole text's
+//!   length in bytes; it is absent when the text is whole. Quoted, such a field is at most
+//!   4 × 1,024 + 2 = 4,098 bytes;
+//! - the `handle` of `surf.agent.ActionRecorded`, `surf.agent.NavigationRequested`,
+//!   `surf.agent.FillRequested`, `surf.agent.PickRequested` and `surf.agent.PressRequested`,
+//!   which the client supplies (up to a request's 64 KiB), cut the same way, with `handle_bytes`
+//!   after it when it was cut;
 //! - a field of the type `Bytes` (the `body` of `surf.net.ResponseReceived`, of
 //!   `surf.navigation.NavigationCommitted` and of `surf.document.ParsingStarted`) and a present
 //!   one of the type `Optional<Bytes>` (the request body of `surf.navigation.NavigationStarted`
@@ -39,9 +45,9 @@ use surf_types::agent::SessionLog;
 
 use crate::command_word;
 
-/// The most bytes of a document's title an entry holds before quoting: a longer title is cut at
-/// the last UTF-8 character boundary at or below it, and the field `title_bytes` after it gives
-/// the whole title's length in bytes.
+/// The most bytes of a text from a page (a document's title, a recorded label) an entry holds
+/// before quoting: a longer text is cut at the last UTF-8 character boundary at or below it, and
+/// the field `title_bytes` or `label_bytes` after it gives the whole text's length in bytes.
 pub const TITLE_ENTRY_BYTES: usize = 1024;
 
 /// The action entry line of a row of the view `SessionLog`, without its line feed: the action
@@ -85,6 +91,15 @@ impl Line {
         }
         self.text(name, &value[..end])
             .text(&format!("{name}_bytes"), &value.len().to_string())
+    }
+
+    /// An `Optional` text from a page: [`Line::cut`] when it is present, the field with no value
+    /// when it is absent.
+    fn optional_cut(self, name: &str, value: Option<&str>, max: usize) -> Line {
+        match value {
+            Some(value) => self.cut(name, value, max),
+            None => self.optional(name, None),
+        }
     }
 
     /// An `Integer` in decimal.
@@ -147,12 +162,14 @@ pub fn event_line(event: &SystemEvent) -> String {
             .integer("sequence", e.sequence)
             .text("command", command_word(e.command))
             .optional("url", e.url.as_ref().map(|url| url.0.as_str()))
-            .optional("handle", e.handle.as_deref())
-            .optional("label", e.label.as_deref()),
+            .optional_cut("handle", e.handle.as_deref(), TITLE_ENTRY_BYTES)
+            .optional_cut("label", e.label.as_deref(), TITLE_ENTRY_BYTES),
         SystemEvent::NavigationRequested(e) => line
             .text("session_id", &e.session_id.0.0)
             .text("tab_id", &e.tab_id.0.0)
-            .text("url", &e.url.0),
+            .text("url", &e.url.0)
+            .optional_cut("handle", e.handle.as_deref(), TITLE_ENTRY_BYTES)
+            .optional_cut("label", e.label.as_deref(), TITLE_ENTRY_BYTES),
         SystemEvent::SessionClosed(e) => line
             .text("session_id", &e.session_id.0.0)
             .text("window_id", &e.window_id.0.0)
@@ -242,14 +259,17 @@ pub fn event_line(event: &SystemEvent) -> String {
         SystemEvent::FillRequested(e) => line
             .text("session_id", &e.session_id.0.0)
             .text("element_id", &e.element_id.0.0)
-            .bytes("value", e.value.as_bytes()),
+            .bytes("value", e.value.as_bytes())
+            .optional_cut("handle", e.handle.as_deref(), TITLE_ENTRY_BYTES),
         SystemEvent::PickRequested(e) => line
             .text("session_id", &e.session_id.0.0)
             .text("element_id", &e.element_id.0.0)
-            .optional("option_id", e.option_id.as_ref().map(|id| id.0.0.as_str())),
+            .optional("option_id", e.option_id.as_ref().map(|id| id.0.0.as_str()))
+            .optional_cut("handle", e.handle.as_deref(), TITLE_ENTRY_BYTES),
         SystemEvent::PressRequested(e) => line
             .text("session_id", &e.session_id.0.0)
-            .text("element_id", &e.element_id.0.0),
+            .text("element_id", &e.element_id.0.0)
+            .optional_cut("handle", e.handle.as_deref(), TITLE_ENTRY_BYTES),
         SystemEvent::FormAdded(e) => line
             .text("form_id", &e.form_id.0.0)
             .text("document_id", &e.document_id.0.0)

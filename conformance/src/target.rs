@@ -1050,11 +1050,14 @@ fn payload(event: &SystemEvent) -> Vec<(&'static str, Node)> {
             ("session_id", uuid(&e.session_id.0)),
             ("element_id", uuid(&e.element_id.0)),
             ("value", text(&e.value)),
+            ("handle", optional(e.handle.as_deref(), text)),
         ],
         SystemEvent::NavigationRequested(e) => vec![
             ("session_id", uuid(&e.session_id.0)),
             ("tab_id", uuid(&e.tab_id.0)),
             ("url", text(&e.url.0)),
+            ("handle", optional(e.handle.as_deref(), text)),
+            ("label", optional(e.label.as_deref(), text)),
         ],
         SystemEvent::PickRequested(e) => vec![
             ("session_id", uuid(&e.session_id.0)),
@@ -1063,10 +1066,12 @@ fn payload(event: &SystemEvent) -> Vec<(&'static str, Node)> {
                 "option_id",
                 optional(e.option_id.as_ref(), |id| uuid(&id.0)),
             ),
+            ("handle", optional(e.handle.as_deref(), text)),
         ],
         SystemEvent::PressRequested(e) => vec![
             ("session_id", uuid(&e.session_id.0)),
             ("element_id", uuid(&e.element_id.0)),
+            ("handle", optional(e.handle.as_deref(), text)),
         ],
         SystemEvent::SessionClosed(e) => vec![
             ("session_id", uuid(&e.session_id.0)),
@@ -3178,6 +3183,8 @@ mod tests {
             session_id: SessionId(Uuid(SESSION.to_owned())),
             tab_id: TabId(Uuid(TAB.to_owned())),
             url: Url(ADDRESS.to_owned()),
+            handle: None,
+            label: None,
         })
     }
 
@@ -3363,6 +3370,7 @@ mod tests {
                     session_id: SessionId(uuid(1)),
                     element_id: ElementId(uuid(2)),
                     value: MARKER.to_owned(),
+                    handle: Some("f1".to_owned()),
                 }),
             ),
             (

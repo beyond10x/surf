@@ -11,6 +11,8 @@ use surf_agent::cli::{self, Source};
 const BINDING_ONLY: &[&str] = &[
     "close token protected hidden_tty --token-prompt",
     "close token protected stdin --token-stdin",
+    "follow token protected hidden_tty --token-prompt",
+    "follow token protected stdin --token-stdin",
     "global state --session-dir",
     "go token protected hidden_tty --token-prompt",
     "go token protected stdin --token-stdin",
@@ -23,6 +25,8 @@ const BINDING_ONLY: &[&str] = &[
 const PARSER_ONLY: &[&str] = &[
     "close session_id environment SURF_SESSION",
     "close token environment SURF_TOKEN",
+    "follow session_id environment SURF_SESSION",
+    "follow token environment SURF_TOKEN",
     "go session_id environment SURF_SESSION",
     "go token environment SURF_TOKEN",
     "look session_id environment SURF_SESSION",

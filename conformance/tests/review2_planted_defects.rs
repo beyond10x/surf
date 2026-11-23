@@ -170,6 +170,12 @@ macro_rules! context_through {
                 self.$field.try_caller_session_id()
             }
 
+            fn try_generate_optional_string(
+                &mut self,
+            ) -> Result<Option<String>, UnmetObligation> {
+                self.$field.try_generate_optional_string()
+            }
+
             fn try_generate_surf_agent_action_id(&mut self) -> Result<ActionId, UnmetObligation> {
                 self.$field.try_generate_surf_agent_action_id()
             }

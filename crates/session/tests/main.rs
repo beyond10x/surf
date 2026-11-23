@@ -6,12 +6,14 @@
 mod adversary_document_text;
 mod adversary_events;
 mod adversary_parse;
+mod adversary_values;
 mod adversary_view;
 mod built;
 mod common;
 mod core;
 mod e2e;
 mod events;
+mod follow;
 mod memory;
 mod redirect;
 mod view;

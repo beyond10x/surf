@@ -61,6 +61,7 @@ timeline:
         payload:
           session_id: {$instance: session}
           element_id: {$instance: sign-in}
+          handle: b1
 
   # The body is `user=ada&password=s3cret`.
   - at: 2026-01-06T09:00:01Z

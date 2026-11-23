@@ -813,7 +813,11 @@ fn own(id: &str, state: HeadState, reason: RefusalReason) -> wire::Answer {
     });
     answer.did = Some(Did::Refused(reason));
     let status = match reason {
-        RefusalReason::Token | RefusalReason::Closed => 1,
+        RefusalReason::Token
+        | RefusalReason::Closed
+        | RefusalReason::UnknownHandle
+        | RefusalReason::Hidden
+        | RefusalReason::Unresolved => 1,
         RefusalReason::Usage => 2,
         RefusalReason::NoSuchSession
         | RefusalReason::SessionDied

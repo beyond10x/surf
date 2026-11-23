@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 1fa135dfaf753fab3e34de8ae9a4a7052216d1878fc9d395075ce5cd5ac673a6
+// contract digest a781938fbf4be70c3e62196db4afd2b86d2f53f3955885c5d3e606169c3ba178
 // do not edit: regenerate with `ess synthesize`
 
 //! Agent — `surf.agent`.
@@ -44,6 +44,19 @@ pub enum ActionCommand {
 /// The identity of one recorded action.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActionId(pub crate::primitives::Uuid);
+
+/// FollowCall — `surf.agent.FollowCall`.
+///
+/// The handle of the link to follow in a session, and the token that proves the caller holds it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FollowCall {
+    /// `session_id` — `String`.
+    pub session_id: String,
+    /// `token` — `surf.agent.SessionToken`.
+    pub token: SessionToken,
+    /// `handle` — `String`.
+    pub handle: String,
+}
 
 /// GoCall — `surf.agent.GoCall`.
 ///
@@ -1040,6 +1053,8 @@ pub struct FillRequested {
     pub element_id: crate::document::ElementId,
     /// `value` — `String`.
     pub value: String,
+    /// `handle` — `Optional<String>`.
+    pub handle: Option<String>,
 }
 
 /// NavigationRequested — the event `surf.agent.NavigationRequested`.
@@ -1051,6 +1066,10 @@ pub struct NavigationRequested {
     pub tab_id: crate::shell::TabId,
     /// `url` — `surf.url.Url`.
     pub url: crate::url::Url,
+    /// `handle` — `Optional<String>`.
+    pub handle: Option<String>,
+    /// `label` — `Optional<String>`.
+    pub label: Option<String>,
 }
 
 /// PickRequested — the event `surf.agent.PickRequested`.
@@ -1062,6 +1081,8 @@ pub struct PickRequested {
     pub element_id: crate::document::ElementId,
     /// `option_id` — `Optional<surf.document.OptionId>`.
     pub option_id: Option<crate::document::OptionId>,
+    /// `handle` — `Optional<String>`.
+    pub handle: Option<String>,
 }
 
 /// PressRequested — the event `surf.agent.PressRequested`.
@@ -1071,6 +1092,8 @@ pub struct PressRequested {
     pub session_id: SessionId,
     /// `element_id` — `surf.document.ElementId`.
     pub element_id: crate::document::ElementId,
+    /// `handle` — `Optional<String>`.
+    pub handle: Option<String>,
 }
 
 /// SessionClosed — the event `surf.agent.SessionClosed`.

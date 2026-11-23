@@ -43,10 +43,10 @@ test("adversary-detail: a click on a mark beside its short name selects that eve
   await expect(segments(page)).toHaveCount(2);
   const mark = segments(page).nth(1).locator("li.mark").filter({ hasText: /^ResponseReceived$/ });
   await expect(mark).toBeVisible();
-  // The page draws the timeline again when its stream opens (view.js, open()), which can be after
-  // #live-word reads "live": a mark found and then measured in two steps may be the one taken
-  // away. Both boxes are read in one step of the page, from a mark still in the document, and
-  // read again until they are.
+  // #live-word reads "live" once the load of the stream's opening is drawn (view.js, open()), but
+  // each later draw of the timeline (an event of the stream) replaces its marks: a mark found and
+  // then measured in two steps may be the one taken away. Both boxes are read in one step of the
+  // page, from a mark still in the document, and read again until they are.
   let line = null;
   await expect
     .poll(async () => {
@@ -201,9 +201,10 @@ test("fixes: Enter and Space on a focused mark's button select its event once", 
   const id = await surf.open();
   await surf.agent(id, "go", surf.pages + "/first/a.html");
   // /events is never answered: no stream opens, so open() does not load and render the timeline
-  // again between the two reads of the count. "live" is written after the first load.
+  // again between the two reads of the count. The word stays "connecting" without an open
+  // stream, so the first wait is the two segments of the first load.
   await page.route(/\/events$/, () => {});
-  await load(page, surf.view);
+  await page.goto(surf.view);
   await expect(segments(page)).toHaveCount(2);
   await page.evaluate(() => {
     window.surfTestRenders = 0;

@@ -2,8 +2,8 @@
   "provenance": {
     "system": "surf",
     "specification_version": "v1",
-    "source_digest": "60e083d63cd21d156c492362f3e2a91463ab823d2f8866a6aa7da4cad52fcaff",
-    "contract_digest": "1fa135dfaf753fab3e34de8ae9a4a7052216d1878fc9d395075ce5cd5ac673a6"
+    "source_digest": "23cb9f909a8270defcd0818278c0cc55081686d403783d898f43f38e40bf3244",
+    "contract_digest": "a781938fbf4be70c3e62196db4afd2b86d2f53f3955885c5d3e606169c3ba178"
   },
   "scope": {
     "profile": "component-skeletons"
@@ -26,6 +26,13 @@
     {
       "kind": "domain_type",
       "source": "surf.agent.ActionId",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.agent.FollowCall",
       "disposition": {
         "disposition": "generated"
       }

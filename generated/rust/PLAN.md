@@ -1,13 +1,13 @@
 <!--
   generated from surf v1
-  contract digest 1fa135dfaf753fab3e34de8ae9a4a7052216d1878fc9d395075ce5cd5ac673a6
+  contract digest a781938fbf4be70c3e62196db4afd2b86d2f53f3955885c5d3e606169c3ba178
   do not edit: regenerate with `ess synthesize`
 -->
 # Synthesis plan — surf v1
 
 Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synthesize`.
 
-241 capabilities: **231 generated**, **6 obligations**, **4 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
+242 capabilities: **232 generated**, **6 obligations**, **4 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
 
 ## Generated
 
@@ -16,6 +16,7 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | domain type | `surf.agent.Action.State` |
 | domain type | `surf.agent.ActionCommand` |
 | domain type | `surf.agent.ActionId` |
+| domain type | `surf.agent.FollowCall` |
 | domain type | `surf.agent.GoCall` |
 | domain type | `surf.agent.LookCall` |
 | domain type | `surf.agent.OpenCall` |

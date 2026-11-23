@@ -94,14 +94,17 @@ pub fn steps(task: &str) -> Option<Vec<Step>> {
     })
 }
 
-/// The handle of the line labelled `label` in the `now` block of `answer`.
-///
-/// `surf_answer::Answer` has no `now` block before `story:agent-follow-links`, which adds it to
-/// the answer and reads its lines here; until then no answer has a `now` line, and a step that
-/// needs a handle fails with `no now line labelled "<label>"`.
+/// The handle of the first line labelled `label` in the `now` block of `answer`, read through
+/// [`surf_answer::parse`]: a label the block shows whole, not cut. `None` when no line has it,
+/// and a step that needs a handle then fails with `no now line labelled "<label>"`.
 fn now_handle(answer: Option<&Answer>, label: &str) -> Option<String> {
-    let _ = (answer?, label);
-    None
+    answer?
+        .now
+        .as_ref()?
+        .elements
+        .iter()
+        .find(|element| !element.label.cut && element.label.kept == label)
+        .map(|element| element.handle.clone())
 }
 
 /// `surf-agent` of one directory in one private `XDG_RUNTIME_DIR`.

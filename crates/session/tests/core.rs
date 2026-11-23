@@ -22,7 +22,7 @@ use common::{golden, opened, path_block, placeholders, request};
 use surf_agent::wire::{self, Request};
 use surf_session::Session;
 
-const ID: &str = "0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b";
+pub(crate) const ID: &str = "0b0e4f5a-6c7d-4e8f-9a0b-1c2d3e4f5a6b";
 
 /// The port the addresses of the core cases name; nothing listens on it.
 const PORT: u16 = 8000;
@@ -42,13 +42,16 @@ fn url(path: &str) -> String {
 }
 
 /// The answer lines of `request` and its exit status.
-fn call<T: surf::Transport>(session: &mut Session<T>, request: &Request) -> (u8, String) {
+pub(crate) fn call<T: surf::Transport>(
+    session: &mut Session<T>,
+    request: &Request,
+) -> (u8, String) {
     let reply = session.answer(request);
     let link = reply.to_link();
     (link.status, link.text)
 }
 
-fn holder(command: &str, token: &str, args: &[(&str, &str)]) -> Request {
+pub(crate) fn holder(command: &str, token: &str, args: &[(&str, &str)]) -> Request {
     request(command, Some(ID), Some(token), args)
 }
 
@@ -403,10 +406,10 @@ fn another_identity_with_the_token_is_refused() {
 
 // --- story:page-text-look --------------------------------------------------------------------
 
-const HTML: &str = "text/html";
+pub(crate) const HTML: &str = "text/html";
 
 /// The transport of the binary, [`surf_session::fetch`], as a type.
-type Fetch = fn(&surf::RequestStarted) -> surf::Answer;
+pub(crate) type Fetch = fn(&surf::RequestStarted) -> surf::Answer;
 
 /// The page of design note `docs/design/page-as-text.md` section 1 without its `table`.
 const SHOP: &str = "<!DOCTYPE html><html lang=\"en\"><head><title>Fruit shop</title>
@@ -433,7 +436,7 @@ page 200 "text/html" "http://bank.example/" "Bank"</pre><h2>&gt; surf 1 session 
 
 /// A page server on `127.0.0.1` port 0: each path its media type and body, status 200; any other
 /// path status 404 and `text/plain`. Counts the requests it answered; stopped when dropped.
-struct Site {
+pub(crate) struct Site {
     port: u16,
     fetches: Arc<AtomicUsize>,
     stop: Arc<AtomicBool>,
@@ -441,7 +444,7 @@ struct Site {
 }
 
 impl Site {
-    fn start(pages: Vec<(&'static str, &'static str, Vec<u8>)>) -> Site {
+    pub(crate) fn start(pages: Vec<(&'static str, &'static str, Vec<u8>)>) -> Site {
         let listener = TcpListener::bind("127.0.0.1:0").expect("a port on 127.0.0.1");
         let port = listener.local_addr().unwrap().port();
         let fetches = Arc::new(AtomicUsize::new(0));
@@ -465,7 +468,7 @@ impl Site {
         }
     }
 
-    fn url(&self, path: &str) -> String {
+    pub(crate) fn url(&self, path: &str) -> String {
         format!("http://127.0.0.1:{}{path}", self.port)
     }
 
@@ -515,7 +518,7 @@ fn serve(mut stream: TcpStream, pages: &[(&str, &str, Vec<u8>)], fetches: &Atomi
 
 /// A session over [`surf_session::fetch`], opened at `url` with `extra` beside `arg url`: the
 /// session, its token and the answer to `open`.
-fn open_at(url: &str, extra: &[(&str, &str)]) -> (Session<Fetch>, String, String) {
+pub(crate) fn open_at(url: &str, extra: &[(&str, &str)]) -> (Session<Fetch>, String, String) {
     let transport: Fetch = surf_session::fetch;
     let mut session = Session::new(ID, transport).unwrap();
     let mut args = vec![("url", url)];
@@ -622,7 +625,13 @@ fn open_as_tree_then_look_as_markdown() {
     assert!(!text.contains("\ndid "), "{text}");
     assert_eq!(
         text.lines().nth(1),
-        Some(format!("page 200 \"text/html\" {}", surf_answer::quote(&root)).as_str())
+        Some(
+            format!(
+                "page 200 \"text/html\" {} \"Fruit shop\"",
+                surf_answer::quote(&root)
+            )
+            .as_str()
+        )
     );
     assert_eq!(from_note(&text), golden("look-as-markdown.txt"));
     let (header, body, more) = block(&text);
@@ -839,11 +848,18 @@ fn look_as_markdown_fetches_nothing() {
     let before = site.fetches();
     assert_eq!(before, 1);
     let (_, plain) = call(&mut session, &holder("look", &token, &[]));
+    // The answer with text has no `now` block and no `note visibility:` (since
+    // `story:agent-follow-links`): the plain answer up to its `now` line.
+    let at = plain
+        .find("\nnow 1 of 1\n")
+        .expect("the plain answer has a now block")
+        + 1;
+    let plain = &plain[..at];
     for form in ["markdown", "tree"] {
         let (status, text) = call(&mut session, &holder("look", &token, &[("form", form)]));
         assert_eq!(status, 0);
         assert!(
-            text.starts_with(&plain),
+            text.starts_with(plain),
             "the answer without the block: {text}"
         );
     }

@@ -131,6 +131,14 @@ const URL_OPTIONAL: Argument = Argument {
     }],
 };
 
+const HANDLE: Argument = Argument {
+    field: "handle",
+    sources: &[Source::Positional {
+        index: 1,
+        required: true,
+    }],
+};
+
 const SESSION: Argument = Argument {
     field: "session_id",
     sources: &[
@@ -168,9 +176,9 @@ const FROM_LINE: Argument = Argument {
 /// The forms `--as` takes, the variants of `surf.agent.PageForm`.
 pub const FORMS: &[&str] = &["tree", "markdown"];
 
-/// The commands: `open [<url>]`, `go <url>`, `look`, `close`. `open` takes no session and no
-/// token. `open`, `go` and `look` take `--as tree|markdown [--from-line <n>]`; `open` only with
-/// an address.
+/// The commands: `open [<url>]`, `go <url>`, `look`, `follow <handle>`, `close`. `open` takes no
+/// session and no token. `open`, `go` and `look` take `--as tree|markdown [--from-line <n>]`;
+/// `open` only with an address.
 pub const COMMANDS: &[Command] = &[
     Command {
         name: "open",
@@ -183,6 +191,10 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "look",
         arguments: &[SESSION, TOKEN, FORM, FROM_LINE],
+    },
+    Command {
+        name: "follow",
+        arguments: &[HANDLE, SESSION, TOKEN],
     },
     Command {
         name: "close",
@@ -202,11 +214,13 @@ pub const USAGE: &str = "\
 usage: surf-agent open [<url>] [--as tree|markdown [--from-line <n>]]
        surf-agent go <url> [--session <id>] [--token-file <path>] [--as tree|markdown [--from-line <n>]]
        surf-agent look [--session <id>] [--token-file <path>] [--as tree|markdown [--from-line <n>]]
+       surf-agent follow <handle> [--session <id>] [--token-file <path>]
        surf-agent close [--session <id>] [--token-file <path>]
 The session comes from --session or SURF_SESSION, the token from --token-file or SURF_TOKEN.
 A token file is a regular file of yours that group and others cannot read (mode 0600).
 --as prints the page as an outline of its tree or as Markdown, from line --from-line (from 1);
 open takes it only with an address.
+follow takes a handle of the now block of the last answer, such as l3.
 ";
 
 /// What the parser reads from the process: the environment and the program's directory. Its
@@ -260,6 +274,8 @@ pub struct Call {
     pub token: Option<Token>,
     /// The address, for `go` and an `open` given one.
     pub url: Option<String>,
+    /// The handle, for `follow`.
+    pub handle: Option<String>,
     /// The form of `--as`, one of [`FORMS`].
     pub form: Option<&'static str>,
     /// The line of `--from-line`, from 1; only beside [`Call::form`].
@@ -267,8 +283,8 @@ pub struct Call {
 }
 
 impl Call {
-    /// The request of the wire for this call: `arg url`, `arg form` and `arg line`, each when
-    /// the call has it.
+    /// The request of the wire for this call: `arg url`, `arg handle`, `arg form` and `arg line`,
+    /// each when the call has it.
     pub fn request(&self) -> Request {
         let arg = |name: &str, value: String| Arg {
             name: name.to_string(),
@@ -276,6 +292,7 @@ impl Call {
         };
         let args = [
             self.url.clone().map(|url| arg("url", url)),
+            self.handle.clone().map(|handle| arg("handle", handle)),
             self.form.map(|form| arg("form", form.to_string())),
             self.from_line.map(|line| arg("line", line.to_string())),
         ];
@@ -402,6 +419,7 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
         session: None,
         token: None,
         url: None,
+        handle: None,
         form: None,
         from_line: None,
     };
@@ -413,7 +431,7 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
         .count();
     if positionals.len() > positional_count {
         return Err(usage(format!(
-            "{} takes at most {positional_count} address",
+            "{} takes at most {positional_count} positional word",
             command.name
         )));
     }
@@ -491,10 +509,18 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
                         let text = word
                             .to_str()
                             .ok_or_else(|| usage(format!("the {} is not UTF-8", argument.field)))?;
-                        call.url = Some(text.to_string());
+                        match argument.field {
+                            "handle" => call.handle = Some(text.to_string()),
+                            _ => call.url = Some(text.to_string()),
+                        }
                     }
                     None if *required => {
-                        return Err(usage(format!("{} needs an address", command.name)));
+                        let what = if argument.field == "handle" {
+                            "a handle"
+                        } else {
+                            "an address"
+                        };
+                        return Err(usage(format!("{} needs {what}", command.name)));
                     }
                     None => {}
                 }

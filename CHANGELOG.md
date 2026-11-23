@@ -7,9 +7,47 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ## [Unreleased]
 
+### Added
+
+- `surf-agent follow <handle>` follows a link of the current page. An answer without `--as`
+  lists the page's links in a `now` block, one line each, such as `l1 link ? "Opening hours" ->
+  "/about/hours.html"`: the handle, `hid` when the `hidden` attribute hides the link and `?`
+  otherwise (visibility is not computed, as `note visibility: hidden attribute only` says), the
+  label cut at 60 characters, and the target resolved against the page's base URL, as a path on
+  the page's own origin, or as written with `unresolved`. `follow` of a handle the page has not,
+  of a hidden link or of an unresolved target exits 1 with `did refused unknown-handle`,
+  `hidden` or `unresolved`. A followed link's `path` line is `3 follow l1 "Opening hours"`.
+  Format: [`docs/agent-answer.md`](docs/agent-answer.md).
+- The `page` line of an agent answer ends with the page's title, and the live view's session
+  list shows it. A title longer than 1,024 characters is left out.
+- The live view has a panel "Now": the links of the answer at the playhead, grouped by kind,
+  each with its handle, label, target and visibility word, a hidden one marked, and the
+  visibility note. A `follow` shows its handle on the timeline. A bidirectional control in a
+  label, a target, a title or an address shows as a mark that names it (`U+202E`), so a page
+  cannot reorder what a person reads in the view. The view's `answer` entry
+  gains the member `now`, and each action of its `path` the members `handle` and
+  `argument_cut`. Format: [`docs/view-stream.md`](docs/view-stream.md).
+
 ### Changed
 
+- `surf <url>` no longer prints a password: the last field of the `element` line of a
+  `password` control is `(set)` when it holds a value and `(empty)` when it does not, unquoted.
+  Every other kind is printed as before. Output: [`docs/surf-command.md`](docs/surf-command.md).
+- The label of a link, button or field leaves out the value of a password input inside it: a
+  `<button>Code <input type=password value=…></button>` is named `Code`.
+- The session log of `surf-agent` cuts the `label` of a recorded action to its first 1,024 bytes
+  and adds `label_bytes`, the whole label's length, when it cut it, as it already did for a
+  page's title. It cuts the `handle` of an action's events, which the client supplies, the
+  same way, with `handle_bytes`.
+- The event `surf.agent.NavigationRequested` in the session log and the live view has two more
+  fields, `handle` and `label`, both empty after a `go`. They will hold the handle and the label
+  of the link a `follow` takes (the label cut as above), and `FillRequested`, `PickRequested` and
+  `PressRequested` the `handle` of the control, once the session runs those commands.
 - The specification, and the code generated from it, is checked with ESS 0.97.4 instead of 0.97.3.
+- The live view's page writes `live` only when its stream of events is open and the load that
+  the stream's opening started is drawn. Until then it reads `connecting` over the first load,
+  and after a lost stream `reconnecting` until the next opening's load is drawn; a keep-alive or
+  an event before that draw writes no word, and neither does a load whose stream has closed.
 
 ## [0.4.0] - 2026-11-22
 

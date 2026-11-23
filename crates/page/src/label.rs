@@ -620,12 +620,14 @@ impl<'t> Namer<'t> {
         if html && node != self.root {
             match this.local_name {
                 "input" => match State::of(this.attribute("type")) {
+                    // A password's value is never part of another element's name: it would
+                    // reach the label of a row and the entries that record it.
+                    State::Password => return Ok(()),
                     state @ (State::Text
                     | State::Search
                     | State::Telephone
                     | State::Url
-                    | State::Email
-                    | State::Password) => {
+                    | State::Email) => {
                         let raw = this.attribute("value").unwrap_or("");
                         self.charge(raw.len())?;
                         let value = state

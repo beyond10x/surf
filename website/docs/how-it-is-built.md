@@ -44,7 +44,7 @@ surf v1 — 9 file(s), 24 scenario(s), valid
   169 scenarios: 169 passed, 0 failed, 0 error, 0 unsupported
 169 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
   169 scenarios: 169 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 169 scenario(s) each, of suite sha256:0aead5f74409f8c561f544df8056b9e6b6fe146c13ba2e5e3a3fbf0ffdea733c
+the interpreter and the Rust system ran 169 scenario(s) each, of suite sha256:95b3119d869d65aec04eaf21d4f9a762352056b6d22b23f0ad1e5a7678f2c672
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 Cargo.lock: 26 package(s), none from outside this repository
@@ -54,7 +54,7 @@ test step: 62.3 s of its budget of 120 s
 agent-tasks: 4 tasks, 2 pass, 2 fail, 0 skipped, lane gate, binaries target/debug
 sh-echo: Summary [   2.623s] 40 tests run: 40 passed, 54 skipped
 view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
-  38 passed (15.8s)
+  59 passed (3.0m)
 html-conformance: 9107 cases, 9095 run, 9095 passed
 ```
 
@@ -66,7 +66,10 @@ tests in a browser (Playwright and Chromium's headless shell), and last holds th
 test counts where they are. The tests run under cargo-nextest; a test still running after 60
 seconds is ended and fails, the test step fails when it takes over 120 seconds, and the block
 leaves out the ten slowest tests the step also prints and the agent tasks' rows after their
-counts.
+counts. The page tests' line, `59 passed (3.0m)` (the task 220 s), was measured at a load
+average of 126 to 127 on 20 CPUs, its slowest test (`an entry over 1 MiB`) 35.0 s; `53 passed`
+took 1.1m at a load average of 55 to 65, `47 passed` 2.5m at a load average of 110 to 140, and
+the 38 of before took 15.8 s.
 
 The scenario runner in
 [`conformance/`](https://github.com/beyond10x/surf/tree/main/conformance) is the one place a

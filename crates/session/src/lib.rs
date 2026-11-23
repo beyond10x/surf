@@ -19,6 +19,9 @@
 //!   carries the `token` line.
 //! - `go <url>`: `Go` as the holder; when it is `requested`, `RecordAction` `go`.
 //! - `look`: the views `SessionState` and `SessionLog`; no action.
+//! - `follow <handle>` (`arg handle`): `Follow` as the holder with the link's resolved address,
+//!   its handle and its label; when it is `requested`, `RecordAction` `follow` with all three
+//!   ("The links" below).
 //! - `close`: `CloseSession` as the holder; when it is `closed`, `RecordAction` `close`.
 //!
 //! An accepted command's `RecordAction` is issued before the run that delivers what the command
@@ -47,6 +50,33 @@
 //! a `close`, and each later command that changes the document or what its text shows) and when
 //! the current document is another one.
 //!
+//! # The links
+//!
+//! After each command the session reads its current document (the one "The page as text" names).
+//! The `page` line and the status record carry its title (`document.title`), unless it is empty
+//! or longer than [`TITLE_CHARS_MAX`] characters. An answer with such a document holds `note
+//! parser: <parts>` when [`surf::NOT_YET_PARSED`] is not empty; one of an open session without
+//! page text, when the document has links, the `now` block and `note visibility: hidden
+//! attribute only` (`docs/agent-answer.md`). A call with `--as` has no `now` block.
+//!
+//! The links are the rows of `surf.document.Elements` of kind `link` in position order, each
+//! with the handle [`surf_page::handles`] gives its node (`l1`, `l2`, … in document order,
+//! hidden elements included, starting at 1 for each document), the row's label and target (the
+//! `href` as written), and `hid` when the element or an ancestor has the HTML `hidden`
+//! attribute, read from the tree: `aria-hidden`, a closed `dialog` or `details` and a popover
+//! leave a link `?`, though the row's `hidden` flag is wider. The target is resolved with
+//! `surf-url` against [`surf_page::base_url::document_base_url`]; a line shows its path, query
+//! and fragment when it has the document's origin and the whole address otherwise, or the
+//! `href` as written and `unresolved`. The label is cut at [`surf_answer::LABEL_CHARS_MAX`]
+//! characters, the target at [`surf_answer::TARGET_CHARS_MAX`]. The block shows the first lines
+//! that fit [`NOW_BYTES_MAX`] bytes, and its header `now <shown> of <total>` counts them all.
+//! The session computes the links once per document and keeps them while it is current.
+//!
+//! `follow <handle>` is refused `closed` on a closed session, `unknown-handle` when the current
+//! document has no link of that handle (or there is none), `hidden` for a link `hid` names, and
+//! `unresolved` for a target that does not resolve; each with status 1 and the state. The `path`
+//! line of a `follow` is `<n> follow <handle> "<label>"`, the label cut as in the `now` block.
+//!
 //! # Refusals
 //!
 //! - A request other than `open` whose `session` is not this identity, or whose token does not
@@ -66,7 +96,8 @@
 //! state `unknown` ([`link::SessionState::Unknown`]) with no address and no title. So a process
 //! that reaches the session's socket without the token reads nothing of the session, not even
 //! the address of its page, and `surfd` keeps what it knew of the session before the request.
-//! - `go` or `close` on a closed session: `did refused closed`, status 1, with the state.
+//! - `go`, `follow` or `close` on a closed session: `did refused closed`, status 1, with the
+//!   state. `follow` without `arg handle` or with another argument: `did refused usage`.
 //!
 //! # The token
 //!
@@ -85,9 +116,15 @@
 //! its length and its two quotes; `surf-url` leaves a `\` in the query or fragment of a
 //! response URL as it is, so the quoted form of one comes to up to four times
 //! [`surf_fetch::MAX_ADDRESS_BYTES`], at most 262,146 bytes. Seven addresses of at most 262,146
-//! bytes each are 1,835,022 bytes; a `text` block adds at most [`surf_answer::TEXT_BYTES_MAX`]
-//! (32,768) bytes of body lines, its header, a `more` line and a `note text:` line, each under
-//! 200 bytes; so an answer stays below [`surfd::link::ANSWER_TEXT_MAX`], 4,194,304 bytes.
+//! bytes each are 1,835,022 bytes. The `did` line of `follow` holds the handle as typed, from a
+//! request like an address, and a `follow` path line holds a label of at most 60 characters
+//! (at most 965 bytes quoted), so the seven still bound them. The title adds at most
+//! [`TITLE_CHARS_MAX`] characters, at most 16,386 bytes quoted. A `text` block adds at most
+//! [`surf_answer::TEXT_BYTES_MAX`] (32,768) bytes of body lines, its header, a `more` line and a
+//! `note text:` line, each under 200 bytes; or, in an answer without text, the `now` block adds
+//! at most [`NOW_BYTES_MAX`] (1,048,576) bytes and `note visibility:` and `note parser:` lines
+//! under 200 bytes each. So an answer stays below [`surfd::link::ANSWER_TEXT_MAX`], 4,194,304
+//! bytes.
 //!
 //! A status record whose quoted address does not fit [`surfd::link::RECORD_MAX`] (65,536 bytes,
 //! with the record's other lines) is sent without the address, and `surfd` lists the session
@@ -139,11 +176,14 @@
 //! count="<n>"` ([`entries::left_out_line`]) counts the entries left out of them; it is absent
 //! when none was. So a request carries at most 256 element entries, and `surfd`'s bounds of a
 //! session's log (10,000 entries) and of a reader's queue (1,024) are not reached by one page.
-//! An event field holds no body, only its length; the one field that holds text from a page,
-//! the title of `surf.document.DocumentParsed`, holds at most
+//! An event field holds no body, only its length. The fields that hold text from a page, the
+//! title of `surf.document.DocumentParsed` and the label of `surf.agent.ActionRecorded` and of
+//! `surf.agent.NavigationRequested` (the label of the link a `follow` took), each hold at most
 //! [`entries::TITLE_ENTRY_BYTES`] (1,024) bytes of it, at most 4,098 bytes quoted, with the
-//! field `title_bytes` when it was cut. An element's label, target and value are in no entry
-//! (`surf.document.ElementAdded` carries two identities and a position). An address, at most
+//! field `title_bytes` or `label_bytes` when it was cut. The `handle` of an action's events,
+//! which the client supplies, is cut the same way, with `handle_bytes`. An element's target and
+//! value are in no entry, and its label only in those two (`surf.document.ElementAdded` carries
+//! two identities and a position). An address, at most
 //! [`surf_agent::wire::REQUEST_MAX`] bytes when it comes from a request and at most
 //! [`surf_fetch::MAX_ADDRESS_BYTES`] bytes, the same 64 KiB, when it is the address a response
 //! came from after redirects, is at most 262,146 bytes once quoted, in at most nine action and
@@ -157,23 +197,24 @@
 pub mod entries;
 pub mod process;
 
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io;
 
-use surf::{MemoryBrowser, Transport, UnmetObligation};
+use surf::{MemoryBrowser, NodeId, Transport, Tree, UnmetObligation};
 use surf_agent::wire::{self, Request};
 use surf_answer::{
-    Answer, Did, Form, Head, Note, Page, Path, PathEntry, RefusalReason, SessionState as HeadState,
-    TextNote,
+    Answer, Cut, Did, Element, Form, Head, LABEL_CHARS_MAX, Note, Now, Page, Path, PathEntry,
+    RefusalReason, SessionState as HeadState, TARGET_CHARS_MAX, Target, TextNote, Visibility,
 };
 use surf_ports::{Caller, ComponentPorts};
 use surf_secret::Token;
 use surf_types::agent::{
-    ActionCommand, CloseSession, CloseSessionOutcome, Go, GoOutcome, OpenSession,
-    OpenSessionOutcome, RecordAction, RecordActionOutcome, SessionId, SessionState,
+    ActionCommand, CloseSession, CloseSessionOutcome, Follow, FollowOutcome, Go, GoOutcome,
+    OpenSession, OpenSessionOutcome, RecordAction, RecordActionOutcome, SessionId, SessionState,
     SessionStateView,
 };
-use surf_types::document::{DocumentId, DocumentState};
+use surf_types::document::{DocumentId, DocumentState, Documents, ElementKind};
 use surf_types::navigation::NavigationState;
 use surf_types::primitives::Uuid;
 use surf_types::shell::{OpenTab, OpenTabOutcome, OpenWindow, OpenWindowOutcome};
@@ -182,6 +223,20 @@ use surfd::link;
 
 /// The most actions the `path` block shows: the last five (design section 5.1).
 pub const PATH_SHOWN: usize = 5;
+
+/// The most bytes the lines of the `now` block take, its header and line feeds included ("The
+/// links" above): 1,048,576. A deliberate bound the design does not state; paging a long block
+/// is `story:agent-answer-paging`.
+pub const NOW_BYTES_MAX: usize = 1 << 20;
+
+/// The most characters of a title the `page` line and the status record hold ("The links"
+/// above): a longer one is left out of both.
+pub const TITLE_CHARS_MAX: usize = 1_024;
+
+/// The bytes of a `now` line beside its handle and its two quoted fields: two spaces, the kind
+/// `link`, the visibility word, `...` after each field, ` -> `, ` unresolved`, separators and
+/// the line feed, counted high.
+const NOW_LINE_FIXED: usize = 48;
 
 /// The most `surf.document.ElementAdded` entries one request carries ("The entries" above): the
 /// first 256 of the request; the others are left out and counted.
@@ -229,7 +284,7 @@ pub struct Reply {
 impl Reply {
     /// The answer of the link: the rendered lines, the status record and the entries, the last
     /// of them the answer entry, which is the rendered lines without the `token` line. The
-    /// address is left out of the record when the answer would not fit the link with it; an
+    /// record's title is the one of the `page` line. The address is left out of the record when the answer would not fit the link with it; an
     /// answer the renderer refuses becomes status 3 with the head line alone, which is then its
     /// answer entry too.
     pub fn to_link(&self) -> link::Answer {
@@ -255,7 +310,12 @@ impl Reply {
             reason,
             state: self.state,
             address: self.address.as_deref().map(link::Quoted::new),
-            title: None,
+            title: match &self.answer.page {
+                Some(Page::Loaded {
+                    title: Some(title), ..
+                }) => Some(link::Quoted::new(title)),
+                _ => None,
+            },
             entries,
             text,
         };
@@ -370,6 +430,30 @@ impl Rendered {
     }
 }
 
+/// One link of the current document, as the `now` block shows it and `follow` takes it ("The
+/// links" above).
+#[derive(Clone)]
+struct Link {
+    /// `l<n>`, as [`surf_page::handles`] numbers it.
+    handle: String,
+    /// The label of the element's row, the whole accessible name (at most
+    /// [`surf_page::LABEL_BYTES_MAX`] bytes).
+    label: String,
+    /// The element or an ancestor has the `hidden` attribute.
+    hidden: bool,
+    /// The target resolved against the document base URL; `None` when it does not resolve.
+    resolved: Option<surf_url::Url>,
+    /// What the `now` line shows: the target's path, query and fragment when it has the
+    /// document's origin, the whole target otherwise, the `href` as written when unresolved.
+    shown: String,
+}
+
+/// The links of the current document, kept while it is current.
+struct Links {
+    document: DocumentId,
+    links: Vec<Link>,
+}
+
 /// One session: its identity, its token, the system it drives and its sequence number.
 pub struct Session<T> {
     id: String,
@@ -386,6 +470,8 @@ pub struct Session<T> {
     marks: Vec<usize>,
     /// The text of the current document, once a call asked for it.
     rendered: Option<Rendered>,
+    /// The links of the current document, once an answer showed them.
+    links: Option<Links>,
 }
 
 impl<T> fmt::Debug for Session<T> {
@@ -426,6 +512,7 @@ impl<T: Transport> Session<T> {
             recorded: Vec::new(),
             marks: Vec::new(),
             rendered: None,
+            links: None,
         })
     }
 
@@ -444,6 +531,16 @@ impl<T: Transport> Session<T> {
     /// Between commands it is nothing: [`Session::answer`] drops what the system delivered.
     pub fn held(&self) -> surf::Held {
         self.browser.held()
+    }
+
+    /// How many lines of the current document's text the session keeps between requests, in
+    /// every form it rendered: 0 when it keeps none. Read-only, for the tests: the kept text is
+    /// dropped by every request but `look` ([`Session::answer`]).
+    pub fn kept_text_lines(&self) -> usize {
+        self.rendered.as_ref().map_or(0, |kept| {
+            kept.tree.as_ref().map_or(0, |lines| lines.lines.len())
+                + kept.markdown.as_ref().map_or(0, |lines| lines.lines.len())
+        })
     }
 
     /// The reply to `request`, with its entries ("The entries" above), which are read from what
@@ -555,7 +652,14 @@ impl<T: Transport> Session<T> {
                 _ => Ok(self.with_state(RefusalReason::Usage)),
             },
             "look" => match (request.unknown_arg(&["form", "line"]), as_text(request)) {
-                (None, Ok(text)) => Ok(self.with_text(self.state_reply(0, None), text)),
+                (None, Ok(text)) => {
+                    let reply = self.state_reply(0, None);
+                    Ok(self.with_text(reply, text))
+                }
+                _ => Ok(self.with_state(RefusalReason::Usage)),
+            },
+            "follow" => match (request.unknown_arg(&["handle"]), request.arg("handle")) {
+                (None, Some(handle)) => self.follow(handle),
                 _ => Ok(self.with_state(RefusalReason::Usage)),
             },
             "close" if request.unknown_arg(&[]).is_none() => self.close(),
@@ -574,6 +678,9 @@ impl<T: Transport> Session<T> {
         if reply.status != 0 {
             return reply;
         }
+        // An answer with page text has no `now` block (`docs/design/page-as-text.md`).
+        reply.answer.now = None;
+        reply.answer.notes.retain(|note| *note != Note::Visibility);
         let Some(document) = self.current_document() else {
             reply.answer.notes.push(Note::Text(TextNote::NoDocument));
             return reply;
@@ -609,6 +716,11 @@ impl<T: Transport> Session<T> {
     /// document parsed. `None` before the first navigation, after a failed one, and for a
     /// response that is not HTML.
     fn current_document(&self) -> Option<DocumentId> {
+        self.current_row().map(|row| row.document_id)
+    }
+
+    /// The row of [`Session::current_document`]: its identity, address and title.
+    fn current_row(&self) -> Option<Documents> {
         let system = self.browser.system();
         let row = system
             .agent
@@ -630,7 +742,96 @@ impl<T: Transport> Session<T> {
             })?;
         self.browser
             .document_tree(&document.document_id)
-            .map(|_| document.document_id)
+            .map(|_| document)
+    }
+
+    /// The links of the current document, computed once per document ("The links" above);
+    /// `None` without a current document.
+    fn links(&mut self) -> Option<&[Link]> {
+        let row = self.current_row()?;
+        if self
+            .links
+            .as_ref()
+            .is_none_or(|kept| kept.document != row.document_id)
+        {
+            let tree = self.browser.document_tree(&row.document_id)?;
+            let mut rows = self
+                .browser
+                .system()
+                .document
+                .elements(row.document_id.clone())
+                .unwrap_or_default();
+            rows.sort_by_key(|element| element.position);
+            let nodes = self
+                .browser
+                .element_nodes(&row.document_id)
+                .unwrap_or_default();
+            let links = document_links(tree, &row.url.0, &rows, nodes);
+            self.links = Some(Links {
+                document: row.document_id,
+                links,
+            });
+        }
+        self.links.as_ref().map(|kept| kept.links.as_slice())
+    }
+
+    /// The title of the current document for the `page` line and the status record: `None`
+    /// when it has none, an empty one, or one over [`TITLE_CHARS_MAX`] characters.
+    fn title(&self) -> Option<String> {
+        self.current_row()?
+            .title
+            .filter(|title| !title.is_empty() && title.chars().nth(TITLE_CHARS_MAX).is_none())
+    }
+
+    /// `follow <handle>`: refused `closed` on a closed session, `unknown-handle` when the
+    /// current document has no link of that handle, `hidden` when the link or an ancestor has
+    /// the `hidden` attribute, `unresolved` when its target does not resolve; otherwise
+    /// `Follow` as the holder with the resolved address, and when it is `requested`,
+    /// `RecordAction` `follow` with the address, the handle and the label.
+    fn follow(&mut self, handle: &str) -> Result<Reply, Stop> {
+        if self.is_closed() {
+            return Ok(self.with_state(RefusalReason::Closed));
+        }
+        let Some(link) = self
+            .links()
+            .and_then(|links| links.iter().find(|link| link.handle == handle))
+            .cloned()
+        else {
+            return Ok(self.with_state(RefusalReason::UnknownHandle));
+        };
+        if link.hidden {
+            return Ok(self.with_state(RefusalReason::Hidden));
+        }
+        let Some(url) = link.resolved.as_ref().map(surf_url::Url::href) else {
+            return Ok(self.with_state(RefusalReason::Unresolved));
+        };
+        let outcome = self.browser.agent_mut().follow(Follow {
+            session_id: self.session_id.clone(),
+            url: Url(url.clone()),
+            handle: link.handle.clone(),
+            label: link.label.clone(),
+        })?;
+        match outcome {
+            FollowOutcome::Requested { .. } => {
+                self.record_and_run(
+                    ActionCommand::Follow,
+                    Some(&url),
+                    Some((&link.handle, Some(&link.label))),
+                )?;
+                Ok(self.state_reply(
+                    0,
+                    Some(Did::Action {
+                        command: "follow".to_string(),
+                        argument: Some(handle.to_string()),
+                    }),
+                ))
+            }
+            FollowOutcome::Closed { .. } => Ok(self.with_state(RefusalReason::Closed)),
+            FollowOutcome::NotHolder { .. } => Err(Stop::Unexpected("not-holder to the holder")),
+            FollowOutcome::NoSuchSession { .. } => {
+                Err(Stop::Unexpected("no such session to the open session"))
+            }
+        }
     }
 
     /// The reply to a request that did not decode: `did refused usage`, status 2, the head line
@@ -705,7 +906,7 @@ impl<T: Transport> Session<T> {
             }
         }
         self.opened = true;
-        self.record_and_run(ActionCommand::Open, None)?;
+        self.record_and_run(ActionCommand::Open, None, None)?;
         self.caller.set(Some(self.session_id.clone()));
         if let Some(url) = url {
             match self.request_go(url)? {
@@ -723,7 +924,7 @@ impl<T: Transport> Session<T> {
             url: Url(url.to_string()),
         })?;
         if let GoOutcome::Requested { .. } = outcome {
-            self.record_and_run(ActionCommand::Go, Some(url))?;
+            self.record_and_run(ActionCommand::Go, Some(url), None)?;
         }
         Ok(outcome)
     }
@@ -751,7 +952,7 @@ impl<T: Transport> Session<T> {
         })?;
         match outcome {
             CloseSessionOutcome::Closed { .. } => {
-                self.record_and_run(ActionCommand::Close, None)?;
+                self.record_and_run(ActionCommand::Close, None, None)?;
                 Ok(self.state_reply(
                     0,
                     Some(Did::Action {
@@ -772,23 +973,34 @@ impl<T: Transport> Session<T> {
 
     /// [`Session::record`], then the run that delivers what the command published, then the
     /// mark of where the action's events end.
-    fn record_and_run(&mut self, command: ActionCommand, url: Option<&str>) -> Result<(), Stop> {
-        self.record(command, url)?;
+    fn record_and_run(
+        &mut self,
+        command: ActionCommand,
+        url: Option<&str>,
+        element: Option<(&str, Option<&str>)>,
+    ) -> Result<(), Stop> {
+        self.record(command, url, element)?;
         self.browser.run()?;
         self.marks.push(self.browser.system().published().len());
         Ok(())
     }
 
-    /// `RecordAction` with the next sequence number, on the `agent` port.
-    fn record(&mut self, command: ActionCommand, url: Option<&str>) -> Result<(), Stop> {
+    /// `RecordAction` with the next sequence number, on the `agent` port; `element` is the
+    /// handle of the element the action took and its label, for an action on one.
+    fn record(
+        &mut self,
+        command: ActionCommand,
+        url: Option<&str>,
+        element: Option<(&str, Option<&str>)>,
+    ) -> Result<(), Stop> {
         let sequence = self.sequence + 1;
         let outcome = self.browser.agent_mut().record_action(RecordAction {
             session_id: self.session_id.clone(),
             sequence,
             command,
             url: url.map(|url| Url(url.to_string())),
-            handle: None,
-            label: None,
+            handle: element.map(|(handle, _)| handle.to_string()),
+            label: element.and_then(|(_, label)| label.map(str::to_string)),
         })?;
         match outcome {
             RecordActionOutcome::Recorded { .. } => {
@@ -859,17 +1071,37 @@ impl<T: Transport> Session<T> {
     }
 
     /// `did refused <reason>` with the page and the path.
-    fn with_state(&self, reason: RefusalReason) -> Reply {
+    fn with_state(&mut self, reason: RefusalReason) -> Reply {
         self.state_reply(refusal_status(reason), Some(Did::Refused(reason)))
     }
 
-    /// The head line, `did` when there is one, and the page and path from the views.
-    fn state_reply(&self, status: u8, did: Option<Did>) -> Reply {
+    /// The head line, `did` when there is one, the page and path from the views, and for the
+    /// current document of an open session its `note parser:` line, its `now` block and `note
+    /// visibility:` ("The links" above). The title of the current document is on a loaded
+    /// `page` line.
+    fn state_reply(&mut self, status: u8, did: Option<Did>) -> Reply {
         let mut answer = Answer::new(self.head());
         answer.did = did;
         let row = self.row();
         answer.page = Some(row.as_ref().map_or(Page::None, page));
+        if let Some(Page::Loaded { title, .. }) = &mut answer.page {
+            *title = self.title();
+        }
         answer.path = Some(self.path());
+        if self.current_document().is_some() {
+            let parts = self.browser.parser_not_yet_parsed();
+            if !parts.is_empty() {
+                answer.notes.push(Note::Parser(
+                    parts.iter().map(|part| part.to_string()).collect(),
+                ));
+            }
+            if !self.is_closed()
+                && let Some(now) = self.links().and_then(now_block)
+            {
+                answer.now = Some(now);
+                answer.notes.push(Note::Visibility);
+            }
+        }
         let (state, address) = self.record_fields();
         Reply {
             status,
@@ -894,10 +1126,30 @@ impl<T: Transport> Session<T> {
         let entries = log
             .into_iter()
             .skip(total.saturating_sub(PATH_SHOWN))
-            .map(|row| PathEntry {
-                sequence: u64::try_from(row.sequence).unwrap_or_default(),
-                command: command_word(row.command).to_string(),
-                argument: row.url.map(|url| url.0),
+            .map(|row| {
+                let sequence = u64::try_from(row.sequence).unwrap_or_default();
+                let command = command_word(row.command).to_string();
+                match row.handle {
+                    // An action on an element: its handle and its label, cut as the `now` block
+                    // cuts it.
+                    Some(handle) => {
+                        let label = row.label.map(|label| Cut::of(&label, LABEL_CHARS_MAX));
+                        PathEntry {
+                            sequence,
+                            command,
+                            handle: Some(handle),
+                            argument_cut: label.as_ref().is_some_and(|label| label.cut),
+                            argument: label.map(|label| label.kept),
+                        }
+                    }
+                    None => PathEntry {
+                        sequence,
+                        command,
+                        handle: None,
+                        argument: row.url.map(|url| url.0),
+                        argument_cut: false,
+                    },
+                }
             })
             .collect();
         Path {
@@ -923,7 +1175,11 @@ impl<T: Transport> Session<T> {
 /// The exit status of a refusal, as the reason table of `docs/agent-answer.md` gives it.
 fn refusal_status(reason: RefusalReason) -> u8 {
     match reason {
-        RefusalReason::Token | RefusalReason::Closed => 1,
+        RefusalReason::Token
+        | RefusalReason::Closed
+        | RefusalReason::UnknownHandle
+        | RefusalReason::Hidden
+        | RefusalReason::Unresolved => 1,
         RefusalReason::Usage => 2,
         RefusalReason::NoSuchSession
         | RefusalReason::SessionDied
@@ -1010,4 +1266,136 @@ fn page(row: &SessionStateView) -> Page {
         },
         _ => Page::None,
     }
+}
+
+/// The links of a document from its element rows (`rows`, in position order) and the node of
+/// each (`nodes`, [`surf::Browser::element_nodes`]): the handle [`surf_page::handles`] gives its
+/// node, the row's label and target, whether it or an ancestor has the `hidden` attribute, and
+/// the target resolved against the document base URL of `tree` at `address`.
+fn document_links(
+    tree: &Tree,
+    address: &str,
+    rows: &[surf_types::document::Elements],
+    nodes: &[(surf_types::document::ElementId, NodeId)],
+) -> Vec<Link> {
+    let handles: HashMap<NodeId, String> = surf_page::handles(tree).into_iter().collect();
+    let hidden = hidden_by_attribute(tree);
+    let page = surf_url::Url::parse(address, None).ok();
+    let base = page
+        .as_ref()
+        .map(|page| surf_page::base_url::document_base_url(tree, page));
+    let node_of: HashMap<&str, NodeId> = nodes
+        .iter()
+        .map(|(element, node)| (element.0.0.as_str(), *node))
+        .collect();
+    let mut links = Vec::new();
+    for row in rows {
+        let Some(href) = row
+            .target
+            .as_ref()
+            .filter(|_| row.kind == ElementKind::Link)
+        else {
+            continue;
+        };
+        let Some(node) = node_of.get(row.element_id.0.0.as_str()) else {
+            continue;
+        };
+        let Some(handle) = handles.get(node) else {
+            continue;
+        };
+        let resolved = surf_url::Url::parse(href, base.as_ref()).ok();
+        let shown = match &resolved {
+            Some(target) => shown_target(target, page.as_ref()),
+            None => href.clone(),
+        };
+        links.push(Link {
+            handle: handle.clone(),
+            label: row.label.clone(),
+            hidden: hidden.contains(node),
+            resolved,
+            shown,
+        });
+    }
+    links
+}
+
+/// The nodes that are or are under an HTML element with the `hidden` attribute: the one rule of
+/// `hid` and of the refusal `hidden` (`story:agent-follow-links`). `aria-hidden`, a closed
+/// `dialog` or `details` and a popover do not count. One walk with its own stack.
+fn hidden_by_attribute(tree: &Tree) -> HashSet<NodeId> {
+    let mut hidden = HashSet::new();
+    let mut pending = vec![(tree.root(), false)];
+    while let Some((node, above)) = pending.pop() {
+        let here = above
+            || matches!(
+                tree.data(node),
+                surf_html::NodeData::Element { namespace: surf_html::Namespace::Html, attributes, .. }
+                    if attributes
+                        .iter()
+                        .any(|a| a.namespace.is_none() && a.local_name == "hidden")
+            );
+        if here {
+            hidden.insert(node);
+        }
+        pending.extend(tree.children(node).iter().map(|&child| (child, here)));
+    }
+    hidden
+}
+
+/// A resolved target as the `now` line writes it: its path, query and fragment when it has the
+/// origin of `page`, the whole address otherwise.
+fn shown_target(target: &surf_url::Url, page: Option<&surf_url::Url>) -> String {
+    if !page.is_some_and(|page| page.origin().same_origin(&target.origin())) {
+        return target.href();
+    }
+    let mut shown = target.serialize_path();
+    if let Some(query) = target.query() {
+        shown.push('?');
+        shown.push_str(query);
+    }
+    if let Some(fragment) = target.fragment() {
+        shown.push('#');
+        shown.push_str(fragment);
+    }
+    shown
+}
+
+/// The `now` block of `links`: a line per link in document order while the lines fit
+/// [`NOW_BYTES_MAX`], the label cut at [`LABEL_CHARS_MAX`] characters and the target at
+/// [`TARGET_CHARS_MAX`]; `None` for a document without links.
+fn now_block(links: &[Link]) -> Option<Now> {
+    if links.is_empty() {
+        return None;
+    }
+    let total = u64::try_from(links.len()).unwrap_or(u64::MAX);
+    let mut bytes = format!("now {total} of {total}\n").len();
+    let mut elements = Vec::new();
+    for link in links {
+        let label = Cut::of(&link.label, LABEL_CHARS_MAX);
+        let target = Cut::of(&link.shown, TARGET_CHARS_MAX);
+        let line = NOW_LINE_FIXED
+            + link.handle.len()
+            + surf_answer::quote(&label.kept).len()
+            + surf_answer::quote(&target.kept).len();
+        if bytes + line > NOW_BYTES_MAX {
+            break;
+        }
+        bytes += line;
+        elements.push(Element {
+            handle: link.handle.clone(),
+            kind: "link".to_string(),
+            visibility: if link.hidden {
+                Visibility::Hidden
+            } else {
+                Visibility::Unknown
+            },
+            label,
+            target: if link.resolved.is_some() {
+                Target::Resolved(target)
+            } else {
+                Target::Unresolved(target)
+            },
+        });
+    }
+    Some(Now { total, elements })
 }

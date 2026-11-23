@@ -90,17 +90,23 @@ fn path() -> Answer {
             PathEntry {
                 sequence: 2,
                 command: "go".to_string(),
+                handle: None,
                 argument: Some("http://example.org/".to_string()),
+                argument_cut: false,
             },
             PathEntry {
                 sequence: 3,
                 command: "go".to_string(),
+                handle: None,
                 argument: Some("http://example.org/login".to_string()),
+                argument_cut: false,
             },
             PathEntry {
                 sequence: 4,
                 command: "close".to_string(),
+                handle: None,
                 argument: None,
+                argument_cut: false,
             },
         ],
     });
@@ -135,12 +141,16 @@ fn shop_look() -> Answer {
             PathEntry {
                 sequence: 1,
                 command: "open".to_string(),
+                handle: None,
                 argument: None,
+                argument_cut: false,
             },
             PathEntry {
                 sequence: 2,
                 command: "go".to_string(),
+                handle: None,
                 argument: Some("http://shop.example/".to_string()),
+                argument_cut: false,
             },
         ],
     });

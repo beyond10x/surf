@@ -12,10 +12,11 @@ through `unquote` and `parse` and write no parser of their own (decisions D20 an
 `docs/plan/agent-plan-revision-2.md`). The golden files under `crates/answer/tests/golden/` are
 answers in this grammar, byte for byte.
 
-This document states the blocks of step 1 of design section 9 (`docs/design/agent-interface.md`).
-`now` and `changed` are defined by later stories (`agent-follow-links`, `agent-fill-pick`,
-`agent-press-submit`, `agent-back-forward`, `agent-change-and-log`), each of which adds its block
-here and in the crate.
+This document states the blocks of step 1 of design section 9 (`docs/design/agent-interface.md`)
+and the `now` block of its step 3 (`agent-follow-links`), which lists links. Controls in `now`
+and the `changed` block are defined by later stories (`agent-fill-pick`, `agent-press-submit`,
+`agent-back-forward`, `agent-change-and-log`), each of which adds its lines here and in the
+crate.
 
 ## Example
 
@@ -37,14 +38,18 @@ The example above shows the whole format. The binaries of release `0.4.0` (`surf
 - the head line, `surf 1 session <id> <state>`;
 - `token <64 digits>`, in the answer of `open` only;
 - `did <command>`, `did <command> "<argument>"` or `did refused <reason>`;
-- `page <status> "<media type>" "<address>"` for a loaded page, `page failed <reason>
-  "<address>"` for a failed load, or `page none` before the first load;
-- `path <shown> of <total>` and its indented lines;
+- `page <status> "<media type>" "<address>" ["<title>"]` for a loaded page, with the title of
+  an HTML document that has one, `page failed <reason> "<address>"` for a failed load, or
+  `page none` before the first load;
+- `path <shown> of <total>` and its indented lines, `<n> follow <handle> "<label>"` for a
+  `follow`;
+- without `--as`, for an HTML page with links, the `now` block of its links and `note
+  visibility: hidden attribute only` (section "Now");
 - with `--as`, the `note text:` lines and the `text` block (section "Text").
 
-A loaded page shows no title, even when the document has one. No `note parser:` line is
-printed: `surf_html::NOT_YET_PARSED` is empty, since the parser builds the tree in every
-insertion mode.
+Since `agent-follow-links` a loaded page shows its title; before it, none. A title longer than
+1,024 characters is left out. No `note parser:` line is printed: `surf_html::NOT_YET_PARSED`
+is empty, since the parser builds the tree in every insertion mode.
 
 An answer of today's binaries, to `go`:
 
@@ -71,8 +76,9 @@ path 3 of 3
   2. `did`
   3. `page`
   4. `path` and its indented lines
-  5. `note` lines, any number
-  6. `text`, its body lines and its `more` line, which is the last line of the answer
+  5. `now` and its indented lines
+  6. `note` lines, any number
+  7. `text`, its body lines and its `more` line, which is the last line of the answer
 - A line is made of words of the format, numbers and quoted fields, separated by one space.
   Only a quoted field holds a value from a page, a server or an address. A word is checked
   against its character set below, and the renderer refuses an answer with a word outside it
@@ -92,7 +98,8 @@ A value from a page, a server or an address is written as a quoted field:
 So a quoted field never holds a `"` other than its two quotes, and it ends at the first `"`
 after the opening one.
 
-A field with a length limit (a label of the `now` block, 60 characters, design section 5.2) is
+A field with a length limit (a label of the `now` block and of a `path` line, 60 characters,
+design section 5.2; a target of the `now` block, 1,024 characters) is
 cut before escaping: a value longer than the limit keeps its first characters up to the limit,
 counted as Unicode scalar values, so the cut falls on a character boundary. The kept part is
 quoted as above, and the field then ends in `...` after the closing quote:
@@ -154,6 +161,9 @@ refusal of the action, with a reason from this list:
 | `no-such-session` | `surfd` lists no session of that identity | 3 |
 | `session-died` | the session process ended without `close` | 3 |
 | `session-timeout` | the session process did not answer in time | 3 |
+| `unknown-handle` | the current document has no element of that handle, or there is none | 1 |
+| `hidden` | the element or an ancestor has the `hidden` attribute | 1 |
+| `unresolved` | the link's target does not resolve against the document base URL | 1 |
 
 A reason not in the list is refused by the parser. A story that adds a reason adds it here, to
 `RefusalReason` and to a test.
@@ -181,17 +191,51 @@ address and the title are quoted fields.
 path <shown> of <total>
   <n> <command>
   <n> <command> "<argument>"
+  <n> <command> <handle> "<label>"
 ```
 
 The last actions of the session, oldest first: `<shown>` of the `<total>` the session has taken,
 `<shown>` not above `<total>`. Exactly `<shown>` lines follow, each indented by two spaces:
 the action's sequence number, its command, a word of `[a-z]+`, and its argument as a quoted
-field when it had one.
+field when it had one. An action on an element names the element's handle, a word of
+`[a-z0-9]+` written bare (the session made it), and, for `follow`, the link's label as the
+`now` block writes it, cut at 60 characters: `3 follow l4 "Sign in"` (design section 5.1).
+
+### Now
+
+```
+now <shown> of <total>
+  <handle> link <visibility> "<label>" -> "<target>"
+  <handle> link <visibility> "<label>" -> "<target>" unresolved
+note visibility: hidden attribute only
+```
+
+The actionable elements of the current document, one line each, in document order (design
+section 5.2); since `agent-follow-links` its links. Only in an answer without page text (no
+`--as`), and only when the document has a link; `note visibility: hidden attribute only`
+follows it among the notes. `<shown>` of the `<total>` links are listed, the first ones: the
+lines stop before the block passes 1,048,576 bytes (paging is `agent-answer-paging`).
+
+- `<handle>`: `l<n>`, numbered from 1 in document order over the actionable elements, hidden
+  ones included, as the outline and the Markdown number them; a new document starts at 1 again,
+  and the same pages give the same handles.
+- `<visibility>`: `hid` when the element or an ancestor has the `hidden` attribute, `?`
+  otherwise: visibility is not computed, and `aria-hidden`, a closed `dialog` or `details` and
+  a popover leave a link `?`. `vis` is not written until visibility is computed.
+- `<label>`: the accessible name, cut at 60 characters (section "Quoting").
+- `<target>`: the `href` resolved against the document base URL (the first `base` element with
+  an `href`, else the document's address), written as its path, query and fragment when it has
+  the page's origin and whole otherwise; an `href` that does not resolve is written as the page
+  wrote it, followed by `unresolved`. Cut at 1,024 characters.
+
+`follow <handle>` takes a handle of this block. It is refused `unknown-handle` for a handle the
+current document has not, `hidden` for a `hid` link and `unresolved` for an unresolved one.
 
 ### Note
 
 ```
 note parser: <parts>
+note visibility: hidden attribute only
 note text: no-css
 note text: no-document
 note text: deep <n>
@@ -205,6 +249,8 @@ note adds it here:
   (`html-document-port` exposes the list as `Browser::parser_not_yet_parsed`), joined by `,`
   without spaces, at least one. Each name is a word of `[a-z-]+`; the renderer refuses
   another (decision D31).
+- `note visibility: hidden attribute only`: the `now` block says `hid` for an element the
+  `hidden` attribute hides and `?` for every other (section "Now"). With the `now` block only.
 - `note text: no-css`: the `text` block is computed from the document's tree without CSS, so
   text a style sheet hides is shown, in source order.
 - `note text: no-document`: page text was asked for, but the load failed or the page is not
@@ -273,8 +319,8 @@ the one place of rule 2.
 
 ### Later blocks
 
-`now` (the actionable elements, one line each) and `changed` (what the last action changed) are
-defined by later stories. The `log` answer is defined by `agent-change-and-log`.
+Controls in `now` and `changed` (what the last action changed) are defined by later stories.
+The `log` answer is defined by `agent-change-and-log`.
 
 ## Grammar
 
@@ -283,8 +329,8 @@ exactly as written, in its case (RFC 7405 writes this `%s"..."`). `SP` is U+0020
 U+000A, `DQUOTE` is U+0022, `DIGIT` is `0` to `9`, `ALPHA` is `A` to `Z` and `a` to `z`.
 
 ```
-answer        = head-line [token-line] [did-line] [page-line] [path-block] *note-line
-                [text-block]
+answer        = head-line [token-line] [did-line] [page-line] [path-block] [now-block]
+                *note-line [text-block]
 
 head-line     = "surf" SP "1" SP "session" SP session-id SP state LF
 session-id    = 1*(DIGIT / lower / "-")
@@ -296,7 +342,8 @@ did-line      = "did" SP (did-refused / did-action) LF
 did-refused   = "refused" SP reason
 did-action    = command [SP quoted]           ; command is not "refused"
 reason        = "token" / "closed" / "usage" / "no-such-session"
-              / "session-died" / "session-timeout"
+              / "session-died" / "session-timeout" / "unknown-handle" / "hidden"
+              / "unresolved"
 
 page-line     = "page" SP (page-none / page-failed / page-loaded) LF
 page-none     = "none"
@@ -308,11 +355,22 @@ failure       = 1*ALPHA
 path-block    = path-line *path-entry         ; exactly <shown> path-entry lines
 path-line     = "path" SP number SP "of" SP number LF
                                               ; <shown> of <total>, <shown> not above <total>
-path-entry    = SP SP number SP command [SP quoted] LF
+path-entry    = SP SP number SP command [SP quoted / SP handle [SP cut-quoted]] LF
+                                              ; with a handle: a label of at most 60
+handle        = 1*(lower / DIGIT)
 
-note-line     = "note" SP (note-parser / note-text) LF
+now-block     = now-line *now-entry           ; exactly <shown> now-entry lines
+now-line      = "now" SP number SP "of" SP number LF
+                                              ; <shown> of <total>, <shown> not above <total>
+now-entry     = SP SP handle SP kind SP visibility SP cut-quoted SP "->" SP cut-quoted
+                [SP "unresolved"] LF          ; label at most 60, target at most 1,024
+kind          = 1*lower
+visibility    = "vis" / "hid" / "?"
+
+note-line     = "note" SP (note-parser / note-visibility / note-text) LF
 note-parser   = "parser:" SP part *("," part)
 part          = 1*(lower / "-")
+note-visibility = "visibility:" SP "hidden attribute only"
 note-text     = "text:" SP ("no-css" / "no-document" / "deep" SP number)
                                               ; deep: at least 1
 

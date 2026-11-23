@@ -1,6 +1,6 @@
 // What the page holds: the sessions in list order, the entries of the sessions it loaded, and
-// the selection: the selected session, the playhead over its actions and the selected event. No
-// DOM here.
+// the selection: the selected session, the playhead over its actions and the selected event; and
+// what the page line and the panel "Now" read at the playhead. No DOM here.
 
 const state = {
   newest: 0,
@@ -308,4 +308,20 @@ export function pageAt(id) {
   }
   const answer = list[at].answer;
   return answer ? answer.page : "running";
+}
+
+// What can be done at the playhead of the session: {now} with the `now` member of its action's
+// answer entry (null when the answer has none), the word "running" when that answer is not
+// held, or null when the session has no action held.
+export function nowAt(id) {
+  const list = actions(id);
+  const at = playheadIndex(list);
+  if (at < 0) {
+    return null;
+  }
+  const answer = list[at].answer;
+  if (!answer) {
+    return "running";
+  }
+  return { now: answer.now === undefined ? null : answer.now };
 }

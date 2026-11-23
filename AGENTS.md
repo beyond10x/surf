@@ -294,7 +294,12 @@ above, and the list of standards itself was written from memory.
     every body line behind `>`, its characters checked by `escaped_in_text`
     (`escaped_at_run_start`, `quote_text`, `quote_text_cut`, `text_page`, `render_text_whole`;
     at most 200 body lines and 32,768 bytes, then a `more` line), and the notes `note text:
-    no-css`, `no-document` and `deep <n>` (`TextNote`). No dependency.
+    no-css`, `no-document` and `deep <n>` (`TextNote`). Since round 2
+    (`story:agent-follow-links`) the `now` block of links (`Now`, `Element`, `Visibility`,
+    `Target`; label cut at `LABEL_CHARS_MAX` 60, target at `TARGET_CHARS_MAX` 1,024, both read
+    back through `Cut`), `note visibility: hidden attribute only`, the `path` line of an action on
+    an element (`3 follow l1 "Sign in"`, `PathEntry::handle`) and the refusal reasons
+    `unknown-handle`, `hidden` and `unresolved`. No dependency.
   - `crates/secret` (`surf-secret`): the operating system random source, the comparison in
     constant time and the 32-byte token. Every secret and every random identity of the agent
     and the view comes from here. No dependency.
@@ -407,7 +412,7 @@ above, and the list of standards itself was written from memory.
     component and a relative path are refused. `tests/start.rs` has the six tests of the checks,
     each against a listener of the test. Since wave
     4 `surf-agent open`, `go`, `look` and `close` run against a real `surfd` and a real session
-    process; the package carries the release version, `0.4.0`, as do `surf-cli`, `surfd` and
+    process, and since round 2 `follow <handle>` (`story:agent-follow-links`); the package carries the release version, `0.4.0`, as do `surf-cli`, `surfd` and
     `surf-session`. `open` starts `surfd` from the directory of its own executable. Depends on
     `surf-answer` and `surf-secret`.
   - `crates/surfd` (`surfd`): a library and the binary `surfd`, the daemon the agent command line
@@ -418,7 +423,10 @@ above, and the list of standards itself was written from memory.
     the entries its sessions send with each answer (`src/log.rs`). Since wave 6 it serves the
     live view: `crates/view` over its sessions and kept logs (`src/view.rs`), on 127.0.0.1,
     address and token in `$XDG_RUNTIME_DIR/surf/view-url` (mode 0600, removed at exit); it reads
-    a session's text only through `surf_answer::parse` and `surf_answer::unquote`. The server
+    a session's text only through `surf_answer::parse` and `surf_answer::unquote`. Since round 2
+    (`story:view-now-panel`) an answer entry's `now` block reaches the view: a link with its
+    label and target, a line of any other kind with its kind and its text as
+    `surf_answer::render` writes it (no `match` on the kind). The server
     starts in `Daemon`'s `begin` with a view token drawn by `surf-secret`; the token is in that
     file and, only with `surfd --print-view-url`, in the line the binary writes to standard
     error (`Config::view_line`), in no answer, refusal, entry or log line. Without the option the
@@ -434,14 +442,14 @@ above, and the list of standards itself was written from memory.
     (`LATE_ANSWER_TIMEOUT`) while the session's turn stays taken, a log of at most 10,000
     entries and 16 MiB per session and 64 MiB over all sessions, a reader queue of 1,024
     entries, 256 ended sessions listed; open sessions are not bounded. It starts `surf-session`
-    from the directory of its own executable. Its 49 tests (3 unit tests of `src/view.rs`,
+    from the directory of its own executable. Its 50 tests (4 unit tests of `src/view.rs`,
     `adversary_link` 3, `built` 14, `in_process` 14, `log` 6, `view` 9) run a stand-in session
     or none; the real one is run by the `e2e`, `events`, `view`, `adversary_events` and
     `adversary_view` tests of `surf-session`. Depends on `surf-agent` (for `wire`),
     `surf-answer`, `surf-secret` and `surf-view`.
   - `crates/session` (`surf-session`): one agent session. A library core over any transport
     and the binary `surf-session`, which `surfd` starts, one process per session. It draws the
-    session token, answers `open`, `go`, `look` and `close` in the format of
+    session token, answers `open`, `go`, `look`, `follow` and `close` in the format of
     `docs/agent-answer.md`, issues the model commands for each (`OpenSession`, `Go`,
     `CloseSession`, `RecordAction`) and loads pages through the `surf` library with
     `surf-fetch`: `http:` only. The token is compared in constant time and is in no command
@@ -461,25 +469,33 @@ above, and the list of standards itself was written from memory.
     most four times its length plus two bytes. Since wave 8 the entries of
     `NavigationStarted` and `RequestStarted` carry `method`, `body` as `<n> bytes` and
     `body_type`, an absent one as the field with no value; its transport is `surf::fetch_http`,
-    which since wave 9 sends a `Post` (no command of the session sends one yet). 73 tests:
+    which since wave 9 sends a `Post` (no command of the session sends one yet). 92 tests:
     `adversary_document_text` 7, `adversary_events` 1, `adversary_parse` 4, `adversary_view`
     1, `built` 11, `core` 22, `e2e` 2 (runs the three built binaries, or those in
-    `SURF_BIN_DIR`), `events` 17, `memory` 1, `redirect` 2 and `view` 5 (the live view of
+    `SURF_BIN_DIR`), `events` 18, `follow` 17, `memory` 2, `redirect` 2 and `view` 5 (the live view of
     `surfd` over the real session).
     `open <url>`, `go <url>` and `look` take `--as tree|markdown [--from-line <n>]` and print the
     page as an outline or as Markdown in a `text` block, computed at each call from the tree
     `surf::Browser::document_tree` keeps for the document of the session's current navigation
     (nothing fetched again); with no HTML document `note text: no-document` and no block; the
     call records the same action, events and path as without `--as`.
+    Since round 2 (`story:agent-follow-links`) the `page` line and the status record carry the
+    document's title (at most 1,024 characters, `TITLE_CHARS_MAX`), and an answer without `--as`
+    lists the current document's links in the `now` block (handles from `surf_page::handles`, `hid`
+    from the `hidden` attribute alone, targets resolved against
+    `surf_page::base_url::document_base_url`, at most `NOW_BYTES_MAX` bytes) with `note
+    visibility: hidden attribute only`; `follow <handle>` issues `Follow` and records `follow`
+    with the address, handle and label, or is refused `unknown-handle`, `hidden` or
+    `unresolved` (status 1).
     `cargo clippy -p surf-session` needs `--no-deps`: the generated `surf-types` fails clippy.
-    Depends on the `surf` library, `surf-ports`, `surf-fetch`, `surf-answer`,
-    `surf-page-text`, `surf-secret`, the
+    Depends on the `surf` library, `surf-ports`, `surf-fetch`, `surf-answer`, `surf-html`,
+    `surf-page`, `surf-page-text`, `surf-secret`, `surf-url`, the
     generated `surf-types`, and on `surf-agent` and `surfd` (the packages of the other two
     binaries, for the end-to-end test and the wire).
   - `crates/view` (`surf-view`): the live view's HTTP server, standard library only: `GET` only, a
     fixed route table, the `Host` and view-token checks, and server-sent events with a bound per
-    reader. `docs/view-stream.md` is what it answers. `web/` holds the page's ten files, with
-    `detail.js` since wave 8 (no
+    reader. `docs/view-stream.md` is what it answers. `web/` holds the page's eleven files, with
+    `detail.js` since wave 8 and `now.js` since round 2 (no
     framework, no build step, nothing from another origin, no inline script or style), compiled
     in by `page_files()` in `src/assets.rs`; the page fits 360 px to 1,400 px. The example
     `prototype` serves them over three scripted sessions; it shows example data only, and since
@@ -491,8 +507,9 @@ above, and the list of standards itself was written from memory.
     sessions; since wave 7 the page shows them. `Source::read_newest` gives the newest number and a
     reader from it in one call, so a stream always answers. A stream's queue holds at most
     `Limits::queue_entries` (256) entries and `Limits::queue_bytes` (1 MiB), or one larger frame
-    alone: such a frame waits until the queue is empty and is then written alone. 61 tests
-    (`adversary_view` 2, `http` 33, `json` 10, `prototype` 8, `stream_bounds` 6, `web` 2).
+    alone: such a frame waits until the queue is empty and is then written alone. 66 tests
+    (`adversary_now` 1, `adversary_view` 2, `http` 33, `json` 14, `prototype` 8,
+    `stream_bounds` 6, `web` 2).
     Depends on `surf-secret`.
     - `crates/view/web/`: the live view's page, plain HTML, CSS and JavaScript modules compiled
       into `surfd`; the selection in the address's fragment (`#session=<id>&at=<sequence>`).
@@ -507,10 +524,18 @@ above, and the list of standards itself was written from memory.
       with its fields, and the session's requests, one row per request; the selected event is
       kept in the address (`#session=<id>&at=<sequence>&event=<number>`); the requests list
       and the selection scroll inside themselves. A mark holds a button for the keyboard, and a
-      click anywhere on the mark selects its event. A value from a session is set
+      click anywhere on the mark selects its event. Since round 2 (`story:view-now-panel`) the
+      centre panel "Now" (`now.js`) lists the `now` member of the answer entry at the playhead,
+      grouped by kind, each element with its handle, the answer's visibility word (`hid` marked
+      hidden), label and target, and the visibility note; a line of a kind it does not know is
+      its text; a segment of an action on an element shows its handle (`follow l1`) from the
+      path of its answer entry. No target is a link. A value from a session is set
       only as `textContent` or as the value of an attribute of the list in `dom.js`, and
       `dom.js` is the only module that sets an attribute (it throws for any other name); its
-      nine attribute names are unchanged. The static attributes of `index.html` (`tabindex`,
+      nine attribute names are unchanged. Every text goes through `written` in `dom.js`: a
+      bidirectional control (U+202A to U+202E, U+2066 to U+2069) is shown as a span of class
+      `bidi-mark` whose text names it (`U+202E`), in a `title` attribute as that name; U+200E,
+      U+200F, joiners and a soft hyphen stay. The static attributes of `index.html` (`tabindex`,
       `role`, `aria-labelledby` on the two scrolling regions) are not set by a script.
   - `crates/view-fixture` (`surf-view-fixture`): test tooling, not shipped: a binary that
     starts a page server, `surfd` in process and sessions for the page tests, under a
@@ -524,7 +549,9 @@ above, and the list of standards itself was written from memory.
     `surf-view-foreign`, waits until it is killed: `tests/fixture.rs` starts it under the name
     `surf-session` as a process that is not the fixture's and that `kill` must leave alive. A
     test starts no program of the system under another name: on the forge's runner `tail`
-    started as `surf-session` exited at once. 2 tests (`fixture` 1, `adversary_commands` 1).
+    started as `surf-session` exited at once. 5 tests (`acceptance` 3, `fixture` 1,
+    `adversary_commands` 1); `acceptance` is the HTTP part of the live view's acceptance case
+    (`story:view-acceptance`), over the pages of `pages/acceptance/`.
     Depends on `surfd`, `surf-view` and `surf-test-process`.
   - `crates/test-process` (`surf-test-process`): test tooling, not shipped and not published: no
     binary that ships depends on it. Whether another process has ended, decided once from
@@ -623,10 +650,13 @@ above, and the list of standards itself was written from memory.
     the copy of the selected `option` the parser puts into a `selectedcontent`, from which
     `actionable_elements` lists no row (surf's reading, not the standard's rendering). Since
     `story:html-document-port` (round 1) `surf` depends on it, and `surf-page-text` too.
-    65 tests: 28 in `tests/elements.rs`, 34 in `tests/label.rs`, 1 each in
-    `tests/tree_tables.rs` and `tests/tree_template.rs` (the parser unit's) and 1 in
+    69 tests: 28 in `tests/elements.rs`, 35 in `tests/label.rs`, 3 in `tests/base_url.rs`,
+    1 each in `tests/tree_tables.rs` and `tests/tree_template.rs` (the parser unit's) and 1 in
     `tests/adversary_select.rs` (the parser adversary's), modules of the one test binary
-    (`story:one-test-binary-per-crate`). Standard library and `surf-html` only.
+    (`story:one-test-binary-per-crate`). Since round 2 (`story:agent-follow-links`) it has
+    `base_url::document_base_url`, the one owner of the document base URL (the first `base`
+    with `href`, parsed against the document address). Standard library, `surf-html` and
+    `surf-url` only.
   - `crates/page-text` (`surf-page-text`): a `surf-html` tree as text, the outline
     (`outline`) and Markdown (`markdown::markdown`, tables as GitHub tables since
     `story:page-text-tables`), each line without the answer's `> `, one at a time.
@@ -808,9 +838,13 @@ above, and the list of standards itself was written from memory.
     7, `hundred` 1, `modes` 9). Depends on `surf-tls` with `test-tooling`.
 - `view-tests/`: the Playwright tests of the live view's page (`@playwright/test` 1.65.0,
   Chromium's headless shell, a committed `package-lock.json`), each case with its own
-  `surf-view-fixture`: 38 cases, 18 in `tests/first-page.spec.mjs`, 6 in
-  `tests/adversary-page.spec.mjs`, 6 in `tests/detail.spec.mjs` and 8 in
-  `tests/adversary-detail.spec.mjs`. Node and Playwright are gate tooling only.
+  `surf-view-fixture`: 59 cases, 23 in `tests/first-page.spec.mjs`, 6 in
+  `tests/adversary-page.spec.mjs`, 6 in `tests/detail.spec.mjs`, 8 in
+  `tests/adversary-detail.spec.mjs`, 5 in `tests/now.spec.mjs` (over the pages of
+  `crates/view-fixture/pages/now/`), 7 in `tests/adversary-now.spec.mjs` (over
+  `crates/view-fixture/pages/adversary-now/`) and 4 in `tests/acceptance.spec.mjs` (the page
+  part of the live view's acceptance case, over `crates/view-fixture/pages/acceptance/`). Node
+  and Playwright are gate tooling only.
 - `conformance/` (`surf-conformance`): runs `.out/suite.json` against the Rust system in process,
   with the runner of `ess-conformance`. A Cargo workspace of its own, outside the root one, with
   its own committed `Cargo.lock` and its own `target/`. It depends on `surf`, `surf-ports` and the
@@ -1479,7 +1513,10 @@ authored), 48 refusal(s)` (`slot task suite`; the document unit read the same on
 Against the interpreter and against the Rust system: `169 scenarios: 169 passed, 0 failed, 0
 error, 0 unsupported`; `conform-totals`: `the interpreter and the Rust system ran 169
 scenario(s) each, of suite
-sha256:0aead5f74409f8c561f544df8056b9e6b6fe146c13ba2e5e3a3fbf0ffdea733c`. The planted defect:
+sha256:95b3119d869d65aec04eaf21d4f9a762352056b6d22b23f0ad1e5a7678f2c672` (the digest since
+`story:agent-follow-links`, which added the shape `surf.agent.FollowCall`; no gate step
+compares it).
+The planted defect:
 `planted defect: 169 scenarios: 133 passed, 36 failed, 0 error, 0 unsupported`; the
 conformance crate's `tests/main.rs` ran 15 passed. `generated-check`: `generated/rust matches
 spec/ (30 artifact(s) and .ess-output)`, the committed bytes. `html-conformance: 9107 cases,
@@ -1502,6 +1539,24 @@ That run was not green: `task view-test` failed one case, `dropped entries are a
 held the 20 entries four `go`s dropped before `story:html-document-port`; the parser step
 records `DocumentParsed` and one `ElementAdded` per actionable element, 28 are dropped now,
 and the test derives the number from the entries' `index` since.
+
+With round 2's view unit (`story:view-now-panel`, `story:view-acceptance`, 2026-11-22) `task
+view-test` runs 47 page tests (38 before), 7 more since the adversary pass on
+`story:view-now-panel` (4 of the adversary's cases and 3 of its fix) and 59 since
+`story:view-live-means-stream-open` (5 in `tests/first-page.spec.mjs`). The live view's
+acceptance case of `epic:live-view` is seven tests named after its sentences, all in the
+gate: in `task test`, the binary
+`surf-view-fixture::main` (5 tests, 2 before) runs `acceptance::api_sessions_lists_both_with_token_and_401_without`,
+`acceptance::request_with_another_host_is_refused` and `acceptance::events_deliver_a_go_in_order`
+(each under 1.2 s at a load average of about 90); in `task view-test`,
+`tests/acceptance.spec.mjs` runs `page lists both sessions`, `page line and three links after
+go`, `latest marker moves on second go` and `script in title is shown as text`. The three
+slowest page tests, at a load average of 106 to 140: `an entry over 1 MiB` 29.7 s (three `go`s
+to a 60,000-byte address, then waits up to 30 s each for four segments and the page line of an
+answer over 1 MiB), `adversary: a refused token on the stream stops the page` 15.5 s (a fixed
+`page.waitForTimeout(12_000)` to see that no request follows a refusal) and `dropped entries
+are a gap` 9.7 s (two fixtures of their own, four `go`s, a poll of `/api/sessions` until a
+session reads `closed`).
 
 With `story:ess-0-97-3` (2026-11-22, on `896c64d`), surf builds on ess 0.97.3: `surf v1 — 9
 file(s), 15 scenario(s), valid` and `96 scenario(s) (15 authored), 28 refusal(s)`, as with
@@ -1622,7 +1677,21 @@ files cannot be read. In the root workspace, `surf-url` prints `urltestdata: 904
 872 passed, 32 skipped`; the 32 are hosts outside ASCII, listed in
 `crates/url/tests/data/SKIPPED`. `view-stream-check`: `view-stream-check: 19 event name(s),
 each a message of the AsyncAPI projection`. `view-test`: `38 passed (15.8s)`; 12.9 s of it are
-the case that waits to see that a refused token is not sent again. `html-conformance`, the last
+the case that waits to see that a refused token is not sent again. Since `story:view-now-panel`
+it printed `43 passed (2.7m)` on 2026-11-22 at a load average of about 140 on 20 CPUs, the
+five cases of `now.spec.mjs` 2.2 to 3.8 s each and `an entry over 1 MiB` 29.9 s at a load
+average of about 140. Since `story:view-acceptance` it prints `47 passed`: `47 passed (2.5m)`
+(the task 174 s with its build and `npm ci`) on 2026-11-22 at a load average of 106 to 140,
+the four cases of `acceptance.spec.mjs` 1.9 to 6.0 s each and `an entry over 1 MiB` 29.7 s at
+that load. Since the adversary pass on `story:view-now-panel` it prints `53 passed`: `53 passed
+(1.1m)` (the task 71 s) on 2026-11-22 at a load average of 55 to 65, the six cases of
+`adversary-now.spec.mjs` 0.7 to 1.4 s each and `an entry over 1 MiB` 17.7 s at that load.
+With the seventh case of `adversary-now.spec.mjs` (a control in an event field, named in the
+mark's `title`) and the five cases of `story:view-live-means-stream-open` in
+`first-page.spec.mjs` it prints `59 passed (3.0m)` (the task 220 s) on 2026-11-23 at a load
+average of 126 to 127 on 20 CPUs, the five cases 5.7 to 11.1 s each and the slowest case,
+`an entry over 1 MiB`, 35.0 s at that load.
+`html-conformance`, the last
 step of `check`: `html-conformance: 9107 cases, 9095 run, 8428 passed` (82 encoding cases,
 7,046 tokenizer cases and 1,300 tree construction cases), with `tag markup 1979/1979/1979`,
 `tag text 328/328/328`, `tag charref

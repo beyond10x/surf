@@ -51,6 +51,8 @@ pub struct Answer {
     pub page: Option<Page>,
     /// `path <shown> of <total>` and one indented line per action shown.
     pub path: Option<Path>,
+    /// `now <shown> of <total>` and one indented line per actionable element shown.
+    pub now: Option<Now>,
     /// `note` lines, in order.
     pub notes: Vec<Note>,
     /// The `text` block: a page's text, every line behind `>`, then the `more` line when lines
@@ -67,6 +69,7 @@ impl Answer {
             did: None,
             page: None,
             path: None,
+            now: None,
             notes: Vec::new(),
             text: None,
         }
@@ -144,16 +147,26 @@ pub enum RefusalReason {
     SessionDied,
     /// `session-timeout`: the session process did not answer in time.
     SessionTimeout,
+    /// `unknown-handle`: the current document has no element of that handle, or there is no
+    /// current document.
+    UnknownHandle,
+    /// `hidden`: the element or an ancestor has the `hidden` attribute.
+    Hidden,
+    /// `unresolved`: the link's target does not resolve against the document base URL.
+    Unresolved,
 }
 
 impl RefusalReason {
-    const ALL: [RefusalReason; 6] = [
+    const ALL: [RefusalReason; 9] = [
         RefusalReason::Token,
         RefusalReason::Closed,
         RefusalReason::Usage,
         RefusalReason::NoSuchSession,
         RefusalReason::SessionDied,
         RefusalReason::SessionTimeout,
+        RefusalReason::UnknownHandle,
+        RefusalReason::Hidden,
+        RefusalReason::Unresolved,
     ];
 
     /// The word of the format.
@@ -165,6 +178,9 @@ impl RefusalReason {
             RefusalReason::NoSuchSession => "no-such-session",
             RefusalReason::SessionDied => "session-died",
             RefusalReason::SessionTimeout => "session-timeout",
+            RefusalReason::UnknownHandle => "unknown-handle",
+            RefusalReason::Hidden => "hidden",
+            RefusalReason::Unresolved => "unresolved",
         }
     }
 }
@@ -203,15 +219,94 @@ pub struct Path {
     pub entries: Vec<PathEntry>,
 }
 
-/// One indented line of the `path` block: `  <n> <command>` or `  <n> <command> "<argument>"`.
+/// One indented line of the `path` block: `  <n> <command>`, then the handle of the element an
+/// action took when it took one (`  3 follow l1`), then the argument quoted when it had one.
+///
+/// Without a handle the argument is an address, written whole. With a handle it is the
+/// element's label, cut at [`LABEL_CHARS_MAX`] characters as the `now` block cuts it
+/// (`  3 follow l1 "Sign in"`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PathEntry {
     /// The action's sequence number in the session.
     pub sequence: u64,
     /// The command word, `[a-z]+`.
     pub command: String,
-    /// The argument, quoted on the line; `None` for a command given none.
+    /// The handle of the element the action took, a word of `[a-z0-9]+`; `None` for an action
+    /// on no element.
+    pub handle: Option<String>,
+    /// The argument, quoted on the line; `None` for a command given none. With a handle, the
+    /// kept part of the label when it was cut.
     pub argument: Option<String>,
+    /// The label was cut at [`LABEL_CHARS_MAX`] characters: the field is followed by `...`. Only
+    /// with a handle.
+    pub argument_cut: bool,
+}
+
+/// The most characters of a label in the `now` block and on a `path` line (design section 5.2).
+pub const LABEL_CHARS_MAX: usize = 60;
+
+/// The most characters of a link's target in the `now` block. A deliberate bound the design does
+/// not state: a target comes from the page, and an answer stays within its size.
+pub const TARGET_CHARS_MAX: usize = 1_024;
+
+/// The `now` block: the actionable elements of the current document, in document order, and
+/// how many it has.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Now {
+    /// How many elements the document has; at least `elements.len()`.
+    pub total: u64,
+    /// The elements shown, the first ones in document order, one indented line each.
+    pub elements: Vec<Element>,
+}
+
+/// One line of the `now` block: `  <handle> <kind> <visibility> "<label>" -> "<target>"`, with
+/// ` unresolved` after a target that did not resolve.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Element {
+    /// The handle, a word of `[a-z0-9]+` (`l1`).
+    pub handle: String,
+    /// The kind, a word of `[a-z]+` (`link`).
+    pub kind: String,
+    /// `vis`, `hid` or `?`.
+    pub visibility: Visibility,
+    /// The label, cut at [`LABEL_CHARS_MAX`] characters.
+    pub label: Cut,
+    /// The target, cut at [`TARGET_CHARS_MAX`] characters.
+    pub target: Target,
+}
+
+/// The visibility word of a `now` line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Visibility {
+    /// `vis`: the element is visible.
+    Visible,
+    /// `hid`: the element is hidden.
+    Hidden,
+    /// `?`: visibility is not computed.
+    Unknown,
+}
+
+impl Visibility {
+    const ALL: [Visibility; 3] = [Visibility::Visible, Visibility::Hidden, Visibility::Unknown];
+
+    /// The word of the format.
+    pub fn word(self) -> &'static str {
+        match self {
+            Visibility::Visible => "vis",
+            Visibility::Hidden => "hid",
+            Visibility::Unknown => "?",
+        }
+    }
+}
+
+/// A link's target on a `now` line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Target {
+    /// `-> "<target>"`: resolved against the document base URL, written as its path, query and
+    /// fragment when it has the page's origin and whole otherwise.
+    Resolved(Cut),
+    /// `-> "<target>" unresolved`: the value as the page wrote it, which does not resolve.
+    Unresolved(Cut),
 }
 
 /// A `note` line, from a fixed list.
@@ -220,9 +315,15 @@ pub enum Note {
     /// `note parser: <parts>`: the parts of the tree builder not implemented yet, at least one,
     /// each a word of `[a-z-]+`, joined by `,`.
     Parser(Vec<String>),
+    /// `note visibility: hidden attribute only`: the `now` block says `hid` for an element the
+    /// `hidden` attribute hides, and `?` for every other, as visibility is not computed.
+    Visibility,
     /// `note text: <what>`: what the `text` block cannot show.
     Text(TextNote),
 }
+
+/// The words of `note visibility:`.
+const VISIBILITY_NOTE: &str = "note visibility: hidden attribute only";
 
 /// What a `note text:` line says.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -461,6 +562,34 @@ pub struct Cut {
     pub cut: bool,
 }
 
+impl Cut {
+    /// `value` cut as [`quote_cut`] cuts it at `limit` characters: its first `limit` characters
+    /// and `cut` when it is longer, the whole value otherwise.
+    pub fn of(value: &str, limit: usize) -> Cut {
+        match value.char_indices().nth(limit) {
+            Some((end, _)) => Cut {
+                kept: value[..end].to_string(),
+                cut: true,
+            },
+            None => Cut {
+                kept: value.to_string(),
+                cut: false,
+            },
+        }
+    }
+
+    /// Whether [`unquote_cut`] with `limit` reads the field of this value back to it: a cut
+    /// value keeps exactly `limit` characters, an uncut one at most `limit`.
+    fn fits(&self, limit: usize) -> bool {
+        let length = self.kept.chars().count();
+        if self.cut {
+            length == limit
+        } else {
+            length <= limit
+        }
+    }
+}
+
 /// Why a quoted field was refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UnquoteError {
@@ -589,6 +718,15 @@ pub enum RenderError {
     TokenForm,
     /// The `path` block shows more actions than its total.
     PathLongerThanTotal,
+    /// The `now` block shows more elements than its total.
+    NowLongerThanTotal,
+    /// A field with a length limit that its reading could not give back: a value marked cut
+    /// that does not keep exactly its limit, an uncut one over it, or a `path` argument marked
+    /// cut on a line without a handle.
+    CutLength {
+        /// Which field, such as `now label`.
+        field: &'static str,
+    },
     /// A `note parser` line with no part, or a `note text: deep` line of 0 levels.
     EmptyNote,
     /// A body line of the `text` block holds a line feed or a character [`escaped_in_text`]
@@ -617,6 +755,12 @@ impl fmt::Display for RenderError {
             }
             RenderError::PathLongerThanTotal => {
                 f.write_str("the path shows more actions than its total")
+            }
+            RenderError::NowLongerThanTotal => {
+                f.write_str("the now block shows more elements than its total")
+            }
+            RenderError::CutLength { field } => {
+                write!(f, "the {field} does not fit its length limit as marked")
             }
             RenderError::EmptyNote => {
                 f.write_str("a note parser line has no part, or a note text deep line 0 levels")
@@ -653,6 +797,9 @@ pub fn render(answer: &Answer) -> Result<String, RenderError> {
     }
     if let Some(path) = &answer.path {
         render_path(path, &mut out)?;
+    }
+    if let Some(now) = &answer.now {
+        render_now(now, &mut out)?;
     }
     for note in &answer.notes {
         render_note(note, &mut out)?;
@@ -734,8 +881,73 @@ fn render_path(path: &Path, out: &mut String) -> Result<(), RenderError> {
     for entry in &path.entries {
         let command = checked(&entry.command, "path command", is_command_char)?;
         out.push_str(&format!("  {} {command}", entry.sequence));
-        push_argument(entry.argument.as_deref(), out);
+        match &entry.handle {
+            Some(handle) => {
+                out.push(' ');
+                out.push_str(checked(handle, "path handle", is_handle_char)?);
+                if let Some(argument) = &entry.argument {
+                    let label = Cut {
+                        kept: argument.clone(),
+                        cut: entry.argument_cut,
+                    };
+                    out.push(' ');
+                    push_cut(&label, LABEL_CHARS_MAX, "path label", out)?;
+                }
+            }
+            None => {
+                if entry.argument_cut {
+                    return Err(RenderError::CutLength {
+                        field: "path argument",
+                    });
+                }
+                push_argument(entry.argument.as_deref(), out);
+            }
+        }
         out.push('\n');
+    }
+    Ok(())
+}
+
+fn render_now(now: &Now, out: &mut String) -> Result<(), RenderError> {
+    let shown = now.elements.len() as u64;
+    if shown > now.total {
+        return Err(RenderError::NowLongerThanTotal);
+    }
+    out.push_str(&format!("now {shown} of {}\n", now.total));
+    for element in &now.elements {
+        let handle = checked(&element.handle, "now handle", is_handle_char)?;
+        let kind = checked(&element.kind, "now kind", is_command_char)?;
+        out.push_str(&format!("  {handle} {kind} {} ", element.visibility.word()));
+        push_cut(&element.label, LABEL_CHARS_MAX, "now label", out)?;
+        out.push_str(" -> ");
+        match &element.target {
+            Target::Resolved(target) => {
+                push_cut(target, TARGET_CHARS_MAX, "now target", out)?;
+            }
+            Target::Unresolved(target) => {
+                push_cut(target, TARGET_CHARS_MAX, "now target", out)?;
+                out.push_str(" unresolved");
+            }
+        }
+        out.push('\n');
+    }
+    Ok(())
+}
+
+/// The field of a value with a length limit, as [`quote_cut`] writes it, when [`unquote_cut`]
+/// reads it back to the same value.
+fn push_cut(
+    value: &Cut,
+    limit: usize,
+    field: &'static str,
+    out: &mut String,
+) -> Result<(), RenderError> {
+    if !value.fits(limit) {
+        return Err(RenderError::CutLength { field });
+    }
+    out.push_str(&quote(&value.kept));
+    if value.cut {
+        out.push_str("...");
     }
     Ok(())
 }
@@ -752,6 +964,7 @@ fn render_note(note: &Note, out: &mut String) -> Result<(), RenderError> {
             out.push_str("note parser: ");
             out.push_str(&parts.join(","));
         }
+        Note::Visibility => out.push_str(VISIBILITY_NOTE),
         Note::Text(what) => {
             out.push_str("note text: ");
             out.push_str(what.word());
@@ -1022,6 +1235,10 @@ fn is_command_char(c: char) -> bool {
     c.is_ascii_lowercase()
 }
 
+fn is_handle_char(c: char) -> bool {
+    c.is_ascii_lowercase() || c.is_ascii_digit()
+}
+
 fn is_part_char(c: char) -> bool {
     c.is_ascii_lowercase() || c == '-'
 }
@@ -1101,11 +1318,12 @@ pub fn parse(text: &str) -> Result<Answer, ParseError> {
 /// one of its own and leaves the lines alone otherwise.
 type Block = fn(&mut Lines<'_>, &mut Answer) -> Result<(), ParseError>;
 
-const BLOCKS: [Block; 6] = [
+const BLOCKS: [Block; 7] = [
     parse_token,
     parse_did,
     parse_page,
     parse_path,
+    parse_now,
     parse_notes,
     parse_text,
 ];
@@ -1229,20 +1447,97 @@ fn parse_path(lines: &mut Lines<'_>, answer: &mut Answer) -> Result<(), ParseErr
         let sequence = cursor.number()?;
         cursor.space()?;
         let command = cursor.word(is_command_char)?.to_string();
-        let argument = cursor.optional_quoted()?;
+        let handle = if cursor.rest().starts_with(' ') && !cursor.rest().starts_with(" \"") {
+            cursor.space()?;
+            Some(cursor.word(is_handle_char)?.to_string())
+        } else {
+            None
+        };
+        let (argument, argument_cut) = match (&handle, cursor.rest().is_empty()) {
+            (_, true) => (None, false),
+            (Some(_), false) => {
+                cursor.space()?;
+                let label = cursor.cut_quoted(LABEL_CHARS_MAX)?;
+                (Some(label.kept), label.cut)
+            }
+            (None, false) => (cursor.optional_quoted()?, false),
+        };
         cursor.end()?;
         entries.push(PathEntry {
             sequence,
             command,
+            handle,
             argument,
+            argument_cut,
         });
     }
     answer.path = Some(Path { total, entries });
     Ok(())
 }
 
+fn parse_now(lines: &mut Lines<'_>, answer: &mut Answer) -> Result<(), ParseError> {
+    let Some(line) = lines.take_if_starts("now ") else {
+        return Ok(());
+    };
+    let mut cursor = line.cursor();
+    cursor.at = "now ".len();
+    let shown: u64 = cursor.number()?;
+    cursor.literal(" of ")?;
+    let total: u64 = cursor.number()?;
+    cursor.end()?;
+    if shown > total {
+        return Err(line.error(ParseErrorKind::OutsideGrammar));
+    }
+    let mut elements = Vec::new();
+    for _ in 0..shown {
+        let Some(element_line) = lines.take_if_starts("  ") else {
+            return Err(ParseError {
+                line: lines.number(),
+                kind: ParseErrorKind::OutsideGrammar,
+            });
+        };
+        let mut cursor = element_line.cursor();
+        cursor.at = 2;
+        let handle = cursor.word(is_handle_char)?.to_string();
+        cursor.space()?;
+        let kind = cursor.word(is_command_char)?.to_string();
+        cursor.space()?;
+        let word = cursor.word(|c| c.is_ascii_lowercase() || c == '?')?;
+        let visibility = Visibility::ALL
+            .into_iter()
+            .find(|visibility| visibility.word() == word)
+            .ok_or_else(|| element_line.error(ParseErrorKind::OutsideGrammar))?;
+        cursor.space()?;
+        let label = cursor.cut_quoted(LABEL_CHARS_MAX)?;
+        cursor.literal(" -> ")?;
+        let target = cursor.cut_quoted(TARGET_CHARS_MAX)?;
+        let target = match cursor.rest() {
+            "" => Target::Resolved(target),
+            " unresolved" => {
+                cursor.at = element_line.text.len();
+                Target::Unresolved(target)
+            }
+            _ => return Err(element_line.error(ParseErrorKind::OutsideGrammar)),
+        };
+        cursor.end()?;
+        elements.push(Element {
+            handle,
+            kind,
+            visibility,
+            label,
+            target,
+        });
+    }
+    answer.now = Some(Now { total, elements });
+    Ok(())
+}
+
 fn parse_notes(lines: &mut Lines<'_>, answer: &mut Answer) -> Result<(), ParseError> {
     while let Some(line) = lines.take_if_starts("note ") {
+        if line.text == VISIBILITY_NOTE {
+            answer.notes.push(Note::Visibility);
+            continue;
+        }
         if let Some(word) = line.text.strip_prefix("note text: ") {
             if word.starts_with("deep ") {
                 let mut cursor = line.cursor();
@@ -1499,6 +1794,26 @@ impl<'a> Cursor<'a> {
         };
         let value =
             unquote(&rest[..end]).map_err(|error| self.line.error(ParseErrorKind::Field(error)))?;
+        self.at += end;
+        Ok(value)
+    }
+
+    /// One field with a length limit of `limit` characters: a quoted field, then `...` when the
+    /// value was cut, read back by [`unquote_cut`].
+    fn cut_quoted(&mut self, limit: usize) -> Result<Cut, ParseError> {
+        let rest = self.rest();
+        if !rest.starts_with('"') {
+            return Err(self.outside());
+        }
+        let mut end = match rest[1..].find('"') {
+            Some(close) => close + 2,
+            None => rest.len(),
+        };
+        if rest[end..].starts_with("...") {
+            end += 3;
+        }
+        let value = unquote_cut(&rest[..end], limit)
+            .map_err(|error| self.line.error(ParseErrorKind::Field(error)))?;
         self.at += end;
         Ok(value)
     }

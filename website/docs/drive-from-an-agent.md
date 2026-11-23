@@ -1,6 +1,6 @@
 ---
 title: Drive surf from an agent
-description: "surf-agent open, go, look and close: a browser session for an AI agent or a script, one call at a time."
+description: "surf-agent open, go, look, follow and close: a browser session for an AI agent or a script, one call at a time."
 ---
 
 import AgentTerminal from '@site/src/components/AgentTerminal';
@@ -36,13 +36,14 @@ It runs on Linux only: the agent binaries read the caller's user id from `/proc/
   `surf/surfd.sock` is a socket of yours; otherwise it exits 3, names the path and what is
   wrong, and sends nothing, so the token never reaches a socket someone else put there.
 
-## The four commands
+## The commands
 
 | command | what it does |
 |---|---|
 | `surf-agent open [<url>]` | open a session, load the address if one is given, print the session's identity and token |
 | `surf-agent go <url>` | load an address into the session's tab |
 | `surf-agent look` | print the session's state |
+| `surf-agent follow <handle>` | follow the link of a handle of the `now` block, such as `l3` |
 | `surf-agent close` | close the session and print its final state |
 
 `open <url>`, `go` and `look` also take `--as tree` or `--as markdown`: the answer then ends
@@ -109,6 +110,28 @@ path 5 of 5
 A load that fails is still an action taken: that `go` exits 0, and the `page` line says
 `failed` and why.
 
+## Links
+
+Since `follow` was added (after that run), the `page` line of an HTML page ends with its
+title, and an answer without `--as` lists the page's links in a `now` block, each with a handle:
+
+```text
+now 3 of 3
+  l1 link ? "Opening hours" -> "/about/hours.html"
+  l2 link hid "Members" -> "/members"
+  l3 link ? "Elsewhere" -> "http://other.example/"
+note visibility: hidden attribute only
+```
+
+`now` lists every link with a handle such as `l3`; `follow l3` goes there. `?` means
+visibility is not computed; only the `hidden` attribute is known, and a link it hides says
+`hid`. A target on the page's own origin is written as its path; one that does not resolve is
+written as the page wrote it, followed by `unresolved`. Handles are numbered in document order
+and start at 1 again on each new page. `follow` of a handle the page has not, of a `hid` link
+or of an unresolved target is refused with status 1 (`did refused unknown-handle`, `hidden`,
+`unresolved`); a followed link's `path` line names its handle and label,
+`3 follow l1 "Opening hours"`.
+
 A script can take the two values from the answer of `open`:
 
 ```console
@@ -121,9 +144,10 @@ $ surf-agent look
 ## The answer
 
 Every answer starts with its head line, `surf 1 session <id> <state>`, then the action it is
-for (`did`), the page (`page`: `none` before the first load, the status, media type and address
-of a loaded page, or `failed` with the reason) and the session's last actions (`path`); with
-`--as`, a `note text:` line and the `text` block with the page follow. Every
+for (`did`), the page (`page`: `none` before the first load, the status, media type, address and
+title of a loaded page, or `failed` with the reason) and the session's last actions (`path`);
+without `--as` the page's links (`now`) follow, with `--as` the `note text:` lines and the
+`text` block with the page. Every
 value that comes from a page, a server or an address stands in double quotes, with every
 character that could start a line or look like a field escaped. The format, line by line, with
 its grammar:
@@ -136,7 +160,7 @@ Quoting lowers the risk of page text steering an agent; it does not remove it.
 | status | meaning |
 |---|---|
 | 0 | the action was taken |
-| 1 | the action was refused: the token does not belong to the session (`did refused token`), or the session is closed (`did refused closed`) |
+| 1 | the action was refused: the token does not belong to the session (`did refused token`), the session is closed (`did refused closed`), or `follow` names a handle the page has not (`unknown-handle`), a hidden link (`hidden`) or a target that does not resolve (`unresolved`) |
 | 2 | usage: a word, the session or the token is missing or malformed |
 | 3 | `surfd` lists no such session (`did refused no-such-session`), the session process ended (`did refused session-died`) or did not answer in time (`did refused session-timeout`), or `surfd` cannot be reached or started, or the runtime directory or the socket fails `surf-agent`'s check |
 

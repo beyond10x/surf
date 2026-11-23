@@ -12,6 +12,7 @@ test = false
 
 [dependencies]
 surf-html = { path = "../html" }
+surf-url = { path = "../url" }
 
 [dev-dependencies]
 

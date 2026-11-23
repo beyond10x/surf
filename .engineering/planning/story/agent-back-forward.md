@@ -43,7 +43,7 @@ scope:
   path: generated/rust
 - confidence: inferred
   path: spec/domains/agent.yaml
-revision: 15
+revision: 18
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 5}
@@ -122,12 +122,18 @@ so the agent gets the reason and status 1 instead of a navigation that never sta
   12. `history_events_map_with_their_fields`: after cases 1 and 2, with `surfd` run in the test
       process (decision D29), the session log holds the `GoBack` and the `GoForward` event entries
       with every field of the specification and no `unmapped` mark, each between its action entry
-      and its answer entry.
+      and its answer entry;
+  13. after a form `POST` answered by a 303 to the page R, and a `follow` from R to B, `back`: the
+      page line of R, fetched with `GET`. The entry of R was committed by the `GET` that followed
+      the redirect, so it is no `POST` entry (decision D267, `story:agent-history-spec`). The
+      same holds for a 301 and a 302, after which `surf-fetch` continues with `GET` too; the case
+      uses the 303.
 
   The cases stand on commands built before this story in the commands unit: cases 1, 2, 5, 7, 8,
-  9, 10, 11 and 12 reach a second page with `follow` (`story:agent-follow-links`); case 6 makes
-  its `POST` entry with `press` (`story:agent-press-submit`, and `fill`,
-  `story:agent-fill-pick`, where its form has a field); cases 3 and 4 need neither.
+  9, 10, 11 and 12 reach a second page with `follow` (`story:agent-follow-links`); cases 6 and 13 make
+  their `POST` with `press` (`story:agent-press-submit`, and `fill`,
+  `story:agent-fill-pick`, where the form has a field), and case 13 goes on with `follow`; cases
+  3 and 4 need neither.
 
 Surfaces written: `crates/session/`, `crates/answer/`, `docs/agent-answer.md`,
 `cli/surf-agent.yaml`, `crates/agent/` (`src/wire.rs` included), `crates/surfd/src/daemon.rs`,
@@ -140,10 +146,43 @@ Surfaces written: `crates/session/`, `crates/answer/`, `docs/agent-answer.md`,
 
 ## Acceptance
 
-`cargo nextest run -p surf-session -p surf-answer -p surf-agent` passes with the 12 numbered
+`cargo nextest run -p surf-session -p surf-answer -p surf-agent` passes with the 13 numbered
 cases, each a test named after its case, case 1 answering the page line of A and case 2 that of
 B, and the drift test holding with `back` and `forward` in both the document and the parser. No
 test runs over 60 s, and the test step ends within 120 s.
+
+## As decided after the adversary's pass
+
+The adversary's pass on `d4499d1` added 13 tests in
+`crates/session/tests/adversary_back_forward.rs`; 2 of them were red.
+
+1. A traversal follows the rule of the request that made its entry (decision D279). The
+   argument of the Change above, "an entry whose address was refused never entered the
+   history", holds for the text of an address and not for what a host name resolves to on a
+   later fetch. An entry made by a `follow` from a page that counts as public was fetched
+   again by `back` or `forward` without the public-page rule, and a name that by then resolved
+   to a local address was dialed, where the same `follow` is refused `forbidden-destination`
+   (`adversary_bf_forward_to_an_entry_followed_from_a_public_page_dials_no_local_address`,
+   `adversary_bf_back_to_an_entry_followed_from_a_public_page_dials_no_local_address`). A
+   redirect is no way in: after a first connection to a public address the fetch refuses a
+   local redirect (`crates/fetch/src/lib.rs`:488-500).
+   - The session keeps, per entry of the history, whether its first request went out under
+     the public-page rule: a `follow` or `press` from a page that counts as public sets it, a
+     `go` does not. An entry committed by a traversal keeps the flag of the entry it reloads.
+   - `back` and `forward` fetch under the flag of their entry. A fetch the rule refuses
+     answers `did refused forbidden-destination` with the kept state, commits nothing, and
+     leaves `path` and the current page as they were.
+   - The flag of the current page is not used: `back` from a public page to an entry the agent
+     typed with `go` at a local address stays allowed.
+   - Tests added with the fix: the answer, `path` and `look` after the refused traversal and a
+     traversal the other way after it; the control with an entry typed by `go`; an entry made
+     by a `GET` `press` from a public page; the entry order of `docs/view-stream.md`:180 for
+     the refused traversal.
+2. `docs/agent-answer.md`: only a `go`, `follow` or `press` that loads a page drops the pages
+   after the current one. A failed `go` and a refused `follow` drop none
+   (`adversary_bf_a_failed_go_after_back_drops_nothing`,
+   `adversary_bf_a_refused_follow_after_back_drops_nothing`).
+3. The acceptance counts the 13 numbered cases, the adversary's 13 tests and the tests of 1.
 
 ## Out of scope
 

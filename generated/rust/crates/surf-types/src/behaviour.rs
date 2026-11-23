@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 1fa135dfaf753fab3e34de8ae9a4a7052216d1878fc9d395075ce5cd5ac673a6
+// contract digest a781938fbf4be70c3e62196db4afd2b86d2f53f3955885c5d3e606169c3ba178
 // do not edit: regenerate with `ess synthesize`
 
 //! What the specification fully determines, generated: the behaviour of every command the plan
@@ -243,6 +243,10 @@ pub trait Context {
     /// The authenticated caller's `session_id`, or `None` where the caller carries none.
     fn caller_session_id(&self) -> Option<crate::agent::SessionId>;
 
+    /// A `Optional<String>` the model says the implementation assigns — a `{generated: true}` value —
+    /// or `None` where there is nothing to report.
+    fn generate_optional_string(&mut self) -> Option<String>;
+
     /// A new `surf.agent.ActionId`, which the model says the implementation assigns — a created identity, a
     /// `{generated: true}` value, or an event field the model leaves undetermined.
     fn generate_surf_agent_action_id(&mut self) -> crate::agent::ActionId;
@@ -290,6 +294,8 @@ pub trait TryContext {
 /// The caller's `session_id`, or a named unavailable answer.
 fn try_caller_session_id(&self) -> Result<Option<crate::agent::SessionId>, UnmetObligation>;
 /// Assigns the value, or names the unavailable answer.
+fn try_generate_optional_string(&mut self) -> Result<Option<String>, UnmetObligation>;
+/// Assigns the value, or names the unavailable answer.
 fn try_generate_surf_agent_action_id(&mut self) -> Result<crate::agent::ActionId, UnmetObligation>;
 /// Assigns the value, or names the unavailable answer.
 fn try_generate_surf_document_document_id(&mut self) -> Result<crate::document::DocumentId, UnmetObligation>;
@@ -313,6 +319,7 @@ fn try_generate_surf_shell_window_id(&mut self) -> Result<crate::shell::WindowId
 
 impl<T: Context + ?Sized> TryContext for T {
 fn try_caller_session_id(&self) -> Result<Option<crate::agent::SessionId>, UnmetObligation> { Ok(Context::caller_session_id(self)) }
+fn try_generate_optional_string(&mut self) -> Result<Option<String>, UnmetObligation> { Ok(Context::generate_optional_string(self)) }
 fn try_generate_surf_agent_action_id(&mut self) -> Result<crate::agent::ActionId, UnmetObligation> { Ok(Context::generate_surf_agent_action_id(self)) }
 fn try_generate_surf_document_document_id(&mut self) -> Result<crate::document::DocumentId, UnmetObligation> { Ok(Context::generate_surf_document_document_id(self)) }
 fn try_generate_surf_document_element_id(&mut self) -> Result<crate::document::ElementId, UnmetObligation> { Ok(Context::generate_surf_document_element_id(self)) }
@@ -413,7 +420,7 @@ where
         };
         let _ = &held;
         let next = held;
-        let answer = crate::agent::FillOutcome::Requested { fill_requested: crate::agent::FillRequested { session_id: input.session_id.clone(), element_id: input.element_id.clone(), value: input.value.clone() } };
+        let answer = crate::agent::FillOutcome::Requested { fill_requested: crate::agent::FillRequested { session_id: input.session_id.clone(), element_id: input.element_id.clone(), value: input.value.clone(), handle: Some(input.handle.clone()) } };
         SessionStorage::put(&mut self.ports, next);
         return Ok(answer);
     }
@@ -450,7 +457,7 @@ where
         let _ = &held;
         let before = held.data.clone();
         let next = held;
-        let answer = crate::agent::FollowOutcome::Requested { navigation_requested: crate::agent::NavigationRequested { session_id: input.session_id.clone(), tab_id: before.tab_id.clone(), url: input.url.clone() } };
+        let answer = crate::agent::FollowOutcome::Requested { navigation_requested: crate::agent::NavigationRequested { session_id: input.session_id.clone(), tab_id: before.tab_id.clone(), url: input.url.clone(), handle: Some(input.handle.clone()), label: Some(input.label.clone()) } };
         SessionStorage::put(&mut self.ports, next);
         return Ok(answer);
     }
@@ -487,7 +494,7 @@ where
         let _ = &held;
         let before = held.data.clone();
         let next = held;
-        let answer = crate::agent::GoOutcome::Requested { navigation_requested: crate::agent::NavigationRequested { session_id: input.session_id.clone(), tab_id: before.tab_id.clone(), url: input.url.clone() } };
+        let answer = crate::agent::GoOutcome::Requested { navigation_requested: crate::agent::NavigationRequested { session_id: input.session_id.clone(), tab_id: before.tab_id.clone(), url: input.url.clone(), handle: self.ports.try_generate_optional_string()?, label: self.ports.try_generate_optional_string()? } };
         SessionStorage::put(&mut self.ports, next);
         return Ok(answer);
     }
@@ -578,7 +585,7 @@ where
         };
         let _ = &held;
         let next = held;
-        let answer = crate::agent::PickOutcome::Requested { pick_requested: crate::agent::PickRequested { session_id: input.session_id.clone(), element_id: input.element_id.clone(), option_id: input.option_id.clone() } };
+        let answer = crate::agent::PickOutcome::Requested { pick_requested: crate::agent::PickRequested { session_id: input.session_id.clone(), element_id: input.element_id.clone(), option_id: input.option_id.clone(), handle: Some(input.handle.clone()) } };
         SessionStorage::put(&mut self.ports, next);
         return Ok(answer);
     }
@@ -614,7 +621,7 @@ where
         };
         let _ = &held;
         let next = held;
-        let answer = crate::agent::PressOutcome::Requested { press_requested: crate::agent::PressRequested { session_id: input.session_id.clone(), element_id: input.element_id.clone() } };
+        let answer = crate::agent::PressOutcome::Requested { press_requested: crate::agent::PressRequested { session_id: input.session_id.clone(), element_id: input.element_id.clone(), handle: Some(input.handle.clone()) } };
         SessionStorage::put(&mut self.ports, next);
         return Ok(answer);
     }

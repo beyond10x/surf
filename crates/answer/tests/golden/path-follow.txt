@@ -1,0 +1,9 @@
+surf 1 session 7f3a open
+did follow "l1"
+page 200 "text/html" "http://shop.example/" "Fruit shop"
+path 5 of 5
+  1 open
+  2 go "http://shop.example/"
+  3 follow l1 "our offers"
+  4 follow l12 "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"...
+  5 press b1
