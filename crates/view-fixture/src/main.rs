@@ -43,7 +43,8 @@
 //! one request per connection, so only the first head is read, up to 64 KiB.
 //!
 //! The end of standard input stops the daemon (which kills its session processes) and the page
-//! server, and removes the directory.
+//! server, kills every process this fixture started that is still there (its descendants, read
+//! from `/proc/<pid>/task/<tid>/children`), and removes the directory.
 //!
 //! Options: `--entries-per-session <n>` and `--bytes-total <n>` set those fields of
 //! `surfd::log::Bounds`.
@@ -491,14 +492,24 @@ fn in_runtime(pid: u32, runtime: &Path) -> bool {
         .any(|pair| pair == needle.as_slice())
 }
 
-/// Kill every process left whose environment holds `XDG_RUNTIME_DIR=<runtime>`.
+/// Kill every process this fixture started that is left: its descendants (the sessions its
+/// `surfd` started, a `surf-agent`), found from `/proc/<pid>/task/<tid>/children`. It reads no
+/// file of a process that is not one of them; reading the environment of every process of the
+/// host cost 112 to 174 ms per fixture at about 4,000 processes
+/// (`story:page-step-holds-under-load`). Only where this kernel has no such file (no
+/// `CONFIG_PROC_CHILDREN`) is every process whose environment holds `XDG_RUNTIME_DIR=<runtime>`
+/// killed, as before.
 fn kill_left(runtime: &Path) {
     let own = std::process::id();
-    let left: Vec<u32> = processes()
-        .into_iter()
-        .filter(|&pid| pid != own)
-        .filter(|&pid| in_runtime(pid, runtime))
-        .collect();
+    let left = if Path::new(&format!("/proc/{own}/task/{own}/children")).exists() {
+        descendants(own)
+    } else {
+        processes()
+            .into_iter()
+            .filter(|&pid| pid != own)
+            .filter(|&pid| in_runtime(pid, runtime))
+            .collect()
+    };
     for &pid in &left {
         signal_kill(pid);
     }
@@ -506,6 +517,39 @@ fn kill_left(runtime: &Path) {
     for pid in left {
         let _ = ended_within(pid, deadline.saturating_duration_since(Instant::now()));
     }
+}
+
+/// Every process under `root`, children first: the pids each thread of a process names in
+/// `/proc/<pid>/task/<tid>/children`, and theirs in turn. A child of a thread that ended is a
+/// child of another thread of its process, so it is listed too.
+fn descendants(root: u32) -> Vec<u32> {
+    let mut found: Vec<u32> = Vec::new();
+    let mut next = vec![root];
+    while let Some(pid) = next.pop() {
+        for child in children(pid) {
+            if !found.contains(&child) {
+                found.push(child);
+                next.push(child);
+            }
+        }
+    }
+    found
+}
+
+fn children(pid: u32) -> Vec<u32> {
+    let Ok(tasks) = fs::read_dir(format!("/proc/{pid}/task")) else {
+        return Vec::new();
+    };
+    tasks
+        .flatten()
+        .flat_map(|task| {
+            fs::read_to_string(task.path().join("children"))
+                .unwrap_or_default()
+                .split_whitespace()
+                .filter_map(|word| word.parse().ok())
+                .collect::<Vec<u32>>()
+        })
+        .collect()
 }
 
 fn processes() -> Vec<u32> {
