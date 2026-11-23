@@ -57,7 +57,7 @@ scope:
   path: taskfiles/conform-totals.sh
 - confidence: cited
   path: taskfiles/generated-compare.sh
-revision: 50
+revision: 51
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T19:52:19Z", actor: "human:operator", revision: 48, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T19:52:19Z", actor: "human:operator", revision: 49, decided_on: {"recorded":{"verification":1}}}
@@ -408,7 +408,7 @@ under 20) is replaced by acceptance 3 here; 2 (load over 100, no test over 20 s,
 
 1. Step time on `main`. Every gate or `task test` run started for this story is in the evidence
    with `cat /proc/loadavg` before and after it; none is dropped. Three consecutive runs of
-   `ESS_TOOLCHAIN=0.97.3 slot --timeout 15m task test` on the story's commit, whose two readings
+   `slot --timeout 15m task test` (the pin `ESS_TOOLCHAIN=0.97.3` this statement named is refused since `spec/ess-inputs.yaml` requires ess 0.97.4) on the story's commit, whose two readings
    are each at least 100, each print `test step: N s` with N at most 90. If the host's load is
    under 100 while the unit works, the runs are reported with their load and this statement stays
    open. Stop: if after all changes such a run is over 90 s, the unit reports the ten largest
