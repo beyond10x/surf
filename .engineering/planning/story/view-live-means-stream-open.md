@@ -25,7 +25,7 @@ scope:
   path: website/docs/how-it-is-built.md
 - confidence: cited
   path: website/docs/status.md
-revision: 14
+revision: 15
 ---
 ## Context
 
@@ -62,7 +62,7 @@ Placement: this story writes `crates/view/web/view.js`, which the view unit of r
 of `story:view-now-panel` and `story:view-controls-and-changes`, and before the gate of the
 round 2 wave. `story:page-test-step-within-budget`, built on `wave/round-2` after the wave
 merge, depends on it (edge): its baseline of 54 page tests, 18 of them in
-`first-page.spec.mjs`, becomes 58 and 22, new test 3 uses `cut` and `mend`, new test 1 reads the
+`first-page.spec.mjs`, becomes 59 and 23, new test 3 uses `cut` and `mend`, new test 1 reads the
 session list, and the lines it cites in the spec files shift.
 
 ## Change
@@ -107,15 +107,38 @@ session list, and the lines it cites in the spec files shift.
      released, `live`.
   4. `no render of the timeline follows live`: a script added before the page runs
      (`page.addInitScript`) counts, in the page, the clears of `#actions` that happen after
-     `#live-word` first reads `live`. The test waits for `live`, for the end of the second
-     answer of `GET /api/sessions/<id>` and two frames, and reads 0.
+     `#live-word` first reads `live`. "After" is the order of the mutation records: `open()`
+     draws and then writes `live` in one task, so the script uses one observer over the
+     document and counts a clear only when the record that makes `#live-word` read `live` comes
+     before it in that order; it does not read the word's text when its callback runs. The test
+     waits for `live`, for the end of the second answer of `GET /api/sessions/<id>` and two
+     frames, and reads 0.
+  5. `no word is written while the page does not follow`: one session is open. A script added
+     before the page runs records every word `#live-word` takes. A route answers the first
+     `/events` with `route.fulfill` (status 200, `text/event-stream`, a body of one comment
+     block, `: keep-alive` and an empty line): the stream opens, gives one comment and ends,
+     and the API stays reachable (no `cut`, which would refuse the requests of the load too).
+     The route holds the second answer of `GET /api/sessions`, the load of that opening, and
+     the next `/events`. Two assertions, each with its message:
+     - "a keep-alive before the draw writes no word": the word reads `reconnecting` and the
+       recorded words hold no `live`;
+     - "a load whose stream closed writes no word": the held answer is released
+       (`route.continue()`), the test waits for the end of the `GET /api/sessions/<id>` that
+       follows and for two frames, the word reads `reconnecting` and the recorded words hold
+       no `live`.
+     Then the held `/events` is continued, and the word becomes `live`.
 - Documents, written by the unit as the units before it on this branch did (`ba9d465`,
   `936d45d`):
   - `README.md`, section "Watching sessions live": the four words and what each says, in at
     most four lines;
   - `CHANGELOG.md`, `## [Unreleased]`, `### Changed`: one bullet;
-  - the count of page tests, 54 today, where it is written: `AGENTS.md` (two places),
-    `README.md` (two places), `website/docs/how-it-is-built.md`, `website/docs/status.md`;
+  - the count of page tests, 54 on `1716d8d`, in the nine lines that state it. Four are a
+    count: `AGENTS.md:827` (with "18 in `tests/first-page.spec.mjs`"), `AGENTS.md:1496`,
+    `README.md:214`, `website/docs/status.md:23`; they get the new count. Five are a recorded
+    run, `54 passed (2.7m)` with its load: `AGENTS.md:1625`, `README.md:481` and `:492`,
+    `website/docs/how-it-is-built.md:57` and `:69`; each is replaced by the line, the task
+    time and the load of one run of acceptance 4, the same run in all five. `40 passed, 54
+    skipped` (`README.md:479`, `how-it-is-built.md:55`) is another count and stays;
   - `docs/design/agent-interface.md:465` ("a "live" marker with the time of the last update")
     stays true and is not written.
 
@@ -126,19 +149,28 @@ count).
 
 ## Acceptance
 
+The page is compiled into `surf-view-fixture` (`crates/view/src/assets.rs:14-25`). Every run of
+acceptances 1 to 3 on the base page or on a planted `view.js`, and the run after a plant is
+removed, comes after the build line of `taskfiles/view-test.yml`; the report shows that line's
+output before each quoted result.
+
 1. Red first: on the page as it is on `impl/round2-view` at `1716d8d`, new tests 1, 2 and 3
-   fail where they expect `connecting` or `reconnecting`, with `live` received, and new test 4
-   reads 1; the report quotes the four failures. With the change the four pass.
-2. The rule on `alive()` and `onEvent` is held by test 2: with `onEvent` left calling
-   `updated()` (planted by hand, removed after, `git diff --stat` equal before and after), test
-   2 fails with `live` received; the report quotes it.
-3. The rule on the opening is held by a fifth test or by test 3, the unit says which: a stream
-   that closes while the load of its opening is held, and the answer released after the page
-   reads `reconnecting`, leaves `reconnecting` until the next opening's load is drawn. With the
-   check on the opening taken out (planted, removed after) the test fails with `live` received.
+   fail where they expect `connecting` or `reconnecting`, with `live` received, new test 4
+   reads 1, and new test 5 fails at its first assertion with `live` among the recorded words;
+   the report quotes the five failures. With the change the five pass.
+2. The rule on `onEvent` and `alive()` is held by two plants, each by hand, removed after,
+   `git diff --stat` equal before and after:
+   - with `onEvent` left calling `updated()`, test 2 fails with `live` received;
+   - with `alive()` left calling `updated()`, test 5 fails at "a keep-alive before the draw
+     writes no word" with `live` among the recorded words.
+   The report quotes both.
+3. The rule on the opening is held by test 5: with the check that the stream of the load is
+   still the open one taken out (planted, removed after), test 5 passes its first assertion and
+   fails at "a load whose stream closed writes no word" with `live` received; the report
+   quotes it.
 4. `slot npx playwright test --workers=2` in `view-tests/`, all spec files, after the build
    line of `taskfiles/view-test.yml`: every test passes, three times in a row; the report gives
-   the count (58, or 59 with a fifth test), the time of each run, the time of each new test, the
+   the count (59), the time of each run, the time of each new test, the
    load of the host (`/proc/loadavg`) before each run, and the ten slowest tests of the last
    run. No test runs over 60 s; a new test over 5 s is named with its time. The time of the
    whole step is reported and not bounded here (`story:page-test-step-within-budget`).
@@ -149,7 +181,8 @@ count).
 6. The words: `grep -n -E 'connecting|reconnecting|offline' README.md` shows the four words in
    the section "Watching sessions live"; `git diff` of `CHANGELOG.md` shows one added bullet
    under `### Changed` of `## [Unreleased]`; `git grep -n -w 54 -- AGENTS.md README.md
-   website/docs` shows no count of page tests left at 54.
+   website/docs` shows only the two lines `40 passed, 54 skipped`, and the report gives the
+   nine lines before and after.
 7. The report names every existing test whose first wait or expectation the unit changed, with
    file, line and reason; the list the design critic read has one entry.
 8. The gate: `slot --timeout 25m task check-runner` exits 0 on `impl/round2-view` at the commit
