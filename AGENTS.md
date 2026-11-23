@@ -181,8 +181,8 @@ above, and the list of standards itself was written from memory.
   prints that release; `.github/workflows/check.yml` and `release.yml` read the channel and the
   components from it and name no release of their own. A `RUSTUP_TOOLCHAIN` in the environment
   wins over the file; `task check-runner` unsets it.
-- `spec/scenarios/*.yaml`: twenty-four authored scenario files (`ess-scenario/6`), for what synthesis
-  does not write. Two cover the flows synthesis refuses (the page load that commits and the one that
+- `spec/scenarios/*.yaml`: thirty-seven authored scenario files (`ess-scenario/6`), for what
+  synthesis does not write. Two cover the flows synthesis refuses (the page load that commits and the one that
   fails); both also read the request's address back from `Requests`. The third,
   `two-of-each-entity.yaml`, creates two windows, two tabs in one window, two page loads, two
   frames and, since wave 3, two actions, and reads each view back with exactly two rows and both
@@ -216,7 +216,14 @@ above, and the list of standards itself was written from memory.
   `agent-fill-sets-value.yaml`, `agent-pick-unchecks-radio-group.yaml`,
   `agent-pick-selects-option.yaml`, `document-refuses-disabled-control.yaml`,
   `document-refuses-hidden-control.yaml`, `agent-press-submits-post.yaml` and
-  `agent-press-submission-ends-without-body.yaml`.
+  `agent-press-submission-ends-without-body.yaml`. Since round 2 (`story:agent-history-spec` and
+  its adversary's cases) thirteen more for the session history: `agent-go-back-traverses.yaml`,
+  `agent-go-forward-traverses.yaml`, `navigation-push-after-back-drops-forward.yaml`,
+  `navigation-traverse-commits-without-entry.yaml`,
+  `navigation-traverse-failed-keeps-current.yaml`, `navigation-traverse-refused-at-end.yaml`,
+  `navigation-traverse-refused-at-start.yaml`, `navigation-traverse-refused-for-post-entry.yaml`
+  and the five `adversary-history-*.yaml` (back twice, forward then push, a `POST` redirected
+  to `GET`, a push during a traversal, two tabs).
 - `spec/ess-inputs.yaml`: the list of every file above, and the pin `requires: ess 0.97.4`. A new
   file under `spec/` is not read until it is listed there.
 - `generated/rust/`: the workspace `ess generate synthesize` writes, its own `Cargo.toml`
@@ -309,7 +316,11 @@ above, and the list of standards itself was written from memory.
     and `readonly`. Since `story:agent-press-submit` a button line ends in `submits F<n>
     <method> "<action>" [unresolved]` (`State::submits`, `Submits`), and the reasons
     `no-default-action`, `password-in-query`, `no-form-owner`, `invalid-controls`,
-    `invalid-action`, `unsupported-enctype` and `dialog-method`. No dependency.
+    `invalid-action`, `unsupported-enctype` and `dialog-method`. Since `story:agent-back-forward`
+    the reasons `at-start`, `at-end` and `post-entry`. Since `story:agent-change-and-log` the
+    `changed` block after `path` (`Changed`, `ControlChange`, `Change`: `changed <n>` with one `~`
+    line per control, or `changed page` with at most `CHANGED_TEXTS_MAX` 10 `+ text` lines cut at
+    `CHANGED_TEXT_CHARS_MAX` 120 characters and `+ text more <n>`). No dependency.
   - `crates/secret` (`surf-secret`): the operating system random source, the comparison in
     constant time and the 32-byte token. Every secret and every random identity of the agent
     and the view comes from here. No dependency.
@@ -319,7 +330,10 @@ above, and the list of standards itself was written from memory.
     returns status, media type and body, or `Unreachable`, `UnsupportedScheme`,
     `MalformedResponse`, `TooManyRedirects` or `ForbiddenDestination`. Its documentation lists what
     it does not do. `is_local`, the rule of a redirect's destination, is public: `surf-session`
-    applies it to the target of `follow`.
+    applies it to the target of `follow` and `press`. Since round 2 `send_from` takes an
+    `Origin`: with `Origin::PublicPage` (a `follow` or `press` from a page that counts as public,
+    and `back` or `forward` to an entry such a page or a redirect after a public first
+    connection chose) a first request to a local address is refused too.
     Since wave 7 it follows up to 20 redirects (301, 302, 303, 307, 308 with a `Location`, for
     `GET`) inside one fetch, returns the address it ended at (`Response.url`, at most 64 KiB) and
     `TooManyRedirects` for a redirect after the twentieth; a redirect to an address that is not
@@ -459,9 +473,10 @@ above, and the list of standards itself was written from memory.
     process, and since round 2 `follow <handle>` (`story:agent-follow-links`), `fill <handle>
     <value>` and `pick <handle> <option>` (`story:agent-fill-pick`; `fill <handle> -` reads the
     value from standard input, `client::run_with_input`, at most 64 KiB without one line feed,
-    the fourth `UNMAPPED:` marker of `cli/surf-agent.yaml`), and `press <handle>`
-    (`story:agent-press-submit`). Since the fix round of `story:agent-fill-pick` `--` ends the
-    options of every command (the fifth marker; `Call::stdin` tells `fill f1 -` from
+    the fourth `UNMAPPED:` marker of `cli/surf-agent.yaml`), `press <handle>`
+    (`story:agent-press-submit`), `back` and `forward` (`story:agent-back-forward`), and `log
+    [<n>]` (`story:agent-change-and-log`, `arg count`). Since the fix round of
+    `story:agent-fill-pick` `--` ends the options of every command (the fifth marker; `Call::stdin` tells `fill f1 -` from
     `fill f1 -- -`), and a value from standard input whose request is over 65,536 bytes is
     refused naming its quoted size (`client::STDIN_VALUE_FITS`, 16,000 bytes, always fits beside
     a handle of up to 1,364); the `Debug` of a wire `Arg` writes its value's length. The
@@ -502,8 +517,8 @@ above, and the list of standards itself was written from memory.
     `surf-answer`, `surf-secret` and `surf-view`.
   - `crates/session` (`surf-session`): one agent session. A library core over any transport
     and the binary `surf-session`, which `surfd` starts, one process per session. It draws the
-    session token, answers `open`, `go`, `look`, `follow`, `fill`, `pick`, `press` and `close`
-    in the format of
+    session token, answers `open`, `go`, `look`, `follow`, `fill`, `pick`, `press`, `back`,
+    `forward`, `log` and `close` in the format of
     `docs/agent-answer.md`, issues the model commands for each (`OpenSession`, `Go`,
     `CloseSession`, `RecordAction`) and loads pages through the `surf` library with
     `surf-fetch`: `http:` only. The token is compared in constant time and is in no command
@@ -524,14 +539,17 @@ above, and the list of standards itself was written from memory.
     `NavigationStarted` and `RequestStarted` carry `method`, `body` as `<n> bytes` and
     `body_type`, an absent one as the field with no value; its transport is `surf::fetch_http`,
     which since wave 9 sends a `Post` (since `story:agent-press-submit` the one of `press`).
-    163 tests:
-    `adversary_document_text` 7, `adversary_events` 1, `adversary_follow` 8, `adversary_parse`
-    4, `adversary_values` 3, `adversary_view` 1, `built` 11, `core` 22, `e2e` 2 (runs the three
-    built binaries, or those in `SURF_BIN_DIR`), `events` 23, `fill_pick` 22 (case 3 runs the
-    built `surf-agent` against `surfd` in the test process), `follow` 17, `follow_refusals` 9
-    (over an in-memory transport that stands at any address), `form_rows` 1, `memory` 2,
-    `press` 23 (the 22 cases of `story:agent-press-submit` and the usage of `press`, against a
-    server that records each request), `redirect` 2 and `view` 5 (the live view of `surfd` over the real session). The bound of 256 row entries
+    288 tests:
+    `adversary_back_forward` 25, `adversary_change_log` 20, `adversary_document_text` 7,
+    `adversary_events` 1, `adversary_fill_pick` 16, `adversary_follow` 8, `adversary_parse` 4,
+    `adversary_press` 22, `adversary_values` 3, `adversary_view` 1, `back_forward` 13, `built`
+    16, `change_and_log` 18, `core` 22, `e2e` 2 (runs the three built binaries, or those in
+    `SURF_BIN_DIR`), `events` 26, `fill_pick` 22 (case 3 runs the built `surf-agent` against
+    `surfd` in the test process), `follow` 18, `follow_refusals` 9 (over an in-memory transport
+    that stands at any address), `form_rows` 1, `memory` 2, `press` 25 (the cases of
+    `story:agent-press-submit` and the usage of `press`, against a server that records each
+    request), `redirect` 2 and `view` 5 (the live view of `surfd` over the real session). The
+    bound of 256 row entries
     per request counts `FormAdded` and `OptionAdded` with `ElementAdded`
     (`story:agent-form-port`).
     `open <url>`, `go <url>` and `look` take `--as tree|markdown [--from-line <n>]` and print the
@@ -567,7 +585,16 @@ above, and the list of standards itself was written from memory.
     `surf::Browser::plan_submission` (the computation the submission step itself uses, so the
     address checked is the address requested) `password-in-query` and the three address
     refusals of `follow`; a submission the step ends is answered with the word of its
-    `SubmissionAbandoned` reason (`end_reason`), the action recorded.
+    `SubmissionAbandoned` reason (`end_reason`), the action recorded. Since
+    `story:agent-back-forward` `back` and `forward` read the entry from the navigator's view
+    `Navigations` and issue `GoBack` or `GoForward`, refused `at-start`, `at-end` or
+    `post-entry`; the fetch of a traversal goes out under the rule of the request that made its
+    entry (`Origin::PublicPage` for an entry a `follow` or `press`
+    from a page that counts as public made, or a redirect after a first connection to a public
+    address chose, as the session's transport notes it). Since `story:agent-change-and-log`
+    every answer that shows the state holds the `changed` block, from what the last such answer
+    showed (`Shown`; a select compared by its selected options' places and labels), and `log [<n>]`
+    is a read that answers every action in `path`, at most `LOG_BYTES_MAX` bytes of path lines.
     `cargo clippy -p surf-session` needs `--no-deps`: the generated `surf-types` fails clippy.
     Depends on the `surf` library, `surf-ports`, `surf-fetch`, `surf-answer`, `surf-html`,
     `surf-page`, `surf-page-text`, `surf-secret`, `surf-url`, the
@@ -588,9 +615,9 @@ above, and the list of standards itself was written from memory.
     sessions; since wave 7 the page shows them. `Source::read_newest` gives the newest number and a
     reader from it in one call, so a stream always answers. A stream's queue holds at most
     `Limits::queue_entries` (256) entries and `Limits::queue_bytes` (1 MiB), or one larger frame
-    alone: such a frame waits until the queue is empty and is then written alone. 66 tests
+    alone: such a frame waits until the queue is empty and is then written alone. 67 tests
     (`adversary_now` 1, `adversary_view` 2, `http` 33, `json` 14, `prototype` 8,
-    `stream_bounds` 6, `web` 2).
+    `stream_bounds` 7, `web` 2).
     Depends on `surf-secret`.
     - `crates/view/web/`: the live view's page, plain HTML, CSS and JavaScript modules compiled
       into `surfd`; the selection in the address's fragment (`#session=<id>&at=<sequence>`).
@@ -1073,8 +1100,10 @@ actionable element its label (run by the tests only).
   CLIs can be specified": the agent's action surface is specified and "mapped to core operations
   of that browser". Planned as `epic:agent-cli-target` (draft). It has code since wave 4:
   `surf-agent open`, `go`, `look` and `close` against `surfd` and one `surf-session` process per
-  session, over `http:` only, and an answer shows status, media type and address, not yet the
-  page's content (`docs/agent-answer.md`, "What an answer holds today"). ESS has a document for it:
+  session, over `http:` only. Since round 2 the agent target has every command of the epic:
+  `open`, `go`, `look`, `close`, `follow`, `back`, `forward`, `fill`, `pick`, `press`, `log`.
+  Before scripts a same-document `changed` block holds control state only
+  (`docs/agent-answer.md`, "What an answer holds today"). ESS has a document for it:
   `ess generate cli --binding <ess-cli/1 or ess-cli/2 document>` writes "a parser and process
   adapter from a typed CLI presentation binding" (`ess generate cli --help`, ess 0.96.0; not run
   here yet). Measured since: both ESS command-line generators write code that needs third-party
@@ -1593,6 +1622,14 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
 
 ## The gate's numbers
 
+After round 2 (the commands branch, `spec/` as at `cf9a6ba`): `surf v1 — 9 file(s), 37
+scenario(s), valid`, 56 `refused:` lines (`slot task conform REFUSALS_MAX=56`). Against the
+interpreter and against the Rust system: `196 scenarios: 196 passed, 0 failed, 0 error, 0
+unsupported`; `conform-totals`: `the interpreter and the Rust system ran 196 scenario(s) each,
+of suite sha256:dcc7e7c2c534eb6f98ef03cbd07da620efd16fbe16e8d448de697919b0a56bf3`.
+`generated-check`: `generated/rust matches spec/ (30 artifact(s) and .ess-output)`.
+`test-layout`: `23 test directories, 147 test files, one test binary each`.
+
 With `story:ess-0-97-4` (2026-11-22, on `afba5e3`), surf builds on ess 0.97.4: `surf v1 — 9
 file(s), 24 scenario(s), valid` and `169 scenario(s) (24 authored), 48 refusal(s)`, as with
 0.97.3. The suite is byte for byte the one 0.97.3 writes, digest
@@ -1780,9 +1817,9 @@ Any other directory reads only the descendants of the test process, found throug
 `/proc/<pid>/task/<tid>/children` followed down, and every process of the host when one of those
 files cannot be read. In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
 872 passed, 32 skipped`; the 32 are hosts outside ASCII, listed in
-`crates/url/tests/data/SKIPPED`. `view-stream-check`: `view-stream-check: 19 event name(s),
-each a message of the AsyncAPI projection`. `view-test`: `38 passed (15.8s)`; 12.9 s of it are
-the case that waits to see that a refused token is not sent again. Since `story:view-now-panel`
+`crates/url/tests/data/SKIPPED`. `view-stream-check`: `view-stream-check: 23 event name(s),
+each a message of the AsyncAPI projection` (19 before round 2). `view-test`: `38 passed
+(15.8s)`; 12.9 s of it are the case that waits to see that a refused token is not sent again. Since `story:view-now-panel`
 it printed `43 passed (2.7m)` on 2026-11-22 at a load average of about 140 on 20 CPUs, the
 five cases of `now.spec.mjs` 2.2 to 3.8 s each and `an entry over 1 MiB` 29.9 s at a load
 average of about 140. Since `story:view-acceptance` it prints `47 passed`: `47 passed (2.5m)`

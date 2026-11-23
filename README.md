@@ -7,7 +7,7 @@
 **A web browser written from scratch, where the specification comes first.**
 
 ![spec: ESS 0.97.4, valid](docs/badges/spec.svg)
-![conformance: 170 of 170 scenarios](docs/badges/conformance.svg)
+![conformance: 196 of 196 scenarios](docs/badges/conformance.svg)
 ![tests: 877 passed](docs/badges/tests.svg)
 ![third-party crates shipped: 0](docs/badges/dependencies.svg)
 ![unsafe code: forbidden](docs/badges/unsafe.svg)
@@ -88,8 +88,9 @@ last field is `-` for a row with neither target nor value.
 On Linux, `surf-agent` drives a browser session one call at a time, for an AI agent or a
 script. `surf-agent open <url>` opens a session, loads the address and prints the session's
 identity and a token, once. Export the two as `SURF_SESSION` and `SURF_TOKEN`; then `go <url>`,
-`look`, `follow <handle>`, `fill <handle> <value>`, `pick <handle> <option>`, `press <handle>`
-and `close` take the session as their subject. Each call answers in a few plain lines. `now`
+`look`, `follow <handle>`, `fill <handle> <value>`, `pick <handle> <option>`, `press <handle>`,
+`back`, `forward`, `log` and `close` take the session as their subject. Each call answers in a
+few plain lines. `now`
 lists every link with a handle such as `l3`, every form field with one such as `f1` and every
 button with one such as `b1`; `follow l3` goes there. `?` means visibility is not computed; only the `hidden` attribute is known.
 
@@ -103,6 +104,17 @@ dash: `fill f1 -- -5`, `pick f2 -- "-- choose --"`.
 `press b1` submits the form of a submit button; the answer shows the page the server answered
 with. A button that only a script would act on is refused.
 
+`back` and `forward` move through the pages of the session. A page reached by a form `POST`
+cannot be gone back or forward to until surf has a cache.
+
+A page that counts as public cannot send the session to a loopback or private address: `follow`
+and `press` from such a page are refused `forbidden-destination` when the address is or resolves
+to one, and so are `back` and `forward` to a page that such a page, or a redirect after a public
+address, chose. To go to a local address, type it with `go`.
+
+`changed` says what the last action changed: the value of a control, or the new page and its new
+texts. `log` lists every action.
+
 A run of `go`:
 
 ```console
@@ -113,6 +125,10 @@ page 200 "text/html" "http://example.org/" "Example Domain"
 path 2 of 2
   1 open
   2 go "http://example.org/"
+changed page none -> "http://example.org/"
+  + text "# Example Domain"
+  + text "This domain is for use in documentation examples without needing permission. Avoid use in operations."
+  + text "[Learn more](<https://iana.org/domains/example>) [@l1]"
 now 1 of 1
   l1 link ? "Learn more" -> "https://iana.org/domains/example"
 note visibility: hidden attribute only
@@ -130,8 +146,9 @@ What it does not do yet:
   `multipart/form-data` form is refused (`unsupported-enctype`), and so is a `GET` form whose
   password field holds a value (`password-in-query`). `press` refuses the address a form would
   submit to as `follow` refuses a link's target. The commands are `open`, `go`, `look`,
-  `follow`, `fill`, `pick`, `press` and `close`. Visibility is not computed: `now` says `hid` for the
-  `hidden` attribute and `?` for every other element.
+  `follow`, `fill`, `pick`, `press`, `back`, `forward`, `log` and `close`. Visibility is not
+  computed: `now` says `hid` for the `hidden` attribute and `?` for every other element.
+- Before scripts, `changed` within one page holds the state of controls only.
 - `follow` refuses, before any navigation, a link to a scheme other than `http:`
   (`unsupported-scheme`), a target over 65,536 bytes (`address-too-long`) and, from a page on a
   public address, a target on a loopback or private address or `localhost`
@@ -234,7 +251,7 @@ there instead.
   `renderer`.
 - **Its own HTTP/1.1 client**, with one deadline for the whole exchange (40 seconds at most)
   and hard limits on header and body size.
-- **170 specified scenarios**, each passing twice: once against the specification's own
+- **196 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
 - **877 tests**, built with warnings treated as errors, and 59 tests of the live view's page in
   a browser.
@@ -287,8 +304,8 @@ command prints has changed:
 - **The HTTP client can send a `POST`** with a body and its media type, and after a redirect
   it does what the Fetch Standard says: a 301, 302 or 303 continues as `GET` without the body,
   a 307 or 308 sends the method and the body again. A body over 16 MiB, or a media type with
-  parameters, is refused before anything is sent. No command sends a `POST` yet: `go` and
-  `open` send `GET`. The form stories of the plan bring the first command that does.
+  parameters, is refused before anything is sent. `go` and `open` send `GET`; since round 2,
+  `press` sends a form's `POST`.
 - **Misnested formatting tags give the standard's tree.** The HTML parser runs the HTML
   Standard's adoption agency algorithm. All 22 `formatting` tree cases of the test data pass,
   and 1,300 of the 1,809 tree construction cases.
@@ -309,7 +326,7 @@ New with the eighth wave of the current plan, shipped in release `0.3.0`:
   a method (`Get` or `Post`), an optional body and its media type, and the live view's events
   `NavigationStarted` and `RequestStarted` show them. `go` and `open` send `GET` as before. A
   request with any other method was refused before anything was sent; since the ninth wave
-  the client sends a `POST` (above), and no command sends one yet.
+  the client sends a `POST` (above), and since round 2 `press` does.
 - **The HTML parser builds a document tree** with the HTML Standard's rules outside tables,
   templates and foreign content (SVG and MathML). All 476 `body` tree cases of the test data
   pass, and all 82 encoding cases: a `meta` that names another encoding parses the page again
@@ -447,11 +464,12 @@ Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `s
 | 7 (delivered) | Watch every session live in a local web page: where it is and what it did, action by action. Redirects are followed. |
 | 8 (delivered) | Select an action or an event in the live view and read its fields, beside the session's requests. |
 | 11 (delivered, round 1) | Read a real page's links, buttons and form fields, from an HTML parser held to the html5lib tests. |
-| 18 | Follow links, fill and submit forms, go back and forward. Each answer says what changed. |
+| 18 (delivered, round 2) | Follow links, fill and submit forms, go back and forward. Each answer says what changed. |
 | 22 | Record an agent's session, turn it into a test, and replay it against the recorded network. |
 
-The next planned steps are following links, filling and submitting forms, and going back and
-forward (round 2). TLS and `https:` are on the list below. None of them has a date.
+Round 2 delivered following links, filling and submitting forms, going back and forward, the
+`changed` block and `log`; no release carries them yet. TLS and `https:` are on the list below.
+None of the next steps has a date.
 
 Next after that, wanted and not planned in detail yet:
 
@@ -507,7 +525,7 @@ view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
 html-conformance: 9107 cases, 9095 run, 9095 passed
 ```
 
-It validates the specification, runs the 170 scenarios against the interpreter built into `ess`
+It validates the specification, runs the 196 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
 that the lock file holds no outside package, then builds and tests, checks that every event
 name of the live view's stream is an event of the specification, runs the live view's page

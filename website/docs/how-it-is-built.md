@@ -58,7 +58,7 @@ view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
 html-conformance: 9107 cases, 9095 run, 9095 passed
 ```
 
-It validates the specification, runs the 170 scenarios against the interpreter built into `ess`
+It validates the specification, runs the 196 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
 that the lock file holds no outside package, then builds and tests, checks that every event
 name of the live view's stream is an event of the specification, runs the live view's page

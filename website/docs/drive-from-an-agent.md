@@ -1,6 +1,6 @@
 ---
 title: Drive surf from an agent
-description: "surf-agent open, go, look, follow, fill, pick, press and close: a browser session for an AI agent or a script, one call at a time."
+description: "surf-agent open, go, look, follow, fill, pick, press, back, forward, log and close: a browser session for an AI agent or a script, one call at a time."
 ---
 
 import AgentTerminal from '@site/src/components/AgentTerminal';
@@ -47,6 +47,9 @@ It runs on Linux only: the agent binaries read the caller's user id from `/proc/
 | `surf-agent fill <handle> <value>` | type a value into a text field, password field or textarea, such as `f1`; `-` reads the value from standard input |
 | `surf-agent pick <handle> <option>` | select an option of a select by its label or value, or `on` or `off` for a checkbox, `on` for a radio button |
 | `surf-agent press <handle>` | submit the form of a submit button, such as `b1`, and load the page the server answers with |
+| `surf-agent back` | load the page before the current one in the session's history again |
+| `surf-agent forward` | load the page after the current one in the session's history again |
+| `surf-agent log [<n>]` | print every action of the session, or the last `<n>`, without taking one |
 | `surf-agent close` | close the session and print its final state |
 
 `open <url>`, `go` and `look` also take `--as tree` or `--as markdown`: the answer then ends
@@ -198,6 +201,41 @@ and ends without a request is refused with its reason: a button outside any form
 address (`invalid-action`), a `multipart/form-data` or `text/plain` form, which surf does not
 encode (`unsupported-enctype`), and `method="dialog"` (`dialog-method`).
 
+## Back, forward and what changed
+
+`back` and `forward` move through the pages of the session. A page reached by a form `POST`
+cannot be gone back or forward to until surf has a cache. The answer is `did back` or `did
+forward` with the page, loaded again with `GET`, and the `path` line `<n> back` or `<n>
+forward`. Before any request, with the page left as it was, they are refused with status 1:
+`back` on the first page (`at-start`), `forward` on the last (`at-end`), and either to a page
+that answered a form `POST` (`post-entry`). A `go`, `follow` or `press` after `back` that loads
+a page drops the pages after the current one.
+
+A page that counts as public cannot send the session to a loopback or private address: `follow`
+and `press` from such a page are refused `forbidden-destination` when the address is or resolves
+to one, and so are `back` and `forward` to a page that such a page, or a redirect after a public
+address, chose. To go to a local address, type it with `go`.
+
+`changed` says what the last action changed: the value of a control, or the new page and its new
+texts. `log` lists every action.
+
+```text
+changed 1
+  ~ f1 value "" -> "ada"
+```
+
+```text
+changed page "http://127.0.0.1:43117/login" -> "http://127.0.0.1:43117/session"
+  + text "Signed in as ada."
+```
+
+On the same page the block has one `~` line per control whose value, checkedness or selected
+options changed, a password as `(set)` or `(empty)`, and is `changed 0` when nothing changed;
+before scripts nothing else changes within a page. After a load it names the old and the new
+address (`none` before the first page) and up to 10 texts of the new page that the old one did
+not hold, each cut at 120 characters, then `+ text more <n>`. `log` answers like `look` with
+every action of the session in `path`, or the last `<n>` with `log <n>`, and takes no action.
+
 A script can take the two values from the answer of `open`:
 
 ```console
@@ -211,9 +249,9 @@ $ surf-agent look
 
 Every answer starts with its head line, `surf 1 session <id> <state>`, then the action it is
 for (`did`), the page (`page`: `none` before the first load, the status, media type, address and
-title of a loaded page, or `failed` with the reason) and the session's last actions (`path`);
-without `--as` the page's links and form fields (`now`) follow, with `--as` the `note text:`
-lines and the `text` block with the page. Every
+title of a loaded page, or `failed` with the reason), the session's last actions (`path`) and
+what the last action changed (`changed`); without `--as` the page's links and form fields
+(`now`) follow, with `--as` the `note text:` lines and the `text` block with the page. Every
 value that comes from a page, a server or an address stands in double quotes, with every
 character that could start a line or look like a field escaped. The format, line by line, with
 its grammar:
@@ -226,7 +264,7 @@ Quoting lowers the risk of page text steering an agent; it does not remove it.
 | status | meaning |
 |---|---|
 | 0 | the action was taken |
-| 1 | the action was refused: the token does not belong to the session (`did refused token`), the session is closed (`did refused closed`), or `follow` names a handle the page has not (`unknown-handle`), a hidden link (`hidden`), a target that does not resolve (`unresolved`), a target over 65,536 bytes (`address-too-long`), one with a scheme surf does not fetch (`unsupported-scheme`) or, from a public page, one on a local address (`forbidden-destination`), or `fill` or `pick` names a field of another kind (`wrong-kind`), a disabled (`disabled`) or read-only (`readonly`) one, or an option it has not (`unknown-option`), or `press` names a button that is not a submit button (`no-default-action`), a `GET` form with a filled password (`password-in-query`), or a submission that ended without a request (`no-form-owner`, `invalid-controls`, `invalid-action`, `unsupported-enctype`, `dialog-method`) |
+| 1 | the action was refused: the token does not belong to the session (`did refused token`), the session is closed (`did refused closed`), or `follow` names a handle the page has not (`unknown-handle`), a hidden link (`hidden`), a target that does not resolve (`unresolved`), a target over 65,536 bytes (`address-too-long`), one with a scheme surf does not fetch (`unsupported-scheme`) or, from a public page, one on a local address (`forbidden-destination`), or `fill` or `pick` names a field of another kind (`wrong-kind`), a disabled (`disabled`) or read-only (`readonly`) one, or an option it has not (`unknown-option`), or `press` names a button that is not a submit button (`no-default-action`), a `GET` form with a filled password (`password-in-query`), or a submission that ended without a request (`no-form-owner`, `invalid-controls`, `invalid-action`, `unsupported-enctype`, `dialog-method`), or `back` or `forward` has no page to go to (`at-start`, `at-end`), would go to the answer of a form `POST` (`post-entry`) or, for a page a public page or a redirect after a public address chose, to a local address (`forbidden-destination`) |
 | 2 | usage: a word, the session or the token is missing or malformed |
 | 3 | `surfd` lists no such session (`did refused no-such-session`), the session process ended (`did refused session-died`) or did not answer in time (`did refused session-timeout`), or `surfd` cannot be reached or started, or the runtime directory or the socket fails `surf-agent`'s check |
 
@@ -247,7 +285,12 @@ answer and says why on standard error.
 - `follow` loads `http:` targets only and refuses the others (`unsupported-scheme`); from a page
   on a public address it refuses a target on a local IP address or `localhost`
   (`forbidden-destination`), and it refuses a target over 65,536 bytes (`address-too-long`).
-  A target that is another name is resolved by the fetch and not checked by `follow`.
+  From such a page a target that is a name is checked when the fetch resolves it: a name that
+  resolves to a local address is refused `forbidden-destination` before any connection.
+- `back` and `forward` load a page again; a page that answered a form `POST` cannot be gone
+  back or forward to (`post-entry`) until surf has a cache.
+- Within one page, `changed` shows the state of controls only: before scripts nothing else
+  changes there.
 - No JavaScript, and no rendering: `--as` reads the document's tree without CSS (`note text:
   no-css`), so text a style sheet hides is shown, in source order.
 - Linux only.

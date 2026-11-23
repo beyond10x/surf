@@ -11,10 +11,24 @@ description: What surf does today, and what it does not do yet.
   `renderer`.
 - **Its own HTTP/1.1 client**, with one deadline for the whole exchange (40 seconds at most) and
   hard limits on header and body size.
-- **170 specified scenarios**, each passing twice: once against the specification's own
+- **196 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
 - **877 tests**, built with warnings treated as errors, and 38 tests of the live view's page in a
   browser.
+
+New with round 2, in no release yet:
+
+- **An agent can act on a page.** `surf-agent follow <handle>` loads a link's target, `fill`
+  types into a field, `pick` chooses an option or ticks a box, and `press` presses a button and
+  submits its form with `GET` or `POST`. `back` and `forward` move through the session's pages.
+  The `page` line shows the page's title.
+- **Each answer says what changed.** The `changed` block lists the controls whose value,
+  checked state or selection the last action changed, or the new page and its new texts, at
+  most ten lines and a count of the rest. `log [<n>]` lists the session's actions.
+- **A public page cannot send the session to your network.** `follow` and `press` from a page
+  that counts as public, and `back` and `forward` to a page that such a page or a redirect after
+  a public address chose, are refused `forbidden-destination` when the address is or resolves to
+  a loopback or private one. To load a local address, type it with `go`.
 
 New with round 1 after the tenth wave of the current plan, shipped in release `0.4.0`:
 
@@ -64,8 +78,8 @@ command prints has changed:
 - **The HTTP client can send a `POST`** with a body and its media type, and after a redirect it
   does what the Fetch Standard says: a 301, 302 or 303 continues as `GET` without the body, a
   307 or 308 sends the method and the body again. A body over 16 MiB, or a media type with
-  parameters, is refused before anything is sent. No command sends a `POST` yet: `go` and
-  `open` send `GET`. The form stories of the plan bring the first command that does.
+  parameters, is refused before anything is sent. `go` and `open` send `GET`; since round 2,
+  `press` sends a form's `POST`.
 - **Misnested formatting tags give the standard's tree.** The HTML parser runs the HTML
   Standard's adoption agency algorithm. All 22 `formatting` tree cases of the test data pass,
   and 1,300 of the 1,809 tree construction cases.
@@ -86,7 +100,7 @@ New with the eighth wave of the current plan, shipped in release `0.3.0`:
   a method (`Get` or `Post`), an optional body and its media type, and the live view's events
   `NavigationStarted` and `RequestStarted` show them. `go` and `open` send `GET` as before. A
   request with any other method was refused before anything was sent; since the ninth wave the
-  client sends a `POST` (above), and no command sends one yet.
+  client sends a `POST` (above), and since round 2 `press` does.
 - **The HTML parser builds a document tree** with the HTML Standard's rules outside tables,
   templates and foreign content (SVG and MathML). All 476 `body` tree cases of the test data
   pass, and all 82 encoding cases: a `meta` that names another encoding parses the page again
@@ -219,8 +233,8 @@ New with the first wave:
 - No `https:`. Only `http:` addresses load.
 - Release `0.2.0` delivers a redirect status as the response; redirects are followed since
   release `0.3.0`.
-- No title in an agent's answer, and page content only as text, with `--as tree` or `--as
-  markdown`.
-- A link cannot be followed and a form cannot be filled or submitted yet.
+- Page content only as text, with `--as tree` or `--as markdown`.
+- `back` and `forward` do not reach a page loaded by a form `POST`: surf has no cache yet.
+- Before scripts, `changed` within one page holds the state of controls only.
 - The agent binaries run on Linux only.
 - No standard section is marked complete.

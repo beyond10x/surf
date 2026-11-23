@@ -65,8 +65,27 @@ release; what came before it is in the git log and in `docs/plan/`.
   for `application/x-www-form-urlencoded`: a `GET` replaces the query of the form's action, a
   `POST` sends the body. A submission that cannot be sent ends with its reason, such as a
   required field or a required select left empty, a `multipart/form-data` form, or an address
-  over 65,536 bytes (`AddressTooLong`), which is not requested. No `surf-agent` command
-  presses a button yet.
+  over 65,536 bytes (`AddressTooLong`), which is not requested. `surf-agent press` uses it.
+- `surf-agent back` and `surf-agent forward` move through the pages of the session, one step,
+  and load the page again with `GET`; the answer is `did back` or `did forward` with that page,
+  and the path line `6 back`. Before any request they exit 1 with `did refused at-start` on the
+  first page, `at-end` on the last, and `post-entry` for a page that is the answer to a form
+  `POST`, which surf does not send again. A `go`, `follow` or `press` after `back` that loads a
+  page drops the pages after the current one.
+- Every answer that shows the session's state has a `changed` block after `path`: what the
+  last action changed. On the same page, `changed <n>` and one line per control whose state
+  changed, such as `~ f1 value "" -> "ada"`, `~ f2 value (empty) -> (set)`, `~ f3 checked false
+  -> true` or `~ f5 selected "Red" -> "Green"` (a select lists all its selected options);
+  `changed 0` when nothing changed. After a load, `changed page "<old>" -> "<new>"` (`none`
+  before the first page) and up to 10 `+ text` lines with the texts of the new page that the
+  old one did not hold, each cut at 120 characters, then `+ text more <n>`.
+- `surf-agent log [<n>]` lists every action of the session, or the last `<n>`, in the `path`
+  block, without taking an action. Format: [`docs/agent-answer.md`](docs/agent-answer.md).
+- A page that counts as public cannot send the session to a loopback or private address:
+  `follow` and `press` from such a page, and `back` and `forward` to a page that such a page or
+  a redirect after a public address chose, exit 1 with `did refused forbidden-destination` when
+  the address is or resolves to one, before any connection to it. To load a local address, type
+  it with `go`.
 - The live view has a panel "Now": the links of the answer at the playhead, grouped by kind,
   each with its handle, label, target and visibility word, a hidden one marked, and the
   visibility note. A `follow` shows its handle on the timeline. A bidirectional control in a
@@ -90,9 +109,11 @@ release; what came before it is in the git log and in `docs/plan/`.
   page's title. It cuts the `handle` of an action's events, which the client supplies, the
   same way, with `handle_bytes`.
 - The event `surf.agent.NavigationRequested` in the session log and the live view has two more
-  fields, `handle` and `label`, both empty after a `go`. They will hold the handle and the label
-  of the link a `follow` takes (the label cut as above), and `FillRequested`, `PickRequested` and
-  `PressRequested` the `handle` of the control, once the session runs those commands.
+  fields, `handle` and `label`, both empty after a `go`. They hold the handle and the label of
+  the link a `follow` takes (the label cut as above), and `FillRequested`, `PickRequested` and
+  `PressRequested` the `handle` of the control.
+- The event `surf.net.ResponseReceived` in the session log and the live view has the field
+  `method` after `url`: the method of the request the response answers.
 - The live view's page writes `live` only when its stream of events is open and the load that
   the stream's opening started is drawn. Until then it reads `connecting` over the first load,
   and after a lost stream `reconnecting` until the next opening's load is drawn; a keep-alive or
