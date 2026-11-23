@@ -43,7 +43,7 @@ scope:
   path: generated/rust
 - confidence: inferred
   path: spec/domains/agent.yaml
-revision: 18
+revision: 19
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 5}
@@ -183,6 +183,28 @@ The adversary's pass on `d4499d1` added 13 tests in
    (`adversary_bf_a_failed_go_after_back_drops_nothing`,
    `adversary_bf_a_refused_follow_after_back_drops_nothing`).
 3. The acceptance counts the 13 numbered cases, the adversary's 13 tests and the tests of 1.
+
+4. An entry whose address a public server chose by redirect follows the public rule on a
+   traversal (decisions D283 and D293; `accb04a`, `dc86f24`). The sentence of 1, "a redirect is
+   no way in", holds for the fetch that follows the redirect and not for a later fetch of the
+   committed address: the name a public server redirected to can resolve to a local address by
+   the time of the `back`.
+   - The session's network wrapper records whether the first connection of a navigation's
+     fetch went to a public address. An entry whose fetch connected first to a public address
+     and committed at another address than the one asked is fetched under the public rule by
+     `back` and `forward`.
+   - The first connection decides, not the text of the asked address (D293): a `go` to a name
+     that resolves to a local address (a development server reached by a name) and is answered
+     with a redirect goes back and forward like any page. As first built (`accb04a`) the text
+     decided and such a `back` was refused
+     (`d293_an_entry_a_name_resolving_local_redirected_to_is_fetched_as_go_fetches`).
+   - A chain from a local first connection to a public address and on to a local one stays
+     without restriction on a traversal, as it is for the `go` that made it (D294, D279).
+5. For `README.md`, with the sentences above: "`back` and `forward` refuse
+   (`forbidden-destination`) a page a public page linked to, or a redirect reached after the
+   first connection went to a public address, when its name now resolves to a loopback or
+   private address. A page reached through a name that resolves to a local address (a
+   development server) goes back and forward like any page."
 
 ## Out of scope
 
