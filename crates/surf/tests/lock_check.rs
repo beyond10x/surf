@@ -1,10 +1,12 @@
 //! `task lock-check` (Taskfile.yml, which runs `taskfiles/lock-check.sh` over the root
 //! `Cargo.lock` and `taskfiles/lock-allow.txt`): nothing that ships uses a third-party crate but
 //! the packages of ring, which the allow-list pins by name, version, source and checksum and
-//! only `surf-tls` may depend on. Each case copies `Taskfile.yml`, `Cargo.lock`,
-//! `taskfiles/lock-check.sh` and `taskfiles/lock-allow.txt` into a directory of its own under
-//! `CARGO_TARGET_TMPDIR`, changes the lock or the list or not, and runs `task lock-check` there.
-//! Needs `task` on `PATH`, as `task check` does.
+//! only `surf-tls` may depend on. Each case copies `Cargo.lock`, `taskfiles/lock-check.sh` and
+//! `taskfiles/lock-allow.txt` into a directory of its own under `CARGO_TARGET_TMPDIR`, changes
+//! the lock or the list or not, and runs the task's line there,
+//! `sh taskfiles/lock-check.sh Cargo.lock taskfiles/lock-allow.txt`, without `task`.
+//! `the_unchanged_lock_passes` holds the task to that line with `task --dry --verbose
+//! lock-check` in the repository, so it needs `task` on `PATH`, as `task check` does.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -27,8 +29,11 @@ fn allow_list() -> String {
         .expect("read taskfiles/lock-allow.txt")
 }
 
-/// A fresh copy named `name` of `Taskfile.yml`, the check's script, `allow` as its allow-list and
-/// `lock` as the root `Cargo.lock`.
+/// The line of `task lock-check` (Taskfile.yml), which `check` runs in a copy.
+const LINE: &str = "sh taskfiles/lock-check.sh Cargo.lock taskfiles/lock-allow.txt";
+
+/// A fresh copy named `name` of the check's script, `allow` as its allow-list and `lock` as the
+/// root `Cargo.lock`.
 fn copy_with(name: &str, lock: &str, allow: &str) -> PathBuf {
     let root = repository();
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
@@ -36,7 +41,6 @@ fn copy_with(name: &str, lock: &str, allow: &str) -> PathBuf {
         .join(name);
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("taskfiles")).expect("create copy");
-    fs::copy(root.join("Taskfile.yml"), dir.join("Taskfile.yml")).expect("copy Taskfile.yml");
     fs::copy(
         root.join("taskfiles/lock-check.sh"),
         dir.join("taskfiles/lock-check.sh"),
@@ -54,13 +58,15 @@ fn copy(name: &str, extra: &str) -> PathBuf {
     copy_with(name, &lock, &allow_list())
 }
 
-/// `task lock-check` in `dir`: its exit status and everything it printed.
+/// The line of `task lock-check` in `dir`, `sh taskfiles/lock-check.sh Cargo.lock
+/// taskfiles/lock-allow.txt`: its exit status and everything it printed.
 fn check(dir: &Path) -> (Option<i32>, String) {
-    let output = Command::new("task")
-        .arg("lock-check")
+    let mut words = LINE.split(' ');
+    let output = Command::new(words.next().expect("a program"))
+        .args(words)
         .current_dir(dir)
         .output()
-        .expect("run task");
+        .expect("run sh");
     let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
     text.push_str(&String::from_utf8_lossy(&output.stderr));
     (output.status.code(), text)
@@ -109,9 +115,22 @@ fn listed_ring() -> String {
 }
 
 /// The lock as committed passes, and names the packages from outside this repository, each on
-/// the allow-list.
+/// the allow-list. `task lock-check` runs the line the other cases run: the task is `silent`, so
+/// `task --dry --verbose` prints its line, on standard error.
 #[test]
 fn the_unchanged_lock_passes() {
+    let dry = Command::new("task")
+        .args(["--dry", "--verbose", "lock-check"])
+        .current_dir(repository())
+        .output()
+        .expect("run task");
+    let stderr = String::from_utf8_lossy(&dry.stderr);
+    let wanted = format!("task: [lock-check] {LINE}");
+    assert!(
+        dry.status.success() && stderr.lines().any(|l| l == wanted),
+        "task --dry --verbose lock-check: no line {wanted:?} in\n{stderr}{}",
+        String::from_utf8_lossy(&dry.stdout)
+    );
     let lock = lock();
     let packages = lock.lines().filter(|l| *l == "[[package]]").count();
     let dir = copy("unchanged", "");

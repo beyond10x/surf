@@ -16,20 +16,26 @@ tasks:
       is declared there, that no file of the binary (those main.rs declares and their child
       modules, followed to their files) holds #![cfg or #![cfg_attr in a line, and that no module
       at any depth joins a selection or its --skip by accident (the list SELECTIONS in the
-      script). It calls no cargo. The head of the script says each rule.
+      script). It also fails on #[test] in the code of a file of a target that runs no test: a
+      [lib] or [[bin]] entry with test = false in any Cargo.toml, and the library and binaries of
+      every package under generated/rust/crates (its file and the modules it declares, followed
+      to their files; #[cfg(test)] is not flagged). It calls no cargo. The head of the script
+      says each rule.
     dir: '{{.TASKFILE_DIR}}/..'
     silent: true
     cmds:
       - sh taskfiles/test-layout.sh .
 
   test-layout-test:
-    desc: Give taskfiles/test-layout.sh a copy of the test layout as it is, four right layouts and twenty-seven planted defects.
+    desc: Give taskfiles/test-layout.sh a copy of the test layout as it is, eight right layouts and thirty planted defects.
     summary: |
-      Give taskfiles/test-layout.sh a copy of the test layout as it is, four right layouts and twenty-seven planted defects.
+      Give taskfiles/test-layout.sh a copy of the test layout as it is, eight right layouts and thirty planted defects.
 
-      Copies the Cargo.toml files, the src/*.rs files, the tests/*.rs files and the tests/<dir>/*.rs
-      files of crates/* and conformance into .out/test-layout/copy, then runs the script on a
-      fresh copy thirty-two times: the copy as it is and four right layouts must pass; each planted
+      Copies the Cargo.toml files, the tests/*.rs files and the tests/<dir>/*.rs files of
+      crates/* and conformance, the manifests of generated/rust/crates/*, and every *.rs file
+      under crates/*/src and generated/rust/crates/*/src at any depth into
+      .out/test-layout/copy, then runs the script on a fresh copy thirty-nine times: the copy as
+      it is and eight right layouts must pass; each planted
       defect must fail and name the path or the module. The defects: a test file no mod line
       names, autotests = false taken out, tests/main.rs removed, the [[test]] entry taken out, a
       second [[test]] entry, a third key harness = false, a mod line commented out, #[cfg(any())]
@@ -42,9 +48,14 @@ tasks:
       child module zz_cli of output_streams.rs in a file of its own, a package under
       generated/rust/crates with two test files and no tests/main.rs, an [[example]] with
       test = true, an inner attribute #![ cfg(any()) ] over three lines, and an out-of-line
-      mod x; inside an inline pub mod a {. The right layouts: a comment that names
-      #![cfg(any())], mod x; inside a string literal and in a trailing comment, and a fixture
-      crate with a Cargo.toml and tests/ below tests/data/.
+      mod x; inside an inline pub mod a {; then #[test] in src/lib.rs of a library with test =
+      false, in a module file that the file of a binary with test = false declares, and in
+      src/lib.rs of a package under generated/rust/crates. The right layouts: a comment that names
+      #![cfg(any())], mod x; inside a string literal and in a trailing comment, a fixture crate
+      with a Cargo.toml and tests/ below tests/data/, #[test] in crates/html/src (a library
+      without test = false), #[test] in a comment and in a string of a library with test =
+      false, #[cfg(test)] in src/compare.rs of surf-secret, which its test binary also declares
+      by #[path], and #[test] in a module of the library of surfd, whose binary has test = false.
 
       SCRIPT names the script under test (default taskfiles/test-layout.sh), so that a planted
       defect can be run in a copy. It prints one line per case that is decided otherwise and fails,
@@ -60,9 +71,12 @@ tasks:
         out=.out/test-layout
         rm -rf "$out"
         mkdir -p "$out/copy"
-        for file in crates/*/Cargo.toml conformance/Cargo.toml crates/*/src/*.rs crates/*/tests/*.rs conformance/tests/*.rs crates/*/tests/*/*.rs conformance/tests/*/*.rs; do
-          if [ -f "$file" ]; then printf '%s\n' "$file"; fi
-        done > "$out/files"
+        {
+          for file in crates/*/Cargo.toml conformance/Cargo.toml generated/rust/crates/*/Cargo.toml crates/*/tests/*.rs conformance/tests/*.rs crates/*/tests/*/*.rs conformance/tests/*/*.rs; do
+            if [ -f "$file" ]; then printf '%s\n' "$file"; fi
+          done
+          find crates/*/src generated/rust/crates/*/src -type f -name '*.rs'
+        } > "$out/files"
         tar -cf - -T "$out/files" | tar -xf - -C "$out/copy"
         case_dir=$out/case
         page=$case_dir/crates/page
@@ -201,6 +215,28 @@ tasks:
         printf '#[test]\nfn planted() {}\n' > "$case_dir/crates/session/tests/common/x.rs"
         printf '\npub mod a {\n    pub mod x;\n}\n' >> "$case_dir/crates/session/tests/common/mod.rs"
         check 1 "an out-of-line mod x; inside an inline pub mod a { in common/mod.rs" crates/session/tests/common/mod.rs
+        fresh
+        printf '\n#[test]\nfn planted() {}\n' >> "$page/src/lib.rs"
+        check 1 "#[test] in src/lib.rs of a library with test = false" crates/page/src/lib.rs
+        fresh
+        printf '\nmod planted;\n' >> "$cli/src/main.rs"
+        printf '#[test]\nfn planted() {}\n' > "$cli/src/planted.rs"
+        check 1 "#[test] in a module file that the file of a binary with test = false declares" crates/surf-cli/src/planted.rs
+        fresh
+        printf '\n#[test]\nfn planted() {}\n' >> "$case_dir/generated/rust/crates/net/src/lib.rs"
+        check 1 "#[test] in src/lib.rs of a package under generated/rust/crates" generated/rust/crates/net/src/lib.rs
+        fresh
+        printf '\n#[test]\nfn planted() {}\n' >> "$case_dir/crates/html/src/lib.rs"
+        check 0 "#[test] in src/lib.rs of crates/html, a library without test = false" ""
+        fresh
+        printf '\n// #[test] in a comment\nconst PLANTED: &str = "#[test]";\n' >> "$page/src/lib.rs"
+        check 0 "#[test] in a comment and in a string of a library with test = false" ""
+        fresh
+        printf '\n#[cfg(test)]\nfn planted() {}\n' >> "$case_dir/crates/secret/src/compare.rs"
+        check 0 "#[cfg(test)] in src/compare.rs of surf-secret, which its test binary declares by #[path]" ""
+        fresh
+        printf '\n#[test]\nfn planted() {}\n' >> "$case_dir/crates/surfd/src/view.rs"
+        check 0 "#[test] in a module of the library of surfd, whose binary has test = false" ""
         if [ "$wrong" -ne 0 ]; then
           echo "test-layout-test: $wrong of $cases case(s) decided otherwise by $script"
           exit 1
