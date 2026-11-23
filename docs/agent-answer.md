@@ -179,6 +179,9 @@ refusal of the action, with a reason from this list:
 | `invalid-action` | the submission ended: the action does not parse as an address | 1 |
 | `unsupported-enctype` | the submission ended: the form `POST`s as `multipart/form-data` or `text/plain`, which surf does not encode | 1 |
 | `dialog-method` | the submission ended: the form's method is `dialog` | 1 |
+| `at-start` | `back`: the session's history has no page before the current one | 1 |
+| `at-end` | `forward`: the session's history has no page after the current one | 1 |
+| `post-entry` | `back` or `forward`: the page it would go to is the answer to a form `POST`, which surf does not send again | 1 |
 
 `address-too-long`, `unsupported-scheme` and `forbidden-destination` are given for the address a
 `press` would submit to as for a link's target.
@@ -219,7 +222,8 @@ field when it had one. An action on an element names the element's handle, a wor
 `[a-z0-9]+` written bare (the session made it), and, for `follow`, the link's label as the
 `now` block writes it, cut at 60 characters: `3 follow l4 "Sign in"` (design section 5.1). A
 `fill` or a `pick` names the handle alone, never the value typed or the option picked:
-`4 fill f1`, `5 pick f3`; so does a `press`, `6 press b1`.
+`4 fill f1`, `5 pick f3`; so does a `press`, `6 press b1`. `back` and `forward` have neither
+argument nor handle: `7 back`, `8 forward`.
 
 ### Now
 
@@ -304,6 +308,17 @@ for the address it would submit to: the action, and for `GET` the action with it
 replaced by the form's entries. A submission that starts and then ends without a request is
 refused with the word of its reason, the `press` in the path: `no-form-owner`,
 `invalid-controls`, `invalid-action`, `unsupported-enctype`, `dialog-method`.
+
+`back` and `forward` take no argument and move the session one page through its history:
+`did back`, `did forward`, and in the path `5 back`, `6 forward`. The answer shows the page
+the step loaded, fetched again with `GET`, or `page failed` when the load failed, which leaves
+the session's place in its history where it was; the handles start at 1 again. Before any
+request, with the page left as it was, each is refused, status 1: `at-start` for `back` on the
+first page, `at-end` for `forward` on the last, and `post-entry` for a page that is the answer
+to a form `POST`. A page a `POST` was redirected to (301, 302, 303) was fetched with `GET` and
+is gone back to like any other. A `go`, `follow` or `press` after `back` drops the pages after the current one. The
+checks of a target (`address-too-long`, `unsupported-scheme`, `forbidden-destination`) do not
+apply: a page of the history was loaded once, and a refused target never entered it.
 
 The answer of a closed session has no `now` block.
 
@@ -424,6 +439,7 @@ reason        = "token" / "closed" / "usage" / "no-such-session"
               / "unknown-option" / "readonly" / "no-default-action"
               / "password-in-query" / "no-form-owner" / "invalid-controls"
               / "invalid-action" / "unsupported-enctype" / "dialog-method"
+              / "at-start" / "at-end" / "post-entry"
 
 page-line     = "page" SP (page-none / page-failed / page-loaded) LF
 page-none     = "none"

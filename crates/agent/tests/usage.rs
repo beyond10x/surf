@@ -169,6 +169,50 @@ fn press_takes_one_handle() {
     assert_eq!(args, vec![("handle", "b1")]);
 }
 
+/// `story:agent-back-forward`: `back` and `forward` take no word and no option but the session's;
+/// with one it is usage, status 2, and nothing is sent. Without, the parser sends no `arg`.
+#[test]
+fn back_and_forward_take_no_argument() {
+    let dir = TestDir::new();
+    for command in ["back", "forward"] {
+        for (args, says) in [
+            (
+                vec![command, "l1"],
+                format!("{command} takes at most 0 positional word"),
+            ),
+            (
+                vec![command, "--as", "tree"],
+                format!("is not an option of {command}"),
+            ),
+        ] {
+            let output = run(agent(&dir)
+                .args(&args)
+                .env("SURF_SESSION", SESSION)
+                .env("SURF_TOKEN", TOKEN));
+            assert_eq!(output.status.code(), Some(2), "{args:?}");
+            assert_eq!(stdout(&output), "", "{args:?}");
+            let printed = stderr(&output);
+            assert!(printed.contains(&says), "{args:?}: {printed}");
+            assert!(
+                printed.contains(&format!("surf-agent {command} [--session <id>]")),
+                "{printed}"
+            );
+        }
+        let env = surf_agent::cli::Environment {
+            runtime_dir: Some(dir.runtime().into()),
+            session: Some(SESSION.into()),
+            token: Some(TOKEN.into()),
+            program_dir: None,
+        };
+        let call = surf_agent::cli::parse(&[command.into()], &env).expect("a call");
+        let request = call.request();
+        assert_eq!(request.command, command);
+        assert_eq!(request.session.as_deref(), Some(SESSION));
+        assert!(request.args.is_empty(), "{:?}", request.args);
+    }
+    assert!(!dir.runtime().join("surf").exists(), "nothing was sent");
+}
+
 /// `story:agent-fill-pick`: `fill` and `pick` take a handle and one word; without the word it
 /// is usage, status 2, and nothing is sent. `fill <handle> -` sends the value read from standard
 /// input without its last line feed; a value over the bound, or not UTF-8, is usage and no

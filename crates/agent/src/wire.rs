@@ -22,7 +22,7 @@
 //!
 //! - `surf-wire 1`, the version line ([`VERSION_LINE`]), always first.
 //! - `command <name>`: a word of `[a-z]+` (`open`, `go`, `look`, `follow`, `fill`, `pick`, `press`,
-//!   `close`).
+//!   `back`, `forward`, `close`).
 //! - `session <id>`: the session identity, a UUID in text form, which the client writes in lower
 //!   case. Absent for `open`. [`Request::decode`] keeps the word as it was sent (any printable
 //!   ASCII without a space); the receiver reads it with [`session_id`], so that an identity that

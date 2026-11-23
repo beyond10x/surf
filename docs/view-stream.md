@@ -224,6 +224,7 @@ surf.navigation.NavigationStarted
 surf.navigation.NavigationCommitted
 surf.navigation.NavigationFailed
 surf.navigation.NavigationCancelled
+surf.navigation.TraversalStarted
 surf.net.RequestStarted
 surf.net.ResponseReceived
 surf.net.FetchFailed
@@ -238,6 +239,7 @@ surf.agent.NavigationRequested
 surf.agent.SessionClosed
 surf.agent.SessionNavigationChanged
 surf.agent.SessionOpened
+surf.agent.TraversalRequested
 ```
 
 One more name reaches the log and the stream: `surf.agent.EventsLeftOut` (field `count`), which

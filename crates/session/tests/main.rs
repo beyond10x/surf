@@ -11,6 +11,7 @@ mod adversary_parse;
 mod adversary_press;
 mod adversary_values;
 mod adversary_view;
+mod back_forward;
 mod built;
 mod common;
 mod core;

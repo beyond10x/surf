@@ -831,7 +831,10 @@ fn own(id: &str, state: HeadState, reason: RefusalReason) -> wire::Answer {
         | RefusalReason::InvalidControls
         | RefusalReason::InvalidAction
         | RefusalReason::UnsupportedEnctype
-        | RefusalReason::DialogMethod => 1,
+        | RefusalReason::DialogMethod
+        | RefusalReason::AtStart
+        | RefusalReason::AtEnd
+        | RefusalReason::PostEntry => 1,
         RefusalReason::Usage => 2,
         RefusalReason::NoSuchSession
         | RefusalReason::SessionDied

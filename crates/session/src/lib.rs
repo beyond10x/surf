@@ -23,6 +23,8 @@
 //!   its handle and its label; when it is `requested`, `RecordAction` `follow` with all three
 //!   ("The links" below).
 //! - `fill`, `pick` ("The controls" below) and `press <handle>` ("Pressing a button" below).
+//! - `back` and `forward`: `GoBack` and `GoForward` as the holder; when it is `requested`,
+//!   `RecordAction` `back` or `forward` ("Back and forward" below).
 //! - `close`: `CloseSession` as the holder; when it is `closed`, `RecordAction` `close`.
 //!
 //! An accepted command's `RecordAction` is issued before the run that delivers what the command
@@ -164,6 +166,20 @@
 //! `dialog-method`; `NotSubmitButton`, `UnsupportedScheme` and `AddressTooLong`, refused before,
 //! map to `no-default-action`, `unsupported-scheme` and `address-too-long`.
 //!
+//! # Back and forward
+//!
+//! The `agent` component reads no history, so the session reads it before it sends anything:
+//! the row of the navigator's view `Navigations` in the tab of the session whose `standing` is
+//! `back` (for `back`) or `forward` (for `forward`). Each refusal has status 1 and the state,
+//! with no event, no request and the path as it was: `closed`; `at-start` or `at-end` when there
+//! is no such row; `post-entry` when its `method` is `Post`, an entry the navigator would not
+//! load again (`TraverseHistory`), since surf has no cache. Otherwise the session sends `GoBack`
+//! or `GoForward` as the holder, records `<n> back` or `<n> forward` and runs the system: the
+//! navigator loads the entry's address with `GET`, and the answer is `did back` or `did
+//! forward` with the page it committed, or `page failed`, the tab's current entry left where it
+//! was. The checks of a target ("Following a link") do not apply: an entry is made only by a
+//! committed navigation, and a refused target commits none (`story:agent-back-forward`).
+//!
 //! # Refusals
 //!
 //! - A request other than `open` whose `session` is not this identity, or whose token does not
@@ -183,10 +199,11 @@
 //! state `unknown` ([`link::SessionState::Unknown`]) with no address and no title. So a process
 //! that reaches the session's socket without the token reads nothing of the session, not even
 //! the address of its page, and `surfd` keeps what it knew of the session before the request.
-//! - `go`, `follow`, `fill`, `pick`, `press` or `close` on a closed session: `did refused
-//!   closed`, status 1, with the state. `follow` or `press` without `arg handle`, `fill` without
-//!   `arg handle` and `arg value`, `pick` without `arg handle` and `arg option`, or any of them
-//!   with another argument: `did refused usage`.
+//! - `go`, `follow`, `fill`, `pick`, `press`, `back`, `forward` or `close` on a closed session:
+//!   `did refused closed`, status 1, with the state. `follow` or `press` without `arg handle`,
+//!   `fill` without `arg handle` and `arg value`, `pick` without `arg handle` and `arg option`,
+//!   or any of them with another argument, and `back`, `forward` or `close` with any argument:
+//!   `did refused usage`.
 //!
 //! # The token
 //!
@@ -307,14 +324,15 @@ use surf_ports::{Caller, ComponentPorts};
 use surf_secret::Token;
 use surf_types::agent::{
     ActionCommand, CloseSession, CloseSessionOutcome, Fill, FillOutcome, Follow, FollowOutcome, Go,
-    GoOutcome, OpenSession, OpenSessionOutcome, Pick, PickOutcome, Press, PressOutcome,
-    RecordAction, RecordActionOutcome, SessionId, SessionState, SessionStateView,
+    GoBack, GoBackOutcome, GoForward, GoForwardOutcome, GoOutcome, OpenSession, OpenSessionOutcome,
+    Pick, PickOutcome, Press, PressOutcome, RecordAction, RecordActionOutcome, SessionId,
+    SessionState, SessionStateView,
 };
 use surf_types::document::{
     DocumentId, DocumentState, Documents, ElementId, ElementKind, Elements, Options,
 };
-use surf_types::navigation::NavigationState;
-use surf_types::net::RequestId;
+use surf_types::navigation::{NavigationState, Standing};
+use surf_types::net::{Method, RequestId};
 use surf_types::primitives::Uuid;
 use surf_types::shell::{OpenTab, OpenTabOutcome, OpenWindow, OpenWindowOutcome};
 use surf_types::url::Url;
@@ -897,6 +915,8 @@ impl<T: Transport> Session<T> {
                 (None, Some(handle)) => self.press(handle),
                 _ => Ok(self.with_state(RefusalReason::Usage)),
             },
+            "back" if request.unknown_arg(&[]).is_none() => self.traverse(Standing::Back),
+            "forward" if request.unknown_arg(&[]).is_none() => self.traverse(Standing::Forward),
             "close" if request.unknown_arg(&[]).is_none() => self.close(),
             _ => Ok(self.with_state(RefusalReason::Usage)),
         };
@@ -1348,6 +1368,81 @@ impl<T: Transport> Session<T> {
                 Err(Stop::Unexpected("no such session to the open session"))
             }
         }
+    }
+
+    /// `back` (`step` [`Standing::Back`]) or `forward` ([`Standing::Forward`]): refused `closed`
+    /// on a closed session; otherwise the history of the session's tab is read from the
+    /// navigator's view `Navigations` before anything is issued ("Back and forward" above): no
+    /// entry at `step` is refused `at-start` or `at-end`, an entry made by `POST` `post-entry`.
+    /// Otherwise `GoBack` or `GoForward` as the holder, and when it is `requested`, the run and
+    /// `RecordAction` `back` or `forward`. No check of a target applies: the entry is one of the
+    /// session's own history, which no refused target entered (`story:agent-back-forward`).
+    fn traverse(&mut self, step: Standing) -> Result<Reply, Stop> {
+        let (command, at_edge, word) = match step {
+            Standing::Forward => (ActionCommand::Forward, RefusalReason::AtEnd, "forward"),
+            _ => (ActionCommand::Back, RefusalReason::AtStart, "back"),
+        };
+        if self.is_closed() {
+            return Ok(self.with_state(RefusalReason::Closed));
+        }
+        match self.entry_at(step)? {
+            None => return Ok(self.with_state(at_edge)),
+            Some(Method::Post) => return Ok(self.with_state(RefusalReason::PostEntry)),
+            Some(Method::Get) => {}
+        }
+        let not_holder = Stop::Unexpected("not-holder to the holder");
+        let no_session = Stop::Unexpected("no such session to the open session");
+        let session_id = self.session_id.clone();
+        let closed = match step {
+            Standing::Forward => match self
+                .browser
+                .agent_mut()
+                .go_forward(GoForward { session_id })?
+            {
+                GoForwardOutcome::Requested { .. } => false,
+                GoForwardOutcome::Closed { .. } => true,
+                GoForwardOutcome::NotHolder { .. } => return Err(not_holder),
+                GoForwardOutcome::NoSuchSession { .. } => return Err(no_session),
+            },
+            _ => match self.browser.agent_mut().go_back(GoBack { session_id })? {
+                GoBackOutcome::Requested { .. } => false,
+                GoBackOutcome::Closed { .. } => true,
+                GoBackOutcome::NotHolder { .. } => return Err(not_holder),
+                GoBackOutcome::NoSuchSession { .. } => return Err(no_session),
+            },
+        };
+        if closed {
+            return Ok(self.with_state(RefusalReason::Closed));
+        }
+        self.record_and_run(command, None, None)?;
+        Ok(self.state_reply(
+            0,
+            Some(Did::Action {
+                command: word.to_string(),
+                argument: None,
+            }),
+        ))
+    }
+
+    /// The method of the entry at `step` in the history of the session's tab, from the
+    /// navigator's view `Navigations`; `None` when the tab has no entry there.
+    fn entry_at(&self, step: Standing) -> Result<Option<Method>, Stop> {
+        let system = self.browser.system();
+        let Some(tab_id) = system
+            .agent
+            .sessions()?
+            .into_iter()
+            .find(|row| row.session_id == self.session_id)
+            .map(|row| row.tab_id)
+        else {
+            return Err(Stop::Unexpected("no row of the open session"));
+        };
+        Ok(system
+            .navigator
+            .navigations()?
+            .into_iter()
+            .find(|row| row.tab_id == tab_id && row.standing == Some(step))
+            .map(|row| row.method))
     }
 
     /// Status 0 with `did <command> "<handle>"` and the state.
@@ -1804,7 +1899,10 @@ fn refusal_status(reason: RefusalReason) -> u8 {
         | RefusalReason::InvalidControls
         | RefusalReason::InvalidAction
         | RefusalReason::UnsupportedEnctype
-        | RefusalReason::DialogMethod => 1,
+        | RefusalReason::DialogMethod
+        | RefusalReason::AtStart
+        | RefusalReason::AtEnd
+        | RefusalReason::PostEntry => 1,
         RefusalReason::Usage => 2,
         RefusalReason::NoSuchSession
         | RefusalReason::SessionDied

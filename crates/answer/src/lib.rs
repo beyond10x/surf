@@ -188,10 +188,16 @@ pub enum RefusalReason {
     UnsupportedEnctype,
     /// `dialog-method`: the form's method is `dialog` (`DialogMethod`).
     DialogMethod,
+    /// `at-start`: the session's history has no entry before the current one (`back`).
+    AtStart,
+    /// `at-end`: the session's history has no entry after the current one (`forward`).
+    AtEnd,
+    /// `post-entry`: the entry `back` or `forward` would go to was made by a `POST`.
+    PostEntry,
 }
 
 impl RefusalReason {
-    const ALL: [RefusalReason; 23] = [
+    const ALL: [RefusalReason; 26] = [
         RefusalReason::Token,
         RefusalReason::Closed,
         RefusalReason::Usage,
@@ -215,6 +221,9 @@ impl RefusalReason {
         RefusalReason::InvalidAction,
         RefusalReason::UnsupportedEnctype,
         RefusalReason::DialogMethod,
+        RefusalReason::AtStart,
+        RefusalReason::AtEnd,
+        RefusalReason::PostEntry,
     ];
 
     /// The word of the format.
@@ -243,6 +252,9 @@ impl RefusalReason {
             RefusalReason::InvalidAction => "invalid-action",
             RefusalReason::UnsupportedEnctype => "unsupported-enctype",
             RefusalReason::DialogMethod => "dialog-method",
+            RefusalReason::AtStart => "at-start",
+            RefusalReason::AtEnd => "at-end",
+            RefusalReason::PostEntry => "post-entry",
         }
     }
 }

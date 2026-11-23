@@ -198,7 +198,8 @@ const FROM_LINE: Argument = Argument {
 pub const FORMS: &[&str] = &["tree", "markdown"];
 
 /// The commands: `open [<url>]`, `go <url>`, `look`, `follow <handle>`, `fill <handle> <value>`,
-/// `pick <handle> <option>`, `press <handle>`, `close`. `open` takes no session and no token.
+/// `pick <handle> <option>`, `press <handle>`, `back`, `forward`, `close`. `open` takes no
+/// session and no token.
 /// `open`, `go` and `look` take `--as tree|markdown [--from-line <n>]`; `open` only with an
 /// address. The value `-` of `fill` is read from standard input by the client
 /// ([`STDIN_VALUE`]).
@@ -232,6 +233,14 @@ pub const COMMANDS: &[Command] = &[
         arguments: &[HANDLE, SESSION, TOKEN],
     },
     Command {
+        name: "back",
+        arguments: &[SESSION, TOKEN],
+    },
+    Command {
+        name: "forward",
+        arguments: &[SESSION, TOKEN],
+    },
+    Command {
         name: "close",
         arguments: &[SESSION, TOKEN],
     },
@@ -253,6 +262,8 @@ usage: surf-agent open [<url>] [--as tree|markdown [--from-line <n>]]
        surf-agent fill <handle> <value>|- [--session <id>] [--token-file <path>]
        surf-agent pick <handle> <option>|on|off [--session <id>] [--token-file <path>]
        surf-agent press <handle> [--session <id>] [--token-file <path>]
+       surf-agent back [--session <id>] [--token-file <path>]
+       surf-agent forward [--session <id>] [--token-file <path>]
        surf-agent close [--session <id>] [--token-file <path>]
 The session comes from --session or SURF_SESSION, the token from --token-file or SURF_TOKEN.
 A token file is a regular file of yours that group and others cannot read (mode 0600).
