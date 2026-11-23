@@ -1525,7 +1525,8 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `story:page-step-holds-under-load`), not a step of `check`. It builds and sets up as `task
   view-test` does, then `taskfiles/page-step-cpu.sh` runs the same Playwright call in the same
   directory under `perf stat -e task-clock` as one slot job and prints the load before and
-  after, the ten slowest tests, the step's line and `page step cpu: T s`, and writes T to
+  after, the ten slowest tests, the step's line and `page step cpu: T s` (the loads and the
+  step's seconds read inside the job, so a wait in the pool's queue is not in them), and writes T to
   `.out/page-step.cpu`. The counter is inherited on fork, not on wait, so it counts every
   process under the call, also the ones nobody reaps (Chromium's), user and kernel time;
   `time` saw about 57 % of it. A user scope of systemd (`systemd-run --user --scope`) read 11
@@ -2072,6 +2073,40 @@ The CPU seconds were 55.5, 55.6 and 56.5 s, 72 to 74 % of the base median: over 
 bound of 53.8 s and its target of 46.1 s. A `perf record` run then, at load 80, gave renderers
 22.9 s, workers 14.0 s, browser 7.7 s, GPU 3.8 s and the fixture 1.7 s. The rest is about 1 CPU
 second per test of a fresh page (a renderer of 0.18 to 0.3 s) and Playwright's own work.
+`an entry over 1 MiB` was the page test over 5 s by its own work: 14.5, 19.8, 24.2 and 33.0 s
+in four runs on `03f25c9` (loads 97.85 to 121.49), 6.6 s after cut (a) at load 110.36, then
+5.4, 3.9 and 3.0 s in the three runs on `c301a84` (two other tests took 5.7 and 5.2 s in the
+third) and 9.1, 1.5 and 1.3 s in the three D331 runs below. At loads of 50 to 70 no page test
+took over 3.0 s; at 96 to 107 four took 11 to 14 s.
+The cause of `#live-word` staying `connecting` for 10 s is open: `controls case 6` in the
+base's third run (load 121, under `perf record -s`) and `timeline of three actions` in the first
+D331 run (load 107); the code rules out a closed or refused stream and a failed first load
+(each writes another word), an error in drawing (it would repeat in every run) and a late head
+of `/events` (surfd writes it at once), 20 repeats of case 6 with traces passed, and since D331
+a failure of the `load` of `controls.spec.mjs` names the live marker's word and class, the
+text of `#message` and the segments drawn (the `load` of the other spec files does not yet).
+D331 looked for one more cut in the Playwright workers, compared by the instructions of a run
+(`perf stat -e instructions`, about 117 G a run, far less tied to the load than CPU seconds):
+- Playwright 1.65 installs `source-map-support` in its runner and each worker without a
+  setting to skip it, so every stack it captures (each API call, each step of a fixture of its
+  own, each `expect`) maps every frame. Resetting `Error.prepareStackTrace` in the config moved
+  a failure's location from `acceptance.spec.mjs:46` to `:48`, because Playwright's loader
+  rewrites the `.mjs` files; with `PW_DISABLE_TS_ESM=1` as well the line was right and the run
+  took 114.7 G instructions against 116.8 G. Neither is a documented setting, and about 1 CPU
+  second is under the 2 s a flag has to save: not kept. `NODE_COMPILE_CACHE` takes Playwright's
+  module load from 2.86 to 2.16 G instructions (0.83 to 0.61 CPU s) in each of the three node
+  processes, about 0.65 s: not kept either.
+- The record settling each request's answer from the page's `response` and `requestfailed`
+  events instead of `request.response()` per request took 117.8 G: no saving, not kept.
+- The per-test fork of `surf-view-fixture` from a worker of about 300 MB costs tens of ms of
+  kernel time (a `spawn` from node took 37 ms at 351 MB, 3.8 ms at 52 MB); not built.
+Runs of 114.7 to 117.8 G instructions took 38.1 and 41.2 CPU s at loads of 36 to 43, 55.6 s
+at 66 to 72 and 62.1 s at 153 to 252: the step's CPU seconds follow the host's load more than
+any of these cuts. With none of them kept, three consecutive runs of `task page-step-cpu` on
+`14e76fd` (2026-11-23) took 64.3, 41.8 and 45.5 CPU s at loads of 106.82 to 95.99, 56.28 to
+50.19 and 70.44 to 68.29; the step took 196.7 s (over its budget, one test failed, see
+above), 20.2 s and 28.5 s; the other 70 tests of the base passed in the first run and all 71
+in the second and third.
 `html-conformance`, the last
 step of `check`: `html-conformance: 9107 cases, 9095 run, 8428 passed` (82 encoding cases,
 7,046 tokenizer cases and 1,300 tree construction cases), with `tag markup 1979/1979/1979`,
