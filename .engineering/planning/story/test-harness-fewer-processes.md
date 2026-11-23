@@ -48,7 +48,7 @@ scope:
   path: crates/view/tests/http.rs
 - confidence: cited
   path: taskfiles/agent-tasks-model.sh
-revision: 26
+revision: 27
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-23T01:22:29Z", actor: "human:operator", revision: 25}
 - {from: "proposed", to: "active", at: "2026-11-23T01:22:30Z", actor: "human:operator", revision: 26}
@@ -413,3 +413,28 @@ are those of the store files on `1f53d35`.
 `crates/view/tests/http.rs`; `crates/view-fixture/tests/main.rs`,
 `crates/view-fixture/tests/common/mod.rs`, `crates/view-fixture/tests/fixture.rs`,
 `crates/view-fixture/tests/adversary_commands.rs`.
+
+## As built
+
+The change is `d846975` on `fix/test-harness-processes`, measured on 2026-11-23.
+
+- One `--check --base` run of html-conformance: 8 programs before, 3 after.
+- One drop of a test directory opened 1281 `environ` files before (`in_process::case_01`) and
+  opens 1 after; `events::case_05` 1287 and 1.
+- view-fixture with `SURF_BIN_DIR` set: `fixture` ran 19 programs, 1 of them cargo, and runs 9,
+  none of them cargo.
+- 893 test names before and after. The 37 changed tests are each under 2 s.
+- Three runs of `task test` in a row at a load of 86 to 115: 33.1 s, 29.8 s and 40.3 s of the
+  budget of 120 s.
+
+Short of the story, decided (D296), not measured again:
+
+- Acceptance 2, module `check` of html-conformance, third pair: 12.83 s after against 22.55 s
+  before, 57 % where the bound is 50 % (38 % and 47 % in the other two pairs). The test
+  `the_tag_counts_of_the_groups_sum_to_the_tag_lines` took 4.10 s of it; it runs the whole
+  conformance suite in the test process and is not changed here.
+- Acceptance 1, the driver with the stub model: 56 programs in 62 processes for 4 tasks before,
+  counted as successful `execve` calls, where the story says 75 in 52. With `one-task.txt`: 32
+  programs, 53 % of the run of 4 tasks after, inside the bound of 60 %.
+
+The text for `AGENTS.md` (D281) is applied on the merged branch.

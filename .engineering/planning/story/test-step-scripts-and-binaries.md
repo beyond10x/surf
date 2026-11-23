@@ -51,7 +51,7 @@ scope:
   path: taskfiles/test-layout.sh
 - confidence: cited
   path: taskfiles/test-layout.yml
-revision: 26
+revision: 27
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-23T01:22:28Z", actor: "human:operator", revision: 25}
 - {from: "proposed", to: "active", at: "2026-11-23T01:22:29Z", actor: "human:operator", revision: 26}
@@ -358,3 +358,26 @@ the manifests `crates/agent/Cargo.toml`, `crates/agent-tasks/Cargo.toml`,
 `crates/surfd/Cargo.toml`, `crates/url/Cargo.toml`, `crates/view/Cargo.toml`; `AGENTS.md` at
 `:131-134`, `:165-169`, `:247-266`, `:1191-1224`, `:1302-1319` and `:1323-1359` (line numbers of
 `96145a2`).
+
+## As built
+
+The change is `2c86943` on `fix/test-step-scripts`, measured on 2026-11-23.
+
+- `taskfiles/generated-compare.sh`: a failing first step ran 72 programs and runs 23 with the
+  listings present, 25 with them missing; both steps passing, 77 and 30. Its output is byte for
+  byte the output of the script before in all three cases.
+- `lock_check`: 3 programs per call before, 2 after.
+- Test binaries: 39 before, 21 after, each with tests; 893 test names and 2 doc tests before and
+  after. `test-layout-test`: 39 cases.
+- The doc step runs beside cargo-nextest: step time less `Summary` 13.0, 12.3 and 8.5 s without,
+  4.6, 3.3 and 2.5 s with, in three alternating pairs, one pool job each.
+- Three runs of `task test` in a row at a load of 80 to 111: 23.4 s, 32.9 s and 39.5 s of the
+  budget of 120 s.
+
+Short of acceptance 2: `generated_check_links` took 10.78 s after against 11.47 s before in the
+third pair, not half. The run after had a load of 95 to 107, the run before 52 to 58; the other
+two pairs gave 26.34 to 6.97 s and 13.27 to 3.02 s. Decided (D296): the pair is not measured
+again. The count of programs, which the acceptance stands for, is met.
+
+The four manifests of `crates/html-conformance`, `crates/session`, `crates/surfd` and
+`crates/view` are changed by this story, as its scope says (D295).
