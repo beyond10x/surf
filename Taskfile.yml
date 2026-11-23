@@ -31,6 +31,10 @@ includes:
     taskfile: taskfiles/view-test.yml
     flatten: true
     optional: true
+  page-step-cpu:
+    taskfile: taskfiles/page-step-cpu.yml
+    flatten: true
+    optional: true
   check-runner:
     taskfile: taskfiles/check-runner.yml
     flatten: true
