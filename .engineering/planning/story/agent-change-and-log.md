@@ -39,7 +39,7 @@ scope:
   path: generated/rust
 - confidence: inferred
   path: spec/domains/agent.yaml
-revision: 17
+revision: 18
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 6}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:08Z", actor: "human:timo", revision: 7}
@@ -174,3 +174,24 @@ tree did not agree, each decided:
 3. The 14 golden files of `crates/answer/tests/golden/` keep their text: they are answers
    rendered from typed values without a page state. Three golden files are added for the
    block: `changed-controls`, `changed-page`, `changed-none`.
+
+## As decided after the adversary's pass
+
+The adversary's pass on `cf9a6ba` and `dc86f24` added 22 tests
+(`crates/session/tests/adversary_change_log.rs`, `crates/answer/tests/adversary_changed.rs`); 3
+were red. Fixed in `d46a8d6`.
+
+1. Decision D298. A `selected` line compares a select's selected options by their places in the
+   select; each side lists the labels of all selected options in document order, joined by
+   `, `, and a move between two options of one label gives a line whose two sides read the
+   same. Before, only the first selected label was compared, and a `pick` that deselected an
+   option of a `select multiple` answered `changed 0`.
+2. Decision D299. A `+ text` line is at most 1,935 bytes and a `~` line under 32,820 bytes: a
+   character of 4 bytes is quoted as 16. The largest answer is about 3,491,000 bytes, inside the
+   answer limit of 4,194,304 bytes of the client and `surfd`. The module documentation of
+   `crates/session` states these figures; no bound changed.
+3. Decision D300. The lists of entries that follow the public rule on a traversal keep only
+   entries whose row in the navigator is not dropped. No test: no answer shows the lists.
+4. Decision D301. The test of a page with many texts runs with 20,000 texts instead of
+   100,000: with 100,000 it took up to 26.6 s under load, past its own bound of 20 s.
+5. The acceptance counts the 16 numbered cases, the adversary's 22 tests and the two cases of 1.
