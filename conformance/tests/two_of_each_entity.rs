@@ -9,10 +9,16 @@
 //! scenario mints two of `Option` or `Submission`: their second instance is arranged with an
 //! identity of its own, so they have a view defect only. `Form` has none: every scenario adds one
 //! form at most. A defect that is not noticed names its entity.
+//!
+//! Each defect runs over the scenarios its line of `tests/noticed.txt` names (`task
+//! conform-slow` writes the list), or over the whole suite when `SURF_NOTICED_OUT` is set; the
+//! control runs the whole suite.
 
 use ess_conformance::target::ImplementationIdentity;
 use surf::{Browser, System};
-use surf_conformance::{SurfTarget, Unanswered, run};
+use surf_conformance::{
+    SurfTarget, Unanswered, each_planted, listed_suite, not_noticed, note_noticed, run, whole_suite,
+};
 use surf_ports::{
     NavigatorPorts, NetPorts, RendererPorts, ShellPorts, agent_port, commit_navigation,
     document_port, navigator_port, net_port, renderer_port, shell_port, traverse_history,
@@ -48,9 +54,6 @@ use surf_types::obligation::UnmetObligation;
 use surf_types::primitives::Uuid;
 use surf_types::render::{FrameId, FrameSnapshot};
 use surf_types::shell::{TabId, TabSnapshot, WindowId, WindowSnapshot};
-
-/// The suite `task suite` writes.
-const SUITE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../.out/suite.json");
 
 /// The one identity every instance of the planted entity gets.
 const SAME: &str = "00000000-0000-4000-8000-000000000000";
@@ -324,10 +327,8 @@ impl<P: TryContext> TryContext for Planted<P> {
     }
 }
 
-/// The suite over every component's ports with `defect` planted: the scenarios that failed.
-fn failed_with(defect: Defect) -> Vec<String> {
-    let suite = std::fs::read_to_string(SUITE)
-        .unwrap_or_else(|error| panic!("{SUITE}: {error}; run `task suite` first"));
+/// `suite` over every component's ports with `defect` planted: the scenarios that failed.
+fn failed_with(defect: Defect, suite: &str) -> Vec<String> {
     let label = format!("{defect:?}");
     let target = SurfTarget::new(
         ImplementationIdentity::new("surf", label.clone()),
@@ -363,7 +364,10 @@ fn failed_with(defect: Defect) -> Vec<String> {
             )
         },
     );
-    let conformance = run(&suite, &target).expect("the suite runs");
+    let conformance = run(suite, &target).expect("the suite runs");
+    if !matches!(defect, Defect::Nothing) {
+        note_noticed(&label, &conformance.report).unwrap_or_else(|error| panic!("{error}"));
+    }
     let counts = conformance.report.counts();
     let failed: Vec<String> = conformance
         .report
@@ -383,22 +387,42 @@ fn failed_with(defect: Defect) -> Vec<String> {
     failed
 }
 
+/// Each of `defects` over the scenarios its line of `tests/noticed.txt` names, or over the whole
+/// suite, each on a thread of its own, when `SURF_NOTICED_OUT` is set.
 fn assert_each_noticed(defects: &[Defect]) {
-    let missed: Vec<String> = defects
+    let planted: Vec<(Defect, String)> = defects
         .iter()
-        .filter(|defect| failed_with(**defect).is_empty())
-        .map(|defect| format!("{defect:?}"))
+        .map(|defect| {
+            let suite =
+                listed_suite(&format!("{defect:?}")).unwrap_or_else(|error| panic!("{error}"));
+            (*defect, suite)
+        })
         .collect();
-    assert!(
-        missed.is_empty(),
-        "the suite passed every scenario over a system with each of {missed:?}"
-    );
+    let missed: Vec<String> = each_planted(&planted, |(defect, suite)| {
+        failed_with(*defect, suite)
+            .is_empty()
+            .then(|| format!("{defect:?}"))
+    })
+    .into_iter()
+    .flatten()
+    .collect();
+    let messages: Vec<String> = missed
+        .iter()
+        .map(|label| {
+            not_noticed(
+                label,
+                "every scenario passed over a system with this defect",
+            )
+        })
+        .collect();
+    assert!(missed.is_empty(), "{}", messages.join("\n"));
 }
 
 /// Control: nothing planted, nothing fails, so a failure above is the defect's.
 #[test]
 fn nothing_planted_fails_no_scenario() {
-    let failed = failed_with(Defect::Nothing);
+    let suite = whole_suite().unwrap_or_else(|error| panic!("{error}"));
+    let failed = failed_with(Defect::Nothing, &suite);
     assert!(failed.is_empty(), "{failed:?}");
 }
 

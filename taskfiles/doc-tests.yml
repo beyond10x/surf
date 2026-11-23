@@ -9,9 +9,10 @@ tasks:
       Fail, naming the file and line, when a doc comment outside crates/ports holds a code block that rustdoc would run, or a doc attribute.
 
       task test runs the doc tests of surf-ports only (cargo test --doc -p surf-ports), so a doc
-      test anywhere else would never run. Runs taskfiles/doc-tests-check.sh on the repository. It
-      reads every *.rs under crates/ and generated/ but those under crates/ports/ (target and dot
-      directories not entered) and follows the fences of the /// and //! lines of each file: a
+      test anywhere else would never run; task conform-rust runs the conformance crate's tests
+      with cargo-nextest, which runs no doc test. Runs taskfiles/doc-tests-check.sh on the
+      repository. It reads every *.rs under crates/, generated/ and conformance/src/ but those
+      under crates/ports/ (target and dot directories not entered) and follows the fences of the /// and //! lines of each file: a
       line whose text after the comment mark and blanks starts with three backticks or three
       tildes opens a block when none is open and closes the open one otherwise. An opening fence
       whose mark is not text fails, and so does a line that holds #[doc = or #![doc =. It prints
@@ -33,7 +34,8 @@ tasks:
       Failing cases: a fence without a mark, rust,no_run, a fence of tildes without a mark, a
       text block followed by a second block without a mark (the line of the second block is
       named, so the closing fence of the first is not taken as an opening), #[doc = "..."],
-      #![doc = "..."], and a //! fence without a mark under generated/. Passing cases: text, and
+      #![doc = "..."], and a //! fence without a mark under generated/ and under
+      conformance/src/. Passing cases: text, and
       every one of the failing constructs under crates/ports/, under a target directory, under a
       dot directory, and in a //// comment, which is no doc comment. A root without crates/ and
       generated/ exits 2.
@@ -115,6 +117,10 @@ tasks:
         mkdir -p "$case_dir/generated/rust/src"
         printf '//! A.\n//!\n//! ```\n//! a();\n//! ```\n' > "$case_dir/generated/rust/src/lib.rs"
         check 1 "a //! fence without a mark under generated/" "doc-tests-check: generated/rust/src/lib.rs:3 $run"
+        fresh
+        mkdir -p "$case_dir/conformance/src"
+        printf '//! A.\n//!\n//! ```\n//! a();\n//! ```\n' > "$case_dir/conformance/src/lib.rs"
+        check 1 "a //! fence without a mark under conformance/src/" "doc-tests-check: conformance/src/lib.rs:3 $run"
         fresh
         all "$case_dir/crates/ports/src"
         check 0 "each failing construct under crates/ports/" "$clean"

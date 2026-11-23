@@ -163,8 +163,9 @@ above, and the list of standards itself was written from memory.
   `taskfiles/tls-flights.yml` the tasks
   `tls-flights-check` (over `taskfiles/tls-flights-check.sh`, a step of `check`) and
   `tls-flights-slow` (a step of `slow`: records the flights again and replays them; `WRITE=1`
-  writes them). `taskfiles/slowest-tests.sh` is no task's own: `task test` calls it. Three
-  tasks of the root `Taskfile.yml` run a script of their own, so that their tests run it with
+  writes them). `taskfiles/slowest-tests.sh` is no task's own: `task test`, `task test-tls`
+  and `task conform-rust` call it, each on a copy of its own of nextest's report. Three tasks
+  of the root `Taskfile.yml` run a script of their own, so that their tests run it with
   `sh` and start no `task` per case: `generated-compare` runs
   `taskfiles/generated-compare.sh <fresh tree>`, `conform-totals` runs
   `taskfiles/conform-totals.sh`, and `lock-check` runs `taskfiles/lock-check.sh Cargo.lock
@@ -235,8 +236,12 @@ above, and the list of standards itself was written from memory.
   committed. `task build` and `task test` pass `--locked`, so a new crate fails them until
   `cargo generate-lockfile --offline` has run.
 - `.config/nextest.toml`: the configuration of cargo-nextest, which `task test` and `task
-  test-tls` run: at least 0.9.143, a run that does not stop at the first failure, a test ended
-  after 60 s, and the JUnit report each task copies and reads the ten slowest tests from.
+  test-tls` run, and `task conform-rust` and `task conform-slow` for the crate `conformance/`
+  (a workspace of its own, so they pass `--config-file .config/nextest.toml`; the crate has no
+  nextest configuration of its own): at least 0.9.143, a run that does not stop at the first
+  failure, a test ended after 60 s, and the JUnit report each task reads the ten slowest tests
+  from, each from a copy of its own (`conform-rust`: `.out/conform-rust-junit.xml`, copied from
+  `conformance/target/nextest/default/junit.xml`).
 - `.cargo/config.toml`: `debug = false` for the profiles `dev` and `test`, so no build of this
   repository carries debug info (the folder's rule: no debug info in test builds). A setting in
   `Cargo.toml` would not do: a cargo config file wins over the manifest, and one in a user's
@@ -973,7 +978,24 @@ above, and the list of standards itself was written from memory.
   generated crates by path, and on `ess-conformance`, `ess-primitives` and `ess-domain` from
   `https://github.com/beyond10x/ess` at tag `0.97.4`; its lock pins the third-party packages
   those bring to the versions ESS's own lock holds at that tag. Nothing in the root workspace
-  depends on it.
+  depends on it. `tests/noticed.txt`, committed and written by `task conform-slow`, holds on
+  its first line `sources <sha256>`, the digest of its sources (`.out/suite.json`; every file
+  under `src/` and `tests/` but `noticed.txt` itself, a list read from the directories and
+  sorted, so a new file counts; `Cargo.toml`; `Cargo.lock` whole), and then one line per
+  planted defect, `<label>: ` and the first 3 scenarios, in the suite's order, that do not pass
+  over it. The digest does not cover the surf crates the crate is built against (`crates/`,
+  `generated/`) nor the list's own lines: after such a change a planted-defect test whose
+  listed scenarios all pass fails naming its defect and ends with `the list
+  tests/noticed.txt may be stale (…); task conform-slow WRITE=1 regenerates it`, and so do a
+  label without a line and a line naming a scenario the suite does not hold (one test each in
+  `tests/planted_defect.rs`). Each planted-defect test runs its defect over its listed
+  scenarios only and asserts that at least one does not pass; the two controls run the whole
+  suite. The narrowed suites are made once per digest by the setup step of `task conform-rust`
+  (`surf-conformance --narrow`, `src/noticed.rs`) under `target/noticed/<digest>/`, and each
+  test reads its own (`surf_conformance::listed_suite`); a missing one fails the test naming
+  that step, never falling back to the whole suite, and a test whose run differs from its line
+  fails too. Admitting the whole 2.8 MB suite took 6.0 to 17.5 s alone at a load average near
+  104, a narrowed suite of 3 scenarios 7 to 135 ms.
   - `src/target.rs`: `SurfTarget`, the hand-written adapter between the runner's named values
     and the generated typed commands, outcomes, view rows, events and binding invocations. A
     fresh `Browser` per scenario; a command is issued on its component's port and `Browser::run`
@@ -987,13 +1009,15 @@ above, and the list of standards itself was written from memory.
     optional input sent as `null` reads as one left out. Since `story:agent-fill-pick` it maps
     the element's `readonly` (in `AddElement`, an `Element` setup and the `Elements` view) and
     the outcome `readonly` of `SetValue`.
-  - `src/main.rs`: the binary `conform-rust` runs. `tests/planted_defect.rs`: the same suite over
-    a `Navigation` storage that drops every `put` must fail at least one scenario.
+  - `src/main.rs`: the binary `conform-rust` runs. `tests/planted_defect.rs`: the scenarios of
+    its line in `tests/noticed.txt` over a `Navigation` storage that drops every `put` must
+    fail at least one scenario.
     `tests/two_of_each_entity.rs`: for each entity alone, one identity for every instance, and
     a view cut to its first row, must each fail at least one scenario; since wave 3 it plants
     `SameIdentity(Action)` (3 scenarios fail), `FirstRowOnly(Session)` (15) and
     `FirstRowOnly(Action)` (2), as the unit reported; since wave 6 also `SameIdentity(Element)`
-    (1) and `FirstRowOnly(Element)` (1), as that unit reported. Its tests need
+    (1) and `FirstRowOnly(Element)` (1), as that unit reported, each count over the whole
+    suite of its day. Its tests need
     `.out/suite.json` in a fresh tree: run `slot task suite` first.
 
 ## Components
@@ -1419,8 +1443,9 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `crates/tls-test-certs` against `certs/DIGEST`. It prints `tls-certs: <n> cases, certs/
   matches its sources`, or `tls-certs: the sources changed since certs/ was generated; run task
   tls-certs-slow` with the sources that differ, and fails.
-- `task slow`: the lane that makes the committed products of the TLS tests again and compares
-  them with the committed files; never a step of `check`. It runs `tls-certs-slow`, which
+- `task slow`: the lane that makes the committed products of the TLS tests and the
+  conformance crate's `tests/noticed.txt` again and compares them with the committed files;
+  never a step of `check`. It runs `tls-certs-slow`, which
   builds and runs `surf-tls-test-certs` and `openssl/make.sh` into `.out/tls-certs/` and
   compares every file with `crates/tls-test-certs/certs/` byte for byte, then
   `tls-flights-slow`, which records the flights against `openssl s_server` on 127.0.0.1 into
@@ -1429,7 +1454,10 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   files were made with the version their `SOURCE` files name. No workflow runs it: the forge's
   runner pins no `openssl`, and the certificates `make.sh` writes come from that tool. Run it
   by hand after a change to `crates/tls-test-certs/` or to
-  `crates/tls/examples/record-flights.rs`.
+  `crates/tls/examples/record-flights.rs`. Its third step is `conform-slow`, which runs every
+  planted defect of `conformance/` over the whole suite and compares the list it writes,
+  `.out/noticed.txt`, with `conformance/tests/noticed.txt` byte for byte; it needs no
+  `openssl`, and `task conform-slow` runs it alone after a change to a source of the list.
 - `task view-test`: the page tests in a browser (`taskfiles/view-test.yml`). It builds
   `surf-agent`, `surf-session` and `surf-view-fixture`, installs `view-tests/` from its
   `package-lock.json` with `npm ci`, and runs `npx playwright test --workers=2` in
@@ -1462,8 +1490,9 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
 - `task doc-tests-check`: `sh taskfiles/doc-tests-check.sh .`. `task test` runs the doc tests of
   `surf-ports` only, so in a doc comment outside `crates/ports` a code block is fenced and
   marked `text` (` ```text ` or `~~~text`), which rustdoc does not run; a doc test belongs in
-  `crates/ports`. The script reads every `*.rs` under `crates/` and `generated/` but those under
-  `crates/ports/` (`target` and dot directories not entered), follows the fences of the `///`
+  `crates/ports`. The script reads every `*.rs` under `crates/`, `generated/` and
+  `conformance/src/` (whose tests run under cargo-nextest, which runs no doc test) but those
+  under `crates/ports/` (`target` and dot directories not entered), follows the fences of the `///`
   and `//!` lines of each file (a line that starts, after the mark and blanks, with three
   backticks or three tildes opens a block when none is open and closes it otherwise), and
   fails, naming `<file>:<line>`, on an opening fence whose mark is not `text` and on a line
@@ -1473,21 +1502,52 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   either: a block doc comment (`/** */`, `/*! */`) and a doc attribute through `cfg_attr` or a
   macro. It calls no cargo.
 - `task doc-tests-check-test`: that script on small trees under `.out/doc-tests-check-test/`,
-  thirteen cases, each compared on its exit status and the line printed: a fence without a
+  fourteen cases, each compared on its exit status and the line printed: a fence without a
   mark, `rust,no_run`, a fence of tildes without a mark, a `text` block followed by a block
   without a mark (named at the second block's line), `#[doc = "…"]`, `#![doc = "…"]` and a
-  `//!` fence without a mark under `generated/` fail; fences marked `text` pass, and so does
+  `//!` fence without a mark under `generated/` and under `conformance/src/` fail; fences marked `text` pass, and so does
   each failing form under `crates/ports/`, a `target` directory, a dot directory and in a
   `////` comment; a root without `crates/` and `generated/` exits 2. `SCRIPT=<path>` runs a
   copy of the script.
 - `task release-smoke DIR=<unpacked archive>`: `taskfiles/release-smoke.sh` on a release
   archive, as the release workflow runs it (`docs/releasing.md`).
 - `task validate`, `task suite`, `task conform`: the specification steps on their own.
-- `task conform-rust`: the crate `conformance/`, warnings denied. Its tests, the planted-defect
-  test included, then the suite against the Rust system: log `.out/conform-rust.log`, report
-  `.out/conform-rust.json` (`ess-conformance-report/2`). Fails when any scenario failed, errored
-  or was unsupported. cargo fetches `github.com/beyond10x/ess` at tag `0.97.4` when its cache
-  does not hold it. `task --summary conform-rust` says more.
+- `task conform-rust`: the crate `conformance/`, warnings denied. First the fast check, `sh
+  taskfiles/conform-noticed.sh check`: the sha256 of the sources of
+  `conformance/tests/noticed.txt` against its first line; when they differ it fails with
+  `conform-rust: the sources of conformance/tests/noticed.txt changed; run task conform-slow`.
+  Then it builds the tests (`cargo nextest run --no-run`) and the binary (`cargo build`), and
+  the setup step `surf-conformance --narrow .out/suite.json conformance/tests/noticed.txt`
+  writes the narrowed suites once per digest (`conform-rust: the narrowed suites of 29 planted
+  defects written to …` or `… are current`), all untimed. The timed part: its tests under
+  cargo-nextest with the root's `.config/nextest.toml` (a test still running after 60 s is
+  ended and fails), into `.out/conform-rust-test.log`, the planted-defect tests included (it
+  fails, naming them, when their `PASS` lines are missing, and with `conform-rust: nextest
+  skipped N test(s); …` when nextest's summary reports a skipped test: the crate has none);
+  each planted defect runs over the at most 3 scenarios its line of `noticed.txt` names, the
+  two controls over the whole suite. Then the suite against the Rust system, the built
+  `conformance/target/debug/surf-conformance` under `timeout` of coreutils: log
+  `.out/conform-rust.log`, report `.out/conform-rust.json` (`ess-conformance-report/2`). Fails
+  when any scenario failed, errored or was unsupported, and when it runs past
+  `CONFORM_SUITE_BOUND` (default 60) seconds: `conform-rust: step 2, the suite against the
+  Rust system, was ended after its bound of 60 s`. It prints nextest's summary line, the
+  runner's summary line, the ten slowest tests from `.out/conform-rust-junit.xml`, its copy of
+  `conformance/target/nextest/default/junit.xml` (`taskfiles/slowest-tests.sh`), and
+  `conformance step: N s of its budget of 120 s`, N the wall time of the tests and the suite
+  run, the builds left out; over the budget (`CONFORM_BUDGET`, default 120) it prints
+  `conformance step: N s, over its budget of 120 s` and fails. It writes N to
+  `.out/conform-step.seconds`. cargo fetches `github.com/beyond10x/ess` at tag `0.97.4` when
+  its cache does not hold it. `task --summary conform-rust` says more.
+- `task conform-slow`: a step of the lane `slow`, never of `check`. Every planted defect of
+  `conformance/` over the whole suite (`SURF_NOTICED_OUT=.out/noticed.d`; the planted-defect
+  tests and the controls only, by a nextest filter; the defects of one test each on a thread
+  of its own), each still held to being noticed. It prints one count line per defect over the
+  whole suite (`sh taskfiles/conform-noticed.sh counts`), for example `navigation storage
+  drops every put: 196 scenarios: 146 passed, 50 failed, 0 error, 0 unsupported`, writes
+  `.out/noticed.txt` (`sh taskfiles/conform-noticed.sh assemble`) and fails when that differs
+  from `conformance/tests/noticed.txt` byte for byte. `WRITE=1` writes the committed file. A
+  change to a source of the list runs `task conform-slow WRITE=1` and commits `noticed.txt` in
+  the same commit; the fast check of `conform-rust` names the task.
 - `task conform-totals`: fail, printing both, when `.out/report.json` (interpreter) and
   `.out/conform-rust.json` (Rust) are of different suites by digest or differ in
   `counts.total`. Needs both runs first.
@@ -1552,7 +1612,9 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   4.6, 3.3 and 2.5 s with it, 13.0, 12.3 and 8.5 s without; `slot status` showed one job for
   the step). The ten slowest tests come from
   `taskfiles/slowest-tests.sh <junit file> [count]` (POSIX sh, pipefail where the shell has
-  it), held by `crates/surf/tests/slowest_tests.rs` on a report of 2,000 cases. Under
+  it), held by `crates/surf/tests/slowest_tests.rs` on a report of 2,000 cases; it also checks
+  that `test`, `test-tls` and `conform-rust`, and no other task, run it, each on a copy of
+  nextest's report it removes before its run and copies after. Under
   `pipefail` no pipeline of a task ends its reader before its input (no `| head`, `grep -q` or
   `sed q` after a command that may write more than a pipe's 64 KiB): the reader stops, the
   writer dies of SIGPIPE and the task fails with 141 (2026-11-22, the list of 892 tests, 70,331
@@ -1630,7 +1692,27 @@ interpreter and against the Rust system: `196 scenarios: 196 passed, 0 failed, 0
 unsupported`; `conform-totals`: `the interpreter and the Rust system ran 196 scenario(s) each,
 of suite sha256:dcc7e7c2c534eb6f98ef03cbd07da620efd16fbe16e8d448de697919b0a56bf3`.
 `generated-check`: `generated/rust matches spec/ (30 artifact(s) and .ess-output)`.
-`test-layout`: `23 test directories, 147 test files, one test binary each`.
+`test-layout`: `23 test directories, 148 test files, one test binary each`.
+
+The gate in runner form on `21adcdc` (2026-11-23, 07:35 to 07:41 CET, a load average of 96 to
+132 on 20 CPUs) printed `check-runner: task check exit 0 in 400 s, export included`, with
+rustc 1.99.1 and ess 0.97.4: the scenario, suite, interpreter, Rust-system, digest and
+`Cargo.lock` lines as on `b00d02d` below; the conformance step `conform-noticed:
+conformance/tests/noticed.txt matches its sources`, `conform-rust: the narrowed suites of 29
+planted defects in conformance/target/noticed/6d99491696333b9a70c2b009b42634243f65bbe23190765d981e5e6ab8c09ee1
+are current`, `Summary [  10.969s] 39 tests run: 39 passed, 0 skipped`, `conformance step:
+17.4 s of its budget of 120 s` (slowest
+`review2_planted_defects::review2_control_the_unplanted_system_passes_every_scenario`,
+10.4 s); `test-layout: 23 test directories, 148 test files, one test binary each`, `1224
+tests: 1224 passed, 0 failed, 0 ignored (cargo-nextest 1222, doc tests 2)`, `test step: 45.2 s
+of its budget of 120 s` (slowest
+`adversary_change_log::adversary_cl_log_at_its_byte_bound_keeps_the_newest`, 15.8 s), `545
+tests: 545 passed, 0 failed, 0 ignored (cargo-nextest 545)`, `tls test step: 20.4 s of its
+budget of 120 s`, `agent-tasks: 4 tasks, 4 pass, 0 fail, 0 skipped, lane gate, binaries
+target/debug`, `view-stream-check: 23 event name(s)`, `59 passed (1.9m)` (slowest `an entry
+over 1 MiB`, 27.3 s), `html-conformance: 9107 cases, 9095 run, 9095 passed`, `x509-limbo: 5143
+cases, 5089 run, 5060 passed`, `doc-tests-check-test: 14 case(s)`, and no line starting with
+`raise:`.
 
 The gate in runner form on `b00d02d` (2026-11-23, 04:55 to 05:03 CET, a load average of 111 to
 117 on 20 CPUs) printed `check-runner: task check exit 0 in 472 s, export included`, with
