@@ -45,7 +45,7 @@ tests=0
   echo "load before: $(cut -d " " -f 1 /proc/loadavg)"
   date +%s%N > "$2"
   perf stat -e task-clock,instructions -x , -o "$1" -- \
-    ./node_modules/.bin/playwright test --workers=2
+    sh ../taskfiles/page-netns.sh ./node_modules/.bin/playwright test --workers=2
   status=$?
   date +%s%N >> "$2"
   echo "load after: $(cut -d " " -f 1 /proc/loadavg)"
