@@ -1623,7 +1623,8 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
 ## The gate's numbers
 
 After round 2 (the commands branch, `spec/` as at `cf9a6ba`): `surf v1 — 9 file(s), 37
-scenario(s), valid`, 56 `refused:` lines (`slot task conform REFUSALS_MAX=56`). Against the
+scenario(s), valid`, 56 `refused:` lines (`slot task conform`, the 8 new ones listed under
+`REFUSALS_MAX` below). Against the
 interpreter and against the Rust system: `196 scenarios: 196 passed, 0 failed, 0 error, 0
 unsupported`; `conform-totals`: `the interpreter and the Rust system ran 196 scenario(s) each,
 of suite sha256:dcc7e7c2c534eb6f98ef03cbd07da620efd16fbe16e8d448de697919b0a56bf3`.
@@ -1878,12 +1879,13 @@ the root workspace (14 in its first commit, 4 in the review fix), so `task test`
 `579 tests: 579 passed, 0 failed, 0 ignored (cargo-nextest 577, doc tests 2)`, counted from the
 `#[test]` lines of the diff; the gate on `main` counted the same 579 since.
 
-`REFUSALS_MAX` in `Taskfile.yml` is 48. `task suite` fails above it. Lower it when a refusal goes
+`REFUSALS_MAX` in `Taskfile.yml` is 56. `task suite` fails above it. Lower it when a refusal goes
 away; raise it only with the new refusal listed here. The list is `grep '^refused:'
 .out/synthesize.log` (read on 2026-11-21 after wave 6: 28 lines, the same as below; the gate
 after wave 7 printed `28 refusal(s)`; in wave 8 the unit of `agent-request-body-spec` read the
 same 28 lines; the gate after wave 9 printed `28 refusal(s)`, and `task suite` after wave 10
-too; after round 1, 48 lines with ess 0.97.3: the 28 and the 20 of `story:agent-forms-spec`
+too; after round 1, 48 lines with ess 0.97.3: the 28 and the 20 of `story:agent-forms-spec`;
+after round 2, 56 lines with ess 0.97.4: the 48 and the 8 of `story:agent-history-spec`, both
 listed last).
 Twenty-two of the 28 are `ESS-SYNTH-010`:
 
@@ -1929,6 +1931,28 @@ The 20 refusals `story:agent-forms-spec` added (28 to 48), with cause:
   `agent-fill-sets-value`, `agent-pick-unchecks-radio-group`, `agent-pick-selects-option`,
   `document-refuses-disabled-control`, `document-refuses-hidden-control`,
   `agent-press-submits-post`, `agent-press-submission-ends-without-body`.
+
+The 8 refusals `story:agent-history-spec` added (48 to 56), with cause:
+
+- `ESS-SYNTH-001` × 2: `TraverseHistory/requested` and `TraverseHistory/no-entry`. A binding or
+  set effect changes the history rows the selector reads while the scenario is arranged, and
+  synthesis does not follow that change.
+- `ESS-SYNTH-001` × 1: the binding `start-on-traversal-started`. Its trigger is
+  `TraverseHistory/requested`, which has no synthesized scenario (the reason above).
+- `ESS-SYNTH-001` × 1: `CommitNavigation/traversed`. Its `affects:` pins the navigation row
+  beside another entry, and one send names one row.
+- `ESS-SYNTH-001` × 1: `CommitNavigation/committed`. Only `Navigate/started` and
+  `StartTraversal/started` create the navigation it affects, and no arrangement takes either for
+  a row its filter selects.
+- `ESS-SYNTH-010` × 3, the cases of the binding `traverse-on-traversal-requested`
+  (`at_most_once`, `on_failure: drop`): delivery (no redelivery to observe), on-failure (drop is
+  unobservable) and flow (an input the event fills chooses the branch of `TraverseHistory`:
+  unsupported, no-entry, requested).
+- Evidence for each refused outcome and flow: the authored scenarios `agent-go-back-traverses`,
+  `agent-go-forward-traverses`, `navigation-traverse-refused-at-start`,
+  `navigation-traverse-refused-at-end`, `navigation-traverse-refused-for-post-entry`,
+  `navigation-traverse-commits-without-entry`, `navigation-commits-at-response-url`,
+  `page-load-commits-and-parses` and the five `adversary-history-*` files.
 
 One note is printed with them: the specification declares actors and no component is served over
 a network, so no `<command>/grant/denied` scenario is generated.
