@@ -311,6 +311,7 @@ fn response_received() -> EntryKind {
         &[
             ("request_id", Some(NAVIGATION)),
             ("url", Some(PAGE)),
+            ("method", Some("Get")),
             ("status", Some("200")),
             ("media_type", Some("text/html")),
             ("body", Some("5000 bytes")),
@@ -358,7 +359,7 @@ fn case_02_a_detail_whose_page_is_committed_is_the_documents_example() {
     };
     let written = to_json(&detail);
     let expected = body_of(&format!("/api/sessions/{A}"));
-    assert_eq!(expected.len(), 5_533, "the document's example");
+    assert_eq!(expected.len(), 5_548, "the document's example");
     assert_eq!(text(&written), text(&expected));
 }
 
@@ -451,9 +452,10 @@ fn case_05_the_action_entry_7() {
 fn case_06_the_event_entry_13_has_every_value_a_string() {
     let written = to_json(&entries_a()[12]);
     let expected = json_block(r#"{"number":13,"#);
-    assert_eq!(expected.len(), 325);
+    assert_eq!(expected.len(), 340);
     assert_eq!(text(&written), text(&expected));
     let written = text(&written);
+    assert!(written.contains(r#""method":"Get""#));
     assert!(written.contains(r#""status":"200""#));
     assert!(written.contains(r#""body":"5000 bytes""#));
 }
