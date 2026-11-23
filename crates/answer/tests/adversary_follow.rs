@@ -29,6 +29,9 @@ fn adversary_follow_a_cut_mark_without_a_label_is_refused_or_reads_back() {
     });
     if let Ok(text) = render(&answer) {
         let parsed = parse(&text).unwrap_or_else(|error| panic!("{error}: {text}"));
-        assert_eq!(parsed, answer, "render wrote {text:?}, which reads back otherwise");
+        assert_eq!(
+            parsed, answer,
+            "render wrote {text:?}, which reads back otherwise"
+        );
     }
 }

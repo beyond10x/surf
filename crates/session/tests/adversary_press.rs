@@ -65,8 +65,11 @@ impl Server {
         let routes = Arc::new(Mutex::new(vec![("/home".to_string(), html(HOME))]));
         let received = Arc::new(Mutex::new(Vec::new()));
         let stop = Arc::new(AtomicBool::new(false));
-        let (serving, recording, stopping) =
-            (Arc::clone(&routes), Arc::clone(&received), Arc::clone(&stop));
+        let (serving, recording, stopping) = (
+            Arc::clone(&routes),
+            Arc::clone(&received),
+            Arc::clone(&stop),
+        );
         let thread = thread::spawn(move || {
             for stream in listener.incoming() {
                 if stopping.load(Ordering::SeqCst) {
@@ -91,7 +94,10 @@ impl Server {
     }
 
     fn route(&self, path: &str, response: String) {
-        self.routes.lock().unwrap().insert(0, (path.to_string(), response));
+        self.routes
+            .lock()
+            .unwrap()
+            .insert(0, (path.to_string(), response));
     }
 
     fn page(&self, path: &str, body: &str) {
@@ -316,7 +322,10 @@ fn adversary_press_an_address_of_exactly_64_kib_is_submitted_and_one_byte_more_i
             assert_eq!(status, 0, "{}", &text[..text.len().min(400)]);
             let lines = server.lines();
             assert_eq!(lines.len(), 2, "the GET is requested");
-            assert_eq!(lines[1].len(), "GET ".len() + 65_536 - server.url("").len() + " HTTP/1.1".len());
+            assert_eq!(
+                lines[1].len(),
+                "GET ".len() + 65_536 - server.url("").len() + " HTTP/1.1".len()
+            );
         } else {
             assert_eq!(
                 typed.did,
@@ -376,8 +385,7 @@ fn adversary_press_the_password_rule_follows_the_buttons_formmethod() {
 /// form and owned through the `form` attribute, are in a `GET`'s entry list all the same: both
 /// refused `password-in-query`, no request.
 #[test]
-fn adversary_press_a_password_from_its_value_attribute_or_owned_by_form_id_is_refused_in_a_get()
-{
+fn adversary_press_a_password_from_its_value_attribute_or_owned_by_form_id_is_refused_in_a_get() {
     refused_before(
         "<!doctype html><form action=/find><input type=password name=pw value=pre-set>\
          <button>Go</button></form>",
@@ -441,7 +449,8 @@ fn adversary_press_every_spelling_of_a_local_destination_from_a_public_page_is_r
         "<form action=\"http://127.0.0.1%2e/s\">",
     ];
     for form in forms {
-        let page = format!("<!doctype html>{form}<input name=a value=1><button>Send</button></form>");
+        let page =
+            format!("<!doctype html>{form}<input name=a value=1><button>Send</button></form>");
         let (mut session, token, asked) = in_memory(public, page.clone());
         let (status, text, typed, entries) =
             ask(&mut session, &token, "press", &[("handle", "b1")]);
@@ -452,7 +461,11 @@ fn adversary_press_every_spelling_of_a_local_destination_from_a_public_page_is_r
         );
         assert_eq!(status, 1);
         assert!(!started(&entries), "{form}");
-        assert_eq!(*asked.lock().unwrap(), vec![format!("Get {public}")], "{form}");
+        assert_eq!(
+            *asked.lock().unwrap(),
+            vec![format!("Get {public}")],
+            "{form}"
+        );
     }
     for page in [
         "<!doctype html><base href=\"http://127.0.0.1:8080/\">\
@@ -469,7 +482,11 @@ fn adversary_press_every_spelling_of_a_local_destination_from_a_public_page_is_r
             Some(Did::Refused(RefusalReason::ForbiddenDestination)),
             "{page}\n{text}"
         );
-        assert_eq!(*asked.lock().unwrap(), vec![format!("Get {public}")], "{page}");
+        assert_eq!(
+            *asked.lock().unwrap(),
+            vec![format!("Get {public}")],
+            "{page}"
+        );
     }
 }
 
@@ -489,7 +506,10 @@ fn adversary_press_a_refused_press_keeps_the_filled_values_and_the_path() {
     assert_eq!(after.page, before.page);
     assert_eq!(after.path, before.path, "{after_text}");
     assert_eq!(line(&after_text, "f1"), line(&before_text, "f1"));
-    assert!(line(&after_text, "f1").contains("= \"ada\""), "{after_text}");
+    assert!(
+        line(&after_text, "f1").contains("= \"ada\""),
+        "{after_text}"
+    );
 }
 
 /// An empty `formaction` submits to the document's address, not to the form's `action`; an
@@ -806,7 +826,12 @@ fn adversary_press_a_redirect_to_another_scheme_or_a_userinfo_is_not_followed() 
         );
         fill(&mut session, &token, "f1", "s3cret-x");
         let (_, text, typed, entries) = ask(&mut session, &token, "press", &[("handle", "b1")]);
-        assert_eq!(server.lines().len(), before + 2, "{location}: {:?}", server.lines());
+        assert_eq!(
+            server.lines().len(),
+            before + 2,
+            "{location}: {:?}",
+            server.lines()
+        );
         assert!(
             matches!(typed.page, Some(Page::Failed { .. })),
             "{location}: {text}"
