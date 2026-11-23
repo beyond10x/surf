@@ -480,7 +480,7 @@ above, and the list of standards itself was written from memory.
     `fill f1 -- -`), and a value from standard input whose request is over 65,536 bytes is
     refused naming its quoted size (`client::STDIN_VALUE_FITS`, 16,000 bytes, always fits beside
     a handle of up to 1,364); the `Debug` of a wire `Arg` writes its value's length. The
-    package carries the release version, `0.4.0`, as do `surf-cli`, `surfd` and
+    package carries the release version, `0.5.0`, as do `surf-cli`, `surfd` and
     `surf-session`. `open` starts `surfd` from the directory of its own executable. Depends on
     `surf-answer` and `surf-secret`.
   - `crates/surfd` (`surfd`): a library and the binary `surfd`, the daemon the agent command line
@@ -1261,11 +1261,12 @@ the others were written to a scratch directory and not compiled:
   release `0.2.0` that ships `surf`, `surf-agent`, `surfd` and `surf-session` (the agent
   binaries for Linux only at first). Work then moves to the script engine, which is its own
   repository. The waves after 4 stay in the plan; they are planned and not scheduled.
-- Present state: wave 10 and round 1 are delivered (10 of 22 waves, and the stories of round
-  1); release `0.2.0` follows wave 4, release `0.3.0` wave 9 and release `0.4.0` round 1 (the
+- Present state: wave 10 and rounds 1 and 2 are delivered (10 of 22 waves, and the stories of
+  rounds 1 and 2); release `0.2.0` follows wave 4, release `0.3.0` wave 9, release `0.4.0`
+  round 1 and release `0.5.0` round 2 (the
   releases are listed at https://github.com/beyond10x/surf/releases). The
   session `host-operator` ordered the continuation after the checkpoint on 2026-11-21, for the
-  operator: "continue as its `AGENTS.md` says". The next is round 2 of
+  operator: "continue as its `AGENTS.md` says". The next is round 3 of
   `docs/plan/agent-waves.md` ("Rounds after wave 10": the waves 11 to 22 in three rounds). The stories
   accepted behind the planned waves are listed in
   that file, in "Accepted on 2026-11-21, behind the planned waves". Open for the next steps:
@@ -1630,6 +1631,25 @@ unsupported`; `conform-totals`: `the interpreter and the Rust system ran 196 sce
 of suite sha256:dcc7e7c2c534eb6f98ef03cbd07da620efd16fbe16e8d448de697919b0a56bf3`.
 `generated-check`: `generated/rust matches spec/ (30 artifact(s) and .ess-output)`.
 `test-layout`: `23 test directories, 147 test files, one test binary each`.
+
+The gate in runner form on `b00d02d` (2026-11-23, 04:55 to 05:03 CET, a load average of 111 to
+117 on 20 CPUs) printed `check-runner: task check exit 0 in 472 s, export included`, with
+rustc 1.99.1 and ess 0.97.4: `surf v1 — 9 file(s), 37 scenario(s), valid`, `196 scenario(s)
+(37 authored), 56 refusal(s)`, `196 scenarios: 196 passed, 0 failed, 0 error, 0 unsupported`
+against the interpreter and against the Rust system, the suite digest above, `Cargo.lock: 49
+package(s), 19 from outside this repository, each on the allow-list`, `1224 tests: 1224
+passed, 0 failed, 0 ignored (cargo-nextest 1222, doc tests 2)`, `test step: 41.0 s of its
+budget of 120 s`, `545 tests: 545 passed, 0 failed, 0 ignored (cargo-nextest 545)`, `tls test
+step: 19.9 s of its budget of 120 s`, `agent-tasks: 4 tasks, 4 pass, 0 fail, 0 skipped, lane
+gate, binaries target/debug` (`article`, `table`, `link` and `search` pass), `view-stream-check:
+23 event name(s)`, `59 passed (1.6m)` (slowest `an entry over 1 MiB`, 16.0 s), `html-conformance:
+9107 cases, 9095 run, 9095 passed`, `x509-limbo: 5143 cases, 5089 run, 5060 passed`, and no
+line starting with `raise:`. The slowest test of the test step was
+`adversary_change_log::adversary_cl_log_at_its_byte_bound_keeps_the_newest`, 7.7 s. The planted
+defect, in `conform-rust`'s `.out/conform-rust-test.log`: `planted defect: 196 scenarios: 146
+passed, 50 failed, 0 error, 0 unsupported`. In the same log the conformance crate's
+`two_of_each_entity` tests ran over 60 s each under `cargo test` (`15 passed; … finished in
+88.20s`), outside nextest's bound.
 
 With `story:ess-0-97-4` (2026-11-22, on `afba5e3`), surf builds on ess 0.97.4: `surf v1 — 9
 file(s), 24 scenario(s), valid` and `169 scenario(s) (24 authored), 48 refusal(s)`, as with

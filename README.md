@@ -8,7 +8,7 @@
 
 ![spec: ESS 0.97.4, valid](docs/badges/spec.svg)
 ![conformance: 196 of 196 scenarios](docs/badges/conformance.svg)
-![tests: 877 passed](docs/badges/tests.svg)
+![tests: 1769 passed](docs/badges/tests.svg)
 ![third-party crates shipped: 0](docs/badges/dependencies.svg)
 ![unsafe code: forbidden](docs/badges/unsafe.svg)
 ![standard sections marked complete: 0](docs/badges/complete.svg)
@@ -42,7 +42,7 @@ archive (Apple silicon and Intel) holds `surf`: the agent binaries read the call
 file.
 
 ```console
-$ version=0.4.0 target=x86_64-unknown-linux-musl
+$ version=0.5.0 target=x86_64-unknown-linux-musl
 $ base=https://github.com/beyond10x/surf/releases/download/$version
 $ curl -fsSLO $base/surf-$version-$target.tar.gz -fsSLO $base/SHA256SUMS
 $ grep " surf-$version-$target.tar.gz\$" SHA256SUMS | sha256sum --check
@@ -229,7 +229,9 @@ there instead.
 3. **Isolation over speed.** A component is a security boundary. A design that needs two
    components to share memory is refused.
 4. **No third-party code in what ships.** The Rust standard library and the operating system
-   are allowed. The checks fail if the lock file lists an outside package. One exception:
+   are allowed. Every outside package of the lock file is on the allow-list
+   `taskfiles/lock-allow.txt` (19 of its 49 packages), and the lock check fails on one that is
+   not. One exception:
    audited cryptographic primitives for TLS come from ring 0.17.14, reviewed as a dependency in
    the rustls audit of Cure53, 2020 (<https://cure53.de/pentest-report_rustls.pdf>). Only the
    crate `surf-tls` may depend on it, and the checks pin its packages by name, version and
@@ -240,7 +242,7 @@ there instead.
 6. **Text from the web stays text.** Anything from a page, a server or an address is escaped
    before it is printed, so a page cannot forge a line of surf's output.
 7. **A passing test must be able to fail.** Tests are tried against planted defects. A storage
-   that drops every write fails 36 of the 170 scenarios.
+   that drops every write fails 50 of the 196 scenarios.
 8. **Small.** A standard is followed for what surf does, not implemented whole.
 
 ## What works today
@@ -253,8 +255,25 @@ there instead.
   and hard limits on header and body size.
 - **196 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **877 tests**, built with warnings treated as errors, and 59 tests of the live view's page in
-  a browser.
+- **1,769 tests** (1,224, and 545 of the TLS crates in a step of their own), built with
+  warnings treated as errors, and 59 tests of the live view's page in a browser.
+
+New with round 2, shipped in release `0.5.0`:
+
+- **An agent can act on a page.** `surf-agent follow <handle>` loads a link's target, `fill`
+  types into a field, `pick` chooses an option or ticks a box, and `press` presses a button and
+  submits its form with `GET` or `POST`. `back` and `forward` move through the session's pages.
+  The `page` line shows the page's title.
+- **Each answer says what changed.** The `changed` block lists the controls whose value,
+  checked state or selection the last action changed, or the new page and its new texts, at
+  most ten lines and a count of the rest. `log [<n>]` lists the session's actions.
+- **A public page cannot send the session to your network.** `follow` and `press` from a page
+  that counts as public, and `back` and `forward` to a page that such a page or a redirect after
+  a public address chose, are refused `forbidden-destination` when the address is or resolves to
+  a loopback or private one. To load a local address, type it with `go`.
+- **The live view shows a page's links.** Its panel "Now" lists the links of the answer at the
+  playhead with their handles, labels and targets, and a `follow` shows its handle on the
+  timeline.
 
 New with round 1 after the tenth wave of the current plan, shipped in release `0.4.0`:
 
@@ -456,7 +475,7 @@ plan is [`docs/plan/agent-waves.md`](docs/plan/agent-waves.md) and its design is
 Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `surf-agent`,
 `surfd` and `surf-session`, for Linux only at first. The releases are listed at
 <https://github.com/beyond10x/surf/releases>. After it, work moves to the script engine,
-[swell](https://beyond10x.github.io/swell/), a project of its own. Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. Wave 10 and round 1, which builds the stories of wave 11 and some of the waves after it, followed, and release `0.4.0` follows round 1: it adds the HTML parser on real pages and the page as text. The waves after them are planned and have no date.
+[swell](https://beyond10x.github.io/swell/), a project of its own. Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. Wave 10 and round 1, which builds the stories of wave 11 and some of the waves after it, followed, and release `0.4.0` follows round 1: it adds the HTML parser on real pages and the page as text. Round 2 followed, and release `0.5.0` follows it: it adds following links, filling and submitting forms, going back and forward, and what changed. The waves after them are planned and have no date.
 
 | after wave | what you can do |
 |---|---|
@@ -468,7 +487,7 @@ Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `s
 | 22 | Record an agent's session, turn it into a test, and replay it against the recorded network. |
 
 Round 2 delivered following links, filling and submitting forms, going back and forward, the
-`changed` block and `log`; no release carries them yet. TLS and `https:` are on the list below.
+`changed` block and `log`; release `0.5.0` ships them. TLS and `https:` are on the list below.
 None of the next steps has a date.
 
 Next after that, wanted and not planned in detail yet:
@@ -506,41 +525,61 @@ One command checks everything:
 
 ```console
 $ task check
-surf v1 — 9 file(s), 24 scenario(s), valid
-170 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
-  170 scenarios: 170 passed, 0 failed, 0 error, 0 unsupported
-170 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
-  170 scenarios: 170 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 170 scenario(s) each, of suite sha256:8b5c4b2f27ec981e3b3d5dff934bc62e935606f9b441604980c929c185d9a132
+surf v1 — 9 file(s), 37 scenario(s), valid
+196 scenario(s) (37 authored), 56 refusal(s), written to .out/suite.json
+  196 scenarios: 196 passed, 0 failed, 0 error, 0 unsupported
+196 scenario(s) (37 authored), 56 refusal(s), written to .out/suite.json
+  196 scenarios: 196 passed, 0 failed, 0 error, 0 unsupported
+the interpreter and the Rust system ran 196 scenario(s) each, of suite sha256:dcc7e7c2c534eb6f98ef03cbd07da620efd16fbe16e8d448de697919b0a56bf3
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
-Cargo.lock: 26 package(s), none from outside this repository
-    Finished `dev` profile [unoptimized] target(s) in 0.00s
-877 tests: 877 passed, 0 failed, 0 ignored (cargo-nextest 875, doc tests 2)
-test step: 62.3 s of its budget of 120 s
-agent-tasks: 4 tasks, 2 pass, 2 fail, 0 skipped, lane gate, binaries target/debug
-sh-echo: Summary [   2.623s] 40 tests run: 40 passed, 54 skipped
-view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
-  59 passed (3.0m)
+10 CLI artifact(s), generated in .out/cli
+Cargo.lock: 49 package(s), 19 from outside this repository, each on the allow-list
+test-layout: 23 test directories, 147 test files, one test binary each
+tls-certs: 33 cases, certs/ matches its sources
+tls-flights: 6 recordings match SOURCE, the recorder matches DIGEST
+tls-flights: self-test: a changed copy of aes128-x25519-ecdsa.bin fails naming it
+doc-tests-check: no doc test outside crates/ports
+    Finished `dev` profile [unoptimized] target(s) in 1.11s
+1224 tests: 1224 passed, 0 failed, 0 ignored (cargo-nextest 1222, doc tests 2)
+test step: 41.0 s of its budget of 120 s
+545 tests: 545 passed, 0 failed, 0 ignored (cargo-nextest 545)
+tls test step: 19.9 s of its budget of 120 s
+agent-tasks: 4 tasks, 4 pass, 0 fail, 0 skipped, lane gate, binaries target/debug
+sh-echo: Summary [   4.803s] 40 tests run: 40 passed, 104 skipped
+view-stream-check: 23 event name(s), each a message of the AsyncAPI projection
+  59 passed (1.6m)
 html-conformance: 9107 cases, 9095 run, 9095 passed
+x509-limbo: 5143 cases, 5089 run, 5060 passed
+tls-x509-conformance: 6 s
+forge-watch-test: 6 case(s), each decided as expected by taskfiles/forge-watch.sh
+planning-only-test: 9 case(s), each decided as expected by taskfiles/planning-only.sh
+test-layout-test: 39 case(s), each decided as expected by taskfiles/test-layout.sh
+sh-echo-test: 2 case(s), each decided as expected by taskfiles/sh-echo.sh
+doc-tests-check-test: 13 case(s), each decided as expected by taskfiles/doc-tests-check.sh
 ```
 
 It validates the specification, runs the 196 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
-that the lock file holds no outside package, then builds and tests, checks that every event
-name of the live view's stream is an event of the specification, runs the live view's page
-tests in a browser, and last holds the HTML parser's test counts where they are. The tests run
-under cargo-nextest; a test still running after 60 seconds is ended and fails, the test step
-fails when it takes over 120 seconds, and the block leaves out the ten slowest tests the step
-also prints and the agent tasks' rows after their counts. The page tests' line, `59 passed
-(3.0m)` (the task 220 s), was measured at a load average of 126 to 127 on 20 CPUs, its slowest
-test (`an entry over 1 MiB`) 35.0 s; `53 passed` took 1.1m at a load average of 55 to 65;
-`47 passed` took 2.5m at a load average of 110 to 140, and the 38 of before took 15.8 s.
+that every package in the lock file from outside the repository is on its allow-list, then
+builds and tests, the TLS crates in a step of their own, checks that every event name of the
+live view's stream is an event of the specification, runs the live view's page tests in a
+browser, holds the HTML parser's and the X.509 checker's test counts where they are, and last
+tests the gate's own scripts. The tests run under cargo-nextest; a test still running after 60
+seconds is ended and fails, each test step fails when it takes over 120 seconds, and the block
+leaves out the ten slowest tests each step also prints, the agent tasks' rows after their
+counts and the rows of the two conformance counts. It is the run of 2026-11-23 at a load
+average of 111 to 117 on 20 CPUs. The page tests' line, `59 passed (1.6m)`, has its slowest
+test (`an entry over 1 MiB`) at 16.0 s; `59 passed (3.0m)` took the task 220 s at a load
+average of 126 to 127; `53 passed` took 1.1m at a load average of 55 to 65; `47 passed` took
+2.5m at a load average of 110 to 140, and the 38 of before took 15.8 s.
 The page tests need Node and
 Chromium's headless shell; with Node there, install the shell once with `npm --prefix view-tests ci`, then `npx --prefix view-tests playwright
-install --only-shell chromium`. The scenario runner in
-[`conformance/`](conformance/) is the one place a third-party crate is used; nothing that
-ships depends on it.
+install --only-shell chromium`. Third-party crates are used in two places: the scenario runner
+in [`conformance/`](conformance/), with a lock of its own, and `surf-tls`, whose `ring` and the
+packages it needs are the 19 outside packages of the root lock, each on the allow-list
+`taskfiles/lock-allow.txt`; the lock check fails on one that is not. Nothing that ships depends
+on either.
 
 `task open` lists the design questions that are still open.
 

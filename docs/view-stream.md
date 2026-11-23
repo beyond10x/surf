@@ -262,8 +262,7 @@ What the view holds of a value, in the words of D22 and D21: a field of bytes (a
 request body) is written by the session process as its length, `<n> bytes`, never as the bytes;
 the answer prints a password's value as `(set)` or `(empty)`, never the value, and the event
 `surf.agent.FillRequested` holds the length of what a `fill` typed, `<n> bytes`, never its text;
-every other control value is kept as the answer prints it, which is what the `changed` panel
-shows. The token is not kept: the answer
+every other control value is kept as the answer prints it. The token is not kept: the answer
 entry of `open` omits the `token` line, and no route and no stream event holds a session's token.
 
 ### Event names

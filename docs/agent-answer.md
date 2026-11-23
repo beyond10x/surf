@@ -34,7 +34,7 @@ note parser: tables,foreign-content
 
 ## What an answer holds today
 
-The example above shows the whole format. The binaries of release `0.4.0` (`surf-agent`,
+The example above shows the whole format. The binaries of release `0.5.0` (`surf-agent`,
 `surfd`, `surf-session`) print fewer lines:
 
 - the head line, `surf 1 session <id> <state>`;
@@ -59,12 +59,18 @@ An answer of today's binaries, to `go`:
 
 ```
 surf 1 session 7ffade4a-4d71-491c-a6c5-b69681d68d07 open
-did go "http://example.org/missing"
-page 404 "text/html" "http://example.org/missing"
-path 3 of 3
+did go "http://example.org/"
+page 200 "text/html" "http://example.org/" "Example Domain"
+path 2 of 2
   1 open
   2 go "http://example.org/"
-  3 go "http://example.org/missing"
+changed page none -> "http://example.org/"
+  + text "# Example Domain"
+  + text "This domain is for use in documentation examples without needing permission. Avoid use in operations."
+  + text "[Learn more](<https://iana.org/domains/example>) [@l1]"
+now 1 of 1
+  l1 link ? "Learn more" -> "https://iana.org/domains/example"
+note visibility: hidden attribute only
 ```
 
 ## Lines

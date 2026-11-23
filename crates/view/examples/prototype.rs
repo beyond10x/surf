@@ -649,6 +649,7 @@ impl Data {
             &[
                 ("request_id", &navigation_id),
                 ("url", url),
+                ("method", "Get"),
                 ("status", "200"),
                 ("media_type", "text/html"),
                 ("body", &body),
