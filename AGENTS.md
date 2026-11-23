@@ -1538,7 +1538,10 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   runs of the same call (the kernel accounts interrupt time apart, and the step's loopback
   traffic is softirq work), and it would take the call out of the pool's cgroup and its limit
   of 16 CPUs. Compare commits by the instructions: they follow the host's load far less than
-  the CPU seconds and the wall time, though not by nothing (the page step's record below). Run
+  the CPU seconds and the wall time, though not by nothing (the page step's record below). The
+  bound (D333): the median of `page step instructions` over three consecutive runs whose step
+  ends within its 120 s (the line `page step: N s of its budget of 120 s`) is at most 122 G; a
+  run over 120 s is red on the budget, and its count is listed and not used. Run
   from the root of another checkout, the script measures that checkout's tests and binaries.
   Needs `perf` and `kernel.perf_event_paranoid` of 2 or less.
 - `task view-stream-check`: the event names of `docs/view-stream.md` against the AsyncAPI
@@ -2131,10 +2134,16 @@ a failed test was listed and repeated:
   111.08, 109.83 to 97.81 and 69.12 to 68.48, 71 passed each.
 The medians are 185.61 G on the base and 119.58 G on the tip, a saving of 35.6 % (CPU s 67.6
 and 55.5, 17.9 %). The spread, largest minus smallest over the median, is 4.3 % on the base and
-7.7 % on the tip: over 5 %, so no bound is set, since a change adding 5 % of work would hide in
-the spread. The instructions too grow with the step's wall time, from timers and polls that run
-as long as it does: the tip's 127.08 G came from a step of 209.1 s at a load of 142, its other
-two runs of 49.2 and 74.7 s were 1.4 % apart.
+7.7 % on the tip. The instructions too grow with the step's wall time, from timers and polls that
+run as long as it does: the tip's 127.08 G came from a step of 209.1 s at a load of 142, its other
+two runs of 49.2 and 74.7 s were 1.4 % apart. D333 sets the bound on runs whose step ends within
+its budget: the median of three consecutive runs of `task page-step-cpu` whose page step ends
+within 120 s is at most 122 G instructions (user only). A run whose step goes over 120 s is red
+on the budget already; its instructions are listed and not counted. The tip's runs within budget
+are 117.93 and 119.58 G; 122 G is 2.0 % over the larger, and the same runs with 5 % more work
+would take 123.8 and 125.6 G. The 116.8 G run of D331 is not counted: it ran `--reporter=dot`
+outside `task page-step-cpu`, with a D331 experiment planted in `fixture.mjs` and
+`controls.spec.mjs` and switched to its baseline form.
 `html-conformance`, the last
 step of `check`: `html-conformance: 9107 cases, 9095 run, 8428 passed` (82 encoding cases,
 7,046 tokenizer cases and 1,300 tree construction cases), with `tag markup 1979/1979/1979`,
