@@ -127,8 +127,8 @@ test("a new session appears without a reload", async ({ page, surf, record }) =>
   const roots = record.requestsOf("/").length;
   const id = await surf.open(surf.pages + "/first/b.html");
   const summary = (await surf.api("/api/sessions")).sessions.find((s) => s.id === id);
-  await expect(items(page)).toHaveCount(2, { timeout: 2000 });
-  await expect(items(page).last().locator(".address")).toHaveText(summary.address, { timeout: 2000 });
+  await expect(items(page)).toHaveCount(2);
+  await expect(items(page).last().locator(".address")).toHaveText(summary.address);
   expect(record.requestsOf("/").length).toBe(roots);
 });
 
@@ -199,10 +199,11 @@ test("latest follows", async ({ page, surf }) => {
   await expect(segments(page)).toHaveCount(2);
   await expect(latest(page)).toHaveAttribute("aria-pressed", "true");
   await surf.agent(id, "go", surf.pages + "/first/b.html");
-  await expect(segments(page)).toHaveCount(3, { timeout: 2000 });
-  await expect(playhead(page)).toHaveCount(1, { timeout: 2000 });
-  await expect.poll(() => playheadAt(page), { timeout: 2000 }).toBe(2);
-  await expect(pageAddress(page)).toHaveText(surf.pages + "/first/b.html", { timeout: 2000 });
+  // Each bound of 2 s below is the sentence's "within 2 s", named beside it.
+  await expect(segments(page)).toHaveCount(3, { timeout: 2000 }); // .engineering/planning/story/view-first-page.md:225-226
+  await expect(playhead(page)).toHaveCount(1, { timeout: 2000 }); // .engineering/planning/story/view-first-page.md:225-226
+  await expect.poll(() => playheadAt(page), { timeout: 2000 }).toBe(2); // .engineering/planning/story/view-first-page.md:225-226
+  await expect(pageAddress(page)).toHaveText(surf.pages + "/first/b.html", { timeout: 2000 }); // .engineering/planning/story/view-first-page.md:225-226
 });
 
 test("playhead stays", async ({ page, surf }) => {
@@ -431,7 +432,7 @@ test("reconnect after a lost connection", async ({ page, surf, record }) => {
 });
 
 test("reset after a long absence", async ({ page, surf, record }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(60_000);
   const id = await surf.open();
   await load(page, surf.piped);
   await expect(segments(page)).toHaveCount(1);
@@ -457,7 +458,7 @@ test("reset after a long absence", async ({ page, surf, record }) => {
 });
 
 test("dropped entries are a gap", async ({ page, startFixture }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(60_000);
   const bound = 30;
   const bounded = await startFixture(["--entries-per-session", String(bound)]);
   const id = await bounded.open();
@@ -500,7 +501,7 @@ test("dropped entries are a gap", async ({ page, startFixture }) => {
 });
 
 test("an entry over 1 MiB", async ({ page, surf }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(60_000);
   const id = await surf.open();
   await load(page, surf.view);
   await expect(segments(page)).toHaveCount(1);

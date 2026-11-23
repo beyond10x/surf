@@ -137,7 +137,8 @@ above, and the list of standards itself was written from memory.
   `taskfiles/html-conformance.yml` the task `html-conformance`,
   `taskfiles/tls-x509-conformance.yml` the task `tls-x509-conformance`,
   `taskfiles/view-stream-check.yml`
-  the task `view-stream-check`, `taskfiles/view-test.yml` the task `view-test`, and
+  the task `view-stream-check`, `taskfiles/view-test.yml` the tasks `view-test` and
+  `view-test-setup` (over `taskfiles/view-test-setup.sh`), and
   `taskfiles/release.yml` the task `release-smoke`
   (`DIR=<unpacked archive>`, optional `TARGET`), which runs `taskfiles/release-smoke.sh`; the
   release workflow calls that script with `sh`. `taskfiles/check-runner.yml` holds the task
@@ -164,12 +165,13 @@ above, and the list of standards itself was written from memory.
   `tls-flights-check` (over `taskfiles/tls-flights-check.sh`, a step of `check`) and
   `tls-flights-slow` (a step of `slow`: records the flights again and replays them; `WRITE=1`
   writes them). `taskfiles/slowest-tests.sh` is no task's own: `task test`, `task test-tls`
-  and `task conform-rust` call it, each on a copy of its own of nextest's report. Three tasks
-  of the root `Taskfile.yml` run a script of their own, so that their tests run it with
-  `sh` and start no `task` per case: `generated-compare` runs
-  `taskfiles/generated-compare.sh <fresh tree>`, `conform-totals` runs
-  `taskfiles/conform-totals.sh`, and `lock-check` runs `taskfiles/lock-check.sh Cargo.lock
-  taskfiles/lock-allow.txt`.
+  and `task conform-rust` call it, each on a copy of its own of nextest's report, and `task
+  view-test` on the JUnit report Playwright writes for it alone. Four tasks of the root
+  `Taskfile.yml` run a script of their own, so that their tests run it with `sh` and start no
+  `task` per case: `generated-compare` runs `taskfiles/generated-compare.sh <fresh tree>`,
+  `conform-totals` runs `taskfiles/conform-totals.sh`, `lock-check` runs
+  `taskfiles/lock-check.sh Cargo.lock taskfiles/lock-allow.txt`, and `step-budgets` runs
+  `taskfiles/step-budgets.sh .out`.
 - Shell scripts, committed or written by a test: a value is printed with `printf '%s'`, never
   with `echo`. The forge's `sh` is dash, whose `echo` turns `\n`, `\\` and the other backslash
   sequences into control characters; this host's `/bin/sh` is bash, whose `echo` does not, so
@@ -1345,9 +1347,16 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `agent-tasks-report` and ends with `sh-echo-test`. Since the TLS stories it runs
   `tls-certs-check` and `tls-flights-check` after `test-layout` and `tls-x509-conformance`
   after `html-conformance`. The tests of the four TLS packages run in `test-tls`, right after
-  `test`, with a budget of 120 s of its own: the two steps' times are not added up. Since
+  `test`, with a budget of 120 s of its own: no budget holds the two steps' times together.
+  Since
   `story:doc-tests-of-one-package` it runs `doc-tests-check` after `tls-flights-check`, before
-  `build`, and ends with `doc-tests-check-test`, after `sh-echo-test`.
+  `build`, and runs `doc-tests-check-test` after `sh-echo-test`. Since
+  `story:page-test-step-within-budget` it ends with `step-budgets` (`taskfiles/step-budgets.sh`),
+  which reads the seconds the four timed steps wrote, `.out/test-step.seconds` (`test`),
+  `.out/tls-test-step.seconds` (`test-tls`), `.out/conform-step.seconds` (`conform-rust`) and
+  `.out/page-step.seconds` (`view-test`), and prints `four steps: N s (test step A s, tls test
+  step B s, conformance step C s, page step D s)`, N their sum; it fails naming the file when
+  one is missing and has no budget of its own: each step fails over its own 120 s.
 - `task check-runner`: the gate to run before a merge, `task check` as the forge's runner runs
   it (`taskfiles/check-runner.sh`; `slot task check-runner`). What it does differently from
   `task check`: it runs in `.out/runner/tree`, a clean export of `HEAD` (a clone sharing this
@@ -1361,7 +1370,8 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `HTML_BASE=origin/main` (the export's `origin` is this repository, so that is the local
   `main`), and it unsets `RUSTUP_TOOLCHAIN`, `CARGO_TARGET_DIR`, `CARGO_BUILD_TARGET_DIR`,
   `RUSTFLAGS`, `CARGO_ENCODED_RUSTFLAGS` and `RUSTDOCFLAGS`. `view-tests/node_modules` is not
-  committed: `task view-test` installs it in the export with `npm ci`, as on the forge. What
+  committed: `task view-test` installs it in the export through `task view-test-setup`
+  (`npm ci` when the export's install is not that of its `package-lock.json`), as on the forge. What
   stays the machine's: the cargo caches of the user, the Playwright browser cache, the cargo
   configuration in the user's home, a compiler cache it names (`rustc-wrapper`) included, and
   the operating system. cargo also reads the working tree's `.cargo/config.toml`, a parent
@@ -1458,14 +1468,27 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   planted defect of `conformance/` over the whole suite and compares the list it writes,
   `.out/noticed.txt`, with `conformance/tests/noticed.txt` byte for byte; it needs no
   `openssl`, and `task conform-slow` runs it alone after a change to a source of the list.
-- `task view-test`: the page tests in a browser (`taskfiles/view-test.yml`). It builds
-  `surf-agent`, `surf-session` and `surf-view-fixture`, installs `view-tests/` from its
-  `package-lock.json` with `npm ci`, and runs `npx playwright test --workers=2` in
-  `view-tests/`. It installs no browser: Chromium's headless shell of the revision
-  `@playwright/test` names must be in the Playwright cache. On a new machine, once:
-  `npm --prefix view-tests ci`, then `npx --prefix view-tests playwright install --only-shell
-  chromium`. A change to what a `go` records is checked with `task view-test` too, because
-  the crate tests do not run the page tests.
+- `task view-test`: the page tests in a browser (`taskfiles/view-test.yml`), the page step,
+  within a budget of 120 s of its own (`story:page-test-step-within-budget`). It removes
+  `.out/page-step.seconds`, builds `surf-agent`, `surf-session` and `surf-view-fixture`, and
+  runs `task view-test-setup` (`taskfiles/view-test-setup.sh`): it compares the sha256 of
+  `view-tests/package-lock.json` with the digest the last install stored in
+  `view-tests/node_modules/.surf-lock.sha256`; equal, it prints `view-tests: node_modules
+  matches package-lock.json` and starts no `npm`; otherwise it runs `npm --prefix view-tests
+  ci --prefer-offline --no-audit --no-fund` and writes the digest. The forge's workflow runs
+  the same task in place of its own `npm ci`. Then the timed part, the build and the setup
+  left out: `./node_modules/.bin/playwright test --workers=2` in `view-tests/`, no `npx` and no
+  `npm`, so no request to a registry. `view-tests/playwright.config.mjs` ends a test still
+  running after 60 s (`timeout: 60_000`; no test sets more) and writes the JUnit report
+  `.out/view-test/junit.xml` beside its list. The step prints `the ten slowest tests:` from
+  that report (`taskfiles/slowest-tests.sh`, which prints a Playwright title whole), then
+  `page step: N s of its budget of 120 s`, or `page step: N s, over its budget of 120 s` and
+  fails; the budget is `PAGE_BUDGET` (default 120). It writes N to `.out/page-step.seconds`.
+  It installs no browser: Chromium's headless shell of the revision `@playwright/test` names
+  must be in the Playwright cache. On a new machine, once: `task --taskfile
+  taskfiles/view-test.yml view-test-setup`, then `npx --prefix view-tests playwright install
+  --only-shell chromium`. A change to what a `go` records is checked with `task view-test`
+  too, because the crate tests do not run the page tests.
 - `task view-stream-check`: the event names of `docs/view-stream.md` against the AsyncAPI
   projection of `spec/` (`taskfiles/view-stream-check.yml`). It fails, naming each, for a name
   that is no message of the projection; a new event whose name nobody adds to the document
@@ -1936,6 +1959,18 @@ mark's `title`) and the five cases of `story:view-live-means-stream-open` in
 `first-page.spec.mjs` it prints `59 passed (3.0m)` (the task 220 s) on 2026-11-23 at a load
 average of 126 to 127 on 20 CPUs, the five cases 5.7 to 11.1 s each and the slowest case,
 `an entry over 1 MiB`, 35.0 s at that load.
+Before `story:page-test-step-within-budget` (on `ecfaaf8`, 2026-11-23, three consecutive runs of
+`slot --timeout 15m task --taskfile taskfiles/view-test.yml view-test` with a JUnit report
+added through the environment, `PW_TEST_REPORTER=junit`) the step printed `59 passed (1.5m)`,
+`(1.2m)` and `(1.2m)` at load averages of 109.84 to 116.21, 116.21 to 101.10 and 101.10 to
+97.63, the task 115.1, 85.8 and 86.9 s, of them the build 4.2, 1.6 and 11.8 s, `npm ci` 8.2,
+3.8 and 1.1 s and `npx` up to its `Running 59 tests` line 16.7, 10.6 and 4.5 s; the slowest
+were `adversary: a refused token on the stream stops the page` 14.6 s (three runs) and `an
+entry over 1 MiB` 12.9, 4.8 and 17.3 s. Each page test keeps a fixture of its own: one start
+of `target/debug/surf-view-fixture`, from its spawn to its ready line, took 8.7 ms, the median
+of 10 starts in a row, so 0.51 s for the 59 page tests, under the 10 s over which they would
+share one (`node fixture-starts.mjs <tree> 10 59`, a probe not committed, at a load average of
+101.67 before and 106.02 after).
 `html-conformance`, the last
 step of `check`: `html-conformance: 9107 cases, 9095 run, 8428 passed` (82 encoding cases,
 7,046 tokenizer cases and 1,300 tree construction cases), with `tag markup 1979/1979/1979`,

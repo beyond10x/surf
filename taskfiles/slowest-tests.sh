@@ -4,8 +4,10 @@
 # usage: slowest-tests.sh <junit file> [count]
 #
 # Prints one line per test, the slowest first, at most count of them (default 10):
-# "  <seconds>s <classname> <name>", the seconds with three decimals in eight columns. It exits
-# 1 with one line on standard error when the file is missing or count is not a number.
+# "  <seconds>s <classname> <name>", the seconds with three decimals in eight columns. The name
+# is the whole attribute, spaces included (Playwright names a test by its title, task
+# view-test), with the five entities of XML read back as their characters. It exits 1 with one
+# line on standard error when the file is missing or count is not a number.
 #
 # No command of the pipeline ends before its input ends: under pipefail a reader that stops
 # early (head) ends the writer before it on SIGPIPE once the list is larger than the pipe's
@@ -37,4 +39,15 @@ tr '\n' ' ' < "$junit" |
 <testcase /g' |
   sed -n 's/^<testcase name="\([^"]*\)" classname="\([^"]*\)"[^>]*time="\([0-9.]*\)".*/\3 \2 \1/p' |
   sort -rn |
-  awk -v count="$count" 'NR <= count { printf "  %8.3fs %s %s\n", $1, $2, $3 }'
+  awk -v count="$count" 'NR <= count {
+    seconds = $1
+    class = $2
+    name = $0
+    sub(/^[^ ]* [^ ]* /, "", name)
+    gsub(/&apos;/, "'"'"'", name)
+    gsub(/&quot;/, "\"", name)
+    gsub(/&lt;/, "<", name)
+    gsub(/&gt;/, ">", name)
+    gsub(/&amp;/, "\\&", name)
+    printf "  %8.3fs %s %s\n", seconds, class, name
+  }'

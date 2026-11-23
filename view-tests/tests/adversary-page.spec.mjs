@@ -72,7 +72,7 @@ test("adversary: an action streamed while the selected session's detail loads is
 // The same after a reset (docs/view-stream.md, "The stream"): forget() drops what is loaded and
 // the selected session's detail is asked for again; a go streamed while it loads is not lost.
 test("adversary: an action streamed while the detail loads after a reset is not lost", async ({ page, surf, record }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(60_000);
   const id = await surf.open();
   await load(page, surf.piped);
   await expect(segments(page)).toHaveCount(1);
@@ -106,7 +106,7 @@ test("adversary: an action streamed while the detail loads after a reset is not 
 // action held, Latest stays off, the marker counts the actions newer than it, and the fragment's
 // `at` is written once with its sequence.
 test("adversary: with Latest off the playhead stays after its action is dropped by the bound", async ({ page, startFixture, record }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(60_000);
   const surf = await startFixture(["--entries-per-session", "30"]);
   const id = await surf.open();
   await surf.agent(id, "go", surf.pages + "/first/a.html");
@@ -168,7 +168,9 @@ test("adversary: a refused token on the stream stops the page", async ({ page, s
   await surf.mend();
   const refusedAt = record.requests.length;
   await items(page).nth(0).locator("button").click();
-  await page.waitForTimeout(12_000);
+  // A page that asks again after a refusal does so after FIRST_DELAY, 500 ms
+  // (crates/view/web/stream.js): 2,000 ms, four times that, show that no request follows.
+  await page.waitForTimeout(2_000);
   expect(record.requests.slice(refusedAt).map((request) => request.path)).toEqual([]);
   await expect(page.locator("#live-word")).toHaveText("offline");
   await expect(page.locator("#message")).toHaveText(REFUSED);

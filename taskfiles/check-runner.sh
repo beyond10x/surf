@@ -23,7 +23,8 @@
 #    inputs, and the forge's runner has none.
 #
 # The page tests' view-tests/node_modules is not committed; task view-test installs it in the
-# export with npm ci, as the workflow does. Chromium's headless shell comes from the user's
+# export through task view-test-setup (npm ci when the export's node_modules is not the install
+# of its package-lock.json), as the workflow does. Chromium's headless shell comes from the user's
 # Playwright cache, as on any machine that runs task check.
 #
 # CHECK_RUNNER_DIR moves the export (default .out/runner, relative to the repository root).

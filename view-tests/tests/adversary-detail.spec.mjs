@@ -62,7 +62,7 @@ test("adversary-detail: a click on a mark beside its short name selects that eve
   await expect(
     mark.locator("button"),
     "a click on the mark ResponseReceived, right of its name, does not select the event: it reaches the segment's handler (timeline.js mark)",
-  ).toHaveAttribute("aria-pressed", "true", { timeout: 2000 });
+  ).toHaveAttribute("aria-pressed", "true");
   await expect(selection(page).locator(".name")).toHaveText("surf.net.ResponseReceived");
 });
 
@@ -289,7 +289,7 @@ test("fixes: no horizontal scroll from a long reason, event name, field name and
 // Decision 3: the requests list scrolls inside itself. Scrolled to its end, a new row is in
 // view; scrolled up, the rows the reader sees do not move when one is added.
 test("fixes: the requests list follows a new row at its end and stays where a reader scrolled", async ({ page, surf }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(60_000);
   const id = await surf.open();
   for (let at = 0; at < 12; at += 1) {
     await surf.agent(id, "go", surf.pages + (at % 2 === 0 ? "/first/a.html" : "/first/b.html"));
@@ -321,7 +321,7 @@ test("fixes: the requests list follows a new row at its end and stays where a re
   expect(atLoad.scroller).not.toBeNull();
   expect(atLoad.lastInView, "at load the list shows its newest row: " + JSON.stringify(atLoad)).toBe(true);
   await surf.agent(id, "go", surf.pages + "/first/a.html");
-  await expect(rows(page)).toHaveCount(13, { timeout: 2000 });
+  await expect(rows(page)).toHaveCount(13);
   await expect.poll(async () => (await geometry()).lastInView, "a list at its end follows the new row").toBe(true);
   await page.locator("#requests > li.request").first().hover();
   await page.mouse.wheel(0, -100_000);
@@ -330,7 +330,7 @@ test("fixes: the requests list follows a new row at its end and stays where a re
   const before = await geometry();
   expect(before.lastInView).toBe(false);
   await surf.agent(id, "go", surf.pages + "/first/b.html");
-  await expect(rows(page)).toHaveCount(14, { timeout: 2000 });
+  await expect(rows(page)).toHaveCount(14);
   await frames(page);
   const after = await geometry();
   const moved = "a list scrolled up does not move: " + JSON.stringify({ before, after });

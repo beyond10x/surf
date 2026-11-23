@@ -130,7 +130,7 @@ jobs:
         if: steps.changes.outputs.planning_only != 'true'
         run: |
           set -euo pipefail
-          npm --prefix view-tests ci --no-audit --no-fund
+          task --taskfile taskfiles/view-test.yml view-test-setup
           npx --prefix view-tests playwright install --with-deps --only-shell chromium
 
       - name: task check
