@@ -10,6 +10,8 @@ relations:
 - informed_by: story:time-bounds-in-tests
 - supersedes: story:slow-tests-at-small-bounds
 - depends_on: story:doc-tests-of-one-package
+- depends_on: story:test-step-scripts-and-binaries
+- depends_on: story:test-harness-fewer-processes
 scope:
 - confidence: cited
   path: .cargo/config.toml
