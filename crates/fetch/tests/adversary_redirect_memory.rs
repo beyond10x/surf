@@ -117,6 +117,13 @@ fn held_while<T>(f: impl FnOnce() -> T) -> (T, usize) {
         let held = (PROCESS_PEAK.load(Ordering::SeqCst) - before).max(0) as usize;
         return (out, held);
     }
+    held_on_this_thread(f)
+}
+
+/// The value of `f` and the most bytes this thread held while `f` ran, beyond what it held
+/// before, whatever runs beside it: the module `https` measures a fetch whose server, a TLS test
+/// server on threads of its own, allocates while the fetch runs.
+pub(crate) fn held_on_this_thread<T>(f: impl FnOnce() -> T) -> (T, usize) {
     let before = LIVE.with(Cell::get);
     PEAK.with(|peak| peak.set(before));
     let out = f();
@@ -395,6 +402,7 @@ fn a_post_body_is_not_copied() {
         method: Method::Post,
         body: Some(&body),
         media_type: Some("application/octet-stream"),
+        anchors: None,
     };
 
     let (result, held) = held_while(|| send(&request, &limits));
@@ -444,6 +452,7 @@ fn a_post_body_written_twice_is_not_copied_while_it_is_written() {
         method: Method::Post,
         body: Some(&body),
         media_type: Some("application/octet-stream"),
+        anchors: None,
     };
 
     let (result, held) = held_while(|| send(&request, &limits));

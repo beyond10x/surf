@@ -4,6 +4,10 @@
 //! of the test (`TestNetwork`), which give a public address or a name the addresses the case
 //! chooses and connect them to the test's servers; no real name is resolved.
 //!
+//! Case 10 (a `Location: https:` ended `UnsupportedScheme`) is gone since `story:tls-fetch-https`:
+//! an `https:` redirect is followed, and case 11 of the module `https` is that case rewritten.
+//! The module `https` also uses this module's server, `TestNetwork` and limits.
+//!
 //! A server answers its connections one after another and records the request target and the
 //! `Host` of every request it read. A redirect it sends has a body with no declared length, and
 //! the server holds the connection open until the client closes it: a client that read the body
@@ -30,25 +34,25 @@ const REQUEST_HEAD_MAX: usize = 256 * 1024;
 
 /// What a server read of one request.
 #[derive(Debug, Clone)]
-struct Seen {
-    target: String,
-    host: String,
+pub(crate) struct Seen {
+    pub(crate) target: String,
+    pub(crate) host: String,
 }
 
 /// What a server answers to one request.
-struct Reply {
-    status: u16,
-    fields: Vec<(&'static str, Vec<u8>)>,
-    body: Vec<u8>,
+pub(crate) struct Reply {
+    pub(crate) status: u16,
+    pub(crate) fields: Vec<(&'static str, Vec<u8>)>,
+    pub(crate) body: Vec<u8>,
     /// `Content-Length` declared and the connection closed after the body; otherwise no length
     /// and the connection held until the client closes it.
-    framed: bool,
+    pub(crate) framed: bool,
     /// Waited before the reply is written.
-    delay: Duration,
+    pub(crate) delay: Duration,
 }
 
 /// A redirect: `status` with one `Location`, a body of no declared length.
-fn redirect(status: u16, location: impl Into<Vec<u8>>) -> Reply {
+pub(crate) fn redirect(status: u16, location: impl Into<Vec<u8>>) -> Reply {
     Reply {
         status,
         fields: vec![("Location", location.into())],
@@ -59,7 +63,7 @@ fn redirect(status: u16, location: impl Into<Vec<u8>>) -> Reply {
 }
 
 /// A 200 `text/html` whose body names `target`.
-fn page(target: &str) -> Reply {
+pub(crate) fn page(target: &str) -> Reply {
     Reply {
         status: 200,
         fields: vec![("Content-Type", b"text/html".to_vec())],
@@ -71,15 +75,15 @@ fn page(target: &str) -> Reply {
 
 type Route = Box<dyn Fn(&str) -> Reply + Send>;
 
-struct Server {
-    port: u16,
+pub(crate) struct Server {
+    pub(crate) port: u16,
     seen: Arc<Mutex<Vec<Seen>>>,
     stop: Arc<AtomicBool>,
     handle: Option<JoinHandle<()>>,
 }
 
 impl Server {
-    fn start(route: impl Fn(&str) -> Reply + Send + 'static) -> Server {
+    pub(crate) fn start(route: impl Fn(&str) -> Reply + Send + 'static) -> Server {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
         let port = listener.local_addr().expect("local address").port();
         let seen = Arc::new(Mutex::new(Vec::new()));
@@ -106,17 +110,17 @@ impl Server {
         }
     }
 
-    fn url(&self, path: &str) -> String {
+    pub(crate) fn url(&self, path: &str) -> String {
         format!("http://127.0.0.1:{}{path}", self.port)
     }
 
     /// Stop the server and return what it read.
-    fn finish(mut self) -> Vec<Seen> {
+    pub(crate) fn finish(mut self) -> Vec<Seen> {
         self.halt();
         self.seen.lock().expect("seen").clone()
     }
 
-    fn targets(self) -> Vec<String> {
+    pub(crate) fn targets(self) -> Vec<String> {
         self.finish().into_iter().map(|seen| seen.target).collect()
     }
 
@@ -199,7 +203,7 @@ fn read_head(stream: &mut TcpStream) -> Option<Vec<u8>> {
     Some(head)
 }
 
-fn limits() -> Limits {
+pub(crate) fn limits() -> Limits {
     Limits {
         connect_timeout: Duration::from_secs(2),
         read_timeout: Duration::from_secs(5),
@@ -207,7 +211,7 @@ fn limits() -> Limits {
     }
 }
 
-fn ok(result: Result<Response, Failure>) -> Response {
+pub(crate) fn ok(result: Result<Response, Failure>) -> Response {
     match result {
         Ok(response) => response,
         Err(failure) => panic!("expected a response, got {failure:?}"),
@@ -342,25 +346,6 @@ fn case_9_a_loop_is_too_many_after_21_requests() {
     assert_too_many(&result);
     assert_eq!(targets.len(), 21);
     assert!(targets.iter().all(|t| t == "/a"), "{targets:?}");
-}
-
-#[test]
-fn case_10_an_https_location_is_unsupported_and_never_connected_to() {
-    let held = TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
-    let port2 = held.local_addr().expect("local address").port();
-    let server = Server::start(move |target| match target {
-        "/a" => redirect(302, format!("https://127.0.0.1:{port2}/")),
-        other => page(other),
-    });
-    let result = fetch(&server.url("/a"), &limits());
-    let targets = server.targets();
-    held.set_nonblocking(true).expect("nonblocking");
-    match held.accept() {
-        Err(e) if e.kind() == ErrorKind::WouldBlock => {}
-        other => panic!("the https: target was connected to: {other:?}"),
-    }
-    assert_unsupported(&result);
-    assert_eq!(targets, ["/a"]);
 }
 
 #[test]
@@ -557,7 +542,7 @@ fn case_20_without_a_redirect_the_url_is_the_asked_address_byte_for_byte() {
 /// order (the last one repeats), and nothing else resolves; a connection to an address it routes
 /// goes to a server of the test on 127.0.0.1, one to 127.0.0.1 itself goes there, and every
 /// other address is refused. It records every name resolved and every address dialed.
-struct TestNetwork {
+pub(crate) struct TestNetwork {
     names: Mutex<HashMap<String, VecDeque<Vec<IpAddr>>>>,
     routes: HashMap<SocketAddr, u16>,
     resolved: Mutex<Vec<String>>,
@@ -565,7 +550,7 @@ struct TestNetwork {
 }
 
 impl TestNetwork {
-    fn new() -> TestNetwork {
+    pub(crate) fn new() -> TestNetwork {
         TestNetwork {
             names: Mutex::new(HashMap::new()),
             routes: HashMap::new(),
@@ -575,7 +560,7 @@ impl TestNetwork {
     }
 
     /// `name` resolves to `answers`, one list per resolution.
-    fn name(self, name: &str, answers: &[&[&str]]) -> TestNetwork {
+    pub(crate) fn name(self, name: &str, answers: &[&[&str]]) -> TestNetwork {
         let lists = answers
             .iter()
             .map(|list| list.iter().map(|ip| ip.parse().unwrap()).collect())
@@ -585,12 +570,12 @@ impl TestNetwork {
     }
 
     /// A connection to `address` goes to the server on 127.0.0.1 at `port`.
-    fn route(mut self, address: &str, port: u16) -> TestNetwork {
+    pub(crate) fn route(mut self, address: &str, port: u16) -> TestNetwork {
         self.routes.insert(address.parse().unwrap(), port);
         self
     }
 
-    fn dialed(&self) -> Vec<String> {
+    pub(crate) fn dialed(&self) -> Vec<String> {
         self.dialed
             .lock()
             .unwrap()
@@ -642,6 +627,7 @@ fn get(address: &str, network: &TestNetwork) -> Result<Response, Failure> {
         method: Method::Get,
         body: None,
         media_type: None,
+        anchors: None,
     };
     send_through(&request, &limits(), network)
 }
@@ -854,6 +840,7 @@ fn case_27_the_first_request_from_a_public_page_goes_to_public_addresses_only() 
             method: Method::Post,
             body: Some(b"a=1"),
             media_type: Some("application/x-www-form-urlencoded"),
+            anchors: None,
         };
         send_from(&request, &limits(), &network, Origin::PublicPage)
     };

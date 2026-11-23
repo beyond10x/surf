@@ -260,6 +260,7 @@ pub fn fetch_http_from(
                 .body_type
                 .as_ref()
                 .map(|media_type| media_type.0.as_str()),
+            anchors: None,
         },
         limits,
         network,
@@ -293,6 +294,21 @@ pub fn answer(result: Result<surf_fetch::Response, surf_fetch::Failure>) -> Answ
         }
         Err(surf_fetch::Failure::ForbiddenDestination(_)) => {
             Answer::Failure(FailureReason::ForbiddenDestination)
+        }
+        Err(surf_fetch::Failure::CertificateNotTrusted(_)) => {
+            Answer::Failure(FailureReason::CertificateNotTrusted)
+        }
+        Err(surf_fetch::Failure::CertificateExpired(_)) => {
+            Answer::Failure(FailureReason::CertificateExpired)
+        }
+        Err(surf_fetch::Failure::CertificateNameMismatch(_)) => {
+            Answer::Failure(FailureReason::CertificateNameMismatch)
+        }
+        Err(surf_fetch::Failure::TlsVersionUnsupported(_)) => {
+            Answer::Failure(FailureReason::TlsVersionUnsupported)
+        }
+        Err(surf_fetch::Failure::TlsHandshakeFailed(_)) => {
+            Answer::Failure(FailureReason::TlsHandshakeFailed)
         }
     }
 }

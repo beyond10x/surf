@@ -4,6 +4,7 @@
 mod adversary_redirect_memory;
 mod fetch;
 mod fetch_bounds;
+mod https;
 mod post;
 mod redirects;
 mod review1_fetch;
