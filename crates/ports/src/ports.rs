@@ -25,8 +25,14 @@ use surf_types::document::{
     OptionNotFound, OptionSelected, SelectOption, SelectOptionOutcome, SubmissionId,
     SubmissionSnapshot,
 };
-use surf_types::navigation::{NavigationSnapshot, NavigationState};
-use surf_types::net::{RequestId, RequestSnapshot};
+use surf_types::navigation::obligations::{CommitNavigationBehavior, TraverseHistoryBehavior};
+use surf_types::navigation::{
+    CommitNavigation, CommitNavigationOutcome, HistoryHandling, NavigationCommitted,
+    NavigationData, NavigationNotFound, NavigationSnapshot, NavigationState,
+    NavigationStateConflict, NoHistoryEntry, Standing, TraversalStarted, TraversalUnsupported,
+    TraverseHistory, TraverseHistoryOutcome,
+};
+use surf_types::net::{MediaType, Method, RequestId, RequestSnapshot};
 use surf_types::obligation::UnmetObligation;
 use surf_types::render::{FrameId, FrameSnapshot};
 use surf_types::shell::{TabId, TabSnapshot, WindowId, WindowSnapshot};
@@ -69,6 +75,16 @@ const CALLER: &str = "the caller's session_id";
 /// The identity of an action, as a context answer names it.
 const ACTION_ID: &str = "surf.agent.ActionId";
 
+/// The `Optional<String>` a `{generated: true}` payload field asks for, as a context answer
+/// names it: the `handle` and `label` of the `NavigationRequested` a `Go` emits.
+const OPTIONAL_STRING: &str = "Optional<String>";
+
+/// The `Optional<Bytes>` and `Optional<surf.net.MediaType>` a `{generated: true}` payload field
+/// asks for, as a context answer names them: the body and its media type of the
+/// `NavigationStarted` a `StartTraversal` emits.
+const OPTIONAL_BYTES: &str = "Optional<Bytes>";
+const OPTIONAL_MEDIA_TYPE: &str = "Optional<surf.net.MediaType>";
+
 /// Implements one storage trait for a ports type over one of its private tables.
 macro_rules! storage {
     ($storage:ident for $ports:ty, $rows:ident: $snapshot:ty, $key:ty $(, $param:ident)?) => {
@@ -98,14 +114,52 @@ macro_rules! storage {
 /// belong to the page load, a document's elements, forms, options and submissions included; the
 /// generated behaviours of a component ask only for their own.
 ///
-/// It also asks for the caller's `session_id` and an action's identity, which only the `agent`
-/// component's commands read. These ports know no caller and record no action, so they answer
-/// both as unmet rather than as a caller with none or an identity for no action.
+/// It also asks for the caller's `session_id`, an action's identity and the `Optional<String>`
+/// of a `Go`'s request, which only the `agent` component's commands read. These ports know no
+/// caller, record no action and issue no `Go`, so they answer all three as unmet rather than as
+/// a caller with none, an identity for no action or an absent value.
+///
+/// And it asks for the `Optional<Bytes>` and `Optional<surf.net.MediaType>` of the
+/// `NavigationStarted` a `StartTraversal` emits, a traversal's request having no body. The
+/// navigator's ports answer both absent (`context!(NavigatorPorts, absent_body)`); the others
+/// start no traversal and answer them as unmet.
 macro_rules! context {
     ($ports:ident) => {
+        context!($ports, {
+            fn try_generate_optional_bytes(&mut self) -> Result<Option<Vec<u8>>, UnmetObligation> {
+                Err(unmet_context(OPTIONAL_BYTES))
+            }
+
+            fn try_generate_optional_surf_net_media_type(
+                &mut self,
+            ) -> Result<Option<MediaType>, UnmetObligation> {
+                Err(unmet_context(OPTIONAL_MEDIA_TYPE))
+            }
+        });
+    };
+    ($ports:ident, absent_body) => {
+        context!($ports, {
+            fn try_generate_optional_bytes(&mut self) -> Result<Option<Vec<u8>>, UnmetObligation> {
+                Ok(None)
+            }
+
+            fn try_generate_optional_surf_net_media_type(
+                &mut self,
+            ) -> Result<Option<MediaType>, UnmetObligation> {
+                Ok(None)
+            }
+        });
+    };
+    ($ports:ident, { $($body:item)* }) => {
         impl<R: RandomSource> TryContext for $ports<R> {
+            $($body)*
+
             fn try_caller_session_id(&self) -> Result<Option<SessionId>, UnmetObligation> {
                 Err(unmet_context(CALLER))
+            }
+
+            fn try_generate_optional_string(&mut self) -> Result<Option<String>, UnmetObligation> {
+                Err(unmet_context(OPTIONAL_STRING))
             }
 
             fn try_generate_surf_agent_action_id(&mut self) -> Result<ActionId, UnmetObligation> {
@@ -196,8 +250,12 @@ storage!(WindowStorage for ShellPorts<R>, windows: WindowSnapshot, WindowId, R);
 storage!(TabStorage for ShellPorts<R>, tabs: TabSnapshot, TabId, R);
 context!(ShellPorts);
 
-/// The `navigator` component's ports: its navigations, and the random source its identities
-/// come from.
+/// The `navigator` component's ports: its navigations, which are also its tabs' session history
+/// entries, and the random source its identities come from.
+///
+/// It also meets the two obligations the generation leaves to it: `CommitNavigation`, which
+/// moves the tab's other entries beside its subject (`affects:`), and `TraverseHistory`, which
+/// reads the entry one step from the current one (a row set).
 #[derive(Debug)]
 pub struct NavigatorPorts<R = OsRandom> {
     navigations: Rows<NavigationSnapshot>,
@@ -215,7 +273,215 @@ impl<R: RandomSource> NavigatorPorts<R> {
 }
 
 storage!(NavigationStorage for NavigatorPorts<R>, navigations: NavigationSnapshot, RequestId, R);
-context!(NavigatorPorts);
+context!(NavigatorPorts, absent_body);
+
+/// Changes every other navigation of `tab` in `rows` that `selects` picks: one `affects:` entry
+/// of `CommitNavigation`.
+fn stand<S: NavigationStorage + ?Sized>(
+    rows: &mut S,
+    subject: &RequestId,
+    tab: &TabId,
+    selects: impl Fn(&NavigationData) -> bool,
+    change: impl Fn(&mut NavigationData),
+) {
+    for mut snapshot in rows.list() {
+        let row = &snapshot.data;
+        if &row.navigation_id != subject && &row.tab_id == tab && selects(row) {
+            change(&mut snapshot.data);
+            rows.put(snapshot);
+        }
+    }
+}
+
+/// The tab's entry at `step` in `rows`, made by `Get`: the row set `TraverseHistory` reads. A
+/// row with no standing is no entry.
+fn entry_at<S: NavigationStorage + ?Sized>(
+    rows: &S,
+    tab: &TabId,
+    step: Standing,
+) -> Option<NavigationData> {
+    rows.list()
+        .into_iter()
+        .map(|snapshot| snapshot.data)
+        .find(|row| &row.tab_id == tab && row.standing == Some(step) && row.method == Method::Get)
+}
+
+/// A response's arrival, its outcomes chosen in the order `spec/` declares them: a navigation no
+/// row holds is refused, and one that already ended (`wrong-state`). A traversal's commit makes
+/// the entry it went to current and adds none; a push's makes the navigation its tab's current
+/// entry, after the one that was current, with the method of its committing request, drops the
+/// entries after that one, and cancels every traversal of the tab still `Started`, so that one
+/// answers `wrong-state` and commits nothing. The effects on the tab's other rows apply in the
+/// order `spec/` writes them.
+///
+/// It reads and writes `rows` only, so a ports type that wraps a [`NavigationStorage`] meets the
+/// obligation over its own storage.
+///
+/// # Errors
+///
+/// None: the obligation is met for every input. The `Result` is the obligation's signature.
+pub fn commit_navigation<S: NavigationStorage + ?Sized>(
+    rows: &mut S,
+    input: CommitNavigation,
+) -> Result<CommitNavigationOutcome, UnmetObligation> {
+    let Some(mut subject) = rows.get(&input.navigation_id) else {
+        return Ok(CommitNavigationOutcome::NoSuchNavigation {
+            error: NavigationNotFound {
+                navigation_id: input.navigation_id,
+            },
+        });
+    };
+    if subject.state != NavigationState::Started {
+        return Ok(CommitNavigationOutcome::WrongState {
+            error: NavigationStateConflict {
+                state: subject.state,
+            },
+        });
+    }
+    let before = subject.data.clone();
+    let id = &input.navigation_id;
+    let tab = &before.tab_id;
+    let navigation_committed = NavigationCommitted {
+        navigation_id: input.navigation_id.clone(),
+        tab_id: before.tab_id.clone(),
+        url: input.url.clone(),
+        status: input.status,
+        media_type: input.media_type,
+        body: input.body,
+    };
+    subject.state = NavigationState::Committed;
+    subject.data.url = input.url;
+    if before.handling == HistoryHandling::Traverse {
+        rows.put(subject);
+        let at = |standing| move |row: &NavigationData| row.standing == Some(standing);
+        let to = |standing| move |row: &mut NavigationData| row.standing = Some(standing);
+        stand(rows, id, tab, at(Standing::Back), to(Standing::Earlier));
+        stand(rows, id, tab, at(Standing::Forward), to(Standing::Later));
+        stand(rows, id, tab, at(Standing::Current), to(Standing::Earlier));
+        let entry = before.entry_id.clone();
+        let entry_next = before.entry_next.clone();
+        stand(
+            rows,
+            id,
+            tab,
+            |row| entry.is_some() && row.next == entry,
+            to(Standing::Back),
+        );
+        stand(
+            rows,
+            id,
+            tab,
+            |row| entry_next.as_ref() == Some(&row.navigation_id),
+            to(Standing::Forward),
+        );
+        stand(
+            rows,
+            id,
+            tab,
+            |row| entry.as_ref() == Some(&row.navigation_id),
+            to(Standing::Current),
+        );
+        return Ok(CommitNavigationOutcome::Traversed {
+            navigation_committed,
+        });
+    }
+    subject.data.standing = Some(Standing::Current);
+    subject.data.method = input.method;
+    rows.put(subject);
+    stand(
+        rows,
+        id,
+        tab,
+        |row| matches!(row.standing, Some(Standing::Forward | Standing::Later)),
+        |row| row.standing = Some(Standing::Dropped),
+    );
+    stand(
+        rows,
+        id,
+        tab,
+        |row| row.standing == Some(Standing::Back),
+        |row| row.standing = Some(Standing::Earlier),
+    );
+    stand(
+        rows,
+        id,
+        tab,
+        |row| row.standing == Some(Standing::Current),
+        |row| {
+            row.standing = Some(Standing::Back);
+            row.next = Some(id.clone());
+        },
+    );
+    for mut snapshot in rows.list() {
+        let row = &snapshot.data;
+        if &row.navigation_id != id
+            && &row.tab_id == tab
+            && row.handling == HistoryHandling::Traverse
+            && snapshot.state == NavigationState::Started
+        {
+            snapshot.state = NavigationState::Cancelled;
+            rows.put(snapshot);
+        }
+    }
+    Ok(CommitNavigationOutcome::Committed {
+        navigation_committed,
+    })
+}
+
+impl<R> CommitNavigationBehavior for NavigatorPorts<R> {
+    fn commit_navigation(
+        &mut self,
+        input: CommitNavigation,
+    ) -> Result<CommitNavigationOutcome, UnmetObligation> {
+        commit_navigation(self, input)
+    }
+}
+
+/// One step back or forward, its outcomes chosen in the order `spec/` declares them: a step that
+/// is neither is refused before any row is read; then a tab with no entry made by `Get` at that
+/// step is refused; otherwise the entry's address, the entry and the entry after it go to
+/// `StartTraversal`. It changes no row.
+///
+/// It reads `rows` only, as [`commit_navigation`] does.
+///
+/// # Errors
+///
+/// None: the obligation is met for every input. The `Result` is the obligation's signature.
+pub fn traverse_history<S: NavigationStorage + ?Sized>(
+    rows: &S,
+    input: TraverseHistory,
+) -> Result<TraverseHistoryOutcome, UnmetObligation> {
+    if input.step != Standing::Back && input.step != Standing::Forward {
+        return Ok(TraverseHistoryOutcome::Unsupported {
+            error: TraversalUnsupported { step: input.step },
+        });
+    }
+    let Some(entry) = entry_at(rows, &input.tab_id, input.step) else {
+        return Ok(TraverseHistoryOutcome::NoEntry {
+            error: NoHistoryEntry {
+                tab_id: input.tab_id,
+                step: input.step,
+            },
+        });
+    };
+    Ok(TraverseHistoryOutcome::Requested {
+        traversal_started: TraversalStarted {
+            tab_id: input.tab_id,
+            url: entry.url,
+            entry_id: entry.navigation_id,
+            entry_next: entry.next,
+        },
+    })
+}
+
+impl<R> TraverseHistoryBehavior for NavigatorPorts<R> {
+    fn traverse_history(
+        &mut self,
+        input: TraverseHistory,
+    ) -> Result<TraverseHistoryOutcome, UnmetObligation> {
+        traverse_history(self, input)
+    }
+}
 
 /// The `net` component's ports: its requests.
 ///
@@ -304,9 +570,9 @@ context!(DocumentPorts);
 /// A checkbox's or a radio button's activation, its outcomes chosen in the order `spec/` declares
 /// them: an element no row holds, one neither a checkbox nor a radio button, a disabled one and
 /// a hidden one are refused; a radio button is checked and every other radio button of its group
-/// (same document, same form owner, same name) unchecked, where a group with no form owner or no
-/// name selects no other (the marker at `surf.document.Check`); a checked checkbox is unchecked,
-/// and an unchecked one checked.
+/// (same document, same `radio_group` key: the same form owner and name, or no form owner and
+/// the same name) unchecked, where a radio button with no key (no name) selects no other; a
+/// checked checkbox is unchecked, and an unchecked one checked.
 impl<R> CheckBehavior for DocumentPorts<R> {
     fn check(&mut self, input: Check) -> Result<CheckOutcome, UnmetObligation> {
         let Some(mut subject) = self.elements.get(&input.element_id) else {
@@ -347,10 +613,8 @@ impl<R> CheckBehavior for DocumentPorts<R> {
                     other.element_id != group.element_id
                         && other.kind == ElementKind::Radio
                         && other.document_id == group.document_id
-                        && other.form_id.is_some()
-                        && other.form_id == group.form_id
-                        && other.name.is_some()
-                        && other.name == group.name
+                        && other.radio_group.is_some()
+                        && other.radio_group == group.radio_group
                 },
                 |other| other.checked = false,
             );
@@ -557,6 +821,22 @@ storage!(ActionStorage for AgentPorts<R>, actions: ActionSnapshot, ActionId, R);
 impl<R: RandomSource> TryContext for AgentPorts<R> {
     fn try_caller_session_id(&self) -> Result<Option<SessionId>, UnmetObligation> {
         Ok(self.caller.get())
+    }
+
+    /// The `handle` and `label` of the `NavigationRequested` a `Go` emits: a `go` names no link,
+    /// so both are absent (`spec/domains/agent.yaml`, `surf.agent.NavigationRequested`).
+    fn try_generate_optional_string(&mut self) -> Result<Option<String>, UnmetObligation> {
+        Ok(None)
+    }
+
+    fn try_generate_optional_bytes(&mut self) -> Result<Option<Vec<u8>>, UnmetObligation> {
+        Err(unmet_context(OPTIONAL_BYTES))
+    }
+
+    fn try_generate_optional_surf_net_media_type(
+        &mut self,
+    ) -> Result<Option<MediaType>, UnmetObligation> {
+        Err(unmet_context(OPTIONAL_MEDIA_TYPE))
     }
 
     fn try_generate_surf_agent_action_id(&mut self) -> Result<ActionId, UnmetObligation> {

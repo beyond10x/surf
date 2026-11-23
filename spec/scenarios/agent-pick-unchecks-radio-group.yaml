@@ -1,8 +1,10 @@
 # An agent picks a radio button: `Pick` without an option publishes the request, and
 # `check-on-pick-requested` checks the button through `surf.document.Check`, which unchecks the
 # others of its group: the radio buttons of the same document with the same form owner and the
-# same name. A radio button of the same name in another form and one of another name in the same
-# form stay checked. Synthesis refuses `Check/radio-checked` (the subject's stored fields select
+# same name, which share the key `radio_group`. A radio button of the same name in another form
+# and one of another name in the same form stay checked. A second pick checks a radio button with
+# no form owner and unchecks the other of its group, the radio buttons with no form owner and the
+# same name (key `- shipping`), and none of the radio buttons in a form. Synthesis refuses `Check/radio-checked` (the subject's stored fields select
 # it, and `Elements` declares an order over one row) and the binding's flow, so this scenario is
 # their evidence.
 type: ess-scenario/6
@@ -33,8 +35,10 @@ arrange:
         disabled: false
         checked: true
         required: false
+        readonly: false
         name: shipping
         form_id: 5a7c1e00-0000-4000-8000-000000000081
+        radio_group: F1 shipping
       state: Added
   - instance: express
     entity: surf.document.Element
@@ -49,8 +53,10 @@ arrange:
         disabled: false
         checked: false
         required: false
+        readonly: false
         name: shipping
         form_id: 5a7c1e00-0000-4000-8000-000000000081
+        radio_group: F1 shipping
       state: Added
   - instance: other-form
     entity: surf.document.Element
@@ -65,8 +71,10 @@ arrange:
         disabled: false
         checked: true
         required: false
+        readonly: false
         name: shipping
         form_id: 5a7c1e00-0000-4000-8000-000000000082
+        radio_group: F2 shipping
       state: Added
   - instance: other-name
     entity: surf.document.Element
@@ -81,8 +89,44 @@ arrange:
         disabled: false
         checked: true
         required: false
+        readonly: false
         name: payment
         form_id: 5a7c1e00-0000-4000-8000-000000000081
+        radio_group: F1 payment
+      state: Added
+  - instance: no-form
+    entity: surf.document.Element
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-000000000078
+      fields:
+        document_id: 5a7c1e00-0000-4000-8000-000000000070
+        position: 5
+        kind: radio
+        label: Pickup
+        hidden: false
+        disabled: false
+        checked: true
+        required: false
+        readonly: false
+        name: shipping
+        radio_group: "- shipping"
+      state: Added
+  - instance: no-form-other
+    entity: surf.document.Element
+    setup:
+      identity: 5a7c1e00-0000-4000-8000-000000000079
+      fields:
+        document_id: 5a7c1e00-0000-4000-8000-000000000070
+        position: 6
+        kind: radio
+        label: Courier
+        hidden: false
+        disabled: false
+        checked: false
+        required: false
+        readonly: false
+        name: shipping
+        radio_group: "- shipping"
       state: Added
 
 timeline:
@@ -100,6 +144,20 @@ timeline:
         payload:
           session_id: {$instance: session}
           element_id: {$instance: express}
+  - at: 2026-01-06T09:00:01Z
+    command: surf.agent.Pick
+    actor: surf.agent.SessionHolder
+    caller: {session_id: {$instance: session}}
+    input:
+      session_id: {$instance: session}
+      element_id: {$instance: no-form-other}
+      handle: f6
+    outcome: requested
+    events:
+      - event: surf.agent.PickRequested
+        payload:
+          session_id: {$instance: session}
+          element_id: {$instance: no-form-other}
 
 assert:
   - view: surf.document.Controls
@@ -110,3 +168,7 @@ assert:
     contains: {element_id: {$instance: other-form}, checked: true}
   - view: surf.document.Controls
     contains: {element_id: {$instance: other-name}, checked: true}
+  - view: surf.document.Controls
+    contains: {element_id: {$instance: no-form-other}, checked: true}
+  - view: surf.document.Controls
+    contains: {element_id: {$instance: no-form}, checked: false}

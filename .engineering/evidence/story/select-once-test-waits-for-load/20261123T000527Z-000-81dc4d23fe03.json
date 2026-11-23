@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T00:05:27Z",
+  "actor": "human:operator",
+  "artifact": "story:select-once-test-waits-for-load",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the implementing unit's two plants on the changed test, neither committed (acceptances 2 and 6)",
+    "reference": "a second click listener on the mark's button in crates/view/web/timeline.js, fixture rebuilt: Enter selects once: one render of the timeline, Expected: 1, Received: 2; the route pattern changed to one that matches nothing: the page loaded once: /events is held, so no stream opened, Expected length: 1, Received length: 2; after both, git diff --stat -- crates/view prints nothing and the fixture was rebuilt"
+  }
+}

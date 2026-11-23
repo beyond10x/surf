@@ -29,7 +29,10 @@
 //! `NoteNavigationStarted`, `NoteNavigationCommitted`, `NoteNavigationFailed` and
 //! `NoteNavigationEnded`, which change every session their filter selects. [`DocumentPorts`]
 //! meets the two the generation leaves to the `document` component, `Check` and `SelectOption`,
-//! which change a control and the others of its group or select.
+//! which change a control and the others of its group or select. [`NavigatorPorts`] meets the
+//! two the generation leaves to the `navigator` component, `CommitNavigation` and
+//! `TraverseHistory`, which keep a tab's session history entries; [`commit_navigation`] and
+//! [`traverse_history`] meet them over any [`NavigationStorage`], for a ports type that wraps one.
 //!
 //! [`shell_port`], [`navigator_port`], [`net_port`], [`document_port`], [`renderer_port`] and
 //! [`agent_port`] build each component's generated port over a ports type;
@@ -90,6 +93,7 @@ mod store;
 
 pub use ports::{
     AgentPorts, Caller, DocumentPorts, NavigatorPorts, NetPorts, RendererPorts, ShellPorts,
+    commit_navigation, traverse_history,
 };
 pub use random::{OsRandom, RandomSource};
 
@@ -103,6 +107,7 @@ use surf_types::behaviour::{
     TabStorage, TryContext, WindowStorage,
 };
 use surf_types::document::obligations::{CheckBehavior, SelectOptionBehavior};
+use surf_types::navigation::obligations::{CommitNavigationBehavior, TraverseHistoryBehavior};
 
 /// The `shell` component's generated port over [`ShellPorts`].
 pub type ShellPort<R = OsRandom> = shell::Shell<Generated<ShellPorts<R>>>;
@@ -125,10 +130,11 @@ where
     shell::Shell::new(Generated::new(ports))
 }
 
-/// The `navigator` component's port, its behaviours generated over `ports`.
+/// The `navigator` component's port, its behaviours generated over `ports`, and the two its
+/// generation leaves owed taken from `ports`.
 pub fn navigator_port<P>(ports: P) -> navigator::Navigator<Generated<P>>
 where
-    P: TryContext + NavigationStorage,
+    P: TryContext + NavigationStorage + CommitNavigationBehavior + TraverseHistoryBehavior,
 {
     navigator::Navigator::new(Generated::new(ports))
 }

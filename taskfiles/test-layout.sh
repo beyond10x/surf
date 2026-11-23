@@ -36,6 +36,17 @@
 #   whose name ends with one of them, the selected module's own file included. A stem added to
 #   the skipped list gets its `--skip <stem>::` in the selection itself.
 #
+# It also fails, naming the file and line, on `#[test]` in the code of a line (literals and
+# comments left out, as above) of a file of a target that runs no test. Those targets: a [lib]
+# or [[bin]] entry with `test = false` in any Cargo.toml under <root> (the directories above not
+# entered, a Cargo.toml below tests/ a fixture), and the library and binaries of every package
+# under generated/rust/crates, whose manifests ess writes and which task test leaves out. The
+# files of a target: its `path` (src/lib.rs for a library and src/main.rs, or
+# src/bin/<name>.rs, for a binary when none is given) and every child module it declares out of
+# line, followed to its file as for a test binary. `#[cfg(test)]` is not flagged: a library file
+# may hold it for a test binary that declares the file by #[path] (crates/secret). A library's
+# modules are not files of a binary of the same package.
+#
 # Not seen by the check: a module that a macro expands to, a file pulled in by `include!`,
 # `autotests = false` inside a multi-line string of [package], and a crate reached through a
 # symbolic link.
@@ -64,6 +75,25 @@ dirs=$(find . \( -name target -o -name node_modules -o -name '.?*' \) -prune -o 
 nl='
 '
 set --
+# Every manifest outside the directories not entered and outside tests/, each read once: those
+# of the test directories for the rules above, all of them for their [lib] and [[bin]] entries.
+manifests=$(find . \( -name target -o -name node_modules -o -name '.?*' \) -prune -o -name Cargo.toml -print |
+  sed 's|^\./||' | LC_ALL=C sort)
+generated=
+for manifest in $manifests; do
+  case "$manifest" in tests/* | */tests/*) continue ;; esac
+  [ -f "$manifest" ] || continue
+  set -- "$@" "$manifest"
+  case "$manifest" in
+    generated/rust/crates/*/Cargo.toml)
+      package=${manifest%/Cargo.toml}
+      case "$package" in generated/rust/crates/*/*) continue ;; esac
+      for file in "$package/src/lib.rs" "$package/src/main.rs" "$package"/src/bin/*.rs; do
+        if [ -f "$file" ]; then generated="$generated$file$nl"; fi
+      done
+      ;;
+  esac
+done
 files=
 testdirs=
 for tests in $dirs; do
@@ -71,7 +101,6 @@ for tests in $dirs; do
   case "$tests" in tests/* | */tests/*) continue ;; esac
   [ -f "${tests%/tests}/Cargo.toml" ] || continue
   testdirs="$testdirs $tests"
-  set -- "$@" "${tests%/tests}/Cargo.toml"
   if [ -f "$tests/main.rs" ]; then set -- "$@" "$tests/main.rs"; fi
   for file in "$tests"/*.rs "$tests"/*/*.rs; do
     if [ -f "$file" ]; then files="$files$file$nl"; fi
@@ -82,7 +111,7 @@ done
 # of the binary; /dev/null so that grep never reads its standard input.
 # shellcheck disable=SC2086
 grep -n -H -E 'mod|path|cfg|#[[:space:]]*!' /dev/null $files |
-  FILES=$files SELECTIONS=$SELECTIONS awk -v dirs="$testdirs" '
+  FILES=$files SELECTIONS=$SELECTIONS GENERATED=$generated awk -v dirs="$testdirs" '
   function problem(text) { print "test-layout: " text; problems++ }
   function module_of(s) { sub(/^.*mod /, "", s); sub(/;$/, "", s); return s }
   function path_of(s) { sub(/^#\[path = "/, "", s); sub(/"\].*$/, "", s); return s }
@@ -204,13 +233,131 @@ grep -n -H -E 'mod|path|cfg|#[[:space:]]*!' /dev/null $files |
       attr = ""
     }
   }
+  # The lines of a file of a target that may matter (they hold `mod`, `path` or `test`), as
+  # tkept[file, i] with their numbers tat[file, i]. Returns 0 when the file cannot be read.
+  function tload(file,   line, number, status) {
+    if (file in tkept_count) return 1
+    number = 0
+    tkept_count[file] = 0
+    while ((status = (getline line < file)) > 0) {
+      number++
+      if (index(line, "mod") || index(line, "path") || index(line, "test")) {
+        tkept_count[file]++
+        tkept[file, tkept_count[file]] = line
+        tat[file, tkept_count[file]] = number
+      }
+    }
+    close(file)
+    if (status < 0) { delete tkept_count[file]; return 0 }
+    return 1
+  }
+  # A target that runs no test: its root file and what it is.
+  function add_target(file, what) {
+    targets++
+    target_file[targets] = file
+    target_what[targets] = what
+  }
+  # The [lib] or [[bin]] entry read last: a target when it holds test = false, or when its
+  # manifest is that of a package under generated/rust/crates. Its file is its path, else
+  # src/lib.rs for a library and, for a binary, src/bin/<name>.rs, src/bin/<name>/main.rs or
+  # src/main.rs, the first that exists.
+  function finish_target(   crate, file, line) {
+    if (entry_kind == "") return
+    crate = dir_of(entry_manifest)
+    if (entry_false || entry_manifest ~ /^generated\/rust\/crates\/[^\/]+\/Cargo\.toml$/) {
+      if (entry_path != "") file = crate "/" entry_path
+      else if (entry_kind == "[lib]") file = crate "/src/lib.rs"
+      else {
+        file = crate "/src/main.rs"
+        if (entry_name != "" && (getline line < (crate "/src/bin/" entry_name "/main.rs")) >= 0) {
+          close(crate "/src/bin/" entry_name "/main.rs")
+          file = crate "/src/bin/" entry_name "/main.rs"
+        }
+        if (entry_name != "" && (getline line < (crate "/src/bin/" entry_name ".rs")) >= 0) {
+          close(crate "/src/bin/" entry_name ".rs")
+          file = crate "/src/bin/" entry_name ".rs"
+        }
+      }
+      add_target(file, (entry_kind == "[lib]" ? "the library" : "the binary") " of " entry_manifest ":" entry_line (entry_false ? ", which has test = false" : ", a generated package"))
+    }
+    entry_kind = ""
+  }
+  # Read one file of a target that runs no test: fail on #[test] in its code, and follow every
+  # child module declared out of line to its file, as visit does for a test binary. The root
+  # file of a target declares its modules in its own directory.
+  function tvisit(file, what, root,   i, line, code, number, attr, attr_at, path_here, name, rest, end, child, dir, moddir, base, before) {
+    if (file in tvisited) return
+    tvisited[file] = 1
+    dir = dir_of(file)
+    base = file
+    sub(/^.*\//, "", base)
+    moddir = (root || base == "mod.rs") ? dir : dir "/" substr(base, 1, length(base) - 3)
+    attr = ""
+    attr_at = -1
+    for (i = 1; i <= tkept_count[file]; i++) {
+      line = tkept[file, i]
+      number = tat[file, i]
+      path_here = ""
+      if (match(line, /#\[[ \t]*path[ \t]*=[ \t]*"[^"]*"[ \t]*\]/)) {
+        path_here = substr(line, RSTART, RLENGTH)
+        sub(/^[^"]*"/, "", path_here)
+        sub(/".*$/, "", path_here)
+      }
+      code = code_of(line)
+      if (code ~ /#[ \t]*\[[ \t]*test[ \t]*\]/)
+        problem(file ":" number ": " line ": #[test] in a file of " what ", so no test run builds it; move the test into tests/")
+      if (path_here != "" && code ~ /^[ \t]*#\[[ \t]*path[ \t]*=[ \t]*""[ \t]*\][ \t]*$/) {
+        attr = path_here
+        attr_at = number
+        continue
+      }
+      if (match(code, /(^|[^A-Za-z0-9_])mod[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]*[;{]/)) {
+        before = substr(code, 1, RSTART)
+        rest = substr(code, RSTART, RLENGTH)
+        end = substr(rest, length(rest), 1)
+        name = rest
+        sub(/^.*mod[ \t]+/, "", name)
+        sub(/[^A-Za-z0-9_].*$/, "", name)
+        if (end == "{" && match(substr(code, RSTART + RLENGTH), /(^|[^A-Za-z0-9_])mod[ \t]+[A-Za-z_][A-Za-z0-9_]*[ \t]*;/)) {
+          problem(file ":" number ": " line ": an out-of-line module inside an inline module, which this check cannot follow")
+        } else if (end == ";") {
+          if (code ~ /^[ \t]/ || index(before, "{"))
+            problem(file ":" number ": " line ": an out-of-line module inside an inline module, which this check cannot follow")
+          else {
+            if (attr_at != number - 1) attr = ""
+            if (path_here != "") attr = path_here
+            if (attr != "") child = dir "/" attr
+            else if (tload(moddir "/" name ".rs")) child = moddir "/" name ".rs"
+            else child = moddir "/" name "/mod.rs"
+            if (tload(child)) tvisit(child, what, 0)
+            else problem(file ":" number ": mod " name "; names " child ", which this check cannot read")
+          }
+        }
+      }
+      attr = ""
+    }
+  }
   BEGIN {
     nfiles = split(ENVIRON["FILES"], all, "\n")
     for (i = 1; i <= nfiles; i++) if (all[i] != "") exists[all[i]] = 1
+    n = split(dirs, list, " ")
+    for (i = 1; i <= n; i++) {
+      crate = list[i]
+      sub(/\/tests$/, "", crate)
+      tested[crate "/Cargo.toml"] = 1
+    }
+    n = split(ENVIRON["GENERATED"], list, "\n")
+    for (i = 1; i <= n; i++) {
+      if (list[i] == "") continue
+      package = list[i]
+      sub(/\/src\/.*$/, "", package)
+      add_target(list[i], "a target of the generated package " package)
+    }
   }
   FNR == 1 {
     close_main()
-    if (FILENAME ~ /\/Cargo\.toml$/) kind = "manifest"
+    finish_target()
+    if (FILENAME ~ /(^|\/)Cargo\.toml$/) kind = "manifest"
     else if (FILENAME ~ /\/tests\/main\.rs$/) kind = "main"
     else kind = "grep"
     if (kind == "main") current = FILENAME
@@ -232,16 +379,30 @@ grep -n -H -E 'mod|path|cfg|#[[:space:]]*!' /dev/null $files |
     line = $0
     sub(/[ \t]*#.*$/, "", line)
     if (line ~ /^[ \t]*\[/) {
+      finish_target()
       table = line
       gsub(/[ \t"\047]/, "", table)
       if (table == "[[test]]") entries[FILENAME]++
+      if (table == "[lib]" || table == "[[bin]]") {
+        entry_kind = table
+        entry_manifest = FILENAME
+        entry_line = FNR
+        entry_path = ""
+        entry_name = ""
+        entry_false = 0
+      }
       next
     }
     gsub(/[ \t]/, "", line)
     gsub(/\047/, "\"", line)
     if (line == "") next
+    if (entry_kind != "") {
+      if (line == "test=false") entry_false = 1
+      else if (line ~ /^path="[^"]*"$/) entry_path = substr(line, 7, length(line) - 7)
+      else if (line ~ /^name="[^"]*"$/) entry_name = substr(line, 7, length(line) - 7)
+    }
     if (table == "[package]" && line == "autotests=false") autotests[FILENAME] = 1
-    if ((table == "[[example]]" || table == "[[bench]]") && line == "test=true")
+    if ((FILENAME in tested) && (table == "[[example]]" || table == "[[bench]]") && line == "test=true")
       problem(FILENAME ":" FNR ": test = true in an entry " table ", which cargo builds as a test binary of its own")
     if (table == "[[test]]") {
       if (line == "name=\"main\"") names[FILENAME]++
@@ -285,6 +446,11 @@ grep -n -H -E 'mod|path|cfg|#[[:space:]]*!' /dev/null $files |
   }
   END {
     close_main()
+    finish_target()
+    for (t = 1; t <= targets; t++) {
+      if (tload(target_file[t])) tvisit(target_file[t], target_what[t], 1)
+      else problem(target_file[t] ": the file of " target_what[t] ", which this check cannot read")
+    }
     count = split(ENVIRON["SELECTIONS"], rows, "\n")
     for (r = 1; r <= count; r++) {
       n = split(rows[r], words, " ")

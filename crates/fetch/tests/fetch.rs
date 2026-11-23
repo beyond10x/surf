@@ -7,7 +7,7 @@ use std::net::{TcpListener, TcpStream};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use surf_fetch::{fetch, Failure, Limits, Response};
+use surf_fetch::{fetch, Failure, Limits, Method, Response};
 
 /// The longest any server thread waits for anything.
 const BOUND: Duration = Duration::from_secs(5);
@@ -108,6 +108,7 @@ fn response(asked: &str, status: u16, media_type: &str, body: &[u8]) -> Result<R
         media_type: media_type.to_string(),
         body: body.to_vec(),
         url: asked.to_string(),
+        method: Method::Get,
     })
 }
 

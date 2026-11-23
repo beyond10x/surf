@@ -23,7 +23,7 @@ use surf_ports::{Caller, ComponentPorts};
 use surf_types::agent::{
     ActionCommand, ActionId, ActionRecorded, FillRequested, Go, NavigationRequested, OpenSession,
     PickRequested, PressRequested, RecordAction, SessionClosed, SessionId,
-    SessionNavigationChanged, SessionOpened,
+    SessionNavigationChanged, SessionOpened, TraversalRequested,
 };
 use surf_types::document::{
     CheckednessSet, DocumentId, DocumentParsed, ElementAdded, ElementId, EncodingName, FormAdded,
@@ -32,6 +32,7 @@ use surf_types::document::{
 };
 use surf_types::navigation::{
     NavigationCancelled, NavigationCommitted, NavigationFailed, NavigationStarted, NavigationState,
+    Standing, TraversalStarted,
 };
 use surf_types::net::{
     FailureReason, FetchFailed, MediaType, Method, RequestId, RequestStarted, ResponseReceived,
@@ -429,6 +430,20 @@ fn case_05_look_adds_no_entry() {
     assert_eq!(wire_as(&dir, &session, "look", &[]).status, 0);
     assert_eq!(kept(&daemon, &session), before);
     assert_eq!(daemon.newest_entry(), newest);
+
+    // The daemon leaked, so that only the drop of the directory, which no helper marked, can
+    // stop the session: it finds it among the test process's descendants.
+    let pid = daemon
+        .sessions()
+        .get(&session.id)
+        .expect("the session is listed")
+        .pid;
+    std::mem::forget(daemon);
+    drop(dir);
+    assert!(
+        !surf_test_process::alive(pid),
+        "the session {pid} runs after the drop"
+    );
 }
 
 /// `text` with each UUID in it replaced by `#<n>`, n the order of its first appearance in
@@ -592,19 +607,36 @@ fn case_07_a_body_is_kept_as_its_length() {
             "{name}"
         );
     }
-    // Every 8 bytes of the page's letters, put in a set once; each window of each entry is
-    // looked up in it.
+    // Every 8 bytes of the page's letters, put in a set once; each window of an entry is looked
+    // up in it. What the session records about the response, its action and event entries,
+    // holds none of them (decision D290).
     let letters: std::collections::BTreeSet<&[u8]> = body[18..].windows(8).collect();
+    let holds_letters = |text: &str| {
+        text.as_bytes()
+            .windows(8)
+            .any(|part| letters.contains(part))
+    };
     for entry in &entries {
-        assert!(
-            !entry
-                .text
-                .as_bytes()
-                .windows(8)
-                .any(|part| letters.contains(part)),
-            "an entry holds bytes of the page: {entry:?}"
-        );
+        if matches!(entry.kind, EntryKind::Action | EntryKind::Event) {
+            assert!(
+                !holds_letters(&entry.text),
+                "an entry holds bytes of the page: {entry:?}"
+            );
+        }
     }
+    // The answer entry is the answer as printed, and its `+ text` lines are page text
+    // (story:agent-change-and-log): the one place an entry holds letters of the page.
+    let answer = entries
+        .iter()
+        .find(|entry| entry.kind == EntryKind::Answer && entry.text.contains("\ndid go "))
+        .expect("the answer entry of the go");
+    assert!(
+        answer
+            .text
+            .lines()
+            .any(|line| line.starts_with("  + text \"") && holds_letters(line)),
+        "the go's answer entry has no `+ text` line with letters of the page: {answer:?}"
+    );
 }
 
 #[test]
@@ -702,11 +734,13 @@ fn case_13_a_subscriber_receives_the_entries_of_a_go() {
 
 #[test]
 fn case_14_a_subscriber_that_never_reads_is_disconnected() {
-    // The story's number, not the crate's constant.
-    const QUEUE: usize = 1024;
+    // The shipped queue is the story's number, not the crate's constant; the case runs with a
+    // queue of 24 entries, so that 3 go pass it.
+    assert_eq!(surfd::log::READER_QUEUE, 1024);
+    const QUEUE: usize = 24;
     let dir = TestDir::new();
     let pages = PageServer::start();
-    let daemon = surfd_in_process(&dir, |_| {});
+    let daemon = surfd_in_process(&dir, |config| config.log.reader_queue = QUEUE);
     let session = wire_open(&dir, None);
     let start = daemon.newest_entry();
     let mut stalled = daemon.subscribe_after(start).unwrap();
@@ -875,6 +909,8 @@ fn covered() -> Vec<SystemEvent> {
             session_id: SessionId(uuid(2)),
             tab_id: TabId(uuid(3)),
             url: url(),
+            handle: Some("l4".to_string()),
+            label: Some(LABEL.to_string()),
         }),
         SystemEvent::SessionClosed(SessionClosed {
             session_id: SessionId(uuid(2)),
@@ -950,6 +986,7 @@ fn covered() -> Vec<SystemEvent> {
         SystemEvent::ResponseReceived(ResponseReceived {
             request_id: RequestId(uuid(5)),
             url: url(),
+            method: Method::Post,
             status: Status(404),
             media_type: MediaType("text/html".to_string()),
             body: BODY.to_vec(),
@@ -975,15 +1012,18 @@ fn covered() -> Vec<SystemEvent> {
             session_id: SessionId(uuid(2)),
             element_id: ElementId(uuid(8)),
             value: TYPED.to_string(),
+            handle: Some("l4".to_string()),
         }),
         SystemEvent::PickRequested(PickRequested {
             session_id: SessionId(uuid(2)),
             element_id: ElementId(uuid(8)),
             option_id: Some(OptionId(uuid(10))),
+            handle: Some("l4".to_string()),
         }),
         SystemEvent::PressRequested(PressRequested {
             session_id: SessionId(uuid(2)),
             element_id: ElementId(uuid(8)),
+            handle: Some("l4".to_string()),
         }),
         SystemEvent::FormAdded(FormAdded {
             form_id: FormId(uuid(9)),
@@ -1022,6 +1062,17 @@ fn covered() -> Vec<SystemEvent> {
             submission_id: SubmissionId(uuid(11)),
             reason: SubmissionEndReason::InvalidControls,
         }),
+        SystemEvent::TraversalRequested(TraversalRequested {
+            session_id: SessionId(uuid(2)),
+            tab_id: TabId(uuid(3)),
+            step: Standing::Back,
+        }),
+        SystemEvent::TraversalStarted(TraversalStarted {
+            tab_id: TabId(uuid(3)),
+            url: url(),
+            entry_id: RequestId(uuid(5)),
+            entry_next: None,
+        }),
     ]
 }
 
@@ -1052,14 +1103,17 @@ fn expected_value(event: &str, field: &str) -> Option<String> {
         ("surf.document.DocumentParsed", "stopped_by") => text("Depth"),
         ("surf.agent.ActionRecorded", "sequence") => text("7"),
         ("surf.agent.ActionRecorded", "command") => text("follow"),
-        ("surf.agent.ActionRecorded", "handle") => text("l4"),
-        ("surf.agent.ActionRecorded", "label") => text(LABEL),
+        (_, "handle") => text("l4"),
+        (_, "label") => text(LABEL),
         ("surf.agent.ActionRecorded", "url") => None,
         (_, "url") => text(ADDRESS),
         ("surf.agent.SessionNavigationChanged", "state") => text("Committed"),
         ("surf.agent.SessionNavigationChanged", "sessions") => text("1"),
         ("surf.navigation.NavigationFailed", "reason") => text("TooManyRedirects"),
         ("surf.net.FetchFailed", "reason") => text("Unreachable"),
+        ("surf.agent.TraversalRequested", "step") => text("back"),
+        ("surf.navigation.TraversalStarted", "entry_id") => id(5),
+        ("surf.navigation.TraversalStarted", "entry_next") => None,
         (_, "status") => text("404"),
         (_, "media_type") => text("text/html"),
         (_, "method") => text("Post"),
@@ -1093,10 +1147,10 @@ fn case_17_every_event_maps_with_all_its_fields() {
     );
     assert_eq!(
         names.len(),
-        30,
-        "the events of spec/ after story:agent-forms-spec"
+        32,
+        "the events of spec/ after story:agent-history-spec"
     );
-    assert_eq!(spec.len(), 31, "and surf.agent.EventsLeftOut");
+    assert_eq!(spec.len(), 33, "and surf.agent.EventsLeftOut");
     let line = surf_session::entries::left_out_line(3);
     assert!(line.starts_with(&format!("event {left_out} ")), "{line}");
     let mapped = fields(&line).expect("a mapped event");
@@ -1332,5 +1386,301 @@ fn document_events_map_with_their_fields() {
             ("unsupported_encoding", None),
             ("stopped_by", None),
         ])
+    );
+}
+
+/// A label of 10,000 bytes from a page: a line feed, a `"` and a bidirectional control among
+/// its first 100 bytes, and a two-byte character across byte 1,024, so the cut falls at 1,023.
+fn long_label() -> String {
+    let mut label = String::from("Sign\n\"in\"\u{202e}");
+    while label.len() < 1023 {
+        label.push('a');
+    }
+    label.push('\u{e9}');
+    while label.len() < 10_000 {
+        label.push('b');
+    }
+    assert_eq!(label.len(), 10_000);
+    label
+}
+
+/// The `label` field of the event line of `event` and the field after it, read back.
+fn label_and_next(event: &SystemEvent) -> (Option<String>, Option<(String, Option<String>)>) {
+    let read = read_back(event);
+    let at = read
+        .iter()
+        .position(|(name, _)| name == "label")
+        .unwrap_or_else(|| panic!("no label: {read:?}"));
+    (read[at].1.clone(), read.get(at + 1).cloned())
+}
+
+/// The event line of `event`, whose label is [`long_label`]: `label` quotes its first 1,023
+/// bytes, the last character boundary at or below 1,024, and `label_bytes="10000"` follows it;
+/// no line feed or bidirectional control is written as itself.
+fn assert_cut(event: &SystemEvent, label: &str) {
+    let (written, next) = label_and_next(event);
+    let written = written.expect("a label");
+    assert_eq!(written.len(), 1023, "the label's length after the cut");
+    assert!(
+        written == label[..1023],
+        "the label is the first 1,023 bytes"
+    );
+    assert_eq!(
+        next,
+        Some(("label_bytes".to_string(), Some("10000".to_string())))
+    );
+    let line = surf_session::entries::event_line(event);
+    assert!(
+        !line.contains('\n') && !line.contains('\u{202e}'),
+        "a raw line feed or bidirectional control"
+    );
+}
+
+/// Story values-and-labels-before-fill, acceptance 3: the label of `ActionRecorded` is cut at
+/// `TITLE_ENTRY_BYTES` with `label_bytes` after it, as a title is.
+#[test]
+fn a_recorded_label_is_cut_at_the_entry_bound() {
+    let max = surf_session::entries::TITLE_ENTRY_BYTES;
+    assert_eq!(max, 1024);
+    let recorded = |label: &str| {
+        SystemEvent::ActionRecorded(ActionRecorded {
+            action_id: ActionId(uuid(1)),
+            session_id: SessionId(uuid(2)),
+            sequence: 7,
+            command: ActionCommand::Follow,
+            url: None,
+            handle: Some("l4".to_string()),
+            label: Some(label.to_string()),
+        })
+    };
+    let label = long_label();
+    assert_cut(&recorded(&label), &label);
+
+    let whole = "c".repeat(max);
+    let (written, next) = label_and_next(&recorded(&whole));
+    assert_eq!(written.as_deref(), Some(whole.as_str()));
+    assert_eq!(next, None);
+    assert!(
+        !surf_session::entries::event_line(&recorded(&whole)).contains("label_bytes"),
+        "a whole label has no label_bytes"
+    );
+
+    // The label a `Follow` carries in its `NavigationRequested`, cut the same way.
+    let requested = SystemEvent::NavigationRequested(NavigationRequested {
+        session_id: SessionId(uuid(2)),
+        tab_id: TabId(uuid(3)),
+        url: Url(ADDRESS.to_string()),
+        handle: Some("l4".to_string()),
+        label: Some(label.clone()),
+    });
+    assert_cut(&requested, &label);
+}
+
+/// The field `name` of the event line of `event` and the field after it, read back.
+fn field_and_next(
+    event: &SystemEvent,
+    name: &str,
+) -> (Option<String>, Option<(String, Option<String>)>) {
+    let read = read_back(event);
+    let at = read
+        .iter()
+        .position(|(field, _)| field == name)
+        .unwrap_or_else(|| panic!("no {name}: {read:?}"));
+    (read[at].1.clone(), read.get(at + 1).cloned())
+}
+
+/// The adversary's finding on story values-and-labels-before-fill: a client supplies the handle
+/// of a `follow`, `fill`, `pick` or `press`, up to the 64 KiB of a request, and the entry carries
+/// it. A handle of 10,000 bytes ([`long_label`]) is cut as a label is: `handle` quotes its first
+/// 1,023 bytes and `handle_bytes="10000"` follows it, so the line is at most the line of a
+/// two-byte handle, one quoted cut field (4 × 1,024 + 2 bytes) and its `handle_bytes`. A handle of
+/// 1,024 bytes is whole and has no `handle_bytes`.
+fn assert_handle_cut(event_with: impl Fn(&str) -> SystemEvent) {
+    let max = surf_session::entries::TITLE_ENTRY_BYTES;
+    let handle = long_label();
+    let long = event_with(&handle);
+    let (written, next) = field_and_next(&long, "handle");
+    let written = written.expect("a handle");
+    assert_eq!(written.len(), 1023, "the handle's length after the cut");
+    assert!(
+        written == handle[..1023],
+        "the handle is the first 1,023 bytes"
+    );
+    assert_eq!(
+        next,
+        Some(("handle_bytes".to_string(), Some("10000".to_string())))
+    );
+    let line = surf_session::entries::event_line(&long);
+    let short = surf_session::entries::event_line(&event_with("l4"));
+    let bound = short.len() + 4 * max + 2 + r#" handle_bytes="10000""#.len();
+    assert!(
+        line.len() <= bound,
+        "an entry of {} bytes over its bound of {bound}",
+        line.len()
+    );
+    assert!(
+        !line.contains('\n') && !line.contains('\u{202e}'),
+        "a raw line feed or bidirectional control"
+    );
+
+    let whole = "c".repeat(max);
+    let (written, _) = field_and_next(&event_with(&whole), "handle");
+    assert_eq!(written.as_deref(), Some(whole.as_str()));
+    assert!(
+        !surf_session::entries::event_line(&event_with(&whole)).contains("handle_bytes"),
+        "a whole handle has no handle_bytes"
+    );
+}
+
+#[test]
+fn a_recorded_handle_is_cut_at_the_entry_bound() {
+    assert_handle_cut(|handle| {
+        SystemEvent::ActionRecorded(ActionRecorded {
+            action_id: ActionId(uuid(1)),
+            session_id: SessionId(uuid(2)),
+            sequence: 7,
+            command: ActionCommand::Follow,
+            url: None,
+            handle: Some(handle.to_string()),
+            label: Some(LABEL.to_string()),
+        })
+    });
+}
+
+#[test]
+fn a_requested_navigations_handle_is_cut_at_the_entry_bound() {
+    assert_handle_cut(|handle| {
+        SystemEvent::NavigationRequested(NavigationRequested {
+            session_id: SessionId(uuid(2)),
+            tab_id: TabId(uuid(3)),
+            url: Url(ADDRESS.to_string()),
+            handle: Some(handle.to_string()),
+            label: Some(LABEL.to_string()),
+        })
+    });
+}
+
+#[test]
+fn a_requested_fills_handle_is_cut_at_the_entry_bound() {
+    assert_handle_cut(|handle| {
+        SystemEvent::FillRequested(FillRequested {
+            session_id: SessionId(uuid(2)),
+            element_id: ElementId(uuid(8)),
+            value: TYPED.to_string(),
+            handle: Some(handle.to_string()),
+        })
+    });
+}
+
+#[test]
+fn a_requested_picks_handle_is_cut_at_the_entry_bound() {
+    assert_handle_cut(|handle| {
+        SystemEvent::PickRequested(PickRequested {
+            session_id: SessionId(uuid(2)),
+            element_id: ElementId(uuid(8)),
+            option_id: Some(OptionId(uuid(10))),
+            handle: Some(handle.to_string()),
+        })
+    });
+}
+
+#[test]
+fn a_requested_press_handle_is_cut_at_the_entry_bound() {
+    assert_handle_cut(|handle| {
+        SystemEvent::PressRequested(PressRequested {
+            session_id: SessionId(uuid(2)),
+            element_id: ElementId(uuid(8)),
+            handle: Some(handle.to_string()),
+        })
+    });
+}
+
+// --- The order of a follow and a press (D19) ----------------------------------------------------
+
+/// A page with a link and a form that posts; the server answers it at every path.
+const LINK_AND_FORM: &str = "<!doctype html><title>Both</title><a href=\"/next\">Next</a>\
+<form action=\"/sent\" method=post><input name=a value=1><button>Send</button></form>";
+
+/// `command handle` on a session at [`LINK_AND_FORM`], answered status 0: in the kept log, its
+/// action entry follows the answer entry of `go` directly, every event entry of its run, the
+/// navigation's included, has a number above the action entry's and below the answer entry's,
+/// and the answer entry is the last (D19, `docs/view-stream.md`, "The entries").
+fn events_between_action_and_answer(command: &str, handle: &str, first: &[&str]) {
+    let dir = TestDir::new();
+    let pages = PageServer::with_body(LINK_AND_FORM.as_bytes().to_vec());
+    let daemon = surfd_in_process(&dir, |_| {});
+    let session = wire_open(&dir, None);
+    go(&dir, &session, &pages.url("/"));
+    let answer = wire_as(&dir, &session, command, &[("handle", handle)]);
+    assert_eq!(answer.status, 0, "{command} {handle}: {answer:?}");
+    let entries = kept(&daemon, &session);
+    let at = entries
+        .iter()
+        .position(|entry| {
+            entry.kind == EntryKind::Action
+                && entry.text.starts_with(&format!("action 3 {command}"))
+        })
+        .unwrap_or_else(|| panic!("no action entry of {command}: {entries:#?}"));
+    assert_eq!(entries[at - 1].kind, EntryKind::Answer, "{entries:#?}");
+    let end = entries.len() - 1;
+    assert_eq!(entries[end].kind, EntryKind::Answer, "{entries:#?}");
+    let (action, reply) = (entries[at].number, entries[end].number);
+    let between = &entries[at + 1..end];
+    for entry in between {
+        assert_eq!(entry.kind, EntryKind::Event, "{entries:#?}");
+        assert!(
+            action < entry.number && entry.number < reply,
+            "{} not between {action} and {reply}",
+            entry.number
+        );
+    }
+    let names = names(between);
+    for name in first.iter().chain(&[
+        "surf.agent.ActionRecorded",
+        "surf.net.RequestStarted",
+        "surf.navigation.NavigationCommitted",
+    ]) {
+        assert!(
+            names.iter().any(|got| got == name),
+            "no {name} in {names:#?}"
+        );
+    }
+}
+
+#[test]
+fn the_events_of_a_follow_lie_between_its_action_and_its_answer() {
+    events_between_action_and_answer("follow", "l1", &["surf.agent.NavigationRequested"]);
+}
+
+#[test]
+fn the_events_of_a_press_lie_between_its_action_and_its_answer() {
+    events_between_action_and_answer(
+        "press",
+        "b1",
+        &[
+            "surf.agent.PressRequested",
+            "surf.document.SubmissionStarted",
+        ],
+    );
+}
+
+/// The `entry_next` of `surf.navigation.TraversalStarted` when the entry has one after it (a
+/// step back): the entry line carries that identity, read back as it was given; case 17 covers
+/// only the absent one.
+#[test]
+fn a_traversal_with_an_entry_after_it_maps_entry_next() {
+    let event = SystemEvent::TraversalStarted(TraversalStarted {
+        tab_id: TabId(uuid(3)),
+        url: Url(ADDRESS.to_string()),
+        entry_id: RequestId(uuid(5)),
+        entry_next: Some(RequestId(uuid(9))),
+    });
+    let read = read_back(&event);
+    assert_eq!(
+        read.iter()
+            .find(|(name, _)| name == "entry_next")
+            .map(|(_, value)| value.clone()),
+        Some(Some(uuid(9).0)),
+        "{read:?}"
     );
 }

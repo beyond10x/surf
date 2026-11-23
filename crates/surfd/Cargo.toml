@@ -14,6 +14,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "surfd"
 path = "src/main.rs"
+test = false
 
 [dependencies]
 surf-agent = { path = "../agent" }

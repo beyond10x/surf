@@ -506,7 +506,9 @@ impl Data {
                 &Object::new()
                     .number("sequence", *sequence)
                     .text("command", command)
+                    .raw("handle", "null")
                     .maybe_text("argument", argument.as_deref())
+                    .raw("argument_cut", "false")
                     .end(),
             );
         }
@@ -517,7 +519,12 @@ impl Data {
             .raw("actions", &actions)
             .end();
         record.page = Some(page.clone());
-        let rest = Self::members(Object::new().raw("page", &page.json()).raw("path", &path));
+        let rest = Self::members(
+            Object::new()
+                .raw("page", &page.json())
+                .raw("path", &path)
+                .raw("now", "null"),
+        );
         self.keep(session, at, "answer", &rest);
     }
 
@@ -538,6 +545,8 @@ impl Data {
                 ("sequence", Some(&sequence)),
                 ("command", Some(command)),
                 ("url", url),
+                ("handle", None),
+                ("label", None),
             ],
         );
     }
@@ -585,11 +594,17 @@ impl Data {
         let url = page.address;
         let body = format!("{} bytes", page.bytes);
         self.action(session, at, "go", Some(url));
-        self.event(
+        self.event_or_null(
             session,
             at,
             "surf.agent.NavigationRequested",
-            &[("session_id", &id), ("tab_id", &tab_id), ("url", url)],
+            &[
+                ("session_id", Some(&id)),
+                ("tab_id", Some(&tab_id)),
+                ("url", Some(url)),
+                ("handle", None),
+                ("label", None),
+            ],
         );
         self.recorded(session, at, Some(url));
         self.event_or_null(

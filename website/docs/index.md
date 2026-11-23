@@ -54,7 +54,8 @@ call at a time, and shows a page as text when asked.
 ## Where to go next
 
 - [Try it](try-it.md): install surf and load a page.
-- [Drive surf from an agent](drive-from-an-agent.md): `surf-agent open`, `go`, `look` and `close`.
+- [Drive surf from an agent](drive-from-an-agent.md): `surf-agent open`, `go`, `look`,
+  `follow`, `fill`, `pick`, `press`, `back`, `forward`, `log` and `close`.
 - [Principles](principles.md): the rules surf is built by.
 - [What works today](what-works.md) and the [roadmap](roadmap.md).
 - [How it is built](how-it-is-built.md): the specification, the components and the gate.

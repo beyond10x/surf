@@ -32,6 +32,7 @@ arrange:
         disabled: false
         checked: false
         required: true
+        readonly: false
         name: user
         form_id: 5a7c1e00-0000-4000-8000-000000000066
       state: Added
@@ -53,6 +54,7 @@ timeline:
           session_id: {$instance: session}
           element_id: {$instance: user-name}
           value: ada
+          handle: f1
 
 assert:
   - view: surf.document.Controls

@@ -7,9 +7,117 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ## [Unreleased]
 
+### Added
+
+- `surf-agent follow <handle>` follows a link of the current page. An answer without `--as`
+  lists the page's links in a `now` block, one line each, such as `l1 link ? "Opening hours" ->
+  "/about/hours.html"`: the handle, `hid` when the `hidden` attribute hides the link and `?`
+  otherwise (visibility is not computed, as `note visibility: hidden attribute only` says), the
+  label cut at 60 characters, and the target resolved against the page's base URL, as a path on
+  the page's own origin, or as written with `unresolved`. `follow` of a handle the page has not,
+  of a hidden link or of an unresolved target exits 1 with `did refused unknown-handle`,
+  `hidden` or `unresolved`. A followed link's `path` line is `3 follow l1 "Opening hours"`.
+  Before any navigation, and so with the page left as it was, `follow` also exits 1 with `did
+  refused address-too-long` for a target over 65,536 bytes, `unsupported-scheme` for a scheme
+  other than `http:` (`javascript:`, `mailto:`, `data:`, `file:`, `https:`), and, from a page
+  on a public address, `forbidden-destination` for a target on a loopback, private, link-local,
+  unique-local, shared or unspecified IP address or `localhost`. A target is never shown with
+  its `user:password@`, and a path on the page's own origin that starts with `//` is shown as
+  the whole address. Format: [`docs/agent-answer.md`](docs/agent-answer.md).
+- `surf-agent fill <handle> <value>` types into a text field, a password field or a textarea,
+  and `fill <handle> -` reads the value from standard input, for a secret: other users can read
+  a command's words. `surf-agent pick <handle> <option>` selects an option of a select by its
+  label, then its value, and `pick <handle> on|off` checks or unchecks a box, `on` a radio button
+  (the others of its group are unchecked). The `now` block lists the form fields beside the
+  links, such as `f1 text ? "User name" = "ada" required`: the value quoted, `(set)` or
+  `(empty)` for a password, whose value is never printed, the selected option's label for a
+  select, and the flags `disabled`, `checked`, `required` and `readonly`. The answer is `did fill
+  "f1"` and the path line `4 fill f1`, never the value. `fill` and `pick` exit 1 with `did
+  refused` and `unknown-handle`, `wrong-kind`, `disabled`, `hidden`, `readonly` or
+  `unknown-option`; `follow` of a form field is `wrong-kind`.
+- `surf-agent press <handle>` submits the form of a submit button with `GET` or `POST`, and the
+  answer shows the page the server answered with: `did press "b1"`, the path line `5 press b1`.
+  The line of a button with a form says what it submits, such as `b1 button ? "Sign in" submits
+  F1 post "/session"`: the form's handle, the method and the action, shown as a link's target
+  is; the button's `formmethod` and `formaction` count. Before anything is sent `press` exits 1
+  with `did refused no-default-action` for a button that is not a submit button,
+  `password-in-query` for a `GET` form whose password field holds a value, and
+  `address-too-long`, `unsupported-scheme` or `forbidden-destination` for the address the form
+  would be submitted to; a submission that ends without a request exits 1 with
+  `no-form-owner`, `invalid-controls`, `invalid-action`, `unsupported-enctype` or
+  `dialog-method`.
+- `fill` of a text or password field drops the line feeds and carriage returns of the value, as
+  a browser sanitizes a single-line field; a textarea keeps them. `pick` of a radio button with
+  no form unchecks the other radio buttons of the page with its name and no form. `surf-agent`
+  takes `--` as the end of options (`fill f1 -- -5`, `pick f2 -- "-- choose --"`; `fill f1 --
+  -` fills one dash), and a value from standard input too long for its request is refused with
+  its size on the wire; a value of up to 16,000 bytes always fits.
+- The `surf` library takes a submit button's `formaction` and `formmethod`: an empty
+  `formaction` submits to the page's own address, and a `formmethod` of an unknown value is
+  `GET`.
+- Of two radio buttons of one group that a page marks `checked`, only the last is checked, as
+  the HTML Standard parses it, in the `now` block and in a submission.
+- The `page` line of an agent answer ends with the page's title, and the live view's session
+  list shows it. A title longer than 1,024 characters is left out.
+- The `surf` library reads a page's forms: each form, each control's `name` and form, and the
+  options of each select with the one selected, as rows of the session log and the live view
+  (`FormAdded`, `OptionAdded`). It builds a form's submission the way the HTML Standard does
+  for `application/x-www-form-urlencoded`: a `GET` replaces the query of the form's action, a
+  `POST` sends the body. A submission that cannot be sent ends with its reason, such as a
+  required field or a required select left empty, a `multipart/form-data` form, or an address
+  over 65,536 bytes (`AddressTooLong`), which is not requested. `surf-agent press` uses it.
+- `surf-agent back` and `surf-agent forward` move through the pages of the session, one step,
+  and load the page again with `GET`; the answer is `did back` or `did forward` with that page,
+  and the path line `6 back`. Before any request they exit 1 with `did refused at-start` on the
+  first page, `at-end` on the last, and `post-entry` for a page that is the answer to a form
+  `POST`, which surf does not send again. A `go`, `follow` or `press` after `back` that loads a
+  page drops the pages after the current one.
+- Every answer that shows the session's state has a `changed` block after `path`: what the
+  last action changed. On the same page, `changed <n>` and one line per control whose state
+  changed, such as `~ f1 value "" -> "ada"`, `~ f2 value (empty) -> (set)`, `~ f3 checked false
+  -> true` or `~ f5 selected "Red" -> "Green"` (a select lists all its selected options);
+  `changed 0` when nothing changed. After a load, `changed page "<old>" -> "<new>"` (`none`
+  before the first page) and up to 10 `+ text` lines with the texts of the new page that the
+  old one did not hold, each cut at 120 characters, then `+ text more <n>`.
+- `surf-agent log [<n>]` lists every action of the session, or the last `<n>`, in the `path`
+  block, without taking an action. Format: [`docs/agent-answer.md`](docs/agent-answer.md).
+- A page that counts as public cannot send the session to a loopback or private address:
+  `follow` and `press` from such a page, and `back` and `forward` to a page that such a page or
+  a redirect after a public address chose, exit 1 with `did refused forbidden-destination` when
+  the address is or resolves to one, before any connection to it. To load a local address, type
+  it with `go`.
+- The live view has a panel "Now": the links of the answer at the playhead, grouped by kind,
+  each with its handle, label, target and visibility word, a hidden one marked, and the
+  visibility note. A `follow` shows its handle on the timeline. A bidirectional control in a
+  label, a target, a title or an address shows as a mark that names it (`U+202E`), so a page
+  cannot reorder what a person reads in the view. The view's `answer` entry
+  gains the member `now`, and each action of its `path` the members `handle` and
+  `argument_cut`. Format: [`docs/view-stream.md`](docs/view-stream.md).
+
 ### Changed
 
 - The specification, and the code generated from it, is checked with ESS 0.97.4 instead of 0.97.3.
+- The session log keeps the first 256 rows a page adds, forms, links, controls and options
+  together, and counts the rest in one `EventsLeftOut` line, as it did for links and controls.
+- `surf <url>` no longer prints a password: the last field of the `element` line of a
+  `password` control is `(set)` when it holds a value and `(empty)` when it does not, unquoted.
+  Every other kind is printed as before. Output: [`docs/surf-command.md`](docs/surf-command.md).
+- The label of a link, button or field leaves out the value of a password input inside it: a
+  `<button>Code <input type=password value=…></button>` is named `Code`.
+- The session log of `surf-agent` cuts the `label` of a recorded action to its first 1,024 bytes
+  and adds `label_bytes`, the whole label's length, when it cut it, as it already did for a
+  page's title. It cuts the `handle` of an action's events, which the client supplies, the
+  same way, with `handle_bytes`.
+- The event `surf.agent.NavigationRequested` in the session log and the live view has two more
+  fields, `handle` and `label`, both empty after a `go`. They hold the handle and the label of
+  the link a `follow` takes (the label cut as above), and `FillRequested`, `PickRequested` and
+  `PressRequested` the `handle` of the control.
+- The event `surf.net.ResponseReceived` in the session log and the live view has the field
+  `method` after `url`: the method of the request the response answers.
+- The live view's page writes `live` only when its stream of events is open and the load that
+  the stream's opening started is drawn. Until then it reads `connecting` over the first load,
+  and after a lost stream `reconnecting` until the next opening's load is drawn; a keep-alive or
+  an event before that draw writes no word, and neither does a load whose stream has closed.
 
 ## [0.4.0] - 2026-11-22
 

@@ -35,3 +35,16 @@ scenarios:
   - scenarios/document-refuses-hidden-control.yaml
   - scenarios/agent-press-submits-post.yaml
   - scenarios/agent-press-submission-ends-without-body.yaml
+  - scenarios/navigation-push-after-back-drops-forward.yaml
+  - scenarios/navigation-traverse-refused-at-start.yaml
+  - scenarios/navigation-traverse-refused-at-end.yaml
+  - scenarios/navigation-traverse-refused-for-post-entry.yaml
+  - scenarios/navigation-traverse-commits-without-entry.yaml
+  - scenarios/navigation-traverse-failed-keeps-current.yaml
+  - scenarios/agent-go-back-traverses.yaml
+  - scenarios/agent-go-forward-traverses.yaml
+  - scenarios/adversary-history-post-redirected-to-get.yaml
+  - scenarios/adversary-history-back-back-keeps-later.yaml
+  - scenarios/adversary-history-forward-then-push-drops-and-keeps-earlier.yaml
+  - scenarios/adversary-history-two-tabs.yaml
+  - scenarios/adversary-history-push-during-traversal.yaml

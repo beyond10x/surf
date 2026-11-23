@@ -20,11 +20,12 @@ list under "After the plan" have no date.
 | 7 (delivered) | Watch every session live in a local web page: where it is and what it did, action by action. Redirects are followed. |
 | 8 (delivered) | Select an action or an event in the live view and read its fields, beside the session's requests. |
 | 11 (delivered, round 1) | Read a real page's links, buttons and form fields, from an HTML parser held to the html5lib tests. |
-| 18 | Follow links, fill and submit forms, go back and forward. Each answer says what changed. |
+| 18 (delivered, round 2) | Follow links, fill and submit forms, go back and forward. Each answer says what changed. |
 | 22 | Record an agent's session, turn it into a test, and replay it against the recorded network. |
 
-The next planned steps are following links, filling and submitting forms, and going back and
-forward (round 2). TLS and `https:` are on the list below. None of them has a date.
+Round 2 delivered following links, filling and submitting forms, going back and forward, the
+`changed` block and `log`; no release carries them yet. TLS and `https:` are on the list below.
+None of the next steps has a date.
 
 The agent commands exist today: see [Drive surf from an agent](drive-from-an-agent.md). An
 agent's answer looks like this today:
@@ -32,14 +33,21 @@ agent's answer looks like this today:
 ```text
 surf 1 session cef9d223-7fdb-4151-85af-6c6d71d4fece open
 did go "http://example.org/"
-page 200 "text/html" "http://example.org/"
+page 200 "text/html" "http://example.org/" "Example Domain"
 path 2 of 2
   1 open
   2 go "http://example.org/"
+changed page none -> "http://example.org/"
+  + text "# Example Domain"
+  + text "This domain is for use in documentation examples without needing permission. Avoid use in operations."
+  + text "[Learn more](<https://iana.org/domains/example>) [@l1]"
+now 1 of 1
+  l1 link ? "Learn more" -> "https://iana.org/domains/example"
+note visibility: hidden attribute only
 ```
 
 Since release `0.4.0`, `--as tree` or `--as markdown` adds the page as text, with the handles
-of its links, buttons and fields. The `page` line does not show the page's title yet.
+of its links, buttons and fields. Since round 2 the `page` line shows the page's title.
 
 ## After the plan
 

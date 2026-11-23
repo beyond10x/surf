@@ -89,8 +89,12 @@ types:
 # to a public address, a request that follows a redirect and whose host resolves to any local
 # address ends the request with ForbiddenDestination, before any connection to it. A chain whose
 # first request connected to a local address follows its redirects as before, and the first
-# request itself is never refused by this rule: going to a local address on purpose is a use of
-# surf.
+# request itself is not refused by this rule when the address was given (a `go`): going to a
+# local address on purpose is a use of surf.
+# UNMAPPED: the first request of a `follow` or a `press` from a page at a public address goes to
+# public addresses only, as a redirect does (`surf-fetch` `Origin::PublicPage`,
+# `story:agent-press-submit`, decision 1 after the adversary's pass). The asker's origin is not
+# an input of `Fetch` yet; the session tells its transport.
 # UNMAPPED: request headers, cookies, caching and TLS.
 entities:
   - name: surf.net.Request
@@ -197,6 +201,11 @@ commands:
       - name: url
         type: surf.url.Url
         example: "http://example.org/"
+      # The method of the request the response answered: the request's own, or `Get` after a
+      # redirect that changed it (a 301 or 302 after a `Post`, a 303), as the Fetch Standard's
+      # "HTTP-redirect fetch" changes the request's method before it fetches again.
+      - name: method
+        type: surf.net.Method
       - name: status
         type: surf.net.Status
         example: 200
@@ -222,6 +231,7 @@ commands:
           surf.net.ResponseReceived:
             request_id: input.request_id
             url: input.url
+            method: input.method
             status: input.status
             media_type: input.media_type
             body: input.body
@@ -296,6 +306,8 @@ events:
         type: surf.net.RequestId
       - name: url
         type: surf.url.Url
+      - name: method
+        type: surf.net.Method
       - name: status
         type: surf.net.Status
       - name: media_type

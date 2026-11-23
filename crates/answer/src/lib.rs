@@ -51,6 +51,11 @@ pub struct Answer {
     pub page: Option<Page>,
     /// `path <shown> of <total>` and one indented line per action shown.
     pub path: Option<Path>,
+    /// `changed <n>` and one indented line per control that changed, or `changed page "<old>" ->
+    /// "<new>"` and one indented line per new text: what the last action changed.
+    pub changed: Option<Changed>,
+    /// `now <shown> of <total>` and one indented line per actionable element shown.
+    pub now: Option<Now>,
     /// `note` lines, in order.
     pub notes: Vec<Note>,
     /// The `text` block: a page's text, every line behind `>`, then the `more` line when lines
@@ -67,6 +72,8 @@ impl Answer {
             did: None,
             page: None,
             path: None,
+            changed: None,
+            now: None,
             notes: Vec::new(),
             text: None,
         }
@@ -144,16 +151,84 @@ pub enum RefusalReason {
     SessionDied,
     /// `session-timeout`: the session process did not answer in time.
     SessionTimeout,
+    /// `unknown-handle`: the current document has no element of that handle, or there is no
+    /// current document.
+    UnknownHandle,
+    /// `hidden`: the element or an ancestor has the `hidden` attribute.
+    Hidden,
+    /// `unresolved`: the link's target does not resolve against the document base URL.
+    Unresolved,
+    /// `address-too-long`: the link's resolved target is longer than the bound of an address
+    /// `surf-fetch` follows, 65,536 bytes.
+    AddressTooLong,
+    /// `unsupported-scheme`: the link's resolved target has a scheme surf does not fetch.
+    UnsupportedScheme,
+    /// `forbidden-destination`: the page came from a public address and the link's target is
+    /// a local one; for `back` and `forward`, the entry was reached so from a public page and
+    /// its name now resolves to a local address.
+    ForbiddenDestination,
+    /// `disabled`: the control, or the option picked, is disabled.
+    Disabled,
+    /// `wrong-kind`: the control is not of a kind the command acts on.
+    WrongKind,
+    /// `unknown-option`: the select has no option of that label or value, or the word is not
+    /// one a checkbox or a radio button takes.
+    UnknownOption,
+    /// `readonly`: the control is read-only and takes no value.
+    Readonly,
+    /// `no-default-action`: the button is a plain or a reset button, which only a script acts
+    /// on.
+    NoDefaultAction,
+    /// `password-in-query`: a `GET` submission would put a filled password into the address.
+    PasswordInQuery,
+    /// `no-form-owner`: the submit button has no form owner (`NoFormOwner`).
+    NoFormOwner,
+    /// `invalid-controls`: a control of the form failed constraint validation
+    /// (`InvalidControls`).
+    InvalidControls,
+    /// `invalid-action`: the form's action did not parse as a URL (`InvalidAction`).
+    InvalidAction,
+    /// `unsupported-enctype`: the form asks for an encoding surf does not build
+    /// (`UnsupportedEnctype`).
+    UnsupportedEnctype,
+    /// `dialog-method`: the form's method is `dialog` (`DialogMethod`).
+    DialogMethod,
+    /// `at-start`: the session's history has no entry before the current one (`back`).
+    AtStart,
+    /// `at-end`: the session's history has no entry after the current one (`forward`).
+    AtEnd,
+    /// `post-entry`: the entry `back` or `forward` would go to was made by a `POST`.
+    PostEntry,
 }
 
 impl RefusalReason {
-    const ALL: [RefusalReason; 6] = [
+    const ALL: [RefusalReason; 26] = [
         RefusalReason::Token,
         RefusalReason::Closed,
         RefusalReason::Usage,
         RefusalReason::NoSuchSession,
         RefusalReason::SessionDied,
         RefusalReason::SessionTimeout,
+        RefusalReason::UnknownHandle,
+        RefusalReason::Hidden,
+        RefusalReason::Unresolved,
+        RefusalReason::AddressTooLong,
+        RefusalReason::UnsupportedScheme,
+        RefusalReason::ForbiddenDestination,
+        RefusalReason::Disabled,
+        RefusalReason::WrongKind,
+        RefusalReason::UnknownOption,
+        RefusalReason::Readonly,
+        RefusalReason::NoDefaultAction,
+        RefusalReason::PasswordInQuery,
+        RefusalReason::NoFormOwner,
+        RefusalReason::InvalidControls,
+        RefusalReason::InvalidAction,
+        RefusalReason::UnsupportedEnctype,
+        RefusalReason::DialogMethod,
+        RefusalReason::AtStart,
+        RefusalReason::AtEnd,
+        RefusalReason::PostEntry,
     ];
 
     /// The word of the format.
@@ -165,6 +240,26 @@ impl RefusalReason {
             RefusalReason::NoSuchSession => "no-such-session",
             RefusalReason::SessionDied => "session-died",
             RefusalReason::SessionTimeout => "session-timeout",
+            RefusalReason::UnknownHandle => "unknown-handle",
+            RefusalReason::Hidden => "hidden",
+            RefusalReason::Unresolved => "unresolved",
+            RefusalReason::AddressTooLong => "address-too-long",
+            RefusalReason::UnsupportedScheme => "unsupported-scheme",
+            RefusalReason::ForbiddenDestination => "forbidden-destination",
+            RefusalReason::Disabled => "disabled",
+            RefusalReason::WrongKind => "wrong-kind",
+            RefusalReason::UnknownOption => "unknown-option",
+            RefusalReason::Readonly => "readonly",
+            RefusalReason::NoDefaultAction => "no-default-action",
+            RefusalReason::PasswordInQuery => "password-in-query",
+            RefusalReason::NoFormOwner => "no-form-owner",
+            RefusalReason::InvalidControls => "invalid-controls",
+            RefusalReason::InvalidAction => "invalid-action",
+            RefusalReason::UnsupportedEnctype => "unsupported-enctype",
+            RefusalReason::DialogMethod => "dialog-method",
+            RefusalReason::AtStart => "at-start",
+            RefusalReason::AtEnd => "at-end",
+            RefusalReason::PostEntry => "post-entry",
         }
     }
 }
@@ -203,15 +298,236 @@ pub struct Path {
     pub entries: Vec<PathEntry>,
 }
 
-/// One indented line of the `path` block: `  <n> <command>` or `  <n> <command> "<argument>"`.
+/// One indented line of the `path` block: `  <n> <command>`, then the handle of the element an
+/// action took when it took one (`  3 follow l1`), then the argument quoted when it had one.
+///
+/// Without a handle the argument is an address, written whole. With a handle it is the
+/// element's label, cut at [`LABEL_CHARS_MAX`] characters as the `now` block cuts it
+/// (`  3 follow l1 "Sign in"`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PathEntry {
     /// The action's sequence number in the session.
     pub sequence: u64,
     /// The command word, `[a-z]+`.
     pub command: String,
-    /// The argument, quoted on the line; `None` for a command given none.
+    /// The handle of the element the action took, a word of `[a-z0-9]+`; `None` for an action
+    /// on no element.
+    pub handle: Option<String>,
+    /// The argument, quoted on the line; `None` for a command given none. With a handle, the
+    /// kept part of the label when it was cut.
     pub argument: Option<String>,
+    /// The label was cut at [`LABEL_CHARS_MAX`] characters: the field is followed by `...`. Only
+    /// with a handle.
+    pub argument_cut: bool,
+}
+
+/// The most characters of a label in the `now` block and on a `path` line (design section 5.2).
+pub const LABEL_CHARS_MAX: usize = 60;
+
+/// The `changed` block: what the last action changed, between the state of the session's
+/// previous answer and the state after the action (design section 5.3,
+/// `story:agent-change-and-log`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Changed {
+    /// `changed <n>` and one indented line per control of the same document whose state
+    /// changed, in document order; `changed 0` when nothing changed.
+    Controls(Vec<ControlChange>),
+    /// `changed page <old> -> <new>`: another page than the previous answer's, then one
+    /// `  + text "<text>"` line per text of the new document the old one did not hold, and
+    /// `  + text more <n>` for those not shown.
+    Page {
+        /// The address of the previous answer's `page` line; `None` for `page none`, written
+        /// `none`.
+        from: Option<String>,
+        /// The address of this answer's `page` line; `None` for `page none`.
+        to: Option<String>,
+        /// The texts shown, at most [`CHANGED_TEXTS_MAX`], each cut at
+        /// [`CHANGED_TEXT_CHARS_MAX`] characters.
+        texts: Vec<Cut>,
+        /// How many new texts are not shown; the `more` line is written when it is not 0, and
+        /// then [`CHANGED_TEXTS_MAX`] texts are shown.
+        more: u64,
+    },
+}
+
+/// One `~` line of the `changed` block: a control's handle and what changed of it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ControlChange {
+    /// The control's handle, a word of `[a-z0-9]+` (`f1`).
+    pub handle: String,
+    /// What changed.
+    pub change: Change,
+}
+
+/// What changed of a control: `<what> <before> -> <after>`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Change {
+    /// `value <before> -> <after>`: each a value as the `now` block writes it, quoted and cut at
+    /// [`VALUE_CHARS_MAX`] characters, or `(set)` and `(empty)` for a password.
+    Value {
+        /// The value before.
+        before: Value,
+        /// The value after.
+        after: Value,
+    },
+    /// `checked <before> -> <after>`, each `true` or `false`: a checkbox or a radio button.
+    Checked {
+        /// Checked before.
+        before: bool,
+        /// Checked after.
+        after: bool,
+    },
+    /// `selected "<before>" -> "<after>"`: the label of a select's selected option, quoted and
+    /// cut at [`VALUE_CHARS_MAX`] characters; empty when none is selected.
+    Selected {
+        /// The label before.
+        before: Cut,
+        /// The label after.
+        after: Cut,
+    },
+}
+
+/// The most `+ text` lines of a `changed page` block.
+pub const CHANGED_TEXTS_MAX: usize = 10;
+
+/// The most characters of the text of a `+ text` line.
+pub const CHANGED_TEXT_CHARS_MAX: usize = 120;
+
+/// The most characters of a link's target in the `now` block. A deliberate bound the design does
+/// not state: a target comes from the page, and an answer stays within its size.
+pub const TARGET_CHARS_MAX: usize = 1_024;
+
+/// The `now` block: the actionable elements of the current document, in document order, and
+/// how many it has.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Now {
+    /// How many elements the document has; at least `elements.len()`.
+    pub total: u64,
+    /// The elements shown, the first ones in document order, one indented line each.
+    pub elements: Vec<Element>,
+}
+
+/// One line of the `now` block: `  <handle> <kind> <visibility> "<label>" -> "<target>"`, with
+/// ` unresolved` after a target that did not resolve.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Element {
+    /// The handle, a word of `[a-z0-9]+` (`l1`).
+    pub handle: String,
+    /// The kind, a word of `[a-z]+` (`link`).
+    pub kind: String,
+    /// `vis`, `hid` or `?`.
+    pub visibility: Visibility,
+    /// The label, cut at [`LABEL_CHARS_MAX`] characters.
+    pub label: Cut,
+    /// The target, cut at [`TARGET_CHARS_MAX`] characters.
+    pub target: Target,
+}
+
+/// The visibility word of a `now` line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Visibility {
+    /// `vis`: the element is visible.
+    Visible,
+    /// `hid`: the element is hidden.
+    Hidden,
+    /// `?`: visibility is not computed.
+    Unknown,
+}
+
+impl Visibility {
+    const ALL: [Visibility; 3] = [Visibility::Visible, Visibility::Hidden, Visibility::Unknown];
+
+    /// The word of the format.
+    pub fn word(self) -> &'static str {
+        match self {
+            Visibility::Visible => "vis",
+            Visibility::Hidden => "hid",
+            Visibility::Unknown => "?",
+        }
+    }
+}
+
+/// What follows the label on a `now` line: a link's target, or a control's state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Target {
+    /// `-> "<target>"`: resolved against the document base URL, written as its path, query and
+    /// fragment when it has the page's origin and whole otherwise.
+    Resolved(Cut),
+    /// `-> "<target>" unresolved`: the value as the page wrote it, which does not resolve.
+    Unresolved(Cut),
+    /// The state of a control or a button (`story:agent-fill-pick`): `= <value>` when it has
+    /// one, then its flags.
+    State(State),
+}
+
+/// The most characters of a control's value on a `now` line, a password's never written, and
+/// of the label of a select's selected option. A deliberate bound the design does not state, as
+/// for [`TARGET_CHARS_MAX`].
+pub const VALUE_CHARS_MAX: usize = 1_024;
+
+/// What a submit button submits (`story:agent-press-submit`): `submits <form> <method>
+/// "<action>"`, or `submits <form> <method> unresolved` for an action that does not parse, with
+/// none of its text, which could hold a userinfo ("As decided after the adversary's pass",
+/// decision 2).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Submits {
+    /// The form's handle, `F` and a number from 1 (`F1`).
+    pub form: String,
+    /// The method the button submits with, a word of `[a-z]+`: `get`, `post` or `dialog`.
+    pub method: String,
+    /// The action, shown as a link's target is and cut at [`TARGET_CHARS_MAX`] characters;
+    /// `None` when it does not resolve against the document base URL: `unresolved`, and no text.
+    pub action: Option<Cut>,
+}
+
+/// A control's state on a `now` line: `[= <value>] [disabled] [checked] [required]
+/// [readonly] [submits ...]`, the flags in that order, each written when it holds, and a
+/// submit button's [`Submits`] last.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct State {
+    /// `= <value>`; `None` for a checkbox, a radio button, a button and a select with no
+    /// option selected.
+    pub value: Option<Value>,
+    /// `disabled`.
+    pub disabled: bool,
+    /// `checked`: a checked checkbox or radio button.
+    pub checked: bool,
+    /// `required`.
+    pub required: bool,
+    /// `readonly`: `fill` is refused.
+    pub readonly: bool,
+    /// What a submit button with a form owner submits; `None` for every other control.
+    pub submits: Option<Submits>,
+}
+
+/// The value of a control on a `now` line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Value {
+    /// `"<value>"`: the value of a text control, a textarea or a file control, or the label of a
+    /// select's selected option, cut at [`VALUE_CHARS_MAX`] characters.
+    Text(Cut),
+    /// `(set)`: a password control that holds a value, never written.
+    Set,
+    /// `(empty)`: a password control with no value.
+    Empty,
+}
+
+/// The flag words of a [`State`], in the order a line writes them.
+const STATE_FLAGS: [&str; 4] = ["disabled", "checked", "required", "readonly"];
+
+impl State {
+    fn flags(&self) -> [bool; 4] {
+        [self.disabled, self.checked, self.required, self.readonly]
+    }
+
+    fn set_flag(&mut self, index: usize) {
+        match index {
+            0 => self.disabled = true,
+            1 => self.checked = true,
+            2 => self.required = true,
+            _ => self.readonly = true,
+        }
+    }
 }
 
 /// A `note` line, from a fixed list.
@@ -220,9 +536,15 @@ pub enum Note {
     /// `note parser: <parts>`: the parts of the tree builder not implemented yet, at least one,
     /// each a word of `[a-z-]+`, joined by `,`.
     Parser(Vec<String>),
+    /// `note visibility: hidden attribute only`: the `now` block says `hid` for an element the
+    /// `hidden` attribute hides, and `?` for every other, as visibility is not computed.
+    Visibility,
     /// `note text: <what>`: what the `text` block cannot show.
     Text(TextNote),
 }
+
+/// The words of `note visibility:`.
+const VISIBILITY_NOTE: &str = "note visibility: hidden attribute only";
 
 /// What a `note text:` line says.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -461,6 +783,34 @@ pub struct Cut {
     pub cut: bool,
 }
 
+impl Cut {
+    /// `value` cut as [`quote_cut`] cuts it at `limit` characters: its first `limit` characters
+    /// and `cut` when it is longer, the whole value otherwise.
+    pub fn of(value: &str, limit: usize) -> Cut {
+        match value.char_indices().nth(limit) {
+            Some((end, _)) => Cut {
+                kept: value[..end].to_string(),
+                cut: true,
+            },
+            None => Cut {
+                kept: value.to_string(),
+                cut: false,
+            },
+        }
+    }
+
+    /// Whether [`unquote_cut`] with `limit` reads the field of this value back to it: a cut
+    /// value keeps exactly `limit` characters, an uncut one at most `limit`.
+    fn fits(&self, limit: usize) -> bool {
+        let length = self.kept.chars().count();
+        if self.cut {
+            length == limit
+        } else {
+            length <= limit
+        }
+    }
+}
+
 /// Why a quoted field was refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UnquoteError {
@@ -589,6 +939,18 @@ pub enum RenderError {
     TokenForm,
     /// The `path` block shows more actions than its total.
     PathLongerThanTotal,
+    /// The `now` block shows more elements than its total.
+    NowLongerThanTotal,
+    /// A `now` line whose kind and what follows its label disagree: a `link` without a target,
+    /// or another kind with one.
+    TargetOfKind,
+    /// A field with a length limit that its reading could not give back: a value marked cut
+    /// that does not keep exactly its limit, an uncut one over it, or a `path` argument marked
+    /// cut on a line without a handle or without an argument.
+    CutLength {
+        /// Which field, such as `now label`.
+        field: &'static str,
+    },
     /// A `note parser` line with no part, or a `note text: deep` line of 0 levels.
     EmptyNote,
     /// A body line of the `text` block holds a line feed or a character [`escaped_in_text`]
@@ -603,6 +965,9 @@ pub enum RenderError {
     /// The counts of the `text` block contradict its lines: more lines shown than the total,
     /// more bytes shown than the total, a first line of 0, or lines shown past the total.
     TextCounts,
+    /// A `changed page` block shows more than [`CHANGED_TEXTS_MAX`] texts, or counts texts not
+    /// shown while it shows fewer.
+    ChangedTexts,
 }
 
 impl fmt::Display for RenderError {
@@ -618,6 +983,15 @@ impl fmt::Display for RenderError {
             RenderError::PathLongerThanTotal => {
                 f.write_str("the path shows more actions than its total")
             }
+            RenderError::NowLongerThanTotal => {
+                f.write_str("the now block shows more elements than its total")
+            }
+            RenderError::TargetOfKind => {
+                f.write_str("a now line has a target and is not a link, or is a link without one")
+            }
+            RenderError::CutLength { field } => {
+                write!(f, "the {field} does not fit its length limit as marked")
+            }
             RenderError::EmptyNote => {
                 f.write_str("a note parser line has no part, or a note text deep line 0 levels")
             }
@@ -632,6 +1006,11 @@ impl fmt::Display for RenderError {
                 "the text block shows more than {TEXT_LINES_MAX} lines or {TEXT_BYTES_MAX} bytes"
             ),
             RenderError::TextCounts => f.write_str("the counts of the text block contradict it"),
+            RenderError::ChangedTexts => write!(
+                f,
+                "the changed block shows more than {CHANGED_TEXTS_MAX} texts, or counts more \
+                 while it shows fewer"
+            ),
         }
     }
 }
@@ -653,6 +1032,12 @@ pub fn render(answer: &Answer) -> Result<String, RenderError> {
     }
     if let Some(path) = &answer.path {
         render_path(path, &mut out)?;
+    }
+    if let Some(changed) = &answer.changed {
+        render_changed(changed, &mut out)?;
+    }
+    if let Some(now) = &answer.now {
+        render_now(now, &mut out)?;
     }
     for note in &answer.notes {
         render_note(note, &mut out)?;
@@ -734,8 +1119,191 @@ fn render_path(path: &Path, out: &mut String) -> Result<(), RenderError> {
     for entry in &path.entries {
         let command = checked(&entry.command, "path command", is_command_char)?;
         out.push_str(&format!("  {} {command}", entry.sequence));
-        push_argument(entry.argument.as_deref(), out);
+        match &entry.handle {
+            Some(handle) => {
+                out.push(' ');
+                out.push_str(checked(handle, "path handle", is_handle_char)?);
+                match &entry.argument {
+                    Some(argument) => {
+                        let label = Cut {
+                            kept: argument.clone(),
+                            cut: entry.argument_cut,
+                        };
+                        out.push(' ');
+                        push_cut(&label, LABEL_CHARS_MAX, "path label", out)?;
+                    }
+                    // A cut mark goes after a label: without one it cannot be written.
+                    None if entry.argument_cut => {
+                        return Err(RenderError::CutLength {
+                            field: "path label",
+                        });
+                    }
+                    None => {}
+                }
+            }
+            None => {
+                if entry.argument_cut {
+                    return Err(RenderError::CutLength {
+                        field: "path argument",
+                    });
+                }
+                push_argument(entry.argument.as_deref(), out);
+            }
+        }
         out.push('\n');
+    }
+    Ok(())
+}
+
+fn render_changed(changed: &Changed, out: &mut String) -> Result<(), RenderError> {
+    match changed {
+        Changed::Controls(changes) => {
+            out.push_str(&format!("changed {}\n", changes.len()));
+            for change in changes {
+                let handle = checked(&change.handle, "changed handle", is_handle_char)?;
+                out.push_str(&format!("  ~ {handle} "));
+                match &change.change {
+                    Change::Value { before, after } => {
+                        out.push_str("value ");
+                        push_value(before, out)?;
+                        out.push_str(" -> ");
+                        push_value(after, out)?;
+                    }
+                    Change::Checked { before, after } => {
+                        out.push_str(&format!("checked {before} -> {after}"));
+                    }
+                    Change::Selected { before, after } => {
+                        out.push_str("selected ");
+                        push_cut(before, VALUE_CHARS_MAX, "changed selected", out)?;
+                        out.push_str(" -> ");
+                        push_cut(after, VALUE_CHARS_MAX, "changed selected", out)?;
+                    }
+                }
+                out.push('\n');
+            }
+        }
+        Changed::Page {
+            from,
+            to,
+            texts,
+            more,
+        } => {
+            if texts.len() > CHANGED_TEXTS_MAX || (*more > 0 && texts.len() < CHANGED_TEXTS_MAX) {
+                return Err(RenderError::ChangedTexts);
+            }
+            out.push_str("changed page ");
+            push_address(from.as_deref(), out);
+            out.push_str(" -> ");
+            push_address(to.as_deref(), out);
+            out.push('\n');
+            for text in texts {
+                out.push_str("  + text ");
+                push_cut(text, CHANGED_TEXT_CHARS_MAX, "changed text", out)?;
+                out.push('\n');
+            }
+            if *more > 0 {
+                out.push_str(&format!("  + text more {more}\n"));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The value of a `~ value` line: quoted and cut as the `now` block writes it, or a password's
+/// `(set)` and `(empty)`.
+fn push_value(value: &Value, out: &mut String) -> Result<(), RenderError> {
+    match value {
+        Value::Text(text) => return push_cut(text, VALUE_CHARS_MAX, "changed value", out),
+        Value::Set => out.push_str("(set)"),
+        Value::Empty => out.push_str("(empty)"),
+    }
+    Ok(())
+}
+
+/// An address of a `changed page` line, quoted, or `none` for `page none`.
+fn push_address(address: Option<&str>, out: &mut String) {
+    match address {
+        Some(address) => out.push_str(&quote(address)),
+        None => out.push_str("none"),
+    }
+}
+
+fn render_now(now: &Now, out: &mut String) -> Result<(), RenderError> {
+    let shown = now.elements.len() as u64;
+    if shown > now.total {
+        return Err(RenderError::NowLongerThanTotal);
+    }
+    out.push_str(&format!("now {shown} of {}\n", now.total));
+    for element in &now.elements {
+        let handle = checked(&element.handle, "now handle", is_handle_char)?;
+        let kind = checked(&element.kind, "now kind", is_command_char)?;
+        if (kind == "link") == matches!(element.target, Target::State(_)) {
+            return Err(RenderError::TargetOfKind);
+        }
+        out.push_str(&format!("  {handle} {kind} {} ", element.visibility.word()));
+        push_cut(&element.label, LABEL_CHARS_MAX, "now label", out)?;
+        match &element.target {
+            Target::Resolved(target) => {
+                out.push_str(" -> ");
+                push_cut(target, TARGET_CHARS_MAX, "now target", out)?;
+            }
+            Target::Unresolved(target) => {
+                out.push_str(" -> ");
+                push_cut(target, TARGET_CHARS_MAX, "now target", out)?;
+                out.push_str(" unresolved");
+            }
+            Target::State(state) => {
+                match &state.value {
+                    Some(Value::Text(value)) => {
+                        out.push_str(" = ");
+                        push_cut(value, VALUE_CHARS_MAX, "now value", out)?;
+                    }
+                    Some(Value::Set) => out.push_str(" = (set)"),
+                    Some(Value::Empty) => out.push_str(" = (empty)"),
+                    None => {}
+                }
+                for (word, holds) in STATE_FLAGS.iter().zip(state.flags()) {
+                    if holds {
+                        out.push(' ');
+                        out.push_str(word);
+                    }
+                }
+                if let Some(submits) = &state.submits {
+                    let form = checked(&submits.form, "now form", is_form_char)?;
+                    if !is_form_handle(form) {
+                        return Err(RenderError::NotAWord {
+                            field: "now form",
+                            value: quote(form),
+                        });
+                    }
+                    let method = checked(&submits.method, "now method", is_command_char)?;
+                    out.push_str(&format!(" submits {form} {method} "));
+                    match &submits.action {
+                        Some(action) => push_cut(action, TARGET_CHARS_MAX, "now action", out)?,
+                        None => out.push_str("unresolved"),
+                    }
+                }
+            }
+        }
+        out.push('\n');
+    }
+    Ok(())
+}
+
+/// The field of a value with a length limit, as [`quote_cut`] writes it, when [`unquote_cut`]
+/// reads it back to the same value.
+fn push_cut(
+    value: &Cut,
+    limit: usize,
+    field: &'static str,
+    out: &mut String,
+) -> Result<(), RenderError> {
+    if !value.fits(limit) {
+        return Err(RenderError::CutLength { field });
+    }
+    out.push_str(&quote(&value.kept));
+    if value.cut {
+        out.push_str("...");
     }
     Ok(())
 }
@@ -752,6 +1320,7 @@ fn render_note(note: &Note, out: &mut String) -> Result<(), RenderError> {
             out.push_str("note parser: ");
             out.push_str(&parts.join(","));
         }
+        Note::Visibility => out.push_str(VISIBILITY_NOTE),
         Note::Text(what) => {
             out.push_str("note text: ");
             out.push_str(what.word());
@@ -1022,6 +1591,21 @@ fn is_command_char(c: char) -> bool {
     c.is_ascii_lowercase()
 }
 
+fn is_handle_char(c: char) -> bool {
+    c.is_ascii_lowercase() || c.is_ascii_digit()
+}
+
+fn is_form_char(c: char) -> bool {
+    c == 'F' || c.is_ascii_digit()
+}
+
+/// `F` and a number from 1 without a leading zero: a form handle.
+fn is_form_handle(word: &str) -> bool {
+    word.strip_prefix('F').is_some_and(|digits| {
+        !digits.is_empty() && !digits.starts_with('0') && digits.bytes().all(|b| b.is_ascii_digit())
+    })
+}
+
 fn is_part_char(c: char) -> bool {
     c.is_ascii_lowercase() || c == '-'
 }
@@ -1101,11 +1685,13 @@ pub fn parse(text: &str) -> Result<Answer, ParseError> {
 /// one of its own and leaves the lines alone otherwise.
 type Block = fn(&mut Lines<'_>, &mut Answer) -> Result<(), ParseError>;
 
-const BLOCKS: [Block; 6] = [
+const BLOCKS: [Block; 8] = [
     parse_token,
     parse_did,
     parse_page,
     parse_path,
+    parse_changed,
+    parse_now,
     parse_notes,
     parse_text,
 ];
@@ -1229,20 +1815,237 @@ fn parse_path(lines: &mut Lines<'_>, answer: &mut Answer) -> Result<(), ParseErr
         let sequence = cursor.number()?;
         cursor.space()?;
         let command = cursor.word(is_command_char)?.to_string();
-        let argument = cursor.optional_quoted()?;
+        let handle = if cursor.rest().starts_with(' ') && !cursor.rest().starts_with(" \"") {
+            cursor.space()?;
+            Some(cursor.word(is_handle_char)?.to_string())
+        } else {
+            None
+        };
+        let (argument, argument_cut) = match (&handle, cursor.rest().is_empty()) {
+            (_, true) => (None, false),
+            (Some(_), false) => {
+                cursor.space()?;
+                let label = cursor.cut_quoted(LABEL_CHARS_MAX)?;
+                (Some(label.kept), label.cut)
+            }
+            (None, false) => (cursor.optional_quoted()?, false),
+        };
         cursor.end()?;
         entries.push(PathEntry {
             sequence,
             command,
+            handle,
             argument,
+            argument_cut,
         });
     }
     answer.path = Some(Path { total, entries });
     Ok(())
 }
 
+fn parse_changed(lines: &mut Lines<'_>, answer: &mut Answer) -> Result<(), ParseError> {
+    let Some(line) = lines.take_if_starts("changed ") else {
+        return Ok(());
+    };
+    let mut cursor = line.cursor();
+    cursor.at = "changed ".len();
+    if cursor.rest().starts_with("page ") {
+        cursor.literal("page ")?;
+        let from = cursor.address()?;
+        cursor.literal(" -> ")?;
+        let to = cursor.address()?;
+        cursor.end()?;
+        let mut texts = Vec::new();
+        let mut more = 0;
+        while let Some(entry) = lines.take_if_starts("  + text ") {
+            let mut cursor = entry.cursor();
+            cursor.at = "  + text ".len();
+            if texts.len() == CHANGED_TEXTS_MAX {
+                cursor.literal("more ")?;
+                more = cursor.number()?;
+                cursor.end()?;
+                if more == 0 {
+                    return Err(entry.error(ParseErrorKind::OutsideGrammar));
+                }
+                break;
+            }
+            texts.push(cursor.cut_quoted(CHANGED_TEXT_CHARS_MAX)?);
+            cursor.end()?;
+        }
+        answer.changed = Some(Changed::Page {
+            from,
+            to,
+            texts,
+            more,
+        });
+        return Ok(());
+    }
+    let count: u64 = cursor.number()?;
+    cursor.end()?;
+    let mut changes = Vec::new();
+    for _ in 0..count {
+        let Some(entry) = lines.take_if_starts("  ~ ") else {
+            return Err(ParseError {
+                line: lines.number(),
+                kind: ParseErrorKind::OutsideGrammar,
+            });
+        };
+        let mut cursor = entry.cursor();
+        cursor.at = "  ~ ".len();
+        let handle = cursor.word(is_handle_char)?.to_string();
+        cursor.space()?;
+        let what = cursor.word(|c| c.is_ascii_lowercase())?;
+        cursor.space()?;
+        let change = match what {
+            "value" => {
+                let before = cursor.value()?;
+                cursor.literal(" -> ")?;
+                let after = cursor.value()?;
+                Change::Value { before, after }
+            }
+            "checked" => {
+                let before = cursor.boolean()?;
+                cursor.literal(" -> ")?;
+                let after = cursor.boolean()?;
+                Change::Checked { before, after }
+            }
+            "selected" => {
+                let before = cursor.cut_quoted(VALUE_CHARS_MAX)?;
+                cursor.literal(" -> ")?;
+                let after = cursor.cut_quoted(VALUE_CHARS_MAX)?;
+                Change::Selected { before, after }
+            }
+            _ => return Err(entry.error(ParseErrorKind::OutsideGrammar)),
+        };
+        cursor.end()?;
+        changes.push(ControlChange { handle, change });
+    }
+    answer.changed = Some(Changed::Controls(changes));
+    Ok(())
+}
+
+fn parse_now(lines: &mut Lines<'_>, answer: &mut Answer) -> Result<(), ParseError> {
+    let Some(line) = lines.take_if_starts("now ") else {
+        return Ok(());
+    };
+    let mut cursor = line.cursor();
+    cursor.at = "now ".len();
+    let shown: u64 = cursor.number()?;
+    cursor.literal(" of ")?;
+    let total: u64 = cursor.number()?;
+    cursor.end()?;
+    if shown > total {
+        return Err(line.error(ParseErrorKind::OutsideGrammar));
+    }
+    let mut elements = Vec::new();
+    for _ in 0..shown {
+        let Some(element_line) = lines.take_if_starts("  ") else {
+            return Err(ParseError {
+                line: lines.number(),
+                kind: ParseErrorKind::OutsideGrammar,
+            });
+        };
+        let mut cursor = element_line.cursor();
+        cursor.at = 2;
+        let handle = cursor.word(is_handle_char)?.to_string();
+        cursor.space()?;
+        let kind = cursor.word(is_command_char)?.to_string();
+        cursor.space()?;
+        let word = cursor.word(|c| c.is_ascii_lowercase() || c == '?')?;
+        let visibility = Visibility::ALL
+            .into_iter()
+            .find(|visibility| visibility.word() == word)
+            .ok_or_else(|| element_line.error(ParseErrorKind::OutsideGrammar))?;
+        cursor.space()?;
+        let label = cursor.cut_quoted(LABEL_CHARS_MAX)?;
+        let target = if cursor.rest().starts_with(" -> ") {
+            cursor.literal(" -> ")?;
+            let target = cursor.cut_quoted(TARGET_CHARS_MAX)?;
+            match cursor.rest() {
+                "" => Target::Resolved(target),
+                " unresolved" => {
+                    cursor.at = element_line.text.len();
+                    Target::Unresolved(target)
+                }
+                _ => return Err(element_line.error(ParseErrorKind::OutsideGrammar)),
+            }
+        } else {
+            let mut state = State::default();
+            if cursor.rest().starts_with(" = ") {
+                cursor.literal(" = ")?;
+                state.value = Some(if cursor.rest().starts_with("(set)") {
+                    cursor.literal("(set)")?;
+                    Value::Set
+                } else if cursor.rest().starts_with("(empty)") {
+                    cursor.literal("(empty)")?;
+                    Value::Empty
+                } else {
+                    Value::Text(cursor.cut_quoted(VALUE_CHARS_MAX)?)
+                });
+            }
+            // The flags in their order, each at most once, so that a line reads back to the
+            // one value that renders it.
+            let mut next = 0;
+            while !cursor.rest().is_empty() {
+                cursor.space()?;
+                let word = cursor.word(|c| c.is_ascii_lowercase())?;
+                if word == "submits" {
+                    cursor.space()?;
+                    let form = cursor.word(is_form_char)?.to_string();
+                    if !is_form_handle(&form) {
+                        return Err(element_line.error(ParseErrorKind::OutsideGrammar));
+                    }
+                    cursor.space()?;
+                    let method = cursor.word(is_command_char)?.to_string();
+                    cursor.space()?;
+                    let action = if cursor.rest() == "unresolved" {
+                        cursor.at = element_line.text.len();
+                        None
+                    } else {
+                        Some(cursor.cut_quoted(TARGET_CHARS_MAX)?)
+                    };
+                    if !cursor.rest().is_empty() {
+                        return Err(element_line.error(ParseErrorKind::OutsideGrammar));
+                    }
+                    state.submits = Some(Submits {
+                        form,
+                        method,
+                        action,
+                    });
+                    break;
+                }
+                let index = STATE_FLAGS[next..]
+                    .iter()
+                    .position(|flag| *flag == word)
+                    .map(|found| next + found)
+                    .ok_or_else(|| element_line.error(ParseErrorKind::OutsideGrammar))?;
+                state.set_flag(index);
+                next = index + 1;
+            }
+            Target::State(state)
+        };
+        cursor.end()?;
+        if (kind == "link") == matches!(target, Target::State(_)) {
+            return Err(element_line.error(ParseErrorKind::OutsideGrammar));
+        }
+        elements.push(Element {
+            handle,
+            kind,
+            visibility,
+            label,
+            target,
+        });
+    }
+    answer.now = Some(Now { total, elements });
+    Ok(())
+}
+
 fn parse_notes(lines: &mut Lines<'_>, answer: &mut Answer) -> Result<(), ParseError> {
     while let Some(line) = lines.take_if_starts("note ") {
+        if line.text == VISIBILITY_NOTE {
+            answer.notes.push(Note::Visibility);
+            continue;
+        }
         if let Some(word) = line.text.strip_prefix("note text: ") {
             if word.starts_with("deep ") {
                 let mut cursor = line.cursor();
@@ -1503,6 +2306,26 @@ impl<'a> Cursor<'a> {
         Ok(value)
     }
 
+    /// One field with a length limit of `limit` characters: a quoted field, then `...` when the
+    /// value was cut, read back by [`unquote_cut`].
+    fn cut_quoted(&mut self, limit: usize) -> Result<Cut, ParseError> {
+        let rest = self.rest();
+        if !rest.starts_with('"') {
+            return Err(self.outside());
+        }
+        let mut end = match rest[1..].find('"') {
+            Some(close) => close + 2,
+            None => rest.len(),
+        };
+        if rest[end..].starts_with("...") {
+            end += 3;
+        }
+        let value = unquote_cut(&rest[..end], limit)
+            .map_err(|error| self.line.error(ParseErrorKind::Field(error)))?;
+        self.at += end;
+        Ok(value)
+    }
+
     /// ` "<value>"` when the line goes on, nothing at its end.
     fn optional_quoted(&mut self) -> Result<Option<String>, ParseError> {
         if self.rest().is_empty() {
@@ -1510,5 +2333,34 @@ impl<'a> Cursor<'a> {
         }
         self.space()?;
         self.quoted().map(Some)
+    }
+
+    /// The value of a `~ value` line: a field cut at [`VALUE_CHARS_MAX`], `(set)` or `(empty)`.
+    fn value(&mut self) -> Result<Value, ParseError> {
+        if self.rest().starts_with('"') {
+            self.cut_quoted(VALUE_CHARS_MAX).map(Value::Text)
+        } else if self.rest().starts_with("(set)") {
+            self.literal("(set)").map(|()| Value::Set)
+        } else {
+            self.literal("(empty)").map(|()| Value::Empty)
+        }
+    }
+
+    /// `true` or `false`.
+    fn boolean(&mut self) -> Result<bool, ParseError> {
+        match self.word(|c| c.is_ascii_lowercase())? {
+            "true" => Ok(true),
+            "false" => Ok(false),
+            _ => Err(self.outside()),
+        }
+    }
+
+    /// An address of a `changed page` line: a quoted field, or `none`.
+    fn address(&mut self) -> Result<Option<String>, ParseError> {
+        if self.rest().starts_with('"') {
+            self.quoted().map(Some)
+        } else {
+            self.literal("none").map(|()| None)
+        }
     }
 }

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T00:05:22Z",
+  "actor": "human:operator",
+  "artifact": "story:session-request-timeout-option",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "three consecutive runs of cargo nextest run -p surf-session on d82eb1c, 2026-11-22 (acceptance 4)",
+    "reference": "built::request_slower_than_its_deadline_is_closed took 1.685 s, 2.028 s and 2.028 s at a load of 107 to 115; each run 75 tests passed"
+  }
+}

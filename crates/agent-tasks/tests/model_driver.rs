@@ -10,6 +10,18 @@ use std::process::{Command, Output, Stdio};
 use surf_agent_tasks::format::{Server, read_tasks};
 use surf_agent_tasks::tasks_file;
 
+/// The task `article` alone, for the cases that read only its line: `AGENT_TASKS_FILE`.
+pub const ONE_TASK: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/one-task.txt");
+
+/// Asserts that the first line of the out file `written` counts one task.
+pub fn assert_one_task(written: &str) {
+    let first = written.lines().next().unwrap_or("");
+    assert!(
+        first.starts_with("agent-tasks-model: 1 tasks, "),
+        "the first line {first:?} does not count 1 tasks"
+    );
+}
+
 fn bin_dir() -> PathBuf {
     std::env::var_os("SURF_BIN_DIR")
         .map(PathBuf::from)
@@ -174,9 +186,10 @@ fn a_model_that_exits_124_by_itself_is_not_over_its_bound() {
 #[test]
 fn a_control_character_in_an_answer_is_written_as_hex() {
     let model = stand_in("esc-model", "printf 'ANSWER: 19\\03332\\t\\177\\n'\n");
-    let (output, written) = drive(&model, "esc", &[]);
+    let (output, written) = drive(&model, "esc", &[("AGENT_TASKS_FILE", ONE_TASK)]);
     assert_eq!(output.status.code(), Some(0), "{}", describe(&output));
     let written = written.expect("the out file is written");
+    assert_one_task(&written);
     assert!(
         written.contains("\ntask article fail 0 calls\n  answered \"19\\x1b32\\x09\\x7f\"\n"),
         "{written:?}"
@@ -187,9 +200,10 @@ fn a_control_character_in_an_answer_is_written_as_hex() {
 #[test]
 fn a_carriage_return_in_an_answer_is_escaped() {
     let model = stand_in("cr-model", "printf 'ANSWER: 19\\r32\\\\x\\n'\n");
-    let (output, written) = drive(&model, "cr", &[]);
+    let (output, written) = drive(&model, "cr", &[("AGENT_TASKS_FILE", ONE_TASK)]);
     assert_eq!(output.status.code(), Some(0), "{}", describe(&output));
     let written = written.expect("the out file is written");
+    assert_one_task(&written);
     assert!(!written.contains('\r'), "{written:?}");
     assert!(
         written.contains("\ntask article fail 0 calls\n  answered \"19\\r32\\\\x\"\n"),

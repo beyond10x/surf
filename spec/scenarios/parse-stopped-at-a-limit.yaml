@@ -45,6 +45,7 @@ timeline:
       disabled: false
       checked: false
       required: false
+      readonly: false
     outcome: added
 
   - at: 2026-01-06T09:00:02Z

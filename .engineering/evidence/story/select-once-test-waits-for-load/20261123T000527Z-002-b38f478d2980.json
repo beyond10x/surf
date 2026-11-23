@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T00:05:27Z",
+  "actor": "human:operator",
+  "artifact": "story:select-once-test-waits-for-load",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the implementing unit's reading of the other 7 tests of the file (acceptance 5)",
+    "reference": ":39 reads boxes in one step, guarded; :73 none; :116 none; :162 reads a scroll position and a point a render could move; :242 none; :290 reads the scroll position of #requests, which a render after live could move; :344 reads window.scrollY after a click; owned by story:view-live-means-stream-open"
+  }
+}

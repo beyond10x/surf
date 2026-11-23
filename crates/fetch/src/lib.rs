@@ -10,6 +10,8 @@
 //! [`send_through`] is [`send`] over a [`Network`] of the caller's: where names are resolved and
 //! connections made. [`send`] uses [`OsNetwork`], the operating system's resolver and
 //! [`TcpStream::connect_timeout`]; a test passes a resolver and a transport of its own.
+//! [`send_from`] is [`send_through`] for a request whose [`Origin`] is a page at a public
+//! address ("Destinations").
 //!
 //! [`send`] does the same for a [`Request`]: an address, a [`Method`] (`GET` or `POST`), and for
 //! a `POST` an optional body and its media type. [`fetch`] is [`send`] of a `GET` without a body.
@@ -114,6 +116,13 @@
 //! network of the machine, by an address literal or by a name that resolves to a public address
 //! first and a local one later. When the first request connected to a local address, the chain
 //! follows its redirects as before, to local and to public addresses. The port is not looked at.
+//!
+//! A request whose [`Origin`] is [`Origin::PublicPage`], a link or a form of a page at a public
+//! address (`story:agent-press-submit`, "As decided after the adversary's pass", decision 1), is
+//! held to that rule from its first request on: a host that resolves to a local address, any one
+//! of those resolved, is refused with [`Failure::ForbiddenDestination`] before any connection and
+//! before a byte is sent, and so is a local IP address. An address given by the one who fetches
+//! ([`Origin::Given`], what [`send`] and [`send_through`] use) keeps the rule above.
 //!
 //! A zero [`Duration`] for either timeout leaves no time and fails every fetch with
 //! [`Failure::Unreachable`]. A duration too large to add to the current [`Instant`] sets no
@@ -313,6 +322,9 @@ pub struct Response {
     /// for byte, when nothing redirected, else the serialization of the URL the last redirect
     /// led to. At most [`MAX_ADDRESS_BYTES`] bytes after a redirect.
     pub url: String,
+    /// The method of the request this response answers: the method of the [`Request`], or
+    /// [`Method::Get`] after a redirect that changed it (the crate documentation, "Redirects").
+    pub method: Method,
 }
 
 /// Why a fetch ended without a response. Each variant carries a human-readable detail.
@@ -430,6 +442,30 @@ pub fn send_through(
     limits: &Limits,
     network: &dyn Network,
 ) -> Result<Response, Failure> {
+    send_from(request, limits, network, Origin::Given)
+}
+
+/// Where the first request of a fetch comes from, for the rule of the crate documentation,
+/// "Destinations".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Origin {
+    /// An address the one who fetches gave, such as one an agent typed: the first request may go
+    /// to any address.
+    #[default]
+    Given,
+    /// A link or a form of a page at a public address: the first request, and every one after
+    /// it, goes to public addresses only.
+    PublicPage,
+}
+
+/// [`send_through`] for a request that comes from `origin`: with [`Origin::PublicPage`] a host
+/// of the first request that resolves to a local address is refused before any connection.
+pub fn send_from(
+    request: &Request<'_>,
+    limits: &Limits,
+    network: &dyn Network,
+    origin: Origin,
+) -> Result<Response, Failure> {
     let address = request.address;
     let mut target = Target::parse(address)?;
     check(request, limits)?;
@@ -447,13 +483,21 @@ pub fn send_through(
     let mut redirects = 0;
     let mut connect_left = limits.connect_timeout;
     let mut read_left = limits.read_timeout;
-    // Whether the first request connected to a local address; none before it connected.
-    let mut started_local: Option<bool> = None;
+    // Whether the first request connected to a local address; none before it connected. A
+    // request from a public page counts as one whose first request went to a public address.
+    let mut started_local: Option<bool> = match origin {
+        Origin::Given => None,
+        Origin::PublicPage => Some(false),
+    };
     loop {
         let connecting = Instant::now();
         // The crate documentation, "Destinations": after a first request to a public address,
-        // every later one must resolve to public addresses only.
-        let public_only = started_local == Some(false);
+        // and from a public page, every request must resolve to public addresses only.
+        let public_only = match (started_local, redirects) {
+            (Some(false), 0) => Some(Refusing::FromPublicPage),
+            (Some(false), _) => Some(Refusing::Redirect),
+            _ => None,
+        };
         let (stream, dialed) = connect(&target, connect_left, network, public_only)?;
         if started_local.is_none() {
             started_local = Some(is_local(dialed.ip()));
@@ -473,6 +517,7 @@ pub fn send_through(
                 media_type,
                 body,
                 url: url.unwrap_or_else(|| address.to_owned()),
+                method: outgoing.method,
             });
         };
         // The body of a redirect is not read: the connection closes here.
@@ -829,6 +874,15 @@ impl Target {
     }
 }
 
+/// Why a request must go to public addresses only (the crate documentation, "Destinations").
+#[derive(Clone, Copy)]
+enum Refusing {
+    /// It follows a redirect, and the first request went to a public address.
+    Redirect,
+    /// It is the first request, and it comes from a page at a public address.
+    FromPublicPage,
+}
+
 /// Resolve once, check, and connect to one of the addresses checked, all within `timeout`.
 /// With `public_only`, any local address among those resolved refuses the request before a
 /// connection (the crate documentation, "Destinations"). Returns the connection and the address
@@ -837,22 +891,31 @@ fn connect(
     target: &Target,
     timeout: Duration,
     network: &dyn Network,
-    public_only: bool,
+    public_only: Option<Refusing>,
 ) -> Result<(TcpStream, SocketAddr), Failure> {
     let deadline = Instant::now().checked_add(timeout);
     let addresses = match target.host.parse::<IpAddr>() {
         Ok(ip) => vec![SocketAddr::new(ip, target.port)],
         Err(_) => network.resolve(&target.host, target.port, timeout)?,
     };
-    if public_only {
-        if let Some(local) = addresses.iter().find(|address| is_local(address.ip())) {
-            return Err(Failure::ForbiddenDestination(format!(
-                "a redirect leads to {}, which is the local address {}, and the first request \
-                 went to a public address",
-                target.host,
-                local.ip()
-            )));
-        }
+    let refused = public_only.and_then(|refusing| {
+        addresses
+            .iter()
+            .find(|address| is_local(address.ip()))
+            .map(|local| (refusing, local.ip()))
+    });
+    if let Some((refusing, ip)) = refused {
+        let host = &target.host;
+        return Err(Failure::ForbiddenDestination(match refusing {
+            Refusing::Redirect => format!(
+                "a redirect leads to {host}, which is the local address {ip}, and the first \
+                 request went to a public address"
+            ),
+            Refusing::FromPublicPage => format!(
+                "{host} is the local address {ip}, and the request comes from a page at a \
+                 public address"
+            ),
+        }));
     }
     let mut last_error = None;
     for address in &addresses {
@@ -875,8 +938,10 @@ fn connect(
 
 /// Whether `ip` is a local address in the sense of the crate documentation, "Destinations":
 /// loopback, private, link-local, unique-local, shared or unspecified, or an IPv6 address that
-/// embeds one of these ([`embedded_v4`]).
-fn is_local(ip: IpAddr) -> bool {
+/// embeds one of these (IPv4-mapped, IPv4-compatible, NAT64 or 6to4). The rule a redirect's
+/// destination is checked by, and
+/// the one `surf-session` applies to the target of `follow` when it is an IP address.
+pub fn is_local(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => is_local_v4(v4),
         IpAddr::V6(v6) => {
@@ -1121,6 +1186,7 @@ fn read_response<R: Read>(inner: R, limits: &Limits) -> Result<Response, Failure
         media_type,
         body,
         url: String::new(),
+        method: Method::Get,
     })
 }
 
@@ -1598,6 +1664,7 @@ mod tests {
                 media_type: DEFAULT_MEDIA_TYPE.to_string(),
                 body: b"ok".to_vec(),
                 url: String::new(),
+                method: Method::Get,
             })
         );
     }

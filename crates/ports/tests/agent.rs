@@ -583,6 +583,22 @@ fn the_other_ports_answer_an_actions_identity_as_unmet() {
     );
 }
 
+/// The `handle` and `label` of the `NavigationRequested` a `Go` emits are `{generated: true}`
+/// (story values-and-labels-before-fill): the agent's ports leave them absent, and the other
+/// ports, which issue no `Go`, answer unmet.
+#[test]
+fn a_gos_optional_text_is_absent_and_unmet_elsewhere() {
+    assert_eq!(AgentPorts::new().try_generate_optional_string(), Ok(None));
+    let unmet = Err(UnmetObligation {
+        capability: "context answer",
+        source: "Optional<String>",
+    });
+    assert_eq!(ShellPorts::new().try_generate_optional_string(), unmet);
+    assert_eq!(NavigatorPorts::new().try_generate_optional_string(), unmet);
+    assert_eq!(DocumentPorts::new().try_generate_optional_string(), unmet);
+    assert_eq!(RendererPorts::new().try_generate_optional_string(), unmet);
+}
+
 #[test]
 fn component_ports_hold_the_agent_port_and_its_caller() {
     let caller = Caller::new();

@@ -18,7 +18,8 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use surf_fetch::{
-    fetch, send_through, Failure, Limits, Method, Network, Request, Response, MAX_ADDRESS_BYTES,
+    fetch, send_from, send_through, Failure, Limits, Method, Network, Origin, Request, Response,
+    MAX_ADDRESS_BYTES,
 };
 
 /// The longest a server waits for a client to send or to close.
@@ -831,4 +832,49 @@ fn case_26_a_redirect_to_a_nat64_address_of_a_loopback_one_is_refused() {
     assert_eq!(network.dialed(), ["203.0.113.5:80"]);
     assert_eq!(public.targets(), ["/a"]);
     assert!(local.targets().is_empty(), "the local server was reached");
+}
+
+/// The first request of a fetch from a page at a public address (`story:agent-press-submit`,
+/// "As decided after the adversary's pass", decision 1): a name that resolves to a local
+/// address, any one of those resolved, and a local IP address are refused before any
+/// connection; a public one is sent. The same names given ([`Origin::Given`]) are dialed.
+#[test]
+fn case_27_the_first_request_from_a_public_page_goes_to_public_addresses_only() {
+    let local = Server::start(page);
+    let public = Server::start(page);
+    let port = local.port;
+    let network = TestNetwork::new()
+        .name("intranet.test", &[&["127.0.0.1"]])
+        .name("mixed.test", &[&["198.51.100.7", "10.0.0.1"]])
+        .name("public.test", &[&["198.51.100.7"]])
+        .route("198.51.100.7:80", public.port);
+    let from_page = |address: &str| {
+        let request = Request {
+            address,
+            method: Method::Post,
+            body: Some(b"a=1"),
+            media_type: Some("application/x-www-form-urlencoded"),
+        };
+        send_from(&request, &limits(), &network, Origin::PublicPage)
+    };
+    for address in [
+        format!("http://intranet.test:{port}/session"),
+        "http://mixed.test/session".to_string(),
+        format!("http://127.0.0.1:{port}/session"),
+    ] {
+        let result = from_page(&address);
+        assert_forbidden(&result);
+        let detail = result.unwrap_err().to_string();
+        assert!(
+            detail.contains("comes from a page at a public address"),
+            "{detail}"
+        );
+    }
+    assert!(network.dialed().is_empty(), "{:?}", network.dialed());
+    let response = ok(from_page("http://public.test/session"));
+    assert_eq!(response.status, 200);
+    assert_eq!(public.targets(), ["/session"]);
+    let given = ok(get(&format!("http://intranet.test:{port}/x"), &network));
+    assert_eq!(given.status, 200);
+    assert_eq!(local.targets(), ["/x"]);
 }

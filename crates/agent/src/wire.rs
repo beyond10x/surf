@@ -21,7 +21,8 @@
 //! ```
 //!
 //! - `surf-wire 1`, the version line ([`VERSION_LINE`]), always first.
-//! - `command <name>`: a word of `[a-z]+` (`open`, `go`, `look`, `close`).
+//! - `command <name>`: a word of `[a-z]+` (`open`, `go`, `look`, `follow`, `fill`, `pick`, `press`,
+//!   `back`, `forward`, `log`, `close`).
 //! - `session <id>`: the session identity, a UUID in text form, which the client writes in lower
 //!   case. Absent for `open`. [`Request::decode`] keeps the word as it was sent (any printable
 //!   ASCII without a space); the receiver reads it with [`session_id`], so that an identity that
@@ -31,7 +32,12 @@
 //! - `arg <name> "<value>"`: one line per argument, in any order, each name once; the name a word
 //!   of `[a-z]+`, the value a field of [`surf_answer::quote`]. `open [<url>]` and `go <url>` send
 //!   `arg url`; `--as <form>` is `arg form` (`tree` or `markdown`) and `--from-line <n>` is
-//!   `arg line` (decimal digits), on `open <url>`, `go` and `look`. A later argument is a new name and needs no new version; the receiver answers an
+//!   `arg line` (decimal digits), on `open <url>`, `go` and `look`. `follow <handle>` sends
+//!   `arg handle`; `fill <handle> <value>` sends `arg handle` and `arg value` (the value read
+//!   from standard input for `-`); `pick <handle> <option>` sends `arg handle` and `arg option`;
+//!   `press <handle>` sends `arg handle`; `log <n>` sends `arg count` (decimal digits, from 1),
+//!   and `log` alone no argument.
+//!   A later argument is a new name and needs no new version; the receiver answers an
 //!   argument name it does not know with status 2 ([`Request::unknown_arg`]).
 //! - `end`: the request is complete. The receiver reads nothing after it.
 //!
@@ -128,7 +134,8 @@ pub const SOCKET: &str = "surfd.sock";
 
 // --- The request --------------------------------------------------------------------------------
 
-/// One request. Its `Debug` writes the token as `Token(..)`.
+/// One request. Its `Debug` writes the token as `Token(..)` and each argument's value as its
+/// length ([`Arg`]).
 #[derive(Clone, Debug)]
 pub struct Request {
     /// The command, a word of `[a-z]+`.
@@ -141,13 +148,23 @@ pub struct Request {
     pub args: Vec<Arg>,
 }
 
-/// One `arg` line: a name and its exact value.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// One `arg` line: a name and its exact value. Its `Debug` writes the value as its length in
+/// bytes, never its bytes: the value of `fill` can be a password.
+#[derive(Clone, PartialEq, Eq)]
 pub struct Arg {
     /// The argument name, a word of `[a-z]+`.
     pub name: String,
     /// The value, unquoted.
     pub value: String,
+}
+
+impl fmt::Debug for Arg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Arg")
+            .field("name", &self.name)
+            .field("value", &format_args!("{} bytes", self.value.len()))
+            .finish()
+    }
 }
 
 /// Why a request was not read or not written.

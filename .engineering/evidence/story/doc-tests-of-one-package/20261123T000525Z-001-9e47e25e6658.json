@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T00:05:25Z",
+  "actor": "human:operator",
+  "artifact": "story:doc-tests-of-one-package",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate: slot --timeout 25m task check-runner on 4047c68, the story's commit, 2026-11-23 00:08 to 00:16 CET (acceptance 2)",
+    "reference": "test step: 83.2 s of its budget of 120 s at a load of 159.01 to 175.22, beside 121.9 s at 142.49 to 176.60 on the base 9f83444; 895 tests: 895 passed (cargo-nextest 893, doc tests 2); tls test step: 10.0 s; the gate itself ended with exit 201 by one page test that this story does not write (story:select-once-test-waits-for-load)"
+  }
+}

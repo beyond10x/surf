@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+mod adversary_fill_pick;
 mod common;
 mod drift;
 mod stand_in;

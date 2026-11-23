@@ -10,10 +10,12 @@ autotests = false
 [lib]
 name = "surf_agent"
 path = "src/lib.rs"
+test = false
 
 [[bin]]
 name = "surf-agent"
 path = "src/main.rs"
+test = false
 
 [dependencies]
 surf-answer = { path = "../answer" }

@@ -9,24 +9,52 @@ use surf_agent::cli::{self, Source};
 /// What the binding declares and the parser refuses: the markers `UNMAPPED:` (b) and (c) of
 /// `cli/surf-agent.yaml`.
 const BINDING_ONLY: &[&str] = &[
+    "back token protected hidden_tty --token-prompt",
+    "back token protected stdin --token-stdin",
     "close token protected hidden_tty --token-prompt",
     "close token protected stdin --token-stdin",
+    "fill token protected hidden_tty --token-prompt",
+    "fill token protected stdin --token-stdin",
+    "follow token protected hidden_tty --token-prompt",
+    "follow token protected stdin --token-stdin",
+    "forward token protected hidden_tty --token-prompt",
+    "forward token protected stdin --token-stdin",
     "global state --session-dir",
     "go token protected hidden_tty --token-prompt",
     "go token protected stdin --token-stdin",
+    "log token protected hidden_tty --token-prompt",
+    "log token protected stdin --token-stdin",
     "look token protected hidden_tty --token-prompt",
     "look token protected stdin --token-stdin",
+    "pick token protected hidden_tty --token-prompt",
+    "pick token protected stdin --token-stdin",
+    "press token protected hidden_tty --token-prompt",
+    "press token protected stdin --token-stdin",
 ];
 
 /// What the parser reads and the binding cannot declare: the marker `UNMAPPED:` (a), the
 /// environment sources `SURF_SESSION` and `SURF_TOKEN`.
 const PARSER_ONLY: &[&str] = &[
+    "back session_id environment SURF_SESSION",
+    "back token environment SURF_TOKEN",
     "close session_id environment SURF_SESSION",
     "close token environment SURF_TOKEN",
+    "fill session_id environment SURF_SESSION",
+    "fill token environment SURF_TOKEN",
+    "follow session_id environment SURF_SESSION",
+    "follow token environment SURF_TOKEN",
+    "forward session_id environment SURF_SESSION",
+    "forward token environment SURF_TOKEN",
     "go session_id environment SURF_SESSION",
     "go token environment SURF_TOKEN",
+    "log session_id environment SURF_SESSION",
+    "log token environment SURF_TOKEN",
     "look session_id environment SURF_SESSION",
     "look token environment SURF_TOKEN",
+    "pick session_id environment SURF_SESSION",
+    "pick token environment SURF_TOKEN",
+    "press session_id environment SURF_SESSION",
+    "press token environment SURF_TOKEN",
 ];
 
 #[test]

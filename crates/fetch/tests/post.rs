@@ -286,6 +286,13 @@ fn redirected_post(status: u16) -> Vec<Seen> {
     let response = ok(result);
     assert_eq!(response.url, expected);
     assert_eq!(response.body, b"done");
+    // The method of the request the response answers: `GET` after a 301, 302 or 303.
+    let method = if matches!(status, 301..=303) {
+        Method::Get
+    } else {
+        Method::Post
+    };
+    assert_eq!(response.method, method, "{status}");
     assert_eq!(seen.len(), 2, "{seen:?}");
     let first = &seen[0];
     assert_eq!(first.line, "POST /form HTTP/1.1");
@@ -446,7 +453,9 @@ fn redirect_307_after_a_changed_method_stays_get() {
     let address = server.url("/form");
     let result = send(&post(&address, Some(b"a=1"), Some(FORM)), &limits());
     let seen = server.finish();
-    assert_eq!(ok(result).body, b"done");
+    let response = ok(result);
+    assert_eq!(response.body, b"done");
+    assert_eq!(response.method, Method::Get);
     let lines: Vec<&str> = seen.iter().map(|s| s.line.as_str()).collect();
     assert_eq!(
         lines,

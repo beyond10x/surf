@@ -125,13 +125,7 @@ fn status_lists_every_task() {
         assert_eq!(row.task, task.name);
     }
     let search = status.iter().find(|s| s.task == "search").unwrap();
-    assert_eq!(
-        search.listed,
-        Listed::Pending(vec![
-            "story:agent-fill-pick".to_string(),
-            "story:agent-press-submit".to_string()
-        ])
-    );
+    assert_eq!(search.listed, Listed::Pass);
 
     let first = &tasks[0].name;
     let without: String = status_text()

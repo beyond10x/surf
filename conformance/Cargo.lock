@@ -419,6 +419,7 @@ dependencies = [
  "surf-ports",
  "surf-system",
  "surf-types",
+ "surf-url",
 ]
 
 [[package]]
@@ -450,6 +451,7 @@ name = "surf-page"
 version = "0.1.0"
 dependencies = [
  "surf-html",
+ "surf-url",
 ]
 
 [[package]]

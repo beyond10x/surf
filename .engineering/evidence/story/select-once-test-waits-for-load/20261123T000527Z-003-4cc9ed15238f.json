@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T00:05:27Z",
+  "actor": "human:operator",
+  "artifact": "story:select-once-test-waits-for-load",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate: slot --timeout 25m task check-runner on 8c0e567 (fix/doc-tests-of-ports), 2026-11-23 00:39 to 00:44 CET (acceptance 7)",
+    "reference": "exit 0 in 308 s; load 87.17 at the start, 50.34 at the end; test step: 19.3 s of its budget of 120 s, 895 tests: 895 passed, 0 failed, 0 ignored (cargo-nextest 893, doc tests 2); tls test step: 8.4 s of its budget of 120 s; page tests 38 passed (22.5s)"
+  }
+}

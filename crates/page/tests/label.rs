@@ -651,6 +651,20 @@ fn a_button_input_embedded_in_a_label_gives_its_value_or_its_default() {
     );
 }
 
+/// Story values-and-labels-before-fill, acceptance 2: an embedded `input` of `type=password`
+/// gives nothing to another element's name; an embedded `type=text` gives its value.
+#[test]
+fn an_embedded_password_input_gives_nothing_to_a_name() {
+    let password = names("<button id=b>Code <input type=password value=\"pw-marker\"></button>");
+    assert_eq!(password[0], "b=\"Code\"", "{password:?}");
+    assert!(
+        !password.iter().any(|line| line.contains("pw-marker")),
+        "{password:?}"
+    );
+    let text = names("<button id=b>Code <input type=text value=\"pw-marker\"></button>");
+    assert_eq!(text[0], "b=\"Code pw-marker\"", "{text:?}");
+}
+
 /// Accname 4.3.2 2C applies to a control embedded in the label "for another widget": a text
 /// control that names itself through `aria-labelledby` does not give its own value.
 #[test]

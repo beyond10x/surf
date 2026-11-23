@@ -52,6 +52,13 @@ fn case_01_open_answers_with_the_token_and_lists_the_session() {
         Some("\"http://example.org/\"")
     );
     assert_eq!(listed.ended, None);
+
+    // The daemon leaked, so that only the drop of the directory, which no helper marked, can
+    // stop the session: it finds it among the test process's descendants.
+    let pid = listed.pid;
+    std::mem::forget(daemon);
+    drop(dir);
+    assert!(!alive(pid), "the session {pid} runs after the drop");
 }
 
 #[test]

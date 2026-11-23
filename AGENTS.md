@@ -129,9 +129,10 @@ above, and the list of standards itself was written from memory.
 - `cli/surf-agent.yaml`: the `ess-cli/2` document of the agent command line, checked by
   `task cli`; the client parser is held to it.
 - `taskfiles/<name>.yml`: one file per task added since the agent interface plan, included by
-  the root `Taskfile.yml` with `flatten: true` and `optional: true`. Optional because the four
-  tests of `crates/surf/tests/lock_check.rs` copy the root `Taskfile.yml` alone into a
-  temporary directory and run one task there; a missing include must not stop them. `check` still fails when an included task is missing.
+  the root `Taskfile.yml` with `flatten: true` and `optional: true`. Optional because a test
+  copied the root `Taskfile.yml` alone into a temporary directory and ran one task there; no test
+  does now (`lock_check` runs its script with `sh`), and the includes stay optional. `check`
+  still fails when an included task is missing.
   `taskfiles/cli.yml` holds the task `cli`, `taskfiles/site.yml` the task `site-build`,
   `taskfiles/html-conformance.yml` the task `html-conformance`,
   `taskfiles/tls-x509-conformance.yml` the task `tls-x509-conformance`,
@@ -162,11 +163,12 @@ above, and the list of standards itself was written from memory.
   `taskfiles/tls-flights.yml` the tasks
   `tls-flights-check` (over `taskfiles/tls-flights-check.sh`, a step of `check`) and
   `tls-flights-slow` (a step of `slow`: records the flights again and replays them; `WRITE=1`
-  writes them). `taskfiles/slowest-tests.sh` is no task's own: `task test` calls it. Two
+  writes them). `taskfiles/slowest-tests.sh` is no task's own: `task test` calls it. Three
   tasks of the root `Taskfile.yml` run a script of their own, so that their tests run it with
   `sh` and start no `task` per case: `generated-compare` runs
-  `taskfiles/generated-compare.sh <fresh tree>`, and `conform-totals` runs
-  `taskfiles/conform-totals.sh`.
+  `taskfiles/generated-compare.sh <fresh tree>`, `conform-totals` runs
+  `taskfiles/conform-totals.sh`, and `lock-check` runs `taskfiles/lock-check.sh Cargo.lock
+  taskfiles/lock-allow.txt`.
 - Shell scripts, committed or written by a test: a value is printed with `printf '%s'`, never
   with `echo`. The forge's `sh` is dash, whose `echo` turns `\n`, `\\` and the other backslash
   sequences into control characters; this host's `/bin/sh` is bash, whose `echo` does not, so
@@ -179,8 +181,8 @@ above, and the list of standards itself was written from memory.
   prints that release; `.github/workflows/check.yml` and `release.yml` read the channel and the
   components from it and name no release of their own. A `RUSTUP_TOOLCHAIN` in the environment
   wins over the file; `task check-runner` unsets it.
-- `spec/scenarios/*.yaml`: twenty-four authored scenario files (`ess-scenario/6`), for what synthesis
-  does not write. Two cover the flows synthesis refuses (the page load that commits and the one that
+- `spec/scenarios/*.yaml`: thirty-seven authored scenario files (`ess-scenario/6`), for what
+  synthesis does not write. Two cover the flows synthesis refuses (the page load that commits and the one that
   fails); both also read the request's address back from `Requests`. The third,
   `two-of-each-entity.yaml`, creates two windows, two tabs in one window, two page loads, two
   frames and, since wave 3, two actions, and reads each view back with exactly two rows and both
@@ -214,7 +216,14 @@ above, and the list of standards itself was written from memory.
   `agent-fill-sets-value.yaml`, `agent-pick-unchecks-radio-group.yaml`,
   `agent-pick-selects-option.yaml`, `document-refuses-disabled-control.yaml`,
   `document-refuses-hidden-control.yaml`, `agent-press-submits-post.yaml` and
-  `agent-press-submission-ends-without-body.yaml`.
+  `agent-press-submission-ends-without-body.yaml`. Since round 2 (`story:agent-history-spec` and
+  its adversary's cases) thirteen more for the session history: `agent-go-back-traverses.yaml`,
+  `agent-go-forward-traverses.yaml`, `navigation-push-after-back-drops-forward.yaml`,
+  `navigation-traverse-commits-without-entry.yaml`,
+  `navigation-traverse-failed-keeps-current.yaml`, `navigation-traverse-refused-at-end.yaml`,
+  `navigation-traverse-refused-at-start.yaml`, `navigation-traverse-refused-for-post-entry.yaml`
+  and the five `adversary-history-*.yaml` (back twice, forward then push, a `POST` redirected
+  to `GET`, a push during a traversal, two tabs).
 - `spec/ess-inputs.yaml`: the list of every file above, and the pin `requires: ess 0.97.4`. A new
   file under `spec/` is not read until it is listed there.
 - `generated/rust/`: the workspace `ess generate synthesize` writes, its own `Cargo.toml`
@@ -263,6 +272,18 @@ above, and the list of standards itself was written from memory.
   --skip review1_cli::`). The selections of the repository are listed in
   `taskfiles/test-layout.sh` (`SELECTIONS`), and a stem added to the skipped list of a selection
   gets its `--skip <stem>::` in that selection. `task test-layout` holds this form.
+  A target without a test of its own has `test = false` in its `[lib]` or `[[bin]]` entry, so
+  that nextest neither builds nor lists an empty test binary for it
+  (`story:test-step-scripts-and-binaries`): the libraries of `surf`, `surf-agent`,
+  `surf-agent-tasks`, `surf-answer`, `surf-html-conformance`, `surf-page`, `surf-page-text`,
+  `surf-ports` (its `doctest` stays, so its two doc tests run), `surf-secret`, `surf-session`,
+  `surf-url`, `surf-view` and `surf-test-process`, and the binaries of `surf-agent`, `surf-cli`,
+  `surf-html-conformance` (both), `surf-session`, `surfd`, `surf-view-fixture` (both) and
+  `surf-agent-tasks`. The eight generated packages hold no test either; ess writes their
+  manifests, so `task test` excludes them (`GENERATED_PACKAGES`). A new test of such a target
+  goes into `tests/`, or the entry loses `test = false`: `task test-layout` fails, naming the
+  file and line, on `#[test]` in a file of a target with `test = false` or of a generated
+  package (`#[cfg(test)]` is allowed, as in `crates/secret/src/compare.rs`).
 - `crates/<name>/`: one hand-written crate each. One that uses a generated crate depends on it
   by path, `../../generated/rust/crates/<name>`. cargo 1.99.1 refuses a member glob that matches
   nothing (measured 2026-11-20), so `crates/` always holds at least one crate. Format one crate
@@ -280,7 +301,26 @@ above, and the list of standards itself was written from memory.
     every body line behind `>`, its characters checked by `escaped_in_text`
     (`escaped_at_run_start`, `quote_text`, `quote_text_cut`, `text_page`, `render_text_whole`;
     at most 200 body lines and 32,768 bytes, then a `more` line), and the notes `note text:
-    no-css`, `no-document` and `deep <n>` (`TextNote`). No dependency.
+    no-css`, `no-document` and `deep <n>` (`TextNote`). Since round 2
+    (`story:agent-follow-links`) the `now` block of links (`Now`, `Element`, `Visibility`,
+    `Target`; label cut at `LABEL_CHARS_MAX` 60, target at `TARGET_CHARS_MAX` 1,024, both read
+    back through `Cut`), `note visibility: hidden attribute only`, the `path` line of an action on
+    an element (`3 follow l1 "Sign in"`, `PathEntry::handle`) and the refusal reasons
+    `unknown-handle`, `hidden` and `unresolved`; since its fix round `address-too-long`,
+    `unsupported-scheme` and `forbidden-destination`, and `render` refuses a `path` entry marked
+    cut without an argument. Since `story:agent-fill-pick` a `now` line of a control carries its
+    state in place of a target (`Target::State`, `State`, `Value`: `= "<value>"` cut at
+    `VALUE_CHARS_MAX` 1,024, `= (set)`, `= (empty)`, then `disabled`, `checked`, `required`,
+    `readonly` in that order; `render` refuses a link without `->` and a control with one,
+    `RenderError::TargetOfKind`), and the reasons `disabled`, `wrong-kind`, `unknown-option`
+    and `readonly`. Since `story:agent-press-submit` a button line ends in `submits F<n>
+    <method> "<action>" [unresolved]` (`State::submits`, `Submits`), and the reasons
+    `no-default-action`, `password-in-query`, `no-form-owner`, `invalid-controls`,
+    `invalid-action`, `unsupported-enctype` and `dialog-method`. Since `story:agent-back-forward`
+    the reasons `at-start`, `at-end` and `post-entry`. Since `story:agent-change-and-log` the
+    `changed` block after `path` (`Changed`, `ControlChange`, `Change`: `changed <n>` with one `~`
+    line per control, or `changed page` with at most `CHANGED_TEXTS_MAX` 10 `+ text` lines cut at
+    `CHANGED_TEXT_CHARS_MAX` 120 characters and `+ text more <n>`). No dependency.
   - `crates/secret` (`surf-secret`): the operating system random source, the comparison in
     constant time and the 32-byte token. Every secret and every random identity of the agent
     and the view comes from here. No dependency.
@@ -289,7 +329,11 @@ above, and the list of standards itself was written from memory.
   - `crates/fetch` (`surf-fetch`): fetches an `http:` address with the standard library only and
     returns status, media type and body, or `Unreachable`, `UnsupportedScheme`,
     `MalformedResponse`, `TooManyRedirects` or `ForbiddenDestination`. Its documentation lists what
-    it does not do.
+    it does not do. `is_local`, the rule of a redirect's destination, is public: `surf-session`
+    applies it to the target of `follow` and `press`. Since round 2 `send_from` takes an
+    `Origin`: with `Origin::PublicPage` (a `follow` or `press` from a page that counts as public,
+    and `back` or `forward` to an entry such a page or a redirect after a public first
+    connection chose) a first request to a local address is refused too.
     Since wave 7 it follows up to 20 redirects (301, 302, 303, 307, 308 with a `Location`, for
     `GET`) inside one fetch, returns the address it ended at (`Response.url`, at most 64 KiB) and
     `TooManyRedirects` for a redirect after the twentieth; a redirect to an address that is not
@@ -332,8 +376,12 @@ above, and the list of standards itself was written from memory.
     `try_generate_surf_agent_action_id` as unmet. Since wave 6 `DocumentPorts` stores
     `Document` and `Element` and draws element identities. Each table keeps an index from key
     to row (`Rows::index`), so a put or a read by key is one hash lookup; 10,001 links of one
-    page are stored in under a second (`crates/session/tests/adversary_parse.rs`). Depends on
-    the generated crates only.
+    page are stored in under a second (`crates/session/tests/adversary_parse.rs`). Its tests
+    write `readonly: false` in each `ElementData` since `story:agent-fill-pick` added the
+    field. Since its fix round `DocumentPorts::check` unchecks the other radio buttons of the
+    subject's document with the same `radio_group` key (the parser step's `F<n> <name>` or
+    `- <name>`), so radio buttons with no form owner and one name are one group; a radio button
+    with no name has no key and unchecks no other. Depends on the generated crates only.
   - `crates/surf` (`surf`): a library only since wave 3 of the agent plan. It builds the
     generated `System` from six component ports the caller supplies and adds the `net`
     component's transport, a trait with one method, as a parameter. `Browser::run` hands each
@@ -368,7 +416,36 @@ above, and the list of standards itself was written from memory.
     (default `HtmlParser`, replaced with `Browser::with_parser`); `Browser::element_nodes` gives
     each element row's identity with its node; `surf::parse_page` is the default's work.
     `tests/parse.rs` 9.
-    Depends on the generated crates, `surf-ports`, `surf-fetch`, `surf-html` and `surf-page`.
+    Since round 2 (`story:agent-form-port`) the parser step also issues one `AddForm` per form,
+    each element's `name` and form owner in its `AddElement`, and one `AddOption` per option of
+    a select (`surf::Page::forms`, from `surf_page::forms`), and the library runs the
+    `document` component's submission step, the type parameter `F` of `Browser` (default
+    `FormSubmitter`, replaced with `Browser::with_submitter`; `conformance/src/target.rs` gives
+    `Unsubmitted`, which never answers): each `SubmissionStarted` whose submitter is a row of a
+    kept document gets `surf::Submission` (address, tree, forms, the rows' values) and the step
+    answers `SubmitForm` or `AbandonSubmission` with one of the eight `SubmissionEndReason`s.
+    `surf::submit_form` is the HTML Standard's form submission algorithm and entry list, from
+    memory, with `application/x-www-form-urlencoded` only (the crate documentation, "The
+    submission step", lists what is not taken). After the adversary's pass on that story: an
+    address over `surf_fetch::MAX_ADDRESS_BYTES` (a `GET`'s with its query, a `POST`'s action)
+    ends `AddressTooLong`, the eighth reason, before any navigation; a `required` select that
+    submits nothing or only empty values ends `InvalidControls`; the `Debug` of `Filled`,
+    `Submission` and `Submit` writes a value or a body as its length. Since
+    `story:agent-press-submit` a submit button's `formaction` and `formmethod` are taken (an
+    empty `formaction` is the document's address, an unknown `formmethod` is `GET`), and
+    `surf::plan_submission` (`Plan`: the button's type, `Submits`, the address a navigation
+    would request, whether a filled password is an entry) is the one computation `submit_form`
+    answers from and the session checks before `press` (`Browser::plan_submission`,
+    `Browser::submits`). `tests/forms.rs` 25
+    (cases 5 to 20, the hidden input, the rows of the parser step; since
+    `story:agent-fill-pick` its case 21, the last of two `checked` radio buttons of a group
+    submitted alone, and the element's `readonly`, which the parser step carries in
+    `AddElement` and `SetValue` refuses with `readonly`; the address bound and the `Debug`
+    lengths; since `story:agent-press-submit` the submitter's `formaction` and `formmethod`
+    and the planned address). `tests/adversary_forms.rs` 12, its two probes of many forms and options at
+    20,000 each, no wall time asserted.
+    Depends on the generated crates, `surf-ports`, `surf-fetch`, `surf-html`, `surf-page` and
+    `surf-url`.
   - `crates/surf-cli` (`surf-cli`): the binary `surf` and its five tests, moved out of
     `crates/surf`, and since wave 7 `redirects` 2 (the `navigation` line holds the address the
     fetch ended at, the `request` line the address asked for). It loads one `http:` address,
@@ -393,7 +470,17 @@ above, and the list of standards itself was written from memory.
     component and a relative path are refused. `tests/start.rs` has the six tests of the checks,
     each against a listener of the test. Since wave
     4 `surf-agent open`, `go`, `look` and `close` run against a real `surfd` and a real session
-    process; the package carries the release version, `0.4.0`, as do `surf-cli`, `surfd` and
+    process, and since round 2 `follow <handle>` (`story:agent-follow-links`), `fill <handle>
+    <value>` and `pick <handle> <option>` (`story:agent-fill-pick`; `fill <handle> -` reads the
+    value from standard input, `client::run_with_input`, at most 64 KiB without one line feed,
+    the fourth `UNMAPPED:` marker of `cli/surf-agent.yaml`), `press <handle>`
+    (`story:agent-press-submit`), `back` and `forward` (`story:agent-back-forward`), and `log
+    [<n>]` (`story:agent-change-and-log`, `arg count`). Since the fix round of
+    `story:agent-fill-pick` `--` ends the options of every command (the fifth marker; `Call::stdin` tells `fill f1 -` from
+    `fill f1 -- -`), and a value from standard input whose request is over 65,536 bytes is
+    refused naming its quoted size (`client::STDIN_VALUE_FITS`, 16,000 bytes, always fits beside
+    a handle of up to 1,364); the `Debug` of a wire `Arg` writes its value's length. The
+    package carries the release version, `0.4.0`, as do `surf-cli`, `surfd` and
     `surf-session`. `open` starts `surfd` from the directory of its own executable. Depends on
     `surf-answer` and `surf-secret`.
   - `crates/surfd` (`surfd`): a library and the binary `surfd`, the daemon the agent command line
@@ -404,7 +491,10 @@ above, and the list of standards itself was written from memory.
     the entries its sessions send with each answer (`src/log.rs`). Since wave 6 it serves the
     live view: `crates/view` over its sessions and kept logs (`src/view.rs`), on 127.0.0.1,
     address and token in `$XDG_RUNTIME_DIR/surf/view-url` (mode 0600, removed at exit); it reads
-    a session's text only through `surf_answer::parse` and `surf_answer::unquote`. The server
+    a session's text only through `surf_answer::parse` and `surf_answer::unquote`. Since round 2
+    (`story:view-now-panel`) an answer entry's `now` block reaches the view: a link with its
+    label and target, a line of any other kind with its kind and its text as
+    `surf_answer::render` writes it (no `match` on the kind). The server
     starts in `Daemon`'s `begin` with a view token drawn by `surf-secret`; the token is in that
     file and, only with `surfd --print-view-url`, in the line the binary writes to standard
     error (`Config::view_line`), in no answer, refusal, entry or log line. Without the option the
@@ -420,14 +510,15 @@ above, and the list of standards itself was written from memory.
     (`LATE_ANSWER_TIMEOUT`) while the session's turn stays taken, a log of at most 10,000
     entries and 16 MiB per session and 64 MiB over all sessions, a reader queue of 1,024
     entries, 256 ended sessions listed; open sessions are not bounded. It starts `surf-session`
-    from the directory of its own executable. Its 49 tests (3 unit tests of `src/view.rs`,
+    from the directory of its own executable. Its 50 tests (4 unit tests of `src/view.rs`,
     `adversary_link` 3, `built` 14, `in_process` 14, `log` 6, `view` 9) run a stand-in session
     or none; the real one is run by the `e2e`, `events`, `view`, `adversary_events` and
     `adversary_view` tests of `surf-session`. Depends on `surf-agent` (for `wire`),
     `surf-answer`, `surf-secret` and `surf-view`.
   - `crates/session` (`surf-session`): one agent session. A library core over any transport
     and the binary `surf-session`, which `surfd` starts, one process per session. It draws the
-    session token, answers `open`, `go`, `look` and `close` in the format of
+    session token, answers `open`, `go`, `look`, `follow`, `fill`, `pick`, `press`, `back`,
+    `forward`, `log` and `close` in the format of
     `docs/agent-answer.md`, issues the model commands for each (`OpenSession`, `Go`,
     `CloseSession`, `RecordAction`) and loads pages through the `surf` library with
     `surf-fetch`: `http:` only. The token is compared in constant time and is in no command
@@ -447,25 +538,72 @@ above, and the list of standards itself was written from memory.
     most four times its length plus two bytes. Since wave 8 the entries of
     `NavigationStarted` and `RequestStarted` carry `method`, `body` as `<n> bytes` and
     `body_type`, an absent one as the field with no value; its transport is `surf::fetch_http`,
-    which since wave 9 sends a `Post` (no command of the session sends one yet). 73 tests:
-    `adversary_document_text` 7, `adversary_events` 1, `adversary_parse` 4, `adversary_view`
-    1, `built` 11, `core` 22, `e2e` 2 (runs the three built binaries, or those in
-    `SURF_BIN_DIR`), `events` 17, `memory` 1, `redirect` 2 and `view` 5 (the live view of
-    `surfd` over the real session).
+    which since wave 9 sends a `Post` (since `story:agent-press-submit` the one of `press`).
+    288 tests:
+    `adversary_back_forward` 25, `adversary_change_log` 20, `adversary_document_text` 7,
+    `adversary_events` 1, `adversary_fill_pick` 16, `adversary_follow` 8, `adversary_parse` 4,
+    `adversary_press` 22, `adversary_values` 3, `adversary_view` 1, `back_forward` 13, `built`
+    16, `change_and_log` 18, `core` 22, `e2e` 2 (runs the three built binaries, or those in
+    `SURF_BIN_DIR`), `events` 26, `fill_pick` 22 (case 3 runs the built `surf-agent` against
+    `surfd` in the test process), `follow` 18, `follow_refusals` 9 (over an in-memory transport
+    that stands at any address), `form_rows` 1, `memory` 2, `press` 25 (the cases of
+    `story:agent-press-submit` and the usage of `press`, against a server that records each
+    request), `redirect` 2 and `view` 5 (the live view of `surfd` over the real session). The
+    bound of 256 row entries
+    per request counts `FormAdded` and `OptionAdded` with `ElementAdded`
+    (`story:agent-form-port`).
     `open <url>`, `go <url>` and `look` take `--as tree|markdown [--from-line <n>]` and print the
     page as an outline or as Markdown in a `text` block, computed at each call from the tree
     `surf::Browser::document_tree` keeps for the document of the session's current navigation
     (nothing fetched again); with no HTML document `note text: no-document` and no block; the
     call records the same action, events and path as without `--as`.
+    Since round 2 (`story:agent-follow-links`) the `page` line and the status record carry the
+    document's title (at most 1,024 characters, `TITLE_CHARS_MAX`), and an answer without `--as`
+    lists the current document's links in the `now` block (handles from `surf_page::handles`, `hid`
+    from the `hidden` attribute alone, targets resolved against
+    `surf_page::base_url::document_base_url`, at most `NOW_BYTES_MAX` bytes) with `note
+    visibility: hidden attribute only`; `follow <handle>` issues `Follow` and records `follow`
+    with the address, handle and label, or is refused `unknown-handle`, `hidden` or
+    `unresolved` (status 1). Since the fix round of its adversary's cases `follow` also refuses,
+    before any navigation, a target over `surf_fetch::MAX_ADDRESS_BYTES` (`address-too-long`),
+    one with a scheme other than `http` (`unsupported-scheme`), and from a page whose host is
+    not local by its text a target whose host is (`forbidden-destination`: an IP address
+    `surf_fetch::is_local` names, or `localhost`); a shown target holds no userinfo, and a
+    same-origin path that starts with `//` is shown whole. Since `story:agent-fill-pick` the
+    `now` block lists the controls beside the links (`f<n>`, `b<n>`, with their state from the
+    rows of `Elements` and `Options`; a password only `(set)` or `(empty)`); `fill` issues
+    `Fill` and `pick` issues `Pick` (with the option for a select), each recording the action
+    with the handle alone, after the session checks, from the rows, `unknown-handle`,
+    `wrong-kind`, `disabled`, `hidden` (the row's flag), then `readonly` or `unknown-option`,
+    because the bindings drop a refusal of `SetValue`, `Check` and `SelectOption`; `follow` of a
+    control is `wrong-kind`. Since its fix round the value of a `text` or `password` control
+    is sent without U+000A and U+000D (`sanitized`, before `Fill`: `SetValue` stores its input
+    as it is), and the hidden-option refusal is gone (an option is hidden only with its
+    select). Since `story:agent-press-submit` a button line names what it
+    submits (`surf::Browser::submits`), and `press` issues `Press` after the session checks
+    `unknown-handle`, `wrong-kind`, `disabled`, `hidden`, `no-default-action`, and from
+    `surf::Browser::plan_submission` (the computation the submission step itself uses, so the
+    address checked is the address requested) `password-in-query` and the three address
+    refusals of `follow`; a submission the step ends is answered with the word of its
+    `SubmissionAbandoned` reason (`end_reason`), the action recorded. Since
+    `story:agent-back-forward` `back` and `forward` read the entry from the navigator's view
+    `Navigations` and issue `GoBack` or `GoForward`, refused `at-start`, `at-end` or
+    `post-entry`; the fetch of a traversal goes out under the rule of the request that made its
+    entry (`Origin::PublicPage` for an entry a `follow` or `press`
+    from a page that counts as public made, or a redirect after a first connection to a public
+    address chose, as the session's transport notes it). Since `story:agent-change-and-log`
+    every answer that shows the state holds the `changed` block, from what the last such answer
+    showed (`Shown`; a select compared by its selected options' places and labels), and `log [<n>]`
+    is a read that answers every action in `path`, at most `LOG_BYTES_MAX` bytes of path lines.
     `cargo clippy -p surf-session` needs `--no-deps`: the generated `surf-types` fails clippy.
-    Depends on the `surf` library, `surf-ports`, `surf-fetch`, `surf-answer`,
-    `surf-page-text`, `surf-secret`, the
+    Depends on the `surf` library, `surf-ports`, `surf-fetch`, `surf-answer`, `surf-html`,
+    `surf-page`, `surf-page-text`, `surf-secret`, `surf-url`, the
     generated `surf-types`, and on `surf-agent` and `surfd` (the packages of the other two
     binaries, for the end-to-end test and the wire).
   - `crates/view` (`surf-view`): the live view's HTTP server, standard library only: `GET` only, a
     fixed route table, the `Host` and view-token checks, and server-sent events with a bound per
-    reader. `docs/view-stream.md` is what it answers. `web/` holds the page's ten files, with
-    `detail.js` since wave 8 (no
+    reader. `docs/view-stream.md` is what it answers. `web/` holds the page's eleven files, with
+    `detail.js` since wave 8 and `now.js` since round 2 (no
     framework, no build step, nothing from another origin, no inline script or style), compiled
     in by `page_files()` in `src/assets.rs`; the page fits 360 px to 1,400 px. The example
     `prototype` serves them over three scripted sessions; it shows example data only, and since
@@ -477,8 +615,9 @@ above, and the list of standards itself was written from memory.
     sessions; since wave 7 the page shows them. `Source::read_newest` gives the newest number and a
     reader from it in one call, so a stream always answers. A stream's queue holds at most
     `Limits::queue_entries` (256) entries and `Limits::queue_bytes` (1 MiB), or one larger frame
-    alone: such a frame waits until the queue is empty and is then written alone. 61 tests
-    (`adversary_view` 2, `http` 33, `json` 10, `prototype` 8, `stream_bounds` 6, `web` 2).
+    alone: such a frame waits until the queue is empty and is then written alone. 67 tests
+    (`adversary_now` 1, `adversary_view` 2, `http` 33, `json` 14, `prototype` 8,
+    `stream_bounds` 7, `web` 2).
     Depends on `surf-secret`.
     - `crates/view/web/`: the live view's page, plain HTML, CSS and JavaScript modules compiled
       into `surfd`; the selection in the address's fragment (`#session=<id>&at=<sequence>`).
@@ -493,10 +632,18 @@ above, and the list of standards itself was written from memory.
       with its fields, and the session's requests, one row per request; the selected event is
       kept in the address (`#session=<id>&at=<sequence>&event=<number>`); the requests list
       and the selection scroll inside themselves. A mark holds a button for the keyboard, and a
-      click anywhere on the mark selects its event. A value from a session is set
+      click anywhere on the mark selects its event. Since round 2 (`story:view-now-panel`) the
+      centre panel "Now" (`now.js`) lists the `now` member of the answer entry at the playhead,
+      grouped by kind, each element with its handle, the answer's visibility word (`hid` marked
+      hidden), label and target, and the visibility note; a line of a kind it does not know is
+      its text; a segment of an action on an element shows its handle (`follow l1`) from the
+      path of its answer entry. No target is a link. A value from a session is set
       only as `textContent` or as the value of an attribute of the list in `dom.js`, and
       `dom.js` is the only module that sets an attribute (it throws for any other name); its
-      nine attribute names are unchanged. The static attributes of `index.html` (`tabindex`,
+      nine attribute names are unchanged. Every text goes through `written` in `dom.js`: a
+      bidirectional control (U+202A to U+202E, U+2066 to U+2069) is shown as a span of class
+      `bidi-mark` whose text names it (`U+202E`), in a `title` attribute as that name; U+200E,
+      U+200F, joiners and a soft hyphen stay. The static attributes of `index.html` (`tabindex`,
       `role`, `aria-labelledby` on the two scrolling regions) are not set by a script.
   - `crates/view-fixture` (`surf-view-fixture`): test tooling, not shipped: a binary that
     starts a page server, `surfd` in process and sessions for the page tests, under a
@@ -510,7 +657,9 @@ above, and the list of standards itself was written from memory.
     `surf-view-foreign`, waits until it is killed: `tests/fixture.rs` starts it under the name
     `surf-session` as a process that is not the fixture's and that `kill` must leave alive. A
     test starts no program of the system under another name: on the forge's runner `tail`
-    started as `surf-session` exited at once. 2 tests (`fixture` 1, `adversary_commands` 1).
+    started as `surf-session` exited at once. 5 tests (`acceptance` 3, `fixture` 1,
+    `adversary_commands` 1); `acceptance` is the HTTP part of the live view's acceptance case
+    (`story:view-acceptance`), over the pages of `pages/acceptance/`.
     Depends on `surfd`, `surf-view` and `surf-test-process`.
   - `crates/test-process` (`surf-test-process`): test tooling, not shipped and not published: no
     binary that ships depends on it. Whether another process has ended, decided once from
@@ -609,10 +758,27 @@ above, and the list of standards itself was written from memory.
     the copy of the selected `option` the parser puts into a `selectedcontent`, from which
     `actionable_elements` lists no row (surf's reading, not the standard's rendering). Since
     `story:html-document-port` (round 1) `surf` depends on it, and `surf-page-text` too.
-    65 tests: 28 in `tests/elements.rs`, 34 in `tests/label.rs`, 1 each in
-    `tests/tree_tables.rs` and `tests/tree_template.rs` (the parser unit's) and 1 in
-    `tests/adversary_select.rs` (the parser adversary's), modules of the one test binary
-    (`story:one-test-binary-per-crate`). Standard library and `surf-html` only.
+    81 tests: 28 in `tests/elements.rs`, 35 in `tests/label.rs`, 3 in `tests/base_url.rs`,
+    6 in `tests/forms.rs`, 1 each in `tests/tree_tables.rs` and `tests/tree_template.rs` (the
+    parser unit's), 1 in `tests/adversary_select.rs` (the parser adversary's), 1 in
+    `tests/adversary_values.rs`, 2 in `tests/adversary_follow.rs` and 3 in
+    `tests/adversary_forms.rs` (its probe at 20,000 forms, options and controls, no wall time
+    asserted; `form_handles` builds no control or option), modules of the one test binary
+    (`story:one-test-binary-per-crate`). Since round 2 (`story:agent-follow-links`) it has
+    `base_url::document_base_url`, the one owner of the document base URL (the first `base`
+    with `href`, parsed against the document address). Since `story:agent-form-port` it has
+    `forms::forms`: the forms in tree order with `action`, `method`, `enctype` as written, each
+    submittable element (the Hidden `input` included) with its form owner (the `form`
+    attribute's ID, else the nearest ancestor `form`), `name`, `value` attribute, `disabled`,
+    `readonly` and `in_datalist`, and each select's list of options with value, label,
+    disabledness and selectedness after parsing; and `form_handles`, `F<n>` per form in
+    document order, apart from `handles`, which page text prints, so page text names no form.
+    The parser's form element pointer is not in the tree, so a control the parser associated
+    with a form it is not inside of has no owner here (the module documentation). Since
+    `story:agent-fill-pick` `actionable_elements` takes the radio button group rule: of the
+    radio buttons of one group (same form owner, or none, and same non-empty `name`) with a
+    `checked` attribute only the last in tree order is `checked`
+    (`forms::uncheck_radio_groups`). Standard library, `surf-html` and `surf-url` only.
   - `crates/page-text` (`surf-page-text`): a `surf-html` tree as text, the outline
     (`outline`) and Markdown (`markdown::markdown`, tables as GitHub tables since
     `story:page-text-tables`), each line without the answer's `> `, one at a time.
@@ -794,9 +960,13 @@ above, and the list of standards itself was written from memory.
     7, `hundred` 1, `modes` 9). Depends on `surf-tls` with `test-tooling`.
 - `view-tests/`: the Playwright tests of the live view's page (`@playwright/test` 1.65.0,
   Chromium's headless shell, a committed `package-lock.json`), each case with its own
-  `surf-view-fixture`: 38 cases, 18 in `tests/first-page.spec.mjs`, 6 in
-  `tests/adversary-page.spec.mjs`, 6 in `tests/detail.spec.mjs` and 8 in
-  `tests/adversary-detail.spec.mjs`. Node and Playwright are gate tooling only.
+  `surf-view-fixture`: 59 cases, 23 in `tests/first-page.spec.mjs`, 6 in
+  `tests/adversary-page.spec.mjs`, 6 in `tests/detail.spec.mjs`, 8 in
+  `tests/adversary-detail.spec.mjs`, 5 in `tests/now.spec.mjs` (over the pages of
+  `crates/view-fixture/pages/now/`), 7 in `tests/adversary-now.spec.mjs` (over
+  `crates/view-fixture/pages/adversary-now/`) and 4 in `tests/acceptance.spec.mjs` (the page
+  part of the live view's acceptance case, over `crates/view-fixture/pages/acceptance/`). Node
+  and Playwright are gate tooling only.
 - `conformance/` (`surf-conformance`): runs `.out/suite.json` against the Rust system in process,
   with the runner of `ess-conformance`. A Cargo workspace of its own, outside the root one, with
   its own committed `Cargo.lock` and its own `target/`. It depends on `surf`, `surf-ports` and the
@@ -814,7 +984,9 @@ above, and the list of standards itself was written from memory.
     events are read from what `System::published` gained while it ran, up to the first binding
     delivery, and the scenario errors where they differ from the event the typed outcome
     carries. Since wave 8 `Navigate` and `Fetch` read their inputs through `present()`, so an
-    optional input sent as `null` reads as one left out.
+    optional input sent as `null` reads as one left out. Since `story:agent-fill-pick` it maps
+    the element's `readonly` (in `AddElement`, an `Element` setup and the `Elements` view) and
+    the outcome `readonly` of `SetValue`.
   - `src/main.rs`: the binary `conform-rust` runs. `tests/planted_defect.rs`: the same suite over
     a `Navigation` storage that drops every `put` must fail at least one scenario.
     `tests/two_of_each_entity.rs`: for each entity alone, one identity for every instance, and
@@ -842,12 +1014,15 @@ The page load: `Navigate` publishes `NavigationStarted`, which invokes `Fetch`. 
 publishes `ResponseReceived`, which invokes `CommitNavigation`. `NavigationCommitted` invokes
 `ParseDocument` when its media type is `text/html`; the document is `Parsing` and
 `ParsingStarted` carries the body. The parser step of `crates/surf`
-(`story:html-document-port`) issues `AddElement` once per actionable element in tree order,
-then `FinishParsing`, which sets the title and moves the document to `Parsed`. `surf-session`
-and `surf` parse every committed HTML body; `conformance/src/target.rs` gives every scenario
-browser the parser step `Unparsed`, which never answers. `FailRequest` publishes `FetchFailed`,
-which invokes `FailNavigation`. Nothing invokes `PaintFrame` yet. A fifth reaction,
-`navigate-on-form-submitted`: `FormSubmitted` invokes `Navigate`.
+(`story:html-document-port`) issues `AddForm` once per form, then `AddElement` once per
+actionable element in tree order, each select's followed by `AddOption` per option
+(`story:agent-form-port`), then `FinishParsing`, which sets the title and moves the document
+to `Parsed`. `surf-session` and `surf` parse every committed HTML body; `conformance/src/target.rs`
+gives every scenario browser the parser step `Unparsed` and the submission step `Unsubmitted`,
+which never answer. `FailRequest` publishes `FetchFailed`, which invokes `FailNavigation`.
+Nothing invokes `PaintFrame` yet. A fifth reaction, `navigate-on-form-submitted`:
+`FormSubmitted` invokes `Navigate`; the submission step of `crates/surf` issues `SubmitForm`
+or `AbandonSubmission` for each `SubmissionStarted`.
 
 A response names the address it came from, after the last redirect (`DeliverResponse.url`,
 `ResponseReceived.url`): the navigation commits there, the document is parsed at it, and the
@@ -925,8 +1100,10 @@ actionable element its label (run by the tests only).
   CLIs can be specified": the agent's action surface is specified and "mapped to core operations
   of that browser". Planned as `epic:agent-cli-target` (draft). It has code since wave 4:
   `surf-agent open`, `go`, `look` and `close` against `surfd` and one `surf-session` process per
-  session, over `http:` only, and an answer shows status, media type and address, not yet the
-  page's content (`docs/agent-answer.md`, "What an answer holds today"). ESS has a document for it:
+  session, over `http:` only. Since round 2 the agent target has every command of the epic:
+  `open`, `go`, `look`, `close`, `follow`, `back`, `forward`, `fill`, `pick`, `press`, `log`.
+  Before scripts a same-document `changed` block holds control state only
+  (`docs/agent-answer.md`, "What an answer holds today"). ESS has a document for it:
   `ess generate cli --binding <ess-cli/1 or ess-cli/2 document>` writes "a parser and process
   adapter from a typed CLI presentation binding" (`ess generate cli --help`, ess 0.96.0; not run
   here yet). Measured since: both ESS command-line generators write code that needs third-party
@@ -1212,16 +1389,30 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   of `tests/main.rs` other than the selected or a skipped one, or any module declared inside a
   file of the binary (inline or out of line, any visibility, any attribute before it on its line,
   the selected module's own file included), has a name that ends with the selected or a skipped
-  name, so that the selection's filter or its `--skip` would match its tests. Not seen by the
-  check: a module that a macro expands to, a file pulled in by `include!`, `autotests = false`
-  inside a multi-line string of `[package]`, and a crate reached through a symbolic link. It
-  calls no cargo and prints `test-layout: <d> test directories, <f> test files, one test binary
-  each`.
-- `task test-layout-test`: that script on a copy of the manifests, the `src/*.rs` and the test
-  files under `.out/test-layout/`, thirty-two cases: the copy as it is and four right layouts
-  pass (a comment that names `#![cfg(any())]`, `mod x;` inside a string literal and in a
-  trailing comment, a fixture crate below `tests/data/`), and each of twenty-seven planted
-  defects fails naming its path or module. `SCRIPT=<path>` runs a copy of the script.
+  name, so that the selection's filter or its `--skip` would match its tests. It also fails,
+  naming the file and line, on `#[test]` in the code of a line of a file of a target that runs
+  no test: a `[lib]` or `[[bin]]` entry with `test = false` in any `Cargo.toml` it reads (the
+  same directories not entered, a `Cargo.toml` below `tests/` a fixture), and the library and
+  binaries of every package under `generated/rust/crates`. The files of such a target are its
+  `path` (`src/lib.rs`, or `src/main.rs` or `src/bin/<name>.rs` for a binary, when none is
+  given) and every child module it declares out of line, followed as for a test binary; a child
+  it cannot read fails. `#[cfg(test)]` is not flagged, and a library's modules are not files of
+  a binary of the same package (`surfd`'s library keeps its tests in `src/view.rs`). Not seen
+  by the check: a module that a macro expands to, a file pulled in by `include!`, `autotests =
+  false` inside a multi-line string of `[package]`, and a crate reached through a symbolic link.
+  It calls no cargo and prints `test-layout: <d> test directories, <f> test files, one test
+  binary each`.
+- `task test-layout-test`: that script on a copy of the manifests of `crates/*`,
+  `conformance` and `generated/rust/crates/*`, every `*.rs` under `crates/*/src` and
+  `generated/rust/crates/*/src`, and the test files under `.out/test-layout/`, thirty-nine
+  cases: the copy as it is and eight right layouts pass (a comment that names
+  `#![cfg(any())]`, `mod x;` inside a string literal and in a trailing comment, a fixture crate
+  below `tests/data/`, `#[test]` in `crates/html/src`, `#[test]` in a comment and a string of
+  a library with `test = false`, `#[cfg(test)]` in `crates/secret/src/compare.rs`, `#[test]`
+  in a module of `surfd`'s library), and each of thirty planted defects fails naming its path
+  or module (three of them `#[test]` in a target without tests: `src/lib.rs` of a library with
+  `test = false`, a module that a binary with `test = false` declares, `src/lib.rs` of a
+  generated package). `SCRIPT=<path>` runs a copy of the script.
 - `task tls-certs-check`: `sh taskfiles/tls-certs-check.sh crates/tls-test-certs`, no build and
   no `openssl`: the sha256 of `src/`, `keys/`, `openssl/` and `Cargo.toml` of
   `crates/tls-test-certs` against `certs/DIGEST`. It prints `tls-certs: <n> cases, certs/
@@ -1316,7 +1507,11 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   19 from outside this repository, each on the allow-list`. The list holds the 19 packages of ring 0.17.14
   (`docs/design/tls.md`, item 2), one line `<name> <version> <source> <checksum>` each,
   sorted; the script's head states the format. It does not read `conformance/Cargo.lock`. A
-  path dependency outside the repository has no `source` line and is not caught.
+  path dependency outside the repository has no `source` line and is not caught. The tests of
+  `crates/surf/tests/lock_check.rs` run that line with `sh` in their copies, without `task`
+  (no `Taskfile.yml` in a copy); `the_unchanged_lock_passes` holds the task to the line with
+  `task --color=false --dry --verbose lock-check`, which prints it on standard error
+  (`--color=false`: with `CI=true`, as `task check-runner` sets it, task colours the line).
 - `task generate`: rewrite `generated/rust/` from `spec/`, in place. `ess` refuses, naming the
   file, when a file it wrote was edited since; delete that file or restore it from git, then run
   it again.
@@ -1324,21 +1519,37 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   that differs from `generated/rust/`, in its bytes or its executable bit. `task --summary generated-check` names what it leaves out
   and why. It is two tasks: `generated-fresh` generates `spec/` into
   `.out/generated-check/fresh` (with `fresh.log` and a copy of `spec/` as `fresh.spec`), once per
-  run of `task`; `generated-compare FRESH=<tree>` compares and regenerates `.ess-output` in
-  place, by `taskfiles/generated-compare.sh`. The tests of
-  `crates/surf/tests/*generated_check*.rs` read that one generation
-  (`crates/surf/tests/common/mod.rs`) and run that script with `sh` in their copies; they fail,
-  saying so, when it is missing or was made from another `spec/`. `cargo test -p surf` needs
-  `slot task generated-fresh` first; `task test` depends on it.
+  run of `task`, and then lists the tree once with `sh taskfiles/generated-compare.sh --lists`
+  into `fresh.list` (its files but `.ess-output/`), `fresh.all` and `fresh.executable` beside
+  it; `generated-compare FRESH=<tree>` compares and regenerates `.ess-output` in place, by
+  `taskfiles/generated-compare.sh`. The script reads the three listings of `<tree>` and refuses
+  them, exit 1 with one line naming the listing and `task generated-fresh`, when `<tree>`, a file
+  or directory in it, or `<tree>.log` is newer than one of them (a file written or removed in the
+  tree changes the time of the file or of its directory); when they are not all there it lists
+  the tree into its own `.out/generated-check/compare`, never beside the tree. It compares the
+  bytes with one `diff -rq --no-dereference` and lists the committed side with one `find`, so a
+  run starts at most 25 programs when step 1 fails (72 before; GNU `find -printf` and `diff`,
+  as on the forge's `ubuntu-latest`). The tests of `crates/surf/tests/*generated_check*.rs` read
+  that one generation (`crates/surf/tests/common/mod.rs`) and run that script with `sh` in their
+  copies; they fail, saying so, when it or one of its listings is missing or it was made from
+  another `spec/`. `cargo test -p surf` needs `slot task generated-fresh` first; `task test`
+  depends on it.
 - `task build`: `cargo build` of the root workspace with `--locked` and `RUSTFLAGS=-D warnings`.
 - `task test`: `cargo nextest run --workspace --locked` without the four TLS packages
   (`--exclude` for each name of `TLS_PACKAGES` in `Taskfile.yml`: `surf-tls`,
   `surf-tls-test-server`, `surf-tls-test-certs`, `surf-tls-conformance`, whose tests `task
-  test-tls` runs, below; cargo-nextest 0.9.143,
+  test-tls` runs, below) and without the eight generated packages, which hold no test
+  (`--exclude` for each name of `GENERATED_PACKAGES`: `agent`, `document`, `navigator`, `net`,
+  `renderer`, `shell`, `surf-system`, `surf-types`; ess writes their manifests, so they get no
+  `test = false`; Layout); cargo-nextest 0.9.143,
   installed as a tool; no crate of the workspace changes) and `cargo test --doc -p surf-ports
   --locked`, the doc tests of `surf-ports` only (the two of the workspace; `task
   doc-tests-check` holds that no other package has one), which nextest does not run, with
-  `RUSTFLAGS=-D warnings`. The ten slowest tests come from
+  `RUSTFLAGS=-D warnings`. The doc tests start in the background before nextest, and the step
+  waits for both and fails when either fails (`story:test-step-scripts-and-binaries`: in three
+  alternating pairs of `slot --timeout 15m task test` the step minus nextest's `Summary` was
+  4.6, 3.3 and 2.5 s with it, 13.0, 12.3 and 8.5 s without; `slot status` showed one job for
+  the step). The ten slowest tests come from
   `taskfiles/slowest-tests.sh <junit file> [count]` (POSIX sh, pipefail where the shell has
   it), held by `crates/surf/tests/slowest_tests.rs` on a report of 2,000 cases. Under
   `pipefail` no pipeline of a task ends its reader before its input (no `| head`, `grep -q` or
@@ -1411,6 +1622,15 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
 
 ## The gate's numbers
 
+After round 2 (the commands branch, `spec/` as at `cf9a6ba`): `surf v1 — 9 file(s), 37
+scenario(s), valid`, 56 `refused:` lines (`slot task conform`, the 8 new ones listed under
+`REFUSALS_MAX` below). Against the
+interpreter and against the Rust system: `196 scenarios: 196 passed, 0 failed, 0 error, 0
+unsupported`; `conform-totals`: `the interpreter and the Rust system ran 196 scenario(s) each,
+of suite sha256:dcc7e7c2c534eb6f98ef03cbd07da620efd16fbe16e8d448de697919b0a56bf3`.
+`generated-check`: `generated/rust matches spec/ (30 artifact(s) and .ess-output)`.
+`test-layout`: `23 test directories, 147 test files, one test binary each`.
+
 With `story:ess-0-97-4` (2026-11-22, on `afba5e3`), surf builds on ess 0.97.4: `surf v1 — 9
 file(s), 24 scenario(s), valid` and `169 scenario(s) (24 authored), 48 refusal(s)`, as with
 0.97.3. The suite is byte for byte the one 0.97.3 writes, digest
@@ -1428,11 +1648,19 @@ average of 109 to 133: 0.97.3 3,574 to 4,430 ms (median 3,848 ms), 0.97.4 3,612 
 After round 1 (2026-11-22, on the wave branch at `fe5c723`: the parser, text and document units
 and `story:agent-tasks` merged on `main` at `5415f27`), with ess 0.97.3: `169 scenario(s) (24
 authored), 48 refusal(s)` (`slot task suite`; the document unit read the same on 0.96.0).
-Against the interpreter and against the Rust system: `169 scenarios: 169 passed, 0 failed, 0
-error, 0 unsupported`; `conform-totals`: `the interpreter and the Rust system ran 169
+Since `story:agent-fill-pick` (round 2), whose element field `readonly` adds the synthesized
+outcome `SetValue/outcome/readonly`: `170 scenario(s) (24 authored), 48 refusal(s)`.
+Against the interpreter and against the Rust system: `170 scenarios: 170 passed, 0 failed, 0
+error, 0 unsupported`; `conform-totals`: `the interpreter and the Rust system ran 170
 scenario(s) each, of suite
-sha256:0aead5f74409f8c561f544df8056b9e6b6fe146c13ba2e5e3a3fbf0ffdea733c`. The planted defect:
-`planted defect: 169 scenarios: 133 passed, 36 failed, 0 error, 0 unsupported`; the
+sha256:8b5c4b2f27ec981e3b3d5dff934bc62e935606f9b441604980c929c185d9a132` (the digest since
+the fix round of `story:agent-fill-pick` added the element field `radio_group` and a group
+with no form owner to `agent-pick-unchecks-radio-group`, after `story:agent-press-submit`
+added `PressCall`, the fix round of `story:agent-form-port`
+added the end reason `AddressTooLong` and `story:agent-fill-pick` added `FillCall`, `PickCall`
+and `readonly`; the counts did not change; no gate step compares it).
+The planted defect:
+`planted defect: 170 scenarios: 134 passed, 36 failed, 0 error, 0 unsupported`; the
 conformance crate's `tests/main.rs` ran 15 passed. `generated-check`: `generated/rust matches
 spec/ (30 artifact(s) and .ess-output)`, the committed bytes. `html-conformance: 9107 cases,
 9095 run, 9095 passed`: the parser unit raised `crates/html-conformance/expected/`, which the
@@ -1454,6 +1682,24 @@ That run was not green: `task view-test` failed one case, `dropped entries are a
 held the 20 entries four `go`s dropped before `story:html-document-port`; the parser step
 records `DocumentParsed` and one `ElementAdded` per actionable element, 28 are dropped now,
 and the test derives the number from the entries' `index` since.
+
+With round 2's view unit (`story:view-now-panel`, `story:view-acceptance`, 2026-11-22) `task
+view-test` runs 47 page tests (38 before), 7 more since the adversary pass on
+`story:view-now-panel` (4 of the adversary's cases and 3 of its fix) and 59 since
+`story:view-live-means-stream-open` (5 in `tests/first-page.spec.mjs`). The live view's
+acceptance case of `epic:live-view` is seven tests named after its sentences, all in the
+gate: in `task test`, the binary
+`surf-view-fixture::main` (5 tests, 2 before) runs `acceptance::api_sessions_lists_both_with_token_and_401_without`,
+`acceptance::request_with_another_host_is_refused` and `acceptance::events_deliver_a_go_in_order`
+(each under 1.2 s at a load average of about 90); in `task view-test`,
+`tests/acceptance.spec.mjs` runs `page lists both sessions`, `page line and three links after
+go`, `latest marker moves on second go` and `script in title is shown as text`. The three
+slowest page tests, at a load average of 106 to 140: `an entry over 1 MiB` 29.7 s (three `go`s
+to a 60,000-byte address, then waits up to 30 s each for four segments and the page line of an
+answer over 1 MiB), `adversary: a refused token on the stream stops the page` 15.5 s (a fixed
+`page.waitForTimeout(12_000)` to see that no request follows a refusal) and `dropped entries
+are a gap` 9.7 s (two fixtures of their own, four `go`s, a poll of `/api/sessions` until a
+session reads `closed`).
 
 With `story:ess-0-97-3` (2026-11-22, on `896c64d`), surf builds on ess 0.97.3: `surf v1 — 9
 file(s), 15 scenario(s), valid` and `96 scenario(s) (15 authored), 28 refusal(s)`, as with
@@ -1554,11 +1800,41 @@ is unset); `adversary_events` gives `surfd` an answer timeout of 0.5 s and a ser
 1.5 s after it read the request, then sends `look` until the path shows the `go`, instead of a
 timeout of 2 s, a server that answered after 4 s and a sleep of 5 s. Each step of the order it
 tests is still 1 s or more apart from the next, so the test does not depend on the runner's
-speed. In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
+speed. Since `story:test-harness-fewer-processes` the two limits of `surf-view` `http` that a
+case waits out are 250 ms: the write limit of `case_23`, which keeps its lower bounds `elapsed >=
+write`, and the receive limit of `case_20`, whose lower bound is 225 ms, 90 % of the limit as
+900 ms was of 1 s. `surfd` `in_process::case_09` keeps its `session_ready_timeout` of 1 s and
+`case_10` its `session_answer_timeout` of 1 s: `surfd` applies both to the `open` exchange
+(`crates/surfd/src/daemon.rs`), so a freshly started stand-in would have to answer within 250 ms
+in the pool, less than 10 times the time the test takes alone.
+`surfd_started_by_hand_writes_no_view_token_unless_asked` runs its two `surfd` at the same time,
+each in a directory of its own. The drop of a test directory of `surfd` and `surf-session`
+(`tests/common/mod.rs`) kills only the case's processes: those whose `environ` holds
+`STAND_IN_DIR=<its control directory>` (`surfd`) or `XDG_RUNTIME_DIR=<its runtime directory>`
+(`surf-session`), never the test process itself. A directory in which a helper started a built
+program (`agent()`, `Surfd::start`, `Started::start`; each calls `mark_built_program`) reads the
+`environ` of every process of the host, since such a program can leave the test process's tree.
+Any other directory reads only the descendants of the test process, found through
+`/proc/<pid>/task/<tid>/children` followed down, and every process of the host when one of those
+files cannot be read. In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
 872 passed, 32 skipped`; the 32 are hosts outside ASCII, listed in
-`crates/url/tests/data/SKIPPED`. `view-stream-check`: `view-stream-check: 19 event name(s),
-each a message of the AsyncAPI projection`. `view-test`: `38 passed (15.8s)`; 12.9 s of it are
-the case that waits to see that a refused token is not sent again. `html-conformance`, the last
+`crates/url/tests/data/SKIPPED`. `view-stream-check`: `view-stream-check: 23 event name(s),
+each a message of the AsyncAPI projection` (19 before round 2). `view-test`: `38 passed
+(15.8s)`; 12.9 s of it are the case that waits to see that a refused token is not sent again. Since `story:view-now-panel`
+it printed `43 passed (2.7m)` on 2026-11-22 at a load average of about 140 on 20 CPUs, the
+five cases of `now.spec.mjs` 2.2 to 3.8 s each and `an entry over 1 MiB` 29.9 s at a load
+average of about 140. Since `story:view-acceptance` it prints `47 passed`: `47 passed (2.5m)`
+(the task 174 s with its build and `npm ci`) on 2026-11-22 at a load average of 106 to 140,
+the four cases of `acceptance.spec.mjs` 1.9 to 6.0 s each and `an entry over 1 MiB` 29.7 s at
+that load. Since the adversary pass on `story:view-now-panel` it prints `53 passed`: `53 passed
+(1.1m)` (the task 71 s) on 2026-11-22 at a load average of 55 to 65, the six cases of
+`adversary-now.spec.mjs` 0.7 to 1.4 s each and `an entry over 1 MiB` 17.7 s at that load.
+With the seventh case of `adversary-now.spec.mjs` (a control in an event field, named in the
+mark's `title`) and the five cases of `story:view-live-means-stream-open` in
+`first-page.spec.mjs` it prints `59 passed (3.0m)` (the task 220 s) on 2026-11-23 at a load
+average of 126 to 127 on 20 CPUs, the five cases 5.7 to 11.1 s each and the slowest case,
+`an entry over 1 MiB`, 35.0 s at that load.
+`html-conformance`, the last
 step of `check`: `html-conformance: 9107 cases, 9095 run, 8428 passed` (82 encoding cases,
 7,046 tokenizer cases and 1,300 tree construction cases), with `tag markup 1979/1979/1979`,
 `tag text 328/328/328`, `tag charref
@@ -1603,12 +1879,13 @@ the root workspace (14 in its first commit, 4 in the review fix), so `task test`
 `579 tests: 579 passed, 0 failed, 0 ignored (cargo-nextest 577, doc tests 2)`, counted from the
 `#[test]` lines of the diff; the gate on `main` counted the same 579 since.
 
-`REFUSALS_MAX` in `Taskfile.yml` is 48. `task suite` fails above it. Lower it when a refusal goes
+`REFUSALS_MAX` in `Taskfile.yml` is 56. `task suite` fails above it. Lower it when a refusal goes
 away; raise it only with the new refusal listed here. The list is `grep '^refused:'
 .out/synthesize.log` (read on 2026-11-21 after wave 6: 28 lines, the same as below; the gate
 after wave 7 printed `28 refusal(s)`; in wave 8 the unit of `agent-request-body-spec` read the
 same 28 lines; the gate after wave 9 printed `28 refusal(s)`, and `task suite` after wave 10
-too; after round 1, 48 lines with ess 0.97.3: the 28 and the 20 of `story:agent-forms-spec`
+too; after round 1, 48 lines with ess 0.97.3: the 28 and the 20 of `story:agent-forms-spec`;
+after round 2, 56 lines with ess 0.97.4: the 48 and the 8 of `story:agent-history-spec`, both
 listed last).
 Twenty-two of the 28 are `ESS-SYNTH-010`:
 
@@ -1654,6 +1931,28 @@ The 20 refusals `story:agent-forms-spec` added (28 to 48), with cause:
   `agent-fill-sets-value`, `agent-pick-unchecks-radio-group`, `agent-pick-selects-option`,
   `document-refuses-disabled-control`, `document-refuses-hidden-control`,
   `agent-press-submits-post`, `agent-press-submission-ends-without-body`.
+
+The 8 refusals `story:agent-history-spec` added (48 to 56), with cause:
+
+- `ESS-SYNTH-001` × 2: `TraverseHistory/requested` and `TraverseHistory/no-entry`. A binding or
+  set effect changes the history rows the selector reads while the scenario is arranged, and
+  synthesis does not follow that change.
+- `ESS-SYNTH-001` × 1: the binding `start-on-traversal-started`. Its trigger is
+  `TraverseHistory/requested`, which has no synthesized scenario (the reason above).
+- `ESS-SYNTH-001` × 1: `CommitNavigation/traversed`. Its `affects:` pins the navigation row
+  beside another entry, and one send names one row.
+- `ESS-SYNTH-001` × 1: `CommitNavigation/committed`. Only `Navigate/started` and
+  `StartTraversal/started` create the navigation it affects, and no arrangement takes either for
+  a row its filter selects.
+- `ESS-SYNTH-010` × 3, the cases of the binding `traverse-on-traversal-requested`
+  (`at_most_once`, `on_failure: drop`): delivery (no redelivery to observe), on-failure (drop is
+  unobservable) and flow (an input the event fills chooses the branch of `TraverseHistory`:
+  unsupported, no-entry, requested).
+- Evidence for each refused outcome and flow: the authored scenarios `agent-go-back-traverses`,
+  `agent-go-forward-traverses`, `navigation-traverse-refused-at-start`,
+  `navigation-traverse-refused-at-end`, `navigation-traverse-refused-for-post-entry`,
+  `navigation-traverse-commits-without-entry`, `navigation-commits-at-response-url`,
+  `page-load-commits-and-parses` and the five `adversary-history-*` files.
 
 One note is printed with them: the specification declares actors and no component is served over
 a network, so no `<command>/grant/denied` scenario is generated.

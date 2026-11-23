@@ -1,5 +1,6 @@
-// The selected session's actions in order: each a segment labelled with its sequence, command
-// and argument, under it one mark per event of that action, grouped by domain. One segment
+// The selected session's actions in order: each a segment labelled with its sequence, command,
+// the handle of the element it took (from the path of its answer entry: `follow l1`) and
+// argument, under it one mark per event of that action, grouped by domain. One segment
 // carries the playhead (aria-current="step"); a click on a segment outside its marks moves the
 // playhead there. A click anywhere on a mark selects its event; each mark holds a button for the
 // keyboard (aria-pressed for the selected one).
@@ -110,8 +111,20 @@ function outcome(answer) {
   return written(page.status);
 }
 
+// The handle of the element `action` took, as the path of its own answer entry names it; null
+// when it took none or its answer is not held.
+function handleOf(action) {
+  const path = action.answer && action.answer.path;
+  if (!path || !Array.isArray(path.actions)) {
+    return null;
+  }
+  const found = path.actions.find((held) => held && held.sequence === action.action.sequence);
+  return found && typeof found.handle === "string" ? found.handle : null;
+}
+
 function segment(action, current, onSelect, selected, onEvent) {
   const entry = action.action;
+  const handle = handleOf(action);
   const button = element(
     "button",
     {
@@ -122,6 +135,7 @@ function segment(action, current, onSelect, selected, onEvent) {
       element("span", { className: "label" }, [
         element("span", { className: "sequence", text: written(entry.sequence) }),
         element("span", { className: "command", text: written(entry.command) }),
+        handle === null ? null : element("span", { className: "handle", text: handle }),
         entry.argument === null || entry.argument === undefined
           ? null
           : element("span", { className: "argument", address: entry.argument }),

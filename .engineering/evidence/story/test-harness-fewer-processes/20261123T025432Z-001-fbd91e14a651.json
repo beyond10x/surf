@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T02:54:32Z",
+  "actor": "human:operator",
+  "artifact": "story:test-harness-fewer-processes",
+  "kind": "story",
+  "revision": 27,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the implementing unit's 14 plants on the tree of d846975, each removed (git diff --stat 17 files, 706/305 before and after)",
+    "reference": "batch read returning another blob: an_expected_count_below_its_value_at_the_base_fails; cache keyed by one name: 7 failed; driver ignoring AGENT_TASKS_FILE: 5 tests, does not count 1 tasks; refusal removed: adversary2.rs:324; agent() not marking: process of the case runs after its drop; walk of children removed: the session runs after the drop; limits applied at once: case_20 3.779066ms, case_23 closed after 182 ms before the write limit of 250ms; reader queue unbounded: not disconnected after 36 entries; per-session bound not applied: left (5, 0) right (3, 2)"
+  }
+}

@@ -7,7 +7,7 @@ use crate::common;
 
 use std::fs::{self, File};
 use std::io::Read;
-use std::os::unix::fs::{FileTypeExt, PermissionsExt, symlink};
+use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::thread;
@@ -138,13 +138,20 @@ fn case_04_the_token_is_in_no_file_and_no_command_line() {
     let stand_in = pids_named(&dir, "surf-session");
     assert_eq!(surfd.len(), 1);
     assert_eq!(stand_in, vec![dir.pid_of(&session.id)]);
-    for pid in surfd.into_iter().chain(stand_in) {
+    let pids: Vec<u32> = surfd.into_iter().chain(stand_in).collect();
+    for &pid in &pids {
         let cmdline = fs::read(format!("/proc/{pid}/cmdline")).unwrap();
         assert!(!cmdline.is_empty());
         assert!(
             !cmdline.windows(token.len()).any(|w| w == token),
             "the token is in the command line of {pid}"
         );
+    }
+    // The surfd that surf-agent started left the test's tree; the drop of the directory that
+    // `agent` marked still stops it and its session.
+    drop(dir);
+    for pid in pids {
+        assert!(!alive(pid), "process {pid} of the case runs after its drop");
     }
 }
 
@@ -167,6 +174,34 @@ fn case_05_an_identity_never_opened_is_unknown() {
         names_in(&dir.surf()),
         ["surfd.lock", "surfd.sock", "view-url"]
     );
+
+    // An entry of the kind bin_dir() holds, in a directory of its own with a program of its
+    // own: one with another inode is replaced by a link to the program, one that is a link to
+    // it is left as it is.
+    let own = dir.path.join("bin");
+    fs::create_dir(&own).unwrap();
+    let program = own.join("program");
+    fs::copy(env!("CARGO_BIN_EXE_surfd"), &program).unwrap();
+    let entry = own.join("surfd");
+    fs::write(&entry, "a stale program").unwrap();
+    link_program(&program, &entry);
+    let (made, of_program) = (
+        fs::metadata(&entry).unwrap(),
+        fs::metadata(&program).unwrap(),
+    );
+    assert_eq!(
+        (made.dev(), made.ino()),
+        (of_program.dev(), of_program.ino()),
+        "the stale entry is not a link to the program"
+    );
+    link_program(&program, &entry);
+    let kept = fs::metadata(&entry).unwrap();
+    assert_eq!(
+        (kept.ino(), kept.nlink(), kept.ctime(), kept.ctime_nsec()),
+        (made.ino(), made.nlink(), made.ctime(), made.ctime_nsec()),
+        "the entry that was a link to the program was made again"
+    );
+    assert_eq!(names_in(&own), ["program", "surfd"]);
 }
 
 #[test]
@@ -419,14 +454,19 @@ fn case_26_an_identity_in_upper_case_is_read_in_lower_case() {
 }
 
 /// The built `surfd` started by hand with `args` and standard error piped, which ends at its
-/// idle exit of 1 second: its `view-url` line, read while it ran, and its whole standard error.
-fn by_hand(dir: &TestDir, args: &[&str]) -> (String, String) {
-    let mut surfd = Surfd::start(dir, args, |command| {
+/// idle exit of 1 second: the running `surfd` and its `view-url` line, read while it runs.
+fn by_hand(dir: &TestDir, args: &[&str]) -> (Surfd, String) {
+    let surfd = Surfd::start(dir, args, |command| {
         command.stderr(Stdio::piped());
     });
     assert_eq!(surfd.line, "ready\n");
     // view-url is written before `ready`.
     let line = fs::read_to_string(dir.surf().join("view-url")).expect("view-url");
+    (surfd, line)
+}
+
+/// Waits for a `surfd` of [`by_hand`] to exit 0 at its idle exit: its whole standard error.
+fn idle_exit(mut surfd: Surfd) -> String {
     let status = surfd.ends_within(ALLOWED).expect("surfd still runs");
     assert!(status.success(), "{status:?}");
     let mut err = String::new();
@@ -437,13 +477,17 @@ fn by_hand(dir: &TestDir, args: &[&str]) -> (String, String) {
         .expect("a piped standard error")
         .read_to_string(&mut err)
         .unwrap();
-    (line, err)
+    err
 }
 
 #[test]
 fn surfd_started_by_hand_writes_no_view_token_unless_asked() {
+    // The two surfd run at the same time, each in a directory of its own.
     let dir = TestDir::new();
-    let (line, err) = by_hand(&dir, &["--idle-exit", "1"]);
+    let asked = TestDir::new();
+    let (unasked_surfd, line) = by_hand(&dir, &["--idle-exit", "1"]);
+    let (asked_surfd, asked_line) = by_hand(&asked, &["--print-view-url", "--idle-exit", "1"]);
+    let err = idle_exit(unasked_surfd);
     let token = line
         .trim_end()
         .rsplit_once("/#")
@@ -462,10 +506,15 @@ fn surfd_started_by_hand_writes_no_view_token_unless_asked() {
         )
     );
 
-    let asked = TestDir::new();
-    let (line, err) = by_hand(&asked, &["--print-view-url", "--idle-exit", "1"]);
-    assert!(line.starts_with("http://127.0.0.1:"), "{line:?}");
-    assert_eq!(err, line, "standard error is the address with its token");
+    let err = idle_exit(asked_surfd);
+    assert!(
+        asked_line.starts_with("http://127.0.0.1:"),
+        "{asked_line:?}"
+    );
+    assert_eq!(
+        err, asked_line,
+        "standard error is the address with its token"
+    );
 }
 
 #[test]

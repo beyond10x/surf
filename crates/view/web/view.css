@@ -379,6 +379,130 @@ h3 {
   overflow-wrap: anywhere;
 }
 
+/* The panel "Now": the elements of the now block at the playhead, grouped by kind. A label, a
+   target and a line come from the page and wrap at any point. */
+
+.now {
+  max-width: 52rem;
+  margin-top: var(--gap);
+  padding: 0.75rem var(--gap) 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.now h3 {
+  margin-bottom: 0.5rem;
+}
+
+.now-count,
+.now-empty,
+.now-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.now-note {
+  margin-top: 0.5rem;
+}
+
+.now-group {
+  margin-top: 0.5rem;
+}
+
+.now-group h4 {
+  margin: 0 0 0.2rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.now-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.now-element {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.1rem 0.5rem;
+  padding: 0.2rem 0;
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+
+.now-element:first-child {
+  border-top: 0;
+}
+
+.now-element .handle,
+.now-element .visibility {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}
+
+.now-element .handle {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.now-element .visibility {
+  color: var(--muted);
+}
+
+.now-element .label,
+.now-element .text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.now-element .arrow,
+.now-element .cut {
+  color: var(--muted);
+}
+
+.now-element .target {
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.now-element .unresolved {
+  color: var(--warn);
+  font-size: 0.85rem;
+}
+
+.now-element.is-hidden .label,
+.now-element.is-hidden .target {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+/* A bidirectional control in a value from a session, shown as its name (dom.js). */
+.bidi-mark {
+  margin: 0 0.1em;
+  padding: 0 0.2em;
+  border: 1px solid var(--warn);
+  border-radius: 3px;
+  color: var(--warn);
+  font-family: var(--mono);
+  font-size: 0.75em;
+  font-style: normal;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.now-element.is-hidden .visibility {
+  color: var(--warn);
+  font-weight: 600;
+}
+
 /* The detail panel: the selected action or event, and the session's requests. The right column
    from 1200px; below that, after the centre. Every value in it wraps inside it, at any point when
    it has no break of its own. The selection and the requests list each have a bounded height and
@@ -668,6 +792,12 @@ h3 {
 
 .segment .command {
   font-weight: 600;
+}
+
+.segment .handle {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--accent);
 }
 
 .segment .argument {

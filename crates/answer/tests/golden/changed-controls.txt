@@ -1,0 +1,13 @@
+surf 1 session 7f3a open
+did pick "f7"
+page 200 "text/html" "http://example.org/form" "Form"
+path 3 of 3
+  1 open
+  2 go "http://example.org/form"
+  3 pick f7
+changed 5
+  ~ f1 value "" -> "ada"
+  ~ f2 value (empty) -> (set)
+  ~ f5 selected "Red" -> "Green"
+  ~ f6 checked true -> false
+  ~ f7 checked false -> true

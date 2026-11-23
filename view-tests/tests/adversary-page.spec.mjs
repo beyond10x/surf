@@ -71,7 +71,7 @@ test("adversary: an action streamed while the selected session's detail loads is
 
 // The same after a reset (docs/view-stream.md, "The stream"): forget() drops what is loaded and
 // the selected session's detail is asked for again; a go streamed while it loads is not lost.
-test("adversary: an action streamed while the detail loads after a reset is not lost", async ({ page, surf }) => {
+test("adversary: an action streamed while the detail loads after a reset is not lost", async ({ page, surf, record }) => {
   test.setTimeout(120_000);
   const id = await surf.open();
   await load(page, surf.piped);
@@ -88,10 +88,15 @@ test("adversary: an action streamed while the detail loads after a reset is not 
   await surf.agent(id, "go", surf.pages + "/first/b.html");
   // The session event after the go's answer entry has reached the page: the list shows the address.
   await expect(items(page).nth(0).locator(".address")).toHaveText(surf.pages + "/first/b.html");
+  // The two held answers: the load of the opening and the load of the reset.
+  const answers = record.requestsOf("/api/sessions/" + id).slice(-2);
   held.release();
-  await expect(segments(page), "the go streamed while the detail loaded after the reset is lost").toHaveCount(27, {
-    timeout: 5000,
-  });
+  // The state is read once both loads are in: live (the load of the opening is drawn), the end
+  // of both answers, and two frames; not a deadline from the release (story D287).
+  await expect(page.locator("#live-word")).toHaveText("live");
+  await Promise.all(answers.map((answer) => answer.body));
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  expect(await segments(page).count(), "the go streamed while the detail loaded after the reset is lost").toBe(27);
   expect(await texts(segments(page).locator(".sequence"))).toEqual(Array.from({ length: 27 }, (_, at) => String(at + 1)));
   await expect(pageAddress(page)).toHaveText(surf.pages + "/first/b.html");
 });

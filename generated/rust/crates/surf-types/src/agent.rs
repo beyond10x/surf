@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 1fa135dfaf753fab3e34de8ae9a4a7052216d1878fc9d395075ce5cd5ac673a6
+// contract digest aac42d8ac87218cacd79d661cdfc6da87c457bcea21b6e55cbec893553faf526
 // do not edit: regenerate with `ess synthesize`
 
 //! Agent — `surf.agent`.
@@ -35,6 +35,10 @@ pub enum ActionCommand {
     Pick,
     /// `press`.
     Press,
+    /// `back`.
+    Back,
+    /// `forward`.
+    Forward,
     /// `close`.
     Close,
 }
@@ -44,6 +48,34 @@ pub enum ActionCommand {
 /// The identity of one recorded action.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActionId(pub crate::primitives::Uuid);
+
+/// FillCall — `surf.agent.FillCall`.
+///
+/// The handle of the control to fill in a session, its value, and the token that proves the caller holds it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FillCall {
+    /// `session_id` — `String`.
+    pub session_id: String,
+    /// `token` — `surf.agent.SessionToken`.
+    pub token: SessionToken,
+    /// `handle` — `String`.
+    pub handle: String,
+    /// `value` — `String`.
+    pub value: String,
+}
+
+/// FollowCall — `surf.agent.FollowCall`.
+///
+/// The handle of the link to follow in a session, and the token that proves the caller holds it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FollowCall {
+    /// `session_id` — `String`.
+    pub session_id: String,
+    /// `token` — `surf.agent.SessionToken`.
+    pub token: SessionToken,
+    /// `handle` — `String`.
+    pub handle: String,
+}
 
 /// GoCall — `surf.agent.GoCall`.
 ///
@@ -60,6 +92,19 @@ pub struct GoCall {
     pub form: Option<PageForm>,
     /// `from_line` — `Optional<Integer>`.
     pub from_line: Option<i64>,
+}
+
+/// LogCall — `surf.agent.LogCall`.
+///
+/// Which session `log` reads, how many of its last actions to list if not all, and the token that proves the caller holds it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogCall {
+    /// `session_id` — `String`.
+    pub session_id: String,
+    /// `token` — `surf.agent.SessionToken`.
+    pub token: SessionToken,
+    /// `count` — `Optional<Integer>`.
+    pub count: Option<i64>,
 }
 
 /// LookCall — `surf.agent.LookCall`.
@@ -110,6 +155,34 @@ pub enum PageForm {
     Tree,
     /// `markdown`.
     Markdown,
+}
+
+/// PickCall — `surf.agent.PickCall`.
+///
+/// The handle of the choice to change in a session, the option to pick, and the token that proves the caller holds it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PickCall {
+    /// `session_id` — `String`.
+    pub session_id: String,
+    /// `token` — `surf.agent.SessionToken`.
+    pub token: SessionToken,
+    /// `handle` — `String`.
+    pub handle: String,
+    /// `option` — `String`.
+    pub option: String,
+}
+
+/// PressCall — `surf.agent.PressCall`.
+///
+/// The handle of the button to press in a session, and the token that proves the caller holds it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PressCall {
+    /// `session_id` — `String`.
+    pub session_id: String,
+    /// `token` — `surf.agent.SessionToken`.
+    pub token: SessionToken,
+    /// `handle` — `String`.
+    pub handle: String,
 }
 
 /// The states of `surf.agent.Session`, as runtime values.
@@ -695,6 +768,102 @@ pub enum GoOutcome {
     },
 }
 
+/// Go back — the input of `surf.agent.GoBack`.
+///
+/// Ask for the entry before the current one in the session's tab.
+///
+/// Everything it can result in is [`GoBackOutcome`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GoBack {
+    /// `session_id` — `surf.agent.SessionId`.
+    pub session_id: SessionId,
+}
+
+/// Everything `surf.agent.GoBack` can result in — one variant per declared outcome.
+///
+/// An infrastructure failure is deliberately not in here: a refusal is a fact about the domain,
+/// a transport fault is a fact about the run, and conflating the two is what the declared
+/// outcomes exist to prevent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GoBackOutcome {
+    /// `not-holder` — when the existing subject's stored fields satisfy `holder != caller.session_id`.
+    ///
+    /// The caller's token is another session's.
+    NotHolder {
+        /// Why it was refused: `surf.agent.NotSessionHolder`.
+        error: NotSessionHolder,
+    },
+    /// `no-such-session` — for an identity no record carries.
+    ///
+    /// No session has this identity.
+    NoSuchSession {
+        /// Why it was refused: `surf.agent.SessionNotFound`.
+        error: SessionNotFound,
+    },
+    /// `closed` — when the existing subject is in Closed.
+    ///
+    /// The session is Closed; nothing was requested.
+    Closed {
+        /// Why it was refused: `surf.agent.SessionStateConflict`.
+        error: SessionStateConflict,
+    },
+    /// `requested` — otherwise.
+    ///
+    /// The navigator is asked for the entry before the current one.
+    Requested {
+        /// The `surf.agent.TraversalRequested` this outcome publishes.
+        traversal_requested: TraversalRequested,
+    },
+}
+
+/// Go forward — the input of `surf.agent.GoForward`.
+///
+/// Ask for the entry after the current one in the session's tab.
+///
+/// Everything it can result in is [`GoForwardOutcome`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GoForward {
+    /// `session_id` — `surf.agent.SessionId`.
+    pub session_id: SessionId,
+}
+
+/// Everything `surf.agent.GoForward` can result in — one variant per declared outcome.
+///
+/// An infrastructure failure is deliberately not in here: a refusal is a fact about the domain,
+/// a transport fault is a fact about the run, and conflating the two is what the declared
+/// outcomes exist to prevent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GoForwardOutcome {
+    /// `not-holder` — when the existing subject's stored fields satisfy `holder != caller.session_id`.
+    ///
+    /// The caller's token is another session's.
+    NotHolder {
+        /// Why it was refused: `surf.agent.NotSessionHolder`.
+        error: NotSessionHolder,
+    },
+    /// `no-such-session` — for an identity no record carries.
+    ///
+    /// No session has this identity.
+    NoSuchSession {
+        /// Why it was refused: `surf.agent.SessionNotFound`.
+        error: SessionNotFound,
+    },
+    /// `closed` — when the existing subject is in Closed.
+    ///
+    /// The session is Closed; nothing was requested.
+    Closed {
+        /// Why it was refused: `surf.agent.SessionStateConflict`.
+        error: SessionStateConflict,
+    },
+    /// `requested` — otherwise.
+    ///
+    /// The navigator is asked for the entry after the current one.
+    Requested {
+        /// The `surf.agent.TraversalRequested` this outcome publishes.
+        traversal_requested: TraversalRequested,
+    },
+}
+
 /// Note a committed navigation — the input of `surf.agent.NoteNavigationCommitted`.
 ///
 /// Record on the session showing a navigation that it committed, with its address, status and media type.
@@ -1040,6 +1209,8 @@ pub struct FillRequested {
     pub element_id: crate::document::ElementId,
     /// `value` — `String`.
     pub value: String,
+    /// `handle` — `Optional<String>`.
+    pub handle: Option<String>,
 }
 
 /// NavigationRequested — the event `surf.agent.NavigationRequested`.
@@ -1051,6 +1222,10 @@ pub struct NavigationRequested {
     pub tab_id: crate::shell::TabId,
     /// `url` — `surf.url.Url`.
     pub url: crate::url::Url,
+    /// `handle` — `Optional<String>`.
+    pub handle: Option<String>,
+    /// `label` — `Optional<String>`.
+    pub label: Option<String>,
 }
 
 /// PickRequested — the event `surf.agent.PickRequested`.
@@ -1062,6 +1237,8 @@ pub struct PickRequested {
     pub element_id: crate::document::ElementId,
     /// `option_id` — `Optional<surf.document.OptionId>`.
     pub option_id: Option<crate::document::OptionId>,
+    /// `handle` — `Optional<String>`.
+    pub handle: Option<String>,
 }
 
 /// PressRequested — the event `surf.agent.PressRequested`.
@@ -1071,6 +1248,8 @@ pub struct PressRequested {
     pub session_id: SessionId,
     /// `element_id` — `surf.document.ElementId`.
     pub element_id: crate::document::ElementId,
+    /// `handle` — `Optional<String>`.
+    pub handle: Option<String>,
 }
 
 /// SessionClosed — the event `surf.agent.SessionClosed`.
@@ -1104,6 +1283,17 @@ pub struct SessionOpened {
     pub window_id: crate::shell::WindowId,
     /// `tab_id` — `surf.shell.TabId`.
     pub tab_id: crate::shell::TabId,
+}
+
+/// TraversalRequested — the event `surf.agent.TraversalRequested`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TraversalRequested {
+    /// `session_id` — `surf.agent.SessionId`.
+    pub session_id: SessionId,
+    /// `tab_id` — `surf.shell.TabId`.
+    pub tab_id: crate::shell::TabId,
+    /// `step` — `surf.navigation.Standing`.
+    pub step: crate::navigation::Standing,
 }
 
 /// The declared error `surf.agent.NotSessionHolder`.
@@ -1265,6 +1455,28 @@ pub mod obligations {
         ///
         /// `Err` is the typed refusal of a request the model declares no outcome for.
         fn go(&mut self, input: super::Go) -> Result<super::GoOutcome, crate::obligation::UnmetObligation>;
+    }
+
+    /// The behaviour `surf.agent.GoBack` — generated.
+    ///
+    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
+    /// over the storage and context ports. Implement it yourself to replace that behaviour.
+    pub trait GoBackBehavior {
+        /// Decides and enacts exactly one declared outcome of `surf.agent.GoBack`.
+        ///
+        /// `Err` is the typed refusal of a request the model declares no outcome for.
+        fn go_back(&mut self, input: super::GoBack) -> Result<super::GoBackOutcome, crate::obligation::UnmetObligation>;
+    }
+
+    /// The behaviour `surf.agent.GoForward` — generated.
+    ///
+    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
+    /// over the storage and context ports. Implement it yourself to replace that behaviour.
+    pub trait GoForwardBehavior {
+        /// Decides and enacts exactly one declared outcome of `surf.agent.GoForward`.
+        ///
+        /// `Err` is the typed refusal of a request the model declares no outcome for.
+        fn go_forward(&mut self, input: super::GoForward) -> Result<super::GoForwardOutcome, crate::obligation::UnmetObligation>;
     }
 
     /// The behaviour `surf.agent.NoteNavigationCommitted` — an implementation obligation.

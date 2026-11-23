@@ -113,6 +113,7 @@ timeline:
     input:
       request_id: {$instance: first-load}
       url: https://example.org/first
+      method: Get
       status: 200
       media_type: text/html
       body: PGh0bWw+PC9odG1sPg==
@@ -123,6 +124,7 @@ timeline:
     input:
       request_id: {$instance: second-load}
       url: https://example.org/second
+      method: Get
       status: 200
       media_type: text/html
       body: PGh0bWw+PC9odG1sPg==

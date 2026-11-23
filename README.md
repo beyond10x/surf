@@ -7,7 +7,7 @@
 **A web browser written from scratch, where the specification comes first.**
 
 ![spec: ESS 0.97.4, valid](docs/badges/spec.svg)
-![conformance: 169 of 169 scenarios](docs/badges/conformance.svg)
+![conformance: 196 of 196 scenarios](docs/badges/conformance.svg)
 ![tests: 877 passed](docs/badges/tests.svg)
 ![third-party crates shipped: 0](docs/badges/dependencies.svg)
 ![unsafe code: forbidden](docs/badges/unsafe.svg)
@@ -88,17 +88,50 @@ last field is `-` for a row with neither target nor value.
 On Linux, `surf-agent` drives a browser session one call at a time, for an AI agent or a
 script. `surf-agent open <url>` opens a session, loads the address and prints the session's
 identity and a token, once. Export the two as `SURF_SESSION` and `SURF_TOKEN`; then `go <url>`,
-`look` and `close` take the session as their subject. Each call answers in a few plain lines. A
-run of `go`:
+`look`, `follow <handle>`, `fill <handle> <value>`, `pick <handle> <option>`, `press <handle>`,
+`back`, `forward`, `log` and `close` take the session as their subject. Each call answers in a
+few plain lines. `now`
+lists every link with a handle such as `l3`, every form field with one such as `f1` and every
+button with one such as `b1`; `follow l3` goes there. `?` means visibility is not computed; only the `hidden` attribute is known.
+
+`fill f1 ada` types into a field; for a secret use `fill f2 -` and write the value to standard
+input: an argument word is readable by other users. `pick` chooses an option or checks a box.
+A password is never printed: `(set)` or `(empty)`. A value of up to 16,000 bytes from standard
+input always fits its request. A text field drops the line breaks of its value, as a browser
+does; a textarea keeps them. `--` ends the options, for a value or an option that starts with a
+dash: `fill f1 -- -5`, `pick f2 -- "-- choose --"`.
+
+`press b1` submits the form of a submit button; the answer shows the page the server answered
+with. A button that only a script would act on is refused.
+
+`back` and `forward` move through the pages of the session. A page reached by a form `POST`
+cannot be gone back or forward to until surf has a cache.
+
+A page that counts as public cannot send the session to a loopback or private address: `follow`
+and `press` from such a page are refused `forbidden-destination` when the address is or resolves
+to one, and so are `back` and `forward` to a page that such a page, or a redirect after a public
+address, chose. To go to a local address, type it with `go`.
+
+`changed` says what the last action changed: the value of a control, or the new page and its new
+texts. `log` lists every action.
+
+A run of `go`:
 
 ```console
 $ surf-agent go http://example.org/
 surf 1 session cef9d223-7fdb-4151-85af-6c6d71d4fece open
 did go "http://example.org/"
-page 200 "text/html" "http://example.org/"
+page 200 "text/html" "http://example.org/" "Example Domain"
 path 2 of 2
   1 open
   2 go "http://example.org/"
+changed page none -> "http://example.org/"
+  + text "# Example Domain"
+  + text "This domain is for use in documentation examples without needing permission. Avoid use in operations."
+  + text "[Learn more](<https://iana.org/domains/example>) [@l1]"
+now 1 of 1
+  l1 link ? "Learn more" -> "https://iana.org/domains/example"
+note visibility: hidden attribute only
 ```
 
 What it does not do yet:
@@ -107,10 +140,19 @@ What it does not do yet:
 - Release `0.2.0` delivers a redirect status as the response. Since release `0.3.0`, a `go`
   follows redirects.
 - No JavaScript and no rendering.
-- An answer holds the status, the media type and the address, and no title. Since release
+- An answer holds the status, the media type, the address and the title. Since release
   `0.4.0`, `--as tree` or `--as markdown` adds the page as text.
-- A link cannot be followed and a form cannot be filled or submitted yet: the commands are
-  `open`, `go`, `look` and `close`.
+- A form is submitted with `GET` or `POST` as `application/x-www-form-urlencoded` only: a
+  `multipart/form-data` form is refused (`unsupported-enctype`), and so is a `GET` form whose
+  password field holds a value (`password-in-query`). `press` refuses the address a form would
+  submit to as `follow` refuses a link's target. The commands are `open`, `go`, `look`,
+  `follow`, `fill`, `pick`, `press`, `back`, `forward`, `log` and `close`. Visibility is not
+  computed: `now` says `hid` for the `hidden` attribute and `?` for every other element.
+- Before scripts, `changed` within one page holds the state of controls only.
+- `follow` refuses, before any navigation, a link to a scheme other than `http:`
+  (`unsupported-scheme`), a target over 65,536 bytes (`address-too-long`) and, from a page on a
+  public address, a target on a loopback or private address or `localhost`
+  (`forbidden-destination`). The page stays.
 - The agent binaries run on Linux only.
 
 The commands, the token, the exit statuses and the answer, one by one:
@@ -134,10 +176,23 @@ of its actions with a playhead: the page line is that of the action at the playh
 follows the newest action, and the arrow keys move the playhead one action. The selection is
 kept in the address, so a reload shows the same action.
 
+The word at the top says whether the page follows: `connecting` until its stream of events is
+open and what it loaded then is shown, `live` with the time of the last update while it follows,
+`reconnecting` from a lost stream until the next one is open and its load shown, and `offline`
+after the view refused the token.
+
 Since the eighth wave, shipped in release `0.3.0`, the right column shows the action at the playhead
 or, after a click on a mark of the timeline, that event with its fields, and the session's
 requests, one row per request. The selected event is kept in the address too. The requests
 list and the selection scroll inside themselves.
+
+Since round 2 a panel "Now" under the page line lists what the agent could do at the playhead:
+the links of that action's answer with their handles, labels, targets and visibility (`hid`
+for a link the `hidden` attribute hides, `?` where visibility is not computed), and the page's
+title shows in the session list and on the page line. A `follow` shows its handle on the
+timeline (`follow l1`). Labels, targets and titles are shown as text; no target is a link. A
+bidirectional control (U+202A to U+202E, U+2066 to U+2069) in a value from a session shows as a
+mark that names it (`U+202E`), so it cannot reorder what a person reads.
 
 The view only reads: nothing on the page changes a session. It listens on 127.0.0.1 only. The
 token in the address is valid until `surfd` exits, and the browser may keep that address in its
@@ -185,7 +240,7 @@ there instead.
 6. **Text from the web stays text.** Anything from a page, a server or an address is escaped
    before it is printed, so a page cannot forge a line of surf's output.
 7. **A passing test must be able to fail.** Tests are tried against planted defects. A storage
-   that drops every write fails 36 of the 169 scenarios.
+   that drops every write fails 36 of the 170 scenarios.
 8. **Small.** A standard is followed for what surf does, not implemented whole.
 
 ## What works today
@@ -196,9 +251,9 @@ there instead.
   `renderer`.
 - **Its own HTTP/1.1 client**, with one deadline for the whole exchange (40 seconds at most)
   and hard limits on header and body size.
-- **169 specified scenarios**, each passing twice: once against the specification's own
+- **196 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **877 tests**, built with warnings treated as errors, and 38 tests of the live view's page in
+- **877 tests**, built with warnings treated as errors, and 59 tests of the live view's page in
   a browser.
 
 New with round 1 after the tenth wave of the current plan, shipped in release `0.4.0`:
@@ -249,8 +304,8 @@ command prints has changed:
 - **The HTTP client can send a `POST`** with a body and its media type, and after a redirect
   it does what the Fetch Standard says: a 301, 302 or 303 continues as `GET` without the body,
   a 307 or 308 sends the method and the body again. A body over 16 MiB, or a media type with
-  parameters, is refused before anything is sent. No command sends a `POST` yet: `go` and
-  `open` send `GET`. The form stories of the plan bring the first command that does.
+  parameters, is refused before anything is sent. `go` and `open` send `GET`; since round 2,
+  `press` sends a form's `POST`.
 - **Misnested formatting tags give the standard's tree.** The HTML parser runs the HTML
   Standard's adoption agency algorithm. All 22 `formatting` tree cases of the test data pass,
   and 1,300 of the 1,809 tree construction cases.
@@ -271,7 +326,7 @@ New with the eighth wave of the current plan, shipped in release `0.3.0`:
   a method (`Get` or `Post`), an optional body and its media type, and the live view's events
   `NavigationStarted` and `RequestStarted` show them. `go` and `open` send `GET` as before. A
   request with any other method was refused before anything was sent; since the ninth wave
-  the client sends a `POST` (above), and no command sends one yet.
+  the client sends a `POST` (above), and since round 2 `press` does.
 - **The HTML parser builds a document tree** with the HTML Standard's rules outside tables,
   templates and foreign content (SVG and MathML). All 476 `body` tree cases of the test data
   pass, and all 82 encoding cases: a `meta` that names another encoding parses the page again
@@ -353,8 +408,9 @@ New with the third wave, the parts the agent commands and the live view build on
 
 - **The daemon, `surfd`.** It keeps the list of sessions (open, closed or died), passes each
   request to the session's own process and the answer back, and exits when it has been idle.
-- **The live view's page.** Nine plain files (ten since the eighth wave), with no framework,
-  nothing from another origin and every value shown as text, fitting screens from 360 px to
+- **The live view's page.** Nine plain files (ten since the eighth wave, eleven since round
+  2), with no framework, nothing from another origin and every value shown as text, fitting
+  screens from 360 px to
   1,400 px wide. One command from a source checkout, the `prototype` example of the `surf-view` crate, serves it over three
   scripted sessions and prints an address to open in a browser on the same machine. It shows
   example data only; since the seventh wave `surfd` serves the page over real sessions (above).
@@ -408,11 +464,12 @@ Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `s
 | 7 (delivered) | Watch every session live in a local web page: where it is and what it did, action by action. Redirects are followed. |
 | 8 (delivered) | Select an action or an event in the live view and read its fields, beside the session's requests. |
 | 11 (delivered, round 1) | Read a real page's links, buttons and form fields, from an HTML parser held to the html5lib tests. |
-| 18 | Follow links, fill and submit forms, go back and forward. Each answer says what changed. |
+| 18 (delivered, round 2) | Follow links, fill and submit forms, go back and forward. Each answer says what changed. |
 | 22 | Record an agent's session, turn it into a test, and replay it against the recorded network. |
 
-The next planned steps are following links, filling and submitting forms, and going back and
-forward (round 2). TLS and `https:` are on the list below. None of them has a date.
+Round 2 delivered following links, filling and submitting forms, going back and forward, the
+`changed` block and `log`; no release carries them yet. TLS and `https:` are on the list below.
+None of the next steps has a date.
 
 Next after that, wanted and not planned in detail yet:
 
@@ -450,11 +507,11 @@ One command checks everything:
 ```console
 $ task check
 surf v1 — 9 file(s), 24 scenario(s), valid
-169 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
-  169 scenarios: 169 passed, 0 failed, 0 error, 0 unsupported
-169 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
-  169 scenarios: 169 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 169 scenario(s) each, of suite sha256:0aead5f74409f8c561f544df8056b9e6b6fe146c13ba2e5e3a3fbf0ffdea733c
+170 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
+  170 scenarios: 170 passed, 0 failed, 0 error, 0 unsupported
+170 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
+  170 scenarios: 170 passed, 0 failed, 0 error, 0 unsupported
+the interpreter and the Rust system ran 170 scenario(s) each, of suite sha256:8b5c4b2f27ec981e3b3d5dff934bc62e935606f9b441604980c929c185d9a132
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 Cargo.lock: 26 package(s), none from outside this repository
@@ -464,18 +521,22 @@ test step: 62.3 s of its budget of 120 s
 agent-tasks: 4 tasks, 2 pass, 2 fail, 0 skipped, lane gate, binaries target/debug
 sh-echo: Summary [   2.623s] 40 tests run: 40 passed, 54 skipped
 view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
-  38 passed (15.8s)
+  59 passed (3.0m)
 html-conformance: 9107 cases, 9095 run, 9095 passed
 ```
 
-It validates the specification, runs the 169 scenarios against the interpreter built into `ess`
+It validates the specification, runs the 196 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
 that the lock file holds no outside package, then builds and tests, checks that every event
 name of the live view's stream is an event of the specification, runs the live view's page
 tests in a browser, and last holds the HTML parser's test counts where they are. The tests run
 under cargo-nextest; a test still running after 60 seconds is ended and fails, the test step
 fails when it takes over 120 seconds, and the block leaves out the ten slowest tests the step
-also prints and the agent tasks' rows after their counts. The page tests need Node and
+also prints and the agent tasks' rows after their counts. The page tests' line, `59 passed
+(3.0m)` (the task 220 s), was measured at a load average of 126 to 127 on 20 CPUs, its slowest
+test (`an entry over 1 MiB`) 35.0 s; `53 passed` took 1.1m at a load average of 55 to 65;
+`47 passed` took 2.5m at a load average of 110 to 140, and the 38 of before took 15.8 s.
+The page tests need Node and
 Chromium's headless shell; with Node there, install the shell once with `npm --prefix view-tests ci`, then `npx --prefix view-tests playwright
 install --only-shell chromium`. The scenario runner in
 [`conformance/`](conformance/) is the one place a third-party crate is used; nothing that

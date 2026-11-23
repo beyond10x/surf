@@ -10,18 +10,23 @@ autotests = false
 [lib]
 name = "surf_session"
 path = "src/lib.rs"
+test = false
 
 [[bin]]
 name = "surf-session"
 path = "src/main.rs"
+test = false
 
 [dependencies]
 surf = { path = "../surf" }
 surf-ports = { path = "../ports" }
 surf-fetch = { path = "../fetch" }
 surf-answer = { path = "../answer" }
+surf-html = { path = "../html" }
+surf-page = { path = "../page" }
 surf-page-text = { path = "../page-text" }
 surf-secret = { path = "../secret" }
+surf-url = { path = "../url" }
 surf-agent = { path = "../agent" }
 surfd = { path = "../surfd" }
 surf-types = { path = "../../generated/rust/crates/surf-types" }

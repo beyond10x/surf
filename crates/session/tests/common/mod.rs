@@ -39,8 +39,17 @@ pub const SOCKET_PATH_MAX: usize = 107;
 
 /// A directory of one case, removed when it is dropped, after every process of the case is
 /// stopped: `r` is the `XDG_RUNTIME_DIR` of the case.
+///
+/// The processes of the case are those whose environment holds `XDG_RUNTIME_DIR=<r>`. A helper
+/// that starts a built program (`agent`, `Started::start`) marks the directory, and its drop
+/// looks for them among every process of the host ([`TestDir::processes`]): such a program can
+/// leave the test's tree (the `surfd` a `surf-agent` starts is reparented when it exits). An
+/// unmarked directory's drop looks only among the descendants of the test process, where an
+/// in-process daemon's sessions are.
 pub struct TestDir {
     pub path: PathBuf,
+    /// Set by a helper that started a built program in this case.
+    pub started_a_built_program: AtomicBool,
 }
 
 impl TestDir {
@@ -63,7 +72,10 @@ impl TestDir {
              base directory is too long; set XDG_RUNTIME_DIR to a short directory of yours"
         );
         fs::create_dir(&path).expect("a new test directory");
-        let dir = TestDir { path };
+        let dir = TestDir {
+            path,
+            started_a_built_program: AtomicBool::new(false),
+        };
         fs::set_permissions(&dir.path, fs::Permissions::from_mode(0o700)).unwrap();
         fs::create_dir(dir.runtime()).expect("the runtime directory");
         fs::set_permissions(dir.runtime(), fs::Permissions::from_mode(0o700)).unwrap();
@@ -89,40 +101,75 @@ impl TestDir {
         dir.join("session.sock")
     }
 
-    /// The process ids whose environment holds `XDG_RUNTIME_DIR=<this case's runtime>`.
+    /// Marks the case as one that started a built program: its drop reads every process.
+    pub fn mark_built_program(&self) {
+        self.started_a_built_program.store(true, Ordering::SeqCst);
+    }
+
+    /// The process ids of the host whose environment holds `XDG_RUNTIME_DIR=<this case's
+    /// runtime>`.
     pub fn processes(&self) -> Vec<u32> {
+        let Ok(entries) = fs::read_dir("/proc") else {
+            return Vec::new();
+        };
+        self.processes_among(
+            entries
+                .flatten()
+                .filter_map(|entry| entry.file_name().to_str()?.parse::<u32>().ok()),
+        )
+    }
+
+    /// The processes of `candidates`, this one left out, whose environment holds
+    /// `XDG_RUNTIME_DIR=<this case's runtime>`.
+    fn processes_among(&self, candidates: impl IntoIterator<Item = u32>) -> Vec<u32> {
         let mut needle = b"XDG_RUNTIME_DIR=".to_vec();
         needle.extend_from_slice(self.runtime().as_os_str().as_encoded_bytes());
         let own = std::process::id();
-        let mut pids = Vec::new();
-        if let Ok(entries) = fs::read_dir("/proc") {
-            for entry in entries.flatten() {
-                let Some(pid) = entry
-                    .file_name()
-                    .to_str()
-                    .and_then(|n| n.parse::<u32>().ok())
-                else {
-                    continue;
-                };
-                if pid == own {
-                    continue;
-                }
-                let environ = fs::read(entry.path().join("environ")).unwrap_or_default();
-                if environ
+        candidates
+            .into_iter()
+            .filter(|&pid| pid != own)
+            .filter(|pid| {
+                fs::read(format!("/proc/{pid}/environ"))
+                    .unwrap_or_default()
                     .split(|&b| b == 0)
                     .any(|pair| pair == needle.as_slice())
-                {
-                    pids.push(pid);
+            })
+            .collect()
+    }
+}
+
+/// Every descendant of this process: the process ids in `/proc/<pid>/task/<tid>/children` of
+/// each of its threads, followed down. `None` when one of those files cannot be read (a process
+/// or thread ended while it was read, so that a child of it may have left the tree).
+pub fn descendants() -> Option<Vec<u32>> {
+    let mut found: Vec<u32> = Vec::new();
+    let mut pending = vec![std::process::id()];
+    while let Some(pid) = pending.pop() {
+        for task in fs::read_dir(format!("/proc/{pid}/task")).ok()? {
+            let children = fs::read_to_string(task.ok()?.path().join("children")).ok()?;
+            for child in children.split_whitespace() {
+                let child: u32 = child.parse().ok()?;
+                if !found.contains(&child) {
+                    found.push(child);
+                    pending.push(child);
                 }
             }
         }
-        pids
     }
+    Some(found)
 }
 
 impl Drop for TestDir {
     fn drop(&mut self) {
-        let pids = self.processes();
+        let walked = if self.started_a_built_program.load(Ordering::SeqCst) {
+            None
+        } else {
+            descendants()
+        };
+        let pids = match walked {
+            Some(descendants) => self.processes_among(descendants),
+            None => self.processes(),
+        };
         for &pid in &pids {
             signal_kill(pid);
         }
@@ -270,8 +317,10 @@ pub fn session_program() -> PathBuf {
     }
 }
 
-/// `surf-agent` in the case's environment: nothing but its `XDG_RUNTIME_DIR`.
+/// `surf-agent` in the case's environment: nothing but its `XDG_RUNTIME_DIR`. Marks the
+/// directory.
 pub fn agent(dir: &TestDir) -> Command {
+    dir.mark_built_program();
     let mut command = Command::new(bin_dir().join("surf-agent"));
     command
         .env_clear()
@@ -356,7 +405,9 @@ pub struct Started {
 
 impl Started {
     /// Start `surf-session [options] <identity> <socket>` in `dir` and read its first line.
+    /// Marks the directory.
     pub fn start(dir: &TestDir, options: &[&str]) -> Started {
+        dir.mark_built_program();
         let id = new_identity();
         let socket = dir.session_socket(&id);
         let mut child = Command::new(session_program())
@@ -608,4 +659,59 @@ pub fn placeholders(text: &str, id: &str, token: &str, port: u16) -> String {
     text.replace(id, "<id>")
         .replace(token, "<token>")
         .replace(&format!("127.0.0.1:{port}"), "127.0.0.1:<port>")
+}
+
+// --- A resolver of its own ------------------------------------------------------------------
+
+/// A [`surf_fetch::Network`] whose names resolve to the addresses a test gives them, without
+/// the host's resolver, and which notes every address dialed. A name it was not given fails
+/// `Unreachable`; a connection goes to the address itself.
+#[derive(Debug, Default)]
+pub struct Names {
+    names: Vec<(String, Vec<std::net::IpAddr>)>,
+    dialed: std::sync::Mutex<Vec<std::net::SocketAddr>>,
+}
+
+impl Names {
+    /// `name` resolves to `addresses`.
+    pub fn name(mut self, name: &str, addresses: &[&str]) -> Names {
+        let addresses = addresses.iter().map(|ip| ip.parse().unwrap()).collect();
+        self.names.push((name.to_string(), addresses));
+        self
+    }
+
+    /// Every address dialed, in order.
+    pub fn dialed(&self) -> Vec<std::net::SocketAddr> {
+        self.dialed.lock().unwrap().clone()
+    }
+}
+
+impl surf_fetch::Network for Names {
+    fn resolve(
+        &self,
+        host: &str,
+        port: u16,
+        _: Duration,
+    ) -> Result<Vec<std::net::SocketAddr>, surf_fetch::Failure> {
+        let (_, addresses) = self
+            .names
+            .iter()
+            .find(|(name, _)| name == host)
+            .ok_or_else(|| {
+                surf_fetch::Failure::Unreachable(format!("the test does not resolve {host}"))
+            })?;
+        Ok(addresses
+            .iter()
+            .map(|ip| std::net::SocketAddr::new(*ip, port))
+            .collect())
+    }
+
+    fn connect(
+        &self,
+        address: &std::net::SocketAddr,
+        timeout: Duration,
+    ) -> std::io::Result<TcpStream> {
+        self.dialed.lock().unwrap().push(*address);
+        TcpStream::connect_timeout(address, timeout)
+    }
 }

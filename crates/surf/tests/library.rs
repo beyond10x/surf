@@ -49,6 +49,7 @@ impl Transport for Counting {
                 ..
             } => Answer::Response {
                 url: request.url.0.clone(),
+                method: request.method,
                 status,
                 media_type,
                 body,
@@ -73,6 +74,7 @@ fn counting(answer: Answer) -> (Counting, Rc<Cell<usize>>) {
 fn html() -> Answer {
     Answer::Response {
         url: String::new(),
+        method: surf::Method::Get,
         status: 200,
         media_type: "text/html".to_owned(),
         body: b"<p>surf</p>".to_vec(),
@@ -184,6 +186,7 @@ fn a_closure_is_a_transport() {
         surf_ports::ComponentPorts::new(),
         |request: &RequestStarted| Answer::Response {
             url: request.url.0.clone(),
+            method: request.method,
             status: 404,
             media_type: "text/plain".to_owned(),
             body: Vec::new(),

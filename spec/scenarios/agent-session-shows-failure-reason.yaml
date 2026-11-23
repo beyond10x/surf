@@ -46,6 +46,7 @@ timeline:
     input:
       request_id: {$instance: first-load}
       url: http://example.org/
+      method: Get
       status: 200
       media_type: text/html
       body: PGh0bWw+PC9odG1sPg==

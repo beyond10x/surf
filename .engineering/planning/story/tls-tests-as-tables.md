@@ -4,7 +4,7 @@ id: story:tls-tests-as-tables
 kind: story
 status: draft
 title: The TLS tests that are rows of one claim run as table tests
-summary: 207 TLS tests in 20 groups become 20 table tests (545 TLS tests become 358), opt-level 1 for surf-tls, surf-tls-test-server, surf-tls-test-certs where the rule allows, lock_check without task; lowers test-tls, not a precondition of the wave's merge
+summary: 207 TLS tests in 20 groups become 20 table tests (545 TLS tests become 358), opt-level 1 for surf-tls, surf-tls-test-server, surf-tls-test-certs where the rule allows; lowers test-tls, not a precondition of the wave's merge
 relations:
 - decomposes: epic:tls-https
 - depends_on: story:test-step-holds-with-tls
@@ -20,8 +20,6 @@ scope:
 - confidence: cited
   path: AGENTS.md
 - confidence: cited
-  path: crates/surf/tests/lock_check.rs
-- confidence: cited
   path: crates/tls-conformance/tests
 - confidence: cited
   path: crates/tls-test-certs/tests
@@ -31,7 +29,7 @@ scope:
   path: crates/tls/tests/tls
 - confidence: cited
   path: crates/tls/tests/tls/path.rs
-revision: 14
+revision: 17
 ---
 ## Why
 
@@ -81,7 +79,7 @@ cost; statement 1 takes them first.
 
 All on `wave/tls-1`, after `story:tls-step-within-budget`. Statement 1 comes first, measured and
 decided before the merge of statement 2, so no table merge counts for an override; then
-statements 2 to 7 in any order.
+statements 2 to 6 in any order.
 
 1. `.cargo/config.toml` on the wave: `[profile.dev.package.<name>]` with `opt-level = 1` for each
    candidate that qualifies by the rule of `story:test-step-holds-with-tls` statement 3 (D257).
@@ -148,18 +146,14 @@ statements 2 to 7 in any order.
 6. The tests that each read a whole data file (`limbo_parse::*`, `wycheproof_*`), the `sh` runs
    of `anchors.rs`, and the tests named after a single mutant that are not in a group stay as
    they are.
-7. `crates/surf/tests/lock_check.rs` (on the wave since `story:tls-lock-allow`, `87fd19f`) runs
-   `sh taskfiles/lock-check.sh <lock> <allow-list>` in its copy per case, not `task lock-check`
-   (`Command::new("task")` at :59 today), as `story:test-step-holds-with-tls` statement 13 does
-   for `generated-compare` and `conform-totals` on `main`. The wave's script, its interface and
-   the task (`Taskfile.yml`:154 on the wave) stay as they are; the module comment of
-   `lock_check.rs` says the test runs the script. `lock_check.rs` runs in `task test`, not in
-   `test-tls`.
+7. (Taken by `story:test-step-scripts-and-binaries`, statement 3: `crates/surf/tests/lock_check.rs`
+   runs `sh taskfiles/lock-check.sh` instead of `task lock-check`, on `main`. This story no
+   longer changes that file.)
 
 ### Overlap and order
 
-- `story:tls-fetch-https` scopes `crates/surf/tests`, which holds `lock_check.rs` (statement 7);
-  this story depends on it and changes `lock_check.rs` after it.
+- `story:tls-fetch-https` scopes `crates/surf/tests`; this story depends on it and changes no
+  file there (`lock_check.rs` went to `story:test-step-scripts-and-binaries` with statement 7).
 - `story:tls-release` depends on this story.
 - `AGENTS.md` on the wave: this story changes the bullet of `.cargo/config.toml` (:230) and the
   TLS counts (:662, :724-748, :769, :792). `story:tls-step-within-budget` changes the bullets of
@@ -207,12 +201,7 @@ Every command runs in a tree of `wave/tls-1`; "before" is the commit of
 7. `grep -nE 'Tests: [0-9]+ in one binary|[0-9]+ tests \(' AGENTS.md` after shows the counts of
    `surf-tls`, `surf-tls-conformance`, `surf-tls-test-certs` and `surf-tls-test-server`, each
    equal to `cargo nextest list -p <package>` on the story's commit.
-8. `git grep -n 'Command::new("task")' crates/surf/tests/lock_check.rs` prints nothing, and `git
-   diff 48f05c2 -- taskfiles/lock-check.sh` is empty. A `taskfiles/lock-check.sh` that passes every
-   package without reading the allow-list (planted by hand, removed after) makes `cargo nextest
-   run -p surf -E 'test(=lock_check::a_changed_checksum_of_ring_fails_naming_it)'` fail with a
-   message that begins `ring-checksum: `, the case's name, as `assert_fails_with`
-   (`lock_check.rs`:70-79) prints it.
+8. (Taken by `story:test-step-scripts-and-binaries` with statement 7.)
 
 ## What it does not do
 
