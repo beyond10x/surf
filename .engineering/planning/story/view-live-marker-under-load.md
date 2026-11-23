@@ -8,7 +8,7 @@ summary: two runs of the page step at a start load of 107 and 121 failed with on
 relations:
 - decomposes: epic:live-view
 - informed_by: story:page-step-holds-under-load
-revision: 5
+revision: 6
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-23T17:19:28Z", actor: "human:operator", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-23T17:19:29Z", actor: "human:operator", revision: 4}
@@ -121,3 +121,13 @@ First unit, 2026-11-23, branch `fix/view-live-marker` from `3b0fc83`:
   load the host has.
 - A probe of `crates/view/src/http.rs` (a plant, removed): in one full run at most 9 connections
   were open, no 503, no connection closed without an answer, a head within 71 ms.
+- A failure that names a cause, 2026-11-23: the gate on `941f7fa` (load 44.00 to 68.02, page step
+  113.4 s) failed `controls case 5` and passed the other 70 page tests. The diagnostic printed:
+  live marker `connecting`, segments drawn 0, `/events` not sent, `/now.js`, `/changes.js` and
+  `/timeline.js` with no answer while the nine other files answered 200, no page error, and three
+  console errors `Failed to load resource: net::ERR_NETWORK_CHANGED`. The page's module graph did
+  not finish, so `view.js` never ran. Lead, not yet confirmed: the browser cancels requests in
+  flight when an address is added to or removed from any interface of the host, a loopback target
+  included, and other work on the host adds and removes container interfaces. The second unit
+  confirms it with a planted address change inside a network namespace of its own and then
+  chooses the fix; a retry of the page load and a longer wait stay out.
