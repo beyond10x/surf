@@ -13,8 +13,21 @@ description: What surf does today, and what it does not do yet.
   hard limits on header and body size.
 - **196 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **1,778 tests** (1,233, and 545 of the TLS crates in a step of their own), built with
-  warnings treated as errors, and 60 tests of the live view's page in a browser.
+- **1,785 tests** (1,240, and 545 of the TLS crates in a step of their own), built with
+  warnings treated as errors, and 71 tests of the live view's page in a browser.
+
+New after round 2, in no release yet:
+
+- **The live view shows a page's controls and what an action changed.** The panel "Now" lists
+  the page's links, buttons and fields in groups: a field with its kind, label, value and flags
+  (`disabled`, `checked`, `required`, `readonly`), a button with the form, method and address it
+  submits to. A new panel, `Changed by <action>` (`Changed by fill f2`), shows what the
+  action at the playhead changed: one line per control (`f1 value "" -> "ada"`,
+  `f3 checked true -> false`), or for another page its `page` line and its new texts, and
+  `no changed block` when the answer has none. A password is shown as `(empty)`, as the number
+  of bytes a `fill` typed (`12 bytes`), or as `(set)`, never its value: neither the page, the
+  stream nor a session's detail holds what the agent typed. Text a server sends back is page
+  text and is shown as such.
 
 New with round 2, shipped in release `0.5.0`:
 

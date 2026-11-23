@@ -12,15 +12,16 @@ window, no rendering, no JavaScript and no `https:` yet.
 ## Numbers
 
 On 2026-11-23, with ess 0.97.4, after round 2, which follows round 1 and wave 10 of the current
-plan:
+plan, and after the live view's control states and changed panel:
 
 | what | value |
 |---|---|
 | specification | ESS 0.97.4, valid |
 | conformance scenarios | 196 of 196 pass, against the interpreter and against the Rust code |
-| tests | 1,778 passed: 1,233, and 545 of the TLS crates |
+| tests | 1,785 passed: 1,240, and 545 of the TLS crates |
 | agent tasks | 4 of 4 pass (`article`, `table`, `link`, `search`) |
-| live view's page tests | 60 passed, in Chromium's headless shell |
+| live view | the panel "Now" lists a page's links, buttons and fields with their state; the panel `Changed by <action>` shows what the action changed; a typed password is shown as a count of bytes, never its value |
+| live view's page tests | 71 passed, in Chromium's headless shell |
 | X.509 test data (x509-limbo) | 5,143 cases counted, 5,089 run, 5,060 pass; `task check` holds these counts |
 | URL test data | 872 of 904 cases pass; 32 skipped, listed by name |
 | HTML parser test data | 9,107 cases counted, 9,095 run, 9,095 pass (82 encoding, 7,046 tokenizer and 1,967 tree construction cases); the parser decides the encoding, tokenizes, and builds a tree in every insertion mode, foreign content and fragments included, within six limits on untrusted input, and `surf` parses every `text/html` response with it; `task check` holds these counts |
