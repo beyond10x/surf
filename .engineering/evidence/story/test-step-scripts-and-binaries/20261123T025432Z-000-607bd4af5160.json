@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T02:54:32Z",
+  "actor": "human:operator",
+  "artifact": "story:test-step-scripts-and-binaries",
+  "kind": "story",
+  "revision": 27,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "forge: check run 45101985100 on main at 06bdd67, the merge of fix/test-step-scripts",
+    "reference": "success; test step: 12.2 s of its budget of 120 s, 895 tests: 895 passed (cargo-nextest 893, doc tests 2); tls test step: 5.4 s; test-layout-test: 39 case(s); generated/rust matches spec/ (30 artifact(s) and .ess-output); page tests 38 passed (16.6s)"
+  }
+}

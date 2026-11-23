@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T02:54:32Z",
+  "actor": "human:operator",
+  "artifact": "story:test-harness-fewer-processes",
+  "kind": "story",
+  "revision": 27,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "three alternating pairs per module, before and after, summed seconds, load 108 to 138 (acceptance 2)",
+    "reference": "check 26.83 to 10.32, 18.06 to 8.52, 22.55 to 12.83 (57 %, bound 50 %; D296); events::case_14 2.678 to 0.193, 7.290 to 0.397, 1.141 to 0.432; in_process 17.76 to 8.34, 23.60 to 4.81, 19.30 to 8.64; view 18.27 to 6.85, 17.00 to 6.32, 17.59 to 6.56; view-fixture fixture 15.87 to 0.51, 1.96 to 0.88, 0.93 to 0.40; 893 test names equal; the 37 changed tests one at a time: slowest 1.838 s"
+  }
+}

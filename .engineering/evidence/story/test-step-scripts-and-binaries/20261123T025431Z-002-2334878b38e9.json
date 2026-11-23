@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T02:54:31Z",
+  "actor": "human:operator",
+  "artifact": "story:test-step-scripts-and-binaries",
+  "kind": "story",
+  "revision": 27,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "three alternating pairs per module, before and after, summed seconds, 2026-11-23 (acceptance 2)",
+    "reference": "lock_check 32.96 to 5.13, 20.38 to 4.01, 20.49 to 5.75; generated_check_links 26.34 to 6.97, 13.27 to 3.02, 11.47 to 10.78 (short of half; load 52 to 58 before, 95 to 107 after; D296); generated_check_modes 8.99 to 4.25, 5.32 to 1.13, 7.25 to 1.64; doc step beside nextest: step less Summary 13.0, 12.3, 8.5 s without and 4.6, 3.3, 2.5 s with"
+  }
+}

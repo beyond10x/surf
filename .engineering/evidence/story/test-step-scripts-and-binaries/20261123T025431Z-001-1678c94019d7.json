@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T02:54:31Z",
+  "actor": "human:operator",
+  "artifact": "story:test-step-scripts-and-binaries",
+  "kind": "story",
+  "revision": 27,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the implementing unit's plants on the tree of 2c86943, each removed (git diff --stat equal before and after)",
+    "reference": "Taskfile.yml running another line: the_unchanged_lock_passes fails with no line task: [lock-check] sh taskfiles/lock-check.sh Cargo.lock taskfiles/lock-allow.txt; byte comparison skipped: review1_one_changed_byte fails naming 30 files; age check removed: exit 0 where the check gives fresh.list: older than; #[test] in crates/surf/src/lib.rs: test-layout exit 201 naming crates/surf/Cargo.toml:10 test = false; a failing doc test and a failing nextest test beside each other: 895 tests: 894 passed, 1 failed, exit 201 each"
+  }
+}
