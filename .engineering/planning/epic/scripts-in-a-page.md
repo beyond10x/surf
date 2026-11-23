@@ -18,8 +18,8 @@ repository of its own that surf embeds, with its requirements written from surf'
 repository is swell (`https://github.com/beyond10x/swell`), an ECMAScript engine written from
 scratch in Rust, "written to be embedded by surf" (swell `README.md`).
 
-The order, decision D77 of 2026-11-22 (option A), given for the operator by the session
-`host-operator`: surf starts embedding swell after wave 11 of `docs/plan/agent-waves.md`, as this
+The order, decision D77 of 2026-11-22 (option A), given for the operator by the operator
+session: surf starts embedding swell after wave 11 of `docs/plan/agent-waves.md`, as this
 epic, planned from now beside the running waves, with no build slot for it until the HTML parser
 delivers a real page's document (`story:html-document-port`, wave 11).
 
@@ -302,7 +302,7 @@ can observe the difference.
 
 Requirements from surf's needs, which no requirement of `host-interface.md` at `6a43e18` states
 (searched for "line number", "column", "position", "charge", "weak handle", "well-known",
-"unscopables" and "set_prototype"; each is surf's proposal to the swell session). The first
+"unscopables" and "set_prototype"; each is surf's proposal to the session working on swell). The first
 seven are checked against S2 = a and S4 = b; 8 to 10 are new with S4:
 
 1. A parse error and an uncaught thrown error can be read with the line and column of the
@@ -397,7 +397,7 @@ story of those waves writes.
    values, seeds and clock, the specification shape of a script's end and of the option, the
    Web IDL selection (each member's slice or its `NotSupportedError` reason, each deviation, the
    selector subset), the session's environment allow-list, the answers to S5 and S6, and
-   requirements 1 to 10 handed to the swell session. Depends on nothing. Writes only
+   requirements 1 to 10 handed to the session working on swell. Depends on nothing. Writes only
    `docs/design/scripts.md`. **Can start now: the first story a unit takes.**
 2. `webidl-reader`: the DOM Standard's IDL Index (commit `e4f4f4f`) and Web IDL's `DOMException`
    are vendored with `SOURCE` files and digests; `surf-webidl` reads them into a model and refuses
@@ -524,7 +524,7 @@ Everything the first version leaves out above; style, layout and rendering; work
 engine.md open item B); a script engine other than swell; a process of its own for scripts (S2
 was answered a); `surf <url>` as a client of `surfd` (a consequence of the end design, not
 planned here); running web-platform-tests files of the DOM; any change in swell's repository,
-which is the swell session's, given requirements 1 to 10 of "The gaps".
+which belongs to the session working on swell, given requirements 1 to 10 of "The gaps".
 
 ## Constraints
 
@@ -576,17 +576,17 @@ which is the swell session's, given requirements 1 to 10 of "The gaps".
 
 ## Decisions taken
 
-- S1, the form of the dependency: option a, a git dependency on a release tag of swell. The operator, 2026-11-22 04:51 CET, relayed by the session `host-operator`: "A: git dep on a swell tag". `lock-check` allows that one source by its exact address and tag, and the sentence on dependencies becomes "no third-party crate; one crate of the organization".
-- S2, where a page's scripts run: option a, in the session process (`surf-session`, one per session), engine and DOM together; there is no separate script process. The operator first picked b at about 04:55 CET, 2026-11-22, relayed by the session `host-operator`: "B: separate script process". He corrected it at 05:15 CET, relayed by the session `host-operator` (spoken, verbatim; "serve", "served" and "serve D" are the transcription of surf and `surfd`): "So for swell and serve, I think one process is actually enough. Yeah, just correct this last decision. Eventually, there will be served, and has an isolated multiple and the CLI just becomes a thin client. That's the actual end design. So where serve D is just a daemon, basically." The epic's default a stands.
-- S3, when scripts run: option b of the list above (put to the operator as "A"), per session, an option of `surf-agent open` and of `surf`, off by default, both modes tested. The operator, 2026-11-22 05:12 CET, relayed by the session `host-operator`: "A: option, off by default". It was the default the epic named. By S7 the option exists on `surf-agent open` only, not on `surf`.
-- S4, the DOM of the first version: option b, the whole `Node`, `Element` and `Document` interfaces generated from their Web IDL. The operator, 2026-11-22 05:14 CET, relayed by the session `host-operator`: "B: full Web IDL interfaces". This is not the default the epic named (a).
-- S7, `surf <url>` and page scripts: option c, scripts run only in sessions of `surfd` (`surf-agent open --scripts`); `surf <url>` gets no script option until `surf` is a thin client of `surfd`, and nothing is built for it. The operator, 2026-11-22 05:48 CET, relayed by the session `host-operator`: "C: scripts only in surfd". It was not the default the epic named (a).
+- S1, the form of the dependency: option a, a git dependency on a release tag of swell. The operator, 2026-11-22 04:51 CET, relayed by the operator session: "A: git dep on a swell tag". `lock-check` allows that one source by its exact address and tag, and the sentence on dependencies becomes "no third-party crate; one crate of the organization".
+- S2, where a page's scripts run: option a, in the session process (`surf-session`, one per session), engine and DOM together; there is no separate script process. The operator first picked b at about 04:55 CET, 2026-11-22, relayed by the operator session: "B: separate script process". He corrected it at 05:15 CET, relayed by the operator session (spoken, verbatim; "serve", "served" and "serve D" are the transcription of surf and `surfd`): "So for swell and serve, I think one process is actually enough. Yeah, just correct this last decision. Eventually, there will be served, and has an isolated multiple and the CLI just becomes a thin client. That's the actual end design. So where serve D is just a daemon, basically." The epic's default a stands.
+- S3, when scripts run: option b of the list above (put to the operator as "A"), per session, an option of `surf-agent open` and of `surf`, off by default, both modes tested. The operator, 2026-11-22 05:12 CET, relayed by the operator session: "A: option, off by default". It was the default the epic named. By S7 the option exists on `surf-agent open` only, not on `surf`.
+- S4, the DOM of the first version: option b, the whole `Node`, `Element` and `Document` interfaces generated from their Web IDL. The operator, 2026-11-22 05:14 CET, relayed by the operator session: "B: full Web IDL interfaces". This is not the default the epic named (a).
+- S7, `surf <url>` and page scripts: option c, scripts run only in sessions of `surfd` (`surf-agent open --scripts`); `surf <url>` gets no script option until `surf` is a thin client of `surfd`, and nothing is built for it. The operator, 2026-11-22 05:48 CET, relayed by the operator session: "C: scripts only in surfd". It was not the default the epic named (a).
 
 ## From the security review of 2026-11-22
 
 A security review of surf and swell of 2026-11-22 names two conditions for running page scripts. The operator forwarded it: "Fix Swell's resource limits before Surf runs untrusted JavaScript."
 
-- surf runs page scripts only on a release tag of swell in which parsing and compilation are charged to the memory budget before they allocate, and property operations (enumeration of string and object keys, property lookup) charge their work and their temporary storage before they do it. The swell session has the findings and plans them as stories; the tag that holds the fixes is named here when it exists.
+- surf runs page scripts only on a release tag of swell in which parsing and compilation are charged to the memory budget before they allocate, and property operations (enumeration of string and object keys, property lookup) charge their work and their temporary storage before they do it. The session working on swell has the findings and plans them as stories; the tag that holds the fixes is named here when it exists.
 - Before a session process runs a script, its environment is reduced to what it needs (today it inherits the caller's environment but two variables of surf), its privileges of the operating system are restricted, and it has resource limits of its own. This is part of the candidate story `scripts-hostile-pages` or a story before it.
 
 ## The DOM from Web IDL
@@ -776,7 +776,7 @@ wait on the generator, the wave stories of the parser and `story:html-document-p
 
 ## End design named by the operator
 
-The operator, 2026-11-22 05:15 CET, relayed by the session `host-operator` (spoken, verbatim;
+The operator, 2026-11-22 05:15 CET, relayed by the operator session (spoken, verbatim;
 "serve", "served" and "serve D" are the transcription of surf and `surfd`): "So for swell and
 serve, I think one process is actually enough. Yeah, just correct this last decision.
 Eventually, there will be served, and has an isolated multiple and the CLI just becomes a thin

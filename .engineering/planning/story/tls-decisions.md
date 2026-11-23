@@ -19,7 +19,7 @@ transitions:
 ## Context
 
 `epic:tls-https`, "Decisions taken": U1 is `ring` 0.17.14 (the operator, 2026-11-22 05:47 CET,
-relayed by `host-operator`: "A: ring 0.17.14"); the lock check allows its packages by name and
+relayed by the operator session: "A: ring 0.17.14"); the lock check allows its packages by name and
 version and only for the crate `surf-tls`; this story checks the C compiler setup of the musl
 release build on the forge runners before anything else is built. U2 is option B (the root list
 of Mozilla as curl publishes it, compiled in, plus one extra anchor file per session). U3 is
@@ -74,7 +74,7 @@ request must fit in it.
 First act: in a scratch workspace (the root workspace copied plus one crate with `ring =
 "=0.17.14"`), `cargo generate-lockfile`, to read the version, source and checksum of the 19
 packages the coordinator measured; a count other than 19 is reported to the coordinator. The
-count is settled (19 in the lock, 8 compiled per target); no question goes to `host-operator`
+count is settled (19 in the lock, 8 compiled per target); no question goes to the operator session
 and `story:tls-lock-allow` waits for nothing but this story.
 
 1. `docs/design/tls.md` (new), numbered items, each a decision with its reason or a measurement
@@ -281,7 +281,7 @@ and `story:tls-lock-allow` waits for nothing but this story.
        - 9.3 a client ignores unknown extensions in a CertificateRequest or NewSessionTicket:
          met (`story:tls-handshake`).
        No requirement of sections 9.1 to 9.3 is deviated from. A deviation found later is a
-       line here, named, and goes to the coordinator for `host-operator`.
+       line here, named, and goes to the coordinator for the operator session.
 2. The probe, on a branch `probe/tls-ring` that is never merged into `main`:
    `.github/workflows/tls-probe.yml` (`on: push` to that branch, and `workflow_dispatch` on it, `permissions: contents:
    read`, every action pinned by commit as `release.yml` pins them, the toolchain read from
@@ -305,7 +305,7 @@ built and ran ring 0.17.14 on the four release targets and on the gate runner.
    `success`, and then item 3 says no step is needed.
 3. Item 2 lists the 19 packages of the epic section "Measured: the packages ring adds", each with
    version, source and checksum, and names the 8 compiled on each release target; their number
-   equals `grep -c "^source = "` of the scratch lock. No question goes to `host-operator`.
+   equals `grep -c "^source = "` of the scratch lock. No question goes to the operator session.
 4. Item 4 gives the ten timings, and the `opt-level` line with the times under it or the
    sentence that none is over 50 ms.
 5. Item 5: a scratch test, run once and quoted, makes the X25519 key of RFC 8448 section 3 from

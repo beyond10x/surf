@@ -136,7 +136,7 @@ by hand, never in `task test`; no model call.
 
 ## Out of scope
 
-The tag and the release (the coordinator, on the word of `host-operator`, as
+The tag and the release (the coordinator, on the word of the operator session, as
 `docs/releasing.md` says); Windows; signing and notarisation; the model lane of
 `story:agent-tasks`.
 
