@@ -35,7 +35,7 @@ scope:
   path: spec/ess-inputs.yaml
 - confidence: cited
   path: spec/scenarios
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:09Z", actor: "human:timo", revision: 5}
@@ -114,6 +114,19 @@ it.
       the entries the push left, one of them `back`. The comment that marks this order
       `UNMAPPED` is replaced by the rule. Nothing reaches the order today (the session runs one
       command at a time); the rule keeps a later caller from a tab that cannot step back.
+      As built (commit `4c867db`, decision D275): a push that commits cancels every traversal of
+      its tab that is still started, also one whose entry the push kept; the response of a
+      cancelled traversal answers `wrong-state` and commits nothing. `ess` refuses the guard
+      on the dropped entry alone (ESS-COMMAND-009, a row-set guard beside the `when_subject`
+      guard of the traversal), and the row-set guard alone lost 11 synthesized scenarios and
+      added 5 refusals in a probe. A traversal that commits after another traversal stays
+      `UNMAPPED`, with a comment that says so.
+    - As built for D267: `DeliverResponse` and `ResponseReceived` of `spec/domains/net.yaml`
+      carry `method`, the method of the request the response answers, and the binding
+      `commit-on-response` passes it to `CommitNavigation`. The entry line of
+      `ResponseReceived` in the session log gains `method`; the examples of
+      `docs/view-stream.md` and the test of `crates/view` that pins them are brought to it on
+      the wave branch, where the view unit's changes of that test are merged.
 - `spec/domains/agent.yaml`: `GoBack(session_id)` and `GoForward(session_id)` with the refusals of
   `Go`; their events invoke the traversal for the tab of the session; the enum
   `surf.agent.ActionCommand` (`spec/domains/agent.yaml:31`) gains the variants `back` and
