@@ -4,4 +4,5 @@
 #![forbid(unsafe_code)]
 
 mod adversary_commands;
+mod common;
 mod fixture;

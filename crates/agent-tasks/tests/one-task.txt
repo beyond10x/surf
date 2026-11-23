@@ -1,0 +1,8 @@
+task article
+server http
+start /article.html
+target /article.html
+connections 1
+commands open look close
+question In which year was the bridge opened?
+answer 1932

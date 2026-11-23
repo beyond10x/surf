@@ -445,26 +445,22 @@ fn case_17_a_stream_from_a_number_replays_or_resets() {
     drop(daemon);
     drop(dir);
 
-    // log.entries_per_session 10 and 25 entries kept: number 1 is older than what is kept.
+    // log.entries_per_session 3 and 5 entries made (3 of open, 2 of one go): number 1 is older
+    // than what is kept.
     let dir = TestDir::new();
     let mut settings = config(&dir);
-    settings.log.entries_per_session = 10;
+    settings.log.entries_per_session = 3;
     let daemon = start(settings);
     let session = open(&dir);
-    for at in 0..11 {
-        assert_eq!(
-            go(&dir, &session, &format!("http://a.example/{at}")).status,
-            0
-        );
-    }
-    assert_eq!(daemon.newest_entry(), 25);
+    assert_eq!(go(&dir, &session, "http://a.example/0").status, 0);
+    assert_eq!(daemon.newest_entry(), 5);
     let kept = daemon.session_entries(&session.id).unwrap();
-    assert_eq!((kept.entries.len(), kept.dropped), (10, 15));
+    assert_eq!((kept.entries.len(), kept.dropped), (3, 2));
     let view = view_url(&dir);
     let events = Events::open(&view, Some(1));
     let first = events.event();
-    assert_eq!((first.id, first.event.as_str()), (25, "reset"));
-    assert_eq!(first.data, r#"{"newest":25}"#);
+    assert_eq!((first.id, first.event.as_str()), (5, "reset"));
+    assert_eq!(first.data, r#"{"newest":5}"#);
     drop(events);
     drop(daemon);
     drop(dir);
