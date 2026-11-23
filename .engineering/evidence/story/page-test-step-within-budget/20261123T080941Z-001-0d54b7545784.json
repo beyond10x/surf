@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T08:09:41Z",
+  "actor": "human:operator",
+  "artifact": "story:page-test-step-within-budget",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the adversary's pass on 60531ef and the fix round, commit ba0c584 (decisions D317 to D321)",
+    "reference": "three Rust tests of the adversary kept (2 red before, 3 of 3 green after) and one page test of two; the refused-token test on Playwright's clock: both plants fail it with /events before /after-the-delays, 2.3 to 2.9 s, 14.6 s before the story; two bounds of 2 s restored in first-page.spec.mjs, a session listed 4 s late fails toHaveCount(2); the setup's digest covers package.json and the lock and a missing package directory reruns npm ci; cargo nextest run -p surf: 115 passed"
+  }
+}

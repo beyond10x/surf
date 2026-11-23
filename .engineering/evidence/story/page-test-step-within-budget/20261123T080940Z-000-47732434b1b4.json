@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T08:09:40Z",
+  "actor": "human:operator",
+  "artifact": "story:page-test-step-within-budget",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the implementing unit's runs before any change, on ecfaaf8, 2026-11-23 (acceptances 1 and 10)",
+    "reference": "three runs of slot --timeout 15m task view-test: 114.8 s, 85.7 s and 86.5 s with queue, 59 passed each, at a 1-minute load of 109.84 to 116.21, 116.21 to 101.10 and 101.10 to 97.63; npm ci inside the step 8.2, 3.8 and 1.1 s; the sum of the JUnit times 91.4, 70.6 and 69.8 s; 10 starts of surf-view-fixture: median 8.7 ms, 0.51 s for 59 page tests, so each test keeps its own fixture"
+  }
+}

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:page-test-step-within-budget
 kind: story
-status: active
+status: implemented
 title: The page-test step ends each test within 60 s
 summary: 'On main (ff6431f, 59 page tests; gate on b00d02d: 59 passed (1.6m) at load 111 to 117, on 9f096f3: 59 passed (40.0s) at load 90 to 53): test timeout 60 s, own budget and ten slowest, npm ci out of the timed part, a shared fixture if fixture starts sum over 10 s, largest costs cut'
 relations:
@@ -25,10 +25,11 @@ scope:
   path: view-tests/playwright.config.mjs
 - confidence: cited
   path: view-tests/tests
-revision: 15
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T21:48:50Z", actor: "human:operator", revision: 11}
 - {from: "proposed", to: "active", at: "2026-11-22T21:48:51Z", actor: "human:operator", revision: 12}
+- {from: "active", to: "implemented", at: "2026-11-23T08:09:43Z", actor: "human:operator", revision: 16, decided_on: {"recorded":{"test_result":4,"verification":2}}, executor: "agent:coordinator"}
 ---
 ## Why
 
