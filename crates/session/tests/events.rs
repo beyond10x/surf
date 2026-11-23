@@ -953,6 +953,7 @@ fn covered() -> Vec<SystemEvent> {
         SystemEvent::ResponseReceived(ResponseReceived {
             request_id: RequestId(uuid(5)),
             url: url(),
+            method: Method::Post,
             status: Status(404),
             media_type: MediaType("text/html".to_string()),
             body: BODY.to_vec(),
@@ -1627,5 +1628,26 @@ fn the_events_of_a_press_lie_between_its_action_and_its_answer() {
             "surf.agent.PressRequested",
             "surf.document.SubmissionStarted",
         ],
+    );
+}
+
+/// The `entry_next` of `surf.navigation.TraversalStarted` when the entry has one after it (a
+/// step back): the entry line carries that identity, read back as it was given; case 17 covers
+/// only the absent one.
+#[test]
+fn a_traversal_with_an_entry_after_it_maps_entry_next() {
+    let event = SystemEvent::TraversalStarted(TraversalStarted {
+        tab_id: TabId(uuid(3)),
+        url: Url(ADDRESS.to_string()),
+        entry_id: RequestId(uuid(5)),
+        entry_next: Some(RequestId(uuid(9))),
+    });
+    let read = read_back(&event);
+    assert_eq!(
+        read.iter()
+            .find(|(name, _)| name == "entry_next")
+            .map(|(_, value)| value.clone()),
+        Some(Some(uuid(9).0)),
+        "{read:?}"
     );
 }

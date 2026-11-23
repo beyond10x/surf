@@ -29,7 +29,7 @@ timeline:
 
   - at: 2026-01-06T09:00:01Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: a}, url: http://example.org/a, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: a}, url: http://example.org/a, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
 
   - at: 2026-01-06T09:00:02Z
@@ -41,7 +41,7 @@ timeline:
 
   - at: 2026-01-06T09:00:03Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: b}, url: http://example.org/b, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: b}, url: http://example.org/b, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
 
   - at: 2026-01-06T09:00:04Z
@@ -53,7 +53,7 @@ timeline:
 
   - at: 2026-01-06T09:00:05Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: c}, url: http://example.org/c, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: c}, url: http://example.org/c, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
 
   - at: 2026-01-06T09:00:06Z
@@ -74,7 +74,7 @@ timeline:
 
   - at: 2026-01-06T09:00:08Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: to-b}, url: http://example.org/b, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: to-b}, url: http://example.org/b, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
 
   - at: 2026-01-06T09:00:09Z
@@ -93,7 +93,7 @@ timeline:
 
   - at: 2026-01-06T09:00:11Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: to-a}, url: http://example.org/a, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: to-a}, url: http://example.org/a, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
 
   - at: 2026-01-06T09:00:12Z

@@ -1293,6 +1293,7 @@ fn payload(event: &SystemEvent) -> Vec<(&'static str, Node)> {
         SystemEvent::ResponseReceived(e) => vec![
             ("request_id", uuid_of(&e.request_id)),
             ("url", text(&e.url.0)),
+            ("method", text(method(e.method))),
             ("status", integer(e.status.0)),
             ("media_type", text(&e.media_type.0)),
             ("body", bytes(&e.body)),
@@ -1347,6 +1348,7 @@ fn invocation(
             vec![
                 ("navigation_id", uuid_of(&input.navigation_id)),
                 ("url", text(&input.url.0)),
+                ("method", text(method(input.method))),
                 ("status", integer(input.status.0)),
                 ("media_type", text(&input.media_type.0)),
                 ("body", bytes(&input.body)),
@@ -2061,6 +2063,7 @@ where
             "surf.navigation.CommitNavigation" => {
                 let navigation_id = RequestId(input.uuid("navigation_id")?);
                 let url = Url(input.text("url")?);
+                let request_method = input.variant("method", method_named)?;
                 let status = Status(input.integer("status")?);
                 let media_type = MediaType(input.text("media_type")?);
                 let body = input.bytes("body")?;
@@ -2070,6 +2073,7 @@ where
                     .commit_navigation(CommitNavigation {
                         navigation_id,
                         url,
+                        method: request_method,
                         status,
                         media_type,
                         body,
@@ -2209,6 +2213,7 @@ where
             "surf.net.DeliverResponse" => {
                 let request_id = RequestId(input.uuid("request_id")?);
                 let url = Url(input.text("url")?);
+                let request_method = input.variant("method", method_named)?;
                 let status = Status(input.integer("status")?);
                 let media_type = MediaType(input.text("media_type")?);
                 let body = input.bytes("body")?;
@@ -2218,6 +2223,7 @@ where
                     .deliver_response(DeliverResponse {
                         request_id,
                         url,
+                        method: request_method,
                         status,
                         media_type,
                         body,
@@ -3309,6 +3315,7 @@ mod tests {
         SystemEvent::ResponseReceived(ResponseReceived {
             request_id: navigation_id(),
             url: Url(ADDRESS.to_owned()),
+            method: Method::Get,
             status: Status(200),
             media_type: MediaType("text/html".to_owned()),
             body: Vec::new(),
@@ -3330,6 +3337,7 @@ mod tests {
         BindingInvocation::CommitOnResponse(CommitNavigation {
             navigation_id: navigation_id(),
             url: Url(ADDRESS.to_owned()),
+            method: Method::Get,
             status: Status(200),
             media_type: MediaType("text/html".to_owned()),
             body: Vec::new(),

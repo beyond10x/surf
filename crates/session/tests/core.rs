@@ -31,6 +31,7 @@ const PORT: u16 = 8000;
 fn pages(request: &surf::RequestStarted) -> surf::Answer {
     surf::Answer::Response {
         url: request.url.0.clone(),
+        method: request.method,
         status: 200,
         media_type: "text/html".to_string(),
         body: b"<p>a page</p>".to_vec(),
@@ -181,6 +182,7 @@ fn fetch_sends_post() {
         answer,
         surf::Answer::Response {
             url: address,
+            method: request.method,
             status: 200,
             media_type: "text/plain".to_string(),
             body: b"ok".to_vec(),
@@ -942,6 +944,7 @@ fn paragraphs(request: &surf::RequestStarted) -> surf::Answer {
     };
     surf::Answer::Response {
         url: request.url.0.clone(),
+        method: request.method,
         status: 200,
         media_type: "text/html".to_string(),
         body: body.into_bytes(),

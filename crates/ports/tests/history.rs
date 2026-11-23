@@ -68,6 +68,8 @@ fn commit(ports: &mut NavigatorPorts, n: u64) -> CommitNavigationOutcome {
         .commit_navigation(CommitNavigation {
             navigation_id: id(n),
             url: url(&n.to_string()),
+            // The method it was started with: nothing redirects here.
+            method: ports.get(&id(n)).map_or(Method::Get, |row| row.data.method),
             status: Status(200),
             media_type: MediaType("text/plain".to_owned()),
             body: b"hi".to_vec(),

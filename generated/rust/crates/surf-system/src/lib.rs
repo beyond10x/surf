@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 3228537f9d6e7cdd446cb9ccbf75b058addda67c10b212a848f9115f7eba7e7b
+// contract digest 0fe2c0b6e437654e024a069cbcca8147e4a9c7adcd5b10150e01611989dfa058
 // do not edit: regenerate with `ess synthesize`
 
 //! The `surf` system, v1: its components assembled, its bindings wired, and its one transport.
@@ -274,6 +274,7 @@ pub fn commit_on_response(event: &surf_types::net::ResponseReceived) -> surf_typ
     surf_types::navigation::CommitNavigation {
         navigation_id: event.request_id.clone(),
         url: event.url.clone(),
+        method: event.method.clone(),
         status: event.status.clone(),
         media_type: event.media_type.clone(),
         body: event.body.clone(),

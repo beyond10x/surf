@@ -44,6 +44,7 @@ fn site(page: &'static str) -> (impl Transport, Requests) {
         let body = if request.url.0 == ADDRESS { page } else { DONE };
         Answer::Response {
             url: request.url.0.clone(),
+            method: request.method,
             status: 200,
             media_type: "text/html".to_owned(),
             body: body.as_bytes().to_vec(),

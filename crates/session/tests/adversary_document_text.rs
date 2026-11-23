@@ -72,12 +72,14 @@ fn serve(request: &surf::RequestStarted) -> surf::Answer {
     match (body(path), path) {
         (Some(body), _) => surf::Answer::Response {
             url: request.url.0.clone(),
+            method: request.method,
             status: 200,
             media_type: "text/html".to_string(),
             body: body.into_bytes(),
         },
         (None, "/plain") => surf::Answer::Response {
             url: request.url.0.clone(),
+            method: request.method,
             status: 200,
             media_type: "text/plain".to_string(),
             body: b"plain".to_vec(),
@@ -465,6 +467,7 @@ fn paragraphs(request: &surf::RequestStarted) -> surf::Answer {
     let n: usize = request.url.0.rsplit('/').next().unwrap().parse().unwrap();
     surf::Answer::Response {
         url: request.url.0.clone(),
+        method: request.method,
         status: 200,
         media_type: "text/html".to_string(),
         body: "<p>a</p>".repeat(n).into_bytes(),

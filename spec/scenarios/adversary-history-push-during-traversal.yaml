@@ -1,9 +1,11 @@
 # Adversary case (story:agent-history-spec). A step forward starts, a push commits before it, and
-# then the step forward commits: CommitNavigation/traversed makes C current, the entry the push
-# dropped, and leaves no entry back from it although A, B and X are still the tab's history
-# (B.next is X). The traversal's comment in spec/domains/navigation.yaml marks this order
-# UNMAPPED. The case asserts the weakest rule that the order should keep: a tab with history
-# beside its current entry has an entry to step back to, and no dropped entry is current.
+# then the step forward's response arrives. At 9ccf798 CommitNavigation/traversed made C
+# current, the entry the push dropped, and left no entry back from it although A, B and X are
+# still the tab's history (B.next is X); the traversal's comment in spec/domains/navigation.yaml
+# marked this order UNMAPPED. Since D268 the push's commit cancels the step forward, so its
+# response commits nothing. The case asserts the weakest rule that the order should keep: a tab
+# with history beside its current entry has an entry to step back to, and no dropped entry is
+# current.
 type: ess-scenario/6
 domain: surf.navigation
 scenario: adversary-history-push-during-traversal
@@ -32,7 +34,7 @@ timeline:
     capture: {instance: a, event: surf.navigation.NavigationStarted, field: navigation_id}
   - at: 2026-01-06T09:00:01Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: a}, url: http://example.org/a, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: a}, url: http://example.org/a, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
   - at: 2026-01-06T09:00:02Z
     command: surf.navigation.Navigate
@@ -42,7 +44,7 @@ timeline:
     capture: {instance: b, event: surf.navigation.NavigationStarted, field: navigation_id}
   - at: 2026-01-06T09:00:03Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: b}, url: http://example.org/b, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: b}, url: http://example.org/b, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
   - at: 2026-01-06T09:00:04Z
     command: surf.navigation.Navigate
@@ -52,7 +54,7 @@ timeline:
     capture: {instance: c, event: surf.navigation.NavigationStarted, field: navigation_id}
   - at: 2026-01-06T09:00:05Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: c}, url: http://example.org/c, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: c}, url: http://example.org/c, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
 
   - at: 2026-01-06T09:00:06Z
@@ -62,7 +64,7 @@ timeline:
     capture: {instance: to-b, event: surf.navigation.NavigationStarted, field: navigation_id}
   - at: 2026-01-06T09:00:07Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: to-b}, url: http://example.org/b, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: to-b}, url: http://example.org/b, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
 
   # The step forward to C starts, as TraverseHistory would start it from B.
@@ -81,13 +83,13 @@ timeline:
     capture: {instance: x, event: surf.navigation.NavigationStarted, field: navigation_id}
   - at: 2026-01-06T09:00:10Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: x}, url: http://example.org/x, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: x}, url: http://example.org/x, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
 
-  # Then the step forward.
+  # Then the step forward's response: the push cancelled it, so it commits nothing (D268).
   - at: 2026-01-06T09:00:11Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: to-c}, url: http://example.org/c, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: to-c}, url: http://example.org/c, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
 
   - at: 2026-01-06T09:00:12Z
@@ -100,3 +102,7 @@ assert:
     contains: {tab_id: 7e5a1b00-0000-4000-8000-000000000e01, standing: back}
   - view: surf.navigation.Navigations
     contains: {navigation_id: {$instance: c}, standing: dropped}
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: x}, standing: current}
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: to-c}, state: Cancelled}

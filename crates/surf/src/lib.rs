@@ -180,6 +180,10 @@ pub enum Answer {
         /// The address the response came from: the address asked for when nothing redirected,
         /// else the address after the last redirect. Issued as `DeliverResponse.url`.
         url: String,
+        /// The method of the request the response answered: the method asked for, or
+        /// [`Method::Get`] after a redirect that changed it. Issued as `DeliverResponse.method`,
+        /// which a pushed session history entry keeps.
+        method: Method,
         /// The status code, such as 200 or 404.
         status: u16,
         /// The type and subtype of the response's media type in lower case, such as `text/html`.
@@ -269,6 +273,10 @@ pub fn answer(result: Result<surf_fetch::Response, surf_fetch::Failure>) -> Answ
     match result {
         Ok(response) => Answer::Response {
             url: response.url,
+            method: match response.method {
+                surf_fetch::Method::Get => Method::Get,
+                surf_fetch::Method::Post => Method::Post,
+            },
             status: response.status,
             media_type: response.media_type,
             body: response.body,
@@ -2024,6 +2032,7 @@ where
         match self.transport.fetch(&started) {
             Answer::Response {
                 url,
+                method,
                 status,
                 media_type,
                 body,
@@ -2031,6 +2040,7 @@ where
                 self.system.net.deliver_response(DeliverResponse {
                     request_id: started.request_id,
                     url: Url(url),
+                    method,
                     status: Status(i64::from(status)),
                     media_type: MediaType(media_type),
                     body,

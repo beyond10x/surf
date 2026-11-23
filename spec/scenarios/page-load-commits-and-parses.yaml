@@ -31,6 +31,7 @@ timeline:
     input:
       request_id: {$instance: load}
       url: https://example.org/
+      method: Get
       status: 200
       media_type: text/html
       body: PGh0bWw+PC9odG1sPg==

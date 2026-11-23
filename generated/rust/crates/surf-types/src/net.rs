@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 3228537f9d6e7cdd446cb9ccbf75b058addda67c10b212a848f9115f7eba7e7b
+// contract digest 0fe2c0b6e437654e024a069cbcca8147e4a9c7adcd5b10150e01611989dfa058
 // do not edit: regenerate with `ess synthesize`
 
 //! Network — `surf.net`.
@@ -265,6 +265,8 @@ pub struct DeliverResponse {
     pub request_id: RequestId,
     /// `url` — `surf.url.Url`.
     pub url: crate::url::Url,
+    /// `method` — `surf.net.Method`.
+    pub method: Method,
     /// `status` — `surf.net.Status`.
     pub status: Status,
     /// `media_type` — `surf.net.MediaType`.
@@ -410,6 +412,8 @@ pub struct ResponseReceived {
     pub request_id: RequestId,
     /// `url` — `surf.url.Url`.
     pub url: crate::url::Url,
+    /// `method` — `surf.net.Method`.
+    pub method: Method,
     /// `status` — `surf.net.Status`.
     pub status: Status,
     /// `media_type` — `surf.net.MediaType`.

@@ -27,7 +27,7 @@ timeline:
     capture: {instance: x1, event: surf.navigation.NavigationStarted, field: navigation_id}
   - at: 2026-01-06T09:00:01Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: x1}, url: http://example.org/x1, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: x1}, url: http://example.org/x1, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
   - at: 2026-01-06T09:00:02Z
     command: surf.navigation.Navigate
@@ -37,7 +37,7 @@ timeline:
     capture: {instance: y1, event: surf.navigation.NavigationStarted, field: navigation_id}
   - at: 2026-01-06T09:00:03Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: y1}, url: http://example.org/y1, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: y1}, url: http://example.org/y1, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
   - at: 2026-01-06T09:00:04Z
     command: surf.navigation.Navigate
@@ -47,7 +47,7 @@ timeline:
     capture: {instance: y2, event: surf.navigation.NavigationStarted, field: navigation_id}
   - at: 2026-01-06T09:00:05Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: y2}, url: http://example.org/y2, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: y2}, url: http://example.org/y2, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
 
   - at: 2026-01-06T09:00:06Z
@@ -72,7 +72,7 @@ timeline:
     capture: {instance: y-back, event: surf.navigation.NavigationStarted, field: navigation_id}
   - at: 2026-01-06T09:00:09Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: y-back}, url: http://example.org/y1, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: y-back}, url: http://example.org/y1, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
 
   - at: 2026-01-06T09:00:10Z
@@ -83,7 +83,7 @@ timeline:
     capture: {instance: x2, event: surf.navigation.NavigationStarted, field: navigation_id}
   - at: 2026-01-06T09:00:11Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: x2}, url: http://example.org/x2, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: x2}, url: http://example.org/x2, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
 
 assert:

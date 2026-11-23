@@ -259,6 +259,7 @@ fn in_memory(start: &str, page: String) -> (Session<Memory>, String, Arc<Mutex<V
         };
         surf::Answer::Response {
             url: request.url.0.clone(),
+            method: request.method,
             status: 200,
             media_type: "text/html".to_string(),
             body: body.into_bytes(),
@@ -889,6 +890,7 @@ fn adversary_press_a_host_name_of_a_local_address_from_a_public_page_is_refused(
         if request.url.0 == start_address {
             surf::Answer::Response {
                 url: request.url.0.clone(),
+                method: request.method,
                 status: 200,
                 media_type: "text/html".to_string(),
                 body: page.clone().into_bytes(),

@@ -33,7 +33,7 @@ timeline:
     capture: {instance: a, event: surf.navigation.NavigationStarted, field: navigation_id}
   - at: 2026-01-06T09:00:01Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: a}, url: http://example.org/a, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: a}, url: http://example.org/a, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
   - at: 2026-01-06T09:00:02Z
     command: surf.navigation.Navigate
@@ -43,7 +43,7 @@ timeline:
     capture: {instance: b, event: surf.navigation.NavigationStarted, field: navigation_id}
   - at: 2026-01-06T09:00:03Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: b}, url: http://example.org/b, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: b}, url: http://example.org/b, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
   - at: 2026-01-06T09:00:04Z
     command: surf.navigation.Navigate
@@ -53,7 +53,7 @@ timeline:
     capture: {instance: c, event: surf.navigation.NavigationStarted, field: navigation_id}
   - at: 2026-01-06T09:00:05Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: c}, url: http://example.org/c, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: c}, url: http://example.org/c, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
   - at: 2026-01-06T09:00:06Z
     command: surf.navigation.Navigate
@@ -63,7 +63,7 @@ timeline:
     capture: {instance: d, event: surf.navigation.NavigationStarted, field: navigation_id}
   - at: 2026-01-06T09:00:07Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: d}, url: http://example.org/d, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: d}, url: http://example.org/d, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
 
   # Back to C.
@@ -81,7 +81,7 @@ timeline:
     capture: {instance: to-c, event: surf.navigation.NavigationStarted, field: navigation_id}
   - at: 2026-01-06T09:00:10Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: to-c}, url: http://example.org/c, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: to-c}, url: http://example.org/c, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
 
   # Back to B.
@@ -99,7 +99,7 @@ timeline:
     capture: {instance: to-b, event: surf.navigation.NavigationStarted, field: navigation_id}
   - at: 2026-01-06T09:00:13Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: to-b}, url: http://example.org/b, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: to-b}, url: http://example.org/b, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
 
   # Forward to C: D is the entry after it again.
@@ -117,7 +117,7 @@ timeline:
     capture: {instance: to-c-again, event: surf.navigation.NavigationStarted, field: navigation_id}
   - at: 2026-01-06T09:00:16Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: to-c-again}, url: http://example.org/c, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: to-c-again}, url: http://example.org/c, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
 
   # A push from C: D is dropped.
@@ -129,7 +129,7 @@ timeline:
     capture: {instance: e, event: surf.navigation.NavigationStarted, field: navigation_id}
   - at: 2026-01-06T09:00:18Z
     command: surf.net.DeliverResponse
-    input: {request_id: {$instance: e}, url: http://example.org/e, status: 200, media_type: text/plain, body: aGk=}
+    input: {request_id: {$instance: e}, url: http://example.org/e, method: Get, status: 200, media_type: text/plain, body: aGk=}
     outcome: responded
 
   - at: 2026-01-06T09:00:19Z

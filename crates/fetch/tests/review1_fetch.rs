@@ -7,7 +7,7 @@ use std::net::{TcpListener, TcpStream};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use surf_fetch::{Failure, Limits, Response, fetch};
+use surf_fetch::{Failure, Limits, Method, Response, fetch};
 
 const BOUND: Duration = Duration::from_secs(5);
 
@@ -97,6 +97,7 @@ fn ok(media_type: &str, body: &[u8]) -> Result<Response, Failure> {
         media_type: media_type.to_owned(),
         body: body.to_vec(),
         url: String::new(),
+        method: Method::Get,
     })
 }
 

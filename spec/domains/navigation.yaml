@@ -83,7 +83,8 @@ entities:
         type: surf.shell.TabId
       - name: url
         type: surf.url.Url
-      # The request's method: an entry made by `Post` is not traversed to.
+      # The request's method, and once a push commits, the method of its committing request
+      # (`CommitNavigation`): an entry made by `Post` is not traversed to.
       - name: method
         type: surf.net.Method
       # `push` for every `Navigate`, `traverse` for a `StartTraversal`.
@@ -287,6 +288,11 @@ commands:
       - name: url
         type: surf.url.Url
         example: "http://example.org/"
+      # The method of the request the response answered (`surf.net.DeliverResponse`): `Get` when
+      # a redirect turned a `Post` into a `Get`. A push's entry keeps it, so an entry is made by
+      # `Post` only when its committing request was a `Post`.
+      - name: method
+        type: surf.net.Method
       - name: status
         type: surf.net.Status
       - name: media_type
@@ -309,9 +315,15 @@ commands:
       # (the one whose `next` it is) is the entry before, the one after it the entry after, and it
       # is current. A traversal that fails or is cancelled changes no entry, so the current one
       # stays where it was.
-      # UNMAPPED: a traversal that commits after a push or another traversal in the same tab
-      # committed since it started. The HTML Standard queues the steps of a traversable's session
-      # history; here the commit moves the entries as if nothing had moved them. What would settle
+      # A traversal does not commit after a push committed in its tab since it started: the push's
+      # commit cancels it (`committed`, below), so its response answers `wrong-state`, no entry
+      # becomes current, no standing moves, and the tab keeps the entries the push left. That
+      # covers a traversal whose entry the push dropped (decision D268, `story:agent-history-spec`)
+      # and one whose entry it kept. The HTML Standard, from memory and not confirmed here, ignores
+      # a navigation started while its navigable traverses (the session history traversal queue);
+      # here the push has already committed, so the traversal yields to it instead.
+      # UNMAPPED: a traversal that commits after another traversal in the same tab committed since
+      # it started; its commit moves the entries as if nothing had moved them. What would settle
       # it: a story that serializes a tab's traversals (`agent-back-forward` starts one at a time).
       - name: traversed
         when_subject: {predicate: handling == traverse}
@@ -353,11 +365,18 @@ commands:
       # A push's commit (HTML Standard, history handling "push", from memory): the entries after
       # the current one are dropped, the current one is the entry before, and the navigation is
       # the new current entry. The first commit in a tab finds no entry and only makes its own.
+      # Every traversal of the tab still Started is cancelled (see `traversed`).
+      # The entry keeps the method of its committing request (decision D267): a `Post` answered by
+      # a 301, 302 or 303 and continued with `Get` makes an entry of `Get`, which a traversal
+      # reaches. The HTML Standard, from memory and not confirmed here, sets the entry's POST
+      # resource to null when the request's body is null after the fetch, which a redirect that
+      # changes the method leaves; this differs in keeping the method rather than a resource.
       - name: committed
         moves: surf.navigation.Navigation.commit
         instance: navigation_id
         sets:
           url: input.url
+          method: input.method
           standing: current
         affects:
           - entity: surf.navigation.Navigation
@@ -369,6 +388,9 @@ commands:
           - entity: surf.navigation.Navigation
             where: {all: [tab_id == subject.tab_id, standing == current]}
             sets: {standing: back, next: input.navigation_id}
+          - entity: surf.navigation.Navigation
+            where: {all: [tab_id == subject.tab_id, handling == traverse, state == Started]}
+            moves: surf.navigation.Navigation.cancel
         emits:
           - surf.navigation.NavigationCommitted
         payload:

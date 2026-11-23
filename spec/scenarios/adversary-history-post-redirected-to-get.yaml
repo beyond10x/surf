@@ -2,9 +2,10 @@
 # /result: crates/fetch follows it with a GET without a body (Fetch Standard, HTTP-redirect fetch),
 # so the page the entry holds came by GET, and the HTML Standard drops the entry's POST resource
 # when the request's body is null after a redirect. A later step back to that entry loads
-# /result with GET, as every browser does after POST/redirect/GET. The specification keeps the
-# method of the Navigate (Post) on the entry and CommitNavigation carries no final method, so it
-# refuses the step under no-entry.
+# /result with GET, as every browser does after POST/redirect/GET. At 9ccf798 the specification
+# kept the method of the Navigate (Post) on the entry and CommitNavigation carried no final
+# method, so it refused the step under no-entry; since D267 the entry keeps the committing
+# request's method.
 type: ess-scenario/6
 domain: surf.navigation
 scenario: adversary-history-post-redirected-to-get
@@ -29,12 +30,14 @@ timeline:
     outcome: started
     capture: {instance: posted, event: surf.navigation.NavigationStarted, field: navigation_id}
 
-  # The response after the 303: its address is the one the redirect led to.
+  # The response after the 303: its address is the one the redirect led to, and its method the
+  # GET the redirect continued with (decision D267).
   - at: 2026-01-06T09:00:01Z
     command: surf.net.DeliverResponse
     input:
       request_id: {$instance: posted}
       url: http://example.org/result
+      method: Get
       status: 200
       media_type: text/plain
       body: aGk=
@@ -55,6 +58,7 @@ timeline:
     input:
       request_id: {$instance: b}
       url: http://example.org/b
+      method: Get
       status: 200
       media_type: text/plain
       body: aGk=

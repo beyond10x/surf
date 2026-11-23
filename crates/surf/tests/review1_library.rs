@@ -21,6 +21,7 @@ fn counting() -> (impl FnMut(&RequestStarted) -> Answer, Rc<Cell<usize>>) {
         seen.set(seen.get() + 1);
         Answer::Response {
             url: request.url.0.clone(),
+            method: request.method,
             status: 200,
             media_type: "text/plain".to_owned(),
             body: Vec::new(),
@@ -58,6 +59,7 @@ fn review1_a_system_whose_request_was_answered_is_not_fetched_again_by_a_new_bro
         .deliver_response(DeliverResponse {
             request_id: navigation_started.navigation_id.clone(),
             url: Url("http://127.0.0.1/".to_owned()),
+            method: Method::Get,
             status: Status(200),
             media_type: MediaType("text/plain".to_owned()),
             body: Vec::new(),

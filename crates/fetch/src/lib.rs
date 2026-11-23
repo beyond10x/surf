@@ -322,6 +322,9 @@ pub struct Response {
     /// for byte, when nothing redirected, else the serialization of the URL the last redirect
     /// led to. At most [`MAX_ADDRESS_BYTES`] bytes after a redirect.
     pub url: String,
+    /// The method of the request this response answers: the method of the [`Request`], or
+    /// [`Method::Get`] after a redirect that changed it (the crate documentation, "Redirects").
+    pub method: Method,
 }
 
 /// Why a fetch ended without a response. Each variant carries a human-readable detail.
@@ -514,6 +517,7 @@ pub fn send_from(
                 media_type,
                 body,
                 url: url.unwrap_or_else(|| address.to_owned()),
+                method: outgoing.method,
             });
         };
         // The body of a redirect is not read: the connection closes here.
@@ -1182,6 +1186,7 @@ fn read_response<R: Read>(inner: R, limits: &Limits) -> Result<Response, Failure
         media_type,
         body,
         url: String::new(),
+        method: Method::Get,
     })
 }
 
@@ -1659,6 +1664,7 @@ mod tests {
                 media_type: DEFAULT_MEDIA_TYPE.to_string(),
                 body: b"ok".to_vec(),
                 url: String::new(),
+                method: Method::Get,
             })
         );
     }

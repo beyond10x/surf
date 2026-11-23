@@ -255,6 +255,7 @@ pub fn event_line(event: &SystemEvent) -> String {
         SystemEvent::ResponseReceived(e) => line
             .text("request_id", &e.request_id.0.0)
             .text("url", &e.url.0)
+            .text("method", &variant(e.method))
             .integer("status", e.status.0)
             .text("media_type", &e.media_type.0)
             .bytes("body", &e.body),

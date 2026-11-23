@@ -31,6 +31,7 @@ timeline:
     input:
       request_id: {$instance: posted}
       url: http://example.org/search
+      method: Post
       status: 200
       media_type: text/plain
       body: aGk=
@@ -51,6 +52,7 @@ timeline:
     input:
       request_id: {$instance: b}
       url: http://example.org/b
+      method: Get
       status: 200
       media_type: text/plain
       body: aGk=

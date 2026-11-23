@@ -246,6 +246,7 @@ fn a_non_html_response_is_not_parsed() {
 fn a_password_value_is_printed_as_set_or_empty() {
     let transport = |request: &RequestStarted| Answer::Response {
         url: request.url.0.clone(),
+        method: request.method,
         status: 200,
         media_type: "text/html".to_owned(),
         body: b"<input type=password value=\"pw-marker\"><input type=password>\
@@ -296,6 +297,7 @@ fn parsed_within(
 ) -> (Vec<String>, String) {
     let transport = move |request: &RequestStarted| Answer::Response {
         url: request.url.0.clone(),
+        method: request.method,
         status: 200,
         media_type: "text/html".to_owned(),
         body: body.clone().into_bytes(),

@@ -47,6 +47,7 @@ impl Opened {
             };
             surf::Answer::Response {
                 url: request.url.0.clone(),
+                method: request.method,
                 status: 200,
                 media_type: "text/html".to_string(),
                 body,

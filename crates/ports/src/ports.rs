@@ -309,8 +309,10 @@ fn entry_at<S: NavigationStorage + ?Sized>(
 /// A response's arrival, its outcomes chosen in the order `spec/` declares them: a navigation no
 /// row holds is refused, and one that already ended (`wrong-state`). A traversal's commit makes
 /// the entry it went to current and adds none; a push's makes the navigation its tab's current
-/// entry, after the one that was current, and drops the entries after that one. The effects on
-/// the tab's other rows apply in the order `spec/` writes them.
+/// entry, after the one that was current, with the method of its committing request, drops the
+/// entries after that one, and cancels every traversal of the tab still `Started`, so that one
+/// answers `wrong-state` and commits nothing. The effects on the tab's other rows apply in the
+/// order `spec/` writes them.
 ///
 /// It reads and writes `rows` only, so a ports type that wraps a [`NavigationStorage`] meets the
 /// obligation over its own storage.
@@ -384,6 +386,7 @@ pub fn commit_navigation<S: NavigationStorage + ?Sized>(
         });
     }
     subject.data.standing = Some(Standing::Current);
+    subject.data.method = input.method;
     rows.put(subject);
     stand(
         rows,
@@ -409,6 +412,17 @@ pub fn commit_navigation<S: NavigationStorage + ?Sized>(
             row.next = Some(id.clone());
         },
     );
+    for mut snapshot in rows.list() {
+        let row = &snapshot.data;
+        if &row.navigation_id != id
+            && &row.tab_id == tab
+            && row.handling == HistoryHandling::Traverse
+            && snapshot.state == NavigationState::Started
+        {
+            snapshot.state = NavigationState::Cancelled;
+            rows.put(snapshot);
+        }
+    }
     Ok(CommitNavigationOutcome::Committed {
         navigation_committed,
     })

@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 3228537f9d6e7cdd446cb9ccbf75b058addda67c10b212a848f9115f7eba7e7b
+// contract digest 0fe2c0b6e437654e024a069cbcca8147e4a9c7adcd5b10150e01611989dfa058
 // do not edit: regenerate with `ess synthesize`
 
 //! What the specification fully determines, generated: the behaviour of every command the plan
@@ -1254,7 +1254,7 @@ where
             _ => return Ok(crate::net::DeliverResponseOutcome::WrongState { error: crate::net::RequestStateConflict { state: held_state } }),
         };
         let next = moved.snapshot();
-        let answer = crate::net::DeliverResponseOutcome::Responded { response_received: crate::net::ResponseReceived { request_id: input.request_id.clone(), url: input.url.clone(), status: input.status.clone(), media_type: input.media_type.clone(), body: input.body.clone() } };
+        let answer = crate::net::DeliverResponseOutcome::Responded { response_received: crate::net::ResponseReceived { request_id: input.request_id.clone(), url: input.url.clone(), method: input.method.clone(), status: input.status.clone(), media_type: input.media_type.clone(), body: input.body.clone() } };
         RequestStorage::put(&mut self.ports, next);
         return Ok(answer);
     }

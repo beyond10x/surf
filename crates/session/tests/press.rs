@@ -612,6 +612,7 @@ fn in_memory(start: &str, page: String) -> (Session<Memory>, String, Arc<Mutex<V
         };
         surf::Answer::Response {
             url: request.url.0.clone(),
+            method: request.method,
             status: 200,
             media_type: "text/html".to_string(),
             body: body.into_bytes(),

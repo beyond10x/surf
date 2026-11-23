@@ -178,6 +178,7 @@ bindings:
     mapping:
       navigation_id: event.request_id
       url: event.url
+      method: event.method
       status: event.status
       media_type: event.media_type
       body: event.body

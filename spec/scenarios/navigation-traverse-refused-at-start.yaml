@@ -36,6 +36,7 @@ timeline:
     input:
       request_id: {$instance: a}
       url: http://example.org/a
+      method: Get
       status: 200
       media_type: text/plain
       body: aGk=
