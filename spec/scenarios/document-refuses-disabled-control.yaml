@@ -21,6 +21,7 @@ arrange:
         disabled: true
         checked: false
         required: false
+        readonly: false
         name: coupon
       state: Added
   - instance: enabled
@@ -37,6 +38,7 @@ arrange:
         disabled: false
         checked: false
         required: false
+        readonly: false
         name: note
       state: Added
 

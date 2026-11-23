@@ -8,9 +8,13 @@
 # measurements A and B).
 #
 # The commands are those of docs/design/agent-interface.md, section 4, slice 1: `open [<url>]`,
-# `go <url>`, `look`, `close`. Every callable is `local`: the token is a credential and not an
-# input of any specification command, so a `service_forward` callable could not carry it. Each
-# command's `about` names what the client asks the session for.
+# `go <url>`, `look`, `close`; and of step 3 of its section 9: `follow <handle>`, a handle of the
+# answer's `now` block, `back` and `forward`; and of step 4: `fill <handle> <value>` (`-` reads the value from
+# standard input), `pick <handle> <option>` and `press <handle>`; and of step 5: `log [<n>]`, every
+# action of the session or the last `n`. Every callable is
+# `local`: the token is a credential and not an input of any specification command, so a
+# `service_forward` callable could not carry it. Each command's `about` names what the client
+# asks the session for.
 #
 # The answer is not the JSON `ess-cli/2` writes. Every command, `open` included, prints the
 # line-oriented text of docs/agent-answer.md (design, sections 5 and 6). The result types below
@@ -46,6 +50,34 @@ callables:
     target: {kind: local, owner: surf.agent.cli, action: look}
     input: surf.agent.LookCall
     result: surf.agent.SessionReadout
+  follow:
+    target: {kind: local, owner: surf.agent.cli, action: follow}
+    input: surf.agent.FollowCall
+    result: surf.agent.SessionReadout
+  fill:
+    target: {kind: local, owner: surf.agent.cli, action: fill}
+    input: surf.agent.FillCall
+    result: surf.agent.SessionReadout
+  pick:
+    target: {kind: local, owner: surf.agent.cli, action: pick}
+    input: surf.agent.PickCall
+    result: surf.agent.SessionReadout
+  press:
+    target: {kind: local, owner: surf.agent.cli, action: press}
+    input: surf.agent.PressCall
+    result: surf.agent.SessionReadout
+  back:
+    target: {kind: local, owner: surf.agent.cli, action: back}
+    input: surf.agent.SessionCall
+    result: surf.agent.SessionReadout
+  forward:
+    target: {kind: local, owner: surf.agent.cli, action: forward}
+    input: surf.agent.SessionCall
+    result: surf.agent.SessionReadout
+  log:
+    target: {kind: local, owner: surf.agent.cli, action: log}
+    input: surf.agent.LogCall
+    result: surf.agent.SessionReadout
   close:
     target: {kind: local, owner: surf.agent.cli, action: close}
     input: surf.agent.SessionCall
@@ -55,6 +87,12 @@ callables:
 # from `SURF_SESSION` when `--session` is absent, and the token from `SURF_TOKEN` when
 # `--token-file` is absent; an option given wins over the environment. What would settle it: an
 # environment source in an ESS command-line binding.
+# UNMAPPED: `--` as the end of options for every command (`story:agent-fill-pick`, decision 3
+# after the adversary's pass). After the first `--` the client reads every word as a positional,
+# even one that starts with `-` (`fill f1 -- -5`, `pick f2 -- "-- choose --"`), and the word `-`
+# as a value of one dash, not standard input (`fill f1 -- -`). `ess-cli/2` fills positionals only
+# before `--` and gives the words after it to a `trailing` source, which takes a list and no
+# positional. What would settle it: positionals that `ess-cli` fills after `--` too.
 commands:
   - path: [open]
     callable: open
@@ -92,6 +130,79 @@ commands:
         source: {kind: option, long: as}
       - field: from_line
         source: {kind: option, long: from-line}
+  - path: [follow]
+    callable: follow
+    about: Follow the link of a handle of the now block and print the session's state
+    arguments:
+      - field: handle
+        source: {kind: positional, index: 1}
+      - field: session_id
+        source: {kind: option, long: session}
+      - field: token
+        source: {kind: protected, file: token-file, stdin: token-stdin, hidden_tty: token-prompt}
+  # UNMAPPED: the value word `-` of `fill`, which the client replaces by standard input (the
+  # marker at `surf.agent.FillCall` in `spec/domains/agent.yaml`). What would settle it: a
+  # positional source in ESS that may read standard input.
+  - path: [fill]
+    callable: fill
+    about: Give a text, password or textarea control of the now block a value, or the value read from standard input for -, and print the session's state
+    arguments:
+      - field: handle
+        source: {kind: positional, index: 1}
+      - field: value
+        source: {kind: positional, index: 2}
+      - field: session_id
+        source: {kind: option, long: session}
+      - field: token
+        source: {kind: protected, file: token-file, stdin: token-stdin, hidden_tty: token-prompt}
+  - path: [pick]
+    callable: pick
+    about: Pick an option of a select by its label or value, or turn a checkbox on or off, or a radio button on, and print the session's state
+    arguments:
+      - field: handle
+        source: {kind: positional, index: 1}
+      - field: option
+        source: {kind: positional, index: 2}
+      - field: session_id
+        source: {kind: option, long: session}
+      - field: token
+        source: {kind: protected, file: token-file, stdin: token-stdin, hidden_tty: token-prompt}
+  - path: [press]
+    callable: press
+    about: Press a submit button of the now block, submitting its form, and print the session's state
+    arguments:
+      - field: handle
+        source: {kind: positional, index: 1}
+      - field: session_id
+        source: {kind: option, long: session}
+      - field: token
+        source: {kind: protected, file: token-file, stdin: token-stdin, hidden_tty: token-prompt}
+  - path: [back]
+    callable: back
+    about: Go to the page before the current one in the session's history and print the session's state
+    arguments:
+      - field: session_id
+        source: {kind: option, long: session}
+      - field: token
+        source: {kind: protected, file: token-file, stdin: token-stdin, hidden_tty: token-prompt}
+  - path: [forward]
+    callable: forward
+    about: Go to the page after the current one in the session's history and print the session's state
+    arguments:
+      - field: session_id
+        source: {kind: option, long: session}
+      - field: token
+        source: {kind: protected, file: token-file, stdin: token-stdin, hidden_tty: token-prompt}
+  - path: [log]
+    callable: log
+    about: Print the session's state with every action of the session, or the last n of them
+    arguments:
+      - field: count
+        source: {kind: positional, index: 1}
+      - field: session_id
+        source: {kind: option, long: session}
+      - field: token
+        source: {kind: protected, file: token-file, stdin: token-stdin, hidden_tty: token-prompt}
   - path: [close]
     callable: close
     about: Close the session and its tab and print its final state

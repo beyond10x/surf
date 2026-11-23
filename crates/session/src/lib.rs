@@ -19,6 +19,14 @@
 //!   carries the `token` line.
 //! - `go <url>`: `Go` as the holder; when it is `requested`, `RecordAction` `go`.
 //! - `look`: the views `SessionState` and `SessionLog`; no action.
+//! - `follow <handle>` (`arg handle`): `Follow` as the holder with the link's resolved address,
+//!   its handle and its label; when it is `requested`, `RecordAction` `follow` with all three
+//!   ("The links" below).
+//! - `fill`, `pick` ("The controls" below) and `press <handle>` ("Pressing a button" below).
+//! - `back` and `forward`: `GoBack` and `GoForward` as the holder; when it is `requested`,
+//!   `RecordAction` `back` or `forward` ("Back and forward" below).
+//! - `log [<n>]` (`arg count`): the views `SessionState` and `SessionLog`; no action ("The log"
+//!   below).
 //! - `close`: `CloseSession` as the holder; when it is `closed`, `RecordAction` `close`.
 //!
 //! An accepted command's `RecordAction` is issued before the run that delivers what the command
@@ -47,6 +55,188 @@
 //! a `close`, and each later command that changes the document or what its text shows) and when
 //! the current document is another one.
 //!
+//! # The links
+//!
+//! After each command the session reads its current document (the one "The page as text" names).
+//! The `page` line and the status record carry its title (`document.title`), unless it is empty
+//! or longer than [`TITLE_CHARS_MAX`] characters. An answer with such a document holds `note
+//! parser: <parts>` when [`surf::NOT_YET_PARSED`] is not empty; one of an open session without
+//! page text, when the document has links or controls, the `now` block and `note visibility:
+//! hidden attribute only` (`docs/agent-answer.md`). A call with `--as` has no `now` block.
+//!
+//! The links are the rows of `surf.document.Elements` of kind `link` in position order, each
+//! with the handle [`surf_page::handles`] gives its node (`l1`, `l2`, … in document order,
+//! hidden elements included, starting at 1 for each document), the row's label and target (the
+//! `href` as written), and `hid` when the element or an ancestor has the HTML `hidden`
+//! attribute, read from the tree: `aria-hidden`, a closed `dialog` or `details` and a popover
+//! leave a link `?`, though the row's `hidden` flag is wider. The target is resolved with
+//! `surf-url` against [`surf_page::base_url::document_base_url`]; a line shows its path, query
+//! and fragment when it has the document's origin and a path that does not start with `//`
+//! (which would read as another host), and otherwise the whole address without its userinfo,
+//! so that scheme, host and port come first; or the `href` as written and `unresolved`. The
+//! label is cut at [`surf_answer::LABEL_CHARS_MAX`]
+//! characters, the target at [`surf_answer::TARGET_CHARS_MAX`]. The block shows the first lines
+//! that fit [`NOW_BYTES_MAX`] bytes, and its header `now <shown> of <total>` counts them all.
+//! The session computes the links once per document and keeps them while it is current.
+//!
+//! `follow <handle>` is refused `closed` on a closed session, `unknown-handle` when the current
+//! document has no element of that handle (or there is none), `wrong-kind` for a control,
+//! `hidden` for a link `hid` names, and `unresolved` for a target that does not resolve; each
+//! with status 1 and the state. The `path` line of a `follow` is `<n> follow <handle>
+//! "<label>"`, the label cut as in the `now` block.
+//!
+//! # The controls
+//!
+//! The `now` block lists every actionable row, links and controls together, in position order:
+//! a control's handle is `f<n>` or `b<n>` from [`surf_page::handles`], its visibility as for a
+//! link, and in place of a target its state (`docs/agent-answer.md`, "The now block"), read from
+//! the control's row and, for a select, from its option rows: the value of a text, textarea or
+//! file control quoted and cut at [`surf_answer::VALUE_CHARS_MAX`]; `(set)` or `(empty)` for a
+//! password, whose value is in no line; the label of a select's selected option (the first of
+//! them in position order); then `disabled`, `checked` (a checkbox or radio button), `required`
+//! and `readonly`.
+//!
+//! `fill <handle> <value>` and `pick <handle> <option>` are checked in this order, each refusal
+//! with status 1 and the state: `closed`; `unknown-handle`; `wrong-kind` (`fill` takes `text`,
+//! `password` and `textarea`, `pick` takes `select`, `checkbox` and `radio`); `disabled`;
+//! `hidden`, from the row's `hidden` flag, which is wider than `hid` and is what `SetValue`
+//! refuses; then for `fill` `readonly`, and for `pick` `unknown-option` (a select without an
+//! option of that label, then of that value; a word other than `on` or `off` for a checkbox, or
+//! than `on` for a radio button) and `disabled` for the option picked (an option is hidden only
+//! where its select is, which is refused `hidden` before). A checkbox already in the state asked
+//! for is left as it is: `did pick "<handle>"`, status 0, no action. The value of a `text` or
+//! `password` control is sent with its line feeds and carriage returns removed, as the HTML
+//! Standard sanitizes a single-line `input`; a `textarea` keeps them. Otherwise the session sends
+//! `Fill` or `Pick` as the holder, records the action (`<n> fill
+//! <handle>`, `<n> pick <handle>`: the handle bare, never the value or the option) and runs the
+//! system, in which the bindings set the value, check the control (a radio button unchecks the
+//! others of its group) or select the option. The answer is `did fill "<handle>"` or `did pick
+//! "<handle>"` with the state. The value of a `fill` is in no row of the session, no line of an
+//! answer and no entry: the `FillRequested` entry gives its length (`"<n> bytes"`).
+//!
+//! # Following a link
+//!
+//! Before any navigation, and so with the page and the path as they were, `follow` refuses a
+//! resolved target, with status 1 and the state:
+//!
+//! - longer than [`surf_fetch::MAX_ADDRESS_BYTES`] bytes: `address-too-long`, the bound of an
+//!   address a redirect leads to ("What it keeps");
+//! - with a scheme other than `http`, the one scheme the transport fetches (`javascript:`,
+//!   `mailto:`, `data:`, `file:`, `https:`): `unsupported-scheme`. `go` still navigates to such
+//!   an address and its page line says `failed UnsupportedScheme`;
+//! - from a document whose address is not local by its text, a target whose host is
+//!   (`host_is_local`: an IP address [`surf_fetch::is_local`] names, the rule a redirect's
+//!   destination is checked by, or `localhost` or a name under it): `forbidden-destination`. A
+//!   document at another name counts as public, as the session does not know where its fetch
+//!   connected.
+//!
+//! A target that is another name is resolved only by the fetch. From a document that counts as
+//! public, the session tells the transport so ([`fetch`], [`fetch_through`]), and the fetch
+//! applies to the first request the rule it applies to a redirect ([`surf_fetch::Origin`]): a
+//! host that resolves to a local address, any one of those resolved, is refused before a
+//! connection is made. The session runs the navigation before it records the action; when the
+//! fetch refused its first request, it records nothing and answers `did refused
+//! forbidden-destination` with the page, the path and the values as they were, as after its own
+//! check: the page and the current document are read as before that navigation for as long as
+//! it is the session's last. `go` with a typed address is not checked so. The same holds for the
+//! request of a `press` ("Pressing a button").
+//!
+//! # Pressing a button
+//!
+//! The line of a button with a form owner ends in `submits F<n> <method> "<action>"`: the form's
+//! handle ([`surf_page::form_handles`]), and the method and action of [`surf::Submits`], which
+//! [`surf::Browser::submits`] reads for every button of the document with the submitter's
+//! `formmethod` and `formaction`; the action is shown as a link's target is ("The links"), and
+//! an action that does not parse as `submits F<n> <method> unresolved`, with none of its text,
+//! which could hold a user name and a password. The action of the form and each distinct
+//! `formaction` are resolved once per answer, however many buttons share them.
+//!
+//! `press <handle>` is checked in this order, each refusal with status 1 and the state, before
+//! any command is sent, so with no submission event, no request and the path as it was:
+//! `closed`; `unknown-handle`; `wrong-kind` for anything but a button; `disabled`; `hidden`;
+//! `no-default-action` for a button that is not a submit button (`type=button`, `type=reset`);
+//! then, for a button with a form owner, from [`surf::Browser::plan_submission`], the plan the
+//! submission step itself follows ([`surf::plan_submission`]), so the address checked is the
+//! address requested: `password-in-query` for a `GET` whose entry list holds a non-empty password
+//! value; and for the address it would request (a `GET`'s with its query written) the three
+//! refusals of "Following a link", `address-too-long`, `unsupported-scheme` and
+//! `forbidden-destination`. Otherwise the session sends `Press` as the holder, records `<n> press
+//! <handle>` and runs the system: the submission step submits the form and the tab navigates
+//! (`did press "<handle>"`, the page it committed), or ends the submission with a
+//! `SubmissionAbandoned` the session answers with its word, status 1, the action recorded:
+//! `no-form-owner`, `invalid-controls`, `invalid-action`, `unsupported-enctype`,
+//! `dialog-method`; `NotSubmitButton`, `UnsupportedScheme` and `AddressTooLong`, refused before,
+//! map to `no-default-action`, `unsupported-scheme` and `address-too-long`.
+//!
+//! # Back and forward
+//!
+//! The `agent` component reads no history, so the session reads it before it sends anything:
+//! the row of the navigator's view `Navigations` in the tab of the session whose `standing` is
+//! `back` (for `back`) or `forward` (for `forward`). Each refusal has status 1 and the state,
+//! with no event, no request and the path as it was: `closed`; `at-start` or `at-end` when there
+//! is no such row; `post-entry` when its `method` is `Post`, an entry the navigator would not
+//! load again (`TraverseHistory`), since surf has no cache. Otherwise the session sends `GoBack`
+//! or `GoForward` as the holder and runs the system: the navigator loads the entry's address
+//! with `GET`.
+//!
+//! The session's own checks of a target ("Following a link") are not made again: they read the
+//! address text, and an entry's address passed them when the entry was made. What a name
+//! resolves to is not settled by that, so the fetch's rule is applied again (decisions D279,
+//! D283 and D293): the run goes out under the rule of a page that counts as public when a public
+//! page or a public server chose the entry's address, by link, form or redirect: an entry a
+//! `follow` or a `press` made from such a page, and an entry a redirect moved to after the fetch
+//! connected first to a public address, whatever command started it. The session's transport
+//! notes where the fetch connected first ([`fetch`]); the text of the address asked for does
+//! not decide it, so a name that resolved to a local address counts as local. Only an entry the
+//! agent's own address reached without a redirect, or by a redirect after a first connection to
+//! a local address, goes out under the rule of `go`, whatever page the session is on. A first
+//! request that rule refuses is
+//! answered `did refused forbidden-destination`, status 1, with nothing recorded and the page
+//! and the path as they were ([`Kept`]), as for a `follow`. Otherwise the session records `<n>
+//! back` or `<n> forward`, and the answer is `did back` or `did forward` with the page it
+//! committed, or `page failed`, the tab's current entry left where it was.
+//!
+//! # What changed
+//!
+//! The session keeps what its last answer that showed the session's state showed ([`Shown`]):
+//! the navigation its page came from (the view `Sessions`, or the one before a refused first
+//! request, [`Kept`]), the address of its `page` line, its current document, and for each
+//! control of that document, in document order, its handle, its kind, its row's value and
+//! checkedness and its selected options, each by its place in the select with its label
+//! (decision D298), each whole. Before the first answer it keeps no navigation, no address and no control. Every
+//! answer that shows the state (`state_reply`: actions, reads and refusals with the state)
+//! compares that with the same reading now and holds the `changed` block, then keeps the new
+//! reading; a refusal without the token, a `usage` refusal of `open` or of a request that does
+//! not decode, and a status-3 answer show no state, have no block and keep nothing.
+//!
+//! - Another navigation: `changed page`, the address of the old `page` line and of the new one,
+//!   or `none` for `page none`. Then the texts of the new document that the old one did not
+//!   hold: the lines [`surf_page_text::markdown::markdown`] renders of each tree
+//!   (`Browser::document_tree`, which keeps the trees of every document of the session) but
+//!   the empty ones, each once, in order; the first [`surf_answer::CHANGED_TEXTS_MAX`] (10)
+//!   cut at [`surf_answer::CHANGED_TEXT_CHARS_MAX`] (120) characters, and the count of the
+//!   others. Without a new document (a failed load, a response that is not HTML) there are
+//!   none.
+//! - The same navigation: one line per control whose state differs, in document order: its value
+//!   for a text, textarea, file or password control (a password's `(set)` or `(empty)`, never the
+//!   value), its checkedness for a checkbox or a radio button, and for a select the set of its
+//!   selected options, compared by their places (decision D298), each side written as their
+//!   labels in document order joined by `, `, `""` for none. Two options of one label give a line
+//!   whose two sides read the same: the selection moved. Before scripts nothing but a control's state changes within a document
+//!   (decision D2 of `story:agent-change-and-log`), so nothing else is compared.
+//!
+//! An action changes at most two controls: `fill` and `pick` one, a radio button turned on the
+//! one of its group the parser left checked as well (`surf_page::forms`, at most one checked per
+//! group), so the block of the same navigation is at most two lines.
+//!
+//! # The log
+//!
+//! `log` takes `arg count`, a number from 1 in decimal digits; any other argument, or a count
+//! that is not one, is `did refused usage`, status 2. It records nothing. Its answer is that of
+//! `look` with the `path` block of every action of the view `SessionLog`, or of the last
+//! `count`, oldest first: as many of the newest as fit [`LOG_BYTES_MAX`] bytes of lines,
+//! `path <shown> of <total>` counting them all.
+//!
 //! # Refusals
 //!
 //! - A request other than `open` whose `session` is not this identity, or whose token does not
@@ -55,7 +245,8 @@
 //!   Nothing is acted on and nothing of the session's state is in the answer.
 //! - From the holder, a command this session does not know, an argument name it does not know,
 //!   `go` without `arg url`, `arg form` other than `tree` or `markdown`, `arg line` without `arg
-//!   form` or not a number from 1: `did refused usage`, status 2, with the current page and path.
+//!   form` or not a number from 1, `arg count` of `log` not a number from 1: `did refused
+//!   usage`, status 2, with the current page and path.
 //! - `open` after the first, `open` with a session, a token or an argument but `url`, `form` and
 //!   `line`, `open` with `arg form` and no `arg url` or with a `form` or `line` refused above, and
 //!   a request that does not decode ([`Session::malformed`]): `did refused usage`, status 2, the
@@ -66,7 +257,11 @@
 //! state `unknown` ([`link::SessionState::Unknown`]) with no address and no title. So a process
 //! that reaches the session's socket without the token reads nothing of the session, not even
 //! the address of its page, and `surfd` keeps what it knew of the session before the request.
-//! - `go` or `close` on a closed session: `did refused closed`, status 1, with the state.
+//! - `go`, `follow`, `fill`, `pick`, `press`, `back`, `forward` or `close` on a closed session:
+//!   `did refused closed`, status 1, with the state. `follow` or `press` without `arg handle`,
+//!   `fill` without `arg handle` and `arg value`, `pick` without `arg handle` and `arg option`,
+//!   or any of them with another argument, and `back`, `forward` or `close` with any argument:
+//!   `did refused usage`.
 //!
 //! # The token
 //!
@@ -77,17 +272,33 @@
 //! # What it keeps
 //!
 //! The answer lines hold the page line, the `did` line and at most [`PATH_SHOWN`] path lines,
-//! seven addresses. An address comes from a request of at most
-//! [`surf_agent::wire::REQUEST_MAX`] bytes, which quotes it as the answer does, or is the
-//! address a response came from after redirects, at most [`surf_fetch::MAX_ADDRESS_BYTES`]
-//! bytes, the same 64 KiB, before quoting. Quoting writes a `"`, a `\` and each byte outside
+//! seven addresses, and since `story:agent-change-and-log` the two of a `changed page` line,
+//! nine. An address has one of three sources: a request of at most
+//! [`surf_agent::wire::REQUEST_MAX`] bytes, which quotes it as the answer does; the address a
+//! response came from after redirects, at most [`surf_fetch::MAX_ADDRESS_BYTES`] bytes, the
+//! same 64 KiB, before quoting; or the target of a link a `follow` took, which a page writes
+//! and `follow` refuses over [`surf_fetch::MAX_ADDRESS_BYTES`] bytes ("Following a link"), and
+//! which a redirect after it bounds the same way. Quoting writes a `"`, a `\` and each byte outside
 //! printable ASCII as four bytes (`\x5c` for a `\`), so a quoted address is at most four times
 //! its length and its two quotes; `surf-url` leaves a `\` in the query or fragment of a
 //! response URL as it is, so the quoted form of one comes to up to four times
-//! [`surf_fetch::MAX_ADDRESS_BYTES`], at most 262,146 bytes. Seven addresses of at most 262,146
-//! bytes each are 1,835,022 bytes; a `text` block adds at most [`surf_answer::TEXT_BYTES_MAX`]
-//! (32,768) bytes of body lines, its header, a `more` line and a `note text:` line, each under
-//! 200 bytes; so an answer stays below [`surfd::link::ANSWER_TEXT_MAX`], 4,194,304 bytes.
+//! [`surf_fetch::MAX_ADDRESS_BYTES`], at most 262,146 bytes. Nine addresses of at most 262,146
+//! bytes each are 2,359,314 bytes. The `did` line of `follow` holds the handle as typed, from a
+//! request like an address, and a `follow` path line holds a label of at most 60 characters
+//! (at most 965 bytes quoted), so the nine still bound them. The title adds at most
+//! [`TITLE_CHARS_MAX`] characters, at most 16,386 bytes quoted. A character of four UTF-8 bytes
+//! quotes to 16 bytes, so the rest of the `changed` block adds at most 10 `+ text` lines of 120
+//! characters, at most 1,935 bytes each with the cut mark and the line feed, and a `more` line
+//! under 40 bytes; or `changed 2` and at most two `~` lines ("What changed"), each with a handle
+//! of `f` and at most 20 digits and two values of at most 1,024 characters and their cut marks,
+//! under 32,820 bytes each (decision D299). A `text` block adds at most
+//! [`surf_answer::TEXT_BYTES_MAX`] (32,768) bytes of body lines, its header, a `more` line and a
+//! `note text:` line, each under 200 bytes; or, in an answer without text, the `now` block adds
+//! at most [`NOW_BYTES_MAX`] (1,048,576) bytes and `note visibility:` and `note parser:` lines
+//! under 200 bytes each. So an answer stays below [`surfd::link::ANSWER_TEXT_MAX`], 4,194,304
+//! bytes: about 3,491,000 at most. The answer of `log` has no `did` line and in place of the five
+//! path lines at most [`LOG_BYTES_MAX`] (1,048,576) bytes of them, so it stays below 3,000,000
+//! (about 2,967,000 at most).
 //!
 //! A status record whose quoted address does not fit [`surfd::link::RECORD_MAX`] (65,536 bytes,
 //! with the record's other lines) is sent without the address, and `surfd` lists the session
@@ -112,6 +323,15 @@
 //! the session (each tree within `surf-html`'s limits; no bound over all documents yet). Since
 //! the fix round of round 1 a call with `--as` also leaves the lines of the current document in
 //! the forms asked for ("The page as text"), until the next request that is not a `look`.
+//! Since `story:agent-change-and-log` the session keeps what its last answer showed ("What
+//! changed"): two addresses and identities, and the handle, value and selected options' places
+//! and labels of each control of the current document, values the element and option rows hold
+//! as well; it is
+//! replaced at each answer that shows the state. It keeps the identity of each navigation made
+//! from a page that counts as public, and of each navigation whose fetch connected first to a
+//! public address and was redirected ("Back and forward", decision D293), while the entry it
+//! made is in the history: after each run it drops those of entries a load after `back`
+//! dropped and of navigations that made no entry (decision D300).
 //!
 //! # The entries
 //!
@@ -127,27 +347,33 @@
 //!
 //! The entries of one request through the wire stay below [`surfd::link::ENTRIES_MAX`],
 //! 8,388,608 bytes, whatever the page holds. The answer entry is the answer lines, at most
-//! [`surfd::link::ANSWER_TEXT_MAX`] (4,194,304 bytes; it holds at most seven addresses, `did`,
-//! `page` and [`PATH_SHOWN`] path lines, each at most 262,146 bytes once quoted, "What it
-//! keeps"), and its `answer-entry <m>` line. The action and event entries take at most
+//! [`surfd::link::ANSWER_TEXT_MAX`] (4,194,304 bytes; it holds at most nine addresses, `did`,
+//! `page`, [`PATH_SHOWN`] path lines and the two of `changed page`, each at most 262,146 bytes
+//! once quoted, "What it keeps"), and its `answer-entry <m>` line. The action and event entries take at most
 //! [`ACTION_AND_EVENT_BYTES_MAX`], 4,194,240 bytes, the rest: the action entries (at most two,
 //! `open <url>` records `open` and `go`, each with at most one address) are written whole and
 //! their bytes, with 64 bytes for a left-out line after each, are set aside first; an event
 //! entry that would take the event entries past what is left is left out, and so is every
-//! `surf.document.ElementAdded` entry after the first [`ELEMENT_ENTRIES_MAX`] (256) of the
-//! request. After an action's events, one line `event surf.agent.EventsLeftOut
-//! count="<n>"` ([`entries::left_out_line`]) counts the entries left out of them; it is absent
-//! when none was. So a request carries at most 256 element entries, and `surfd`'s bounds of a
-//! session's log (10,000 entries) and of a reader's queue (1,024) are not reached by one page.
-//! An event field holds no body, only its length; the one field that holds text from a page,
-//! the title of `surf.document.DocumentParsed`, holds at most
+//! row entry (`surf.document.ElementAdded`, `surf.document.FormAdded` and
+//! `surf.document.OptionAdded`, one per row the parser step adds) after the first
+//! [`ELEMENT_ENTRIES_MAX`] (256) of the request. After an action's events, one line
+//! `event surf.agent.EventsLeftOut count="<n>"` ([`entries::left_out_line`]) counts the entries
+//! left out of them; it is absent when none was. So a request carries at most 256 row entries,
+//! and `surfd`'s bounds of a session's log (10,000 entries) and of a reader's queue (1,024)
+//! are not reached by one page.
+//! An event field holds no body, only its length. The fields that hold text from a page, the
+//! title of `surf.document.DocumentParsed` and the label of `surf.agent.ActionRecorded` and of
+//! `surf.agent.NavigationRequested` (the label of the link a `follow` took), each hold at most
 //! [`entries::TITLE_ENTRY_BYTES`] (1,024) bytes of it, at most 4,098 bytes quoted, with the
-//! field `title_bytes` when it was cut. An element's label, target and value are in no entry
-//! (`surf.document.ElementAdded` carries two identities and a position). An address, at most
+//! field `title_bytes` or `label_bytes` when it was cut. The `handle` of an action's events,
+//! which the client supplies, is cut the same way, with `handle_bytes`. An element's target and
+//! value are in no entry, and its label only in those two (`surf.document.ElementAdded` carries
+//! two identities and a position). An address, at most
 //! [`surf_agent::wire::REQUEST_MAX`] bytes when it comes from a request and at most
 //! [`surf_fetch::MAX_ADDRESS_BYTES`] bytes, the same 64 KiB, when it is the address a response
-//! came from after redirects, is at most 262,146 bytes once quoted, in at most nine action and
-//! event lines of one `open <url>` or `go` (`DocumentParsed` is the ninth), 2,359,314 bytes,
+//! came from after redirects or the target a `follow` took, is at most 262,146 bytes once
+//! quoted, in at most nine action and event lines of one `open <url>`, `go` or `follow`
+//! (`DocumentParsed` is the ninth), 2,359,314 bytes,
 //! with a few hundred bytes of other fields per line: below the 4,194,240, so no event of the
 //! page load itself is left out.
 
@@ -157,24 +383,32 @@
 pub mod entries;
 pub mod process;
 
+use std::cell::{Cell, RefCell};
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io;
 
-use surf::{MemoryBrowser, Transport, UnmetObligation};
+use surf::{MemoryBrowser, NodeId, Transport, Tree, UnmetObligation};
 use surf_agent::wire::{self, Request};
 use surf_answer::{
-    Answer, Did, Form, Head, Note, Page, Path, PathEntry, RefusalReason, SessionState as HeadState,
-    TextNote,
+    Answer, CHANGED_TEXT_CHARS_MAX, CHANGED_TEXTS_MAX, Change, Changed, ControlChange, Cut, Did,
+    Element, Form, Head, LABEL_CHARS_MAX, Note, Now, Page, Path, PathEntry, RefusalReason,
+    SessionState as HeadState, State, TARGET_CHARS_MAX, Target, TextNote, VALUE_CHARS_MAX, Value,
+    Visibility,
 };
 use surf_ports::{Caller, ComponentPorts};
 use surf_secret::Token;
 use surf_types::agent::{
-    ActionCommand, CloseSession, CloseSessionOutcome, Go, GoOutcome, OpenSession,
-    OpenSessionOutcome, RecordAction, RecordActionOutcome, SessionId, SessionState,
-    SessionStateView,
+    ActionCommand, CloseSession, CloseSessionOutcome, Fill, FillOutcome, Follow, FollowOutcome, Go,
+    GoBack, GoBackOutcome, GoForward, GoForwardOutcome, GoOutcome, OpenSession, OpenSessionOutcome,
+    Pick, PickOutcome, Press, PressOutcome, RecordAction, RecordActionOutcome, SessionId,
+    SessionState, SessionStateView,
 };
-use surf_types::document::{DocumentId, DocumentState};
-use surf_types::navigation::NavigationState;
+use surf_types::document::{
+    DocumentId, DocumentState, Documents, ElementId, ElementKind, Elements, Options,
+};
+use surf_types::navigation::{NavigationState, Standing};
+use surf_types::net::{Method, RequestId};
 use surf_types::primitives::Uuid;
 use surf_types::shell::{OpenTab, OpenTabOutcome, OpenWindow, OpenWindowOutcome};
 use surf_types::url::Url;
@@ -183,8 +417,43 @@ use surfd::link;
 /// The most actions the `path` block shows: the last five (design section 5.1).
 pub const PATH_SHOWN: usize = 5;
 
-/// The most `surf.document.ElementAdded` entries one request carries ("The entries" above): the
-/// first 256 of the request; the others are left out and counted.
+/// The most bytes the `path` block of a `log` answer takes, its lines counted high ("The log"
+/// above): 1,048,576. The newest actions are kept. A deliberate bound the design does not
+/// state, as for [`NOW_BYTES_MAX`].
+pub const LOG_BYTES_MAX: usize = 1 << 20;
+
+/// The bytes of a `path` line beside its quoted field and its handle: two spaces, a sequence
+/// number of up to 20 digits, a command word of up to seven letters, the spaces, `...` and the
+/// line feed, counted high.
+const PATH_LINE_FIXED: usize = 40;
+
+/// The most bytes the lines of the `now` block take, its header and line feeds included ("The
+/// links" above): 1,048,576. A deliberate bound the design does not state; paging a long block
+/// is `story:agent-answer-paging`.
+pub const NOW_BYTES_MAX: usize = 1 << 20;
+
+/// The most characters of a title the `page` line and the status record hold ("The links"
+/// above): a longer one is left out of both.
+pub const TITLE_CHARS_MAX: usize = 1_024;
+
+/// The bytes of a `now` line beside its handle and its two quoted fields: two spaces, the kind
+/// `link`, the visibility word, `...` after each field, ` -> `, ` unresolved`, separators and
+/// the line feed, counted high.
+const NOW_LINE_FIXED: usize = 48;
+
+/// The bytes a control's `now` line takes beside [`NOW_LINE_FIXED`], its handle, its label and
+/// its quoted value: a kind word of up to eight letters, ` = `, `(empty)`, `...` after the value
+/// and the four flags with their spaces, counted high.
+const CONTROL_LINE_FIXED: usize = 64;
+
+/// The bytes of a button's `submits` part beside its form handle and its quoted action:
+/// ` submits `, a method word of up to six letters, the spaces, `...` and ` unresolved`, counted
+/// high.
+const SUBMITS_FIXED: usize = 32;
+
+/// The most row entries (`surf.document.ElementAdded`, `FormAdded` and `OptionAdded`) one request
+/// carries ("The entries" above): the first 256 of the request; the others are left out and
+/// counted.
 pub const ELEMENT_ENTRIES_MAX: usize = 256;
 
 /// The most bytes the action and event entries of one request take together, left-out lines
@@ -201,9 +470,109 @@ const LEFT_OUT_LINE_MAX: usize = 64;
 /// [`surf::answer`]. An address that is not `http:` is `UnsupportedScheme` and nothing is read;
 /// so is a `Get` with a body or a media type, before any connection. A `Post` is sent with its
 /// body and media type (an agent's `go` navigates with `Get`). Redirects are followed inside the
-/// one fetch, up to 20, and the answer carries the address of the last response.
+/// one fetch, up to 20, and the answer carries the address of the last response. The first
+/// request of a `follow` or a `press` from a page that counts as public goes to public addresses
+/// only ("Following a link" above).
 pub fn fetch(request: &surf::RequestStarted) -> surf::Answer {
-    surf::answer(surf::fetch_http(request, &surf_fetch::Limits::default()))
+    fetch_through(request, &surf_fetch::OsNetwork)
+}
+
+/// [`fetch`] over `network`, which resolves names and makes connections: a test gives a name
+/// the addresses it chooses without the host's resolver.
+pub fn fetch_through(
+    request: &surf::RequestStarted,
+    network: &dyn surf_fetch::Network,
+) -> surf::Answer {
+    let from_public = FIRST_REQUEST.with(|first| first.from_public.replace(false));
+    let origin = if from_public {
+        surf_fetch::Origin::PublicPage
+    } else {
+        surf_fetch::Origin::Given
+    };
+    let dialing = Dialing {
+        network,
+        dialed: Cell::new(false),
+        first_local: Cell::new(None),
+    };
+    let result = surf::fetch_http_from(request, &surf_fetch::Limits::default(), &dialing, origin);
+    if from_public
+        && !dialing.dialed.get()
+        && matches!(result, Err(surf_fetch::Failure::ForbiddenDestination(_)))
+    {
+        FIRST_REQUEST.with(|first| first.refused.set(true));
+    }
+    // A response from another address than the one asked for came after a redirect.
+    if dialing.first_local.get() == Some(false)
+        && result
+            .as_ref()
+            .is_ok_and(|response| response.url != request.url.0)
+    {
+        FIRST_REQUEST.with(|first| {
+            first
+                .redirected_public
+                .borrow_mut()
+                .push(request.request_id.clone());
+        });
+    }
+    surf::answer(result)
+}
+
+/// What the session tells [`fetch`] about the run it starts, and what the fetch tells it back.
+/// The session and its transport run on one thread, the transport inside the session's run.
+struct FirstRequest {
+    /// The next request is the first of a `follow` or a `press` from a page that counts as
+    /// public; the fetch that reads it clears it.
+    from_public: Cell<bool>,
+    /// That request was refused `ForbiddenDestination` before any connection.
+    refused: Cell<bool>,
+    /// The requests of the run whose fetch connected first to a public address and answered
+    /// from another address, after a redirect (decision D293); the session takes them after
+    /// the run ([`Session::note_redirected_public`]).
+    redirected_public: RefCell<Vec<RequestId>>,
+}
+
+thread_local! {
+    static FIRST_REQUEST: FirstRequest = const {
+        FirstRequest {
+            from_public: Cell::new(false),
+            refused: Cell::new(false),
+            redirected_public: RefCell::new(Vec::new()),
+        }
+    };
+}
+
+/// A [`surf_fetch::Network`] that notes whether a connection was attempted, and whether the
+/// first connection made went to a local address ([`surf_fetch::is_local`]), as the fetch's
+/// own rule judges it.
+struct Dialing<'a> {
+    network: &'a dyn surf_fetch::Network,
+    dialed: Cell<bool>,
+    first_local: Cell<Option<bool>>,
+}
+
+impl surf_fetch::Network for Dialing<'_> {
+    fn resolve(
+        &self,
+        host: &str,
+        port: u16,
+        timeout: std::time::Duration,
+    ) -> Result<Vec<std::net::SocketAddr>, surf_fetch::Failure> {
+        self.network.resolve(host, port, timeout)
+    }
+
+    fn connect(
+        &self,
+        address: &std::net::SocketAddr,
+        timeout: std::time::Duration,
+    ) -> io::Result<std::net::TcpStream> {
+        self.dialed.set(true);
+        let connected = self.network.connect(address, timeout);
+        if connected.is_ok() && self.first_local.get().is_none() {
+            self.first_local
+                .set(Some(surf_fetch::is_local(address.ip())));
+        }
+        connected
+    }
 }
 
 /// What one request comes to: the exit status, the answer lines as a typed answer, and the
@@ -229,7 +598,7 @@ pub struct Reply {
 impl Reply {
     /// The answer of the link: the rendered lines, the status record and the entries, the last
     /// of them the answer entry, which is the rendered lines without the `token` line. The
-    /// address is left out of the record when the answer would not fit the link with it; an
+    /// record's title is the one of the `page` line. The address is left out of the record when the answer would not fit the link with it; an
     /// answer the renderer refuses becomes status 3 with the head line alone, which is then its
     /// answer entry too.
     pub fn to_link(&self) -> link::Answer {
@@ -255,7 +624,12 @@ impl Reply {
             reason,
             state: self.state,
             address: self.address.as_deref().map(link::Quoted::new),
-            title: None,
+            title: match &self.answer.page {
+                Some(Page::Loaded {
+                    title: Some(title), ..
+                }) => Some(link::Quoted::new(title)),
+                _ => None,
+            },
             entries,
             text,
         };
@@ -370,6 +744,41 @@ impl Rendered {
     }
 }
 
+/// One actionable element of the current document, a link or a control, as the `now` block
+/// shows it and `follow`, `fill` and `pick` take it ("The links" and "The controls" above). What
+/// does not change while the document lives; a control's state is read from its row at each
+/// answer.
+#[derive(Clone)]
+struct Link {
+    /// `l<n>`, `b<n>` or `f<n>`, as [`surf_page::handles`] numbers it.
+    handle: String,
+    /// The element's row.
+    element_id: ElementId,
+    /// The element's kind.
+    kind: ElementKind,
+    /// The label of the element's row, the whole accessible name (at most
+    /// [`surf_page::LABEL_BYTES_MAX`] bytes).
+    label: String,
+    /// The element or an ancestor has the `hidden` attribute.
+    hidden: bool,
+    /// A link's target resolved against the document base URL; `None` when it does not
+    /// resolve, and for a control.
+    resolved: Option<surf_url::Url>,
+    /// What the `now` line of a link shows: the target's path, query and fragment when it has
+    /// the document's origin, the whole target otherwise, the `href` as written when
+    /// unresolved; empty for a control.
+    shown: String,
+}
+
+/// The actionable elements of the current document, kept while it is current.
+struct Links {
+    document: DocumentId,
+    links: Vec<Link>,
+    /// The document's address has a host that is not local by its text ([`host_is_local`]):
+    /// `follow` refuses a local target from it ("Following a link" above).
+    from_public: bool,
+}
+
 /// One session: its identity, its token, the system it drives and its sequence number.
 pub struct Session<T> {
     id: String,
@@ -386,6 +795,61 @@ pub struct Session<T> {
     marks: Vec<usize>,
     /// The text of the current document, once a call asked for it.
     rendered: Option<Rendered>,
+    /// The links of the current document, once an answer showed them.
+    links: Option<Links>,
+    /// The state before a `follow` or a `press` whose first request the fetch refused, kept
+    /// while that navigation is the session's last ([`Session::run_from`]).
+    kept: Option<Kept>,
+    /// The navigations whose first request went out under the rule of a page that counts as
+    /// public: a `follow` or a `press` from such a page ([`Session::run_from`]). An entry of the
+    /// history has the identity of the navigation that made it, so `back` and `forward` fetch
+    /// it again under the same rule (decision D279); an entry made by `go` is not here. A
+    /// traversal under the rule is noted too; it makes no entry, so it is never looked up, and
+    /// the next run drops it, as it drops an entry a load after `back` dropped (decision D300,
+    /// [`Session::note_redirected_public`]).
+    from_public: Vec<RequestId>,
+    /// The navigations whose fetch connected first to a public address and was redirected
+    /// (decision D293), as the session's transport noted them ([`fetch`]): `back` and `forward`
+    /// fetch the entry such a navigation made under the rule of a page that counts as public
+    /// ([`Session::redirected_by_public`]). Only those whose entry is in the history (D300).
+    redirected_public: Vec<RequestId>,
+    /// What the last answer that showed the session's state showed, for the `changed` block of
+    /// the next ("What changed" above).
+    shown: Shown,
+}
+
+/// The page state an answer showed ("What changed" above): the load its page came from, the
+/// address of its `page` line, its document and the state of each control of that document.
+#[derive(Clone, Debug, Default)]
+struct Shown {
+    navigation: Option<RequestId>,
+    address: Option<String>,
+    document: Option<DocumentId>,
+    controls: Vec<ShownControl>,
+}
+
+/// The state of one control: its handle, its kind, and from its rows its value, its checkedness
+/// and its selected options, each by its place in the select and with its label (decision
+/// D298), each whole.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ShownControl {
+    handle: String,
+    kind: ElementKind,
+    value: Option<String>,
+    checked: bool,
+    selected: Vec<(i64, String)>,
+}
+
+/// What the session showed before a navigation whose first request the fetch refused
+/// `ForbiddenDestination`: its navigation, that navigation's state and the session's row. While
+/// the refused navigation is the session's last, the page, the current document and the path
+/// are read as they were, as after a `forbidden-destination` of the session's own checks.
+#[derive(Clone, Debug)]
+struct Kept {
+    refused: Option<RequestId>,
+    navigation: Option<RequestId>,
+    navigation_state: Option<NavigationState>,
+    row: Option<SessionStateView>,
 }
 
 impl<T> fmt::Debug for Session<T> {
@@ -426,6 +890,11 @@ impl<T: Transport> Session<T> {
             recorded: Vec::new(),
             marks: Vec::new(),
             rendered: None,
+            links: None,
+            kept: None,
+            from_public: Vec::new(),
+            redirected_public: Vec::new(),
+            shown: Shown::default(),
         })
     }
 
@@ -444,6 +913,16 @@ impl<T: Transport> Session<T> {
     /// Between commands it is nothing: [`Session::answer`] drops what the system delivered.
     pub fn held(&self) -> surf::Held {
         self.browser.held()
+    }
+
+    /// How many lines of the current document's text the session keeps between requests, in
+    /// every form it rendered: 0 when it keeps none. Read-only, for the tests: the kept text is
+    /// dropped by every request but `look` ([`Session::answer`]).
+    pub fn kept_text_lines(&self) -> usize {
+        self.rendered.as_ref().map_or(0, |kept| {
+            kept.tree.as_ref().map_or(0, |lines| lines.lines.len())
+                + kept.markdown.as_ref().map_or(0, |lines| lines.lines.len())
+        })
     }
 
     /// The reply to `request`, with its entries ("The entries" above), which are read from what
@@ -509,7 +988,12 @@ impl<T: Transport> Session<T> {
             };
             let mut left_out = 0u64;
             for event in &published[from..end] {
-                let element = matches!(event, surf::SystemEvent::ElementAdded(_));
+                let element = matches!(
+                    event,
+                    surf::SystemEvent::ElementAdded(_)
+                        | surf::SystemEvent::FormAdded(_)
+                        | surf::SystemEvent::OptionAdded(_)
+                );
                 if element && elements >= ELEMENT_ENTRIES_MAX {
                     left_out += 1;
                     continue;
@@ -555,9 +1039,46 @@ impl<T: Transport> Session<T> {
                 _ => Ok(self.with_state(RefusalReason::Usage)),
             },
             "look" => match (request.unknown_arg(&["form", "line"]), as_text(request)) {
-                (None, Ok(text)) => Ok(self.with_text(self.state_reply(0, None), text)),
+                (None, Ok(text)) => {
+                    let reply = self.state_reply(0, None);
+                    Ok(self.with_text(reply, text))
+                }
                 _ => Ok(self.with_state(RefusalReason::Usage)),
             },
+            "follow" => match (request.unknown_arg(&["handle"]), request.arg("handle")) {
+                (None, Some(handle)) => self.follow(handle),
+                _ => Ok(self.with_state(RefusalReason::Usage)),
+            },
+            "fill" => match (
+                request.unknown_arg(&["handle", "value"]),
+                request.arg("handle"),
+                request.arg("value"),
+            ) {
+                (None, Some(handle), Some(value)) => self.fill(handle, value),
+                _ => Ok(self.with_state(RefusalReason::Usage)),
+            },
+            "pick" => match (
+                request.unknown_arg(&["handle", "option"]),
+                request.arg("handle"),
+                request.arg("option"),
+            ) {
+                (None, Some(handle), Some(option)) => self.pick(handle, option),
+                _ => Ok(self.with_state(RefusalReason::Usage)),
+            },
+            "press" => match (request.unknown_arg(&["handle"]), request.arg("handle")) {
+                (None, Some(handle)) => self.press(handle),
+                _ => Ok(self.with_state(RefusalReason::Usage)),
+            },
+            "log" => match (request.unknown_arg(&["count"]), log_count(request)) {
+                (None, Ok(count)) => {
+                    let mut reply = self.state_reply(0, None);
+                    reply.answer.path = Some(self.path_of(count, LOG_BYTES_MAX));
+                    Ok(reply)
+                }
+                _ => Ok(self.with_state(RefusalReason::Usage)),
+            },
+            "back" if request.unknown_arg(&[]).is_none() => self.traverse(Standing::Back),
+            "forward" if request.unknown_arg(&[]).is_none() => self.traverse(Standing::Forward),
             "close" if request.unknown_arg(&[]).is_none() => self.close(),
             _ => Ok(self.with_state(RefusalReason::Usage)),
         };
@@ -574,6 +1095,9 @@ impl<T: Transport> Session<T> {
         if reply.status != 0 {
             return reply;
         }
+        // An answer with page text has no `now` block (`docs/design/page-as-text.md`).
+        reply.answer.now = None;
+        reply.answer.notes.retain(|note| *note != Note::Visibility);
         let Some(document) = self.current_document() else {
             reply.answer.notes.push(Note::Text(TextNote::NoDocument));
             return reply;
@@ -609,17 +1133,17 @@ impl<T: Transport> Session<T> {
     /// document parsed. `None` before the first navigation, after a failed one, and for a
     /// response that is not HTML.
     fn current_document(&self) -> Option<DocumentId> {
+        self.current_row().map(|row| row.document_id)
+    }
+
+    /// The row of [`Session::current_document`]: its identity, address and title.
+    fn current_row(&self) -> Option<Documents> {
         let system = self.browser.system();
-        let row = system
-            .agent
-            .sessions()
-            .ok()?
-            .into_iter()
-            .find(|row| row.session_id == self.session_id)?;
-        if row.navigation_state != Some(NavigationState::Committed) {
+        let (navigation, navigation_state) = self.navigation()?;
+        if navigation_state != Some(NavigationState::Committed) {
             return None;
         }
-        let navigation = row.navigation_id?;
+        let navigation = navigation?;
         let document = system
             .document
             .documents()
@@ -630,7 +1154,536 @@ impl<T: Transport> Session<T> {
             })?;
         self.browser
             .document_tree(&document.document_id)
-            .map(|_| document.document_id)
+            .map(|_| document)
+    }
+
+    /// The links of the current document, computed once per document ("The links" above);
+    /// `None` without a current document.
+    fn links(&mut self) -> Option<&[Link]> {
+        let row = self.current_row()?;
+        if self
+            .links
+            .as_ref()
+            .is_none_or(|kept| kept.document != row.document_id)
+        {
+            let tree = self.browser.document_tree(&row.document_id)?;
+            let mut rows = self
+                .browser
+                .system()
+                .document
+                .elements(row.document_id.clone())
+                .unwrap_or_default();
+            rows.sort_by_key(|element| element.position);
+            let nodes = self
+                .browser
+                .element_nodes(&row.document_id)
+                .unwrap_or_default();
+            let links = document_links(tree, &row.url.0, &rows, nodes);
+            let from_public =
+                !surf_url::Url::parse(&row.url.0, None).is_ok_and(|page| host_is_local(&page));
+            self.links = Some(Links {
+                document: row.document_id,
+                links,
+                from_public,
+            });
+        }
+        self.links.as_ref().map(|kept| kept.links.as_slice())
+    }
+
+    /// The title of the current document for the `page` line and the status record: `None`
+    /// when it has none, an empty one, or one over [`TITLE_CHARS_MAX`] characters.
+    fn title(&self) -> Option<String> {
+        self.current_row()?
+            .title
+            .filter(|title| !title.is_empty() && title.chars().nth(TITLE_CHARS_MAX).is_none())
+    }
+
+    /// `follow <handle>`: refused `closed` on a closed session, `unknown-handle` when the
+    /// current document has no link of that handle, `hidden` when the link or an ancestor has
+    /// the `hidden` attribute, `unresolved` when its target does not resolve,
+    /// `address-too-long`, `unsupported-scheme` or `forbidden-destination` for a target
+    /// "Following a link" names; otherwise `Follow` as the holder with the resolved address,
+    /// and when it is `requested`, the run ([`Session::run_from`]): `forbidden-destination` when
+    /// the fetch refused its first request, otherwise `RecordAction` `follow` with the address,
+    /// the handle and the label.
+    fn follow(&mut self, handle: &str) -> Result<Reply, Stop> {
+        if self.is_closed() {
+            return Ok(self.with_state(RefusalReason::Closed));
+        }
+        let Some(link) = self
+            .links()
+            .and_then(|links| links.iter().find(|link| link.handle == handle))
+            .cloned()
+        else {
+            return Ok(self.with_state(RefusalReason::UnknownHandle));
+        };
+        let from_public = self.links.as_ref().is_none_or(|kept| kept.from_public);
+        if link.kind != ElementKind::Link {
+            return Ok(self.with_state(RefusalReason::WrongKind));
+        }
+        if link.hidden {
+            return Ok(self.with_state(RefusalReason::Hidden));
+        }
+        let Some(target) = link.resolved.as_ref() else {
+            return Ok(self.with_state(RefusalReason::Unresolved));
+        };
+        let url = target.href();
+        if url.len() > surf_fetch::MAX_ADDRESS_BYTES {
+            return Ok(self.with_state(RefusalReason::AddressTooLong));
+        }
+        if target.scheme() != "http" {
+            return Ok(self.with_state(RefusalReason::UnsupportedScheme));
+        }
+        if from_public && host_is_local(target) {
+            return Ok(self.with_state(RefusalReason::ForbiddenDestination));
+        }
+        let outcome = self.browser.agent_mut().follow(Follow {
+            session_id: self.session_id.clone(),
+            url: Url(url.clone()),
+            handle: link.handle.clone(),
+            label: link.label.clone(),
+        })?;
+        match outcome {
+            FollowOutcome::Requested { .. } => {
+                if self.run_from(from_public)? {
+                    return Ok(self.with_state(RefusalReason::ForbiddenDestination));
+                }
+                self.record_and_run(
+                    ActionCommand::Follow,
+                    Some(&url),
+                    Some((&link.handle, Some(&link.label))),
+                )?;
+                Ok(self.state_reply(
+                    0,
+                    Some(Did::Action {
+                        command: "follow".to_string(),
+                        argument: Some(handle.to_string()),
+                    }),
+                ))
+            }
+            FollowOutcome::Closed { .. } => Ok(self.with_state(RefusalReason::Closed)),
+            FollowOutcome::NotHolder { .. } => Err(Stop::Unexpected("not-holder to the holder")),
+            FollowOutcome::NoSuchSession { .. } => {
+                Err(Stop::Unexpected("no such session to the open session"))
+            }
+        }
+    }
+
+    /// The `now` block of the current document, with each control's state read from its row
+    /// now ("The controls" above); `None` without a current document or an actionable element.
+    fn now(&mut self) -> Option<Now> {
+        let states = self.control_states()?;
+        self.links().and_then(|links| now_block(links, &states))
+    }
+
+    /// The state of each control of the current document, from the rows of its elements and of
+    /// every select's options.
+    fn control_states(&self) -> Option<HashMap<String, State>> {
+        let row = self.current_row()?;
+        let document = &self.browser.system().document;
+        let rows = document.elements(row.document_id.clone()).ok()?;
+        let options = document.options().ok()?;
+        let mut states = control_states(&rows, &options);
+        let page = surf_url::Url::parse(&row.url.0, None).ok();
+        for (element_id, found) in self.browser.submits(&row.document_id).ok()? {
+            if let Some(state) = states.get_mut(&element_id.0.0) {
+                state.submits = Some(submits_part(&found, page.as_ref()));
+            }
+        }
+        Some(states)
+    }
+
+    /// The row of the control `handle` of the current document, checked as "The controls"
+    /// above orders the refusals for `command`: `unknown-handle`, `wrong-kind` (a kind not in
+    /// `kinds`), `disabled`, then `hidden` (the row's flag, which the document's command reads).
+    fn control(&mut self, handle: &str, kinds: &[ElementKind]) -> Result<Elements, RefusalReason> {
+        let Some(link) = self
+            .links()
+            .and_then(|links| links.iter().find(|link| link.handle == handle))
+            .cloned()
+        else {
+            return Err(RefusalReason::UnknownHandle);
+        };
+        let row = self
+            .current_row()
+            .and_then(|row| {
+                self.browser
+                    .system()
+                    .document
+                    .elements(row.document_id)
+                    .ok()
+            })
+            .and_then(|rows| {
+                rows.into_iter()
+                    .find(|row| row.element_id == link.element_id)
+            })
+            .ok_or(RefusalReason::UnknownHandle)?;
+        if !kinds.contains(&row.kind) {
+            return Err(RefusalReason::WrongKind);
+        }
+        if row.disabled {
+            return Err(RefusalReason::Disabled);
+        }
+        if row.hidden || link.hidden {
+            return Err(RefusalReason::Hidden);
+        }
+        Ok(row)
+    }
+
+    /// `fill <handle> <value>`: refused `closed` on a closed session; `unknown-handle`,
+    /// `wrong-kind` for a control that is not `text`, `password` or `textarea`, `disabled`,
+    /// `hidden` and `readonly` from the control's row; otherwise `Fill` as the holder, and when
+    /// it is `requested`, `RecordAction` `fill` with the handle alone and a run, in which the
+    /// binding gives the control the value (`SetValue`). The value of a `text` or `password`
+    /// control is sent without its line breaks ([`sanitized`]). The value is in no row of the
+    /// session and no line of the answer.
+    fn fill(&mut self, handle: &str, value: &str) -> Result<Reply, Stop> {
+        if self.is_closed() {
+            return Ok(self.with_state(RefusalReason::Closed));
+        }
+        let row = match self.control(
+            handle,
+            &[
+                ElementKind::Text,
+                ElementKind::Password,
+                ElementKind::Textarea,
+            ],
+        ) {
+            Ok(row) if row.readonly => return Ok(self.with_state(RefusalReason::Readonly)),
+            Ok(row) => row,
+            Err(reason) => return Ok(self.with_state(reason)),
+        };
+        let outcome = self.browser.agent_mut().fill(Fill {
+            session_id: self.session_id.clone(),
+            element_id: row.element_id,
+            value: sanitized(row.kind, value),
+            handle: handle.to_string(),
+        })?;
+        match outcome {
+            FillOutcome::Requested { .. } => {
+                self.record_and_run(ActionCommand::Fill, None, Some((handle, None)))?;
+                Ok(self.acted("fill", handle))
+            }
+            FillOutcome::Closed { .. } => Ok(self.with_state(RefusalReason::Closed)),
+            FillOutcome::NotHolder { .. } => Err(Stop::Unexpected("not-holder to the holder")),
+            FillOutcome::NoSuchSession { .. } => {
+                Err(Stop::Unexpected("no such session to the open session"))
+            }
+        }
+    }
+
+    /// `pick <handle> <option>`: refused `closed` on a closed session; `unknown-handle`,
+    /// `wrong-kind` for a control that is not a `select`, `checkbox` or `radio`, `disabled` and
+    /// `hidden` from the control's row; `unknown-option` for a select without an option of that
+    /// label, then value, and for a word other than `on` or `off` on a checkbox or `on` on a
+    /// radio button; `disabled` for a disabled option. A checkbox already in the state asked for
+    /// is left as it is: `did pick`, status 0, no action. Otherwise `Pick` as the holder (with the
+    /// option for a select), and when it is `requested`, `RecordAction` `pick` with the handle
+    /// alone and a run, in which the binding checks the control (`Check`) or selects the option
+    /// (`SelectOption`).
+    fn pick(&mut self, handle: &str, word: &str) -> Result<Reply, Stop> {
+        if self.is_closed() {
+            return Ok(self.with_state(RefusalReason::Closed));
+        }
+        let row = match self.control(
+            handle,
+            &[
+                ElementKind::Select,
+                ElementKind::Checkbox,
+                ElementKind::Radio,
+            ],
+        ) {
+            Ok(row) => row,
+            Err(reason) => return Ok(self.with_state(reason)),
+        };
+        let option_id = match row.kind {
+            ElementKind::Select => {
+                let mut options: Vec<Options> = self
+                    .browser
+                    .system()
+                    .document
+                    .options()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|option| option.select_id == row.element_id)
+                    .collect();
+                options.sort_by_key(|option| option.position);
+                let found = options
+                    .iter()
+                    .find(|option| option.label == word)
+                    .or_else(|| options.iter().find(|option| option.value == word));
+                match found {
+                    None => return Ok(self.with_state(RefusalReason::UnknownOption)),
+                    Some(option) if option.disabled => {
+                        return Ok(self.with_state(RefusalReason::Disabled));
+                    }
+                    Some(option) => Some(option.option_id.clone()),
+                }
+            }
+            ElementKind::Checkbox => match word {
+                "on" | "off" if row.checked == (word == "on") => {
+                    return Ok(self.acted("pick", handle));
+                }
+                "on" | "off" => None,
+                _ => return Ok(self.with_state(RefusalReason::UnknownOption)),
+            },
+            _ => match word {
+                "on" => None,
+                _ => return Ok(self.with_state(RefusalReason::UnknownOption)),
+            },
+        };
+        let outcome = self.browser.agent_mut().pick(Pick {
+            session_id: self.session_id.clone(),
+            element_id: row.element_id,
+            option_id,
+            handle: handle.to_string(),
+        })?;
+        match outcome {
+            PickOutcome::Requested { .. } => {
+                self.record_and_run(ActionCommand::Pick, None, Some((handle, None)))?;
+                Ok(self.acted("pick", handle))
+            }
+            PickOutcome::Closed { .. } => Ok(self.with_state(RefusalReason::Closed)),
+            PickOutcome::NotHolder { .. } => Err(Stop::Unexpected("not-holder to the holder")),
+            PickOutcome::NoSuchSession { .. } => {
+                Err(Stop::Unexpected("no such session to the open session"))
+            }
+        }
+    }
+
+    /// `press <handle>` ("Pressing a button" above): refused `closed` on a closed session;
+    /// `unknown-handle`, `wrong-kind` for an element that is not a button, `disabled` and
+    /// `hidden` from its row; then, from the [`surf::Plan`] of the press, which computes the
+    /// address the submission step would request, `no-default-action` for a plain or a reset
+    /// button, `password-in-query` for a `GET` whose entry list holds a filled password, and
+    /// `address-too-long`, `unsupported-scheme` and `forbidden-destination` for that address.
+    /// Otherwise `Press` as the holder, and when it is `requested`, the run in which the
+    /// submission starts and ends ([`Session::run_from`]): `forbidden-destination` when the fetch
+    /// refused its first request; otherwise `RecordAction` `press` with the handle alone. With a
+    /// navigation, `did press "<handle>"` and the page it landed on; abandoned, the word of its
+    /// reason ([`end_reason`]), status 1.
+    fn press(&mut self, handle: &str) -> Result<Reply, Stop> {
+        if self.is_closed() {
+            return Ok(self.with_state(RefusalReason::Closed));
+        }
+        let row = match self.control(handle, &[ElementKind::Button]) {
+            Ok(row) => row,
+            Err(reason) => return Ok(self.with_state(reason)),
+        };
+        let Some(plan) = self.browser.plan_submission(&row.element_id)? else {
+            return Ok(self.with_state(RefusalReason::NoDefaultAction));
+        };
+        if !matches!(
+            plan.button,
+            surf_page::forms::ButtonType::Submit | surf_page::forms::ButtonType::Image
+        ) {
+            return Ok(self.with_state(RefusalReason::NoDefaultAction));
+        }
+        let from_public = self.links.as_ref().is_none_or(|kept| kept.from_public);
+        if let Some(submits) = &plan.submits {
+            if submits.method == surf::FormMethod::Get && plan.password {
+                return Ok(self.with_state(RefusalReason::PasswordInQuery));
+            }
+            if let (Some(address), Ok(action)) = (&plan.address, &submits.action) {
+                if address.len() > surf_fetch::MAX_ADDRESS_BYTES {
+                    return Ok(self.with_state(RefusalReason::AddressTooLong));
+                }
+                if action.scheme() != "http" {
+                    return Ok(self.with_state(RefusalReason::UnsupportedScheme));
+                }
+                if from_public && host_is_local(action) {
+                    return Ok(self.with_state(RefusalReason::ForbiddenDestination));
+                }
+            }
+        }
+        let outcome = self.browser.agent_mut().press(Press {
+            session_id: self.session_id.clone(),
+            element_id: row.element_id,
+            handle: handle.to_string(),
+        })?;
+        match outcome {
+            PressOutcome::Requested { .. } => {
+                let start = self.browser.system().published().len();
+                if self.run_from(from_public)? {
+                    return Ok(self.with_state(RefusalReason::ForbiddenDestination));
+                }
+                self.record_and_run(ActionCommand::Press, None, Some((handle, None)))?;
+                let abandoned = self
+                    .browser
+                    .system()
+                    .published()
+                    .get(start..)
+                    .unwrap_or(&[])
+                    .iter()
+                    .find_map(|event| match event {
+                        surf::SystemEvent::SubmissionAbandoned(abandoned) => Some(abandoned.reason),
+                        _ => None,
+                    });
+                Ok(match abandoned {
+                    Some(reason) => self.with_state(end_reason(reason)),
+                    None => self.acted("press", handle),
+                })
+            }
+            PressOutcome::Closed { .. } => Ok(self.with_state(RefusalReason::Closed)),
+            PressOutcome::NotHolder { .. } => Err(Stop::Unexpected("not-holder to the holder")),
+            PressOutcome::NoSuchSession { .. } => {
+                Err(Stop::Unexpected("no such session to the open session"))
+            }
+        }
+    }
+
+    /// `back` (`step` [`Standing::Back`]) or `forward` ([`Standing::Forward`]): refused `closed`
+    /// on a closed session; otherwise the history of the session's tab is read from the
+    /// navigator's view `Navigations` before anything is issued ("Back and forward" above): no
+    /// entry at `step` is refused `at-start` or `at-end`, an entry made by `POST` `post-entry`.
+    /// Otherwise `GoBack` or `GoForward` as the holder, and when it is `requested`, the run
+    /// ([`Session::run_from`]) under the rule of the request that made the entry (decision
+    /// D279): `forbidden-destination` when the fetch refused it, otherwise `RecordAction` `back`
+    /// or `forward`.
+    fn traverse(&mut self, step: Standing) -> Result<Reply, Stop> {
+        let (command, at_edge, word) = match step {
+            Standing::Forward => (ActionCommand::Forward, RefusalReason::AtEnd, "forward"),
+            _ => (ActionCommand::Back, RefusalReason::AtStart, "back"),
+        };
+        if self.is_closed() {
+            return Ok(self.with_state(RefusalReason::Closed));
+        }
+        let from_public = match self.entry_at(step)? {
+            None => return Ok(self.with_state(at_edge)),
+            Some((_, Method::Post)) => return Ok(self.with_state(RefusalReason::PostEntry)),
+            Some((entry, Method::Get)) => {
+                self.from_public.contains(&entry) || self.redirected_by_public(&entry)?
+            }
+        };
+        let not_holder = Stop::Unexpected("not-holder to the holder");
+        let no_session = Stop::Unexpected("no such session to the open session");
+        let session_id = self.session_id.clone();
+        let closed = match step {
+            Standing::Forward => match self
+                .browser
+                .agent_mut()
+                .go_forward(GoForward { session_id })?
+            {
+                GoForwardOutcome::Requested { .. } => false,
+                GoForwardOutcome::Closed { .. } => true,
+                GoForwardOutcome::NotHolder { .. } => return Err(not_holder),
+                GoForwardOutcome::NoSuchSession { .. } => return Err(no_session),
+            },
+            _ => match self.browser.agent_mut().go_back(GoBack { session_id })? {
+                GoBackOutcome::Requested { .. } => false,
+                GoBackOutcome::Closed { .. } => true,
+                GoBackOutcome::NotHolder { .. } => return Err(not_holder),
+                GoBackOutcome::NoSuchSession { .. } => return Err(no_session),
+            },
+        };
+        if closed {
+            return Ok(self.with_state(RefusalReason::Closed));
+        }
+        if self.run_from(from_public)? {
+            return Ok(self.with_state(RefusalReason::ForbiddenDestination));
+        }
+        self.record_and_run(command, None, None)?;
+        Ok(self.state_reply(
+            0,
+            Some(Did::Action {
+                command: word.to_string(),
+                argument: None,
+            }),
+        ))
+    }
+
+    /// The identity and the method of the entry at `step` in the history of the session's tab,
+    /// from the navigator's view `Navigations`; `None` when the tab has no entry there.
+    fn entry_at(&self, step: Standing) -> Result<Option<(RequestId, Method)>, Stop> {
+        let system = self.browser.system();
+        let Some(tab_id) = system
+            .agent
+            .sessions()?
+            .into_iter()
+            .find(|row| row.session_id == self.session_id)
+            .map(|row| row.tab_id)
+        else {
+            return Err(Stop::Unexpected("no row of the open session"));
+        };
+        Ok(system
+            .navigator
+            .navigations()?
+            .into_iter()
+            .find(|row| row.tab_id == tab_id && row.standing == Some(step))
+            .map(|row| (row.navigation_id, row.method)))
+    }
+
+    /// Whether a redirect moved the navigation that made the entry `entry` after a first
+    /// connection to a public address (decisions D283 and D293): its request in the view
+    /// `Requests` asked for an address other than the one the entry committed at, and the
+    /// session's transport noted that the fetch connected first to a public address
+    /// ([`Session::redirected_public`]). That is the fetch's own rule: after a first connection
+    /// to a public address no redirect may lead to a local one. A first connection to a local
+    /// address, whatever the address's text, leaves the entry to the rule of `go` (D279, D294).
+    fn redirected_by_public(&self, entry: &RequestId) -> Result<bool, Stop> {
+        if !self.redirected_public.contains(entry) {
+            return Ok(false);
+        }
+        let system = self.browser.system();
+        let Some(committed) = system
+            .navigator
+            .navigations()?
+            .into_iter()
+            .find(|row| row.navigation_id == *entry)
+            .map(|row| row.url)
+        else {
+            return Ok(false);
+        };
+        let Some(asked) = system
+            .net
+            .requests()?
+            .into_iter()
+            .find(|row| row.request_id == *entry)
+            .map(|row| row.url)
+        else {
+            return Ok(false);
+        };
+        Ok(asked != committed)
+    }
+
+    /// Takes from the session's transport the navigations of the last run whose fetch
+    /// connected first to a public address and was redirected ([`Session::redirected_public`]).
+    /// Then keeps in it and in [`Session::from_public`] only the navigations that are entries of
+    /// the history (decision D300): one a load after `back` dropped, or one that never made an
+    /// entry (a traversal, a failed load), is never looked up again.
+    fn note_redirected_public(&mut self) {
+        let noted = FIRST_REQUEST.with(|first| first.redirected_public.take());
+        for navigation in noted {
+            if !self.redirected_public.contains(&navigation) {
+                self.redirected_public.push(navigation);
+            }
+        }
+        let Ok(rows) = self.browser.system().navigator.navigations() else {
+            return;
+        };
+        let entries: HashSet<&str> = rows
+            .iter()
+            .filter(|row| {
+                row.standing
+                    .is_some_and(|standing| standing != Standing::Dropped)
+            })
+            .map(|row| row.navigation_id.0.0.as_str())
+            .collect();
+        self.from_public
+            .retain(|navigation| entries.contains(navigation.0.0.as_str()));
+        self.redirected_public
+            .retain(|navigation| entries.contains(navigation.0.0.as_str()));
+    }
+
+    /// Status 0 with `did <command> "<handle>"` and the state.
+    fn acted(&mut self, command: &str, handle: &str) -> Reply {
+        self.state_reply(
+            0,
+            Some(Did::Action {
+                command: command.to_string(),
+                argument: Some(handle.to_string()),
+            }),
+        )
     }
 
     /// The reply to a request that did not decode: `did refused usage`, status 2, the head line
@@ -705,7 +1758,7 @@ impl<T: Transport> Session<T> {
             }
         }
         self.opened = true;
-        self.record_and_run(ActionCommand::Open, None)?;
+        self.record_and_run(ActionCommand::Open, None, None)?;
         self.caller.set(Some(self.session_id.clone()));
         if let Some(url) = url {
             match self.request_go(url)? {
@@ -723,7 +1776,7 @@ impl<T: Transport> Session<T> {
             url: Url(url.to_string()),
         })?;
         if let GoOutcome::Requested { .. } = outcome {
-            self.record_and_run(ActionCommand::Go, Some(url))?;
+            self.record_and_run(ActionCommand::Go, Some(url), None)?;
         }
         Ok(outcome)
     }
@@ -751,7 +1804,7 @@ impl<T: Transport> Session<T> {
         })?;
         match outcome {
             CloseSessionOutcome::Closed { .. } => {
-                self.record_and_run(ActionCommand::Close, None)?;
+                self.record_and_run(ActionCommand::Close, None, None)?;
                 Ok(self.state_reply(
                     0,
                     Some(Did::Action {
@@ -772,23 +1825,36 @@ impl<T: Transport> Session<T> {
 
     /// [`Session::record`], then the run that delivers what the command published, then the
     /// mark of where the action's events end.
-    fn record_and_run(&mut self, command: ActionCommand, url: Option<&str>) -> Result<(), Stop> {
-        self.record(command, url)?;
-        self.browser.run()?;
+    fn record_and_run(
+        &mut self,
+        command: ActionCommand,
+        url: Option<&str>,
+        element: Option<(&str, Option<&str>)>,
+    ) -> Result<(), Stop> {
+        self.record(command, url, element)?;
+        let ran = self.browser.run();
+        self.note_redirected_public();
+        ran?;
         self.marks.push(self.browser.system().published().len());
         Ok(())
     }
 
-    /// `RecordAction` with the next sequence number, on the `agent` port.
-    fn record(&mut self, command: ActionCommand, url: Option<&str>) -> Result<(), Stop> {
+    /// `RecordAction` with the next sequence number, on the `agent` port; `element` is the
+    /// handle of the element the action took and its label, for an action on one.
+    fn record(
+        &mut self,
+        command: ActionCommand,
+        url: Option<&str>,
+        element: Option<(&str, Option<&str>)>,
+    ) -> Result<(), Stop> {
         let sequence = self.sequence + 1;
         let outcome = self.browser.agent_mut().record_action(RecordAction {
             session_id: self.session_id.clone(),
             sequence,
             command,
             url: url.map(|url| Url(url.to_string())),
-            handle: None,
-            label: None,
+            handle: element.map(|(handle, _)| handle.to_string()),
+            label: element.and_then(|(_, label)| label.map(str::to_string)),
         })?;
         match outcome {
             RecordActionOutcome::Recorded { .. } => {
@@ -802,15 +1868,117 @@ impl<T: Transport> Session<T> {
         }
     }
 
-    /// The session's row of the view `SessionState`, if it is open or was.
+    /// The session's row of the view `SessionState`, if it is open or was; while a navigation
+    /// whose first request the fetch refused is the last, its address, navigation state,
+    /// status, media type and failure reason are those before it ([`Kept`]).
     fn row(&self) -> Option<SessionStateView> {
-        self.browser
+        let row = self
+            .browser
             .system()
             .agent
             .session_state_view(self.session_id.clone())
             .ok()?
             .into_iter()
-            .next()
+            .next()?;
+        match self.kept_now().and_then(|kept| kept.row.as_ref()) {
+            Some(kept) => Some(SessionStateView {
+                state: row.state,
+                ..kept.clone()
+            }),
+            None => Some(row),
+        }
+    }
+
+    /// The session's navigation and its state from the view `Sessions`, or those before a
+    /// refused first request ([`Kept`]); `None` when the view has no row of the session.
+    fn navigation(&self) -> Option<(Option<RequestId>, Option<NavigationState>)> {
+        let row = self
+            .browser
+            .system()
+            .agent
+            .sessions()
+            .ok()?
+            .into_iter()
+            .find(|row| row.session_id == self.session_id)?;
+        Some(match &self.kept {
+            Some(kept) if kept.refused == row.navigation_id => {
+                (kept.navigation.clone(), kept.navigation_state)
+            }
+            _ => (row.navigation_id, row.navigation_state),
+        })
+    }
+
+    /// [`Session::kept`] while the navigation it was kept for is the session's last.
+    fn kept_now(&self) -> Option<&Kept> {
+        let kept = self.kept.as_ref()?;
+        let last = self
+            .browser
+            .system()
+            .agent
+            .sessions()
+            .ok()?
+            .into_iter()
+            .find(|row| row.session_id == self.session_id)?
+            .navigation_id;
+        (kept.refused == last).then_some(kept)
+    }
+
+    /// The run of a `follow`, a `press`, a `back` or a `forward` before anything is recorded,
+    /// with the session's transport told whether the first request goes out under the rule of a
+    /// page that counts as public ("Following a link" above, "Back and forward"): `true` when the
+    /// fetch refused that request `ForbiddenDestination` before any connection. Then the state
+    /// before the run is kept ([`Kept`]) and the caller records nothing, as for a refusal of its
+    /// own checks. Otherwise, under that rule, the navigation it started is noted in
+    /// [`Session::from_public`], so that the entry it makes keeps the rule.
+    fn run_from(&mut self, from_public: bool) -> Result<bool, Stop> {
+        let (navigation, navigation_state) = self.navigation().unwrap_or((None, None));
+        let row = self.row();
+        FIRST_REQUEST.with(|first| {
+            first.from_public.set(from_public);
+            first.refused.set(false);
+        });
+        let ran = self.browser.run();
+        self.note_redirected_public();
+        let refused = FIRST_REQUEST.with(|first| {
+            first.from_public.set(false);
+            first.refused.replace(false)
+        });
+        ran?;
+        if refused {
+            let refused = self
+                .browser
+                .system()
+                .agent
+                .sessions()
+                .ok()
+                .and_then(|rows| {
+                    rows.into_iter()
+                        .find(|row| row.session_id == self.session_id)
+                })
+                .and_then(|row| row.navigation_id);
+            self.kept = Some(Kept {
+                refused,
+                navigation,
+                navigation_state,
+                row,
+            });
+        } else if from_public
+            && let Some(started) = self
+                .browser
+                .system()
+                .agent
+                .sessions()
+                .ok()
+                .and_then(|rows| {
+                    rows.into_iter()
+                        .find(|row| row.session_id == self.session_id)
+                })
+                .and_then(|row| row.navigation_id)
+            && !self.from_public.contains(&started)
+        {
+            self.from_public.push(started);
+        }
+        Ok(refused)
     }
 
     fn head(&self) -> Head {
@@ -859,17 +2027,41 @@ impl<T: Transport> Session<T> {
     }
 
     /// `did refused <reason>` with the page and the path.
-    fn with_state(&self, reason: RefusalReason) -> Reply {
+    fn with_state(&mut self, reason: RefusalReason) -> Reply {
         self.state_reply(refusal_status(reason), Some(Did::Refused(reason)))
     }
 
-    /// The head line, `did` when there is one, and the page and path from the views.
-    fn state_reply(&self, status: u8, did: Option<Did>) -> Reply {
+    /// The head line, `did` when there is one, the page and path from the views, the `changed`
+    /// block against the state the previous answer showed ("What changed" above), and for the
+    /// current document of an open session its `note parser:` line, its `now` block and `note
+    /// visibility:` ("The links" above). The title of the current document is on a loaded
+    /// `page` line.
+    fn state_reply(&mut self, status: u8, did: Option<Did>) -> Reply {
         let mut answer = Answer::new(self.head());
         answer.did = did;
         let row = self.row();
         answer.page = Some(row.as_ref().map_or(Page::None, page));
+        if let Some(Page::Loaded { title, .. }) = &mut answer.page {
+            *title = self.title();
+        }
         answer.path = Some(self.path());
+        let shown = self.shown_now(answer.page.as_ref());
+        answer.changed = Some(self.changed(&shown));
+        self.shown = shown;
+        if self.current_document().is_some() {
+            let parts = self.browser.parser_not_yet_parsed();
+            if !parts.is_empty() {
+                answer.notes.push(Note::Parser(
+                    parts.iter().map(|part| part.to_string()).collect(),
+                ));
+            }
+            if !self.is_closed()
+                && let Some(now) = self.now()
+            {
+                answer.now = Some(now);
+                answer.notes.push(Note::Visibility);
+            }
+        }
         let (state, address) = self.record_fields();
         Reply {
             status,
@@ -883,6 +2075,13 @@ impl<T: Transport> Session<T> {
 
     /// The last [`PATH_SHOWN`] actions of the log, oldest first, and their total.
     fn path(&self) -> Path {
+        self.path_of(Some(PATH_SHOWN), usize::MAX)
+    }
+
+    /// The last `last` actions of the log, or all of them for `None`, oldest first, as many of
+    /// the newest of them as fit `bytes` bytes of lines counted high ([`PATH_LINE_FIXED`]), and
+    /// their total ("The log" above).
+    fn path_of(&self, last: Option<usize>, bytes: usize) -> Path {
         let mut log = self
             .browser
             .system()
@@ -891,19 +2090,166 @@ impl<T: Transport> Session<T> {
             .unwrap_or_default();
         log.sort_by_key(|row| row.sequence);
         let total = log.len();
+        let mut room = bytes;
+        let mut first = total.saturating_sub(last.unwrap_or(total));
+        for (at, row) in log.iter().enumerate().skip(first).rev() {
+            let argument = match (&row.handle, &row.label, &row.url) {
+                (Some(_), Some(label), _) => {
+                    surf_answer::quote(&Cut::of(label, LABEL_CHARS_MAX).kept).len()
+                }
+                (None, _, Some(url)) => surf_answer::quote(&url.0).len(),
+                _ => 0,
+            };
+            let line = PATH_LINE_FIXED + row.handle.as_ref().map_or(0, String::len) + argument;
+            if line > room {
+                first = at + 1;
+                break;
+            }
+            room -= line;
+        }
         let entries = log
             .into_iter()
-            .skip(total.saturating_sub(PATH_SHOWN))
-            .map(|row| PathEntry {
-                sequence: u64::try_from(row.sequence).unwrap_or_default(),
-                command: command_word(row.command).to_string(),
-                argument: row.url.map(|url| url.0),
+            .skip(first)
+            .map(|row| {
+                let sequence = u64::try_from(row.sequence).unwrap_or_default();
+                let command = command_word(row.command).to_string();
+                match row.handle {
+                    // An action on an element: its handle and its label, cut as the `now` block
+                    // cuts it.
+                    Some(handle) => {
+                        let label = row.label.map(|label| Cut::of(&label, LABEL_CHARS_MAX));
+                        PathEntry {
+                            sequence,
+                            command,
+                            handle: Some(handle),
+                            argument_cut: label.as_ref().is_some_and(|label| label.cut),
+                            argument: label.map(|label| label.kept),
+                        }
+                    }
+                    None => PathEntry {
+                        sequence,
+                        command,
+                        handle: None,
+                        argument: row.url.map(|url| url.0),
+                        argument_cut: false,
+                    },
+                }
             })
             .collect();
         Path {
             total: u64::try_from(total).unwrap_or(u64::MAX),
             entries,
         }
+    }
+
+    /// What an answer with the `page` line `page` shows now ("What changed" above).
+    fn shown_now(&mut self, page: Option<&Page>) -> Shown {
+        let address = match page {
+            Some(Page::Loaded { address, .. } | Page::Failed { address, .. }) => {
+                Some(address.clone())
+            }
+            _ => None,
+        };
+        Shown {
+            navigation: self.navigation().and_then(|(navigation, _)| navigation),
+            address,
+            document: self.current_document(),
+            controls: self.controls_shown(),
+        }
+    }
+
+    /// The state of each control of the current document, in document order, from its row and,
+    /// for a select, from its option rows; none without a current document.
+    fn controls_shown(&mut self) -> Vec<ShownControl> {
+        let Some(row) = self.current_row() else {
+            return Vec::new();
+        };
+        let document = &self.browser.system().document;
+        let mut rows: HashMap<String, Elements> = document
+            .elements(row.document_id)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|row| (row.element_id.0.0.clone(), row))
+            .collect();
+        let mut selected = selected_options(&document.options().unwrap_or_default());
+        let Some(links) = self.links() else {
+            return Vec::new();
+        };
+        links
+            .iter()
+            .filter(|link| !matches!(link.kind, ElementKind::Link | ElementKind::Button))
+            .filter_map(|link| {
+                let row = rows.remove(&link.element_id.0.0)?;
+                Some(ShownControl {
+                    handle: link.handle.clone(),
+                    kind: row.kind,
+                    value: row.value,
+                    checked: row.checked,
+                    selected: selected.remove(&link.element_id.0.0).unwrap_or_default(),
+                })
+            })
+            .collect()
+    }
+
+    /// The `changed` block from [`Session::shown`] to `now` ("What changed" above): `changed
+    /// page` when they show the pages of two loads, otherwise a line per control whose state
+    /// changed.
+    fn changed(&self, now: &Shown) -> Changed {
+        let before = &self.shown;
+        if before.navigation != now.navigation {
+            let (texts, more) = self.new_texts(before.document.as_ref(), now.document.as_ref());
+            return Changed::Page {
+                from: before.address.clone(),
+                to: now.address.clone(),
+                texts,
+                more,
+            };
+        }
+        let earlier: HashMap<&str, &ShownControl> = before
+            .controls
+            .iter()
+            .map(|control| (control.handle.as_str(), control))
+            .collect();
+        Changed::Controls(
+            now.controls
+                .iter()
+                .filter_map(|control| {
+                    let change = control_change(earlier.get(control.handle.as_str())?, control)?;
+                    Some(ControlChange {
+                        handle: control.handle.clone(),
+                        change,
+                    })
+                })
+                .collect(),
+        )
+    }
+
+    /// The texts of the document `new` that the document `old` does not hold: the lines of the
+    /// Markdown rendering of each ([`surf_page_text::markdown::markdown`]) but the empty ones,
+    /// each once, in order; the first [`CHANGED_TEXTS_MAX`] cut at [`CHANGED_TEXT_CHARS_MAX`]
+    /// characters, and how many more there are.
+    fn new_texts(&self, old: Option<&DocumentId>, new: Option<&DocumentId>) -> (Vec<Cut>, u64) {
+        let Some(tree) = new.and_then(|document| self.browser.document_tree(document)) else {
+            return (Vec::new(), 0);
+        };
+        let held: HashSet<String> = old
+            .and_then(|document| self.browser.document_tree(document))
+            .map(|old| markdown_texts(old).collect())
+            .unwrap_or_default();
+        let mut seen = HashSet::new();
+        let mut texts = Vec::new();
+        let mut more = 0u64;
+        for line in markdown_texts(tree) {
+            if held.contains(&line) || !seen.insert(line.clone()) {
+                continue;
+            }
+            if texts.len() < CHANGED_TEXTS_MAX {
+                texts.push(Cut::of(&line, CHANGED_TEXT_CHARS_MAX));
+            } else {
+                more += 1;
+            }
+        }
+        (texts, more)
     }
 
     /// Status 3 with the reason, the head line alone.
@@ -923,7 +2269,28 @@ impl<T: Transport> Session<T> {
 /// The exit status of a refusal, as the reason table of `docs/agent-answer.md` gives it.
 fn refusal_status(reason: RefusalReason) -> u8 {
     match reason {
-        RefusalReason::Token | RefusalReason::Closed => 1,
+        RefusalReason::Token
+        | RefusalReason::Closed
+        | RefusalReason::UnknownHandle
+        | RefusalReason::Hidden
+        | RefusalReason::Unresolved
+        | RefusalReason::AddressTooLong
+        | RefusalReason::UnsupportedScheme
+        | RefusalReason::ForbiddenDestination
+        | RefusalReason::Disabled
+        | RefusalReason::WrongKind
+        | RefusalReason::UnknownOption
+        | RefusalReason::Readonly
+        | RefusalReason::NoDefaultAction
+        | RefusalReason::PasswordInQuery
+        | RefusalReason::NoFormOwner
+        | RefusalReason::InvalidControls
+        | RefusalReason::InvalidAction
+        | RefusalReason::UnsupportedEnctype
+        | RefusalReason::DialogMethod
+        | RefusalReason::AtStart
+        | RefusalReason::AtEnd
+        | RefusalReason::PostEntry => 1,
         RefusalReason::Usage => 2,
         RefusalReason::NoSuchSession
         | RefusalReason::SessionDied
@@ -974,6 +2341,8 @@ fn command_word(command: ActionCommand) -> &'static str {
         ActionCommand::Fill => "fill",
         ActionCommand::Pick => "pick",
         ActionCommand::Press => "press",
+        ActionCommand::Back => "back",
+        ActionCommand::Forward => "forward",
     }
 }
 
@@ -1009,5 +2378,420 @@ fn page(row: &SessionStateView) -> Page {
             None => Page::None,
         },
         _ => Page::None,
+    }
+}
+
+/// The actionable elements of a document from its element rows (`rows`, in position order) and
+/// the node of each (`nodes`, [`surf::Browser::element_nodes`]): the handle
+/// [`surf_page::handles`] gives its node, the row's kind and label, whether it or an ancestor
+/// has the `hidden` attribute, and for a link its target resolved against the document base URL
+/// of `tree` at `address`.
+fn document_links(
+    tree: &Tree,
+    address: &str,
+    rows: &[Elements],
+    nodes: &[(surf_types::document::ElementId, NodeId)],
+) -> Vec<Link> {
+    let handles: HashMap<NodeId, String> = surf_page::handles(tree).into_iter().collect();
+    let hidden = hidden_by_attribute(tree);
+    let page = surf_url::Url::parse(address, None).ok();
+    let base = page
+        .as_ref()
+        .map(|page| surf_page::base_url::document_base_url(tree, page));
+    let node_of: HashMap<&str, NodeId> = nodes
+        .iter()
+        .map(|(element, node)| (element.0.0.as_str(), *node))
+        .collect();
+    let mut links = Vec::new();
+    for row in rows {
+        let href = row
+            .target
+            .as_ref()
+            .filter(|_| row.kind == ElementKind::Link);
+        if row.kind == ElementKind::Link && href.is_none() {
+            continue;
+        }
+        let Some(node) = node_of.get(row.element_id.0.0.as_str()) else {
+            continue;
+        };
+        let Some(handle) = handles.get(node) else {
+            continue;
+        };
+        let resolved = href.and_then(|href| surf_url::Url::parse(href, base.as_ref()).ok());
+        let shown = match (&resolved, href) {
+            (Some(target), _) => shown_target(target, page.as_ref()),
+            (None, Some(href)) => href.clone(),
+            (None, None) => String::new(),
+        };
+        links.push(Link {
+            handle: handle.clone(),
+            element_id: row.element_id.clone(),
+            kind: row.kind,
+            label: row.label.clone(),
+            hidden: hidden.contains(node),
+            resolved,
+            shown,
+        });
+    }
+    links
+}
+
+/// The nodes that are or are under an HTML element with the `hidden` attribute: the one rule of
+/// `hid` and of the refusal `hidden` (`story:agent-follow-links`). `aria-hidden`, a closed
+/// `dialog` or `details` and a popover do not count. One walk with its own stack.
+fn hidden_by_attribute(tree: &Tree) -> HashSet<NodeId> {
+    let mut hidden = HashSet::new();
+    let mut pending = vec![(tree.root(), false)];
+    while let Some((node, above)) = pending.pop() {
+        let here = above
+            || matches!(
+                tree.data(node),
+                surf_html::NodeData::Element { namespace: surf_html::Namespace::Html, attributes, .. }
+                    if attributes
+                        .iter()
+                        .any(|a| a.namespace.is_none() && a.local_name == "hidden")
+            );
+        if here {
+            hidden.insert(node);
+        }
+        pending.extend(tree.children(node).iter().map(|&child| (child, here)));
+    }
+    hidden
+}
+
+/// A resolved target as the `now` line writes it: its path, query and fragment when it has the
+/// origin of `page` and its path does not start with `//`, which reads as another host; the
+/// whole address without its userinfo otherwise, so that scheme, host and port come first and
+/// a cut at [`TARGET_CHARS_MAX`] keeps them whole (a host alone over the limit aside).
+fn shown_target(target: &surf_url::Url, page: Option<&surf_url::Url>) -> String {
+    let path = target.serialize_path();
+    if !page.is_some_and(|page| page.origin().same_origin(&target.origin()))
+        || path.starts_with("//")
+    {
+        return without_userinfo(target);
+    }
+    let mut shown = path;
+    if let Some(query) = target.query() {
+        shown.push('?');
+        shown.push_str(query);
+    }
+    if let Some(fragment) = target.fragment() {
+        shown.push('#');
+        shown.push_str(fragment);
+    }
+    shown
+}
+
+/// The URL serializer's output for `url` without the userinfo: `user:password@` follows
+/// `<scheme>://` and is left out; a URL without one is its `href`.
+fn without_userinfo(url: &surf_url::Url) -> String {
+    let mut href = url.href();
+    let (username, password) = (url.username(), url.password());
+    if url.host().is_some() && !(username.is_empty() && password.is_empty()) {
+        let start = url.scheme().len() + "://".len();
+        let length = username.len()
+            + if password.is_empty() {
+                0
+            } else {
+                1 + password.len()
+            }
+            + 1;
+        href.replace_range(start..start + length, "");
+    }
+    href
+}
+
+/// Whether the host of `url` is local by its text: an IP address [`surf_fetch::is_local`]
+/// names (the rule of a redirect's destination), or the name `localhost` or one under it, which
+/// the operating system resolves to a loopback address. Any other name is not: where it leads
+/// is known only when the fetch resolves it.
+fn host_is_local(url: &surf_url::Url) -> bool {
+    match url.host() {
+        Some(surf_url::Host::Ipv4(address)) => {
+            surf_fetch::is_local(std::net::IpAddr::V4(std::net::Ipv4Addr::from(*address)))
+        }
+        Some(surf_url::Host::Ipv6(pieces)) => {
+            surf_fetch::is_local(std::net::IpAddr::V6(std::net::Ipv6Addr::from(*pieces)))
+        }
+        Some(surf_url::Host::Domain(name)) => {
+            let name = name.strip_suffix('.').unwrap_or(name);
+            name == "localhost" || name.ends_with(".localhost")
+        }
+        _ => false,
+    }
+}
+
+/// The `now` block of `links`: a line per element in document order while the lines fit
+/// [`NOW_BYTES_MAX`], the label cut at [`LABEL_CHARS_MAX`] characters, a link's target at
+/// [`TARGET_CHARS_MAX`] and a control's value at [`VALUE_CHARS_MAX`]; a control's state is its
+/// entry in `states`, and nothing when it has none. `None` for a document without an actionable
+/// element.
+fn now_block(links: &[Link], states: &HashMap<String, State>) -> Option<Now> {
+    if links.is_empty() {
+        return None;
+    }
+    let total = u64::try_from(links.len()).unwrap_or(u64::MAX);
+    let mut bytes = format!("now {total} of {total}\n").len();
+    let mut elements = Vec::new();
+    for link in links {
+        let label = Cut::of(&link.label, LABEL_CHARS_MAX);
+        let fixed = NOW_LINE_FIXED + link.handle.len() + surf_answer::quote(&label.kept).len();
+        let (line, target) = if link.kind == ElementKind::Link {
+            let target = Cut::of(&link.shown, TARGET_CHARS_MAX);
+            let line = fixed + surf_answer::quote(&target.kept).len();
+            let target = if link.resolved.is_some() {
+                Target::Resolved(target)
+            } else {
+                Target::Unresolved(target)
+            };
+            (line, target)
+        } else {
+            let state = states
+                .get(&link.element_id.0.0)
+                .cloned()
+                .unwrap_or_default();
+            let value = match &state.value {
+                Some(Value::Text(value)) => surf_answer::quote(&value.kept).len(),
+                _ => 0,
+            };
+            let submits = state.submits.as_ref().map_or(0, |submits| {
+                SUBMITS_FIXED
+                    + submits.form.len()
+                    + submits
+                        .action
+                        .as_ref()
+                        .map_or(0, |action| surf_answer::quote(&action.kept).len())
+            });
+            (
+                fixed + CONTROL_LINE_FIXED + value + submits,
+                Target::State(state),
+            )
+        };
+        if bytes + line > NOW_BYTES_MAX {
+            break;
+        }
+        bytes += line;
+        elements.push(Element {
+            handle: link.handle.clone(),
+            kind: kind_word(link.kind).to_string(),
+            visibility: if link.hidden {
+                Visibility::Hidden
+            } else {
+                Visibility::Unknown
+            },
+            label,
+            target,
+        });
+    }
+    Some(Now { total, elements })
+}
+
+/// The value `fill` sends for a control of `kind`: for `text` and `password`, the kinds of a
+/// single-line `input`, `value` with every U+000A and U+000D removed, the value sanitization
+/// algorithm of the HTML Standard's Text, Search, Telephone, URL, Email and Password states
+/// ("strip newlines"); for a `textarea`, `value` as given. It is done here, before `Fill`,
+/// because the specification's `SetValue` stores its input as it is: a field's `sets:` has no
+/// operation on a string. So the value `FillRequested` counts, the row holds and a submission
+/// sends is the one the field holds.
+fn sanitized(kind: ElementKind, value: &str) -> String {
+    match kind {
+        ElementKind::Text | ElementKind::Password => value
+            .chars()
+            .filter(|c| !matches!(c, '\n' | '\r'))
+            .collect(),
+        _ => value.to_string(),
+    }
+}
+
+/// The word of a submission's end reason ("Pressing a button" above): one per reason;
+/// `UnsupportedScheme` and `AddressTooLong`, which the session refuses before it presses, give
+/// the words of those refusals.
+fn end_reason(reason: surf::SubmissionEndReason) -> RefusalReason {
+    use surf::SubmissionEndReason as End;
+
+    match reason {
+        End::NoFormOwner => RefusalReason::NoFormOwner,
+        End::NotSubmitButton => RefusalReason::NoDefaultAction,
+        End::InvalidControls => RefusalReason::InvalidControls,
+        End::InvalidAction => RefusalReason::InvalidAction,
+        End::UnsupportedScheme => RefusalReason::UnsupportedScheme,
+        End::UnsupportedEnctype => RefusalReason::UnsupportedEnctype,
+        End::DialogMethod => RefusalReason::DialogMethod,
+        End::AddressTooLong => RefusalReason::AddressTooLong,
+    }
+}
+
+/// The `submits` part of a button line (`story:agent-press-submit`): the form's handle
+/// `F<n>`, the method, and the action shown by the rules of a link's target
+/// ([`shown_target`]), cut at [`TARGET_CHARS_MAX`], or `unresolved` alone.
+fn submits_part(found: &surf::Submits, page: Option<&surf_url::Url>) -> surf_answer::Submits {
+    // An action that does not parse is shown as `unresolved` with none of its text, which
+    // could hold a userinfo ("As decided after the adversary's pass", decision 2).
+    surf_answer::Submits {
+        form: format!("F{}", found.form + 1),
+        method: found.method.word().to_string(),
+        action: found
+            .action
+            .as_ref()
+            .ok()
+            .map(|action| Cut::of(&shown_target(action, page), TARGET_CHARS_MAX)),
+    }
+}
+
+/// The kind word of a `now` line: the variant name of `surf.document.ElementKind`.
+fn kind_word(kind: ElementKind) -> &'static str {
+    match kind {
+        ElementKind::Link => "link",
+        ElementKind::Button => "button",
+        ElementKind::Text => "text",
+        ElementKind::Password => "password",
+        ElementKind::Checkbox => "checkbox",
+        ElementKind::Radio => "radio",
+        ElementKind::File => "file",
+        ElementKind::Select => "select",
+        ElementKind::Textarea => "textarea",
+    }
+}
+
+/// The state of each control of a document as a `now` line writes it ("The controls" above):
+/// from its row (`rows`) and, for a select, the label of its first selected option by position
+/// (`options`, the rows of every select).
+fn control_states(rows: &[Elements], options: &[Options]) -> HashMap<String, State> {
+    let selected = selected_labels(options);
+    rows.iter()
+        .filter(|row| row.kind != ElementKind::Link)
+        .map(|row| {
+            let text = |value: &str| Some(Value::Text(Cut::of(value, VALUE_CHARS_MAX)));
+            let value = match row.kind {
+                ElementKind::Text | ElementKind::Textarea | ElementKind::File => {
+                    text(row.value.as_deref().unwrap_or(""))
+                }
+                ElementKind::Password => Some(
+                    if row.value.as_deref().is_some_and(|value| !value.is_empty()) {
+                        Value::Set
+                    } else {
+                        Value::Empty
+                    },
+                ),
+                ElementKind::Select => selected
+                    .get(row.element_id.0.0.as_str())
+                    .and_then(|label| text(label)),
+                _ => None,
+            };
+            let state = State {
+                value,
+                disabled: row.disabled,
+                checked: row.checked
+                    && matches!(row.kind, ElementKind::Checkbox | ElementKind::Radio),
+                required: row.required,
+                readonly: row.readonly,
+                submits: None,
+            };
+            (row.element_id.0.0.clone(), state)
+        })
+        .collect()
+}
+
+/// The label of the selected option of each select, by the select's element identity: of its
+/// selected options (`options`, the rows of every select) the first by position.
+fn selected_labels(options: &[Options]) -> HashMap<&str, &str> {
+    let mut selected: HashMap<&str, (i64, &str)> = HashMap::new();
+    for option in options.iter().filter(|option| option.selected) {
+        let entry = selected
+            .entry(option.select_id.0.0.as_str())
+            .or_insert((option.position, option.label.as_str()));
+        if option.position < entry.0 {
+            *entry = (option.position, option.label.as_str());
+        }
+    }
+    selected
+        .into_iter()
+        .map(|(select, (_, label))| (select, label))
+        .collect()
+}
+
+/// The selected options of each select, by the select's element identity: each option's place
+/// in the select and its label, in document order (decision D298).
+fn selected_options(options: &[Options]) -> HashMap<String, Vec<(i64, String)>> {
+    let mut selected: HashMap<String, Vec<(i64, String)>> = HashMap::new();
+    for option in options.iter().filter(|option| option.selected) {
+        selected
+            .entry(option.select_id.0.0.clone())
+            .or_default()
+            .push((option.position, option.label.clone()));
+    }
+    for options in selected.values_mut() {
+        options.sort();
+    }
+    selected
+}
+
+/// The `~` line of a control from `before` to `after`, or `None` when its state is the same
+/// ("What changed" above): `value` for a text, textarea, file or password control, a password's
+/// written `(set)` or `(empty)`; `checked` for a checkbox or a radio button; `selected` for a
+/// select when the set of its selected options changed, compared by their places (decision
+/// D298), each side the labels of its selected options in document order joined by `, `, `""`
+/// for none selected.
+fn control_change(before: &ShownControl, after: &ShownControl) -> Option<Change> {
+    match after.kind {
+        ElementKind::Text | ElementKind::Textarea | ElementKind::File
+            if before.value != after.value =>
+        {
+            let value = |value: &Option<String>| {
+                Value::Text(Cut::of(value.as_deref().unwrap_or(""), VALUE_CHARS_MAX))
+            };
+            Some(Change::Value {
+                before: value(&before.value),
+                after: value(&after.value),
+            })
+        }
+        ElementKind::Password if before.value != after.value => {
+            let value = |value: &Option<String>| match value.as_deref() {
+                Some(value) if !value.is_empty() => Value::Set,
+                _ => Value::Empty,
+            };
+            Some(Change::Value {
+                before: value(&before.value),
+                after: value(&after.value),
+            })
+        }
+        ElementKind::Checkbox | ElementKind::Radio if before.checked != after.checked => {
+            Some(Change::Checked {
+                before: before.checked,
+                after: after.checked,
+            })
+        }
+        ElementKind::Select if before.selected != after.selected => {
+            let label = |selected: &[(i64, String)]| {
+                let labels: Vec<&str> = selected.iter().map(|(_, label)| label.as_str()).collect();
+                Cut::of(&labels.join(", "), VALUE_CHARS_MAX)
+            };
+            Some(Change::Selected {
+                before: label(&before.selected),
+                after: label(&after.selected),
+            })
+        }
+        _ => None,
+    }
+}
+
+/// The texts of a document's tree ("What changed" above): the lines of its Markdown rendering
+/// but the empty ones.
+fn markdown_texts(tree: &Tree) -> impl Iterator<Item = String> + '_ {
+    surf_page_text::markdown::markdown(tree).filter(|line| !line.trim().is_empty())
+}
+
+/// The `arg count` of `log` ("The log" above): `None` without it; `Err` for one that is not a
+/// number from 1 in decimal digits. A number past the platform's `usize` counts as every action.
+fn log_count(request: &Request) -> Result<Option<usize>, ()> {
+    let Some(digits) = request.arg("count") else {
+        return Ok(None);
+    };
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(());
+    }
+    match digits.trim_start_matches('0') {
+        "" => Err(()),
+        number => Ok(Some(number.parse().unwrap_or(usize::MAX))),
     }
 }

@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 1fa135dfaf753fab3e34de8ae9a4a7052216d1878fc9d395075ce5cd5ac673a6
+// contract digest aac42d8ac87218cacd79d661cdfc6da87c457bcea21b6e55cbec893553faf526
 // do not edit: regenerate with `ess synthesize`
 
 //! The `surf` system, v1: its components assembled, its bindings wired, and its one transport.
@@ -36,6 +36,8 @@ pub enum SystemEvent {
     SessionNavigationChanged(surf_types::agent::SessionNavigationChanged),
     /// `surf.agent.SessionOpened`.
     SessionOpened(surf_types::agent::SessionOpened),
+    /// `surf.agent.TraversalRequested`.
+    TraversalRequested(surf_types::agent::TraversalRequested),
     /// `surf.document.CheckednessSet`.
     CheckednessSet(surf_types::document::CheckednessSet),
     /// `surf.document.DocumentParsed`.
@@ -66,6 +68,8 @@ pub enum SystemEvent {
     NavigationFailed(surf_types::navigation::NavigationFailed),
     /// `surf.navigation.NavigationStarted`.
     NavigationStarted(surf_types::navigation::NavigationStarted),
+    /// `surf.navigation.TraversalStarted`.
+    TraversalStarted(surf_types::navigation::TraversalStarted),
     /// `surf.net.FetchFailed`.
     FetchFailed(surf_types::net::FetchFailed),
     /// `surf.net.RequestStarted`.
@@ -94,6 +98,7 @@ impl SystemEvent {
             Self::SessionClosed(_) => "surf.agent.SessionClosed",
             Self::SessionNavigationChanged(_) => "surf.agent.SessionNavigationChanged",
             Self::SessionOpened(_) => "surf.agent.SessionOpened",
+            Self::TraversalRequested(_) => "surf.agent.TraversalRequested",
             Self::CheckednessSet(_) => "surf.document.CheckednessSet",
             Self::DocumentParsed(_) => "surf.document.DocumentParsed",
             Self::ElementAdded(_) => "surf.document.ElementAdded",
@@ -109,6 +114,7 @@ impl SystemEvent {
             Self::NavigationCommitted(_) => "surf.navigation.NavigationCommitted",
             Self::NavigationFailed(_) => "surf.navigation.NavigationFailed",
             Self::NavigationStarted(_) => "surf.navigation.NavigationStarted",
+            Self::TraversalStarted(_) => "surf.navigation.TraversalStarted",
             Self::FetchFailed(_) => "surf.net.FetchFailed",
             Self::RequestStarted(_) => "surf.net.RequestStarted",
             Self::ResponseReceived(_) => "surf.net.ResponseReceived",
@@ -131,6 +137,7 @@ impl From<agent::PublishedEvent> for SystemEvent {
             agent::PublishedEvent::SessionClosed(event) => Self::SessionClosed(event),
             agent::PublishedEvent::SessionNavigationChanged(event) => Self::SessionNavigationChanged(event),
             agent::PublishedEvent::SessionOpened(event) => Self::SessionOpened(event),
+            agent::PublishedEvent::TraversalRequested(event) => Self::TraversalRequested(event),
         }
     }
 }
@@ -160,6 +167,7 @@ impl From<navigator::PublishedEvent> for SystemEvent {
             navigator::PublishedEvent::NavigationCommitted(event) => Self::NavigationCommitted(event),
             navigator::PublishedEvent::NavigationFailed(event) => Self::NavigationFailed(event),
             navigator::PublishedEvent::NavigationStarted(event) => Self::NavigationStarted(event),
+            navigator::PublishedEvent::TraversalStarted(event) => Self::TraversalStarted(event),
         }
     }
 }
@@ -227,8 +235,12 @@ pub enum BindingInvocation {
     SelectOnPickRequested(surf_types::document::SelectOption),
     /// `set-value-on-fill-requested` invoked `surf.document.SetValue`.
     SetValueOnFillRequested(surf_types::document::SetValue),
+    /// `start-on-traversal-started` invoked `surf.navigation.StartTraversal`.
+    StartOnTraversalStarted(surf_types::navigation::StartTraversal),
     /// `submit-on-press-requested` invoked `surf.document.StartSubmission`.
     SubmitOnPressRequested(surf_types::document::StartSubmission),
+    /// `traverse-on-traversal-requested` invoked `surf.navigation.TraverseHistory`.
+    TraverseOnTraversalRequested(surf_types::navigation::TraverseHistory),
 }
 
 /// The binding `check-on-pick-requested`: `surf.agent.PickRequested`, read as `surf.document.Check` input.
@@ -262,6 +274,7 @@ pub fn commit_on_response(event: &surf_types::net::ResponseReceived) -> surf_typ
     surf_types::navigation::CommitNavigation {
         navigation_id: event.request_id.clone(),
         url: event.url.clone(),
+        method: event.method.clone(),
         status: event.status.clone(),
         media_type: event.media_type.clone(),
         body: event.body.clone(),
@@ -413,6 +426,20 @@ pub fn set_value_on_fill_requested(event: &surf_types::agent::FillRequested) -> 
     }
 }
 
+/// The binding `start-on-traversal-started`: `surf.navigation.TraversalStarted`, read as `surf.navigation.StartTraversal` input.
+///
+/// Fully determined by the specification: every input is filled from an event field — through the
+/// declared crossing where one is named — from a literal the target admits, or left absent
+/// where the input is optional and the binding says nothing.
+pub fn start_on_traversal_started(event: &surf_types::navigation::TraversalStarted) -> surf_types::navigation::StartTraversal {
+    surf_types::navigation::StartTraversal {
+        tab_id: event.tab_id.clone(),
+        url: event.url.clone(),
+        entry_id: event.entry_id.clone(),
+        entry_next: event.entry_next.clone(),
+    }
+}
+
 /// The binding `submit-on-press-requested`: `surf.agent.PressRequested`, read as `surf.document.StartSubmission` input.
 ///
 /// Fully determined by the specification: every input is filled from an event field — through the
@@ -421,6 +448,18 @@ pub fn set_value_on_fill_requested(event: &surf_types::agent::FillRequested) -> 
 pub fn submit_on_press_requested(event: &surf_types::agent::PressRequested) -> surf_types::document::StartSubmission {
     surf_types::document::StartSubmission {
         element_id: event.element_id.clone(),
+    }
+}
+
+/// The binding `traverse-on-traversal-requested`: `surf.agent.TraversalRequested`, read as `surf.navigation.TraverseHistory` input.
+///
+/// Fully determined by the specification: every input is filled from an event field — through the
+/// declared crossing where one is named — from a literal the target admits, or left absent
+/// where the input is optional and the binding says nothing.
+pub fn traverse_on_traversal_requested(event: &surf_types::agent::TraversalRequested) -> surf_types::navigation::TraverseHistory {
+    surf_types::navigation::TraverseHistory {
+        tab_id: event.tab_id.clone(),
+        step: event.step.clone(),
     }
 }
 
@@ -527,9 +566,9 @@ impl<AgentBehaviors, DocumentBehaviors, NavigatorBehaviors, NetBehaviors, Render
 
 impl<AgentBehaviors, DocumentBehaviors, NavigatorBehaviors, NetBehaviors, RendererBehaviors, ShellBehaviors> System<AgentBehaviors, DocumentBehaviors, NavigatorBehaviors, NetBehaviors, RendererBehaviors, ShellBehaviors>
 where
-    AgentBehaviors: surf_types::agent::obligations::CloseSessionBehavior + surf_types::agent::obligations::FillBehavior + surf_types::agent::obligations::FollowBehavior + surf_types::agent::obligations::GoBehavior + surf_types::agent::obligations::NoteNavigationCommittedBehavior + surf_types::agent::obligations::NoteNavigationEndedBehavior + surf_types::agent::obligations::NoteNavigationFailedBehavior + surf_types::agent::obligations::NoteNavigationStartedBehavior + surf_types::agent::obligations::OpenSessionBehavior + surf_types::agent::obligations::PickBehavior + surf_types::agent::obligations::PressBehavior + surf_types::agent::obligations::RecordActionBehavior + surf_types::agent::obligations::SessionLogQuery + surf_types::agent::obligations::SessionStateViewQuery + surf_types::agent::obligations::SessionsQuery,
+    AgentBehaviors: surf_types::agent::obligations::CloseSessionBehavior + surf_types::agent::obligations::FillBehavior + surf_types::agent::obligations::FollowBehavior + surf_types::agent::obligations::GoBehavior + surf_types::agent::obligations::GoBackBehavior + surf_types::agent::obligations::GoForwardBehavior + surf_types::agent::obligations::NoteNavigationCommittedBehavior + surf_types::agent::obligations::NoteNavigationEndedBehavior + surf_types::agent::obligations::NoteNavigationFailedBehavior + surf_types::agent::obligations::NoteNavigationStartedBehavior + surf_types::agent::obligations::OpenSessionBehavior + surf_types::agent::obligations::PickBehavior + surf_types::agent::obligations::PressBehavior + surf_types::agent::obligations::RecordActionBehavior + surf_types::agent::obligations::SessionLogQuery + surf_types::agent::obligations::SessionStateViewQuery + surf_types::agent::obligations::SessionsQuery,
     DocumentBehaviors: surf_types::document::obligations::AbandonSubmissionBehavior + surf_types::document::obligations::AddElementBehavior + surf_types::document::obligations::AddFormBehavior + surf_types::document::obligations::AddOptionBehavior + surf_types::document::obligations::CheckBehavior + surf_types::document::obligations::FinishParsingBehavior + surf_types::document::obligations::ParseDocumentBehavior + surf_types::document::obligations::SelectOptionBehavior + surf_types::document::obligations::SetValueBehavior + surf_types::document::obligations::StartSubmissionBehavior + surf_types::document::obligations::SubmitFormBehavior + surf_types::document::obligations::ControlsQuery + surf_types::document::obligations::DocumentsQuery + surf_types::document::obligations::ElementsQuery + surf_types::document::obligations::FormsQuery + surf_types::document::obligations::OptionsQuery + surf_types::document::obligations::SubmissionsQuery,
-    NavigatorBehaviors: surf_types::navigation::obligations::CancelNavigationBehavior + surf_types::navigation::obligations::CommitNavigationBehavior + surf_types::navigation::obligations::FailNavigationBehavior + surf_types::navigation::obligations::NavigateBehavior + surf_types::navigation::obligations::NavigationsQuery,
+    NavigatorBehaviors: surf_types::navigation::obligations::CancelNavigationBehavior + surf_types::navigation::obligations::CommitNavigationBehavior + surf_types::navigation::obligations::FailNavigationBehavior + surf_types::navigation::obligations::NavigateBehavior + surf_types::navigation::obligations::StartTraversalBehavior + surf_types::navigation::obligations::TraverseHistoryBehavior + surf_types::navigation::obligations::NavigationsQuery,
     NetBehaviors: surf_types::net::obligations::DeliverResponseBehavior + surf_types::net::obligations::FailRequestBehavior + surf_types::net::obligations::FetchBehavior + surf_types::net::obligations::RequestsQuery,
     RendererBehaviors: surf_types::render::obligations::PaintFrameBehavior + surf_types::render::obligations::FramesQuery,
     ShellBehaviors: surf_types::shell::obligations::CloseTabBehavior + surf_types::shell::obligations::OpenTabBehavior + surf_types::shell::obligations::OpenWindowBehavior + surf_types::shell::obligations::TabsQuery + surf_types::shell::obligations::WindowsQuery,
@@ -645,6 +684,11 @@ where
             }
             SystemEvent::SessionNavigationChanged(_) => {}
             SystemEvent::SessionOpened(_) => {}
+            SystemEvent::TraversalRequested(event) => {
+                if let Err(failure) = self.deliver_traverse_on_traversal_requested(event) {
+                    failed = failed.or(Some(failure));
+                }
+            }
             SystemEvent::CheckednessSet(_) => {}
             SystemEvent::DocumentParsed(_) => {}
             SystemEvent::ElementAdded(_) => {}
@@ -683,6 +727,11 @@ where
                     failed = failed.or(Some(failure));
                 }
                 if let Err(failure) = self.deliver_note_on_navigation_started(event) {
+                    failed = failed.or(Some(failure));
+                }
+            }
+            SystemEvent::TraversalStarted(event) => {
+                if let Err(failure) = self.deliver_start_on_traversal_started(event) {
                     failed = failed.or(Some(failure));
                 }
             }
@@ -896,6 +945,17 @@ where
         Ok(())
     }
 
+    /// `start-on-traversal-started`'s attempt at one `surf.navigation.TraversalStarted`: transform, record the invocation, invoke the
+    /// acceptor's port, and answer a declared refusal with the declared policy.
+    fn deliver_start_on_traversal_started(&mut self, event: &surf_types::navigation::TraversalStarted) -> Result<(), surf_types::obligation::UnmetObligation> {
+        // `start-on-traversal-started`: at_most_once, on failure drop.
+        let input = start_on_traversal_started(event);
+        self.invocations.push(BindingInvocation::StartOnTraversalStarted(input.clone()));
+        // No declared refusal exists, so this invocation cannot fail.
+        let _ = self.navigator.start_traversal(input)?;
+        Ok(())
+    }
+
     /// `submit-on-press-requested`'s attempt at one `surf.agent.PressRequested`: transform, record the invocation, invoke the
     /// acceptor's port, and answer a declared refusal with the declared policy.
     fn deliver_submit_on_press_requested(&mut self, event: &surf_types::agent::PressRequested) -> Result<(), surf_types::obligation::UnmetObligation> {
@@ -905,6 +965,18 @@ where
         // `drop`: a declared refusal is given up silently, because that is what the author
         // wrote; an unmet obligation still propagates.
         let _ = self.document.start_submission(input)?;
+        Ok(())
+    }
+
+    /// `traverse-on-traversal-requested`'s attempt at one `surf.agent.TraversalRequested`: transform, record the invocation, invoke the
+    /// acceptor's port, and answer a declared refusal with the declared policy.
+    fn deliver_traverse_on_traversal_requested(&mut self, event: &surf_types::agent::TraversalRequested) -> Result<(), surf_types::obligation::UnmetObligation> {
+        // `traverse-on-traversal-requested`: at_most_once, on failure drop.
+        let input = traverse_on_traversal_requested(event);
+        self.invocations.push(BindingInvocation::TraverseOnTraversalRequested(input.clone()));
+        // `drop`: a declared refusal is given up silently, because that is what the author
+        // wrote; an unmet obligation still propagates.
+        let _ = self.navigator.traverse_history(input)?;
         Ok(())
     }
 }

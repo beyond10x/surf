@@ -3,9 +3,15 @@
 
 #![forbid(unsafe_code)]
 
+mod adversary_changed;
+mod adversary_follow;
+mod back_forward;
+mod changed;
 mod cut;
 mod forging;
 mod golden;
 mod note_parser;
+mod now;
 mod parse;
+mod press;
 mod unquote;

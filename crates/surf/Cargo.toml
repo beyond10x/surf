@@ -23,6 +23,7 @@ surf-ports = { path = "../ports" }
 surf-fetch = { path = "../fetch" }
 surf-html = { path = "../html" }
 surf-page = { path = "../page" }
+surf-url = { path = "../url" }
 
 [[test]]
 name = "main"

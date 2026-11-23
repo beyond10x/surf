@@ -5,14 +5,18 @@ use ess_conformance::target::ImplementationIdentity;
 use surf::{Browser, System};
 use surf_conformance::{SurfTarget, Unanswered, run};
 use surf_ports::{
-    NavigatorPorts, NetPorts, RendererPorts, ShellPorts, agent_port, document_port, navigator_port,
-    net_port, renderer_port, shell_port,
+    NavigatorPorts, NetPorts, RendererPorts, ShellPorts, agent_port, commit_navigation,
+    document_port, navigator_port, net_port, renderer_port, shell_port, traverse_history,
 };
 use surf_types::agent::{ActionId, SessionId};
 use surf_types::behaviour::{NavigationStorage, TryContext};
 use surf_types::document::{DocumentId, ElementId, FormId, OptionId, SubmissionId};
-use surf_types::navigation::NavigationSnapshot;
-use surf_types::net::RequestId;
+use surf_types::navigation::obligations::{CommitNavigationBehavior, TraverseHistoryBehavior};
+use surf_types::navigation::{
+    CommitNavigation, CommitNavigationOutcome, NavigationSnapshot, TraverseHistory,
+    TraverseHistoryOutcome,
+};
+use surf_types::net::{MediaType, RequestId};
 use surf_types::obligation::UnmetObligation;
 use surf_types::render::FrameId;
 use surf_types::shell::{TabId, WindowId};
@@ -39,9 +43,43 @@ impl NavigationStorage for DropsEveryPut {
     }
 }
 
+/// The `navigator` component's obligations, met over the storage that drops every `put`, as its
+/// generated behaviours are.
+impl CommitNavigationBehavior for DropsEveryPut {
+    fn commit_navigation(
+        &mut self,
+        input: CommitNavigation,
+    ) -> Result<CommitNavigationOutcome, UnmetObligation> {
+        commit_navigation(self, input)
+    }
+}
+
+impl TraverseHistoryBehavior for DropsEveryPut {
+    fn traverse_history(
+        &mut self,
+        input: TraverseHistory,
+    ) -> Result<TraverseHistoryOutcome, UnmetObligation> {
+        traverse_history(self, input)
+    }
+}
+
 impl TryContext for DropsEveryPut {
     fn try_caller_session_id(&self) -> Result<Option<SessionId>, UnmetObligation> {
         self.0.try_caller_session_id()
+    }
+
+    fn try_generate_optional_string(&mut self) -> Result<Option<String>, UnmetObligation> {
+        self.0.try_generate_optional_string()
+    }
+
+    fn try_generate_optional_bytes(&mut self) -> Result<Option<Vec<u8>>, UnmetObligation> {
+        self.0.try_generate_optional_bytes()
+    }
+
+    fn try_generate_optional_surf_net_media_type(
+        &mut self,
+    ) -> Result<Option<MediaType>, UnmetObligation> {
+        self.0.try_generate_optional_surf_net_media_type()
     }
 
     fn try_generate_surf_agent_action_id(&mut self) -> Result<ActionId, UnmetObligation> {

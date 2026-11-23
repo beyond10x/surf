@@ -25,7 +25,9 @@
 //!   mode "filename" with no selected file). `textarea`: its child text content. `None` for the
 //!   other kinds; a `select`'s options are not read.
 //! - `checked`: the default checkedness of an `input` in the Checkbox or Radio Button state
-//!   (the `checked` attribute is present).
+//!   (the `checked` attribute is present), with the radio button group rule as the parser leaves
+//!   it (`story:agent-fill-pick`): of the radio buttons of one group with `checked`, only the
+//!   last in tree order is checked ([`forms`] gives the group and its rule).
 //! - `disabled`: for `button`, `input`, `select` and `textarea`: the `disabled` attribute is
 //!   present, or the element is a descendant of a `fieldset` with a `disabled` attribute and not
 //!   a descendant of that fieldset's first `legend` element child. Always `false` for a link.
@@ -87,8 +89,9 @@
 //!   node gives nothing unless the node that started the traversal (the referenced node, the
 //!   `label`) is hidden (2A); a descendant's own `aria-labelledby` is followed unless the walk is
 //!   already inside an `aria-labelledby` traversal (2B); a control embedded in the name of
-//!   another element gives its value (2C: a Text, Search, Telephone, URL, Email or Password
-//!   `input` and a `textarea` their default value, a Number or Range `input` `aria-valuetext`,
+//!   another element gives its value (2C: a Text, Search, Telephone, URL or Email `input` and a
+//!   `textarea` their default value, a Password `input` nothing (see "Deviations"), a Number
+//!   or Range `input` `aria-valuetext`,
 //!   else `aria-valuenow`, else its `value` attribute); `aria-label` (2D); the element's own
 //!   attributes (2E: an `img`'s `alt`, even blank; an `area`'s `alt`; an Image Button's `alt`,
 //!   `title` or `Submit`; a Submit Button's, Reset Button's or Button's `value`, or `Submit` or
@@ -99,8 +102,12 @@
 //!   of `hidden`, recorded by the walk of [`actionable_elements`].
 //!
 //! - [`handles`]: surf's own numbering of the rows, not a standard's: `l<n>`, `b<n>`, `f<n>`
-//!   (`docs/design/page-as-text.md` section 5). [`hidden_roots`]: the rule of [`is_hidden`] for a
-//!   whole tree in one walk.
+//!   (`docs/design/page-as-text.md` section 5). [`form_handles`]: the forms numbered `F<n>`
+//!   apart from it, so page text, which prints [`handles`], names no form. [`hidden_roots`]: the
+//!   rule of [`is_hidden`] for a whole tree in one walk.
+//! - [`forms`]: the forms, each control's form owner and `name`, and the options of each select
+//!   with their selectedness (`story:agent-form-port`); its module documentation gives the
+//!   rules.
 //!
 //! No function recurses over the depth of the tree: [`actionable_elements`] and [`title`] walk
 //! with their own stack over [`Tree::children`], [`is_hidden`] walks up [`Tree::parent`], and
@@ -133,8 +140,8 @@
 //! - The spaces accname may join with by CSS `display` (its note under 2F, AccName #225):
 //!   children are joined without a space.
 //! - An explicit `role` attribute: the role is the one the kind implies (item 6 of the note).
-//! - The chosen option of a `select` in 2C: option selectedness is `story:agent-form-port`'s,
-//!   so an embedded `select` gives the empty string.
+//! - The chosen option of a `select` in 2C: an embedded `select` gives the empty string. The
+//!   selectedness [`forms`] computes is not read by the labels.
 //!
 //! # Deviations
 //!
@@ -147,25 +154,22 @@
 //! - A hidden actionable element is named from its own subtree, hidden parts included, as a
 //!   hidden node referenced by `aria-labelledby` is (step 2A would give it the empty name): its
 //!   row is kept and flagged, and a hidden link is shown by its label.
+//! - An `input` of the Password state embedded in another element's name gives nothing in 2C,
+//!   where accname gives its value: a password is never printed, and a label reaches the answer
+//!   and the recorded actions (`story:values-and-labels-before-fill`).
 //! - A label is cut at [`LABEL_BYTES_MAX`] bytes, and the work for the labels of one call is
 //!   bounded by [`LABEL_WORK_MAX`]; past it a name comes from the element's own attributes. The
 //!   standards bound neither.
-//!
-//! # Left to other stories
-//!
-//! - A control's form owner and the radio button group rule, by which a later checked radio
-//!   button unchecks the others of its group: here every radio button with a `checked`
-//!   attribute is `checked` (`story:agent-form-port`).
-//! - Option selectedness of a `select` (`story:agent-form-port`).
-//! - Resolving a link's target against the document base URL (`story:agent-follow-links`).
-//! - Writing the rows (`story:html-document-port`).
 
 #![forbid(unsafe_code)]
 
+pub mod base_url;
+pub mod forms;
 mod label;
 
 use surf_html::{Attribute, Namespace, NodeData, NodeId, Tree};
 
+pub use forms::form_handles;
 pub use label::{LABEL_BYTES_MAX, LABEL_WORK_MAX};
 
 thread_local! {
@@ -357,6 +361,7 @@ pub fn actionable_elements(tree: &Tree) -> Vec<ActionableElement> {
         }
     }
     label::fill(tree, facts, &mut found);
+    forms::uncheck_radio_groups(tree, &mut found);
     found
 }
 

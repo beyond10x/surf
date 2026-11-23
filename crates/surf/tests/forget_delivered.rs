@@ -29,6 +29,7 @@ fn pages() -> (impl Transport, Rc<Cell<usize>>) {
         counter.set(counter.get() + 1);
         Answer::Response {
             url: request.url.0.clone(),
+            method: request.method,
             status: 200,
             media_type: "text/html".to_owned(),
             body: vec![b'x'; BODY],

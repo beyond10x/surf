@@ -1,0 +1,108 @@
+# Adversary case (story:agent-history-spec). A step forward starts, a push commits before it, and
+# then the step forward's response arrives. At 9ccf798 CommitNavigation/traversed made C
+# current, the entry the push dropped, and left no entry back from it although A, B and X are
+# still the tab's history (B.next is X); the traversal's comment in spec/domains/navigation.yaml
+# marked this order UNMAPPED. Since D268 the push's commit cancels the step forward, so its
+# response commits nothing. The case asserts the weakest rule that the order should keep: a tab
+# with history beside its current entry has an entry to step back to, and no dropped entry is
+# current.
+type: ess-scenario/6
+domain: surf.navigation
+scenario: adversary-history-push-during-traversal
+summary: A push that commits while a step forward is in flight leaves the tab an entry to step back to.
+
+arrange:
+  - instance: a
+    entity: surf.navigation.Navigation
+  - instance: b
+    entity: surf.navigation.Navigation
+  - instance: c
+    entity: surf.navigation.Navigation
+  - instance: x
+    entity: surf.navigation.Navigation
+  - instance: to-b
+    entity: surf.navigation.Navigation
+  - instance: to-c
+    entity: surf.navigation.Navigation
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input: {tab_id: 7e5a1b00-0000-4000-8000-000000000e01, url: http://example.org/a, method: Get}
+    outcome: started
+    capture: {instance: a, event: surf.navigation.NavigationStarted, field: navigation_id}
+  - at: 2026-01-06T09:00:01Z
+    command: surf.net.DeliverResponse
+    input: {request_id: {$instance: a}, url: http://example.org/a, method: Get, status: 200, media_type: text/plain, body: aGk=}
+    outcome: responded
+  - at: 2026-01-06T09:00:02Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input: {tab_id: 7e5a1b00-0000-4000-8000-000000000e01, url: http://example.org/b, method: Get}
+    outcome: started
+    capture: {instance: b, event: surf.navigation.NavigationStarted, field: navigation_id}
+  - at: 2026-01-06T09:00:03Z
+    command: surf.net.DeliverResponse
+    input: {request_id: {$instance: b}, url: http://example.org/b, method: Get, status: 200, media_type: text/plain, body: aGk=}
+    outcome: responded
+  - at: 2026-01-06T09:00:04Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input: {tab_id: 7e5a1b00-0000-4000-8000-000000000e01, url: http://example.org/c, method: Get}
+    outcome: started
+    capture: {instance: c, event: surf.navigation.NavigationStarted, field: navigation_id}
+  - at: 2026-01-06T09:00:05Z
+    command: surf.net.DeliverResponse
+    input: {request_id: {$instance: c}, url: http://example.org/c, method: Get, status: 200, media_type: text/plain, body: aGk=}
+    outcome: responded
+
+  - at: 2026-01-06T09:00:06Z
+    command: surf.navigation.StartTraversal
+    input: {tab_id: 7e5a1b00-0000-4000-8000-000000000e01, url: http://example.org/b, entry_id: {$instance: b}, entry_next: {$instance: c}}
+    outcome: started
+    capture: {instance: to-b, event: surf.navigation.NavigationStarted, field: navigation_id}
+  - at: 2026-01-06T09:00:07Z
+    command: surf.net.DeliverResponse
+    input: {request_id: {$instance: to-b}, url: http://example.org/b, method: Get, status: 200, media_type: text/plain, body: aGk=}
+    outcome: responded
+
+  # The step forward to C starts, as TraverseHistory would start it from B.
+  - at: 2026-01-06T09:00:08Z
+    command: surf.navigation.StartTraversal
+    input: {tab_id: 7e5a1b00-0000-4000-8000-000000000e01, url: http://example.org/c, entry_id: {$instance: c}}
+    outcome: started
+    capture: {instance: to-c, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  # A push commits first.
+  - at: 2026-01-06T09:00:09Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input: {tab_id: 7e5a1b00-0000-4000-8000-000000000e01, url: http://example.org/x, method: Get}
+    outcome: started
+    capture: {instance: x, event: surf.navigation.NavigationStarted, field: navigation_id}
+  - at: 2026-01-06T09:00:10Z
+    command: surf.net.DeliverResponse
+    input: {request_id: {$instance: x}, url: http://example.org/x, method: Get, status: 200, media_type: text/plain, body: aGk=}
+    outcome: responded
+
+  # Then the step forward's response: the push cancelled it, so it commits nothing (D268).
+  - at: 2026-01-06T09:00:11Z
+    command: surf.net.DeliverResponse
+    input: {request_id: {$instance: to-c}, url: http://example.org/c, method: Get, status: 200, media_type: text/plain, body: aGk=}
+    outcome: responded
+
+  - at: 2026-01-06T09:00:12Z
+    command: surf.navigation.TraverseHistory
+    input: {tab_id: 7e5a1b00-0000-4000-8000-000000000e01, step: back}
+    outcome: requested
+
+assert:
+  - view: surf.navigation.Navigations
+    contains: {tab_id: 7e5a1b00-0000-4000-8000-000000000e01, standing: back}
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: c}, standing: dropped}
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: x}, standing: current}
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: to-c}, state: Cancelled}

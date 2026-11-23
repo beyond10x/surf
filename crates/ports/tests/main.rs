@@ -4,6 +4,8 @@
 #![forbid(unsafe_code)]
 
 mod adversary_document_forms;
+mod adversary_history;
 mod agent;
+mod history;
 mod ports;
 mod review1_ports;

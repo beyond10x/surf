@@ -1,0 +1,83 @@
+# Adversary case (story:agent-history-spec). A form POST whose response is a 303 to
+# /result: crates/fetch follows it with a GET without a body (Fetch Standard, HTTP-redirect fetch),
+# so the page the entry holds came by GET, and the HTML Standard drops the entry's POST resource
+# when the request's body is null after a redirect. A later step back to that entry loads
+# /result with GET, as every browser does after POST/redirect/GET. At 9ccf798 the specification
+# kept the method of the Navigate (Post) on the entry and CommitNavigation carried no final
+# method, so it refused the step under no-entry; since D267 the entry keeps the committing
+# request's method.
+type: ess-scenario/6
+domain: surf.navigation
+scenario: adversary-history-post-redirected-to-get
+summary: A step back to an entry a POST made whose response came after a 303 to a GET is traversed.
+
+arrange:
+  - instance: posted
+    entity: surf.navigation.Navigation
+  - instance: b
+    entity: surf.navigation.Navigation
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000a01
+      url: http://example.org/search
+      method: Post
+      body: cT0x
+      body_type: application/x-www-form-urlencoded
+    outcome: started
+    capture: {instance: posted, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  # The response after the 303: its address is the one the redirect led to, and its method the
+  # GET the redirect continued with (decision D267).
+  - at: 2026-01-06T09:00:01Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: posted}
+      url: http://example.org/result
+      method: Get
+      status: 200
+      media_type: text/plain
+      body: aGk=
+    outcome: responded
+
+  - at: 2026-01-06T09:00:02Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000a01
+      url: http://example.org/b
+      method: Get
+    outcome: started
+    capture: {instance: b, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:03Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: b}
+      url: http://example.org/b
+      method: Get
+      status: 200
+      media_type: text/plain
+      body: aGk=
+    outcome: responded
+
+  - at: 2026-01-06T09:00:04Z
+    command: surf.navigation.TraverseHistory
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000a01
+      step: back
+    outcome: requested
+    events:
+      - event: surf.navigation.TraversalStarted
+        payload:
+          tab_id: 7e5a1b00-0000-4000-8000-000000000a01
+          url: http://example.org/result
+          entry_id: {$instance: posted}
+          entry_next: {$instance: b}
+
+assert:
+  - view: surf.navigation.Navigations
+    contains: {url: http://example.org/result, handling: traverse, method: Get, entry_id: {$instance: posted}, state: Started}

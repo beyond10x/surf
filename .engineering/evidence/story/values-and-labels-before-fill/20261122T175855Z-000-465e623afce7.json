@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T17:58:55Z",
+  "actor": "human:operator",
+  "artifact": "story:values-and-labels-before-fill",
+  "kind": "story",
+  "revision": 14,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "plan critic panel: scope, design, acceptance, parallel safety",
+    "reference": "two rounds on 2026-11-22: round 1 needs-revision by all four (28 findings), round 2 design approve and four last points by the other three, written at d2bb386"
+  }
+}

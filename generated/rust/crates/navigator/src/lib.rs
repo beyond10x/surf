@@ -1,10 +1,10 @@
 // generated from surf v1
-// contract digest 1fa135dfaf753fab3e34de8ae9a4a7052216d1878fc9d395075ce5cd5ac673a6
+// contract digest aac42d8ac87218cacd79d661cdfc6da87c457bcea21b6e55cbec893553faf526
 // do not edit: regenerate with `ess synthesize`
 
 //! navigator — the `navigator` component of `surf` v1.
 //!
-//! Decides what each tab loads and tracks every load to its end.
+//! Decides what each tab loads, tracks every load to its end and keeps each tab's session history.
 //!
 //! The component's outer surface exactly as the specification declares it: accepted commands as
 //! handlers, declared views as queries, published events as a typed outbox. The behaviour behind
@@ -25,6 +25,8 @@ pub enum PublishedEvent {
     NavigationFailed(surf_types::navigation::NavigationFailed),
     /// `surf.navigation.NavigationStarted`.
     NavigationStarted(surf_types::navigation::NavigationStarted),
+    /// `surf.navigation.TraversalStarted`.
+    TraversalStarted(surf_types::navigation::TraversalStarted),
 }
 
 /// navigator — the port over the component's obligations.
@@ -57,7 +59,7 @@ impl<B> Navigator<B> {
 
 impl<B> Navigator<B>
 where
-    B: surf_types::navigation::obligations::CancelNavigationBehavior + surf_types::navigation::obligations::CommitNavigationBehavior + surf_types::navigation::obligations::FailNavigationBehavior + surf_types::navigation::obligations::NavigateBehavior + surf_types::navigation::obligations::NavigationsQuery,
+    B: surf_types::navigation::obligations::CancelNavigationBehavior + surf_types::navigation::obligations::CommitNavigationBehavior + surf_types::navigation::obligations::FailNavigationBehavior + surf_types::navigation::obligations::NavigateBehavior + surf_types::navigation::obligations::StartTraversalBehavior + surf_types::navigation::obligations::TraverseHistoryBehavior + surf_types::navigation::obligations::NavigationsQuery,
 {
     /// Accepts `surf.navigation.CancelNavigation`: runs the behaviour obligation, then publishes the declared events
     /// the outcome carries.
@@ -85,6 +87,9 @@ where
         let outcome = self.behaviors.commit_navigation(input)?;
         match &outcome {
             surf_types::navigation::CommitNavigationOutcome::NoSuchNavigation { .. } => {}
+            surf_types::navigation::CommitNavigationOutcome::Traversed { navigation_committed, .. } => {
+                self.outbox.push(PublishedEvent::NavigationCommitted(navigation_committed.clone()));
+            }
             surf_types::navigation::CommitNavigationOutcome::Committed { navigation_committed, .. } => {
                 self.outbox.push(PublishedEvent::NavigationCommitted(navigation_committed.clone()));
             }
@@ -120,6 +125,38 @@ where
         match &outcome {
             surf_types::navigation::NavigateOutcome::Started { navigation_started, .. } => {
                 self.outbox.push(PublishedEvent::NavigationStarted(navigation_started.clone()));
+            }
+        }
+        Ok(outcome)
+    }
+
+    /// Accepts `surf.navigation.StartTraversal`: runs the behaviour obligation, then publishes the declared events
+    /// the outcome carries.
+    ///
+    /// `Err` is the typed refusal of an unmet obligation — never a domain outcome, which always
+    /// arrives as a variant of the outcome type, refusals included.
+    pub fn start_traversal(&mut self, input: surf_types::navigation::StartTraversal) -> Result<surf_types::navigation::StartTraversalOutcome, surf_types::obligation::UnmetObligation> {
+        let outcome = self.behaviors.start_traversal(input)?;
+        match &outcome {
+            surf_types::navigation::StartTraversalOutcome::Started { navigation_started, .. } => {
+                self.outbox.push(PublishedEvent::NavigationStarted(navigation_started.clone()));
+            }
+        }
+        Ok(outcome)
+    }
+
+    /// Accepts `surf.navigation.TraverseHistory`: runs the behaviour obligation, then publishes the declared events
+    /// the outcome carries.
+    ///
+    /// `Err` is the typed refusal of an unmet obligation — never a domain outcome, which always
+    /// arrives as a variant of the outcome type, refusals included.
+    pub fn traverse_history(&mut self, input: surf_types::navigation::TraverseHistory) -> Result<surf_types::navigation::TraverseHistoryOutcome, surf_types::obligation::UnmetObligation> {
+        let outcome = self.behaviors.traverse_history(input)?;
+        match &outcome {
+            surf_types::navigation::TraverseHistoryOutcome::Unsupported { .. } => {}
+            surf_types::navigation::TraverseHistoryOutcome::NoEntry { .. } => {}
+            surf_types::navigation::TraverseHistoryOutcome::Requested { traversal_started, .. } => {
+                self.outbox.push(PublishedEvent::TraversalStarted(traversal_started.clone()));
             }
         }
         Ok(outcome)

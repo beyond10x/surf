@@ -41,7 +41,8 @@ fetch-failed <request-id> <reason> <address>
   `Steps`. `<position>` counts the elements of the document from 1.
   `<flags>` is the flags that are set, in the order `hidden`, `disabled`, `checked`,
   `required`, joined by `,`, or `-` when none is. The last field is a link's target or a
-  control's value, or `-` when the element has neither.
+  control's value, or `-` when the element has neither. A `password` element's last field is
+  `(set)` when its value is not empty and `(empty)` when it is, unquoted, never the value.
 - A title, a label, a target and a value are quoted fields: written as an address is (below),
   with `"` written as `\x22`, between two `"`.
 - Fields are separated by one space. An identity is a UUID in lower-case 8-4-4-4-12 form. A

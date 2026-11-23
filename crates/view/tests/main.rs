@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+mod adversary_now;
 mod adversary_view;
 mod http;
 mod json;

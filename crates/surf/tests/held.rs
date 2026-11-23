@@ -24,6 +24,7 @@ fn a_parsed_body_is_held_five_times_until_delivered() {
     let answered = body.clone();
     let transport = move |request: &RequestStarted| Answer::Response {
         url: request.url.0.clone(),
+        method: request.method,
         status: 200,
         media_type: "text/html".to_owned(),
         body: answered.clone(),

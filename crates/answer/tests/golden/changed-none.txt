@@ -1,0 +1,7 @@
+surf 1 session 7f3a open
+token 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+did open
+page none
+path 1 of 1
+  1 open
+changed 0

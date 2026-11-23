@@ -1,0 +1,126 @@
+# A tab loads A, then B, goes back to A, and loads C: the push drops B, the entry after the
+# current one, and C follows A. The traversal's navigation is started with `StartTraversal`, the
+# command `start-on-traversal-started` invokes, because a scenario cannot name the identity a
+# binding's command mints and so could not answer its request. Synthesis cannot arrange it: the
+# entries' standing is written only by `CommitNavigation`'s effects on other rows.
+type: ess-scenario/6
+domain: surf.navigation
+scenario: navigation-push-after-back-drops-forward
+summary: A push after going back drops the entry that was after the current one, and a step forward then finds none.
+
+arrange:
+  - instance: a
+    entity: surf.navigation.Navigation
+  - instance: b
+    entity: surf.navigation.Navigation
+  - instance: back-to-a
+    entity: surf.navigation.Navigation
+  - instance: c
+    entity: surf.navigation.Navigation
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000101
+      url: http://example.org/a
+      method: Get
+    outcome: started
+    capture: {instance: a, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:01Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: a}
+      url: http://example.org/a
+      method: Get
+      status: 200
+      media_type: text/plain
+      body: aGk=
+    outcome: responded
+
+  - at: 2026-01-06T09:00:02Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000101
+      url: http://example.org/b
+      method: Get
+    outcome: started
+    capture: {instance: b, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:03Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: b}
+      url: http://example.org/b
+      method: Get
+      status: 200
+      media_type: text/plain
+      body: aGk=
+    outcome: responded
+
+  - at: 2026-01-06T09:00:04Z
+    command: surf.navigation.StartTraversal
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000101
+      url: http://example.org/a
+      entry_id: {$instance: a}
+      entry_next: {$instance: b}
+    outcome: started
+    capture: {instance: back-to-a, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:05Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: back-to-a}
+      url: http://example.org/a
+      method: Get
+      status: 200
+      media_type: text/plain
+      body: aGk=
+    outcome: responded
+
+  - at: 2026-01-06T09:00:06Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000101
+      url: http://example.org/c
+      method: Get
+    outcome: started
+    capture: {instance: c, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:07Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: c}
+      url: http://example.org/c
+      method: Get
+      status: 200
+      media_type: text/plain
+      body: aGk=
+    outcome: responded
+
+  - at: 2026-01-06T09:00:08Z
+    command: surf.navigation.TraverseHistory
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000101
+      step: forward
+    outcome: no-entry
+    error:
+      name: surf.navigation.NoHistoryEntry
+      fields: {tab_id: 7e5a1b00-0000-4000-8000-000000000101, step: forward}
+
+assert:
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: a}, standing: back, next: {$instance: c}}
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: b}, standing: dropped}
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: c}, standing: current, next: null}
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: back-to-a}, handling: traverse, standing: null, state: Committed}
+  - view: surf.navigation.Navigations
+    counts: {at_least: 4, at_most: 4}

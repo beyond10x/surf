@@ -1,0 +1,12 @@
+surf 1 session 7f3a open
+page 200 "text/html" "http://shop.example/" "Fruit shop"
+path 2 of 2
+  1 open
+  2 go "http://shop.example/"
+now 5 of 5
+  l1 link ? "our offers" -> "/offers"
+  l2 link hid "Members" -> "/members"
+  l3 link ? "Elsewhere" -> "http://other.example/a"
+  l4 link ? "Broken" -> "http://[" unresolved
+  l5 link ? "Sign in to read the archive of everything this site has ever"... -> "/archive"
+note visibility: hidden attribute only

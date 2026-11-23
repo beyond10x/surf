@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T02:54:32Z",
+  "actor": "human:operator",
+  "artifact": "story:test-harness-fewer-processes",
+  "kind": "story",
+  "revision": 27,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "three runs of slot --timeout 15m task test in a row on the tree of d846975, 2026-11-23 03:21 to 03:24 CET, load 114.56 to 85.99 (acceptance 6)",
+    "reference": "test step: 33.1 s, 29.8 s and 40.3 s of its budget of 120 s; 895 tests: 895 passed each; slowest test 3.519 s"
+  }
+}

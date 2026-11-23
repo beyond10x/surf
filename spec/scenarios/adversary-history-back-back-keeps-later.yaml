@@ -1,0 +1,120 @@
+# Adversary case (story:agent-history-spec). Three entries and two steps back, each through
+# TraverseHistory and the navigation start-on-traversal-started starts: A is current, B the entry
+# after it, C later. No authored scenario before this one reaches the standing `later`, so a
+# CommitNavigation effect that moved the old forward entry anywhere else passed the suite.
+type: ess-scenario/6
+domain: surf.navigation
+scenario: adversary-history-back-back-keeps-later
+summary: Two steps back from the third entry make the first current, the second forward and the third later.
+
+arrange:
+  - instance: a
+    entity: surf.navigation.Navigation
+  - instance: b
+    entity: surf.navigation.Navigation
+  - instance: c
+    entity: surf.navigation.Navigation
+  - instance: to-b
+    entity: surf.navigation.Navigation
+  - instance: to-a
+    entity: surf.navigation.Navigation
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input: {tab_id: 7e5a1b00-0000-4000-8000-000000000b01, url: http://example.org/a, method: Get}
+    outcome: started
+    capture: {instance: a, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:01Z
+    command: surf.net.DeliverResponse
+    input: {request_id: {$instance: a}, url: http://example.org/a, method: Get, status: 200, media_type: text/plain, body: aGk=}
+    outcome: responded
+
+  - at: 2026-01-06T09:00:02Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input: {tab_id: 7e5a1b00-0000-4000-8000-000000000b01, url: http://example.org/b, method: Get}
+    outcome: started
+    capture: {instance: b, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:03Z
+    command: surf.net.DeliverResponse
+    input: {request_id: {$instance: b}, url: http://example.org/b, method: Get, status: 200, media_type: text/plain, body: aGk=}
+    outcome: responded
+
+  - at: 2026-01-06T09:00:04Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input: {tab_id: 7e5a1b00-0000-4000-8000-000000000b01, url: http://example.org/c, method: Get}
+    outcome: started
+    capture: {instance: c, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:05Z
+    command: surf.net.DeliverResponse
+    input: {request_id: {$instance: c}, url: http://example.org/c, method: Get, status: 200, media_type: text/plain, body: aGk=}
+    outcome: responded
+
+  - at: 2026-01-06T09:00:06Z
+    command: surf.navigation.TraverseHistory
+    input: {tab_id: 7e5a1b00-0000-4000-8000-000000000b01, step: back}
+    outcome: requested
+    events:
+      - event: surf.navigation.TraversalStarted
+        payload: {tab_id: 7e5a1b00-0000-4000-8000-000000000b01, url: http://example.org/b, entry_id: {$instance: b}, entry_next: {$instance: c}}
+
+  # The navigation start-on-traversal-started starts, with the payload above, issued again so
+  # that the scenario can name it (navigation-push-after-back-drops-forward.yaml says why).
+  - at: 2026-01-06T09:00:07Z
+    command: surf.navigation.StartTraversal
+    input: {tab_id: 7e5a1b00-0000-4000-8000-000000000b01, url: http://example.org/b, entry_id: {$instance: b}, entry_next: {$instance: c}}
+    outcome: started
+    capture: {instance: to-b, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:08Z
+    command: surf.net.DeliverResponse
+    input: {request_id: {$instance: to-b}, url: http://example.org/b, method: Get, status: 200, media_type: text/plain, body: aGk=}
+    outcome: responded
+
+  - at: 2026-01-06T09:00:09Z
+    command: surf.navigation.TraverseHistory
+    input: {tab_id: 7e5a1b00-0000-4000-8000-000000000b01, step: back}
+    outcome: requested
+    events:
+      - event: surf.navigation.TraversalStarted
+        payload: {tab_id: 7e5a1b00-0000-4000-8000-000000000b01, url: http://example.org/a, entry_id: {$instance: a}, entry_next: {$instance: b}}
+
+  - at: 2026-01-06T09:00:10Z
+    command: surf.navigation.StartTraversal
+    input: {tab_id: 7e5a1b00-0000-4000-8000-000000000b01, url: http://example.org/a, entry_id: {$instance: a}, entry_next: {$instance: b}}
+    outcome: started
+    capture: {instance: to-a, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:11Z
+    command: surf.net.DeliverResponse
+    input: {request_id: {$instance: to-a}, url: http://example.org/a, method: Get, status: 200, media_type: text/plain, body: aGk=}
+    outcome: responded
+
+  - at: 2026-01-06T09:00:12Z
+    command: surf.navigation.TraverseHistory
+    input: {tab_id: 7e5a1b00-0000-4000-8000-000000000b01, step: back}
+    outcome: no-entry
+    error:
+      name: surf.navigation.NoHistoryEntry
+      fields: {tab_id: 7e5a1b00-0000-4000-8000-000000000b01, step: back}
+
+assert:
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: a}, standing: current, next: {$instance: b}}
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: b}, standing: forward, next: {$instance: c}}
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: c}, standing: later, next: null}
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: to-b}, handling: traverse, standing: null, state: Committed}
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: to-a}, handling: traverse, standing: null, state: Committed}
+  # The three entries, the two traversals above, and the two start-on-traversal-started started.
+  - view: surf.navigation.Navigations
+    counts: {at_least: 7, at_most: 7}

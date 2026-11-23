@@ -240,6 +240,45 @@ fn a_non_html_response_is_not_parsed() {
     );
 }
 
+/// Story values-and-labels-before-fill, acceptance 1: the `element` line of a `password` control
+/// ends in `(set)` or `(empty)`, never its value; a `text` control's line ends in its value.
+#[test]
+fn a_password_value_is_printed_as_set_or_empty() {
+    let transport = |request: &RequestStarted| Answer::Response {
+        url: request.url.0.clone(),
+        method: request.method,
+        status: 200,
+        media_type: "text/html".to_owned(),
+        body: b"<input type=password value=\"pw-marker\"><input type=password>\
+<input type=text value=\"tx-marker\">"
+            .to_vec(),
+    };
+    let mut browser = Browser::from_ports(ComponentPorts::new(), transport);
+    let report = browser.load("http://127.0.0.1/form").expect("load");
+    let lines = report.lines();
+    let elements: Vec<&String> = lines
+        .iter()
+        .filter(|line| line.starts_with("element "))
+        .collect();
+    assert_eq!(elements.len(), 3, "{lines:?}");
+    assert!(
+        elements[0].contains(" 1 password ") && elements[0].ends_with(" (set)"),
+        "{lines:?}"
+    );
+    assert!(
+        elements[1].contains(" 2 password ") && elements[1].ends_with(" (empty)"),
+        "{lines:?}"
+    );
+    assert!(
+        elements[2].contains(" 3 text ") && elements[2].ends_with(" \"tx-marker\""),
+        "{lines:?}"
+    );
+    assert!(
+        !lines.iter().any(|line| line.contains("pw-marker")),
+        "{lines:?}"
+    );
+}
+
 // --- The parser's limits, each set small ---------------------------------------------------------
 
 /// The page every limit case starts with: a title and the link `/a`, both before the limit.
@@ -258,6 +297,7 @@ fn parsed_within(
 ) -> (Vec<String>, String) {
     let transport = move |request: &RequestStarted| Answer::Response {
         url: request.url.0.clone(),
+        method: request.method,
         status: 200,
         media_type: "text/html".to_owned(),
         body: body.clone().into_bytes(),

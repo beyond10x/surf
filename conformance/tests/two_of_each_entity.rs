@@ -14,8 +14,8 @@ use ess_conformance::target::ImplementationIdentity;
 use surf::{Browser, System};
 use surf_conformance::{SurfTarget, Unanswered, run};
 use surf_ports::{
-    NavigatorPorts, NetPorts, RendererPorts, ShellPorts, agent_port, document_port, navigator_port,
-    net_port, renderer_port, shell_port,
+    NavigatorPorts, NetPorts, RendererPorts, ShellPorts, agent_port, commit_navigation,
+    document_port, navigator_port, net_port, renderer_port, shell_port, traverse_history,
 };
 use surf_types::agent::obligations::{
     NoteNavigationCommittedBehavior, NoteNavigationEndedBehavior, NoteNavigationFailedBehavior,
@@ -38,8 +38,12 @@ use surf_types::document::{
     FormSnapshot, ListOptionSnapshot, OptionId, SelectOption, SelectOptionOutcome, SubmissionId,
     SubmissionSnapshot,
 };
-use surf_types::navigation::NavigationSnapshot;
-use surf_types::net::{RequestId, RequestSnapshot};
+use surf_types::navigation::obligations::{CommitNavigationBehavior, TraverseHistoryBehavior};
+use surf_types::navigation::{
+    CommitNavigation, CommitNavigationOutcome, NavigationSnapshot, TraverseHistory,
+    TraverseHistoryOutcome,
+};
+use surf_types::net::{MediaType, RequestId, RequestSnapshot};
 use surf_types::obligation::UnmetObligation;
 use surf_types::primitives::Uuid;
 use surf_types::render::{FrameId, FrameSnapshot};
@@ -213,6 +217,26 @@ planted_obligation!(
     SelectOptionOutcome
 );
 
+/// The `navigator` component's obligations, met over the planted storage itself: they read and
+/// write a tab's entries through it, as the component's generated behaviours do.
+impl<P: NavigationStorage> CommitNavigationBehavior for Planted<P> {
+    fn commit_navigation(
+        &mut self,
+        input: CommitNavigation,
+    ) -> Result<CommitNavigationOutcome, UnmetObligation> {
+        commit_navigation(self, input)
+    }
+}
+
+impl<P: NavigationStorage> TraverseHistoryBehavior for Planted<P> {
+    fn traverse_history(
+        &mut self,
+        input: TraverseHistory,
+    ) -> Result<TraverseHistoryOutcome, UnmetObligation> {
+        traverse_history(self, input)
+    }
+}
+
 fn same() -> Uuid {
     Uuid(SAME.to_owned())
 }
@@ -220,6 +244,20 @@ fn same() -> Uuid {
 impl<P: TryContext> TryContext for Planted<P> {
     fn try_caller_session_id(&self) -> Result<Option<SessionId>, UnmetObligation> {
         self.inner.try_caller_session_id()
+    }
+
+    fn try_generate_optional_string(&mut self) -> Result<Option<String>, UnmetObligation> {
+        self.inner.try_generate_optional_string()
+    }
+
+    fn try_generate_optional_bytes(&mut self) -> Result<Option<Vec<u8>>, UnmetObligation> {
+        self.inner.try_generate_optional_bytes()
+    }
+
+    fn try_generate_optional_surf_net_media_type(
+        &mut self,
+    ) -> Result<Option<MediaType>, UnmetObligation> {
+        self.inner.try_generate_optional_surf_net_media_type()
     }
 
     fn try_generate_surf_agent_action_id(&mut self) -> Result<ActionId, UnmetObligation> {

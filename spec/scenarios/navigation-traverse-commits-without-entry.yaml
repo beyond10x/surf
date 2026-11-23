@@ -1,0 +1,129 @@
+# A step back that commits makes the entry it went to current and adds none: after A and B, a step
+# back asks for A, its navigation commits, A is current, B is the entry after it, and the
+# traversal's own navigation is no entry. A step forward then asks for B. The traversal's
+# navigation is started with `StartTraversal`, for the reason
+# `navigation-push-after-back-drops-forward.yaml` gives; synthesis cannot arrange it for that
+# reason too.
+type: ess-scenario/6
+domain: surf.navigation
+scenario: navigation-traverse-commits-without-entry
+summary: A committed step back makes the entry it went to current, adds no entry, and leaves the entry after it to step forward to.
+
+arrange:
+  - instance: a
+    entity: surf.navigation.Navigation
+  - instance: b
+    entity: surf.navigation.Navigation
+  - instance: back-to-a
+    entity: surf.navigation.Navigation
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000501
+      url: http://example.org/a
+      method: Get
+    outcome: started
+    capture: {instance: a, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:01Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: a}
+      url: http://example.org/a
+      method: Get
+      status: 200
+      media_type: text/plain
+      body: aGk=
+    outcome: responded
+
+  - at: 2026-01-06T09:00:02Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000501
+      url: http://example.org/b
+      method: Get
+    outcome: started
+    capture: {instance: b, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:03Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: b}
+      url: http://example.org/b
+      method: Get
+      status: 200
+      media_type: text/plain
+      body: aGk=
+    outcome: responded
+
+  - at: 2026-01-06T09:00:04Z
+    command: surf.navigation.TraverseHistory
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000501
+      step: back
+    outcome: requested
+    events:
+      - event: surf.navigation.TraversalStarted
+        payload:
+          tab_id: 7e5a1b00-0000-4000-8000-000000000501
+          url: http://example.org/a
+          entry_id: {$instance: a}
+          entry_next: {$instance: b}
+
+  - at: 2026-01-06T09:00:05Z
+    command: surf.navigation.StartTraversal
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000501
+      url: http://example.org/a
+      entry_id: {$instance: a}
+      entry_next: {$instance: b}
+    outcome: started
+    events:
+      - event: surf.navigation.NavigationStarted
+        payload:
+          tab_id: 7e5a1b00-0000-4000-8000-000000000501
+          url: http://example.org/a
+          method: Get
+    capture: {instance: back-to-a, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:06Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: back-to-a}
+      url: http://example.org/a
+      method: Get
+      status: 200
+      media_type: text/plain
+      body: aGk=
+    outcome: responded
+
+  - at: 2026-01-06T09:00:07Z
+    command: surf.navigation.TraverseHistory
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000501
+      step: forward
+    outcome: requested
+    events:
+      - event: surf.navigation.TraversalStarted
+        payload:
+          tab_id: 7e5a1b00-0000-4000-8000-000000000501
+          url: http://example.org/b
+          entry_id: {$instance: b}
+
+assert:
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: a}, standing: current, next: {$instance: b}}
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: b}, standing: forward}
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: back-to-a}, handling: traverse, entry_id: {$instance: a}, standing: null, state: Committed}
+  - view: surf.net.Requests
+    contains: {request_id: {$instance: back-to-a}, url: http://example.org/a, method: Get}
+  # The step forward's navigation, which `start-on-traversal-started` started: B has no entry
+  # after it.
+  - view: surf.navigation.Navigations
+    contains: {url: http://example.org/b, handling: traverse, entry_id: {$instance: b}, entry_next: null, state: Started}

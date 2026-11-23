@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 1fa135dfaf753fab3e34de8ae9a4a7052216d1878fc9d395075ce5cd5ac673a6
+// contract digest aac42d8ac87218cacd79d661cdfc6da87c457bcea21b6e55cbec893553faf526
 // do not edit: regenerate with `ess synthesize`
 
 //! Navigation — `surf.navigation`.
@@ -7,6 +7,17 @@
 //! Taking a tab from one address to another, from the request to the committed page.
 //!
 //! Everything this bounded context declares that the synthesis plan marks generated.
+
+/// HistoryHandling — `surf.navigation.HistoryHandling`: one of a closed set of names.
+///
+/// What a navigation's commit does to its tab's session history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HistoryHandling {
+    /// `push`.
+    Push,
+    /// `traverse`.
+    Traverse,
+}
 
 /// The states of `surf.navigation.Navigation`, as runtime values.
 ///
@@ -24,6 +35,25 @@ pub enum NavigationState {
     Started,
 }
 
+/// Standing — `surf.navigation.Standing`: one of a closed set of names.
+///
+/// Where a session history entry stands from its tab's current entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Standing {
+    /// `earlier`.
+    Earlier,
+    /// `back`.
+    Back,
+    /// `current`.
+    Current,
+    /// `forward`.
+    Forward,
+    /// `later`.
+    Later,
+    /// `dropped`.
+    Dropped,
+}
+
 /// What Navigation — `surf.navigation.Navigation` — holds, apart from where it is in its lifecycle.
 ///
 /// The identity and every declared field. The state is deliberately not one: inside the domain it
@@ -38,6 +68,24 @@ pub struct NavigationData {
     pub tab_id: crate::shell::TabId,
     /// `url` — `surf.url.Url`.
     pub url: crate::url::Url,
+    /// `method` — `surf.net.Method`.
+    pub method: crate::net::Method,
+    /// `handling` — `surf.navigation.HistoryHandling`.
+    pub handling: HistoryHandling,
+    /// `standing` — `Optional<surf.navigation.Standing>`.
+    pub standing: Option<Standing>,
+    /// `next` — `Optional<surf.net.RequestId>`.
+    ///
+    /// Carries `next`: `surf.navigation.Navigation` references one `surf.navigation.Navigation`.
+    pub next: Option<crate::net::RequestId>,
+    /// `entry_id` — `Optional<surf.net.RequestId>`.
+    ///
+    /// Carries `entry`: `surf.navigation.Navigation` references one `surf.navigation.Navigation`.
+    pub entry_id: Option<crate::net::RequestId>,
+    /// `entry_next` — `Optional<surf.net.RequestId>`.
+    ///
+    /// Carries `entry_next`: `surf.navigation.Navigation` references one `surf.navigation.Navigation`.
+    pub entry_next: Option<crate::net::RequestId>,
 }
 
 /// The states of `surf.navigation.Navigation`, at the type level.
@@ -129,7 +177,7 @@ impl Navigation<navigation_state::Started> {
 }
 
 impl Navigation<navigation_state::Started> {
-    /// `commit` — `Started` → `Committed`. Taken by the `committed` outcome of `surf.navigation.CommitNavigation`.
+    /// `commit` — `Started` → `Committed`. Taken by the `traversed` outcome of `surf.navigation.CommitNavigation`, the `committed` outcome of `surf.navigation.CommitNavigation`.
     pub fn commit(self) -> Navigation<navigation_state::Committed> {
         Navigation {
             data: self.data,
@@ -289,6 +337,8 @@ pub struct CommitNavigation {
     pub navigation_id: crate::net::RequestId,
     /// `url` — `surf.url.Url`.
     pub url: crate::url::Url,
+    /// `method` — `surf.net.Method`.
+    pub method: crate::net::Method,
     /// `status` — `surf.net.Status`.
     pub status: crate::net::Status,
     /// `media_type` — `surf.net.MediaType`.
@@ -309,9 +359,16 @@ pub enum CommitNavigationOutcome {
         /// Why it was refused: `surf.navigation.NavigationNotFound`.
         error: NavigationNotFound,
     },
+    /// `traversed` — when the existing subject's stored fields satisfy `handling == traverse`.
+    ///
+    /// The navigation is Committed and the entry it went to is current.
+    Traversed {
+        /// The `surf.navigation.NavigationCommitted` this outcome publishes.
+        navigation_committed: NavigationCommitted,
+    },
     /// `committed` — otherwise.
     ///
-    /// The navigation is Committed.
+    /// The navigation is Committed and is its tab's current entry, after the one that was current; the entries after that one are dropped.
     Committed {
         /// The `surf.navigation.NavigationCommitted` this outcome publishes.
         navigation_committed: NavigationCommitted,
@@ -401,6 +458,82 @@ pub enum NavigateOutcome {
     },
 }
 
+/// Start a traversal — the input of `surf.navigation.StartTraversal`.
+///
+/// Start loading a session history entry's address into its tab.
+///
+/// Everything it can result in is [`StartTraversalOutcome`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StartTraversal {
+    /// `tab_id` — `surf.shell.TabId`.
+    pub tab_id: crate::shell::TabId,
+    /// `url` — `surf.url.Url`.
+    pub url: crate::url::Url,
+    /// `entry_id` — `surf.net.RequestId`.
+    pub entry_id: crate::net::RequestId,
+    /// `entry_next` — `Optional<surf.net.RequestId>`.
+    pub entry_next: Option<crate::net::RequestId>,
+}
+
+/// Everything `surf.navigation.StartTraversal` can result in — one variant per declared outcome.
+///
+/// An infrastructure failure is deliberately not in here: a refusal is a fact about the domain,
+/// a transport fault is a fact about the run, and conflating the two is what the declared
+/// outcomes exist to prevent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StartTraversalOutcome {
+    /// `started` — otherwise.
+    ///
+    /// The traversal's navigation is Started and the entry's address is to be fetched.
+    Started {
+        /// The `surf.navigation.NavigationStarted` this outcome publishes.
+        navigation_started: NavigationStarted,
+    },
+}
+
+/// Traverse the history — the input of `surf.navigation.TraverseHistory`.
+///
+/// Ask to load the entry before or after a tab's current one.
+///
+/// Everything it can result in is [`TraverseHistoryOutcome`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TraverseHistory {
+    /// `tab_id` — `surf.shell.TabId`.
+    pub tab_id: crate::shell::TabId,
+    /// `step` — `surf.navigation.Standing`.
+    pub step: Standing,
+}
+
+/// Everything `surf.navigation.TraverseHistory` can result in — one variant per declared outcome.
+///
+/// An infrastructure failure is deliberately not in here: a refusal is a fact about the domain,
+/// a transport fault is a fact about the run, and conflating the two is what the declared
+/// outcomes exist to prevent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TraverseHistoryOutcome {
+    /// `unsupported` — when `(step != back and step != forward)`.
+    ///
+    /// Only one step back or forward is traversed.
+    Unsupported {
+        /// Why it was refused: `surf.navigation.TraversalUnsupported`.
+        error: TraversalUnsupported,
+    },
+    /// `no-entry` — when, of the `surf.navigation.Navigation` rows satisfying `(tab_id == input.tab_id and defined(standing) and standing == input.step and method == Get)`, no row is selected.
+    ///
+    /// No entry made by GET is there.
+    NoEntry {
+        /// Why it was refused: `surf.navigation.NoHistoryEntry`.
+        error: NoHistoryEntry,
+    },
+    /// `requested` — otherwise.
+    ///
+    /// The tab is to load the entry's address.
+    Requested {
+        /// The `surf.navigation.TraversalStarted` this outcome publishes.
+        traversal_started: TraversalStarted,
+    },
+}
+
 /// NavigationCancelled — the event `surf.navigation.NavigationCancelled`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NavigationCancelled {
@@ -457,6 +590,19 @@ pub struct NavigationStarted {
     pub body_type: Option<crate::net::MediaType>,
 }
 
+/// TraversalStarted — the event `surf.navigation.TraversalStarted`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TraversalStarted {
+    /// `tab_id` — `surf.shell.TabId`.
+    pub tab_id: crate::shell::TabId,
+    /// `url` — `surf.url.Url`.
+    pub url: crate::url::Url,
+    /// `entry_id` — `surf.net.RequestId`.
+    pub entry_id: crate::net::RequestId,
+    /// `entry_next` — `Optional<surf.net.RequestId>`.
+    pub entry_next: Option<crate::net::RequestId>,
+}
+
 /// The declared error `surf.navigation.NavigationNotFound`.
 ///
 /// No navigation has this identity.
@@ -475,6 +621,26 @@ pub struct NavigationStateConflict {
     pub state: NavigationState,
 }
 
+/// The declared error `surf.navigation.NoHistoryEntry`.
+///
+/// The tab has no entry at that step from its current one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NoHistoryEntry {
+    /// `tab_id` — `surf.shell.TabId`.
+    pub tab_id: crate::shell::TabId,
+    /// `step` — `surf.navigation.Standing`.
+    pub step: Standing,
+}
+
+/// The declared error `surf.navigation.TraversalUnsupported`.
+///
+/// Only one step back or one step forward is traversed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TraversalUnsupported {
+    /// `step` — `surf.navigation.Standing`.
+    pub step: Standing,
+}
+
 /// Navigations — one row of the view `surf.navigation.Navigations`.
 ///
 /// Projects `surf.navigation.Navigation` at `read_your_writes` consistency.
@@ -490,12 +656,25 @@ pub struct Navigations {
     pub url: crate::url::Url,
     /// `state` — `surf.navigation.Navigation.State`.
     pub state: NavigationState,
+    /// `method` — `surf.net.Method`.
+    pub method: crate::net::Method,
+    /// `handling` — `surf.navigation.HistoryHandling`.
+    pub handling: HistoryHandling,
+    /// `standing` — `Optional<surf.navigation.Standing>`.
+    pub standing: Option<Standing>,
+    /// `next` — `Optional<surf.net.RequestId>`.
+    pub next: Option<crate::net::RequestId>,
+    /// `entry_id` — `Optional<surf.net.RequestId>`.
+    pub entry_id: Option<crate::net::RequestId>,
+    /// `entry_next` — `Optional<surf.net.RequestId>`.
+    pub entry_next: Option<crate::net::RequestId>,
 }
 
 /// What this bounded context owes its implementor, and the seams of what is generated.
 ///
 /// One trait per obligation in the synthesis plan, each carrying the plan's own contract, and one
 /// per generated behaviour, which [`Generated`](crate::behaviour::Generated) implements.
+/// [`Unimplemented`](obligations::Unimplemented) satisfies every owed trait by refusing in the type system.
 pub mod obligations {
     /// The behaviour `surf.navigation.CancelNavigation` — generated.
     ///
@@ -508,14 +687,16 @@ pub mod obligations {
         fn cancel_navigation(&mut self, input: super::CancelNavigation) -> Result<super::CancelNavigationOutcome, crate::obligation::UnmetObligation>;
     }
 
-    /// The behaviour `surf.navigation.CommitNavigation` — generated.
+    /// The behaviour `surf.navigation.CommitNavigation` — an implementation obligation.
     ///
-    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
-    /// over the storage and context ports. Implement it yourself to replace that behaviour.
+    /// Why it is not generated: kept an obligation by effects on filtered rows (`affects:`), in `traversed`.
+    ///
+    /// Contract: given `surf.navigation.CommitNavigation` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `no-such-navigation` for an identity no record carries, error `surf.navigation.NavigationNotFound`; `traversed` when the existing subject's stored fields satisfy `handling == traverse`, takes `commit` of `surf.navigation.Navigation`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and standing == back)`, setting `standing`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and standing == forward)`, setting `standing`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and standing == current)`, setting `standing`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and next == subject.entry_id)`, setting `standing`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and navigation_id == subject.entry_next)`, setting `standing`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and navigation_id == subject.entry_id)`, setting `standing`, emits `surf.navigation.NavigationCommitted`; `committed` otherwise, takes `commit` of `surf.navigation.Navigation`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and (standing == forward or standing == later))`, setting `standing`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and standing == back)`, setting `standing`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and standing == current)`, setting `standing`, `next`, changes, beside its subject, every `surf.navigation.Navigation` where `(tab_id == subject.tab_id and handling == traverse and state == Started)`, moving it along `cancel` (a row resting outside its `from` states is left as it is), emits `surf.navigation.NavigationCommitted`; `wrong-state` from a state no declared move starts in, error `surf.navigation.NavigationStateConflict`.
     pub trait CommitNavigationBehavior {
         /// Decides and enacts exactly one declared outcome of `surf.navigation.CommitNavigation`.
         ///
-        /// `Err` is the typed refusal of a request the model declares no outcome for.
+        /// `Err` is the typed refusal of an obligation nothing has satisfied; a satisfying
+        /// implementation never returns it.
         fn commit_navigation(&mut self, input: super::CommitNavigation) -> Result<super::CommitNavigationOutcome, crate::obligation::UnmetObligation>;
     }
 
@@ -541,6 +722,30 @@ pub mod obligations {
         fn navigate(&mut self, input: super::Navigate) -> Result<super::NavigateOutcome, crate::obligation::UnmetObligation>;
     }
 
+    /// The behaviour `surf.navigation.StartTraversal` — generated.
+    ///
+    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
+    /// over the storage and context ports. Implement it yourself to replace that behaviour.
+    pub trait StartTraversalBehavior {
+        /// Decides and enacts exactly one declared outcome of `surf.navigation.StartTraversal`.
+        ///
+        /// `Err` is the typed refusal of a request the model declares no outcome for.
+        fn start_traversal(&mut self, input: super::StartTraversal) -> Result<super::StartTraversalOutcome, crate::obligation::UnmetObligation>;
+    }
+
+    /// The behaviour `surf.navigation.TraverseHistory` — an implementation obligation.
+    ///
+    /// Why it is not generated: kept an obligation by a guard over the rows a selector selects (`when_related: {entity, where, exists | count | forall}`), in `no-entry`.
+    ///
+    /// Contract: given `surf.navigation.TraverseHistory` input, decide and enact exactly one outcome. Declared outcomes (declaration order, not selection precedence): `unsupported` when `(step != back and step != forward)`, error `surf.navigation.TraversalUnsupported`; `no-entry` when, of the `surf.navigation.Navigation` rows satisfying `(tab_id == input.tab_id and defined(standing) and standing == input.step and method == Get)`, no row is selected, error `surf.navigation.NoHistoryEntry`; `requested` otherwise, emits `surf.navigation.TraversalStarted`.
+    pub trait TraverseHistoryBehavior {
+        /// Decides and enacts exactly one declared outcome of `surf.navigation.TraverseHistory`.
+        ///
+        /// `Err` is the typed refusal of an obligation nothing has satisfied; a satisfying
+        /// implementation never returns it.
+        fn traverse_history(&mut self, input: super::TraverseHistory) -> Result<super::TraverseHistoryOutcome, crate::obligation::UnmetObligation>;
+    }
+
     /// The query `surf.navigation.Navigations` — generated.
     ///
     /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
@@ -552,4 +757,21 @@ pub mod obligations {
         fn navigations(&self) -> Result<Vec<super::Navigations>, crate::obligation::UnmetObligation>;
     }
 
+    /// Every obligation of this bounded context, refused in the type system.
+    ///
+    /// Each method returns the typed refusal naming what is owed — never a panic, never a guessed
+    /// value — so a workspace built on this stub compiles and reports its own gaps.
+    pub struct Unimplemented;
+
+    impl CommitNavigationBehavior for Unimplemented {
+        fn commit_navigation(&mut self, _input: super::CommitNavigation) -> Result<super::CommitNavigationOutcome, crate::obligation::UnmetObligation> {
+            Err(crate::obligation::UnmetObligation { capability: "command behaviour", source: "surf.navigation.CommitNavigation" })
+        }
+    }
+
+    impl TraverseHistoryBehavior for Unimplemented {
+        fn traverse_history(&mut self, _input: super::TraverseHistory) -> Result<super::TraverseHistoryOutcome, crate::obligation::UnmetObligation> {
+            Err(crate::obligation::UnmetObligation { capability: "command behaviour", source: "surf.navigation.TraverseHistory" })
+        }
+    }
 }

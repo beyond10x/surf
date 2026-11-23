@@ -3,7 +3,7 @@
 //! parser's table: [`parse`] reads the words through them and nothing else, and the test `drift`
 //! holds them to `.out/cli/binding.json`, which `task cli` writes from the document.
 //!
-//! The differences from the document are its three `UNMAPPED:` markers, and only those:
+//! The differences from the document are its five `UNMAPPED:` markers, and only those:
 //!
 //! - (a) `ess-cli/2` has no environment source. The parser reads the session from `SURF_SESSION`
 //!   when `--session` is absent and the token from `SURF_TOKEN` when `--token-file` is absent;
@@ -13,6 +13,11 @@
 //!   or a terminal ([`Source::TokenStdin`], [`Source::TokenPrompt`]).
 //! - (c) the state global `--session-dir`, which `ess-cli/2` requires. The parser refuses it with
 //!   exit 2 and touches no path; the directory is `$XDG_RUNTIME_DIR/surf/` always ([`GLOBALS`]).
+//! - (d) the value word `-` of `fill` ([`STDIN_VALUE`]). The parser keeps the word; the client
+//!   reads the value from standard input in its place ([`crate::client::run_with_input`]).
+//! - (e) `--` ends the options of every command: every word after it is a positional, one that
+//!   starts with `-` included, and the value word `-` after it is one dash, not standard input
+//!   ([`Call::stdin`]).
 //!
 //! The token is never an argument word: no option takes it, because other local users can read
 //! a process's arguments. It is read from `SURF_TOKEN` or from a file that is a regular file, not
@@ -131,6 +136,38 @@ const URL_OPTIONAL: Argument = Argument {
     }],
 };
 
+const HANDLE: Argument = Argument {
+    field: "handle",
+    sources: &[Source::Positional {
+        index: 1,
+        required: true,
+    }],
+};
+
+const VALUE: Argument = Argument {
+    field: "value",
+    sources: &[Source::Positional {
+        index: 2,
+        required: true,
+    }],
+};
+
+const OPTION: Argument = Argument {
+    field: "option",
+    sources: &[Source::Positional {
+        index: 2,
+        required: true,
+    }],
+};
+
+const COUNT: Argument = Argument {
+    field: "count",
+    sources: &[Source::Positional {
+        index: 1,
+        required: false,
+    }],
+};
+
 const SESSION: Argument = Argument {
     field: "session_id",
     sources: &[
@@ -168,9 +205,12 @@ const FROM_LINE: Argument = Argument {
 /// The forms `--as` takes, the variants of `surf.agent.PageForm`.
 pub const FORMS: &[&str] = &["tree", "markdown"];
 
-/// The commands: `open [<url>]`, `go <url>`, `look`, `close`. `open` takes no session and no
-/// token. `open`, `go` and `look` take `--as tree|markdown [--from-line <n>]`; `open` only with
-/// an address.
+/// The commands: `open [<url>]`, `go <url>`, `look`, `follow <handle>`, `fill <handle> <value>`,
+/// `pick <handle> <option>`, `press <handle>`, `back`, `forward`, `log [<n>]`, `close`. `open`
+/// takes no session and no token.
+/// `open`, `go` and `look` take `--as tree|markdown [--from-line <n>]`; `open` only with an
+/// address. The value `-` of `fill` is read from standard input by the client
+/// ([`STDIN_VALUE`]).
 pub const COMMANDS: &[Command] = &[
     Command {
         name: "open",
@@ -183,6 +223,34 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "look",
         arguments: &[SESSION, TOKEN, FORM, FROM_LINE],
+    },
+    Command {
+        name: "follow",
+        arguments: &[HANDLE, SESSION, TOKEN],
+    },
+    Command {
+        name: "fill",
+        arguments: &[HANDLE, VALUE, SESSION, TOKEN],
+    },
+    Command {
+        name: "pick",
+        arguments: &[HANDLE, OPTION, SESSION, TOKEN],
+    },
+    Command {
+        name: "press",
+        arguments: &[HANDLE, SESSION, TOKEN],
+    },
+    Command {
+        name: "back",
+        arguments: &[SESSION, TOKEN],
+    },
+    Command {
+        name: "forward",
+        arguments: &[SESSION, TOKEN],
+    },
+    Command {
+        name: "log",
+        arguments: &[COUNT, SESSION, TOKEN],
     },
     Command {
         name: "close",
@@ -202,12 +270,31 @@ pub const USAGE: &str = "\
 usage: surf-agent open [<url>] [--as tree|markdown [--from-line <n>]]
        surf-agent go <url> [--session <id>] [--token-file <path>] [--as tree|markdown [--from-line <n>]]
        surf-agent look [--session <id>] [--token-file <path>] [--as tree|markdown [--from-line <n>]]
+       surf-agent follow <handle> [--session <id>] [--token-file <path>]
+       surf-agent fill <handle> <value>|- [--session <id>] [--token-file <path>]
+       surf-agent pick <handle> <option>|on|off [--session <id>] [--token-file <path>]
+       surf-agent press <handle> [--session <id>] [--token-file <path>]
+       surf-agent back [--session <id>] [--token-file <path>]
+       surf-agent forward [--session <id>] [--token-file <path>]
+       surf-agent log [<n>] [--session <id>] [--token-file <path>]
        surf-agent close [--session <id>] [--token-file <path>]
 The session comes from --session or SURF_SESSION, the token from --token-file or SURF_TOKEN.
 A token file is a regular file of yours that group and others cannot read (mode 0600).
 --as prints the page as an outline of its tree or as Markdown, from line --from-line (from 1);
 open takes it only with an address.
+follow, fill, pick and press take a handle of the now block of the last answer, such as l3,
+f1 or b1.
+fill - reads the value from standard input; give a secret that way, since other users can
+read the words of a command. A value of up to 16000 bytes from standard input always fits.
+pick takes an option's label or value, or on or off for a box.
+log lists every action of the session, or the last <n> (from 1).
+-- ends the options: a word after it is an argument even when it starts with -
+(fill f1 -- -5, pick f2 -- \"-- choose --\"; fill f1 -- - fills one dash).
 ";
+
+/// The value word of `fill` that the client replaces by standard input, without one line feed
+/// at its end: the marker `UNMAPPED:` at `fill` in `cli/surf-agent.yaml`.
+pub const STDIN_VALUE: &str = "-";
 
 /// What the parser reads from the process: the environment and the program's directory. Its
 /// `Debug` does not write the token.
@@ -249,8 +336,8 @@ impl fmt::Debug for Environment {
 }
 
 /// A call the parser read: the command and its values. Its `Debug` writes the token as
-/// `Token(..)`.
-#[derive(Clone, Debug)]
+/// `Token(..)` and the value of `fill` as its length in bytes.
+#[derive(Clone)]
 pub struct Call {
     /// The command word.
     pub command: &'static str,
@@ -260,15 +347,51 @@ pub struct Call {
     pub token: Option<Token>,
     /// The address, for `go` and an `open` given one.
     pub url: Option<String>,
+    /// The handle, for `follow`, `fill` and `pick`.
+    pub handle: Option<String>,
+    /// The value word of `fill`; [`STDIN_VALUE`] until the client reads standard input. The
+    /// `Debug` of the call writes only its length.
+    pub value: Option<String>,
+    /// The option word of `pick`.
+    pub option: Option<String>,
     /// The form of `--as`, one of [`FORMS`].
     pub form: Option<&'static str>,
     /// The line of `--from-line`, from 1; only beside [`Call::form`].
     pub from_line: Option<u64>,
+    /// How many of the last actions `log` lists, from 1; `None` for every action.
+    pub count: Option<u64>,
+    /// The value of `fill` is read from standard input: its word is [`STDIN_VALUE`], given before
+    /// any `--` (after `--` the word `-` is a value of one dash).
+    pub stdin: bool,
+}
+
+impl fmt::Debug for Call {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Call")
+            .field("command", &self.command)
+            .field("session", &self.session)
+            .field("token", &self.token)
+            .field("url", &self.url)
+            .field("handle", &self.handle)
+            .field(
+                "value",
+                &self
+                    .value
+                    .as_ref()
+                    .map(|value| format!("{} bytes", value.len())),
+            )
+            .field("option", &self.option)
+            .field("form", &self.form)
+            .field("from_line", &self.from_line)
+            .field("count", &self.count)
+            .field("stdin", &self.stdin)
+            .finish()
+    }
 }
 
 impl Call {
-    /// The request of the wire for this call: `arg url`, `arg form` and `arg line`, each when
-    /// the call has it.
+    /// The request of the wire for this call: `arg url`, `arg handle`, `arg value`, `arg option`,
+    /// `arg form`, `arg line` and `arg count`, each when the call has it.
     pub fn request(&self) -> Request {
         let arg = |name: &str, value: String| Arg {
             name: name.to_string(),
@@ -276,8 +399,12 @@ impl Call {
         };
         let args = [
             self.url.clone().map(|url| arg("url", url)),
+            self.handle.clone().map(|handle| arg("handle", handle)),
+            self.value.clone().map(|value| arg("value", value)),
+            self.option.clone().map(|option| arg("option", option)),
             self.form.map(|form| arg("form", form.to_string())),
             self.from_line.map(|line| arg("line", line.to_string())),
+            self.count.map(|count| arg("count", count.to_string())),
         ];
         Request {
             command: self.command.to_string(),
@@ -311,15 +438,19 @@ fn usage(message: impl Into<String>) -> UsageError {
 /// address), then the token, then the session, then the address.
 pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
     let mut command: Option<&'static Command> = None;
-    let mut positionals: Vec<&OsStr> = Vec::new();
+    // Each positional word, and whether it came after `--`.
+    let mut positionals: Vec<(&OsStr, bool)> = Vec::new();
     let mut given: Vec<(&'static Source, OsString)> = Vec::new();
+    let mut options_ended = false;
     let mut index = 0;
     while index < args.len() {
         let number = index + 1;
         let word = &args[index];
         index += 1;
         let bytes = word.as_encoded_bytes();
-        if let Some(rest) = bytes.strip_prefix(b"--") {
+        if !options_ended && bytes == b"--" {
+            options_ended = true;
+        } else if let Some(rest) = bytes.strip_prefix(b"--").filter(|_| !options_ended) {
             let (name, inline) = match rest.iter().position(|&b| b == b'=') {
                 Some(at) => (&rest[..at], Some(&rest[at + 1..])),
                 None => (rest, None),
@@ -342,7 +473,8 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
                 .find(|source| source.long().is_some_and(|long| long.as_bytes() == name))
             else {
                 return Err(usage(format!(
-                    "word {number} is not an option of {}; no option takes the token",
+                    "word {number} is not an option of {}; no option takes the token; -- before it makes \
+                     it an argument",
                     current.name
                 )));
             };
@@ -376,9 +508,9 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
                 )));
             }
             given.push((source, value));
-        } else if bytes.len() > 1 && bytes[0] == b'-' {
+        } else if !options_ended && bytes.len() > 1 && bytes[0] == b'-' {
             return Err(usage(format!(
-                "word {number} is not an option of surf-agent"
+                "word {number} is not an option of surf-agent; -- before it makes it an argument"
             )));
         } else if command.is_none() {
             command = Some(
@@ -390,7 +522,7 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
                     })?,
             );
         } else {
-            positionals.push(word);
+            positionals.push((word, options_ended));
         }
     }
     let Some(command) = command else {
@@ -402,8 +534,13 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
         session: None,
         token: None,
         url: None,
+        handle: None,
+        value: None,
+        option: None,
         form: None,
         from_line: None,
+        count: None,
+        stdin: false,
     };
     let positional_count = command
         .arguments
@@ -413,7 +550,7 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
         .count();
     if positionals.len() > positional_count {
         return Err(usage(format!(
-            "{} takes at most {positional_count} address",
+            "{} takes at most {positional_count} positional word",
             command.name
         )));
     }
@@ -487,14 +624,42 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
         for source in argument.sources {
             if let Source::Positional { index, required } = source {
                 match positionals.get(index - 1) {
-                    Some(word) => {
+                    Some(&(word, after_end)) => {
                         let text = word
                             .to_str()
                             .ok_or_else(|| usage(format!("the {} is not UTF-8", argument.field)))?;
-                        call.url = Some(text.to_string());
+                        match argument.field {
+                            "handle" => call.handle = Some(text.to_string()),
+                            "value" => {
+                                call.stdin = !after_end && text == STDIN_VALUE;
+                                call.value = Some(text.to_string());
+                            }
+                            "option" => call.option = Some(text.to_string()),
+                            "count" => {
+                                call.count = Some(
+                                    Some(text)
+                                        .filter(|digits| {
+                                            !digits.is_empty()
+                                                && digits.bytes().all(|b| b.is_ascii_digit())
+                                        })
+                                        .and_then(|digits| digits.parse::<u64>().ok())
+                                        .filter(|count| *count >= 1)
+                                        .ok_or_else(|| {
+                                            usage("log takes a number of actions from 1")
+                                        })?,
+                                );
+                            }
+                            _ => call.url = Some(text.to_string()),
+                        }
                     }
                     None if *required => {
-                        return Err(usage(format!("{} needs an address", command.name)));
+                        let what = match argument.field {
+                            "handle" => "a handle",
+                            "value" => "a value, or - for standard input",
+                            "option" => "an option, on or off",
+                            _ => "an address",
+                        };
+                        return Err(usage(format!("{} needs {what}", command.name)));
                     }
                     None => {}
                 }

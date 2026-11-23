@@ -1,0 +1,21 @@
+surf 1 session <id> open
+page 200 "text/html" "http://127.0.0.1:<port>/form.html" "Sign up"
+path 2 of 2
+  1 open
+  2 go "http://127.0.0.1:<port>/form.html"
+changed 0
+now 13 of 13
+  f1 text ? "User name" = "ada"
+  f2 password ? "Password" = (empty)
+  f3 checkbox ? "News"
+  f4 radio ? "Small" checked
+  f5 radio ? "Medium"
+  f6 select ? "Colour" = "Green"
+  f7 textarea ? "Note" = "hello"
+  f8 file ? "Photo" = ""
+  f9 text ? "Coupon" = "SAVE10" disabled
+  f10 text ? "Email" = "" required
+  f11 text ? "Code" = "X1" readonly
+  f12 text hid "Secret" = ""
+  b1 button ? "Save" submits F1 post "/save"
+note visibility: hidden attribute only

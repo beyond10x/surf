@@ -1,0 +1,74 @@
+# A step forward from a tab's last entry is refused and starts no navigation: after two pushes the
+# second is current and nothing is after it. Synthesis cannot arrange it, for the reason
+# `navigation-traverse-refused-at-start.yaml` gives.
+type: ess-scenario/6
+domain: surf.navigation
+scenario: navigation-traverse-refused-at-end
+summary: A step forward from the last entry is refused and starts nothing.
+
+arrange:
+  - instance: a
+    entity: surf.navigation.Navigation
+  - instance: b
+    entity: surf.navigation.Navigation
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000301
+      url: http://example.org/a
+      method: Get
+    outcome: started
+    capture: {instance: a, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:01Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: a}
+      url: http://example.org/a
+      method: Get
+      status: 200
+      media_type: text/plain
+      body: aGk=
+    outcome: responded
+
+  - at: 2026-01-06T09:00:02Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000301
+      url: http://example.org/b
+      method: Get
+    outcome: started
+    capture: {instance: b, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-06T09:00:03Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: b}
+      url: http://example.org/b
+      method: Get
+      status: 200
+      media_type: text/plain
+      body: aGk=
+    outcome: responded
+
+  - at: 2026-01-06T09:00:04Z
+    command: surf.navigation.TraverseHistory
+    input:
+      tab_id: 7e5a1b00-0000-4000-8000-000000000301
+      step: forward
+    outcome: no-entry
+    error:
+      name: surf.navigation.NoHistoryEntry
+      fields: {tab_id: 7e5a1b00-0000-4000-8000-000000000301, step: forward}
+
+assert:
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: a}, standing: back, next: {$instance: b}}
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: b}, standing: current}
+  - view: surf.navigation.Navigations
+    counts: {at_least: 2, at_most: 2}

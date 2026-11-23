@@ -40,13 +40,84 @@
 //! `surf.document.ParsingStarted` whose document is still `Parsing` to the [`Parser`], a
 //! parameter of [`Browser`] like the transport, and issues what it answers on the `document`
 //! port and on no other. The default, [`HtmlParser`], decodes and parses the body with
-//! `surf-html` at its default limits and computes the title and the actionable elements with
-//! their labels with `surf-page` ([`parse_page`]). [`Browser`] keeps the tree of each parsed
-//! document, keyed by the document's identity, with the node of each element row: read only,
-//! through [`Browser::document_tree`] and [`Browser::element_nodes`]. No component's port
-//! receives the tree. The tree is not changed after parsing (decision D2 of
+//! `surf-html` at its default limits and computes the title, the actionable elements with
+//! their labels, and the forms with each control's form owner, `name` and options with
+//! `surf-page` ([`parse_page`]); the step issues `surf.document.AddForm` per form, the `name`
+//! and `form_id` in each `AddElement` with a radio button's group key `radio_group`
+//! (`F<n> <name>`, or `- <name>` with no form owner; none without a name), and
+//! `surf.document.AddOption` per option of a select after the select's `AddElement`, before
+//! `FinishParsing`. [`Browser`] keeps the tree of each
+//! parsed document, keyed by the document's identity, with the node of each element row and its
+//! forms: read only, through [`Browser::document_tree`] and [`Browser::element_nodes`], and for
+//! the submission step. No component's port receives the tree. The tree is not changed after parsing (decision D2 of
 //! `docs/plan/agent-plan-revision-1.md`), and it is kept for the life of the [`Browser`], as the
 //! document's rows are.
+//!
+//! # The submission step
+//!
+//! The `document` component leaves the end of a submission to its submission step
+//! (`spec/domains/document.yaml`, the comment above `surf.document.Submission`): after
+//! `surf.document.StartSubmission` made a submission `Started`, something builds the request
+//! from the tree and the control rows and issues `surf.document.SubmitForm` or
+//! `surf.document.AbandonSubmission`. [`Browser::run`] is that step too: it hands each
+//! `surf.document.SubmissionStarted` whose submission is still `Started` and whose submitter is
+//! an element row of a document it parsed to the [`Submitter`], a parameter of [`Browser`] like
+//! the parser step, with the document's address, tree, forms and the state of its control rows
+//! ([`Submission`]), and issues what it answers on the `document` port. The default,
+//! [`FormSubmitter`], is [`submit_form`]: the HTML Standard's form submission algorithm
+//! (4.10.21.3) and "constructing the entry list" (4.10.21.4), from memory, in this order:
+//!
+//! 1. A submitter with no form owner ends `NoFormOwner` (the button's activation behaviour
+//!    reads the form owner first); a Reset Button or a Button ends `NotSubmitButton`.
+//! 2. Unless the form has `novalidate`, a control that suffers from being missing ends
+//!    `InvalidControls`: a text, password, textarea, file or select control that is `required`,
+//!    not disabled, not read-only and not in a `datalist`, with an empty value; a select's value
+//!    is empty when it submits nothing or only empty values (its placeholder option selected).
+//!    The other constraints of constraint validation are not built.
+//! 3. The entry list, of the form owner's controls in tree order: a control in a `datalist`, a
+//!    disabled one, a button that is not the submitter, an unchecked checkbox or radio button
+//!    and one without a `name` (or with an empty one) are skipped; an Image Button submitter
+//!    gives `<name>.x` and `<name>.y` (`x` and `y` without a name) with the value `0`, the
+//!    coordinate of an activation without a pointing device; a select gives each selected option
+//!    that is not disabled; a checkbox or radio button its `value` attribute, else `on`; a
+//!    Hidden `input` named `_charset_` (ASCII case-insensitive) `UTF-8`; another Hidden `input`
+//!    and the submitter button their `value` attribute; a file control the empty string; the
+//!    other controls the value their row holds. Every line break of a name or value becomes CR
+//!    LF ("convert to a list of name-value pairs").
+//! 4. The method: a submit button's `formmethod` when it has one, else the form's `method`.
+//!    `dialog` (ASCII case-insensitive) ends `DialogMethod`; `post` is `Post`; anything else, a
+//!    missing method and an unknown `formmethod` included, is `Get` (the invalid value default
+//!    of both attributes).
+//! 5. The action: a submit button's `formaction` when it has one, else the form's `action`
+//!    attribute; the document's address when that is absent or empty, an empty `formaction`
+//!    included (the form's `action` is not read then); parsed with `surf-url` against the
+//!    document base URL ([`surf_page::base_url::document_base_url`]); a failure ends
+//!    `InvalidAction`.
+//! 6. A scheme other than `http` and `https` ends `UnsupportedScheme`: `javascript:` (surf runs
+//!    no script), `mailto:`, `data:`, `file:` and the others.
+//! 7. `Get` ("mutate action URL"): the action with its query replaced by the entry list
+//!    serialized as `application/x-www-form-urlencoded`, its fragment kept, whatever the
+//!    enctype. `Post` ("submit as entity body"): the enctype `multipart/form-data` or
+//!    `text/plain` (ASCII case-insensitive) ends `UnsupportedEnctype`; any other, a missing one
+//!    included, sends the serialized entry list as the body with the media type
+//!    `application/x-www-form-urlencoded`.
+//! 8. Not a step of the standard: an address longer than [`surf_fetch::MAX_ADDRESS_BYTES`]
+//!    (65,536 bytes), a `Get`'s with its query or a `Post`'s action, ends `AddressTooLong`, the
+//!    bound of every address surf fetches; nothing is navigated and no request is made.
+//!
+//! [`Submission`]'s, [`Filled`]'s and [`Submit`]'s `Debug` write a control's value and a body as
+//! their length in bytes, never their bytes; an address is written whole.
+//!
+//! [`plan_submission`] computes these steps once, with the address a navigation would request,
+//! for [`submit_form`] and for the agent session, which checks that address before it presses
+//! (`story:agent-press-submit`), so the address checked is the address requested.
+//!
+//! Not taken: `formenctype`, `formnovalidate` and `formtarget` on a submitter; `accept-charset`
+//! and the document's encoding (every entry list is encoded as UTF-8, the one encoding of
+//! `surf-url`'s serializer, and `_charset_` says so); `dirname`; the
+//! `submit` event; a target other than the document's own tab; whether the document is still
+//! the one its tab shows ("cannot navigate"): a submission of a document a later navigation
+//! replaced still navigates the tab.
 //!
 //! [`Browser::load`] is what the `surf` binary does: `OpenWindow`, `OpenTab`, `Navigate`, run, and
 //! the rows of the `Navigations`, `Requests`, `Documents` and `Elements` views with every
@@ -56,7 +127,7 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 
 use agent::Agent;
@@ -70,9 +141,11 @@ use surf_ports::{
 };
 use surf_types::behaviour::Generated;
 use surf_types::document::{
-    AddElement, AddElementOutcome, DocumentId, DocumentState, Documents, ElementId, ElementKind,
-    Elements, EncodingName, FinishParsing, FinishParsingOutcome, ParseLimit,
+    AbandonSubmission, AddElement, AddElementOutcome, AddForm, AddFormOutcome, AddOption,
+    DocumentId, DocumentState, Documents, ElementId, ElementKind, Elements, EncodingName,
+    FinishParsing, FinishParsingOutcome, FormId, ParseLimit, SubmissionState, SubmitForm,
 };
+pub use surf_types::document::{SubmissionEndReason, SubmissionStarted};
 use surf_types::navigation::{Navigate, NavigateOutcome, NavigationState, Navigations};
 use surf_types::net::{
     DeliverResponse, FailRequest, FailureReason, FetchFailed, MediaType, RequestId, RequestState,
@@ -107,6 +180,10 @@ pub enum Answer {
         /// The address the response came from: the address asked for when nothing redirected,
         /// else the address after the last redirect. Issued as `DeliverResponse.url`.
         url: String,
+        /// The method of the request the response answered: the method asked for, or
+        /// [`Method::Get`] after a redirect that changed it. Issued as `DeliverResponse.method`,
+        /// which a pushed session history entry keeps.
+        method: Method,
         /// The status code, such as 200 or 404.
         status: u16,
         /// The type and subtype of the response's media type in lower case, such as `text/html`.
@@ -148,6 +225,23 @@ pub fn fetch_http(
     request: &RequestStarted,
     limits: &surf_fetch::Limits,
 ) -> Result<surf_fetch::Response, surf_fetch::Failure> {
+    fetch_http_from(
+        request,
+        limits,
+        &surf_fetch::OsNetwork,
+        surf_fetch::Origin::Given,
+    )
+}
+
+/// [`fetch_http`] over `network`, for a request that comes from `origin`: with
+/// [`surf_fetch::Origin::PublicPage`], a link or a form of a page at a public address, the first
+/// request goes to public addresses only ([`surf_fetch::send_from`]).
+pub fn fetch_http_from(
+    request: &RequestStarted,
+    limits: &surf_fetch::Limits,
+    network: &dyn surf_fetch::Network,
+    origin: surf_fetch::Origin,
+) -> Result<surf_fetch::Response, surf_fetch::Failure> {
     let method = match (request.method, &request.body, &request.body_type) {
         (Method::Get, None, None) => surf_fetch::Method::Get,
         (Method::Get, _, _) => {
@@ -157,7 +251,7 @@ pub fn fetch_http(
         }
         (Method::Post, _, _) => surf_fetch::Method::Post,
     };
-    surf_fetch::send(
+    surf_fetch::send_from(
         &surf_fetch::Request {
             address: &request.url.0,
             method,
@@ -168,6 +262,8 @@ pub fn fetch_http(
                 .map(|media_type| media_type.0.as_str()),
         },
         limits,
+        network,
+        origin,
     )
 }
 
@@ -177,6 +273,10 @@ pub fn answer(result: Result<surf_fetch::Response, surf_fetch::Failure>) -> Answ
     match result {
         Ok(response) => Answer::Response {
             url: response.url,
+            method: match response.method {
+                surf_fetch::Method::Get => Method::Get,
+                surf_fetch::Method::Post => Method::Post,
+            },
             status: response.status,
             media_type: response.media_type,
             body: response.body,
@@ -214,6 +314,11 @@ pub struct Page {
     pub unsupported_encoding: Option<String>,
     /// The limit that stopped parsing, if one did.
     pub stopped_by: Option<surf_html::limits::Limit>,
+    /// The forms and the controls with their form owner, `name` and options
+    /// ([`surf_page::forms::forms`]). Issued as one `surf.document.AddForm` per form, the
+    /// `name` and `form_id` of each element's `AddElement`, and one `surf.document.AddOption`
+    /// per option of a select.
+    pub forms: surf_page::forms::Forms,
 }
 
 /// What a [`Parser`] answers for one started parse.
@@ -295,6 +400,7 @@ pub fn parse_page_with(body: &[u8], options: &surf_html::ParseOptions) -> Page {
     let unsupported_encoding = (decoded_with != chosen).then(|| chosen.to_owned());
     let title = surf_page::title(&parsed.tree);
     let elements = surf_page::actionable_elements(&parsed.tree);
+    let forms = surf_page::forms::forms(&parsed.tree);
     Page {
         stopped_by: parsed.tree.stopped_by(),
         tree: parsed.tree,
@@ -302,7 +408,532 @@ pub fn parse_page_with(body: &[u8], options: &surf_html::ParseOptions) -> Page {
         elements,
         encoding: decoded_with.to_owned(),
         unsupported_encoding,
+        forms,
     }
+}
+
+/// One started submission as the submission step is handed it: the document's address, its
+/// tree, its forms and controls, the submitter's node, and the state each control's rows hold
+/// now.
+#[derive(Debug, Clone, Copy)]
+pub struct Submission<'a> {
+    /// The `surf.document.SubmissionStarted` the `document` component published.
+    pub started: &'a SubmissionStarted,
+    /// The address of the submitter's document, its `Documents` row's `url`.
+    pub address: &'a str,
+    /// The document's tree.
+    pub tree: &'a Tree,
+    /// The document's forms and controls, as its parser step found them.
+    pub forms: &'a surf_page::forms::Forms,
+    /// The submitter's node in [`Submission::tree`].
+    pub submitter: NodeId,
+    /// The state of each control that has a row, by its node.
+    pub filled: &'a BTreeMap<NodeId, Filled>,
+}
+
+/// The state of one control as its rows hold it when the submission starts: what `SetValue`,
+/// `Check` and `SelectOption` left. Its `Debug` writes each value as its length in bytes, never
+/// its bytes: a password's value is one of them.
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct Filled {
+    /// The `Elements` row's `value`.
+    pub value: Option<String>,
+    /// The `Elements` row's `checked`.
+    pub checked: bool,
+    /// The `Elements` row's `required`.
+    pub required: bool,
+    /// For a select, the values of its `Options` rows that are selected and not disabled, in
+    /// position order; empty for every other kind.
+    pub selected: Vec<String>,
+}
+
+/// `<n> bytes`, how a `Debug` output writes a value it must not print.
+struct Length(usize);
+
+impl fmt::Debug for Length {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} bytes", self.0)
+    }
+}
+
+impl fmt::Debug for Filled {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Filled")
+            .field(
+                "value",
+                &self.value.as_ref().map(|value| Length(value.len())),
+            )
+            .field("checked", &self.checked)
+            .field("required", &self.required)
+            .field(
+                "selected",
+                &self
+                    .selected
+                    .iter()
+                    .map(|value| Length(value.len()))
+                    .collect::<Vec<_>>(),
+            )
+            .finish()
+    }
+}
+
+/// What a [`Submitter`] answers for one started submission. Its `Debug` writes a `POST`'s body
+/// as its length in bytes and the address whole.
+#[derive(Clone, PartialEq, Eq)]
+pub enum Submit {
+    /// The request the submission navigates to: issued as `surf.document.SubmitForm` with the
+    /// tab of the submitter's document.
+    Navigate {
+        /// The address.
+        url: String,
+        /// `Get` or `Post`.
+        method: Method,
+        /// A `Post`'s body.
+        body: Option<Vec<u8>>,
+        /// A `Post`'s media type.
+        body_type: Option<String>,
+    },
+    /// No navigation, for this reason: issued as `surf.document.AbandonSubmission`.
+    Abandon(SubmissionEndReason),
+    /// No answer. Nothing is issued and the submission stays `Started`.
+    Unanswered,
+}
+
+impl fmt::Debug for Submit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Submit::Navigate {
+                url,
+                method,
+                body,
+                body_type,
+            } => f
+                .debug_struct("Navigate")
+                .field("url", url)
+                .field("method", method)
+                .field("body", &body.as_ref().map(|body| Length(body.len())))
+                .field("body_type", body_type)
+                .finish(),
+            Submit::Abandon(reason) => f.debug_tuple("Abandon").field(reason).finish(),
+            Submit::Unanswered => f.write_str("Unanswered"),
+        }
+    }
+}
+
+/// Ends a started submission, for the `document` component.
+///
+/// It is handed a [`Submission`]: the started submission with what its document holds. A
+/// closure `FnMut(&Submission<'_>) -> Submit` is a submission step.
+pub trait Submitter {
+    /// Answers how `submission` ends.
+    fn submit(&mut self, submission: &Submission<'_>) -> Submit;
+}
+
+impl<F: FnMut(&Submission<'_>) -> Submit> Submitter for F {
+    fn submit(&mut self, submission: &Submission<'_>) -> Submit {
+        self(submission)
+    }
+}
+
+/// The submission step of the binaries and the session: [`submit_form`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FormSubmitter;
+
+impl Submitter for FormSubmitter {
+    fn submit(&mut self, submission: &Submission<'_>) -> Submit {
+        submit_form(submission)
+    }
+}
+
+/// The media type of the one encoding surf builds.
+const URLENCODED: &str = "application/x-www-form-urlencoded";
+
+/// The method a submit button submits with: the `GET`, `POST` and `dialog` states of a form's
+/// method.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FormMethod {
+    /// `get`, and every value that is not `post` or `dialog`, a missing one included.
+    Get,
+    /// `post`.
+    Post,
+    /// `dialog`.
+    Dialog,
+}
+
+impl FormMethod {
+    /// The word of a `now` line: `get`, `post` or `dialog`.
+    pub fn word(self) -> &'static str {
+        match self {
+            FormMethod::Get => "get",
+            FormMethod::Post => "post",
+            FormMethod::Dialog => "dialog",
+        }
+    }
+
+    /// The method of an attribute's value, ASCII case-insensitive; an unknown value is `Get`.
+    fn of(value: &str) -> FormMethod {
+        if value.eq_ignore_ascii_case("post") {
+            FormMethod::Post
+        } else if value.eq_ignore_ascii_case("dialog") {
+            FormMethod::Dialog
+        } else {
+            FormMethod::Get
+        }
+    }
+}
+
+/// What a button submits to, read from its attributes and its form owner's: the form, the
+/// method and the action, before any entry list is built.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Submits {
+    /// The form owner, an index into [`surf_page::forms::Forms::forms`]: its handle is
+    /// `F<form + 1>` ([`surf_page::form_handles`]).
+    pub form: usize,
+    /// The submitter's `formmethod` when it is a submit button that has one, else the form's
+    /// `method`.
+    pub method: FormMethod,
+    /// The submitter's `formaction` when it is a submit button that has one, else the form's
+    /// `action`; the document's address when that is empty; resolved against the document base
+    /// URL. `Err` holds the action as written when it, or the document's address, does not
+    /// parse.
+    pub action: Result<surf_url::Url, String>,
+}
+
+/// [`Submits`] of the button `submitter` of `forms`, with `base` the document base URL of
+/// `tree` (`None` when the document's `address` does not parse); `None` for a node that is not
+/// a button of `forms`, and for a button with no form owner.
+pub fn submits(
+    tree: &Tree,
+    forms: &surf_page::forms::Forms,
+    address: &str,
+    base: Option<&surf_url::Url>,
+    submitter: NodeId,
+) -> Option<Submits> {
+    submits_resolving(tree, forms, address, submitter, &mut |action| {
+        resolve_action(action, base)
+    })
+}
+
+/// An action resolved against the document base URL `base`: `Err` holds it as written when it,
+/// or the document's address (`base` is `None`), does not parse.
+fn resolve_action(action: &str, base: Option<&surf_url::Url>) -> Result<surf_url::Url, String> {
+    base.and_then(|base| surf_url::Url::parse(action, Some(base)).ok())
+        .ok_or_else(|| action.to_owned())
+}
+
+/// [`submits`] with the action resolved by `resolve`, so that a caller that reads every button of
+/// a document resolves each distinct action once (`story:agent-press-submit`, "As decided after
+/// the adversary's pass", decision 3).
+fn submits_resolving(
+    tree: &Tree,
+    forms: &surf_page::forms::Forms,
+    address: &str,
+    submitter: NodeId,
+    resolve: &mut dyn FnMut(&str) -> Result<surf_url::Url, String>,
+) -> Option<Submits> {
+    use surf_page::forms::{ButtonType, Field};
+
+    let control = forms.control(submitter)?;
+    if !matches!(control.field, Field::Button(_)) {
+        return None;
+    }
+    let owner = control.owner?;
+    let form = &forms.forms[owner];
+    let submit_button = matches!(
+        control.field,
+        Field::Button(ButtonType::Submit | ButtonType::Image)
+    );
+    let own = |name: &str| {
+        submit_button
+            .then(|| attribute(tree, submitter, name))
+            .flatten()
+    };
+    let method = FormMethod::of(own("formmethod").or(form.method.as_deref()).unwrap_or(""));
+    let action = match own("formaction").or(form.action.as_deref()) {
+        None | Some("") => address,
+        Some(action) => action,
+    };
+    let action = resolve(action);
+    Some(Submits {
+        form: owner,
+        method,
+        action,
+    })
+}
+
+/// The value of the attribute `name` (in no namespace) of the element `node`, if it has one.
+fn attribute<'a>(tree: &'a Tree, node: NodeId, name: &str) -> Option<&'a str> {
+    match tree.data(node) {
+        surf_html::NodeData::Element { attributes, .. } => attributes
+            .iter()
+            .find(|attribute| attribute.namespace.is_none() && attribute.local_name == name)
+            .map(|attribute| attribute.value.as_str()),
+        _ => None,
+    }
+}
+
+/// How a press of one button would be submitted, computed once for both readers: the session,
+/// which checks it before it presses (`story:agent-press-submit`), and [`submit_form`], which
+/// answers [`Plan::submit`]. So the address the session checks is the address requested.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Plan {
+    /// The button's type.
+    pub button: surf_page::forms::ButtonType,
+    /// Its form, method and action; `None` for a button with no form owner.
+    pub submits: Option<Submits>,
+    /// The address a navigation would request: for `Get` the action with its query replaced by
+    /// the entry list, for `Post` the action; `None` for `Dialog`, an action that does not
+    /// parse, and no form owner. Built whether or not the submission would end before it.
+    pub address: Option<String>,
+    /// The entry list holds a password control's non-empty value.
+    pub password: bool,
+    /// What [`submit_form`] answers.
+    pub submit: Submit,
+}
+
+/// The [`Plan`] of `submission`; `None` when its submitter is not a button of its forms.
+pub fn plan_submission(submission: &Submission<'_>) -> Option<Plan> {
+    use surf_page::forms::{ButtonType, Field};
+
+    let forms = submission.forms;
+    let control = forms.control(submission.submitter)?;
+    let Field::Button(button) = control.field else {
+        return None;
+    };
+    let document = surf_url::Url::parse(submission.address, None).ok();
+    let base = document
+        .as_ref()
+        .map(|document| surf_page::base_url::document_base_url(submission.tree, document));
+    let Some(submits) = submits(
+        submission.tree,
+        forms,
+        submission.address,
+        base.as_ref(),
+        submission.submitter,
+    ) else {
+        return Some(Plan {
+            button,
+            submits: None,
+            address: None,
+            password: false,
+            submit: Submit::Abandon(SubmissionEndReason::NoFormOwner),
+        });
+    };
+    let owner = submits.form;
+    let form = &forms.forms[owner];
+    let controls: Vec<&surf_page::forms::Control> = forms
+        .controls
+        .iter()
+        .filter(|control| control.owner == Some(owner))
+        .collect();
+    let filled = |control: &surf_page::forms::Control| {
+        submission
+            .filled
+            .get(&control.node)
+            .cloned()
+            .unwrap_or_default()
+    };
+    let (pairs, password) = entry_list(&controls, submission.submitter, &filled);
+    let encoded = surf_url::form_urlencoded::serialize(&pairs);
+    let address = match (submits.method, &submits.action) {
+        (FormMethod::Get, Ok(action)) => Some(with_query(action, &encoded)),
+        (FormMethod::Post, Ok(action)) => Some(action.href()),
+        _ => None,
+    };
+    let end = |reason| Submit::Abandon(reason);
+    let submit = if !matches!(button, ButtonType::Submit | ButtonType::Image) {
+        end(SubmissionEndReason::NotSubmitButton)
+    } else if !form.novalidate
+        && controls
+            .iter()
+            .any(|control| suffers_from_being_missing(control, &filled(control)))
+    {
+        end(SubmissionEndReason::InvalidControls)
+    } else if submits.method == FormMethod::Dialog {
+        end(SubmissionEndReason::DialogMethod)
+    } else if submits.action.is_err() {
+        end(SubmissionEndReason::InvalidAction)
+    } else if !submits
+        .action
+        .as_ref()
+        .is_ok_and(|action| matches!(action.scheme(), "http" | "https"))
+    {
+        end(SubmissionEndReason::UnsupportedScheme)
+    } else if submits.method == FormMethod::Post && {
+        let enctype = form.enctype.as_deref().unwrap_or("");
+        enctype.eq_ignore_ascii_case("multipart/form-data")
+            || enctype.eq_ignore_ascii_case("text/plain")
+    } {
+        end(SubmissionEndReason::UnsupportedEnctype)
+    } else if address
+        .as_ref()
+        .is_some_and(|address| address.len() > surf_fetch::MAX_ADDRESS_BYTES)
+    {
+        end(SubmissionEndReason::AddressTooLong)
+    } else if submits.method == FormMethod::Post {
+        Submit::Navigate {
+            url: address.clone().unwrap_or_default(),
+            method: Method::Post,
+            body: Some(encoded.into_bytes()),
+            body_type: Some(URLENCODED.to_owned()),
+        }
+    } else {
+        Submit::Navigate {
+            url: address.clone().unwrap_or_default(),
+            method: Method::Get,
+            body: None,
+            body_type: None,
+        }
+    };
+    Some(Plan {
+        button,
+        submits: Some(submits),
+        address,
+        password,
+        submit,
+    })
+}
+
+/// The HTML Standard's form submission algorithm (4.10.21.3) for `submission`, as far as surf
+/// takes it (see the crate documentation, "The submission step"): [`Plan::submit`] of
+/// [`plan_submission`], and no answer for a submitter that is not a button of its forms.
+pub fn submit_form(submission: &Submission<'_>) -> Submit {
+    plan_submission(submission).map_or(Submit::Unanswered, |plan| plan.submit)
+}
+
+/// "Suffering from being missing", the one constraint built: a candidate for constraint
+/// validation (not disabled, not in a `datalist`, not read-only) of a kind that holds a value,
+/// `required`, with an empty value. A select's value is what it submits: it is empty when no
+/// option that is not disabled is selected, or when each one selected has the empty value (its
+/// placeholder label option among them).
+fn suffers_from_being_missing(control: &surf_page::forms::Control, filled: &Filled) -> bool {
+    use surf_page::forms::Field;
+
+    let empty = match control.field {
+        Field::Text | Field::Password | Field::Textarea | Field::File => {
+            filled.value.as_deref().unwrap_or("").is_empty()
+        }
+        Field::Select => filled.selected.iter().all(String::is_empty),
+        _ => return false,
+    };
+    !control.disabled && !control.in_datalist && !control.readonly && filled.required && empty
+}
+
+/// 4.10.21.4 "Constructing the entry list" over the form's `controls` in tree order with the
+/// submitter `submitter`, then "convert to a list of name-value pairs": every line break in a
+/// name or value written as CR LF. Also whether a password control gave a non-empty value.
+fn entry_list(
+    controls: &[&surf_page::forms::Control],
+    submitter: NodeId,
+    filled: &dyn Fn(&surf_page::forms::Control) -> Filled,
+) -> (Vec<(String, String)>, bool) {
+    use surf_page::forms::{ButtonType, Field};
+
+    let mut entries = Vec::new();
+    let mut password = false;
+    for control in controls {
+        if control.in_datalist || control.disabled {
+            continue;
+        }
+        if matches!(control.field, Field::Button(_)) && control.node != submitter {
+            continue;
+        }
+        let state = filled(control);
+        if matches!(control.field, Field::Checkbox | Field::Radio) && !state.checked {
+            continue;
+        }
+        let name = control.name.as_deref().unwrap_or("");
+        if control.field == Field::Button(ButtonType::Image) {
+            // The selected coordinate of an activation without a pointing device is (0, 0).
+            let (x, y) = if name.is_empty() {
+                ("x".to_owned(), "y".to_owned())
+            } else {
+                (format!("{name}.x"), format!("{name}.y"))
+            };
+            entries.push((x, "0".to_owned()));
+            entries.push((y, "0".to_owned()));
+            continue;
+        }
+        if name.is_empty() {
+            continue;
+        }
+        let attribute = || control.value.clone().unwrap_or_default();
+        match control.field {
+            Field::Select => {
+                for value in state.selected {
+                    entries.push((name.to_owned(), value));
+                }
+            }
+            Field::Checkbox | Field::Radio => entries.push((
+                name.to_owned(),
+                control.value.clone().unwrap_or_else(|| "on".to_owned()),
+            )),
+            Field::Hidden if name.eq_ignore_ascii_case("_charset_") => {
+                entries.push((name.to_owned(), "UTF-8".to_owned()));
+            }
+            Field::Hidden | Field::Button(_) => entries.push((name.to_owned(), attribute())),
+            // A file control holds no file: the entry's file has the empty name, which is what
+            // the urlencoded serializer writes for a file.
+            Field::File => entries.push((name.to_owned(), String::new())),
+            Field::Text | Field::Password | Field::Textarea => {
+                let value = state.value.unwrap_or_default();
+                password |= control.field == Field::Password && !value.is_empty();
+                entries.push((name.to_owned(), value));
+            }
+        }
+    }
+    let entries = entries
+        .into_iter()
+        .map(|(name, value)| (crlf(&name), crlf(&value)))
+        .collect();
+    (entries, password)
+}
+
+/// Every CR not followed by LF and every LF not preceded by CR replaced by CR LF.
+fn crlf(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\r' => {
+                out.push_str("\r\n");
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+            }
+            '\n' => out.push_str("\r\n"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// "Mutate action URL": `action` with its query set to `query`, its fragment kept.
+fn with_query(action: &surf_url::Url, query: &str) -> String {
+    let mut url = action.serialize(true);
+    if let Some(old) = action.query() {
+        url.truncate(url.len() - old.len() - 1);
+    }
+    url.push('?');
+    url.push_str(query);
+    if let Some(fragment) = action.fragment() {
+        url.push('#');
+        url.push_str(fragment);
+    }
+    url
+}
+
+/// The `radio_group` key of a radio button `control` (`surf.document.Element`): `F<n> <name>`
+/// for one whose form owner is the form of handle `F<n>`, `- <name>` for one with no form owner,
+/// so that the radio buttons of one group, the HTML Standard's "radio button group", share it;
+/// `None` for one without a name or with an empty one, a group of its own. The parse-time rule
+/// of `surf_page` groups checked radio buttons by the same owner and name.
+fn radio_group(control: &surf_page::forms::Control) -> Option<String> {
+    let name = control.name.as_deref().filter(|name| !name.is_empty())?;
+    Some(match control.owner {
+        Some(owner) => format!("F{} {name}", owner + 1),
+        None => format!("- {name}"),
+    })
 }
 
 fn element_kind(kind: surf_page::Kind) -> ElementKind {
@@ -409,7 +1040,8 @@ impl Report {
     /// [`escape`] with `"` written as `\x22`, between two `"`. `<flags>` is the flags of the row
     /// that are set, in the order `hidden`, `disabled`, `checked`, `required`, joined by `,`, or
     /// `-` when none is. The last field is a link's target or a control's value, or `-` when the
-    /// row has neither. `<kind>` is a name of `surf.document.ElementKind`, `<limit>` one of
+    /// row has neither; for a `password` it is `(set)` when the value is not empty and `(empty)`
+    /// when it is, unquoted, never the value. `<kind>` is a name of `surf.document.ElementKind`, `<limit>` one of
     /// `surf.document.ParseLimit`, and `<parts>` the entries of [`Report::not_yet_parsed`]
     /// joined by `,`.
     pub fn lines(&self) -> Vec<String> {
@@ -490,9 +1122,22 @@ fn element_line(element: &Elements) -> String {
     } else {
         flags.join(",")
     };
-    let last = match element.target.as_deref().or(element.value.as_deref()) {
-        Some(text) => quoted(text),
-        None => "-".to_owned(),
+    // A password's value is never printed: `(set)` or `(empty)`, unquoted (design section 5.2).
+    let last = if element.kind == ElementKind::Password {
+        if element
+            .value
+            .as_deref()
+            .is_some_and(|value| !value.is_empty())
+        {
+            "(set)".to_owned()
+        } else {
+            "(empty)".to_owned()
+        }
+    } else {
+        match element.target.as_deref().or(element.value.as_deref()) {
+            Some(text) => quoted(text),
+            None => "-".to_owned(),
+        }
     };
     format!(
         "element {} {} {} {flags} {} {last}",
@@ -610,6 +1255,8 @@ pub trait AgentBehaviors:
     + surf_types::agent::obligations::FillBehavior
     + surf_types::agent::obligations::FollowBehavior
     + surf_types::agent::obligations::GoBehavior
+    + surf_types::agent::obligations::GoBackBehavior
+    + surf_types::agent::obligations::GoForwardBehavior
     + surf_types::agent::obligations::NoteNavigationCommittedBehavior
     + surf_types::agent::obligations::NoteNavigationEndedBehavior
     + surf_types::agent::obligations::NoteNavigationFailedBehavior
@@ -629,6 +1276,8 @@ impl<B> AgentBehaviors for B where
         + surf_types::agent::obligations::FillBehavior
         + surf_types::agent::obligations::FollowBehavior
         + surf_types::agent::obligations::GoBehavior
+        + surf_types::agent::obligations::GoBackBehavior
+        + surf_types::agent::obligations::GoForwardBehavior
         + surf_types::agent::obligations::NoteNavigationCommittedBehavior
         + surf_types::agent::obligations::NoteNavigationEndedBehavior
         + surf_types::agent::obligations::NoteNavigationFailedBehavior
@@ -692,6 +1341,8 @@ pub trait NavigatorBehaviors:
     + surf_types::navigation::obligations::CommitNavigationBehavior
     + surf_types::navigation::obligations::FailNavigationBehavior
     + surf_types::navigation::obligations::NavigateBehavior
+    + surf_types::navigation::obligations::StartTraversalBehavior
+    + surf_types::navigation::obligations::TraverseHistoryBehavior
     + surf_types::navigation::obligations::NavigationsQuery
 {
 }
@@ -701,6 +1352,8 @@ impl<B> NavigatorBehaviors for B where
         + surf_types::navigation::obligations::CommitNavigationBehavior
         + surf_types::navigation::obligations::FailNavigationBehavior
         + surf_types::navigation::obligations::NavigateBehavior
+        + surf_types::navigation::obligations::StartTraversalBehavior
+        + surf_types::navigation::obligations::TraverseHistoryBehavior
         + surf_types::navigation::obligations::NavigationsQuery
 {
 }
@@ -753,17 +1406,19 @@ impl<B> ShellBehaviors for B where
 {
 }
 
-/// The generated [`System`], the transport of its `net` component and the parser step of its
-/// `document` component.
+/// The generated [`System`], the transport of its `net` component, and the parser step and the
+/// submission step of its `document` component.
 ///
 /// The type parameters are the behaviours behind each component's port, in the order
 /// [`System::new`] takes the ports (`agent`, `document`, `navigator`, `net`, `renderer`,
-/// `shell`), the transport and the parser step, [`HtmlParser`] unless
-/// [`Browser::with_parser`] gave another.
-pub struct Browser<A, D, N, Ne, R, S, T, P = HtmlParser> {
+/// `shell`), the transport, the parser step, [`HtmlParser`] unless [`Browser::with_parser`]
+/// gave another, and the submission step, [`FormSubmitter`] unless [`Browser::with_submitter`]
+/// gave another.
+pub struct Browser<A, D, N, Ne, R, S, T, P = HtmlParser, F = FormSubmitter> {
     system: System<A, D, N, Ne, R, S>,
     transport: T,
     parser: P,
+    submitter: F,
     /// How far into [`System::published`] the run has read.
     cursor: usize,
     /// The tree of each parsed document and the node of each of its element rows, by the
@@ -776,6 +1431,20 @@ struct Kept {
     tree: Tree,
     /// The identity of each element row, in position order, with its node in `tree`.
     nodes: Vec<(ElementId, NodeId)>,
+    /// The forms and controls of `tree`, for the submission step.
+    forms: surf_page::forms::Forms,
+}
+
+/// The inputs of the submission step for one button, but the started submission.
+struct Prepared {
+    /// The key of the button's [`Kept`] document.
+    key: String,
+    /// The button's node.
+    node: NodeId,
+    /// The document's row.
+    document: Documents,
+    /// The state of each control that has a row, by its node.
+    filled: BTreeMap<NodeId, Filled>,
 }
 
 /// A [`Browser`] over the in-memory ports of `surf-ports` and the operating system's random
@@ -808,27 +1477,42 @@ impl<T> MemoryBrowser<T> {
 }
 
 impl<A, D, N, Ne, R, S, T> Browser<A, D, N, Ne, R, S, T> {
-    /// `system` with `transport` and the parser step [`HtmlParser`]. The first [`Browser::run`]
-    /// reads `system`'s log from its start.
+    /// `system` with `transport`, the parser step [`HtmlParser`] and the submission step
+    /// [`FormSubmitter`]. The first [`Browser::run`] reads `system`'s log from its start.
     pub fn new(system: System<A, D, N, Ne, R, S>, transport: T) -> Self {
         Self {
             system,
             transport,
             parser: HtmlParser::default(),
+            submitter: FormSubmitter,
             cursor: 0,
             kept: BTreeMap::new(),
         }
     }
 }
 
-impl<A, D, N, Ne, R, S, T, P> Browser<A, D, N, Ne, R, S, T, P> {
+impl<A, D, N, Ne, R, S, T, P, F> Browser<A, D, N, Ne, R, S, T, P, F> {
     /// The same browser with the parser step `parser` in place of its own. What it ran and kept
     /// stays.
-    pub fn with_parser<Q>(self, parser: Q) -> Browser<A, D, N, Ne, R, S, T, Q> {
+    pub fn with_parser<Q>(self, parser: Q) -> Browser<A, D, N, Ne, R, S, T, Q, F> {
         Browser {
             system: self.system,
             transport: self.transport,
             parser,
+            submitter: self.submitter,
+            cursor: self.cursor,
+            kept: self.kept,
+        }
+    }
+
+    /// The same browser with the submission step `submitter` in place of its own. What it ran
+    /// and kept stays.
+    pub fn with_submitter<G>(self, submitter: G) -> Browser<A, D, N, Ne, R, S, T, P, G> {
+        Browser {
+            system: self.system,
+            transport: self.transport,
+            parser: self.parser,
+            submitter,
             cursor: self.cursor,
             kept: self.kept,
         }
@@ -944,6 +1628,7 @@ fn event_body(event: &SystemEvent) -> usize {
         | SystemEvent::NavigationRequested(_)
         | SystemEvent::PickRequested(_)
         | SystemEvent::PressRequested(_)
+        | SystemEvent::TraversalRequested(_)
         | SystemEvent::SessionClosed(_)
         | SystemEvent::SessionNavigationChanged(_)
         | SystemEvent::SessionOpened(_)
@@ -958,6 +1643,7 @@ fn event_body(event: &SystemEvent) -> usize {
         | SystemEvent::ValueSet(_)
         | SystemEvent::NavigationCancelled(_)
         | SystemEvent::NavigationFailed(_)
+        | SystemEvent::TraversalStarted(_)
         | SystemEvent::FetchFailed(_)
         | SystemEvent::FramePainted(_)
         | SystemEvent::TabClosed(_)
@@ -988,18 +1674,21 @@ fn invocation_body(invocation: &BindingInvocation) -> usize {
         | BindingInvocation::NoteOnNavigationStarted(_)
         | BindingInvocation::SelectOnPickRequested(_)
         | BindingInvocation::SetValueOnFillRequested(_)
-        | BindingInvocation::SubmitOnPressRequested(_) => 0,
+        | BindingInvocation::StartOnTraversalStarted(_)
+        | BindingInvocation::SubmitOnPressRequested(_)
+        | BindingInvocation::TraverseOnTraversalRequested(_) => 0,
     }
 }
 
 /// A step [`Browser::run`] hands on: a started request to the transport, a started parse to the
-/// parser step.
+/// parser step, a started submission to the submission step.
 enum Step {
     Request(RequestStarted),
     Parse(ParsingStarted),
+    Submit(SubmissionStarted),
 }
 
-impl<A, D, N, Ne, R, S, T, P> Browser<A, D, N, Ne, R, S, T, P>
+impl<A, D, N, Ne, R, S, T, P, F> Browser<A, D, N, Ne, R, S, T, P, F>
 where
     A: AgentBehaviors,
     D: DocumentBehaviors,
@@ -1009,13 +1698,16 @@ where
     S: ShellBehaviors,
     T: Transport,
     P: Parser,
+    F: Submitter,
 {
-    /// Runs the system until no event is undelivered and no request or parse started since the
-    /// last run is left unasked: pump, hand every `surf.net.RequestStarted` published since the
-    /// last pass whose request is `Pending` to the transport once and issue its answer on the
-    /// `net` port, hand every `surf.document.ParsingStarted` published since the last pass whose
-    /// document is `Parsing` to the parser step once and issue its answer on the `document` port,
-    /// in the order they were published, and pump again.
+    /// Runs the system until no event is undelivered and no request, parse or submission
+    /// started since the last run is left unasked: pump, hand every `surf.net.RequestStarted`
+    /// published since the last pass whose request is `Pending` to the transport once and issue
+    /// its answer on the `net` port, hand every `surf.document.ParsingStarted` published since
+    /// the last pass whose document is `Parsing` to the parser step once, and every
+    /// `surf.document.SubmissionStarted` whose submission is `Started` to the submission step
+    /// once, and issue their answers on the `document` port, in the order they were published,
+    /// and pump again.
     ///
     /// `Err` is the first unmet obligation of a pump or of a `net` or `document` command,
     /// returned at once.
@@ -1028,6 +1720,7 @@ where
                 .filter_map(|event| match event {
                     SystemEvent::RequestStarted(started) => Some(Step::Request(started.clone())),
                     SystemEvent::ParsingStarted(started) => Some(Step::Parse(started.clone())),
+                    SystemEvent::SubmissionStarted(started) => Some(Step::Submit(started.clone())),
                     _ => None,
                 })
                 .collect();
@@ -1039,16 +1732,20 @@ where
                 match step {
                     Step::Request(request) => self.answer(request)?,
                     Step::Parse(started) => self.parse(started)?,
+                    Step::Submit(started) => self.submit(started)?,
                 }
             }
         }
     }
 
     /// Asks the parser step for one started parse, if its document is still `Parsing`, and
-    /// issues the answer on the `document` port: one `AddElement` per element in tree order,
-    /// positions from 1, then `FinishParsing`. The tree is kept with the node of each element
-    /// whose row was added once `FinishParsing` moved the document to `Parsed`. A declared
-    /// refusal of either command is the `document` component's outcome and is left as it is.
+    /// issues the answer on the `document` port: one `AddForm` per form in tree order, then one
+    /// `AddElement` per element in tree order with its `name` and its form owner's identity,
+    /// each select's followed by one `AddOption` per option of its list of options, positions
+    /// from 1, then `FinishParsing`. The tree is kept with the node of each element whose row was
+    /// added once `FinishParsing` moved the document to `Parsed`. A declared refusal of any of
+    /// these commands is the `document` component's outcome and is left as it is: a form whose
+    /// row was refused owns no element row.
     fn parse(&mut self, started: ParsingStarted) -> Result<(), UnmetObligation> {
         let parsing = self.system.document.documents()?.iter().any(|row| {
             row.document_id == started.document_id && row.state == DocumentState::Parsing
@@ -1066,9 +1763,25 @@ where
             encoding,
             unsupported_encoding,
             stopped_by,
+            forms,
         } = *page;
+        let mut form_ids: Vec<Option<FormId>> = Vec::with_capacity(forms.forms.len());
+        for (position, form) in (1..).zip(&forms.forms) {
+            let outcome = self.system.document.add_form(AddForm {
+                document_id: started.document_id.clone(),
+                position,
+                action: form.action.clone(),
+                method: form.method.clone(),
+                enctype: form.enctype.clone(),
+            })?;
+            form_ids.push(match outcome {
+                AddFormOutcome::Added { form_added } => Some(form_added.form_id),
+                _ => None,
+            });
+        }
         let mut nodes = Vec::with_capacity(elements.len());
         for (position, element) in (1..).zip(elements) {
+            let control = forms.control(element.node);
             let outcome = self.system.document.add_element(AddElement {
                 document_id: started.document_id.clone(),
                 position,
@@ -1080,14 +1793,30 @@ where
                 disabled: element.disabled,
                 checked: element.checked,
                 required: element.required,
-                // The parser step adds no form yet: filling the form rows, a control's name and
-                // its form owner from the page is `story:agent-form-port`'s.
-                name: None,
-                form_id: None,
+                readonly: control.is_some_and(|control| control.readonly),
+                name: control.and_then(|control| control.name.clone()),
+                form_id: control
+                    .and_then(|control| control.owner)
+                    .and_then(|owner| form_ids[owner].clone()),
+                radio_group: control
+                    .filter(|_| matches!(element.kind, surf_page::Kind::Radio))
+                    .and_then(radio_group),
             })?;
-            if let AddElementOutcome::Added { element_added } = outcome {
-                nodes.push((element_added.element_id, element.node));
+            let AddElementOutcome::Added { element_added } = outcome else {
+                continue;
+            };
+            for (position, option) in (1..).zip(control.map_or(&[][..], |c| &c.options[..])) {
+                self.system.document.add_option(AddOption {
+                    select_id: element_added.element_id.clone(),
+                    position,
+                    value: option.value.clone(),
+                    label: option.label.clone(),
+                    selected: option.selected,
+                    disabled: option.disabled || element.disabled,
+                    hidden: element.hidden,
+                })?;
             }
+            nodes.push((element_added.element_id, element.node));
         }
         let outcome = self.system.document.finish_parsing(FinishParsing {
             document_id: started.document_id.clone(),
@@ -1098,9 +1827,195 @@ where
         })?;
         if let FinishParsingOutcome::Parsed { .. } = outcome {
             self.kept
-                .insert(started.document_id.0.0, Kept { tree, nodes });
+                .insert(started.document_id.0.0, Kept { tree, nodes, forms });
         }
         Ok(())
+    }
+
+    /// Hands one started submission to the submission step, if it is still `Started` and its
+    /// submitter is an element row of a document parsed here, with that document's address,
+    /// tree, forms and the state of its control rows, and issues the answer on the `document`
+    /// port: `SubmitForm` with the tab of the submitter's document, or `AbandonSubmission`. A
+    /// submission whose submitter is not of a kept document is left `Started`. A declared refusal
+    /// of either command is the `document` component's outcome and is left as it is.
+    fn submit(&mut self, started: SubmissionStarted) -> Result<(), UnmetObligation> {
+        let open = self.system.document.submissions()?.iter().any(|row| {
+            row.submission_id == started.submission_id && row.state == SubmissionState::Started
+        });
+        if !open {
+            return Ok(());
+        }
+        let Some(prepared) = self.prepare(&started.submitter)? else {
+            return Ok(());
+        };
+        let kept = &self.kept[&prepared.key];
+        let answer = self.submitter.submit(&Submission {
+            started: &started,
+            address: &prepared.document.url.0,
+            tree: &kept.tree,
+            forms: &kept.forms,
+            submitter: prepared.node,
+            filled: &prepared.filled,
+        });
+        match answer {
+            Submit::Navigate {
+                url,
+                method,
+                body,
+                body_type,
+            } => {
+                self.system.document.submit_form(SubmitForm {
+                    submission_id: started.submission_id,
+                    tab_id: prepared.document.tab_id,
+                    url: Url(url),
+                    method,
+                    body,
+                    body_type: body_type.map(MediaType),
+                })?;
+            }
+            Submit::Abandon(reason) => {
+                self.system.document.abandon_submission(AbandonSubmission {
+                    submission_id: started.submission_id,
+                    reason,
+                })?;
+            }
+            Submit::Unanswered => {}
+        }
+        Ok(())
+    }
+
+    /// The [`Plan`] of a press of the button row `submitter` now, from the same inputs the
+    /// submission step is handed ([`plan_submission`] of the default step, [`FormSubmitter`]);
+    /// nothing is issued. `None` when `submitter` is not an element row of a document parsed
+    /// here, or not a button of its forms.
+    pub fn plan_submission(&self, submitter: &ElementId) -> Result<Option<Plan>, UnmetObligation> {
+        let Some(prepared) = self.prepare(submitter)? else {
+            return Ok(None);
+        };
+        let kept = &self.kept[&prepared.key];
+        // The plan reads no field of the started submission: none has started.
+        let started = SubmissionStarted {
+            submission_id: surf_types::document::SubmissionId(surf_types::primitives::Uuid(
+                String::new(),
+            )),
+            submitter: submitter.clone(),
+        };
+        Ok(plan_submission(&Submission {
+            started: &started,
+            address: &prepared.document.url.0,
+            tree: &kept.tree,
+            forms: &kept.forms,
+            submitter: prepared.node,
+            filled: &prepared.filled,
+        }))
+    }
+
+    /// What each button of the document `document_id` with a form owner submits to
+    /// ([`submits`]), by its element row, the document base URL computed once and each distinct
+    /// action resolved once, however many buttons share it (`story:agent-press-submit`, "As
+    /// decided after the adversary's pass", decision 3); empty for a document not parsed here.
+    pub fn submits(
+        &self,
+        document_id: &DocumentId,
+    ) -> Result<Vec<(ElementId, Submits)>, UnmetObligation> {
+        let Some(kept) = self.kept.get(&document_id.0.0) else {
+            return Ok(Vec::new());
+        };
+        let Some(document) = self
+            .system
+            .document
+            .documents()?
+            .into_iter()
+            .find(|row| row.document_id == *document_id)
+        else {
+            return Ok(Vec::new());
+        };
+        let address = &document.url.0;
+        let base = surf_url::Url::parse(address, None)
+            .ok()
+            .map(|page| surf_page::base_url::document_base_url(&kept.tree, &page));
+        let mut resolved: HashMap<String, Result<surf_url::Url, String>> = HashMap::new();
+        let mut resolve = |action: &str| {
+            if let Some(found) = resolved.get(action) {
+                return found.clone();
+            }
+            let found = resolve_action(action, base.as_ref());
+            resolved.insert(action.to_owned(), found.clone());
+            found
+        };
+        Ok(kept
+            .nodes
+            .iter()
+            .filter_map(|(element_id, node)| {
+                submits_resolving(&kept.tree, &kept.forms, address, *node, &mut resolve)
+                    .map(|found| (element_id.clone(), found))
+            })
+            .collect())
+    }
+
+    /// The inputs of the submission step for the button row `submitter`: its kept document,
+    /// node, `Documents` row and the state of every control row. `None` when it is not an
+    /// element row of a document parsed here.
+    fn prepare(&self, submitter: &ElementId) -> Result<Option<Prepared>, UnmetObligation> {
+        let Some((key, node)) = self.kept.iter().find_map(|(key, kept)| {
+            kept.nodes
+                .iter()
+                .find(|(element_id, _)| element_id == submitter)
+                .map(|&(_, node)| (key.clone(), node))
+        }) else {
+            return Ok(None);
+        };
+        let Some(document) = self
+            .system
+            .document
+            .documents()?
+            .into_iter()
+            .find(|row| row.document_id.0.0 == key)
+        else {
+            return Ok(None);
+        };
+        let rows = self
+            .system
+            .document
+            .elements(document.document_id.clone())?;
+        let mut selected: BTreeMap<String, Vec<(i64, String)>> = BTreeMap::new();
+        for option in self.system.document.options()? {
+            if option.selected && !option.disabled {
+                selected
+                    .entry(option.select_id.0.0)
+                    .or_default()
+                    .push((option.position, option.value));
+            }
+        }
+        let kept = &self.kept[&key];
+        let node_of: BTreeMap<&str, NodeId> = kept
+            .nodes
+            .iter()
+            .map(|(element_id, node)| (element_id.0.0.as_str(), *node))
+            .collect();
+        let mut filled = BTreeMap::new();
+        for row in rows {
+            let Some(&node) = node_of.get(row.element_id.0.0.as_str()) else {
+                continue;
+            };
+            let mut values = selected.remove(&row.element_id.0.0).unwrap_or_default();
+            values.sort();
+            filled.insert(
+                node,
+                Filled {
+                    value: row.value,
+                    checked: row.checked,
+                    required: row.required,
+                    selected: values.into_iter().map(|(_, value)| value).collect(),
+                },
+            );
+        }
+        Ok(Some(Prepared {
+            key,
+            node,
+            document,
+            filled,
+        }))
     }
 
     /// Asks the transport for one started request, if it is still `Pending`, and issues the
@@ -1117,6 +2032,7 @@ where
         match self.transport.fetch(&started) {
             Answer::Response {
                 url,
+                method,
                 status,
                 media_type,
                 body,
@@ -1124,6 +2040,7 @@ where
                 self.system.net.deliver_response(DeliverResponse {
                     request_id: started.request_id,
                     url: Url(url),
+                    method,
                     status: Status(i64::from(status)),
                     media_type: MediaType(media_type),
                     body,

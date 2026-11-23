@@ -215,7 +215,7 @@ line or look like a field of the format.
 
 ```
 surf 1 session 7f3a open
-did fill f1
+did fill "f1"
 page 200 text/html http://example.org/login "Sign in"
 path 3 of 3
   1 go http://example.org/
@@ -228,7 +228,7 @@ now 5
   l2 link hid "Admin" -> /admin
   f1 text vis "User name" = "ada"
   f2 password vis "Password" = (set)
-  b1 button vis "Sign in" submits F1 post /session
+  b1 button vis "Sign in" submits F1 post "/session"
 ```
 
 - Line 1: format version, session, session state.

@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T02:54:32Z",
+  "actor": "human:operator",
+  "artifact": "story:test-harness-fewer-processes",
+  "kind": "story",
+  "revision": 27,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the implementing unit's counts with strace outside the pool on the tree of d846975, 2026-11-23 (acceptances 1 and 10)",
+    "reference": "one --check --base run: 8 programs before, 3 after; environ opens in one drop: in_process::case_01 1281 to 1, events::case_05 1287 to 1; view-fixture fixture with SURF_BIN_DIR: 19 programs, 1 cargo, to 9, 0 cargo; driver with the stub model: 56 programs in 62 processes for 4 tasks before (the story says 75 in 52), one-task.txt 32, 53 % of the run of 4 after; surfd bin_dir entries keep inode, link count and ctime over a second run"
+  }
+}

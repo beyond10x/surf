@@ -7,7 +7,9 @@
 //! [`Unanswered`]: the suite ends a request itself, with `surf.net.DeliverResponse` or
 //! `surf.net.FailRequest`, so no request is ever answered from the network. The parser step is
 //! [`Unparsed`]: the suite ends a parse itself, with `surf.document.AddElement` and
-//! `surf.document.FinishParsing`, so no body is ever parsed by `surf-html`.
+//! `surf.document.FinishParsing`, so no body is ever parsed by `surf-html`. The submission step
+//! is [`Unsubmitted`]: the suite ends a submission itself, with `surf.document.SubmitForm` or
+//! `surf.document.AbandonSubmission`.
 //!
 //! What the target reports, and where it reads it:
 //!
@@ -39,18 +41,19 @@ use ess_primitives::consistency::ConsistencyToken;
 use ess_primitives::node::Node;
 use surf::{
     AgentBehaviors, Answer, Browser, DocumentBehaviors, NavigatorBehaviors, NetBehaviors, Parse,
-    Parser, ParsingStarted, RendererBehaviors, RequestStarted, ShellBehaviors, SystemEvent,
-    Transport, UnmetObligation,
+    Parser, ParsingStarted, RendererBehaviors, RequestStarted, ShellBehaviors, Submission, Submit,
+    Submitter, SystemEvent, Transport, UnmetObligation,
 };
 use surf_ports::{AgentPorts, Caller, DocumentPorts};
 use surf_system::BindingInvocation;
 use surf_types::agent::{
     ActionCommand, CloseSession, CloseSessionOutcome, Fill, FillOutcome, Follow, FollowOutcome, Go,
-    GoOutcome, NoteNavigationCommitted, NoteNavigationCommittedOutcome, NoteNavigationEnded,
-    NoteNavigationEndedOutcome, NoteNavigationFailed, NoteNavigationFailedOutcome,
-    NoteNavigationStarted, NoteNavigationStartedOutcome, OpenSession, OpenSessionOutcome, Pick,
-    PickOutcome, Press, PressOutcome, RecordAction, RecordActionOutcome, SessionData, SessionId,
-    SessionSnapshot, SessionState,
+    GoBack, GoBackOutcome, GoForward, GoForwardOutcome, GoOutcome, NoteNavigationCommitted,
+    NoteNavigationCommittedOutcome, NoteNavigationEnded, NoteNavigationEndedOutcome,
+    NoteNavigationFailed, NoteNavigationFailedOutcome, NoteNavigationStarted,
+    NoteNavigationStartedOutcome, OpenSession, OpenSessionOutcome, Pick, PickOutcome, Press,
+    PressOutcome, RecordAction, RecordActionOutcome, SessionData, SessionId, SessionSnapshot,
+    SessionState,
 };
 use surf_types::behaviour::{ElementStorage, ListOptionStorage, SessionStorage, SubmissionStorage};
 use surf_types::document::{
@@ -65,7 +68,9 @@ use surf_types::document::{
 };
 use surf_types::navigation::{
     CancelNavigation, CancelNavigationOutcome, CommitNavigation, CommitNavigationOutcome,
-    FailNavigation, FailNavigationOutcome, Navigate, NavigateOutcome, NavigationState,
+    FailNavigation, FailNavigationOutcome, HistoryHandling, Navigate, NavigateOutcome,
+    NavigationState, Standing, StartTraversal, StartTraversalOutcome, TraverseHistory,
+    TraverseHistoryOutcome,
 };
 use surf_types::net::{
     DeliverResponse, DeliverResponseOutcome, FailRequest, FailRequestOutcome, FailureReason, Fetch,
@@ -102,13 +107,26 @@ impl Parser for Unparsed {
     }
 }
 
+/// A submission step that never answers: every submission stays `Started` until the suite ends
+/// it itself, with `surf.document.SubmitForm` or `surf.document.AbandonSubmission`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Unsubmitted;
+
+impl Submitter for Unsubmitted {
+    fn submit(&mut self, _submission: &Submission<'_>) -> Submit {
+        Submit::Unanswered
+    }
+}
+
 /// A [`Browser`] over component ports `A`, `D`, `N`, `Ne`, `R` and `S`, with the
 /// [`Unanswered`] transport: what the function a [`SurfTarget`] is built with returns. The
-/// target replaces its parser step with [`Unparsed`] before the scenario's first command.
+/// target replaces its parser step with [`Unparsed`] and its submission step with
+/// [`Unsubmitted`] before the scenario's first command.
 pub type ConformanceBrowser<A, D, N, Ne, R, S> = Browser<A, D, N, Ne, R, S, Unanswered>;
 
-/// The browser a scenario runs: a [`ConformanceBrowser`] with the parser step [`Unparsed`].
-type Running<A, D, N, Ne, R, S> = Browser<A, D, N, Ne, R, S, Unanswered, Unparsed>;
+/// The browser a scenario runs: a [`ConformanceBrowser`] with the parser step [`Unparsed`] and
+/// the submission step [`Unsubmitted`].
+type Running<A, D, N, Ne, R, S> = Browser<A, D, N, Ne, R, S, Unanswered, Unparsed, Unsubmitted>;
 
 type Assemble<A, D, N, Ne, R, S> = Box<dyn Fn(&Setup) -> ConformanceBrowser<A, D, N, Ne, R, S>>;
 
@@ -284,6 +302,7 @@ fn publisher(event: &SystemEvent) -> Component {
         | SystemEvent::NavigationRequested(_)
         | SystemEvent::PickRequested(_)
         | SystemEvent::PressRequested(_)
+        | SystemEvent::TraversalRequested(_)
         | SystemEvent::SessionClosed(_)
         | SystemEvent::SessionNavigationChanged(_)
         | SystemEvent::SessionOpened(_) => Component::Agent,
@@ -301,7 +320,8 @@ fn publisher(event: &SystemEvent) -> Component {
         SystemEvent::NavigationCancelled(_)
         | SystemEvent::NavigationCommitted(_)
         | SystemEvent::NavigationFailed(_)
-        | SystemEvent::NavigationStarted(_) => Component::Navigator,
+        | SystemEvent::NavigationStarted(_)
+        | SystemEvent::TraversalStarted(_) => Component::Navigator,
         SystemEvent::FetchFailed(_)
         | SystemEvent::RequestStarted(_)
         | SystemEvent::ResponseReceived(_) => Component::Net,
@@ -318,7 +338,9 @@ fn invoked_on(invocation: &BindingInvocation) -> Component {
         BindingInvocation::CommitOnResponse(_)
         | BindingInvocation::FailOnFetchFailed(_)
         | BindingInvocation::NavigateOnFormSubmitted(_)
-        | BindingInvocation::NavigateOnNavigationRequested(_) => Component::Navigator,
+        | BindingInvocation::NavigateOnNavigationRequested(_)
+        | BindingInvocation::StartOnTraversalStarted(_)
+        | BindingInvocation::TraverseOnTraversalRequested(_) => Component::Navigator,
         BindingInvocation::FetchOnNavigationStarted(_) => Component::Net,
         BindingInvocation::CheckOnPickRequested(_)
         | BindingInvocation::ParseOnNavigationCommitted(_)
@@ -352,6 +374,8 @@ fn trigger(invocation: &BindingInvocation) -> &'static str {
         BindingInvocation::NoteOnNavigationCommitted(_)
         | BindingInvocation::ParseOnNavigationCommitted(_) => "surf.navigation.NavigationCommitted",
         BindingInvocation::NoteOnNavigationFailed(_) => "surf.navigation.NavigationFailed",
+        BindingInvocation::StartOnTraversalStarted(_) => "surf.navigation.TraversalStarted",
+        BindingInvocation::TraverseOnTraversalRequested(_) => "surf.agent.TraversalRequested",
     }
 }
 
@@ -407,8 +431,15 @@ fn named_invocation(invoked: &BindingInvocation) -> String {
 /// another component and reached the log after that run, so the binding's events sit behind it.
 /// The `agent` component is invoked back so: `Go` publishes `NavigationRequested`, the
 /// navigator's `NavigationStarted` follows, and `note-on-navigation-started` invokes the agent
-/// again. The [`Unanswered`] transport issues no command. Where that does not hold, the log
-/// cannot be split, and the answer is an error.
+/// again. The [`Unanswered`] transport issues no command.
+///
+/// A binding may also react to one of the command's own events and invoke its component again:
+/// `TraverseHistory` publishes `TraversalStarted`, and `start-on-traversal-started` invokes the
+/// navigator's `StartTraversal`, whose `NavigationStarted` joins the run. Then the run cannot be
+/// split by component, and the command's own events are the ones its outcome carries, at the
+/// start of the run; the binding's follow them. A binding counts so only when the event it
+/// reacted to is among the outcome's. Where none of this holds, the log cannot be split, and the
+/// answer is an error.
 ///
 /// `Err` also when the outcome and the log disagree: an event the outcome carries that the log
 /// lacks, an event on the log behind a refusal, or other values.
@@ -420,20 +451,29 @@ fn reported_events(
 ) -> Result<Vec<SystemEvent>, String> {
     let component = receiver(command)
         .ok_or_else(|| format!("`{command}` is issued on no component of the surf system"))?;
-    let direct = gained
-        .iter()
-        .take_while(|event| publisher(event) == component)
-        .count();
-    let mut back = invoked
+    let back: Vec<&BindingInvocation> = invoked
         .iter()
         .filter(|invocation| invoked_on(invocation) == component)
-        .peekable();
-    let invoked_back = back.peek().is_some();
+        .collect();
+    let on_own = |invocation: &BindingInvocation| {
+        let cause = trigger(invocation);
+        answered.iter().any(|event| event.name() == cause)
+    };
+    let direct = if back.iter().any(|invocation| on_own(invocation)) {
+        answered.len().min(gained.len())
+    } else {
+        gained
+            .iter()
+            .take_while(|event| publisher(event) == component)
+            .count()
+    };
+    let invoked_back = !back.is_empty();
     for invocation in back {
         let cause = trigger(invocation);
-        let delivered = gained[direct..]
-            .iter()
-            .any(|event| event.name() == cause && publisher(event) != component);
+        let delivered = on_own(invocation)
+            || gained[direct..]
+                .iter()
+                .any(|event| event.name() == cause && publisher(event) != component);
         if !delivered {
             return Err(format!(
                 "a binding invoked {} on the component `{command}` was issued on, and \
@@ -502,6 +542,37 @@ fn navigation_state_named(name: &str) -> Option<NavigationState> {
     .find(|state| navigation_state(*state) == name)
 }
 
+fn standing(standing: Standing) -> &'static str {
+    match standing {
+        Standing::Earlier => "earlier",
+        Standing::Back => "back",
+        Standing::Current => "current",
+        Standing::Forward => "forward",
+        Standing::Later => "later",
+        Standing::Dropped => "dropped",
+    }
+}
+
+fn standing_named(name: &str) -> Option<Standing> {
+    [
+        Standing::Earlier,
+        Standing::Back,
+        Standing::Current,
+        Standing::Forward,
+        Standing::Later,
+        Standing::Dropped,
+    ]
+    .into_iter()
+    .find(|candidate| standing(*candidate) == name)
+}
+
+fn handling(handling: HistoryHandling) -> &'static str {
+    match handling {
+        HistoryHandling::Push => "push",
+        HistoryHandling::Traverse => "traverse",
+    }
+}
+
 fn session_state(state: SessionState) -> &'static str {
     match state {
         SessionState::Closed => "Closed",
@@ -517,6 +588,8 @@ fn action_command(command: ActionCommand) -> &'static str {
         ActionCommand::Fill => "fill",
         ActionCommand::Pick => "pick",
         ActionCommand::Press => "press",
+        ActionCommand::Back => "back",
+        ActionCommand::Forward => "forward",
         ActionCommand::Close => "close",
     }
 }
@@ -529,6 +602,8 @@ fn action_command_named(name: &str) -> Option<ActionCommand> {
         ActionCommand::Fill,
         ActionCommand::Pick,
         ActionCommand::Press,
+        ActionCommand::Back,
+        ActionCommand::Forward,
         ActionCommand::Close,
     ]
     .into_iter()
@@ -853,6 +928,7 @@ fn end_reason(reason: SubmissionEndReason) -> &'static str {
         SubmissionEndReason::UnsupportedScheme => "UnsupportedScheme",
         SubmissionEndReason::UnsupportedEnctype => "UnsupportedEnctype",
         SubmissionEndReason::DialogMethod => "DialogMethod",
+        SubmissionEndReason::AddressTooLong => "AddressTooLong",
     }
 }
 
@@ -865,6 +941,7 @@ fn end_reason_named(name: &str) -> Option<SubmissionEndReason> {
         SubmissionEndReason::UnsupportedScheme,
         SubmissionEndReason::UnsupportedEnctype,
         SubmissionEndReason::DialogMethod,
+        SubmissionEndReason::AddressTooLong,
     ]
     .into_iter()
     .find(|reason| end_reason(*reason) == name)
@@ -956,8 +1033,10 @@ fn element_snapshot(
         disabled: input.boolean("disabled")?,
         checked: input.boolean("checked")?,
         required: input.boolean("required")?,
+        readonly: input.boolean("readonly")?,
         name: optional_text(&mut input, &present, "name")?,
         form_id: optional_text(&mut input, &present, "form_id")?.map(|id| FormId(Uuid(id))),
+        radio_group: optional_text(&mut input, &present, "radio_group")?,
     };
     input.finish()?;
     let state = established_state(ENTITY, state, |name| {
@@ -1050,11 +1129,14 @@ fn payload(event: &SystemEvent) -> Vec<(&'static str, Node)> {
             ("session_id", uuid(&e.session_id.0)),
             ("element_id", uuid(&e.element_id.0)),
             ("value", text(&e.value)),
+            ("handle", optional(e.handle.as_deref(), text)),
         ],
         SystemEvent::NavigationRequested(e) => vec![
             ("session_id", uuid(&e.session_id.0)),
             ("tab_id", uuid(&e.tab_id.0)),
             ("url", text(&e.url.0)),
+            ("handle", optional(e.handle.as_deref(), text)),
+            ("label", optional(e.label.as_deref(), text)),
         ],
         SystemEvent::PickRequested(e) => vec![
             ("session_id", uuid(&e.session_id.0)),
@@ -1063,10 +1145,17 @@ fn payload(event: &SystemEvent) -> Vec<(&'static str, Node)> {
                 "option_id",
                 optional(e.option_id.as_ref(), |id| uuid(&id.0)),
             ),
+            ("handle", optional(e.handle.as_deref(), text)),
         ],
         SystemEvent::PressRequested(e) => vec![
             ("session_id", uuid(&e.session_id.0)),
             ("element_id", uuid(&e.element_id.0)),
+            ("handle", optional(e.handle.as_deref(), text)),
+        ],
+        SystemEvent::TraversalRequested(e) => vec![
+            ("session_id", uuid(&e.session_id.0)),
+            ("tab_id", uuid(&e.tab_id.0)),
+            ("step", text(standing(e.step))),
         ],
         SystemEvent::SessionClosed(e) => vec![
             ("session_id", uuid(&e.session_id.0)),
@@ -1178,6 +1267,12 @@ fn payload(event: &SystemEvent) -> Vec<(&'static str, Node)> {
             ));
             fields
         }
+        SystemEvent::TraversalStarted(e) => vec![
+            ("tab_id", uuid(&e.tab_id.0)),
+            ("url", text(&e.url.0)),
+            ("entry_id", uuid_of(&e.entry_id)),
+            ("entry_next", optional(e.entry_next.as_ref(), uuid_of)),
+        ],
         SystemEvent::FetchFailed(e) => vec![
             ("request_id", uuid_of(&e.request_id)),
             ("url", text(&e.url.0)),
@@ -1198,6 +1293,7 @@ fn payload(event: &SystemEvent) -> Vec<(&'static str, Node)> {
         SystemEvent::ResponseReceived(e) => vec![
             ("request_id", uuid_of(&e.request_id)),
             ("url", text(&e.url.0)),
+            ("method", text(method(e.method))),
             ("status", integer(e.status.0)),
             ("media_type", text(&e.media_type.0)),
             ("body", bytes(&e.body)),
@@ -1252,6 +1348,7 @@ fn invocation(
             vec![
                 ("navigation_id", uuid_of(&input.navigation_id)),
                 ("url", text(&input.url.0)),
+                ("method", text(method(input.method))),
                 ("status", integer(input.status.0)),
                 ("media_type", text(&input.media_type.0)),
                 ("body", bytes(&input.body)),
@@ -1382,6 +1479,24 @@ fn invocation(
                 ("state", text(navigation_state(input.state))),
             ],
         ),
+        BindingInvocation::TraverseOnTraversalRequested(input) => (
+            "traverse-on-traversal-requested",
+            "surf.navigation.TraverseHistory",
+            vec![
+                ("tab_id", values::uuid(&input.tab_id.0)),
+                ("step", text(standing(input.step))),
+            ],
+        ),
+        BindingInvocation::StartOnTraversalStarted(input) => (
+            "start-on-traversal-started",
+            "surf.navigation.StartTraversal",
+            vec![
+                ("tab_id", values::uuid(&input.tab_id.0)),
+                ("url", text(&input.url.0)),
+                ("entry_id", uuid_of(&input.entry_id)),
+                ("entry_next", optional(input.entry_next.as_ref(), uuid_of)),
+            ],
+        ),
     }
 }
 
@@ -1468,6 +1583,68 @@ where
                         vec![("session_id", uuid(&error.session_id.0))],
                     )?,
                     GoOutcome::Closed { error } => refused(
+                        "closed",
+                        "surf.agent.SessionStateConflict",
+                        vec![("state", values::text(session_state(error.state)))],
+                    )?,
+                }
+            }
+            "surf.agent.GoBack" => {
+                let session_id = SessionId(input.uuid("session_id")?);
+                input.finish()?;
+                match browser
+                    .agent_mut()
+                    .go_back(GoBack { session_id })
+                    .map_err(unmet)?
+                {
+                    GoBackOutcome::Requested {
+                        traversal_requested,
+                    } => took(
+                        "requested",
+                        SystemEvent::TraversalRequested(traversal_requested),
+                    ),
+                    GoBackOutcome::NotHolder { error } => refused(
+                        "not-holder",
+                        "surf.agent.NotSessionHolder",
+                        vec![("session_id", uuid(&error.session_id.0))],
+                    )?,
+                    GoBackOutcome::NoSuchSession { error } => refused(
+                        "no-such-session",
+                        "surf.agent.SessionNotFound",
+                        vec![("session_id", uuid(&error.session_id.0))],
+                    )?,
+                    GoBackOutcome::Closed { error } => refused(
+                        "closed",
+                        "surf.agent.SessionStateConflict",
+                        vec![("state", values::text(session_state(error.state)))],
+                    )?,
+                }
+            }
+            "surf.agent.GoForward" => {
+                let session_id = SessionId(input.uuid("session_id")?);
+                input.finish()?;
+                match browser
+                    .agent_mut()
+                    .go_forward(GoForward { session_id })
+                    .map_err(unmet)?
+                {
+                    GoForwardOutcome::Requested {
+                        traversal_requested,
+                    } => took(
+                        "requested",
+                        SystemEvent::TraversalRequested(traversal_requested),
+                    ),
+                    GoForwardOutcome::NotHolder { error } => refused(
+                        "not-holder",
+                        "surf.agent.NotSessionHolder",
+                        vec![("session_id", uuid(&error.session_id.0))],
+                    )?,
+                    GoForwardOutcome::NoSuchSession { error } => refused(
+                        "no-such-session",
+                        "surf.agent.SessionNotFound",
+                        vec![("session_id", uuid(&error.session_id.0))],
+                    )?,
+                    GoForwardOutcome::Closed { error } => refused(
                         "closed",
                         "surf.agent.SessionStateConflict",
                         vec![("state", values::text(session_state(error.state)))],
@@ -1886,6 +2063,7 @@ where
             "surf.navigation.CommitNavigation" => {
                 let navigation_id = RequestId(input.uuid("navigation_id")?);
                 let url = Url(input.text("url")?);
+                let request_method = input.variant("method", method_named)?;
                 let status = Status(input.integer("status")?);
                 let media_type = MediaType(input.text("media_type")?);
                 let body = input.bytes("body")?;
@@ -1895,6 +2073,7 @@ where
                     .commit_navigation(CommitNavigation {
                         navigation_id,
                         url,
+                        method: request_method,
                         status,
                         media_type,
                         body,
@@ -1907,6 +2086,12 @@ where
                         "committed",
                         SystemEvent::NavigationCommitted(navigation_committed),
                     ),
+                    CommitNavigationOutcome::Traversed {
+                        navigation_committed,
+                    } => took(
+                        "traversed",
+                        SystemEvent::NavigationCommitted(navigation_committed),
+                    ),
                     CommitNavigationOutcome::NoSuchNavigation { error } => refused(
                         "no-such-navigation",
                         "surf.navigation.NavigationNotFound",
@@ -1917,6 +2102,62 @@ where
                         "surf.navigation.NavigationStateConflict",
                         vec![("state", values::text(navigation_state(error.state)))],
                     )?,
+                }
+            }
+            "surf.navigation.TraverseHistory" => {
+                let tab_id = TabId(input.uuid("tab_id")?);
+                let step = input.variant("step", standing_named)?;
+                input.finish()?;
+                match browser
+                    .navigator_mut()
+                    .traverse_history(TraverseHistory { tab_id, step })
+                    .map_err(unmet)?
+                {
+                    TraverseHistoryOutcome::Requested { traversal_started } => took(
+                        "requested",
+                        SystemEvent::TraversalStarted(traversal_started),
+                    ),
+                    TraverseHistoryOutcome::Unsupported { error } => refused(
+                        "unsupported",
+                        "surf.navigation.TraversalUnsupported",
+                        vec![("step", values::text(standing(error.step)))],
+                    )?,
+                    TraverseHistoryOutcome::NoEntry { error } => refused(
+                        "no-entry",
+                        "surf.navigation.NoHistoryEntry",
+                        vec![
+                            ("tab_id", uuid(&error.tab_id.0)),
+                            ("step", values::text(standing(error.step))),
+                        ],
+                    )?,
+                }
+            }
+            "surf.navigation.StartTraversal" => {
+                let present = present(fields);
+                let mut input = Input::new(command, &present);
+                let tab_id = TabId(input.uuid("tab_id")?);
+                let url = Url(input.text("url")?);
+                let entry_id = RequestId(input.uuid("entry_id")?);
+                let entry_next = if present.contains_key("entry_next") {
+                    Some(RequestId(input.uuid("entry_next")?))
+                } else {
+                    None
+                };
+                input.finish()?;
+                match browser
+                    .navigator_mut()
+                    .start_traversal(StartTraversal {
+                        tab_id,
+                        url,
+                        entry_id,
+                        entry_next,
+                    })
+                    .map_err(unmet)?
+                {
+                    StartTraversalOutcome::Started { navigation_started } => took(
+                        "started",
+                        SystemEvent::NavigationStarted(navigation_started),
+                    ),
                 }
             }
             "surf.navigation.FailNavigation" => {
@@ -1972,6 +2213,7 @@ where
             "surf.net.DeliverResponse" => {
                 let request_id = RequestId(input.uuid("request_id")?);
                 let url = Url(input.text("url")?);
+                let request_method = input.variant("method", method_named)?;
                 let status = Status(input.integer("status")?);
                 let media_type = MediaType(input.text("media_type")?);
                 let body = input.bytes("body")?;
@@ -1981,6 +2223,7 @@ where
                     .deliver_response(DeliverResponse {
                         request_id,
                         url,
+                        method: request_method,
                         status,
                         media_type,
                         body,
@@ -2069,9 +2312,11 @@ where
                 let disabled = input.boolean("disabled")?;
                 let checked = input.boolean("checked")?;
                 let required = input.boolean("required")?;
+                let readonly = input.boolean("readonly")?;
                 let name = optional_text(&mut input, &present, "name")?;
                 let form_id =
                     optional_text(&mut input, &present, "form_id")?.map(|id| FormId(Uuid(id)));
+                let radio_group = optional_text(&mut input, &present, "radio_group")?;
                 input.finish()?;
                 match browser
                     .document_mut()
@@ -2086,8 +2331,10 @@ where
                         disabled,
                         checked,
                         required,
+                        readonly,
                         name,
                         form_id,
+                        radio_group,
                     })
                     .map_err(unmet)?
                 {
@@ -2251,6 +2498,11 @@ where
                     SetValueOutcome::Hidden { error } => {
                         refused_element("hidden", "surf.document.ControlHidden", &error.element_id)?
                     }
+                    SetValueOutcome::Readonly { error } => refused_element(
+                        "readonly",
+                        "surf.document.ControlReadonly",
+                        &error.element_id,
+                    )?,
                 }
             }
             "surf.document.Check" => {
@@ -2539,6 +2791,7 @@ where
                         ("disabled", values::boolean(row.disabled)),
                         ("checked", values::boolean(row.checked)),
                         ("required", values::boolean(row.required)),
+                        ("readonly", values::boolean(row.readonly)),
                         ("name", optional(row.name.as_deref(), text)),
                         ("form_id", optional(row.form_id.as_ref(), |id| uuid(&id.0))),
                     ])
@@ -2688,6 +2941,12 @@ where
                         ("tab_id", uuid(&row.tab_id.0)),
                         ("url", text(&row.url.0)),
                         ("state", text(navigation_state(row.state))),
+                        ("method", text(method(row.method))),
+                        ("handling", text(handling(row.handling))),
+                        ("standing", optional(row.standing, |at| text(standing(at)))),
+                        ("next", optional(row.next.as_ref(), uuid_of)),
+                        ("entry_id", optional(row.entry_id.as_ref(), uuid_of)),
+                        ("entry_next", optional(row.entry_next.as_ref(), uuid_of)),
                     ]
                 })
                 .collect(),
@@ -2770,7 +3029,9 @@ where
     fn begin_scenario(&self, _scenario: &ScenarioContext) -> Result<(), TargetError> {
         let setup = Setup::default();
         *self.scenario.borrow_mut() = Some(Scenario {
-            browser: (self.assemble)(&setup).with_parser(Unparsed),
+            browser: (self.assemble)(&setup)
+                .with_parser(Unparsed)
+                .with_submitter(Unsubmitted),
             setup,
             writes: 0,
         });
@@ -2826,7 +3087,9 @@ where
                     format!("a `{entity}` `{identity}` is already established"),
                 ));
             }
-            scenario.browser = (self.assemble)(&scenario.setup).with_parser(Unparsed);
+            scenario.browser = (self.assemble)(&scenario.setup)
+                .with_parser(Unparsed)
+                .with_submitter(Unsubmitted);
             Ok(())
         })
     }
@@ -2993,7 +3256,7 @@ mod tests {
     };
     use surf_types::navigation::{
         CommitNavigation, Navigate, NavigationCancelled, NavigationCommitted, NavigationStarted,
-        NavigationState,
+        NavigationState, StartTraversal, TraversalStarted,
     };
     use surf_types::net::{
         Fetch, MediaType, Method, RequestId, RequestStarted, ResponseReceived, Status,
@@ -3052,6 +3315,7 @@ mod tests {
         SystemEvent::ResponseReceived(ResponseReceived {
             request_id: navigation_id(),
             url: Url(ADDRESS.to_owned()),
+            method: Method::Get,
             status: Status(200),
             media_type: MediaType("text/html".to_owned()),
             body: Vec::new(),
@@ -3073,6 +3337,7 @@ mod tests {
         BindingInvocation::CommitOnResponse(CommitNavigation {
             navigation_id: navigation_id(),
             url: Url(ADDRESS.to_owned()),
+            method: Method::Get,
             status: Status(200),
             media_type: MediaType("text/html".to_owned()),
             body: Vec::new(),
@@ -3164,6 +3429,62 @@ mod tests {
         assert!(answer.is_err(), "{answer:?}");
     }
 
+    fn traversal_started() -> SystemEvent {
+        SystemEvent::TraversalStarted(TraversalStarted {
+            tab_id: TabId(Uuid(TAB.to_owned())),
+            url: Url(ADDRESS.to_owned()),
+            entry_id: navigation_id(),
+            entry_next: None,
+        })
+    }
+
+    fn start_traversal() -> BindingInvocation {
+        BindingInvocation::StartOnTraversalStarted(StartTraversal {
+            tab_id: TabId(Uuid(TAB.to_owned())),
+            url: Url(ADDRESS.to_owned()),
+            entry_id: navigation_id(),
+            entry_next: None,
+        })
+    }
+
+    /// `story:agent-history-spec`: `TraverseHistory` publishes `TraversalStarted`, and
+    /// `start-on-traversal-started` invokes the navigator again on it, so the navigator's
+    /// `NavigationStarted` follows in the same run. The binding reacted to the command's own
+    /// event, so the command's events are the ones its outcome carries and the rest of the run
+    /// is the binding's.
+    #[test]
+    fn a_binding_back_on_the_commands_own_event_ends_the_command_at_its_outcome() {
+        assert_eq!(
+            reported_events(
+                "surf.navigation.TraverseHistory",
+                &[traversal_started()],
+                &[traversal_started(), started(), request_started()],
+                &[start_traversal(), fetch()],
+            ),
+            Ok(vec![traversal_started()])
+        );
+    }
+
+    /// The same binding with a refusal: the event it reacted to is not the command's, so the
+    /// log cannot be split, and the event behind the refusal is an error.
+    #[test]
+    fn a_binding_back_on_an_event_the_outcome_lacks_is_an_error() {
+        let answer = reported_events(
+            "surf.navigation.TraverseHistory",
+            &[],
+            &[traversal_started(), started()],
+            &[start_traversal()],
+        );
+        assert!(answer.is_err(), "{answer:?}");
+        let answer = reported_events(
+            "surf.navigation.TraverseHistory",
+            &[traversal_started()],
+            &[started(), traversal_started()],
+            &[start_traversal()],
+        );
+        assert!(answer.is_err(), "{answer:?}");
+    }
+
     /// A command the adapter cannot place in a component is an error, not an empty answer.
     #[test]
     fn a_command_of_no_component_is_an_error() {
@@ -3178,6 +3499,8 @@ mod tests {
             session_id: SessionId(Uuid(SESSION.to_owned())),
             tab_id: TabId(Uuid(TAB.to_owned())),
             url: Url(ADDRESS.to_owned()),
+            handle: None,
+            label: None,
         })
     }
 
@@ -3249,7 +3572,8 @@ mod tests {
     /// fresh system.
     fn navigated(fields: &[(&str, Node)]) -> (NavigationStarted, Fetch) {
         let mut browser = Browser::from_ports(ComponentPorts::new(), super::Unanswered)
-            .with_parser(super::Unparsed);
+            .with_parser(super::Unparsed)
+            .with_submitter(super::Unsubmitted);
         let fields: BTreeMap<String, Node> = fields
             .iter()
             .map(|(name, node)| ((*name).to_owned(), node.clone()))
@@ -3363,6 +3687,7 @@ mod tests {
                     session_id: SessionId(uuid(1)),
                     element_id: ElementId(uuid(2)),
                     value: MARKER.to_owned(),
+                    handle: Some("f1".to_owned()),
                 }),
             ),
             (

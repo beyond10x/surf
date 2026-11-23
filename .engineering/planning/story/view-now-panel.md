@@ -9,7 +9,34 @@ relations:
 - decomposes: epic:live-view
 - depends_on: story:view-detail-panel
 - depends_on: story:agent-follow-links
-revision: 6
+scope:
+- confidence: inferred
+  path: AGENTS.md
+- confidence: inferred
+  path: README.md
+- confidence: cited
+  path: crates/surfd/src/view.rs
+- confidence: cited
+  path: crates/view-fixture/pages/now
+- confidence: cited
+  path: crates/view/src/assets.rs
+- confidence: cited
+  path: crates/view/src/json.rs
+- confidence: cited
+  path: crates/view/src/model.rs
+- confidence: cited
+  path: crates/view/tests
+- confidence: cited
+  path: crates/view/tests/prototype.rs
+- confidence: cited
+  path: crates/view/web
+- confidence: cited
+  path: docs/view-stream.md
+- confidence: cited
+  path: view-tests/tests/now.spec.mjs
+- confidence: inferred
+  path: website/docs/status.md
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-21T00:46:14Z", actor: "human:timo", revision: 3}
 - {from: "proposed", to: "active", at: "2026-11-21T00:46:15Z", actor: "human:timo", revision: 4}
@@ -18,15 +45,22 @@ transitions:
 
 `epic:live-view`, Outcome: for the selected session, "what can be done on it now (the actionable
 elements of the agent's `now` block, grouped by kind, each with handle, label, state or target and
-visibility)". Before the parser the `now` block is empty; links reach it with
-`story:agent-follow-links`, which also puts the title on the page line. This story shows them. The
+visibility)". `surf_answer::Answer` has no `now` block on `main` (`crates/answer/src/lib.rs:42-59`);
+`story:agent-follow-links` adds it with the links, and puts the title on the page line. The
+view's pages render a title already (`crates/view/web/sessions.js:37-38`, `page.js`); the data
+lacks it, because the session sends none: `title: None` in its reply to `surfd`
+(`crates/session/src/lib.rs:258`) and on its page line (`:999`). `story:agent-follow-links` sets
+both; this story reads the title from the data it receives and writes no file of
+`crates/session`. This story shows them. The
 controls and the `changed` block follow in `story:view-controls-and-changes`.
 
 Needs from `epic:agent-cli-target`: `story:agent-follow-links`: the `now` block with link lines
 (handle, kind, visibility, label, target or unresolved target) and the title on the page line,
 each with its parse in `surf_answer::parse` and its round-trip case (decision D20 of
-`docs/plan/agent-plan-revision-2.md`: every story that adds a block adds its parse); and, under
-D27, the mapping of the `Follow` events it adds, in `crates/session`. The answer reaches `surfd` as
+`docs/plan/agent-plan-revision-2.md`: every story that adds a block adds its parse); and the
+`follow` command with its `path` entry. No `Follow` event exists: `follow` publishes
+`NavigationRequested` and `ActionRecorded`, whose entries are mapped already
+(`crates/session/src/entries.rs:144-155`). The answer reaches `surfd` as
 its lines, kept as the answer entry (D20); labels, targets and the title in them are quoted on the
 link and come out of `surf_answer::parse` as exact values (D26).
 
@@ -41,23 +75,45 @@ link and come out of `surf_answer::parse` as exact values (D26).
 ## Change
 
 - `docs/view-stream.md`: the `answer` entry gains the member `now` after `path`, as that document
-  reserves it (no member removed or renamed): the elements, each with handle, kind, visibility
-  `vis`, `hid` or `?`, label, and target or unresolved target, and the note that visibility is the
-  `hidden` attribute only; the page line's `title`, a member already, holds the title instead of
-  `null`; one example each, in the document's JSON rules.
-- `crates/view/src/model.rs`, `json.rs`: the element; `crates/view/tests/golden/` and
-  `crates/view/tests/json.rs`: case 1 below.
-- `crates/surfd/src/view.rs`: the JSON of the title and of the `now` block that
-  `surf_answer::parse` returns for an answer entry; no parsing of answer text here (D20).
+  reserves it (`docs/view-stream.md:202-205`; no member removed or renamed): the elements, each
+  with handle, kind, visibility `vis`, `hid` or `?`, label, and target or unresolved target, and
+  the visibility note as the `now` block carries it, `note visibility: hidden attribute only`.
+  The word is `hid` when the element or an ancestor has the `hidden` attribute, otherwise `?`
+  (`story:agent-follow-links`); `aria-hidden`, a closed `dialog` or `details` and a popover do not
+  make a link `hid`. The view shows the answer's word and states no rule of its own. The page
+  line's `title`, a member already, holds the title instead of `null`; one example each, in the
+  document's JSON rules. The `path` member's action (`{"sequence","command","argument"}`,
+  `docs/view-stream.md:202`) gains `handle`, after `command`, from `PathEntry.handle` that
+  `story:agent-follow-links` adds (`crates/surfd/src/view.rs:205-209` sets the other three); no
+  member is removed or renamed.
+- `crates/view/src/model.rs` (`EntryKind::Answer`, `:129`), `json.rs` (`:252`): the element.
+  `crates/view/tests/json.rs` reads its expected values from the fenced blocks of
+  `docs/view-stream.md` (`crates/view/tests/json.rs:20-29`), so case 1's expected answer is the
+  example this story adds there; no golden file.
+- `crates/surfd/src/view.rs`: the JSON of the title, of the path entry's handle and of the `now`
+  block that `surf_answer::parse` returns for an answer entry (`:198-216`); no parsing of answer
+  text here (D20). The conversion has no exhaustive `match` on the kind of a `now` line: a kind it
+  does not know (control, button, form) goes out as a member with `kind` and its text, so a later
+  command story (`story:agent-fill-pick`, `story:agent-press-submit`) changes no file of
+  `crates/surfd/src/view.rs`.
 - `crates/view/web/now.js`: a centre panel "Now", grouped by kind (links; buttons and fields once
   they exist), each element with its handle, label, target and visibility, a hidden one marked;
   the note line when the answer has it; the set the `answer` after the playhead's action holds.
-  `index.html`, `view.css`, `view.js`, `sessions.js`, `page.js` (the title), `assets.rs`.
+  `index.html`, `view.css`, `view.js`, `sessions.js`, `page.js` (the title), `state.js` (which
+  reads only `answer.page` today, `crates/view/web/state.js:301-310`), `assets.rs`.
+  `crates/view/tests/prototype.rs` holds the files of `web/` as `TEN` (`:19`, asserted at `:618`
+  and `:632`): it gains `now.js`.
 - `crates/view-fixture/pages/now/`: a page with three links (one to a second page of the fixture, one inside a
   `hidden` element, one whose `href` does not resolve) and a page whose title holds `<script>` and
   `"`.
+- The count of page tests, 38 today, is restated where it is stated: `AGENTS.md:621`,
+  `README.md:463`, `README.md:197`, `website/docs/status.md:22`. On `README.md:197` this story
+  changes the page-test number only; the test count on that line ("877 tests") belongs to the
+  command story that lands last before the wave gate.
 - Cases:
-  1. (`crates/view/tests/json.rs`) the `answer` of the three-link page equals its golden file;
+  1. (`crates/view/tests/json.rs`) the `answer` of the three-link page equals the example of
+     `docs/view-stream.md`; and an answer whose `now` block holds a control line and a button
+     line gives each as a member with its `kind` and its text;
   2. (`view-tests/tests/now.spec.mjs`) the panel lists the three links under links with handles
      `l1` to `l3` in document order, their labels and targets;
   3. the hidden link is marked hidden; the visibility note is shown;
@@ -69,14 +125,15 @@ link and come out of `surf_answer::parse` as exact values (D26).
      `script` or `img` element is added and no dialog opens.
 
 Surfaces written: `docs/view-stream.md`, `crates/view/src/model.rs`, `crates/view/src/json.rs`,
-`crates/view/src/assets.rs`, `crates/view/tests/`, `crates/view/web/`, `crates/surfd/src/view.rs`,
-`crates/view-fixture/pages/now/`, `view-tests/tests/now.spec.mjs`.
+`crates/view/src/assets.rs`, `crates/view/tests/` (`json.rs`, `prototype.rs`), `crates/view/web/`,
+`crates/surfd/src/view.rs`, `crates/view-fixture/pages/now/`, `view-tests/tests/now.spec.mjs`,
+`AGENTS.md`, `README.md`, `website/docs/status.md`. No file of `crates/session`.
 
 ## Acceptance
 
-`slot task view-test` passes with cases 2 to 6 of `view-tests/tests/now.spec.mjs`, `cargo test -p
-surf-view --test main json::` passes with case 1, each named after its case, and the earlier view tests
-still pass.
+`slot task view-test` passes with cases 2 to 6 of `view-tests/tests/now.spec.mjs`, `cargo nextest
+run -p surf-view --test main json::` passes with case 1, each named after its case, and the
+earlier view tests still pass. No test runs over 60 s, and the test step ends within 120 s.
 
 ## Out of scope
 

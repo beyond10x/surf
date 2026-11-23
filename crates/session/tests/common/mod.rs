@@ -660,3 +660,58 @@ pub fn placeholders(text: &str, id: &str, token: &str, port: u16) -> String {
         .replace(token, "<token>")
         .replace(&format!("127.0.0.1:{port}"), "127.0.0.1:<port>")
 }
+
+// --- A resolver of its own ------------------------------------------------------------------
+
+/// A [`surf_fetch::Network`] whose names resolve to the addresses a test gives them, without
+/// the host's resolver, and which notes every address dialed. A name it was not given fails
+/// `Unreachable`; a connection goes to the address itself.
+#[derive(Debug, Default)]
+pub struct Names {
+    names: Vec<(String, Vec<std::net::IpAddr>)>,
+    dialed: std::sync::Mutex<Vec<std::net::SocketAddr>>,
+}
+
+impl Names {
+    /// `name` resolves to `addresses`.
+    pub fn name(mut self, name: &str, addresses: &[&str]) -> Names {
+        let addresses = addresses.iter().map(|ip| ip.parse().unwrap()).collect();
+        self.names.push((name.to_string(), addresses));
+        self
+    }
+
+    /// Every address dialed, in order.
+    pub fn dialed(&self) -> Vec<std::net::SocketAddr> {
+        self.dialed.lock().unwrap().clone()
+    }
+}
+
+impl surf_fetch::Network for Names {
+    fn resolve(
+        &self,
+        host: &str,
+        port: u16,
+        _: Duration,
+    ) -> Result<Vec<std::net::SocketAddr>, surf_fetch::Failure> {
+        let (_, addresses) = self
+            .names
+            .iter()
+            .find(|(name, _)| name == host)
+            .ok_or_else(|| {
+                surf_fetch::Failure::Unreachable(format!("the test does not resolve {host}"))
+            })?;
+        Ok(addresses
+            .iter()
+            .map(|ip| std::net::SocketAddr::new(*ip, port))
+            .collect())
+    }
+
+    fn connect(
+        &self,
+        address: &std::net::SocketAddr,
+        timeout: Duration,
+    ) -> std::io::Result<TcpStream> {
+        self.dialed.lock().unwrap().push(*address);
+        TcpStream::connect_timeout(address, timeout)
+    }
+}
