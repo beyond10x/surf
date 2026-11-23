@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 0fe2c0b6e437654e024a069cbcca8147e4a9c7adcd5b10150e01611989dfa058
+// contract digest aac42d8ac87218cacd79d661cdfc6da87c457bcea21b6e55cbec893553faf526
 // do not edit: regenerate with `ess synthesize`
 
 //! Agent — `surf.agent`.
@@ -92,6 +92,19 @@ pub struct GoCall {
     pub form: Option<PageForm>,
     /// `from_line` — `Optional<Integer>`.
     pub from_line: Option<i64>,
+}
+
+/// LogCall — `surf.agent.LogCall`.
+///
+/// Which session `log` reads, how many of its last actions to list if not all, and the token that proves the caller holds it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogCall {
+    /// `session_id` — `String`.
+    pub session_id: String,
+    /// `token` — `surf.agent.SessionToken`.
+    pub token: SessionToken,
+    /// `count` — `Optional<Integer>`.
+    pub count: Option<i64>,
 }
 
 /// LookCall — `surf.agent.LookCall`.

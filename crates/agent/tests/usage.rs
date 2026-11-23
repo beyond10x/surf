@@ -213,6 +213,56 @@ fn back_and_forward_take_no_argument() {
     assert!(!dir.runtime().join("surf").exists(), "nothing was sent");
 }
 
+/// `story:agent-change-and-log`: `log` takes at most one word, a number of actions from 1; a
+/// word that is not one, two words or an option it does not take is usage, status 2, and nothing
+/// is sent. `log` sends no `arg`, `log 2` sends `arg count "2"`.
+#[test]
+fn log_takes_a_number_from_1() {
+    let dir = TestDir::new();
+    for (args, says) in [
+        (vec!["log", "0"], "log takes a number of actions from 1"),
+        (vec!["log", "x"], "log takes a number of actions from 1"),
+        (vec!["log", "-1"], "is not an option of surf-agent"),
+        (vec!["log", "1", "2"], "log takes at most 1 positional word"),
+        (vec!["log", "--as", "tree"], "is not an option of log"),
+    ] {
+        let output = run(agent(&dir)
+            .args(&args)
+            .env("SURF_SESSION", SESSION)
+            .env("SURF_TOKEN", TOKEN));
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert_eq!(stdout(&output), "", "{args:?}");
+        let printed = stderr(&output);
+        assert!(printed.contains(says), "{args:?}: {printed}");
+        assert!(printed.contains("surf-agent log [<n>]"), "{printed}");
+    }
+    assert!(!dir.runtime().join("surf").exists(), "nothing was sent");
+
+    let env = surf_agent::cli::Environment {
+        runtime_dir: Some(dir.runtime().into()),
+        session: Some(SESSION.into()),
+        token: Some(TOKEN.into()),
+        program_dir: None,
+    };
+    for (words, sent) in [
+        (vec!["log"], vec![]),
+        (vec!["log", "2"], vec![("count", "2")]),
+    ] {
+        let words: Vec<std::ffi::OsString> = words.into_iter().map(Into::into).collect();
+        let request = surf_agent::cli::parse(&words, &env)
+            .expect("a call")
+            .request();
+        assert_eq!(request.command, "log");
+        assert_eq!(request.session.as_deref(), Some(SESSION));
+        let args: Vec<(&str, &str)> = request
+            .args
+            .iter()
+            .map(|arg| (arg.name.as_str(), arg.value.as_str()))
+            .collect();
+        assert_eq!(args, sent);
+    }
+}
+
 /// `story:agent-fill-pick`: `fill` and `pick` take a handle and one word; without the word it
 /// is usage, status 2, and nothing is sent. `fill <handle> -` sends the value read from standard
 /// input without its last line feed; a value over the bound, or not UTF-8, is usage and no

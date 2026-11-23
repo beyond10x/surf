@@ -56,8 +56,8 @@ types:
   # 64 lower-case hexadecimal digits. It is not declared as an `alphabet:` or a length: the
   # command-line binding refuses a constrained type ("invariants are explicit refusals",
   # ess-cli/2), so the form is checked by the code that issues and reads it.
-  # It is named only by the eight command-line shapes below that carry it (`SessionCall`,
-  # `LookCall`, `GoCall`, `FollowCall`, `FillCall`, `PickCall`, `PressCall`,
+  # It is named only by the nine command-line shapes below that carry it (`SessionCall`,
+  # `LookCall`, `GoCall`, `FollowCall`, `FillCall`, `PickCall`, `PressCall`, `LogCall`,
   # `OpenedSession`): no entity, command, event or view holds it, so no stored row and no
   # published event carries the secret.
   # UNMAPPED: that a session's token is what makes its caller `surf.agent.SessionHolder`. The
@@ -215,6 +215,20 @@ types:
         type: surf.agent.SessionToken
       - name: handle
         type: String
+
+  # `log [<n>]` (`story:agent-change-and-log`): every action of the session from the view
+  # `SessionLog`, or the last `count` of them. A read: it records no action.
+  - name: surf.agent.LogCall
+    kind: struct
+    naming:
+      summary: Which session `log` reads, how many of its last actions to list if not all, and the token that proves the caller holds it.
+    fields:
+      - name: session_id
+        type: String
+      - name: token
+        type: surf.agent.SessionToken
+      - name: count
+        type: Optional<Integer>
 
   - name: surf.agent.OpenedSession
     kind: struct

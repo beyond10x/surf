@@ -2,8 +2,8 @@
   "provenance": {
     "system": "surf",
     "specification_version": "v1",
-    "source_digest": "5994012bf95dac2d96c9c32800bbca55686960d17e4c44d04c41821efa64943a",
-    "contract_digest": "0fe2c0b6e437654e024a069cbcca8147e4a9c7adcd5b10150e01611989dfa058"
+    "source_digest": "7ca14cb63147e575c7bbd41e1d348d0a4ce2682edfff219eaecbdadf6cdca2d1",
+    "contract_digest": "aac42d8ac87218cacd79d661cdfc6da87c457bcea21b6e55cbec893553faf526"
   },
   "scope": {
     "profile": "component-skeletons"
@@ -47,6 +47,13 @@
     {
       "kind": "domain_type",
       "source": "surf.agent.GoCall",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.agent.LogCall",
       "disposition": {
         "disposition": "generated"
       }

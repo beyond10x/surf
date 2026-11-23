@@ -1,0 +1,18 @@
+surf 1 session 7f3a open
+did press "b1"
+page 200 "text/html" "http://example.org/session" "Welcome"
+path 2 of 2
+  1 open
+  2 press b1
+changed page "http://example.org/login" -> "http://example.org/session"
+  + text "Text 1"
+  + text "Text 2"
+  + text "Text 3"
+  + text "Text 4"
+  + text "Text 5"
+  + text "Text 6"
+  + text "Text 7"
+  + text "Text 8"
+  + text "Text 9"
+  + text "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"...
+  + text more 5

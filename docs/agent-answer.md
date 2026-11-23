@@ -14,10 +14,9 @@ answers in this grammar, byte for byte.
 
 This document states the blocks of step 1 of design section 9 (`docs/design/agent-interface.md`)
 and the `now` block of its step 3 (`agent-follow-links`), which lists links, with the control
-and button lines of its step 4 (`agent-fill-pick`), and the `submits` part of a button line
-(`agent-press-submit`). The `changed` block is defined by later stories
-(`agent-back-forward`, `agent-change-and-log`), each of which adds its lines here and in the
-crate.
+and button lines of its step 4 (`agent-fill-pick`), the `submits` part of a button line
+(`agent-press-submit`), and of its step 5 (`agent-change-and-log`) the `changed` block and the
+answer of `log`.
 
 ## Example
 
@@ -28,6 +27,8 @@ page 200 "text/html" "http://example.org/login" "Sign in"
 path 2 of 2
   1 open
   2 go "http://example.org/login"
+changed page none -> "http://example.org/login"
+  + text "Sign in to read the archive."
 note parser: tables,foreign-content
 ```
 
@@ -43,7 +44,9 @@ The example above shows the whole format. The binaries of release `0.4.0` (`surf
   an HTML document that has one, `page failed <reason> "<address>"` for a failed load, or
   `page none` before the first load;
 - `path <shown> of <total>` and its indented lines, `<n> follow <handle> "<label>"` for a
-  `follow`;
+  `follow`; every action in the answer of `log`;
+- since `agent-change-and-log`, the `changed` block in every answer that shows the session's
+  state (section "Changed");
 - without `--as`, for an HTML page with links, the `now` block of its links and `note
   visibility: hidden attribute only` (section "Now");
 - with `--as`, the `note text:` lines and the `text` block (section "Text").
@@ -77,9 +80,10 @@ path 3 of 3
   2. `did`
   3. `page`
   4. `path` and its indented lines
-  5. `now` and its indented lines
-  6. `note` lines, any number
-  7. `text`, its body lines and its `more` line, which is the last line of the answer
+  5. `changed` and its indented lines
+  6. `now` and its indented lines
+  7. `note` lines, any number
+  8. `text`, its body lines and its `more` line, which is the last line of the answer
 - A line is made of words of the format, numbers and quoted fields, separated by one space.
   Only a quoted field holds a value from a page, a server or an address. A word is checked
   against its character set below, and the renderer refuses an answer with a word outside it
@@ -100,7 +104,8 @@ So a quoted field never holds a `"` other than its two quotes, and it ends at th
 after the opening one.
 
 A field with a length limit (a label of the `now` block and of a `path` line, 60 characters,
-design section 5.2; a target of the `now` block, 1,024 characters) is
+design section 5.2; a target of the `now` block, 1,024 characters; the text of a `+ text` line of
+the `changed` block, 120 characters, design section 5.3) is
 cut before escaping: a value longer than the limit keeps its first characters up to the limit,
 counted as Unicode scalar values, so the cut falls on a character boundary. The kept part is
 quoted as above, and the field then ends in `...` after the closing quote:
@@ -227,6 +232,59 @@ field when it had one. An action on an element names the element's handle, a wor
 `fill` or a `pick` names the handle alone, never the value typed or the option picked:
 `4 fill f1`, `5 pick f3`; so does a `press`, `6 press b1`. `back` and `forward` have neither
 argument nor handle: `7 back`, `8 forward`.
+
+The block shows the last 5 actions; the answer of `log` shows more (section "Log").
+
+### Changed
+
+```
+changed <n>
+  ~ <handle> value "<before>" -> "<after>"
+  ~ <handle> value (empty) -> (set)
+  ~ <handle> checked <before> -> <after>
+  ~ <handle> selected "<before>" -> "<after>"
+changed page "<old address>" -> "<new address>"
+  + text "<text>"
+  + text more <n>
+```
+
+What the last action changed: the session compares the state its previous answer showed with
+the state after the action (design section 5.3, `agent-change-and-log`). Every answer of the
+session that shows the session's state has the block, reads (`look`, `log`) and refusals
+included, `changed 0` when nothing changed. An answer that shows no state has none: the head
+line and `did` line of a `token` refusal and of a `usage` refusal without the token (section
+"Exit status and refusals"), the head line alone of status 3, and the answers `surfd` gives
+without the session process (`no-such-session`, `session-died`, `session-timeout`, and the
+`did refused closed` of a session whose process has ended). Such an answer leaves the state the
+next one compares with as it was.
+
+- Same page, when the previous answer and this one show the page of the same load: `changed
+  <n>` and one line per control of the current document whose state changed, in document order,
+  exactly `<n>` lines. `value` for a `text`, `textarea`, `file` or `password` control, each
+  value as the `now` block writes it: quoted and cut at 1,024 characters, for a password
+  `(set)` or `(empty)` and never the value. `checked` for a checkbox or a radio button, `true` or
+  `false`. `selected` for a select: the label of its selected option before and after, quoted
+  and cut at 1,024 characters, `""` when none was selected. A radio button turned on gives one
+  line for each button of its group that changed: `~ f6 checked true -> false` and `~ f7 checked
+  false -> true`. Values are compared whole, so a change past the first 1,024 characters gives a
+  line whose two values read the same. Before scripts an action changes no element of a page,
+  only the state of a control (decision D2 of the story), so the block holds no other line;
+  elements that appear or go, and a label, target, visibility or text that changes within one
+  page, wait for the script engine and the detailed mode (design sections 5.3 and 5.4).
+- Another page, when a load happened since the previous answer (`open <url>`, `go`, a `follow`,
+  a `press` that loaded a page, `back`, `forward`): `changed page`, the address of the previous
+  answer's `page` line and of this one's, each a quoted field, or `none` for `page none`; a
+  failed load counts with its address. Then one `+ text` line per text of the new page that the
+  old one did not hold, in order: the texts are the lines of the page's Markdown rendering
+  (`surf-page-text`, the lines of `look --as markdown`), empty lines left out, each once; a line
+  the old page also had is not new. At most 10 lines, each text quoted and cut at 120
+  characters (`surf_answer::quote_cut`); then `+ text more <n>` counts the new texts not shown.
+  A page without a document (a failed load, a response that is not HTML) has no texts. A text
+  is quoted as the Markdown line is, its own escapes included (rule 2 of section "Text"), so a
+  `\` of the line is `\x5c` in the field.
+
+A refusal changes nothing, so its block is `changed 0`; so is the block of a `forbidden-destination`
+the fetch refused, which leaves the page as it was.
 
 ### Now
 
@@ -421,10 +479,28 @@ the one place of rule 2.
 `surf_answer::render_text_whole` writes every line behind `>` without the bounds and without
 `more`, for `surf <url> --as`.
 
-### Later blocks
+### Log
 
-The `changed` block (what the last action changed) is defined by a later story.
-The `log` answer is defined by `agent-change-and-log`.
+`log [<n>]` is a read: it records no action, and its answer has no `did` line. It is the answer
+of `look` with a longer `path` block: every action of the session, oldest first, or the last
+`<n>` of them (a number from 1; on the wire `arg count`), `path <shown> of <total>` as before.
+The lines stop before the block passes 1,048,576 bytes, the newest kept, so `<shown>` can be
+below what was asked. `log 0`, a word that is not a number and any other argument are refused
+`usage`, status 2.
+
+```
+surf 1 session 7f3a open
+page 200 "text/html" "http://example.org/" "Home"
+path 7 of 7
+  1 open
+  2 go "http://example.org/"
+  3 follow l1 "Next"
+  4 back
+  5 forward
+  6 go "http://example.org/"
+  7 follow l1 "Next"
+changed 0
+```
 
 ## Grammar
 
@@ -433,8 +509,8 @@ exactly as written, in its case (RFC 7405 writes this `%s"..."`). `SP` is U+0020
 U+000A, `DQUOTE` is U+0022, `DIGIT` is `0` to `9`, `ALPHA` is `A` to `Z` and `a` to `z`.
 
 ```
-answer        = head-line [token-line] [did-line] [page-line] [path-block] [now-block]
-                *note-line [text-block]
+answer        = head-line [token-line] [did-line] [page-line] [path-block] [changed-block]
+                [now-block] *note-line [text-block]
 
 head-line     = "surf" SP "1" SP "session" SP session-id SP state LF
 session-id    = 1*(DIGIT / lower / "-")
@@ -467,6 +543,26 @@ path-line     = "path" SP number SP "of" SP number LF
 path-entry    = SP SP number SP command [SP quoted / SP handle [SP cut-quoted]] LF
                                               ; with a handle: a label of at most 60
 handle        = 1*(lower / DIGIT)
+
+changed-block = changed-line *change-entry    ; exactly <n> change-entry lines
+              / changed-page *text-entry [text-more]
+                                              ; at most 10 text-entry lines; text-more only
+                                              ; after 10 of them
+changed-line  = "changed" SP number LF        ; <n>
+change-entry  = SP SP "~" SP handle SP (change-value / change-checked / change-selected) LF
+change-value  = "value" SP value SP "->" SP value
+value         = cut-quoted / "(set)" / "(empty)"
+                                              ; at most 1,024
+change-checked = "checked" SP boolean SP "->" SP boolean
+boolean       = "true" / "false"
+change-selected = "selected" SP cut-quoted SP "->" SP cut-quoted
+                                              ; each at most 1,024
+changed-page  = "changed" SP "page" SP address SP "->" SP address LF
+address       = quoted / "none"
+text-entry    = SP SP "+" SP "text" SP cut-quoted LF
+                                              ; at most 120
+text-more     = SP SP "+" SP "text" SP "more" SP number LF
+                                              ; number at least 1
 
 now-block     = now-line *now-entry           ; exactly <shown> now-entry lines
 now-line      = "now" SP number SP "of" SP number LF
@@ -529,7 +625,8 @@ disabled control, closed session, wrong token); 2 usage; 3 the session process c
 or stopped. The table of `did refused` gives the status of each reason.
 
 A refusal still prints the answer: the head line, then `did refused <reason>`, then the current
-state of the session as far as the one answering knows it (`page`, `path`, the notes).
+state of the session as far as the one answering knows it (`page`, `path`, `changed`, the
+notes).
 A `token` refusal prints the head line and the `did` line only: a caller without the token
 learns nothing of the session. So does a `usage` refusal of `open` (such as a second `open`
 to the same session process) and of a request that is not in the format of the wire: neither carries

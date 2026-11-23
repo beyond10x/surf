@@ -14,6 +14,7 @@ mod adversary_values;
 mod adversary_view;
 mod back_forward;
 mod built;
+mod change_and_log;
 mod common;
 mod core;
 mod e2e;

@@ -51,6 +51,9 @@ pub struct Answer {
     pub page: Option<Page>,
     /// `path <shown> of <total>` and one indented line per action shown.
     pub path: Option<Path>,
+    /// `changed <n>` and one indented line per control that changed, or `changed page "<old>" ->
+    /// "<new>"` and one indented line per new text: what the last action changed.
+    pub changed: Option<Changed>,
     /// `now <shown> of <total>` and one indented line per actionable element shown.
     pub now: Option<Now>,
     /// `note` lines, in order.
@@ -69,6 +72,7 @@ impl Answer {
             did: None,
             page: None,
             path: None,
+            changed: None,
             now: None,
             notes: Vec::new(),
             text: None,
@@ -319,6 +323,75 @@ pub struct PathEntry {
 
 /// The most characters of a label in the `now` block and on a `path` line (design section 5.2).
 pub const LABEL_CHARS_MAX: usize = 60;
+
+/// The `changed` block: what the last action changed, between the state of the session's
+/// previous answer and the state after the action (design section 5.3,
+/// `story:agent-change-and-log`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Changed {
+    /// `changed <n>` and one indented line per control of the same document whose state
+    /// changed, in document order; `changed 0` when nothing changed.
+    Controls(Vec<ControlChange>),
+    /// `changed page <old> -> <new>`: another page than the previous answer's, then one
+    /// `  + text "<text>"` line per text of the new document the old one did not hold, and
+    /// `  + text more <n>` for those not shown.
+    Page {
+        /// The address of the previous answer's `page` line; `None` for `page none`, written
+        /// `none`.
+        from: Option<String>,
+        /// The address of this answer's `page` line; `None` for `page none`.
+        to: Option<String>,
+        /// The texts shown, at most [`CHANGED_TEXTS_MAX`], each cut at
+        /// [`CHANGED_TEXT_CHARS_MAX`] characters.
+        texts: Vec<Cut>,
+        /// How many new texts are not shown; the `more` line is written when it is not 0, and
+        /// then [`CHANGED_TEXTS_MAX`] texts are shown.
+        more: u64,
+    },
+}
+
+/// One `~` line of the `changed` block: a control's handle and what changed of it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ControlChange {
+    /// The control's handle, a word of `[a-z0-9]+` (`f1`).
+    pub handle: String,
+    /// What changed.
+    pub change: Change,
+}
+
+/// What changed of a control: `<what> <before> -> <after>`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Change {
+    /// `value <before> -> <after>`: each a value as the `now` block writes it, quoted and cut at
+    /// [`VALUE_CHARS_MAX`] characters, or `(set)` and `(empty)` for a password.
+    Value {
+        /// The value before.
+        before: Value,
+        /// The value after.
+        after: Value,
+    },
+    /// `checked <before> -> <after>`, each `true` or `false`: a checkbox or a radio button.
+    Checked {
+        /// Checked before.
+        before: bool,
+        /// Checked after.
+        after: bool,
+    },
+    /// `selected "<before>" -> "<after>"`: the label of a select's selected option, quoted and
+    /// cut at [`VALUE_CHARS_MAX`] characters; empty when none is selected.
+    Selected {
+        /// The label before.
+        before: Cut,
+        /// The label after.
+        after: Cut,
+    },
+}
+
+/// The most `+ text` lines of a `changed page` block.
+pub const CHANGED_TEXTS_MAX: usize = 10;
+
+/// The most characters of the text of a `+ text` line.
+pub const CHANGED_TEXT_CHARS_MAX: usize = 120;
 
 /// The most characters of a link's target in the `now` block. A deliberate bound the design does
 /// not state: a target comes from the page, and an answer stays within its size.
@@ -892,6 +965,9 @@ pub enum RenderError {
     /// The counts of the `text` block contradict its lines: more lines shown than the total,
     /// more bytes shown than the total, a first line of 0, or lines shown past the total.
     TextCounts,
+    /// A `changed page` block shows more than [`CHANGED_TEXTS_MAX`] texts, or counts texts not
+    /// shown while it shows fewer.
+    ChangedTexts,
 }
 
 impl fmt::Display for RenderError {
@@ -930,6 +1006,11 @@ impl fmt::Display for RenderError {
                 "the text block shows more than {TEXT_LINES_MAX} lines or {TEXT_BYTES_MAX} bytes"
             ),
             RenderError::TextCounts => f.write_str("the counts of the text block contradict it"),
+            RenderError::ChangedTexts => write!(
+                f,
+                "the changed block shows more than {CHANGED_TEXTS_MAX} texts, or counts more \
+                 while it shows fewer"
+            ),
         }
     }
 }
@@ -951,6 +1032,9 @@ pub fn render(answer: &Answer) -> Result<String, RenderError> {
     }
     if let Some(path) = &answer.path {
         render_path(path, &mut out)?;
+    }
+    if let Some(changed) = &answer.changed {
+        render_changed(changed, &mut out)?;
     }
     if let Some(now) = &answer.now {
         render_now(now, &mut out)?;
@@ -1069,6 +1153,79 @@ fn render_path(path: &Path, out: &mut String) -> Result<(), RenderError> {
         out.push('\n');
     }
     Ok(())
+}
+
+fn render_changed(changed: &Changed, out: &mut String) -> Result<(), RenderError> {
+    match changed {
+        Changed::Controls(changes) => {
+            out.push_str(&format!("changed {}\n", changes.len()));
+            for change in changes {
+                let handle = checked(&change.handle, "changed handle", is_handle_char)?;
+                out.push_str(&format!("  ~ {handle} "));
+                match &change.change {
+                    Change::Value { before, after } => {
+                        out.push_str("value ");
+                        push_value(before, out)?;
+                        out.push_str(" -> ");
+                        push_value(after, out)?;
+                    }
+                    Change::Checked { before, after } => {
+                        out.push_str(&format!("checked {before} -> {after}"));
+                    }
+                    Change::Selected { before, after } => {
+                        out.push_str("selected ");
+                        push_cut(before, VALUE_CHARS_MAX, "changed selected", out)?;
+                        out.push_str(" -> ");
+                        push_cut(after, VALUE_CHARS_MAX, "changed selected", out)?;
+                    }
+                }
+                out.push('\n');
+            }
+        }
+        Changed::Page {
+            from,
+            to,
+            texts,
+            more,
+        } => {
+            if texts.len() > CHANGED_TEXTS_MAX || (*more > 0 && texts.len() < CHANGED_TEXTS_MAX) {
+                return Err(RenderError::ChangedTexts);
+            }
+            out.push_str("changed page ");
+            push_address(from.as_deref(), out);
+            out.push_str(" -> ");
+            push_address(to.as_deref(), out);
+            out.push('\n');
+            for text in texts {
+                out.push_str("  + text ");
+                push_cut(text, CHANGED_TEXT_CHARS_MAX, "changed text", out)?;
+                out.push('\n');
+            }
+            if *more > 0 {
+                out.push_str(&format!("  + text more {more}\n"));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The value of a `~ value` line: quoted and cut as the `now` block writes it, or a password's
+/// `(set)` and `(empty)`.
+fn push_value(value: &Value, out: &mut String) -> Result<(), RenderError> {
+    match value {
+        Value::Text(text) => return push_cut(text, VALUE_CHARS_MAX, "changed value", out),
+        Value::Set => out.push_str("(set)"),
+        Value::Empty => out.push_str("(empty)"),
+    }
+    Ok(())
+}
+
+/// An address of a `changed page` line, quoted, or `none` for `page none`.
+fn push_address(address: Option<&str>, out: &mut String) {
+    match address {
+        Some(address) => out.push_str(&quote(address)),
+        None => out.push_str("none"),
+    }
 }
 
 fn render_now(now: &Now, out: &mut String) -> Result<(), RenderError> {
@@ -1528,11 +1685,12 @@ pub fn parse(text: &str) -> Result<Answer, ParseError> {
 /// one of its own and leaves the lines alone otherwise.
 type Block = fn(&mut Lines<'_>, &mut Answer) -> Result<(), ParseError>;
 
-const BLOCKS: [Block; 7] = [
+const BLOCKS: [Block; 8] = [
     parse_token,
     parse_did,
     parse_page,
     parse_path,
+    parse_changed,
     parse_now,
     parse_notes,
     parse_text,
@@ -1682,6 +1840,87 @@ fn parse_path(lines: &mut Lines<'_>, answer: &mut Answer) -> Result<(), ParseErr
         });
     }
     answer.path = Some(Path { total, entries });
+    Ok(())
+}
+
+fn parse_changed(lines: &mut Lines<'_>, answer: &mut Answer) -> Result<(), ParseError> {
+    let Some(line) = lines.take_if_starts("changed ") else {
+        return Ok(());
+    };
+    let mut cursor = line.cursor();
+    cursor.at = "changed ".len();
+    if cursor.rest().starts_with("page ") {
+        cursor.literal("page ")?;
+        let from = cursor.address()?;
+        cursor.literal(" -> ")?;
+        let to = cursor.address()?;
+        cursor.end()?;
+        let mut texts = Vec::new();
+        let mut more = 0;
+        while let Some(entry) = lines.take_if_starts("  + text ") {
+            let mut cursor = entry.cursor();
+            cursor.at = "  + text ".len();
+            if texts.len() == CHANGED_TEXTS_MAX {
+                cursor.literal("more ")?;
+                more = cursor.number()?;
+                cursor.end()?;
+                if more == 0 {
+                    return Err(entry.error(ParseErrorKind::OutsideGrammar));
+                }
+                break;
+            }
+            texts.push(cursor.cut_quoted(CHANGED_TEXT_CHARS_MAX)?);
+            cursor.end()?;
+        }
+        answer.changed = Some(Changed::Page {
+            from,
+            to,
+            texts,
+            more,
+        });
+        return Ok(());
+    }
+    let count: u64 = cursor.number()?;
+    cursor.end()?;
+    let mut changes = Vec::new();
+    for _ in 0..count {
+        let Some(entry) = lines.take_if_starts("  ~ ") else {
+            return Err(ParseError {
+                line: lines.number(),
+                kind: ParseErrorKind::OutsideGrammar,
+            });
+        };
+        let mut cursor = entry.cursor();
+        cursor.at = "  ~ ".len();
+        let handle = cursor.word(is_handle_char)?.to_string();
+        cursor.space()?;
+        let what = cursor.word(|c| c.is_ascii_lowercase())?;
+        cursor.space()?;
+        let change = match what {
+            "value" => {
+                let before = cursor.value()?;
+                cursor.literal(" -> ")?;
+                let after = cursor.value()?;
+                Change::Value { before, after }
+            }
+            "checked" => {
+                let before = cursor.boolean()?;
+                cursor.literal(" -> ")?;
+                let after = cursor.boolean()?;
+                Change::Checked { before, after }
+            }
+            "selected" => {
+                let before = cursor.cut_quoted(VALUE_CHARS_MAX)?;
+                cursor.literal(" -> ")?;
+                let after = cursor.cut_quoted(VALUE_CHARS_MAX)?;
+                Change::Selected { before, after }
+            }
+            _ => return Err(entry.error(ParseErrorKind::OutsideGrammar)),
+        };
+        cursor.end()?;
+        changes.push(ControlChange { handle, change });
+    }
+    answer.changed = Some(Changed::Controls(changes));
     Ok(())
 }
 
@@ -2094,5 +2333,34 @@ impl<'a> Cursor<'a> {
         }
         self.space()?;
         self.quoted().map(Some)
+    }
+
+    /// The value of a `~ value` line: a field cut at [`VALUE_CHARS_MAX`], `(set)` or `(empty)`.
+    fn value(&mut self) -> Result<Value, ParseError> {
+        if self.rest().starts_with('"') {
+            self.cut_quoted(VALUE_CHARS_MAX).map(Value::Text)
+        } else if self.rest().starts_with("(set)") {
+            self.literal("(set)").map(|()| Value::Set)
+        } else {
+            self.literal("(empty)").map(|()| Value::Empty)
+        }
+    }
+
+    /// `true` or `false`.
+    fn boolean(&mut self) -> Result<bool, ParseError> {
+        match self.word(|c| c.is_ascii_lowercase())? {
+            "true" => Ok(true),
+            "false" => Ok(false),
+            _ => Err(self.outside()),
+        }
+    }
+
+    /// An address of a `changed page` line: a quoted field, or `none`.
+    fn address(&mut self) -> Result<Option<String>, ParseError> {
+        if self.rest().starts_with('"') {
+            self.quoted().map(Some)
+        } else {
+            self.literal("none").map(|()| None)
+        }
     }
 }

@@ -285,8 +285,8 @@ fn case_12_a_forged_label_stays_in_its_field_on_the_link_and_path_lines() {
     );
     assert_eq!(
         text.lines().count(),
-        7,
-        "head, did, page, path and 3 lines: {text}"
+        8,
+        "head, did, page, path and 3 lines, changed page: {text}"
     );
     round_trip(&text, &typed);
 }

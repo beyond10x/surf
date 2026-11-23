@@ -160,6 +160,14 @@ const OPTION: Argument = Argument {
     }],
 };
 
+const COUNT: Argument = Argument {
+    field: "count",
+    sources: &[Source::Positional {
+        index: 1,
+        required: false,
+    }],
+};
+
 const SESSION: Argument = Argument {
     field: "session_id",
     sources: &[
@@ -198,8 +206,8 @@ const FROM_LINE: Argument = Argument {
 pub const FORMS: &[&str] = &["tree", "markdown"];
 
 /// The commands: `open [<url>]`, `go <url>`, `look`, `follow <handle>`, `fill <handle> <value>`,
-/// `pick <handle> <option>`, `press <handle>`, `back`, `forward`, `close`. `open` takes no
-/// session and no token.
+/// `pick <handle> <option>`, `press <handle>`, `back`, `forward`, `log [<n>]`, `close`. `open`
+/// takes no session and no token.
 /// `open`, `go` and `look` take `--as tree|markdown [--from-line <n>]`; `open` only with an
 /// address. The value `-` of `fill` is read from standard input by the client
 /// ([`STDIN_VALUE`]).
@@ -241,6 +249,10 @@ pub const COMMANDS: &[Command] = &[
         arguments: &[SESSION, TOKEN],
     },
     Command {
+        name: "log",
+        arguments: &[COUNT, SESSION, TOKEN],
+    },
+    Command {
         name: "close",
         arguments: &[SESSION, TOKEN],
     },
@@ -264,6 +276,7 @@ usage: surf-agent open [<url>] [--as tree|markdown [--from-line <n>]]
        surf-agent press <handle> [--session <id>] [--token-file <path>]
        surf-agent back [--session <id>] [--token-file <path>]
        surf-agent forward [--session <id>] [--token-file <path>]
+       surf-agent log [<n>] [--session <id>] [--token-file <path>]
        surf-agent close [--session <id>] [--token-file <path>]
 The session comes from --session or SURF_SESSION, the token from --token-file or SURF_TOKEN.
 A token file is a regular file of yours that group and others cannot read (mode 0600).
@@ -274,6 +287,7 @@ f1 or b1.
 fill - reads the value from standard input; give a secret that way, since other users can
 read the words of a command. A value of up to 16000 bytes from standard input always fits.
 pick takes an option's label or value, or on or off for a box.
+log lists every action of the session, or the last <n> (from 1).
 -- ends the options: a word after it is an argument even when it starts with -
 (fill f1 -- -5, pick f2 -- \"-- choose --\"; fill f1 -- - fills one dash).
 ";
@@ -344,6 +358,8 @@ pub struct Call {
     pub form: Option<&'static str>,
     /// The line of `--from-line`, from 1; only beside [`Call::form`].
     pub from_line: Option<u64>,
+    /// How many of the last actions `log` lists, from 1; `None` for every action.
+    pub count: Option<u64>,
     /// The value of `fill` is read from standard input: its word is [`STDIN_VALUE`], given before
     /// any `--` (after `--` the word `-` is a value of one dash).
     pub stdin: bool,
@@ -367,6 +383,7 @@ impl fmt::Debug for Call {
             .field("option", &self.option)
             .field("form", &self.form)
             .field("from_line", &self.from_line)
+            .field("count", &self.count)
             .field("stdin", &self.stdin)
             .finish()
     }
@@ -374,7 +391,7 @@ impl fmt::Debug for Call {
 
 impl Call {
     /// The request of the wire for this call: `arg url`, `arg handle`, `arg value`, `arg option`,
-    /// `arg form` and `arg line`, each when the call has it.
+    /// `arg form`, `arg line` and `arg count`, each when the call has it.
     pub fn request(&self) -> Request {
         let arg = |name: &str, value: String| Arg {
             name: name.to_string(),
@@ -387,6 +404,7 @@ impl Call {
             self.option.clone().map(|option| arg("option", option)),
             self.form.map(|form| arg("form", form.to_string())),
             self.from_line.map(|line| arg("line", line.to_string())),
+            self.count.map(|count| arg("count", count.to_string())),
         ];
         Request {
             command: self.command.to_string(),
@@ -521,6 +539,7 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
         option: None,
         form: None,
         from_line: None,
+        count: None,
         stdin: false,
     };
     let positional_count = command
@@ -616,6 +635,20 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
                                 call.value = Some(text.to_string());
                             }
                             "option" => call.option = Some(text.to_string()),
+                            "count" => {
+                                call.count = Some(
+                                    Some(text)
+                                        .filter(|digits| {
+                                            !digits.is_empty()
+                                                && digits.bytes().all(|b| b.is_ascii_digit())
+                                        })
+                                        .and_then(|digits| digits.parse::<u64>().ok())
+                                        .filter(|count| *count >= 1)
+                                        .ok_or_else(|| {
+                                            usage("log takes a number of actions from 1")
+                                        })?,
+                                );
+                            }
                             _ => call.url = Some(text.to_string()),
                         }
                     }

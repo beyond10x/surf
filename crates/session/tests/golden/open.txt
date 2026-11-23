@@ -5,3 +5,5 @@ page 200 "text/html" "http://127.0.0.1:<port>/a"
 path 2 of 2
   1 open
   2 go "http://127.0.0.1:<port>/a"
+changed page none -> "http://127.0.0.1:<port>/a"
+  + text "a page"

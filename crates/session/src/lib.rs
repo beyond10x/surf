@@ -25,6 +25,8 @@
 //! - `fill`, `pick` ("The controls" below) and `press <handle>` ("Pressing a button" below).
 //! - `back` and `forward`: `GoBack` and `GoForward` as the holder; when it is `requested`,
 //!   `RecordAction` `back` or `forward` ("Back and forward" below).
+//! - `log [<n>]` (`arg count`): the views `SessionState` and `SessionLog`; no action ("The log"
+//!   below).
 //! - `close`: `CloseSession` as the holder; when it is `closed`, `RecordAction` `close`.
 //!
 //! An accepted command's `RecordAction` is issued before the run that delivers what the command
@@ -191,6 +193,45 @@
 //! back` or `<n> forward`, and the answer is `did back` or `did forward` with the page it
 //! committed, or `page failed`, the tab's current entry left where it was.
 //!
+//! # What changed
+//!
+//! The session keeps what its last answer that showed the session's state showed ([`Shown`]):
+//! the navigation its page came from (the view `Sessions`, or the one before a refused first
+//! request, [`Kept`]), the address of its `page` line, its current document, and for each
+//! control of that document, in document order, its handle, its kind, its row's value and
+//! checkedness and the label of its selected option (the first selected by position), each
+//! whole. Before the first answer it keeps no navigation, no address and no control. Every
+//! answer that shows the state (`state_reply`: actions, reads and refusals with the state)
+//! compares that with the same reading now and holds the `changed` block, then keeps the new
+//! reading; a refusal without the token, a `usage` refusal of `open` or of a request that does
+//! not decode, and a status-3 answer show no state, have no block and keep nothing.
+//!
+//! - Another navigation: `changed page`, the address of the old `page` line and of the new one,
+//!   or `none` for `page none`. Then the texts of the new document that the old one did not
+//!   hold: the lines [`surf_page_text::markdown::markdown`] renders of each tree
+//!   (`Browser::document_tree`, which keeps the trees of every document of the session) but
+//!   the empty ones, each once, in order; the first [`surf_answer::CHANGED_TEXTS_MAX`] (10)
+//!   cut at [`surf_answer::CHANGED_TEXT_CHARS_MAX`] (120) characters, and the count of the
+//!   others. Without a new document (a failed load, a response that is not HTML) there are
+//!   none.
+//! - The same navigation: one line per control whose state differs, in document order: its value
+//!   for a text, textarea, file or password control (a password's `(set)` or `(empty)`, never the
+//!   value), its checkedness for a checkbox or a radio button, the label of its selected option
+//!   for a select. Before scripts nothing but a control's state changes within a document
+//!   (decision D2 of `story:agent-change-and-log`), so nothing else is compared.
+//!
+//! An action changes at most two controls: `fill` and `pick` one, a radio button turned on the
+//! one of its group the parser left checked as well (`surf_page::forms`, at most one checked per
+//! group), so the block of the same navigation is at most two lines.
+//!
+//! # The log
+//!
+//! `log` takes `arg count`, a number from 1 in decimal digits; any other argument, or a count
+//! that is not one, is `did refused usage`, status 2. It records nothing. Its answer is that of
+//! `look` with the `path` block of every action of the view `SessionLog`, or of the last
+//! `count`, oldest first: as many of the newest as fit [`LOG_BYTES_MAX`] bytes of lines,
+//! `path <shown> of <total>` counting them all.
+//!
 //! # Refusals
 //!
 //! - A request other than `open` whose `session` is not this identity, or whose token does not
@@ -199,7 +240,8 @@
 //!   Nothing is acted on and nothing of the session's state is in the answer.
 //! - From the holder, a command this session does not know, an argument name it does not know,
 //!   `go` without `arg url`, `arg form` other than `tree` or `markdown`, `arg line` without `arg
-//!   form` or not a number from 1: `did refused usage`, status 2, with the current page and path.
+//!   form` or not a number from 1, `arg count` of `log` not a number from 1: `did refused
+//!   usage`, status 2, with the current page and path.
 //! - `open` after the first, `open` with a session, a token or an argument but `url`, `form` and
 //!   `line`, `open` with `arg form` and no `arg url` or with a `form` or `line` refused above, and
 //!   a request that does not decode ([`Session::malformed`]): `did refused usage`, status 2, the
@@ -225,7 +267,8 @@
 //! # What it keeps
 //!
 //! The answer lines hold the page line, the `did` line and at most [`PATH_SHOWN`] path lines,
-//! seven addresses. An address has one of three sources: a request of at most
+//! seven addresses, and since `story:agent-change-and-log` the two of a `changed page` line,
+//! nine. An address has one of three sources: a request of at most
 //! [`surf_agent::wire::REQUEST_MAX`] bytes, which quotes it as the answer does; the address a
 //! response came from after redirects, at most [`surf_fetch::MAX_ADDRESS_BYTES`] bytes, the
 //! same 64 KiB, before quoting; or the target of a link a `follow` took, which a page writes
@@ -234,16 +277,20 @@
 //! printable ASCII as four bytes (`\x5c` for a `\`), so a quoted address is at most four times
 //! its length and its two quotes; `surf-url` leaves a `\` in the query or fragment of a
 //! response URL as it is, so the quoted form of one comes to up to four times
-//! [`surf_fetch::MAX_ADDRESS_BYTES`], at most 262,146 bytes. Seven addresses of at most 262,146
-//! bytes each are 1,835,022 bytes. The `did` line of `follow` holds the handle as typed, from a
+//! [`surf_fetch::MAX_ADDRESS_BYTES`], at most 262,146 bytes. Nine addresses of at most 262,146
+//! bytes each are 2,359,314 bytes. The `did` line of `follow` holds the handle as typed, from a
 //! request like an address, and a `follow` path line holds a label of at most 60 characters
-//! (at most 965 bytes quoted), so the seven still bound them. The title adds at most
-//! [`TITLE_CHARS_MAX`] characters, at most 16,386 bytes quoted. A `text` block adds at most
+//! (at most 965 bytes quoted), so the nine still bound them. The title adds at most
+//! [`TITLE_CHARS_MAX`] characters, at most 16,386 bytes quoted. The rest of the `changed` block
+//! adds at most 10 `+ text` lines of 120 characters, at most 495 bytes each quoted, and a `more`
+//! line; or at most two `~` lines ("What changed"), each with two values of at most 1,024
+//! characters, under 8,300 bytes each quoted. A `text` block adds at most
 //! [`surf_answer::TEXT_BYTES_MAX`] (32,768) bytes of body lines, its header, a `more` line and a
 //! `note text:` line, each under 200 bytes; or, in an answer without text, the `now` block adds
 //! at most [`NOW_BYTES_MAX`] (1,048,576) bytes and `note visibility:` and `note parser:` lines
 //! under 200 bytes each. So an answer stays below [`surfd::link::ANSWER_TEXT_MAX`], 4,194,304
-//! bytes.
+//! bytes: about 3,441,000 at most. The answer of `log` has no `did` line and in place of the five
+//! path lines at most [`LOG_BYTES_MAX`] (1,048,576) bytes of them, so it stays below 3,000,000.
 //!
 //! A status record whose quoted address does not fit [`surfd::link::RECORD_MAX`] (65,536 bytes,
 //! with the record's other lines) is sent without the address, and `surfd` lists the session
@@ -268,6 +315,10 @@
 //! the session (each tree within `surf-html`'s limits; no bound over all documents yet). Since
 //! the fix round of round 1 a call with `--as` also leaves the lines of the current document in
 //! the forms asked for ("The page as text"), until the next request that is not a `look`.
+//! Since `story:agent-change-and-log` the session keeps what its last answer showed ("What
+//! changed"): two addresses and identities, and the handle, value and selected label of each
+//! control of the current document, values the element and option rows hold as well; it is
+//! replaced at each answer that shows the state.
 //!
 //! # The entries
 //!
@@ -283,9 +334,9 @@
 //!
 //! The entries of one request through the wire stay below [`surfd::link::ENTRIES_MAX`],
 //! 8,388,608 bytes, whatever the page holds. The answer entry is the answer lines, at most
-//! [`surfd::link::ANSWER_TEXT_MAX`] (4,194,304 bytes; it holds at most seven addresses, `did`,
-//! `page` and [`PATH_SHOWN`] path lines, each at most 262,146 bytes once quoted, "What it
-//! keeps"), and its `answer-entry <m>` line. The action and event entries take at most
+//! [`surfd::link::ANSWER_TEXT_MAX`] (4,194,304 bytes; it holds at most nine addresses, `did`,
+//! `page`, [`PATH_SHOWN`] path lines and the two of `changed page`, each at most 262,146 bytes
+//! once quoted, "What it keeps"), and its `answer-entry <m>` line. The action and event entries take at most
 //! [`ACTION_AND_EVENT_BYTES_MAX`], 4,194,240 bytes, the rest: the action entries (at most two,
 //! `open <url>` records `open` and `go`, each with at most one address) are written whole and
 //! their bytes, with 64 bytes for a left-out line after each, are set aside first; an event
@@ -327,9 +378,10 @@ use std::io;
 use surf::{MemoryBrowser, NodeId, Transport, Tree, UnmetObligation};
 use surf_agent::wire::{self, Request};
 use surf_answer::{
-    Answer, Cut, Did, Element, Form, Head, LABEL_CHARS_MAX, Note, Now, Page, Path, PathEntry,
-    RefusalReason, SessionState as HeadState, State, TARGET_CHARS_MAX, Target, TextNote,
-    VALUE_CHARS_MAX, Value, Visibility,
+    Answer, CHANGED_TEXT_CHARS_MAX, CHANGED_TEXTS_MAX, Change, Changed, ControlChange, Cut, Did,
+    Element, Form, Head, LABEL_CHARS_MAX, Note, Now, Page, Path, PathEntry, RefusalReason,
+    SessionState as HeadState, State, TARGET_CHARS_MAX, Target, TextNote, VALUE_CHARS_MAX, Value,
+    Visibility,
 };
 use surf_ports::{Caller, ComponentPorts};
 use surf_secret::Token;
@@ -351,6 +403,16 @@ use surfd::link;
 
 /// The most actions the `path` block shows: the last five (design section 5.1).
 pub const PATH_SHOWN: usize = 5;
+
+/// The most bytes the `path` block of a `log` answer takes, its lines counted high ("The log"
+/// above): 1,048,576. The newest actions are kept. A deliberate bound the design does not
+/// state, as for [`NOW_BYTES_MAX`].
+pub const LOG_BYTES_MAX: usize = 1 << 20;
+
+/// The bytes of a `path` line beside its quoted field and its handle: two spaces, a sequence
+/// number of up to 20 digits, a command word of up to seven letters, the spaces, `...` and the
+/// line feed, counted high.
+const PATH_LINE_FIXED: usize = 40;
 
 /// The most bytes the lines of the `now` block take, its header and line feeds included ("The
 /// links" above): 1,048,576. A deliberate bound the design does not state; paging a long block
@@ -704,6 +766,30 @@ pub struct Session<T> {
     /// it again under the same rule (decision D279); an entry made by `go` is not here. A
     /// traversal under the rule is noted too; it makes no entry, so it is never looked up.
     from_public: Vec<RequestId>,
+    /// What the last answer that showed the session's state showed, for the `changed` block of
+    /// the next ("What changed" above).
+    shown: Shown,
+}
+
+/// The page state an answer showed ("What changed" above): the load its page came from, the
+/// address of its `page` line, its document and the state of each control of that document.
+#[derive(Clone, Debug, Default)]
+struct Shown {
+    navigation: Option<RequestId>,
+    address: Option<String>,
+    document: Option<DocumentId>,
+    controls: Vec<ShownControl>,
+}
+
+/// The state of one control: its handle, its kind, and from its rows its value, its checkedness
+/// and the label of its selected option, each whole.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ShownControl {
+    handle: String,
+    kind: ElementKind,
+    value: Option<String>,
+    checked: bool,
+    selected: Option<String>,
 }
 
 /// What the session showed before a navigation whose first request the fetch refused
@@ -759,6 +845,7 @@ impl<T: Transport> Session<T> {
             links: None,
             kept: None,
             from_public: Vec::new(),
+            shown: Shown::default(),
         })
     }
 
@@ -931,6 +1018,14 @@ impl<T: Transport> Session<T> {
             },
             "press" => match (request.unknown_arg(&["handle"]), request.arg("handle")) {
                 (None, Some(handle)) => self.press(handle),
+                _ => Ok(self.with_state(RefusalReason::Usage)),
+            },
+            "log" => match (request.unknown_arg(&["count"]), log_count(request)) {
+                (None, Ok(count)) => {
+                    let mut reply = self.state_reply(0, None);
+                    reply.answer.path = Some(self.path_of(count, LOG_BYTES_MAX));
+                    Ok(reply)
+                }
                 _ => Ok(self.with_state(RefusalReason::Usage)),
             },
             "back" if request.unknown_arg(&[]).is_none() => self.traverse(Standing::Back),
@@ -1852,7 +1947,8 @@ impl<T: Transport> Session<T> {
         self.state_reply(refusal_status(reason), Some(Did::Refused(reason)))
     }
 
-    /// The head line, `did` when there is one, the page and path from the views, and for the
+    /// The head line, `did` when there is one, the page and path from the views, the `changed`
+    /// block against the state the previous answer showed ("What changed" above), and for the
     /// current document of an open session its `note parser:` line, its `now` block and `note
     /// visibility:` ("The links" above). The title of the current document is on a loaded
     /// `page` line.
@@ -1865,6 +1961,9 @@ impl<T: Transport> Session<T> {
             *title = self.title();
         }
         answer.path = Some(self.path());
+        let shown = self.shown_now(answer.page.as_ref());
+        answer.changed = Some(self.changed(&shown));
+        self.shown = shown;
         if self.current_document().is_some() {
             let parts = self.browser.parser_not_yet_parsed();
             if !parts.is_empty() {
@@ -1892,6 +1991,13 @@ impl<T: Transport> Session<T> {
 
     /// The last [`PATH_SHOWN`] actions of the log, oldest first, and their total.
     fn path(&self) -> Path {
+        self.path_of(Some(PATH_SHOWN), usize::MAX)
+    }
+
+    /// The last `last` actions of the log, or all of them for `None`, oldest first, as many of
+    /// the newest of them as fit `bytes` bytes of lines counted high ([`PATH_LINE_FIXED`]), and
+    /// their total ("The log" above).
+    fn path_of(&self, last: Option<usize>, bytes: usize) -> Path {
         let mut log = self
             .browser
             .system()
@@ -1900,9 +2006,26 @@ impl<T: Transport> Session<T> {
             .unwrap_or_default();
         log.sort_by_key(|row| row.sequence);
         let total = log.len();
+        let mut room = bytes;
+        let mut first = total.saturating_sub(last.unwrap_or(total));
+        for (at, row) in log.iter().enumerate().skip(first).rev() {
+            let argument = match (&row.handle, &row.label, &row.url) {
+                (Some(_), Some(label), _) => {
+                    surf_answer::quote(&Cut::of(label, LABEL_CHARS_MAX).kept).len()
+                }
+                (None, _, Some(url)) => surf_answer::quote(&url.0).len(),
+                _ => 0,
+            };
+            let line = PATH_LINE_FIXED + row.handle.as_ref().map_or(0, String::len) + argument;
+            if line > room {
+                first = at + 1;
+                break;
+            }
+            room -= line;
+        }
         let entries = log
             .into_iter()
-            .skip(total.saturating_sub(PATH_SHOWN))
+            .skip(first)
             .map(|row| {
                 let sequence = u64::try_from(row.sequence).unwrap_or_default();
                 let command = command_word(row.command).to_string();
@@ -1933,6 +2056,120 @@ impl<T: Transport> Session<T> {
             total: u64::try_from(total).unwrap_or(u64::MAX),
             entries,
         }
+    }
+
+    /// What an answer with the `page` line `page` shows now ("What changed" above).
+    fn shown_now(&mut self, page: Option<&Page>) -> Shown {
+        let address = match page {
+            Some(Page::Loaded { address, .. } | Page::Failed { address, .. }) => {
+                Some(address.clone())
+            }
+            _ => None,
+        };
+        Shown {
+            navigation: self.navigation().and_then(|(navigation, _)| navigation),
+            address,
+            document: self.current_document(),
+            controls: self.controls_shown(),
+        }
+    }
+
+    /// The state of each control of the current document, in document order, from its row and,
+    /// for a select, from its option rows; none without a current document.
+    fn controls_shown(&mut self) -> Vec<ShownControl> {
+        let Some(row) = self.current_row() else {
+            return Vec::new();
+        };
+        let document = &self.browser.system().document;
+        let mut rows: HashMap<String, Elements> = document
+            .elements(row.document_id)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|row| (row.element_id.0.0.clone(), row))
+            .collect();
+        let options = document.options().unwrap_or_default();
+        let selected: HashMap<String, String> = selected_labels(&options)
+            .into_iter()
+            .map(|(select, label)| (select.to_string(), label.to_string()))
+            .collect();
+        let Some(links) = self.links() else {
+            return Vec::new();
+        };
+        links
+            .iter()
+            .filter(|link| !matches!(link.kind, ElementKind::Link | ElementKind::Button))
+            .filter_map(|link| {
+                let row = rows.remove(&link.element_id.0.0)?;
+                Some(ShownControl {
+                    handle: link.handle.clone(),
+                    kind: row.kind,
+                    value: row.value,
+                    checked: row.checked,
+                    selected: selected.get(&link.element_id.0.0).cloned(),
+                })
+            })
+            .collect()
+    }
+
+    /// The `changed` block from [`Session::shown`] to `now` ("What changed" above): `changed
+    /// page` when they show the pages of two loads, otherwise a line per control whose state
+    /// changed.
+    fn changed(&self, now: &Shown) -> Changed {
+        let before = &self.shown;
+        if before.navigation != now.navigation {
+            let (texts, more) = self.new_texts(before.document.as_ref(), now.document.as_ref());
+            return Changed::Page {
+                from: before.address.clone(),
+                to: now.address.clone(),
+                texts,
+                more,
+            };
+        }
+        let earlier: HashMap<&str, &ShownControl> = before
+            .controls
+            .iter()
+            .map(|control| (control.handle.as_str(), control))
+            .collect();
+        Changed::Controls(
+            now.controls
+                .iter()
+                .filter_map(|control| {
+                    let change = control_change(earlier.get(control.handle.as_str())?, control)?;
+                    Some(ControlChange {
+                        handle: control.handle.clone(),
+                        change,
+                    })
+                })
+                .collect(),
+        )
+    }
+
+    /// The texts of the document `new` that the document `old` does not hold: the lines of the
+    /// Markdown rendering of each ([`surf_page_text::markdown::markdown`]) but the empty ones,
+    /// each once, in order; the first [`CHANGED_TEXTS_MAX`] cut at [`CHANGED_TEXT_CHARS_MAX`]
+    /// characters, and how many more there are.
+    fn new_texts(&self, old: Option<&DocumentId>, new: Option<&DocumentId>) -> (Vec<Cut>, u64) {
+        let Some(tree) = new.and_then(|document| self.browser.document_tree(document)) else {
+            return (Vec::new(), 0);
+        };
+        let held: HashSet<String> = old
+            .and_then(|document| self.browser.document_tree(document))
+            .map(|old| markdown_texts(old).collect())
+            .unwrap_or_default();
+        let mut seen = HashSet::new();
+        let mut texts = Vec::new();
+        let mut more = 0u64;
+        for line in markdown_texts(tree) {
+            if held.contains(&line) || !seen.insert(line.clone()) {
+                continue;
+            }
+            if texts.len() < CHANGED_TEXTS_MAX {
+                texts.push(Cut::of(&line, CHANGED_TEXT_CHARS_MAX));
+            } else {
+                more += 1;
+            }
+        }
+        (texts, more)
     }
 
     /// Status 3 with the reason, the head line alone.
@@ -2340,15 +2577,7 @@ fn kind_word(kind: ElementKind) -> &'static str {
 /// from its row (`rows`) and, for a select, the label of its first selected option by position
 /// (`options`, the rows of every select).
 fn control_states(rows: &[Elements], options: &[Options]) -> HashMap<String, State> {
-    let mut selected: HashMap<&str, (i64, &str)> = HashMap::new();
-    for option in options.iter().filter(|option| option.selected) {
-        let entry = selected
-            .entry(option.select_id.0.0.as_str())
-            .or_insert((option.position, option.label.as_str()));
-        if option.position < entry.0 {
-            *entry = (option.position, option.label.as_str());
-        }
-    }
+    let selected = selected_labels(options);
     rows.iter()
         .filter(|row| row.kind != ElementKind::Link)
         .map(|row| {
@@ -2366,7 +2595,7 @@ fn control_states(rows: &[Elements], options: &[Options]) -> HashMap<String, Sta
                 ),
                 ElementKind::Select => selected
                     .get(row.element_id.0.0.as_str())
-                    .and_then(|(_, label)| text(label)),
+                    .and_then(|label| text(label)),
                 _ => None,
             };
             let state = State {
@@ -2381,4 +2610,88 @@ fn control_states(rows: &[Elements], options: &[Options]) -> HashMap<String, Sta
             (row.element_id.0.0.clone(), state)
         })
         .collect()
+}
+
+/// The label of the selected option of each select, by the select's element identity: of its
+/// selected options (`options`, the rows of every select) the first by position.
+fn selected_labels(options: &[Options]) -> HashMap<&str, &str> {
+    let mut selected: HashMap<&str, (i64, &str)> = HashMap::new();
+    for option in options.iter().filter(|option| option.selected) {
+        let entry = selected
+            .entry(option.select_id.0.0.as_str())
+            .or_insert((option.position, option.label.as_str()));
+        if option.position < entry.0 {
+            *entry = (option.position, option.label.as_str());
+        }
+    }
+    selected
+        .into_iter()
+        .map(|(select, (_, label))| (select, label))
+        .collect()
+}
+
+/// The `~` line of a control from `before` to `after`, or `None` when its state is the same
+/// ("What changed" above): `value` for a text, textarea, file or password control, a password's
+/// written `(set)` or `(empty)`; `checked` for a checkbox or a radio button; `selected` for a
+/// select, `""` for none selected.
+fn control_change(before: &ShownControl, after: &ShownControl) -> Option<Change> {
+    match after.kind {
+        ElementKind::Text | ElementKind::Textarea | ElementKind::File
+            if before.value != after.value =>
+        {
+            let value = |value: &Option<String>| {
+                Value::Text(Cut::of(value.as_deref().unwrap_or(""), VALUE_CHARS_MAX))
+            };
+            Some(Change::Value {
+                before: value(&before.value),
+                after: value(&after.value),
+            })
+        }
+        ElementKind::Password if before.value != after.value => {
+            let value = |value: &Option<String>| match value.as_deref() {
+                Some(value) if !value.is_empty() => Value::Set,
+                _ => Value::Empty,
+            };
+            Some(Change::Value {
+                before: value(&before.value),
+                after: value(&after.value),
+            })
+        }
+        ElementKind::Checkbox | ElementKind::Radio if before.checked != after.checked => {
+            Some(Change::Checked {
+                before: before.checked,
+                after: after.checked,
+            })
+        }
+        ElementKind::Select if before.selected != after.selected => {
+            let label =
+                |label: &Option<String>| Cut::of(label.as_deref().unwrap_or(""), VALUE_CHARS_MAX);
+            Some(Change::Selected {
+                before: label(&before.selected),
+                after: label(&after.selected),
+            })
+        }
+        _ => None,
+    }
+}
+
+/// The texts of a document's tree ("What changed" above): the lines of its Markdown rendering
+/// but the empty ones.
+fn markdown_texts(tree: &Tree) -> impl Iterator<Item = String> + '_ {
+    surf_page_text::markdown::markdown(tree).filter(|line| !line.trim().is_empty())
+}
+
+/// The `arg count` of `log` ("The log" above): `None` without it; `Err` for one that is not a
+/// number from 1 in decimal digits. A number past the platform's `usize` counts as every action.
+fn log_count(request: &Request) -> Result<Option<usize>, ()> {
+    let Some(digits) = request.arg("count") else {
+        return Ok(None);
+    };
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(());
+    }
+    match digits.trim_start_matches('0') {
+        "" => Err(()),
+        number => Ok(Some(number.parse().unwrap_or(usize::MAX))),
+    }
 }

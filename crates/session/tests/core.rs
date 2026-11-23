@@ -258,7 +258,8 @@ fn open_without_an_address() {
     assert_eq!(
         text,
         format!(
-            "surf 1 session {ID} open\ntoken {token}\ndid open\npage none\npath 1 of 1\n  1 open\n"
+            "surf 1 session {ID} open\ntoken {token}\ndid open\npage none\npath 1 of 1\n  1 open\n\
+             changed 0\n"
         )
     );
     let (status, text) = call(&mut session, &holder("close", &token, &[]));
@@ -266,7 +267,8 @@ fn open_without_an_address() {
     assert_eq!(
         text,
         format!(
-            "surf 1 session {ID} closed\ndid close\npage none\npath 2 of 2\n  1 open\n  2 close\n"
+            "surf 1 session {ID} closed\ndid close\npage none\npath 2 of 2\n  1 open\n  2 close\n\
+             changed 0\n"
         )
     );
 }
@@ -667,6 +669,9 @@ fn a_forged_page_stays_page_text() {
         "did ",
         "page ",
         "path ",
+        "changed ",
+        "  + text ",
+        "  ~ ",
         "note ",
         "text ",
     ];
@@ -817,7 +822,7 @@ fn no_document_gives_a_note_and_no_block() {
     let (status, text) = call(&mut with, &holder("look", &with_token, &[("form", "tree")]));
     assert_eq!(status, 0);
     assert!(
-        text.ends_with("page none\npath 1 of 1\n  1 open\nnote text: no-document\n"),
+        text.ends_with("page none\npath 1 of 1\n  1 open\nchanged 0\nnote text: no-document\n"),
         "{text}"
     );
 

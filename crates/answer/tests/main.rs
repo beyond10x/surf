@@ -5,6 +5,7 @@
 
 mod adversary_follow;
 mod back_forward;
+mod changed;
 mod cut;
 mod forging;
 mod golden;
