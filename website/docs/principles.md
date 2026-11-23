@@ -23,7 +23,7 @@ that.
 6. **Text from the web stays text.** Anything from a page, a server or an address is escaped
    before it is printed, so a page cannot forge a line of surf's output.
 7. **A passing test must be able to fail.** Tests are tried against planted defects. A storage
-   that drops every write fails 36 of the 170 scenarios.
+   that drops every write fails 50 of the 196 scenarios.
 8. **Small.** A standard is followed for what surf does, not implemented whole.
 
 ## Compliant, minimal, secure

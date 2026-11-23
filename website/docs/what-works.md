@@ -13,8 +13,8 @@ description: What surf does today, and what it does not do yet.
   hard limits on header and body size.
 - **196 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **877 tests**, built with warnings treated as errors, and 38 tests of the live view's page in a
-  browser.
+- **1,769 tests** (1,224, and 545 of the TLS crates in a step of their own), built with
+  warnings treated as errors, and 59 tests of the live view's page in a browser.
 
 New with round 2, in no release yet:
 

@@ -39,37 +39,54 @@ One command checks everything:
 
 ```console
 $ task check
-surf v1 — 9 file(s), 24 scenario(s), valid
-170 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
-  170 scenarios: 170 passed, 0 failed, 0 error, 0 unsupported
-170 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
-  170 scenarios: 170 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 170 scenario(s) each, of suite sha256:8b5c4b2f27ec981e3b3d5dff934bc62e935606f9b441604980c929c185d9a132
+surf v1 — 9 file(s), 37 scenario(s), valid
+196 scenario(s) (37 authored), 56 refusal(s), written to .out/suite.json
+  196 scenarios: 196 passed, 0 failed, 0 error, 0 unsupported
+196 scenario(s) (37 authored), 56 refusal(s), written to .out/suite.json
+  196 scenarios: 196 passed, 0 failed, 0 error, 0 unsupported
+the interpreter and the Rust system ran 196 scenario(s) each, of suite sha256:dcc7e7c2c534eb6f98ef03cbd07da620efd16fbe16e8d448de697919b0a56bf3
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
-Cargo.lock: 26 package(s), none from outside this repository
-    Finished `dev` profile [unoptimized] target(s) in 0.00s
-877 tests: 877 passed, 0 failed, 0 ignored (cargo-nextest 875, doc tests 2)
-test step: 62.3 s of its budget of 120 s
-agent-tasks: 4 tasks, 2 pass, 2 fail, 0 skipped, lane gate, binaries target/debug
-sh-echo: Summary [   2.623s] 40 tests run: 40 passed, 54 skipped
-view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
-  59 passed (3.0m)
+10 CLI artifact(s), generated in .out/cli
+Cargo.lock: 49 package(s), 19 from outside this repository, each on the allow-list
+test-layout: 23 test directories, 147 test files, one test binary each
+tls-certs: 33 cases, certs/ matches its sources
+tls-flights: 6 recordings match SOURCE, the recorder matches DIGEST
+tls-flights: self-test: a changed copy of aes128-x25519-ecdsa.bin fails naming it
+doc-tests-check: no doc test outside crates/ports
+    Finished `dev` profile [unoptimized] target(s) in 1.11s
+1224 tests: 1224 passed, 0 failed, 0 ignored (cargo-nextest 1222, doc tests 2)
+test step: 41.0 s of its budget of 120 s
+545 tests: 545 passed, 0 failed, 0 ignored (cargo-nextest 545)
+tls test step: 19.9 s of its budget of 120 s
+agent-tasks: 4 tasks, 4 pass, 0 fail, 0 skipped, lane gate, binaries target/debug
+sh-echo: Summary [   4.803s] 40 tests run: 40 passed, 104 skipped
+view-stream-check: 23 event name(s), each a message of the AsyncAPI projection
+  59 passed (1.6m)
 html-conformance: 9107 cases, 9095 run, 9095 passed
+x509-limbo: 5143 cases, 5089 run, 5060 passed
+tls-x509-conformance: 6 s
+forge-watch-test: 6 case(s), each decided as expected by taskfiles/forge-watch.sh
+planning-only-test: 9 case(s), each decided as expected by taskfiles/planning-only.sh
+test-layout-test: 39 case(s), each decided as expected by taskfiles/test-layout.sh
+sh-echo-test: 2 case(s), each decided as expected by taskfiles/sh-echo.sh
+doc-tests-check-test: 13 case(s), each decided as expected by taskfiles/doc-tests-check.sh
 ```
 
 It validates the specification, runs the 196 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
-that the lock file holds no outside package, then builds and tests, checks that every event
-name of the live view's stream is an event of the specification, runs the live view's page
-tests in a browser (Playwright and Chromium's headless shell), and last holds the HTML parser's
-test counts where they are. The tests run under cargo-nextest; a test still running after 60
-seconds is ended and fails, the test step fails when it takes over 120 seconds, and the block
-leaves out the ten slowest tests the step also prints and the agent tasks' rows after their
-counts. The page tests' line, `59 passed (3.0m)` (the task 220 s), was measured at a load
-average of 126 to 127 on 20 CPUs, its slowest test (`an entry over 1 MiB`) 35.0 s; `53 passed`
-took 1.1m at a load average of 55 to 65, `47 passed` 2.5m at a load average of 110 to 140, and
-the 38 of before took 15.8 s.
+that every package in the lock file from outside the repository is on its allow-list, then
+builds and tests, the TLS crates in a step of their own, checks that every event name of the
+live view's stream is an event of the specification, runs the live view's page tests in a
+browser (Playwright and Chromium's headless shell), holds the HTML parser's and the X.509
+checker's test counts where they are, and last tests the gate's own scripts. The tests run under
+cargo-nextest; a test still running after 60 seconds is ended and fails, each test step fails
+when it takes over 120 seconds, and the block leaves out the ten slowest tests each step also
+prints, the agent tasks' rows after their counts and the rows of the two conformance counts. It
+is the run of 2026-11-23 at a load average of 111 to 117 on 20 CPUs. The page tests' line,
+`59 passed (1.6m)`, has its slowest test (`an entry over 1 MiB`) at 16.0 s; `59 passed (3.0m)`
+took the task 220 s at a load average of 126 to 127, `53 passed` 1.1m at a load average of 55
+to 65, `47 passed` 2.5m at a load average of 110 to 140, and the 38 of before took 15.8 s.
 
 The scenario runner in
 [`conformance/`](https://github.com/beyond10x/surf/tree/main/conformance) is the one place a

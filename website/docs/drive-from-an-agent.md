@@ -15,7 +15,7 @@ answer in plain lines, written to be read by a language model.
 <AgentTerminal
   id="agent-session"
   session={agentSession}
-  caption="An agent session recorded on 2026-11-22 with the binaries of release 0.4.0 against a local copy of this site on 127.0.0.1:43117, with the token replaced. An answer names a page's status, media type and address, still with no title; with --as markdown or --as tree it ends with the page as Markdown or as the outline of its tree, every line behind >. The agent reads the Principles page with look --as markdown (all 89 lines) and look --as tree --from-line 151 (lines 151 to 224 of 224, from the heading of its last section)."
+  caption="An agent session recorded on 2026-11-22 with the binaries of release 0.4.0 against a local copy of this site on 127.0.0.1:43117, with the token replaced. In that release an answer names a page's status, media type and address, with no title and no changed block, which round 2 adds; with --as markdown or --as tree it ends with the page as Markdown or as the outline of its tree, every line behind >. The agent reads the Principles page with look --as markdown (all 89 lines) and look --as tree --from-line 151 (lines 151 to 224 of 224, from the heading of its last section)."
 />
 
 It runs on Linux only: the agent binaries read the caller's user id from `/proc/self` and need
