@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:view-live-means-stream-open
 kind: story
-status: draft
+status: active
 title: The live view says live when its stream is open
 summary: The page of the live view writes live after its first load, before its event stream is open, and draws the timeline again when the stream opens. It writes live when the stream is open and that load is drawn, and the page tests wait for that state.
 relations:
@@ -25,7 +25,10 @@ scope:
   path: website/docs/how-it-is-built.md
 - confidence: cited
   path: website/docs/status.md
-revision: 16
+revision: 18
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T00:29:33Z", actor: "human:operator", revision: 17}
+- {from: "proposed", to: "active", at: "2026-11-23T00:29:33Z", actor: "human:operator", revision: 18}
 ---
 ## Context
 
