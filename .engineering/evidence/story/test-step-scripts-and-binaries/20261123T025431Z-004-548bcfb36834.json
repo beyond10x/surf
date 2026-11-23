@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T02:54:31Z",
+  "actor": "human:operator",
+  "artifact": "story:test-step-scripts-and-binaries",
+  "kind": "story",
+  "revision": 27,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate: slot --timeout 25m task check-runner on 3b017f4 (fix/test-step-scripts, both stories merged), 2026-11-23 03:40 to 03:44 CET (acceptance 9)",
+    "reference": "exit 0 in 212 s; load 66.29 at the start, 45.78 at the end; test step: 17.2 s of its budget of 120 s, 895 tests: 895 passed, 0 failed, 0 ignored (cargo-nextest 893, doc tests 2); tls test step: 7.6 s of its budget of 120 s, 545 passed. The run before, on 78668ce, ended with exit 201: lock_check::the_unchanged_lock_passes read task's line with colour codes under CI=true; fixed in 3b017f4 with task --color=false"
+  }
+}

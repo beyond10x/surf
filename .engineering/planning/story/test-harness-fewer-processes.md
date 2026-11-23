@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:test-harness-fewer-processes
 kind: story
-status: active
+status: implemented
 title: The test harnesses start fewer programs and wait shorter clocks
 summary: html-conformance reads its base in one git call and commits its fixture once per digest, test directories find their processes among the test's descendants unless a helper that starts a built program marked them, five driver tests run one task, two view clocks drop to 250 ms, two log bounds shrink, surfd's bin directory is linked once per run
 relations:
@@ -48,10 +48,11 @@ scope:
   path: crates/view/tests/http.rs
 - confidence: cited
   path: taskfiles/agent-tasks-model.sh
-revision: 27
+revision: 28
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-23T01:22:29Z", actor: "human:operator", revision: 25}
 - {from: "proposed", to: "active", at: "2026-11-23T01:22:30Z", actor: "human:operator", revision: 26}
+- {from: "active", to: "implemented", at: "2026-11-23T02:54:33Z", actor: "human:operator", revision: 28, decided_on: {"recorded":{"test_result":4,"verification":2}}, executor: "agent:coordinator"}
 ---
 ## Why
 

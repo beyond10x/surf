@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T02:54:31Z",
+  "actor": "human:operator",
+  "artifact": "story:test-step-scripts-and-binaries",
+  "kind": "story",
+  "revision": 27,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "three runs of slot --timeout 15m task test in a row on the tree of 2c86943, load 111.09 to 79.73",
+    "reference": "test step: 23.4 s, 32.9 s and 39.5 s of its budget of 120 s; 895 tests: 895 passed each"
+  }
+}
