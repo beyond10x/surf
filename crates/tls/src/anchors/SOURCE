@@ -1,0 +1,16 @@
+The file cacert.pem beside this one is copied unchanged from the extract of the root store of
+Mozilla that curl publishes (docs/design/tls.md, item 11). The task anchors-refresh writes both
+files (taskfiles/tls-anchors.sh) and no one edits them by hand. The .sha256 it checks comes
+from the same server as the list and proves an uncut download only, so the person who
+refreshes reads the titles the task prints as added and removed.
+
+url: https://curl.se/ca/cacert.pem
+sha256-url: https://curl.se/ca/cacert.pem.sha256
+page: https://curl.se/docs/caextract.html
+header: Certificate data from Mozilla as of: Thu Nov  5 04:12:01 2026 GMT
+date: 2026-11-05
+fetched: 2026-11-22
+bytes: 200116
+count: 118
+sha256: 427c064216761a1e72a8b30f0d954d08cb6e4435a82091fb865afd20c8497285
+licence: MPL-2.0, as the page says: "The PEM file is only a converted version of the original one and thus it is licensed under the same license as the Mozilla source file: MPL 2.0"

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-handshake
 kind: story
-status: active
+status: implemented
 title: surf-tls completes a TLS 1.3 client handshake and refuses every server that deviates
 summary: The client state machine with HelloRetryRequest, compatibility mode, KeyUpdate and close_notify; ClientHello held by a golden file; RFC 8448 and recorded flights of an independent server replayed; each deviation ends with its alert.
 relations:
@@ -36,10 +36,11 @@ scope:
   path: crates/tls/tests/tls/rfc8446-client-musts.txt
 - confidence: cited
   path: taskfiles/tls-flights.yml
-revision: 14
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:28Z", actor: "human:operator", revision: 13, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:29Z", actor: "human:operator", revision: 14, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-22T21:13:24Z", actor: "human:operator", revision: 16, decided_on: {"recorded":{"test_result":1,"verification":3}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -514,3 +515,47 @@ Encrypted Client Hello; path validation itself (`story:tls-x509-path`); the test
 `tests/data/client-hello-retry.golden`, `tests/data/flights/`, `examples/record-flights.rs`,
 `taskfiles/tls-flights.yml`. Coordinator: `mod` lines in a wave of more than one unit, the root
 `Taskfile.yml`, `AGENTS.md`. Beside it run `story:tls-x509-path` and `story:tls-anchors`.
+
+## As built
+
+What differs from the text above, as of 6cff209 (branch `wave/tls-1`):
+
+- One trait, `ServerCertVerifier::verify(&self, certificates: &[&[u8]], host: &str, now: Time)
+  -> Result<LeafKey, CertificateRejection>` (`crates/tls/src/verify.rs:18-27`): the handshake
+  calls it once, for the server's Certificate (`crates/tls/src/handshake/client.rs:592-596`),
+  and `PathVerifier` implements it (`crates/tls/src/path.rs:311`).
+  `Connection::new(stream, host, &dyn ServerCertVerifier, now)`
+  (`crates/tls/src/connection.rs:79`) delegates to the public `Connection::with_random`
+  (`:90`).
+- The host is normalised once, one trailing dot removed and ASCII lowered
+  (`crates/tls/src/names.rs:71-73`), in `names::connection_host`, called at
+  `crates/tls/src/connection.rs:99`; that one value goes to `server_name` and to the verifier
+  (bdbcd4f). A host that is neither an IP address nor a DNS name is refused before the
+  ClientHello with `Error::Host` (ee6c101); a name over 253 bytes is refused
+  (`names.rs:196`; the tests use 254 bytes, `security_seams.rs:452`, `:491`), so the longest
+  name sent is 253 (`handshake_hostile::long_cookie`). The host in its text is a cut, escaped
+  excerpt of at most 64 bytes (`names.rs:158`).
+- The client hands each flight to the stream in one write and one flush: change_cipher_spec,
+  an empty Certificate when asked and Finished (`crates/tls/src/handshake/client.rs:229-252`);
+  a KeyUpdate with the data after it (`crates/tls/src/connection.rs:323-350`); 8de6ce4, test
+  `security_seams::each_flight_of_the_client_is_one_write_and_one_flush`.
+- `close` and the drop write `close_notify` and refuse later writes; shutting the stream is the
+  caller's, after `into_inner` (`crates/tls/src/connection.rs:21-24`).
+- The two golden files hold the whole record with its 5-byte header.
+- Six recorded flights; `SOURCE` stores the draws (random, session id, key shares) of each.
+  `tls-flights-slow` runs in `task slow` (`Taskfile.yml:376-380`), by hand; the forge has no
+  lane `slow` for surf yet, because its runner pins no `openssl` (`AGENTS.md:1232-1233`).
+- Tests of this story also live in `adversary_handshake` (8) and `security_seams` (20); the
+  tables `rfc8446-client-musts.txt` and `rfc8446-client-fields.txt` name some of them. The story
+  also wrote `crates/tls/src/error.rs` (b082959, 25546b3).
+
+Not shown by a test or a run:
+
+- Acceptance 2, `cargo tree -p surf-tls -e normal,build,features` shows no `test-tooling`: run
+  by hand on 32df67f and on 6cff209 (no `test-tooling` in its output); no test or task runs it.
+  A step of `check` running it would show it on every change.
+- Rows 6 and 6.2 of the client obligations, "the stream is shut" and "the keys forgotten": the
+  tests see later writes refused (`Io(BrokenPipe)`), not the stream shut or the keys dropped.
+- Budget, "each test under 1 s": not asserted; `handshake::musts_rows_name_tests` took 2.8 s
+  in the gate run on 32df67f (load 105 to 143); on 6cff209 no test of the story is among the
+  ten slowest (the tenth took 1.6 s).

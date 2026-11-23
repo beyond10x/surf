@@ -431,6 +431,40 @@ fn f2_a_large_frame_behind_a_full_queue_waits_and_comes_in_order() {
     server.stop();
 }
 
+/// A reader that resumes with `Last-Event-ID` and does not read yet: entry 1 of
+/// [`blocking_size`], which the writer cannot finish, then entry 2 of 2 MiB, under the bound of
+/// [`blocking_size`] and 1 MiB alone but over it with entry 1. A close at the bound now would cut
+/// entry 1 in its write, and the reader would resume at the same number every time and never get
+/// it (`surf-session`'s `adversary_view` case did on a loaded host: three resumes at 15, entry
+/// 16 never delivered). The stream stays open until its first entry is written, then delivers
+/// both in order.
+#[test]
+fn f2_a_resumed_reader_gets_its_first_entry_before_a_close_at_the_bound() {
+    let blocking = blocking_size();
+    let limits = Limits {
+        queue_bytes: blocking + MIB,
+        write: Duration::from_secs(120),
+        ..Limits::default()
+    };
+    let source = Fed::new(0, 0, true);
+    let (server, port) = start(&source, limits);
+    let mut client = Client::open(port, Some("0"));
+    source.publish(entry(1, blocking));
+    source.publish(entry(2, 2 * MIB));
+    wait_for("the pump took entry 2", WAIT, || source.handed(2));
+    // Three polls of the pump (100 ms each, `crates/view/src/sse.rs`).
+    thread::sleep(Duration::from_millis(300));
+    assert_eq!(
+        server.open_streams(),
+        1,
+        "the stream is open while its first entry is still in its write"
+    );
+    assert_entry(client.event(), 1, blocking);
+    assert_entry(client.event(), 2, 2 * MIB);
+    drop(client);
+    server.stop();
+}
+
 /// The pump waiting with a large frame ends when the stream closes: the client goes away while
 /// entries 3 and 4 are queued, and the stream's threads end long before the write limit of
 /// 120 s. The test waits until the stream's slot is free, which happens once the writer, the

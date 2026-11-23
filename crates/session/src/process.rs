@@ -1,4 +1,4 @@
-//! The session process: `surf-session [--idle-timeout <seconds>] <identity> <socket path>`.
+//! The session process: `surf-session [--idle-timeout <seconds>] [--request-timeout <seconds>] <identity> <socket path>`.
 //!
 //! `surfd` starts it with the two arguments (`crates/surfd/src/link.rs`, "Start"): the identity, a
 //! UUID in lower-case text form, and the absolute path of the session socket in a directory
@@ -8,7 +8,8 @@
 //! exits 1 without it.
 //!
 //! It serves one connection at a time: one request of [`surf_agent::wire`], read up to its `end`
-//! line within [`wire::REQUEST_TIMEOUT`] of the accept, at most [`wire::REQUEST_MAX`] bytes; one
+//! line within [`wire::REQUEST_TIMEOUT`] of the accept (`--request-timeout` sets another, of the
+//! form of `--idle-timeout`), at most [`wire::REQUEST_MAX`] bytes; one
 //! link answer ([`surfd::link::Answer::encode`]), written within [`WRITE_TIMEOUT`]; then the
 //! connection is closed. A request that does not decode is answered with status 2; one over the
 //! limit, one slower than the deadline and one whose connection ends before `end` are closed
@@ -18,6 +19,7 @@
 //! closed the session, after [`IDLE_TIMEOUT`] without a connection (`--idle-timeout` sets
 //! another, a whole number of seconds from 1, for a test that starts the binary itself; `surfd`
 //! passes no option), and when its standard input reaches its end (`surfd` closes the pipe).
+//! Each of the two options comes at most once, before the identity, in either order.
 //!
 //! Bounds: at most one connection is read at a time and at most one more is held accepted, in a
 //! channel of no capacity; the rest wait in the kernel's backlog. Standard input is read into a
@@ -56,6 +58,8 @@ pub const START_FAILED_STATUS: u8 = 1;
 pub struct Arguments {
     /// The idle timeout: [`IDLE_TIMEOUT`] or `--idle-timeout`.
     pub idle_timeout: Duration,
+    /// The read deadline of one request: [`wire::REQUEST_TIMEOUT`] or `--request-timeout`.
+    pub request_timeout: Duration,
     /// The session identity, a UUID in lower-case text form.
     pub identity: String,
     /// The path of the session socket.
@@ -64,20 +68,22 @@ pub struct Arguments {
 
 /// The arguments in `args` (the words after the program name), or `None` for any other shape.
 pub fn arguments(args: &[OsString]) -> Option<Arguments> {
-    let (idle_timeout, rest) = match args {
-        [option, seconds, rest @ ..] if option == "--idle-timeout" => {
-            let seconds = seconds.to_str()?;
-            if seconds.is_empty() || !seconds.bytes().all(|b| b.is_ascii_digit()) {
-                return None;
-            }
-            let seconds: u32 = seconds.parse().ok()?;
-            if seconds == 0 {
-                return None;
-            }
-            (Duration::from_secs(u64::from(seconds)), rest)
+    let (mut idle_timeout, mut request_timeout) = (None, None);
+    let mut rest = args;
+    loop {
+        let option = match rest {
+            [option, ..] if option == "--idle-timeout" => &mut idle_timeout,
+            [option, ..] if option == "--request-timeout" => &mut request_timeout,
+            _ => break,
+        };
+        let [_, seconds, tail @ ..] = rest else {
+            return None;
+        };
+        if option.replace(whole_seconds(seconds)?).is_some() {
+            return None;
         }
-        _ => (IDLE_TIMEOUT, args),
-    };
+        rest = tail;
+    }
     let [identity, socket] = rest else {
         return None;
     };
@@ -86,10 +92,24 @@ pub fn arguments(args: &[OsString]) -> Option<Arguments> {
         return None;
     }
     Some(Arguments {
-        idle_timeout,
+        idle_timeout: idle_timeout.unwrap_or(IDLE_TIMEOUT),
+        request_timeout: request_timeout.unwrap_or(wire::REQUEST_TIMEOUT),
         identity: identity.to_string(),
         socket: PathBuf::from(socket),
     })
+}
+
+/// The number of seconds in `word`, a whole number from 1, or `None`.
+fn whole_seconds(word: &OsString) -> Option<Duration> {
+    let seconds = word.to_str()?;
+    if seconds.is_empty() || !seconds.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let seconds: u32 = seconds.parse().ok()?;
+    if seconds == 0 {
+        return None;
+    }
+    Some(Duration::from_secs(u64::from(seconds)))
 }
 
 /// What the main loop waits for.
@@ -118,7 +138,7 @@ pub fn run(args: &[OsString], out: &mut impl Write) -> u8 {
     if started {
         // A timeout, the end of standard input and a closed channel all end the loop.
         while let Ok(Event::Connection(stream)) = events.recv_timeout(arguments.idle_timeout) {
-            if serve(&mut session, stream) {
+            if serve(&mut session, stream, arguments.request_timeout) {
                 break;
             }
         }
@@ -176,9 +196,14 @@ fn accept(listener: UnixListener, sender: SyncSender<Event>) -> io::Result<()> {
         .map(drop)
 }
 
-/// Serve one connection; whether the session was closed by it.
-fn serve<T: surf::Transport>(session: &mut Session<T>, stream: UnixStream) -> bool {
-    let deadline = Instant::now() + wire::REQUEST_TIMEOUT;
+/// Serve one connection, reading its request within `request_timeout`; whether the session was
+/// closed by it.
+fn serve<T: surf::Transport>(
+    session: &mut Session<T>,
+    stream: UnixStream,
+    request_timeout: Duration,
+) -> bool {
+    let deadline = Instant::now() + request_timeout;
     let request = {
         let mut reader = BufReader::new(Deadline {
             stream: &stream,

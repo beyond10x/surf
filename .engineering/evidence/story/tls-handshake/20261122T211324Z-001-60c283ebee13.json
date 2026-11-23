@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T21:13:24Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-handshake",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "security review of the seams of surf-tls on wave/tls-1: 6 findings and one on writes, fixed in bdbcd4f, ee6c101, 7f0ad05, 2047347, d299d0d, 36e50b2, 8de6ce4",
+    "reference": "this story's fixes: bdbcd4f, the host normalised once for server_name and the verifier; ee6c101, a host no certificate can match refused with Error::Host before the ClientHello; 8de6ce4, each flight of the client one write and one flush"
+  }
+}

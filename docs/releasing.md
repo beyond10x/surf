@@ -155,3 +155,7 @@ The commands use the gates as the bot, from a checkout of this repository:
    `$gates gh -- release upload <version> <file>...`; it does not touch the notes.
 
 A refused scan creates no release: fix the cause on `main` and release the next patch version.
+
+The trust anchors of `surf-tls` are refreshed with `task anchors-refresh`, whose `.sha256` comes
+from the same server as the list and proves an uncut download only, so the person who refreshes
+reads the titles it prints as added and removed before committing the new list.

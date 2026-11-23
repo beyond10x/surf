@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T21:13:25Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-test-server",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate: task check-runner on 6cff209 (wave/tls-1), 2026-11-22 22:03 to 22:10 CET, and task slow on 6cff209",
+    "reference": "exit 0; Summary [ 27.576s] 1432 tests run: 1432 passed, 0 skipped; test step: 32.0 s of its budget of 120 s; check-runner: task check exit 0 in 362 s; task slow: exit 0, tls-certs-slow: 100 files, none differs, tls-flights-slow: every new recording replays to its outcome. The run before on 32df67f passed the same 1432 tests and failed its budget, test step 126.3 s at a load of 105 to 143; this story's tests: surf-tls-test-server 46 (adversary_server 17, handshake 12, hostile 7, hundred 1, modes 9)"
+  }
+}

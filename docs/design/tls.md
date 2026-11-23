@@ -412,6 +412,44 @@ The verifier interface: the trait `ServerCertVerifier` takes the certificates th
 the host and the time, and answers the `LeafKey` or a `CertificateRejection` of kind
 `NotTrusted(check)` with a check of item 7, `Expired` or `NameMismatch`. The connection layer is
 a client over any `Read + Write`, given a host, a `&dyn ServerCertVerifier` and the time.
+`PathVerifier` of `path.rs` is the one implementation the crate ships; the handshake calls the
+trait once, with the `cert_data` of each CertificateEntry in the order sent.
+
+A host whose last label is a number in the URL Standard's sense (all ASCII digits, or `0x`/`0X`
+followed by hex digits or nothing) is not a DNS name: `0x7f000001`, `127.0.0.0x1`, `1.2.3.0X`
+and `example.0x` match no dNSName; `example.x0` and `0x.example` stay DNS names.
+
+The host is normalised once, where the connection is made (`Connection::new` and
+`Connection::with_random`, through `names::normalise`): one trailing dot removed, ASCII letters
+lowered. That one value is sent in `server_name` (none for an IP address), given to
+`ServerCertVerifier::verify`, and reported by `Connection::host`. `127.0.0.1.` is the address
+127.0.0.1, as `surf-url` reads it (the URL Standard's IPv4 parser drops one empty last part), so
+it carries no `server_name` and is matched against iPAddress entries.
+
+A host that, so normalised, is neither an IP address nor a DNS name in the preferred name syntax
+(`names::is_dns_name`) matches no certificate, and is refused before the first byte is written
+(`names::connection_host`): `Error::Host(HostRefusal)`, whose `reason` is the first rule it
+breaks, in this order: `Empty`, `NameTooLong` (over 253 bytes), `Byte` (a byte other than a
+letter, a digit, `-` or `.`), `EmptyLabel`, `LabelTooLong` (over 63 bytes),
+`HyphenAtLabelEdge`, `NumberLastLabel` (`0x7f000001`). The host in its text is an excerpt
+(item 7). `messages::MAX_SERVER_NAME`, 255, stays the bound the cookie of item 9.1 is computed
+with; the longest name sent is 253 bytes.
+
+KeyUpdate (RFC 8446 section 4.6.3): an `update_requested` is answered by one KeyUpdate of
+`update_not_requested` before the next record of data the client writes, however many came; a
+read writes nothing; `close` with an answer owed sends `close_notify` under the current key
+without it.
+
+Each flight of the client reaches the stream in one `write` and one `flush`: the ClientHello;
+the `change_cipher_spec` of compatibility mode with the empty Certificate (when asked for) and
+the Finished; an owed KeyUpdate, or the one before the AES-GCM record limit, with the record of
+data after it; each alert alone, with nothing held after it. The record layer holds a flight's
+records between `RecordLayer::cork` and `uncork`, and every single write of it hands all its
+records over at once. On a socket without `TCP_NODELAY` a second small write waits for the
+peer's delayed ACK: the unit that built the test server measured 48.8 ms per handshake without
+`nodelay` and 8 to 22 ms with it. The second ClientHello after a HelloRetryRequest is a flight of
+its own (no `change_cipher_spec` goes before it). The bytes are those written before; only the
+calls on the stream are fewer.
 
 The public `Error` of `error.rs`, a closed list:
 
@@ -444,12 +482,20 @@ The public `Error` of `error.rs`, a closed list:
   `decode_error`), and from `story:tls-record` `InterleavedHandshake`,
   `HandshakeSpansKeyChange`, `EmptyContent` (a handshake or alert record with no content),
   `BadAlertRecord` (an alert record that is not one alert of two bytes), `UnprotectedRecord`
-  (application data without protection), `Downgrade`, `UnexpectedChangeCipherSpec`,
-  `BadCertificateVerify`, `BadFinished`.
-- `SequenceExhausted`.
+  (a record without protection where protection is required: application data before the
+  read keys are set, a handshake or alert record after), `Downgrade`,
+  `UnexpectedChangeCipherSpec`, `BadCertificateVerify`, `BadFinished`, and from
+  `story:tls-handshake` `TooManyRecordsWithoutData { bound }` (more records in a row than item
+  9 allows that give the caller no application data; alert `unexpected_message`).
+- `SequenceExhausted`, and from `story:tls-record` `KeyLimitReached` (item 9.6).
 - `Certificate(CertificateRejection)`, which `story:tls-x509` adds. A `CertificateRejection`
   sends `unknown_ca` (`NoPathToAnchor`), `certificate_expired` (`Expired`) or `bad_certificate`
   (every other).
+- `Host(HostRefusal)`, which the security review of the seams adds: the host matches no
+  certificate (above); nothing was written, no alert is sent.
+
+`error.rs` also holds `excerpt`, the one form in which an error text shows bytes from outside
+the crate (item 7).
 
 The list follows the tables "RFC 8446 client obligations" and "Messages the client receives" of
 `story:tls-handshake` and "RFC 8446 record obligations" of `story:tls-record`.
@@ -461,6 +507,15 @@ keys under 2048 bits. ring exports no SHA-1 signing encoding (`src/rsa/padding.r
 for legacy verification only), refuses to sign with an RSA modulus under 2048 bits
 (`src/rsa/keypair.rs:283`), and has AES-128-GCM and AES-256-GCM only, no AES-192
 (`src/aead/algorithm.rs:149-163`).
+
+The types that hold secret bytes overwrite them with zeros in their own `Drop` (`fill(0)`, no
+`unsafe`): `crypto::Secret` (the (EC)DHE shared secret of an agreement), `crypto::Digest` (the
+pseudorandom key `hkdf_extract` answers, and every HMAC), `key_schedule::Secret` and
+`key_schedule::TrafficKey`; `key_schedule`'s expansion buffer is zeroed after use. The keys
+ring holds inside `AeadKey`, `EphemeralKey` and `SigningKey` are ring's own and not wiped by
+surf. A wipe is a plain write before the memory is freed; that the bytes read zero afterwards
+is not tested (it cannot be read without `unsafe`); the tests hold at compile time that each of
+the four types has its `Drop`.
 
 Behind the cargo feature `test-tooling` (off by default; turned on by `surf-tls-test-certs`,
 `surf-tls-test-server` and the dev-dependency of `surf-tls` on itself): the signing from PKCS#8
@@ -510,20 +565,47 @@ The checks of `NotTrusted(check)`, a closed list; `INDEX` of `story:tls-test-cer
 
 | check | condition | alert surf sends | detail |
 |---|---|---|---|
-| `Unreadable` | a certificate the server sent that the X.509 reader refuses: bad DER, a version 1 leaf, `AlgorithmMismatch` and the other errors of the reader | `bad_certificate` | `Unreadable: certificate <n> of the server: <error of the reader>` |
+| `Unreadable` | the leaf refused by the X.509 reader: bad DER, a version 1 leaf, `AlgorithmMismatch` and the other errors of the reader; a certificate after the leaf the reader refuses, when no path is found (below); the anchor's certificate refused by the reader for its extensions, or with an authorityKeyIdentifier holding authorityCertIssuer or authorityCertSerialNumber or a keyIdentifier other than its subjectKeyIdentifier; a leaf with an empty subject whose subjectAltName is not critical (RFC 5280 section 4.2.1.6) | `bad_certificate` | `Unreadable: certificate <n> of the server: <error of the reader>`, and when certificates were left out `; <k> certificates left out as unreadable` (`; 1 certificate left out as unreadable`) |
 | `NoPathToAnchor` | no path from the leaf to a trust anchor | `unknown_ca` | `NoPathToAnchor: no path to a trust anchor` |
 | `BadSignature` | a signature on the path does not verify | `bad_certificate` | `BadSignature: the signature of certificate <n> does not verify` |
-| `IssuerNotCa` | an issuer without basicConstraints cA | `bad_certificate` | `IssuerNotCa: certificate <n> issues but is no CA` |
+| `IssuerNotCa` | an issuer without basicConstraints cA, with basicConstraints not critical, or with an empty subject | `bad_certificate` | `IssuerNotCa: certificate <n> issues but is no CA` |
 | `PathTooLong` | more intermediates than item 9 allows, or a pathLenConstraint broken | `bad_certificate` | `PathTooLong: <k> intermediates, at most <bound>` or `PathTooLong: pathLenConstraint of certificate <n> broken` |
 | `CandidateLimit` | a limit of the path search of item 9.4 reached: 100 signature checks or 25,000 candidates considered | `bad_certificate` | `CandidateLimit: <bound> <signature checks or candidates considered>` |
 | `KeyUsage` | keyUsage without keyCertSign on an issuer, or without digitalSignature on the leaf | `bad_certificate` | `KeyUsage: certificate <n> lacks <keyCertSign or digitalSignature>` |
-| `UnknownCriticalExtension` | a critical extension the reader does not know | `bad_certificate` | `UnknownCriticalExtension: <OID> in certificate <n>` |
-| `NameConstraint` | a name outside a nameConstraints of an issuer or of the anchor | `bad_certificate` | `NameConstraint: <name> outside the constraints of certificate <n>` |
-| `NoServerAuth` | extKeyUsage without serverAuth on the leaf | `bad_certificate` | `NoServerAuth: the leaf is not for TLS servers` |
+| `UnknownCriticalExtension` | a critical extension the reader does not know; authorityKeyIdentifier or subjectKeyIdentifier marked critical (RFC 5280 sections 4.2.1.1 and 4.2.1.2) | `bad_certificate` | `UnknownCriticalExtension: <OID> in certificate <n>` |
+| `NameConstraint` | a name outside a nameConstraints of an issuer or of the anchor, whether the extension is marked critical or not (one not marked critical is read and enforced like a critical one, not refused); nameConstraints present in a leaf that is no CA (RFC 5280 section 4.2.1.10); the name-constraint work of item 9.4 exhausted | `bad_certificate` | `NameConstraint: <name> outside the constraints of certificate <n>` |
+| `NoServerAuth` | extKeyUsage without serverAuth on the leaf, or with neither serverAuth nor anyExtendedKeyUsage on an intermediate (below) | `bad_certificate` | `NoServerAuth: the leaf is not for TLS servers`, or `NoServerAuth: certificate <n> is not for TLS servers` for an intermediate |
 | `WeakAlgorithm` | an MD5 or SHA-1 signature, decided before any verification | `bad_certificate` | `WeakAlgorithm: <algorithm> in certificate <n>` |
 | `WeakKey` | an RSA key under 2048 bits, decided before any verification | `bad_certificate` | `WeakKey: RSA <bits> bits in certificate <n>` |
 
-`<n>` counts the certificates as the server sent them, the leaf 0.
+A detail shows bytes from outside the crate only as an excerpt (`error::excerpt`, one helper
+for every such text): the OID of `UnknownCriticalExtension`, the name of `NameConstraint`, the
+host of `NameMismatch` and of `Error::Host`, and the label of `AnchorError::NotACertificate`
+(item 8). An excerpt is at most `error::EXCERPT_BYTES_MAX`, 64 bytes, of the value (the crate
+had no excerpt bound before); each byte outside printable ASCII is written `\xNN` and the
+backslash `\\`; a longer value is cut and followed by ` ... (<n> bytes, cut after 64)`. So a
+detail stays under 512 bytes; the fields themselves keep the whole value. Before, a critical
+extension with an OBJECT IDENTIFIER of 20,001 bytes gave a detail of 40,046 bytes.
+
+`<n>` counts the certificates as the server sent them, the leaf 0. Every certificate keeps its
+sent position; one sent twice is a candidate once, at its first position, and every `<n>` in a
+refusal is the position as sent. The anchor is numbered after them: the count of certificates
+sent.
+
+The first certificate (the leaf) must be readable; an unreadable certificate after it is left
+out of the candidates and does not refuse the chain (RFC 8446 section 4.4.2: certificates after
+the leaf that the path does not need may be ignored). When no path is found and at least one
+certificate was left out, the refusal is `NotTrusted(Unreadable)` naming the first one left out
+by its sent position and its reader error, without bytes of it, and how many were left out,
+before any other reason. Reading costs one pass over each certificate sent, so the cost stays
+bounded by the message size.
+
+extKeyUsage is held on every certificate of the path below the anchor. The leaf needs
+serverAuth in an extKeyUsage it has; an intermediate that has an extKeyUsage without serverAuth
+and without anyExtendedKeyUsage refuses the path with `NoServerAuth`, naming that certificate's
+sent position; an intermediate without the extension passes. The anchor's own extKeyUsage is
+not read. A refusal ends that path only: the search goes on to another issuer of the same
+subject (a cross-signed intermediate).
 
 Every other condition, each with one reason:
 
@@ -532,13 +614,14 @@ Every other condition, each with one reason:
 | any check of the table above, among them a bad certificate (`BadSignature`), a certificate the reader refuses (`Unreadable`) and a weak algorithm (`WeakAlgorithm`, `WeakKey`) | `CertificateNotTrusted` | as above | as above |
 | outside the validity, either side, of any certificate on the path | `CertificateExpired` | `certificate_expired` | `certificate <n> valid from <notBefore> to <notAfter>, checked at <time>` |
 | no `subjectAltName` entry of the leaf matches the host (no Common Name is read) | `CertificateNameMismatch` | `bad_certificate` | `no subjectAltName entry matches <host>` |
+| a host no certificate can match, refused before the first byte (`Error::Host`, item 6) | `CertificateNameMismatch` | none | `the host "<host>" matches no certificate: <reason>` |
 | (a) a `protocol_version` alert before any ServerHello | `TlsVersionUnsupported` | none | `the server sent protocol_version before its ServerHello` |
 | (b) a `handshake_failure` alert before any ServerHello | `TlsHandshakeFailed` | none | `the server sent handshake_failure before its ServerHello; a server limited to TLS 1.2 answers this way` |
 | (c) a ServerHello that selects TLS 1.2 or below (no `supported_versions`) without a downgrade value, any suite | `TlsVersionUnsupported` | `protocol_version` | `the server selected <version>` |
 | a ServerHello of TLS 1.2 or below with either downgrade value of RFC 8446 section 4.1.3 (`DOWNGRD` and 0x01 or 0x00): a downgrade to TLS 1.2 | `TlsHandshakeFailed` | `illegal_parameter` | `illegal_parameter: the ServerHello random holds a downgrade value` |
 | a ServerHello whose `supported_versions` holds anything but 0x0304 | `TlsHandshakeFailed` | `illegal_parameter` | `illegal_parameter: the ServerHello selects <version>` |
 | a handshake message that declares more bytes than item 9 allows (an oversized handshake message) | `TlsHandshakeFailed` | `illegal_parameter` | `illegal_parameter: a <message> of <declared> bytes, at most <bound>` |
-| every other alert received or protocol violation (`AlertReceived`, `AlertSent` with any other violation, `SequenceExhausted`) | `TlsHandshakeFailed` | the alert of the violation, or none | `<alert>: <violation>` for an alert surf sent, `the server sent <alert>` for one it received |
+| every other alert received or protocol violation (`AlertReceived`, `AlertSent` with any other violation, `SequenceExhausted`, `KeyLimitReached`) | `TlsHandshakeFailed` | the alert of the violation, or none | `<alert>: <violation>` for an alert surf sent, `the server sent <alert>` for one it received |
 | a server that never finishes the handshake or the response (`TimedOut`) | `Unreachable` | none | as for HTTP today |
 | the connection closed before the handshake ended (`ConnectionClosed`), a truncated record among them | `Unreachable` | none | as for HTTP today |
 | the connection closed after the handshake without `close_notify` (`Truncated`) | `Unreachable` | none | as for HTTP today |
@@ -556,7 +639,13 @@ so in those words where `https:` is described.
 the file and its bytes travel in the `open` request; not an environment variable, because a
 `surfd` started by an earlier `open` does not see the environment of a later caller. The file
 holds at most 32 KiB and 64 certificates; every block is a `CERTIFICATE`, every certificate a
-CA (basicConstraints cA). Why 32 KiB: an `open` request holds at most `surf_agent::wire::
+CA (basicConstraints cA). The reader of the file is `surf_tls::anchors::Anchors::with_extra_pem`;
+it refuses the file whole with an `AnchorError`: `NoCertificate` (no PEM block),
+`NotACertificate { index, label }` (another label; its content is not decoded), `BadPem {
+index }`, `BadCertificate { index, error }` (the reader's error), `NotACa { index }`,
+`TooLarge` (over 32,768 bytes, before any block is read) or `TooMany` (over 64 blocks, before
+any is decoded). A certificate the reader refuses is not taken as name and key from this file.
+Why 32 KiB: an `open` request holds at most `surf_agent::wire::
 REQUEST_MAX`, 64 KiB with its `end` line (`crates/agent/src/wire.rs:86`), and an `arg` value
 travels quoted (`surf_answer::quote`, `crates/answer/src/lib.rs:221`), which writes a newline
 as `\x0a`, 4 bytes; a PEM file of 64-character lines grows by 3 bytes per line, so 32,768 bytes
@@ -584,6 +673,11 @@ the count, date and sha256 of the bundled list of item 11, and with a file a sec
    "for errors which conform to the formal protocol syntax but are otherwise incorrect"
    (`:4945-4948`). A declared length up to 2^24 - 1 conforms to the syntax (the length is a
    `uint24`); it is wrong only against surf's own bound, so `illegal_parameter`.
+   A HelloRetryRequest cookie is at most 65,116 bytes (`messages::MAX_COOKIE`): the second
+   ClientHello echoes it in `extensions<8..2^16-1>` beside its other extensions at their
+   largest (413 bytes with a 255-byte `server_name` and a secp256r1 share) and the 6 bytes
+   around the cookie. A longer one is `illegal_parameter`, `MessageTooLarge { declared,
+   bound: 65116 }`, before any second hello is built.
 2. **The most certificates in a Certificate message: 64.** Reason: more than the 50 of
    `candidate-limit`, so that the path builder sees that case whole. The length bound above alone
    would not bound the count usefully: a `CertificateEntry` is at least 6 bytes (3 bytes of
@@ -595,13 +689,18 @@ the count, date and sha256 of the bundled list of item 11, and with a file a sec
    (`src/verify_cert.rs:873` of 0.103.17). Reason: the web's chains have one or two
    intermediates; a longer path is either an attack on the search or a mistake. `path-too-long`
    of `story:tls-test-certs` has 7. More is `NotTrusted(PathTooLong)`.
-4. **The path search and its two limits: 100 signature checks and 25,000 candidates
-   considered**, per validation. The search (`story:tls-x509-path`, `path.rs`) is depth-first
-   from the leaf. At each step, for the certificate at the end of the path, its candidate issuers
-   are the trust anchors and then the certificates the server sent, in the order sent, whose
-   subject equals the certificate's issuer name (byte for byte after the reader's
-   normalisation) and, when both carry one, whose subjectKeyIdentifier equals its
-   authorityKeyIdentifier; a certificate already on the path is no candidate.
+4. **The path search and its limits: 100 signature checks, 25,000 candidates considered and
+   250,000 name-constraint comparisons**, per validation. The search (`story:tls-x509-path`,
+   `path.rs`) is depth-first from the leaf. At each step, for the certificate at the end of the
+   path, its candidate issuers are the trust anchors and then the certificates the server sent,
+   in the order sent, whose subject equals the certificate's issuer name (byte for byte as DER;
+   the reader normalises nothing); a certificate already on the path is no candidate. Key
+   identifiers order the candidates, they filter none: an issuer whose subjectKeyIdentifier
+   equals the child's authorityKeyIdentifier (both present) is tried first, the others after it
+   in the order met. The issuer name alone decides whether a certificate is a candidate. Counts
+   with this rule: the same-subject dead ends stay 39 at n=20 and 79 at n=40; the cycle 42 and
+   98; every one verifies 514 and 1462; candidate-limit considered 104 to 147 (bound 153),
+   without anchor 4108 to 4366.
    - **Each candidate looked at charges the counter `considered`**, one per name comparison,
      whether the names match or not. Limit 25,000.
    - **Before the search descends into a candidate, surf verifies the candidate's signature
@@ -609,11 +708,33 @@ the count, date and sha256 of the bundled list of item 11, and with a file a sec
      verification charges the counter `signatures`, whether it succeeds or not. Limit 100, the
      number rustls-webpki keeps (`signatures: 100`, `rustls-webpki-0.103.17/src/verify_cert.rs:355-360`,
      taken there from the remedy of Go's CVE-2018-16875).
-   - A candidate whose signature does not verify is not descended into. A candidate that is an
+   - **Each subtree of a nameConstraints visited charges the counter
+     `name_constraint_comparisons`.** One unit is one subtree visited for one subjectAltName
+     entry, of any form, permitted or excluded, plus one unit per subtree for the one pass that
+     finds whether a directoryName subtree is present; a leaf with n entries under m subtrees
+     costs m + n * m. Limit 250,000, the number rustls-webpki keeps
+     (`name_constraint_comparisons: 250_000`, `rustls-webpki-0.103.17/src/verify_cert.rs`).
+     Reaching it refuses the path with `NotTrusted(NameConstraint)`, detail "the work of 250000
+     name comparisons"; it never accepts for want of budget.
+   - A candidate whose signature does not verify is not descended into. A signature whose
+     scheme the seam does not support for the key (a P-384 key with an ecdsa-with-SHA256
+     signature, say) counts as one that does not verify (`BadSignature`). A candidate that is an
      anchor and verifies ends the path: the other checks of item 7 run on it (validity,
      basicConstraints and pathLenConstraint, keyUsage, extKeyUsage, nameConstraints); if they
      pass, the path is the answer, else the search goes on with the next candidate. A candidate
-     that would be the 7th intermediate is not descended into (item 9.3).
+     that would be the 7th intermediate is not descended into (item 9.3). The anchor's own
+     certificate is held to them as an issuer's (validity, basicConstraints cA, keyUsage
+     keyCertSign when keyUsage is present, pathLenConstraint, its critical extensions) however
+     the anchor was made: `TrustAnchor` keeps the certificate it was read from
+     (`TrustAnchor::certificate`), so a root of `PathVerifier::add_root`, of
+     `Anchors::bundled` and of an extra file (`Anchors::with_extra_pem`) are checked alike;
+     an expired root, or one whose keyUsage lacks keyCertSign, refuses the path with the same
+     `Expired` or `KeyUsage` either way. Only a root the reader refuses and item 11 takes as
+     name and key holds no certificate and skips them. The cost: the bundled list of
+     2026-11-05 holds 126,380 bytes of DER in its 117 anchors, read once per process and shared
+     by every clone of the set (one pointer and length more per anchor). No root of that list
+     is expired on 2026-11-22; the first to expire, NetLock Arany (Class Gold) Főtanúsítvány,
+     ends on 2028-12-06.
 
    Why this order, the other one than rustls-webpki's: webpki descends into every name match and
    verifies the signatures only when a path reaches an anchor
@@ -625,8 +746,9 @@ the count, date and sha256 of the bundled list of item 11, and with a file a sec
    comparisons each, 24,846. So `considered` cannot reach its limit with today's sets; it bounds
    the work if a set grows.
 
-   What the search answers when it ends without a path, in this order: a limit reached (either
-   counter): `NotTrusted(CandidateLimit)`; else a candidate cut by item 9.3:
+   What the search answers when it ends without a path, in this order: a certificate left out
+   as unreadable (item 7): `NotTrusted(Unreadable)`, the first of them with the count; else a
+   limit reached (either counter): `NotTrusted(CandidateLimit)`; else a candidate cut by item 9.3:
    `NotTrusted(PathTooLong)`; else a candidate refused by `REFUSED`: `NotTrusted(WeakAlgorithm)`
    or `NotTrusted(WeakKey)`; else a name match whose signature failed: `NotTrusted(BadSignature)`;
    else a complete path that failed a check of item 7: the check of the last such path; else
@@ -645,6 +767,29 @@ the count, date and sha256 of the bundled list of item 11, and with a file a sec
    HelloRetryRequest in the same connection [...] it MUST abort the handshake with an
    "unexpected_message" alert" (`rfc8446.txt:1837-1840`): `unexpected_message`,
    `SecondHelloRetryRequest`.
+   `Transcript::hello_retry_request` refuses a second call with the same violation and leaves
+   the transcript as it was (`story:tls-record`); the handshake refuses the message before it.
+6. **The most records under one AES-GCM write key: 23,726,566.** RFC 8446 section 5.5 limits
+   AES-GCM to 2^24.5 full-size records under one key (`rfc8446.txt:4696-4700`); 2^24.5 is
+   23,726,566.4, rounded down. The record layer counts the records it writes under each write
+   key (`record::AES_GCM_RECORD_LIMIT`, `write_limit`); the write that would pass the limit is
+   refused before a byte of it is written, with the error `KeyLimitReached`, and the layer is
+   closed after it. The layer sends no KeyUpdate of its own: a caller that may write that many
+   records sends one before. ChaCha20-Poly1305 has no such limit (section 5.5: "the record
+   sequence number would wrap before the safety limit is reached"): its keys are bounded by the
+   sequence number alone (`SequenceExhausted`). Reading has no record limit: the limit guards
+   the keys surf encrypts with, and the read sequence still cannot wrap. Why a count and no
+   automatic update: a KeyUpdate is a handshake message of `story:tls-handshake`, which the
+   record layer does not write on its own. The connection sends it: a KeyUpdate
+   (`update_not_requested`) when fewer than 2 records remain under the write key, before the
+   next record of data, so `write_data` never meets the layer's refusal at
+   `AES_GCM_RECORD_LIMIT`.
+7. **The most records in a row without application data: 32.** Empty application data,
+   `user_canceled`, NewSessionTicket and KeyUpdate records give the caller nothing; the 33rd
+   in a row ends the connection with `unexpected_message`, `TooManyRecordsWithoutData { bound:
+   32 }`. A record with at least one byte of data starts the count again; handshake messages
+   that share a record count as one record. The bound counts records, never time
+   (`connection::MAX_RECORDS_WITHOUT_DATA`).
 
 ## 10. The test design, per material
 
@@ -699,14 +844,18 @@ from the costs of item 4, not runs.
    41,805,636 bytes, sha256 `56799cefd65fc9e0bdb9cb0f97fce6734533b45df3de4fc17fdc7b7b79654fca`,
    `version` 1, 9,807 cases (935 `SUCCESS`, 8,872 `FAILURE`; 9,797 `SERVER`, 10 `CLIENT`; by
    family bettertls 9,572, rfc5280 109, webpki 56, crl 22, online 14, pathlen 13, pathological
-   11, rfc9881 6, cve 3, invalid 1). It is over 20 MiB, so `story:tls-x509` keeps every case not
-   of the `bettertls` family (235 cases, 2,000,133 bytes as compact JSON) and the `bettertls`
-   cases in file order up to 20 MiB in all: at this commit the first 4,907 (18,968,694 bytes),
-   so 5,142 cases kept and 4,665 left out, and states in `SOURCE` the size, the count kept and
-   the count left out. Within the budget (estimate): the file holds 39,975 certificates for its
+   11, rfc9881 6, cve 3, invalid 1). It is over 20 MiB, so `story:tls-x509` chooses every case
+   not of the `bettertls` family (235 cases, 1,999,896 bytes as compact JSON) and the
+   `bettertls` cases in file order up to 20 MiB in all: at this commit the first 4,909
+   (18,971,513 bytes), sizes of the cases as upstream has them. Of the cases chosen it then drops
+   the field `peer_certificate_key` (the peer's private key, D158) and leaves out the case
+   `online::facebook.com` (D161: a secret scanner's token pattern matches a run of its leaf's
+   base64). So 5,143 cases are kept and 4,664 left out: `limbo-other.json` holds 234 cases in
+   1,934,876 bytes, `limbo-bettertls-1.json` to `-4.json` the 4,909 of `bettertls`. `SOURCE`
+   states the sizes, the counts, what is dropped and the jq that makes the files again. Within the budget (estimate): the file holds 39,975 certificates for its
    9,807 cases, about 4 per case; of 400 leaf certificates sampled (200 of each part), 392 hold
    P-256 keys, 2 RSA-2048 and 4 ML-DSA-44. So a case costs a few verifications at about 0.1 ms
-   each, and the 5,142 cases about 2.5 s at opt-level 0 (5,142 × 4 × 0.12 ms); the 11
+   each, and the 5,143 cases about 2.5 s at opt-level 0 (5,143 × 4 × 0.12 ms); the 11
    `pathological` cases are held to the limits of item 9.4, at most 100 verifications each, 0.1
    s for P-256 keys. Reading 21 MB of JSON and its PEM is not estimated here; `story:tls-x509`
    measures it, and the case runner fits the 60 s and the 120 s with it.
@@ -739,8 +888,14 @@ binary). The first of them fixes the form of those files for all four (binary fi
 no such keyword on the line) and states it here through the coordinating agent. If no form
 passes, it is a question to the operator, since the exceptions of the gates policy are his.
 
-BoGo, BoringSSL's TLS suite, is not used: it needs Go and a long run. The lanes: `tls-certs-check`
-and `tls-flights-check` in `check`, `tls-certs-slow` and `tls-flights-slow` in `slow`.
+BoGo, BoringSSL's TLS suite, is not used: it needs Go and a long run. The lanes: `check` runs
+`tls-certs-check` and `tls-flights-check` (digests, no build, no `openssl`) and
+`tls-x509-conformance` (the x509-limbo counts); the task `slow` runs `tls-certs-slow` (the test
+certificates made again and compared byte for byte) and `tls-flights-slow` (the flights
+recorded again and replayed, compared by outcome). `slow` needs `openssl` 3.4 or later; no
+workflow runs it, because the forge's runner pins no `openssl` and three of the certificates
+are bytes `openssl` writes. It is run by hand after a change to the sources of either
+generator.
 
 ## 11. U2 in detail: the bundled anchors
 
@@ -748,7 +903,9 @@ The file is curl's extract of Mozilla's root store, the `cacert.pem` that
 `https://curl.se/docs/caextract.html` publishes: PEM, checked daily, converted when Mozilla's store
 changes, with a `.sha256` beside it. Read on 2026-11-22 from `https://curl.se/ca/cacert.pem`:
 200,116 bytes, `Last-Modified: Thu, 05 Nov 2026 04:12:01 GMT`, its header line "Certificate data
-from Mozilla as of: Thu Nov  5 04:12:01 2026 GMT", 118 `BEGIN CERTIFICATE` blocks, sha256
+from Mozilla as of: Thu Nov  5 04:12:01 2026 GMT", 118 `BEGIN CERTIFICATE` blocks (of which
+117 become anchors; e-Szigno TLS Root CA 2023, a P-521 key signed with ecdsa-with-SHA512,
+gives none: the reader knows no P-521 key and ring 0.17.14 verifies none), sha256
 `427c064216761a1e72a8b30f0d954d08cb6e4435a82091fb865afd20c8497285`, the value
 `https://curl.se/ca/cacert.pem.sha256` publishes for it (that file is one line,
 `<sha256>  cacert.pem`, 77 bytes; the `SHA256:` line in the list's own header is the hash of
@@ -759,8 +916,14 @@ itself (`sha256sum cacert.pem`), checked equal to the published `.sha256` line w
 taken and by the gate's digest check after; `surf --anchors` prints the date, the count and
 that sha256 (item 8). A root
 the certificate reader refuses (a version 1 root, for one) is taken as its name and key, as RFC
-5280 section 6.1.1 (d) defines a trust anchor. A list older than 90 days is refreshed before a
-release (`docs/releasing.md`).
+5280 section 6.1.1 (d) defines a trust anchor, only when a walk over it shows it holds no
+nameConstraints: a version 1 or 2 certificate, or a version 3 certificate whose extension list
+can be walked to its end (each extension's OBJECT IDENTIFIER read, no value interpreted) and
+names no nameConstraints. A refused root that names nameConstraints, or whose extension list
+cannot be walked, gives no anchor: `TrustAnchor::from_der` returns the reader's error (D164). A list older than 90 days is refreshed before a
+release (`docs/releasing.md`). `task anchors-refresh` prints each title the new list adds or
+removes (a title is the line curl writes above each certificate) and refuses, changing
+nothing, a list that removes more than 10 titles (`ANCHORS_REMOVED_MAX`, default 10).
 
 Licences, for `NOTICE`: the list is Mozilla's root store, published by Mozilla under the
 Mozilla Public License 2.0 (not read again for this note: `story:tls-anchors` quotes the licence
@@ -836,7 +999,9 @@ system clock, with certificates valid until 2125 and an expired one whose end li
 - 9.2 extensions (MUST implement, MUST send when applicable): `supported_versions`, `cookie`
   (echoed), `signature_algorithms`, `signature_algorithms_cert`, `supported_groups`,
   `key_share`, `server_name` (sent when the host is a name; RFC 6066 allows no IP literal
-  there). No `pre_shared_key` or `psk_key_exchange_modes`, as no PSK is offered. The
+  there; the name without a trailing dot, in ASCII lower case, the value the verifier is given,
+  item 6; a host that is neither an address nor a DNS name is refused before any ClientHello).
+  No `pre_shared_key` or `psk_key_exchange_modes`, as no PSK is offered. The
   ClientHello holds both `signature_algorithms` and `supported_groups`, and `key_share` with
   `supported_groups`. Met.
 - 9.3 a client supports every parameter it advertises. Shown for each: the three suites and both

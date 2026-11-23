@@ -1,0 +1,16 @@
+[package]
+name = "surf-tls-conformance"
+description = "Runs the vendored x509-limbo cases against the certificate path validation of surf-tls and counts the cases that exist, run and pass."
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+autotests = false
+
+[dependencies]
+surf-tls = { path = "../tls" }
+surf-html-conformance = { path = "../html-conformance" }
+
+[[test]]
+name = "main"
+path = "tests/main.rs"

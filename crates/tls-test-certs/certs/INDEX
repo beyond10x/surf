@@ -1,0 +1,33 @@
+ok-rsa2048 localhost 2026-11-22T00:00:00Z ok
+ok-ecdsa-p256 localhost 2026-11-22T00:00:00Z ok
+ok-ecdsa-p384 localhost 2026-11-22T00:00:00Z ok
+ok-ed25519 localhost 2026-11-22T00:00:00Z ok
+ok-wildcard a.example.test 2026-11-22T00:00:00Z ok
+expired localhost 2026-11-22T00:00:00Z CertificateExpired
+not-yet-valid localhost 2026-11-22T00:00:00Z CertificateExpired
+wrong-host localhost 2026-11-22T00:00:00Z CertificateNameMismatch
+untrusted-root localhost 2026-11-22T00:00:00Z CertificateNotTrusted NoPathToAnchor
+bad-signature localhost 2026-11-22T00:00:00Z CertificateNotTrusted BadSignature
+intermediate-not-ca localhost 2026-11-22T00:00:00Z CertificateNotTrusted IssuerNotCa
+path-too-long localhost 2026-11-22T00:00:00Z CertificateNotTrusted PathTooLong
+pathlen-exceeded localhost 2026-11-22T00:00:00Z CertificateNotTrusted PathTooLong
+leaf-no-digital-signature localhost 2026-11-22T00:00:00Z CertificateNotTrusted KeyUsage
+issuer-no-key-cert-sign localhost 2026-11-22T00:00:00Z CertificateNotTrusted KeyUsage
+candidate-limit localhost 2026-11-22T00:00:00Z CertificateNotTrusted CandidateLimit
+candidate-limit-no-anchor localhost 2026-11-22T00:00:00Z CertificateNotTrusted CandidateLimit
+unknown-critical-extension localhost 2026-11-22T00:00:00Z CertificateNotTrusted UnknownCriticalExtension
+wildcard-two-labels a.b.example.test 2026-11-22T00:00:00Z CertificateNameMismatch
+common-name-only localhost 2026-11-22T00:00:00Z CertificateNameMismatch
+ip-mismatch 127.0.0.1 2026-11-22T00:00:00Z CertificateNameMismatch
+name-constraints-excluded localhost 2026-11-22T00:00:00Z CertificateNotTrusted NameConstraint
+eku-client-only localhost 2026-11-22T00:00:00Z CertificateNotTrusted NoServerAuth
+1000-sans localhost 2026-11-22T00:00:00Z ok
+ok-rsa-pss localhost 2026-11-22T00:00:00Z ok
+ok-rsa-pss-sha384 localhost 2026-11-22T00:00:00Z ok
+ok-rsa-pss-sha512 localhost 2026-11-22T00:00:00Z ok
+ok-rsa-pkcs1-sha384 localhost 2026-11-22T00:00:00Z ok
+ok-rsa-pkcs1-sha512 localhost 2026-11-22T00:00:00Z ok
+leaf-v1 localhost 2026-11-22T00:00:00Z CertificateNotTrusted Unreadable
+sha1 localhost 2026-11-22T00:00:00Z CertificateNotTrusted WeakAlgorithm
+md5 localhost 2026-11-22T00:00:00Z CertificateNotTrusted WeakAlgorithm
+rsa-1024 localhost 2026-11-22T00:00:00Z CertificateNotTrusted WeakKey

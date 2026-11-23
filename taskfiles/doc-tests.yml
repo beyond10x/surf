@@ -1,0 +1,138 @@
+version: '3'
+
+set: [pipefail]
+
+tasks:
+  doc-tests-check:
+    desc: Fail, naming the file and line, when a doc comment outside crates/ports holds a code block that rustdoc would run, or a doc attribute.
+    summary: |
+      Fail, naming the file and line, when a doc comment outside crates/ports holds a code block that rustdoc would run, or a doc attribute.
+
+      task test runs the doc tests of surf-ports only (cargo test --doc -p surf-ports), so a doc
+      test anywhere else would never run. Runs taskfiles/doc-tests-check.sh on the repository. It
+      reads every *.rs under crates/ and generated/ but those under crates/ports/ (target and dot
+      directories not entered) and follows the fences of the /// and //! lines of each file: a
+      line whose text after the comment mark and blanks starts with three backticks or three
+      tildes opens a block when none is open and closes the open one otherwise. An opening fence
+      whose mark is not text fails, and so does a line that holds #[doc = or #![doc =. It prints
+      every failing line, or "doc-tests-check: no doc test outside crates/ports". A code block
+      written by indentation, and one in a block doc comment (/** or /*!), is not seen. It calls
+      no cargo.
+    dir: '{{.TASKFILE_DIR}}/..'
+    silent: true
+    cmds:
+      - sh taskfiles/doc-tests-check.sh .
+
+  doc-tests-check-test:
+    desc: Give taskfiles/doc-tests-check.sh fences with and without the mark text, a doc attribute, and the directories it skips.
+    summary: |
+      Give taskfiles/doc-tests-check.sh fences with and without the mark text, a doc attribute, and the directories it skips.
+
+      Writes each case as a small tree under .out/doc-tests-check-test/case, runs the script on
+      it and compares its exit status and the whole of what it printed with the expected line.
+      Failing cases: a fence without a mark, rust,no_run, a fence of tildes without a mark, a
+      text block followed by a second block without a mark (the line of the second block is
+      named, so the closing fence of the first is not taken as an opening), #[doc = "..."],
+      #![doc = "..."], and a //! fence without a mark under generated/. Passing cases: text, and
+      every one of the failing constructs under crates/ports/, under a target directory, under a
+      dot directory, and in a //// comment, which is no doc comment. A root without crates/ and
+      generated/ exits 2.
+
+      SCRIPT names the script under test (default taskfiles/doc-tests-check.sh), so that a
+      planted defect can be run in a copy. It prints one line per case that is decided otherwise
+      and fails, or one line with the count.
+    dir: '{{.TASKFILE_DIR}}/..'
+    silent: true
+    vars:
+      SCRIPT: '{{.SCRIPT | default "taskfiles/doc-tests-check.sh"}}'
+    cmds:
+      - |
+        script='{{.SCRIPT}}'
+        test -f "$script" || { echo "$script: missing"; exit 1; }
+        out=.out/doc-tests-check-test
+        rm -rf "$out"
+        mkdir -p "$out"
+        case_dir=$out/case
+        file=crates/a/src/lib.rs
+        run='opens a code block that rustdoc would run; mark it text or move the doc test to crates/ports'
+        attr='sets a doc attribute; the gate runs the doc tests of surf-ports only'
+        clean='doc-tests-check: no doc test outside crates/ports'
+        cases=0
+        wrong=0
+        fresh() {
+          rm -rf "$case_dir"
+          mkdir -p "$case_dir/crates/a/src"
+          printf 'pub fn a() {}\n' > "$case_dir/crates/b.rs"
+        }
+        all() {
+          dir=$1
+          mkdir -p "$dir"
+          printf '/// A.\n///\n/// ```\n/// a();\n/// ```\npub fn a() {}\n' > "$dir/bare.rs"
+          printf '/// A.\n///\n/// ```rust,no_run\n/// a();\n/// ```\npub fn a() {}\n' > "$dir/no_run.rs"
+          printf '/// A.\n///\n/// ~~~\n/// a();\n/// ~~~\npub fn a() {}\n' > "$dir/tildes.rs"
+          printf '//! A.\n//!\n//! ```text\n//! a\n//! ```\n//!\n//! ```\n//! a();\n//! ```\n' > "$dir/second.rs"
+          printf '#[doc = "A."]\npub fn a() {}\n' > "$dir/attr.rs"
+          printf '#![doc = "A."]\n' > "$dir/inner_attr.rs"
+        }
+        check() {
+          expected=$1
+          name=$2
+          line=$3
+          cases=$((cases + 1))
+          status=0
+          sh "$script" "$case_dir" > "$out/case$cases.log" 2>&1 || status=$?
+          printed=$(cat "$out/case$cases.log")
+          if [ "$status" -ne "$expected" ]; then
+            printf '%s\n' "doc-tests-check-test: $name: exit $status, expected $expected ($out/case$cases.log)"
+            wrong=$((wrong + 1))
+          elif [ "$printed" != "$line" ]; then
+            printf '%s\n' "doc-tests-check-test: $name: printed \"$printed\", expected \"$line\""
+            wrong=$((wrong + 1))
+          fi
+        }
+        fresh
+        printf '/// A.\n///\n/// ```\n/// a();\n/// ```\npub fn a() {}\n' > "$case_dir/$file"
+        check 1 "a fence without a mark" "doc-tests-check: $file:3 $run"
+        fresh
+        printf '/// A.\n///\n///   ```rust,no_run\n/// a();\n/// ```\npub fn a() {}\n' > "$case_dir/$file"
+        check 1 "a fence marked rust,no_run" "doc-tests-check: $file:3 $run"
+        fresh
+        printf '    /// A.\n    ///\n    /// ~~~\n    /// a();\n    /// ~~~\n    pub fn a() {}\n' > "$case_dir/$file"
+        check 1 "a fence of tildes without a mark" "doc-tests-check: $file:3 $run"
+        fresh
+        printf '//! A.\n//!\n//! ```text\n//! a\n//! ```\n\n/// B.\n///\n/// ~~~ text\n/// b\n/// ~~~\npub fn b() {}\n' > "$case_dir/$file"
+        check 0 "fences marked text" "$clean"
+        fresh
+        printf '//! A.\n//!\n//! ```text\n//! a\n//! ```\n//!\n//! ```\n//! a();\n//! ```\n' > "$case_dir/$file"
+        check 1 "a text block followed by a block without a mark" "doc-tests-check: $file:7 $run"
+        fresh
+        printf '//! A.\n\n#[doc = "B."]\npub fn b() {}\n' > "$case_dir/$file"
+        check 1 "#[doc = \"...\"]" "doc-tests-check: $file:3 $attr"
+        fresh
+        printf '#![doc = "A."]\n' > "$case_dir/$file"
+        check 1 "#![doc = \"...\"]" "doc-tests-check: $file:1 $attr"
+        fresh
+        mkdir -p "$case_dir/generated/rust/src"
+        printf '//! A.\n//!\n//! ```\n//! a();\n//! ```\n' > "$case_dir/generated/rust/src/lib.rs"
+        check 1 "a //! fence without a mark under generated/" "doc-tests-check: generated/rust/src/lib.rs:3 $run"
+        fresh
+        all "$case_dir/crates/ports/src"
+        check 0 "each failing construct under crates/ports/" "$clean"
+        fresh
+        all "$case_dir/crates/a/target/debug/build"
+        check 0 "each failing construct under a target directory" "$clean"
+        fresh
+        all "$case_dir/crates/a/.hidden"
+        check 0 "each failing construct under a dot directory" "$clean"
+        fresh
+        printf '//// A.\n////\n//// ```\n//// a();\n//// ```\npub fn a() {}\n' > "$case_dir/$file"
+        check 0 "a fence without a mark in a //// comment" "$clean"
+        rm -rf "$case_dir"
+        mkdir -p "$case_dir/src"
+        printf '/// ```\n/// a();\n/// ```\npub fn a() {}\n' > "$case_dir/src/lib.rs"
+        check 2 "a root without crates/ and generated/" "doc-tests-check: $case_dir holds neither crates/ nor generated/"
+        if [ "$wrong" -ne 0 ]; then
+          echo "doc-tests-check-test: $wrong of $cases case(s) decided otherwise by $script"
+          exit 1
+        fi
+        echo "doc-tests-check-test: $cases case(s), each decided as expected by $script"

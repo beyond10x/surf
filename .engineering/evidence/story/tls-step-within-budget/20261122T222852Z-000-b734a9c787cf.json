@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-22T22:28:52Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-step-within-budget",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate: task check-runner on cb22b79 (wave/tls-1), 2026-11-22 23:12 to 23:22 CET, 364 s of it queued",
+    "reference": "exit 0 in 236 s; load 130.62 when queued, 43.84 at the end; test step: 26.8 s of its budget of 120 s, 890 tests: 890 passed, 0 failed, 0 ignored (cargo-nextest 888, doc tests 2); tls test step: 12.2 s of its budget of 120 s, 545 tests: 545 passed, 0 failed, 0 ignored (cargo-nextest 545); 888 is the 887 of 48f05c2 plus the stream test of 81cc832; .out/test-junit.xml and .out/test-tls-junit.xml both written; the ten slowest of test name no TLS package, the ten of test-tls only surf-tls (acceptance 1, 2, 8)"
+  }
+}
