@@ -16,7 +16,7 @@ description: What surf does today, and what it does not do yet.
 - **1,769 tests** (1,224, and 545 of the TLS crates in a step of their own), built with
   warnings treated as errors, and 59 tests of the live view's page in a browser.
 
-New with round 2, in no release yet:
+New with round 2, shipped in release `0.5.0`:
 
 - **An agent can act on a page.** `surf-agent follow <handle>` loads a link's target, `fill`
   types into a field, `pick` chooses an option or ticks a box, and `press` presses a button and
@@ -29,6 +29,9 @@ New with round 2, in no release yet:
   that counts as public, and `back` and `forward` to a page that such a page or a redirect after
   a public address chose, are refused `forbidden-destination` when the address is or resolves to
   a loopback or private one. To load a local address, type it with `go`.
+- **The live view shows a page's links.** Its panel "Now" lists the links of the answer at the
+  playhead with their handles, labels and targets, and a `follow` shows its handle on the
+  timeline.
 
 New with round 1 after the tenth wave of the current plan, shipped in release `0.4.0`:
 

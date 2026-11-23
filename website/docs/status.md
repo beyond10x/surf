@@ -27,7 +27,7 @@ plan:
 | third-party crates in what ships | 0 |
 | unsafe code | forbidden in every hand-written crate; two test files hold a counting allocator |
 | standard sections marked complete | 0 |
-| roadmap | 10 of 22 waves delivered, and round 2 delivered the step after wave 18 (follow, fill, press, back, forward, what changed); release `0.4.0` follows round 1 ([releases](https://github.com/beyond10x/surf/releases)) |
+| roadmap | 10 of 22 waves delivered, and round 2 delivered the step after wave 18 (follow, fill, press, back, forward, what changed); release `0.4.0` follows round 1 and release `0.5.0` round 2 ([releases](https://github.com/beyond10x/surf/releases)) |
 
 ## What is not checked yet
 

@@ -88,9 +88,11 @@ is the run of 2026-11-23 at a load average of 111 to 117 on 20 CPUs. The page te
 took the task 220 s at a load average of 126 to 127, `53 passed` 1.1m at a load average of 55
 to 65, `47 passed` 2.5m at a load average of 110 to 140, and the 38 of before took 15.8 s.
 
-The scenario runner in
-[`conformance/`](https://github.com/beyond10x/surf/tree/main/conformance) is the one place a
-third-party crate is used; nothing that ships depends on it.
+Third-party crates are used in two places: the scenario runner in
+[`conformance/`](https://github.com/beyond10x/surf/tree/main/conformance), with a lock of its
+own, and `surf-tls`, whose `ring` and the packages it needs are the 19 outside packages of the
+root lock, each on the allow-list `taskfiles/lock-allow.txt`; the lock check fails on one that
+is not. Nothing that ships depends on either.
 
 ## Build from source
 

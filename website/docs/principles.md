@@ -16,8 +16,10 @@ that.
 3. **Isolation over speed.** A component is a security boundary. A design that needs two
    components to share memory is refused.
 4. **No third-party code in what ships.** The Rust standard library and the operating system are
-   allowed. The checks fail if the lock file lists an outside package. One exception is planned:
-   audited cryptographic primitives for TLS.
+   allowed. Every outside package of the lock file is on the allow-list
+   `taskfiles/lock-allow.txt` (19 of its 49 packages), and the lock check fails on one that is
+   not. One exception: audited cryptographic primitives for TLS, from `ring`, on which only the
+   crate `surf-tls` may depend; nothing that ships depends on it yet.
 5. **No unsafe code.** Every hand-written crate forbids it. The exceptions are in tests: two
    counting allocators that measure what a fetch holds and what a parse allocates.
 6. **Text from the web stays text.** Anything from a page, a server or an address is escaped

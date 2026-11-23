@@ -7,6 +7,8 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-23
+
 ### Added
 
 - `surf-agent follow <handle>` follows a link of the current page. An answer without `--as`
@@ -19,9 +21,8 @@ release; what came before it is in the git log and in `docs/plan/`.
   `hidden` or `unresolved`. A followed link's `path` line is `3 follow l1 "Opening hours"`.
   Before any navigation, and so with the page left as it was, `follow` also exits 1 with `did
   refused address-too-long` for a target over 65,536 bytes, `unsupported-scheme` for a scheme
-  other than `http:` (`javascript:`, `mailto:`, `data:`, `file:`, `https:`), and, from a page
-  on a public address, `forbidden-destination` for a target on a loopback, private, link-local,
-  unique-local, shared or unspecified IP address or `localhost`. A target is never shown with
+  other than `http:` (`javascript:`, `mailto:`, `data:`, `file:`, `https:`), and
+  `forbidden-destination` from a page that counts as public (below). A target is never shown with
   its `user:password@`, and a path on the page's own origin that starts with `//` is shown as
   the whole address. Format: [`docs/agent-answer.md`](docs/agent-answer.md).
 - `surf-agent fill <handle> <value>` types into a text field, a password field or a textarea,

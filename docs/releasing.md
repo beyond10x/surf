@@ -61,8 +61,13 @@ The commands use the gates as the bot, from a checkout of this repository:
 1. **Version.** Set `version` to the new version in the four manifests of the shipped
    binaries, `crates/surf-cli/Cargo.toml`, `crates/agent/Cargo.toml`,
    `crates/surfd/Cargo.toml` and `crates/session/Cargo.toml`, then
-   `cargo generate-lockfile --offline`. Release `0.1.0` shipped the binary from the package
-   `surf`; `surf-cli` starts at that version, so the next release is above it.
+   `cargo generate-lockfile --offline`. `git diff Cargo.lock` then shows the version lines of
+   these four packages and nothing else: no third-party package moves in a release commit. The
+   command takes the newest version the local registry cache holds, so it can move one; pin it
+   back with `cargo update --offline -p <name> --precise <version of the lock before>`, and the
+   lock check passes again (on 2026-11-23 for `0.5.0` it moved `cc` from 1.11.1 to 1.11.3,
+   which `taskfiles/lock-allow.txt` does not list). Release `0.1.0` shipped the binary from the
+   package `surf`; `surf-cli` starts at that version, so the next release is above it.
 2. **Changelog.** In `CHANGELOG.md`, rename `## [Unreleased]` to `## [<version>] - <date>` and
    put an empty `## [Unreleased]` above it. Commit both on `main`; `slot task check-runner` is
    green on that commit, and the gate's output holds no line that starts with `raise:` (a task

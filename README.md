@@ -42,7 +42,7 @@ archive (Apple silicon and Intel) holds `surf`: the agent binaries read the call
 file.
 
 ```console
-$ version=0.4.0 target=x86_64-unknown-linux-musl
+$ version=0.5.0 target=x86_64-unknown-linux-musl
 $ base=https://github.com/beyond10x/surf/releases/download/$version
 $ curl -fsSLO $base/surf-$version-$target.tar.gz -fsSLO $base/SHA256SUMS
 $ grep " surf-$version-$target.tar.gz\$" SHA256SUMS | sha256sum --check
@@ -229,7 +229,9 @@ there instead.
 3. **Isolation over speed.** A component is a security boundary. A design that needs two
    components to share memory is refused.
 4. **No third-party code in what ships.** The Rust standard library and the operating system
-   are allowed. The checks fail if the lock file lists an outside package. One exception:
+   are allowed. Every outside package of the lock file is on the allow-list
+   `taskfiles/lock-allow.txt` (19 of its 49 packages), and the lock check fails on one that is
+   not. One exception:
    audited cryptographic primitives for TLS come from ring 0.17.14, reviewed as a dependency in
    the rustls audit of Cure53, 2020 (<https://cure53.de/pentest-report_rustls.pdf>). Only the
    crate `surf-tls` may depend on it, and the checks pin its packages by name, version and
@@ -255,6 +257,23 @@ there instead.
   interpreter and once against the Rust code.
 - **1,769 tests** (1,224, and 545 of the TLS crates in a step of their own), built with
   warnings treated as errors, and 59 tests of the live view's page in a browser.
+
+New with round 2, shipped in release `0.5.0`:
+
+- **An agent can act on a page.** `surf-agent follow <handle>` loads a link's target, `fill`
+  types into a field, `pick` chooses an option or ticks a box, and `press` presses a button and
+  submits its form with `GET` or `POST`. `back` and `forward` move through the session's pages.
+  The `page` line shows the page's title.
+- **Each answer says what changed.** The `changed` block lists the controls whose value,
+  checked state or selection the last action changed, or the new page and its new texts, at
+  most ten lines and a count of the rest. `log [<n>]` lists the session's actions.
+- **A public page cannot send the session to your network.** `follow` and `press` from a page
+  that counts as public, and `back` and `forward` to a page that such a page or a redirect after
+  a public address chose, are refused `forbidden-destination` when the address is or resolves to
+  a loopback or private one. To load a local address, type it with `go`.
+- **The live view shows a page's links.** Its panel "Now" lists the links of the answer at the
+  playhead with their handles, labels and targets, and a `follow` shows its handle on the
+  timeline.
 
 New with round 1 after the tenth wave of the current plan, shipped in release `0.4.0`:
 
@@ -456,7 +475,7 @@ plan is [`docs/plan/agent-waves.md`](docs/plan/agent-waves.md) and its design is
 Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `surf-agent`,
 `surfd` and `surf-session`, for Linux only at first. The releases are listed at
 <https://github.com/beyond10x/surf/releases>. After it, work moves to the script engine,
-[swell](https://beyond10x.github.io/swell/), a project of its own. Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. Wave 10 and round 1, which builds the stories of wave 11 and some of the waves after it, followed, and release `0.4.0` follows round 1: it adds the HTML parser on real pages and the page as text. The waves after them are planned and have no date.
+[swell](https://beyond10x.github.io/swell/), a project of its own. Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. Wave 10 and round 1, which builds the stories of wave 11 and some of the waves after it, followed, and release `0.4.0` follows round 1: it adds the HTML parser on real pages and the page as text. Round 2 followed, and release `0.5.0` follows it: it adds following links, filling and submitting forms, going back and forward, and what changed. The waves after them are planned and have no date.
 
 | after wave | what you can do |
 |---|---|
@@ -468,7 +487,7 @@ Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `s
 | 22 | Record an agent's session, turn it into a test, and replay it against the recorded network. |
 
 Round 2 delivered following links, filling and submitting forms, going back and forward, the
-`changed` block and `log`; no release carries them yet. TLS and `https:` are on the list below.
+`changed` block and `log`; release `0.5.0` ships them. TLS and `https:` are on the list below.
 None of the next steps has a date.
 
 Next after that, wanted and not planned in detail yet:
@@ -556,9 +575,11 @@ average of 126 to 127; `53 passed` took 1.1m at a load average of 55 to 65; `47 
 2.5m at a load average of 110 to 140, and the 38 of before took 15.8 s.
 The page tests need Node and
 Chromium's headless shell; with Node there, install the shell once with `npm --prefix view-tests ci`, then `npx --prefix view-tests playwright
-install --only-shell chromium`. The scenario runner in
-[`conformance/`](conformance/) is the one place a third-party crate is used; nothing that
-ships depends on it.
+install --only-shell chromium`. Third-party crates are used in two places: the scenario runner
+in [`conformance/`](conformance/), with a lock of its own, and `surf-tls`, whose `ring` and the
+packages it needs are the 19 outside packages of the root lock, each on the allow-list
+`taskfiles/lock-allow.txt`; the lock check fails on one that is not. Nothing that ships depends
+on either.
 
 `task open` lists the design questions that are still open.
 
