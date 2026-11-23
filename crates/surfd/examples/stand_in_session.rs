@@ -22,7 +22,10 @@
 //!
 //! The entries of its link answer, for the log `surfd` keeps: for `open` with status 0 its
 //! action entry, one event entry (`surf.shell.WindowOpened`) and its answer entry without the
-//! token line; for `go` and `close` the action entry and the answer entry; none for any other
+//! token line; for `go` and `close` the action entry and the answer entry; for `fill` and `press`
+//! the action entry, for `fill` the `surf.agent.FillRequested` entry with the value as its length
+//! (`"<n> bytes"`, as the session writes it), and the answer entry of a one-password form, with
+//! its `now` and `changed` blocks (`story:view-controls-and-changes`); none for any other
 //! request.
 //!
 //! What it records there: `alive-<pid>`, a file it holds a lock on from before it records its
@@ -43,11 +46,21 @@ use std::thread;
 use std::time::Duration;
 
 use surf_agent::wire;
-use surf_answer::{Did, Head, Page, RefusalReason, SessionState as HeadState};
+use surf_answer::{
+    CHANGED_TEXT_CHARS_MAX, Change, Changed, ControlChange, Cut, Did, Element, Head,
+    LABEL_CHARS_MAX, Now, Page, RefusalReason, SessionState as HeadState, State, Target, Value,
+    Visibility,
+};
 use surf_secret::Token;
 use surfd::link::{self, Answer, Entry, Quoted, SessionState};
 
 const LIFETIME: Duration = Duration::from_secs(60);
+
+/// The page a `fill` of the stand-in acts on.
+const FORM: &str = "http://127.0.0.1:9/form.html";
+
+/// The page a `press` of the stand-in loads.
+const ANSWERED: &str = "http://127.0.0.1:9/answer.html";
 
 struct Session {
     id: String,
@@ -295,7 +308,75 @@ fn serve(mut stream: UnixStream, session: &Session) {
     if request.command == "go" {
         answer.entries = entries(session, "go", request.arg("url"), &answer.text);
     }
+    if request.command == "fill" || request.command == "press" {
+        let handle = request.arg("handle").unwrap_or_default();
+        answer.text = control_answer(id, &request.command, handle);
+        answer.entries = entries(session, &request.command, None, &answer.text);
+        if request.command == "fill" {
+            // As the session does (`crates/session/src/entries.rs`): the value as its length.
+            let length = request.arg("value").map_or(0, str::len);
+            let line = format!(
+                "event surf.agent.FillRequested session_id={} element_id={} value={} handle={}",
+                surf_answer::quote(id),
+                surf_answer::quote(id),
+                surf_answer::quote(&format!("{length} bytes")),
+                surf_answer::quote(handle),
+            );
+            answer.entries.insert(1, Entry::line(&line).unwrap());
+        }
+    }
     write(&mut stream, &answer);
+}
+
+/// The answer of a `fill` or a `press` on the one-password form of [`FORM`]: after `fill`, the
+/// password `(set)` and its `changed` line; after `press`, another page with one new text.
+fn control_answer(id: &str, command: &str, handle: &str) -> String {
+    let mut answer = surf_answer::Answer::new(Head {
+        session: id.to_string(),
+        state: HeadState::Open,
+    });
+    answer.did = Some(Did::Action {
+        command: command.to_string(),
+        argument: Some(handle.to_string()),
+    });
+    let loaded = |address: &str| Page::Loaded {
+        status: 200,
+        media_type: "text/html".to_string(),
+        address: address.to_string(),
+        title: None,
+    };
+    if command == "press" {
+        answer.page = Some(loaded(ANSWERED));
+        answer.changed = Some(Changed::Page {
+            from: Some(FORM.to_string()),
+            to: Some(ANSWERED.to_string()),
+            texts: vec![Cut::of("Wrong password", CHANGED_TEXT_CHARS_MAX)],
+            more: 0,
+        });
+        return surf_answer::render(&answer).unwrap_or_default();
+    }
+    answer.page = Some(loaded(FORM));
+    answer.changed = Some(Changed::Controls(vec![ControlChange {
+        handle: handle.to_string(),
+        change: Change::Value {
+            before: Value::Empty,
+            after: Value::Set,
+        },
+    }]));
+    answer.now = Some(Now {
+        total: 1,
+        elements: vec![Element {
+            handle: handle.to_string(),
+            kind: "password".to_string(),
+            visibility: Visibility::Unknown,
+            label: Cut::of("Password", LABEL_CHARS_MAX),
+            target: Target::State(State {
+                value: Some(Value::Set),
+                ..State::default()
+            }),
+        }],
+    });
+    surf_answer::render(&answer).unwrap_or_default()
 }
 
 /// The entries of one recorded action: its action entry with the next sequence number, then

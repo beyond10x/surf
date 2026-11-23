@@ -1,12 +1,15 @@
-//! Cases 1 to 9 and 22 of `story:view-surfd-serves`, and case 1 of `story:view-now-panel`
-//! (`case_01_now_…`): the JSON writer of `surf-view` from model values, held to the fenced
-//! examples of `docs/view-stream.md`, read from the document itself so that no copy can drift.
+//! Cases 1 to 9 and 22 of `story:view-surfd-serves`, case 1 of `story:view-now-panel`
+//! (`case_01_now_…`) and case 1 of `story:view-controls-and-changes` (`case_01_controls_…`): the
+//! JSON writer of `surf-view` from model values, held to the fenced examples of
+//! `docs/view-stream.md`, read from the document itself so that no copy can drift, and for the
+//! controls to the golden files of `tests/golden/`, which the document's examples equal.
 
 #![forbid(unsafe_code)]
 
 use surf_view::model::{
-    Action, Detail, Entry, EntryKind, Now, NowElement, PageLine, Path, PathAction, Reset,
-    SessionList, SessionState, Summary,
+    Action, Change, Changed, ChangedText, ControlChange, ControlState, ControlValue, Detail, Entry,
+    EntryKind, Now, NowElement, PageLine, Path, PathAction, Reset, SessionList, SessionState,
+    Submits, Summary,
 };
 use surf_view::to_json;
 
@@ -216,6 +219,7 @@ fn entries_a() -> Vec<Entry> {
                 actions: vec![path_action(1, "open", None)],
             }),
             now: None,
+            changed: None,
         },
         EntryKind::Action(action(2, "go", Some(PAGE))),
         event(
@@ -331,6 +335,7 @@ fn answer_17() -> EntryKind {
             ],
         }),
         now: None,
+        changed: None,
     }
 }
 
@@ -359,7 +364,7 @@ fn case_02_a_detail_whose_page_is_committed_is_the_documents_example() {
     };
     let written = to_json(&detail);
     let expected = body_of(&format!("/api/sessions/{A}"));
-    assert_eq!(expected.len(), 5_548, "the document's example");
+    assert_eq!(expected.len(), 5_578, "the document's example");
     assert_eq!(text(&written), text(&expected));
 }
 
@@ -382,6 +387,7 @@ fn case_03_a_detail_whose_page_failed_names_its_reason() {
                 ],
             }),
             now: None,
+            changed: None,
         },
     };
     let detail = Detail {
@@ -405,7 +411,7 @@ fn case_03_a_detail_whose_page_failed_names_its_reason() {
         r#"{"sequence":2,"command":"go","handle":null,"argument":"http://127.0.0.1:9/","#,
         r#""argument_cut":false},"#,
         r#"{"sequence":3,"command":"close","handle":null,"argument":null,"argument_cut":false}]},"#,
-        r#""now":null}]}"#,
+        r#""now":null,"changed":null}]}"#,
     );
     assert_eq!(text(&to_json(&detail)), expected);
 }
@@ -435,7 +441,7 @@ fn case_04_a_detail_before_the_first_page_has_the_page_none() {
         r#"{"number":6,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":6,"#,
         r#""kept_at":1795226400015,"kind":"answer","page":{"kind":"none"},"#,
         r#""path":{"shown":1,"total":1,"actions":[{"sequence":1,"command":"open","handle":null,"#,
-        r#""argument":null,"argument_cut":false}]},"now":null}]}"#,
+        r#""argument":null,"argument_cut":false}]},"now":null,"changed":null}]}"#,
     );
     assert_eq!(text(&to_json(&detail)), expected);
 }
@@ -464,7 +470,7 @@ fn case_06_the_event_entry_13_has_every_value_a_string() {
 fn case_07_the_answer_entry_17_has_its_status_a_number() {
     let written = to_json(&entries_a()[16]);
     let expected = json_block(r#"{"number":17,"#);
-    assert_eq!(expected.len(), 474);
+    assert_eq!(expected.len(), 489);
     assert_eq!(text(&written), text(&expected));
     assert!(text(&written).contains(r#""status":200,"#));
 }
@@ -589,6 +595,7 @@ fn link(handle: &str, visibility: &str, label: &str, target: &str, unresolved: b
         target_cut: Some(false),
         unresolved: Some(unresolved),
         text: None,
+        state: None,
     }
 }
 
@@ -604,6 +611,7 @@ fn other(handle: &str, kind: &str, line: &str) -> NowElement {
         target_cut: None,
         unresolved: None,
         text: Some(line.to_string()),
+        state: None,
     }
 }
 
@@ -643,10 +651,11 @@ fn case_01_now_the_answer_of_the_three_link_page_is_the_documents_example() {
                 ],
                 visibility_note: Some("hidden attribute only".to_string()),
             }),
+            changed: None,
         },
     };
     let expected = json_block(r#"{"number":14,"#);
-    assert_eq!(expected.len(), 1_047, "the document's example");
+    assert_eq!(expected.len(), 1_101, "the document's example");
     assert_eq!(text(&to_json(&answer)), text(&expected));
 }
 
@@ -684,13 +693,285 @@ fn case_01_now_a_control_line_and_a_button_line_go_out_with_kind_and_text() {
         r#"{"shown":2,"total":2,"elements":["#,
         r#"{"handle":"f1","kind":"text","visibility":"?","label":null,"label_cut":null,"#,
         r#""target":null,"target_cut":null,"unresolved":null,"#,
-        "\"text\":\"f1 text ? \\u0022Email\\u0022 \\u0022\\u003cb\\u003ex\\u003c/b\\u003e\\u0022 required\"},",
+        "\"text\":\"f1 text ? \\u0022Email\\u0022 \\u0022\\u003cb\\u003ex\\u003c/b\\u003e\\u0022 required\",\"state\":null},",
         r#"{"handle":"b1","kind":"button","visibility":"?","label":null,"label_cut":null,"#,
         r#""target":null,"target_cut":null,"unresolved":null,"#,
-        "\"text\":\"b1 button ? \\u0022Sign in\\u0022\"}],",
+        "\"text\":\"b1 button ? \\u0022Sign in\\u0022\",\"state\":null}],",
         r#""visibility_note":null}"#,
     );
     assert_eq!(text(&to_json(&now)), expected);
+}
+
+// --- story:view-controls-and-changes, case 1 -------------------------------------------------
+
+const FORMS: &str = "http://127.0.0.1:41000/forms/login.html";
+const D: &str = "8e2b4d6f-1a3c-4e5f-9b7d-2c4e6f8a0b13";
+
+/// The golden file `crates/view/tests/golden/<name>`, without the line feed it ends in.
+fn golden(name: &str) -> String {
+    let path = format!("{}/tests/golden/{name}", env!("CARGO_MANIFEST_DIR"));
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{path}: {error}"));
+    text.strip_suffix('\n')
+        .expect("a line feed at its end")
+        .to_string()
+}
+
+fn sign_in() -> PageLine {
+    PageLine::Loaded {
+        status: 200,
+        media_type: "text/html".to_string(),
+        address: FORMS.to_string(),
+        title: Some("Sign in".to_string()),
+    }
+}
+
+fn text_value(value: &str) -> ControlValue {
+    ControlValue::Text {
+        text: value.to_string(),
+        cut: false,
+    }
+}
+
+/// A control or button line of the login form, its line as the answer writes it.
+fn control(handle: &str, kind: &str, label: &str, line: &str, state: ControlState) -> NowElement {
+    NowElement {
+        handle: handle.to_string(),
+        kind: kind.to_string(),
+        visibility: "?".to_string(),
+        label: Some(label.to_string()),
+        label_cut: Some(false),
+        target: None,
+        target_cut: None,
+        unresolved: None,
+        text: Some(line.to_string()),
+        state: Some(state),
+    }
+}
+
+fn flags(value: Option<ControlValue>, checked: bool, required: bool) -> ControlState {
+    ControlState {
+        value,
+        disabled: false,
+        checked,
+        required,
+        readonly: false,
+        submits: None,
+    }
+}
+
+/// The `now` of the login form (`crates/view-fixture/pages/forms/login.html`), the password
+/// `(empty)` or `(set)`.
+fn login_now(password: ControlValue) -> Now {
+    let word = if password == ControlValue::Set {
+        "(set)"
+    } else {
+        "(empty)"
+    };
+    let mut submit = flags(None, false, false);
+    submit.submits = Some(Submits {
+        form: "F1".to_string(),
+        method: "post".to_string(),
+        action: Some("/forms/answer.html".to_string()),
+        action_cut: Some(false),
+    });
+    Now {
+        shown: 5,
+        total: 5,
+        elements: vec![
+            control(
+                "f1",
+                "text",
+                "Name",
+                r#"f1 text ? "Name" = """#,
+                flags(Some(text_value("")), false, false),
+            ),
+            control(
+                "f2",
+                "password",
+                "Password",
+                &format!(r#"f2 password ? "Password" = {word} required"#),
+                flags(Some(password), false, true),
+            ),
+            control(
+                "f3",
+                "checkbox",
+                "Remember me",
+                r#"f3 checkbox ? "Remember me" checked"#,
+                flags(None, true, false),
+            ),
+            control(
+                "f4",
+                "select",
+                "Role",
+                r#"f4 select ? "Role" = "Editor""#,
+                flags(Some(text_value("Editor")), false, false),
+            ),
+            control(
+                "b1",
+                "button",
+                "Sign in",
+                r#"b1 button ? "Sign in" submits F1 post "/forms/answer.html""#,
+                submit,
+            ),
+        ],
+        visibility_note: Some("hidden attribute only".to_string()),
+    }
+}
+
+fn changed_text(text: &str) -> ChangedText {
+    ChangedText {
+        text: text.to_string(),
+        cut: false,
+    }
+}
+
+/// The answer entry of `go` to the login form.
+fn forms_go_answer() -> Entry {
+    Entry {
+        number: 26,
+        session: D.to_string(),
+        index: 26,
+        kept_at: 1_795_226_600_026,
+        kind: EntryKind::Answer {
+            page: Some(sign_in()),
+            path: Some(Path {
+                shown: 2,
+                total: 2,
+                actions: vec![
+                    path_action(1, "open", None),
+                    path_action(2, "go", Some(FORMS)),
+                ],
+            }),
+            now: Some(login_now(ControlValue::Empty)),
+            changed: Some(Changed::Page {
+                from: None,
+                to: Some(FORMS.to_string()),
+                texts: vec![
+                    changed_text("# Sign in"),
+                    changed_text("Name [@f1 text: Name]"),
+                    changed_text("Password [@f2 password required: Password]"),
+                    changed_text("[@f3 checkbox checked: Remember me] Remember me"),
+                    changed_text("Role [@f4 select: Role]"),
+                    changed_text("[@b1 button: Sign in]"),
+                ],
+                more: 0,
+            }),
+        },
+    }
+}
+
+/// The answer entry of `fill f2 -`, the password given on standard input.
+fn forms_fill_answer() -> Entry {
+    let fill = PathAction {
+        sequence: 3,
+        command: "fill".to_string(),
+        handle: Some("f2".to_string()),
+        argument: None,
+        argument_cut: false,
+    };
+    Entry {
+        number: 31,
+        session: D.to_string(),
+        index: 31,
+        kept_at: 1_795_226_601_031,
+        kind: EntryKind::Answer {
+            page: Some(sign_in()),
+            path: Some(Path {
+                shown: 3,
+                total: 3,
+                actions: vec![
+                    path_action(1, "open", None),
+                    path_action(2, "go", Some(FORMS)),
+                    fill,
+                ],
+            }),
+            now: Some(login_now(ControlValue::Set)),
+            changed: Some(Changed::Controls(vec![ControlChange {
+                handle: "f2".to_string(),
+                change: Change::Value {
+                    before: ControlValue::Empty,
+                    after: ControlValue::Set,
+                },
+            }])),
+        },
+    }
+}
+
+#[test]
+fn case_01_controls_the_answer_of_the_form_page_equals_its_golden_file() {
+    let written = text(&to_json(&forms_go_answer()));
+    assert_eq!(written, golden("forms-go-answer.json"));
+    assert_eq!(
+        text(&json_block(r#"{"number":26,"session":"8e2b4d6f-"#)),
+        written,
+        "the document's example is the golden file"
+    );
+}
+
+#[test]
+fn case_01_controls_the_answer_after_a_fill_equals_its_golden_file() {
+    let written = text(&to_json(&forms_fill_answer()));
+    assert_eq!(written, golden("forms-fill-answer.json"));
+    assert_eq!(
+        text(&json_block(r#"{"number":31,"session":"8e2b4d6f-"#)),
+        written,
+        "the document's example is the golden file"
+    );
+    assert!(
+        written.contains(r#""value":{"kind":"set","text":null,"cut":null}"#),
+        "the password as the answer prints it: {written}"
+    );
+}
+
+#[test]
+fn case_01_controls_checked_and_selected_changes_and_a_cut_value() {
+    let changed = Changed::Controls(vec![
+        ControlChange {
+            handle: "f3".to_string(),
+            change: Change::Checked {
+                before: true,
+                after: false,
+            },
+        },
+        ControlChange {
+            handle: "f4".to_string(),
+            change: Change::Selected {
+                before: text_value("Editor"),
+                after: ControlValue::Text {
+                    text: "<Reader>".to_string(),
+                    cut: true,
+                },
+            },
+        },
+    ]);
+    let expected = concat!(
+        r#"{"kind":"controls","lines":["#,
+        r#"{"handle":"f3","what":"checked","before":true,"after":false},"#,
+        r#"{"handle":"f4","what":"selected","#,
+        r#""before":{"kind":"text","text":"Editor","cut":false},"#,
+        r#""after":{"kind":"text","text":"\u003cReader\u003e","cut":true}}]}"#,
+    );
+    assert_eq!(text(&to_json(&changed)), expected);
+    let unresolved = Submits {
+        form: "F2".to_string(),
+        method: "get".to_string(),
+        action: None,
+        action_cut: None,
+    };
+    assert_eq!(
+        text(&to_json(&unresolved)),
+        r#"{"form":"F2","method":"get","action":null,"action_cut":null}"#
+    );
+    let more = Changed::Page {
+        from: Some(FORMS.to_string()),
+        to: None,
+        texts: Vec::new(),
+        more: 3,
+    };
+    assert_eq!(
+        text(&to_json(&more)),
+        r#"{"kind":"page","from":"http://127.0.0.1:41000/forms/login.html","to":null,"texts":[],"more":3}"#
+    );
 }
 
 /// A JSON reader for the tests: the values `surf-view` writes (no fraction, no exponent, no

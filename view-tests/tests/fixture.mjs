@@ -88,6 +88,16 @@ export class Fixture {
     return answer.status;
   }
 
+  // `surf-agent <words>` as session `id` with `input` on its standard input (fill <handle> -),
+  // so that the value is in no command line.
+  async agentStdin(id, input, ...words) {
+    const answer = await this.command("agent-stdin", id, input, ...words);
+    if (answer.status === undefined) {
+      throw new Error("agent-stdin answered " + JSON.stringify(answer));
+    }
+    return answer.status;
+  }
+
   kill(id) {
     return this.command("kill", id);
   }

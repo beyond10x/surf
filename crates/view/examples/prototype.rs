@@ -523,7 +523,8 @@ impl Data {
             Object::new()
                 .raw("page", &page.json())
                 .raw("path", &path)
-                .raw("now", "null"),
+                .raw("now", "null")
+                .raw("changed", "null"),
         );
         self.keep(session, at, "answer", &rest);
     }

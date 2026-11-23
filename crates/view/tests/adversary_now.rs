@@ -27,6 +27,7 @@ fn a_cut_label_and_a_cut_target_are_each_written_under_their_own_name() {
                 target_cut: Some(false),
                 unresolved: Some(false),
                 text: None,
+                state: None,
             },
             NowElement {
                 handle: "l2".to_string(),
@@ -38,6 +39,7 @@ fn a_cut_label_and_a_cut_target_are_each_written_under_their_own_name() {
                 target_cut: Some(true),
                 unresolved: Some(true),
                 text: None,
+                state: None,
             },
         ],
         visibility_note: None,
@@ -46,10 +48,10 @@ fn a_cut_label_and_a_cut_target_are_each_written_under_their_own_name() {
         concat!(
             r#"{{"shown":2,"total":5,"elements":["#,
             r#"{{"handle":"l1","kind":"link","visibility":"vis","label":"{label}","#,
-            r#""label_cut":true,"target":"/a","target_cut":false,"unresolved":false,"text":null}},"#,
+            r#""label_cut":true,"target":"/a","target_cut":false,"unresolved":false,"text":null,"state":null}},"#,
             r#"{{"handle":"l2","kind":"link","visibility":"?","#,
             r#""label":"{markup}","label_cut":false,"#,
-            r#""target":"javascript:x","target_cut":true,"unresolved":true,"text":null}}],"#,
+            r#""target":"javascript:x","target_cut":true,"unresolved":true,"text":null,"state":null}}],"#,
             r#""visibility_note":null}}"#,
         ),
         label = "L".repeat(60),

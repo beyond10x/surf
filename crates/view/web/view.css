@@ -478,6 +478,78 @@ h3 {
   font-size: 0.85rem;
 }
 
+.now-element .kind,
+.now-element .flag,
+.now-element .form,
+.now-element .method {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.now-element .value,
+.now-element .action {
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.now-element .value.password {
+  color: var(--muted);
+}
+
+.now-element .submits {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.1rem 0.4rem;
+  min-width: 0;
+}
+
+/* The panel "Changed by <action>": the changed block of the answer at the playhead, one line per
+   change, each line text that wraps at any point. */
+
+.changes {
+  max-width: 52rem;
+  margin-top: var(--gap);
+  padding: 0.75rem var(--gap) 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.changes h3 {
+  margin-bottom: 0.5rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.changes-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.changes-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.change {
+  padding: 0.2rem 0;
+  border-top: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.change:first-child {
+  border-top: 0;
+}
+
 .now-element.is-hidden .label,
 .now-element.is-hidden .target {
   color: var(--muted);

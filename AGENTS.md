@@ -501,7 +501,9 @@ above, and the list of standards itself was written from memory.
     a session's text only through `surf_answer::parse` and `surf_answer::unquote`. Since round 2
     (`story:view-now-panel`) an answer entry's `now` block reaches the view: a link with its
     label and target, a line of any other kind with its kind and its text as
-    `surf_answer::render` writes it (no `match` on the kind). The server
+    `surf_answer::render` writes it (no `match` on the kind); since
+    `story:view-controls-and-changes` a control or button line also with its label and its state
+    as `surf_answer::parse` reads it, and the entry with the `changed` block. The server
     starts in `Daemon`'s `begin` with a view token drawn by `surf-secret`; the token is in that
     file and, only with `surfd --print-view-url`, in the line the binary writes to standard
     error (`Config::view_line`), in no answer, refusal, entry or log line. Without the option the
@@ -517,8 +519,8 @@ above, and the list of standards itself was written from memory.
     (`LATE_ANSWER_TIMEOUT`) while the session's turn stays taken, a log of at most 10,000
     entries and 16 MiB per session and 64 MiB over all sessions, a reader queue of 1,024
     entries, 256 ended sessions listed; open sessions are not bounded. It starts `surf-session`
-    from the directory of its own executable. Its 50 tests (4 unit tests of `src/view.rs`,
-    `adversary_link` 3, `built` 14, `in_process` 14, `log` 6, `view` 9) run a stand-in session
+    from the directory of its own executable. Its 51 tests (4 unit tests of `src/view.rs`,
+    `adversary_link` 3, `built` 14, `in_process` 14, `log` 6, `view` 10) run a stand-in session
     or none; the real one is run by the `e2e`, `events`, `view`, `adversary_events` and
     `adversary_view` tests of `surf-session`. Depends on `surf-agent` (for `wire`),
     `surf-answer`, `surf-secret` and `surf-view`.
@@ -609,8 +611,9 @@ above, and the list of standards itself was written from memory.
     binaries, for the end-to-end test and the wire).
   - `crates/view` (`surf-view`): the live view's HTTP server, standard library only: `GET` only, a
     fixed route table, the `Host` and view-token checks, and server-sent events with a bound per
-    reader. `docs/view-stream.md` is what it answers. `web/` holds the page's eleven files, with
-    `detail.js` since wave 8 and `now.js` since round 2 (no
+    reader. `docs/view-stream.md` is what it answers. `web/` holds the page's twelve files, with
+    `detail.js` since wave 8, `now.js` since round 2 and `changes.js` since
+    `story:view-controls-and-changes` (no
     framework, no build step, nothing from another origin, no inline script or style), compiled
     in by `page_files()` in `src/assets.rs`; the page fits 360 px to 1,400 px. The example
     `prototype` serves them over three scripted sessions; it shows example data only, and since
@@ -622,8 +625,8 @@ above, and the list of standards itself was written from memory.
     sessions; since wave 7 the page shows them. `Source::read_newest` gives the newest number and a
     reader from it in one call, so a stream always answers. A stream's queue holds at most
     `Limits::queue_entries` (256) entries and `Limits::queue_bytes` (1 MiB), or one larger frame
-    alone: such a frame waits until the queue is empty and is then written alone. 67 tests
-    (`adversary_now` 1, `adversary_view` 2, `http` 33, `json` 14, `prototype` 8,
+    alone: such a frame waits until the queue is empty and is then written alone. 70 tests
+    (`adversary_now` 1, `adversary_view` 2, `http` 33, `json` 17, `prototype` 8,
     `stream_bounds` 7, `web` 2).
     Depends on `surf-secret`.
     - `crates/view/web/`: the live view's page, plain HTML, CSS and JavaScript modules compiled
@@ -644,7 +647,14 @@ above, and the list of standards itself was written from memory.
       grouped by kind, each element with its handle, the answer's visibility word (`hid` marked
       hidden), label and target, and the visibility note; a line of a kind it does not know is
       its text; a segment of an action on an element shows its handle (`follow l1`) from the
-      path of its answer entry. No target is a link. A value from a session is set
+      path of its answer entry. Since `story:view-controls-and-changes` the panel groups links,
+      buttons (with the form, method and action they submit) and fields (every control, with its
+      kind, value and flags), and the centre panel "Changed by <action>" (`changes.js`) shows
+      the `changed` member of the answer entry at the playhead: a line per control that changed
+      (`f1 value "" -> "ada"`), or the page change and its `+ text` lines. A password is shown as
+      `(empty)`, `(set)`, or the length of the newest `FillRequested` entry of its handle since
+      its document loaded (`12 bytes`), never its value. No target or action is a link.
+      A value from a session is set
       only as `textContent` or as the value of an attribute of the list in `dom.js`, and
       `dom.js` is the only module that sets an attribute (it throws for any other name); its
       nine attribute names are unchanged. Every text goes through `written` in `dom.js`: a
@@ -655,7 +665,10 @@ above, and the list of standards itself was written from memory.
   - `crates/view-fixture` (`surf-view-fixture`): test tooling, not shipped: a binary that
     starts a page server, `surfd` in process and sessions for the page tests, under a
     directory of its own in `$XDG_RUNTIME_DIR`, driven by tab-separated commands on its
-    standard input (`open`, `agent`, `kill`, `stop-surfd`, `cut`, `mend`). `kill` acts only
+    standard input (`open`, `agent`, `agent-stdin`, `kill`, `stop-surfd`, `cut`, `mend`);
+    `agent-stdin` gives `surf-agent` an input on its standard input (`fill <handle> -`). The
+    page server answers a `POST` as the `GET` of its target, its body read and dropped, so that a
+    form of `pages/forms/` reaches its answer page. `kill` acts only
     for a session the fixture opened and only on a `surf-session` whose environment holds the
     fixture's own `XDG_RUNTIME_DIR`. Whether a process has ended is decided by `surf-test-process`
     (`alive`, in the binary and in `tests/fixture.rs`, as in the tests of `surf-agent`, `surfd`
@@ -967,13 +980,15 @@ above, and the list of standards itself was written from memory.
     7, `hundred` 1, `modes` 9). Depends on `surf-tls` with `test-tooling`.
 - `view-tests/`: the Playwright tests of the live view's page (`@playwright/test` 1.65.0,
   Chromium's headless shell, a committed `package-lock.json`), each case with its own
-  `surf-view-fixture`: 59 cases, 23 in `tests/first-page.spec.mjs`, 6 in
+  `surf-view-fixture`: 65 cases, 23 in `tests/first-page.spec.mjs`, 6 in
   `tests/adversary-page.spec.mjs`, 6 in `tests/detail.spec.mjs`, 8 in
   `tests/adversary-detail.spec.mjs`, 5 in `tests/now.spec.mjs` (over the pages of
   `crates/view-fixture/pages/now/`), 7 in `tests/adversary-now.spec.mjs` (over
-  `crates/view-fixture/pages/adversary-now/`) and 4 in `tests/acceptance.spec.mjs` (the page
-  part of the live view's acceptance case, over `crates/view-fixture/pages/acceptance/`). Node
-  and Playwright are gate tooling only.
+  `crates/view-fixture/pages/adversary-now/`), 4 in `tests/acceptance.spec.mjs` (the page
+  part of the live view's acceptance case, over `crates/view-fixture/pages/acceptance/`), 1 in
+  `tests/adversary-budget.spec.mjs` and 5 in `tests/controls.spec.mjs` (cases 3 to 7 of
+  `story:view-controls-and-changes`, over `crates/view-fixture/pages/forms/`). Node and
+  Playwright are gate tooling only.
 - `conformance/` (`surf-conformance`): runs `.out/suite.json` against the Rust system in process,
   with the runner of `ess-conformance`. A Cargo workspace of its own, outside the root one, with
   its own committed `Cargo.lock` and its own `target/`. It depends on `surf`, `surf-ports` and the

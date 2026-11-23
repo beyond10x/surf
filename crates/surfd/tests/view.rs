@@ -1,15 +1,17 @@
-//! Cases 10, 11, 12, 17, 18, 19, 20, 24 and 27 of `story:view-surfd-serves`: the live view
-//! `surfd` serves on 127.0.0.1. Every case but 27 runs `surfd` in the test process
-//! (`common::start`) with the stand-in session, driven by the wire (`common::call`); case 27 runs
-//! the built `surfd`. Each case reads the port and the token from `view-url` and asserts what a
-//! route answers.
+//! Cases 10, 11, 12, 17, 18, 19, 20, 24 and 27 of `story:view-surfd-serves` and case 2 of
+//! `story:view-controls-and-changes` (`case_02_controls_…`): the live view `surfd` serves on
+//! 127.0.0.1. Every case but 27 runs `surfd` in the test process (`common::start`) with the
+//! stand-in session, driven by the wire (`common::call`), and case 2 by the linked `surf-agent`
+//! with the password on its standard input; case 27 runs the built `surfd`. Each case reads the
+//! port and the token from `view-url` and asserts what a route answers.
 
 use crate::common;
 
 use std::fs;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::net::{Shutdown, TcpStream};
 use std::os::unix::fs::PermissionsExt;
+use std::process::{Output, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -643,6 +645,101 @@ fn case_24_a_late_answer_shows_as_before_until_its_entries_arrive() {
         .map(|entry| entry.get("number").number())
         .collect();
     assert_eq!(&kept[kept.len() - 2..], [entries[0].id, entries[1].id]);
+}
+
+/// `surf-agent <words>` as `session`, with `input` on its standard input.
+fn agent_with_input(dir: &TestDir, session: &Opened, input: &str, words: &[&str]) -> Output {
+    let mut command = agent(dir);
+    command
+        .args(words)
+        .env("SURF_SESSION", &session.id)
+        .env("SURF_TOKEN", &session.token)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    for _ in 0..50 {
+        match command.spawn() {
+            Err(error) if error.kind() == ErrorKind::ExecutableFileBusy => {
+                thread::sleep(Duration::from_millis(20));
+            }
+            Err(error) => panic!("surf-agent: {error}"),
+            Ok(mut child) => {
+                let mut stdin = child.stdin.take().expect("a pipe");
+                stdin.write_all(input.as_bytes()).unwrap();
+                drop(stdin);
+                return child.wait_with_output().unwrap();
+            }
+        }
+    }
+    panic!("the copied program stayed busy");
+}
+
+/// Case 2 of `story:view-controls-and-changes`: after `fill f2 -` with the password on standard
+/// input and `press b1`, no byte of `/api/sessions/<id>`, of `/api/sessions` or of the stream
+/// since before the session opened holds the password. The stand-in session receives it in the
+/// request, as the session does, and writes its length (`12 bytes`) in its `FillRequested` entry.
+#[test]
+fn case_02_controls_a_filled_password_is_in_no_byte_of_the_detail_or_the_stream() {
+    const SECRET: &str = "hunter2-view";
+    let dir = TestDir::new();
+    let _daemon = start(config(&dir));
+    let view = view_url(&dir);
+    let events = Events::open(&view, None);
+    let session = open(&dir);
+    let fill = agent_with_input(&dir, &session, SECRET, &["fill", "f2", "-"]);
+    assert_eq!(fill.status.code(), Some(0), "{}", stderr(&fill));
+    let press = agent_with_input(&dir, &session, "", &["press", "b1"]);
+    assert_eq!(press.status.code(), Some(0), "{}", stderr(&press));
+    assert!(
+        dir.requests(&session.id).contains(SECRET),
+        "the password reached the session through surfd"
+    );
+
+    let mut streamed = events.until(|event| {
+        event.event == "entry" && event.data.contains(r#""changed":{"kind":"page""#)
+    });
+    streamed.push(events.event());
+    assert_eq!(
+        streamed.last().map(|event| event.event.as_str()),
+        Some("session")
+    );
+    for event in &streamed {
+        assert!(
+            !event.data.contains(SECRET) && !event.event.contains(SECRET),
+            "the stream holds the password in event {}",
+            event.id
+        );
+    }
+    assert!(
+        streamed
+            .iter()
+            .any(|event| event.data.contains(r#""value":"12 bytes""#)),
+        "the FillRequested entry with the length is on the stream"
+    );
+
+    let (status, detail) = get(
+        view.port,
+        &format!("/api/sessions/{}", session.id),
+        Some(&view.token),
+    );
+    assert_eq!(status, 200);
+    let detail = String::from_utf8(detail).expect("UTF-8");
+    assert!(!detail.contains(SECRET), "the detail holds the password");
+    assert!(detail.contains(r#""value":"12 bytes""#), "{detail}");
+    assert!(
+        detail.contains(r#""value":{"kind":"set","text":null,"cut":null}"#),
+        "{detail}"
+    );
+    assert!(
+        detail.contains(r#""changed":{"kind":"controls","lines":[{"handle":"f2","what":"value","#),
+        "{detail}"
+    );
+    let (status, list) = get(view.port, "/api/sessions", Some(&view.token));
+    assert_eq!(status, 200);
+    assert!(
+        !String::from_utf8_lossy(&list).contains(SECRET),
+        "the list holds the password"
+    );
 }
 
 #[test]

@@ -142,9 +142,10 @@ pub struct Now {
 }
 
 /// One element of a `now`,
-/// `{"handle","kind","visibility","label","label_cut","target","target_cut","unresolved","text"}`.
-/// A link has the members from `label` to `unresolved` and no `text`; a line of a kind the view
-/// does not know has `text`, the line as the answer writes it, and none of the others.
+/// `{"handle","kind","visibility","label","label_cut","target","target_cut","unresolved","text","state"}`.
+/// A link has the members from `label` to `unresolved`, and no `text` and no `state`. A control
+/// or a button (`story:view-controls-and-changes`) has `label`, `label_cut`, `text` (its line as
+/// the answer writes it) and `state`, and no target.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NowElement {
     /// Its handle (`l1`).
@@ -153,7 +154,7 @@ pub struct NowElement {
     pub kind: String,
     /// The answer's visibility word: `vis`, `hid` or `?`.
     pub visibility: String,
-    /// A link's label, as the answer cut it.
+    /// The label, as the answer cut it.
     pub label: Option<String>,
     /// Whether the label was cut.
     pub label_cut: Option<bool>,
@@ -163,8 +164,125 @@ pub struct NowElement {
     pub target_cut: Option<bool>,
     /// Whether the target did not resolve and is the `href` as the page wrote it.
     pub unresolved: Option<bool>,
-    /// The line of a kind the view does not know, without its indentation.
+    /// The line of an element that is not a link, without its indentation.
     pub text: Option<String>,
+    /// The state of a control or a button; `None` for a link.
+    pub state: Option<ControlState>,
+}
+
+/// The state of a control or a button on its `now` line,
+/// `{"value","disabled","checked","required","readonly","submits"}`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ControlState {
+    /// `= <value>` of the line; `None` for a checkbox, a radio button, a button and a select with
+    /// no option selected.
+    pub value: Option<ControlValue>,
+    /// `disabled`.
+    pub disabled: bool,
+    /// `checked`.
+    pub checked: bool,
+    /// `required`.
+    pub required: bool,
+    /// `readonly`.
+    pub readonly: bool,
+    /// What a submit button with a form owner submits.
+    pub submits: Option<Submits>,
+}
+
+/// A control's value as the answer prints it, `{"kind","text","cut"}`: a quoted value
+/// (`"kind":"text"`), or a password's `(set)` or `(empty)` (`"kind":"set"`, `"kind":"empty"`,
+/// `text` and `cut` `null`), never a password's value (decision D22).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ControlValue {
+    /// A quoted value: a text control's value, or the label of a select's selected option.
+    Text {
+        /// The value as the answer cut it.
+        text: String,
+        /// Whether it was cut.
+        cut: bool,
+    },
+    /// `(set)`: a password control that holds a value.
+    Set,
+    /// `(empty)`: a password control with no value.
+    Empty,
+}
+
+/// `submits F<n> <method> "<action>"` of a button line, `{"form","method","action","action_cut"}`;
+/// `action` and `action_cut` `null` for `unresolved`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Submits {
+    /// The form's handle (`F1`).
+    pub form: String,
+    /// The method word (`post`).
+    pub method: String,
+    /// The action, as the answer cut it; `None` when it does not resolve.
+    pub action: Option<String>,
+    /// Whether the action was cut.
+    pub action_cut: Option<bool>,
+}
+
+/// The `changed` member of an `answer` entry: what the action changed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Changed {
+    /// `{"kind":"controls","lines":[…]}`: `changed <n>` and its `~` lines; no line for
+    /// `changed 0`.
+    Controls(Vec<ControlChange>),
+    /// `{"kind":"page","from","to","texts":[…],"more"}`: `changed page <old> -> <new>` and its
+    /// `+ text` lines.
+    Page {
+        /// The address of the previous answer's page; `None` for `none`.
+        from: Option<String>,
+        /// The address of this answer's page; `None` for `none`.
+        to: Option<String>,
+        /// The new texts shown, each `{"text","cut"}`.
+        texts: Vec<ChangedText>,
+        /// How many new texts are not shown (`+ text more <n>`), 0 without that line.
+        more: u64,
+    },
+}
+
+/// One `+ text` line, `{"text","cut"}`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChangedText {
+    /// The text, as the answer cut it.
+    pub text: String,
+    /// Whether it was cut.
+    pub cut: bool,
+}
+
+/// One `~` line, `{"handle","what","before","after"}`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ControlChange {
+    /// The control's handle (`f1`).
+    pub handle: String,
+    /// What changed, with its two sides.
+    pub change: Change,
+}
+
+/// What changed of a control: `what` is `value`, `checked` or `selected`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Change {
+    /// `value <before> -> <after>`, each a [`ControlValue`].
+    Value {
+        /// The value before.
+        before: ControlValue,
+        /// The value after.
+        after: ControlValue,
+    },
+    /// `checked <before> -> <after>`, each written `true` or `false`.
+    Checked {
+        /// Checked before.
+        before: bool,
+        /// Checked after.
+        after: bool,
+    },
+    /// `selected "<before>" -> "<after>"`, each a [`ControlValue::Text`].
+    Selected {
+        /// The labels before.
+        before: ControlValue,
+        /// The labels after.
+        after: ControlValue,
+    },
 }
 
 /// What follows the five members every entry starts with.
@@ -182,7 +300,7 @@ pub enum EntryKind {
         /// absent value.
         fields: Vec<(String, Option<String>)>,
     },
-    /// `"kind":"answer"`, then `"page"`, `"path"` and `"now"`.
+    /// `"kind":"answer"`, then `"page"`, `"path"`, `"now"` and `"changed"`.
     Answer {
         /// The page line.
         page: Option<PageLine>,
@@ -190,6 +308,8 @@ pub enum EntryKind {
         path: Option<Path>,
         /// The `now` block; `None` when the answer has none.
         now: Option<Now>,
+        /// The `changed` block; `None` when the answer has none.
+        changed: Option<Changed>,
     },
 }
 

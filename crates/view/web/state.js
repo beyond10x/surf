@@ -310,9 +310,38 @@ export function pageAt(id) {
   return answer ? answer.page : "running";
 }
 
-// What can be done at the playhead of the session: {now} with the `now` member of its action's
-// answer entry (null when the answer has none), the word "running" when that answer is not
-// held, or null when the session has no action held.
+// The length a `fill` typed into each control of the document at action `at` of `list`, by
+// handle: the `value` of the newest surf.agent.FillRequested entry of that handle ("12 bytes",
+// docs/view-stream.md: the event holds the length, never the text), from `at` back to the
+// action whose answer's `changed` member says it loaded that document. `before` leaves out the
+// events of the action at `at` itself: the lengths before it.
+export function fillLengths(list, at, before = false) {
+  const lengths = new Map();
+  for (let index = at; index >= 0; index -= 1) {
+    const held = list[index];
+    if (!(before && index === at)) {
+      for (let event = held.events.length - 1; event >= 0; event -= 1) {
+        const entry = held.events[event];
+        const fields = entry.fields;
+        if (entry.name !== "surf.agent.FillRequested" || !fields || typeof fields.handle !== "string") {
+          continue;
+        }
+        if (!lengths.has(fields.handle) && typeof fields.value === "string") {
+          lengths.set(fields.handle, fields.value);
+        }
+      }
+    }
+    const changed = held.answer ? held.answer.changed : null;
+    if (changed && changed.kind === "page") {
+      break;
+    }
+  }
+  return lengths;
+}
+
+// What can be done at the playhead of the session: {now, lengths} with the `now` member of its
+// action's answer entry (null when the answer has none) and fillLengths() there, the word
+// "running" when that answer is not held, or null when the session has no action held.
 export function nowAt(id) {
   const list = actions(id);
   const at = playheadIndex(list);
@@ -323,5 +352,30 @@ export function nowAt(id) {
   if (!answer) {
     return "running";
   }
-  return { now: answer.now === undefined ? null : answer.now };
+  return { now: answer.now === undefined ? null : answer.now, lengths: fillLengths(list, at) };
+}
+
+// What the action at the playhead changed: {command, handle, changed, lengths, before} with its
+// command, the handle its path line names (or null), the `changed` member of its answer entry
+// (null when the answer has none), and fillLengths() after and before it; the word "running"
+// when that answer is not held, or null when the session has no action held.
+export function changedAt(id) {
+  const list = actions(id);
+  const at = playheadIndex(list);
+  if (at < 0) {
+    return null;
+  }
+  const held = list[at];
+  if (!held.answer) {
+    return "running";
+  }
+  const path = held.answer.path;
+  const step = path && Array.isArray(path.actions) ? path.actions.find((one) => one && one.sequence === held.action.sequence) : null;
+  return {
+    command: typeof held.action.command === "string" ? held.action.command : null,
+    handle: step && typeof step.handle === "string" ? step.handle : null,
+    changed: held.answer.changed === undefined ? null : held.answer.changed,
+    lengths: fillLengths(list, at),
+    before: fillLengths(list, at, true),
+  };
 }
