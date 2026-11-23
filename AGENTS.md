@@ -129,9 +129,10 @@ above, and the list of standards itself was written from memory.
 - `cli/surf-agent.yaml`: the `ess-cli/2` document of the agent command line, checked by
   `task cli`; the client parser is held to it.
 - `taskfiles/<name>.yml`: one file per task added since the agent interface plan, included by
-  the root `Taskfile.yml` with `flatten: true` and `optional: true`. Optional because the four
-  tests of `crates/surf/tests/lock_check.rs` copy the root `Taskfile.yml` alone into a
-  temporary directory and run one task there; a missing include must not stop them. `check` still fails when an included task is missing.
+  the root `Taskfile.yml` with `flatten: true` and `optional: true`. Optional because a test
+  copied the root `Taskfile.yml` alone into a temporary directory and ran one task there; no test
+  does now (`lock_check` runs its script with `sh`), and the includes stay optional. `check`
+  still fails when an included task is missing.
   `taskfiles/cli.yml` holds the task `cli`, `taskfiles/site.yml` the task `site-build`,
   `taskfiles/html-conformance.yml` the task `html-conformance`,
   `taskfiles/tls-x509-conformance.yml` the task `tls-x509-conformance`,
@@ -162,11 +163,12 @@ above, and the list of standards itself was written from memory.
   `taskfiles/tls-flights.yml` the tasks
   `tls-flights-check` (over `taskfiles/tls-flights-check.sh`, a step of `check`) and
   `tls-flights-slow` (a step of `slow`: records the flights again and replays them; `WRITE=1`
-  writes them). `taskfiles/slowest-tests.sh` is no task's own: `task test` calls it. Two
+  writes them). `taskfiles/slowest-tests.sh` is no task's own: `task test` calls it. Three
   tasks of the root `Taskfile.yml` run a script of their own, so that their tests run it with
   `sh` and start no `task` per case: `generated-compare` runs
-  `taskfiles/generated-compare.sh <fresh tree>`, and `conform-totals` runs
-  `taskfiles/conform-totals.sh`.
+  `taskfiles/generated-compare.sh <fresh tree>`, `conform-totals` runs
+  `taskfiles/conform-totals.sh`, and `lock-check` runs `taskfiles/lock-check.sh Cargo.lock
+  taskfiles/lock-allow.txt`.
 - Shell scripts, committed or written by a test: a value is printed with `printf '%s'`, never
   with `echo`. The forge's `sh` is dash, whose `echo` turns `\n`, `\\` and the other backslash
   sequences into control characters; this host's `/bin/sh` is bash, whose `echo` does not, so
@@ -263,6 +265,18 @@ above, and the list of standards itself was written from memory.
   --skip review1_cli::`). The selections of the repository are listed in
   `taskfiles/test-layout.sh` (`SELECTIONS`), and a stem added to the skipped list of a selection
   gets its `--skip <stem>::` in that selection. `task test-layout` holds this form.
+  A target without a test of its own has `test = false` in its `[lib]` or `[[bin]]` entry, so
+  that nextest neither builds nor lists an empty test binary for it
+  (`story:test-step-scripts-and-binaries`): the libraries of `surf`, `surf-agent`,
+  `surf-agent-tasks`, `surf-answer`, `surf-html-conformance`, `surf-page`, `surf-page-text`,
+  `surf-ports` (its `doctest` stays, so its two doc tests run), `surf-secret`, `surf-session`,
+  `surf-url`, `surf-view` and `surf-test-process`, and the binaries of `surf-agent`, `surf-cli`,
+  `surf-html-conformance` (both), `surf-session`, `surfd`, `surf-view-fixture` (both) and
+  `surf-agent-tasks`. The eight generated packages hold no test either; ess writes their
+  manifests, so `task test` excludes them (`GENERATED_PACKAGES`). A new test of such a target
+  goes into `tests/`, or the entry loses `test = false`: `task test-layout` fails, naming the
+  file and line, on `#[test]` in a file of a target with `test = false` or of a generated
+  package (`#[cfg(test)]` is allowed, as in `crates/secret/src/compare.rs`).
 - `crates/<name>/`: one hand-written crate each. One that uses a generated crate depends on it
   by path, `../../generated/rust/crates/<name>`. cargo 1.99.1 refuses a member glob that matches
   nothing (measured 2026-11-20), so `crates/` always holds at least one crate. Format one crate
@@ -1212,16 +1226,30 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   of `tests/main.rs` other than the selected or a skipped one, or any module declared inside a
   file of the binary (inline or out of line, any visibility, any attribute before it on its line,
   the selected module's own file included), has a name that ends with the selected or a skipped
-  name, so that the selection's filter or its `--skip` would match its tests. Not seen by the
-  check: a module that a macro expands to, a file pulled in by `include!`, `autotests = false`
-  inside a multi-line string of `[package]`, and a crate reached through a symbolic link. It
-  calls no cargo and prints `test-layout: <d> test directories, <f> test files, one test binary
-  each`.
-- `task test-layout-test`: that script on a copy of the manifests, the `src/*.rs` and the test
-  files under `.out/test-layout/`, thirty-two cases: the copy as it is and four right layouts
-  pass (a comment that names `#![cfg(any())]`, `mod x;` inside a string literal and in a
-  trailing comment, a fixture crate below `tests/data/`), and each of twenty-seven planted
-  defects fails naming its path or module. `SCRIPT=<path>` runs a copy of the script.
+  name, so that the selection's filter or its `--skip` would match its tests. It also fails,
+  naming the file and line, on `#[test]` in the code of a line of a file of a target that runs
+  no test: a `[lib]` or `[[bin]]` entry with `test = false` in any `Cargo.toml` it reads (the
+  same directories not entered, a `Cargo.toml` below `tests/` a fixture), and the library and
+  binaries of every package under `generated/rust/crates`. The files of such a target are its
+  `path` (`src/lib.rs`, or `src/main.rs` or `src/bin/<name>.rs` for a binary, when none is
+  given) and every child module it declares out of line, followed as for a test binary; a child
+  it cannot read fails. `#[cfg(test)]` is not flagged, and a library's modules are not files of
+  a binary of the same package (`surfd`'s library keeps its tests in `src/view.rs`). Not seen
+  by the check: a module that a macro expands to, a file pulled in by `include!`, `autotests =
+  false` inside a multi-line string of `[package]`, and a crate reached through a symbolic link.
+  It calls no cargo and prints `test-layout: <d> test directories, <f> test files, one test
+  binary each`.
+- `task test-layout-test`: that script on a copy of the manifests of `crates/*`,
+  `conformance` and `generated/rust/crates/*`, every `*.rs` under `crates/*/src` and
+  `generated/rust/crates/*/src`, and the test files under `.out/test-layout/`, thirty-nine
+  cases: the copy as it is and eight right layouts pass (a comment that names
+  `#![cfg(any())]`, `mod x;` inside a string literal and in a trailing comment, a fixture crate
+  below `tests/data/`, `#[test]` in `crates/html/src`, `#[test]` in a comment and a string of
+  a library with `test = false`, `#[cfg(test)]` in `crates/secret/src/compare.rs`, `#[test]`
+  in a module of `surfd`'s library), and each of thirty planted defects fails naming its path
+  or module (three of them `#[test]` in a target without tests: `src/lib.rs` of a library with
+  `test = false`, a module that a binary with `test = false` declares, `src/lib.rs` of a
+  generated package). `SCRIPT=<path>` runs a copy of the script.
 - `task tls-certs-check`: `sh taskfiles/tls-certs-check.sh crates/tls-test-certs`, no build and
   no `openssl`: the sha256 of `src/`, `keys/`, `openssl/` and `Cargo.toml` of
   `crates/tls-test-certs` against `certs/DIGEST`. It prints `tls-certs: <n> cases, certs/
@@ -1316,7 +1344,11 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   19 from outside this repository, each on the allow-list`. The list holds the 19 packages of ring 0.17.14
   (`docs/design/tls.md`, item 2), one line `<name> <version> <source> <checksum>` each,
   sorted; the script's head states the format. It does not read `conformance/Cargo.lock`. A
-  path dependency outside the repository has no `source` line and is not caught.
+  path dependency outside the repository has no `source` line and is not caught. The tests of
+  `crates/surf/tests/lock_check.rs` run that line with `sh` in their copies, without `task`
+  (no `Taskfile.yml` in a copy); `the_unchanged_lock_passes` holds the task to the line with
+  `task --color=false --dry --verbose lock-check`, which prints it on standard error
+  (`--color=false`: with `CI=true`, as `task check-runner` sets it, task colours the line).
 - `task generate`: rewrite `generated/rust/` from `spec/`, in place. `ess` refuses, naming the
   file, when a file it wrote was edited since; delete that file or restore it from git, then run
   it again.
@@ -1324,21 +1356,37 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   that differs from `generated/rust/`, in its bytes or its executable bit. `task --summary generated-check` names what it leaves out
   and why. It is two tasks: `generated-fresh` generates `spec/` into
   `.out/generated-check/fresh` (with `fresh.log` and a copy of `spec/` as `fresh.spec`), once per
-  run of `task`; `generated-compare FRESH=<tree>` compares and regenerates `.ess-output` in
-  place, by `taskfiles/generated-compare.sh`. The tests of
-  `crates/surf/tests/*generated_check*.rs` read that one generation
-  (`crates/surf/tests/common/mod.rs`) and run that script with `sh` in their copies; they fail,
-  saying so, when it is missing or was made from another `spec/`. `cargo test -p surf` needs
-  `slot task generated-fresh` first; `task test` depends on it.
+  run of `task`, and then lists the tree once with `sh taskfiles/generated-compare.sh --lists`
+  into `fresh.list` (its files but `.ess-output/`), `fresh.all` and `fresh.executable` beside
+  it; `generated-compare FRESH=<tree>` compares and regenerates `.ess-output` in place, by
+  `taskfiles/generated-compare.sh`. The script reads the three listings of `<tree>` and refuses
+  them, exit 1 with one line naming the listing and `task generated-fresh`, when `<tree>`, a file
+  or directory in it, or `<tree>.log` is newer than one of them (a file written or removed in the
+  tree changes the time of the file or of its directory); when they are not all there it lists
+  the tree into its own `.out/generated-check/compare`, never beside the tree. It compares the
+  bytes with one `diff -rq --no-dereference` and lists the committed side with one `find`, so a
+  run starts at most 25 programs when step 1 fails (72 before; GNU `find -printf` and `diff`,
+  as on the forge's `ubuntu-latest`). The tests of `crates/surf/tests/*generated_check*.rs` read
+  that one generation (`crates/surf/tests/common/mod.rs`) and run that script with `sh` in their
+  copies; they fail, saying so, when it or one of its listings is missing or it was made from
+  another `spec/`. `cargo test -p surf` needs `slot task generated-fresh` first; `task test`
+  depends on it.
 - `task build`: `cargo build` of the root workspace with `--locked` and `RUSTFLAGS=-D warnings`.
 - `task test`: `cargo nextest run --workspace --locked` without the four TLS packages
   (`--exclude` for each name of `TLS_PACKAGES` in `Taskfile.yml`: `surf-tls`,
   `surf-tls-test-server`, `surf-tls-test-certs`, `surf-tls-conformance`, whose tests `task
-  test-tls` runs, below; cargo-nextest 0.9.143,
+  test-tls` runs, below) and without the eight generated packages, which hold no test
+  (`--exclude` for each name of `GENERATED_PACKAGES`: `agent`, `document`, `navigator`, `net`,
+  `renderer`, `shell`, `surf-system`, `surf-types`; ess writes their manifests, so they get no
+  `test = false`; Layout); cargo-nextest 0.9.143,
   installed as a tool; no crate of the workspace changes) and `cargo test --doc -p surf-ports
   --locked`, the doc tests of `surf-ports` only (the two of the workspace; `task
   doc-tests-check` holds that no other package has one), which nextest does not run, with
-  `RUSTFLAGS=-D warnings`. The ten slowest tests come from
+  `RUSTFLAGS=-D warnings`. The doc tests start in the background before nextest, and the step
+  waits for both and fails when either fails (`story:test-step-scripts-and-binaries`: in three
+  alternating pairs of `slot --timeout 15m task test` the step minus nextest's `Summary` was
+  4.6, 3.3 and 2.5 s with it, 13.0, 12.3 and 8.5 s without; `slot status` showed one job for
+  the step). The ten slowest tests come from
   `taskfiles/slowest-tests.sh <junit file> [count]` (POSIX sh, pipefail where the shell has
   it), held by `crates/surf/tests/slowest_tests.rs` on a report of 2,000 cases. Under
   `pipefail` no pipeline of a task ends its reader before its input (no `| head`, `grep -q` or
@@ -1554,7 +1602,23 @@ is unset); `adversary_events` gives `surfd` an answer timeout of 0.5 s and a ser
 1.5 s after it read the request, then sends `look` until the path shows the `go`, instead of a
 timeout of 2 s, a server that answered after 4 s and a sleep of 5 s. Each step of the order it
 tests is still 1 s or more apart from the next, so the test does not depend on the runner's
-speed. In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
+speed. Since `story:test-harness-fewer-processes` the two limits of `surf-view` `http` that a
+case waits out are 250 ms: the write limit of `case_23`, which keeps its lower bounds `elapsed >=
+write`, and the receive limit of `case_20`, whose lower bound is 225 ms, 90 % of the limit as
+900 ms was of 1 s. `surfd` `in_process::case_09` keeps its `session_ready_timeout` of 1 s and
+`case_10` its `session_answer_timeout` of 1 s: `surfd` applies both to the `open` exchange
+(`crates/surfd/src/daemon.rs`), so a freshly started stand-in would have to answer within 250 ms
+in the pool, less than 10 times the time the test takes alone.
+`surfd_started_by_hand_writes_no_view_token_unless_asked` runs its two `surfd` at the same time,
+each in a directory of its own. The drop of a test directory of `surfd` and `surf-session`
+(`tests/common/mod.rs`) kills only the case's processes: those whose `environ` holds
+`STAND_IN_DIR=<its control directory>` (`surfd`) or `XDG_RUNTIME_DIR=<its runtime directory>`
+(`surf-session`), never the test process itself. A directory in which a helper started a built
+program (`agent()`, `Surfd::start`, `Started::start`; each calls `mark_built_program`) reads the
+`environ` of every process of the host, since such a program can leave the test process's tree.
+Any other directory reads only the descendants of the test process, found through
+`/proc/<pid>/task/<tid>/children` followed down, and every process of the host when one of those
+files cannot be read. In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
 872 passed, 32 skipped`; the 32 are hosts outside ASCII, listed in
 `crates/url/tests/data/SKIPPED`. `view-stream-check`: `view-stream-check: 19 event name(s),
 each a message of the AsyncAPI projection`. `view-test`: `38 passed (15.8s)`; 12.9 s of it are

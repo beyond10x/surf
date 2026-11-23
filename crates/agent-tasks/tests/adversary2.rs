@@ -23,6 +23,8 @@ use surf_agent_tasks::{Run, Verdict, judge, tasks_file};
 
 use surf_answer::{Answer, Form, Head, SessionState, render, text_page};
 
+use crate::model_driver::{ONE_TASK, assert_one_task};
+
 fn tmp() -> PathBuf {
     PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
 }
@@ -187,6 +189,16 @@ fn driver() -> PathBuf {
 /// Run the driver with the model command `model` and the extra variables `env`: its output and
 /// the out file, when one is written.
 fn drive(model: &Path, name: &str, env: &[(&str, &str)]) -> (Output, Option<String>) {
+    drive_without(model, name, env, &[])
+}
+
+/// [`drive`] with the variables `removed` taken out of the driver's environment after `env`.
+fn drive_without(
+    model: &Path,
+    name: &str,
+    env: &[(&str, &str)],
+    removed: &[&str],
+) -> (Output, Option<String>) {
     let bin = std::env::var_os("SURF_BIN_DIR")
         .map(PathBuf::from)
         .expect("SURF_BIN_DIR names the built programs, agent-tasks-serve among them");
@@ -208,6 +220,9 @@ fn drive(model: &Path, name: &str, env: &[(&str, &str)]) -> (Output, Option<Stri
         .stdin(Stdio::null());
     for (key, value) in env {
         command.env(key, value);
+    }
+    for key in removed {
+        command.env_remove(key);
     }
     let output = command.output().expect("sh runs");
     let written = fs::read_to_string(&out).ok();
@@ -249,10 +264,11 @@ fn a_model_that_leaves_a_child_leaves_no_process() {
             pids.display()
         ),
     );
-    let (output, _) = drive(&stand_in, "child", &[]);
+    let (output, written) = drive(&stand_in, "child", &[("AGENT_TASKS_FILE", ONE_TASK)]);
     let left = sleeping(&pids);
     let _ = fs::remove_file(&stand_in);
     assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_one_task(&written.expect("the out file is written"));
     assert!(left.is_empty(), "children of the model left: {left:?}");
 }
 
@@ -294,6 +310,23 @@ fn a_bound_of_zero_or_no_number_ends_the_lane_before_any_model_runs() {
             "{bound}: {stderr}"
         );
     }
+    // Another task list without a model command of the caller: refused before anything runs or
+    // the out file of the earlier run is removed.
+    let (output, written) = drive_without(
+        &stand_in,
+        "zero",
+        &[("AGENT_TASKS_FILE", ONE_TASK)],
+        &["AGENT_TASKS_MODEL_COMMAND", "AGENT_TASKS_MODEL"],
+    );
+    assert_ne!(output.status.code(), Some(0), "{output:?}");
+    assert!(!ran.exists(), "the model ran");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("AGENT_TASKS_FILE"), "{stderr}");
+    assert_eq!(
+        written.as_deref(),
+        Some("agent-tasks-model: a file of an earlier run\n"),
+        "the out file of the earlier run is not left as it was"
+    );
     let _ = fs::remove_file(&stand_in);
 }
 
@@ -308,10 +341,11 @@ fn every_call_is_one_line_that_reads_back() {
          surf-agent \"$(printf 'cr\\rz')\" > /dev/null 2>&1\n\
          echo 'ANSWER: unknown'\n",
     );
-    let (output, written) = drive(&stand_in, "words", &[]);
+    let (output, written) = drive(&stand_in, "words", &[("AGENT_TASKS_FILE", ONE_TASK)]);
     let _ = fs::remove_file(&stand_in);
     assert_eq!(output.status.code(), Some(0), "{output:?}");
     let written = written.expect("the out file is written");
+    assert_one_task(&written);
     let expected = "\ntask article fail 4 calls\n  surf-agent x\\\\ny\n  surf-agent x\\ny\n  \
                     surf-agent a\\x09b\\x1bc\\\\\n  surf-agent cr\\rz\n  answered \"unknown\"\n";
     assert!(written.contains(expected), "{written:?}");

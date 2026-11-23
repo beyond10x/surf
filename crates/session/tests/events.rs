@@ -429,6 +429,20 @@ fn case_05_look_adds_no_entry() {
     assert_eq!(wire_as(&dir, &session, "look", &[]).status, 0);
     assert_eq!(kept(&daemon, &session), before);
     assert_eq!(daemon.newest_entry(), newest);
+
+    // The daemon leaked, so that only the drop of the directory, which no helper marked, can
+    // stop the session: it finds it among the test process's descendants.
+    let pid = daemon
+        .sessions()
+        .get(&session.id)
+        .expect("the session is listed")
+        .pid;
+    std::mem::forget(daemon);
+    drop(dir);
+    assert!(
+        !surf_test_process::alive(pid),
+        "the session {pid} runs after the drop"
+    );
 }
 
 /// `text` with each UUID in it replaced by `#<n>`, n the order of its first appearance in
@@ -702,11 +716,13 @@ fn case_13_a_subscriber_receives_the_entries_of_a_go() {
 
 #[test]
 fn case_14_a_subscriber_that_never_reads_is_disconnected() {
-    // The story's number, not the crate's constant.
-    const QUEUE: usize = 1024;
+    // The shipped queue is the story's number, not the crate's constant; the case runs with a
+    // queue of 24 entries, so that 3 go pass it.
+    assert_eq!(surfd::log::READER_QUEUE, 1024);
+    const QUEUE: usize = 24;
     let dir = TestDir::new();
     let pages = PageServer::start();
-    let daemon = surfd_in_process(&dir, |_| {});
+    let daemon = surfd_in_process(&dir, |config| config.log.reader_queue = QUEUE);
     let session = wire_open(&dir, None);
     let start = daemon.newest_entry();
     let mut stalled = daemon.subscribe_after(start).unwrap();

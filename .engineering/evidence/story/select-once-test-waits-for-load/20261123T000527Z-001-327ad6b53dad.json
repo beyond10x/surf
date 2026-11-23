@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T00:05:27Z",
+  "actor": "human:operator",
+  "artifact": "story:select-once-test-waits-for-load",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "three runs of slot npx playwright test --workers=2 tests/adversary-detail.spec.mjs on the tree of 8c0e567 before its commit (acceptances 3 and 4)",
+    "reference": "8 passed in each; the changed test took 304 ms, 320 ms and 292 ms at a load of 116.56, 113.23 and 108.81; the diff is 5 lines added and 1 removed, all in the test at :200, no wait, timeout or retry added, toBe(before + 1) not in the diff"
+  }
+}

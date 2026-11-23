@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T00:05:26Z",
+  "actor": "human:operator",
+  "artifact": "story:select-once-test-waits-for-load",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the implementing unit's scratch copy of the unchanged test, the second load held and released after before was read, 2026-11-23, load 71 (acceptance 1)",
+    "reference": "Enter selects once: one render of the timeline; Expected: 1; Received: 2; held before release: 1 (list 2, detail 1); the copy waited for the second detail answer before the count"
+  }
+}

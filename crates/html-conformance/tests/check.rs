@@ -4,10 +4,13 @@
 //!
 //! Each case but the last runs the binary with `--root` over a small repository the test writes
 //! under `CARGO_TARGET_TMPDIR`: a note with both blocks, a few data files and the three expected
-//! files, committed with git so that a base revision exists. Over that data the empty parser
+//! files, committed with git so that a base revision exists (once per digest of those bytes, see
+//! [`Fixture`]). Over that data the empty parser
 //! passes one case: the tokenizer test with an empty input. The expected values below are
 //! written out here, never taken from the crate.
 
+use std::cell::RefCell;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -125,38 +128,179 @@ tag encoding 0/1/1
 section the-input-byte-stream incomplete
 ";
 
+/// The fixture: a repository under `CARGO_TARGET_TMPDIR/check/<name>`.
+///
+/// Its first commit, the base, is made once per digest of the bytes [`initial_files`] writes:
+/// the repository and its commit name are held in `CARGO_TARGET_TMPDIR/check-base/<digest>`,
+/// made by the first test process that needs it and copied by every later one, so that a test
+/// whose files are as written there starts no git for its base.
 struct Fixture {
     root: PathBuf,
+    /// The base commit while the fixture holds the bytes it was copied with; `None` after a
+    /// change through the fixture, so that [`Fixture::commit`] commits that change.
+    base: RefCell<Option<String>>,
+}
+
+/// Every file `Fixture::new` writes: its path in the fixture and its content.
+fn initial_files() -> Vec<(String, String)> {
+    let data = |path: &str, content: &str| {
+        (
+            format!("crates/html-conformance/data/{path}"),
+            content.to_string(),
+        )
+    };
+    vec![
+        data(TEST1, TEST1_DATA),
+        data(XML, XML_DATA),
+        data(TREE1, TREE_DATA),
+        data(TREE2, TREE_DATA),
+        data(ENC1, ENC_DATA),
+        (NOTE.to_string(), note_text(INVENTORY, SECTIONS)),
+        (TOKENIZER.to_string(), TOKENIZER_EXPECTED.to_string()),
+        (TREE.to_string(), TREE_EXPECTED.to_string()),
+        (ENCODING.to_string(), ENCODING_EXPECTED.to_string()),
+    ]
+}
+
+fn note_text(inventory: &str, sections: &str) -> String {
+    format!("# A note\n\n```html-sections\n{sections}```\n\n```html-inventory\n{inventory}```\n")
+}
+
+/// FNV-1a, 64 bits, over every path and content, each ended by a zero byte.
+fn digest(files: &[(String, String)]) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for (path, content) in files {
+        for part in [path.as_bytes(), content.as_bytes()] {
+            for &byte in part.iter().chain(&[0u8]) {
+                hash ^= u64::from(byte);
+                hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        }
+    }
+    format!("{hash:016x}")
+}
+
+/// Writes `content` to `root/path`, making its directories.
+fn write_file(root: &Path, path: &str, content: &str) {
+    let path = root.join(path);
+    fs::create_dir_all(path.parent().expect("a parent")).expect("create a directory");
+    fs::write(&path, content).expect("write a fixture file");
+}
+
+/// Copies the tree `from` to `to`, which must not exist, in this process.
+fn copy_tree(from: &Path, to: &Path) {
+    fs::create_dir_all(to).expect("create a directory of the fixture");
+    for entry in fs::read_dir(from).expect("read a directory of the held base") {
+        let entry = entry.expect("an entry of the held base");
+        let target = to.join(entry.file_name());
+        let kind = entry.file_type().expect("the entry's type");
+        if kind.is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else if kind.is_symlink() {
+            let link = fs::read_link(entry.path()).expect("read a link");
+            std::os::unix::fs::symlink(link, &target).expect("copy a link");
+        } else {
+            fs::copy(entry.path(), &target).expect("copy a file of the held base");
+        }
+    }
+}
+
+/// The directory that holds the base of `files`, `<digest>/repo` and `<digest>/base`, made when
+/// it is not there yet: written under `<digest>.part-<pid>`, committed with today's four git
+/// calls and renamed into place. When another test process renamed its own first, that one is
+/// kept and this one removed.
+fn held_base(files: &[(String, String)]) -> PathBuf {
+    let cache = Path::new(env!("CARGO_TARGET_TMPDIR")).join("check-base");
+    let name = digest(files);
+    let held = cache.join(&name);
+    if held.join("base").exists() {
+        return held;
+    }
+    fs::create_dir_all(&cache).expect("create the directory of held bases");
+    let part = cache.join(format!("{name}.part-{}", std::process::id()));
+    if part.exists() {
+        fs::remove_dir_all(&part).expect("remove a partial base of an earlier run");
+    }
+    let repo = part.join("repo");
+    for (path, content) in files {
+        write_file(&repo, path, content);
+    }
+    git(&repo, &["init", "--quiet", "--initial-branch", "main"]);
+    git(&repo, &["add", "--all"]);
+    git(
+        &repo,
+        &["commit", "--quiet", "--allow-empty", "--message", "fixture"],
+    );
+    let base = git(&repo, &["rev-parse", "HEAD"]);
+    fs::write(part.join("base"), &base).expect("write the base's name");
+    if let Err(error) = fs::rename(&part, &held) {
+        assert!(
+            held.join("base").exists(),
+            "move {} to {}: {error}",
+            part.display(),
+            held.display()
+        );
+        let _ = fs::remove_dir_all(&part);
+    }
+    held
+}
+
+/// Runs git in `root` without the user's or the system's configuration: its standard output.
+fn git(root: &Path, args: &[&str]) -> String {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args([
+            "-c",
+            "user.name=fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+        ])
+        .args(args)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .output()
+        .expect("run git");
+    assert!(
+        output.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
 impl Fixture {
-    /// The fixture repository with its data, note and expected files, not committed yet.
+    /// The fixture repository with its data, note and expected files, committed once as its
+    /// base: a copy of the held base of these bytes.
     fn new(name: &str) -> Fixture {
         let root = Path::new(env!("CARGO_TARGET_TMPDIR"))
             .join("check")
             .join(name);
         if root.exists() {
-            std::fs::remove_dir_all(&root).expect("remove the old fixture");
+            fs::remove_dir_all(&root).expect("remove the old fixture");
         }
-        std::fs::create_dir_all(&root).expect("create the fixture");
-        let fixture = Fixture { root };
-        fixture.data(TEST1, TEST1_DATA);
-        fixture.data(XML, XML_DATA);
-        fixture.data(TREE1, TREE_DATA);
-        fixture.data(TREE2, TREE_DATA);
-        fixture.data(ENC1, ENC_DATA);
-        fixture.note(INVENTORY, SECTIONS);
-        fixture.write(TOKENIZER, TOKENIZER_EXPECTED);
-        fixture.write(TREE, TREE_EXPECTED);
-        fixture.write(ENCODING, ENCODING_EXPECTED);
-        fixture.git(&["init", "--quiet", "--initial-branch", "main"]);
-        fixture
+        let held = held_base(&initial_files());
+        copy_tree(&held.join("repo"), &root);
+        let base = fs::read_to_string(held.join("base")).expect("read the base's name");
+        Fixture {
+            root,
+            base: RefCell::new(Some(base.trim().to_string())),
+        }
     }
 
     fn write(&self, path: &str, content: &str) {
-        let path = self.root.join(path);
-        std::fs::create_dir_all(path.parent().expect("a parent")).expect("create a directory");
-        std::fs::write(&path, content).expect("write a fixture file");
+        self.base.replace(None);
+        write_file(&self.root, path, content);
+    }
+
+    /// Removes the directory `path` of the fixture with everything in it.
+    fn remove_dir(&self, path: &str) {
+        self.base.replace(None);
+        fs::remove_dir_all(self.root.join(path)).expect("remove a directory of the fixture");
     }
 
     fn read(&self, path: &str) -> String {
@@ -175,46 +319,21 @@ impl Fixture {
     }
 
     fn note(&self, inventory: &str, sections: &str) {
-        self.write(
-            NOTE,
-            &format!(
-                "# A note\n\n```html-sections\n{sections}```\n\n```html-inventory\n{inventory}```\n"
-            ),
-        );
+        self.write(NOTE, &note_text(inventory, sections));
     }
 
-    fn git(&self, args: &[&str]) -> String {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(&self.root)
-            .args([
-                "-c",
-                "user.name=fixture",
-                "-c",
-                "user.email=fixture@example.invalid",
-                "-c",
-                "commit.gpgsign=false",
-                "-c",
-                "core.hooksPath=/dev/null",
-            ])
-            .args(args)
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .output()
-            .expect("run git");
-        assert!(
-            output.status.success(),
-            "git {args:?}: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        String::from_utf8_lossy(&output.stdout).trim().to_string()
-    }
-
-    /// Commits everything and answers the commit's name.
+    /// Commits everything and answers the commit's name: the copied base, without git, while
+    /// the fixture holds the bytes it was copied with.
     fn commit(&self) -> String {
-        self.git(&["add", "--all"]);
-        self.git(&["commit", "--quiet", "--allow-empty", "--message", "fixture"]);
-        self.git(&["rev-parse", "HEAD"])
+        if let Some(base) = self.base.borrow().clone() {
+            return base;
+        }
+        git(&self.root, &["add", "--all"]);
+        git(
+            &self.root,
+            &["commit", "--quiet", "--allow-empty", "--message", "fixture"],
+        );
+        git(&self.root, &["rev-parse", "HEAD"])
     }
 
     /// Runs `--check --base <base>` over the fixture: the exit status and what it printed.
@@ -530,8 +649,7 @@ fn a_count_above_the_expected_count_passes() {
 #[test]
 fn a_section_without_a_data_file_is_printed_incomplete_with_its_reasons() {
     let fixture = Fixture::new("section-without-data");
-    std::fs::remove_dir_all(fixture.root.join("crates/html-conformance/expected"))
-        .expect("remove the expected files");
+    fixture.remove_dir("crates/html-conformance/expected");
     let base = fixture.commit();
     fixture.write(TOKENIZER, TOKENIZER_EXPECTED);
     fixture.write(TREE, TREE_EXPECTED);
