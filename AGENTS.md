@@ -1521,19 +1521,26 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   taskfiles/view-test.yml view-test-setup`, then `npx --prefix view-tests playwright install
   --only-shell chromium`. A change to what a `go` records is checked with `task view-test`
   too, because the crate tests do not run the page tests.
-- `task page-step-cpu`: the page step's CPU seconds (`taskfiles/page-step-cpu.yml`,
-  `story:page-step-holds-under-load`), not a step of `check`. It builds and sets up as `task
-  view-test` does, then `taskfiles/page-step-cpu.sh` runs the same Playwright call in the same
-  directory under `perf stat -e task-clock` as one slot job and prints the load before and
-  after, the ten slowest tests, the step's line and `page step cpu: T s` (the loads and the
-  step's seconds read inside the job, so a wait in the pool's queue is not in them), and writes T to
-  `.out/page-step.cpu`. The counter is inherited on fork, not on wait, so it counts every
-  process under the call, also the ones nobody reaps (Chromium's), user and kernel time;
-  `time` saw about 57 % of it. A user scope of systemd (`systemd-run --user --scope`) read 11
-  to 12 % less in three runs of the same call (the kernel accounts interrupt time apart,
-  and the step's loopback traffic is softirq work), and it would take the call out of the
-  pool's cgroup and its limit of 16 CPUs. Compare commits by these CPU seconds: the wall
-  time follows the host's load. Needs `perf` and `kernel.perf_event_paranoid` of 2 or less.
+- `task page-step-cpu`: the page step's CPU seconds and instructions
+  (`taskfiles/page-step-cpu.yml`, `story:page-step-holds-under-load`), not a step of `check`.
+  It builds and sets up as `task view-test` does, then `taskfiles/page-step-cpu.sh` runs the
+  same Playwright call in the same directory under `perf stat -e task-clock,instructions` as
+  one slot job and prints the load before and after, the ten slowest tests, the step's line,
+  `page step cpu: T s` and `page step instructions: I G (user only)` (the loads and the step's
+  seconds read inside the job, so a wait in the pool's queue is not in them), and writes T to
+  `.out/page-step.cpu` and I to `.out/page-step.instructions`. The counters are inherited on
+  fork, not on wait, so they count every process under the call, also the ones nobody reaps
+  (Chromium's); `time` saw about 57 % of the CPU seconds. The CPU seconds are user and kernel
+  time; the instructions are user only, because `kernel.perf_event_paranoid` is 2 on this host
+  (perf names both counters `:u`, but a software clock counts both modes: `dd` from
+  `/dev/zero` to `/dev/null`, nearly all system time, read 705 ms and 44.5 M instructions). A
+  user scope of systemd (`systemd-run --user --scope`) read 11 to 12 % less CPU time in three
+  runs of the same call (the kernel accounts interrupt time apart, and the step's loopback
+  traffic is softirq work), and it would take the call out of the pool's cgroup and its limit
+  of 16 CPUs. Compare commits by the instructions: they follow the host's load far less than
+  the CPU seconds and the wall time, though not by nothing (the page step's record below). Run
+  from the root of another checkout, the script measures that checkout's tests and binaries.
+  Needs `perf` and `kernel.perf_event_paranoid` of 2 or less.
 - `task view-stream-check`: the event names of `docs/view-stream.md` against the AsyncAPI
   projection of `spec/` (`taskfiles/view-stream-check.yml`). It fails, naming each, for a name
   that is no message of the projection; a new event whose name nobody adds to the document
@@ -2107,6 +2114,27 @@ any of these cuts. With none of them kept, three consecutive runs of `task page-
 50.19 and 70.44 to 68.29; the step took 196.7 s (over its budget, one test failed, see
 above), 20.2 s and 28.5 s; the other 70 tests of the base passed in the first run and all 71
 in the second and third.
+D332 sets the page step's bound in instructions (user only, `task page-step-cpu`), not in CPU
+seconds: the four runs of the same work above took 116.8, 117.8 and 114.7 G and 41.2, 55.6 and
+62.1 CPU s at loads of 36, 66 to 72 and 153 to 252, and 38.1 CPU s at 39 to 43 (its
+instructions not counted), so a bound in CPU seconds measures the host. On 2026-11-23 base and
+tip ran in turn, the tip's `taskfiles/page-step-cpu.sh` run from the root of each tree (the base,
+`03f25c9`, has no such script, so its own tests, config and binaries were measured); a run with
+a failed test was listed and repeated:
+- base `03f25c9`: 193.23, 185.61 and 185.20 G, 70.0, 64.8 and 67.6 CPU s, 85.9, 64.9 and
+  74.2 s, at loads of 92.05 to 80.13, 82.29 to 74.13 and 75.96 to 62.27, 71 passed each. Three
+  runs had a failed test, the live marker `connecting` or `offline` for 10 s in `load`, and
+  were repeated: 201.88 G (194.7 s, 1 failed), 188.65 G (64.5 s, 1 failed) and 203.78 G
+  (110.1 s, 3 failed).
+- tip `97237e2` (in the first run its parent `f5d40c0` with this script uncommitted): 127.08,
+  117.93 and 119.58 G, 62.7, 51.9 and 55.5 CPU s, 209.1, 49.2 and 74.7 s, at loads of 142.57 to
+  111.08, 109.83 to 97.81 and 69.12 to 68.48, 71 passed each.
+The medians are 185.61 G on the base and 119.58 G on the tip, a saving of 35.6 % (CPU s 67.6
+and 55.5, 17.9 %). The spread, largest minus smallest over the median, is 4.3 % on the base and
+7.7 % on the tip: over 5 %, so no bound is set, since a change adding 5 % of work would hide in
+the spread. The instructions too grow with the step's wall time, from timers and polls that run
+as long as it does: the tip's 127.08 G came from a step of 209.1 s at a load of 142, its other
+two runs of 49.2 and 74.7 s were 1.4 % apart.
 `html-conformance`, the last
 step of `check`: `html-conformance: 9107 cases, 9095 run, 8428 passed` (82 encoding cases,
 7,046 tokenizer cases and 1,300 tree construction cases), with `tag markup 1979/1979/1979`,

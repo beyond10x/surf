@@ -11,8 +11,9 @@
 # is 2, but a software clock counts the time a task runs in either mode (dd from /dev/zero to
 # /dev/null, nearly all system time, read 705 ms). instructions are user only at paranoid 2
 # (instructions:u: the same dd read 44.5 M, its kernel copies not in them). The bound of the page
-# step is in instructions: they are the step's own work, while its CPU seconds follow the host's
-# load (AGENTS.md, task page-step-cpu).
+# step is in instructions: they follow the host's load far less than its CPU seconds, though a
+# longer step spends more of them in timers and polls (AGENTS.md, task page-step-cpu and the
+# record of story:page-step-holds-under-load).
 #
 # Not a cgroup of its own: on this host a user scope (systemd-run --user --scope) read 11 to 12 %
 # less than task-clock in each of three runs of the same call (the kernel accounts interrupt time
