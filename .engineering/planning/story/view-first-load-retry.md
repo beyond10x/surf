@@ -7,6 +7,7 @@ title: A failed first load of the live view's page, and the text for a 403 that 
 summary: A failed first load stays offline with no retry; the refused token's text is also shown for a refused Host. Found in wave 7, decided first.
 relations:
 - decomposes: epic:live-view
+- informed_by: story:view-live-means-stream-open
 revision: 1
 ---
 ## Context

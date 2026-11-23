@@ -9,6 +9,7 @@ relations:
 - decomposes: epic:live-view
 - informed_by: story:test-step-holds-with-tls
 - depends_on: story:conformance-step-within-budget
+- depends_on: story:view-live-means-stream-open
 scope:
 - confidence: cited
   path: .github/workflows/check.yml
