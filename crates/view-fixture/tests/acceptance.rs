@@ -8,50 +8,12 @@
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
-use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Duration, Instant};
 
 const WAIT: Duration = Duration::from_secs(10);
-
-/// `target/<profile>/`, where `surf-agent` and `surf-session` are built beside the fixture (as
-/// `bin_dir()` of `tests/fixture.rs`; nothing is built when they are fresh).
-fn bin_dir() -> PathBuf {
-    let exe = std::env::current_exe().expect("the test's executable");
-    let profile_dir = exe
-        .parent()
-        .and_then(Path::parent)
-        .expect("target/<profile>")
-        .to_path_buf();
-    let profile = match profile_dir.file_name().and_then(|name| name.to_str()) {
-        Some("debug") => "dev".to_string(),
-        Some(other) => other.to_string(),
-        None => panic!("no profile directory above {}", exe.display()),
-    };
-    let status = Command::new(env!("CARGO"))
-        .args([
-            "build",
-            "--locked",
-            "--quiet",
-            "-p",
-            "surf-agent",
-            "-p",
-            "surf-session",
-            "--profile",
-            &profile,
-        ])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .stdin(Stdio::null())
-        .status()
-        .expect("cargo runs");
-    assert!(
-        status.success(),
-        "building surf-agent and surf-session: {status}"
-    );
-    profile_dir
-}
 
 /// The running fixture, with the view's port, the view token and the page server's address.
 /// Dropped: its standard input is closed, so it stops `surfd`, its sessions and the page server;
@@ -67,7 +29,7 @@ struct Fixture {
 
 impl Fixture {
     fn start() -> Fixture {
-        let bin = bin_dir();
+        let bin = crate::common::bin_dir();
         for program in ["surf-agent", "surf-session"] {
             assert!(bin.join(program).is_file(), "{program} beside the fixture");
         }

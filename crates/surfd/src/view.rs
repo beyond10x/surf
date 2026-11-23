@@ -703,8 +703,8 @@ mod tests {
                 "  2 follow l1 \"012345678901234567890123456789012345678901234567890123456789\"...\n",
                 "now 3 of 4\n",
                 "  l1 link ? \"Back\" -> \"/\"\n",
-                "  f1 text hid \"Email\" -> \"x\"\n",
-                "  b1 button ? \"Sign in\" -> \"http://[\" unresolved\n",
+                "  f1 text hid \"Email\" = \"x\"\n",
+                "  b1 button ? \"Sign in\" submits F1 post \"/session\"\n",
                 "note visibility: hidden attribute only\n",
             )),
         );
@@ -724,10 +724,10 @@ mod tests {
             r#""target":"/","target_cut":false,"unresolved":false,"text":null},"#,
             r#"{"handle":"f1","kind":"text","visibility":"hid","label":null,"label_cut":null,"#,
             r#""target":null,"target_cut":null,"unresolved":null,"#,
-            "\"text\":\"f1 text hid \\u0022Email\\u0022 -\\u003e \\u0022x\\u0022\"},",
+            "\"text\":\"f1 text hid \\u0022Email\\u0022 = \\u0022x\\u0022\"},",
             r#"{"handle":"b1","kind":"button","visibility":"?","label":null,"label_cut":null,"#,
             r#""target":null,"target_cut":null,"unresolved":null,"#,
-            "\"text\":\"b1 button ? \\u0022Sign in\\u0022 -\\u003e \\u0022http://[\\u0022 unresolved\"}],",
+            "\"text\":\"b1 button ? \\u0022Sign in\\u0022 submits F1 post \\u0022/session\\u0022\"}],",
             r#""visibility_note":"hidden attribute only"}}"#,
         );
         assert!(detail.contains(expected), "{detail}");
