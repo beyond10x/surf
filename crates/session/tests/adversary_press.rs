@@ -805,14 +805,15 @@ fn adversary_press_a_now_block_of_long_unresolved_actions_stays_within_its_bound
     assert!(!text.contains('\u{202e}'));
 }
 
-/// A `POST` answered 307 to an `https:` address or to one with a userinfo is not followed: no
-/// request after the `POST`, the page line `failed`, no password on any line or entry.
+/// A `POST` answered 307 to an address of a scheme surf does not fetch (neither `http:` nor
+/// `https:`) or to one with a userinfo is not followed: no request after the `POST`, the page
+/// line `failed`, no password on any line or entry.
 #[test]
 fn adversary_press_a_redirect_to_another_scheme_or_a_userinfo_is_not_followed() {
     let server = Server::start();
     let port = server.port;
     for location in [
-        format!("https://127.0.0.1:{port}/landing"),
+        format!("ftp://127.0.0.1:{port}/landing"),
         format!("http://u:p@127.0.0.1:{port}/landing"),
         "mailto:a@example.org".to_string(),
     ] {
