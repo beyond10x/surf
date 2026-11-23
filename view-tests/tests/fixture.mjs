@@ -94,8 +94,9 @@ function fetchLine(call) {
 // What the page shows and did when `live` was not reached, each read once, all at the same
 // time, each within READ_WAIT: the live marker's word and class, #message, the segments drawn;
 // the page's /events fetches (sent, its head arrived or not, ms from the navigation) and its
-// other fetches; the browser's own requests for /events and their answers; and whether the
-// view answers `/` from here, outside the browser.
+// other fetches; each of the browser's latest requests (the page's files included) with its
+// answer; the page's errors and its console's errors and warnings; and whether the view
+// answers `/` from here, outside the browser.
 async function shows(page) {
   const origin = (() => {
     try {
@@ -117,13 +118,15 @@ async function shows(page) {
       return `${notRead(failure)} after ${Date.now() - started} ms`;
     }
   };
-  const [word, kind, message, drawn, fetches, requests, view] = await Promise.all([
+  const [word, kind, message, drawn, fetches, requests, errors, messages, view] = await Promise.all([
     page.locator("#live-word").textContent({ timeout: READ_WAIT }).then(shownText, notRead),
     page.locator("#live").getAttribute("class", { timeout: READ_WAIT }).then(shownText, notRead),
     page.locator("#message").textContent({ timeout: READ_WAIT }).then(shownText, notRead),
     within(page.locator("#actions > li.segment").count(), NOT_READ).catch(notRead),
     within(page.evaluate(() => (Array.isArray(window.surfTestFetches) ? window.surfTestFetches : null)), NOT_READ).catch(notRead),
     within(page.requests(), NOT_READ).catch(notRead),
+    within(page.pageErrors(), NOT_READ).catch(notRead),
+    within(page.consoleMessages(), NOT_READ).catch(notRead),
     askView(),
   ]);
   let stream;
@@ -147,40 +150,48 @@ async function shows(page) {
     stream = fetches === null ? "(the page has no note of its fetches)" : fetches;
     others = stream;
   }
+  // Each of the browser's latest requests (the page's files, its fetches): its path and its
+  // answer's status, its failure, or no answer yet.
   let browser;
   if (Array.isArray(requests)) {
-    const events = requests.filter((request) => {
-      try {
-        return new URL(request.url()).pathname === "/events";
-      } catch {
-        return false;
-      }
-    });
     browser =
-      events.length === 0
-        ? `none of its ${requests.length} latest`
-        : events
-            .map((request) => {
-              const response = request.existingResponse();
-              if (response) {
-                const head = request.timing().responseStart;
-                return `answered ${response.status()}` + (head >= 0 ? `, head ${Math.round(head)} ms after it was sent` : "");
-              }
-              const failure = request.failure();
-              return failure ? `failed (${failure.errorText})` : "no answer";
-            })
-            .join(" | ");
+      requests
+        .map((request) => {
+          let where;
+          try {
+            where = new URL(request.url()).pathname.replace(/[0-9a-f-]{36}$/, "<id>");
+          } catch {
+            where = request.url();
+          }
+          const response = request.existingResponse();
+          if (response) {
+            const head = request.timing().responseStart;
+            return `${where} ${response.status()}` + (head >= 0 ? ` (head ${Math.round(head)} ms after it was sent)` : "");
+          }
+          const failure = request.failure();
+          return failure ? `${where} failed (${failure.errorText})` : `${where} no answer`;
+        })
+        .join(", ") || "none";
   } else {
     browser = requests;
   }
+  const pageErrors = Array.isArray(errors) ? errors.map((error) => String(error.message || error).split("\n")[0]).join(" | ") || "none" : errors;
+  const consoleErrors = Array.isArray(messages)
+    ? messages
+        .filter((entry) => entry.type() === "error" || entry.type() === "warning")
+        .map((entry) => `${entry.type()}: ${entry.text().split("\n")[0]}`)
+        .join(" | ") || "none"
+    : messages;
   return [
     `live marker: ${word}`,
     `class ${kind}`,
     `message: ${message}`,
     `segments drawn: ${drawn}`,
     `/events: ${stream}`,
-    `the browser's /events requests: ${browser}`,
     `the page's other fetches: ${others}`,
+    `the browser's requests: ${browser}`,
+    `page errors: ${pageErrors}`,
+    `console errors and warnings: ${consoleErrors}`,
     `the view's / from the test: ${view}`,
   ].join("; ");
 }
