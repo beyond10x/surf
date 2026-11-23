@@ -8,7 +8,7 @@
 
 ![spec: ESS 0.97.4, valid](docs/badges/spec.svg)
 ![conformance: 196 of 196 scenarios](docs/badges/conformance.svg)
-![tests: 1769 passed](docs/badges/tests.svg)
+![tests: 1778 passed](docs/badges/tests.svg)
 ![third-party crates shipped: 0](docs/badges/dependencies.svg)
 ![unsafe code: forbidden](docs/badges/unsafe.svg)
 ![standard sections marked complete: 0](docs/badges/complete.svg)
@@ -257,8 +257,8 @@ there instead.
   and hard limits on header and body size.
 - **196 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **1,769 tests** (1,224, and 545 of the TLS crates in a step of their own), built with
-  warnings treated as errors, and 59 tests of the live view's page in a browser.
+- **1,778 tests** (1,233, and 545 of the TLS crates in a step of their own), built with
+  warnings treated as errors, and 60 tests of the live view's page in a browser.
 
 New with round 2, shipped in release `0.5.0`:
 
@@ -533,36 +533,39 @@ surf v1 — 9 file(s), 37 scenario(s), valid
 196 scenario(s) (37 authored), 56 refusal(s), written to .out/suite.json
 conform-noticed: conformance/tests/noticed.txt matches its sources
 conform-rust: the narrowed suites of 29 planted defects in conformance/target/noticed/6d99491696333b9a70c2b009b42634243f65bbe23190765d981e5e6ab8c09ee1 are current
-Summary [  10.969s] 39 tests run: 39 passed, 0 skipped
+Summary [   8.819s] 39 tests run: 39 passed, 0 skipped
   196 scenarios: 196 passed, 0 failed, 0 error, 0 unsupported
-conformance step: 17.4 s of its budget of 120 s
+conformance step: 20.8 s of its budget of 120 s
 the interpreter and the Rust system ran 196 scenario(s) each, of suite sha256:dcc7e7c2c534eb6f98ef03cbd07da620efd16fbe16e8d448de697919b0a56bf3
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 10 CLI artifact(s), generated in .out/cli
 Cargo.lock: 49 package(s), 19 from outside this repository, each on the allow-list
-test-layout: 23 test directories, 148 test files, one test binary each
+test-layout: 23 test directories, 150 test files, one test binary each
 tls-certs: 33 cases, certs/ matches its sources
 tls-flights: 6 recordings match SOURCE, the recorder matches DIGEST
 tls-flights: self-test: a changed copy of aes128-x25519-ecdsa.bin fails naming it
 doc-tests-check: no doc test outside crates/ports
-    Finished `dev` profile [unoptimized] target(s) in 13.34s
-1224 tests: 1224 passed, 0 failed, 0 ignored (cargo-nextest 1222, doc tests 2)
-test step: 45.2 s of its budget of 120 s
+    Finished `dev` profile [unoptimized] target(s) in 9.46s
+1233 tests: 1233 passed, 0 failed, 0 ignored (cargo-nextest 1231, doc tests 2)
+test step: 38.1 s of its budget of 120 s
 545 tests: 545 passed, 0 failed, 0 ignored (cargo-nextest 545)
-tls test step: 20.4 s of its budget of 120 s
+tls test step: 18.0 s of its budget of 120 s
 agent-tasks: 4 tasks, 4 pass, 0 fail, 0 skipped, lane gate, binaries target/debug
-sh-echo: Summary [   6.596s] 40 tests run: 40 passed, 104 skipped
+sh-echo: Summary [   4.018s] 41 tests run: 41 passed, 112 skipped
 view-stream-check: 23 event name(s), each a message of the AsyncAPI projection
-  59 passed (1.9m)
+view-tests: node_modules installed from package-lock.json
+  60 passed (58.5s)
+page step: 60.6 s of its budget of 120 s
 html-conformance: 9107 cases, 9095 run, 9095 passed
 x509-limbo: 5143 cases, 5089 run, 5060 passed
-tls-x509-conformance: 14 s
+tls-x509-conformance: 15 s
 forge-watch-test: 6 case(s), each decided as expected by taskfiles/forge-watch.sh
 planning-only-test: 9 case(s), each decided as expected by taskfiles/planning-only.sh
 test-layout-test: 39 case(s), each decided as expected by taskfiles/test-layout.sh
 sh-echo-test: 2 case(s), each decided as expected by taskfiles/sh-echo.sh
 doc-tests-check-test: 14 case(s), each decided as expected by taskfiles/doc-tests-check.sh
+four steps: 137.5 s (test step 38.1 s, tls test step 18.0 s, conformance step 20.8 s, page step 60.6 s)
 ```
 
 It validates the specification, runs the 196 scenarios against the interpreter built into `ess`
@@ -572,12 +575,14 @@ builds and tests, the TLS crates in a step of their own, checks that every event
 live view's stream is an event of the specification, runs the live view's page tests in a
 browser, holds the HTML parser's and the X.509 checker's test counts where they are, and last
 tests the gate's own scripts. The tests run under cargo-nextest; a test still running after 60
-seconds is ended and fails, each test step fails when it takes over 120 seconds, and the block
-leaves out the ten slowest tests each step also prints, the agent tasks' rows after their
-counts and the rows of the two conformance counts. It is the run of 2026-11-23 at a load
-average of 96 to 132 on 20 CPUs. The page tests' line, `59 passed (1.9m)`, has its slowest
-test (`an entry over 1 MiB`) at 27.3 s; `59 passed (1.6m)` had it at 16.0 s at a load average
-of 111 to 117; `59 passed (3.0m)` took the task 220 s at a load
+seconds is ended and fails, each of the four timed steps (the conformance step, the test step,
+the TLS test step and the page step) fails when it takes over 120 seconds, and the last line
+adds the four up. The block leaves out the ten slowest tests each step also prints, the agent
+tasks' rows after their counts, npm's and Playwright's own lines and the rows of the two
+conformance counts. It is the run of 2026-11-23 that `task check-runner` ended in 283 s. The
+page tests' line, `60 passed (58.5s)`, has its slowest test (`an entry over 1 MiB`) at 9.7 s;
+`59 passed (1.9m)` had it at 27.3 s at a load average of 96 to 132; `59 passed (1.6m)` at
+16.0 s at a load average of 111 to 117; `59 passed (3.0m)` took the task 220 s at a load
 average of 126 to 127; `53 passed` took 1.1m at a load average of 55 to 65; `47 passed` took
 2.5m at a load average of 110 to 140, and the 38 of before took 15.8 s.
 The page tests need Node and

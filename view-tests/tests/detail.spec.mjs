@@ -161,10 +161,11 @@ test("a go adds a row live", async ({ page, surf, record }) => {
   await expect(rows(page)).toHaveCount(3);
   const roots = record.requestsOf("/").length;
   await surf.agent(id, "go", surf.pages + "/first/b.html");
-  await expect(rows(page)).toHaveCount(4, { timeout: 2000 });
+  // The bound of 2 s is the sentence's "a fourth row within 2 s", named beside it.
+  await expect(rows(page)).toHaveCount(4, { timeout: 2000 }); // .engineering/planning/story/view-detail-panel.md:156-157
   const row = rows(page).nth(3);
-  await expect(row.locator(".status")).toHaveText("200", { timeout: 2000 });
-  await expect(row.locator(".size")).toHaveText("210 bytes", { timeout: 2000 });
+  await expect(row.locator(".status")).toHaveText("200");
+  await expect(row.locator(".size")).toHaveText("210 bytes");
   expect(await row.locator(".address").textContent()).toBe(surf.pages + "/first/b.html");
   expect(record.requestsOf("/").length).toBe(roots);
 });

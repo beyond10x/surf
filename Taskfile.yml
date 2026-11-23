@@ -440,7 +440,8 @@ tasks:
       test nextest skips (#[ignore]) as ignored; after it how many came from each runner.
       Then the wall time of the two commands together, without the time before the task
       started. It fails when a test failed, and when that time is over TEST_BUDGET seconds
-      (120), naming the time.
+      (120), naming the time. It writes the time to .out/test-step.seconds, which it removes
+      first, for task step-budgets.
 
       It depends on task cli (.out/cli/) and on task generated-fresh, the one generation the
       tests of generated-check compare against.
@@ -452,6 +453,7 @@ tasks:
       TEST_BUDGET: '{{.TEST_BUDGET | default "120"}}'
     silent: true
     cmds:
+      - rm -f .out/test-step.seconds
       - task: build
       - mkdir -p .out
       - |
@@ -482,6 +484,7 @@ tasks:
             printf "%d tests: %d passed, %d failed, %d ignored (cargo-nextest %d, doc tests %d)\n", n + d[1] + d[2] + d[3], p + d[1], f + d[2], i + d[3], n, d[1] + d[2] + d[3]
           }'
         seconds=$(( elapsed / 1000 )).$(( elapsed % 1000 / 100 ))
+        echo "$seconds" > .out/test-step.seconds
         if [ "$elapsed" -gt $(( {{.TEST_BUDGET}} * 1000 )) ]; then
           echo "test step: ${seconds} s, over its budget of {{.TEST_BUDGET}} s"
           exit 1
@@ -509,6 +512,8 @@ tasks:
       the nextest run, without the time before the task started. It fails when a test failed,
       and when that time is over TLS_TEST_BUDGET seconds (120), naming the time. The budget is
       its own: the time of task test does not count against it, nor its time against task test.
+      It writes the time to .out/tls-test-step.seconds, which it removes first, for task
+      step-budgets.
     env:
       RUSTFLAGS: -D warnings
       SURF_BIN_DIR: '{{.ROOT_DIR}}/target/debug'
@@ -516,6 +521,7 @@ tasks:
       TLS_TEST_BUDGET: '{{.TLS_TEST_BUDGET | default "120"}}'
     silent: true
     cmds:
+      - rm -f .out/tls-test-step.seconds
       - task: build
       - mkdir -p .out
       - |
@@ -540,6 +546,7 @@ tasks:
             printf "%d tests: %d passed, %d failed, %d ignored (cargo-nextest %d)\n", n, p, f, i, n
           }'
         seconds=$(( elapsed / 1000 )).$(( elapsed % 1000 / 100 ))
+        echo "$seconds" > .out/tls-test-step.seconds
         if [ "$elapsed" -gt $(( {{.TLS_TEST_BUDGET}} * 1000 )) ]; then
           echo "tls test step: ${seconds} s, over its budget of {{.TLS_TEST_BUDGET}} s"
           exit 1
@@ -580,6 +587,23 @@ tasks:
       - task: test-layout-test
       - task: sh-echo-test
       - task: doc-tests-check-test
+      - task: step-budgets
+
+  step-budgets:
+    desc: Print the sum of the four timed steps of check, read from the seconds files the steps wrote under .out/.
+    summary: |
+      Print the sum of the four timed steps of check, read from the seconds files the steps
+      wrote under .out/.
+
+      sh taskfiles/step-budgets.sh .out reads .out/test-step.seconds (task test),
+      .out/tls-test-step.seconds (task test-tls), .out/conform-step.seconds (task conform-rust)
+      and .out/page-step.seconds (task view-test), the wall time of each step, which fails over
+      its own budget of 120 s, and prints "four steps: N s (test step A s, tls test step B s, conformance step C s, page
+      step D s)", N their sum. It fails naming the file when one is missing or holds no number.
+      It has no budget of its own. The last step of check.
+    silent: true
+    cmds:
+      - sh taskfiles/step-budgets.sh .out
 
   slow:
     desc: Make the committed products of the TLS tests and the conformance crate's list of noticed scenarios again and compare them with the committed files (the test certificates byte for byte, the recorded flights by outcome, conformance/tests/noticed.txt byte for byte); needs openssl 3.4 or later; never a step of check.

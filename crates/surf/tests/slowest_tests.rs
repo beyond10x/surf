@@ -1,5 +1,5 @@
-//! `taskfiles/slowest-tests.sh`, which task test, task test-tls and task conform-rust run on
-//! their JUnit reports: a
+//! `taskfiles/slowest-tests.sh`, which task test, task test-tls, task conform-rust and task
+//! view-test run on their JUnit reports: a
 //! report whose list is larger than a pipe's buffer prints its ten slowest tests and exits 0.
 //! Before, the task's
 //! pipeline ended `sort -rn | head -n 10`, and under pipefail `sort` died of SIGPIPE once `head`
@@ -89,6 +89,32 @@ fn a_list_larger_than_a_pipe_prints_its_ten_slowest_and_exits_0() {
     let _ = fs::remove_dir_all(&dir);
 }
 
+/// Playwright's JUnit reporter (task view-test) names a test by its title, with spaces and the
+/// five entities of XML: the line holds the whole title, as a reader wrote it.
+#[test]
+fn a_title_with_spaces_and_entities_is_printed_whole() {
+    let dir = scratch("titles");
+    let junit = dir.join("junit.xml");
+    fs::write(
+        &junit,
+        "<testsuites>\n<testsuite name=\"first-page.spec.mjs\">\n\
+         <testcase name=\"an entry over 1 MiB\" classname=\"first-page.spec.mjs\" time=\"12.905\">\n\
+         </testcase>\n\
+         <testcase name=\"a mark&apos;s title &amp; &quot;text&quot; &lt;b&gt;\" \
+         classname=\"now.spec.mjs\" time=\"1.5\">\n</testcase>\n\
+         </testsuite>\n</testsuites>\n",
+    )
+    .expect("write report");
+    let (status, out, err) = run(&[&junit]);
+    assert_eq!(status, Some(0), "{err}");
+    assert_eq!(
+        out,
+        "    12.905s first-page.spec.mjs an entry over 1 MiB\n     \
+         1.500s now.spec.mjs a mark's title & \"text\" <b>\n"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn a_missing_report_exits_1_with_one_line() {
     let dir = scratch("missing");
@@ -103,7 +129,11 @@ fn a_missing_report_exits_1_with_one_line() {
 /// that calls it.
 #[test]
 fn no_sort_feeds_a_head() {
-    for file in ["taskfiles/slowest-tests.sh", "Taskfile.yml"] {
+    for file in [
+        "taskfiles/slowest-tests.sh",
+        "Taskfile.yml",
+        "taskfiles/view-test.yml",
+    ] {
         let text = fs::read_to_string(repository().join(file)).expect("read file");
         let joined = text.replace("|\n", "| ");
         for line in joined.lines() {
@@ -149,6 +179,31 @@ fn no_sort_feeds_a_head() {
             "task {name} no longer copies nextest's report to {copy}"
         );
     }
+    // task view-test, in taskfiles/view-test.yml, reads the report Playwright writes for it
+    // alone, removed before the run.
+    let view = fs::read_to_string(repository().join("taskfiles/view-test.yml"))
+        .expect("read taskfiles/view-test.yml");
+    assert_eq!(
+        view.matches(call).count(),
+        1,
+        "task view-test no longer runs taskfiles/slowest-tests.sh once"
+    );
+    let entry = task_entry(&view, "view-test");
+    assert!(entry.contains(call), "task view-test no longer runs {call}");
+    assert!(
+        entry.contains("junit=.out/view-test/junit.xml\n"),
+        "task view-test no longer reads .out/view-test/junit.xml"
+    );
+    assert!(
+        entry.lines().any(|line| line.trim() == "rm -f \"$junit\""),
+        "task view-test no longer removes .out/view-test/junit.xml before its run"
+    );
+    let config = fs::read_to_string(repository().join("view-tests/playwright.config.mjs"))
+        .expect("read view-tests/playwright.config.mjs");
+    assert!(
+        config.contains("[\"junit\", { outputFile: \"../.out/view-test/junit.xml\" }]"),
+        "view-tests/playwright.config.mjs no longer writes .out/view-test/junit.xml"
+    );
 }
 
 /// The directory cargo-nextest writes the JUnit report of task `name` into.
