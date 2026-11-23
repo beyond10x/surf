@@ -4,18 +4,20 @@ set: [pipefail]
 
 tasks:
   page-step-cpu:
-    desc: The page step's CPU seconds, user plus kernel time of the Playwright call and every process under it (perf stat, task-clock).
+    desc: The page step's CPU seconds (user plus kernel) and instructions (user only) of the Playwright call and every process under it (perf stat).
     summary: |
-      The page step's CPU seconds, user plus kernel time of the Playwright call and every process under it (perf stat, task-clock).
+      The page step's CPU seconds (user plus kernel) and instructions (user only) of the Playwright call and every process under it (perf stat).
 
       story:page-step-holds-under-load. Builds surf-agent, surf-session and surf-view-fixture and
       runs task view-test-setup as task view-test does, then taskfiles/page-step-cpu.sh: the
-      Playwright call of task view-test, unchanged, under perf stat -e task-clock, as one slot
-      job (slot --timeout 15m). It prints the load before and after, the ten slowest tests, the
-      line of task view-test and "page step cpu: T s", and writes T to .out/page-step.cpu. CPU
-      seconds are what commits are compared by; the wall time follows the host's load. Needs
-      perf and a kernel.perf_event_paranoid of 2 or less. Not a step of task check. Run it
-      without slot: the build and the call take their own slots.
+      Playwright call of task view-test, unchanged, under perf stat -e task-clock,instructions,
+      as one slot job (slot --timeout 15m). It prints the load before and after, the ten
+      slowest tests, the line of task view-test, "page step cpu: T s" and "page step
+      instructions: I G (user only)", and writes T to .out/page-step.cpu and I to
+      .out/page-step.instructions. The bound is in instructions (AGENTS.md): the CPU seconds and
+      the wall time follow the host's load. Needs perf and a kernel.perf_event_paranoid of 2 or
+      less. Not a step of task check. Run it without slot: the build and the call take their own
+      slots.
     dir: '{{.TASKFILE_DIR}}/..'
     silent: true
     env:
