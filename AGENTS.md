@@ -1692,7 +1692,27 @@ interpreter and against the Rust system: `196 scenarios: 196 passed, 0 failed, 0
 unsupported`; `conform-totals`: `the interpreter and the Rust system ran 196 scenario(s) each,
 of suite sha256:dcc7e7c2c534eb6f98ef03cbd07da620efd16fbe16e8d448de697919b0a56bf3`.
 `generated-check`: `generated/rust matches spec/ (30 artifact(s) and .ess-output)`.
-`test-layout`: `23 test directories, 147 test files, one test binary each`.
+`test-layout`: `23 test directories, 148 test files, one test binary each`.
+
+The gate in runner form on `21adcdc` (2026-11-23, 07:35 to 07:41 CET, a load average of 96 to
+132 on 20 CPUs) printed `check-runner: task check exit 0 in 400 s, export included`, with
+rustc 1.99.1 and ess 0.97.4: the scenario, suite, interpreter, Rust-system, digest and
+`Cargo.lock` lines as on `b00d02d` below; the conformance step `conform-noticed:
+conformance/tests/noticed.txt matches its sources`, `conform-rust: the narrowed suites of 29
+planted defects in conformance/target/noticed/6d99491696333b9a70c2b009b42634243f65bbe23190765d981e5e6ab8c09ee1
+are current`, `Summary [  10.969s] 39 tests run: 39 passed, 0 skipped`, `conformance step:
+17.4 s of its budget of 120 s` (slowest
+`review2_planted_defects::review2_control_the_unplanted_system_passes_every_scenario`,
+10.4 s); `test-layout: 23 test directories, 148 test files, one test binary each`, `1224
+tests: 1224 passed, 0 failed, 0 ignored (cargo-nextest 1222, doc tests 2)`, `test step: 45.2 s
+of its budget of 120 s` (slowest
+`adversary_change_log::adversary_cl_log_at_its_byte_bound_keeps_the_newest`, 15.8 s), `545
+tests: 545 passed, 0 failed, 0 ignored (cargo-nextest 545)`, `tls test step: 20.4 s of its
+budget of 120 s`, `agent-tasks: 4 tasks, 4 pass, 0 fail, 0 skipped, lane gate, binaries
+target/debug`, `view-stream-check: 23 event name(s)`, `59 passed (1.9m)` (slowest `an entry
+over 1 MiB`, 27.3 s), `html-conformance: 9107 cases, 9095 run, 9095 passed`, `x509-limbo: 5143
+cases, 5089 run, 5060 passed`, `doc-tests-check-test: 14 case(s)`, and no line starting with
+`raise:`.
 
 The gate in runner form on `b00d02d` (2026-11-23, 04:55 to 05:03 CET, a load average of 111 to
 117 on 20 CPUs) printed `check-runner: task check exit 0 in 472 s, export included`, with
