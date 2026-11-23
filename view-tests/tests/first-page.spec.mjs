@@ -506,16 +506,13 @@ test("an entry over 1 MiB", async ({ page, surf }) => {
   const id = await surf.open();
   await load(page, surf.view);
   await expect(segments(page)).toHaveCount(1);
+  // One go to an address of 60,000 bytes: its answer entry is over 1,048,576 bytes (the address
+  // is written three times, each `<` as <), which the session's test
+  // large_entry_one_go_makes_an_answer_over_1_mib_and_three_make_four_actions measures from the
+  // detail; here the view draws that entry (story:page-step-holds-under-load).
   const address = surf.pages + "/first/a.html?" + "<".repeat(60_000);
-  for (let at = 0; at < 3; at += 1) {
-    await surf.agent(id, "go", address);
-  }
-  const actions = actionsOf(await surf.api("/api/sessions/" + id));
-  expect(actions.length).toBe(4);
-  const answer = actions[3].answer;
-  expect(answer).not.toBeNull();
-  expect(Buffer.byteLength(toJson(answer))).toBeGreaterThan(1_048_576);
-  await expect(segments(page)).toHaveCount(4, { timeout: 30_000 });
+  expect(await surf.agent(id, "go", address)).toBe(0);
+  await expect(segments(page)).toHaveCount(2, { timeout: 30_000 });
   await expect(pageAddress(page)).toHaveCount(1, { timeout: 30_000 });
   await expect.poll(() => pageAddress(page).textContent(), { timeout: 30_000 }).toBe(address);
 });

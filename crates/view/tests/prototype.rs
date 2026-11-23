@@ -16,7 +16,8 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
 const WAIT: Duration = Duration::from_secs(10);
-const ELEVEN: [&str; 11] = [
+const TWELVE: [&str; 12] = [
+    "changes.js",
     "detail.js",
     "dom.js",
     "index.html",
@@ -616,8 +617,8 @@ fn case_03_each_page_file_answers_under_its_name_with_its_type() {
     let mut names: Vec<&str> = files.iter().map(|file| file.name.as_str()).collect();
     names.sort_unstable();
     assert_eq!(
-        names, ELEVEN,
-        "page_files() holds the eleven files of the stories"
+        names, TWELVE,
+        "page_files() holds the twelve files of the stories"
     );
     let mut on_disk: Vec<String> = fs::read_dir(web())
         .expect("read web/")
@@ -630,7 +631,7 @@ fn case_03_each_page_file_answers_under_its_name_with_its_type() {
         })
         .collect();
     on_disk.sort();
-    assert_eq!(on_disk, ELEVEN, "web/ holds the eleven files and no other");
+    assert_eq!(on_disk, TWELVE, "web/ holds the twelve files and no other");
 
     let running = Running::start();
     for file in &files {

@@ -30,7 +30,7 @@ below are wall times of the running job, not of the queue.
 ## 1. The decisions U1, U2 and U3, and the TLS 1.2 suites
 
 1. **U1, the source of the primitives: `ring` 0.17.14.** The operator, 2026-11-22 05:47 CET,
-   relayed by the session `host-operator`: "A: ring 0.17.14". Of the three options of the epic
+   relayed by the operator session: "A: ring 0.17.14". Of the three options of the epic
    that take an outside crate it adds the fewest packages (item 2; option D, primitives written
    here, adds none and was refused for the timing risk decision C names), covers every primitive TLS 1.3 needs, and is the source
    rustls calls easier to build. Its cost is a C compiler that also builds assembly on every
@@ -1018,4 +1018,4 @@ system clock, with certificates valid until 2125 and an expired one whose end li
   (`story:tls-handshake`).
 
 No requirement of sections 9.1 to 9.3 is deviated from. A deviation found later is a line here,
-named, and goes to the coordinating agent for `host-operator`.
+named, and goes to the coordinating agent for the operator session.

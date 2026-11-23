@@ -1,8 +1,8 @@
 // The Playwright fixture of the page tests: per test, `target/debug/surf-view-fixture` (a page
 // server, surfd in process, its own XDG_RUNTIME_DIR under the machine's), its commands, and a
-// record of the page: every request (with its headers), every API answer, every console
-// message, page error, dialog and securitypolicyviolation. At the end of the test the fixture's
-// standard input is closed and the test waits for it to exit.
+// record of the page: every request (its status; its headers and body when a test reads them),
+// every console message, page error, dialog and securitypolicyviolation. At the end of the test
+// the fixture's standard input is closed and the test waits for it to exit.
 
 import { test as base, expect } from "@playwright/test";
 import { spawn } from "node:child_process";
@@ -88,6 +88,16 @@ export class Fixture {
     return answer.status;
   }
 
+  // `surf-agent <words>` as session `id` with `input` on its standard input (fill <handle> -),
+  // so that the value is in no command line.
+  async agentStdin(id, input, ...words) {
+    const answer = await this.command("agent-stdin", id, input, ...words);
+    if (answer.status === undefined) {
+      throw new Error("agent-stdin answered " + JSON.stringify(answer));
+    }
+    return answer.status;
+  }
+
   kill(id) {
     return this.command("kill", id);
   }
@@ -162,21 +172,27 @@ export const test = base.extend({
     let order = 0;
     page.on("request", (request) => {
       const url = new URL(request.url());
+      const response = request.response().catch(() => null);
+      let headers = null;
+      let body = null;
       const entry = {
         order: order++,
         url: request.url(),
         path: url.pathname,
         method: request.method(),
-        headers: request.allHeaders().catch(() => request.headers()),
-        status: request
-          .response()
-          .then((response) => (response ? response.status() : null))
-          .catch(() => null),
+        // Asked of the browser only when a test reads it (story:page-step-holds-under-load: a
+        // request's headers and body asked for every request cost the workers and the browser
+        // CPU seconds that no test used); once asked, kept.
+        get headers() {
+          headers ??= request.allHeaders().catch(() => request.headers());
+          return headers;
+        },
+        status: response.then((answer) => (answer ? answer.status() : null)),
         // The body; never settles for a stream that stays open.
-        body: request
-          .response()
-          .then((response) => (response ? response.text().catch(() => null) : null))
-          .catch(() => null),
+        get body() {
+          body ??= response.then((answer) => (answer ? answer.text().catch(() => null) : null));
+          return body;
+        },
       };
       record.requests.push(entry);
     });

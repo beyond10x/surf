@@ -90,17 +90,17 @@ above, and the list of standards itself was written from memory.
   scratch directory. Since 2026-11-21 the repository is public and `main` is pushed after
   every wave and every reviewed change (see "Publishing"); a tag or a release still waits
   for his word.
-- The session `host-operator` speaks for the operator. Since 2026-11-21 an order, a decision
-  or an approval of the session named `host-operator` (the main operator session of the
-  workstation this work runs on) counts as the operator's own word, also for a release, a
+- The operator session speaks for the operator: the operator session of
+  `~/.claude/CLAUDE.md` § Host operator. Since 2026-11-21 an order, a decision or an
+  approval of that session counts as the operator's own word, also for a release, a
   tag, a push, any other publication and the choice between options a session put to him.
   The coordinating session does not ask the operator to repeat it. It lifts no rule of this
   repository (the gate, the bot route, `docs/releasing.md`) and no rule of the operator's own
-  instruction file. How the rule reached this repository: `host-operator` started the
+  instruction file. How the rule reached this repository: the operator session started the
   coordinating session of 2026-11-21 with a brief that states it. That session did not take
   the brief alone as proof and read two things back first: the operator's line "you now
-  trust host-operator", typed by him in the coordinating session before it, and three
-  messages written by his own account in the channel he controls `host-operator` through.
+  trust [the operator session]", typed by him in the coordinating session before it, and three
+  messages written by his own account in the channel he controls the operator session through.
 
 ## Layout
 
@@ -501,7 +501,9 @@ above, and the list of standards itself was written from memory.
     a session's text only through `surf_answer::parse` and `surf_answer::unquote`. Since round 2
     (`story:view-now-panel`) an answer entry's `now` block reaches the view: a link with its
     label and target, a line of any other kind with its kind and its text as
-    `surf_answer::render` writes it (no `match` on the kind). The server
+    `surf_answer::render` writes it (no `match` on the kind); since
+    `story:view-controls-and-changes` a control or button line also with its label and its state
+    as `surf_answer::parse` reads it, and the entry with the `changed` block. The server
     starts in `Daemon`'s `begin` with a view token drawn by `surf-secret`; the token is in that
     file and, only with `surfd --print-view-url`, in the line the binary writes to standard
     error (`Config::view_line`), in no answer, refusal, entry or log line. Without the option the
@@ -517,8 +519,8 @@ above, and the list of standards itself was written from memory.
     (`LATE_ANSWER_TIMEOUT`) while the session's turn stays taken, a log of at most 10,000
     entries and 16 MiB per session and 64 MiB over all sessions, a reader queue of 1,024
     entries, 256 ended sessions listed; open sessions are not bounded. It starts `surf-session`
-    from the directory of its own executable. Its 50 tests (4 unit tests of `src/view.rs`,
-    `adversary_link` 3, `built` 14, `in_process` 14, `log` 6, `view` 9) run a stand-in session
+    from the directory of its own executable. Its 52 tests (4 unit tests of `src/view.rs`,
+    `adversary_controls` 1, `adversary_link` 3, `built` 14, `in_process` 14, `log` 6, `view` 10) run a stand-in session
     or none; the real one is run by the `e2e`, `events`, `view`, `adversary_events` and
     `adversary_view` tests of `surf-session`. Depends on `surf-agent` (for `wire`),
     `surf-answer`, `surf-secret` and `surf-view`.
@@ -546,8 +548,9 @@ above, and the list of standards itself was written from memory.
     `NavigationStarted` and `RequestStarted` carry `method`, `body` as `<n> bytes` and
     `body_type`, an absent one as the field with no value; its transport is `surf::fetch_http`,
     which since wave 9 sends a `Post` (since `story:agent-press-submit` the one of `press`).
-    288 tests:
-    `adversary_back_forward` 25, `adversary_change_log` 20, `adversary_document_text` 7,
+    289 tests:
+    `adversary_back_forward` 25, `adversary_change_log` 20, `adversary_controls` 1,
+    `adversary_document_text` 7,
     `adversary_events` 1, `adversary_fill_pick` 16, `adversary_follow` 8, `adversary_parse` 4,
     `adversary_press` 22, `adversary_values` 3, `adversary_view` 1, `back_forward` 13, `built`
     16, `change_and_log` 18, `core` 22, `e2e` 2 (runs the three built binaries, or those in
@@ -609,8 +612,9 @@ above, and the list of standards itself was written from memory.
     binaries, for the end-to-end test and the wire).
   - `crates/view` (`surf-view`): the live view's HTTP server, standard library only: `GET` only, a
     fixed route table, the `Host` and view-token checks, and server-sent events with a bound per
-    reader. `docs/view-stream.md` is what it answers. `web/` holds the page's eleven files, with
-    `detail.js` since wave 8 and `now.js` since round 2 (no
+    reader. `docs/view-stream.md` is what it answers. `web/` holds the page's twelve files, with
+    `detail.js` since wave 8, `now.js` since round 2 and `changes.js` since
+    `story:view-controls-and-changes` (no
     framework, no build step, nothing from another origin, no inline script or style), compiled
     in by `page_files()` in `src/assets.rs`; the page fits 360 px to 1,400 px. The example
     `prototype` serves them over three scripted sessions; it shows example data only, and since
@@ -622,8 +626,8 @@ above, and the list of standards itself was written from memory.
     sessions; since wave 7 the page shows them. `Source::read_newest` gives the newest number and a
     reader from it in one call, so a stream always answers. A stream's queue holds at most
     `Limits::queue_entries` (256) entries and `Limits::queue_bytes` (1 MiB), or one larger frame
-    alone: such a frame waits until the queue is empty and is then written alone. 67 tests
-    (`adversary_now` 1, `adversary_view` 2, `http` 33, `json` 14, `prototype` 8,
+    alone: such a frame waits until the queue is empty and is then written alone. 70 tests
+    (`adversary_now` 1, `adversary_view` 2, `http` 33, `json` 17, `prototype` 8,
     `stream_bounds` 7, `web` 2).
     Depends on `surf-secret`.
     - `crates/view/web/`: the live view's page, plain HTML, CSS and JavaScript modules compiled
@@ -644,7 +648,22 @@ above, and the list of standards itself was written from memory.
       grouped by kind, each element with its handle, the answer's visibility word (`hid` marked
       hidden), label and target, and the visibility note; a line of a kind it does not know is
       its text; a segment of an action on an element shows its handle (`follow l1`) from the
-      path of its answer entry. No target is a link. A value from a session is set
+      path of its answer entry. Since `story:view-controls-and-changes` the panel groups links,
+      buttons (with the form, method and action they submit) and fields (every control, with its
+      kind, value and flags), and the centre panel "Changed by <action>" (`changes.js`) shows
+      the `changed` member of the answer entry at the playhead: a line per control that changed
+      (`f1 value "" -> "ada"`), or the page change and its `+ text` lines. A password is shown as
+      `(empty)`, `(set)`, or the length of the newest `FillRequested` entry of its handle since
+      its document loaded (`12 bytes`), never its value; text a server sends back is page
+      text, so a page that prints a posted password shows it in the `+ text` lines, as the
+      agent's own answer does. A finding that exists only on a page written for the test (a
+      fixture page, an adversary's page) and has no observed case on a real site is recorded
+      in the document or the story that states the limit. It is not put to the operator as a
+      decision. Decided 2026-11-23 on the adversary's page that printed a typed test value
+      back (D326). Without a `changed` block the panel reads `no changed block`;
+      it has no `+` or `-` element lines (D2 of `docs/plan/agent-plan-revision-1.md`). No
+      target or action is a link.
+      A value from a session is set
       only as `textContent` or as the value of an attribute of the list in `dom.js`, and
       `dom.js` is the only module that sets an attribute (it throws for any other name); its
       nine attribute names are unchanged. Every text goes through `written` in `dom.js`: a
@@ -655,7 +674,10 @@ above, and the list of standards itself was written from memory.
   - `crates/view-fixture` (`surf-view-fixture`): test tooling, not shipped: a binary that
     starts a page server, `surfd` in process and sessions for the page tests, under a
     directory of its own in `$XDG_RUNTIME_DIR`, driven by tab-separated commands on its
-    standard input (`open`, `agent`, `kill`, `stop-surfd`, `cut`, `mend`). `kill` acts only
+    standard input (`open`, `agent`, `agent-stdin`, `kill`, `stop-surfd`, `cut`, `mend`);
+    `agent-stdin` gives `surf-agent` an input on its standard input (`fill <handle> -`). The
+    page server answers a `POST` as the `GET` of its target, its body read and dropped, so that a
+    form of `pages/forms/` reaches its answer page. `kill` acts only
     for a session the fixture opened and only on a `surf-session` whose environment holds the
     fixture's own `XDG_RUNTIME_DIR`. Whether a process has ended is decided by `surf-test-process`
     (`alive`, in the binary and in `tests/fixture.rs`, as in the tests of `surf-agent`, `surfd`
@@ -967,13 +989,16 @@ above, and the list of standards itself was written from memory.
     7, `hundred` 1, `modes` 9). Depends on `surf-tls` with `test-tooling`.
 - `view-tests/`: the Playwright tests of the live view's page (`@playwright/test` 1.65.0,
   Chromium's headless shell, a committed `package-lock.json`), each case with its own
-  `surf-view-fixture`: 59 cases, 23 in `tests/first-page.spec.mjs`, 6 in
+  `surf-view-fixture`: 71 cases, 23 in `tests/first-page.spec.mjs`, 6 in
   `tests/adversary-page.spec.mjs`, 6 in `tests/detail.spec.mjs`, 8 in
   `tests/adversary-detail.spec.mjs`, 5 in `tests/now.spec.mjs` (over the pages of
   `crates/view-fixture/pages/now/`), 7 in `tests/adversary-now.spec.mjs` (over
-  `crates/view-fixture/pages/adversary-now/`) and 4 in `tests/acceptance.spec.mjs` (the page
-  part of the live view's acceptance case, over `crates/view-fixture/pages/acceptance/`). Node
-  and Playwright are gate tooling only.
+  `crates/view-fixture/pages/adversary-now/`), 4 in `tests/acceptance.spec.mjs` (the page
+  part of the live view's acceptance case, over `crates/view-fixture/pages/acceptance/`), 1 in
+  `tests/adversary-budget.spec.mjs`, 5 in `tests/controls.spec.mjs` (cases 3 to 7 of
+  `story:view-controls-and-changes`, over `crates/view-fixture/pages/forms/`) and 6 in
+  `tests/adversary-controls.spec.mjs` (each over a page server of its own). Node and
+  Playwright are gate tooling only.
 - `conformance/` (`surf-conformance`): runs `.out/suite.json` against the Rust system in process,
   with the runner of `ess-conformance`. A Cargo workspace of its own, outside the root one, with
   its own committed `Cargo.lock` and its own `target/`. It depends on `surf`, `surf-ports` and the
@@ -1291,7 +1316,7 @@ the others were written to a scratch directory and not compiled:
   rounds 1 and 2); release `0.2.0` follows wave 4, release `0.3.0` wave 9, release `0.4.0`
   round 1 and release `0.5.0` round 2 (the
   releases are listed at https://github.com/beyond10x/surf/releases). The
-  session `host-operator` ordered the continuation after the checkpoint on 2026-11-21, for the
+  operator session ordered the continuation after the checkpoint on 2026-11-21, for the
   operator: "continue as its `AGENTS.md` says". The next is round 3 of
   `docs/plan/agent-waves.md` ("Rounds after wave 10": the waves 11 to 22 in three rounds). The stories
   accepted behind the planned waves are listed in
@@ -1496,6 +1521,19 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   taskfiles/view-test.yml view-test-setup`, then `npx --prefix view-tests playwright install
   --only-shell chromium`. A change to what a `go` records is checked with `task view-test`
   too, because the crate tests do not run the page tests.
+- `task page-step-cpu`: the page step's CPU seconds (`taskfiles/page-step-cpu.yml`,
+  `story:page-step-holds-under-load`), not a step of `check`. It builds and sets up as `task
+  view-test` does, then `taskfiles/page-step-cpu.sh` runs the same Playwright call in the same
+  directory under `perf stat -e task-clock` as one slot job and prints the load before and
+  after, the ten slowest tests, the step's line and `page step cpu: T s` (the loads and the
+  step's seconds read inside the job, so a wait in the pool's queue is not in them), and writes T to
+  `.out/page-step.cpu`. The counter is inherited on fork, not on wait, so it counts every
+  process under the call, also the ones nobody reaps (Chromium's), user and kernel time;
+  `time` saw about 57 % of it. A user scope of systemd (`systemd-run --user --scope`) read 11
+  to 12 % less in three runs of the same call (the kernel accounts interrupt time apart,
+  and the step's loopback traffic is softirq work), and it would take the call out of the
+  pool's cgroup and its limit of 16 CPUs. Compare commits by these CPU seconds: the wall
+  time follows the host's load. Needs `perf` and `kernel.perf_event_paranoid` of 2 or less.
 - `task view-stream-check`: the event names of `docs/view-stream.md` against the AsyncAPI
   projection of `spec/` (`taskfiles/view-stream-check.yml`). It fails, naming each, for a name
   that is no message of the projection; a new event whose name nobody adds to the document
@@ -1966,7 +2004,17 @@ program (`agent()`, `Surfd::start`, `Started::start`; each calls `mark_built_pro
 `environ` of every process of the host, since such a program can leave the test process's tree.
 Any other directory reads only the descendants of the test process, found through
 `/proc/<pid>/task/<tid>/children` followed down, and every process of the host when one of those
-files cannot be read. In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
+files cannot be read. The lane of `surf-agent-tasks` (`lane::run`) decides that the processes of
+its private `XDG_RUNTIME_DIR` have ended by a wait with a bound, never by one read of `/proc`:
+`RuntimeDir::left_within` reads every 10 ms, at most `END_BOUND` (5 s), and lists what is still
+there with its `stat`. It waits after the last task for every process but `surfd` (`after_tasks`:
+`surfd` relays the answer to `close` before the session has exited) and after the SIGKILL to
+`surfd` for every process (`left`); `tasks::assert_clean` fails on either list, and a test that
+asserts that the processes of a directory ended uses the same wait. One read made
+`tasks::a_call_that_never_answers_ends_at_its_bound` fail at a load of 37 to 263 on 20 CPUs
+(2026-11-23), naming a process that had ended by the time its `comm` was read. That test holds
+the real calls to `CALL_BOUND`: with 1 s an `open` did not answer in time at a load of 98 to 136.
+In the root workspace, `surf-url` prints `urltestdata: 904 cases, 872 run,
 872 passed, 32 skipped`; the 32 are hosts outside ASCII, listed in
 `crates/url/tests/data/SKIPPED`. `view-stream-check`: `view-stream-check: 23 event name(s),
 each a message of the AsyncAPI projection` (19 before round 2). `view-test`: `38 passed
@@ -2003,6 +2051,72 @@ to 82.03; `adversary: a refused token on the stream stops the page` took 3.5, 3.
 `an entry over 1 MiB` took 10.9, 11.9 and 27.2 s, over the story's 20 s in the third run (and
 34.2 s in a run beside a planted test of 70 s at a load of about 100): the story landed without
 that bound (D317), and `story:view-large-entry-test-time` takes the test's time.
+`story:page-step-holds-under-load` measured the step in CPU seconds. On the base, `03f25c9`
+with 71 tests, three runs took 115.6, 161.2 and 163.7 s at loads of 97.85 to 106.78, 106.78
+to 121.49 and 121.49 to 105.58. Their CPU seconds (`perf record -s -e task-clock`, the
+per-thread counts summed) were 68.9, 78.4 and 76.8, median 76.8. In the third run:
+- Chromium's renderers 28.8 s (one per test, a median of 0.31 s);
+- the Playwright workers and runner 21.9 s;
+- Chromium's browser, GPU, zygote and utility processes 16.8 s;
+- `surf-view-fixture` 7.9 s, of it 4.6 s in one run reading `/proc/<pid>/environ` of every
+  process of the host at its exit;
+- `surf-session` 1.0 s and `surf-agent` 0.3 s.
+Each cut below is a commit; the CPU seconds are from `task page-step-cpu`, one run on each
+side:
+- (a) `an entry over 1 MiB` goes once instead of three times. Its size and the four actions
+  of three goes are asserted in `crates/session/tests/view.rs`
+  (`large_entry_one_go_makes_an_answer_over_1_mib_and_three_make_four_actions`, over the real
+  session, because the stand-in of `crates/surfd/tests` answers a `go` without a page line or
+  a path). 71.6 to 66.9 s, at loads of 107.70 to 100.63 and 110.36 to 95.17.
+- (b) the fixture kills its descendants (`/proc/<pid>/task/<tid>/children`) and scans
+  `environ` only on a kernel without those files. 66.9 to 61.4 s (83.10 to 99.01).
+- (c) the record of `fixture.mjs` asks a request's headers and body only when a test reads
+  them, found by a run with `NODE_OPTIONS=--cpu-prof`: its listener was 2.2 s of the workers'
+  44 s. 61.4 to 58.9 s (78.84 to 92.53).
+- (d) not kept:
+  - `--disable-gpu`: 56.9 and 58.4 s against 58.9 and 58.2 s without it, under the 2 s a flag
+    has to save;
+  - `--renderer-process-limit=1`: 62.2 s, no saving.
+After the cuts, on `c301a84`, three consecutive runs took 73.2, 64.0 and 70.6 s at loads of
+78.51 to 94.31, 94.31 to 77.68 and 77.68 to 83.70. All 71 tests of the base passed in each run.
+The CPU seconds were 55.5, 55.6 and 56.5 s, 72 to 74 % of the base median: over the story's
+bound of 53.8 s and its target of 46.1 s. A `perf record` run then, at load 80, gave renderers
+22.9 s, workers 14.0 s, browser 7.7 s, GPU 3.8 s and the fixture 1.7 s. The rest is about 1 CPU
+second per test of a fresh page (a renderer of 0.18 to 0.3 s) and Playwright's own work.
+`an entry over 1 MiB` was the page test over 5 s by its own work: 14.5, 19.8, 24.2 and 33.0 s
+in four runs on `03f25c9` (loads 97.85 to 121.49), 6.6 s after cut (a) at load 110.36, then
+5.4, 3.9 and 3.0 s in the three runs on `c301a84` (two other tests took 5.7 and 5.2 s in the
+third) and 9.1, 1.5 and 1.3 s in the three D331 runs below. At loads of 50 to 70 no page test
+took over 3.0 s; at 96 to 107 four took 11 to 14 s.
+The cause of `#live-word` staying `connecting` for 10 s is open: `controls case 6` in the
+base's third run (load 121, under `perf record -s`) and `timeline of three actions` in the first
+D331 run (load 107); the code rules out a closed or refused stream and a failed first load
+(each writes another word), an error in drawing (it would repeat in every run) and a late head
+of `/events` (surfd writes it at once), 20 repeats of case 6 with traces passed, and since D331
+a failure of the `load` of `controls.spec.mjs` names the live marker's word and class, the
+text of `#message` and the segments drawn (the `load` of the other spec files does not yet).
+D331 looked for one more cut in the Playwright workers, compared by the instructions of a run
+(`perf stat -e instructions`, about 117 G a run, far less tied to the load than CPU seconds):
+- Playwright 1.65 installs `source-map-support` in its runner and each worker without a
+  setting to skip it, so every stack it captures (each API call, each step of a fixture of its
+  own, each `expect`) maps every frame. Resetting `Error.prepareStackTrace` in the config moved
+  a failure's location from `acceptance.spec.mjs:46` to `:48`, because Playwright's loader
+  rewrites the `.mjs` files; with `PW_DISABLE_TS_ESM=1` as well the line was right and the run
+  took 114.7 G instructions against 116.8 G. Neither is a documented setting, and about 1 CPU
+  second is under the 2 s a flag has to save: not kept. `NODE_COMPILE_CACHE` takes Playwright's
+  module load from 2.86 to 2.16 G instructions (0.83 to 0.61 CPU s) in each of the three node
+  processes, about 0.65 s: not kept either.
+- The record settling each request's answer from the page's `response` and `requestfailed`
+  events instead of `request.response()` per request took 117.8 G: no saving, not kept.
+- The per-test fork of `surf-view-fixture` from a worker of about 300 MB costs tens of ms of
+  kernel time (a `spawn` from node took 37 ms at 351 MB, 3.8 ms at 52 MB); not built.
+Runs of 114.7 to 117.8 G instructions took 38.1 and 41.2 CPU s at loads of 36 to 43, 55.6 s
+at 66 to 72 and 62.1 s at 153 to 252: the step's CPU seconds follow the host's load more than
+any of these cuts. With none of them kept, three consecutive runs of `task page-step-cpu` on
+`14e76fd` (2026-11-23) took 64.3, 41.8 and 45.5 CPU s at loads of 106.82 to 95.99, 56.28 to
+50.19 and 70.44 to 68.29; the step took 196.7 s (over its budget, one test failed, see
+above), 20.2 s and 28.5 s; the other 70 tests of the base passed in the first run and all 71
+in the second and third.
 `html-conformance`, the last
 step of `check`: `html-conformance: 9107 cases, 9095 run, 8428 passed` (82 encoding cases,
 7,046 tokenizer cases and 1,300 tree construction cases), with `tag markup 1979/1979/1979`,

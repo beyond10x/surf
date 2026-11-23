@@ -8,7 +8,6 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use surf_agent_tasks::agent::CALL_BOUND;
 use surf_agent_tasks::format::{Listed, read_status, read_tasks};
@@ -40,8 +39,10 @@ fn bin_dir() -> PathBuf {
 }
 
 /// The facts of /proc every lane run is held to: one surfd from the first `open` on, no cargo
-/// below the test, surfd ended after SIGKILL, no process of the run left, and its directory
-/// removed.
+/// below the test, no process of the run but surfd after the last task, surfd ended after
+/// SIGKILL, no process of the run left, and its directory removed. The two lists of processes
+/// come from waits with a bound ([`surf_agent_tasks::process::END_BOUND`]), not from one read:
+/// a process that is still ending is in /proc, and one that stays is in the list.
 fn assert_clean(run: &LaneRun) {
     let surfd: BTreeSet<u32> = run.surfd_samples.iter().flatten().copied().collect();
     assert_eq!(surfd.len(), 1, "surfd processes seen: {surfd:?}");
@@ -54,6 +55,11 @@ fn assert_clean(run: &LaneRun) {
         run.cargo_seen.is_empty(),
         "cargo below the test: {:?}",
         run.cargo_seen
+    );
+    assert!(
+        run.after_tasks.is_empty(),
+        "processes of the run but surfd after its last task: {:?}",
+        run.after_tasks
     );
     for result in &run.ended {
         result.as_ref().expect("surfd ended after SIGKILL");
@@ -146,7 +152,9 @@ fn a_call_that_never_answers_ends_at_its_bound() {
     let config = Config {
         bin: bin.clone(),
         fallback: PathBuf::from(env!("CARGO_TARGET_TMPDIR")),
-        call_bound: Duration::from_secs(1),
+        // The gate's bound, sat out once: every other call is a real one and must answer
+        // within it. With 1 s an `open` did not, at a load of 98 to 136 on 20 CPUs (2026-11-23).
+        call_bound: CALL_BOUND,
         lane: Lane {
             name: "gate".to_string(),
             binaries: bin.clone(),
@@ -178,7 +186,10 @@ fn a_call_that_never_answers_ends_at_its_bound() {
     );
     assert_eq!(
         task_lines[0],
-        "task article fail 3 calls 1 connections: no answer within 1 s on look"
+        format!(
+            "task article fail 3 calls 1 connections: no answer within {} s on look",
+            CALL_BOUND.as_secs()
+        )
     );
     assert!(
         !task_lines[1..]

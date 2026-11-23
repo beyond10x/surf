@@ -3,10 +3,13 @@
 //! private `XDG_RUNTIME_DIR`.
 //!
 //! A run removes its report file first and writes it last. After the last task every session
-//! is closed by its task; the run sends SIGKILL to the `surfd` it found (a `surfd` that `open`
-//! started ends on its own only after its idle exit of 600 s) and waits for it, at most
-//! [`KILL_BOUND`], then removes the private directory. What `/proc` showed is returned, for the
-//! caller to hold the run to.
+//! is closed by its task: the run waits, at most [`END_BOUND`], until no process of the
+//! private directory but its `surfd` is left, since a session exits after `surfd` relayed its
+//! answer to `close`. It then sends SIGKILL to the `surfd` it found (a `surfd` that `open`
+//! started ends on its own only after its idle exit of 600 s), waits for it, at most
+//! [`KILL_BOUND`], waits again, at most [`END_BOUND`], until no process of the directory is
+//! left, and removes the private directory. What `/proc` showed is returned, for the caller to
+//! hold the run to.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -18,7 +21,7 @@ use surf_test_process::ended_within;
 use crate::agent::{Agent, steps};
 use crate::format::{read_status, read_tasks};
 use crate::judge::judge;
-use crate::process::{self, KILL_BOUND, RuntimeDir};
+use crate::process::{self, END_BOUND, KILL_BOUND, RuntimeDir};
 use crate::report::{Lane, TaskResult, report};
 use crate::server::serve;
 use crate::{sites_dir, status_file, tasks_file};
@@ -48,10 +51,15 @@ pub struct LaneRun {
     pub surfd_samples: Vec<Vec<u32>>,
     /// Every process whose `comm` is `cargo` seen below this process.
     pub cargo_seen: BTreeSet<u32>,
+    /// The processes of the private directory but its `surfd` still there [`END_BOUND`] after
+    /// the last task, with their `/proc/<pid>/stat`: a session its task did not close, or a
+    /// process a call left.
+    pub after_tasks: Vec<(u32, String)>,
     /// The wait for each `surfd` after SIGKILL.
     pub ended: Vec<Result<Duration, String>>,
-    /// The processes of the private directory left after that, with their `comm`.
-    pub left: Vec<(u32, Option<String>)>,
+    /// The processes of the private directory still there [`END_BOUND`] after that, with their
+    /// `/proc/<pid>/stat`.
+    pub left: Vec<(u32, String)>,
     /// The private directory, removed at the end of the run.
     pub directory: PathBuf,
 }
@@ -112,6 +120,7 @@ pub fn run(config: &Config) -> LaneRun {
 
     let mut surfd: BTreeSet<u32> = surfd_samples.iter().flatten().copied().collect();
     surfd.extend(dir.processes_named("surfd"));
+    let after_tasks = dir.left_within(&surfd, END_BOUND);
     for &pid in &surfd {
         process::signal_kill(pid);
     }
@@ -119,11 +128,8 @@ pub fn run(config: &Config) -> LaneRun {
         .iter()
         .map(|&pid| ended_within(pid, KILL_BOUND))
         .collect();
-    let left = dir
-        .processes()
-        .into_iter()
-        .map(|pid| (pid, process::comm(pid)))
-        .collect();
+    // A session still open ends when the end of surfd closes its standard input.
+    let left = dir.left_within(&BTreeSet::new(), END_BOUND);
     drop(dir);
 
     let outcome = report(&results, &status, &config.lane, &config.out);
@@ -132,6 +138,7 @@ pub fn run(config: &Config) -> LaneRun {
         outcome,
         surfd_samples,
         cargo_seen,
+        after_tasks,
         ended,
         left,
         directory,
