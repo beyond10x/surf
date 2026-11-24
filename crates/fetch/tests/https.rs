@@ -57,6 +57,8 @@ fn get_through(
         body: None,
         media_type: None,
         anchors: Some(anchors),
+        jar: None,
+        initiator: None,
     };
     send_through(&request, limits, network)
 }

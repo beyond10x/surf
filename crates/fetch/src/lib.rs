@@ -44,6 +44,20 @@
 //! `Content-Length`, and stays one for the rest of the chain; a 307 or 308 repeats the method, the
 //! body and the media type. A 303 after a `GET` stays a `GET`.
 //!
+//! # Cookies
+//!
+//! A [`Request`] with a jar ([`Request::jar`], a `surf_cookie::Jar`) sends, on every hop, the
+//! `Cookie` field the jar gives for the hop's address, its method and whether it is same-site
+//! with the request's initiator ([`Request::initiator`], kept by every hop of a redirect;
+//! `surf_cookie::site`); one field after `Host` and `Connection`, none when no cookie matches.
+//! Every `Set-Cookie` field of each response, redirects included, goes into the jar for that
+//! response's address before the next hop is sent; one that is not UTF-8 is dropped. A
+//! `Set-Cookie` field longer than the header limit ends the fetch as every such field does
+//! ([`Failure::MalformedResponse`]), and nothing of that response goes into the jar. An address
+//! `surf_url::Url::parse` does not parse sends no cookie and keeps none. The rules of the jar
+//! (draft-ietf-httpbis-rfc6265bis-22) are those of the crate `surf-cookie`. A request without a
+//! jar sends no `Cookie` field and keeps no cookie.
+//!
 //! The wire format follows HTTP/1.1 (RFC 9112, message syntax; RFC 9110, semantics) for what
 //! this crate does. No section of either is claimed complete. Where a rule is followed, the
 //! comment beside the code names the section it was checked against.
@@ -210,6 +224,11 @@
 //! of 65,535 bytes, up to 64 certificates): what parsing and verifying it takes was not
 //! measured.
 //!
+//! A request with a jar holds, beside the above, while the head of a hop is written and read,
+//! the address of the hop parsed with `surf-url` and the `Cookie` field, at most 8,192 bytes;
+//! both are dropped before a body is read. The jar is the caller's, and `surf-cookie` states
+//! its bound.
+//!
 //! # What it does not do
 //!
 //! It is not a complete HTTP client. It does not do any scheme other than `http:` and `https:`
@@ -219,11 +238,11 @@
 //! methods other than `GET` and `POST`,
 //! `Expect: 100-continue` (a `POST` sends its body at once, after the head), chunked request
 //! bodies, a request media type with parameters, request header fields other than `Host`,
-//! `Connection`, `Content-Type` and `Content-Length` (no `Origin`, no `Referer`), persistent
-//! connections (every fetch opens and closes one connection), content codings (the
+//! `Connection`, `Cookie`, `Content-Type` and `Content-Length` (no `Origin`, no `Referer`),
+//! persistent connections (every fetch opens and closes one connection), content codings (the
 //! body is returned as sent; no `Accept-Encoding` is sent, and no `Content-Encoding` is decoded),
 //! transfer codings other than `chunked`, trailers (the chunked body ends at its last chunk; the
-//! trailer section is not read), proxies, cookies, caching, `Refresh`, or URL parsing beyond
+//! trailer section is not read), proxies, caching, `Refresh`, or URL parsing beyond
 //! splitting an address into host, port and request target and resolving a `Location`.
 //!
 //! It does not check revocation: a revoked certificate that has not expired loads.
@@ -257,6 +276,7 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use surf_cookie::Jar;
 use surf_tls::connection::Connection;
 use surf_tls::der::Time;
 use surf_tls::error::{AlertDescription, Error as TlsError};
@@ -326,11 +346,13 @@ impl Method {
 
 /// A request to send, borrowed from the caller: nothing of it is copied, the body least of all.
 ///
-/// Its [`Debug`](fmt::Debug) text shows the address, the method and the media type, and the body
-/// by its length only, never its bytes, since a form's body can carry a password:
-/// `Request { address: "http://example.org/login", method: Post, body: Some(16 bytes),
-/// media_type: Some("application/x-www-form-urlencoded") }`.
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// Its [`Debug`](fmt::Debug) text shows the address, the method, the media type and the
+/// initiator, the body by its length only, never its bytes, since a form's body can carry a
+/// password, the anchors by their count, and the jar by the count of its cookies, never a
+/// cookie: `Request { address: "http://example.org/login", method: Post, body: Some(16 bytes),
+/// media_type: Some("application/x-www-form-urlencoded"), anchors: None, jar: Some(Jar {
+/// cookies: 1 }), initiator: Some("http://example.org") }`.
+#[derive(Clone, Copy)]
 pub struct Request<'a> {
     /// The address, as for [`fetch`].
     pub address: &'a str,
@@ -346,6 +368,14 @@ pub struct Request<'a> {
     /// the bundled list alone ([`Anchors::bundled`]), read at the first `https:` request of the
     /// fetch.
     pub anchors: Option<&'a Anchors>,
+    /// The cookie jar of the session the request belongs to: each hop sends the `Cookie` field
+    /// the jar gives for its address, and every `Set-Cookie` field of each response goes into
+    /// it (the crate documentation, "Cookies"). `None` sends no cookie and keeps none.
+    pub jar: Option<&'a Jar>,
+    /// The serialized origin of the document that started the navigation, such as
+    /// `http://127.0.0.1:8080`, which decides whether a hop is same-site for the jar
+    /// ([`surf_cookie::site`]). `None` for a navigation nobody's document started.
+    pub initiator: Option<&'a str>,
 }
 
 impl fmt::Debug for Request<'_> {
@@ -359,6 +389,8 @@ impl fmt::Debug for Request<'_> {
                 "anchors",
                 &self.anchors.map(|anchors| AnchorCount(anchors.count())),
             )
+            .field("jar", &self.jar)
+            .field("initiator", &self.initiator)
             .finish()
     }
 }
@@ -490,6 +522,8 @@ pub fn fetch(address: &str, limits: &Limits) -> Result<Response, Failure> {
             body: None,
             media_type: None,
             anchors: None,
+            jar: None,
+            initiator: None,
         },
         limits,
     )
@@ -624,7 +658,38 @@ pub fn send_from(
                 secure(Timed::new(stream, read_left), &target.host, verifier)?
             }
         };
-        let (head, wire) = exchange(&target, &outgoing, stream, limits)?;
+        // The crate documentation, "Cookies": the jar sees the address of this hop parsed; a
+        // fetch without a jar parses nothing for it.
+        let hop_url = match request.jar {
+            Some(_) => match current.as_ref() {
+                Some((url, _)) => Some(url.clone()),
+                None => surf_url::Url::parse(address, None).ok(),
+            },
+            None => None,
+        };
+        let cookie = match (request.jar, hop_url.as_ref()) {
+            (Some(jar), Some(url)) => jar.cookie_field(
+                url,
+                surf_cookie::site(request.initiator, url),
+                match outgoing.method {
+                    Method::Get => surf_cookie::Method::Get,
+                    Method::Post => surf_cookie::Method::Post,
+                },
+                SystemTime::now(),
+            ),
+            _ => None,
+        };
+        let (head, wire) = exchange(&target, &outgoing, cookie.as_deref(), stream, limits)?;
+        drop(cookie);
+        if let (Some(jar), Some(url)) = (request.jar, hop_url.as_ref()) {
+            // A field that is not UTF-8 is no cookie the jar can read: it is dropped.
+            for set_cookie in head.values(b"set-cookie") {
+                if let Ok(set_cookie) = std::str::from_utf8(set_cookie) {
+                    jar.receive(url, set_cookie, SystemTime::now());
+                }
+            }
+        }
+        drop(hop_url);
         let status = head.status;
         // The request is sent: of the address, only what a response needs is kept from here
         // (the crate documentation, "Memory").
@@ -736,12 +801,13 @@ const MAX_REDIRECTS: usize = 20;
 /// [`fetch`] is not checked against it.
 pub const MAX_ADDRESS_BYTES: usize = 65_536;
 
-/// Send the request for `target` on `stream` and read the head of the final (not interim)
-/// response, within the deadline of `stream`. Returns the head and the connection with what is
-/// left of it.
+/// Send the request for `target` on `stream`, with the `Cookie` field `cookie` when there is
+/// one, and read the head of the final (not interim) response, within the deadline of `stream`.
+/// Returns the head and the connection with what is left of it.
 fn exchange(
     target: &Target,
     outgoing: &Outgoing<'_>,
+    cookie: Option<&str>,
     mut stream: Stream,
     limits: &Limits,
 ) -> Result<(Head, Wire<Stream>), Failure> {
@@ -753,6 +819,11 @@ fn exchange(
         target.request_target,
         target.authority
     );
+    if let Some(cookie) = cookie {
+        head.push_str("Cookie: ");
+        head.push_str(cookie);
+        head.push_str("\r\n");
+    }
     if let Some(media_type) = outgoing.media_type {
         head.push_str("Content-Type: ");
         head.push_str(media_type);

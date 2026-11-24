@@ -268,6 +268,8 @@ pub fn fetch_http_from(
                 .as_ref()
                 .map(|media_type| media_type.0.as_str()),
             anchors,
+            jar: None,
+            initiator: None,
         },
         limits,
         network,

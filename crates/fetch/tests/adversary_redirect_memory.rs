@@ -403,6 +403,8 @@ fn a_post_body_is_not_copied() {
         body: Some(&body),
         media_type: Some("application/octet-stream"),
         anchors: None,
+        jar: None,
+        initiator: None,
     };
 
     let (result, held) = held_while(|| send(&request, &limits));
@@ -453,6 +455,8 @@ fn a_post_body_written_twice_is_not_copied_while_it_is_written() {
         body: Some(&body),
         media_type: Some("application/octet-stream"),
         anchors: None,
+        jar: None,
+        initiator: None,
     };
 
     let (result, held) = held_while(|| send(&request, &limits));
