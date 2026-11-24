@@ -2,6 +2,7 @@
 //! A new test file gets its `mod` line here (AGENTS.md, Layout).
 
 mod adversary_limits;
+mod adversary_script_hook;
 mod adversary_tree;
 mod common;
 mod encoding;
