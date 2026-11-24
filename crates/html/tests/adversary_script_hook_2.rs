@@ -269,6 +269,137 @@ fn chain(tree: &mut Tree, length: usize) -> (NodeId, NodeId) {
     (first, last)
 }
 
+// The cases from here to the next such line fail on the tip they were written against
+// (`72de3b9`).
+
+// Item 2 of the coordinator's message: the adoption agency's own moves after a write.
+
+/// Ruling 4 of fix round 1: "The depth limit holds for the tree, not for the stack: after a
+/// hook has written, a parser insertion checks the real depth of the node it inserts under and
+/// stops the parse at the limit". Steps 4.23 and 4.30 of the adoption agency move a subtree and
+/// are not checked. The hook leaves the `body` at the limit's depth (16) and gives the removed
+/// furthest block a chain as high as the limit; each write passes the write surface's own depth
+/// check. `</b>` then moves the furthest block under the `body` (4.23) and puts a new `b`
+/// between it and its children (4.30): the tree is 2N + 1 = 33 elements deep and no limit is
+/// named. The same markup with no hook stays at 4.
+#[test]
+fn the_adoption_agency_moves_a_subtree_past_the_depth_limit_after_writes() {
+    const N: usize = 16;
+    let input = "<body><b id=fmt><p id=fb><script id=s>x</script></b>";
+    let mut hook = Recorder::with(|tree, script| {
+        let fb = tree.parent(script).unwrap();
+        let fmt = tree.parent(fb).unwrap();
+        let body = tree.parent(fmt).unwrap();
+        let html = tree.parent(body).unwrap();
+        tree.remove_node(fb).unwrap();
+        tree.remove_node(fmt).unwrap();
+        let (first, last) = chain(tree, N - 2);
+        tree.append_child(html, first).unwrap();
+        tree.append_child(last, body).unwrap();
+        let (first, _) = chain(tree, N - 1);
+        tree.append_child(fb, first).unwrap();
+    });
+    let tree = parse_document_with_hook(input, &deep(N), &mut hook);
+    assert_a_tree(&tree, &[], input);
+    let without = parse_document(input, &deep(N));
+    assert!(max_element_depth(&without) <= N);
+    let depth = max_element_depth(&tree);
+    assert!(
+        depth <= N,
+        "limit {N}: the tree is {depth} elements deep, stopped by {:?}",
+        tree.stopped_by()
+    );
+}
+
+fn namespace_of(tree: &Tree, node: NodeId) -> Namespace {
+    match tree.data(node) {
+        NodeData::Element { namespace, .. } => *namespace,
+        other => panic!("not an element: {other:?}"),
+    }
+}
+
+// Item 5 of the coordinator's message: lookups of attributes after a write.
+
+/// An HTML integration point is "a MathML `annotation-xml` element whose start tag token had
+/// an attribute with the name `encoding`" of `text/html` (HTML Standard 13.2.6, "HTML
+/// integration point"); `foreign.rs:264` says so too ("whose start tag had"). The tree
+/// builder reads the element's attributes instead, so a hook's write changes where later
+/// markup goes: after the hook removes `encoding`, `<foo>` is a MathML element (it must be an
+/// HTML one); after the hook sets it on an `annotation-xml` whose start tag had none, `<foo>`
+/// is an HTML element (it must be a MathML one).
+#[test]
+fn a_write_to_encoding_does_not_change_an_annotation_xml_integration_point() {
+    let removed = "<math><annotation-xml id=ax encoding=text/html><script id=s>x</script>\
+                   <foo id=f></foo></annotation-xml></math>";
+    let added = "<math><annotation-xml id=ax><svg><foreignObject><script id=s>x</script>\
+                 </foreignObject></svg><foo id=f></foo></annotation-xml></math>";
+    /// An input, the namespace `<foo>` gets by its start tag, and the hook's write.
+    type Case = (&'static str, Namespace, fn(&mut Tree, NodeId));
+    let cases: [Case; 2] = [
+        (removed, Namespace::Html, |tree, ax| {
+            tree.remove_attribute(ax, "encoding").unwrap();
+        }),
+        (added, Namespace::MathMl, |tree, ax| {
+            tree.set_attribute(ax, "encoding", "text/html").unwrap();
+        }),
+    ];
+    let mut wrong = Vec::new();
+    for (input, expected, write) in cases {
+        let without = parse_document(input, &scripted());
+        assert_eq!(
+            namespace_of(&without, by_id(&without, "f")),
+            expected,
+            "{input}"
+        );
+        let mut hook = Recorder::with(move |tree, _| {
+            let ax = by_id(tree, "ax");
+            write(tree, ax);
+        });
+        let tree = parse_document_with_hook(input, &scripted(), &mut hook);
+        assert_eq!(
+            named(&tree, &hook.calls),
+            [("s".to_string(), None)],
+            "{input}"
+        );
+        let got = namespace_of(&tree, by_id(&tree, "f"));
+        if got != expected {
+            wrong.push(format!(
+                "`{input}`: <foo> in {got:?}, expected {expected:?}"
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+// Item 4 of the coordinator's message: the switch "a hook wrote".
+
+/// The parse with a hook is that of [`parse_document`] when the hook "writes nothing"
+/// (`lib.rs`, `parse_document_with_hook`), and ruling 4 of fix round 1 keeps the depth check
+/// "behind 'a hook wrote'" so that such a parse "must not pay for it". A write that moves the
+/// script's text to where it already is changes no node, but turns the switch on, and the
+/// markup after it, which makes a tree deeper than the stack, then parses to another tree.
+#[test]
+fn a_write_that_changes_nothing_leaves_the_markup_after_it_as_without_a_hook() {
+    const N: usize = 16;
+    let without = parse_document(DEEPER_THAN_THE_STACK, &deep(N));
+    let mut hook = Recorder::with(|tree, script| {
+        let text = tree.children(script)[0];
+        tree.append_child(script, text).unwrap();
+    });
+    let tree = parse_document_with_hook(DEEPER_THAN_THE_STACK, &deep(N), &mut hook);
+    assert!(
+        tree == without,
+        "without a hook: {} deep, stopped by {:?}; after the write: {} deep, stopped by {:?}, \
+         {} nodes against {}",
+        max_element_depth(&without),
+        without.stopped_by(),
+        max_element_depth(&tree),
+        tree.stopped_by(),
+        tree.node_count(),
+        without.node_count()
+    );
+}
+
 // The cases below held on the tip they were written against (`72de3b9`).
 
 // Item 1 of the coordinator's message: a parser insertion the tree refuses.
