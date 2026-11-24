@@ -1,7 +1,10 @@
 //! The bound on nested types: a named type alone is 1 deep, `sequence<DOMString>` and
-//! `(A or B)` 2 deep; past 32 levels a type is refused, never read by deeper recursion.
+//! `(A or B)` 2 deep; past 32 levels a type is refused, never read by deeper recursion. And the
+//! time of a model of many definitions.
 
-use surf_webidl::read;
+use std::time::{Duration, Instant};
+
+use surf_webidl::{Model, read};
 
 const FILE: &str = "test.idl";
 
@@ -43,6 +46,29 @@ fn types_32_deep_are_read() {
 fn types_33_deep_are_refused() {
     assert_eq!(refused(&sequences(33)), REFUSED);
     assert_eq!(refused(&unions(33)), REFUSED);
+}
+
+/// `Model::new` finds each name through one map built once, not by a scan of every definition
+/// per statement: 16,000 interfaces, each with one `includes` of one mixin, read and modelled
+/// within 2 s.
+#[test]
+fn a_model_of_16000_interfaces_is_built_within_2_s() {
+    let mut text = String::new();
+    for i in 0..16_000 {
+        text.push_str(&format!("interface A{i} {{}};\nA{i} includes M;\n"));
+    }
+    text.push_str("interface mixin M {\n  undefined f();\n};\n");
+    let start = Instant::now();
+    let definitions = read(&text, FILE).unwrap_or_else(|error| panic!("{error}"));
+    let read_time = start.elapsed();
+    let model = Model::new(definitions).unwrap_or_else(|error| panic!("{error}"));
+    let total = start.elapsed();
+    println!(
+        "16000 interfaces: read {read_time:?}, model {:?}, together {total:?}",
+        total - read_time
+    );
+    assert_eq!(model.counts("A15999").from_mixins, 1);
+    assert!(total < Duration::from_secs(2), "{total:?}");
 }
 
 #[test]

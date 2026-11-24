@@ -334,33 +334,70 @@ pub struct Unresolved {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Model {
     definitions: Vec<Definition>,
+    /// For each name a definition defines ([`defines`]), the index of that definition.
+    defined: BTreeMap<String, usize>,
+    /// For each name, the indices of every definition of that name, in the order given.
+    named: BTreeMap<String, Vec<usize>>,
+}
+
+/// Whether `definition` defines its name: all but a `partial interface` and `includes`.
+fn defines(definition: &Definition) -> bool {
+    !matches!(
+        definition.kind,
+        DefinitionKind::Includes { .. } | DefinitionKind::Interface { partial: true, .. }
+    )
+}
+
+/// What a definition is, as the refusals name it.
+fn kind_name(kind: &DefinitionKind) -> &'static str {
+    match kind {
+        DefinitionKind::Dictionary { .. } => "dictionary",
+        _ => "interface",
+    }
 }
 
 impl Model {
-    /// The model of `definitions`, in the order given.
+    /// The model of `definitions`, in the order given. It builds one map from each name to its
+    /// definitions, then refuses, in this order, each check over all definitions before the
+    /// next:
+    /// 1. a name two definitions define, naming the second and the first;
+    /// 2. a `partial interface` of a name defined as something other than an interface;
+    /// 3. `A includes B;` where `B` is defined as no interface mixin or `A` as no interface;
+    /// 4. an interface or a dictionary that inherits from a definition of another kind, then a
+    ///    cycle of inheritance of any length;
+    /// 5. a name twice among the members of an interface merged with its partials and the
+    ///    mixins it includes ([`Model::members`]): two operations are an overload; an
+    ///    operation, an attribute or a constant of one name with any other member of that
+    ///    name is a second member.
+    ///
+    /// A name no definition defines is not refused; [`Model::unresolved`] lists it.
     pub fn new(definitions: Vec<Definition>) -> Result<Model, ReadError> {
-        let model = Model { definitions };
-        model.check_names()?;
+        let mut model = Model {
+            definitions,
+            defined: BTreeMap::new(),
+            named: BTreeMap::new(),
+        };
+        model.index()?;
+        model.check_partials()?;
         model.check_includes()?;
-        model.check_overloads()?;
+        model.check_inheritance()?;
+        model.check_members()?;
         Ok(model)
     }
 
-    /// The definitions that define a name: all but `partial interface` and `includes`.
-    fn defining(&self) -> impl Iterator<Item = &Definition> {
-        self.definitions.iter().filter(|definition| {
-            !matches!(
-                definition.kind,
-                DefinitionKind::Includes { .. } | DefinitionKind::Interface { partial: true, .. }
-            )
-        })
-    }
-
-    /// Refuses a name that two definitions define, naming the second and the first.
-    fn check_names(&self) -> Result<(), ReadError> {
-        let mut first: BTreeMap<&str, &Definition> = BTreeMap::new();
-        for definition in self.defining() {
-            if let Some(earlier) = first.get(definition.name.as_str()) {
+    /// Builds [`Model::defined`] and [`Model::named`]; refuses a name that two definitions
+    /// define, naming the second and the first.
+    fn index(&mut self) -> Result<(), ReadError> {
+        for (index, definition) in self.definitions.iter().enumerate() {
+            self.named
+                .entry(definition.name.clone())
+                .or_default()
+                .push(index);
+            if !defines(definition) {
+                continue;
+            }
+            if let Some(&first) = self.defined.get(&definition.name) {
+                let earlier = &self.definitions[first];
                 return Err(ReadError::new(
                     &definition.file,
                     definition.line,
@@ -370,14 +407,49 @@ impl Model {
                     ),
                 ));
             }
-            first.insert(&definition.name, definition);
+            self.defined.insert(definition.name.clone(), index);
+        }
+        Ok(())
+    }
+
+    /// The definition that defines `name`, if one does.
+    fn definition_of(&self, name: &str) -> Option<&Definition> {
+        self.defined
+            .get(name)
+            .map(|&index| &self.definitions[index])
+    }
+
+    /// Refuses a `partial interface D` where `D` is defined as something other than an
+    /// interface, naming the partial and the definition.
+    fn check_partials(&self) -> Result<(), ReadError> {
+        for partial in &self.definitions {
+            if !matches!(
+                partial.kind,
+                DefinitionKind::Interface { partial: true, .. }
+            ) {
+                continue;
+            }
+            if let Some(full) = self.definition_of(&partial.name)
+                && !matches!(full.kind, DefinitionKind::Interface { .. })
+            {
+                return Err(ReadError::new(
+                    &partial.file,
+                    partial.line,
+                    format!(
+                        "`partial interface {name}`, where `{name}` is no interface, defined at {}:{}",
+                        full.file,
+                        full.line,
+                        name = partial.name
+                    ),
+                ));
+            }
         }
         Ok(())
     }
 
     /// Refuses `A includes B;` where `B` is defined and is no interface mixin, or `A` is defined
-    /// and is no interface, naming the statement. An undefined name is left to
-    /// [`Model::unresolved`].
+    /// and is no interface (a `partial interface` defines no name), naming the statement. An
+    /// undefined name is left to [`Model::unresolved`].
     fn check_includes(&self) -> Result<(), ReadError> {
         for statement in &self.definitions {
             let DefinitionKind::Includes { mixin } = &statement.kind else {
@@ -390,19 +462,13 @@ impl Model {
                     format!("`{} includes {}`, where {what}", statement.name, mixin.name),
                 ))
             };
-            if let Some(definition) = self.defining().find(|d| d.name == mixin.name)
+            if let Some(definition) = self.definition_of(&mixin.name)
                 && !matches!(definition.kind, DefinitionKind::InterfaceMixin { .. })
             {
                 return refuse(format!("`{}` is no interface mixin", mixin.name));
             }
-            let mut named = self
-                .definitions
-                .iter()
-                .filter(|d| d.name == statement.name)
-                .filter(|d| !matches!(d.kind, DefinitionKind::Includes { .. }))
-                .peekable();
-            if named.peek().is_some()
-                && !named.any(|d| matches!(d.kind, DefinitionKind::Interface { .. }))
+            if let Some(definition) = self.definition_of(&statement.name)
+                && !matches!(definition.kind, DefinitionKind::Interface { .. })
             {
                 return refuse(format!("`{}` is no interface", statement.name));
             }
@@ -410,32 +476,152 @@ impl Model {
         Ok(())
     }
 
-    /// Refuses an operation name twice in the merged view of an interface (its definitions and
-    /// the mixins it includes, [`Model::members`]), naming the file and line of the second.
-    fn check_overloads(&self) -> Result<(), ReadError> {
+    /// The index of the definition `definitions[index]` inherits from, if it inherits and that
+    /// name is defined.
+    fn parent_of(&self, index: usize) -> Option<usize> {
+        match &self.definitions[index].kind {
+            DefinitionKind::Interface {
+                inherits: Some(parent),
+                ..
+            }
+            | DefinitionKind::Dictionary {
+                inherits: Some(parent),
+                ..
+            } => self.defined.get(&parent.name).copied(),
+            _ => None,
+        }
+    }
+
+    /// Refuses an interface or a dictionary whose parent is defined as another kind, naming
+    /// both; then a cycle of inheritance, naming each definition of the cycle from the one
+    /// read first. Each chain is walked once, in a loop.
+    fn check_inheritance(&self) -> Result<(), ReadError> {
+        for (index, child) in self.definitions.iter().enumerate() {
+            let Some(parent) = self
+                .parent_of(index)
+                .map(|parent| &self.definitions[parent])
+            else {
+                continue;
+            };
+            let same = matches!(
+                (&child.kind, &parent.kind),
+                (
+                    DefinitionKind::Interface { .. },
+                    DefinitionKind::Interface { .. }
+                ) | (
+                    DefinitionKind::Dictionary { .. },
+                    DefinitionKind::Dictionary { .. }
+                )
+            );
+            if !same {
+                return Err(ReadError::new(
+                    &child.file,
+                    child.line,
+                    format!(
+                        "`{} : {}`, where `{}` is no {}, defined at {}:{}",
+                        child.name,
+                        parent.name,
+                        parent.name,
+                        kind_name(&child.kind),
+                        parent.file,
+                        parent.line
+                    ),
+                ));
+            }
+        }
+        // 0: not walked yet; 1: on the chain being walked; 2: its chain ends without a cycle.
+        let mut state = vec![0u8; self.definitions.len()];
+        for start in 0..self.definitions.len() {
+            let mut chain = Vec::new();
+            let mut at = Some(start);
+            while let Some(index) = at {
+                match state[index] {
+                    0 => {
+                        state[index] = 1;
+                        chain.push(index);
+                        at = self.parent_of(index);
+                    }
+                    1 => {
+                        let from = chain
+                            .iter()
+                            .position(|&on| on == index)
+                            .expect("on the chain");
+                        return Err(self.cycle(&chain[from..]));
+                    }
+                    _ => break,
+                }
+            }
+            for index in chain {
+                state[index] = 2;
+            }
+        }
+        Ok(())
+    }
+
+    /// The refusal of the inheritance cycle `cycle` (each inherits from the next, the last
+    /// from the first), named from the definition read first.
+    fn cycle(&self, cycle: &[usize]) -> ReadError {
+        let first = (0..cycle.len())
+            .min_by_key(|&at| cycle[at])
+            .expect("a cycle has a definition");
+        let mut names = Vec::new();
+        for step in 0..cycle.len() {
+            let definition = &self.definitions[cycle[(first + step) % cycle.len()]];
+            names.push(format!(
+                "`{}` at {}:{}",
+                definition.name, definition.file, definition.line
+            ));
+        }
+        let head = &self.definitions[cycle[first]];
+        ReadError::new(
+            &head.file,
+            head.line,
+            format!(
+                "a cycle of inheritance: {}, then `{}` again",
+                names.join(", "),
+                head.name
+            ),
+        )
+    }
+
+    /// Refuses a name twice among the merged members of an interface (its definitions and
+    /// the mixins it includes, [`Model::members`]), naming the file and line of the second:
+    /// two operations as an overload, any other pair as a second member with the first's
+    /// place.
+    fn check_members(&self) -> Result<(), ReadError> {
         let mut interfaces: Vec<&str> = Vec::new();
+        let mut seen = BTreeSet::new();
         for definition in &self.definitions {
             if matches!(
                 definition.kind,
                 DefinitionKind::Interface { .. } | DefinitionKind::Includes { .. }
-            ) && !interfaces.contains(&definition.name.as_str())
+            ) && seen.insert(definition.name.as_str())
             {
                 interfaces.push(&definition.name);
             }
         }
         for interface in interfaces {
             let (own, mixins) = self.located_parts(interface);
-            let mut operations = BTreeSet::new();
+            let mut first: BTreeMap<&str, (&str, &Member)> = BTreeMap::new();
             for (file, member) in own.into_iter().chain(mixins) {
-                if let (MemberKind::Operation { .. }, Some(name)) = (&member.kind, &member.name)
-                    && !operations.insert(name.as_str())
-                {
-                    return Err(ReadError::new(
-                        file,
-                        member.line,
-                        format!("an overload: a second operation `{name}` in `{interface}`"),
-                    ));
-                }
+                let Some(name) = &member.name else {
+                    continue;
+                };
+                let Some((first_file, earlier)) = first.get(name.as_str()) else {
+                    first.insert(name, (file, member));
+                    continue;
+                };
+                let operation =
+                    |member: &Member| matches!(member.kind, MemberKind::Operation { .. });
+                let construct = if operation(earlier) && operation(member) {
+                    format!("an overload: a second operation `{name}` in `{interface}`")
+                } else {
+                    format!(
+                        "a second member `{name}` in `{interface}`, the first at {first_file}:{}",
+                        earlier.line
+                    )
+                };
+                return Err(ReadError::new(file, member.line, construct));
             }
         }
         Ok(())
@@ -467,10 +653,7 @@ impl Model {
     fn located_parts(&self, interface: &str) -> (Located<'_>, Located<'_>) {
         let mut own = Vec::new();
         let mut mixins = Vec::new();
-        for definition in &self.definitions {
-            if definition.name != interface {
-                continue;
-            }
+        for definition in self.all_named(interface) {
             match &definition.kind {
                 DefinitionKind::Interface { members, .. } => own.extend(
                     members
@@ -486,10 +669,17 @@ impl Model {
         (own, mixins)
     }
 
+    /// Every definition of `name`, in the order given, found through [`Model::named`].
+    fn all_named(&self, name: &str) -> impl Iterator<Item = &Definition> {
+        self.named
+            .get(name)
+            .into_iter()
+            .flatten()
+            .map(|&index| &self.definitions[index])
+    }
+
     fn mixin_members(&self, mixin: &str) -> Vec<(&str, &Member)> {
-        self.definitions
-            .iter()
-            .filter(|definition| definition.name == mixin)
+        self.all_named(mixin)
             .flat_map(|definition| {
                 let members = match &definition.kind {
                     DefinitionKind::InterfaceMixin { members } => members.as_slice(),
@@ -553,18 +743,6 @@ impl Model {
     /// read defines (a `partial interface` and an `includes` define no name), one entry per
     /// place it is written, sorted by name, file and line.
     pub fn unresolved(&self) -> Vec<Unresolved> {
-        let defined: BTreeSet<&str> = self
-            .definitions
-            .iter()
-            .filter(|definition| {
-                !matches!(
-                    definition.kind,
-                    DefinitionKind::Includes { .. }
-                        | DefinitionKind::Interface { partial: true, .. }
-                )
-            })
-            .map(|definition| definition.name.as_str())
-            .collect();
         let mut out = Vec::new();
         for definition in &self.definitions {
             let mut names: Vec<(String, usize)> = Vec::new();
@@ -593,7 +771,7 @@ impl Model {
                 }
             });
             for (name, line) in names {
-                if !defined.contains(name.as_str()) {
+                if !self.defined.contains_key(&name) {
                     out.push(Unresolved {
                         name,
                         file: definition.file.clone(),

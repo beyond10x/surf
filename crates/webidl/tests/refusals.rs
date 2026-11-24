@@ -122,6 +122,11 @@ fn type_extended_attribute_before_a_definition() {
     );
 }
 
+/// The error the model of `text`, read as [`FILE`], fails with.
+fn one_file_refused(text: &str) -> String {
+    model_refused(&[(FILE, text)])
+}
+
 #[test]
 fn a_member_extended_attribute_on_a_type() {
     let construct = |name: &str| {
@@ -166,6 +171,107 @@ fn a_type_extended_attribute_before_and_on_the_type() {
         "dictionary D {\n  [LegacyNullToEmptyString] required\n  [LegacyNullToEmptyString] DOMString s;\n};",
         3,
         "the extended attribute `[LegacyNullToEmptyString]` twice on one type",
+    );
+}
+
+#[test]
+fn a_partial_interface_of_what_is_no_interface() {
+    for definition in [
+        "dictionary D {};",
+        "interface mixin D {};",
+        "enum D { \"a\" };",
+        "typedef DOMString D;",
+        "callback D = undefined ();",
+        "callback interface D {};",
+    ] {
+        let text =
+            format!("{definition}\n\npartial interface D {{\n  readonly attribute any x;\n}};");
+        assert_eq!(
+            one_file_refused(&text),
+            format!(
+                "{FILE}:3: refused: `partial interface D`, where `D` is no interface, defined at {FILE}:1"
+            ),
+            "{definition}"
+        );
+    }
+}
+
+#[test]
+fn inheritance_from_another_kind() {
+    assert_eq!(
+        one_file_refused("dictionary D {};\ninterface A : D {};"),
+        format!("{FILE}:2: refused: `A : D`, where `D` is no interface, defined at {FILE}:1")
+    );
+    assert_eq!(
+        one_file_refused("interface I {};\n\ndictionary D : I {};"),
+        format!("{FILE}:3: refused: `D : I`, where `I` is no dictionary, defined at {FILE}:1")
+    );
+    assert_eq!(
+        one_file_refused("interface mixin M {};\ninterface A : M {};"),
+        format!("{FILE}:2: refused: `A : M`, where `M` is no interface, defined at {FILE}:1")
+    );
+}
+
+#[test]
+fn inheritance_cycle() {
+    assert_eq!(
+        one_file_refused("\ninterface A : A {};"),
+        format!("{FILE}:2: refused: a cycle of inheritance: `A` at {FILE}:2, then `A` again")
+    );
+    assert_eq!(
+        one_file_refused("interface A : B {};\ninterface B : A {};"),
+        format!(
+            "{FILE}:1: refused: a cycle of inheritance: `A` at {FILE}:1, `B` at {FILE}:2, then `A` again"
+        )
+    );
+    assert_eq!(
+        one_file_refused(
+            "interface X : B {};\ndictionary E {};\ninterface C : B {};\ninterface B : C {};"
+        ),
+        format!(
+            "{FILE}:3: refused: a cycle of inheritance: `C` at {FILE}:3, `B` at {FILE}:4, then `C` again"
+        )
+    );
+    assert_eq!(
+        one_file_refused("dictionary A : B {};\ndictionary B : C {};\ndictionary C : A {};"),
+        format!(
+            "{FILE}:1: refused: a cycle of inheritance: `A` at {FILE}:1, `B` at {FILE}:2, `C` at {FILE}:3, then `A` again"
+        )
+    );
+}
+
+#[test]
+fn two_members_of_one_name() {
+    let second = |line: usize, name: &str, first: usize| {
+        format!(
+            "{FILE}:{line}: refused: a second member `{name}` in `A`, the first at {FILE}:{first}"
+        )
+    };
+    assert_eq!(
+        one_file_refused(
+            "interface A {\n  readonly attribute DOMString x;\n  readonly attribute DOMString x;\n};"
+        ),
+        second(3, "x", 2)
+    );
+    assert_eq!(
+        one_file_refused("interface A {\n  attribute unsigned long x;\n\n  undefined x();\n};"),
+        second(4, "x", 2)
+    );
+    assert_eq!(
+        one_file_refused("interface A {\n  undefined x();\n  const unsigned long x = 1;\n};"),
+        second(3, "x", 2)
+    );
+    assert_eq!(
+        one_file_refused(
+            "interface A {\n  const unsigned long X = 1;\n};\npartial interface A {\n  readonly attribute unsigned long X;\n};"
+        ),
+        second(5, "X", 2)
+    );
+    assert_eq!(
+        one_file_refused(
+            "interface A {};\ninterface mixin M {\n  readonly attribute DOMString x;\n};\nA includes M;\nA includes M;"
+        ),
+        second(3, "x", 3)
     );
 }
 

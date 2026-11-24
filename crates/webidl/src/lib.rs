@@ -61,9 +61,14 @@
 //! `record`, `FrozenArray`, `long`, `float`, `byte`, `octet`, `bigint`, `ByteString`, floating
 //! point constants and the defaults `[]` and `undefined`.
 //!
-//! [`Model::new`] also refuses a name that two definitions define (a `partial interface` and an
-//! `includes` define none), naming both, and `A includes B;` where `B` is defined and is no
-//! interface mixin or `A` is defined and is no interface.
+//! [`Model::new`] also refuses, in the order its doc gives: a name that two definitions define
+//! (a `partial interface` and an `includes` define none), naming both; a `partial interface`
+//! of a name defined as no interface; `A includes B;` where `B` is defined and is no interface
+//! mixin or `A` is defined and is no interface; an interface or a dictionary that inherits from
+//! a definition of another kind, and a cycle of inheritance; and a member name twice in the
+//! merged view of an interface (an attribute, an operation or a constant with another member
+//! of that name). A name no definition defines is listed by [`Model::unresolved`], not
+//! refused.
 //!
 //! A type that nests deeper than [`MAX_TYPE_DEPTH`] levels is refused too, so a hostile text
 //! cannot drive the recursion of the type parser past that many calls.
