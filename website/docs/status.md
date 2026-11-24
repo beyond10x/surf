@@ -7,13 +7,14 @@ description: Where surf stands, in the numbers its gate prints.
 
 surf is young, and not a browser for daily use. It loads one address from the command line and
 prints what happened, and on Linux `surf-agent` drives a session. It loads `http:`
-addresses, and `https:` ones since release `0.7.0`. It has no window, no rendering and no
-JavaScript yet.
+addresses, and `https:` ones since release `0.7.0`; since release `0.8.0` an agent session
+keeps cookies. It has no window, no rendering and no JavaScript yet.
 
 ## Numbers
 
 On 2026-11-24, with ess 0.97.4, after round 2, which follows round 1 and wave 10 of the current
-plan, after the live view's control states and changed panel, and after TLS 1.3 and `https:`:
+plan, after the live view's control states and changed panel, after TLS 1.3 and `https:`, and
+after the cookie jar and `surf-agent help --for-agent` (the gate run on `eb97549`):
 
 | what | value |
 |---|---|
@@ -29,7 +30,7 @@ plan, after the live view's control states and changed panel, and after TLS 1.3 
 | third-party crates in what ships | 0 up to release `0.6.0`; since release `0.7.0`, ring 0.17.14 and the four crates it needs, for the cryptographic primitives of TLS, through `surf-tls` alone |
 | unsafe code | forbidden in every hand-written crate; three test files hold a counting allocator |
 | standard sections marked complete | 0 |
-| roadmap | 10 of 22 waves delivered, and round 2 delivered the step after wave 18 (follow, fill, press, back, forward, what changed); release `0.4.0` follows round 1, release `0.5.0` round 2, release `0.6.0` the live view's control states and release `0.7.0` TLS 1.3 and `https:` ([releases](https://github.com/beyond10x/surf/releases)) |
+| roadmap | 10 of 22 waves delivered, and round 2 delivered the step after wave 18 (follow, fill, press, back, forward, what changed); release `0.4.0` follows round 1, release `0.5.0` round 2, release `0.6.0` the live view's control states, release `0.7.0` TLS 1.3 and `https:` and release `0.8.0` the cookie jar and `surf-agent help --for-agent` ([releases](https://github.com/beyond10x/surf/releases)) |
 
 ## What is not checked yet
 

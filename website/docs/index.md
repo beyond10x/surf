@@ -30,7 +30,7 @@ runs no script today.
 surf has no window, no rendering and no JavaScript yet. It loads one address from the command
 line and prints what happened; `surf-agent` does the same for an agent, one call at a time, and
 shows a page as text when asked. It loads `http:` addresses, and `https:` ones since release
-`0.7.0`.
+`0.7.0`; since release `0.8.0` an agent session keeps cookies.
 
 :::
 

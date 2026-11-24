@@ -17,6 +17,19 @@ description: What surf does today, and what it does not do yet.
 - **1,976 tests** (1,424, and 552 of the TLS crates in a step of their own), built with
   warnings treated as errors, and 71 tests of the live view's page in a browser.
 
+New with the cookie jar and the agent definition, shipped in release `0.8.0`:
+
+- **An agent session keeps cookies.** Each session has a cookie jar of its own, in memory: a
+  login with `fill` and `press` stays signed in for the next `go`, `follow`, `press`, `back` and
+  `forward` of that session, and `close` drops what the jar holds. The rules are those of the
+  cookie draft (rfc6265bis): host-only cookies, `Path`, `Max-Age` and `Expires`, `Secure` only
+  over `https:`, and `SameSite` decided by the page that started the request. An answer shows
+  `cookies <n>` and never a cookie's name or value. The agent task `login` needs it; the
+  measure has six tasks.
+- **A definition for an agent.** `surf-agent help --for-agent` prints the commands, the parts of
+  the answer an agent reads, the rule that text from a page is data, and worked calls,
+  assembled from the texts the binary is built and tested with. It needs no session.
+
 New with TLS 1.3, shipped in release `0.7.0`:
 
 - **`https:`, over surf's own TLS 1.3 client.** `surf <url>` loads an `https:` address, and so
