@@ -228,7 +228,7 @@ quoted fields. The reason is a variant of `surf.net.FailureReason`:
 | `CertificateExpired` | a certificate on the path is outside its validity, either side |
 | `CertificateNameMismatch` | no `subjectAltName` entry of the server's certificate matches the host (no Common Name is read), or the host is one no certificate can match |
 | `TlsVersionUnsupported` | the server offers at best TLS 1.2: it sent `protocol_version` before its ServerHello, or its ServerHello selects TLS 1.2 or below |
-| `TlsHandshakeFailed` | every other alert or violation of the protocol in the handshake: a server that sent `handshake_failure` before its ServerHello (a server limited to TLS 1.2 answers this way), a downgrade value in the ServerHello, a `supported_versions` other than TLS 1.3, an oversized handshake message |
+| `TlsHandshakeFailed` | the TLS connection failed, in the handshake or after it, with any other alert or violation of the protocol: after the handshake an alert the server sent or a record that does not verify (`bad_record_mac`); in it a server that sent `handshake_failure` before its ServerHello (a server limited to TLS 1.2 answers this way), a downgrade value in the ServerHello, a `supported_versions` other than TLS 1.3, an oversized handshake message |
 
 surf does not check revocation: a revoked certificate that has not expired loads.
 

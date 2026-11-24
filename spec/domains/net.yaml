@@ -79,8 +79,8 @@ types:
       # TLS 1.2 answers this way (kind (b) of item 7 of `docs/design/tls.md`).
       - name: TlsHandshakeFailed
         summary: >-
-          The TLS handshake ended with an alert or a violation of the protocol that no other
-          reason names.
+          The TLS connection failed, in the handshake or after it, with an alert or a violation
+          of the protocol that no other reason names (a record that does not verify among them).
     naming:
       summary: Why a request ended without a response.
 
