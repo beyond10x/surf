@@ -308,6 +308,49 @@ const NODES: Answers = Answers {
     text_uncharged: false,
 };
 
+/// Red. Q4 (`docs/design/scripts.md`, "parser: nodes"): a write that would make one more node
+/// is refused and the script ends `limit: nodes`; decision 9 ends it "even under a `catch`".
+/// Without a `catch` the throw of `end_with_limit` leaves the entry first: the engine reads the
+/// interrupt only after a host call that returned normally, so the entry ends `Throw`, and
+/// `Runner::document_end` clears the record and the interrupt and answers `threw`.
+#[test]
+fn a_limit_not_caught_ends_the_script_at_the_limit() {
+    let log = Log::default();
+    let (end, after, record) = with(limits(), &log, NODES, |runner| {
+        let end = evaluate(runner, r#"document.createElement("p");"#);
+        let record = recorded(runner);
+        (end, runner.evaluate("1"), record)
+    });
+    assert_eq!(after, ScriptEnd::Ran, "the next script");
+    assert_eq!(record, None, "the record cleared");
+    assert_eq!(end, ScriptEnd::Limit(Reason::Nodes), "{end}");
+}
+
+/// Red. The same limit, caught and then left by another throw before the engine's next read
+/// of the interrupt: rethrown, a `finally` over another throw, and a new error in the `catch`.
+#[test]
+fn a_limit_left_by_another_throw_ends_the_script_at_the_limit() {
+    let sources = [
+        r#"try { document.createElement("p"); } catch (e) { throw e; }"#,
+        r#"try { throw 1; } finally { try { document.createElement("p"); } catch (e) {} }"#,
+        r#"try { document.createElement("p"); } catch (e) { throw new Error("after"); }"#,
+    ];
+    let mut ends = Vec::new();
+    for source in sources {
+        let log = Log::default();
+        ends.push(with(limits(), &log, NODES, |runner| {
+            evaluate(runner, source)
+        }));
+    }
+    let wrong: Vec<String> = sources
+        .iter()
+        .zip(&ends)
+        .filter(|(_, end)| **end != ScriptEnd::Limit(Reason::Nodes))
+        .map(|(source, end)| format!("{source} -> {end}"))
+        .collect();
+    assert!(wrong.is_empty(), "not `limit: nodes`: {wrong:#?}");
+}
+
 /// Held. After a member reported a limit under a `catch`, a call that follows the `catch` does
 /// not reach the slice again (the engine reads the interrupt first), so a second limit cannot
 /// replace the first in the record.
@@ -371,6 +414,68 @@ fn the_next_script_inherits_no_limit() {
     assert_ne!(first, ScriptEnd::Ran);
     assert_eq!(record, None);
     assert_eq!(second, ScriptEnd::Ran, "{second}");
+}
+
+/// Red (a state this unit's own `Wrap` does not reach). `unwrap_node` throws its `TypeError`
+/// from inside `with_dom`, while the bindings are out of the host: `type_error` finds no realm
+/// (`realm_of`), answers `Terminated(EngineFault)`, and the agent is faulted for good. The
+/// message "an object that is no node of this document" can never reach a script.
+#[test]
+fn a_wrapper_the_hook_does_not_know_is_a_type_error() {
+    let log = Log::default();
+    let answers = Answers {
+        create_limits: &[],
+        refuse_unwrap_of: Some("pi"),
+        text_uncharged: false,
+    };
+    let (end, next) = with(limits(), &log, answers, |runner| {
+        let end = evaluate(
+            runner,
+            r#"var caught = null;
+               try { pi.hasChildNodes(); } catch (e) { caught = e; }
+               check(caught instanceof TypeError, "a TypeError: " + caught);"#,
+        );
+        (end, runner.evaluate("1"))
+    });
+    assert_eq!(
+        (end.clone(), next.clone()),
+        (ScriptEnd::Ran, ScriptEnd::Ran),
+        "{end}; {next}"
+    );
+}
+
+/// Red. Web IDL 3.7.9 (vendored `webidl.html`, "If definition has an indexed property
+/// getter, then: Perform DefineMethodProperty(target, %Symbol.iterator%,
+/// %Array.prototype.values%, false)"): `HTMLCollection` has `getter Element? item(unsigned
+/// long index)`, so its prototype has `@@iterator`. The generated spec says `iterable: false`.
+#[test]
+fn html_collection_has_the_array_iterator() {
+    let log = Log::default();
+    with(limits(), &log, Answers::default(), |runner| {
+        ran(
+            runner,
+            r#"var d = desc(HTMLCollection.prototype, Symbol.iterator);
+               check(d !== undefined, "HTMLCollection.prototype[@@iterator] is missing");
+               check(d.value === Array.prototype.values && d.writable && !d.enumerable
+                 && d.configurable, "its attributes");"#,
+        );
+    });
+}
+
+/// Red. Web IDL's attribute setter (3.7.6, vendored `webidl.html`: "Let V be undefined. If any
+/// arguments were passed, then set V to the value of the first argument passed.") throws no
+/// `TypeError` for a call without an argument; the generated setters call `required(.., 1,
+/// ..)`. `Element.id`'s setter called with none converts `undefined` to "undefined".
+#[test]
+fn an_attribute_setter_without_an_argument_converts_undefined() {
+    let log = Log::default();
+    with(limits(), &log, Answers::default(), |runner| {
+        ran(runner, r#"desc(Element.prototype, "id").set.call(el);"#);
+    });
+    assert_eq!(
+        log.attributes(),
+        [("id".to_string(), "undefined".to_string())]
+    );
 }
 
 const INTERFACES: &str = r#"["EventTarget", "Node", "Element", "Document", "CharacterData",
