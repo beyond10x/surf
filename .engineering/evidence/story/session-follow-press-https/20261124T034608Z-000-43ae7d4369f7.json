@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T03:46:08Z",
+  "actor": "human:operator",
+  "artifact": "story:session-follow-press-https",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "correction of the evidence entry of 2026-11-24T03:45:42Z on this story",
+    "reference": "its source says the critics read from 04:35 to 04:50 CET; that span was written without reading the clock. Read from the session's clock and the plan commits: the three critics started at 04:34 CET and the last verdict came at 04:45 CET. Verdicts and counts stand as written"
+  }
+}

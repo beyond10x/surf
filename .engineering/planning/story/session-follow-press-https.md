@@ -2,14 +2,17 @@
 format: aep.planning-md/3
 id: story:session-follow-press-https
 kind: story
-status: draft
+status: active
 title: 'follow and press load https: targets with the session''s anchors'
 summary: 'a session that reached an https: page takes its links and sends its forms: follow and press load https: targets through the session''s trust anchors; every other scheme stays refused'
 relations:
 - decomposes: epic:tls-https
 - depends_on: story:tls-session-anchors
 - informed_by: story:tls-session-anchors
-revision: 4
+revision: 6
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T03:45:42Z", actor: "human:operator", revision: 5, decided_on: {"recorded":{"verification":1}}}
+- {from: "proposed", to: "active", at: "2026-11-24T03:45:42Z", actor: "human:operator", revision: 6, decided_on: {"recorded":{"verification":1}}}
 ---
 ## Why
 

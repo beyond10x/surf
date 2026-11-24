@@ -24,7 +24,7 @@ scope:
   path: taskfiles/release-smoke.sh
 - confidence: cited
   path: website/docs
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:31Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:31Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
@@ -138,7 +138,8 @@ A manual run of the release workflow on the story branch, started and watched by
    test.
 
 9. `git grep -n -F -e 'No `https:` yet' -e 'or `https:` (`unsupported-scheme`)' -e
-   'failed UnsupportedScheme "https://' -- website/docs` prints nothing.
+   'failed UnsupportedScheme "https://' -e 'loads `http:` targets only' -- website/docs`
+   prints nothing.
 
 Budget: no test of the root workspace is added; the smoke test runs in the release workflow and
 by hand, never in `task test`; no model call.
