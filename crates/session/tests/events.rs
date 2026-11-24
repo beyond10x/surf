@@ -28,7 +28,8 @@ use surf_types::agent::{
 use surf_types::document::{
     CheckednessSet, DocumentId, DocumentParsed, ElementAdded, ElementId, EncodingName, FormAdded,
     FormId, FormSubmitted, OptionAdded, OptionId, OptionSelected, ParseLimit, ParsingStarted,
-    SubmissionAbandoned, SubmissionEndReason, SubmissionId, SubmissionStarted, ValueSet,
+    ScriptEnd, ScriptEndAdded, ScriptId, SubmissionAbandoned, SubmissionEndReason, SubmissionId,
+    SubmissionStarted, ValueSet,
 };
 use surf_types::navigation::{
     NavigationCancelled, NavigationCommitted, NavigationFailed, NavigationStarted, NavigationState,
@@ -185,6 +186,7 @@ fn reference_names(url: &str) -> (Vec<String>, Vec<String>) {
             session_id: session_id.clone(),
             window_id,
             tab_id,
+            scripts: false,
         })
         .unwrap();
     browser
@@ -1040,6 +1042,13 @@ fn covered() -> Vec<SystemEvent> {
             select_id: ElementId(uuid(8)),
             position: 3,
         }),
+        // `story:scripts-spec`: the end of a script, which carries no page text.
+        SystemEvent::ScriptEndAdded(ScriptEndAdded {
+            script_id: ScriptId(uuid(12)),
+            document_id: DocumentId(uuid(6)),
+            position: 3,
+            end: ScriptEnd::NotRun,
+        }),
         SystemEvent::ValueSet(ValueSet {
             element_id: ElementId(uuid(8)),
         }),
@@ -1099,6 +1108,8 @@ fn expected_value(event: &str, field: &str) -> Option<String> {
         (_, "form_id") => id(9),
         (_, "option_id") => id(10),
         (_, "submission_id") => id(11),
+        (_, "script_id") => id(12),
+        ("surf.document.ScriptEndAdded", "end") => text("NotRun"),
         (_, "position") => text("3"),
         ("surf.document.CheckednessSet", "checked") => text("true"),
         ("surf.document.SubmissionAbandoned", "reason") => text("InvalidControls"),
@@ -1154,10 +1165,10 @@ fn case_17_every_event_maps_with_all_its_fields() {
     );
     assert_eq!(
         names.len(),
-        32,
-        "the events of spec/ after story:agent-history-spec"
+        33,
+        "the events of spec/ after story:scripts-spec"
     );
-    assert_eq!(spec.len(), 33, "and surf.agent.EventsLeftOut");
+    assert_eq!(spec.len(), 34, "and surf.agent.EventsLeftOut");
     let line = surf_session::entries::left_out_line(3);
     assert!(line.starts_with(&format!("event {left_out} ")), "{line}");
     let mapped = fields(&line).expect("a mapped event");

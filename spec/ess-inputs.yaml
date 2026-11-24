@@ -55,3 +55,8 @@ scenarios:
   - scenarios/adversary-history-forward-then-push-drops-and-keeps-earlier.yaml
   - scenarios/adversary-history-two-tabs.yaml
   - scenarios/adversary-history-push-during-traversal.yaml
+  - scenarios/document-records-script-ends.yaml
+  - scenarios/document-refuses-script-end-of-unknown-document.yaml
+  - scenarios/document-refuses-script-end-after-parsing.yaml
+  - scenarios/agent-open-session-with-scripts.yaml
+  - scenarios/agent-open-session-without-scripts.yaml

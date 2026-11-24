@@ -58,13 +58,14 @@ use surf_types::agent::{
 use surf_types::behaviour::{ElementStorage, ListOptionStorage, SessionStorage, SubmissionStorage};
 use surf_types::document::{
     AbandonSubmission, AbandonSubmissionOutcome, AddElement, AddElementOutcome, AddForm,
-    AddFormOutcome, AddOption, AddOptionOutcome, Check, CheckOutcome, DocumentId, DocumentState,
-    ElementData, ElementId, ElementKind, ElementSnapshot, ElementState, EncodingName,
-    FinishParsing, FinishParsingOutcome, FormId, FormState, ListOptionData, ListOptionSnapshot,
-    OptionId, OptionState, ParseDocument, ParseDocumentOutcome, ParseLimit, SelectOption,
-    SelectOptionOutcome, SetValue, SetValueOutcome, StartSubmission, StartSubmissionOutcome,
-    SubmissionData, SubmissionEndReason, SubmissionId, SubmissionSnapshot, SubmissionState,
-    SubmitForm, SubmitFormOutcome,
+    AddFormOutcome, AddOption, AddOptionOutcome, AddScriptEnd, AddScriptEndOutcome, Check,
+    CheckOutcome, DocumentId, DocumentState, ElementData, ElementId, ElementKind, ElementSnapshot,
+    ElementState, EncodingName, FinishParsing, FinishParsingOutcome, FormId, FormState,
+    ListOptionData, ListOptionSnapshot, OptionId, OptionState, ParseDocument, ParseDocumentOutcome,
+    ParseLimit, ScriptEnd, ScriptErrorKind, ScriptReason, SelectOption, SelectOptionOutcome,
+    SetValue, SetValueOutcome, StartSubmission, StartSubmissionOutcome, SubmissionData,
+    SubmissionEndReason, SubmissionId, SubmissionSnapshot, SubmissionState, SubmitForm,
+    SubmitFormOutcome,
 };
 use surf_types::navigation::{
     CancelNavigation, CancelNavigationOutcome, CommitNavigation, CommitNavigationOutcome,
@@ -314,6 +315,7 @@ fn publisher(event: &SystemEvent) -> Component {
         | SystemEvent::OptionAdded(_)
         | SystemEvent::OptionSelected(_)
         | SystemEvent::ParsingStarted(_)
+        | SystemEvent::ScriptEndAdded(_)
         | SystemEvent::SubmissionAbandoned(_)
         | SystemEvent::SubmissionStarted(_)
         | SystemEvent::ValueSet(_) => Component::Document,
@@ -653,7 +655,7 @@ fn session_snapshot(
         None | Some(Node::Null) => Ok(None),
         Some(node) => text(name, node).map(Some),
     };
-    const DECLARED: [&str; 9] = [
+    const DECLARED: [&str; 10] = [
         "window_id",
         "tab_id",
         "holder",
@@ -663,6 +665,7 @@ fn session_snapshot(
         "status",
         "media_type",
         "failure_reason",
+        "scripts",
     ];
     if let Some(undeclared) = fields
         .keys()
@@ -699,6 +702,16 @@ fn session_snapshot(
                 .ok_or_else(|| wrong(format!("`failure_reason` is no reason: {name}")))?,
         ),
     };
+    let scripts = match fields.get("scripts") {
+        Some(Node::Bool(value)) => *value,
+        None => return Err(wrong("`scripts` is missing".to_owned())),
+        Some(other) => {
+            return Err(wrong(format!(
+                "`scripts` is not a Boolean: {}",
+                ess_conformance::report::quote(other)
+            )));
+        }
+    };
     let state = match state.to_string().as_str() {
         "Open" => SessionState::Open,
         "Closed" => SessionState::Closed,
@@ -717,6 +730,7 @@ fn session_snapshot(
             status,
             media_type: optional("media_type")?.map(MediaType),
             failure_reason,
+            scripts,
         },
     })
 }
@@ -1129,6 +1143,120 @@ fn parse_limit_named(name: &str) -> Option<ParseLimit> {
     .find(|limit| parse_limit(*limit) == name)
 }
 
+/// How a script ended, as `spec/` spells `surf.document.ScriptEnd`.
+fn script_end(end: ScriptEnd) -> &'static str {
+    match end {
+        ScriptEnd::Ran => "Ran",
+        ScriptEnd::Threw => "Threw",
+        ScriptEnd::Refused => "Refused",
+        ScriptEnd::Limit => "Limit",
+        ScriptEnd::Faulted => "Faulted",
+        ScriptEnd::NotRun => "NotRun",
+    }
+}
+
+fn script_end_named(name: &str) -> Option<ScriptEnd> {
+    [
+        ScriptEnd::Ran,
+        ScriptEnd::Threw,
+        ScriptEnd::Refused,
+        ScriptEnd::Limit,
+        ScriptEnd::Faulted,
+        ScriptEnd::NotRun,
+    ]
+    .into_iter()
+    .find(|end| script_end(*end) == name)
+}
+
+/// Why a script was not run or which limit ended it, as `spec/` spells
+/// `surf.document.ScriptReason`.
+fn script_reason(reason: ScriptReason) -> &'static str {
+    match reason {
+        ScriptReason::Empty => "Empty",
+        ScriptReason::Src => "Src",
+        ScriptReason::Type => "Type",
+        ScriptReason::Module => "Module",
+        ScriptReason::Importmap => "Importmap",
+        ScriptReason::Speculationrules => "Speculationrules",
+        ScriptReason::Disconnected => "Disconnected",
+        ScriptReason::Nomodule => "Nomodule",
+        ScriptReason::Event => "Event",
+        ScriptReason::Svg => "Svg",
+        ScriptReason::Inserted => "Inserted",
+        ScriptReason::Eof => "Eof",
+        ScriptReason::StepsPerScript => "StepsPerScript",
+        ScriptReason::Memory => "Memory",
+        ScriptReason::SourceBytes => "SourceBytes",
+        ScriptReason::WallClock => "WallClock",
+        ScriptReason::Nodes => "Nodes",
+        ScriptReason::Depth => "Depth",
+        ScriptReason::Attributes => "Attributes",
+        ScriptReason::StoredBytes => "StoredBytes",
+        ScriptReason::ScriptsPerDocument => "ScriptsPerDocument",
+        ScriptReason::StepsPerDocument => "StepsPerDocument",
+        ScriptReason::Faulted => "Faulted",
+    }
+}
+
+fn script_reason_named(name: &str) -> Option<ScriptReason> {
+    [
+        ScriptReason::Empty,
+        ScriptReason::Src,
+        ScriptReason::Type,
+        ScriptReason::Module,
+        ScriptReason::Importmap,
+        ScriptReason::Speculationrules,
+        ScriptReason::Disconnected,
+        ScriptReason::Nomodule,
+        ScriptReason::Event,
+        ScriptReason::Svg,
+        ScriptReason::Inserted,
+        ScriptReason::Eof,
+        ScriptReason::StepsPerScript,
+        ScriptReason::Memory,
+        ScriptReason::SourceBytes,
+        ScriptReason::WallClock,
+        ScriptReason::Nodes,
+        ScriptReason::Depth,
+        ScriptReason::Attributes,
+        ScriptReason::StoredBytes,
+        ScriptReason::ScriptsPerDocument,
+        ScriptReason::StepsPerDocument,
+        ScriptReason::Faulted,
+    ]
+    .into_iter()
+    .find(|reason| script_reason(*reason) == name)
+}
+
+/// The kind of what a script threw, as `spec/` spells `surf.document.ScriptErrorKind`.
+fn script_error_kind(kind: ScriptErrorKind) -> &'static str {
+    match kind {
+        ScriptErrorKind::Error => "Error",
+        ScriptErrorKind::EvalError => "EvalError",
+        ScriptErrorKind::RangeError => "RangeError",
+        ScriptErrorKind::ReferenceError => "ReferenceError",
+        ScriptErrorKind::SyntaxError => "SyntaxError",
+        ScriptErrorKind::TypeError => "TypeError",
+        ScriptErrorKind::UriError => "UriError",
+        ScriptErrorKind::Value => "Value",
+    }
+}
+
+fn script_error_kind_named(name: &str) -> Option<ScriptErrorKind> {
+    [
+        ScriptErrorKind::Error,
+        ScriptErrorKind::EvalError,
+        ScriptErrorKind::RangeError,
+        ScriptErrorKind::ReferenceError,
+        ScriptErrorKind::SyntaxError,
+        ScriptErrorKind::TypeError,
+        ScriptErrorKind::UriError,
+        ScriptErrorKind::Value,
+    ]
+    .into_iter()
+    .find(|kind| script_error_kind(*kind) == name)
+}
+
 /// The payload of an event on the system's log, by declared field name.
 fn payload(event: &SystemEvent) -> Vec<(&'static str, Node)> {
     use values::{bytes, integer, text, uuid};
@@ -1241,6 +1369,12 @@ fn payload(event: &SystemEvent) -> Vec<(&'static str, Node)> {
             ("option_id", uuid(&e.option_id.0)),
             ("select_id", uuid(&e.select_id.0)),
             ("position", integer(e.position)),
+        ],
+        SystemEvent::ScriptEndAdded(e) => vec![
+            ("script_id", uuid(&e.script_id.0)),
+            ("document_id", uuid(&e.document_id.0)),
+            ("position", integer(e.position)),
+            ("end", text(script_end(e.end))),
         ],
         SystemEvent::OptionSelected(e) => vec![
             ("option_id", uuid(&e.option_id.0)),
@@ -1561,6 +1695,7 @@ where
                 let session_id = SessionId(input.uuid("session_id")?);
                 let window_id = WindowId(input.uuid("window_id")?);
                 let tab_id = TabId(input.uuid("tab_id")?);
+                let scripts = input.boolean("scripts")?;
                 input.finish()?;
                 match browser
                     .agent_mut()
@@ -1568,6 +1703,7 @@ where
                         session_id,
                         window_id,
                         tab_id,
+                        scripts,
                     })
                     .map_err(unmet)?
                 {
@@ -2502,6 +2638,69 @@ where
                     )?,
                 }
             }
+            "surf.document.AddScriptEnd" => {
+                let present = present(fields);
+                let mut input = Input::new(command, &present);
+                let document_id = DocumentId(input.uuid("document_id")?);
+                let position = input.integer("position")?;
+                let end = input.variant("end", script_end_named)?;
+                let reason = if present.contains_key("reason") {
+                    Some(input.variant("reason", script_reason_named)?)
+                } else {
+                    None
+                };
+                let error_kind = if present.contains_key("error_kind") {
+                    Some(input.variant("error_kind", script_error_kind_named)?)
+                } else {
+                    None
+                };
+                let message = optional_text(&mut input, &present, "message")?;
+                let line = if present.contains_key("line") {
+                    Some(input.integer("line")?)
+                } else {
+                    None
+                };
+                let column = if present.contains_key("column") {
+                    Some(input.integer("column")?)
+                } else {
+                    None
+                };
+                let dynamic = if present.contains_key("dynamic") {
+                    Some(input.boolean("dynamic")?)
+                } else {
+                    None
+                };
+                input.finish()?;
+                match browser
+                    .document_mut()
+                    .add_script_end(AddScriptEnd {
+                        document_id,
+                        position,
+                        end,
+                        reason,
+                        error_kind,
+                        message,
+                        line,
+                        column,
+                        dynamic,
+                    })
+                    .map_err(unmet)?
+                {
+                    AddScriptEndOutcome::Added { script_end_added } => {
+                        took("added", SystemEvent::ScriptEndAdded(script_end_added))
+                    }
+                    AddScriptEndOutcome::NoSuchDocument { error } => refused(
+                        "no-such-document",
+                        "surf.document.DocumentNotFound",
+                        vec![("document_id", uuid(&error.document_id.0))],
+                    )?,
+                    AddScriptEndOutcome::AlreadyParsed { error } => refused(
+                        "already-parsed",
+                        "surf.document.DocumentStateConflict",
+                        vec![("state", values::text(document_state(error.state)))],
+                    )?,
+                }
+            }
             "surf.document.SetValue" => {
                 let element_id = ElementId(input.uuid("element_id")?);
                 let value = input.text("value")?;
@@ -2865,6 +3064,7 @@ where
                             "failure_reason",
                             optional(row.failure_reason, |reason| text(failure_reason(reason))),
                         ),
+                        ("scripts", values::boolean(row.scripts)),
                     ]
                 })
                 .collect(),

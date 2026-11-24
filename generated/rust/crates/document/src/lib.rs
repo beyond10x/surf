@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 0885760ec9338d6af6c9b21b424dde0557abe451edb6419c0f296bc37836f5f6
+// contract digest 07cdc6dccd9f825a5663f6380a29fc0270c0b9fd966125976e7f3bd8032e17b4
 // do not edit: regenerate with `ess synthesize`
 
 //! document — the `document` component of `surf` v1.
@@ -33,6 +33,8 @@ pub enum PublishedEvent {
     OptionSelected(surf_types::document::OptionSelected),
     /// `surf.document.ParsingStarted`.
     ParsingStarted(surf_types::document::ParsingStarted),
+    /// `surf.document.ScriptEndAdded`.
+    ScriptEndAdded(surf_types::document::ScriptEndAdded),
     /// `surf.document.SubmissionAbandoned`.
     SubmissionAbandoned(surf_types::document::SubmissionAbandoned),
     /// `surf.document.SubmissionStarted`.
@@ -71,7 +73,7 @@ impl<B> Document<B> {
 
 impl<B> Document<B>
 where
-    B: surf_types::document::obligations::AbandonSubmissionBehavior + surf_types::document::obligations::AddElementBehavior + surf_types::document::obligations::AddFormBehavior + surf_types::document::obligations::AddOptionBehavior + surf_types::document::obligations::CheckBehavior + surf_types::document::obligations::FinishParsingBehavior + surf_types::document::obligations::ParseDocumentBehavior + surf_types::document::obligations::SelectOptionBehavior + surf_types::document::obligations::SetValueBehavior + surf_types::document::obligations::StartSubmissionBehavior + surf_types::document::obligations::SubmitFormBehavior + surf_types::document::obligations::ControlsQuery + surf_types::document::obligations::DocumentsQuery + surf_types::document::obligations::ElementsQuery + surf_types::document::obligations::FormsQuery + surf_types::document::obligations::OptionsQuery + surf_types::document::obligations::SubmissionsQuery,
+    B: surf_types::document::obligations::AbandonSubmissionBehavior + surf_types::document::obligations::AddElementBehavior + surf_types::document::obligations::AddFormBehavior + surf_types::document::obligations::AddOptionBehavior + surf_types::document::obligations::AddScriptEndBehavior + surf_types::document::obligations::CheckBehavior + surf_types::document::obligations::FinishParsingBehavior + surf_types::document::obligations::ParseDocumentBehavior + surf_types::document::obligations::SelectOptionBehavior + surf_types::document::obligations::SetValueBehavior + surf_types::document::obligations::StartSubmissionBehavior + surf_types::document::obligations::SubmitFormBehavior + surf_types::document::obligations::ControlsQuery + surf_types::document::obligations::DocumentsQuery + surf_types::document::obligations::ElementsQuery + surf_types::document::obligations::FormsQuery + surf_types::document::obligations::OptionsQuery + surf_types::document::obligations::SubmissionsQuery,
 {
     /// Accepts `surf.document.AbandonSubmission`: runs the behaviour obligation, then publishes the declared events
     /// the outcome carries.
@@ -136,6 +138,23 @@ where
             surf_types::document::AddOptionOutcome::NotASelect { .. } => {}
             surf_types::document::AddOptionOutcome::Added { option_added, .. } => {
                 self.outbox.push(PublishedEvent::OptionAdded(option_added.clone()));
+            }
+        }
+        Ok(outcome)
+    }
+
+    /// Accepts `surf.document.AddScriptEnd`: runs the behaviour obligation, then publishes the declared events
+    /// the outcome carries.
+    ///
+    /// `Err` is the typed refusal of an unmet obligation — never a domain outcome, which always
+    /// arrives as a variant of the outcome type, refusals included.
+    pub fn add_script_end(&mut self, input: surf_types::document::AddScriptEnd) -> Result<surf_types::document::AddScriptEndOutcome, surf_types::obligation::UnmetObligation> {
+        let outcome = self.behaviors.add_script_end(input)?;
+        match &outcome {
+            surf_types::document::AddScriptEndOutcome::NoSuchDocument { .. } => {}
+            surf_types::document::AddScriptEndOutcome::AlreadyParsed { .. } => {}
+            surf_types::document::AddScriptEndOutcome::Added { script_end_added, .. } => {
+                self.outbox.push(PublishedEvent::ScriptEndAdded(script_end_added.clone()));
             }
         }
         Ok(outcome)

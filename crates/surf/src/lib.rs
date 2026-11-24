@@ -1364,6 +1364,7 @@ pub trait DocumentBehaviors:
     + surf_types::document::obligations::AddElementBehavior
     + surf_types::document::obligations::AddFormBehavior
     + surf_types::document::obligations::AddOptionBehavior
+    + surf_types::document::obligations::AddScriptEndBehavior
     + surf_types::document::obligations::CheckBehavior
     + surf_types::document::obligations::FinishParsingBehavior
     + surf_types::document::obligations::ParseDocumentBehavior
@@ -1385,6 +1386,7 @@ impl<B> DocumentBehaviors for B where
         + surf_types::document::obligations::AddElementBehavior
         + surf_types::document::obligations::AddFormBehavior
         + surf_types::document::obligations::AddOptionBehavior
+        + surf_types::document::obligations::AddScriptEndBehavior
         + surf_types::document::obligations::CheckBehavior
         + surf_types::document::obligations::FinishParsingBehavior
         + surf_types::document::obligations::ParseDocumentBehavior
@@ -1703,6 +1705,7 @@ fn event_body(event: &SystemEvent) -> usize {
         | SystemEvent::ElementAdded(_)
         | SystemEvent::FormAdded(_)
         | SystemEvent::OptionAdded(_)
+        | SystemEvent::ScriptEndAdded(_)
         | SystemEvent::OptionSelected(_)
         | SystemEvent::SubmissionAbandoned(_)
         | SystemEvent::SubmissionStarted(_)

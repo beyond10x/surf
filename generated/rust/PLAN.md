@@ -1,13 +1,13 @@
 <!--
   generated from surf v1
-  contract digest 0885760ec9338d6af6c9b21b424dde0557abe451edb6419c0f296bc37836f5f6
+  contract digest 07cdc6dccd9f825a5663f6380a29fc0270c0b9fd966125976e7f3bd8032e17b4
   do not edit: regenerate with `ess synthesize`
 -->
 # Synthesis plan — surf v1
 
 Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synthesize`.
 
-265 capabilities: **253 generated**, **8 obligations**, **4 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
+274 capabilities: **262 generated**, **8 obligations**, **4 refused**. An obligation is yours to implement against its contract; a refusal is a fact about this synthesis scope, not about the specification.
 
 ## Generated
 
@@ -42,6 +42,11 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | domain type | `surf.document.Option.State` |
 | domain type | `surf.document.OptionId` |
 | domain type | `surf.document.ParseLimit` |
+| domain type | `surf.document.Script.State` |
+| domain type | `surf.document.ScriptEnd` |
+| domain type | `surf.document.ScriptErrorKind` |
+| domain type | `surf.document.ScriptId` |
+| domain type | `surf.document.ScriptReason` |
 | domain type | `surf.document.Submission.State` |
 | domain type | `surf.document.SubmissionEndReason` |
 | domain type | `surf.document.SubmissionId` |
@@ -67,6 +72,7 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | entity lifecycle | `surf.document.Element` |
 | entity lifecycle | `surf.document.Form` |
 | entity lifecycle | `surf.document.Option` |
+| entity lifecycle | `surf.document.Script` |
 | entity lifecycle | `surf.document.Submission` |
 | entity lifecycle | `surf.navigation.Navigation` |
 | entity lifecycle | `surf.net.Request` |
@@ -105,6 +111,8 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | command behaviour | `surf.document.AddForm` |
 | command contract | `surf.document.AddOption` |
 | command behaviour | `surf.document.AddOption` |
+| command contract | `surf.document.AddScriptEnd` |
+| command behaviour | `surf.document.AddScriptEnd` |
 | command contract | `surf.document.Check` |
 | command contract | `surf.document.FinishParsing` |
 | command behaviour | `surf.document.FinishParsing` |
@@ -159,6 +167,7 @@ Scope: `component-skeletons`, planned by `ess-synth`. Regenerate with `ess synth
 | event type | `surf.document.OptionAdded` |
 | event type | `surf.document.OptionSelected` |
 | event type | `surf.document.ParsingStarted` |
+| event type | `surf.document.ScriptEndAdded` |
 | event type | `surf.document.SubmissionAbandoned` |
 | event type | `surf.document.SubmissionStarted` |
 | event type | `surf.document.ValueSet` |

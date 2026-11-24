@@ -9,7 +9,7 @@
 //! | [`ShellPorts`] | `shell` | `Window`, `Tab` | yes |
 //! | [`NavigatorPorts`] | `navigator` | `Navigation` | yes |
 //! | [`NetPorts`] | `net` | `Request` | no |
-//! | [`DocumentPorts`] | `document` | `Document`, `Element`, `Form`, `Option`, `Submission` | yes |
+//! | [`DocumentPorts`] | `document` | `Document`, `Element`, `Form`, `Option`, `Submission`, `Script` | yes |
 //! | [`RendererPorts`] | `renderer` | `Frame` | yes |
 //! | [`AgentPorts`] | `agent` | `Session`, `Action` | the caller and an action's identity |
 //!
@@ -105,8 +105,8 @@ use surf_types::agent::obligations::{
 };
 use surf_types::behaviour::{
     ActionStorage, DocumentStorage, ElementStorage, FormStorage, FrameStorage, Generated,
-    ListOptionStorage, NavigationStorage, RequestStorage, SessionStorage, SubmissionStorage,
-    TabStorage, TryContext, WindowStorage,
+    ListOptionStorage, NavigationStorage, RequestStorage, ScriptStorage, SessionStorage,
+    SubmissionStorage, TabStorage, TryContext, WindowStorage,
 };
 use surf_types::document::obligations::{CheckBehavior, SelectOptionBehavior};
 use surf_types::navigation::obligations::{CommitNavigationBehavior, TraverseHistoryBehavior};
@@ -159,6 +159,7 @@ where
         + FormStorage
         + ListOptionStorage
         + SubmissionStorage
+        + ScriptStorage
         + CheckBehavior
         + SelectOptionBehavior,
 {

@@ -2,8 +2,8 @@
   "provenance": {
     "system": "surf",
     "specification_version": "v1",
-    "source_digest": "750651f413d725d7fa69a5a78e4d0216dab9606c4f61c5425be76c5335dfd8c4",
-    "contract_digest": "0885760ec9338d6af6c9b21b424dde0557abe451edb6419c0f296bc37836f5f6"
+    "source_digest": "6ab1cb52ab3713e992c76df1f711b6b1fd1677416b1b0d85aef8e72df8dce76b",
+    "contract_digest": "07cdc6dccd9f825a5663f6380a29fc0270c0b9fd966125976e7f3bd8032e17b4"
   },
   "scope": {
     "profile": "component-skeletons"
@@ -214,6 +214,41 @@
     },
     {
       "kind": "domain_type",
+      "source": "surf.document.Script.State",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.document.ScriptEnd",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.document.ScriptErrorKind",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.document.ScriptId",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.document.ScriptReason",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
       "source": "surf.document.Submission.State",
       "disposition": {
         "disposition": "generated"
@@ -383,6 +418,13 @@
     {
       "kind": "entity_lifecycle",
       "source": "surf.document.Option",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "entity_lifecycle",
+      "source": "surf.document.Script",
       "disposition": {
         "disposition": "generated"
       }
@@ -697,6 +739,20 @@
     {
       "kind": "command_behavior",
       "source": "surf.document.AddOption",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_contract",
+      "source": "surf.document.AddScriptEnd",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "surf.document.AddScriptEnd",
       "disposition": {
         "disposition": "generated"
       }
@@ -1123,6 +1179,13 @@
     {
       "kind": "event_type",
       "source": "surf.document.ParsingStarted",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "event_type",
+      "source": "surf.document.ScriptEndAdded",
       "disposition": {
         "disposition": "generated"
       }
