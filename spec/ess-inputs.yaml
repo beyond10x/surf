@@ -60,3 +60,5 @@ scenarios:
   - scenarios/document-refuses-script-end-after-parsing.yaml
   - scenarios/agent-open-session-with-scripts.yaml
   - scenarios/agent-open-session-without-scripts.yaml
+  - scenarios/adversary-script-ends-every-reason.yaml
+  - scenarios/adversary-script-end-pairs-outside-q7.yaml
