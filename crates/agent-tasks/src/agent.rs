@@ -1,7 +1,8 @@
 //! The scripted agent of the gate's lane: the steps of each task, and the `surf-agent` calls
 //! that take them.
 //!
-//! Per task: `open <start address>`; then the task's own steps, each handle found through
+//! Per task: `open <start address>` (`open --ca-file <root> <start address>` for a row whose
+//! server is `https`); then the task's own steps, each handle found through
 //! [`surf_answer::parse`] by its label in the `now` block of a `look` without `--as`, never a
 //! handle written here; then `look --as markdown`, and `look --as markdown --from-line <n>` for
 //! every `more` line, until the text block ends; then `close`, also after a failed step. Every
@@ -80,7 +81,7 @@ impl Step {
 pub fn steps(task: &str) -> Option<Vec<Step>> {
     use Step::*;
     Some(match task {
-        "article" | "table" => vec![Open, LookMarkdown, Close],
+        "article" | "table" | "https" => vec![Open, LookMarkdown, Close],
         "link" => vec![Open, Look, Follow("Opening hours"), LookMarkdown, Close],
         "search" => vec![
             Open,
@@ -301,6 +302,18 @@ impl Agent {
     /// Run one task's steps from `start`, the address of its start page. The connections of
     /// the returned [`Run`] are left at 0: the caller counts them at the fixture server.
     pub fn run(&self, steps: &[Step], start: &str, after_call: &mut dyn FnMut()) -> Run {
+        self.run_with_ca_file(steps, start, None, after_call)
+    }
+
+    /// [`Agent::run`], its `open` step `open --ca-file <ca_file> <start>` when `ca_file` is
+    /// given: the session trusts the roots of that file besides the bundled ones.
+    pub fn run_with_ca_file(
+        &self,
+        steps: &[Step],
+        start: &str,
+        ca_file: Option<&str>,
+        after_call: &mut dyn FnMut(),
+    ) -> Run {
         let mut run = Run::default();
         let mut session: Option<Session> = None;
         let mut last_look: Option<Answer> = None;
@@ -310,9 +323,12 @@ impl Agent {
             }
             match step {
                 Step::Open => {
-                    let Some(output) =
-                        self.step(&mut run, &["open", start], None, None, after_call)
-                    else {
+                    let mut words = vec!["open"];
+                    if let Some(file) = ca_file {
+                        words.extend(["--ca-file", file]);
+                    }
+                    words.push(start);
+                    let Some(output) = self.step(&mut run, &words, None, None, after_call) else {
                         continue;
                     };
                     let parsed = surf_answer::parse(&String::from_utf8_lossy(&output.stdout));
@@ -390,6 +406,40 @@ impl Agent {
             }
         }
         run
+    }
+
+    /// A session of its own on `address`: `open <address>` without `--ca-file`, then `look
+    /// --as markdown`, then `close` whenever `open` gave a session. The standard output of
+    /// `open` and of `look`, or the reason of the first of the two that did not go through
+    /// (`exit <status> on open`, `open answered no session`, ...). What `close` does is not
+    /// part of the result: a session it left is a process of the run that the lane finds.
+    pub fn open_look_close(
+        &self,
+        address: &str,
+        after_call: &mut dyn FnMut(),
+    ) -> Result<(String, String), String> {
+        let mut run = Run::default();
+        let failed = |run: Run| run.failure.map_or_else(String::new, |f| f.reason());
+        let Some(opened) = self.step(&mut run, &["open", address], None, None, after_call) else {
+            return Err(failed(run));
+        };
+        let opened = String::from_utf8_lossy(&opened.stdout).into_owned();
+        let session = surf_answer::parse(&opened)
+            .ok()
+            .and_then(|answer| Some((answer.head.session, answer.token?)));
+        let Some((id, token)) = session else {
+            return Err("open answered no session".to_string());
+        };
+        let session = Session { id, token };
+        let words = ["look", "--as", "markdown"];
+        let looked = self.step(&mut run, &words, Some(&session), None, after_call);
+        let looked = match looked {
+            Some(output) => Ok(String::from_utf8_lossy(&output.stdout).into_owned()),
+            None => Err(failed(run)),
+        };
+        let mut closing = Run::default();
+        self.step(&mut closing, &["close"], Some(&session), None, after_call);
+        Ok((opened, looked?))
     }
 }
 

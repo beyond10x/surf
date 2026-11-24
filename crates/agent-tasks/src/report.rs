@@ -6,12 +6,16 @@
 //! machine ([`shown_binaries`]);
 //! one line per task in their order, `task <name> pass <c> calls <k> connections` or `task
 //! <name> fail <c> calls <k> connections: <reason>` (a row without a result: `task <name>
-//! skipped`); then `raise: <name>` for each task listed `pending` that passed.
+//! skipped`); then one line per check, `check <name> pass` or `check <name> fail: <reason>`,
+//! counted in no number of the first line; then `raise: <name>` for each task listed `pending`
+//! that passed.
 //!
 //! A `task` line is the judged result alone. (`pending`, pass) adds `raise: <name>`; (`pass`,
 //! fail) makes [`report`] return an error after the file is written; (`pass`, pass) and
-//! (`pending`, fail) add nothing. With `SURF_AGENT_TASKS=measure` the listed states are not
-//! enforced and no `raise:` line is written.
+//! (`pending`, fail) add nothing. A failed check makes it return `agent-tasks: check <name>
+//! failed: <reason>` after the file is written, when no task did. With
+//! `SURF_AGENT_TASKS=measure` the listed states are not enforced, a failed check returns no
+//! error, and no `raise:` line is written.
 //!
 //! The file is written whole at the end of a run (to `<file>.part.<pid>`, then renamed), and a run
 //! removes it before it starts ([`crate::lane::run`]), so a file left by an earlier run is
@@ -33,6 +37,17 @@ pub struct TaskResult {
     /// The connections the fixture server accepted for it.
     pub connections: usize,
     /// The judged result.
+    pub verdict: Verdict,
+}
+
+/// One check's result: a statement a run holds besides its tasks, such as `https-without-root`
+/// ([`crate::lane`]). It is written as a `check` line and counted in no number of the first
+/// line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CheckResult {
+    /// The check's name.
+    pub check: String,
+    /// Whether it held, and the reason when it did not.
     pub verdict: Verdict,
 }
 
@@ -87,9 +102,11 @@ fn measuring() -> bool {
 }
 
 /// Write the report of `lane` to `out` (its directory made when missing), then hold each task
-/// to its listed state: the error of the first task listed `pass` that failed.
+/// to its listed state and each check to passing: the error of the first task listed `pass`
+/// that failed, else that of the first check that failed.
 pub fn report(
     results: &[TaskResult],
+    checks: &[CheckResult],
     status: &[Status],
     lane: &Lane,
     out: &Path,
@@ -126,6 +143,21 @@ pub fn report(
             }
         }
     }
+    let mut check_error = None;
+    for check in checks {
+        match &check.verdict {
+            Verdict::Pass => lines.push_str(&format!("check {} pass\n", check.check)),
+            Verdict::Fail(reason) => {
+                lines.push_str(&format!("check {} fail: {reason}\n", check.check));
+                if enforce && check_error.is_none() {
+                    check_error = Some(format!(
+                        "agent-tasks: check {} failed: {reason}",
+                        check.check
+                    ));
+                }
+            }
+        }
+    }
     let text = format!(
         "agent-tasks: {} tasks, {pass} pass, {fail} fail, {skipped} skipped, lane {}, binaries \
          {}\n{lines}{raises}",
@@ -144,7 +176,7 @@ pub fn report(
     fs::write(&part, text)
         .and_then(|()| fs::rename(&part, out))
         .map_err(|error| format!("agent-tasks: cannot write {}: {error}", out.display()))?;
-    match first_error {
+    match first_error.or(check_error) {
         Some(error) => Err(error),
         None => Ok(()),
     }

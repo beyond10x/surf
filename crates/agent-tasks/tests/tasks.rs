@@ -1,19 +1,26 @@
 //! The scripted lane: every task of `tasks.txt`, one after the other, with the `surf-agent`,
 //! `surfd` and `surf-session` of `SURF_BIN_DIR`, against one fixture server (a thread of this
-//! test) and one `surfd` in one private `XDG_RUNTIME_DIR`. It writes the root
-//! `.out/agent-tasks.txt` and holds each task to its row of `status.txt`. No model call; every
-//! address is on 127.0.0.1; nothing is built.
+//! test) and one `surfd` in one private `XDG_RUNTIME_DIR`. `every_task` also starts the one TLS
+//! test server of the run, for the rows whose `server` is `https` and the check
+//! `https-without-root`; the other test of the lane starts none and skips those rows. It writes
+//! the root `.out/agent-tasks.txt` and holds each task to its row of `status.txt`. No model
+//! call; every address is on 127.0.0.1 (`localhost` from `/etc/hosts`); nothing is built.
 
 use std::collections::BTreeSet;
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use surf_agent_tasks::agent::CALL_BOUND;
-use surf_agent_tasks::format::{Listed, read_status, read_tasks};
-use surf_agent_tasks::lane::{self, Config, LaneRun};
+use surf_agent_tasks::format::{Listed, Server, read_status, read_tasks};
+use surf_agent_tasks::lane::{self, Config, Https, LaneRun};
 use surf_agent_tasks::report::Lane;
-use surf_agent_tasks::{root_report_file, status_file, tasks_file};
+use surf_agent_tasks::server::file_for;
+use surf_agent_tasks::{root_report_file, sites_dir, status_file, tasks_file};
+use surf_tls::crypto::Scheme;
+use surf_tls_test_certs::cases;
+use surf_tls_test_server::{Config as TlsConfig, Response, TestServer};
 
 use crate::status::binaries_field;
 
@@ -76,9 +83,52 @@ fn assert_clean(run: &LaneRun) {
     );
 }
 
+/// The certificate case of the TLS server: its leaf is `localhost` (dNSName and iPAddress
+/// 127.0.0.1), the host of every `https` address of the run.
+const TLS_CASE: &str = "ok-rsa2048";
+
+/// The root the chain of [`TLS_CASE`] leads to, the file `open --ca-file` names.
+const TLS_ROOT: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../tls-test-certs/certs/ok-rsa2048/root.pem"
+);
+
+/// The TLS test server of the `https` rows, on 127.0.0.1 port 0: the start and the target of
+/// each such row answered 200 `text/html` with the bytes of its file under `sites/<task>/`,
+/// every other path 404.
+fn tls_server() -> TestServer {
+    let spec = cases::specs()
+        .into_iter()
+        .find(|spec| spec.name == TLS_CASE)
+        .expect("the certificate case is listed");
+    assert_eq!((spec.host, spec.outcome), ("localhost", cases::Outcome::Ok));
+    let mut config = TlsConfig::new(TLS_CASE, Scheme::RsaPssRsaeSha256);
+    config.responses.clear();
+    let tasks = read_tasks(&fs::read_to_string(tasks_file()).unwrap()).unwrap();
+    for task in tasks.iter().filter(|task| task.server == Server::Https) {
+        let site = sites_dir().join(&task.name);
+        for path in [&task.start, &task.target] {
+            let file = file_for(&site, path)
+                .unwrap_or_else(|| panic!("{}: no file for {path}", task.name));
+            config.responses.insert(
+                path.clone(),
+                Response {
+                    status: 200,
+                    reason: "OK".to_string(),
+                    fields: vec![("Content-Type".to_string(), "text/html".to_string())],
+                    body: fs::read(&file).unwrap(),
+                },
+            );
+        }
+    }
+    TestServer::start(config).expect("the TLS test server starts")
+}
+
 #[test]
 fn every_task() {
     let bin = bin_dir();
+    let tls = Arc::new(tls_server());
+    let counted = Arc::clone(&tls);
     let measure = std::env::var_os("SURF_AGENT_TASKS").is_some_and(|value| value == "measure");
     // The archive task passes DIR as typed; the line names that, never the absolute form.
     let given = std::env::var_os("SURF_BIN_DIR_GIVEN")
@@ -93,6 +143,11 @@ fn every_task() {
             binaries: given,
         },
         out: root_report_file(),
+        https: Some(Https {
+            origin: format!("https://localhost:{}", tls.port()),
+            root: PathBuf::from(TLS_ROOT),
+            accepted: Box::new(move || counted.accepted()),
+        }),
     };
     let run = lane::run(&config);
     let written = fs::read_to_string(root_report_file()).expect("the report is written");
@@ -103,9 +158,15 @@ fn every_task() {
         "a machine's path in {first:?}"
     );
     assert_clean(&run);
+    let checks: Vec<&str> = run
+        .checks
+        .iter()
+        .map(|check| check.check.as_str())
+        .collect();
+    assert_eq!(checks, ["https-without-root"]);
     assert_eq!(
         written.lines().count(),
-        1 + run.results.len() + written.matches("\nraise: ").count(),
+        1 + run.results.len() + run.checks.len() + written.matches("\nraise: ").count(),
         "{written}"
     );
     if let Err(error) = &run.outcome {
@@ -160,6 +221,8 @@ fn a_call_that_never_answers_ends_at_its_bound() {
             binaries: bin.clone(),
         },
         out: out.clone(),
+        // No TLS server: one runs per test run, in `every_task`; the `https` rows are skipped.
+        https: None,
     };
     let run = lane::run(&config);
     let written = fs::read_to_string(&out).expect("the report is written");
@@ -184,6 +247,11 @@ fn a_call_that_never_answers_ends_at_its_bound() {
             .all(|line| line.starts_with("raise: ")),
         "{written}"
     );
+    for (line, task) in task_lines.iter().zip(&tasks) {
+        if task.server == Server::Https {
+            assert_eq!(*line, format!("task {} skipped", task.name), "{written}");
+        }
+    }
     assert_eq!(
         task_lines[0],
         format!(
