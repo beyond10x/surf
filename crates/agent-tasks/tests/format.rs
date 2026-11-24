@@ -191,6 +191,7 @@ fn commands_match_the_steps() {
             "article" | "table" | "https" => Some(&["open", "look", "close"]),
             "link" => Some(&["open", "look", "follow", "look", "close"]),
             "search" => Some(&["open", "look", "fill", "press", "look", "close"]),
+            "login" => Some(&["open", "look", "fill", "fill", "press", "look", "close"]),
             _ => None,
         };
         if let Some(named) = named {
