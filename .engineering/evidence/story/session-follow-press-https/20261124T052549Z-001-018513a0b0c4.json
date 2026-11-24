@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T05:25:49Z",
+  "actor": "human:operator",
+  "artifact": "story:session-follow-press-https",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the forge runs on main at e0d9b15 (the merges of impl/session-follow-press-https at 7ade66e and of plan/round-2 at 7f7e15e), 2026-11-24 06:07 to 06:25 CET",
+    "reference": "check 45331182619 success, Shared source gates 45331183448 success, Documentation validation 45331182528 success, Documentation site 45332267060 success"
+  }
+}

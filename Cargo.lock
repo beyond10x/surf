@@ -138,6 +138,9 @@ version = "0.1.0"
 dependencies = [
  "surf-answer",
  "surf-test-process",
+ "surf-tls",
+ "surf-tls-test-certs",
+ "surf-tls-test-server",
 ]
 
 [[package]]

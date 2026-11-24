@@ -589,7 +589,7 @@ doc-tests-check: no doc test outside crates/ports
 test step: 44.9 s of its budget of 120 s
 545 tests: 545 passed, 0 failed, 0 ignored (cargo-nextest 545)
 tls test step: 15.7 s of its budget of 120 s
-agent-tasks: 4 tasks, 4 pass, 0 fail, 0 skipped, lane gate, binaries target/debug
+agent-tasks: 5 tasks, 5 pass, 0 fail, 0 skipped, lane gate, binaries target/debug
 sh-echo: Summary [  13.489s] 41 tests run: 41 passed, 112 skipped
 view-stream-check: 23 event name(s), each a message of the AsyncAPI projection
 view-tests: node_modules installed from package-lock.json

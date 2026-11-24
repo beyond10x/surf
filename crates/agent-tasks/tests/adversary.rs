@@ -40,6 +40,7 @@ fn one_answer(lines: &[&str]) -> Run {
         connections: 1,
         failure: None,
         answers: vec![markdown(lines)],
+        opened: None,
     }
 }
 
