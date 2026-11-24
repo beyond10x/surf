@@ -280,28 +280,15 @@ tasks:
       - sh taskfiles/conform-totals.sh
 
   lock-check:
-    desc: Fail, naming each package, when the root Cargo.lock holds one from outside this repository that is not on taskfiles/lock-allow.txt, or a crate other than surf-tls depends on one that is.
+    desc: Fail, naming each package, when the root Cargo.lock holds one from outside this repository that is not on taskfiles/lock-allow.txt, or a crate of this repository depends on a listed package or on surf-script without a line of taskfiles/lock-owners.txt.
     summary: |
-      Fail, naming each package, when the root Cargo.lock holds one from outside this repository
-      that is not on taskfiles/lock-allow.txt, or a crate other than surf-tls depends on one that is.
-
-      Nothing that ships uses a third-party crate but ring, the one source of cryptographic
-      primitives (AGENTS.md, Goals), and the root Cargo.lock proves it with two rules:
-      - every package with a source line (one cargo took from a registry or a git repository)
-        matches a line of taskfiles/lock-allow.txt on name, version, source and checksum;
-      - no crate of this repository but surf-tls depends on a package of that list.
-      A line of the list that no package matches fails too, and so does a missing Cargo.lock.
-      The lock is read only in the form cargo writes: a line in any other form fails with its
-      number, also where cargo would accept it as another spelling of the same TOML.
-      taskfiles/lock-check.sh does the work and names each finding; its head states the format
-      of the list.
-
-      conformance/ has a lock of its own, which this does not read: it is the one place a
-      third-party crate is allowed beside ring. A path dependency on a directory outside this
-      repository has no source line, and is not caught here.
+      Fail when the root Cargo.lock, the lists taskfiles/lock-allow.txt and
+      taskfiles/lock-owners.txt, the root Cargo.toml, the tree's cargo config files or a file
+      that starts a build breaks a rule of taskfiles/lock-check.sh, whose head states each
+      rule, why it holds and where the check ends.
     silent: true
     cmds:
-      - sh taskfiles/lock-check.sh Cargo.lock taskfiles/lock-allow.txt
+      - sh taskfiles/lock-check.sh Cargo.lock taskfiles/lock-allow.txt taskfiles/lock-owners.txt Cargo.toml
 
   generate:
     desc: Rewrite generated/rust from spec/ with ess, in place.

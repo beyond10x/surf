@@ -29,17 +29,23 @@ wanted, not mandatory: "I'm not saying we have to follow a spec, but would be gr
   could also spec it, implement it our own." Scope, decided by the operator on 2026-11-20 (option C):
   - No third-party crates in anything that ships. The Rust standard library and the operating
     system are allowed.
-  - One exception: audited cryptographic primitives (ciphers, hashes, key exchange, signature
-    verification) come from a third-party crate, because hand-written ones leak keys through
-    timing. The crate is ring 0.17.14 (the operator, 2026-11-22: "A: ring 0.17.14"), used by
-    `surf-tls` alone and allowed by `taskfiles/lock-allow.txt`. The TLS protocol code on top of
-    it is written here.
+  - Two exceptions. `taskfiles/lock-allow.txt` names each of their packages by name,
+    version, source and checksum (`none` for a package from git), and
+    `taskfiles/lock-owners.txt` names the crates of this repository that may depend on
+    each (`task lock-check`).
+    - Audited cryptographic primitives (ciphers, hashes, key exchange, signature
+      verification) come from a third-party crate, because hand-written ones leak keys
+      through timing. The crate is ring 0.17.14 (the operator, 2026-11-22: "A: ring
+      0.17.14"), used by `surf-tls` alone. The TLS protocol code on top of it is written
+      here.
+    - One crate of the organization, the script engine swell, by a git dependency on a
+      release tag, used by `surf-script` alone (`docs/design/scripts.md`, Q15).
   - Build and test tooling (`ess`, `task`, test suites) is not runtime and is not covered.
   - `conformance/` is the one place in the repository where a third-party crate is allowed: the
     `ess-conformance` runner and what it brings, in a Cargo workspace of its own. The root
-    `Cargo.lock` proves the rest: every package in it from outside this repository is one of
-    the 19 packages of ring on `taskfiles/lock-allow.txt`, matched on name, version, source and
-    checksum, and no crate of this repository but `surf-tls` depends on one (`task
+    `Cargo.lock` proves the rest: every package in it from outside this repository is on
+    `taskfiles/lock-allow.txt`, matched on name, version, source and checksum, and no crate
+    of this repository depends on one but those `taskfiles/lock-owners.txt` names (`task
     lock-check`).
 
 Status on 2026-11-20: `spec/` was drafted by reasoning over the page load. No standard was read
@@ -296,7 +302,7 @@ above, and the list of standards itself was written from memory.
   (`story:test-step-scripts-and-binaries`): the libraries of `surf`, `surf-agent`,
   `surf-agent-tasks`, `surf-answer`, `surf-cookie`, `surf-html-conformance`, `surf-page`,
   `surf-page-text`,
-  `surf-ports` (its `doctest` stays, so its two doc tests run), `surf-secret`, `surf-session`,
+  `surf-ports` (its `doctest` stays, so its two doc tests run), `surf-script`, `surf-secret`, `surf-session`,
   `surf-url`, `surf-view`, `surf-webidl` and `surf-test-process`, and the binaries of
   `surf-agent`, `surf-cli`,
   `surf-html-conformance` (both), `surf-session`, `surfd`, `surf-view-fixture` (both) and
@@ -345,6 +351,10 @@ above, and the list of standards itself was written from memory.
     `CHANGED_TEXT_CHARS_MAX` 120 characters and `+ text more <n>`). Since
     `story:agent-cookie-jar` the `cookies <n>` line after `path` (`Answer::cookies`, from 1;
     `render` refuses 0 with `RenderError::NoCookies`, `parse` refuses it). No dependency.
+  - `crates/script` (`surf-script`, `story:scripts-engine-dependency`): runs a source on one
+    swell 0.8.0 agent under surf's limits; no DOM yet, and no crate depends on it. Depends on
+    swell and `surf-secret`. 29 tests: `tests/engine.rs` 18 (3 of them ignored until swell
+    reaches HOST-125, HOST-26 and HOST-127), `tests/adversary.rs` 10, `tests/adversary_2.rs` 1.
   - `crates/secret` (`surf-secret`): the operating system random source, the comparison in
     constant time and the 32-byte token. Every secret and every random identity of the agent
     and the view comes from here. No dependency.
@@ -1850,26 +1860,23 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
 - `task conform-totals`: fail, printing both, when `.out/report.json` (interpreter) and
   `.out/conform-rust.json` (Rust) are of different suites by digest or differ in
   `counts.total`. Needs both runs first.
-- `task lock-check`: runs `sh taskfiles/lock-check.sh Cargo.lock taskfiles/lock-allow.txt`.
-  It fails, one line per finding, when the root `Cargo.lock` holds a package with a `source`
-  line (one from a registry or a git repository) that matches no line of
-  `taskfiles/lock-allow.txt` on name, version, source and checksum (`Cargo.lock: <name>
-  <version> from <source>: not on the allow-list`, with the listed line when the name is
-  listed); when a crate of this repository other than `surf-tls` depends on a listed package
-  (`Cargo.lock: <package> depends on <allowed>; only surf-tls may`); when a listed line is in
-  no package (`taskfiles/lock-allow.txt: <name> <version> is in no package of Cargo.lock`);
-  when a line of the lock is in no form cargo writes (`Cargo.lock:<n>: not in the form cargo
-  writes: <line>`); and when the lock is missing. The check refuses a lock that cargo would
-  accept in another spelling (keys without spaces, a comment after `[[package]]`, a
-  dependency array on one line, literal strings, `[metadata]`, `[[patch.unused]]`, the
-  `replace = "…"` line cargo writes for `[replace]`); it still reads such a lock for the
-  other findings, so its packages are named too. Else it prints `Cargo.lock: <n> package(s),
-  19 from outside this repository, each on the allow-list`. The list holds the 19 packages of ring 0.17.14
-  (`docs/design/tls.md`, item 2), one line `<name> <version> <source> <checksum>` each,
-  sorted; the script's head states the format. It does not read `conformance/Cargo.lock`. A
-  path dependency outside the repository has no `source` line and is not caught. The tests of
-  `crates/surf/tests/lock_check.rs` run that line with `sh` in their copies, without `task`
-  (no `Taskfile.yml` in a copy); `the_unchanged_lock_passes` holds the task to the line with
+- `task lock-check`: runs `sh taskfiles/lock-check.sh Cargo.lock taskfiles/lock-allow.txt
+  taskfiles/lock-owners.txt Cargo.toml`. The script's head states each rule, its findings
+  and where the check ends: every package of the root `Cargo.lock` with a `source` line
+  matches a line of `taskfiles/lock-allow.txt` on name, version, source and checksum; a crate of
+  this repository depends on a listed package or on `surf-script` only by a line of
+  `taskfiles/lock-owners.txt`; each package from git has `overflow-checks = true` in the root
+  manifest's release profile, and no cargo config file of the tree and no file that starts a
+  build turns it off; the lock is read only in the form cargo writes. Else it prints
+  `Cargo.lock: <n> package(s), <m> from outside this repository, each on the allow-list`:
+  58 and 25 today (`story:scripts-engine-dependency`; 51 and 19 before it). The list holds
+  the 19 packages of ring 0.17.14 (`docs/design/tls.md`, item 2) and the six of swell 0.8.0
+  (`docs/design/scripts.md`, Q13 and Q15), one line `<name> <version> <source> <checksum>`
+  each, sorted. It does not read `conformance/Cargo.lock`. A path dependency outside the
+  repository has no `source` line and is not caught. The tests of
+  `crates/surf/tests/lock_check.rs` (36), `adversary.rs` (9), `adversary_2.rs` (6) and
+  `adversary_3.rs` (5) run that line with `sh` in their copies, without `task`;
+  `the_unchanged_lock_passes` holds the task to the line with
   `task --color=false --dry --verbose lock-check`, which prints it on standard error
   (`--color=false`: with `CI=true`, as `task check-runner` sets it, task colours the line).
 - `task generate`: rewrite `generated/rust/` from `spec/`, in place. `ess` refuses, naming the
