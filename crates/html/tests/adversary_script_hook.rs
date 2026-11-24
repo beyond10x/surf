@@ -503,12 +503,16 @@ fn by_id(tree: &Tree, id: &str) -> NodeId {
         .unwrap_or_else(|| panic!("no element with the id {id}"))
 }
 
+/// An input and the calls it gives: the `id` of each element, and `None` for `run` or the
+/// reason of `skip`.
+type MarkupCase = (&'static str, &'static [(&'static str, Option<NotRun>)]);
+
 /// Markup the table of Q1 does not spell out, and the call each gives. Each script element in
 /// the tree gets exactly the calls listed.
 #[test]
 fn markup_q1_does_not_spell_out_gets_its_calls() {
     use NotRun::*;
-    let cases: &[(&str, &[(&str, Option<NotRun>)])] = &[
+    let cases: &[MarkupCase] = &[
         (
             "<template><template><script id=a>x</script></template></template>",
             &[("a", Some(Disconnected))],
@@ -1129,6 +1133,9 @@ fn refused_writes_leave_no_count_raised() {
     assert_a_tree(&tree, &[], "depth");
 }
 
+/// A write of character data at the offsets a case gives.
+type DataWrite = fn(&mut Tree, NodeId) -> Result<(), WriteError>;
+
 /// Offsets a caller controls: past the end, `usize::MAX`, between the two units of a surrogate
 /// pair, and counts past the end. Each refused write leaves the tree as it was.
 #[test]
@@ -1137,7 +1144,7 @@ fn offsets_past_the_end_and_inside_a_pair_are_refused() {
     let p = by_id(&tree, "p");
     let text = tree.create_text_node("a\u{1F600}b").unwrap();
     tree.append_child(p, text).unwrap();
-    let refused: [(&str, fn(&mut Tree, NodeId) -> Result<(), WriteError>); 8] = [
+    let refused: [(&str, DataWrite); 8] = [
         ("insert at usize::MAX", |t, n| {
             t.insert_data(n, usize::MAX, "x")
         }),
