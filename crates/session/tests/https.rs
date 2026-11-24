@@ -109,6 +109,28 @@ fn https_case_1_open_with_the_root_as_ca_file_loads_the_page() {
     assert_eq!(page_line(&answer), loaded(&address), "{answer}");
 }
 
+/// A file of the root and another root, with lines before, between and after them: the client
+/// sends only the blocks, and the session loads the page through them.
+#[test]
+fn https_case_1_a_file_with_lines_around_its_blocks_loads_the_page() {
+    let dir = TestDir::new();
+    let server = server("ok-ecdsa-p256", Mode::Normal);
+    let address = address(&server);
+    let text = [
+        "a line before the blocks\n".to_string(),
+        fs::read_to_string(root("ok-ed25519")).unwrap(),
+        "a line between the blocks\n".to_string(),
+        fs::read_to_string(root("ok-ecdsa-p256")).unwrap(),
+        "a line after the blocks\n".to_string(),
+    ]
+    .concat();
+    let file = dir.path.join("roots.pem");
+    fs::write(&file, text).unwrap();
+    let session = open(&dir, Some(&file));
+    let answer = go(&dir, &session, &address);
+    assert_eq!(page_line(&answer), loaded(&address), "{answer}");
+}
+
 #[test]
 fn https_case_2_a_session_opened_without_ca_file_does_not_trust_the_server() {
     let dir = TestDir::new();

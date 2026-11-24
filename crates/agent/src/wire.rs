@@ -37,7 +37,8 @@
 //!   from standard input for `-`); `pick <handle> <option>` sends `arg handle` and `arg option`;
 //!   `press <handle>` sends `arg handle`; `log <n>` sends `arg count` (decimal digits, from 1),
 //!   and `log` alone no argument. `open --ca-file <path>` sends `arg anchors`, the text of the
-//!   file (PEM, at most 32 KiB; `docs/design/tls.md` item 8), never the path: the anchors travel
+//!   certificate blocks of the file without the lines around them (PEM, from a file of at most
+//!   32 KiB; `docs/design/tls.md` item 8), never the path: the anchors travel
 //!   in the request because a `surfd` started by an earlier `open` does not see the environment
 //!   of a later caller.
 //!   A later argument is a new name and needs no new version; the receiver answers an

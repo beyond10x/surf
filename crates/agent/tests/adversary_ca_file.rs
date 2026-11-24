@@ -103,17 +103,20 @@ fn adversary_ca_file_a_fifo_is_refused_and_does_not_hang() {
     assert_eq!(dir.requests(), "", "a request was sent");
 }
 
-/// The root followed by `#` outside any block, `size` bytes in all: valid PEM of one CA.
+/// A line of `#` outside any block, then the root without the line feed after its END line,
+/// `size` bytes in all: valid PEM of one CA whose last byte is the last dash of its END line, so
+/// that a file read one byte short is no longer PEM.
 fn padded_root(dir: &TestDir, name: &str, size: usize) -> PathBuf {
-    let mut text = fs::read_to_string(root()).unwrap();
-    text.push_str(&"#".repeat(size - text.len()));
+    let root = fs::read_to_string(root()).unwrap();
+    let root = root.trim_end_matches('\n');
+    let text = format!("{}\n{root}", "#".repeat(size - root.len() - 1));
     let path = dir.path.join(name);
     fs::write(&path, &text).unwrap();
     path
 }
 
-/// A file of exactly 32 KiB is taken and sent whole, also through a symbolic link; a file of
-/// one byte more is refused `TooLarge` although its first 32 KiB are a file that is taken.
+/// A file of exactly 32 KiB is read to its last byte and taken, and its block is sent, also
+/// through a symbolic link; a file of one byte more is refused `TooLarge`.
 #[test]
 fn adversary_ca_file_the_bound_is_32_kib_exactly() {
     let dir = TestDir::new();
@@ -127,8 +130,8 @@ fn adversary_ca_file_the_bound_is_32_kib_exactly() {
         "TooLarge",
     );
     let _surfd = StandIn::start(&dir);
-    let text = fs::read_to_string(&at).unwrap();
-    let line = format!("arg anchors {}\n", surf_answer::quote(&text));
+    let block = fs::read_to_string(root()).unwrap();
+    let line = format!("arg anchors {}\n", surf_answer::quote(&block));
     for file in [&at, &link] {
         dir.clear_requests();
         let _ = run(agent(&dir).arg("open").arg("--ca-file").arg(file));

@@ -1,9 +1,9 @@
 //! Case 5 of `story:tls-session-anchors`, and the request of `open --ca-file`: the client reads
 //! the file of `--ca-file` before it connects, refuses one `surf-tls` refuses as an invalid input
 //! (exit 2 and the usage, as `docs/agent-answer.md` gives a usage error) with nothing connected
-//! and no session made, and sends the bytes of a file it takes as `arg anchors` of the `open`
-//! request. With a copy of the built `surf-agent` and the stand-in beside it as `surfd`. The
-//! certificates are those of `crates/tls-test-certs/certs/`.
+//! and no session made, and sends the blocks of a file it takes, and nothing around them, as
+//! `arg anchors` of the `open` request. With a copy of the built `surf-agent` and the stand-in
+//! beside it as `surfd`. The certificates are those of `crates/tls-test-certs/certs/`.
 
 use crate::common;
 
@@ -97,22 +97,47 @@ fn ca_file_case_5_a_refused_file_sends_nothing_to_a_running_surfd() {
     assert_eq!(left, ["surfd.sock"], "a session was made");
 }
 
-/// A file the client takes travels in the `open` request as `arg anchors`, its bytes quoted;
-/// the path does not.
+/// The lines of a file of two roots that are outside its blocks: before, between and after
+/// them, a stray END line among them.
+const AROUND: [&str; 4] = [
+    "a line before the blocks\n",
+    "a line between the blocks\n",
+    "-----END CERTIFICATE-----\n",
+    "a line after the blocks\n",
+];
+
+/// A file the client takes travels in the `open` request as `arg anchors`: the text of the
+/// blocks `surf-tls` took, quoted, and none of the lines around them; the path does not travel.
 #[test]
-fn ca_file_open_sends_the_bytes_of_the_file_as_arg_anchors() {
+fn ca_file_open_sends_only_the_blocks_taken_as_arg_anchors() {
     let dir = TestDir::new();
     let _surfd = StandIn::start(&dir);
-    let file = case("ok-ecdsa-p256").join("root.pem");
-    let pem = fs::read_to_string(&file).unwrap();
+    let p256 = fs::read_to_string(case("ok-ecdsa-p256").join("root.pem")).unwrap();
+    let ed25519 = fs::read_to_string(case("ok-ed25519").join("root.pem")).unwrap();
+    let text = [AROUND[0], &p256, AROUND[1], AROUND[2], &ed25519, AROUND[3]].concat();
+    let file = dir.path.join("roots.pem");
+    fs::write(&file, &text).unwrap();
     let _ = run(agent(&dir)
         .arg("open")
         .arg("--ca-file")
         .arg(&file)
         .arg("https://localhost:1/"));
     let requests = dir.requests();
-    let line = format!("arg anchors {}\n", surf_answer::quote(&pem));
+    let blocks = format!("{p256}{ed25519}");
+    let line = format!("arg anchors {}\n", surf_answer::quote(&blocks));
     assert!(requests.contains(&line), "{requests}");
+    for around in [AROUND[0], AROUND[1], AROUND[3]] {
+        assert!(
+            !requests.contains(quoted_inner(around).as_str()),
+            "{around:?} travels: {requests}"
+        );
+    }
+    // Each block ends with an END line; a third one would be the stray line.
+    assert_eq!(
+        requests.matches(quoted_inner(AROUND[2]).as_str()).count(),
+        2,
+        "the stray END line travels: {requests}"
+    );
     assert!(
         requests.starts_with("surf-wire 1\ncommand open\n"),
         "{requests}"
@@ -121,4 +146,35 @@ fn ca_file_open_sends_the_bytes_of_the_file_as_arg_anchors() {
         !requests.contains(file.to_str().unwrap()),
         "the path travels: {requests}"
     );
+}
+
+/// `text` as `surf_answer::quote` writes it, without the double quotes around it.
+fn quoted_inner(text: &str) -> String {
+    let quoted = surf_answer::quote(text);
+    quoted[1..quoted.len() - 1].to_string()
+}
+
+/// Bytes that are not UTF-8, outside the blocks of a file, do not refuse it: they are not sent,
+/// and the blocks are.
+#[test]
+fn ca_file_bytes_that_are_not_utf_8_outside_the_blocks_are_not_sent() {
+    let dir = TestDir::new();
+    let _surfd = StandIn::start(&dir);
+    let root = fs::read(case("ok-ecdsa-p256").join("root.pem")).unwrap();
+    let mut bytes = b"before \xff\xfe\n".to_vec();
+    bytes.extend_from_slice(&root);
+    bytes.extend_from_slice(b"after \xc3\x28\n");
+    let file = dir.path.join("latin.pem");
+    fs::write(&file, &bytes).unwrap();
+    let output = run(agent(&dir)
+        .arg("open")
+        .arg("--ca-file")
+        .arg(&file)
+        .arg("https://localhost:1/"));
+    let requests = dir.requests();
+    let root = String::from_utf8(root).unwrap();
+    let line = format!("arg anchors {}\n", surf_answer::quote(&root));
+    assert!(requests.contains(&line), "{}: {requests}", stderr(&output));
+    assert!(!requests.contains("before "), "{requests}");
+    assert!(!requests.contains("after "), "{requests}");
 }

@@ -272,8 +272,8 @@
 //!
 //! # Extra trust anchors
 //!
-//! An `open` with `arg anchors` (`surf-agent open --ca-file <path>`, which sends the file's
-//! text) gives the session the bundled trust anchors and the certificates of that text, read
+//! An `open` with `arg anchors` (`surf-agent open --ca-file <path>`, which sends the text of the
+//! file's certificate blocks) gives the session the bundled trust anchors and the certificates of that text, read
 //! once with [`surf_fetch::Anchors::with_extra_pem`]; every `https:` load of the session is
 //! authenticated against them for its life, and they are dropped with it. Text that reader
 //! refuses is `did refused usage`, status 2, as any other `usage` refusal of `open`, and the

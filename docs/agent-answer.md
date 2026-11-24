@@ -667,9 +667,11 @@ as trust anchors beside the bundled ones, for every `https:` load of the session
 life (`docs/design/tls.md` item 8); a session opened without it trusts the bundled anchors only,
 and the anchors of one session are never those of another. The client reads the file before it
 connects to `surfd`: at most 32,768 bytes and 64 blocks, every block a `CERTIFICATE`, every
-certificate a CA. Its bytes travel in the `open` request (`arg anchors`) and `surfd` passes them
-to the session process over the session socket; neither the path nor the bytes are an argument
-or in the environment of a process.
+certificate a CA. The text of its certificate blocks, from each BEGIN line to its END line,
+travels in the `open` request (`arg anchors`); the lines before, between and after the blocks
+are not sent, and need not be UTF-8. `surfd` passes the request to the session process over the
+session socket; neither the path nor the blocks are an argument or in the environment of a
+process.
 
 A file the client refuses is an invalid input: exit status 2, nothing on standard output, and on
 standard error the line `surf-agent: the --ca-file file is refused: <error>` (or `surf-agent:

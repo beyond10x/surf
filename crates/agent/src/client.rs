@@ -12,8 +12,9 @@
 //!
 //! Before that, `open --ca-file <path>` reads the file and checks it with `surf-tls`
 //! ([`read_ca_file`]); a file it refuses is a usage error (status 2), with nothing connected,
-//! started or written. A file it takes travels as the text of `arg anchors` in the `open`
-//! request; `surfd` passes the request to the session process unchanged, over its socket.
+//! started or written. Of a file it takes, the certificate blocks travel, without the lines
+//! around them, as the text of `arg anchors` in the `open` request; `surfd` passes the request
+//! to the session process unchanged, over its socket.
 
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -273,11 +274,12 @@ fn read_value(input: &mut dyn Read) -> Result<String, Failure> {
         .map_err(|_| Failure::Usage("the value read from standard input is not UTF-8".into()))
 }
 
-/// The text of the file of `--ca-file` (`docs/design/tls.md` item 8), read before any
-/// connection: a regular file, read up to one byte past [`EXTRA_BYTES_MAX`] so that a larger one
-/// is refused as too large without being read whole, and taken only when
-/// [`Anchors::with_extra_pem`] of `surf-tls` takes it (at most 64 blocks, every block a
-/// `CERTIFICATE`, every certificate a CA). A file it refuses is a usage error naming the kind of
+/// The certificate blocks of the file of `--ca-file` (`docs/design/tls.md` item 8), read before
+/// any connection: a regular file, read up to one byte past [`EXTRA_BYTES_MAX`] so that a larger
+/// one is refused as too large without being read whole, and taken only when
+/// [`Anchors::with_extra_pem_blocks`] of `surf-tls` takes it (at most 64 blocks, every block a
+/// `CERTIFICATE`, every certificate a CA). The text given back is that of the blocks taken, and
+/// none of the lines around them. A file it refuses is a usage error naming the kind of
 /// [`AnchorError`] and the block at fault ([`refusal`]); no message repeats the path or a byte
 /// of the file.
 fn read_ca_file(path: &Path) -> Result<String, Failure> {
@@ -305,14 +307,14 @@ fn read_ca_file(path: &Path) -> Result<String, Failure> {
     file.take(EXTRA_BYTES_MAX as u64 + 1)
         .read_to_end(&mut pem)
         .map_err(unreadable)?;
-    Anchors::bundled().with_extra_pem(&pem).map_err(|error| {
-        Failure::Usage(format!(
-            "the --ca-file file is refused: {}",
-            refusal(&error)
-        ))
-    })?;
-    String::from_utf8(pem)
-        .map_err(|_| Failure::Usage("the --ca-file file is not UTF-8 text".to_string()))
+    Anchors::bundled()
+        .with_extra_pem_blocks(&pem)
+        .map_err(|error| {
+            Failure::Usage(format!(
+                "the --ca-file file is refused: {}",
+                refusal(&error)
+            ))
+        })
 }
 
 /// The refusal of a `--ca-file` file as the client prints it: the kind of the [`AnchorError`]
