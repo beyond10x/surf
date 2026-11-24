@@ -66,6 +66,10 @@ private `XDG_RUNTIME_DIR`, it runs the end-to-end case of the session process
 (`crates/session/tests/e2e.rs`) on the directory's own `surf-agent`, `surfd` and
 `surf-session`: `open`, `go`, `look` and `close` against a page server inside the test, each
 answer compared with its golden text. It then fails if a process from the directory still runs.
+Last, it runs `surf-agent help --for-agent` in an empty environment: it must exit 0, end with a
+line feed, have the first line `surf-agent <version>: a definition for agents` with the version
+of the directory's name and the last line `end of the definition`; the step prints how many lines
+the definition has.
 It runs unchanged on a Linux workstation, from a checkout, on an unpacked archive:
 
     sh taskfiles/release-smoke.sh <dir>/surf-<version>-x86_64-unknown-linux-musl

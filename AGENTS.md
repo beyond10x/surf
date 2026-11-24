@@ -574,8 +574,20 @@ above, and the list of standards itself was written from memory.
     refused naming its quoted size (`client::STDIN_VALUE_FITS`, 16,000 bytes, always fits beside
     a handle of up to 1,364); the `Debug` of a wire `Arg` writes its value's length. The
     package carries the release version, `0.7.0`, as do `surf-cli`, `surfd` and
-    `surf-session`. `open` starts `surfd` from the directory of its own executable. 61 tests in
-    one binary: `adversary_ca_file` 4, `adversary_fill_pick` 6, `ca_file` 6, `drift` 2,
+    `surf-session`. `open` starts `surfd` from the directory of its own executable. Since
+    `story:agent-skill-definition` `surf-agent help --for-agent`, those words and nothing else,
+    prints a definition for agents and asks no session for anything (`src/help.rs`,
+    `help::assemble`; the sixth `UNMAPPED:` marker). The binary takes the words before it reads
+    the environment and assembles the text from `cli::USAGE` and, compiled in,
+    `cli/surf-agent.yaml`, `docs/agent-answer.md` and the golden `open.txt`, `go.txt` and
+    `look.txt` of `crates/session/tests/golden/`: a later change of those files changes the
+    definition and writes no file of its own. `help::commands` reads a plain `about` on one line
+    and refuses every other form, naming the line. A write that fails exits 1 with one line on
+    standard error; a closed pipe exits 0. The module `help_for_agent` compares the printed
+    sections with those files and section 3 with `.out/cli/binding.json` (read with the JSON
+    reader of `tests/drift.rs`), and holds each sentence of sections 1, 2 and 5 to its source.
+    77 tests in one binary: `adversary_ca_file` 4, `adversary_fill_pick` 6,
+    `adversary_skill_definition` 2, `ca_file` 6, `drift` 2, `help_for_agent` 14,
     `secreview_refusal_text` 2, `stand_in` 10, `start` 12, `token` 9, `usage` 10. Depends on
     `surf-answer`, `surf-secret` and `surf-tls` (which reads the file of `open --ca-file`).
   - `crates/surfd` (`surfd`): a library and the binary `surfd`, the daemon the agent command line

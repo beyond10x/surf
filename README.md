@@ -86,6 +86,10 @@ last field is `-` for a row with neither target nor value.
 
 ## Driving surf from an agent
 
+`surf-agent help --for-agent` prints, for an agent to read, the definition of the installed
+version: its commands, the parts of the answer an agent reads, the rule for text from a page and
+worked calls. It needs no session.
+
 On Linux, `surf-agent` drives a browser session one call at a time, for an AI agent or a
 script. `surf-agent open <url>` opens a session, loads the address and prints the session's
 identity and a token, once. Export the two as `SURF_SESSION` and `SURF_TOKEN`; then `go <url>`,
