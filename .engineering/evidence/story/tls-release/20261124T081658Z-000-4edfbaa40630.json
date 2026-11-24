@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T08:16:58Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-release",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "release workflow run 45347703886, started by hand on impl/tls-release at 2ae3e17, 2026-11-24 08:24 to 09:08 CET (acceptance 1 and 6)",
+    "reference": "the four package jobs and the checksums job success; each smoke log holds the https: line (Unreachable), anchors 117 bundled 2026-11-05 and the handshake line (navigation Committed); each package log: the test line first (6 passed), then the build into target/ship; the marker is found in the binary the test built and in none of the copied binaries"
+  }
+}

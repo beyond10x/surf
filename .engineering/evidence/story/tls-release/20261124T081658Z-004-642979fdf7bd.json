@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T08:16:58Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-release",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "one review of 282480c to 70046fe for defects by a reviewer who did not write it, 2026-11-24",
+    "reference": "eight items named, each changed in the fix round e93ab1b and 2ae3e17 or in b39b77b: the handshake in the smoke test, the exact anchors count, one fetch-failed line with an id, prose, and the libraries the macOS surf links"
+  }
+}

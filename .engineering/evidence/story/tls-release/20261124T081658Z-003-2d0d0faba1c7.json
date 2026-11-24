@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T08:16:58Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-release",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the forge runs on main at ce99285 (the merges of impl/tls-release at b39b77b and of plan/round-2 at ccca6fb), 2026-11-24 09:10 to 09:16 CET",
+    "reference": "check 45353854845 success, Shared source gates 45353855005 success, Documentation validation 45353854815 success, Documentation site 45354290955 success"
+  }
+}
