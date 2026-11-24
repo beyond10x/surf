@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 mod adversary;
+mod adversary_2;
 mod depth;
 mod extraction;
 mod reader;
