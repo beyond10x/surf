@@ -14,13 +14,14 @@ keeps cookies. It has no window, no rendering and no JavaScript yet.
 
 On 2026-11-24, with ess 0.97.4, after round 2, which follows round 1 and wave 10 of the current
 plan, after the live view's control states and changed panel, after TLS 1.3 and `https:`, and
-after the cookie jar and `surf-agent help --for-agent` (the gate run on `eb97549`):
+after the cookie jar and `surf-agent help --for-agent`, and with the Web IDL reader
+`surf-webidl` (the gate run on `8fab187`, its tests counted again after it):
 
 | what | value |
 |---|---|
 | specification | ESS 0.97.4, valid |
 | conformance scenarios | 203 of 203 pass, against the interpreter and against the Rust code |
-| tests | 1,976 passed: 1,424, and 552 of the TLS crates |
+| tests | 2,048 passed: 1,496, and 552 of the TLS crates |
 | agent tasks | 6 of 6 pass (`article`, `table`, `link`, `search`, `https`, `login`) |
 | live view | the panel "Now" lists a page's links, buttons and fields with their state; the panel `Changed by <action>` shows what the action changed; a typed password is shown as a count of bytes, never its value |
 | live view's page tests | 71 passed, in Chromium's headless shell |

@@ -1018,7 +1018,7 @@ above, and the list of standards itself was written from memory.
     interface mixin or `A` no interface; `Model::counts`, `Model::members`,
     `Model::extended_attribute_counts` and `Model::unresolved` read it (for the two pages,
     `tests/unresolved.txt` lists the names no definition defines). Depends on `surf-html`
-    only. 69 tests in one test binary (`adversary` 11, `depth` 3, `reader` 36, `refusals` 16,
+    only. 72 tests in one test binary (`adversary` 11, `depth` 3, `reader` 35, `refusals` 20,
     `source` 2, `vendored` 1; the model of both pages is built once per run, in `vendored`).
   - `crates/tls-conformance` (`surf-tls-conformance`, test tooling, not shipped): runs the
     x509-limbo cases of `crates/tls/tests/data/x509-limbo/` through `surf_tls::path::PathVerifier`

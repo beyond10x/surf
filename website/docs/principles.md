@@ -17,7 +17,7 @@ that.
    components to share memory is refused.
 4. **No third-party code in what ships.** The Rust standard library and the operating system are
    allowed. Every outside package of the lock file is on the allow-list
-   `taskfiles/lock-allow.txt` (19 of its 49 packages), and the lock check fails on one that is
+   `taskfiles/lock-allow.txt` (19 of its 51 packages), and the lock check fails on one that is
    not. One exception: audited cryptographic primitives for TLS come from ring, which was
    reviewed as a dependency in the rustls audit of Cure53, 2020
    ([the report](https://cure53.de/pentest-report_rustls.pdf)); surf uses ring 0.17.14. Only
