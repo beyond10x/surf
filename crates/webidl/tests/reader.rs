@@ -227,6 +227,17 @@ fn definition_enum() {
 }
 
 #[test]
+fn definition_enum_trailing_comma() {
+    let definition = one("enum E { \"a\", \"b\", };");
+    assert_eq!(
+        definition.kind,
+        DefinitionKind::Enum {
+            values: vec!["a".to_string(), "b".to_string()]
+        }
+    );
+}
+
+#[test]
 fn definition_typedef() {
     let definition = one("typedef (ArrayBufferView or Thing) BufferSource;");
     assert_eq!(definition.name, "BufferSource");

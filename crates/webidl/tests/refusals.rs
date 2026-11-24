@@ -161,3 +161,17 @@ fn newer_index() {
         }
     }
 }
+
+#[test]
+fn enum_empty_value_between_commas() {
+    assert_refused(
+        "enum E {\n  \"a\",\n  ,\n  \"b\"\n};",
+        3,
+        "`,` where a string was expected",
+    );
+}
+
+#[test]
+fn enum_without_values() {
+    assert_refused("enum E {\n};", 2, "`}` where a string was expected");
+}

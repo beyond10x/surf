@@ -623,6 +623,8 @@ impl Parser<'_> {
         Ok(members)
     }
 
+    /// `{ "a", "b" }`, at least one string, a comma after the last allowed (the grammar's
+    /// `EnumValueList`); an empty list and an empty place between two commas are refused.
     fn enum_values(&mut self) -> Result<Vec<String>, ReadError> {
         self.expect("{")?;
         let mut values = Vec::new();
@@ -632,8 +634,7 @@ impl Parser<'_> {
                     let token = self.next().expect("peeked");
                     values.push(token.text[1..token.text.len() - 1].to_string());
                 }
-                _ if values.is_empty() => return self.unexpected("a string"),
-                _ => {}
+                _ => return self.unexpected("a string"),
             }
             if self.eat("}") {
                 break;
