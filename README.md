@@ -8,7 +8,7 @@
 
 ![spec: ESS 0.97.4, valid](docs/badges/spec.svg)
 ![conformance: 203 of 203 scenarios](docs/badges/conformance.svg)
-![tests: 1960 passed](docs/badges/tests.svg)
+![tests: 1976 passed](docs/badges/tests.svg)
 ![third-party crates shipped: 5, ring 0.17.14 and 4 it needs](docs/badges/dependencies.svg)
 ![unsafe code: forbidden](docs/badges/unsafe.svg)
 ![standard sections marked complete: 0](docs/badges/complete.svg)
@@ -282,7 +282,7 @@ there instead.
   check revocation: a revoked certificate that has not expired loads.
 - **203 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **1,960 tests** (1,408, and 552 of the TLS crates in a step of their own), built with
+- **1,976 tests** (1,424, and 552 of the TLS crates in a step of their own), built with
   warnings treated as errors, and 71 tests of the live view's page in a browser.
 
 New after round 2, shipped in release `0.6.0`:
@@ -583,13 +583,13 @@ generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 10 CLI artifact(s), generated in .out/cli
 Cargo.lock: 50 package(s), 19 from outside this repository, each on the allow-list
-test-layout: 24 test directories, 185 test files, one test binary each
+test-layout: 24 test directories, 187 test files, one test binary each
 tls-certs: 33 cases, certs/ matches its sources
 tls-flights: 6 recordings match SOURCE, the recorder matches DIGEST
 tls-flights: self-test: a changed copy of aes128-x25519-ecdsa.bin fails naming it
 doc-tests-check: no doc test outside crates/ports
     Finished `dev` profile [unoptimized] target(s) in 0.03s
-1408 tests: 1408 passed, 0 failed, 0 ignored (cargo-nextest 1406, doc tests 2)
+1424 tests: 1424 passed, 0 failed, 0 ignored (cargo-nextest 1422, doc tests 2)
 test step: 10.8 s of its budget of 120 s
 552 tests: 552 passed, 0 failed, 0 ignored (cargo-nextest 552)
 tls test step: 2.8 s of its budget of 120 s
