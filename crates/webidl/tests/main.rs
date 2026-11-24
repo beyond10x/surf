@@ -3,4 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+mod reader;
+mod refusals;
 mod source;
+mod vendored;
