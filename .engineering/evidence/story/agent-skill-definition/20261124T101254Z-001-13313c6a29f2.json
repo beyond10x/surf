@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T10:12:54Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-skill-definition",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the smoke test on release binaries built at the tip with the release workflow flags, through the pool on the build node, 2026-11-24 (acceptance 10)",
+    "reference": "release-smoke: surf-agent help --for-agent prints 315 lines; release-smoke: ok, surf, surf-agent, surfd and surf-session on Linux; by hand on stub binaries the step fails on a missing final line feed, on a version other than the archive directory name and on a directory not named surf-<version>-<target>"
+  }
+}

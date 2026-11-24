@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T10:12:54Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-skill-definition",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "one review of 476a206 to 5742114 by a reviewer who did not write it, 2026-11-24",
+    "reference": "nothing blocking; two holes of the tests closed by 2 tests of the reviewer (1ede2c9); findings on section 2 (an export is lost in a tool with a new shell per command), section 1 and 5 sentences, the shared scan of test and binary, a failed write, the smoke step: each changed in the fix round df8285f, bfe2429, 44d96c4"
+  }
+}

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-skill-definition
 kind: story
-status: active
+status: implemented
 title: 'surf-agent help --for-agent: a definition an agent reads, assembled from the sources the binary is held to'
 summary: The binary prints the commands, the answer, the untrusted-text rule and worked calls from cli/surf-agent.yaml, docs/agent-answer.md and the golden answers compiled into it; a gate test compares output and sources; a thin SKILL.md is handed over to agentplugins.
 relations:
@@ -25,10 +25,11 @@ scope:
   path: crates/agent/tests
 - confidence: cited
   path: taskfiles/release-smoke.sh
-revision: 9
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T07:42:30Z", actor: "human:operator", revision: 7, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T07:42:31Z", actor: "human:operator", revision: 8, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-24T10:12:54Z", actor: "human:operator", revision: 11, decided_on: {"recorded":{"test_result":3,"verification":2}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -277,3 +278,26 @@ sections 1, 2 and 5 under "Change" and the constant of acceptance case 5.
     with a line feed.
 
 At the merge the definition has 315 lines, 87 of them outside section 4.
+
+## As built
+
+Where the unit on `main` (`e9ef6b0`, the merge of `impl/agent-skill-definition` at `dd9c3ed`)
+differs from the text above, beside "Decisions after the review":
+
+- `help::assemble` answers `Result<String, _>`, not `String`: it refuses a description of the
+  binding that its line scan cannot read (decision 11).
+- `crates/agent/src/lib.rs` gets `pub mod help;`: an integration test reaches only the library,
+  and cases 1a and 6 call `help::assemble`. Five items of `crates/agent/tests/drift.rs` became
+  `pub(crate)`, so the test of section 3 reads `.out/cli/binding.json` the way `drift` does.
+- The headings of `docs/agent-answer.md` are at lines 76, 156, 531 and 647 at the merge, not at
+  the lines the story cites; the part "Exit status and refusals" includes its subsection "Extra
+  trust anchors", by the story's own rule for where a body ends.
+- The grammar line of case 6 is padded (`state         = "open" / ...`); the test finds it by
+  its start and end and holds no copy of it.
+- Outside acceptance 11's list: `crates/agent/src/lib.rs`, `crates/agent/tests/drift.rs`,
+  `CHANGELOG.md`, `AGENTS.md`, `README.md`, `docs/releasing.md`,
+  `website/docs/drive-from-an-agent.md`, a comment in `.github/workflows/release.yml`, and the
+  public numbers (badges, `website/docs/`).
+- Tests at the merge: `surf-agent` 77 (61 before the unit), the gate's test step 1424.
+
+The hand-over to `agentplugins` (a `SKILL.md` that points to the command) is not filed yet.
