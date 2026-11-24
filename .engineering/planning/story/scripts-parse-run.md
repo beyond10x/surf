@@ -20,7 +20,7 @@ scope:
   path: crates/script/tests/parse_run.rs
 - confidence: cited
   path: docs/design/scripts.md
-revision: 20
+revision: 21
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 ---
@@ -58,6 +58,22 @@ The end words are the closed list of ends of `docs/design/scripts.md`, Q7: `ran`
 `scripts-per-document`, `steps-per-document`, `wall-clock`, `memory` and `faulted`. They are the 23
 variants of `surf.document.ScriptReason` behind `Limit` and `NotRun` (Q7's YAML). This story
 invents none.
+
+Found by the review of `story:html-script-hook` (2026-11-24), and ruled in that unit:
+
+- The hook is called once for every `script` element the parser inserts: an SVG script
+  with the word `svg` however it is closed, and an HTML script that is open when the
+  parser stops, at the end of the input or at a limit, with `eof`. This story maps each
+  word to its end and counts on exactly one call per element.
+- Bytes with a hook: the only path today is `encoding::decode` and then
+  `parse_document_with_hook` on the text. That path hands the parser no encoding, so a
+  `meta` that names another encoding does not decode the bytes again: scripts run once,
+  and the tree can differ from the one `parse_document_bytes` builds for the same bytes.
+  This story decides which tree a page with such a `meta` gets when scripts are on and
+  holds it with a test on one page whose `meta` names an encoding the sniffing did not
+  pick.
+- After a hook has written, the parser's depth limit holds for the tree and no longer for
+  the stack of open elements alone; a parse stopped that way has `stopped_by` `Depth`.
 
 ## Decisions taken
 

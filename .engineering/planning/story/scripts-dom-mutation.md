@@ -15,7 +15,7 @@ scope:
   path: crates/script/src/dom/mutation.rs
 - confidence: cited
   path: crates/script/tests/dom_mutation.rs
-revision: 18
+revision: 19
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 15}
 ---
@@ -39,6 +39,22 @@ finds an operation it needs missing there, it adds it to that file and names it 
 end words are the note's (Q4's column `outcome when reached`, Q7's closed list of ends); where the
 note spells a word otherwise than this text, the note's spelling holds. The parse that runs a
 page's scripts is `story:scripts-parse-run`'s, which this story uses in its tests.
+
+Found by the review of `story:html-script-hook` (2026-11-24), each for this story to hold
+with a test:
+
+- The tree's write surface does not count the cost of a write. A move walks the children
+  or the subtree it touches (the check that the document allows the child, the height of
+  the moved element), so a script that moves a deep subtree many times is bounded by the
+  script's own step and wall-clock bounds only. This story charges steps for a write in
+  proportion to what the tree walks, and its test moves a subtree of the node bound's size
+  in a loop and ends `limit: steps` or `limit: wall-clock` inside the bound.
+- A removed node keeps its place in the tree's node count; shortened data and a removed
+  attribute give their bytes back. A script that adds and removes nodes in a loop reaches
+  the node bound, and the write that reaches it is refused. This story names the error a
+  script sees for that refusal.
+- A `NodeId` belongs to one tree. The bindings never hand a node of one document to
+  another document's tree.
 
 ## Change
 

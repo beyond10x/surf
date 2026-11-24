@@ -61,7 +61,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 30
+revision: 31
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:14Z", actor: "human:operator", revision: 25}
 ---
@@ -115,6 +115,17 @@ Found by the reviews of `story:session-process-hardening` and `story:scripts-eng
   builtins removes the `#[ignore]` lines.
 - `surf-script` matches swell's error types arm by arm, so a tag that adds a variant stops the
   build where surf must choose the word.
+
+Found by the review of `story:scripts-spec` (2026-11-24), each for this story to hold with a
+test:
+
+- "Without scripts: no record" cannot be said in the document domain: a document does not
+  know the session's option, and a component reads no other component's rows. This story's
+  session holds it: a session opened without scripts writes no script end, on a page with
+  scripts of every kind.
+- `AddScriptEnd` refuses an end that the note's Q7 table or Q16's ranges exclude. The
+  session's writer builds each end from the runner's own types, so that no refused end can
+  be written, and this story says what the session answers when the store refuses one.
 
 ## Domain relations
 
