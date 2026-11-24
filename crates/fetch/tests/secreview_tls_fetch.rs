@@ -48,6 +48,8 @@ fn get(address: &str, anchors: &Anchors, limits: &Limits, network: &TestNetwork)
         body: None,
         media_type: None,
         anchors: Some(anchors),
+        jar: None,
+        initiator: None,
     };
     send_through(&request, limits, network)
 }
@@ -342,6 +344,8 @@ fn secreview_tls_a_post_redirected_from_https_to_http_carries_what_the_rule_says
             body: Some(body),
             media_type: Some(form),
             anchors: Some(&anchors),
+            jar: None,
+            initiator: None,
         };
         let response = ok(send_through(&request, &limits(), &network()));
         assert_eq!(response.url, to);

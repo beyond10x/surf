@@ -20,6 +20,7 @@ mod back_forward;
 mod built;
 mod change_and_log;
 mod common;
+mod cookies;
 mod core;
 mod e2e;
 mod events;

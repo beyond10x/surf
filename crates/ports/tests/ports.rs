@@ -201,6 +201,7 @@ fn storage_request_put_get_list_in_insertion_order_replace_in_place_delete() {
             url: url("a"),
             method: Method::Get,
             body_type: None,
+            initiator: None,
         },
     });
     let replacement = RequestSnapshot {

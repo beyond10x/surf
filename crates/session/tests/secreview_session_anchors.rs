@@ -115,6 +115,7 @@ fn get(url: &str) -> surf::RequestStarted {
         method: surf::Method::Get,
         body: None,
         body_type: None,
+        initiator: None,
     }
 }
 

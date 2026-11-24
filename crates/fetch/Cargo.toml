@@ -8,6 +8,7 @@ license = "Apache-2.0"
 autotests = false
 
 [dependencies]
+surf-cookie = { path = "../cookie" }
 surf-tls = { path = "../tls" }
 surf-url = { path = "../url" }
 

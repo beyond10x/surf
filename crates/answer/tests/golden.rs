@@ -3,8 +3,8 @@
 //! typed value of its golden test, and `render` of that value gives the file again.
 
 use surf_answer::{
-    Answer, Did, Form, Head, Note, Page, Path, PathEntry, RefusalReason, SessionState, Text,
-    TextNote, parse, render, render_text_whole,
+    Answer, Changed, Did, Form, Head, Note, Page, Path, PathEntry, RefusalReason, RenderError,
+    SessionState, Text, TextNote, parse, render, render_text_whole,
 };
 
 fn golden(name: &str) -> String {
@@ -486,4 +486,80 @@ fn render_text_whole_writes_every_line_without_bounds() {
     }
     assert_eq!(whole, expected);
     assert!(!whole.contains("more"));
+}
+
+/// Case A1 of `story:agent-cookie-jar`: `look` of a page with a path of one action, its jar
+/// holding two cookies.
+fn cookies() -> Answer {
+    let mut answer = head_open();
+    answer.did = Some(Did::Action {
+        command: "look".to_string(),
+        argument: None,
+    });
+    answer.page = Some(Page::Loaded {
+        status: 200,
+        media_type: "text/html".to_string(),
+        address: "http://shop.example/".to_string(),
+        title: None,
+    });
+    answer.path = Some(Path {
+        total: 1,
+        entries: vec![PathEntry {
+            sequence: 1,
+            command: "go".to_string(),
+            handle: None,
+            argument: Some("http://shop.example/".to_string()),
+            argument_cut: false,
+        }],
+    });
+    answer.cookies = Some(2);
+    answer
+}
+
+#[test]
+fn a1_golden_cookies() {
+    assert_golden("cookies", cookies());
+    assert_round_trip("cookies", cookies());
+}
+
+/// `parse` of `text` is refused, naming line `line`.
+fn refused_at(text: &str, line: usize) {
+    match parse(text) {
+        Err(error) => assert_eq!(error.line, line, "{text:?}: {error}"),
+        Ok(answer) => panic!("{text:?} parsed as {answer:?}"),
+    }
+}
+
+#[test]
+fn a2_parse_refuses_cookies_0_02_and_after_a_note() {
+    let head = "surf 1 session 7f3a open\n";
+    refused_at(&format!("{head}cookies 0\n"), 2);
+    refused_at(&format!("{head}cookies 02\n"), 2);
+    refused_at(&format!("{head}note parser: tables\ncookies 1\n"), 3);
+    // What parse refuses, render does not write.
+    let mut zero = head_open();
+    zero.cookies = Some(0);
+    assert_eq!(render(&zero), Err(RenderError::NoCookies));
+}
+
+#[test]
+fn a3_cookies_stands_after_path_and_before_changed_and_text() {
+    let head = "surf 1 session 7f3a open\n";
+    // Each answer parses without its last line, so the refusal is the cookies line's place.
+    for (before, line) in [
+        (format!("{head}changed 0\n"), 3),
+        (
+            format!("{head}text markdown 1 of 1 lines from 1, 4 of 4 bytes\n> x\n"),
+            4,
+        ),
+    ] {
+        assert!(parse(&before).is_ok(), "{before:?}");
+        refused_at(&format!("{before}cookies 1\n"), line);
+    }
+    let text = format!("{head}path 1 of 1\n  1 open\ncookies 1\nchanged 0\n");
+    let parsed = parse(&text).expect("cookies between path and changed parses");
+    assert_eq!(parsed.cookies, Some(1));
+    assert_eq!(parsed.changed, Some(Changed::Controls(Vec::new())));
+    let rendered = render(&parsed).expect("the parsed value renders");
+    assert_eq!(rendered.as_bytes(), text.as_bytes());
 }

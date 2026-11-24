@@ -628,6 +628,8 @@ fn get(address: &str, network: &TestNetwork) -> Result<Response, Failure> {
         body: None,
         media_type: None,
         anchors: None,
+        jar: None,
+        initiator: None,
     };
     send_through(&request, &limits(), network)
 }
@@ -841,6 +843,8 @@ fn case_27_the_first_request_from_a_public_page_goes_to_public_addresses_only() 
             body: Some(b"a=1"),
             media_type: Some("application/x-www-form-urlencoded"),
             anchors: None,
+            jar: None,
+            initiator: None,
         };
         send_from(&request, &limits(), &network, Origin::PublicPage)
     };

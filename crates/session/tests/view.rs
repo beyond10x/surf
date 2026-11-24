@@ -25,12 +25,12 @@ const ALLOWED: Duration = Duration::from_secs(10);
 
 // --- view-url and the routes ------------------------------------------------------------------
 
-struct ViewUrl {
+pub(crate) struct ViewUrl {
     port: u16,
     token: String,
 }
 
-fn view_url(dir: &TestDir) -> ViewUrl {
+pub(crate) fn view_url(dir: &TestDir) -> ViewUrl {
     let line = fs::read_to_string(dir.surf().join("view-url")).expect("view-url");
     let rest = line
         .strip_prefix("http://127.0.0.1:")
@@ -43,7 +43,7 @@ fn view_url(dir: &TestDir) -> ViewUrl {
 }
 
 /// The 200 body of `GET <target>` with the view token.
-fn body(view: &ViewUrl, target: &str) -> Vec<u8> {
+pub(crate) fn body(view: &ViewUrl, target: &str) -> Vec<u8> {
     let mut stream = TcpStream::connect(("127.0.0.1", view.port)).expect("the view listens");
     stream.set_read_timeout(Some(ALLOWED)).unwrap();
     let request = format!(
@@ -87,10 +87,10 @@ fn summary(view: &ViewUrl, id: &str) -> json::Value {
 // --- The stream -------------------------------------------------------------------------------
 
 #[derive(Clone, Debug)]
-struct Event {
+pub(crate) struct Event {
     id: u64,
-    event: String,
-    data: String,
+    pub(crate) event: String,
+    pub(crate) data: String,
 }
 
 impl Event {
@@ -101,7 +101,7 @@ impl Event {
 
 /// An open `GET /events`, read by a thread of its own that keeps every byte it read; closed
 /// when dropped.
-struct Events {
+pub(crate) struct Events {
     socket: TcpStream,
     received: Receiver<Event>,
     bytes: Arc<Mutex<Vec<u8>>>,
@@ -110,7 +110,7 @@ struct Events {
 
 impl Events {
     /// Open the stream and read its head: the server writes it once the reader is subscribed.
-    fn open(view: &ViewUrl) -> Events {
+    pub(crate) fn open(view: &ViewUrl) -> Events {
         let mut socket = TcpStream::connect(("127.0.0.1", view.port)).expect("the view listens");
         let request = format!(
             "GET /events HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {}\r\n\r\n",
@@ -175,7 +175,7 @@ impl Events {
     }
 
     /// Every event until one for which `last` holds, that one included.
-    fn until(&self, last: impl Fn(&Event) -> bool) -> Vec<Event> {
+    pub(crate) fn until(&self, last: impl Fn(&Event) -> bool) -> Vec<Event> {
         let mut events = Vec::new();
         loop {
             let event = self.event();
@@ -192,7 +192,7 @@ impl Events {
         self.until(|event| event.event == "session" && event.json().get("id").str() == id)
     }
 
-    fn bytes(&self) -> Vec<u8> {
+    pub(crate) fn bytes(&self) -> Vec<u8> {
         self.bytes.lock().unwrap().clone()
     }
 }

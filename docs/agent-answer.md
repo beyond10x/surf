@@ -45,6 +45,8 @@ The example above shows the whole format. The binaries of release `0.7.0` (`surf
   `page none` before the first load;
 - `path <shown> of <total>` and its indented lines, `<n> follow <handle> "<label>"` for a
   `follow`; every action in the answer of `log`;
+- since `agent-cookie-jar`, `cookies <n>` in every answer that shows the session's state while
+  its jar holds a cookie (section "Cookies");
 - since `agent-change-and-log`, the `changed` block in every answer that shows the session's
   state (section "Changed");
 - without `--as`, for an HTML page with links, the `now` block of its links and `note
@@ -86,10 +88,11 @@ note visibility: hidden attribute only
   2. `did`
   3. `page`
   4. `path` and its indented lines
-  5. `changed` and its indented lines
-  6. `now` and its indented lines
-  7. `note` lines, any number
-  8. `text`, its body lines and its `more` line, which is the last line of the answer
+  5. `cookies`
+  6. `changed` and its indented lines
+  7. `now` and its indented lines
+  8. `note` lines, any number
+  9. `text`, its body lines and its `more` line, which is the last line of the answer
 - A line is made of words of the format, numbers and quoted fields, separated by one space.
   Only a quoted field holds a value from a page, a server or an address. A word is checked
   against its character set below, and the renderer refuses an answer with a word outside it
@@ -252,6 +255,24 @@ field when it had one. An action on an element names the element's handle, a wor
 argument nor handle: `7 back`, `8 forward`.
 
 The block shows the last 5 actions; the answer of `log` shows more (section "Log").
+
+### Cookies
+
+```
+cookies <n>
+```
+
+The cookies the session's jar holds when the answer is made, expired ones removed first: one
+line directly after the `path` block, `<n>` from 1, and no line when the jar holds none. It
+counts them and names none: no cookie's name or value is ever in an answer. A session keeps its
+cookies in memory, for itself, until it ends (`crates/cookie`, `surf-cookie`).
+
+```
+path 2 of 2
+  1 open
+  2 go "http://127.0.0.1:8080/login"
+cookies 1
+```
 
 ### Changed
 
@@ -535,8 +556,8 @@ exactly as written, in its case (RFC 7405 writes this `%s"..."`). `SP` is U+0020
 U+000A, `DQUOTE` is U+0022, `DIGIT` is `0` to `9`, `ALPHA` is `A` to `Z` and `a` to `z`.
 
 ```
-answer        = head-line [token-line] [did-line] [page-line] [path-block] [changed-block]
-                [now-block] *note-line [text-block]
+answer        = head-line [token-line] [did-line] [page-line] [path-block] [cookies-line]
+                [changed-block] [now-block] *note-line [text-block]
 
 head-line     = "surf" SP "1" SP "session" SP session-id SP state LF
 session-id    = 1*(DIGIT / lower / "-")
@@ -569,6 +590,8 @@ path-line     = "path" SP number SP "of" SP number LF
 path-entry    = SP SP number SP command [SP quoted / SP handle [SP cut-quoted]] LF
                                               ; with a handle: a label of at most 60
 handle        = 1*(lower / DIGIT)
+
+cookies-line  = "cookies" SP number LF        ; number from 1
 
 changed-block = changed-line *change-entry    ; exactly <n> change-entry lines
               / changed-page *text-entry [text-more]
