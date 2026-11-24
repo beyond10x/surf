@@ -5,6 +5,7 @@
 
 mod adversary;
 mod adversary_2;
+mod adversary_3;
 mod adversary_forms;
 mod adversary_page_budget;
 mod common;
