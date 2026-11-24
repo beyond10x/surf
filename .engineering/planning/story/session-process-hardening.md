@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:session-process-hardening
 kind: story
-status: active
+status: implemented
 title: surfd starts surf-session with a cleared environment, no new privileges and resource limits of its own
 summary: 'S5 = a, decided 2026-11-24: env_clear and the note''s allow-list, setpriv --no-new-privs and prlimit with the note''s bounds, read from /proc by tests; a session ending at a bound is listed died and its answer names the signal and bound, shown with the stand-in session and no script.'
 relations:
@@ -37,10 +37,11 @@ scope:
   path: docs/agent-answer.md
 - confidence: cited
   path: docs/view-stream.md
-revision: 25
+revision: 27
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:12Z", actor: "human:operator", revision: 16}
 - {from: "proposed", to: "active", at: "2026-11-24T12:08:07Z", actor: "human:operator", revision: 25, executor: "agent:coordinator"}
+- {from: "active", to: "implemented", at: "2026-11-24T15:32:59Z", actor: "human:operator", revision: 27, decided_on: {"recorded":{"test_result":2,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -241,3 +242,44 @@ merge of the other.
 
 The second condition of the security review, which the epic puts before the first session that
 runs a page's script.
+
+## As built
+
+The unit is on `main` at `91494cf` (the merge of `impl/session-process-hardening` at `9cab4c5`,
+which holds the reviewer's tests of two passes and one merge of `main`). `surfd` runs 89 tests
+(52 before), `surf-view` 71 (70), the view's page tests 72 (71). Where it differs from the text
+above:
+
+- Outside the Change, applied: `crates/session/src/lib.rs` (the refusal `scripts-unavailable`
+  needs an arm in `refusal_status`), two test files of `surf-session` (four tests found the
+  session process by `XDG_RUNTIME_DIR` in its environment, which is now cleared; they find it
+  by its socket path argument), and `.github/workflows/check.yml` (a step that finds `setpriv`
+  and `prlimit` on the runner and names the missing one; a directory does not count).
+- Acceptance 6 ("pass unchanged") was wrong for `in_process::case_06`: a session killed with
+  `SIGKILL` from outside now answers with `note ended: signal SIGKILL`, as decision 5 says.
+  Acceptance 8 ("only the files of the Change") does not hold, by the item above; the design
+  note's Q10 and Q11 changed with the unit too.
+- The word `bound cpu` is on the line only when `surfd` started the session with a CPU bound
+  and the signal is `SIGXCPU`. `surfd` sets no file-size bound, so `bound fsize` does not
+  exist; `SIGXFSZ` reads as any other signal. The line cannot tell who sent the signal.
+- A start chain (`setpriv`, `prlimit`, the session) that ends by an exit before the session's
+  first byte is answered like a missing program: with scripts `did refused
+  scripts-unavailable`, exit 3.
+- A session that ends by a signal `surfd` did not send gets the note line from its start on:
+  before its first byte, while it answers `open`, and on an `open` that fails after a wrong
+  first line or the ready timeout when the session had already died. A session `surfd` killed
+  gets no note; `docs/agent-answer.md` lists every kill.
+- For that note `surfd` waits its kill grace (2 s) for the end of a session that closed its
+  output. The wait holds no lock: 8 such opens at once took 2.004 to 2.014 s each, and a
+  `look` on another session during the wait was answered in 1.77 ms. At most 64 run at once
+  (the connection limit).
+- Chosen where the story was open: a refused open answers with a newly drawn identity and the
+  head state `unknown`; `signal` sits after `ended_at` and before `page` in the live view's
+  summary; the live view shows the signal and not the bound word.
+- Not held by a test, by a ruling: a session that ends by its own signal in the instant
+  `surfd` kills it reads as killed, with no note; on the ready-timeout path the note is lost
+  when a child of the session holds the output past the kill wait.
+- No test starts the built `surf-session` under the bounds of a session with scripts: it
+  refuses `open` with `arg scripts` until `story:scripts-document-port`, which holds that test.
+- Host fact: single tasks that read the specification need `ESS_TOOLCHAIN=0.97.4` on a host
+  whose default `ess` is newer than the pin; the gate in runner form sets it from the pin.

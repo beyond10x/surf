@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T15:32:59Z",
+  "actor": "human:operator",
+  "artifact": "story:session-process-hardening",
+  "kind": "story",
+  "revision": 26,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "two passes on the unit by a reviewer who did not write it, 2026-11-24",
+    "reference": "first, on ebb85e7: 3 musts (two of them acceptance lines against rulings, one the public numbers), 1 should, 6 notes, 11 tests and one page test merged, one red; second, on b2ad02d: no must, 2 shoulds (documents), 4 notes, 9 tests merged, all green; four rounds by the implementor after the first tip"
+  }
+}
