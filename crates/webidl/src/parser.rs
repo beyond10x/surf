@@ -574,7 +574,7 @@ impl Parser<'_> {
         } else {
             self.ty()?
         };
-        onto_type(&mut extended_attributes, &mut ty);
+        self.onto_type(&mut extended_attributes, &mut ty)?;
         let variadic = !optional && self.eat("...");
         let (name, line) = self.argument_name()?;
         let default = if optional && self.eat("=") {
@@ -620,7 +620,7 @@ impl Parser<'_> {
             } else {
                 self.ty()?
             };
-            onto_type(&mut extended_attributes, &mut ty);
+            self.onto_type(&mut extended_attributes, &mut ty)?;
             let (name, _) = self.identifier("the name of a dictionary member")?;
             let default = if !required && self.eat("=") {
                 Some(self.default_value()?)
@@ -736,6 +736,37 @@ impl Parser<'_> {
         }
     }
 
+    /// Moves the names of [`TYPE_EXTENDED_ATTRIBUTES`] in `written` (the list before an argument
+    /// or a dictionary member) onto `ty`, ahead of those `ty` holds; the others stay in
+    /// `written`. A name both moved and already on `ty` is refused, on the line of the one on
+    /// `ty`.
+    fn onto_type(
+        &self,
+        written: &mut Vec<ExtendedAttribute>,
+        ty: &mut Type,
+    ) -> Result<(), ReadError> {
+        let (on_type, stay): (Vec<_>, Vec<_>) = std::mem::take(written)
+            .into_iter()
+            .partition(|attribute| TYPE_EXTENDED_ATTRIBUTES.contains(&attribute.name.as_str()));
+        if let Some(twice) = ty
+            .extended_attributes
+            .iter()
+            .find(|attribute| on_type.iter().any(|moved| moved.name == attribute.name))
+        {
+            return self.refuse(
+                twice.line,
+                format!(
+                    "the extended attribute `[{}]` twice on one type",
+                    twice.name
+                ),
+            );
+        }
+        *written = stay;
+        let after = std::mem::replace(&mut ty.extended_attributes, on_type);
+        ty.extended_attributes.extend(after);
+        Ok(())
+    }
+
     /// The error for `what` in a kind of body that does not allow it.
     fn not_in<T>(&self, body: Body, line: usize, what: &str) -> Result<T, ReadError> {
         self.refuse(line, format!("{what} in {}", body.name()))
@@ -816,7 +847,7 @@ impl Parser<'_> {
     }
 
     fn type_with_extended_attributes(&mut self) -> Result<Type, ReadError> {
-        let extended_attributes = self.extended_attributes()?;
+        let extended_attributes = self.type_extended_attributes()?;
         let mut ty = self.ty()?;
         ty.extended_attributes = extended_attributes;
         Ok(ty)
@@ -867,8 +898,27 @@ impl Parser<'_> {
         })
     }
 
+    /// The extended attributes written on a type: only names of [`TYPE_EXTENDED_ATTRIBUTES`]
+    /// apply to a type (Web IDL, "Annotated types"); another known name there is refused.
+    fn type_extended_attributes(&mut self) -> Result<Vec<ExtendedAttribute>, ReadError> {
+        let list = self.extended_attributes()?;
+        if let Some(attribute) = list
+            .iter()
+            .find(|attribute| !TYPE_EXTENDED_ATTRIBUTES.contains(&attribute.name.as_str()))
+        {
+            return self.refuse(
+                attribute.line,
+                format!(
+                    "the extended attribute `[{}]`, which does not apply to a type, on a type",
+                    attribute.name
+                ),
+            );
+        }
+        Ok(list)
+    }
+
     fn union_member(&mut self) -> Result<Type, ReadError> {
-        let extended_attributes = self.extended_attributes()?;
+        let extended_attributes = self.type_extended_attributes()?;
         if self.is(0, "any") {
             return self.refuse(self.line(), "`any` in a union");
         }
@@ -953,16 +1003,4 @@ fn plain(kind: TypeKind) -> Type {
         nullable: false,
         extended_attributes: Vec::new(),
     }
-}
-
-/// Moves the names of [`TYPE_EXTENDED_ATTRIBUTES`] in `written` (the list before an argument
-/// or a dictionary member) onto `ty`, ahead of those `ty` holds;
-/// the others stay in `written`.
-fn onto_type(written: &mut Vec<ExtendedAttribute>, ty: &mut Type) {
-    let (on_type, stay): (Vec<_>, Vec<_>) = std::mem::take(written)
-        .into_iter()
-        .partition(|attribute| TYPE_EXTENDED_ATTRIBUTES.contains(&attribute.name.as_str()));
-    *written = stay;
-    let after = std::mem::replace(&mut ty.extended_attributes, on_type);
-    ty.extended_attributes.extend(after);
 }

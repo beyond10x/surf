@@ -737,3 +737,35 @@ fn added_cases() {
         case();
     }
 }
+
+// Taken over from the second adversary pass as it was written: a type's own extended
+// attributes, written after `optional` or `required`, stay on the type when a type's attribute
+// is also written before the argument or the member.
+
+fn names(ty: &Type) -> Vec<&str> {
+    ty.extended_attributes
+        .iter()
+        .map(|attribute| attribute.name.as_str())
+        .collect()
+}
+
+#[test]
+fn type_attributes_after_optional_and_required_are_kept() {
+    let definitions = read(
+        "interface A {\n  undefined f(optional [EnforceRange] unsigned long a, [AllowShared] optional [EnforceRange] unsigned long b);\n};\ndictionary D {\n  required [EnforceRange] unsigned long r;\n};\n",
+        "test.idl",
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    let DefinitionKind::Interface { members, .. } = &definitions[0].kind else {
+        panic!("not an interface");
+    };
+    let MemberKind::Operation { arguments, .. } = &members[0].kind else {
+        panic!("not an operation");
+    };
+    assert_eq!(names(&arguments[0].ty), ["EnforceRange"]);
+    assert_eq!(names(&arguments[1].ty), ["AllowShared", "EnforceRange"]);
+    let DefinitionKind::Dictionary { members, .. } = &definitions[1].kind else {
+        panic!("not a dictionary");
+    };
+    assert_eq!(names(&members[0].ty), ["EnforceRange"]);
+}

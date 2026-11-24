@@ -123,6 +123,53 @@ fn type_extended_attribute_before_a_definition() {
 }
 
 #[test]
+fn a_member_extended_attribute_on_a_type() {
+    let construct = |name: &str| {
+        format!(
+            "{FILE}:2: refused: the extended attribute `[{name}]`, which does not apply to a type, on a type"
+        )
+    };
+    for (text, name) in [
+        (
+            "interface A {\n  attribute [CEReactions] DOMString x;\n};",
+            "CEReactions",
+        ),
+        (
+            "interface A {\n  undefined f(sequence<[NewObject] Node> a);\n};",
+            "NewObject",
+        ),
+        (
+            "\ntypedef ([SameObject] Node or DOMString) T;",
+            "SameObject",
+        ),
+        (
+            "interface A {\n  undefined f(optional [Unscopable] DOMString a);\n};",
+            "Unscopable",
+        ),
+        (
+            "dictionary D {\n  required [Exposed=Window] DOMString a;\n};",
+            "Exposed",
+        ),
+    ] {
+        assert_eq!(refused(text), construct(name), "{text}");
+    }
+}
+
+#[test]
+fn a_type_extended_attribute_before_and_on_the_type() {
+    assert_refused(
+        "interface A {\n  undefined f([EnforceRange] optional\n    [EnforceRange] unsigned long b);\n};",
+        3,
+        "the extended attribute `[EnforceRange]` twice on one type",
+    );
+    assert_refused(
+        "dictionary D {\n  [LegacyNullToEmptyString] required\n  [LegacyNullToEmptyString] DOMString s;\n};",
+        3,
+        "the extended attribute `[LegacyNullToEmptyString]` twice on one type",
+    );
+}
+
+#[test]
 fn includes_of_what_is_no_mixin() {
     assert_eq!(
         model_refused(&[
