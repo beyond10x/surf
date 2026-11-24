@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+mod adversary_jar;
 mod bound;
 mod hosts;
 mod jar;
