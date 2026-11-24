@@ -1377,6 +1377,7 @@ pub trait DocumentBehaviors:
     + surf_types::document::obligations::ElementsQuery
     + surf_types::document::obligations::FormsQuery
     + surf_types::document::obligations::OptionsQuery
+    + surf_types::document::obligations::ScriptsQuery
     + surf_types::document::obligations::SubmissionsQuery
 {
 }
@@ -1399,6 +1400,7 @@ impl<B> DocumentBehaviors for B where
         + surf_types::document::obligations::ElementsQuery
         + surf_types::document::obligations::FormsQuery
         + surf_types::document::obligations::OptionsQuery
+        + surf_types::document::obligations::ScriptsQuery
         + surf_types::document::obligations::SubmissionsQuery
 {
 }

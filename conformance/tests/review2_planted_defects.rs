@@ -22,13 +22,14 @@ use surf_ports::{
 use surf_types::agent::{ActionId, SessionId};
 use surf_types::behaviour::{
     DocumentStorage, ElementStorage, FormStorage, FrameStorage, ListOptionStorage,
-    NavigationStorage, RequestStorage, SubmissionStorage, TabStorage, TryContext, WindowStorage,
+    NavigationStorage, RequestStorage, ScriptStorage, SubmissionStorage, TabStorage, TryContext,
+    WindowStorage,
 };
 use surf_types::document::obligations::{CheckBehavior, SelectOptionBehavior};
 use surf_types::document::{
     Check, CheckOutcome, DocumentId, DocumentSnapshot, ElementId, ElementSnapshot, FormId,
-    FormSnapshot, ListOptionSnapshot, OptionId, SelectOption, SelectOptionOutcome, SubmissionId,
-    SubmissionSnapshot,
+    FormSnapshot, ListOptionSnapshot, OptionId, ScriptId, ScriptSnapshot, SelectOption,
+    SelectOptionOutcome, SubmissionId, SubmissionSnapshot,
 };
 use surf_types::navigation::obligations::{CommitNavigationBehavior, TraverseHistoryBehavior};
 use surf_types::navigation::{
@@ -169,6 +170,7 @@ mutant_storage!(FormStorage, FormSnapshot, FormId);
 mutant_storage!(ListOptionStorage, ListOptionSnapshot, OptionId);
 mutant_storage!(SubmissionStorage, SubmissionSnapshot, SubmissionId);
 mutant_storage!(FrameStorage, FrameSnapshot, FrameId);
+mutant_storage!(ScriptStorage, ScriptSnapshot, ScriptId);
 
 /// The `document` component's obligations, handed through to the ports the mutant wraps: they
 /// read and write its tables without the policy.
@@ -263,6 +265,12 @@ macro_rules! context_through {
                 &mut self,
             ) -> Result<OptionId, UnmetObligation> {
                 self.$field.try_generate_surf_document_option_id()
+            }
+
+            fn try_generate_surf_document_script_id(
+                &mut self,
+            ) -> Result<ScriptId, UnmetObligation> {
+                self.$field.try_generate_surf_document_script_id()
             }
 
             fn try_generate_surf_document_submission_id(

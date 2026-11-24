@@ -1,6 +1,6 @@
 # A script's end is written only while its document is `Parsing` (`docs/design/scripts.md`,
 # Q7, `written:`): after `FinishParsing` it is refused, as `AddForm` refuses a form then:
-# `already-parsed`, with the state `Parsed`, and the document keeps its title.
+# `already-parsed`, with the state `Parsed`; the document keeps its title and has no script row.
 type: ess-scenario/6
 domain: surf.document
 scenario: document-refuses-script-end-after-parsing
@@ -44,3 +44,6 @@ timeline:
 assert:
   - view: surf.document.Documents
     contains: {document_id: {$instance: page}, state: Parsed, title: Done}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    counts: {at_least: 0, at_most: 0}

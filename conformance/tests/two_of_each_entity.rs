@@ -35,14 +35,14 @@ use surf_types::agent::{
 };
 use surf_types::behaviour::{
     ActionStorage, DocumentStorage, ElementStorage, FormStorage, FrameStorage, ListOptionStorage,
-    NavigationStorage, RequestStorage, SessionStorage, SubmissionStorage, TabStorage, TryContext,
-    WindowStorage,
+    NavigationStorage, RequestStorage, ScriptStorage, SessionStorage, SubmissionStorage,
+    TabStorage, TryContext, WindowStorage,
 };
 use surf_types::document::obligations::{CheckBehavior, SelectOptionBehavior};
 use surf_types::document::{
     Check, CheckOutcome, DocumentId, DocumentSnapshot, ElementId, ElementSnapshot, FormId,
-    FormSnapshot, ListOptionSnapshot, OptionId, SelectOption, SelectOptionOutcome, SubmissionId,
-    SubmissionSnapshot,
+    FormSnapshot, ListOptionSnapshot, OptionId, ScriptId, ScriptSnapshot, SelectOption,
+    SelectOptionOutcome, SubmissionId, SubmissionSnapshot,
 };
 use surf_types::navigation::obligations::{CommitNavigationBehavior, TraverseHistoryBehavior};
 use surf_types::navigation::{
@@ -71,6 +71,7 @@ enum Entity {
     Action,
     Option,
     Submission,
+    Script,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -175,6 +176,7 @@ planted_storage!(
     SubmissionId,
     Entity::Submission
 );
+planted_storage!(ScriptStorage, ScriptSnapshot, ScriptId, Entity::Script);
 
 /// The obligations of the `agent` and `document` components, handed through to the ports the
 /// defect is planted in.
@@ -290,6 +292,13 @@ impl<P: TryContext> TryContext for Planted<P> {
 
     fn try_generate_surf_document_option_id(&mut self) -> Result<OptionId, UnmetObligation> {
         self.inner.try_generate_surf_document_option_id()
+    }
+
+    fn try_generate_surf_document_script_id(&mut self) -> Result<ScriptId, UnmetObligation> {
+        if self.same(Entity::Script) {
+            return Ok(ScriptId(same()));
+        }
+        self.inner.try_generate_surf_document_script_id()
     }
 
     fn try_generate_surf_document_submission_id(
@@ -436,6 +445,7 @@ fn one_identity_for_every_instance_of_an_entity_is_noticed_for_each_entity() {
         Defect::SameIdentity(Entity::Element),
         Defect::SameIdentity(Entity::Frame),
         Defect::SameIdentity(Entity::Action),
+        Defect::SameIdentity(Entity::Script),
     ]);
 }
 
@@ -453,5 +463,6 @@ fn a_view_cut_to_its_first_row_is_noticed_for_each_entity() {
         Defect::FirstRowOnly(Entity::Action),
         Defect::FirstRowOnly(Entity::Option),
         Defect::FirstRowOnly(Entity::Submission),
+        Defect::FirstRowOnly(Entity::Script),
     ]);
 }

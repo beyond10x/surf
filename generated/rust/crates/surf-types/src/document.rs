@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 07cdc6dccd9f825a5663f6380a29fc0270c0b9fd966125976e7f3bd8032e17b4
+// contract digest d6c21bcc6a807c12b12c5e62e83d4b3cf21db6c45d1dd9135d8affd63032a0ae
 // do not edit: regenerate with `ess synthesize`
 
 //! Document — `surf.document`.
@@ -2226,6 +2226,35 @@ pub struct Options {
     pub hidden: bool,
 }
 
+/// Scripts — one row of the view `surf.document.Scripts`.
+///
+/// Projects `surf.document.Script` at `read_your_writes` consistency, containing instances where `document_id == param.document_id`.
+/// The specification fully determines every row, so its query is generated over the storage port —
+/// see the plan.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Scripts {
+    /// `script_id` — `surf.document.ScriptId`.
+    pub script_id: ScriptId,
+    /// `document_id` — `surf.document.DocumentId`.
+    pub document_id: DocumentId,
+    /// `position` — `Integer`.
+    pub position: i64,
+    /// `end` — `surf.document.ScriptEnd`.
+    pub end: ScriptEnd,
+    /// `reason` — `Optional<surf.document.ScriptReason>`.
+    pub reason: Option<ScriptReason>,
+    /// `error_kind` — `Optional<surf.document.ScriptErrorKind>`.
+    pub error_kind: Option<ScriptErrorKind>,
+    /// `message` — `Optional<String>`.
+    pub message: Option<String>,
+    /// `line` — `Optional<Integer>`.
+    pub line: Option<i64>,
+    /// `column` — `Optional<Integer>`.
+    pub column: Option<i64>,
+    /// `dynamic` — `Optional<Boolean>`.
+    pub dynamic: Option<bool>,
+}
+
 /// Submissions — one row of the view `surf.document.Submissions`.
 ///
 /// Projects `surf.document.Submission` at `read_your_writes` consistency.
@@ -2436,6 +2465,17 @@ pub mod obligations {
         ///
         /// `Err` is the typed refusal of a row whose declared type cannot hold its value.
         fn options(&self) -> Result<Vec<super::Options>, crate::obligation::UnmetObligation>;
+    }
+
+    /// The query `surf.document.Scripts` — generated.
+    ///
+    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
+    /// over the storage port. Implement it yourself to replace that query.
+    pub trait ScriptsQuery {
+        /// Serves `surf.document.Scripts` rows at the view's declared consistency.
+        ///
+        /// `Err` is the typed refusal of a row whose declared type cannot hold its value.
+        fn scripts(&self, document_id: crate::document::DocumentId) -> Result<Vec<super::Scripts>, crate::obligation::UnmetObligation>;
     }
 
     /// The query `surf.document.Submissions` — generated.

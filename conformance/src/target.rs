@@ -3033,6 +3033,37 @@ where
                 .collect();
             return Ok(rows);
         }
+        if view == "surf.document.Scripts" {
+            let document_id = DocumentId(params.uuid("document_id")?);
+            params.finish()?;
+            let rows = system
+                .document
+                .scripts(document_id)
+                .map_err(unmet)?
+                .into_iter()
+                .map(|row| {
+                    fields(vec![
+                        ("script_id", uuid(&row.script_id.0)),
+                        ("document_id", uuid(&row.document_id.0)),
+                        ("position", integer(row.position)),
+                        ("end", text(script_end(row.end))),
+                        (
+                            "reason",
+                            optional(row.reason, |reason| text(script_reason(reason))),
+                        ),
+                        (
+                            "error_kind",
+                            optional(row.error_kind, |kind| text(script_error_kind(kind))),
+                        ),
+                        ("message", optional(row.message.as_deref(), text)),
+                        ("line", optional(row.line, integer)),
+                        ("column", optional(row.column, integer)),
+                        ("dynamic", optional(row.dynamic, values::boolean)),
+                    ])
+                })
+                .collect();
+            return Ok(rows);
+        }
         params.finish()?;
         let rows: Vec<Vec<(&'static str, Node)>> = match view {
             "surf.agent.Sessions" => system

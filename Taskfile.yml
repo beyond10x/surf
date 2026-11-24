@@ -77,7 +77,7 @@ includes:
     optional: true
 
 vars:
-  REFUSALS_MAX: 56
+  REFUSALS_MAX: 57
   TLS_PACKAGES: [surf-tls, surf-tls-test-server, surf-tls-test-certs, surf-tls-conformance]
   GENERATED_PACKAGES: [agent, document, navigator, net, renderer, shell, surf-system, surf-types]
   SYNTHESIZE: ess generate synthesize --strict-requires --path spec --target rust

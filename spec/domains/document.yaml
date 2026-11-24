@@ -1550,6 +1550,42 @@ views:
       wire: elements
       display: Elements
 
+  # The ends of one document's scripts, in the order they ended (`docs/design/scripts.md`, Q7):
+  # every stored field of the record. Each entity of the domain has a view; without one no
+  # scenario sees the record.
+  - name: surf.document.Scripts
+    source: surf.document.Script
+    consistency: read_your_writes
+    params:
+      - name: document_id
+        type: surf.document.DocumentId
+    filter: document_id == param.document_id
+    order_by: [position asc]
+    fields:
+      - name: script_id
+        type: surf.document.ScriptId
+      - name: document_id
+        type: surf.document.DocumentId
+      - name: position
+        type: Integer
+      - name: end
+        type: surf.document.ScriptEnd
+      - name: reason
+        type: Optional<surf.document.ScriptReason>
+      - name: error_kind
+        type: Optional<surf.document.ScriptErrorKind>
+      - name: message
+        type: Optional<String>
+      - name: line
+        type: Optional<Integer>
+      - name: column
+        type: Optional<Integer>
+      - name: dynamic
+        type: Optional<Boolean>
+    naming:
+      wire: scripts
+      display: Scripts
+
   # Every element of every document with its control state, in no order: the view a control
   # command's result is read back from, whichever document holds the element.
   - name: surf.document.Controls

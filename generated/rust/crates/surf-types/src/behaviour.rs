@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 07cdc6dccd9f825a5663f6380a29fc0270c0b9fd966125976e7f3bd8032e17b4
+// contract digest d6c21bcc6a807c12b12c5e62e83d4b3cf21db6c45d1dd9135d8affd63032a0ae
 // do not edit: regenerate with `ess synthesize`
 
 //! What the specification fully determines, generated: the behaviour of every command the plan
@@ -139,6 +139,10 @@ pub trait ScriptStorage {
 
     /// Removes the instance with this identity.
     fn delete(&mut self, identity: &crate::document::ScriptId);
+
+    /// Every stored instance, in the order the store keeps them: the order a generated query
+    /// answers an unordered view in.
+    fn list(&self) -> Vec<crate::document::ScriptSnapshot>;
 }
 
 /// Where `surf.document.Submission` is stored — a port the implementor provides.
@@ -1686,6 +1690,35 @@ where
                 selected: held.data.selected,
                 disabled: held.data.disabled,
                 hidden: held.data.hidden,
+            })
+            .collect())
+    }
+}
+
+/// `surf.document.Scripts`, generated: every row is one the specification fully determines from the stored `surf.document.Script`s.
+impl<P> crate::document::obligations::ScriptsQuery for Generated<P>
+where
+    P: ScriptStorage,
+{
+    fn scripts(&self, param_0: crate::document::DocumentId) -> Result<Vec<crate::document::Scripts>, UnmetObligation> {
+        let mut admitted = ScriptStorage::list(&self.ports);
+        // `filter:` shows a row where it holds; false or unknown hides it.
+        admitted.retain(|held| equal(Some(&held.data.document_id).map(|value| &value.0).map(|value| value.0.clone()), Some(&param_0).map(|value| &value.0).map(|value| value.0.clone())) == Some(true));
+        // `order_by:`, stably: rows equal on every key keep the port's order.
+        admitted.sort_by(|left, right| number_order(&Some(&left.data.position).map(|value| value.to_string()).unwrap_or_default(), &Some(&right.data.position).map(|value| value.to_string()).unwrap_or_default()));
+        Ok(admitted
+            .into_iter()
+            .map(|held| crate::document::Scripts {
+                script_id: held.data.script_id,
+                document_id: held.data.document_id,
+                position: held.data.position,
+                end: held.data.end,
+                reason: held.data.reason,
+                error_kind: held.data.error_kind,
+                message: held.data.message,
+                line: held.data.line,
+                column: held.data.column,
+                dynamic: held.data.dynamic,
             })
             .collect())
     }

@@ -3,7 +3,9 @@
 # and then finishes parsing. One record of each of the six ends of `surf.document.ScriptEnd`:
 # a script that ran, one that threw a `TypeError` with its message, line and column, one swell
 # refused, one a limit ended, one that faulted, and one the end of the input closed (`NotRun`,
-# `Eof`). Each is `added`, and its event carries the position and the end, no page text.
+# `Eof`). Each is `added`, and its event carries the position and the end, no page text. The
+# view `surf.document.Scripts` reads back the six records, each with its position, end and
+# reason.
 type: ess-scenario/6
 domain: surf.document
 scenario: document-records-script-ends
@@ -131,3 +133,24 @@ timeline:
 assert:
   - view: surf.document.Documents
     contains: {document_id: {$instance: page}, state: Parsed, stopped_by: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    counts: {at_least: 6, at_most: 6}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 1, end: Ran, reason: null, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 2, end: Threw, reason: null, error_kind: TypeError, message: "x is not a function", line: 3, column: 5, dynamic: false}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 3, end: Refused, reason: null, error_kind: SyntaxError, message: "class declarations are slice 7", line: 1, column: 1, dynamic: false}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 4, end: Limit, reason: StepsPerScript, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 5, end: Faulted, reason: null, error_kind: null, message: null, line: null, column: null, dynamic: null}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {document_id: {$instance: page}, position: 6, end: NotRun, reason: Eof, error_kind: null, message: null, line: null, column: null, dynamic: null}

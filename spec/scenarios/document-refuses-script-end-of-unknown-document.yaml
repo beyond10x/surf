@@ -1,6 +1,7 @@
 # The end of a script of a document no row holds is refused, as `AddForm` refuses a form of
 # one (`docs/design/scripts.md`, Q7): `no-such-document`, naming the identity, and nothing is
-# added. The document that exists is untouched and still `Parsing`.
+# added: neither document has a script row. The document that exists is untouched and still
+# `Parsing`.
 type: ess-scenario/6
 domain: surf.document
 scenario: document-refuses-script-end-of-unknown-document
@@ -37,3 +38,9 @@ assert:
     counts: {at_least: 1, at_most: 1}
   - view: surf.document.Documents
     contains: {document_id: {$instance: page}, state: Parsing}
+  - view: surf.document.Scripts
+    params: {document_id: 5c41e7d0-0000-4000-8000-0000000002ff}
+    counts: {at_least: 0, at_most: 0}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    counts: {at_least: 0, at_most: 0}

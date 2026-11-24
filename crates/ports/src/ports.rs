@@ -107,22 +107,6 @@ macro_rules! storage {
             }
         }
     };
-    // A storage trait without `list`: the entity has no view, so the generation asks for none.
-    ($storage:ident for $ports:ty, $rows:ident: $snapshot:ty, $key:ty, $param:ident, unlisted) => {
-        impl<$param> $storage for $ports {
-            fn get(&self, identity: &$key) -> Option<$snapshot> {
-                self.$rows.get(identity)
-            }
-
-            fn put(&mut self, snapshot: $snapshot) {
-                self.$rows.put(snapshot);
-            }
-
-            fn delete(&mut self, identity: &$key) {
-                self.$rows.delete(identity);
-            }
-        }
-    };
 }
 
 /// Implements `TryContext` for a ports type over its random source.
@@ -596,7 +580,7 @@ storage!(FormStorage for DocumentPorts<R>, forms: FormSnapshot, FormId, R);
 storage!(ElementStorage for DocumentPorts<R>, elements: ElementSnapshot, ElementId, R);
 storage!(ListOptionStorage for DocumentPorts<R>, options: ListOptionSnapshot, OptionId, R);
 storage!(SubmissionStorage for DocumentPorts<R>, submissions: SubmissionSnapshot, SubmissionId, R);
-storage!(ScriptStorage for DocumentPorts<R>, scripts: ScriptSnapshot, ScriptId, R, unlisted);
+storage!(ScriptStorage for DocumentPorts<R>, scripts: ScriptSnapshot, ScriptId, R);
 context!(DocumentPorts);
 
 /// A checkbox's or a radio button's activation, its outcomes chosen in the order `spec/` declares

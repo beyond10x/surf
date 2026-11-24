@@ -4,7 +4,7 @@
 //! parser's table: [`parse`] reads the words through them and nothing else, and the test `drift`
 //! holds them to `.out/cli/binding.json`, which `task cli` writes from the document.
 //!
-//! The differences from the document are its six `UNMAPPED:` markers, and only those:
+//! The differences from the document are its seven `UNMAPPED:` markers, and only those:
 //!
 //! - (a) `ess-cli/2` has no environment source. The parser reads the session from `SURF_SESSION`
 //!   when `--session` is absent and the token from `SURF_TOKEN` when `--token-file` is absent;
@@ -22,6 +22,10 @@
 //! - (f) `help --for-agent` prints the client's own text and asks no session for anything, so no
 //!   callable stands behind it. The binary takes those words before the parser
 //!   ([`is_help_for_agent`]); [`parse`] refuses `help` in any other form.
+//! - (g) `open --scripts true|false`, the field `scripts` of `surf.agent.OpenCall`, is declared
+//!   because each field of the input has one argument. The parser refuses it with exit 2 and the
+//!   usage, and no session is started, until `story:scripts-document-port`
+//!   ([`Source::Refused`]).
 //!
 //! The token is never an argument word: no option takes it, because other local users can read
 //! a process's arguments. It is read from `SURF_TOKEN` or from a file that is a regular file, not
@@ -75,12 +79,20 @@ pub enum Source {
         /// The variable's name.
         name: &'static str,
     },
+    /// `--<long> <value>`: declared by the document, refused (marker g).
+    Refused {
+        /// The option name without its dashes.
+        long: &'static str,
+    },
 }
 
 impl Source {
-    /// Whether the parser takes a value from this source; `false` for the two it refuses.
+    /// Whether the parser takes a value from this source; `false` for the three it refuses.
     pub fn accepted(&self) -> bool {
-        !matches!(self, Source::TokenStdin { .. } | Source::TokenPrompt { .. })
+        !matches!(
+            self,
+            Source::TokenStdin { .. } | Source::TokenPrompt { .. } | Source::Refused { .. }
+        )
     }
 
     /// The option name of a source that is an option word.
@@ -89,7 +101,8 @@ impl Source {
             Source::Option { long }
             | Source::TokenFile { long }
             | Source::TokenStdin { long }
-            | Source::TokenPrompt { long } => Some(long),
+            | Source::TokenPrompt { long }
+            | Source::Refused { long } => Some(long),
             Source::Positional { .. } | Source::Environment { .. } => None,
         }
     }
@@ -211,6 +224,12 @@ const CA_FILE: Argument = Argument {
     sources: &[Source::Option { long: "ca-file" }],
 };
 
+/// `--scripts`, refused until `story:scripts-document-port` (marker g).
+const SCRIPTS: Argument = Argument {
+    field: "scripts",
+    sources: &[Source::Refused { long: "scripts" }],
+};
+
 /// The forms `--as` takes, the variants of `surf.agent.PageForm`.
 pub const FORMS: &[&str] = &["tree", "markdown"];
 
@@ -224,7 +243,7 @@ pub const FORMS: &[&str] = &["tree", "markdown"];
 pub const COMMANDS: &[Command] = &[
     Command {
         name: "open",
-        arguments: &[URL_OPTIONAL, FORM, FROM_LINE, CA_FILE],
+        arguments: &[URL_OPTIONAL, FORM, FROM_LINE, CA_FILE, SCRIPTS],
     },
     Command {
         name: "go",
@@ -521,6 +540,11 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
                     current.name
                 )));
             };
+            if let Source::Refused { long } = source {
+                return Err(usage(format!(
+                    "--{long} is not accepted: surf runs no page script yet"
+                )));
+            }
             if !source.accepted() {
                 return Err(usage(format!(
                     "--{} is not accepted: the token comes from --token-file or SURF_TOKEN",

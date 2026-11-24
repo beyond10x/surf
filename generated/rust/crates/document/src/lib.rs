@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 07cdc6dccd9f825a5663f6380a29fc0270c0b9fd966125976e7f3bd8032e17b4
+// contract digest d6c21bcc6a807c12b12c5e62e83d4b3cf21db6c45d1dd9135d8affd63032a0ae
 // do not edit: regenerate with `ess synthesize`
 
 //! document — the `document` component of `surf` v1.
@@ -73,7 +73,7 @@ impl<B> Document<B> {
 
 impl<B> Document<B>
 where
-    B: surf_types::document::obligations::AbandonSubmissionBehavior + surf_types::document::obligations::AddElementBehavior + surf_types::document::obligations::AddFormBehavior + surf_types::document::obligations::AddOptionBehavior + surf_types::document::obligations::AddScriptEndBehavior + surf_types::document::obligations::CheckBehavior + surf_types::document::obligations::FinishParsingBehavior + surf_types::document::obligations::ParseDocumentBehavior + surf_types::document::obligations::SelectOptionBehavior + surf_types::document::obligations::SetValueBehavior + surf_types::document::obligations::StartSubmissionBehavior + surf_types::document::obligations::SubmitFormBehavior + surf_types::document::obligations::ControlsQuery + surf_types::document::obligations::DocumentsQuery + surf_types::document::obligations::ElementsQuery + surf_types::document::obligations::FormsQuery + surf_types::document::obligations::OptionsQuery + surf_types::document::obligations::SubmissionsQuery,
+    B: surf_types::document::obligations::AbandonSubmissionBehavior + surf_types::document::obligations::AddElementBehavior + surf_types::document::obligations::AddFormBehavior + surf_types::document::obligations::AddOptionBehavior + surf_types::document::obligations::AddScriptEndBehavior + surf_types::document::obligations::CheckBehavior + surf_types::document::obligations::FinishParsingBehavior + surf_types::document::obligations::ParseDocumentBehavior + surf_types::document::obligations::SelectOptionBehavior + surf_types::document::obligations::SetValueBehavior + surf_types::document::obligations::StartSubmissionBehavior + surf_types::document::obligations::SubmitFormBehavior + surf_types::document::obligations::ControlsQuery + surf_types::document::obligations::DocumentsQuery + surf_types::document::obligations::ElementsQuery + surf_types::document::obligations::FormsQuery + surf_types::document::obligations::OptionsQuery + surf_types::document::obligations::ScriptsQuery + surf_types::document::obligations::SubmissionsQuery,
 {
     /// Accepts `surf.document.AbandonSubmission`: runs the behaviour obligation, then publishes the declared events
     /// the outcome carries.
@@ -314,6 +314,11 @@ where
     /// Serves `surf.document.Options` at `read_your_writes` consistency, from the owed projection.
     pub fn options(&self) -> Result<Vec<surf_types::document::Options>, surf_types::obligation::UnmetObligation> {
         self.behaviors.options()
+    }
+
+    /// Serves `surf.document.Scripts` at `read_your_writes` consistency, from the owed projection.
+    pub fn scripts(&self, document_id: surf_types::document::DocumentId) -> Result<Vec<surf_types::document::Scripts>, surf_types::obligation::UnmetObligation> {
+        self.behaviors.scripts(document_id)
     }
 
     /// Serves `surf.document.Submissions` at `read_your_writes` consistency, from the owed projection.

@@ -617,7 +617,34 @@ events:
       - {name: document_id, type: surf.document.DocumentId}
       - {name: position, type: Integer}
       - {name: end, type: surf.document.ScriptEnd}
+
+views:
+  - name: surf.document.Scripts
+    source: surf.document.Script
+    consistency: read_your_writes
+    params:
+      - {name: document_id, type: surf.document.DocumentId}
+    filter: document_id == param.document_id
+    order_by: [position asc]
+    fields:
+      - {name: script_id, type: surf.document.ScriptId}
+      - {name: document_id, type: surf.document.DocumentId}
+      - {name: position, type: Integer}
+      - {name: end, type: surf.document.ScriptEnd}
+      - {name: reason, type: Optional<surf.document.ScriptReason>}
+      - {name: error_kind, type: Optional<surf.document.ScriptErrorKind>}
+      - {name: message, type: Optional<String>}
+      - {name: line, type: Optional<Integer>}
+      - {name: column, type: Optional<Integer>}
+      - {name: dynamic, type: Optional<Boolean>}
+    naming:
+      wire: scripts
+      display: Scripts
 ```
+
+The view `surf.document.Scripts` reads every stored field of a document's records, in the order
+the scripts ended, as `surf.document.Elements` reads its elements: each entity of the domain has a
+view, and without one no scenario sees the record.
 
 The command is the document component's, issued by its parser step in the session process
 (`surf-session`), as `AddElement` and `AddForm` are; no other process runs page script (S7). The
