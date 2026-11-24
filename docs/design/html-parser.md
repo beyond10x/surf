@@ -373,7 +373,7 @@ Open: whether the answer wants kinds for those states, or for `summary`, `detail
 | limit | default |
 |---|---|
 | input bytes | 16,777,216 (16 MiB, the `surf-fetch` body limit) |
-| tree depth (elements on the stack of open elements) | 512 |
+| tree depth (elements on the stack of open elements, and on the path from the root to any node of the tree) | 512 |
 | nodes, template contents included | 1,048,576 |
 | attributes on one element | 1,024 |
 | stored bytes (every string the tree holds, clones included, and 80 for each attribute) | 67,108,864 (64 MiB) |
@@ -381,6 +381,23 @@ Open: whether the answer wants kinds for those states, or for `summary`, `detail
 
 Reaching one stops parsing as "stop parsing" does; the document holds what was built and names
 the limit (a row field, item 2).
+
+Depth, since fix round 2 of `story:html-script-hook`: the limit bounds the tree as well as the
+stack, in every parse, with a script hook or without. Markup alone made a tree deeper than its
+stack before (a random search at a limit of 16 found 18; the `selectedcontent` copy made 2N − 4
+at a limit of N), and a hook's writes can make it deeper still. No node of a parsed tree is
+deeper than the limit, counted as the write surface counts: the elements on its path from the
+root, itself included, a template counted for the nodes of its contents. The tree keeps each
+node's depth in its record (a `u32` in the record's padding: `NODE_BYTES` stays 136), so an
+insertion reads its parent's depth and visits nothing. The parse stops with `Depth` before:
+an element inserted under a parent at the limit (each insertion of an element, the in-head
+`script` and the `template` start tag included); an outer iteration of the adoption agency
+algorithm whose moves would put a node past it, checked for the whole iteration before its
+first move, so the iteration changes nothing and the tree holds every node where it was; an
+element of the `selectedcontent` copy under a copy at the limit, which leaves the copy cut
+there. A move that shifts nodes (the adoption agency's furthest block's children, a write's
+subtree) gives each node under it its new depth, each visited a step for the parser; a check of
+a move down reads the deepest depth under the furthest block, each node a step too.
 
 Stored bytes, as `story:html-parser-limits` made them exact: the UTF-8 bytes of every string the
 tree holds, element local names, attribute names, prefixes and values, text, comment data,

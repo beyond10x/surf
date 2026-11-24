@@ -19,8 +19,12 @@ pub struct Limits {
     /// decoded; the cut input is parsed to its end. Default 16 MiB (16,777,216), the body limit
     /// of `surf-fetch`.
     pub max_input_bytes: usize,
-    /// The most elements on the stack of open elements: an element that would be the next one
-    /// is not created. Default 512.
+    /// The most elements on the stack of open elements, and the deepest node of the tree: the
+    /// elements on its path from the root, itself included, a template counted for the nodes
+    /// of its contents. An element that would be the next one on the stack, or deeper in the
+    /// tree, is not created; a move of the adoption agency algorithm or a `selectedcontent`
+    /// copy that would put a node deeper is not made (the crate documentation, "Limits").
+    /// Default 512.
     pub max_depth: usize,
     /// The most nodes the tree holds ([`crate::Tree::node_count`]: the document, every node
     /// under it, template contents and nodes removed from their parent). Default 1,048,576.
@@ -77,7 +81,7 @@ pub enum Limit {
     /// The input was longer than [`Limits::max_input_bytes`]; the parse ran over its prefix.
     InputBytes,
     /// An element would have been one more than [`Limits::max_depth`] on the stack of open
-    /// elements.
+    /// elements, or a node of the tree deeper than it.
     Depth,
     /// A node would have taken the tree past [`Limits::max_nodes`].
     Nodes,

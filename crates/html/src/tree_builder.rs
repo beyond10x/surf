@@ -1051,33 +1051,24 @@ impl TreeBuilder {
         true
     }
 
-    /// Whether an element inserted under `parent` stays inside the depth limit, once a hook's
-    /// write gave a node a new parent: then the stack of open elements no longer tells the
-    /// depth of the tree, and the tree's is counted. When it does not, parsing stops. A parse
-    /// whose hooks gave no node a new parent does not count.
+    /// Whether an element inserted under `parent` stays inside the depth limit in the tree:
+    /// `parent`'s depth ([`Tree::depth`], which the tree keeps, so nothing is walked) is below
+    /// the limit. When it is not, parsing stops. The stack of open elements does not tell the
+    /// tree's depth: foster parenting, the adoption agency algorithm, the `selectedcontent`
+    /// copy and a hook's writes put nodes deeper or shallower than their entries.
     fn room_under(&mut self, parent: NodeId) -> bool {
-        if !self.tree.reparented() {
-            return true;
+        if self.tree.depth(parent) >= self.limits.max_depth {
+            self.stop_at(Limit::Depth);
+            return false;
         }
-        match self.tree.element_depth(parent) {
-            Some(depth) if depth < self.limits.max_depth => true,
-            _ => {
-                self.stop_at(Limit::Depth);
-                false
-            }
-        }
+        true
     }
 
-    /// The appropriate place for an element, taken before the element is created, when a
-    /// hook's write gave a node a new parent ([`Self::room_under`]): `Some(None)` when no write
-    /// did, and the place is taken after the element is created, as without a hook; `None`
-    /// when the place has no room, and parsing stopped.
-    fn place_with_room(&mut self) -> Option<Option<(NodeId, Option<NodeId>)>> {
-        if !self.tree.reparented() {
-            return Some(None);
-        }
+    /// The appropriate place for an element, when it has room under it ([`Self::room_under`]);
+    /// `None`, and parsing stopped, when it has not.
+    fn place_with_room(&mut self) -> Option<(NodeId, Option<NodeId>)> {
         let place = self.appropriate_place(None);
-        self.room_under(place.0).then_some(Some(place))
+        self.room_under(place.0).then_some(place)
     }
 
     // 13.2.6.1 Creating and inserting nodes.
@@ -1177,7 +1168,13 @@ impl TreeBuilder {
         if !self.admit(1, bytes) {
             return None;
         }
-        let categories = categories_of(namespace, name);
+        let mut categories = categories_of(namespace, name);
+        if namespace == Namespace::MathMl
+            && name == "annotation-xml"
+            && foreign::encoding_is_html(&attributes)
+        {
+            categories.0 |= Categories::HTML_INTEGRATION_POINT;
+        }
         let element = self
             .tree
             .create_element(namespace, name, attributes, categories);
@@ -1235,8 +1232,9 @@ impl TreeBuilder {
     }
 
     /// Insert a foreign element for a token in `namespace` (an HTML element for
-    /// [`Namespace::Html`]), with `name` already adjusted: the appropriate place is taken, the
-    /// element created, inserted there and pushed onto the stack of open elements.
+    /// [`Namespace::Html`]), with `name` already adjusted: the appropriate place is taken and
+    /// checked for depth, the element created, inserted there and pushed onto the stack of open
+    /// elements.
     fn insert_element(
         &mut self,
         namespace: Namespace,
@@ -1246,12 +1244,11 @@ impl TreeBuilder {
         if !self.room_on_stack() {
             return None;
         }
-        let early = self.place_with_room()?;
+        let location = self.place_with_room()?;
         let element = match namespace {
             Namespace::Html => self.create_element(name, attributes)?,
             _ => self.create_foreign_element(namespace, name, attributes)?,
         };
-        let location = early.unwrap_or_else(|| self.appropriate_place(None));
         self.insert_element_at(element, location);
         self.open.push(element);
         self.watch_script(element);

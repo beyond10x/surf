@@ -9,7 +9,7 @@
 
 use super::{Flow, TreeBuilder, is_whitespace};
 use crate::tokenizer::{Token, TokenAttribute};
-use crate::tree::{Attribute, Namespace, NodeData, NodeId};
+use crate::tree::{Attribute, Categories, Namespace, NodeData, NodeId};
 
 /// The start tags that break out of foreign content (13.2.6.5); `font` breaks out only with a
 /// `color`, `face` or `size` attribute.
@@ -187,6 +187,18 @@ pub(super) fn svg_tag_name(name: &str) -> &str {
         .map_or(name, |(_, element)| element)
 }
 
+/// Whether the attributes a start tag gave a MathML `annotation-xml` make it an HTML
+/// integration point (13.2.6): an `encoding` of `text/html` or `application/xhtml+xml` in any
+/// ASCII case. No adjustment renames `encoding`.
+pub(super) fn encoding_is_html(attributes: &[Attribute]) -> bool {
+    attributes.iter().any(|a| {
+        a.namespace.is_none()
+            && a.local_name == "encoding"
+            && (a.value.eq_ignore_ascii_case("text/html")
+                || a.value.eq_ignore_ascii_case("application/xhtml+xml"))
+    })
+}
+
 /// The attributes an element in `namespace` gets for a token's attributes: for MathML, adjust
 /// MathML attributes and adjust foreign attributes; for SVG, adjust SVG attributes and adjust
 /// foreign attributes; for HTML, the token's as they are. Each rule that creates an element in
@@ -262,23 +274,21 @@ impl TreeBuilder {
     }
 
     /// Whether `node` is an HTML integration point: a MathML `annotation-xml` whose start tag
-    /// had an `encoding` of `text/html` or `application/xhtml+xml` in any ASCII case (the
-    /// element keeps the token's attributes, and no adjustment renames `encoding`), or an SVG
-    /// `foreignObject`, `desc` or `title`. The context element of a fragment is created with
-    /// no attribute, as its "fake" start tag token has none here.
+    /// had an `encoding` of `text/html` or `application/xhtml+xml` in any ASCII case, which
+    /// the element's categories keep from the token when it is created
+    /// ([`Categories::HTML_INTEGRATION_POINT`]), so a hook's later write to the attribute
+    /// changes nothing; or an SVG `foreignObject`, `desc` or `title`. The context element of a
+    /// fragment is created with no attribute, as its "fake" start tag token has none here.
     fn is_html_integration_point(&self, node: NodeId) -> bool {
         match self.tree.data(node) {
             NodeData::Element {
                 namespace: Namespace::MathMl,
                 local_name,
-                attributes,
                 ..
-            } if local_name == "annotation-xml" => attributes.iter().any(|a| {
-                a.namespace.is_none()
-                    && a.local_name == "encoding"
-                    && (a.value.eq_ignore_ascii_case("text/html")
-                        || a.value.eq_ignore_ascii_case("application/xhtml+xml"))
-            }),
+            } if local_name == "annotation-xml" => self
+                .tree
+                .categories(node)
+                .has(Categories::HTML_INTEGRATION_POINT),
             NodeData::Element {
                 namespace: Namespace::Svg,
                 local_name,

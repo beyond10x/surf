@@ -107,8 +107,20 @@
 //!   to its end, the end-of-file step included, so the tree is that of the prefix, and
 //!   [`limits::Limit::InputBytes`] is named unless another limit stopped the parse of the
 //!   prefix. The parse again after a `meta` that changes the encoding reads the same cut bytes.
-//! - **Depth** ([`limits::Limits::max_depth`], default 512): an element that would be entry
-//!   513 of the stack of open elements is not created.
+//! - **Depth** ([`limits::Limits::max_depth`], default 512): it bounds the stack of open
+//!   elements and the tree, in every parse, with a hook or without. An element that would be
+//!   entry 513 of the stack is not created. No node of the tree is deeper than 512: the
+//!   elements on its path from the root, itself included, a template counted for the nodes of
+//!   its contents (the count the write surface refuses a write by). Markup alone makes a tree
+//!   deeper than its stack (foster parenting, the adoption agency algorithm, the
+//!   `selectedcontent` copy), and so do a hook's writes, so each place that gives a node a
+//!   parent checks the tree before it: an element inserted (also the in-head `script` and the
+//!   `template` start tag) is not created under a parent 512 deep; an outer iteration of the
+//!   adoption agency algorithm that would move a node past the limit makes no change, checked
+//!   before its first move; the `selectedcontent` copy makes no element under a copy 512 deep.
+//!   Each stops the parse with [`limits::Limit::Depth`]. Text, comments and processing
+//!   instructions are no deeper than their parent. The tree keeps each node's depth, so a check
+//!   visits nothing; a move that shifts nodes deeper or shallower visits each of them, a step.
 //! - **Nodes** ([`limits::Limits::max_nodes`], default 1,048,576, template contents
 //!   included): a node whose creation would take [`Tree::node_count`] past the limit is not
 //!   created (a `template` is two nodes). The reconstruction of the active formatting elements
@@ -134,9 +146,11 @@
 //! - **Steps** ([`limits::Limits::max_steps`], default 2^27, 134,217,728): every entry visited
 //!   in a scan of the stack of open elements or of the list of active formatting elements (the
 //!   scopes, popping, "any other end tag", Noah's Ark, the reconstruction, the adoption agency
-//!   algorithm's scans and its walk to the root), and every child visited in a parent's child
+//!   algorithm's scans and its walk to the root), every child visited in a parent's child
 //!   list (inserting before a reference, finding the text node to append to, removing a node,
-//!   moving children, looking for an element child). The count is checked after each token:
+//!   moving children, looking for an element child), and every node whose kept depth a move
+//!   changes or whose depth the adoption agency algorithm reads to check a move down (the
+//!   depth limit). The count is checked after each token:
 //!   the token that takes it past the limit is processed whole, then parsing stops. The
 //!   `selectedcontent` update after the end-of-file token counts every node it visits and
 //!   copies and is checked after each, so it stops where it passes the limit.

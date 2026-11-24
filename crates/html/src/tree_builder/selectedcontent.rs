@@ -196,8 +196,10 @@ impl TreeBuilder {
     /// Clone an option into a selectedcontent: each child of `option` cloned with its subtree
     /// and appended to `target`, leaving out every `script`, SVG `script`, `frame`, `iframe`,
     /// `embed` and `object` element with its subtree. `false` when a limit stopped it: the
-    /// step limit, checked after each node visited, or the node or stored-byte limit, which
-    /// admits each node before it is made.
+    /// step limit, checked after each node visited, the depth limit, checked before each
+    /// element is made against the depth of the copy it goes under, or the node or stored-byte
+    /// limit, which admits each node before it is made. A copy goes under its parent before
+    /// anything goes under it, so the tree holds a copy cut where the limit stopped it.
     fn clone_children(&mut self, option: NodeId, target: NodeId) -> bool {
         let mut pending: Vec<(NodeId, NodeId)> = self
             .tree
@@ -229,6 +231,10 @@ impl TreeBuilder {
                     };
                     if removed {
                         continue;
+                    }
+                    if self.tree.depth(parent) >= self.limits.max_depth {
+                        self.stop_at(Limit::Depth);
+                        return false;
                     }
                     let nodes = 1 + usize::from(template_contents.is_some());
                     if !self.admit(nodes, stored_bytes_of(&data)) {

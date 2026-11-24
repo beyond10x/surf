@@ -36,15 +36,14 @@ impl TreeBuilder {
         if !self.room_on_stack() {
             return;
         }
-        let Some(early) = self.place_with_room() else {
+        // The insertion location is taken before the template is pushed, so that it is not
+        // inside the template's own contents.
+        let Some(location) = self.place_with_room() else {
             return;
         };
         let Some(template) = self.create_element(name, attributes) else {
             return;
         };
-        // The insertion location is taken after the element is created and before it is
-        // pushed, so that it is not inside the template's own contents.
-        let location = early.unwrap_or_else(|| self.appropriate_place(None));
         self.open.push(template);
         self.insert_element_at(template, location);
     }

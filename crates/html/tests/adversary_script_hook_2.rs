@@ -546,7 +546,8 @@ fn a_write_that_changes_nothing_leaves_the_tree_equal() {
 }
 
 /// Markup that makes a tree deeper than its stack of open elements with no hook (found by a
-/// random search on `main`'s parser, at a depth limit of 16: 18 elements deep).
+/// random search on `main`'s parser, at a depth limit of 16: 18 elements deep). Since fix round
+/// 2 the depth limit bounds the tree: the parse stops at it, no element deeper than 16.
 const DEEPER_THAN_THE_STACK: &str = "<script id=s>x</script><form><button><u></i></form><u><u>\
     <option></a><dd><code></form><i><ul></p><option><td><optgroup><s></div><em></template></u>\
     <form><div><i><td></table><h1></i><option></form><table><template><form><object>\
@@ -558,7 +559,7 @@ const DEEPER_THAN_THE_STACK: &str = "<script id=s>x</script><form><button><u></i
 fn a_refused_write_leaves_the_parse_as_without_a_hook() {
     const N: usize = 16;
     let without = parse_document(DEEPER_THAN_THE_STACK, &deep(N));
-    assert!(max_element_depth(&without) > N);
+    assert!(max_element_depth(&without) <= N);
     let mut hook = Recorder::with(|tree, script| {
         let head = tree.parent(script).unwrap();
         let html = tree.parent(head).unwrap();
