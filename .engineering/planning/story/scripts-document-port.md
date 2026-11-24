@@ -61,7 +61,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 28
+revision: 29
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:14Z", actor: "human:operator", revision: 25}
 ---
@@ -96,6 +96,11 @@ charge every copy that is alive while the engine calls into script; its status a
 `absent`. Q13's decision (the coordinating agent, 2026-11-24, reversible): this story, the one that
 lets a page's scripts run in a session, waits for the swell tag that holds requirement 11 and takes
 that tag in its first commit.
+
+Found while `story:scripts-spec` was built (2026-11-24): the session's cap of 256 rows of entries
+per request does not count the event `ScriptEndAdded`. A page may add up to 1,000 script records
+(Q4), so this story decides whether those events count against the cap or have a bound of their
+own, and holds the answer with a test.
 
 ## Domain relations
 
