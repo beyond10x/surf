@@ -703,7 +703,7 @@ fn added_allow_shared() {
 #[test]
 fn unresolved_names_carry_the_line_they_are_written_on() {
     let model = model(all(
-        "interface A\n  : Missing {\n};\ndictionary D\n\n  : Absent {};\nA\n  includes\n  Gone;\n",
+        "interface A\n  : Missing {\n};\ndictionary D\n\n  : Absent {};\nA\n  includes\n  Gone;\npartial interface Nowhere {};\n",
     ));
     let lines: Vec<(String, usize)> = model
         .unresolved()
@@ -715,7 +715,8 @@ fn unresolved_names_carry_the_line_they_are_written_on() {
         [
             ("Absent".to_string(), 6),
             ("Gone".to_string(), 9),
-            ("Missing".to_string(), 2)
+            ("Missing".to_string(), 2),
+            ("Nowhere".to_string(), 10)
         ]
     );
 }

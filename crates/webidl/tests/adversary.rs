@@ -133,7 +133,8 @@ fn unresolved_inheritance() {
 #[test]
 fn a_partial_interface_defines_no_name() {
     let model = model("partial interface W {};\ninterface A {\n  attribute W w;\n};\n");
-    assert_eq!(unresolved_names(&model), ["W"]);
+    // Since round 5 the partial's own name is listed too: W at line 1 and at line 3.
+    assert_eq!(unresolved_names(&model), ["W", "W"]);
 }
 
 #[test]

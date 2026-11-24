@@ -318,7 +318,8 @@ pub struct Reference {
     pub line: usize,
 }
 
-/// A name a type, an inheritance or an `includes` names that no definition read defines.
+/// A name a type, an inheritance, an `includes` or a `partial interface` names that no
+/// definition read defines.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Unresolved {
     /// The name.
@@ -739,9 +740,13 @@ impl Model {
         counts
     }
 
-    /// Every name a type, an inheritance or an `includes` statement names that no definition
-    /// read defines (a `partial interface` and an `includes` define no name), one entry per
-    /// place it is written, sorted by name, file and line.
+    /// Every name that no definition read defines (a `partial interface` and an `includes`
+    /// define no name) among: the parent an interface or a dictionary inherits from, both
+    /// names of an `includes` statement (the interface and the mixin), every named type,
+    /// nested types included, and the name of a `partial interface`, with the line of the
+    /// partial. One entry per place it is written, sorted by name, file and line. (The reader
+    /// reads no other kind of partial: `partial interface mixin`, `partial dictionary` and
+    /// `partial namespace` are refused.)
     pub fn unresolved(&self) -> Vec<Unresolved> {
         let mut out = Vec::new();
         for definition in &self.definitions {
@@ -758,6 +763,9 @@ impl Model {
                 DefinitionKind::Includes { mixin } => {
                     names.push((definition.name.clone(), definition.line));
                     names.push((mixin.name.clone(), mixin.line));
+                }
+                DefinitionKind::Interface { partial: true, .. } => {
+                    names.push((definition.name.clone(), definition.line));
                 }
                 _ => {}
             }

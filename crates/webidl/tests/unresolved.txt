@@ -3,3 +3,4 @@ DOMHighResTimeStamp
 EventHandler
 HTMLSlotElement
 TrustedType
+Window
