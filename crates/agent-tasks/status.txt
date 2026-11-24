@@ -3,3 +3,4 @@ table pass
 link pass
 search pass
 https pass
+login pass

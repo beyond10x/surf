@@ -18,9 +18,9 @@ plan, after the live view's control states and changed panel, and after TLS 1.3 
 | what | value |
 |---|---|
 | specification | ESS 0.97.4, valid |
-| conformance scenarios | 201 of 201 pass, against the interpreter and against the Rust code |
-| tests | 1,897 passed: 1,345, and 552 of the TLS crates |
-| agent tasks | 5 of 5 pass (`article`, `table`, `link`, `search`, `https`) |
+| conformance scenarios | 203 of 203 pass, against the interpreter and against the Rust code |
+| tests | 1,960 passed: 1,408, and 552 of the TLS crates |
+| agent tasks | 6 of 6 pass (`article`, `table`, `link`, `search`, `https`, `login`) |
 | live view | the panel "Now" lists a page's links, buttons and fields with their state; the panel `Changed by <action>` shows what the action changed; a typed password is shown as a count of bytes, never its value |
 | live view's page tests | 71 passed, in Chromium's headless shell |
 | X.509 test data (x509-limbo) | 5,143 cases counted, 5,089 run, 5,060 pass; `task check` holds these counts |

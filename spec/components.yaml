@@ -164,6 +164,7 @@ bindings:
       method: event.method
       body: event.body
       body_type: event.body_type
+      initiator: event.initiator
     delivery: at_most_once
     # Fetch refuses nothing. If it does not run at all, the navigation stays Started until the
     # user cancels it.
@@ -244,13 +245,15 @@ bindings:
     invoke:
       command: surf.navigation.Navigate
     # A `Post` carries the body in `application/x-www-form-urlencoded`; a `Get` carries its entries
-    # in the address and no body (HTML Standard, "form submission algorithm", from memory).
+    # in the address and no body (HTML Standard, "form submission algorithm", from memory). The
+    # initiator is the origin of the form's document.
     mapping:
       tab_id: event.tab_id
       url: event.url
       method: event.method
       body: event.body
       body_type: event.body_type
+      initiator: event.initiator
     delivery: at_most_once
     # Navigate refuses nothing. If it does not run at all, the submission is Submitted and the tab
     # keeps its page.
@@ -265,11 +268,13 @@ bindings:
       event: surf.agent.NavigationRequested
     invoke:
       command: surf.navigation.Navigate
-    # An agent's `go` and `follow` load an address: `Get`, without a body.
+    # An agent's `go` and `follow` load an address: `Get`, without a body; a `follow` with the
+    # origin of the document whose link it follows as the initiator, a `go` with none.
     mapping:
       tab_id: event.tab_id
       url: event.url
       method: Get
+      initiator: event.initiator
     delivery: at_most_once
     # Navigate refuses nothing. If it does not run at all, the session keeps the navigation it
     # had, and the agent sees that nothing started.

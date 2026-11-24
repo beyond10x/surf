@@ -55,6 +55,8 @@ fn get_with(address: &str, anchors: &Anchors, limits: &Limits) -> Result<Respons
         body: None,
         media_type: None,
         anchors: Some(anchors),
+        jar: None,
+        initiator: None,
     };
     send_through(&request, limits, &network())
 }

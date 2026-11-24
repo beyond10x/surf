@@ -460,6 +460,7 @@ dependencies = [
  "net",
  "renderer",
  "shell",
+ "surf-cookie",
  "surf-fetch",
  "surf-html",
  "surf-page",
@@ -483,9 +484,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "surf-cookie"
+version = "0.1.0"
+dependencies = [
+ "surf-url",
+]
+
+[[package]]
 name = "surf-fetch"
 version = "0.1.0"
 dependencies = [
+ "surf-cookie",
  "surf-tls",
  "surf-url",
 ]

@@ -30,7 +30,7 @@ that.
    before it is printed, so a page cannot forge a line of surf's output.
 7. **A passing test must be able to fail.** Tests are tried against planted defects. Over the
    whole suite (`task conform-slow`), a navigation storage that drops every write fails 55 of
-   the 201 scenarios; the gate runs each of the 29 planted defects over the first 3 scenarios
+   the 203 scenarios; the gate runs each of the 29 planted defects over the first 3 scenarios
    that notice it.
 8. **Small.** A standard is followed for what surf does, not implemented whole.
 

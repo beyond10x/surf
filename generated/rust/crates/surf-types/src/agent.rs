@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 153f12c9bc6989d7738d48778d89afd6338830f138bc654b26d0f1a53611f3d7
+// contract digest 0885760ec9338d6af6c9b21b424dde0557abe451edb6419c0f296bc37836f5f6
 // do not edit: regenerate with `ess synthesize`
 
 //! Agent — `surf.agent`.
@@ -681,6 +681,8 @@ pub struct Follow {
     pub handle: String,
     /// `label` — `String`.
     pub label: String,
+    /// `initiator` — `Optional<String>`.
+    pub initiator: Option<String>,
 }
 
 /// Everything `surf.agent.Follow` can result in — one variant per declared outcome.
@@ -1228,6 +1230,8 @@ pub struct NavigationRequested {
     pub handle: Option<String>,
     /// `label` — `Optional<String>`.
     pub label: Option<String>,
+    /// `initiator` — `Optional<String>`.
+    pub initiator: Option<String>,
 }
 
 /// PickRequested — the event `surf.agent.PickRequested`.

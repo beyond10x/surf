@@ -21,6 +21,7 @@ test = false
 surf = { path = "../surf" }
 surf-ports = { path = "../ports" }
 surf-fetch = { path = "../fetch" }
+surf-cookie = { path = "../cookie" }
 surf-answer = { path = "../answer" }
 surf-html = { path = "../html" }
 surf-page = { path = "../page" }

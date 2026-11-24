@@ -209,6 +209,13 @@ commands:
       - name: body_type
         type: Optional<surf.net.MediaType>
         example: "application/x-www-form-urlencoded"
+      # The serialised origin of the document whose link or form started the navigation, as the
+      # HTML Standard's navigate is given a source document; none when the person at the keyboard
+      # started it. It travels in `NavigationStarted` to the request, whose transport reads it for
+      # cookies (`spec/domains/net.yaml`, R9). Not stored on the navigation.
+      - name: initiator
+        type: Optional<String>
+        example: "http://example.org"
     outcomes:
       - name: started
         creates: surf.navigation.Navigation
@@ -228,6 +235,7 @@ commands:
             method: input.method
             body: input.body
             body_type: input.body_type
+            initiator: input.initiator
         summary: The navigation is Started and its address is to be fetched.
 
   # A traversal's navigation: `Get` to the entry's address, without a body, with the handling
@@ -271,6 +279,7 @@ commands:
             method: Get
             body: {generated: true}
             body_type: {generated: true}
+            initiator: {generated: true}
         summary: The traversal's navigation is Started and the entry's address is to be fetched.
 
   - name: surf.navigation.CommitNavigation
@@ -568,6 +577,8 @@ events:
         type: Optional<Bytes>
       - name: body_type
         type: Optional<surf.net.MediaType>
+      - name: initiator
+        type: Optional<String>
 
   # `url` is the response's address, where the navigation committed.
   - name: surf.navigation.NavigationCommitted

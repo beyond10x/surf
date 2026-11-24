@@ -4,6 +4,7 @@
 
 use std::io::{self, ErrorKind, Read, Write};
 use std::net::{Shutdown, TcpStream};
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
@@ -74,8 +75,14 @@ fn failed<E: std::fmt::Debug>(what: &'static str) -> impl Fn(E) -> End {
     move |e| format!("{what}: {e:?}")
 }
 
-/// Serves one accepted connection to its end and returns what it saw.
-pub(crate) fn serve(stream: TcpStream, setup: &Setup, stop: &AtomicBool) -> Seen {
+/// Serves one accepted connection to its end and returns what it saw. The head of the request
+/// it reads is appended to `requests` before the response is written.
+pub(crate) fn serve(
+    stream: TcpStream,
+    setup: &Setup,
+    stop: &AtomicBool,
+    requests: &Mutex<Vec<Vec<u8>>>,
+) -> Seen {
     let mut seen = Seen::default();
     let ready = stream
         .set_read_timeout(Some(POLL))
@@ -96,6 +103,7 @@ pub(crate) fn serve(stream: TcpStream, setup: &Setup, stop: &AtomicBool) -> Seen
     let mut server = Server {
         layer: RecordLayer::new(watched),
         setup,
+        requests,
         seen,
         hello_read: false,
         finished: false,
@@ -144,6 +152,8 @@ fn never_answer(mut watched: Watched<'_>, mut seen: Seen) -> Seen {
 struct Server<'a> {
     layer: RecordLayer<Watched<'a>>,
     setup: &'a Setup,
+    /// The heads of the requests the server read, shared by its connections.
+    requests: &'a Mutex<Vec<Vec<u8>>>,
     seen: Seen,
     /// A handshake message was read: the first ClientHello came.
     hello_read: bool,
@@ -507,6 +517,10 @@ impl Server<'_> {
         let length = content_length(head);
         let path = line.split(' ').nth(1).unwrap_or("").to_string();
         self.seen.request = Some(line);
+        match self.requests.lock() {
+            Ok(mut all) => all.push(head.to_vec()),
+            Err(poisoned) => poisoned.into_inner().push(head.to_vec()),
+        }
         if head_end.saturating_add(length) > MAX_REQUEST {
             return Err(self.abort(AlertDescription::INTERNAL_ERROR));
         }

@@ -3,10 +3,17 @@
 //! `/article.html`, is `http://127.0.0.1:<port>/article/article.html` on the wire, and the
 //! links and forms of a site are relative.
 //!
-//! `GET` only, one request per connection, answered with `Connection: close`. A path component
-//! is of `[A-Za-z0-9._-]`, not `.` or `..`. `/<task>/results?q=<query>`, the query of
-//! `[A-Za-z0-9]+`, answers `results-<query>.html` when it exists and `results-none.html`
-//! otherwise. Everything else is a 404.
+//! `GET` only but for one route, one request per connection, answered with `Connection: close`.
+//! A path component is of `[A-Za-z0-9._-]`, not `.` or `..`. `/<task>/results?q=<query>`, the
+//! query of `[A-Za-z0-9]+`, answers `results-<query>.html` when it exists and
+//! `results-none.html` otherwise. Everything else is a 404.
+//!
+//! The site of the task `login` has two routes of its own: `POST /login/login` with the body
+//! `name=ada&password=lovelace` answers `303`, `Location: /login/account.html` and the
+//! `Set-Cookie` of [`LOGIN_COOKIE`] (`Path=/; HttpOnly; SameSite=Lax`), any other body `303` to
+//! `/login/login.html`; `GET /login/account.html` answers the account page only to a request
+//! whose `Cookie` field holds [`LOGIN_COOKIE`], and `303` to `/login/login.html` otherwise. So
+//! the task passes only when the agent's session keeps the cookie of its sign-in.
 //!
 //! [`Server::accepted`] counts the connections accepted, so that a test can tell how many a
 //! task made.
@@ -25,6 +32,15 @@ const HEAD_MAX: usize = 16 * 1024;
 
 /// How long the server waits for a request head.
 const READ_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The cookie the site of the task `login` sets at a sign-in and asks for on its account page.
+pub const LOGIN_COOKIE: &str = "sid=4f1c2a9e7b3d5f6081a2c3d4e5f60718";
+
+/// The body of the sign-in of the task `login`.
+const LOGIN_BODY: &[u8] = b"name=ada&password=lovelace";
+
+/// The most bytes of a request body the server reads.
+const BODY_MAX: usize = 16 * 1024;
 
 /// A running fixture server. Its thread serves until the process ends.
 pub struct Server {
@@ -78,24 +94,56 @@ pub fn serve_sites(sites: PathBuf, only: Option<Vec<String>>) -> io::Result<Serv
 /// Read one request head and answer it.
 fn answer(mut stream: TcpStream, sites: &Path, only: Option<&[String]>) -> io::Result<()> {
     stream.set_read_timeout(Some(READ_TIMEOUT))?;
-    let mut head = Vec::new();
+    let mut bytes = Vec::new();
     let mut buffer = [0u8; 2048];
-    while !head.windows(4).any(|window| window == b"\r\n\r\n") {
-        if head.len() > HEAD_MAX {
+    let head_end = loop {
+        if let Some(at) = bytes.windows(4).position(|window| window == b"\r\n\r\n") {
+            break at + 4;
+        }
+        if bytes.len() > HEAD_MAX {
             return respond(&mut stream, "431 Request Header Fields Too Large", None);
         }
         let read = stream.read(&mut buffer)?;
         if read == 0 {
             return Ok(());
         }
-        head.extend_from_slice(&buffer[..read]);
-    }
-    let head = String::from_utf8_lossy(&head);
+        bytes.extend_from_slice(&buffer[..read]);
+    };
+    let head = String::from_utf8_lossy(&bytes[..head_end]).into_owned();
     let request_line = head.split("\r\n").next().unwrap_or("");
     let mut words = request_line.split(' ');
     let (Some(method), Some(target)) = (words.next(), words.next()) else {
         return respond(&mut stream, "400 Bad Request", None);
     };
+    let login = only.is_none_or(|only| only.iter().any(|name| name == "login"));
+    match (method, target) {
+        ("POST", "/login/login") if login => {
+            let length = field(&head, "content-length")
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(0);
+            if length > BODY_MAX {
+                return respond(&mut stream, "413 Content Too Large", None);
+            }
+            while bytes.len() < head_end + length {
+                let read = stream.read(&mut buffer)?;
+                if read == 0 {
+                    return Ok(());
+                }
+                bytes.extend_from_slice(&buffer[..read]);
+            }
+            let body = &bytes[head_end..head_end + length];
+            return if body == LOGIN_BODY {
+                let cookie = format!("{LOGIN_COOKIE}; Path=/; HttpOnly; SameSite=Lax");
+                see_other(&mut stream, "/login/account.html", Some(&cookie))
+            } else {
+                see_other(&mut stream, "/login/login.html", None)
+            };
+        }
+        ("GET", "/login/account.html") if login && !signed_in(&head) => {
+            return see_other(&mut stream, "/login/login.html", None);
+        }
+        _ => {}
+    }
     if method != "GET" {
         return respond(&mut stream, "405 Method Not Allowed", None);
     }
@@ -111,6 +159,31 @@ fn answer(mut stream: TcpStream, sites: &Path, only: Option<&[String]>) -> io::R
         }
         None => respond(&mut stream, "404 Not Found", None),
     }
+}
+
+/// The value of the first field of `head` named `name` (lower case), in any case.
+fn field<'a>(head: &'a str, name: &str) -> Option<&'a str> {
+    head.split("\r\n").skip(1).find_map(|line| {
+        let (field, value) = line.split_once(':')?;
+        field
+            .eq_ignore_ascii_case(name)
+            .then_some(value.trim_matches([' ', '\t']))
+    })
+}
+
+/// Whether the `Cookie` field of `head` holds [`LOGIN_COOKIE`].
+fn signed_in(head: &str) -> bool {
+    field(head, "cookie").is_some_and(|cookies| cookies.split("; ").any(|c| c == LOGIN_COOKIE))
+}
+
+/// A `303` to `location`, with `Set-Cookie: <cookie>` when given, and no body.
+fn see_other(stream: &mut TcpStream, location: &str, cookie: Option<&str>) -> io::Result<()> {
+    let set_cookie = cookie.map_or(String::new(), |cookie| format!("Set-Cookie: {cookie}\r\n"));
+    let head = format!(
+        "HTTP/1.1 303 See Other\r\nLocation: {location}\r\n{set_cookie}Content-Length: 0\r\nConnection: close\r\n\r\n"
+    );
+    stream.write_all(head.as_bytes())?;
+    stream.flush()
 }
 
 fn respond(stream: &mut TcpStream, status: &str, body: Option<(&str, &[u8])>) -> io::Result<()> {

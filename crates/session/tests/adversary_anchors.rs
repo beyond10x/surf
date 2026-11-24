@@ -297,6 +297,7 @@ fn adversary_anchors_after_an_answer_the_thread_fetches_with_the_bundled_list_al
         method: surf::Method::Get,
         body: None,
         body_type: None,
+        initiator: None,
     };
     let answer = surf_session::fetch(&started);
     assert!(

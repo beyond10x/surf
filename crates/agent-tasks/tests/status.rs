@@ -25,6 +25,7 @@ fn base_a() -> Vec<TaskResult> {
         fail("link", "no now line labelled \"Opening hours\""),
         fail("search", "no now line labelled \"Search\""),
         fail("https", "exit 2 on look"),
+        fail("login", "no now line labelled \"Name\""),
     ]
 }
 
@@ -79,12 +80,13 @@ fn a_listed_pass_that_fails_fails() {
     let written = fs::read_to_string(&out).expect("the file is written");
     assert_eq!(
         written,
-        "agent-tasks: 5 tasks, 0 pass, 5 fail, 0 skipped, lane gate, binaries bin\n\
+        "agent-tasks: 6 tasks, 0 pass, 6 fail, 0 skipped, lane gate, binaries bin\n\
          task article fail 3 calls 1 connections: exit 2 on look\n\
          task table fail 3 calls 1 connections: exit 2 on look\n\
          task link fail 3 calls 1 connections: no now line labelled \"Opening hours\"\n\
          task search fail 3 calls 1 connections: no now line labelled \"Search\"\n\
-         task https fail 3 calls 1 connections: exit 2 on look\n"
+         task https fail 3 calls 1 connections: exit 2 on look\n\
+         task login fail 3 calls 1 connections: no now line labelled \"Name\"\n"
     );
     assert_eq!(modified(&root), before, "the root file is not touched");
     let _ = fs::remove_file(&out);
@@ -107,7 +109,7 @@ fn a_pending_task_that_passes_is_raised() {
     let written = fs::read_to_string(&out).expect("the file is written");
     assert!(
         written.starts_with(
-            "agent-tasks: 5 tasks, 1 pass, 4 fail, 0 skipped, lane gate, binaries bin\n"
+            "agent-tasks: 6 tasks, 1 pass, 5 fail, 0 skipped, lane gate, binaries bin\n"
         ),
         "{written}"
     );

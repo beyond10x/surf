@@ -91,6 +91,15 @@ pub fn steps(task: &str) -> Option<Vec<Step>> {
             LookMarkdown,
             Close,
         ],
+        "login" => vec![
+            Open,
+            Look,
+            Fill("Name", "ada"),
+            Fill("Password", "lovelace"),
+            Press("Sign in"),
+            LookMarkdown,
+            Close,
+        ],
         _ => return None,
     })
 }

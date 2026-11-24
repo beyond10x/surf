@@ -43,3 +43,12 @@ connections 1
 commands open look close
 question What does the notice say is closed?
 answer the north entrance
+
+task login
+server http
+start /login.html
+target /account.html
+connections 3
+commands open look fill fill press look close
+question On which day is the next delivery?
+answer Tuesday

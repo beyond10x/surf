@@ -230,6 +230,7 @@ fn entries_a() -> Vec<Entry> {
                 ("url", Some(PAGE)),
                 ("handle", None),
                 ("label", None),
+                ("initiator", None),
             ],
         ),
         event(
@@ -253,6 +254,7 @@ fn entries_a() -> Vec<Entry> {
                 ("method", Some("Get")),
                 ("body", None),
                 ("body_type", None),
+                ("initiator", None),
             ],
         ),
         event(
@@ -271,6 +273,7 @@ fn entries_a() -> Vec<Entry> {
                 ("method", Some("Get")),
                 ("body", None),
                 ("body_type", None),
+                ("initiator", None),
             ],
         ),
         response_received(),
@@ -364,7 +367,7 @@ fn case_02_a_detail_whose_page_is_committed_is_the_documents_example() {
     };
     let written = to_json(&detail);
     let expected = body_of(&format!("/api/sessions/{A}"));
-    assert_eq!(expected.len(), 5_578, "the document's example");
+    assert_eq!(expected.len(), 5_629, "the document's example");
     assert_eq!(text(&written), text(&expected));
 }
 

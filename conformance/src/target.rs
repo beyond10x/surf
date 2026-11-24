@@ -767,13 +767,14 @@ fn method_named(name: &str) -> Option<Method> {
         .find(|candidate| method(*candidate) == name)
 }
 
-/// The method, the body and its media type of a request, by declared field name; `null` for an
-/// absent body or media type.
+/// The method, the body, its media type and the initiator of a request, by declared field name;
+/// `null` for an absent body, media type or initiator.
 fn request_fields(
     request_method: Method,
     body: Option<&Vec<u8>>,
     body_type: Option<&MediaType>,
-) -> [(&'static str, Node); 3] {
+    initiator: Option<&str>,
+) -> [(&'static str, Node); 4] {
     [
         ("method", values::text(method(request_method))),
         ("body", optional(body, |body| values::bytes(body))),
@@ -781,15 +782,16 @@ fn request_fields(
             "body_type",
             optional(body_type, |media_type| values::text(&media_type.0)),
         ),
+        ("initiator", optional(initiator, values::text)),
     ]
 }
 
-/// The method of a request, its body and the body's media type.
-type RequestParts = (Method, Option<Vec<u8>>, Option<MediaType>);
+/// The method of a request, its body, the body's media type and its initiator.
+type RequestParts = (Method, Option<Vec<u8>>, Option<MediaType>, Option<String>);
 
-/// The method, the body and its media type of the input of `Navigate` or `Fetch`, whose fields
-/// without `null` are `present`: an absent body or media type and one sent as `null` read the
-/// same.
+/// The method, the body, its media type and the initiator of the input of `Navigate`, `Fetch`
+/// or `SubmitForm`, whose fields without `null` are `present`: an absent body, media type or
+/// initiator and one sent as `null` read the same.
 fn request_input(
     input: &mut Input<'_>,
     present: &BTreeMap<String, Node>,
@@ -805,7 +807,12 @@ fn request_input(
     } else {
         None
     };
-    Ok((request_method, body, body_type))
+    let initiator = if present.contains_key("initiator") {
+        Some(input.text("initiator")?)
+    } else {
+        None
+    };
+    Ok((request_method, body, body_type, initiator))
 }
 
 fn request_state(state: RequestState) -> &'static str {
@@ -1147,6 +1154,7 @@ fn payload(event: &SystemEvent) -> Vec<(&'static str, Node)> {
             ("url", text(&e.url.0)),
             ("handle", optional(e.handle.as_deref(), text)),
             ("label", optional(e.label.as_deref(), text)),
+            ("initiator", optional(e.initiator.as_deref(), text)),
         ],
         SystemEvent::PickRequested(e) => vec![
             ("session_id", uuid(&e.session_id.0)),
@@ -1225,6 +1233,7 @@ fn payload(event: &SystemEvent) -> Vec<(&'static str, Node)> {
                 e.method,
                 e.body.as_ref(),
                 e.body_type.as_ref(),
+                e.initiator.as_deref(),
             ));
             fields
         }
@@ -1274,6 +1283,7 @@ fn payload(event: &SystemEvent) -> Vec<(&'static str, Node)> {
                 e.method,
                 e.body.as_ref(),
                 e.body_type.as_ref(),
+                e.initiator.as_deref(),
             ));
             fields
         }
@@ -1297,6 +1307,7 @@ fn payload(event: &SystemEvent) -> Vec<(&'static str, Node)> {
                 e.method,
                 e.body.as_ref(),
                 e.body_type.as_ref(),
+                e.initiator.as_deref(),
             ));
             fields
         }
@@ -1382,6 +1393,7 @@ fn invocation(
                     input.method,
                     input.body.as_ref(),
                     input.body_type.as_ref(),
+                    input.initiator.as_deref(),
                 ));
                 fields
             })
@@ -1406,6 +1418,7 @@ fn invocation(
                     input.method,
                     input.body.as_ref(),
                     input.body_type.as_ref(),
+                    input.initiator.as_deref(),
                 ));
                 fields
             })
@@ -1445,6 +1458,7 @@ fn invocation(
                     input.method,
                     input.body.as_ref(),
                     input.body_type.as_ref(),
+                    input.initiator.as_deref(),
                 ));
                 fields
             },
@@ -1662,10 +1676,17 @@ where
                 }
             }
             "surf.agent.Follow" => {
+                let present = present(fields);
+                let mut input = Input::new(command, &present);
                 let session_id = SessionId(input.uuid("session_id")?);
                 let url = Url(input.text("url")?);
                 let handle = input.text("handle")?;
                 let label = input.text("label")?;
+                let initiator = if present.contains_key("initiator") {
+                    Some(input.text("initiator")?)
+                } else {
+                    None
+                };
                 input.finish()?;
                 match browser
                     .agent_mut()
@@ -1674,6 +1695,7 @@ where
                         url,
                         handle,
                         label,
+                        initiator,
                     })
                     .map_err(unmet)?
                 {
@@ -2025,7 +2047,7 @@ where
                 let mut input = Input::new(command, &present);
                 let tab_id = TabId(input.uuid("tab_id")?);
                 let url = Url(input.text("url")?);
-                let (method, body, body_type) = request_input(&mut input, &present)?;
+                let (method, body, body_type, initiator) = request_input(&mut input, &present)?;
                 input.finish()?;
                 match browser
                     .navigator_mut()
@@ -2035,6 +2057,7 @@ where
                         method,
                         body,
                         body_type,
+                        initiator,
                     })
                     .map_err(unmet)?
                 {
@@ -2202,7 +2225,7 @@ where
                 let mut input = Input::new(command, &present);
                 let request_id = RequestId(input.uuid("request_id")?);
                 let url = Url(input.text("url")?);
-                let (method, body, body_type) = request_input(&mut input, &present)?;
+                let (method, body, body_type, initiator) = request_input(&mut input, &present)?;
                 input.finish()?;
                 match browser
                     .net_mut()
@@ -2212,6 +2235,7 @@ where
                         method,
                         body,
                         body_type,
+                        initiator,
                     })
                     .map_err(unmet)?
                 {
@@ -2617,7 +2641,7 @@ where
                 let submission_id = SubmissionId(input.uuid("submission_id")?);
                 let tab_id = TabId(input.uuid("tab_id")?);
                 let url = Url(input.text("url")?);
-                let (method, body, body_type) = request_input(&mut input, &present)?;
+                let (method, body, body_type, initiator) = request_input(&mut input, &present)?;
                 input.finish()?;
                 match browser
                     .document_mut()
@@ -2628,6 +2652,7 @@ where
                         method,
                         body,
                         body_type,
+                        initiator,
                     })
                     .map_err(unmet)?
                 {
@@ -2974,6 +2999,7 @@ where
                             "body_type",
                             optional(row.body_type.as_ref(), |media_type| text(&media_type.0)),
                         ),
+                        ("initiator", optional(row.initiator.as_deref(), text)),
                         ("state", text(request_state(row.state))),
                     ]
                 })
@@ -3298,6 +3324,7 @@ mod tests {
             method: Method::Get,
             body: None,
             body_type: None,
+            initiator: None,
         })
     }
 
@@ -3308,6 +3335,7 @@ mod tests {
             method: Method::Get,
             body: None,
             body_type: None,
+            initiator: None,
         })
     }
 
@@ -3318,6 +3346,7 @@ mod tests {
             method: Method::Get,
             body: None,
             body_type: None,
+            initiator: None,
         })
     }
 
@@ -3511,6 +3540,7 @@ mod tests {
             url: Url(ADDRESS.to_owned()),
             handle: None,
             label: None,
+            initiator: None,
         })
     }
 
@@ -3529,6 +3559,7 @@ mod tests {
             method: Method::Get,
             body: None,
             body_type: None,
+            initiator: None,
         })
     }
 
@@ -3709,6 +3740,7 @@ mod tests {
                     method: Method::Post,
                     body: Some(MARKER.as_bytes().to_vec()),
                     body_type: Some(MediaType("application/x-www-form-urlencoded".to_owned())),
+                    initiator: None,
                 }),
             ),
         ]
@@ -3733,6 +3765,7 @@ mod tests {
                     method: Method::Post,
                     body: Some(MARKER.as_bytes().to_vec()),
                     body_type: Some(MediaType("application/x-www-form-urlencoded".to_owned())),
+                    initiator: None,
                 }),
             ),
         ]
