@@ -4,4 +4,5 @@
 #![forbid(unsafe_code)]
 
 mod adversary;
+mod adversary_2;
 mod engine;
