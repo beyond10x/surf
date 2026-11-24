@@ -30,4 +30,5 @@ mod https;
 mod memory;
 mod press;
 mod redirect;
+mod secreview_session_anchors;
 mod view;
