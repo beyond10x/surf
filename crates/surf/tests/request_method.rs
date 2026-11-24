@@ -98,7 +98,7 @@ fn assert_refused_without_connecting(
     request: &RequestStarted,
     method: &str,
 ) {
-    match fetch_http(request, &short(), None) {
+    match fetch_http(request, &short(), surf::RequestContext::default()) {
         Err(surf_fetch::Failure::UnsupportedScheme(detail)) => {
             assert!(detail.contains(method), "{detail:?}");
         }
@@ -191,7 +191,13 @@ fn post_navigation_is_sent_by_fetch_http() {
     let local = listener.local_addr().expect("address");
     let address = format!("http://{local}/form");
     let server = serve_one(listener);
-    let transport = |request: &RequestStarted| answer(fetch_http(request, &short(), None));
+    let transport = |request: &RequestStarted| {
+        answer(fetch_http(
+            request,
+            &short(),
+            surf::RequestContext::default(),
+        ))
+    };
     let mut browser = Browser::from_ports(ComponentPorts::new(), transport);
     let NavigateOutcome::Started { navigation_started } = browser
         .navigator_mut()

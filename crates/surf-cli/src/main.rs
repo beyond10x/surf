@@ -15,8 +15,8 @@ use std::io::{self, Read, Write};
 use std::process::ExitCode;
 
 use surf::{
-    Answer, EXIT_STOPPED, EXIT_USAGE, MemoryBrowser, Report, RequestStarted, Transport, answer,
-    escape, exit_status, fetch_http,
+    Answer, EXIT_STOPPED, EXIT_USAGE, MemoryBrowser, Report, RequestContext, RequestStarted,
+    Transport, answer, escape, exit_status, fetch_http,
 };
 use surf_answer::{Form, RenderError, render_text_whole};
 use surf_fetch::{Anchors, Limits, anchors::EXTRA_BYTES_MAX};
@@ -225,7 +225,12 @@ fn main() -> ExitCode {
     let limits = Limits::default();
     // The binary navigates with `Get` and no body only, so `fetch_http` never refuses its request.
     let transport = move |request: &RequestStarted| -> Answer {
-        let result = fetch_http(request, &limits, anchors.as_ref());
+        // One process, one page: `surf <url>` keeps no cookie.
+        let context = RequestContext {
+            anchors: anchors.as_ref(),
+            jar: None,
+        };
+        let result = fetch_http(request, &limits, context);
         if let Err(failure) = &result {
             let address = &request.url.0;
             // The failure's detail can quote the address and the operating system's text, so

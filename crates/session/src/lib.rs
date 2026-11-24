@@ -520,7 +520,10 @@ pub fn fetch_through(
     let result = surf::fetch_http_from(
         request,
         &surf_fetch::Limits::default(),
-        anchors.as_deref(),
+        surf::RequestContext {
+            anchors: anchors.as_deref(),
+            jar: None,
+        },
         &dialing,
         origin,
     );
