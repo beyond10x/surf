@@ -216,6 +216,9 @@ enum Order {
     DocumentFirst,
     /// `already-parsed` of a document that exists before the input's refusals.
     ParsedFirst,
+    /// `already-parsed` of a document that exists between `invalid-end` and
+    /// `invalid-position`.
+    ParsedBeforePosition,
 }
 
 /// One plant of the Rust target's `AddScriptEnd`.
@@ -309,6 +312,9 @@ impl<P: ScriptIdentity + DocumentStorage + ScriptStorage> AddScriptEndBehavior f
             Order::ParsedFirst if parsed => Some(conflict()),
             Order::ParsedFirst if invalid_end => Some(end()),
             Order::ParsedFirst if invalid_position => Some(position()),
+            Order::ParsedBeforePosition if invalid_end => Some(end()),
+            Order::ParsedBeforePosition if parsed => Some(conflict()),
+            Order::ParsedBeforePosition if invalid_position => Some(position()),
             _ => None,
         };
         if let Some(answer) = answer {
@@ -674,5 +680,24 @@ fn adversary2_refusals_in_another_order_are_noticed() {
     assert!(
         missed.is_empty(),
         "orders that pass every scenario: {missed:?}"
+    );
+}
+
+/// `invalid-position` answers before `already-parsed`: a position below 1 on a document already
+/// `Parsed` is `invalid-position`. `document-script-end-refusals-in-order` holds the order
+/// against `no-such-document` and holds `invalid-end` against `already-parsed`, not
+/// `invalid-position` against `already-parsed`.
+#[test]
+fn adversary2_already_parsed_before_invalid_position_is_noticed() {
+    let missed = unnoticed(&[(
+        "ParsedBeforePosition".to_owned(),
+        Plant {
+            order: Order::ParsedBeforePosition,
+            ..NOTHING
+        },
+    )]);
+    assert!(
+        missed.is_empty(),
+        "already-parsed answered before invalid-position passes every scenario"
     );
 }
