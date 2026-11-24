@@ -620,8 +620,9 @@ above, and the list of standards itself was written from memory.
     (`LATE_ANSWER_TIMEOUT`) while the session's turn stays taken, a log of at most 10,000
     entries and 16 MiB per session and 64 MiB over all sessions, a reader queue of 1,024
     entries, 256 ended sessions listed; open sessions are not bounded. It starts `surf-session`
-    from the directory of its own executable. Its 52 tests (4 unit tests of `src/view.rs`,
-    `adversary_controls` 1, `adversary_link` 3, `built` 14, `in_process` 14, `log` 6, `view` 10) run a stand-in session
+    from the directory of its own executable. Its 89 tests (4 unit tests of `src/view.rs`,
+    `adversary` 11, `adversary_2` 9, `adversary_controls` 1, `adversary_link` 3, `built` 14,
+    `hardening` 17, `in_process` 14, `log` 6, `view` 10) run a stand-in session
     or none; the real one is run by the `e2e`, `events`, `view`, `adversary_events` and
     `adversary_view` tests of `surf-session`. Depends on `surf-agent` (for `wire`),
     `surf-answer`, `surf-secret` and `surf-view`.
@@ -744,8 +745,8 @@ above, and the list of standards itself was written from memory.
     sessions; since wave 7 the page shows them. `Source::read_newest` gives the newest number and a
     reader from it in one call, so a stream always answers. A stream's queue holds at most
     `Limits::queue_entries` (256) entries and `Limits::queue_bytes` (1 MiB), or one larger frame
-    alone: such a frame waits until the queue is empty and is then written alone. 70 tests
-    (`adversary_now` 1, `adversary_view` 2, `http` 33, `json` 17, `prototype` 8,
+    alone: such a frame waits until the queue is empty and is then written alone. 71 tests
+    (`adversary_now` 1, `adversary_view` 2, `http` 33, `json` 18, `prototype` 8,
     `stream_bounds` 7, `web` 2).
     Depends on `surf-secret`.
     - `crates/view/web/`: the live view's page, plain HTML, CSS and JavaScript modules compiled
@@ -1173,15 +1174,16 @@ above, and the list of standards itself was written from memory.
     `surf-tls` with `test-tooling`.
 - `view-tests/`: the Playwright tests of the live view's page (`@playwright/test` 1.65.0,
   Chromium's headless shell, a committed `package-lock.json`), each case with its own
-  `surf-view-fixture`: 71 cases, 23 in `tests/first-page.spec.mjs`, 6 in
+  `surf-view-fixture`: 72 cases, 23 in `tests/first-page.spec.mjs`, 6 in
   `tests/adversary-page.spec.mjs`, 6 in `tests/detail.spec.mjs`, 8 in
   `tests/adversary-detail.spec.mjs`, 5 in `tests/now.spec.mjs` (over the pages of
   `crates/view-fixture/pages/now/`), 7 in `tests/adversary-now.spec.mjs` (over
   `crates/view-fixture/pages/adversary-now/`), 4 in `tests/acceptance.spec.mjs` (the page
   part of the live view's acceptance case, over `crates/view-fixture/pages/acceptance/`), 1 in
   `tests/adversary-budget.spec.mjs`, 5 in `tests/controls.spec.mjs` (cases 3 to 7 of
-  `story:view-controls-and-changes`, over `crates/view-fixture/pages/forms/`) and 6 in
-  `tests/adversary-controls.spec.mjs` (each over a page server of its own). Node and
+  `story:view-controls-and-changes`, over `crates/view-fixture/pages/forms/`), 6 in
+  `tests/adversary-controls.spec.mjs` (each over a page server of its own) and 1 in
+  `tests/adversary-signal.spec.mjs`. Node and
   Playwright are gate tooling only.
 - `conformance/` (`surf-conformance`): runs `.out/suite.json` against the Rust system in process,
   with the runner of `ess-conformance`. A Cargo workspace of its own, outside the root one, with
