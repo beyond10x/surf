@@ -356,6 +356,35 @@ fn a_setpriv_that_is_a_directory_counts_as_missing() {
     setpriv_that_is_no_executable_file(|path| fs::create_dir(path).unwrap());
 }
 
+/// `surfd` runs under a hard CPU limit below the 3,601 s the form with scripts asks for (a
+/// service manager's `LimitCPU=`, a job's `ulimit -t`): `prlimit` cannot raise it and exits
+/// non-zero before it runs the session. Q11 and the brief read that as a session with scripts
+/// that cannot run under both programs: `did refused scripts-unavailable`, status 3. A session
+/// without scripts still opens (its one bound lowers a limit).
+#[test]
+fn a_prlimit_that_fails_before_the_session_answers_scripts_unavailable() {
+    let own = std::process::id();
+    let lowered = Command::new(PRLIMIT)
+        .args(["--pid", &own.to_string(), "--cpu=1000:1000"])
+        .status()
+        .expect("prlimit runs");
+    assert!(lowered.success(), "{lowered}");
+    assert_eq!(limit(own, "Max cpu time"), ("1000".to_string(), "1000".to_string()));
+    let dir = TestDir::new();
+    let _daemon = start(config(&dir));
+    let session = open(&dir);
+    assert_eq!(no_new_privs(dir.pid_of(&session.id)), "1");
+    let answer = call(&dir, &open_with(&[("scripts", "true")]));
+    assert_eq!(answer.status, 3, "{answer:?}");
+    assert!(
+        answer
+            .text
+            .lines()
+            .any(|line| line == "did refused scripts-unavailable"),
+        "{answer:?}"
+    );
+}
+
 // --- The bounds as a boundary ------------------------------------------------------------------
 
 /// The session program of a session with scripts is a sh script that, before it execs the
