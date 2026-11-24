@@ -7,6 +7,7 @@ mod common;
 mod encoding;
 mod limits;
 mod not_yet_parsed;
+mod script_hook;
 mod tree_body;
 mod tree_costs;
 mod tree_formatting;

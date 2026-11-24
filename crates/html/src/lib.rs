@@ -47,8 +47,10 @@
 //!   `surf-html-conformance` and never edited by hand; it carries the BSD 3-Clause notice of
 //!   the WHATWG in its header.
 //! - [`tree`]: the node arena and its readers [`Tree::root`], [`Tree::data`],
-//!   [`Tree::children`], [`Tree::parent`] and [`Tree::descendants`]. Only tree construction
-//!   changes a tree; a node is never dropped from it.
+//!   [`Tree::children`], [`Tree::parent`] and [`Tree::descendants`], and its public write
+//!   surface, the DOM's operations a script's bindings need (the module documentation lists
+//!   them), each held to the limits of the parse ([`Tree::limits`]) and answering a
+//!   [`WriteError`] instead of writing. A node is never dropped from a tree.
 //! - [`tree_builder`]: written for every insertion mode of 13.2.6.4, with the stack of open
 //!   elements and its scopes, the list of active formatting elements with its Noah's Ark clause
 //!   and its reconstruction, the adoption agency algorithm, foster parenting, the stack of
@@ -56,7 +58,9 @@
 //!   adjustments, the fragment parsing algorithm, and the `meta` rules that change the
 //!   encoding. At the end of a document's parse each `select` updates its `selectedcontent`
 //!   elements' copy of the selected `option`, as the DOM's queued update would. Parse errors
-//!   are not collected, and no script runs.
+//!   are not collected, and no script runs here: with scripting enabled and a [`ScriptHook`]
+//!   ([`parse_document_with_hook`]), the hook is called at the end of each parser-inserted
+//!   script element, to run it or to report it not run with its reason ([`NotRun`]).
 //! - [`limits`]: written. [`limits::Limits`] holds the six limits of
 //!   `docs/design/html-parser.md` item 7 with their defaults, [`ParseOptions::limits`] carries
 //!   them into a parse, and [`Tree::stopped_by`] names the [`limits::Limit`] that stopped one.
@@ -66,6 +70,8 @@
 //!
 //! - [`parse_document`]: the tokenizer and tree construction over decoded text. With no
 //!   confidence in an encoding, a `meta` does not change it.
+//! - [`parse_document_with_hook`]: [`parse_document`] with a [`ScriptHook`], called while
+//!   scripting is enabled.
 //! - [`parse_fragment`]: the fragment parsing algorithm (13.4) for a context element named by
 //!   its namespace and local name, with no attribute and no ancestor: a document fragment that
 //!   holds the children of the algorithm's `html` root.
@@ -169,8 +175,8 @@ pub mod tokenizer;
 pub mod tree;
 pub mod tree_builder;
 
-pub use tree::{Attribute, Namespace, NodeData, NodeId, Tree};
-pub use tree_builder::NOT_YET_PARSED;
+pub use tree::{Attribute, Namespace, NodeData, NodeId, Tree, WriteError};
+pub use tree_builder::{NOT_YET_PARSED, NotRun, ScriptHook};
 
 /// How a document or a fragment is parsed.
 ///
@@ -230,6 +236,26 @@ pub struct ParsedDocument {
 pub fn parse_document(input: &str, options: &ParseOptions) -> Tree {
     let (input, cut) = limits::cut_str(input, options.limits.max_input_bytes);
     let mut tree = tree_builder::parse(input, options, None).tree;
+    if cut {
+        tree.stop_at(limits::Limit::InputBytes);
+    }
+    tree
+}
+
+/// [`parse_document`] with a hook for the document's scripts: while scripting is enabled
+/// ([`ParseOptions::scripting_disabled`] false), `hook` is called once for each parser-inserted
+/// script element, after the token that ended it, to run it ([`ScriptHook::run`], which may
+/// write the tree) or to report it not run with its reason ([`ScriptHook::skip`]); parsing then
+/// goes on over the tree the hook left ([`tree_builder`] says when each call comes). With
+/// scripting disabled no call is made, and the tree is that of [`parse_document`]; so is the
+/// tree of a hook that writes nothing.
+pub fn parse_document_with_hook(
+    input: &str,
+    options: &ParseOptions,
+    hook: &mut dyn ScriptHook,
+) -> Tree {
+    let (input, cut) = limits::cut_str(input, options.limits.max_input_bytes);
+    let mut tree = tree_builder::parse_with_hook(input, options, None, Some(hook)).tree;
     if cut {
         tree.stop_at(limits::Limit::InputBytes);
     }

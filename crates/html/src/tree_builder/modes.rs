@@ -2,7 +2,7 @@
 //! after the mode, its rules in the standard's order. Parse errors are not reported, so a rule
 //! that is only a parse error and "ignore the token" reads `Flow::Done`.
 
-use super::{Entry, Flow, Mode, QuirksMode, Scope, TreeBuilder, is_whitespace};
+use super::{Entry, Flow, Mode, QuirksMode, Scope, ScriptEnd, TreeBuilder, is_whitespace};
 use crate::tokenizer::{self, Token, TokenAttribute};
 use crate::tree::{Namespace, NodeData, NodeId, stored_bytes_of};
 
@@ -1118,7 +1118,10 @@ impl TreeBuilder {
     }
 
     /// 13.2.6.4.8 The "text" insertion mode. A `script` end tag pops the element and returns to
-    /// the original insertion mode: no script is prepared or run.
+    /// the original insertion mode (steps 2 to 4); with a hook set and scripting enabled the
+    /// element is noted, and the hook is called after the token (the module documentation of
+    /// `tree_builder`). The end-of-file token notes a `script` that is the current node the same
+    /// way, as not run.
     pub(super) fn text(&mut self, token: &Token) -> Flow {
         match token {
             Token::Character(c) => {
@@ -1126,13 +1129,27 @@ impl TreeBuilder {
                 Flow::Done
             }
             Token::EndOfFile => {
-                self.open.pop();
+                if let Some(node) = self.open.pop()
+                    && self.is_html(node, &["script"])
+                {
+                    // "Set its already started to true": it is never prepared.
+                    self.script_ended(node, ScriptEnd::Eof);
+                }
                 self.mode = self.original_mode;
                 Flow::Reprocess
             }
+            Token::EndTag { name } if name == "script" => {
+                // 2 to 4. Then 8, "prepare the script element", after the token.
+                if let Some(script) = self.open.pop()
+                    && self.is_html(script, &["script"])
+                {
+                    self.script_ended(script, ScriptEnd::EndTag);
+                }
+                self.mode = self.original_mode;
+                Flow::Done
+            }
             _ => {
-                // An end tag whose tag name is "script", and any other end tag; the tokenizer
-                // emits no other token in the text states.
+                // Any other end tag; the tokenizer emits no other token in the text states.
                 self.open.pop();
                 self.mode = self.original_mode;
                 Flow::Done

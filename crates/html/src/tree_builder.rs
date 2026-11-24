@@ -25,8 +25,19 @@
 //! elements at the end of a document's parse (story `html-tree-complete`).
 //!
 //! Parse errors are not collected: neither the tokenizer's nor the tree builder's reach a
-//! caller. Scripts do not run: at a `script` end tag the text mode pops the element and returns
-//! to the original insertion mode.
+//! caller. No script runs here: at a `script` end tag the text mode pops the element and returns
+//! to the original insertion mode. A document parsed with scripting enabled
+//! ([`crate::ParseOptions::scripting_disabled`] false) and a [`ScriptHook`]
+//! ([`crate::parse_document_with_hook`]) calls the hook once for each parser-inserted script
+//! element, after the token that ended it (story `html-script-hook`, `docs/design/scripts.md`
+//! Q1 and Q2): at an HTML `script` end tag in the text mode, after steps 2 to 4 of 13.2.6.4.8,
+//! `run` for an element that the steps of "prepare the script element" Q2 takes would run, else
+//! `skip` with the reason of Q1 ([`NotRun`]); at the end-of-file token in the text mode with the
+//! current node a `script`, `skip` with [`NotRun::Eof`]; at an SVG `script` end tag in foreign
+//! content, or an SVG `script` start tag with its self-closing flag, `skip` with [`NotRun::Svg`].
+//! Parsing then goes on with the stack of open elements and the list of active formatting
+//! elements as they were, over the tree the hook left. Without a hook, or with scripting
+//! disabled, no call is made and the parse is the parse without one.
 //!
 //! The limits (story `html-parser-limits`, the crate documentation's "Limits"): every element,
 //! node, text and attribute merge is admitted against the depth, node, stored-byte and attribute
@@ -57,6 +68,172 @@ use crate::tree::{Attribute, Categories, Namespace, NodeData, NodeId, Tree};
 /// does, named in `[a-z-]+`; the tree story that writes it removes its entry. Empty since
 /// story `html-tree-foreign` wrote foreign content and the fragment case.
 pub const NOT_YET_PARSED: &[&str] = &[];
+
+/// What the tree builder calls at a `script` end tag of a parser-inserted HTML script element
+/// while parser scripting is enabled ([`crate::ParseOptions::scripting_disabled`] false), after
+/// steps 2 to 4 of 13.2.6.4.8 and the steps of "prepare the script element" the design note's
+/// Q2 takes (`docs/design/scripts.md`). `skip` is called as well for a `script` element open at
+/// the end of the input ([`NotRun::Eof`]) and for an SVG `script` element ended in foreign
+/// content ([`NotRun::Svg`]). The hook is called at most once for an element, and never for an
+/// element a script inserted.
+pub trait ScriptHook {
+    /// Run the element's script to its end. The call may write the tree through its public
+    /// write surface; it returns when the script ended, however it ended.
+    fn run(&mut self, tree: &mut Tree, script: NodeId);
+    /// The element is not run, for the reason of Q1's line `reasons:`.
+    fn skip(&mut self, tree: &Tree, script: NodeId, reason: NotRun);
+}
+
+/// Why a script element is not run: one word of Q1's line `reasons:` each, but `inserted`,
+/// which no end tag reports.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum NotRun {
+    /// No `src` and no source text (step 8 of "prepare the script element").
+    Empty,
+    /// A `src` attribute: external scripts are not fetched (step 35).
+    Src,
+    /// A type that is no JavaScript MIME type essence and none of the three below (step 15).
+    Type,
+    /// `type=module` (step 12).
+    Module,
+    /// `type=importmap` (step 13).
+    Importmap,
+    /// `type=speculationrules` (step 14).
+    Speculationrules,
+    /// The element is not connected, as in a template's contents (step 9).
+    Disconnected,
+    /// `nomodule` on a classic script (step 21).
+    Nomodule,
+    /// `event` and `for` that are not `onload` for `window` (step 24).
+    Event,
+    /// An SVG `script` in foreign content, which the first version does not run.
+    Svg,
+    /// The element was open at the end of the input (13.2.6.4.8, "An end-of-file token").
+    Eof,
+}
+
+impl NotRun {
+    /// The reason's word of Q1's line `reasons:`.
+    pub fn word(self) -> &'static str {
+        match self {
+            NotRun::Empty => "empty",
+            NotRun::Src => "src",
+            NotRun::Type => "type",
+            NotRun::Module => "module",
+            NotRun::Importmap => "importmap",
+            NotRun::Speculationrules => "speculationrules",
+            NotRun::Disconnected => "disconnected",
+            NotRun::Nomodule => "nomodule",
+            NotRun::Event => "event",
+            NotRun::Svg => "svg",
+            NotRun::Eof => "eof",
+        }
+    }
+}
+
+/// How a parser-inserted script element ended, for the hook call after its token.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ScriptEnd {
+    /// Its end tag in the text mode: the steps of "prepare the script element" decide.
+    EndTag,
+    /// The end-of-file token in the text mode.
+    Eof,
+    /// An SVG `script` ended in foreign content.
+    Svg,
+}
+
+/// The JavaScript MIME type essences (MIME Sniffing 4.6), in lower case.
+const JAVASCRIPT_ESSENCES: &[&str] = &[
+    "application/ecmascript",
+    "application/javascript",
+    "application/x-ecmascript",
+    "application/x-javascript",
+    "text/ecmascript",
+    "text/javascript",
+    "text/javascript1.0",
+    "text/javascript1.1",
+    "text/javascript1.2",
+    "text/javascript1.3",
+    "text/javascript1.4",
+    "text/javascript1.5",
+    "text/jscript",
+    "text/livescript",
+    "text/x-ecmascript",
+    "text/x-javascript",
+];
+
+/// ASCII whitespace (Infra).
+const ASCII_WHITESPACE: [char; 5] = ['\t', '\n', '\x0C', '\r', ' '];
+
+/// The steps of "prepare the script element" (4.12.1.1) that Q2 takes, for the HTML script
+/// element `script` as the parser made it: `None` when it runs, else the reason it does not.
+/// Steps 1 to 7 hold for a parser-inserted element at its end tag in a parse with scripting
+/// enabled (one document, not started before); step 20 is the caller's.
+fn prepare(tree: &Tree, script: NodeId) -> Option<NotRun> {
+    let NodeData::Element { attributes, .. } = tree.data(script) else {
+        return Some(NotRun::Type);
+    };
+    let attribute = |name: &str| {
+        attributes
+            .iter()
+            .find(|a| a.namespace.is_none() && a.local_name == name)
+            .map(|a| a.value.as_str())
+    };
+    // 7, 8. The child text content.
+    let empty = tree.children(script).iter().all(|&c| match tree.data(c) {
+        NodeData::Text(text) => text.is_empty(),
+        _ => true,
+    });
+    if attribute("src").is_none() && empty {
+        return Some(NotRun::Empty);
+    }
+    // 9. Connected: the root is the document.
+    let mut root = script;
+    while let Some(parent) = tree.parent(root) {
+        root = parent;
+    }
+    if *tree.data(root) != NodeData::Document {
+        return Some(NotRun::Disconnected);
+    }
+    // 10. The script block's type string.
+    let type_string = match (attribute("type"), attribute("language")) {
+        (Some(""), _) | (None, Some("") | None) => "text/javascript".to_string(),
+        (Some(value), _) => value.trim_matches(ASCII_WHITESPACE).to_string(),
+        (None, Some(language)) => format!("text/{language}"),
+    };
+    // 11 to 15.
+    let is = |name: &str| type_string.eq_ignore_ascii_case(name);
+    if !JAVASCRIPT_ESSENCES.iter().any(|essence| is(essence)) {
+        return Some(if is("module") {
+            NotRun::Module
+        } else if is("importmap") {
+            NotRun::Importmap
+        } else if is("speculationrules") {
+            NotRun::Speculationrules
+        } else {
+            NotRun::Type
+        });
+    }
+    // 21. A classic script with `nomodule`.
+    if attribute("nomodule").is_some() {
+        return Some(NotRun::Nomodule);
+    }
+    // 24. `event` and `for`.
+    if let (Some(event), Some(for_)) = (attribute("event"), attribute("for")) {
+        let event = event.trim_matches(ASCII_WHITESPACE);
+        let for_ = for_.trim_matches(ASCII_WHITESPACE);
+        if !for_.eq_ignore_ascii_case("window")
+            || !(event.eq_ignore_ascii_case("onload") || event.eq_ignore_ascii_case("onload()"))
+        {
+            return Some(NotRun::Event);
+        }
+    }
+    // 35. An external script.
+    if attribute("src").is_some() {
+        return Some(NotRun::Src);
+    }
+    None
+}
 
 /// The mode of a document (DOM, "mode"), which the initial insertion mode decides from the
 /// DOCTYPE.
@@ -333,12 +510,24 @@ pub(crate) fn parse(
     options: &ParseOptions,
     encoding: Option<InputEncoding>,
 ) -> Parsed {
+    parse_with_hook(input, options, encoding, None)
+}
+
+/// [`parse`] with the hook that the end of each parser-inserted script element is reported to
+/// while scripting is enabled.
+pub(crate) fn parse_with_hook(
+    input: &str,
+    options: &ParseOptions,
+    encoding: Option<InputEncoding>,
+    hook: Option<&mut dyn ScriptHook>,
+) -> Parsed {
     // The input stream keeps its own copy of the code points: this one goes once it is made.
-    let builder = {
+    let mut builder = {
         let code_points: Vec<u32> = input.chars().map(u32::from).collect();
         TreeBuilder::new(&code_points, options, encoding)
     };
-    run(builder)
+    builder.report_scripts = hook.is_some() && !options.scripting_disabled;
+    run(builder, hook)
 }
 
 /// Runs the fragment parsing algorithm (13.4) over decoded text for a context element with no
@@ -356,7 +545,7 @@ pub(crate) fn parse_fragment(
         let code_points: Vec<u32> = input.chars().map(u32::from).collect();
         TreeBuilder::new(&code_points, options, None)
     };
-    builder.tree = Tree::fragment();
+    builder.tree = Tree::fragment(options.limits);
     let name = context.local_name.as_str();
     let element = match context.namespace {
         Namespace::Html => builder.create_element(name, &[]),
@@ -364,7 +553,7 @@ pub(crate) fn parse_fragment(
     };
     let html = builder.create_element("html", &[]);
     let (Some(element), Some(html)) = (element, html) else {
-        return run(builder).tree;
+        return run(builder, None).tree;
     };
     builder.context = Some(element);
     builder.fragment_html = Some(html);
@@ -390,12 +579,14 @@ pub(crate) fn parse_fragment(
     if builder.is_html(element, &["form"]) {
         builder.form = Some(element);
     }
-    run(builder).tree
+    // The fragment parsing algorithm marks every script element it parses as already started
+    // (13.4): no hook.
+    run(builder, None).tree
 }
 
 /// The tokenizer and tree construction from the first token to the end, with the step limit
-/// checked after each token.
-fn run(mut builder: TreeBuilder) -> Parsed {
+/// checked after each token. A script element the token ended is reported to `hook` after it.
+fn run(mut builder: TreeBuilder, mut hook: Option<&mut dyn ScriptHook>) -> Parsed {
     while !builder.stopped {
         builder.tokenizer.set_cdata_allowed(builder.cdata_allowed());
         let Some(token) = builder.tokenizer.next_token() else {
@@ -404,6 +595,11 @@ fn run(mut builder: TreeBuilder) -> Parsed {
             break;
         };
         builder.dispatch(token);
+        if let Some(hook) = hook.as_deref_mut()
+            && let Some((script, end)) = builder.ended_script.take()
+        {
+            builder.report_script(hook, script, end);
+        }
         // Also the end-of-file token, whose rules scan too (in template pops down to each open
         // `template`), unless another limit stopped the parse.
         if builder.tree.stopped_by().is_none() && builder.steps.get() > builder.limits.max_steps {
@@ -479,6 +675,14 @@ struct TreeBuilder {
     /// An HTML `selectedcontent` element was created: the end of the parse updates the
     /// `select` elements' copies of their selected option (the module `selectedcontent`).
     saw_selectedcontent: bool,
+    /// A hook is set and scripting is enabled: the end of each parser-inserted script element
+    /// is noted in `ended_script`.
+    report_scripts: bool,
+    /// The script element the token being processed ended, and how; the hook is called with it
+    /// after the token.
+    ended_script: Option<(NodeId, ScriptEnd)>,
+    /// The element [`TreeBuilder::insert_element`] inserted last.
+    last_inserted: Option<NodeId>,
 }
 
 const HTML_ELEMENT_SPECIAL: &[&str] = &[
@@ -600,7 +804,7 @@ fn is_whitespace(c: u32) -> bool {
 
 /// The categories of an element in `namespace` named `name`, decided once when it is created:
 /// special, and the element types of the scopes of 13.2.4.2.
-fn categories_of(namespace: Namespace, name: &str) -> Categories {
+pub(crate) fn categories_of(namespace: Namespace, name: &str) -> Categories {
     let mut bits = 0;
     match namespace {
         Namespace::Html => {
@@ -644,7 +848,7 @@ impl TreeBuilder {
     fn new(input: &[u32], options: &ParseOptions, encoding: Option<InputEncoding>) -> TreeBuilder {
         TreeBuilder {
             tokenizer: Tokenizer::new(input, options.limits.max_attributes),
-            tree: Tree::document(),
+            tree: Tree::document(options.limits),
             mode: Mode::Initial,
             original_mode: Mode::Initial,
             open: OpenElements::default(),
@@ -668,6 +872,35 @@ impl TreeBuilder {
             template_modes: Vec::new(),
             fragment_html: None,
             saw_selectedcontent: false,
+            report_scripts: false,
+            ended_script: None,
+            last_inserted: None,
+        }
+    }
+
+    /// Notes that the token being processed ended the script element `script` ([`run`] calls
+    /// the hook after it), when a hook is set and scripting is enabled.
+    fn script_ended(&mut self, script: NodeId, end: ScriptEnd) {
+        if self.report_scripts {
+            self.ended_script = Some((script, end));
+        }
+    }
+
+    /// Calls `hook` for the script element `script` that ended as `end`: `run` or `skip` with
+    /// its reason. After `run` the names the `html` and `body` merges keep are read again from
+    /// the elements, which the hook may have changed.
+    fn report_script(&mut self, hook: &mut dyn ScriptHook, script: NodeId, end: ScriptEnd) {
+        let reason = match end {
+            ScriptEnd::EndTag => prepare(&self.tree, script),
+            ScriptEnd::Eof => Some(NotRun::Eof),
+            ScriptEnd::Svg => Some(NotRun::Svg),
+        };
+        match reason {
+            Some(reason) => hook.skip(&self.tree, script, reason),
+            None => {
+                hook.run(&mut self.tree, script);
+                self.merged_names.clear();
+            }
         }
     }
 
@@ -691,7 +924,11 @@ impl TreeBuilder {
         let mut token = token;
         loop {
             let flow = if self.in_foreign_content(&token) {
-                self.foreign_content(&token)
+                if self.report_scripts {
+                    self.foreign_content_noting_svg_scripts(&token)
+                } else {
+                    self.foreign_content(&token)
+                }
             } else {
                 self.process_by_mode(&token)
             };
@@ -704,6 +941,43 @@ impl TreeBuilder {
                 return;
             }
         }
+    }
+
+    /// The rules for foreign content (the module `foreign`), noting an SVG `script` element
+    /// they end: at its end tag, or at its start tag with the self-closing flag, which they act
+    /// on as on the end tag (13.2.6.5).
+    fn foreign_content_noting_svg_scripts(&mut self, token: &Token) -> Flow {
+        let is_svg_script = |b: &Self, node: NodeId| {
+            matches!(
+                b.tree.data(node),
+                NodeData::Element { namespace: Namespace::Svg, local_name, .. } if local_name == "script"
+            )
+        };
+        let ended = match token {
+            Token::EndTag { name } if name == "script" => self
+                .open
+                .last()
+                .copied()
+                .filter(|&node| is_svg_script(self, node)),
+            _ => None,
+        };
+        let self_closing = matches!(
+            token,
+            Token::StartTag { name, self_closing: true, .. } if name == "script"
+        );
+        let inserted_before = self.last_inserted;
+        let flow = self.foreign_content(token);
+        if let Some(script) = ended {
+            self.script_ended(script, ScriptEnd::Svg);
+        } else if self_closing
+            && self.last_inserted != inserted_before
+            && let Some(script) = self.last_inserted
+            && is_svg_script(self, script)
+            && !self.open.holds(script)
+        {
+            self.script_ended(script, ScriptEnd::Svg);
+        }
+        flow
     }
 
     /// Processes `token` by the rules of the current insertion mode.
@@ -952,6 +1226,7 @@ impl TreeBuilder {
         let location = self.appropriate_place(None);
         self.insert_element_at(element, location);
         self.open.push(element);
+        self.last_inserted = Some(element);
         Some(element)
     }
 
