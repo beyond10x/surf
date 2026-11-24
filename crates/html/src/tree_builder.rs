@@ -28,13 +28,16 @@
 //! caller. No script runs here: at a `script` end tag the text mode pops the element and returns
 //! to the original insertion mode. A document parsed with scripting enabled
 //! ([`crate::ParseOptions::scripting_disabled`] false) and a [`ScriptHook`]
-//! ([`crate::parse_document_with_hook`]) calls the hook once for each parser-inserted script
-//! element, after the token that ended it (story `html-script-hook`, `docs/design/scripts.md`
-//! Q1 and Q2): at an HTML `script` end tag in the text mode, after steps 2 to 4 of 13.2.6.4.8,
-//! `run` for an element that the steps of "prepare the script element" Q2 takes would run, else
-//! `skip` with the reason of Q1 ([`NotRun`]); at the end-of-file token in the text mode with the
-//! current node a `script`, `skip` with [`NotRun::Eof`]; at an SVG `script` end tag in foreign
-//! content, or an SVG `script` start tag with its self-closing flag, `skip` with [`NotRun::Svg`].
+//! ([`crate::parse_document_with_hook`]) calls the hook at most once for each parser-inserted
+//! script element, after the token that ended it (story `html-script-hook`,
+//! `docs/design/scripts.md` Q1 and Q2): at an HTML `script` end tag in the text mode, after
+//! steps 2 to 4 of 13.2.6.4.8, `run` for an element that the steps of "prepare the script
+//! element" Q2 takes would run, else `skip` with the reason of Q1 ([`NotRun`]); at the
+//! end-of-file token in the text mode with the current node a `script`, `skip` with
+//! [`NotRun::Eof`]; at an SVG `script` end tag in foreign content, or an SVG `script` start tag
+//! with its self-closing flag, `skip` with [`NotRun::Svg`]. No other end makes a call: a script
+//! element a limit stopped the parse inside, and an SVG `script` another end tag closes or still
+//! open at the end of the input, get none.
 //! Parsing then goes on with the stack of open elements and the list of active formatting
 //! elements as they were, over the tree the hook left. Without a hook, or with scripting
 //! disabled, no call is made and the parse is the parse without one.

@@ -59,8 +59,10 @@
 //!   encoding. At the end of a document's parse each `select` updates its `selectedcontent`
 //!   elements' copy of the selected `option`, as the DOM's queued update would. Parse errors
 //!   are not collected, and no script runs here: with scripting enabled and a [`ScriptHook`]
-//!   ([`parse_document_with_hook`]), the hook is called at the end of each parser-inserted
-//!   script element, to run it or to report it not run with its reason ([`NotRun`]).
+//!   ([`parse_document_with_hook`]), the hook is called at the end of a parser-inserted
+//!   script element, at most once for each, to run it or to report it not run with its reason
+//!   ([`NotRun`]). A script element a limit stopped the parse inside, and an SVG `script`
+//!   another end tag closes (`</svg>`) or still open at the end of the input, get no call.
 //! - [`limits`]: written. [`limits::Limits`] holds the six limits of
 //!   `docs/design/html-parser.md` item 7 with their defaults, [`ParseOptions::limits`] carries
 //!   them into a parse, and [`Tree::stopped_by`] names the [`limits::Limit`] that stopped one.
@@ -243,8 +245,9 @@ pub fn parse_document(input: &str, options: &ParseOptions) -> Tree {
 }
 
 /// [`parse_document`] with a hook for the document's scripts: while scripting is enabled
-/// ([`ParseOptions::scripting_disabled`] false), `hook` is called once for each parser-inserted
-/// script element, after the token that ended it, to run it ([`ScriptHook::run`], which may
+/// ([`ParseOptions::scripting_disabled`] false), `hook` is called at most once for each
+/// parser-inserted script element, after the token that ended it, to run it
+/// ([`ScriptHook::run`], which may
 /// write the tree) or to report it not run with its reason ([`ScriptHook::skip`]); parsing then
 /// goes on over the tree the hook left ([`tree_builder`] says when each call comes). With
 /// scripting disabled no call is made, and the tree is that of [`parse_document`]; so is the
