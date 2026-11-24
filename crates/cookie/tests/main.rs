@@ -6,4 +6,5 @@
 mod bound;
 mod hosts;
 mod jar;
+mod secreview_jar;
 mod shadow;
