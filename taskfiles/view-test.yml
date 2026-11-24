@@ -31,7 +31,10 @@ tasks:
       the flags of task build, so it rebuilds nothing check built, and runs task
       view-test-setup (npm ci only when view-tests/node_modules is not the install of its
       package.json and package-lock.json). Then the timed part: ./node_modules/.bin/playwright test --workers=2
-      in view-tests/, no npx and no npm, so no request to a registry. Each test starts its own
+      in view-tests/, no npx and no npm, so no request to a registry, run by
+      taskfiles/page-netns.sh in a user and network namespace of its own with only loopback up
+      (a change of the host's interfaces cancels Chromium's requests; without a namespace the
+      step fails with one line "page step: no network namespace of its own"). Each test starts its own
       target/debug/surf-view-fixture: a page server, surfd in process and sessions, under a
       directory of its own in $XDG_RUNTIME_DIR. view-tests/playwright.config.mjs ends a test
       still running after 60 s and counts it failed, and writes the JUnit report
@@ -62,7 +65,7 @@ tasks:
           rm -f "$junit"
           start=$(date +%s%N)
           tests=0
-          (cd view-tests && ./node_modules/.bin/playwright test --workers=2) || tests=1
+          (cd view-tests && sh ../taskfiles/page-netns.sh ./node_modules/.bin/playwright test --workers=2) || tests=1
           elapsed=$(( ($(date +%s%N) - start) / 1000000 ))
           if [ -f "$junit" ]; then
             echo "the ten slowest tests:"

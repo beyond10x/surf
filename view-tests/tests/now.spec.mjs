@@ -2,7 +2,7 @@
 // surf-view-fixture (fixture.mjs) over the pages of crates/view-fixture/pages/now/. The panel
 // "Now" shows the now block of the answer entry of the action at the playhead.
 
-import { test, expect } from "./fixture.mjs";
+import { test, expect, expectLive } from "./fixture.mjs";
 
 // The three values of cases 5 and 6, together: the title of now/forged.html, and its one
 // link's label; its target is "javascript:" and the same three in quotes.
@@ -14,7 +14,7 @@ const elements = (page) => page.locator("#now li.now-element");
 
 async function load(page, address) {
   await page.goto(address);
-  await expect(page.locator("#live-word")).toHaveText("live");
+  await expectLive(page);
 }
 
 async function texts(locator) {

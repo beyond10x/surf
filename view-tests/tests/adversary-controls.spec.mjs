@@ -3,14 +3,14 @@
 // names the statement it holds the view to.
 
 import http from "node:http";
-import { test, expect } from "./fixture.mjs";
+import { test, expect, expectLive } from "./fixture.mjs";
 
 const segments = (page) => page.locator("#actions > li.segment");
 const changes = (page) => page.locator("#changes li.change");
 
 async function load(page, address) {
   await page.goto(address);
-  await expect(page.locator("#live-word")).toHaveText("live");
+  await expectLive(page);
 }
 
 async function playheadTo(page, at) {
@@ -333,7 +333,7 @@ test("adversary-controls: with Latest off the changed panel and the length stay 
     await expect(page.locator("#live-word")).toHaveText("reconnecting", { timeout: 5000 });
     expect(await surf.agentStdin(id, "abc", "fill", "f3", "-")).toBe(0);
     await surf.mend();
-    await expect(page.locator("#live-word")).toHaveText("live");
+    await expectLive(page);
     await expect(segments(page)).toHaveCount(5);
     await expect(segments(page).nth(2)).toHaveAttribute("aria-current", "step");
     await expect(page.locator("#changes-heading")).toHaveText("Changed by fill f3");

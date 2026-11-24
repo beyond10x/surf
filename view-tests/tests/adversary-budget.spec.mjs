@@ -10,7 +10,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { test, expect } from "./fixture.mjs";
+import { test, expect, expectLive } from "./fixture.mjs";
 
 const REFUSED = "The view refused the token. Open the address the program printed, with its #token.";
 const AFTER = "/after-the-delays";
@@ -27,7 +27,7 @@ const AGAIN =
 
 async function load(page, address) {
   await page.goto(address);
-  await expect(page.locator("#live-word")).toHaveText("live");
+  await expectLive(page);
 }
 
 test("adversary-budget: a page that asks /events again 5 s after a refusal is seen by the refused-token test's steps", async ({ page, surf, record }) => {

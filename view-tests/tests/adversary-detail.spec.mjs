@@ -1,7 +1,7 @@
 // Adversary cases against story:view-detail-panel: each names the statement it holds the page to.
 
 import http from "node:http";
-import { test, expect } from "./fixture.mjs";
+import { test, expect, expectLive } from "./fixture.mjs";
 
 const segments = (page) => page.locator("#actions > li.segment");
 const selection = (page) => page.locator("#selection");
@@ -9,7 +9,7 @@ const rows = (page) => page.locator("#requests > li.request");
 
 async function load(page, address) {
   await page.goto(address);
-  await expect(page.locator("#live-word")).toHaveText("live");
+  await expectLive(page);
 }
 
 // The JSON of `value` as surfd writes it: `<`, `>` and `&` as \u escapes.

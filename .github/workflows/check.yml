@@ -133,6 +133,15 @@ jobs:
           task --taskfile taskfiles/view-test.yml view-test-setup
           npx --prefix view-tests playwright install --with-deps --only-shell chromium
 
+      - name: Allow the page step's network namespace (taskfiles/page-netns.sh)
+        if: steps.changes.outputs.planning_only != 'true'
+        run: |
+          set -euo pipefail
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          sh taskfiles/page-netns.sh ip -brief address
+
       - name: task check
         if: steps.changes.outputs.planning_only != 'true'
         run: task check
