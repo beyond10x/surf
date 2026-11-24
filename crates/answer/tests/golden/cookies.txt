@@ -1,0 +1,6 @@
+surf 1 session 7f3a open
+did look
+page 200 "text/html" "http://shop.example/"
+path 1 of 1
+  1 go "http://shop.example/"
+cookies 2

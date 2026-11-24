@@ -51,6 +51,8 @@ pub struct Answer {
     pub page: Option<Page>,
     /// `path <shown> of <total>` and one indented line per action shown.
     pub path: Option<Path>,
+    /// `cookies <n>`: the cookies the session's jar holds, from 1; no line when it holds none.
+    pub cookies: Option<u64>,
     /// `changed <n>` and one indented line per control that changed, or `changed page "<old>" ->
     /// "<new>"` and one indented line per new text: what the last action changed.
     pub changed: Option<Changed>,
@@ -72,6 +74,7 @@ impl Answer {
             did: None,
             page: None,
             path: None,
+            cookies: None,
             changed: None,
             now: None,
             notes: Vec::new(),
@@ -968,6 +971,8 @@ pub enum RenderError {
     /// A `changed page` block shows more than [`CHANGED_TEXTS_MAX`] texts, or counts texts not
     /// shown while it shows fewer.
     ChangedTexts,
+    /// A `cookies` line of 0: an answer whose jar holds no cookie has no such line.
+    NoCookies,
 }
 
 impl fmt::Display for RenderError {
@@ -1011,6 +1016,9 @@ impl fmt::Display for RenderError {
                 "the changed block shows more than {CHANGED_TEXTS_MAX} texts, or counts more \
                  while it shows fewer"
             ),
+            RenderError::NoCookies => {
+                f.write_str("the cookies line counts 0, which is written as no line")
+            }
         }
     }
 }
@@ -1032,6 +1040,9 @@ pub fn render(answer: &Answer) -> Result<String, RenderError> {
     }
     if let Some(path) = &answer.path {
         render_path(path, &mut out)?;
+    }
+    if let Some(cookies) = answer.cookies {
+        render_cookies(cookies, &mut out)?;
     }
     if let Some(changed) = &answer.changed {
         render_changed(changed, &mut out)?;
@@ -1152,6 +1163,14 @@ fn render_path(path: &Path, out: &mut String) -> Result<(), RenderError> {
         }
         out.push('\n');
     }
+    Ok(())
+}
+
+fn render_cookies(cookies: u64, out: &mut String) -> Result<(), RenderError> {
+    if cookies == 0 {
+        return Err(RenderError::NoCookies);
+    }
+    out.push_str(&format!("cookies {cookies}\n"));
     Ok(())
 }
 
@@ -1685,11 +1704,12 @@ pub fn parse(text: &str) -> Result<Answer, ParseError> {
 /// one of its own and leaves the lines alone otherwise.
 type Block = fn(&mut Lines<'_>, &mut Answer) -> Result<(), ParseError>;
 
-const BLOCKS: [Block; 8] = [
+const BLOCKS: [Block; 9] = [
     parse_token,
     parse_did,
     parse_page,
     parse_path,
+    parse_cookies,
     parse_changed,
     parse_now,
     parse_notes,
@@ -1840,6 +1860,21 @@ fn parse_path(lines: &mut Lines<'_>, answer: &mut Answer) -> Result<(), ParseErr
         });
     }
     answer.path = Some(Path { total, entries });
+    Ok(())
+}
+
+fn parse_cookies(lines: &mut Lines<'_>, answer: &mut Answer) -> Result<(), ParseError> {
+    let Some(line) = lines.take_if_starts("cookies ") else {
+        return Ok(());
+    };
+    let mut cursor = line.cursor();
+    cursor.at = "cookies ".len();
+    let cookies: u64 = cursor.number()?;
+    cursor.end()?;
+    if cookies == 0 {
+        return Err(line.error(ParseErrorKind::OutsideGrammar));
+    }
+    answer.cookies = Some(cookies);
     Ok(())
 }
 
