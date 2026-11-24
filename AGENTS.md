@@ -738,6 +738,28 @@ above, and the list of standards itself was written from memory.
     library only. 8 tests in one binary (`tests/main.rs` over `tests/lines.rs` and
     `tests/children.rs`). A development dependency of `surf-agent`, `surfd` and
     `surf-session`; a dependency of `surf-view-fixture`.
+  - `crates/agent-tasks` (`surf-agent-tasks`): test tooling, not shipped (`story:agent-tasks`,
+    `story:agent-tasks-https`): the measure of what an agent can do with `surf-agent` alone.
+    `tasks.txt` holds one block per task (`article`, `table`, `link`, `search`, `https`),
+    `status.txt` the state each is listed in (all five `pass`), `sites/<task>/` their files.
+    `tasks::every_task` runs every row with the scripted agent and the programs of
+    `SURF_BIN_DIR`, in one private `XDG_RUNTIME_DIR` with one `surfd`, against the fixture
+    server (a thread, 127.0.0.1) and, for the row `https`, the one TLS test server of the run
+    (`surf-tls-test-server`, certificate case `ok-rsa2048`): that row opens
+    `https://localhost:<port>/notice.html` with `open --ca-file` and the case's `root.pem` and
+    reads it with `look --as markdown`; its connections are those the TLS server counts. After
+    the last task, in the same `surfd`, the check `https-without-root` opens the same address
+    without `--ca-file` and passes when `open` answers `page failed CertificateNotTrusted
+    "<address>"` and `look --as markdown` answers `note text: no-document`. The test writes
+    `.out/agent-tasks.txt`: the counts, one line per task, then `check https-without-root pass`
+    (or `fail: <reason>`, which fails the run unless `SURF_AGENT_TASKS=measure`, and is counted
+    in no number of the first line), then the `raise:` lines; `task agent-tasks-report` prints
+    it. `tasks::a_call_that_never_answers_ends_at_its_bound` starts no TLS server and writes
+    `task https skipped`; the model lane (`taskfiles/agent-tasks-model.sh`) writes `task https
+    skipped: server https`. 39 tests (`adversary` 4, `adversary2` 10, `archive_task` 1,
+    `bounded` 4, `calls` 1, `check` 1, `fixtures` 1, `format` 3, `judge` 2, `model_driver` 6,
+    `status` 4, `tasks` 2). Depends on `surf-answer` and `surf-test-process`; its tests also
+    on `surf-tls`, `surf-tls-test-server` and `surf-tls-test-certs`.
   - `crates/html` (`surf-html`): the HTML parser. Since wave 5 it decides a document's encoding
     by the sniffing algorithm and decodes UTF-8, UTF-16LE, UTF-16BE, windows-1252 and
     replacement (`src/encoding.rs`; the other 35 encodings of the label table are decoded as
