@@ -242,8 +242,9 @@ there instead.
    are allowed. Every outside package of the lock file is on the allow-list
    `taskfiles/lock-allow.txt` (19 of its 49 packages), and the lock check fails on one that is
    not. One exception:
-   audited cryptographic primitives for TLS come from ring 0.17.14, reviewed as a dependency in
-   the rustls audit of Cure53, 2020 (<https://cure53.de/pentest-report_rustls.pdf>). Only the
+   audited cryptographic primitives for TLS come from ring, which was reviewed as a dependency
+   in the rustls audit of Cure53, 2020 (<https://cure53.de/pentest-report_rustls.pdf>); surf
+   uses ring 0.17.14. Only the
    crate `surf-tls` may depend on it, and the checks pin its packages by name, version and
    checksum.
 5. **No unsafe code.** Every hand-written crate forbids it. The exceptions are in tests: three
@@ -269,7 +270,8 @@ there instead.
   authenticated against the root list of Mozilla as curl publishes it, built into the binary,
   and for `surf --ca-file <path>` and a session of `surf-agent open --ca-file <path>` also
   against the certificates of that file; `surf --anchors` prints
-  the list's count, date and sha256. Redirects between `http:` and `https:` are followed both
+  the number of trust anchors read from the list, the list's date and its sha256. Redirects
+  between `http:` and `https:` are followed both
   ways. A certificate that is not trusted, has expired or names another host, a server limited
   to TLS 1.2 and a failed handshake each fail the load with a reason of its own. surf does not
   check revocation: a revoked certificate that has not expired loads.

@@ -18,11 +18,11 @@ that.
 4. **No third-party code in what ships.** The Rust standard library and the operating system are
    allowed. Every outside package of the lock file is on the allow-list
    `taskfiles/lock-allow.txt` (19 of its 49 packages), and the lock check fails on one that is
-   not. One exception: audited cryptographic primitives for TLS come from ring 0.17.14,
+   not. One exception: audited cryptographic primitives for TLS come from ring, which was
    reviewed as a dependency in the rustls audit of Cure53, 2020
-   ([the report](https://cure53.de/pentest-report_rustls.pdf)). Only the crate `surf-tls` may
-   depend on it, and the checks pin its packages by name, version and checksum. The binaries
-   built from `main` use it; no release does yet.
+   ([the report](https://cure53.de/pentest-report_rustls.pdf)); surf uses ring 0.17.14. Only
+   the crate `surf-tls` may depend on it, and the checks pin its packages by name, version and
+   checksum. The binaries built from `main` use it; no release does yet.
 5. **No unsafe code.** Every hand-written crate forbids it. The exceptions are in tests: three
    counting allocators that measure what a fetch holds, what a parse allocates and what the
    TLS code allocates.

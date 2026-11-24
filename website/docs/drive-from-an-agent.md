@@ -286,7 +286,8 @@ answer and says why on standard error.
   loopback, private, link-local, unique-local, shared or unspecified address, or to an IPv6
   address that embeds one, fails with `ForbiddenDestination`, before any connection to it; a session that starts at a local
   address follows its redirects as before.
-- `follow` loads `http:` and `https:` targets and refuses the others (`unsupported-scheme`);
+- `follow` loads `http:` targets, and on `main` also `https:` (in no release yet), and refuses
+  the others (`unsupported-scheme`);
   from a page on a public address it refuses a target on a local IP address or `localhost`
   (`forbidden-destination`), and it refuses a target over 65,536 bytes (`address-too-long`).
   From such a page a target that is a name is checked when the fetch resolves it: a name that

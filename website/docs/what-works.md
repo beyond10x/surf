@@ -24,7 +24,8 @@ New on `main`, in no release yet:
   server is authenticated against the root list of Mozilla as curl publishes it, built into the
   binary. `surf --ca-file <path>` adds the CA certificates of a PEM file to the trust anchors of
   one load, and `surf-agent open --ca-file <path>` to those of one session, for its life.
-  `surf --anchors` prints the list's count, date and sha256. Redirects between `http:` and
+  `surf --anchors` prints the number of trust anchors read from the list, the list's date and
+  its sha256. Redirects between `http:` and
   `https:` are followed both ways. surf speaks TLS 1.3 only. A certificate that is not trusted,
   has expired or names another host, a server limited to TLS 1.2 and a failed handshake each
   fail the load with a reason of its own: `CertificateNotTrusted`, `CertificateExpired`,

@@ -66,7 +66,8 @@ output format, the exit statuses and the limits.
 No release has `https:` yet. Built from `main`, `surf` loads an `https:` address over its own
 TLS 1.3 client, and authenticates the server against the root list of Mozilla as curl
 publishes it, built into the binary. `--ca-file <path>` adds the CA certificates of a PEM file
-for that load, and `surf --anchors` prints the list's count, date and sha256:
+for that load, and `surf --anchors` prints the number of trust anchors read from the list, the
+list's date and its sha256:
 
 ```text
 anchors <n> bundled <yyyy-mm-dd> sha256:<64 hex>

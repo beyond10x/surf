@@ -200,7 +200,9 @@ What follows, per runner:
    13 s.
 
 The lines for the job `package` of `.github/workflows/release.yml`, a step after
-`dtolnay/rust-toolchain` and before the build (`story:tls-release` adds it):
+`dtolnay/rust-toolchain` and before the build. Since `story:tls-release` the job holds them as
+the step "Install a C compiler that targets musl, for ring", between "Set the build flags" and
+"Build, test and package", with a comment saying why:
 
 ```yaml
       - name: Install a C compiler that targets musl, for ring

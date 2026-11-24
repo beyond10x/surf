@@ -23,7 +23,8 @@ release; what came before it is in the git log and in `docs/plan/`.
 - `surf --ca-file <path> <url>` adds the CA certificates of a PEM file to the trust anchors of
   that load: at most 32 KiB and 64 certificates, every one a CA. A file it refuses exits 2,
   naming the path and the error, before any connection.
-- `surf --anchors [--ca-file <path>]` prints the bundled list's count, date and sha256,
+- `surf --anchors [--ca-file <path>]` prints the number of trust anchors read from the bundled
+  list, the list's date and its sha256,
   `anchors <n> bundled <yyyy-mm-dd> sha256:<hex>`, and with a file `anchors <m> file <path>`.
 - An agent session loads `https:`: `go` and `open` an `https:` address, `follow` and `press` an
   `https:` target.

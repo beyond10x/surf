@@ -16,8 +16,13 @@ and surf-session), through the crate surf-tls:
   parts copyright The OpenSSL Project Authors, The BoringSSL Authors, Google
   Inc., Intel Corporation, CloudFlare, ARM Inc., Oracle and/or its affiliates,
   the fiat-crypto authors and the others named at the top of each of its
-  source files. Each file is under the Apache License 2.0, the text in LICENSE
-  beside this file, or under the ISC license, as the file says at its top:
+  source files. Its code from the once_cell project (src/polyfill/once_cell,
+  built for every target of surf) is under MIT OR Apache-2.0, used here under
+  the Apache License 2.0; its licence files name no copyright holder. Its
+  fiat-crypto code (third_party/fiat) is under the Apache License 2.0, as
+  third_party/fiat/LICENSE says. Every other file is under the Apache License
+  2.0, the text in LICENSE beside this file, or under the ISC license, as the
+  file says at its top:
 
     Permission to use, copy, modify, and/or distribute this software for any
     purpose with or without fee is hereby granted, provided that the above
