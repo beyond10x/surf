@@ -6,7 +6,8 @@ description: What surf does today, and what it does not do yet.
 # What works today
 
 - **A page load, end to end.** `surf <url>` opens a window and a tab, starts a navigation, fetches
-  the address over `http:` and creates a document for an HTML response.
+  the address over `http:`, and on `main` also `https:` (in no release yet, below), and creates
+  a document for an HTML response.
 - **Six components in one process**: `agent`, `shell`, `navigator`, `net`, `document` and
   `renderer`.
 - **Its own HTTP/1.1 client**, with one deadline for the whole exchange (40 seconds at most) and
@@ -15,6 +16,23 @@ description: What surf does today, and what it does not do yet.
   interpreter and once against the Rust code.
 - **1,785 tests** (1,240, and 545 of the TLS crates in a step of their own), built with
   warnings treated as errors, and 71 tests of the live view's page in a browser.
+
+New on `main`, in no release yet:
+
+- **`https:`, over surf's own TLS 1.3 client.** `surf <url>` loads an `https:` address, and so
+  do an agent session's `go` and `open`; `follow` and `press` load an `https:` target. The
+  server is authenticated against the root list of Mozilla as curl publishes it, built into the
+  binary. `surf --ca-file <path>` adds the CA certificates of a PEM file to the trust anchors of
+  one load, and `surf-agent open --ca-file <path>` to those of one session, for its life.
+  `surf --anchors` prints the list's count, date and sha256. Redirects between `http:` and
+  `https:` are followed both ways. surf speaks TLS 1.3 only. A certificate that is not trusted,
+  has expired or names another host, a server limited to TLS 1.2 and a failed handshake each
+  fail the load with a reason of its own: `CertificateNotTrusted`, `CertificateExpired`,
+  `CertificateNameMismatch`, `TlsVersionUnsupported` and `TlsHandshakeFailed`.
+  surf does not check revocation: a revoked certificate that has not expired loads.
+- **The one exception to no third-party code in what ships.** The cryptographic primitives of
+  TLS come from ring 0.17.14 and the four crates it needs, through the crate `surf-tls` alone
+  ([Principles](principles.md), principle 4).
 
 New after round 2, shipped in release `0.6.0`:
 
@@ -128,9 +146,9 @@ New with the seventh wave of the current plan, shipped in release `0.3.0`:
 - **Redirects are followed.** A `go` or an `open` follows up to 20 redirects (301, 302, 303, 307
   and 308 with a `Location`) inside one fetch. The `page` line shows the address the fetch ended
   at, and the `did go` line the address asked for. One more redirect after the twentieth fails
-  the load with `TooManyRedirects`. Only `http:` loads: a redirect to `https:` fails with
-  `UnsupportedScheme`. A redirect from a public address to a loopback or private one fails with
-  `ForbiddenDestination` (above).
+  the load with `TooManyRedirects`. In the releases up to `0.6.0` only `http:` loads: a redirect
+  to `https:` fails with `UnsupportedScheme`; on `main` it is followed (above). A redirect from a
+  public address to a loopback or private one fails with `ForbiddenDestination` (above).
 - **The live view's page shows real sessions.** While `surfd` runs, open the address in
   `$XDG_RUNTIME_DIR/surf/view-url` in a browser on the same machine. The page lists the
   sessions, open, closed or died; for the selected session it shows a timeline of its actions
@@ -246,7 +264,8 @@ New with the first wave:
 
 - No window and no rendering. The `renderer` component is specified; it does not render yet.
 - No JavaScript.
-- No `https:`. Only `http:` addresses load.
+- No release has `https:` yet: the releases up to `0.6.0` load `http:` addresses only.
+  `https:` loads on `main` (above), over TLS 1.3 only.
 - Release `0.2.0` delivers a redirect status as the response; redirects are followed since
   release `0.3.0`.
 - Page content only as text, with `--as tree` or `--as markdown`.

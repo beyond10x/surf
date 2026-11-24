@@ -104,15 +104,17 @@ Third-party crates are used in two places: the scenario runner in
 [`conformance/`](https://github.com/beyond10x/surf/tree/main/conformance), with a lock of its
 own, and `surf-tls`, whose `ring` and the packages it needs are the 19 outside packages of the
 root lock, each on the allow-list `taskfiles/lock-allow.txt`; the lock check fails on one that
-is not. Nothing that ships depends on either.
+is not. Nothing that ships depends on the scenario runner. Every binary built from `main` is
+built with `surf-tls` and so with ring; no release is built with it yet.
 
 ## Build from source
 
 Building is for working on surf; to use it, [install the binary](try-it.md).
 
-You need a Rust toolchain with `cargo` (surf is built with 1.99.1), [`task`](https://taskfile.dev)
-and [`ess`](https://github.com/beyond10x/ess) 0.97.4. `task check` also needs
-[`cargo-nextest`](https://nexte.st) 0.9.143 or later.
+You need a Rust toolchain with `cargo` (surf is built with 1.99.1), a C compiler (ring compiles
+its C and assembly with it: `cc` on Linux, the Xcode command line tools on macOS),
+[`task`](https://taskfile.dev) and [`ess`](https://github.com/beyond10x/ess) 0.97.4. `task check`
+also needs [`cargo-nextest`](https://nexte.st) 0.9.143 or later.
 
 ```console
 $ git clone https://github.com/beyond10x/surf

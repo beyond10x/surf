@@ -53,7 +53,9 @@ of its links, buttons and fields. Since round 2 the `page` line shows the page's
 
 Wanted, and not planned in detail yet:
 
-- **TLS 1.3**, and `https:` with it. Soon: most of the web is not reachable without it.
+- **TLS 1.3**, and `https:` with it. Under way: on `main`, `surf` and an agent session's `go`,
+  `open`, `follow` and `press` load `https:`, and a session takes an extra anchor file with
+  `open --ca-file`; the release comes next. Most of the web is not reachable without it.
 - **Screenshots.** That takes CSS, layout, painting and text rendering, all written here.
 - **A JavaScript engine**: [swell](https://beyond10x.github.io/swell/), an ECMAScript engine
   written from scratch in Rust as a project of its own, which surf will embed.
