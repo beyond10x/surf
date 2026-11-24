@@ -23,7 +23,7 @@ scope:
   path: taskfiles/release-smoke.sh
 - confidence: cited
   path: website/docs
-revision: 16
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:31Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:31Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
@@ -179,7 +179,7 @@ the text above:
   ring (`llvm-otool -L` on both macOS archives of runs 45344883467 and 45347703886);
   `docs/releasing.md`, `docs/design/tls.md` and `CHANGELOG.md` say so.
 - Outside the Writes: `taskfiles/agent-tasks.yml`, `taskfiles/release.yml`,
-  `docs/design/tls.md`, `docs/badges/` and four more website pages, each for a sentence that the
+  `docs/design/tls.md`, `docs/badges/` and seven website pages beside the two named, each for a sentence that the
   change made false.
 
 Noticed and not changed: the test line of the release workflow runs 6 tests (`cli::` of
