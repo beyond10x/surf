@@ -292,35 +292,22 @@ impl TreeBuilder {
     /// Whether `ancestor` is a host-including inclusive ancestor of `node` (DOM): `node`'s
     /// parents are followed up to its root, and from a root that has a host to that host. Only
     /// a document fragment has a host, and here only a template's contents is one; a Document
-    /// or an element without a parent has none, and the walk ends there. The arena keeps no link
-    /// from a template's contents to the template, so the template is looked for on the stack
-    /// of open elements.
+    /// or an element without a parent has none, and the walk ends there. The tree finds a
+    /// template's host, also a template a hook took off the stack of open elements. The walk
+    /// takes at most one step per node; a longer one is a cycle, answered as true, so that the
+    /// insertion is not made.
     fn is_host_including_inclusive_ancestor(&self, ancestor: NodeId, node: NodeId) -> bool {
         let mut next = Some(node);
-        while let Some(at) = next {
+        for _ in 0..=self.tree.node_count() {
+            let Some(at) = next else {
+                return false;
+            };
             self.visit();
             if at == ancestor {
                 return true;
             }
-            next = match self.tree.parent(at) {
-                Some(parent) => Some(parent),
-                None if *self.tree.data(at) == NodeData::DocumentFragment => self.template_host(at),
-                None => None,
-            };
+            next = self.tree.parent_or_host(at);
         }
-        false
-    }
-
-    /// The template element on the stack of open elements whose template contents is `fragment`.
-    /// A fragment is the contents of one template, so the scan starts at the current node, where
-    /// the innermost open template is.
-    fn template_host(&self, fragment: NodeId) -> Option<NodeId> {
-        self.open.iter().rev().copied().find(|&n| {
-            self.visit();
-            matches!(
-                self.tree.data(n),
-                NodeData::Element { template_contents: Some(contents), .. } if *contents == fragment
-            )
-        })
+        true
     }
 }

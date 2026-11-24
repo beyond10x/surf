@@ -28,16 +28,16 @@
 //! caller. No script runs here: at a `script` end tag the text mode pops the element and returns
 //! to the original insertion mode. A document parsed with scripting enabled
 //! ([`crate::ParseOptions::scripting_disabled`] false) and a [`ScriptHook`]
-//! ([`crate::parse_document_with_hook`]) calls the hook at most once for each parser-inserted
-//! script element, after the token that ended it (story `html-script-hook`,
+//! ([`crate::parse_document_with_hook`]) calls the hook once for each script element the parser
+//! inserts, HTML or SVG, when it leaves the stack of open elements or the parse ends, whichever
+//! comes first, after the token that ended it (story `html-script-hook`,
 //! `docs/design/scripts.md` Q1 and Q2): at an HTML `script` end tag in the text mode, after
 //! steps 2 to 4 of 13.2.6.4.8, `run` for an element that the steps of "prepare the script
-//! element" Q2 takes would run, else `skip` with the reason of Q1 ([`NotRun`]); at the
-//! end-of-file token in the text mode with the current node a `script`, `skip` with
-//! [`NotRun::Eof`]; at an SVG `script` end tag in foreign content, or an SVG `script` start tag
-//! with its self-closing flag, `skip` with [`NotRun::Svg`]. No other end makes a call: a script
-//! element a limit stopped the parse inside, and an SVG `script` another end tag closes or still
-//! open at the end of the input, get none.
+//! element" Q2 takes would run, else `skip` with the reason of Q1 ([`NotRun`]); for an HTML
+//! `script` open when the parser stopped, at the end of the input or at a limit, `skip` with
+//! [`NotRun::Eof`]; for an SVG `script`, however it is closed or open at the end, `skip` with
+//! [`NotRun::Svg`]. A MathML `script` is no script element and gets no call. The stack of open
+//! elements watches each script element it is given and notes the ones that leave it.
 //! Parsing then goes on with the stack of open elements and the list of active formatting
 //! elements as they were, over the tree the hook left. Without a hook, or with scripting
 //! disabled, no call is made and the parse is the parse without one.
@@ -75,10 +75,10 @@ pub const NOT_YET_PARSED: &[&str] = &[];
 /// What the tree builder calls at a `script` end tag of a parser-inserted HTML script element
 /// while parser scripting is enabled ([`crate::ParseOptions::scripting_disabled`] false), after
 /// steps 2 to 4 of 13.2.6.4.8 and the steps of "prepare the script element" the design note's
-/// Q2 takes (`docs/design/scripts.md`). `skip` is called as well for a `script` element open at
-/// the end of the input ([`NotRun::Eof`]) and for an SVG `script` element ended in foreign
-/// content ([`NotRun::Svg`]). The hook is called at most once for an element, and never for an
-/// element a script inserted.
+/// Q2 takes (`docs/design/scripts.md`). `skip` is called as well for an HTML `script` element
+/// open when the parser stopped ([`NotRun::Eof`]) and for an SVG `script` element, however it
+/// is closed ([`NotRun::Svg`]). The hook is called once for each script element the parser
+/// inserts, and never for an element a script inserted.
 pub trait ScriptHook {
     /// Run the element's script to its end. The call may write the tree through its public
     /// write surface; it returns when the script ended, however it ended.
@@ -109,9 +109,9 @@ pub enum NotRun {
     Nomodule,
     /// `event` and `for` that are not `onload` for `window` (step 24).
     Event,
-    /// An SVG `script` in foreign content, which the first version does not run.
+    /// An SVG `script`, however it is closed, which the first version does not run.
     Svg,
-    /// The element was open at the end of the input (13.2.6.4.8, "An end-of-file token").
+    /// The element was open when the parser stopped: the end of the input or a limit.
     Eof,
 }
 
@@ -132,17 +132,6 @@ impl NotRun {
             NotRun::Eof => "eof",
         }
     }
-}
-
-/// How a parser-inserted script element ended, for the hook call after its token.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ScriptEnd {
-    /// Its end tag in the text mode: the steps of "prepare the script element" decide.
-    EndTag,
-    /// The end-of-file token in the text mode.
-    Eof,
-    /// An SVG `script` ended in foreign content.
-    Svg,
 }
 
 /// The JavaScript MIME type essences (MIME Sniffing 4.6), in lower case.
@@ -363,6 +352,15 @@ struct OpenElements {
     bounds: Vec<bool>,
     /// The positions in `stack` of the entries that bound "has an element in scope", ascending.
     boundaries: Vec<usize>,
+    /// Some script element is watched ([`OpenElements::watch`]): a parse with a hook and
+    /// scripting enabled. Without one, an entry that leaves costs this test only.
+    watching: bool,
+    /// For each node of the arena by its index, whether it is a watched script element that
+    /// has not left the stack yet.
+    watched: Vec<bool>,
+    /// The watched script elements that left the stack, in the order they left; the hook is
+    /// called for each after the token.
+    ended: Vec<NodeId>,
 }
 
 impl std::ops::Deref for OpenElements {
@@ -396,7 +394,26 @@ impl OpenElements {
     }
 
     fn left(&mut self, node: NodeId) {
-        self.on_stack[node.index()] -= 1;
+        let index = node.index();
+        self.on_stack[index] -= 1;
+        if self.watching
+            && self.on_stack[index] == 0
+            && self.watched.get(index).copied().unwrap_or(false)
+        {
+            self.watched[index] = false;
+            self.ended.push(node);
+        }
+    }
+
+    /// Watches `node`, a script element just pushed: when it leaves the stack it goes to
+    /// `ended`, once.
+    fn watch(&mut self, node: NodeId) {
+        let index = node.index();
+        if self.watched.len() <= index {
+            self.watched.resize(index + 1, false);
+        }
+        self.watched[index] = true;
+        self.watching = true;
     }
 
     /// Whether `node` is in the stack of open elements: no entry is visited.
@@ -599,9 +616,9 @@ fn run(mut builder: TreeBuilder, mut hook: Option<&mut dyn ScriptHook>) -> Parse
         };
         builder.dispatch(token);
         if let Some(hook) = hook.as_deref_mut()
-            && let Some((script, end)) = builder.ended_script.take()
+            && !builder.open.ended.is_empty()
         {
-            builder.report_script(hook, script, end);
+            builder.report_ended(hook);
         }
         // Also the end-of-file token, whose rules scan too (in template pops down to each open
         // `template`), unless another limit stopped the parse.
@@ -611,6 +628,11 @@ fn run(mut builder: TreeBuilder, mut hook: Option<&mut dyn ScriptHook>) -> Parse
     }
     // "Stop parsing" pops every open element, also after a limit.
     builder.open.clear();
+    if let Some(hook) = hook
+        && !builder.open.ended.is_empty()
+    {
+        builder.report_ended(hook);
+    }
     if builder.saw_selectedcontent
         && builder.context.is_none()
         && builder.tree.stopped_by().is_none()
@@ -678,14 +700,12 @@ struct TreeBuilder {
     /// An HTML `selectedcontent` element was created: the end of the parse updates the
     /// `select` elements' copies of their selected option (the module `selectedcontent`).
     saw_selectedcontent: bool,
-    /// A hook is set and scripting is enabled: the end of each parser-inserted script element
-    /// is noted in `ended_script`.
+    /// A hook is set and scripting is enabled: each script element the parser pushes is
+    /// watched on the stack of open elements ([`OpenElements::watch`]).
     report_scripts: bool,
-    /// The script element the token being processed ended, and how; the hook is called with it
-    /// after the token.
-    ended_script: Option<(NodeId, ScriptEnd)>,
-    /// The element [`TreeBuilder::insert_element`] inserted last.
-    last_inserted: Option<NodeId>,
+    /// The element the last `script` end tag of the text mode popped: if it is a watched HTML
+    /// script element, its end tag ended it, and "prepare the script element" decides its call.
+    script_end_tag: Option<NodeId>,
 }
 
 const HTML_ELEMENT_SPECIAL: &[&str] = &[
@@ -876,33 +896,49 @@ impl TreeBuilder {
             fragment_html: None,
             saw_selectedcontent: false,
             report_scripts: false,
-            ended_script: None,
-            last_inserted: None,
+            script_end_tag: None,
         }
     }
 
-    /// Notes that the token being processed ended the script element `script` ([`run`] calls
-    /// the hook after it), when a hook is set and scripting is enabled.
-    fn script_ended(&mut self, script: NodeId, end: ScriptEnd) {
-        if self.report_scripts {
-            self.ended_script = Some((script, end));
+    /// Watches `element`, just pushed, when it is a script element and a hook is set with
+    /// scripting enabled: an HTML `script` or an SVG `script`, not a MathML one.
+    fn watch_script(&mut self, element: NodeId) {
+        if self.report_scripts
+            && matches!(
+                self.tree.data(element),
+                NodeData::Element { namespace: Namespace::Html | Namespace::Svg, local_name, .. }
+                    if local_name == "script"
+            )
+        {
+            self.open.watch(element);
         }
     }
 
-    /// Calls `hook` for the script element `script` that ended as `end`: `run` or `skip` with
-    /// its reason. After `run` the names the `html` and `body` merges keep are read again from
-    /// the elements, which the hook may have changed.
-    fn report_script(&mut self, hook: &mut dyn ScriptHook, script: NodeId, end: ScriptEnd) {
-        let reason = match end {
-            ScriptEnd::EndTag => prepare(&self.tree, script),
-            ScriptEnd::Eof => Some(NotRun::Eof),
-            ScriptEnd::Svg => Some(NotRun::Svg),
-        };
-        match reason {
-            Some(reason) => hook.skip(&self.tree, script, reason),
-            None => {
-                hook.run(&mut self.tree, script);
-                self.merged_names.clear();
+    /// Calls `hook` once for each watched script element that left the stack of open elements,
+    /// in the order they left: an HTML `script` its end tag popped gets `run` or `skip` as
+    /// "prepare the script element" decides; another HTML `script`, popped at the end of the
+    /// input or by the end of a parse a limit stopped, `skip` with [`NotRun::Eof`]; an SVG
+    /// `script`, however it left, `skip` with [`NotRun::Svg`]. After `run` the names the `html`
+    /// and `body` merges keep are read again from the elements, which the hook may have
+    /// changed.
+    fn report_ended(&mut self, hook: &mut dyn ScriptHook) {
+        let end_tag = self.script_end_tag.take();
+        for script in std::mem::take(&mut self.open.ended) {
+            let reason = if self.is_html(script, &["script"]) {
+                if end_tag == Some(script) {
+                    prepare(&self.tree, script)
+                } else {
+                    Some(NotRun::Eof)
+                }
+            } else {
+                Some(NotRun::Svg)
+            };
+            match reason {
+                Some(reason) => hook.skip(&self.tree, script, reason),
+                None => {
+                    hook.run(&mut self.tree, script);
+                    self.merged_names.clear();
+                }
             }
         }
     }
@@ -927,11 +963,7 @@ impl TreeBuilder {
         let mut token = token;
         loop {
             let flow = if self.in_foreign_content(&token) {
-                if self.report_scripts {
-                    self.foreign_content_noting_svg_scripts(&token)
-                } else {
-                    self.foreign_content(&token)
-                }
+                self.foreign_content(&token)
             } else {
                 self.process_by_mode(&token)
             };
@@ -944,43 +976,6 @@ impl TreeBuilder {
                 return;
             }
         }
-    }
-
-    /// The rules for foreign content (the module `foreign`), noting an SVG `script` element
-    /// they end: at its end tag, or at its start tag with the self-closing flag, which they act
-    /// on as on the end tag (13.2.6.5).
-    fn foreign_content_noting_svg_scripts(&mut self, token: &Token) -> Flow {
-        let is_svg_script = |b: &Self, node: NodeId| {
-            matches!(
-                b.tree.data(node),
-                NodeData::Element { namespace: Namespace::Svg, local_name, .. } if local_name == "script"
-            )
-        };
-        let ended = match token {
-            Token::EndTag { name } if name == "script" => self
-                .open
-                .last()
-                .copied()
-                .filter(|&node| is_svg_script(self, node)),
-            _ => None,
-        };
-        let self_closing = matches!(
-            token,
-            Token::StartTag { name, self_closing: true, .. } if name == "script"
-        );
-        let inserted_before = self.last_inserted;
-        let flow = self.foreign_content(token);
-        if let Some(script) = ended {
-            self.script_ended(script, ScriptEnd::Svg);
-        } else if self_closing
-            && self.last_inserted != inserted_before
-            && let Some(script) = self.last_inserted
-            && is_svg_script(self, script)
-            && !self.open.holds(script)
-        {
-            self.script_ended(script, ScriptEnd::Svg);
-        }
-        flow
     }
 
     /// Processes `token` by the rules of the current insertion mode.
@@ -1054,6 +1049,35 @@ impl TreeBuilder {
             return false;
         }
         true
+    }
+
+    /// Whether an element inserted under `parent` stays inside the depth limit, once a hook's
+    /// write gave a node a new parent: then the stack of open elements no longer tells the
+    /// depth of the tree, and the tree's is counted. When it does not, parsing stops. A parse
+    /// whose hooks gave no node a new parent does not count.
+    fn room_under(&mut self, parent: NodeId) -> bool {
+        if !self.tree.reparented() {
+            return true;
+        }
+        match self.tree.element_depth(parent) {
+            Some(depth) if depth < self.limits.max_depth => true,
+            _ => {
+                self.stop_at(Limit::Depth);
+                false
+            }
+        }
+    }
+
+    /// The appropriate place for an element, taken before the element is created, when a
+    /// hook's write gave a node a new parent ([`Self::room_under`]): `Some(None)` when no write
+    /// did, and the place is taken after the element is created, as without a hook; `None`
+    /// when the place has no room, and parsing stopped.
+    fn place_with_room(&mut self) -> Option<Option<(NodeId, Option<NodeId>)>> {
+        if !self.tree.reparented() {
+            return Some(None);
+        }
+        let place = self.appropriate_place(None);
+        self.room_under(place.0).then_some(Some(place))
     }
 
     // 13.2.6.1 Creating and inserting nodes.
@@ -1222,14 +1246,15 @@ impl TreeBuilder {
         if !self.room_on_stack() {
             return None;
         }
+        let early = self.place_with_room()?;
         let element = match namespace {
             Namespace::Html => self.create_element(name, attributes)?,
             _ => self.create_foreign_element(namespace, name, attributes)?,
         };
-        let location = self.appropriate_place(None);
+        let location = early.unwrap_or_else(|| self.appropriate_place(None));
         self.insert_element_at(element, location);
         self.open.push(element);
-        self.last_inserted = Some(element);
+        self.watch_script(element);
         Some(element)
     }
 
@@ -1303,21 +1328,30 @@ impl TreeBuilder {
     }
 
     /// The `html` and `body` start tag rules of in body: each attribute of the token whose name
-    /// `element` has no attribute of is added to it, in order. A merge that would give the
-    /// element more attributes than the attribute limit, or pass the stored-byte limit, is not
-    /// made, and parsing stops. The names of the element's attributes are kept in a set, so the
-    /// merge costs O(1) for each attribute of the token.
+    /// `element` has no attribute of is added to it, in order. A token's attribute is in no
+    /// namespace, so it matches only an attribute of the element in no namespace of its local
+    /// name: an attribute a hook set in a namespace keeps its place and counts. A merge that
+    /// would give the element more attributes than the attribute limit, its attributes counted
+    /// whatever their names, or pass the stored-byte limit, is not made, and parsing stops. The
+    /// names of the element's attributes in no namespace are kept in a set, so the merge costs
+    /// O(1) for each attribute of the token.
     fn merge_attributes(&mut self, element: NodeId, attributes: &[TokenAttribute]) {
         if self.stopped {
             return;
         }
+        let held = match self.tree.data(element) {
+            NodeData::Element { attributes, .. } => attributes.len(),
+            _ => 0,
+        };
         let at = match self.merged_names.iter().position(|(n, _)| *n == element) {
             Some(at) => at,
             None => {
                 let names = match self.tree.data(element) {
-                    NodeData::Element { attributes, .. } => {
-                        attributes.iter().map(|a| a.local_name.clone()).collect()
-                    }
+                    NodeData::Element { attributes, .. } => attributes
+                        .iter()
+                        .filter(|a| a.namespace.is_none())
+                        .map(|a| a.local_name.clone())
+                        .collect(),
                     _ => HashSet::new(),
                 };
                 self.merged_names.push((element, names));
@@ -1333,7 +1367,7 @@ impl TreeBuilder {
         if new.is_empty() {
             return;
         }
-        if names.len() + new.len() > self.limits.max_attributes {
+        if held + new.len() > self.limits.max_attributes {
             self.stop_at(Limit::Attributes);
             return;
         }

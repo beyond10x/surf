@@ -245,6 +245,20 @@ pub struct Tree {
     stopped_by: Option<Limit>,
     steps: usize,
     limits: Limits,
+    reparented: Reparented,
+}
+
+/// Whether a write of the public surface gave a node a new parent: from then on the parser's
+/// own insertions check the tree's depth and refuse a cycle, which a tree only the parser
+/// built cannot have. It is not part of what a tree holds, so two trees compare equal whatever
+/// it is.
+#[derive(Clone, Copy, Debug, Default, Eq)]
+struct Reparented(bool);
+
+impl PartialEq for Reparented {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
 }
 
 impl Tree {
@@ -265,6 +279,7 @@ impl Tree {
             stopped_by: None,
             steps: 0,
             limits,
+            reparented: Reparented(false),
         };
         tree.create(data, 0);
         tree
@@ -335,7 +350,9 @@ impl Tree {
     }
 
     /// Inserts `node`, which has no parent, into `parent` before `reference`, or as its last
-    /// child when `reference` is `None` (the DOM's "insert").
+    /// child when `reference` is `None` (the DOM's "insert"). After a public write gave a node
+    /// a new parent ([`Tree::reparented`]), an insertion that would make `node` an ancestor of
+    /// itself through parents and template hosts is not made: `node` stays without a parent.
     pub(crate) fn insert(
         &mut self,
         parent: NodeId,
@@ -344,6 +361,21 @@ impl Tree {
         steps: &Cell<usize>,
     ) {
         debug_assert!(self.nodes[node.0].parent.is_none());
+        // A node with no children and no template contents is no ancestor of another node.
+        let may_hold = !self.nodes[node.0].children.is_empty()
+            || matches!(
+                self.nodes[node.0].data,
+                NodeData::Element {
+                    template_contents: Some(_),
+                    ..
+                }
+            );
+        if self.reparented.0
+            && (may_hold || node == parent)
+            && self.is_host_including_inclusive_ancestor(node, parent)
+        {
+            return;
+        }
         let at = self.insertion_index(parent, reference, steps);
         self.nodes[parent.0].children.insert(at, node);
         self.nodes[node.0].parent = Some(parent);
@@ -591,6 +623,12 @@ fn shrink<T>(list: &mut Vec<T>) {
 /// The public write surface (the module documentation): the DOM's operations, each checked as
 /// the DOM checks it and admitted against the limits of the parse before it writes.
 ///
+/// A [`NodeId`] is an id of one tree: an id of another tree is the caller's error, which a
+/// write may answer with a panic, a refusal or a change to the wrong node. A removed node stays
+/// in the arena and keeps its count: removal gives no room back for nodes. A write may cost
+/// time in proportion to the children or the subtree it touches, which no limit counts: the
+/// caller charges for it.
+///
 /// # Panics
 ///
 /// Each when a [`NodeId`] it is given is not of this tree.
@@ -643,41 +681,62 @@ impl Tree {
     }
 
     /// The parent of `node`, or for a template's contents its template.
-    fn parent_or_host(&self, node: NodeId) -> Option<NodeId> {
+    pub(crate) fn parent_or_host(&self, node: NodeId) -> Option<NodeId> {
         self.nodes[node.0].parent.or_else(|| self.host(node))
     }
 
-    /// Whether `ancestor` is a host-including inclusive ancestor of `node` (DOM).
-    fn is_host_including_inclusive_ancestor(&self, ancestor: NodeId, node: NodeId) -> bool {
+    /// Whether `ancestor` is a host-including inclusive ancestor of `node` (DOM). The walk
+    /// takes at most one step per node of the tree; a longer one is a cycle, which this
+    /// answers as true, so that a write refuses it.
+    pub(crate) fn is_host_including_inclusive_ancestor(
+        &self,
+        ancestor: NodeId,
+        node: NodeId,
+    ) -> bool {
         let mut next = Some(node);
-        while let Some(at) = next {
-            if at == ancestor {
-                return true;
+        for _ in 0..=self.nodes.len() {
+            match next {
+                Some(at) if at == ancestor => return true,
+                Some(at) => next = self.parent_or_host(at),
+                None => return false,
             }
-            next = self.parent_or_host(at);
         }
-        false
+        true
     }
 
     /// The root of `node` (DOM "root", which for a node of a template's contents is the
-    /// contents).
-    fn root_of(&self, node: NodeId) -> NodeId {
+    /// contents), or `None` on a cycle: the walk takes at most one step per node.
+    fn root_of(&self, node: NodeId) -> Option<NodeId> {
         let mut at = node;
-        while let Some(parent) = self.nodes[at.0].parent {
-            at = parent;
+        for _ in 0..=self.nodes.len() {
+            match self.nodes[at.0].parent {
+                Some(parent) => at = parent,
+                None => return Some(at),
+            }
         }
-        at
+        None
     }
 
-    /// The elements among `node`'s inclusive ancestors, a template counted for its contents.
-    fn element_depth(&self, node: NodeId) -> usize {
+    /// The elements among `node`'s inclusive ancestors, a template counted for its contents,
+    /// or `None` on a cycle: the walk takes at most one step per node.
+    pub(crate) fn element_depth(&self, node: NodeId) -> Option<usize> {
         let mut depth = 0;
         let mut next = Some(node);
-        while let Some(at) = next {
-            depth += usize::from(self.is_element(at));
-            next = self.parent_or_host(at);
+        for _ in 0..=self.nodes.len() {
+            match next {
+                Some(at) => {
+                    depth += usize::from(self.is_element(at));
+                    next = self.parent_or_host(at);
+                }
+                None => return Some(depth),
+            }
         }
-        depth
+        None
+    }
+
+    /// Whether a write of the public surface has given a node a new parent.
+    pub(crate) fn reparented(&self) -> bool {
+        self.reparented.0
     }
 
     /// The most elements on a path down from `node`, `node` included, through template
@@ -712,7 +771,13 @@ impl Tree {
                 .unwrap_or(0),
             _ => self.element_height(node),
         };
-        if height > 0 && self.element_depth(parent) + height > self.limits.max_depth {
+        if height == 0 {
+            return Ok(());
+        }
+        let Some(depth) = self.element_depth(parent) else {
+            return Err(WriteError::HierarchyRequest);
+        };
+        if depth + height > self.limits.max_depth {
             return Err(WriteError::Limit(Limit::Depth));
         }
         Ok(())
@@ -832,6 +897,7 @@ impl Tree {
     /// "Insert" (DOM) of `node` into `parent` before `child`, after the checks: a fragment's
     /// children in its place, in order; a node with a parent leaves it first.
     fn insert_checked(&mut self, node: NodeId, parent: NodeId, child: Option<NodeId>) {
+        self.reparented.0 = true;
         let nodes = match self.nodes[node.0].data {
             NodeData::DocumentFragment => {
                 let children = std::mem::take(&mut self.nodes[node.0].children);
@@ -976,7 +1042,8 @@ impl Tree {
         if !matches!(
             parent_data,
             NodeData::Document | NodeData::DocumentFragment | NodeData::Element { .. }
-        ) || self.root_of(parent) != self.root_of(node)
+        ) || self.root_of(parent).is_none()
+            || self.root_of(parent) != self.root_of(node)
             || self.is_host_including_inclusive_ancestor(node, parent)
         {
             return Err(WriteError::HierarchyRequest);
@@ -1491,5 +1558,30 @@ mod tests {
     #[test]
     fn the_record_sizes_are_the_numbers_the_limits_state() {
         assert_eq!([ATTRIBUTE_BYTES, NODE_BYTES], [80, 136]);
+    }
+
+    /// A list that removals shrank holds at most twice its entries (or four): the room no
+    /// public call shows, which keeps the heap inside the bound of the stored-byte limit.
+    #[test]
+    fn removals_give_a_list_its_room_back() {
+        use super::{Limits, Namespace, NodeData, Tree};
+        let mut tree = Tree::document(Limits::default());
+        let div = tree.create_element_ns(Namespace::Html, "div").unwrap();
+        let mut texts = Vec::new();
+        for n in 0..100 {
+            let text = tree.create_text_node("t").unwrap();
+            tree.append_child(div, text).unwrap();
+            tree.set_attribute(div, &format!("a{n}"), "v").unwrap();
+            texts.push(text);
+        }
+        for (n, &text) in texts.iter().enumerate().skip(1) {
+            tree.remove_node(text).unwrap();
+            tree.remove_attribute(div, &format!("a{n}")).unwrap();
+        }
+        let NodeData::Element { attributes, .. } = &tree.nodes[div.0].data else {
+            unreachable!("a div is an element");
+        };
+        assert!(tree.nodes[div.0].children.capacity() <= 4);
+        assert!(attributes.capacity() <= 4);
     }
 }

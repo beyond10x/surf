@@ -2,7 +2,7 @@
 //! after the mode, its rules in the standard's order. Parse errors are not reported, so a rule
 //! that is only a parse error and "ignore the token" reads `Flow::Done`.
 
-use super::{Entry, Flow, Mode, QuirksMode, Scope, ScriptEnd, TreeBuilder, is_whitespace};
+use super::{Entry, Flow, Mode, QuirksMode, Scope, TreeBuilder, is_whitespace};
 use crate::tokenizer::{self, Token, TokenAttribute};
 use crate::tree::{Namespace, NodeData, NodeId, stored_bytes_of};
 
@@ -358,7 +358,7 @@ impl TreeBuilder {
                 name, attributes, ..
             } if name == "script" => {
                 let (parent, reference) = self.appropriate_place(None);
-                if !self.room_on_stack() {
+                if !self.room_on_stack() || !self.room_under(parent) {
                     return Flow::Done;
                 }
                 let Some(element) = self.create_element(name, attributes) else {
@@ -366,6 +366,7 @@ impl TreeBuilder {
                 };
                 self.insert_element_at(element, (parent, reference));
                 self.open.push(element);
+                self.watch_script(element);
                 self.tokenizer.switch_to(tokenizer::State::ScriptData);
                 self.original_mode = self.mode;
                 self.mode = Mode::Text;
@@ -1119,9 +1120,9 @@ impl TreeBuilder {
 
     /// 13.2.6.4.8 The "text" insertion mode. A `script` end tag pops the element and returns to
     /// the original insertion mode (steps 2 to 4); with a hook set and scripting enabled the
-    /// element is noted, and the hook is called after the token (the module documentation of
-    /// `tree_builder`). The end-of-file token notes a `script` that is the current node the same
-    /// way, as not run.
+    /// element is noted as ended by its end tag, and the hook is called after the token (the
+    /// module documentation of `tree_builder`). The end-of-file token pops it unnoted: "set its
+    /// already started to true", it is never prepared.
     pub(super) fn text(&mut self, token: &Token) -> Flow {
         match token {
             Token::Character(c) => {
@@ -1129,21 +1130,15 @@ impl TreeBuilder {
                 Flow::Done
             }
             Token::EndOfFile => {
-                if let Some(node) = self.open.pop()
-                    && self.is_html(node, &["script"])
-                {
-                    // "Set its already started to true": it is never prepared.
-                    self.script_ended(node, ScriptEnd::Eof);
-                }
+                self.open.pop();
                 self.mode = self.original_mode;
                 Flow::Reprocess
             }
             Token::EndTag { name } if name == "script" => {
                 // 2 to 4. Then 8, "prepare the script element", after the token.
-                if let Some(script) = self.open.pop()
-                    && self.is_html(script, &["script"])
-                {
-                    self.script_ended(script, ScriptEnd::EndTag);
+                let script = self.open.pop();
+                if self.report_scripts {
+                    self.script_end_tag = script;
                 }
                 self.mode = self.original_mode;
                 Flow::Done
