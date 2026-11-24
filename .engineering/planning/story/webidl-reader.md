@@ -12,7 +12,7 @@ scope:
   path: Cargo.lock
 - confidence: cited
   path: crates/webidl
-revision: 16
+revision: 18
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:34:04Z", actor: "human:operator", revision: 15}
 - {from: "proposed", to: "active", at: "2026-11-24T10:34:09Z", actor: "human:operator", revision: 16}
@@ -55,7 +55,7 @@ files, run 2026-11-24; the story's own reader replaces them):
 - `dom.html` line 17412 is the `h2` with `id="idl-index"`; one `pre` follows it, and its text
   (`awk 'NR>=17413 && NR<=18085' dom.html`, tags removed and `&lt;`, `&gt;`, `&quot;`,
   `&amp;` decoded) is 673 lines, the last one empty, as the epic counted (line 617).
-- `webidl.html` line 18713 is that `h2`; its `pre` text is 58 lines and holds `QuotaExceededError`,
+- `webidl.html` line 18713 is that `h2`; its `pre` text is 57 lines (lines 18714 to 18770, no empty line before `</pre>`; the DOM index ends with an empty line, which its 673 count) and holds `QuotaExceededError`,
   `QuotaExceededErrorOptions`, three `typedef`s (one with `[AllowShared]` on a union member),
   `DOMException` and the callbacks `Function` and `VoidFunction`.
 - The table of the epic (lines 631-637) holds: `EventTarget` 3 operations and a constructor;
@@ -163,7 +163,7 @@ No binary: the binary `bindings` belongs to `story:webidl-bindings`.
    `webidl.html` line 531). Outside the gate, at review, the
    coordinating agent's `sha256sum` of a fresh fetch of each address equals its `SOURCE` line.
 3. `vendored::the_indexes_read_whole`: both pages read with no `ReadError`; the DOM index
-   extracts to 673 lines and the Web IDL index to 58 (each equal to its `index-lines:`); the set of
+   extracts to 673 lines and the Web IDL index to 57 (each equal to its `index-lines:`); the set of
    `Model::unresolved` equals `tests/unresolved.txt` and holds `EventHandler`,
    `DOMHighResTimeStamp` and `TrustedType`, each asserted by name; and from `Model::counts`: `EventTarget` 3 own,
    0 from mixins, 0 constants, 0 attributes, 3 operations, a constructor; `Node` 47, 0, 18, 14, 15,
@@ -204,7 +204,7 @@ No binary: the binary `bindings` belongs to `story:webidl-bindings`.
    `Promise<undefined> x();` inside `interface Node` fails naming that line.
 9. `slot task check` exits 0; `slot task lock-check` passes with `surf-webidl` in `Cargo.lock`
    without a `source` line.
-10. `git diff --stat` of the story names only `crates/webidl/`, `Cargo.lock` and the files of
+10. `git diff --stat` of the story names only `crates/webidl/`, `Cargo.lock`, the lists of crates in `AGENTS.md` and the files of
     acceptance 12.
 11. The folder's bounds hold: the test step ends within 120 s and no test runs over 60 s
     (nextest's `slow-timeout` of 60 s with `terminate-after = 1`, `.config/nextest.toml:5`); no
