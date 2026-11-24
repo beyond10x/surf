@@ -535,6 +535,7 @@ impl Secure {
     fn start() -> Secure {
         let plain = Recorder::start(|target, _| match target {
             "/set" => set(&["s2=1; Secure; Path=/", "sec=2; Path=/"]),
+            "/set-deep" => set(&["sec=3; Path=/echo"]),
             _ => set(&[]),
         });
         let mut config = Config::new(TLS_CASE, Scheme::EcdsaSecp256r1Sha256);
@@ -617,7 +618,10 @@ fn x3_a_redirect_from_https_to_http_drops_the_secure_cookie() {
 #[test]
 fn x4_http_cannot_set_a_secure_cookie_nor_shadow_one() {
     let secure = Secure::start();
+    // `sec=2` on the Secure cookie's own path `/`, then `sec=3` on `/echo`, below it: both from
+    // `http:`, both ignored.
     secure.get(&secure.plain.at("localhost", "/set"));
+    secure.get(&secure.plain.at("localhost", "/set-deep"));
     secure.get(&secure.https("/echo"));
     assert_eq!(secure.tls_hops()[2..], [hop("/echo", Some("sec=1"))]);
 }

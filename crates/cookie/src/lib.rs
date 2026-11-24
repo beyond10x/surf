@@ -280,7 +280,7 @@ impl Jar {
                     && old.name == parsed.name
                     && (domain_matches(&host.text, host.is_ip, &old.domain)
                         || domain_matches(&old.domain, is_ip(&old.domain), &host.text))
-                    && path_matches(&old.path, &path)
+                    && path_matches(&path, &old.path)
             });
             if shadowed {
                 return;
