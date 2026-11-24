@@ -234,6 +234,6 @@ fn the_indexes_read_whole() {
     );
     assert_eq!(
         [index_lines("dom.html"), index_lines("webidl.html")],
-        [673, 58]
+        [673, 57]
     );
 }
