@@ -99,10 +99,15 @@ types:
   # shared record: an `ess-cli/2` argument binds a field of the callable's input by name, and a
   # field inside a nested record is not a source the binding is measured to take. `from_line`
   # counts the lines of the form asked for, from 1; the client takes it only beside `form`.
+  # `ca_file` is the path of a PEM file of extra trust anchors for the session's `https:` loads
+  # (`docs/design/tls.md` item 8): the client reads the file, refuses one `surf-tls` refuses
+  # before it connects, and sends its bytes in the `open` request, which `surfd` passes to the
+  # session process over the session socket; the path itself goes nowhere. The anchors belong to
+  # the session and end with it; no entity holds them (`epic:tls-https`, U2).
   - name: surf.agent.OpenCall
     kind: struct
     naming:
-      summary: The input of `open`, the address to load first if one is given, and the form to print it in.
+      summary: The input of `open`, the address to load first if one is given, the form to print it in, and a file of extra trust anchors.
     fields:
       - name: url
         type: Optional<surf.url.Url>
@@ -110,6 +115,8 @@ types:
         type: Optional<surf.agent.PageForm>
       - name: from_line
         type: Optional<Integer>
+      - name: ca_file
+        type: Optional<String>
 
   - name: surf.agent.LookCall
     kind: struct
