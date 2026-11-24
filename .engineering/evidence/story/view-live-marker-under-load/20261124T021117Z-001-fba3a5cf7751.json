@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T02:11:17Z",
+  "actor": "human:operator",
+  "artifact": "story:view-live-marker-under-load",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "task page-step-cpu, three runs on ee57cbc, and the repeat of three tests 84 times through taskfiles/page-netns.sh on the host, 2026-11-24 01:49 to 02:18 CET, load 76.40 to 88.21 at the start",
+    "reference": "119.14 G, 119.32 G, 118.58 G instructions (median 119.14 G, bound 122 G), page step 102.1 s, 114.4 s, 72.0 s, 71 passed each; repeat: 252 page starts, 252 passed, 0 failed"
+  }
+}
