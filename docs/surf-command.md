@@ -123,8 +123,8 @@ fails the load with `UnsupportedScheme`.
 
 This is the one-shot `surf` command. An agent session (`surf-agent`) loads an `https:` address
 with `go` and `open`, and an `https:` target with `follow` and `press`, against the bundled
-trust anchors and those of `surf-agent open --ca-file`; a target of any other scheme but
-`http:` is refused `did refused unsupported-scheme` (`docs/agent-answer.md`).
+trust anchors and those of `surf-agent open --ca-file`; a target of any scheme other than
+`http:` and `https:` is refused `did refused unsupported-scheme` (`docs/agent-answer.md`).
 
 `surf --ca-file <path> <url>` adds the certificates of a PEM file to the trust anchors of that
 load. The file holds at most 32 KiB (32,768 bytes) and 64 certificates; every block is a
