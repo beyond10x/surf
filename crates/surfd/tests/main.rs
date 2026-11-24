@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 mod adversary;
+mod adversary_2;
 mod adversary_controls;
 mod adversary_link;
 mod built;
