@@ -390,7 +390,7 @@ fn case_14_other_scheme_is_unsupported_without_connecting() {
         .set_nonblocking(true)
         .expect("nonblocking listener");
     for address in [
-        format!("https://127.0.0.1:{port}/"),
+        format!("ws://127.0.0.1:{port}/"),
         format!("ftp://127.0.0.1:{port}/"),
         format!("httpx://127.0.0.1:{port}/"),
         "data:text/plain,hello".to_string(),

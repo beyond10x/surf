@@ -121,9 +121,11 @@
 //!
 //! - longer than [`surf_fetch::MAX_ADDRESS_BYTES`] bytes: `address-too-long`, the bound of an
 //!   address a redirect leads to ("What it keeps");
-//! - with a scheme other than `http`, the one scheme the transport fetches (`javascript:`,
-//!   `mailto:`, `data:`, `file:`, `https:`): `unsupported-scheme`. `go` still navigates to such
-//!   an address and its page line says `failed UnsupportedScheme`;
+//! - with a scheme other than `http` (`javascript:`, `mailto:`, `data:`, `file:`, `https:`):
+//!   `unsupported-scheme`. `go` still navigates to such an address: an `https:` one loads
+//!   against the bundled trust anchors, any other ends with the page line `failed
+//!   UnsupportedScheme`. `follow` and `press` refuse `https:` until a session takes an extra
+//!   anchor file (`story:tls-session-anchors`);
 //! - from a document whose address is not local by its text, a target whose host is
 //!   (`host_is_local`: an IP address [`surf_fetch::is_local`] names, the rule a redirect's
 //!   destination is checked by, or `localhost` or a name under it): `forbidden-destination`. A
@@ -467,8 +469,9 @@ pub const ACTION_AND_EVENT_BYTES_MAX: usize = link::ENTRIES_MAX - link::ANSWER_T
 const LEFT_OUT_LINE_MAX: usize = 64;
 
 /// The transport of the binary: [`surf::fetch_http`] at `surf-fetch`'s default limits, through
-/// [`surf::answer`]. An address that is not `http:` is `UnsupportedScheme` and nothing is read;
-/// so is a `Get` with a body or a media type, before any connection. A `Post` is sent with its
+/// [`surf::answer`]. An `https:` server is authenticated against the bundled trust anchors. An
+/// address that is neither `http:` nor `https:` is `UnsupportedScheme` and nothing is read; so
+/// is a `Get` with a body or a media type, before any connection. A `Post` is sent with its
 /// body and media type (an agent's `go` navigates with `Get`). Redirects are followed inside the
 /// one fetch, up to 20, and the answer carries the address of the last response. The first
 /// request of a `follow` or a `press` from a page that counts as public goes to public addresses
@@ -494,7 +497,14 @@ pub fn fetch_through(
         dialed: Cell::new(false),
         first_local: Cell::new(None),
     };
-    let result = surf::fetch_http_from(request, &surf_fetch::Limits::default(), &dialing, origin);
+    // The bundled trust anchors: an agent session's extra file is `story:tls-session-anchors`.
+    let result = surf::fetch_http_from(
+        request,
+        &surf_fetch::Limits::default(),
+        None,
+        &dialing,
+        origin,
+    );
     if from_public
         && !dialing.dialed.get()
         && matches!(result, Err(surf_fetch::Failure::ForbiddenDestination(_)))

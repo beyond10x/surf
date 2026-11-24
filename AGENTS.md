@@ -184,7 +184,7 @@ above, and the list of standards itself was written from memory.
   prints that release; `.github/workflows/check.yml` and `release.yml` read the channel and the
   components from it and name no release of their own. A `RUSTUP_TOOLCHAIN` in the environment
   wins over the file; `task check-runner` unsets it.
-- `spec/scenarios/*.yaml`: thirty-seven authored scenario files (`ess-scenario/6`), for what
+- `spec/scenarios/*.yaml`: forty-two authored scenario files (`ess-scenario/6`), for what
   synthesis does not write. Two cover the flows synthesis refuses (the page load that commits and the one that
   fails); both also read the request's address back from `Requests`. The third,
   `two-of-each-entity.yaml`, creates two windows, two tabs in one window, two page loads, two
@@ -226,7 +226,15 @@ above, and the list of standards itself was written from memory.
   `navigation-traverse-failed-keeps-current.yaml`, `navigation-traverse-refused-at-end.yaml`,
   `navigation-traverse-refused-at-start.yaml`, `navigation-traverse-refused-for-post-entry.yaml`
   and the five `adversary-history-*.yaml` (back twice, forward then push, a `POST` redirected
-  to `GET`, a push during a traversal, two tabs).
+  to `GET`, a push during a traversal, two tabs). Since `story:tls-spec` five more, one per TLS
+  failure reason: `page-load-fails-certificate-not-trusted.yaml`,
+  `page-load-fails-certificate-expired.yaml`, `page-load-fails-certificate-name-mismatch.yaml`,
+  `page-load-fails-tls-version-unsupported.yaml` and `page-load-fails-tls-handshake-failed.yaml`.
+  Each navigates a session's tab to an `https:` address, sends `FailRequest` with its reason and
+  reads it back from `Requests`, `Navigations` and `SessionState`;
+  `page-load-fails-certificate-expired.yaml` also sends `CertificateExpired` for a request
+  already `Responded`, which ends in `wrong-state`, and reads the committed navigation back as
+  `Committed`.
 - `spec/ess-inputs.yaml`: the list of every file above, and the pin `requires: ess 0.97.4`. A new
   file under `spec/` is not read until it is listed there.
 - `generated/rust/`: the workspace `ess generate synthesize` writes, its own `Cargo.toml`
@@ -335,7 +343,15 @@ above, and the list of standards itself was written from memory.
     web-platform-tests URL data vendored under `tests/data/`; no IDNA. No dependency.
   - `crates/fetch` (`surf-fetch`): fetches an `http:` address with the standard library only and
     returns status, media type and body, or `Unreachable`, `UnsupportedScheme`,
-    `MalformedResponse`, `TooManyRedirects` or `ForbiddenDestination`. Its documentation lists what
+    `MalformedResponse`, `TooManyRedirects` or `ForbiddenDestination`. Since
+    `story:tls-fetch-https` it fetches an `https:` address too: the same connection through the
+    `Network` and the destination rule, then the TLS 1.3 handshake of `surf-tls` over the same
+    stream, inside the read timeout summed over the hops, against the anchors `Request::anchors`
+    borrows (`None`: the bundled list, `surf_fetch::Anchors::bundled()`) at the system clock.
+    Five reasons came with it, `CertificateNotTrusted`, `CertificateExpired`,
+    `CertificateNameMismatch`, `TlsVersionUnsupported` and `TlsHandshakeFailed`, mapped from
+    `surf_tls::Error` as item 7 of `docs/design/tls.md` says; it does not check revocation. Its
+    documentation lists what
     it does not do. `is_local`, the rule of a redirect's destination, is public: `surf-session`
     applies it to the target of `follow` and `press`. Since round 2 `send_from` takes an
     `Origin`: with `Origin::PublicPage` (a `follow` or `press` from a page that counts as public,
@@ -343,8 +359,9 @@ above, and the list of standards itself was written from memory.
     connection chose) a first request to a local address is refused too.
     Since wave 7 it follows up to 20 redirects (301, 302, 303, 307, 308 with a `Location`, for
     `GET`) inside one fetch, returns the address it ended at (`Response.url`, at most 64 KiB) and
-    `TooManyRedirects` for a redirect after the twentieth; a redirect to an address that is not
-    `http:` ends as `UnsupportedScheme`. Since wave 9 `surf_fetch::send(&Request, &Limits)`
+    `TooManyRedirects` for a redirect after the twentieth; a redirect to an address that is
+    neither `http:` nor `https:` ends as `UnsupportedScheme`. Since wave 9
+    `surf_fetch::send(&Request, &Limits)`
     stands beside `fetch(address, limits)`, which stays the `Get` without a body: a `Request`
     holds the address, the method (`Method`: `Get`, `Post`), an optional body and an optional
     media type, borrowed from the caller. A `Post` sends `Content-Length` always and
@@ -358,22 +375,28 @@ above, and the list of standards itself was written from memory.
     borrowed, not copied, and while it is written the fetch holds at most the header limit and
     one read buffer (73,728 bytes at the defaults for the whole fetch of a 4 MiB body sent twice
     through a 308, with short addresses and a 2-byte response); no bound is stated while a head
-    is read. Since `story:security-review-fixes` it has the destination rule of its section
+    is read. A TLS connection added 100,009 bytes to a `GET` of 64 KiB from the TLS test server
+    (`https` holds it to at most 131,072); no bound is stated for a server's chain at the bounds
+    of item 9. Since `story:security-review-fixes` it has the destination rule of its section
     "Destinations": each request of a chain resolves its host once, and those addresses are
     checked and dialed; after a first request to a public address a redirect to a loopback,
     private, link-local, unique-local, shared or unspecified address (or an IPv6 address that
     embeds one: IPv4-mapped, IPv4-compatible, NAT64 `64:ff9b::/96`, 6to4 `2002::/16`)
     ends `ForbiddenDestination` before any connection. `send_through(&Request, &Limits, &dyn
     Network)` takes the resolver and the transport (`Network::resolve`, `Network::connect`);
-    `send` and `fetch` use `OsNetwork`. 117 tests: 14 unit tests, `adversary_redirect_memory` 4,
-    `fetch` 24, `fetch_bounds` 7, `post` 16, `redirects` 27 (cases 21 to 26 and the review's
-    case of other spellings over a `TestNetwork` of the test, no real name resolved), `review1_fetch` 5,
+    `send` and `fetch` use `OsNetwork`. 136 tests: 14 unit tests, `adversary_redirect_memory` 4,
+    `fetch` 24, `fetch_bounds` 7, `https` 19 (cases 1 to 17 of `story:tls-fetch-https` against
+    `surf-tls-test-server` on 127.0.0.1, an empty set of anchors refused before any connection,
+    and what a TLS connection adds to what a fetch holds), `post` 16, `redirects` 27 (cases 21
+    to 26 and the review's case of other spellings over a `TestNetwork` of the test, no real
+    name resolved; its case 10 moved to `https` as case 11), `review1_fetch` 5,
     `review1_security_fetch` 13 and
     `review2_fetch_limits` 7. `adversary_redirect_memory` holds an `unsafe`, a counting
     allocator, test only; since wave 10 `crates/html/tests/common/mod.rs` holds another, and
     since `story:tls-lock-allow` `crates/tls/tests/tls/alloc.rs` the third, each a counting
     allocator of tests; no file under a `src/` holds any. Depends on
-    `surf-url`.
+    `surf-url` and `surf-tls`; its tests also on `surf-tls-test-server` and
+    `surf-tls-test-certs`.
   - `crates/ports` (`surf-ports`): in-memory storage and version 4 identities for the generated
     components, one ports type per component. `AgentPorts<R = OsRandom>` stores `Session` and
     `Action`, assigns a version 4 `ActionId` from its random source (`with_source`,
@@ -414,6 +437,9 @@ above, and the list of standards itself was written from memory.
     the first `Post`. `Browser::held` also counts the request bodies of
     `NavigationStarted`, `RequestStarted` and the `Fetch` invocation. `Browser::start` and
     `Browser::load` keep their signatures. `tests/request_method.rs` 5.
+    Since `story:tls-fetch-https` `fetch_http` and `fetch_http_from` take the anchors of an
+    `https:` fetch (`None`: the bundled list), and the five TLS failures of `surf-fetch` answer
+    the `FailureReason` of the same name (`tests/tls_failures.rs` 1).
     The library also runs the `document` component's parser step, a parameter of `Browser` like
     the transport: it decodes and parses each committed HTML body with `surf-html`, computes the
     title and the actionable elements with `surf-page`, and issues one command per actionable
@@ -455,10 +481,14 @@ above, and the list of standards itself was written from memory.
     `surf-url`.
   - `crates/surf-cli` (`surf-cli`): the binary `surf` and its five tests, moved out of
     `crates/surf`, and since wave 7 `redirects` 2 (the `navigation` line holds the address the
-    fetch ended at, the `request` line the address asked for). It loads one `http:` address,
-    with `surf-fetch` as the transport (since wave 8 through `surf::fetch_http`). A package of
+    fetch ended at, the `request` line the address asked for). It loads one `http:` or, since
+    `story:tls-fetch-https`, `https:` address, with `surf-fetch` as the transport (since wave 8
+    through `surf::fetch_http`); `--ca-file <path>` adds the certificates of one PEM file to the
+    bundled anchors and `--anchors` prints them (module `https`, 4 tests, against
+    `surf-tls-test-server` on 127.0.0.1). A package of
     its own so that it can depend on crates that depend on the `surf` library. Depends on `surf`,
-    `surf-fetch` and `surf-ports`. The release workflow builds and versions `surf-cli`
+    `surf-fetch` and `surf-ports`; its tests also on `surf-tls-test-server` and
+    `surf-tls-test-certs`. The release workflow builds and versions `surf-cli`
     (`crates/surf-cli/Cargo.toml`).
   - `crates/agent` (`surf-agent`): the agent command line and the binary `surf-agent`. A parser
     held to `cli/surf-agent.yaml` by a test, the token read from `SURF_TOKEN` or from a token file
@@ -530,7 +560,8 @@ above, and the list of standards itself was written from memory.
     `forward`, `log` and `close` in the format of
     `docs/agent-answer.md`, issues the model commands for each (`OpenSession`, `Go`,
     `CloseSession`, `RecordAction`) and loads pages through the `surf` library with
-    `surf-fetch`: `http:` only. The token is compared in constant time and is in no command
+    `surf-fetch`: `http:` and, since `story:tls-fetch-https`, `https:` against the bundled
+    anchors only. The token is compared in constant time and is in no command
     line, environment or file; a request with a wrong token or for another identity gets the
     head line and the refusal only, and since `story:security-review-fixes` that head line says
     `unknown` and the status record holds the state `unknown` with no address and no title, for
@@ -1744,14 +1775,25 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   view's routes and event stream), `docs/design/` (accepted designs and decision notes:
   `agent-interface.md`, `scenario-runner.md`, `live-view.md`, `html-parser.md`).
 - `target/debug/surf <url>`, after `task build`: load one address and print one line per row.
-  `docs/surf-command.md` gives the output format and the exit statuses.
+  `docs/surf-command.md` gives the output format and the exit statuses. An `http:` or an
+  `https:` address loads; `https:` over the TLS 1.3 client of `surf-tls`, the server
+  authenticated against the bundled trust anchors (`crates/tls/src/anchors/`) at the system
+  clock. `--ca-file <path>` adds the CA certificates of a PEM file (at most 32 KiB and 64
+  blocks) to the anchors of that load; a file it refuses exits 2, naming the path and the
+  error, before any connection. `surf --anchors [--ca-file <path>]` prints `anchors <n> bundled
+  <yyyy-mm-dd> sha256:<hex>` and with a file `anchors <m> file <path>`, exit 0. Revocation is
+  not checked: a revoked certificate that has not expired loads. The usage line printed on a
+  usage error names both options (`crates/surf-cli/src/main.rs`, `USAGE`).
 - Driving a session from a build tree, after `task build`: `target/debug/surf-agent open [<url>]`
   prints the session's identity and its token once; export them as `SURF_SESSION` and
   `SURF_TOKEN`, then `target/debug/surf-agent go <url>`, `look` and `close`. The three binaries
   (`surf-agent`, `surfd`, `surf-session`) find each other in `target/debug/`, because each
   starts the next from the directory of its own executable. `XDG_RUNTIME_DIR` must be set
-  (the session's socket lives under it). Two notes: only `http:` loads (a redirect is followed
-  inside the fetch, and one to `https:` ends as `UnsupportedScheme`); and an answer shows no
+  (the session's socket lives under it). Two notes: `http:` and `https:` load (a redirect is
+  followed inside the fetch, between the two schemes too; one to any other scheme ends as
+  `UnsupportedScheme`), `https:` against the bundled trust anchors only, since a session takes
+  no `--ca-file` before `story:tls-session-anchors`, and `follow` and `press` still refuse an
+  `https:` target (`unsupported-scheme`); and an answer shows no
   page content (status, media type and address only), because no page is parsed yet. While
   `surfd` runs, `$XDG_RUNTIME_DIR/surf/view-url` holds the live view's address and token
   (`http://127.0.0.1:<port>/#<token>`); open it in a browser on the same machine to see the

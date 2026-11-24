@@ -261,5 +261,8 @@ fn case_6_no_argument_is_a_usage_error() {
         run.stdout, run.stderr
     );
     assert_eq!(run.stdout, "");
-    assert_eq!(run.stderr, "usage: surf <url> [--as tree|markdown]\n");
+    assert_eq!(
+        run.stderr,
+        "usage: surf <url> [--as tree|markdown] [--ca-file <path>] | surf --anchors [--ca-file <path>]\n"
+    );
 }

@@ -22,3 +22,4 @@ mod review1_library;
 mod review2_generated_check;
 mod slowest_tests;
 mod step_budgets;
+mod tls_failures;

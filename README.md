@@ -136,7 +136,10 @@ note visibility: hidden attribute only
 
 What it does not do yet:
 
-- Only `http:` addresses load: no TLS.
+- `go` and `open` load `https:` addresses against the bundled trust anchors only: a session
+  takes no extra anchor file yet, and no release has `https:` yet. Inside a session, `follow`
+  and `press` refuse an `https:` target with `did refused unsupported-scheme`; the one-shot
+  `surf` command loads `https:`.
 - Release `0.2.0` delivers a redirect status as the response. Since release `0.3.0`, a `go`
   follows redirects.
 - No JavaScript and no rendering.
@@ -219,8 +222,7 @@ there instead.
 
 ## What surf is not
 
-- Not a browser for daily use. There is no window, no rendering, no JavaScript and no `https:`
-  yet.
+- Not a browser for daily use. There is no window, no rendering and no JavaScript yet.
 - Not a fork of an existing engine, and not a shell around one.
 - Not complete, and it says where. A part of a standard is called complete only when all of it
   is specified and the standard's own tests for it pass. Nothing carries that mark yet, which
@@ -258,11 +260,18 @@ there instead.
 ## What works today
 
 - **A page load, end to end.** `surf <url>` opens a window and a tab, starts a navigation,
-  fetches the address over `http:` and creates a document for an HTML response.
+  fetches the address over `http:` or `https:` and creates a document for an HTML response.
 - **Six components in one process**: `agent`, `shell`, `navigator`, `net`, `document` and
   `renderer`.
 - **Its own HTTP/1.1 client**, with one deadline for the whole exchange (40 seconds at most)
   and hard limits on header and body size.
+- **`https:` over its own TLS 1.3 client**, on `main` and in no release yet. The server is
+  authenticated against the root list of Mozilla as curl publishes it, built into the binary,
+  and for `surf` also against the certificates of `--ca-file <path>`; `surf --anchors` prints
+  the list's count, date and sha256. Redirects between `http:` and `https:` are followed both
+  ways. A certificate that is not trusted, has expired or names another host, a server limited
+  to TLS 1.2 and a failed handshake each fail the load with a reason of its own. surf does not
+  check revocation: a revoked certificate that has not expired loads.
 - **196 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
 - **1,785 tests** (1,240, and 545 of the TLS crates in a step of their own), built with
@@ -380,8 +389,9 @@ New with the seventh wave of the current plan, shipped in release `0.3.0`:
 - **Redirects are followed.** A `go` or an `open` follows up to 20 redirects (301, 302, 303,
   307 and 308 with a `Location`) inside one fetch. The `page` line shows the address the fetch
   ended at, and the `did go` line the address asked for. One more redirect after the twentieth
-  fails the load with `TooManyRedirects`. Only `http:` loads: a redirect to `https:` fails with
-  `UnsupportedScheme`. A redirect from a public address to a loopback or private one fails with
+  fails the load with `TooManyRedirects`. In that release only `http:` loaded: a redirect to
+  `https:` failed with `UnsupportedScheme`. A redirect from a public address to a loopback or
+  private one fails with
   `ForbiddenDestination` (above).
 - **The live view's page shows real sessions**, with a playhead over each session's actions
   (see "Watching sessions live" above). After a refused token the page stops and reads
@@ -515,7 +525,8 @@ None of the next steps has a date.
 
 Next after that, wanted and not planned in detail yet:
 
-- **TLS 1.3**, and `https:` with it. Soon: most of the web is not reachable without it.
+- **TLS 1.3**, and `https:` with it. Under way: `surf` and an agent's `go` load `https:` on
+  `main`; an agent session's extra anchor file and the release come next.
 - **Screenshots.** That takes CSS, layout, painting and text rendering, all written here.
 - **A JavaScript engine**: [swell](https://beyond10x.github.io/swell/), an ECMAScript engine
   written from scratch in Rust as a project of its own, which surf will embed.

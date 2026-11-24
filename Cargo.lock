@@ -152,6 +152,8 @@ dependencies = [
  "surf-fetch",
  "surf-page-text",
  "surf-ports",
+ "surf-tls-test-certs",
+ "surf-tls-test-server",
  "surf-types",
 ]
 
@@ -159,6 +161,9 @@ dependencies = [
 name = "surf-fetch"
 version = "0.1.0"
 dependencies = [
+ "surf-tls",
+ "surf-tls-test-certs",
+ "surf-tls-test-server",
  "surf-url",
 ]
 

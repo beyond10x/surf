@@ -221,13 +221,19 @@ impl<F: FnMut(&RequestStarted) -> Answer> Transport for F {
 /// the body). A [`Method::Get`] with a body or a media type ends with
 /// [`surf_fetch::Failure::UnsupportedScheme`], whose detail names the method, before any
 /// connection is attempted.
+///
+/// An `https:` request, and an `https:` redirect, authenticate the server against `anchors`:
+/// the bundled list with the anchors of an extra file ([`surf_fetch::Anchors::with_extra_pem`]),
+/// or the bundled list alone with `None`.
 pub fn fetch_http(
     request: &RequestStarted,
     limits: &surf_fetch::Limits,
+    anchors: Option<&surf_fetch::Anchors>,
 ) -> Result<surf_fetch::Response, surf_fetch::Failure> {
     fetch_http_from(
         request,
         limits,
+        anchors,
         &surf_fetch::OsNetwork,
         surf_fetch::Origin::Given,
     )
@@ -239,6 +245,7 @@ pub fn fetch_http(
 pub fn fetch_http_from(
     request: &RequestStarted,
     limits: &surf_fetch::Limits,
+    anchors: Option<&surf_fetch::Anchors>,
     network: &dyn surf_fetch::Network,
     origin: surf_fetch::Origin,
 ) -> Result<surf_fetch::Response, surf_fetch::Failure> {
@@ -260,6 +267,7 @@ pub fn fetch_http_from(
                 .body_type
                 .as_ref()
                 .map(|media_type| media_type.0.as_str()),
+            anchors,
         },
         limits,
         network,
@@ -293,6 +301,21 @@ pub fn answer(result: Result<surf_fetch::Response, surf_fetch::Failure>) -> Answ
         }
         Err(surf_fetch::Failure::ForbiddenDestination(_)) => {
             Answer::Failure(FailureReason::ForbiddenDestination)
+        }
+        Err(surf_fetch::Failure::CertificateNotTrusted(_)) => {
+            Answer::Failure(FailureReason::CertificateNotTrusted)
+        }
+        Err(surf_fetch::Failure::CertificateExpired(_)) => {
+            Answer::Failure(FailureReason::CertificateExpired)
+        }
+        Err(surf_fetch::Failure::CertificateNameMismatch(_)) => {
+            Answer::Failure(FailureReason::CertificateNameMismatch)
+        }
+        Err(surf_fetch::Failure::TlsVersionUnsupported(_)) => {
+            Answer::Failure(FailureReason::TlsVersionUnsupported)
+        }
+        Err(surf_fetch::Failure::TlsHandshakeFailed(_)) => {
+            Answer::Failure(FailureReason::TlsHandshakeFailed)
         }
     }
 }
@@ -1233,6 +1256,11 @@ fn failure_reason(reason: FailureReason) -> &'static str {
         FailureReason::MalformedResponse => "MalformedResponse",
         FailureReason::TooManyRedirects => "TooManyRedirects",
         FailureReason::ForbiddenDestination => "ForbiddenDestination",
+        FailureReason::CertificateNotTrusted => "CertificateNotTrusted",
+        FailureReason::CertificateExpired => "CertificateExpired",
+        FailureReason::CertificateNameMismatch => "CertificateNameMismatch",
+        FailureReason::TlsVersionUnsupported => "TlsVersionUnsupported",
+        FailureReason::TlsHandshakeFailed => "TlsHandshakeFailed",
     }
 }
 
