@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:scripts-engine-dependency
 kind: story
-status: active
+status: implemented
 title: surf depends on swell by a release tag, lock-check allows exactly that source, and surf-script runs an agent under surf's limits
 summary: A git dependency on the tag the note names; the allow-list, its rule per package, and a closed list of crates that may depend on surf-script; overflow checks enforced by lock-check; NOTICE and the Goals sentence; surf-script evaluates a source with no DOM under the step, memory, frame-depth and wall-clock limits, with the clock, seed, time-zone and compile-strings hooks of Q4 and Q6, HOST-17, 152 and 163 tested in surf's profile.
 relations:
@@ -39,10 +39,11 @@ scope:
   path: taskfiles/lock-owners.txt
 - confidence: cited
   path: website/docs/principles.md
-revision: 27
+revision: 29
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:12Z", actor: "human:operator", revision: 19}
 - {from: "proposed", to: "active", at: "2026-11-24T12:08:06Z", actor: "human:operator", revision: 27, executor: "agent:coordinator"}
+- {from: "active", to: "implemented", at: "2026-11-24T15:42:28Z", actor: "human:operator", revision: 29, decided_on: {"recorded":{"test_result":2,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -316,3 +317,50 @@ of line 33; neither changes the other's lines, and the second to merge keeps the
 
 S1's form of the dependency and the first code that runs swell inside surf, as the epic's third
 candidate.
+
+## As built
+
+The unit is on `main` at `f513b99` (the merge of `impl/scripts-engine-dependency` at `254a744`,
+which holds the reviewer's tests of three passes and one merge of `main`). The crate
+`crates/script` (package `surf-script`) runs 29 tests, 3 of them ignored; `surf` runs 158
+(118 before), 56 of them on `lock-check`. `Cargo.lock` holds 58 packages, 25 from outside this
+repository (51 and 19 before). Where it differs from the text above:
+
+- The tag is written in one place, `crates/script/Cargo.toml`. A change of tag is followed by
+  `Cargo.lock`, six lines of `taskfiles/lock-allow.txt`, the constant `SWELL` in
+  `crates/surf/tests/lock_check.rs`, `NOTICE` and the citations `@ 0.8.0`.
+- Acceptance 2 against decision 3: decision 3 holds.
+- `NOTICE` keeps swell's attribution of the Unicode data (Apache-2.0, section 4(d)).
+- `AGENTS.md`, "Goals": the story's sentence had dropped the reason for ring and the
+  operator's words; the unit restored them, and the Layout lists name `crates/script`.
+- `lock-check` grew beyond the story. It reads the tree's cargo config files: no multi-line
+  string, no backslash, no `rustflags` in any letter case, no line with `overflow` but
+  `overflow-checks = true`, no profile section for a swell package. The root manifest holds
+  no multi-line string. `Taskfile.yml`, every file under `taskfiles/` but the check's own
+  three, and every file under `.github/workflows/` hold no line that names the overflow
+  checks in either spelling and no `rustflags` line with an `@`. A package of the lock
+  without a source whose name is on the allow-list fails. A duplicate line of either list
+  fails, and so does an owners line no dependency uses.
+- Where that check ends, by a ruling: it holds a key or a flag written in those files. It
+  does not hold a setting reached through another file, a `rustc` or wrapper named in a
+  config file, an ancestor's config file or the environment of whoever starts the build.
+  Review of a change to those files holds the rest. The sentence "cargo reads profiles from
+  the root manifest only" was wrong (a cargo config file overrides the root manifest) and is
+  corrected in `Taskfile.yml` and in the note's Q17.
+- A script started after the wall-clock deadline ends `not run: wall-clock`, is not started
+  and not counted. The first script's start is the clock's start.
+- `surf-script` names every variant of swell's error types, with no catch-all arm, so a tag
+  that adds a variant stops the build where surf must choose the word. The host errors that
+  are defects of surf's own calls stay `faulted`.
+- The per-runner totals are held and counted in this unit and enforced by
+  `story:scripts-parse-run`.
+- `agent_and_realm()` is for the bindings' setup before the first script; an entry run
+  through it is outside the totals and the clock.
+- Three tests are ignored at swell `0.8.0` (`clock_advances`, `seeds_fixed`, `time_zone`):
+  `Date` and `Math.random` wait for swell's slice 4. Two claims have no test yet: a fault
+  stays set, and a test runner hands its seeds to the agent.
+- The test of the clock thread holds that no thread remains after 100 runners, read again
+  for at most 2 s. No test holds the join itself: a thread that ends by itself leaves the
+  thread count as a joined one does.
+- The dependencies badge stays at 5: swell is the organization's own, and no binary ships
+  `surf-script` yet.
