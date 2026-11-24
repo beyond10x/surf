@@ -583,18 +583,23 @@ fn the_other_ports_answer_an_actions_identity_as_unmet() {
     );
 }
 
-/// The `handle` and `label` of the `NavigationRequested` a `Go` emits are `{generated: true}`
-/// (story values-and-labels-before-fill): the agent's ports leave them absent, and the other
-/// ports, which issue no `Go`, answer unmet.
+/// The `handle`, `label` and `initiator` of the `NavigationRequested` a `Go` emits are
+/// `{generated: true}` (story values-and-labels-before-fill, `story:agent-cookie-jar`): the
+/// agent's ports leave them absent. The `initiator` of the `NavigationStarted` a
+/// `StartTraversal` emits is too, and the navigator's ports leave it absent. The other ports,
+/// which issue neither, answer unmet.
 #[test]
 fn a_gos_optional_text_is_absent_and_unmet_elsewhere() {
     assert_eq!(AgentPorts::new().try_generate_optional_string(), Ok(None));
+    assert_eq!(
+        NavigatorPorts::new().try_generate_optional_string(),
+        Ok(None)
+    );
     let unmet = Err(UnmetObligation {
         capability: "context answer",
         source: "Optional<String>",
     });
     assert_eq!(ShellPorts::new().try_generate_optional_string(), unmet);
-    assert_eq!(NavigatorPorts::new().try_generate_optional_string(), unmet);
     assert_eq!(DocumentPorts::new().try_generate_optional_string(), unmet);
     assert_eq!(RendererPorts::new().try_generate_optional_string(), unmet);
 }

@@ -1071,6 +1071,12 @@ commands:
       - name: body_type
         type: Optional<surf.net.MediaType>
         example: "application/x-www-form-urlencoded"
+      # The serialised origin of the form's document, which the submission step gives: the
+      # initiator of the navigation (`spec/domains/net.yaml`, R9), as the HTML Standard's form
+      # submission navigates with the form's node document as the source document.
+      - name: initiator
+        type: Optional<String>
+        example: "http://example.org"
     outcomes:
       - name: no-such-submission
         unknown_instance: true
@@ -1093,6 +1099,7 @@ commands:
             method: input.method
             body: input.body
             body_type: input.body_type
+            initiator: input.initiator
         summary: The submission is Submitted, and its tab is to navigate to the request.
 
       - name: wrong-state
@@ -1238,6 +1245,8 @@ events:
         type: Optional<Bytes>
       - name: body_type
         type: Optional<surf.net.MediaType>
+      - name: initiator
+        type: Optional<String>
 
   - name: surf.document.SubmissionAbandoned
     fields:

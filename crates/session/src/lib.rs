@@ -1301,6 +1301,7 @@ impl<T: Transport> Session<T> {
             url: Url(url.clone()),
             handle: link.handle.clone(),
             label: link.label.clone(),
+            initiator: None,
         })?;
         match outcome {
             FollowOutcome::Requested { .. } => {

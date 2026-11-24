@@ -1899,6 +1899,7 @@ where
                     method,
                     body,
                     body_type: body_type.map(MediaType),
+                    initiator: None,
                 })?;
             }
             Submit::Abandon(reason) => {
@@ -2109,6 +2110,7 @@ where
             method: Method::Get,
             body: None,
             body_type: None,
+            initiator: None,
         })? {
             NavigateOutcome::Started { navigation_started } => navigation_started.navigation_id,
         };

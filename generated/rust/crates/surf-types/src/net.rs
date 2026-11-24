@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 153f12c9bc6989d7738d48778d89afd6338830f138bc654b26d0f1a53611f3d7
+// contract digest 0885760ec9338d6af6c9b21b424dde0557abe451edb6419c0f296bc37836f5f6
 // do not edit: regenerate with `ess synthesize`
 
 //! Network — `surf.net`.
@@ -90,6 +90,8 @@ pub struct RequestData {
     pub method: Method,
     /// `body_type` — `Optional<surf.net.MediaType>`.
     pub body_type: Option<MediaType>,
+    /// `initiator` — `Optional<String>`.
+    pub initiator: Option<String>,
 }
 
 /// The states of `surf.net.Request`, at the type level.
@@ -371,6 +373,8 @@ pub struct Fetch {
     pub body: Option<Vec<u8>>,
     /// `body_type` — `Optional<surf.net.MediaType>`.
     pub body_type: Option<MediaType>,
+    /// `initiator` — `Optional<String>`.
+    pub initiator: Option<String>,
 }
 
 /// Everything `surf.net.Fetch` can result in — one variant per declared outcome.
@@ -413,6 +417,8 @@ pub struct RequestStarted {
     pub body: Option<Vec<u8>>,
     /// `body_type` — `Optional<surf.net.MediaType>`.
     pub body_type: Option<MediaType>,
+    /// `initiator` — `Optional<String>`.
+    pub initiator: Option<String>,
 }
 
 /// ResponseReceived — the event `surf.net.ResponseReceived`.
@@ -465,6 +471,8 @@ pub struct Requests {
     pub method: Method,
     /// `body_type` — `Optional<surf.net.MediaType>`.
     pub body_type: Option<MediaType>,
+    /// `initiator` — `Optional<String>`.
+    pub initiator: Option<String>,
     /// `state` — `surf.net.Request.State`.
     pub state: RequestState,
 }

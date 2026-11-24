@@ -170,6 +170,7 @@ fn fetch_sends_post() {
         body_type: Some(surf_types::net::MediaType(
             "application/x-www-form-urlencoded".to_string(),
         )),
+        initiator: None,
     };
     let answer = surf_session::fetch(&request);
     // A transport that sent nothing would leave the server in `accept`: this connection, queued

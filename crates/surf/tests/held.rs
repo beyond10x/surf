@@ -95,6 +95,7 @@ fn a_submitted_form_body_is_held_in_every_place_that_carries_it() {
             method: Method::Post,
             body: Some(vec![b'f'; BODY]),
             body_type: Some(MediaType("application/x-www-form-urlencoded".to_owned())),
+            initiator: None,
         })
         .unwrap();
     assert!(

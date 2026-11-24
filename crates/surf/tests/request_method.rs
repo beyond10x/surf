@@ -51,6 +51,7 @@ fn post_to(address: &str) -> Navigate {
         method: Method::Post,
         body: Some(b"a=1".to_vec()),
         body_type: Some(MediaType(FORM.to_owned())),
+        initiator: None,
     }
 }
 
@@ -67,6 +68,7 @@ fn request(
         method,
         body: body.map(<[u8]>::to_vec),
         body_type: body_type.map(|media_type| MediaType(media_type.to_owned())),
+        initiator: None,
     }
 }
 
@@ -138,6 +140,7 @@ fn post_navigation_reaches_the_transport() {
             method: Method::Post,
             body: Some(b"a=1".to_vec()),
             body_type: Some(MediaType(FORM.to_owned())),
+            initiator: None,
         }]
     );
 }
