@@ -60,6 +60,11 @@ fn assert_fails(name: &str, extra: &[(&str, String)]) {
     assert_ne!(status, Some(0), "{name}: the check passed:\n{text}");
 }
 
+fn assert_passes(name: &str, extra: &[(&str, String)]) {
+    let (status, text) = check(name, extra);
+    assert_eq!(status, Some(0), "{name}:\n{text}");
+}
+
 /// The committed `.cargo/config.toml` with `text` after it.
 fn config_after(text: &str) -> String {
     format!("{}\n{text}", read(".cargo/config.toml"))
@@ -136,6 +141,21 @@ fn a_script_a_task_runs_fails() {
         &[(
             "taskfiles/build-release.sh",
             "#!/bin/sh\nRUSTFLAGS='-C overflow-checks=off' cargo build --release\n".to_string(),
+        )],
+    );
+}
+
+/// Held: the word in a comment, and `overflow-checks = true` in the release profile with a
+/// comment after it, pass.
+#[test]
+fn comments_and_the_true_line_pass() {
+    assert_passes(
+        "config-comments",
+        &[(
+            ".cargo/config.toml",
+            config_after(
+                "# overflow checks stay on in every profile\n[profile.release] # not overflow\nopt-level = 3\noverflow-checks = true # on\n",
+            ),
         )],
     );
 }
