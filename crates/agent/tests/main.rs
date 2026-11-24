@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+mod adversary_ca_file;
 mod adversary_fill_pick;
 mod ca_file;
 mod common;
