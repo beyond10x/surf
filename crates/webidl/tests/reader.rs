@@ -12,6 +12,10 @@ fn all(text: &str) -> Vec<Definition> {
     read(text, FILE).unwrap_or_else(|error| panic!("{error}"))
 }
 
+fn model(definitions: Vec<Definition>) -> Model {
+    Model::new(definitions).unwrap_or_else(|error| panic!("{error}"))
+}
+
 fn one(text: &str) -> Definition {
     let mut definitions = all(text);
     assert_eq!(definitions.len(), 1, "{definitions:?}");
@@ -296,7 +300,7 @@ fn member_stringifier() {
         }
     ));
     assert_eq!(list[1].name.as_deref(), Some("value"));
-    let model = Model::new(vec![definition]);
+    let model = model(vec![definition]);
     assert_eq!(model.counts("Range").operations, 1);
     assert_eq!(model.counts("Range").attributes, 1);
 }
@@ -343,7 +347,7 @@ fn member_constructor() {
     assert_eq!(member.name, None);
     let list = arguments(&member);
     assert_eq!(list[0].default, Some(DefaultValue::String(String::new())));
-    let model = Model::new(vec![one("interface Text {\n  constructor();\n};")]);
+    let model = model(vec![one("interface Text {\n  constructor();\n};")]);
     let counts = model.counts("Text");
     assert!(counts.constructor);
     assert_eq!(counts.own, 0);
@@ -371,7 +375,7 @@ fn member_iterable() {
         panic!("not iterable");
     };
     assert_eq!(shape(ty), named("Node"));
-    let model = Model::new(vec![one("interface NodeList {\n  iterable<Node>;\n};")]);
+    let model = model(vec![one("interface NodeList {\n  iterable<Node>;\n};")]);
     assert_eq!(model.counts("NodeList").own, 0);
 }
 
@@ -462,7 +466,7 @@ fn type_extended_attribute() {
     assert_eq!(ty.kind, TypeKind::DomString);
     assert_eq!(ty.extended_attributes[0].name, "LegacyNullToEmptyString");
     assert!(member.extended_attributes.is_empty());
-    let model = Model::new(vec![one(
+    let model = model(vec![one(
         "interface CharacterData {\n  attribute [LegacyNullToEmptyString] DOMString data;\n};",
     )]);
     assert_eq!(
@@ -510,7 +514,7 @@ fn extended_attribute_arguments() {
 
 #[test]
 fn merged_mixin_counted_on_each() {
-    let model = Model::new(all(
+    let model = model(all(
         "interface mixin ChildNode {\n  undefined remove();\n  readonly attribute Element? next;\n};\ninterface A { const short X = 1; };\ninterface B {};\nA includes ChildNode;\nB includes ChildNode;\n",
     ));
     for (interface, own) in [("A", 1), ("B", 0)] {
@@ -531,7 +535,7 @@ fn merged_mixin_counted_on_each() {
 
 #[test]
 fn merged_partial() {
-    let model = Model::new(all(
+    let model = model(all(
         "partial interface Document {\n  readonly attribute DOMString title;\n};\ninterface Document : Node {\n  constructor();\n  Element? getElementById(DOMString id);\n};\n",
     ));
     let counts = model.counts("Document");
@@ -600,7 +604,7 @@ fn added_buffer_related_type() {
             "Float16Array"
         ]
     );
-    assert!(Model::new(vec![definition]).unresolved().is_empty());
+    assert!(model(vec![definition]).unresolved().is_empty());
 }
 
 fn added_serializable() {

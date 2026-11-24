@@ -3,6 +3,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::ReadError;
+
 /// One definition of an IDL text, with the file and line it starts on (the line of its keyword,
 /// or of its first name for `includes`).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -314,8 +316,41 @@ pub struct Model {
 
 impl Model {
     /// The model of `definitions`, in the order given.
-    pub fn new(definitions: Vec<Definition>) -> Model {
-        Model { definitions }
+    pub fn new(definitions: Vec<Definition>) -> Result<Model, ReadError> {
+        let model = Model { definitions };
+        model.check_overloads()?;
+        Ok(model)
+    }
+
+    /// Refuses an operation name twice in the merged view of an interface (its definitions and
+    /// the mixins it includes, [`Model::members`]), naming the file and line of the second.
+    fn check_overloads(&self) -> Result<(), ReadError> {
+        let mut interfaces: Vec<&str> = Vec::new();
+        for definition in &self.definitions {
+            if matches!(
+                definition.kind,
+                DefinitionKind::Interface { .. } | DefinitionKind::Includes { .. }
+            ) && !interfaces.contains(&definition.name.as_str())
+            {
+                interfaces.push(&definition.name);
+            }
+        }
+        for interface in interfaces {
+            let (own, mixins) = self.located_parts(interface);
+            let mut operations = BTreeSet::new();
+            for (file, member) in own.into_iter().chain(mixins) {
+                if let (MemberKind::Operation { .. }, Some(name)) = (&member.kind, &member.name)
+                    && !operations.insert(name.as_str())
+                {
+                    return Err(ReadError::new(
+                        file,
+                        member.line,
+                        format!("an overload: a second operation `{name}` in `{interface}`"),
+                    ));
+                }
+            }
+        }
+        Ok(())
     }
 
     /// The definitions, in the order given.
@@ -333,6 +368,15 @@ impl Model {
     }
 
     fn member_parts(&self, interface: &str) -> (Vec<&Member>, Vec<&Member>) {
+        let (own, mixins) = self.located_parts(interface);
+        fn strip(list: Located<'_>) -> Vec<&Member> {
+            list.into_iter().map(|(_, member)| member).collect()
+        }
+        (strip(own), strip(mixins))
+    }
+
+    /// The own and the mixin members of `interface`, each with the file of its definition.
+    fn located_parts(&self, interface: &str) -> (Located<'_>, Located<'_>) {
         let mut own = Vec::new();
         let mut mixins = Vec::new();
         for definition in &self.definitions {
@@ -340,7 +384,11 @@ impl Model {
                 continue;
             }
             match &definition.kind {
-                DefinitionKind::Interface { members, .. } => own.extend(members),
+                DefinitionKind::Interface { members, .. } => own.extend(
+                    members
+                        .iter()
+                        .map(|member| (definition.file.as_str(), member)),
+                ),
                 DefinitionKind::Includes { mixin } => mixins.extend(self.mixin_members(mixin)),
                 _ => {}
             }
@@ -348,13 +396,18 @@ impl Model {
         (own, mixins)
     }
 
-    fn mixin_members(&self, mixin: &str) -> Vec<&Member> {
+    fn mixin_members(&self, mixin: &str) -> Vec<(&str, &Member)> {
         self.definitions
             .iter()
             .filter(|definition| definition.name == mixin)
-            .flat_map(|definition| match &definition.kind {
-                DefinitionKind::InterfaceMixin { members } => members.as_slice(),
-                _ => &[],
+            .flat_map(|definition| {
+                let members = match &definition.kind {
+                    DefinitionKind::InterfaceMixin { members } => members.as_slice(),
+                    _ => &[],
+                };
+                members
+                    .iter()
+                    .map(move |member| (definition.file.as_str(), member))
             })
             .collect()
     }
@@ -463,6 +516,9 @@ impl Model {
         out
     }
 }
+
+/// Members, each with the file of the definition that holds it.
+type Located<'a> = Vec<(&'a str, &'a Member)>;
 
 /// What [`visit`] hands its callback.
 enum Seen<'a> {

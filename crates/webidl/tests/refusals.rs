@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use surf_webidl::{EXTENDED_ATTRIBUTES, extract_index, read};
+use surf_webidl::{EXTENDED_ATTRIBUTES, Model, extract_index, read};
 
 const FILE: &str = "test.idl";
 
@@ -38,6 +38,46 @@ fn overload() {
         "interface A {\n  undefined f(DOMString a);\n\n  undefined f(Node a);\n};",
         4,
         "an overload: a second operation `f` in `A`",
+    );
+}
+
+/// The error the model of the texts, each read with its file name, fails with, as printed.
+fn model_refused(texts: &[(&str, &str)]) -> String {
+    let mut definitions = Vec::new();
+    for (file, text) in texts {
+        definitions.extend(read(text, file).unwrap_or_else(|error| panic!("{error}")));
+    }
+    match Model::new(definitions) {
+        Ok(model) => panic!("a model: {model:?}"),
+        Err(error) => error.to_string(),
+    }
+}
+
+#[test]
+fn overload_across_partial() {
+    assert_eq!(
+        model_refused(&[
+            ("a.idl", "interface A {\n  undefined f();\n};"),
+            (
+                "b.idl",
+                "partial interface A {\n  readonly attribute any x;\n  undefined f(DOMString s);\n};"
+            ),
+        ]),
+        "b.idl:3: refused: an overload: a second operation `f` in `A`"
+    );
+}
+
+#[test]
+fn overload_across_mixin() {
+    assert_eq!(
+        model_refused(&[
+            (
+                "a.idl",
+                "interface A {\n  undefined g();\n};\nA includes M;"
+            ),
+            ("m.idl", "\ninterface mixin M {\n  undefined g(Node n);\n};"),
+        ]),
+        "m.idl:3: refused: an overload: a second operation `g` in `A`"
     );
 }
 

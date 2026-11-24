@@ -44,8 +44,9 @@
 //! - "short": the type `short` (`dom.html`, line 524);
 //! - "buffer related type": the grammar's `BufferRelatedType`s, `ArrayBuffer`,
 //!   `SharedArrayBuffer`, `DataView` and the twelve typed arrays (`webidl.html`, line 14);
-//! - "[Serializable]": the extended attribute with no value (`webidl.html`, line 1); the
-//!   grammar admits it as `ExtendedAttributeNoArgs`, the HTML Standard defines it;
+//! - "[Serializable]": the extended attribute with no value (`webidl.html`, line 1). The HTML
+//!   Standard defines it, not the Web IDL Standard; only its form, `ExtendedAttributeNoArgs`, is
+//!   Web IDL's grammar;
 //! - "[AllowShared]": the extended attribute with no value, on a union member type
 //!   (`webidl.html`, line 20).
 //!
@@ -53,7 +54,8 @@
 //!
 //! Every other construct, each with `<file>:<line>: refused: <construct>`, among them
 //! `Promise<T>`, an operation name twice in one interface, mixin or callback interface (an
-//! overload), `namespace`, `maplike`, `setlike`, `async iterable`, `legacycaller`, an extended
+//! overload, refused by [`read`]) or twice in the merged view of an interface, its partials and
+//! the mixins it includes (refused by [`Model::new`], naming the second), `namespace`, `maplike`, `setlike`, `async iterable`, `legacycaller`, an extended
 //! attribute not in [`EXTENDED_ATTRIBUTES`] or with an argument list, `setter`, `deleter`,
 //! `static` attributes, `record`, `FrozenArray`, `long`, `float`, `byte`, `octet`, `bigint`,
 //! `ByteString`, floating point constants and the defaults `[]` and `undefined`.

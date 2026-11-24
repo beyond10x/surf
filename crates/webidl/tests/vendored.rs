@@ -94,7 +94,7 @@ fn the_indexes_read_whole() {
         lines.push((file, page.index.lines().count()));
         definitions.extend(page.definitions);
     }
-    let model = Model::new(definitions);
+    let model = Model::new(definitions).unwrap_or_else(|error| panic!("{error}"));
 
     // Acceptance 3: the names no definition defines, and the four interfaces of the table.
     let unresolved: BTreeSet<String> = model
