@@ -6,6 +6,7 @@
 
 #![forbid(unsafe_code)]
 
+mod adversary_request_body;
 mod adversary_server;
 mod common;
 mod handshake;
