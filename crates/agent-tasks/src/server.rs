@@ -51,18 +51,24 @@ impl Server {
 
 /// Bind 127.0.0.1 port 0 and serve `sites` from a thread, one more thread per connection.
 pub fn serve(sites: PathBuf) -> io::Result<Server> {
+    serve_sites(sites, None)
+}
+
+/// [`serve`], the sites of the tasks `only` alone when it is given: the path of any other
+/// directory of `sites` is a 404.
+pub fn serve_sites(sites: PathBuf, only: Option<Vec<String>>) -> io::Result<Server> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let origin = format!("http://{}", listener.local_addr()?);
     let accepted = Arc::new(AtomicUsize::new(0));
     let counter = Arc::clone(&accepted);
-    let sites = Arc::new(sites);
+    let sites = Arc::new((sites, only));
     thread::spawn(move || {
         for stream in listener.incoming() {
             let Ok(stream) = stream else { continue };
             counter.fetch_add(1, Ordering::SeqCst);
             let sites = Arc::clone(&sites);
             thread::spawn(move || {
-                let _ = answer(stream, &sites);
+                let _ = answer(stream, &sites.0, sites.1.as_deref());
             });
         }
     });
@@ -70,7 +76,7 @@ pub fn serve(sites: PathBuf) -> io::Result<Server> {
 }
 
 /// Read one request head and answer it.
-fn answer(mut stream: TcpStream, sites: &Path) -> io::Result<()> {
+fn answer(mut stream: TcpStream, sites: &Path, only: Option<&[String]>) -> io::Result<()> {
     stream.set_read_timeout(Some(READ_TIMEOUT))?;
     let mut head = Vec::new();
     let mut buffer = [0u8; 2048];
@@ -93,7 +99,7 @@ fn answer(mut stream: TcpStream, sites: &Path) -> io::Result<()> {
     if method != "GET" {
         return respond(&mut stream, "405 Method Not Allowed", None);
     }
-    match route(sites, target).and_then(|file| Some((fs::read(&file).ok()?, file))) {
+    match route(sites, only, target).and_then(|file| Some((fs::read(&file).ok()?, file))) {
         Some((body, file)) => {
             let html = file.extension().is_some_and(|ext| ext == "html");
             let media = if html {
@@ -118,11 +124,14 @@ fn respond(stream: &mut TcpStream, status: &str, body: Option<(&str, &[u8])>) ->
     stream.flush()
 }
 
-/// The file for a request target `/<task>/<path>[?<query>]`.
-fn route(sites: &Path, target: &str) -> Option<PathBuf> {
+/// The file for a request target `/<task>/<path>[?<query>]`, `<task>` one of `only` when given.
+fn route(sites: &Path, only: Option<&[String]>, target: &str) -> Option<PathBuf> {
     let rest = target.strip_prefix('/')?;
     let (task, path) = rest.split_once('/')?;
     if task.is_empty() || !task.bytes().all(|b| b.is_ascii_lowercase()) {
+        return None;
+    }
+    if only.is_some_and(|only| !only.iter().any(|name| name == task)) {
         return None;
     }
     file_for(&sites.join(task), &format!("/{path}"))

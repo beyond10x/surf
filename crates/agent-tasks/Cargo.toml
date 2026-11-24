@@ -20,6 +20,11 @@ test = false
 surf-answer = { path = "../answer" }
 surf-test-process = { path = "../test-process" }
 
+[dev-dependencies]
+surf-tls = { path = "../tls" }
+surf-tls-test-certs = { path = "../tls-test-certs" }
+surf-tls-test-server = { path = "../tls-test-server" }
+
 [[test]]
 name = "main"
 path = "tests/main.rs"

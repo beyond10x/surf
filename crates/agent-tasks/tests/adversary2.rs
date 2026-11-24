@@ -53,6 +53,7 @@ fn one_answer(lines: &[&str]) -> Run {
         connections: 1,
         failure: None,
         answers: vec![render(&answer).unwrap()],
+        opened: None,
     }
 }
 
@@ -162,6 +163,7 @@ fn a_lane_that_panics_leaves_no_report_of_an_earlier_run() {
             binaries: bin.clone(),
         },
         out: out.clone(),
+        https: None,
     };
     let panicked = catch_unwind(AssertUnwindSafe(|| lane::run(&config))).is_err();
     let left = out.exists();
