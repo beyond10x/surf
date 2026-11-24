@@ -1116,7 +1116,10 @@ Settled: the fields (kind, message, line, column, `dynamic`) and their sources, 
   "Configuration", `[profile]`: it "can be used to globally change profile settings, and
   override settings specified in Cargo.toml"), so `task lock-check` also reads the tree's
   `.cargo/config.toml`; a config file above the tree, `--config` and `CARGO_PROFILE_*` are
-  outside what a check of the tree sees (`story:scripts-engine-dependency`, fix round 1).
+  outside what a check of the tree sees (`story:scripts-engine-dependency`, fix round 1). The
+  check also refuses rustc's flag that turns overflow checks off, which cargo adds after the
+  profile's flags, in the tree's config files (rustflags, `[env]`), tasks and workflows (fix
+  round 2).
   swell's root `Cargo.toml` sets `overflow-checks = true` in `dev`, `release`, `test` and `bench`
   (`Cargo.toml:10-20 @ 0.8.0`), which surf's build does not read; surf's dev and test profiles
   check overflow by default, and its release profile sets it for the six swell packages

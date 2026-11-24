@@ -298,11 +298,16 @@ tasks:
         taskfiles/lock-owners.txt: ring by surf-tls, swell by surf-script, surf-script by none;
       - each package from git has overflow-checks = true in its table
         [profile.release.package.<name>] of the root Cargo.toml, since cargo reads no profile
-        from a dependency's manifest; the root Cargo.toml holds no multi-line string, and the
-        tree's .cargo/config.toml (and .cargo/config), which override the root manifest's
-        profiles, name no package from git in a profile and turn overflow-checks off in none.
-        Outside what a check of the tree can see: the config file of a directory above the
-        tree or of CARGO_HOME, a --config on a command line and CARGO_PROFILE_* variables.
+        from a dependency's manifest; the root Cargo.toml holds no multi-line string. The
+        tree's .cargo/config.toml (and .cargo/config) override the root manifest's profiles
+        and add rustflags, and rustc takes the last overflow-checks flag: they hold no
+        multi-line string and no backslash, name no package from git in a profile, and hold
+        overflow in no line but "overflow-checks = true". Taskfile.yml, taskfiles/*.yml and
+        .github/workflows/*.yml hold no line with the rustc flag's form (overflow-checks with
+        "=" right after it). Outside what a check of the tree can see: the config file of a
+        directory above the tree or of CARGO_HOME, a --config or RUSTFLAGS on a command
+        line, CARGO_PROFILE_* variables, and what a rustc or wrapper named in a config file
+        does.
       A package without a source line that bears a listed name fails, and so does a line of
       the list that no package matches, a line of the owners file no dependency uses, a line
       of either file written twice, and a missing Cargo.lock, list, owners file or manifest.

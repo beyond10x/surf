@@ -25,13 +25,21 @@
 # multi-line string (`"""` or `'''`), so that no table hides inside one; the lines inside one are
 # not read as tables.
 #
-# A cargo config file overrides the root manifest's profiles. The check reads the config files
-# of the tree, `.cargo/config.toml` and `.cargo/config` beside the manifest, when they exist, and
-# fails on a line in a `profile` table or key that names a package from git as a package of a
-# profile (`[profile.<any>.package.<name>]`, also in dotted keys or an inline table), or that
-# sets `overflow-checks` to false in any profile. Outside what a check of the tree can see: the
-# config file of a directory above the tree or of `$CARGO_HOME`, a `--config` on a command line,
-# and the `CARGO_PROFILE_*` variables of the environment.
+# A cargo config file overrides the root manifest's profiles and adds rustflags after the
+# profile's flags, and rustc takes the last `-C overflow-checks`. The check reads the config
+# files of the tree, `.cargo/config.toml` and `.cargo/config` beside the manifest, when they
+# exist. Such a file holds no multi-line string and no backslash, so that each line is read as
+# what it says: no table hides in a string and no name is spelled in escapes. It fails on a
+# line in a `profile` table or key that names a package from git as a package of a profile
+# (`[profile.<any>.package.<name>]`, also in dotted keys or an inline table), and on a line
+# that holds `overflow` outside a comment and is not `overflow-checks = true` (rustflags under
+# `[build]`, `[target.<any>]`, `[host]` or a profile, `RUSTFLAGS` under `[env]`, a profile
+# turning the checks off). `Taskfile.yml`, `taskfiles/*.yml` and `.github/workflows/*.yml`
+# beside the manifest hold no line with the rustc flag's form, `overflow-checks` with `=`
+# right after it. Outside what a check of the tree can see: the config file of a directory
+# above the tree or of `$CARGO_HOME`, a `--config` or `RUSTFLAGS` on a command line, the
+# `CARGO_PROFILE_*` variables of the environment, and what a `rustc` or a wrapper named in a
+# config file does.
 #
 # The lock is accepted only in the form cargo writes it. cargo reads the lock as TOML and, under
 # --locked, compares values, so it accepts the same lock in other spellings (keys without
@@ -61,7 +69,11 @@
 #   its table of the manifest's release profile: "<manifest>: <name> <version> from <source>: no
 #   overflow-checks = true under [profile.release.package.<name>]";
 # - a line of the manifest holds `"""` or `'''`: "<manifest>:<n>: a multi-line string ...";
-# - a line of a config file as above: "<config>:<n>: ...";
+# - a line of a config file as above: "<config>:<n>: a multi-line string ...", "... a
+#   backslash ...", "... names <name>, a package from git, in a profile ..." or "... holds
+#   overflow but is not overflow-checks = true ...";
+# - a line of a task or workflow file with the flag: "<file>:<n>: sets overflow checks by the
+#   rustc flag ...";
 # - a line of the allow-list matches no package of the lock: "<allow-list>: <name> <version> is
 #   in no package of <lock>";
 # - a line of the owners file is used by no dependency: "<owners>: <package> <crate> is a
@@ -87,17 +99,21 @@ test -f "$allow" || { echo "$allow: missing; it lists the packages from outside 
 test -f "$owners" || { echo "$owners: missing; it lists the crates of this repository that may depend on a listed package or on surf-script"; exit 1; }
 test -f "$manifest" || { echo "$manifest: missing; it holds the release profile of each package from git"; exit 1; }
 
-# The config files of the tree that cargo reads beside the manifest, those that exist.
+# The config files of the tree that cargo reads beside the manifest, and the task and workflow
+# files that run cargo, those that exist.
 dir=$(dirname "$manifest")
 case $dir in
-  .) base=.cargo ;;
-  *) base=$dir/.cargo ;;
+  .) pre= ;;
+  *) pre=$dir/ ;;
 esac
-config1=$base/config.toml
-config2=$base/config
+config1=${pre}.cargo/config.toml
+config2=${pre}.cargo/config
 set -- "$allow" "$owners" "$manifest"
 test -f "$config1" && set -- "$@" "$config1"
 test -f "$config2" && set -- "$@" "$config2"
+for f in "${pre}Taskfile.yml" "${pre}taskfiles/"*.yml "${pre}.github/workflows/"*.yml; do
+  test -f "$f" && set -- "$@" "$f"
+done
 set -- "$@" "$lock"
 
 exec awk -v lock="$lock" -v allow="$allow" -v owners="$owners" -v manifest="$manifest" \
@@ -228,26 +244,52 @@ exec awk -v lock="$lock" -v allow="$allow" -v owners="$owners" -v manifest="$man
     next
   }
   FILENAME == config1 || FILENAME == config2 {
-    # Each line of a profile table or key, kept with its key path for the END rules.
+    if (FNR == 1) { ctable = ""; cinstring = 0 }
+    # No multi-line string and no backslash, so that a line is read as what it says.
+    n = count($0, tdq) + count($0, tsq)
+    if (n) {
+      print FILENAME ":" FNR ": a multi-line string; a cargo config file of the tree holds none, so that no table or key hides in one: " $0
+      bad++
+      if (n % 2) cinstring = !cinstring
+      next
+    }
+    if (cinstring) next
+    if (index($0, "\\")) {
+      print FILENAME ":" FNR ": a backslash; a cargo config file of the tree holds none, so that no name is spelled in escapes: " $0
+      bad++
+      next
+    }
     s = trim(uncomment($0))
     if (s == "") next
+    # A line that holds overflow outside a comment, kept for the END rules.
+    if (index(tolower(s), "overflow") && s != "overflow-checks = true") {
+      overs++
+      ofile[overs] = FILENAME; oline[overs] = FNR; otext[overs] = $0
+    }
+    # Each line of a profile table or key, kept with its key path for the END rules.
     if (substr(s, 1, 1) == "[") {
       ctable = s
       gsub(/[][ \t"]/, "", ctable)
       gsub(sq, "", ctable)
       path = ctable
-      cval = ""
     } else {
       eq = index(s, "=")
       if (!eq) next
       k = trim(substr(s, 1, eq - 1)); gsub(/[ \t"]/, "", k); gsub(sq, "", k)
       path = ctable == "" ? k : ctable "." k
-      cval = trim(substr(s, eq + 1))
     }
     if (path != "profile" && substr(path, 1, 8) != "profile.") next
     configs++
     cfile[configs] = FILENAME; cline[configs] = FNR; cpath[configs] = path
-    cvalue[configs] = cval; ctext[configs] = $0
+    ctext[configs] = $0
+    next
+  }
+  FILENAME ~ /\.yml$/ {
+    # A task or a workflow sets no overflow checks by the rustc flag.
+    if (index($0, "overflow-checks=")) {
+      print FILENAME ":" FNR ": sets overflow checks by the rustc flag; no task or workflow of the tree does, because rustc takes the last such flag and would undo the release profile of " manifest ": " $0
+      bad++
+    }
     next
   }
   {
@@ -326,12 +368,13 @@ exec awk -v lock="$lock" -v allow="$allow" -v owners="$owners" -v manifest="$man
       if (hit != "") {
         print cfile[c] ":" cline[c] ": names " hit ", a package from git, in a profile; a cargo config file overrides the profiles of " manifest ": " ctext[c]
         bad++
-        continue
+        named[cfile[c] SUBSEP cline[c]] = 1
       }
-      if ((seg[n] == "overflow-checks" && cvalue[c] ~ /false/) || (index(ctext[c], "{") && ctext[c] ~ /overflow-checks[ \t]*=[ \t]*false/)) {
-        print cfile[c] ":" cline[c] ": turns overflow-checks off in a profile; a cargo config file overrides the profiles of " manifest ": " ctext[c]
-        bad++
-      }
+    }
+    for (o = 1; o <= overs; o++) {
+      if ((ofile[o] SUBSEP oline[o]) in named) continue
+      print ofile[o] ":" oline[o] ": holds overflow but is not overflow-checks = true; a cargo config file sets the profiles and the rustflags of each build of the tree, and rustc takes the last overflow-checks flag: " otext[o]
+      bad++
     }
     for (l = 1; l <= listed; l++) if (!(l in matched)) {
       print allow ": " lname[l] " " lversion[l] " is in no package of " lock
@@ -343,7 +386,7 @@ exec awk -v lock="$lock" -v allow="$allow" -v owners="$owners" -v manifest="$man
       bad++
     }
     if (bad) {
-      print bad " finding(s); a package from outside this repository must be on " allow ", a crate may depend on one or on surf-script only by a line of " owners ", a package from git needs overflow-checks = true in the release profile of " manifest " and no cargo config file of the tree may change its profile, and the lock is read only in the form cargo writes"
+      print bad " finding(s); a package from outside this repository must be on " allow ", a crate may depend on one or on surf-script only by a line of " owners ", a package from git needs overflow-checks = true in the release profile of " manifest " that no cargo config file, task or workflow of the tree may undo, and the lock is read only in the form cargo writes"
       exit 1
     }
     if (outside) print lock ": " packages " package(s), " outside " from outside this repository, each on the allow-list"

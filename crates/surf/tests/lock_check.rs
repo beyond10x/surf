@@ -581,12 +581,14 @@ fn an_owners_line_not_two_fields_fails_naming_it() {
 /// `.cargo/config.toml` turning overflow checks off in the release profile fails, naming the
 /// file and the line, in a table and in dotted keys: a cargo config file overrides the root
 /// manifest's profiles. `[profile.release.package.swell-num]` there is the review's case
-/// (`adversary::a_cargo_config_turning_overflow_checks_off_fails`).
+/// (`adversary::a_cargo_config_turning_overflow_checks_off_fails`). Since fix round 2 a line
+/// holding `overflow` that is not `overflow-checks = true` fails on its text; a line that names
+/// a package from git in a profile says that instead.
 #[test]
 fn a_cargo_config_turning_overflow_checks_off_for_the_release_profile_fails() {
     let config = Files::committed().config;
     let n = config.lines().count();
-    let off = "turns overflow-checks off in a profile";
+    let off = CONFIG_OVERFLOW;
     let names = "names swell-num, a package from git, in a profile";
     for (case, edited, at, says) in [
         (
@@ -616,6 +618,103 @@ fn a_cargo_config_turning_overflow_checks_off_for_the_release_profile_fails() {
             },
         );
         let start = format!(".cargo/config.toml:{at}: {says}; ");
+        assert_fails_with(case, &dir, &format!("{start:?}"), |l| l.starts_with(&start));
+    }
+}
+
+/// What the check says of a line of a cargo config file that holds `overflow` and is not
+/// `overflow-checks = true`.
+const CONFIG_OVERFLOW: &str = "holds overflow but is not overflow-checks = true";
+
+/// The three places of the tree that run cargo besides its config files, one committed file of
+/// each: the root Taskfile, a taskfile under `taskfiles/` and a workflow.
+const RUNNING_FILES: [&str; 3] = [
+    "Taskfile.yml",
+    "taskfiles/release.yml",
+    ".github/workflows/check.yml",
+];
+
+/// A copy of the tree's file at `path` in the copy `dir`, passed through `edit`; answers the
+/// number of the copy's last line.
+fn write_tree_file(dir: &Path, path: &str, edit: impl Fn(String) -> String) -> usize {
+    let text = edit(
+        fs::read_to_string(repository().join(path)).unwrap_or_else(|e| panic!("read {path}: {e}")),
+    );
+    let file = dir.join(path);
+    fs::create_dir_all(file.parent().expect("a parent")).expect("create dir");
+    fs::write(&file, &text).unwrap_or_else(|e| panic!("write {path}: {e}"));
+    text.lines().count()
+}
+
+/// The rustc flag that turns overflow checks off, added to a task or a workflow, fails, naming
+/// the file and the line: cargo adds `RUSTFLAGS` after the profile's flags, and rustc takes the
+/// last (review report2, S3). One case per place.
+#[test]
+fn the_overflow_flag_in_a_task_or_a_workflow_fails() {
+    for (i, path) in RUNNING_FILES.into_iter().enumerate() {
+        let case = format!("flag-{i}");
+        let dir = copy_files(&case, &Files::committed());
+        let at = write_tree_file(&dir, path, |text| {
+            format!("{text}\n# RUSTFLAGS='-C overflow-checks=off' cargo build --release\n")
+        });
+        let start = format!("{path}:{at}: sets overflow checks by the rustc flag; ");
+        assert_fails_with(&case, &dir, &format!("{start:?}"), |l| {
+            l.starts_with(&start)
+        });
+    }
+}
+
+/// `overflow-checks = true` in the release profile of a cargo config file passes, and so do the
+/// tree's own task and workflow files.
+#[test]
+fn overflow_checks_on_in_a_config_file_pass() {
+    let config = format!(
+        "{}\n[profile.release]\noverflow-checks = true\n",
+        Files::committed().config
+    );
+    let dir = copy_files(
+        "config-on",
+        &Files {
+            config,
+            ..Files::committed()
+        },
+    );
+    for path in RUNNING_FILES {
+        write_tree_file(&dir, path, |text| text);
+    }
+    let (status, text) = check(&dir);
+    assert_eq!(status, Some(0), "{text}");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// A multi-line string or a backslash in a cargo config file of the tree fails, naming the file
+/// and the line: a table line inside a string moves what a reader of lines takes for the table,
+/// and an escape spells a name the check compares as written (review report2, S1 and S2; the
+/// review's cases are `adversary_2::a_config_hiding_a_profile_key_after_a_string_fails` and
+/// `adversary_2::a_config_with_escaped_keys_fails`).
+#[test]
+fn a_string_or_an_escape_in_a_config_file_fails() {
+    let config = Files::committed().config;
+    for (case, edited, says) in [
+        (
+            "config-string",
+            format!("note = '''\nx\n'''\n\n{config}"),
+            "a multi-line string; ",
+        ),
+        (
+            "config-escape",
+            format!("note = \"a\\tb\"\n\n{config}"),
+            "a backslash; ",
+        ),
+    ] {
+        let dir = copy_files(
+            case,
+            &Files {
+                config: edited,
+                ..Files::committed()
+            },
+        );
+        let start = format!(".cargo/config.toml:1: {says}");
         assert_fails_with(case, &dir, &format!("{start:?}"), |l| l.starts_with(&start));
     }
 }

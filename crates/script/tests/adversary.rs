@@ -7,7 +7,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use surf_script::{
     MESSAGE_CHARS, Mode, Reason, Runner, RunnerLimits, ScriptEnd, ScriptErrorKind, run,
@@ -216,10 +216,13 @@ fn threads() -> usize {
         .expect("a Threads line")
 }
 
-/// Held: 100 runners, half of them never started, leave no thread behind: each runner's thread
-/// and its clock's thread end when the runner is dropped. The count is read right after each
-/// runner is dropped, and a started runner's clock (30 s) is still waiting then, so a clock
-/// thread that is not joined on the drop is still counted (fix round 1, item 12 a).
+/// Held: 100 runners, half of them never started, leave no thread behind: after the last is
+/// dropped, the count of `Threads:` comes back to the count before the first, read again until
+/// equal for at most 2 s. That catches a runner's thread or a clock thread that never ends. No
+/// test holds that the drop joins the clock thread: the drop wakes the clock thread at once, and
+/// a thread that ends by itself a moment later leaves the count as a joined one does, while a
+/// joined thread is still counted for a moment after the join returns (review report2, M1; fix
+/// round 2).
 #[test]
 fn a_hundred_runners_leave_no_thread_behind() {
     let before = threads();
@@ -232,8 +235,17 @@ fn a_hundred_runners_leave_no_thread_behind() {
             }
         });
         assert!(matches!(end, Some(ScriptEnd::Ran) | None), "{end:?}");
-        assert_eq!(threads(), before, "after runner {i}");
     }
+    let until = Instant::now() + Duration::from_secs(2);
+    let mut after = threads();
+    while after != before && Instant::now() < until {
+        thread::yield_now();
+        after = threads();
+    }
+    assert_eq!(
+        after, before,
+        "threads after the 100 runners: {after}, before the first: {before}"
+    );
 }
 
 /// Held: the clock of one runner ends no script of another. Runner B runs an endless loop under

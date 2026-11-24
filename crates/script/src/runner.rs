@@ -16,8 +16,9 @@ use swell::{
 /// The host errors that are no fault of the engine (swell's `HostError` at `0.8.0` but
 /// `Faulted`): a stale or foreign handle, a value of the wrong kind, the module errors and an
 /// evaluation while another runs. Each is a defect of surf's own calls that a page cannot
-/// cause. It is read as `HostError::Faulted` is: a parse or a run ends `faulted`, a read
-/// (kind, message, site, steps) answers nothing. Every variant is named, so a
+/// cause. It is read as `HostError::Faulted` is: a parse or a run ends `faulted`, a read of
+/// the site or the steps answers nothing, and a read of a thrown value answers kind `value`
+/// with no message. Every variant is named, so a
 /// variant a later tag adds stops the build where surf decides its word.
 macro_rules! surf_defect {
     () => {
@@ -618,6 +619,9 @@ impl Runner {
                 summary.message.map(|units| message(&units)),
             ),
             Ok(None) => (ScriptErrorKind::Value, None),
+            // Not reachable from a live agent: the value comes from the entry that just answered
+            // it, of this agent and not released, and a fault ends that entry `Terminated`, not
+            // `Throw`. Read as a thrown value with nothing known of it.
             Err(HostError::Faulted | surf_defect!()) => (ScriptErrorKind::Value, None),
         };
         ScriptError {
