@@ -5,7 +5,9 @@
 
 mod adversary;
 mod depth;
+mod extraction;
 mod reader;
 mod refusals;
+mod selection;
 mod source;
 mod vendored;

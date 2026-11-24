@@ -1,0 +1,126 @@
+version: '3'
+
+set: [pipefail]
+
+vars:
+  BINDINGS: crates/script/src/bindings.rs
+
+tasks:
+  webidl-check:
+    desc: Fail when a source of the generated DOM bindings differs from its sha256 in their header (no build, no generation).
+    summary: |
+      Fail when a source of the generated DOM bindings differs from its sha256 in their header (no build, no generation).
+
+      crates/script/src/bindings.rs names in its header the sha256 of each source the binary
+      bindings of surf-webidl reads: the two vendored pages and the cut of the HTML Standard,
+      crates/webidl/selection.txt, crates/webidl/Cargo.toml and every file of crates/webidl/src.
+      The task fails when the header lists another set of files than these, and runs
+      `sha256sum --check --strict` over the listed lines, which names each file that differs.
+      Then its self-test: a copy of the sources with one byte of selection.txt changed must
+      fail naming that file and no other. Regenerate with `cargo run -p surf-webidl --bin bindings`. A step of check; the lane
+      slow regenerates the file and compares the bytes (webidl-slow).
+    dir: '{{.TASKFILE_DIR}}/..'
+    silent: true
+    cmds:
+      - |
+        set -eu
+        out=.out/webidl-check
+        rm -rf "$out"
+        mkdir -p "$out"
+        sed -n 's|^//! \([0-9a-f]\{64\}\)  \(.*\)$|\1  \2|p' '{{.BINDINGS}}' > "$out/digests"
+        cut -c 67- "$out/digests" | sort > "$out/listed"
+        {
+          printf '%s\n' crates/webidl/data/whatwg/dom.html crates/webidl/data/whatwg/webidl.html \
+            crates/webidl/data/whatwg/html-idl.html crates/webidl/selection.txt crates/webidl/Cargo.toml
+          find crates/webidl/src -type f -name '*.rs'
+        } | sort > "$out/sources"
+        if ! cmp -s "$out/listed" "$out/sources"; then
+          echo "webidl-check: {{.BINDINGS}} names other sources than surf-webidl has (< named, > present):"
+          diff "$out/listed" "$out/sources" | grep '^[<>]' || true
+          exit 1
+        fi
+        if ! sha256sum --check --strict --quiet "$out/digests"; then
+          echo "webidl-check: {{.BINDINGS}} is older than the sources above; run cargo run -p surf-webidl --bin bindings"
+          exit 1
+        fi
+        echo "webidl-check: the $(wc -l < "$out/digests" | tr -d ' ') sources of {{.BINDINGS}} match its header"
+      - |
+        set -eu
+        out=.out/webidl-check
+        copy="$out/self-test"
+        mkdir -p "$copy"
+        while read -r _ path; do
+          mkdir -p "$copy/$(dirname "$path")"
+          ln -s "$PWD/$path" "$copy/$path"
+        done < "$out/digests"
+        rm "$copy/crates/webidl/selection.txt"
+        { printf 'X'; tail -c +2 crates/webidl/selection.txt; } > "$copy/crates/webidl/selection.txt"
+        if (cd "$copy" && sha256sum --check --strict --quiet "$PWD/../digests") > "$out/self-test.txt" 2>&1; then
+          echo "webidl-check: self-test: a changed byte of selection.txt passed"
+          exit 1
+        fi
+        if [ "$(grep -c 'FAILED' "$out/self-test.txt")" -ne 1 ] \
+          || ! grep -q '^crates/webidl/selection.txt: FAILED$' "$out/self-test.txt"; then
+          echo "webidl-check: self-test: the failure does not name selection.txt alone:"
+          cat "$out/self-test.txt"
+          exit 1
+        fi
+        echo "webidl-check: self-test: one changed byte of selection.txt fails naming it"
+
+  webidl-slow:
+    desc: Generate the DOM bindings again into .out/webidl-slow and compare them byte for byte with crates/script/src/bindings.rs.
+    summary: |
+      Generate the DOM bindings again into .out/webidl-slow and compare them byte for byte with crates/script/src/bindings.rs.
+
+      A step of the lane slow, never of check: it builds and runs the binary bindings of
+      surf-webidl, which reads the vendored files and crates/webidl/selection.txt and
+      formats its output with rustfmt, and fails when the bytes differ from the committed file.
+    dir: '{{.TASKFILE_DIR}}/..'
+    silent: true
+    cmds:
+      - |
+        set -eu
+        out=.out/webidl-slow
+        rm -rf "$out"
+        mkdir -p "$out"
+        cargo run --quiet --locked -p surf-webidl --bin bindings -- "$out/bindings.rs"
+        if ! cmp '{{.BINDINGS}}' "$out/bindings.rs"; then
+          echo "webidl-slow: {{.BINDINGS}} is not what the generator writes now"
+          exit 1
+        fi
+        echo "webidl-slow: {{.BINDINGS}} is what the generator writes, byte for byte"
+
+  webidl-html-cut:
+    desc: Cut a snapshot of the HTML Standard (SNAPSHOT=<file>) and compare the cut byte for byte with crates/webidl/data/whatwg/html-idl.html; fetches nothing.
+    summary: |
+      Cut a snapshot of the HTML Standard (SNAPSHOT=<file>) and compare the cut byte for byte with crates/webidl/data/whatwg/html-idl.html; fetches nothing.
+
+      The tree holds the blocks of Web IDL of the HTML Standard's commit snapshot, not the page
+      (crates/webidl/data/whatwg/SOURCE names its address, byte count and sha256). Given the
+      path of a snapshot file, inside the tree (the build node reads the tree only), the task
+      refuses a file whose sha256 is not SOURCE's `snapshot-sha256`, cuts it with
+      `bindings --cut` into .out/webidl-html-cut/html-idl.html and fails when the bytes differ
+      from the committed file. Neither a step of check nor of the lane slow.
+    dir: '{{.TASKFILE_DIR}}/..'
+    silent: true
+    requires:
+      vars: [SNAPSHOT]
+    cmds:
+      - |
+        set -eu
+        source=crates/webidl/data/whatwg/SOURCE
+        committed=crates/webidl/data/whatwg/html-idl.html
+        out=.out/webidl-html-cut
+        expected=$(sed -n 's/^snapshot-sha256: //p' "$source")
+        actual=$(sha256sum < '{{.SNAPSHOT}}' | cut -c 1-64)
+        if [ "$actual" != "$expected" ]; then
+          echo "webidl-html-cut: {{.SNAPSHOT}} has sha256 $actual, not the snapshot's $expected"
+          exit 1
+        fi
+        mkdir -p "$out"
+        cargo run --quiet --locked -p surf-webidl --bin bindings -- --cut '{{.SNAPSHOT}}' "$out/html-idl.html"
+        if ! cmp "$committed" "$out/html-idl.html"; then
+          echo "webidl-html-cut: the cut of {{.SNAPSHOT}} differs from $committed"
+          exit 1
+        fi
+        echo "webidl-html-cut: the cut of the snapshot $expected is $committed, byte for byte"

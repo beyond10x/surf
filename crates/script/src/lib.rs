@@ -10,10 +10,12 @@
 
 #![forbid(unsafe_code)]
 
+pub mod bindings;
+pub mod dom;
 mod runner;
 
 pub use runner::{
-    MESSAGE_CHARS, Mode, Reason, Runner, RunnerError, RunnerLimits, SESSION_ENGINE_LIMITS,
-    ScriptEnd, ScriptError, ScriptErrorKind, ScriptHost, Site, TEST_CLOCK_START, TEST_CLOCK_STEP,
-    run,
+    Document, MESSAGE_CHARS, Mode, Reason, Runner, RunnerError, RunnerLimits,
+    SESSION_ENGINE_LIMITS, ScriptEnd, ScriptError, ScriptErrorKind, ScriptHost, Site,
+    TEST_CLOCK_START, TEST_CLOCK_STEP, run, run_document,
 };

@@ -1,6 +1,10 @@
-The two files below are copied unchanged from commit snapshots of two WHATWG standards. The
-crate surf-webidl reads the Web IDL of each from its section "IDL Index": the text content of
-the pre element after the h2 element whose id is idl-index.
+The first two files below are copied unchanged from commit snapshots of two WHATWG standards;
+the third holds the blocks of Web IDL of a commit snapshot of a third, not the page. The crate
+surf-webidl reads the Web IDL of the first two from their section "IDL Index": the text content
+of the pre element after the h2 element whose id is idl-index. Of the HTML Standard, a single
+page without such an index, it reads only the pre blocks of class idl that define Window or a
+partial Document, and of them only the members crates/webidl/selection.txt names
+(story:webidl-bindings, decision 7).
 
 file: dom.html
 address: https://dom.spec.whatwg.org/commit-snapshots/e4f4f4f0ace83fe6c52ab68e047351ce7f2dcd69/
@@ -20,12 +24,27 @@ licence: CC BY 4.0, Creative Commons Attribution 4.0 International (WHATWG IPR p
 copyright: Copyright © WHATWG (Apple, Google, Mozilla, Microsoft).
 index-lines: 57
 
-generated: nothing yet. Bindings generated from these files are portions of the standards
-incorporated into source code; under the WHATWG IPR policy they are licensed under the BSD
-3-Clause License instead and carry that notice in their header, as
+file: html-idl.html
+address: https://html.spec.whatwg.org/commit-snapshots/546d834701d171e3b164da8463d62878deb1e954/
+commit: 546d834701d171e3b164da8463d62878deb1e954
+last-updated: 23 November 2026 (the HTML Living Standard, Commit Snapshot)
+fetched: 2026-11-24
+licence: CC BY 4.0, Creative Commons Attribution 4.0 International (WHATWG IPR policy, https://whatwg.org/ipr-policy)
+copyright: Copyright © WHATWG (Apple, Google, Mozilla, Microsoft).
+snapshot-bytes: 15266649
+snapshot-sha256: 818723cb476be36d337e43ab43460940da1d6e8ac0ec63741468c1e2bd48b33b
+cut: each pre element of the snapshot whose start tag, or that of the code element right inside it, has the class idl, and that has not the class extract, byte for byte from <pre to </pre>, in the page's order, each followed by one line feed (bindings --cut, task webidl-html-cut)
+idl-blocks: 213
+bytes: 573184
+
+generated: crates/script/src/bindings.rs, written by the binary bindings of surf-webidl from
+these files and crates/webidl/selection.txt. Bindings generated from these files are portions of
+the standards incorporated into source code; under the WHATWG IPR policy they are licensed under
+the BSD 3-Clause License instead and carry that notice in their header, as
 crates/html/src/charref_table.rs does.
 
 sha256 of each file, path relative to this directory:
 
 80cf04abd88405c6c1f0ec7c28a0a53634df5fdd55e8833c6b6fe68511ca2aa6  dom.html
 3915f58aa923a43fd03dd6fee040bbf8468856ef51270071b0a8bf11378658fe  webidl.html
+cc3aaecd4aaf3d0e63c7405191056e99d9e16eb64d356e1c8d59d5bc01265371  html-idl.html

@@ -1,15 +1,45 @@
-//! The vendored pages and their `SOURCE`: the digests hold, and each file is named with where it
+//! The vendored files and their `SOURCE`: the digests hold, and each file is named with where it
 //! came from.
 
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-/// The vendored files, each with the line of its title (`h1 id="title"`), which names the commit.
-const FILES: [(&str, usize); 2] = [("dom.html", 410), ("webidl.html", 531)];
+/// A vendored file: its name, the line of its title (`h1 id="title"`, which names the commit)
+/// for a page held whole, and the keys of its block in `SOURCE` after [`KEYS`]. The cut of
+/// the HTML Standard holds no title: its commit is checked against its address only.
+struct File {
+    name: &'static str,
+    title_line: Option<usize>,
+    last_keys: &'static [&'static str],
+}
 
-/// The keys `SOURCE` holds for each file.
-const KEYS: [&str; 8] = [
+const FILES: [File; 3] = [
+    File {
+        name: "dom.html",
+        title_line: Some(410),
+        last_keys: &["index-lines"],
+    },
+    File {
+        name: "webidl.html",
+        title_line: Some(531),
+        last_keys: &["index-lines"],
+    },
+    File {
+        name: "html-idl.html",
+        title_line: None,
+        last_keys: &[
+            "snapshot-bytes",
+            "snapshot-sha256",
+            "cut",
+            "idl-blocks",
+            "bytes",
+        ],
+    },
+];
+
+/// The keys `SOURCE` holds for each file, before its last key.
+const KEYS: [&str; 7] = [
     "file",
     "address",
     "commit",
@@ -17,7 +47,6 @@ const KEYS: [&str; 8] = [
     "fetched",
     "licence",
     "copyright",
-    "index-lines",
 ];
 
 fn data_dir() -> PathBuf {
@@ -94,21 +123,25 @@ fn file_blocks(source: &str) -> Vec<Vec<(String, String)>> {
     blocks
 }
 
-/// The commit a vendored page names in its title line: `Commit <40 hex digits>`.
-fn title_commit(file: &str, line: usize) -> String {
-    let bytes = std::fs::read(data_dir().join(file)).expect("read the page");
-    let text = String::from_utf8(bytes).expect("the page is UTF-8");
-    let title = text.lines().nth(line - 1).expect("the title line");
+/// The commit a vendored page names in its title line `line` (`h1 id="title"`): `Commit <40 hex
+/// digits>`. Only the lines up to the title are read.
+fn title_commit(name: &str, line: usize) -> String {
+    let page = std::fs::File::open(data_dir().join(name)).expect("open the page");
+    let title = BufReader::new(page)
+        .lines()
+        .nth(line - 1)
+        .expect("the title line")
+        .expect("the page is UTF-8");
     assert!(
         title.contains("id=\"title\""),
-        "{file}:{line} is not the title: {title}"
+        "{name}:{line} is not the title: {title}"
     );
     let at = title.find("Commit ").expect("the title names a commit") + "Commit ".len();
     let commit: String = title[at..]
         .chars()
         .take_while(|c| c.is_ascii_hexdigit())
         .collect();
-    assert_eq!(commit.len(), 40, "{file}:{line}: {title}");
+    assert_eq!(commit.len(), 40, "{name}:{line}: {title}");
     commit
 }
 
@@ -124,8 +157,8 @@ fn sources_match_their_digests() {
         .join(format!("webidl-source-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&copy);
     std::fs::create_dir_all(&copy).expect("create the copy");
-    for (file, _) in FILES {
-        std::fs::copy(data_dir().join(file), copy.join(file)).expect("copy a page");
+    for file in &FILES {
+        std::fs::copy(data_dir().join(file.name), copy.join(file.name)).expect("copy a file");
     }
     let mut dom = std::fs::read(copy.join("dom.html")).expect("read the copy");
     let middle = dom.len() / 2;
@@ -137,20 +170,36 @@ fn sources_match_their_digests() {
     assert!(!passed, "{text}");
     assert!(text.contains("dom.html: FAILED"), "{text}");
     assert!(text.contains("webidl.html: OK"), "{text}");
+    assert!(text.contains("html-idl.html: OK"), "{text}");
 }
 
 #[test]
 fn source_names_each_file() {
     let blocks = file_blocks(&source_text());
     let names: Vec<&str> = blocks.iter().map(|block| block[0].1.as_str()).collect();
-    assert_eq!(names, ["dom.html", "webidl.html"]);
-    for ((file, title_line), block) in FILES.iter().zip(&blocks) {
+    assert_eq!(names, ["dom.html", "webidl.html", "html-idl.html"]);
+    for (file, block) in FILES.iter().zip(&blocks) {
+        let name = file.name;
         let keys: Vec<&str> = block.iter().map(|(key, _)| key.as_str()).collect();
-        assert_eq!(keys, KEYS, "{file}");
+        let mut expected = KEYS.to_vec();
+        expected.extend(file.last_keys);
+        assert_eq!(keys, expected, "{name}");
         for (key, value) in block {
-            assert!(!value.is_empty(), "{file}: {key} is empty");
+            assert!(!value.is_empty(), "{name}: {key} is empty");
         }
         let commit = &block[2].1;
-        assert_eq!(*commit, title_commit(file, *title_line), "{file}");
+        if let Some(line) = file.title_line {
+            assert_eq!(*commit, title_commit(name, line), "{name}");
+        }
+        assert!(
+            block[1].1.contains(commit.as_str()),
+            "{name}: the address names the commit"
+        );
+        if let Some((_, bytes)) = block.iter().find(|(key, _)| key == "bytes") {
+            let size = std::fs::metadata(data_dir().join(name))
+                .expect("the file")
+                .len();
+            assert_eq!(bytes.parse::<u64>().ok(), Some(size), "{name}: bytes");
+        }
     }
 }

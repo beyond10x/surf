@@ -8,10 +8,15 @@ use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use surf_html::Tree;
+use surf_html::limits::Limit;
 use swell::{
-    Agent, AgentState, CreateError, ErrorKind, HookCx, Host, HostError, InterruptHandle, Job,
-    Limits, LoadRequest, ObjectRef, Outcome, Parsed, Realm, Root, Seeds, Source, Termination,
+    Abrupt, Agent, AgentState, Completion, CreateError, ErrorKind, GlobalObjects, GlobalSetup,
+    HookCx, Host, HostError, InterruptHandle, Job, Limits, LoadRequest, ObjectRef, Outcome, Parsed,
+    Realm, RealmRef, Root, Seeds, Source, Termination, Value,
 };
+
+use crate::bindings::{self, Dom, DomState, Slices};
 
 /// The host errors that are no fault of the engine (swell's `HostError` at `0.8.0` but
 /// `Faulted`): a stale or foreign handle, a value of the wrong kind, the module errors and an
@@ -147,6 +152,9 @@ impl Mode {
 /// The host value of the runner's agent: the hooks of Q6.
 pub struct ScriptHost {
     clock: Clock,
+    /// The DOM bindings of a document's runner ([`run_document`]); `None` for a runner
+    /// without a document.
+    pub(crate) dom: Option<Box<Dom>>,
 }
 
 enum Clock {
@@ -163,7 +171,12 @@ impl ScriptHost {
                 next: TEST_CLOCK_START,
             },
         };
-        Self { clock }
+        Self { clock, dom: None }
+    }
+
+    /// The document of a runner with the DOM bindings, `None` for one without.
+    pub fn document(&self) -> Option<&DomState> {
+        self.dom.as_deref().map(|dom| &dom.state)
     }
 
     /// What `host_system_utc_epoch_nanoseconds` answers now (Q6).
@@ -398,13 +411,54 @@ where
     R: Send,
     F: FnOnce(&mut Runner) -> R + Send,
 {
+    run_on(limits, mode, None::<fn() -> Document>, body)
+}
+
+/// The document of a runner with the DOM bindings: its tree, the limits of the parser it was
+/// parsed under, which every write of a script is held to, and the slices.
+pub struct Document {
+    pub tree: Tree,
+    pub limits: surf_html::limits::Limits,
+    pub slices: Slices,
+}
+
+/// Runs `body` as [`run`] does, with a runner whose realm has the DOM bindings of the document
+/// `document` makes on the runner's thread: the global object is a `Window`, and the realm's
+/// setup defines the interface objects and the global's members in a `with_cx` right after
+/// `create_realm`, outside the runner's totals and before the first script.
+pub fn run_document<R, D, F>(
+    limits: RunnerLimits,
+    mode: Mode,
+    document: D,
+    body: F,
+) -> Result<R, RunnerError>
+where
+    R: Send,
+    D: FnOnce() -> Document + Send,
+    F: FnOnce(&mut Runner) -> R + Send,
+{
+    run_on(limits, mode, Some(document), body)
+}
+
+fn run_on<R, D, F>(
+    limits: RunnerLimits,
+    mode: Mode,
+    document: Option<D>,
+    body: F,
+) -> Result<R, RunnerError>
+where
+    R: Send,
+    D: FnOnce() -> Document + Send,
+    F: FnOnce(&mut Runner) -> R + Send,
+{
     let stack_bytes = limits.stack_bytes();
     thread::scope(|scope| {
         let thread = thread::Builder::new()
             .name("surf-script".to_string())
             .stack_size(stack_bytes)
             .spawn_scoped(scope, move || {
-                let mut runner = Runner::new(limits, mode, stack_bytes)?;
+                let document = document.map(|make| make());
+                let mut runner = Runner::new(limits, mode, stack_bytes, document)?;
                 Ok(body(&mut runner))
             })
             .map_err(RunnerError::Thread)?;
@@ -503,11 +557,25 @@ pub struct Runner {
 }
 
 impl Runner {
-    fn new(limits: RunnerLimits, mode: Mode, stack_bytes: usize) -> Result<Self, RunnerError> {
+    fn new(
+        limits: RunnerLimits,
+        mode: Mode,
+        stack_bytes: usize,
+        document: Option<Document>,
+    ) -> Result<Self, RunnerError> {
         let seeds = mode.seeds().map_err(RunnerError::Seeds)?;
         let mut agent =
             Agent::new(ScriptHost::new(mode), limits.engine, seeds).map_err(RunnerError::Agent)?;
-        let realm = match agent.create_realm(None, None) {
+        let mut window = |cx: &mut HookCx<'_, ScriptHost>, realm: RealmRef| {
+            let global = cx
+                .new_host_object(bindings::window_spec(realm))
+                .map_err(|_| Abrupt::Terminated(Termination::EngineFault))??;
+            Completion::Ok(GlobalObjects { global, this: None })
+        };
+        let setup: Option<GlobalSetup<'_, ScriptHost>> = document
+            .as_ref()
+            .map(|_| &mut window as GlobalSetup<'_, ScriptHost>);
+        let realm = match agent.create_realm(setup, None) {
             Ok(Outcome::Normal(realm)) => realm,
             Ok(other @ (Outcome::Throw(_) | Outcome::Terminated(_))) => {
                 return Err(RunnerError::Realm(format!("{other:?}")));
@@ -516,6 +584,9 @@ impl Runner {
                 return Err(RunnerError::Realm(format!("{error:?}")));
             }
         };
+        if let Some(document) = document {
+            install(&mut agent, &realm, document)?;
+        }
         let clock = WallClock::new(agent.interrupt_handle()).map_err(RunnerError::Thread)?;
         Ok(Self {
             clock,
@@ -556,6 +627,7 @@ impl Runner {
         self.clock.before_script(self.limits.wall_clock);
         self.scripts = self.scripts.saturating_add(1);
         let end = self.run_script(source);
+        let end = self.document_end(end);
         match self.agent.last_entry_steps() {
             Ok(steps) => self.steps = self.steps.saturating_add(steps),
             // A faulted agent answers no count; the script's end says `faulted`.
@@ -572,6 +644,36 @@ impl Runner {
             _ => {}
         }
         end
+    }
+
+    /// Decision 10 of `story:webidl-bindings`: when an entry of a document ends
+    /// `Terminated(Interrupted)` (read as `limit: wall-clock`), a limit the bindings recorded
+    /// (`bindings::end_with_limit`) is the end, in the words of Q4's column `outcome when
+    /// reached`; otherwise the end stays `limit: wall-clock`. The record is cleared after every
+    /// script; after an end other than the interrupt, the interrupt it set and the engine did
+    /// not read is withdrawn with it, so the next script is not ended by it.
+    fn document_end(&mut self, end: ScriptEnd) -> ScriptEnd {
+        let Some(dom) = self.agent.host_mut().dom.as_deref_mut() else {
+            return end;
+        };
+        let Some(limit) = dom.state.take_limit() else {
+            return end;
+        };
+        if end != ScriptEnd::Limit(Reason::WallClock) {
+            self.agent.interrupt_handle().clear();
+            return end;
+        }
+        match limit {
+            Limit::Nodes => ScriptEnd::Limit(Reason::Nodes),
+            Limit::Depth => ScriptEnd::Limit(Reason::Depth),
+            Limit::Attributes => ScriptEnd::Limit(Reason::Attributes),
+            Limit::StoredBytes => ScriptEnd::Limit(Reason::StoredBytes),
+            // The limits of the parser's input and of its steps: no member of
+            // `story:webidl-bindings` records these two, and Q4 gives them no word for a
+            // script, so the end stays the interrupt's. The first story with a member that
+            // writes into the tree gives each a word of Q4 or shows that no write reaches it.
+            Limit::InputBytes | Limit::Steps => end,
+        }
     }
 
     /// The parse and the run of one script, and its end.
@@ -688,6 +790,38 @@ impl Runner {
     /// first script may use it.
     pub fn agent_and_realm(&mut self) -> (&mut Agent<ScriptHost>, &Realm) {
         (&mut self.agent, &self.realm)
+    }
+}
+
+/// The realm's setup of a document's runner: the interface objects and the global's members,
+/// defined in one `with_cx` right after `create_realm` (`bindings::install`), the bindings then
+/// held by the host.
+fn install(
+    agent: &mut Agent<ScriptHost>,
+    realm: &Realm,
+    document: Document,
+) -> Result<(), RunnerError> {
+    let failed = |what: String| RunnerError::Realm(format!("the DOM bindings: {what}"));
+    let interrupt = agent.interrupt_handle();
+    let global = agent
+        .global_object(realm)
+        .map_err(|error| failed(format!("{error:?}")))?;
+    let dom = Dom::new(
+        DomState::new(document.tree, document.limits, interrupt),
+        document.slices,
+    );
+    let answer = agent.with_cx(realm, |cx| {
+        let realm_ref = cx.realm_ref(realm).map_err(|error| format!("{error:?}"))?;
+        let global = match cx.get(&global) {
+            Ok(Value::Object(global)) => global,
+            other => return Err(format!("the global object: {other:?}")),
+        };
+        bindings::install(cx, realm_ref, global, dom).map_err(|abrupt| format!("{abrupt:?}"))
+    });
+    match answer {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(what)) => Err(failed(what)),
+        Err(error) => Err(failed(format!("{error:?}"))),
     }
 }
 

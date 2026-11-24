@@ -63,6 +63,10 @@ includes:
     taskfile: taskfiles/tls-flights.yml
     flatten: true
     optional: true
+  webidl:
+    taskfile: taskfiles/webidl.yml
+    flatten: true
+    optional: true
   agent-tasks:
     taskfile: taskfiles/agent-tasks.yml
     flatten: true
@@ -563,6 +567,7 @@ tasks:
       - task: test-layout
       - task: tls-certs-check
       - task: tls-flights-check
+      - task: webidl-check
       - task: doc-tests-check
       - task: build
       - task: test
@@ -597,8 +602,9 @@ tasks:
       - sh taskfiles/step-budgets.sh .out
 
   slow:
-    desc: Make the committed products of the TLS tests and the conformance crate's list of noticed scenarios again and compare them with the committed files (the test certificates byte for byte, the recorded flights by outcome, conformance/tests/noticed.txt byte for byte); needs openssl 3.4 or later; never a step of check.
+    desc: Make the committed products of the TLS tests, the conformance crate's list of noticed scenarios and the DOM bindings again and compare them with the committed files (the test certificates byte for byte, the recorded flights by outcome, conformance/tests/noticed.txt and crates/script/src/bindings.rs byte for byte); needs openssl 3.4 or later; never a step of check.
     cmds:
       - task: tls-certs-slow
       - task: tls-flights-slow
+      - task: webidl-slow
       - task: conform-slow
