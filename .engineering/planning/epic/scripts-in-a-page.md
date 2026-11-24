@@ -7,7 +7,7 @@ title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, in the session process, against a DOM generated from Web IDL and under limits per page, when the session's option asks for it, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 36
+revision: 37
 ---
 ## Context
 
@@ -293,6 +293,19 @@ at `6a43e18`:
   `WindowProxy` cannot be built, so the first version returns snapshots (the named deviation of
   "The DOM from Web IDL"); HOST-77 to HOST-84, HOST-100, HOST-101, HOST-121, HOST-148, HOST-149
   (promise jobs and the checkpoint, slice 10).
+- Slice 10 as swell planned it on 2026-11-23 (its `design/slice-10`, all pending), with what surf
+  asked for: the host makes a promise with `cx.new_promise_capability()`, settles it through
+  `agent.call`, and drains the queue with `agent.perform_microtask_checkpoint()`, which surf
+  calls after each script; `Agent::queue_microtask` takes a realm (HOST-192); a job that queues
+  jobs without end ends the checkpoint with a termination (HOST-193). On surf's request:
+  `last_entry_steps()` after a checkpoint reads the steps of the whole checkpoint, also after a
+  termination (HOST-197), for the step total per document; the interrupt ends a checkpoint at
+  its start, before each entry and inside a job (HOST-198), for the wall-clock bound; a
+  checkpoint that did not empty the queue leaves its entries queued and charged, and the next
+  checkpoint runs them (HOST-199); `Agent::clear_microtasks()` drops every queued entry unrun
+  and credits its charge (HOST-200). surf calls it when a limit ended a checkpoint, so that a
+  page that floods the queue cannot spend the next scripts' budgets. Dropping the agent with
+  entries queued calls nothing of the host.
 
 Read at `6a43e18` and not a requirement: `new_host_function` and `define_property_or_throw` are
 methods of `Cx` only, not of the setup closure's `HookCx` (`crates/swell/src/host/mod.rs`), so

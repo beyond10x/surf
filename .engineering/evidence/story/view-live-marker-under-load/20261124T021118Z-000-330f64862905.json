@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T02:11:18Z",
+  "actor": "human:operator",
+  "artifact": "story:view-live-marker-under-load",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "forge: the four runs of surf main at the merge 4386cad, 2026-11-24, and the check of pull request 4 on ee57cbc, ended 02:32 CET",
+    "reference": "main: check 45309253129, Shared source gates 45309253725, Documentation validation 45309253193, Documentation site 45309426307, each success. Pull request 4, check 45304618088: kernel.apparmor_restrict_unprivileged_userns = 0, the namespace lists lo only, 71 passed (15.8s), page step: 16.2 s of its budget of 120 s (14.8 s on main before, run 45225184504)"
+  }
+}

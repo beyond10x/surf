@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T03:45:42Z",
+  "actor": "human:operator",
+  "artifact": "story:session-follow-press-https",
+  "kind": "story",
+  "revision": 4,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "plan critics for scope, acceptance and design, 2026-11-24 04:35 to 04:50 CET, three reads: draft, revision 3 (plan commit a8963f7), revision 4 (cc2a4bd)",
+    "reference": "first read: needs-revision from each (4, 7 and 3 findings); second read: scope approve, acceptance 1 finding, design 2 findings; third read: acceptance approve, design approve, no finding left. The parallel-safety critic did not read it: the Placement section builds it alone, after story:tls-session-anchors and before story:tls-release"
+  }
+}

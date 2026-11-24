@@ -30,7 +30,7 @@ scope:
   path: crates/surf/src/lib.rs
 - confidence: cited
   path: crates/surf/tests
-revision: 10
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:30Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:30Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
@@ -183,7 +183,8 @@ Elsewhere:
 23. `cargo test --locked --manifest-path conformance/Cargo.toml` exits 0 with the new
     `conformance/Cargo.lock`.
 24. `cargo tree -p surf-cli -e normal,build,features` lists `surf-tls` without `test-tooling`;
-    `cargo tree -p surf-cli -e dev,features` lists it with `test-tooling` (the reason for the
+    `cargo tree -p surf-cli -e normal,build,dev,features -i surf-tls` lists it with
+    `test-tooling`, through the two test crates of the dev edges (the reason for the
     order of steps in `story:tls-release`).
 25. `grep -c "does not check revocation" crates/fetch/src/lib.rs` prints at least 1.
 

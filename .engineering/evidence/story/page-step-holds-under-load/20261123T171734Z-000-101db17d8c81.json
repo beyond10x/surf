@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T17:17:34Z",
+  "actor": "human:operator",
+  "artifact": "story:page-step-holds-under-load",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the forge's runs on main at 3b0fc83 (the merge of measure/page-step-instructions at 9d38a27), 2026-11-23 18:10 to 18:16 CET",
+    "reference": "check 45225184504 success, Shared source gates 45225185304 success, Documentation validation 45225184263 success, Documentation site 45225342092 success"
+  }
+}

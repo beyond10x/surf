@@ -5,7 +5,7 @@ kind: epic
 status: active
 title: 'surf loads https: addresses'
 summary: 'TLS 1.3 client written here over one audited source of primitives; X.509 path validation, host names, trust anchors; https: and redirects between schemes in surf-fetch, with TLS failure reasons in the answer.'
-revision: 20
+revision: 21
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:31Z", actor: "human:operator", revision: 19}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:32Z", actor: "human:operator", revision: 20}
@@ -384,3 +384,15 @@ Measured by the coordinating agent on 2026-11-22 with `cargo generate-lockfile` 
 - `Cargo.lock` gains 19 entries: cc, cfg-if, find-msvc-tools, getrandom, libc, ring, shlex, untrusted, wasi, windows-sys, windows-targets and the eight `windows_*` crates of windows-targets.
 - 8 of them are compiled for each of x86_64 and aarch64 Linux (gnu and musl) and macOS: cc, cfg-if, find-msvc-tools, getrandom, libc, ring, shlex, untrusted. The other 11 belong to Windows and WASI targets; cargo records them in the lock and never downloads or builds them for surf's targets.
 - The count of 8 given with U1 was the compiled set for one target. The comparison of U1 counted every candidate that way, so the order of the candidates is the one the operator saw. The lock check of `tls-lock-allow` names all 19.
+
+## Stories added after the thirteen
+
+2026-11-24, by the coordinating role, after the unit of `story:tls-session-anchors` was built:
+
+- `story:session-follow-press-https`: `follow` and `press` load `https:` targets. The line
+  above, "`surf::fetch_http` and the session's transport stop refusing `https:`", was claimed
+  for `go` alone. `story:tls-release` depends on it, so the epic does not close while a session
+  refuses an `https:` link or action.
+- `story:session-form-leaves-https` (draft): what a session does with a form's values that
+  would leave an `https:` page for an `http:` address. It changes the redirect rule of
+  "Decisions taken" if it is taken up, and the epic closes without it.

@@ -2,17 +2,18 @@
 format: aep.planning-md/3
 id: story:page-step-holds-under-load
 kind: story
-status: active
+status: implemented
 title: The page step costs 36 % fewer instructions
 summary: 'three cuts take the page step from a median of 185.61 G to 119.58 G instructions (35.6 % fewer); bound: a median of at most 122 G over three runs within the 120 s budget; the claim at a load over 100 is withdrawn (49.2 s at 110, 196.7 s at 107, 209.1 s at 143)'
 relations:
 - decomposes: epic:live-view
 - informed_by: story:page-test-step-within-budget
 - informed_by: story:view-large-entry-test-time
-revision: 8
+revision: 9
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-23T09:26:33Z", actor: "human:operator", revision: 4}
 - {from: "proposed", to: "active", at: "2026-11-23T09:26:33Z", actor: "human:operator", revision: 5}
+- {from: "active", to: "implemented", at: "2026-11-23T17:17:35Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"test_result":5,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Why
 

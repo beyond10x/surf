@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T17:17:31Z",
+  "actor": "human:operator",
+  "artifact": "story:page-step-holds-under-load",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "six passing runs of task page-step-cpu, three on the base 03f25c9 and three on the tip (f5d40c0 with the script, then 97237e2), 2026-11-23 (acceptances 2 to 5)",
+    "reference": "base: 193.23 G at load 92.05 to 80.13 (85.9 s, 70.0 CPU s), 185.61 G at 82.29 to 74.13 (64.9 s, 64.8 CPU s), 185.20 G at 75.96 to 62.27 (74.2 s, 67.6 CPU s), 71 passed each; three more base runs had 1, 1 and 3 failed tests on the live marker and were repeated; tip: 127.08 G at 142.57 to 111.08 (209.1 s, over the budget, not counted for the bound), 117.93 G at 109.83 to 97.81 (49.2 s, 51.9 CPU s), 119.58 G at 69.12 to 68.48 (74.7 s, 55.5 CPU s), 71 passed each; medians 185.61 G and 119.58 G, 35.6 % fewer; bound 122 G on runs within the budget (D333)"
+  }
+}

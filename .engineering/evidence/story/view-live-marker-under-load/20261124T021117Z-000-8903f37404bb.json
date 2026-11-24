@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T02:11:17Z",
+  "actor": "human:operator",
+  "artifact": "story:view-live-marker-under-load",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "plant runs on 941f7fa and c40365c, 2026-11-23 23:37 to 2026-11-24 00:05 CET: an address added and deleted every 200 ms inside a network namespace of its own, 20 tests per run, --workers=2",
+    "reference": "without the fix 25 failed of at least 62 page starts (text: module files with no answer, net::ERR_NETWORK_CHANGED, 0 segments); no plant 0 of 196; plant with the page step through taskfiles/page-netns.sh 0 of 227"
+  }
+}

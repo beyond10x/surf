@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T17:17:32Z",
+  "actor": "human:operator",
+  "artifact": "story:page-step-holds-under-load",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "the implementing unit's plants for cuts 1a to 1c, each removed with the tree's status empty after (acceptance 6), and the unchanged settings (acceptance 7)",
+    "reference": "1a: the Rust test of crates/session/tests/view.rs red with changed dropped from the answer (the answer of one go is 720503 bytes), the page test red with stream.js skipping events over 1,048,576 bytes; 1b: the fixture's test red when the session stays 120 s after its input ends, surfd is never dropped and kill_left ends nothing (has not ended within 9.97 s), green with the new kill_left on the same plants; with kill_left ending nothing alone it stays green, because the session ends when its input closes; the fallback for a kernel without the children files is not exercised on this host; 1c: headers, first stream from newest red (Expected 19, Received 20); body, controls case 3 red at controls.spec.mjs:94; status is read eagerly as before and no red was made for it alone; git diff 03f25c9 -- taskfiles/view-test.yml view-tests/playwright.config.mjs is empty: --workers=2, no retries, timeout 60_000 and the budget of 120 s; no build setting changed (acceptance 9)"
+  }
+}

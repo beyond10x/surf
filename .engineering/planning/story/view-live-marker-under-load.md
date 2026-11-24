@@ -2,13 +2,17 @@
 format: aep.planning-md/3
 id: story:view-live-marker-under-load
 kind: story
-status: draft
-title: The view's live marker reaches live at a load over 100
+status: implemented
+title: 'The view''s live marker reaches live at the measured load: the page tests run in a network namespace of their own'
 summary: two runs of the page step at a start load of 107 and 121 failed with one test each that waited 10 s for the live marker and found connecting; one wait with a diagnostic in every spec file, the cause, the fix, 10 runs at a load of 100 or more
 relations:
 - decomposes: epic:live-view
 - informed_by: story:page-step-holds-under-load
-revision: 2
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-23T17:19:28Z", actor: "human:operator", revision: 3}
+- {from: "proposed", to: "active", at: "2026-11-23T17:19:29Z", actor: "human:operator", revision: 4}
+- {from: "active", to: "implemented", at: "2026-11-24T02:11:18Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"test_result":3,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Why
 
@@ -93,3 +97,87 @@ made by hand and is not committed: `git status --short` is empty after it.
 - The step's seconds at a load over 100: `story:page-step-holds-under-load`. That story's item on
   `controls case 6` is this story's; a longer wait is allowed here only under statement 6.
 - The load of the host.
+
+## Found so far
+
+First unit, 2026-11-23, branch `fix/view-live-marker` from `3b0fc83`:
+
+- Change 1 is built in `7f646a5` and `941f7fa`: `expectLive(page)` in
+  `view-tests/tests/fixture.mjs` is the one wait for `live`, used by every spec file. A failed
+  wait prints the live marker's word and class, `#message`, the segments drawn, whether `/events`
+  was sent and its head arrived with the milliseconds from the navigation, the page's other
+  fetches, the browser's requests with their status, page errors, console errors, and a `GET /`
+  of the view made by the test. Acceptance 1: with `/events` planted never to answer, one test
+  per spec file fails with that text (10 on `7f646a5`, 9 of 10 on `941f7fa`: `controls case 6`
+  was not selected in that run); on the base the same plant prints `Received "connecting"` only.
+- Acceptance 7: base median 117.47 G instructions (120.93, 117.47, 116.16), `941f7fa` median
+  117.37 G (117.37, 116.79, 119.11), all runs within the budget, 71 passed each.
+- No counted run: the host was restarted at 20:30 CET and its load stayed under 100 afterwards
+  (highest seen 92.32) through 3,600 s of waiting.
+- A failure at a low load, not counted: on `7f646a5`, load 21.76 to 37.66, `page lists both
+  sessions` waited 10 s and printed: live marker `connecting`, segments drawn 0, `/events` not
+  sent, no other fetch of the page, 12 files loaded by the browser, the view's `/` from the test
+  200 in 54 ms. The page's script made no request in 10 s. So the failure is not bound to a load
+  of 100. Decision D337: the second unit looks for the cause by repeating page starts at the
+  load the host has.
+- A probe of `crates/view/src/http.rs` (a plant, removed): in one full run at most 9 connections
+  were open, no 503, no connection closed without an answer, a head within 71 ms.
+- A failure that names a cause, 2026-11-23: the gate on `941f7fa` (load 44.00 to 68.02, page step
+  113.4 s) failed `controls case 5` and passed the other 70 page tests. The diagnostic printed:
+  live marker `connecting`, segments drawn 0, `/events` not sent, `/now.js`, `/changes.js` and
+  `/timeline.js` with no answer while the nine other files answered 200, no page error, and three
+  console errors `Failed to load resource: net::ERR_NETWORK_CHANGED`. The page's module graph did
+  not finish, so `view.js` never ran. Lead, not yet confirmed: the browser cancels requests in
+  flight when an address is added to or removed from any interface of the host, a loopback target
+  included, and other work on the host adds and removes container interfaces. The second unit
+  confirms it with a planted address change inside a network namespace of its own and then
+  chooses the fix; a retry of the page load and a longer wait stay out.
+
+## As found and as closed
+
+Second unit, 2026-11-23 and 24, branch `fix/view-live-marker-cause` from `941f7fa`, commits
+`c40365c` and `ee57cbc`, on `main` as the merge `4386cad`.
+
+The cause is not the load. The browser cancels every request in flight with
+`net::ERR_NETWORK_CHANGED` when an address of any interface in its network namespace is added or
+removed, a request to loopback included. On the host, containers of other work start and stop;
+each adds or removes an interface with a link-local address. A page whose module files were
+cancelled never ran its script, so the marker stayed `connecting`.
+
+- The host, read only: 0 address changes in 60 s, 10 in 20 minutes, in two bursts, all on
+  container interfaces. Both failures with a diagnostic have such an interface coming up in the
+  kernel log within 2 s of the failed test.
+- Planted inside a network namespace of its own, never on the host: an address added and
+  deleted every 200 ms. Without the fix 25 page starts failed of at least 62, with the gate's
+  text (module files with no answer, `net::ERR_NETWORK_CHANGED`, 0 segments, `/events` not
+  sent). With no plant, 0 of 196. With the plant and the fix, 0 of 227.
+- The fix: `taskfiles/page-netns.sh` runs the page step, the browser and every fixture in a user
+  and network namespace of its own with only loopback up; without one the step fails with one
+  line and runs no test. `view-tests/global-setup.mjs` refuses to start a page test outside such
+  a namespace. `.github/workflows/check.yml` allows unprivileged user namespaces on the runner.
+
+Against the statements:
+
+1. Met in the first unit (see "Found so far").
+2. The cause is named, and the failure text that shows it is quoted above under "Found so far".
+   That run started at a load of 44.00, so it is not a counted run. No counted run exists: no
+   run of `task view-test` started at a load of 100 or more between the diagnostic and the
+   close, and no load was made for one.
+3. Not shown as written, for the same reason: 0 counted runs. Shown in its place: 0 of 227 page
+   starts failed under the plant with the fix; 252 page starts on the host with the fix, 0
+   failed; three runs of `task page-step-cpu` and two gates on `ee57cbc`, 71 passed each.
+4. Met by the plant above, and held from now on by a committed check: outside a namespace of
+   their own the page tests fail in `global-setup.mjs` before a browser starts.
+5. The highest start load of a listed run of the whole page step is 88.21. Runs of a part of it
+   started higher (the plant runs at 128.07, 121.42 and 98.60, the cold starts of the first unit
+   at 98.48); they are no runs of `task view-test`. The title says "at the measured load", and
+   the claim at a load of 100 or more moves to `story:view-live-marker-at-load-100`.
+6. Unchanged: `--workers=2`, `retries: 0`, the 60 s bound, `expect.timeout` of 10 000 ms, the
+   120 s budget, every test title. The fix is no longer wait.
+7. Base median 117.47 G instructions (120.93, 117.47, 116.16). `ee57cbc`: median 119.14 G
+   (119.14, 119.32, 118.58), each run within 120 s, 71 passed each. The bound of
+   `story:page-step-holds-under-load` is 122 G.
+
+One local gate on `ee57cbc` passed every test and took 131.6 s for the page step, at a load of
+65.77 to 99.08 beside a second gate; the next, alone at a load of 78.52 to 49.51, took 21.9 s.
+The step's seconds under load are `story:page-step-holds-under-load`'s.

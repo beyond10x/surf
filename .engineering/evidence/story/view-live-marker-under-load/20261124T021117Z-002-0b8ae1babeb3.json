@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T02:11:17Z",
+  "actor": "human:operator",
+  "artifact": "story:view-live-marker-under-load",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "gate: task check-runner on ee57cbc, whose tree equals the merge 4386cad on main, 2026-11-24 02:55 to 02:59 CET, 1-minute load 78.52 to 49.51",
+    "reference": "exit 0 in 249 s; 1240 tests: 1240 passed (cargo-nextest 1238, doc tests 2), test step 45.0 s; 545 tls tests, 24.7 s; conformance step 21.1 s; 71 passed (20.3s), page step: 21.9 s of its budget of 120 s. The run before it, beside a second gate at a load of 65.77 to 99.08: every test passed, page step 131.6 s, exit 201"
+  }
+}

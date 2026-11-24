@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T17:17:32Z",
+  "actor": "human:operator",
+  "artifact": "story:page-step-holds-under-load",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "every run of the page step after the last cut that is over the budget or at a start load over 100 (acceptance 5; decision D334)",
+    "reference": "196.7 s at 106.82 to 95.99 on 14e76fd (1 failed: timeline of three actions, the live marker); 209.1 s at 142.57 to 111.08; 49.2 s at 109.83 to 97.81; runs at a start load under 90: 20.2 s at 56.28, 28.5 s at 70.44, 74.7 s at 69.12, and in the gates 84.5 s at 89.87, 96.7 s at 87.30 and 114.1 s at 45.16 to 91.89"
+  }
+}
