@@ -93,6 +93,9 @@ callables:
 # as a value of one dash, not standard input (`fill f1 -- -`). `ess-cli/2` fills positionals only
 # before `--` and gives the words after it to a `trailing` source, which takes a list and no
 # positional. What would settle it: positionals that `ess-cli` fills after `--` too.
+# UNMAPPED: `help --for-agent` prints the client's own text and asks no session for anything, so
+# no callable of `surf.agent` stands behind it; the client takes it before the parser. What would
+# settle it: a command without a callable in `ess-cli/2`.
 commands:
   - path: [open]
     callable: open

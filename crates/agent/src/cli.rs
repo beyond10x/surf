@@ -4,7 +4,7 @@
 //! parser's table: [`parse`] reads the words through them and nothing else, and the test `drift`
 //! holds them to `.out/cli/binding.json`, which `task cli` writes from the document.
 //!
-//! The differences from the document are its five `UNMAPPED:` markers, and only those:
+//! The differences from the document are its six `UNMAPPED:` markers, and only those:
 //!
 //! - (a) `ess-cli/2` has no environment source. The parser reads the session from `SURF_SESSION`
 //!   when `--session` is absent and the token from `SURF_TOKEN` when `--token-file` is absent;
@@ -19,6 +19,9 @@
 //! - (e) `--` ends the options of every command: every word after it is a positional, one that
 //!   starts with `-` included, and the value word `-` after it is one dash, not standard input
 //!   ([`Call::stdin`]).
+//! - (f) `help --for-agent` prints the client's own text and asks no session for anything, so no
+//!   callable stands behind it. The binary takes those words before the parser
+//!   ([`is_help_for_agent`]); [`parse`] refuses `help` in any other form.
 //!
 //! The token is never an argument word: no option takes it, because other local users can read
 //! a process's arguments. It is read from `SURF_TOKEN` or from a file that is a regular file, not
@@ -285,6 +288,7 @@ usage: surf-agent open [<url>] [--ca-file <path>] [--as tree|markdown [--from-li
        surf-agent forward [--session <id>] [--token-file <path>]
        surf-agent log [<n>] [--session <id>] [--token-file <path>]
        surf-agent close [--session <id>] [--token-file <path>]
+       surf-agent help --for-agent
 The session comes from --session or SURF_SESSION, the token from --token-file or SURF_TOKEN.
 A token file is a regular file of yours that group and others cannot read (mode 0600).
 --as prints the page as an outline of its tree or as Markdown, from line --from-line (from 1);
@@ -300,6 +304,20 @@ log lists every action of the session, or the last <n> (from 1).
 -- ends the options: a word after it is an argument even when it starts with -
 (fill f1 -- -5, pick f2 -- \"-- choose --\"; fill f1 -- - fills one dash).
 ";
+
+/// The word of the client's own help, taken before the parser: not a command of
+/// `cli/surf-agent.yaml` (its `UNMAPPED:` marker at `commands`) and not in [`COMMANDS`].
+pub const HELP: &str = "help";
+
+/// The one option of [`HELP`].
+pub const FOR_AGENT: &str = "--for-agent";
+
+/// Whether `args` (the words after the program name) are `help --for-agent` and nothing else.
+/// Those words print the definition of [`crate::help`]; `help` in any other form is a usage
+/// error of [`parse`].
+pub fn is_help_for_agent(args: &[OsString]) -> bool {
+    matches!(args, [word, option] if word == HELP && option == FOR_AGENT)
+}
 
 /// The value word of `fill` that the client replaces by standard input, without one line feed
 /// at its end: the marker `UNMAPPED:` at `fill` in `cli/surf-agent.yaml`.
@@ -537,6 +555,8 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
             return Err(usage(format!(
                 "word {number} is not an option of surf-agent; -- before it makes it an argument"
             )));
+        } else if command.is_none() && bytes == HELP.as_bytes() {
+            return Err(usage(format!("{HELP} takes {FOR_AGENT} and nothing else")));
         } else if command.is_none() {
             command = Some(
                 COMMANDS
