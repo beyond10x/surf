@@ -7,6 +7,8 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-24
+
 ### Added
 
 - `surf-agent help --for-agent` prints a definition for an AI agent, assembled from the texts
@@ -28,8 +30,19 @@ release; what came before it is in the git log and in `docs/plan/`.
 - An agent answer has the line `cookies <n>` after `path` when the session holds cookies.
 - The agent task `login`: the measure now has six tasks, all passing.
 - The specification's `surf.net.Requests` view and the events `NavigationRequested`,
-  `NavigationStarted` and `RequestStarted` carry the initiator of a request: the origin of the
-  page that started it, none for an address the agent typed or a step `back` or `forward`.
+  `NavigationStarted`, `RequestStarted` and `FormSubmitted` carry the initiator of a request:
+  the origin of the page that started it, none for an address the agent typed or a step `back`
+  or `forward`. The live view shows it as the field `initiator` of those events.
+
+### Changed
+
+- An agent session reads the address of each load once with surf's URL parser, and the
+  connection, the `Host` field and the choice of cookies all follow that one reading, as a
+  browser reads the address: `http://a.test\b.test/` goes to `a.test`, `http://%61.test/` to
+  `a.test` and `http://0x7f.0.0.1/` to `127.0.0.1`. Release `0.7.0` split the address text
+  itself and asked for the host as written. An address with user information, a tab or a line
+  feed is still refused, and one the parser does not read is fetched as before, with no
+  cookie. The `surf` command reads addresses as before.
 
 ## [0.7.0] - 2026-11-24
 

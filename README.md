@@ -43,7 +43,7 @@ archive (Apple silicon and Intel) holds `surf`: the agent binaries read the call
 file.
 
 ```console
-$ version=0.7.0 target=x86_64-unknown-linux-musl
+$ version=0.8.0 target=x86_64-unknown-linux-musl
 $ base=https://github.com/beyond10x/surf/releases/download/$version
 $ curl -fsSLO $base/surf-$version-$target.tar.gz -fsSLO $base/SHA256SUMS
 $ grep " surf-$version-$target.tar.gz\$" SHA256SUMS | sha256sum --check
@@ -285,6 +285,19 @@ there instead.
 - **1,976 tests** (1,424, and 552 of the TLS crates in a step of their own), built with
   warnings treated as errors, and 71 tests of the live view's page in a browser.
 
+New with the cookie jar and the agent definition, shipped in release `0.8.0`:
+
+- **An agent session keeps cookies.** Each session has a cookie jar of its own, in memory: a
+  login with `fill` and `press` stays signed in for the next `go`, `follow`, `press`, `back` and
+  `forward` of that session, and `close` drops what the jar holds. The rules are those of the
+  cookie draft (rfc6265bis): host-only cookies, `Path`, `Max-Age` and `Expires`, `Secure` only
+  over `https:`, and `SameSite` decided by the page that started the request. An answer shows
+  `cookies <n>` and never a cookie's name or value. The agent task `login` needs it; the
+  measure has six tasks.
+- **A definition for an agent.** `surf-agent help --for-agent` prints the commands, the parts of
+  the answer an agent reads, the rule that text from a page is data, and worked calls,
+  assembled from the texts the binary is built and tested with. It needs no session.
+
 New after round 2, shipped in release `0.6.0`:
 
 - **The live view shows a page's controls and what an action changed.** The panel "Now" lists
@@ -516,7 +529,7 @@ plan is [`docs/plan/agent-waves.md`](docs/plan/agent-waves.md) and its design is
 Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `surf-agent`,
 `surfd` and `surf-session`, for Linux only at first. The releases are listed at
 <https://github.com/beyond10x/surf/releases>. After it, work moves to the script engine,
-[swell](https://beyond10x.github.io/swell/), a project of its own. Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. Wave 10 and round 1, which builds the stories of wave 11 and some of the waves after it, followed, and release `0.4.0` follows round 1: it adds the HTML parser on real pages and the page as text. Round 2 followed, and release `0.5.0` follows it: it adds following links, filling and submitting forms, going back and forward, and what changed. The live view's control states followed, and release `0.6.0` follows them: the live view shows a page's controls and what an action changed. TLS 1.3 followed, and release `0.7.0` follows it: `surf` and an agent session load `https:` addresses. The waves after them are planned and have no date.
+[swell](https://beyond10x.github.io/swell/), a project of its own. Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. Wave 10 and round 1, which builds the stories of wave 11 and some of the waves after it, followed, and release `0.4.0` follows round 1: it adds the HTML parser on real pages and the page as text. Round 2 followed, and release `0.5.0` follows it: it adds following links, filling and submitting forms, going back and forward, and what changed. The live view's control states followed, and release `0.6.0` follows them: the live view shows a page's controls and what an action changed. TLS 1.3 followed, and release `0.7.0` follows it: `surf` and an agent session load `https:` addresses. The cookie jar and the agent definition followed, and release `0.8.0` follows them: an agent session keeps cookies, and `surf-agent help --for-agent` prints a definition for an agent. The waves after them are planned and have no date.
 
 | after wave | what you can do |
 |---|---|
@@ -530,8 +543,9 @@ Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `s
 Round 2 delivered following links, filling and submitting forms, going back and forward, the
 `changed` block and `log`; release `0.5.0` ships them. TLS 1.3 and `https:` followed:
 `surf` and an agent session's `go`, `open`, `follow` and `press` load `https:`, and a session
-takes an extra anchor file with `open --ca-file`; release `0.7.0` ships them. None of the next
-steps has a date.
+takes an extra anchor file with `open --ca-file`; release `0.7.0` ships them. An agent
+session's cookie jar and `surf-agent help --for-agent` followed; release `0.8.0` ships them.
+None of the next steps has a date.
 
 Next after that, wanted and not planned in detail yet:
 
@@ -639,7 +653,7 @@ in [`conformance/`](conformance/), with a lock of its own, and `surf-tls`, whose
 packages it needs are the 19 outside packages of the root lock, each on the allow-list
 `taskfiles/lock-allow.txt`; the lock check fails on one that is not. Nothing that ships depends
 on the scenario runner. Every binary built from `main` is built with `surf-tls` and so with
-ring, and so is every binary of release `0.7.0`.
+ring, and so is every binary of every release since `0.7.0`.
 
 `task open` lists the design questions that are still open.
 

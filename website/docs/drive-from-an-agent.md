@@ -107,6 +107,10 @@ A load that fails is still an action taken: `go` exits 0, and the `page` line sa
 ([`docs/agent-answer.md`](https://github.com/beyond10x/surf/blob/main/docs/agent-answer.md),
 section "Page", lists the reasons).
 
+Since release `0.8.0` a session keeps the cookies its pages set, in memory and for itself, until
+`close`: a login with `fill` and `press` stays signed in for the next calls of that session, and
+`open` starts with none.
+
 ## https
 
 Since release `0.7.0`, `go` and `open` load an `https:` address, and
@@ -257,9 +261,10 @@ $ surf-agent look
 
 Every answer starts with its head line, `surf 1 session <id> <state>`, then the action it is
 for (`did`), the page (`page`: `none` before the first load, the status, media type, address and
-title of a loaded page, or `failed` with the reason), the session's last actions (`path`) and
-what the last action changed (`changed`); without `--as` the page's links and form fields
-(`now`) follow, with `--as` the `note text:` lines and the `text` block with the page. Every
+title of a loaded page, or `failed` with the reason), the session's last actions (`path`),
+since release `0.8.0` the number of cookies the session keeps when it keeps any (`cookies
+<n>`, never a cookie's name or value), and what the last action changed (`changed`); without
+`--as` the page's links and form fields (`now`) follow, with `--as` the `note text:` lines and the `text` block with the page. Every
 value that comes from a page, a server or an address stands in double quotes, with every
 character that could start a line or look like a field escaped. The format, line by line, with
 its grammar:

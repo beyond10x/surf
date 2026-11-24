@@ -107,7 +107,7 @@ Third-party crates are used in two places: the scenario runner in
 own, and `surf-tls`, whose `ring` and the packages it needs are the 19 outside packages of the
 root lock, each on the allow-list `taskfiles/lock-allow.txt`; the lock check fails on one that
 is not. Nothing that ships depends on the scenario runner. Every binary built from `main` is
-built with `surf-tls` and so with ring, and so is every binary of release `0.7.0`.
+built with `surf-tls` and so with ring, and so is every binary of every release since `0.7.0`.
 
 ## Build from source
 

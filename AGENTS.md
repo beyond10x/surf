@@ -573,7 +573,7 @@ above, and the list of standards itself was written from memory.
     `fill f1 -- -`), and a value from standard input whose request is over 65,536 bytes is
     refused naming its quoted size (`client::STDIN_VALUE_FITS`, 16,000 bytes, always fits beside
     a handle of up to 1,364); the `Debug` of a wire `Arg` writes its value's length. The
-    package carries the release version, `0.7.0`, as do `surf-cli`, `surfd` and
+    package carries the release version, `0.8.0`, as do `surf-cli`, `surfd` and
     `surf-session`. `open` starts `surfd` from the directory of its own executable. Since
     `story:agent-skill-definition` `surf-agent help --for-agent`, those words and nothing else,
     prints a definition for agents and asks no session for anything (`src/help.rs`,
@@ -1483,18 +1483,20 @@ the others were written to a scratch directory and not compiled:
 - Present state: wave 10 and rounds 1 and 2 are delivered (10 of 22 waves, and the stories of
   rounds 1 and 2); release `0.2.0` follows wave 4, release `0.3.0` wave 9, release `0.4.0`
   round 1, release `0.5.0` round 2, release `0.6.0` the view's control states and changed
-  panel and release `0.7.0` TLS 1.3 and `https:` (the releases are listed at
+  panel, release `0.7.0` TLS 1.3 and `https:`, and release `0.8.0` the cookie jar and
+  `surf-agent help --for-agent` (the releases are listed at
   https://github.com/beyond10x/surf/releases). The
   operator session ordered the continuation after the checkpoint on 2026-11-21, for the
   operator: "continue as its `AGENTS.md` says". Round 3 of `docs/plan/agent-waves.md`
   ("Rounds after wave 10": the waves 11 to 22 in three rounds) is the runner, and it moves
   behind items 2 and 4 of that file's list "What an agent needs from surf" (D85). The stories
   accepted behind the planned waves are listed in
-  that file, in "Accepted on 2026-11-21, behind the planned waves". Open for the next steps,
-  in the order of that list: cookies (`story:agent-cookie-jar`, active), pages that build
-  their content by script (`epic:scripts-in-a-page`, draft), a skill definition for agents
-  (`story:agent-skill-definition`, active); round 3 (`epic:e2e-scenario-runner`, active)
-  comes after cookies.
+  that file, in "Accepted on 2026-11-21, behind the planned waves". Of that list, items 2, 3
+  and 4 are in release `0.8.0` (TLS, round 2, `story:agent-cookie-jar`, implemented), and so
+  is item 6's `surf-agent help --for-agent` (`story:agent-skill-definition`, still active in
+  the planning store). Open for the next steps: pages that build their content by script
+  (`epic:scripts-in-a-page`, draft) and round 3 (`epic:e2e-scenario-runner`, active), which
+  items 2 and 4 no longer hold back.
 - Branches: `wave/<n>-<name>` for a wave, `impl/<story-slug>` for a unit. Every checkout is a
   managed worktree (`worktree create`); nothing is edited in the primary checkout during a wave.
 - An implementor leaves its changes uncommitted; the coordinator commits, merges and owns every
