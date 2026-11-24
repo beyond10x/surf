@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T09:51:33Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-cookie-jar",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the gate in runner form (task check-runner) on 5fba905, the tip of impl/agent-cookie-jar with main merged in, on the build node, 2026-11-24",
+    "reference": "exit 0 in 56 s; conformance 203 of 203 scenarios (44 authored), step 2.6 s; 1408 tests passed, test step 10.9 s; 552 TLS tests passed, 2.8 s; 71 page tests passed, page step 13.9 s of 120 s; agent-tasks: 6 tasks, 6 pass, 0 fail, 0 skipped"
+  }
+}

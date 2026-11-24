@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T09:51:33Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-cookie-jar",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "one review of ee86329 to 86be5ce for defects by a reviewer who did not write it, 2026-11-24",
+    "reference": "findings named, each changed in the fix round 65bb6f7 to ef20bad: the changelog sentence on what a login holds for, Domain=. stored host-only, the bound in bytes; 5 tests of the reviewer merged (0c5d352)"
+  }
+}
