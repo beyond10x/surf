@@ -518,8 +518,10 @@ above, and the list of standards itself was written from memory.
     refused naming its quoted size (`client::STDIN_VALUE_FITS`, 16,000 bytes, always fits beside
     a handle of up to 1,364); the `Debug` of a wire `Arg` writes its value's length. The
     package carries the release version, `0.6.0`, as do `surf-cli`, `surfd` and
-    `surf-session`. `open` starts `surfd` from the directory of its own executable. Depends on
-    `surf-answer` and `surf-secret`.
+    `surf-session`. `open` starts `surfd` from the directory of its own executable. 61 tests in
+    one binary: `adversary_ca_file` 4, `adversary_fill_pick` 6, `ca_file` 6, `drift` 2,
+    `secreview_refusal_text` 2, `stand_in` 10, `start` 12, `token` 9, `usage` 10. Depends on
+    `surf-answer`, `surf-secret` and `surf-tls` (which reads the file of `open --ca-file`).
   - `crates/surfd` (`surfd`): a library and the binary `surfd`, the daemon the agent command line
     talks to. Lock and socket in `$XDG_RUNTIME_DIR/surf`, one session process per session in a
     directory of mode 0700, each request passed unchanged to the session and the answer back,
@@ -579,17 +581,19 @@ above, and the list of standards itself was written from memory.
     `NavigationStarted` and `RequestStarted` carry `method`, `body` as `<n> bytes` and
     `body_type`, an absent one as the field with no value; its transport is `surf::fetch_http`,
     which since wave 9 sends a `Post` (since `story:agent-press-submit` the one of `press`).
-    289 tests:
+    311 tests: `adversary_anchors` 5,
     `adversary_back_forward` 25, `adversary_change_log` 20, `adversary_controls` 1,
     `adversary_document_text` 7,
     `adversary_events` 1, `adversary_fill_pick` 16, `adversary_follow` 8, `adversary_parse` 4,
     `adversary_press` 22, `adversary_values` 3, `adversary_view` 1, `back_forward` 13, `built`
     16, `change_and_log` 18, `core` 22, `e2e` 2 (runs the three built binaries, or those in
     `SURF_BIN_DIR`), `events` 26, `fill_pick` 22 (case 3 runs the built `surf-agent` against
-    `surfd` in the test process), `follow` 18, `follow_refusals` 9 (over an in-memory transport
-    that stands at any address), `form_rows` 1, `memory` 2, `press` 25 (the cases of
+    `surfd` in the test process), `follow` 18, `follow_refusals` 10 (over an in-memory transport
+    that stands at any address), `form_rows` 1, `https` 10 (`open --ca-file` against
+    `surf-tls-test-server` on 127.0.0.1), `memory` 2, `press` 25 (the cases of
     `story:agent-press-submit` and the usage of `press`, against a server that records each
-    request), `redirect` 2 and `view` 5 (the live view of `surfd` over the real session). The
+    request), `redirect` 2, `secreview_session_anchors` 5 and `view` 6 (the live view of `surfd`
+    over the real session). The
     bound of 256 row entries
     per request counts `FormAdded` and `OptionAdded` with `ElementAdded`
     (`story:agent-form-port`).
@@ -1758,8 +1762,10 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `surf_page::attribute_visits()`), not by a wall time.
 - `task test-tls`: `cargo nextest run --locked` with `-p` for each of the four TLS packages, the
   ones `task test` leaves out, under the same `.config/nextest.toml` and environment
-  (`RUSTFLAGS=-D warnings`, `SURF_BIN_DIR`). They hold no doc test. No other package depends on
-  them and only they set a feature of `surf-tls`, so its build and the one of `task test` share
+  (`RUSTFLAGS=-D warnings`, `SURF_BIN_DIR`). They hold no doc test. Of the other packages
+  `surf-fetch` and `surf-agent` depend on `surf-tls`, and the tests of `surf-fetch`, `surf-cli`
+  and `surf-session` on `surf-tls-test-server` (those of the first two on `surf-tls-test-certs`
+  too); only the four set a feature of `surf-tls`, so its build and the one of `task test` share
   every artifact. Log `.out/test-tls.log`, JUnit report copied to `.out/test-tls-junit.xml`. It
   prints the ten slowest tests, nextest's `Summary` line, `N tests: P passed, F failed, I ignored
   (cargo-nextest N)` and `tls test step: <s> s of its budget of 120 s`; it fails when a test
@@ -1791,8 +1797,9 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   starts the next from the directory of its own executable. `XDG_RUNTIME_DIR` must be set
   (the session's socket lives under it). Two notes: `http:` and `https:` load (a redirect is
   followed inside the fetch, between the two schemes too; one to any other scheme ends as
-  `UnsupportedScheme`), `https:` against the bundled trust anchors only, since a session takes
-  no `--ca-file` before `story:tls-session-anchors`, and `follow` and `press` still refuse an
+  `UnsupportedScheme`), `https:` against the bundled trust anchors, and for a session opened
+  with `surf-agent open --ca-file <path>` also against the CA certificates of that file
+  (`docs/agent-answer.md`, "Extra trust anchors"), and `follow` and `press` still refuse an
   `https:` target (`unsupported-scheme`); and an answer shows no
   page content (status, media type and address only), because no page is parsed yet. While
   `surfd` runs, `$XDG_RUNTIME_DIR/surf/view-url` holds the live view's address and token
