@@ -12,8 +12,11 @@
 //! # One request
 //!
 //! Per request `surfd` makes one connection to the session socket and writes the request of
-//! [`surf_agent::wire`] unchanged, token included, up to its `end` line. The session writes one
-//! answer ([`Answer::encode`]) and closes the connection:
+//! [`surf_agent::wire`] unchanged, token included, up to its `end` line. So the session's extra
+//! trust anchors of `surf-agent open --ca-file` (`arg anchors` of the `open` request, the text
+//! of the file) reach the session this way only, never as an argument of the session program or
+//! in its environment ("Start"). The session writes one answer ([`Answer::encode`]) and closes
+//! the connection:
 //!
 //! ```text
 //! surf-link 1
