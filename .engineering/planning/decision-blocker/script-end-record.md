@@ -2,12 +2,14 @@
 format: aep.planning-md/3
 id: decision-blocker:script-end-record
 kind: decision-blocker
-status: open
+status: cleared
 title: Nobody has decided how the specification records a script's end and how that record relates to its document
 summary: 'The record of each script''s end has no shape in an ess/1 document: cardinality, owner and when it is written are open; story:scripts-spec waits for it.'
 relations:
 - blocks: story:scripts-spec
-revision: 1
+revision: 3
+transitions:
+- {from: "open", to: "cleared", at: "2026-11-24T12:08:06Z", actor: "human:operator", revision: 3}
 ---
 ## Question
 
@@ -46,3 +48,20 @@ ran, threw, refused, ended by a limit, not run with a reason; no record in a doc
 without scripts. The note's Q7 confirms or replaces it, and the operator clears this blocker.
 
 ## Decision
+
+## Decided
+
+Decided by `docs/design/scripts.md`, Q7, on `main` at `35db3d4` (2026-11-24). The five lines:
+
+- How many: many per document. One record per script element the parser reached in a document
+  parsed with scripts (one closed by the end of the input included, `not run: eof`), plus one
+  per script element a script inserted, which ends `not run: inserted`; never a second record
+  for one element.
+- Owner: the document, through the relation `scripts` of `surf.document.Document`.
+- When: while the document is `Parsing`, by the command `surf.document.AddScriptEnd`, before
+  `FinishParsing`.
+- Does a record outlive its document: no.
+- A document parsed without scripts: no record.
+
+`story:scripts-spec` writes this into `spec/`; the closed list of ends and the names of the
+YAML are Q7's.

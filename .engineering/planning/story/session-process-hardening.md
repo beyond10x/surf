@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:session-process-hardening
 kind: story
-status: proposed
+status: active
 title: surfd starts surf-session with a cleared environment, no new privileges and resource limits of its own
 summary: 'S5 = a, decided 2026-11-24: env_clear and the note''s allow-list, setpriv --no-new-privs and prlimit with the note''s bounds, read from /proc by tests; a session ending at a bound is listed died and its answer names the signal and bound, shown with the stand-in session and no script.'
 relations:
@@ -37,9 +37,10 @@ scope:
   path: docs/agent-answer.md
 - confidence: cited
   path: docs/view-stream.md
-revision: 24
+revision: 25
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:12Z", actor: "human:operator", revision: 16}
+- {from: "proposed", to: "active", at: "2026-11-24T12:08:07Z", actor: "human:operator", revision: 25, executor: "agent:coordinator"}
 ---
 ## Context
 

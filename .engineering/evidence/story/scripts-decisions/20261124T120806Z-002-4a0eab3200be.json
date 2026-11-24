@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T12:08:06Z",
+  "actor": "human:operator",
+  "artifact": "story:scripts-decisions",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "counts on docs/design/scripts.md at 775cc83, by shell, 2026-11-24",
+    "reference": "15 sections Q, each with one Settled line and no Open line; 13 probe lines; one reasons line of 12 words; Q1, Q4 and Q7 word lists agree (the word check of the writer, rerun by the second reviewer)"
+  }
+}

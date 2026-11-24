@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:scripts-decisions
 kind: story
-status: active
+status: implemented
 title: 'Settle the first version of page scripts in a design note: boundary, limits, the session''s bounds, the swell tag and the engine''s requirements'
 summary: docs/design/scripts.md answers 15 questions the epic leaves open (Q8, Q9 and Q12 moved to webidl-bindings and scripts-dom-selectors), each closed by a table, a probe line or a citation; records S5 = a as decided on 2026-11-24, proposes the answer of the script-end blocker in five lines, and hands requirements 1 to 10 to the script engine's session.
 relations:
@@ -10,10 +10,11 @@ relations:
 scope:
 - confidence: cited
   path: docs/design/scripts.md
-revision: 12
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:34:04Z", actor: "human:operator", revision: 10}
 - {from: "proposed", to: "active", at: "2026-11-24T10:34:09Z", actor: "human:operator", revision: 11}
+- {from: "active", to: "implemented", at: "2026-11-24T12:08:06Z", actor: "human:operator", revision: 14, decided_on: {"recorded":{"test_result":2,"verification":2}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -354,3 +355,44 @@ module, `async` and `defer` scripts, timers, events, `document.write`).
 
 It is the epic's first candidate story, and the one `scripts-engine-dependency`, `scripts-spec`,
 `session-process-hardening` and `html-script-hook` start on.
+
+## As built
+
+The note is `docs/design/scripts.md` on `main` at `35db3d4` (the merge of `impl/scripts-note` at
+`775cc83`, one commit, 1,170 lines). Where it differs from the text above:
+
+- Q13 is decided, not proposed: decided by the coordinating agent on 2026-11-24, reversible,
+  recorded in the epic's "Decisions taken". The stories before `story:scripts-document-port`
+  build on swell `0.8.0`; `story:scripts-document-port` waits for the swell tag that holds
+  requirement 11.
+- Q18's table has 11 rows. Rows 1 to 10 are `held` at `0.8.0`; row 11 is new, from the note's
+  second round, with status `absent`.
+- Q1's line `reasons:` has 12 words; `eof`, a script closed by the end of the file, came with
+  the first review. Q7's closed list has 23 words.
+- Q11 gives bounds per kind of session, not one set for every session: no new privileges and
+  no core file for every session; address space, CPU and open files for a session opened with
+  scripts. The CPU bound is written soft below hard (`3600:3601`), because with both equal the
+  kernel ends the process with SIGKILL and no bound can be named. The address-space value is a
+  chosen backstop of 4 GiB until `story:session-memory-bound` bounds the trees a session keeps;
+  `story:scripts-document-port` ships with 2 GiB.
+- A stack overflow of the script thread ends the session with SIGABRT, not SIGSEGV; Q5 gives a
+  chosen margin beside `min_stack_bytes()` and names the test of `story:scripts-parse-run` that
+  measures it.
+- The note says of swell's open findings only what swell's own documents at the tag say. The
+  measurement behind requirement 11 is not in the note; it returns with the tag that closes
+  the requirement.
+- The probes lie under the ignored `.out/probes/` of the unit's tree and are not committed;
+  each `probe:` line names the machine it ran on ("the build node", "the workstation").
+
+Acceptance 6, the hand-over: the requirements table, rows 1 to 11, with the measurement behind
+row 11, went to swell's session on 2026-11-24, 12:33 CET, as a message between the two
+sessions. swell answered at 12:35 CET that requirement 11 is its next story, ahead of its next
+slice, wider than the note's wording (every buffer whose size a script controls and that is
+alive across a call into script; steps as well as bytes), and that it lands in swell's next
+release.
+
+Two reviews by a reviewer who did not write the note: the first found 3 musts (the CPU bound's
+signal, a bound sized for one tree in a session that keeps every tree, a copy swell does not
+charge), 12 shoulds and 9 notes; the second, after the fix round, no must, 8 shoulds and 6
+notes. All are answered in the note at `775cc83`; the second pass checked 33 new citations and
+every new number against its probe's log.
