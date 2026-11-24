@@ -31,15 +31,27 @@
 # exist. Such a file holds no multi-line string and no backslash, so that each line is read as
 # what it says: no table hides in a string and no name is spelled in escapes. It fails on a
 # line in a `profile` table or key that names a package from git as a package of a profile
-# (`[profile.<any>.package.<name>]`, also in dotted keys or an inline table), and on a line
-# that holds `overflow` outside a comment and is not `overflow-checks = true` (rustflags under
-# `[build]`, `[target.<any>]`, `[host]` or a profile, `RUSTFLAGS` under `[env]`, a profile
-# turning the checks off). `Taskfile.yml`, `taskfiles/*.yml` and `.github/workflows/*.yml`
-# beside the manifest hold no line with the rustc flag's form, `overflow-checks` with `=`
-# right after it. Outside what a check of the tree can see: the config file of a directory
-# above the tree or of `$CARGO_HOME`, a `--config` or `RUSTFLAGS` on a command line, the
-# `CARGO_PROFILE_*` variables of the environment, and what a `rustc` or a wrapper named in a
-# config file does.
+# (`[profile.<any>.package.<name>]`, also in dotted keys or an inline table), on a line outside
+# a comment that holds `rustflags` in any letter case (under `[build]`, `[target.<any>]`,
+# `[host]` or a profile, and `RUSTFLAGS`, `CARGO_ENCODED_RUSTFLAGS` or `CARGO_BUILD_RUSTFLAGS`
+# under `[env]`), and on a line that holds `overflow` outside a comment and is not
+# `overflow-checks = true`.
+#
+# The files that start builds are `Taskfile.yml` beside the manifest, every file under
+# `taskfiles/` but this script, `lock-allow.txt` and `lock-owners.txt`, and every file under
+# `.github/workflows/`. A line of one of them fails when it holds `overflow-checks` or
+# `overflow_checks` in any letter case (the rustc flag in both spellings, the key in a
+# `--config`, `CARGO_PROFILE_<NAME>_OVERFLOW_CHECKS`), or `rustflags` in any letter case with an
+# `@` (an argument file).
+#
+# The check holds the plain forms: a key or a flag written in the tree's cargo config files or
+# in the files that start builds. It does not hold a setting reached through another file (a
+# config file named by `--config`, a script outside `taskfiles/`, a program a task downloads),
+# a `rustc` or wrapper named in a config file, an ancestor's config file, or the environment of
+# whoever starts the build. A change of these files is reviewed; that holds the rest. Some
+# lines a reader may expect to pass fail by these rules and stay so: `"""` or a backslash in a
+# comment of a config file, `overflow-checks=true` without spaces, and an `[env]` key that
+# holds the word overflow.
 #
 # The lock is accepted only in the form cargo writes it. cargo reads the lock as TOML and, under
 # --locked, compares values, so it accepts the same lock in other spellings (keys without
@@ -70,10 +82,10 @@
 #   overflow-checks = true under [profile.release.package.<name>]";
 # - a line of the manifest holds `"""` or `'''`: "<manifest>:<n>: a multi-line string ...";
 # - a line of a config file as above: "<config>:<n>: a multi-line string ...", "... a
-#   backslash ...", "... names <name>, a package from git, in a profile ..." or "... holds
-#   overflow but is not overflow-checks = true ...";
-# - a line of a task or workflow file with the flag: "<file>:<n>: sets overflow checks by the
-#   rustc flag ...";
+#   backslash ...", "... names <name>, a package from git, in a profile ...", "... rustflags;
+#   ..." or "... holds overflow but is not overflow-checks = true ...";
+# - a line of a file that starts a build as above: "<file>:<n>: names overflow checks ..." or
+#   "... rustflags with an argument file ...";
 # - a line of the allow-list matches no package of the lock: "<allow-list>: <name> <version> is
 #   in no package of <lock>";
 # - a line of the owners file is used by no dependency: "<owners>: <package> <crate> is a
@@ -99,8 +111,8 @@ test -f "$allow" || { echo "$allow: missing; it lists the packages from outside 
 test -f "$owners" || { echo "$owners: missing; it lists the crates of this repository that may depend on a listed package or on surf-script"; exit 1; }
 test -f "$manifest" || { echo "$manifest: missing; it holds the release profile of each package from git"; exit 1; }
 
-# The config files of the tree that cargo reads beside the manifest, and the task and workflow
-# files that run cargo, those that exist.
+# The config files of the tree that cargo reads beside the manifest, and the files that start
+# builds, those that exist: the lock comes last, every other file before it.
 dir=$(dirname "$manifest")
 case $dir in
   .) pre= ;;
@@ -111,9 +123,20 @@ config2=${pre}.cargo/config
 set -- "$allow" "$owners" "$manifest"
 test -f "$config1" && set -- "$@" "$config1"
 test -f "$config2" && set -- "$@" "$config2"
-for f in "${pre}Taskfile.yml" "${pre}taskfiles/"*.yml "${pre}.github/workflows/"*.yml; do
-  test -f "$f" && set -- "$@" "$f"
+test -f "${pre}Taskfile.yml" && set -- "$@" "${pre}Taskfile.yml"
+starts=$(find "${pre}taskfiles" "${pre}.github/workflows" -type f 2>/dev/null | LC_ALL=C sort)
+ifs=$IFS
+IFS='
+'
+set -f
+for f in $starts; do
+  case $f in
+    "${pre}taskfiles/lock-check.sh" | "${pre}taskfiles/lock-allow.txt" | "${pre}taskfiles/lock-owners.txt") ;;
+    *) set -- "$@" "$f" ;;
+  esac
 done
+set +f
+IFS=$ifs
 set -- "$@" "$lock"
 
 exec awk -v lock="$lock" -v allow="$allow" -v owners="$owners" -v manifest="$manifest" \
@@ -261,8 +284,11 @@ exec awk -v lock="$lock" -v allow="$allow" -v owners="$owners" -v manifest="$man
     }
     s = trim(uncomment($0))
     if (s == "") next
-    # A line that holds overflow outside a comment, kept for the END rules.
-    if (index(tolower(s), "overflow") && s != "overflow-checks = true") {
+    # No rustflags at all; a line that holds overflow outside a comment, kept for the END rules.
+    if (index(tolower(s), "rustflags")) {
+      print FILENAME ":" FNR ": rustflags; a cargo config file of the tree holds none, so that no flag and no argument file undoes the release profile of " manifest ": " $0
+      bad++
+    } else if (index(tolower(s), "overflow") && s != "overflow-checks = true") {
       overs++
       ofile[overs] = FILENAME; oline[overs] = FNR; otext[overs] = $0
     }
@@ -284,10 +310,15 @@ exec awk -v lock="$lock" -v allow="$allow" -v owners="$owners" -v manifest="$man
     ctext[configs] = $0
     next
   }
-  FILENAME ~ /\.yml$/ {
-    # A task or a workflow sets no overflow checks by the rustc flag.
-    if (index($0, "overflow-checks=")) {
-      print FILENAME ":" FNR ": sets overflow checks by the rustc flag; no task or workflow of the tree does, because rustc takes the last such flag and would undo the release profile of " manifest ": " $0
+  FILENAME != lock {
+    # A file that starts a build names no overflow checks and no argument file in rustflags.
+    low = tolower($0)
+    if (index(low, "overflow-checks") || index(low, "overflow_checks")) {
+      print FILENAME ":" FNR ": names overflow checks; a file that starts a build sets none, so that the release profile of " manifest " holds: " $0
+      bad++
+    }
+    if (index(low, "rustflags") && index($0, "@")) {
+      print FILENAME ":" FNR ": rustflags with an argument file; a file that starts a build names none, so that no flag read from a file undoes the release profile of " manifest ": " $0
       bad++
     }
     next
@@ -386,7 +417,7 @@ exec awk -v lock="$lock" -v allow="$allow" -v owners="$owners" -v manifest="$man
       bad++
     }
     if (bad) {
-      print bad " finding(s); a package from outside this repository must be on " allow ", a crate may depend on one or on surf-script only by a line of " owners ", a package from git needs overflow-checks = true in the release profile of " manifest " that no cargo config file, task or workflow of the tree may undo, and the lock is read only in the form cargo writes"
+      print bad " finding(s); a package from outside this repository must be on " allow ", a crate may depend on one or on surf-script only by a line of " owners ", a package from git needs overflow-checks = true in the release profile of " manifest " that no cargo config file of the tree and no file that starts a build may undo, and the lock is read only in the form cargo writes"
       exit 1
     }
     if (outside) print lock ": " packages " package(s), " outside " from outside this repository, each on the allow-list"

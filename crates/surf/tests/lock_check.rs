@@ -626,13 +626,35 @@ fn a_cargo_config_turning_overflow_checks_off_for_the_release_profile_fails() {
 /// `overflow-checks = true`.
 const CONFIG_OVERFLOW: &str = "holds overflow but is not overflow-checks = true";
 
-/// The three places of the tree that run cargo besides its config files, one committed file of
-/// each: the root Taskfile, a taskfile under `taskfiles/` and a workflow.
-const RUNNING_FILES: [&str; 3] = [
+/// What the check says of a line of a file that starts a build naming overflow checks.
+const STARTS_OVERFLOW: &str = "names overflow checks";
+
+/// The places of the tree that start builds, one committed file of each: the root Taskfile, a
+/// taskfile and a script under `taskfiles/`, and a workflow.
+const RUNNING_FILES: [&str; 4] = [
     "Taskfile.yml",
     "taskfiles/release.yml",
+    "taskfiles/release-smoke.sh",
     ".github/workflows/check.yml",
 ];
+
+/// Every committed file under `dir` of the repository, as paths from its root.
+fn tree_files(dir: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut open = vec![dir.to_string()];
+    while let Some(next) = open.pop() {
+        for entry in fs::read_dir(repository().join(&next)).expect("read a directory") {
+            let entry = entry.expect("an entry");
+            let path = format!("{next}/{}", entry.file_name().to_string_lossy());
+            if entry.file_type().expect("a file type").is_dir() {
+                open.push(path);
+            } else {
+                found.push(path);
+            }
+        }
+    }
+    found
+}
 
 /// A copy of the tree's file at `path` in the copy `dir`, passed through `edit`; answers the
 /// number of the copy's last line.
@@ -646,26 +668,76 @@ fn write_tree_file(dir: &Path, path: &str, edit: impl Fn(String) -> String) -> u
     text.lines().count()
 }
 
-/// The rustc flag that turns overflow checks off, added to a task or a workflow, fails, naming
-/// the file and the line: cargo adds `RUSTFLAGS` after the profile's flags, and rustc takes the
-/// last (review report2, S3). One case per place.
+/// A line naming overflow checks, added to a file that starts a build, fails, naming the file
+/// and the line: the rustc flag, which cargo adds after the profile's flags and rustc takes
+/// last (review report2, S3), and the profile's variable in capitals (fix round 3). One case per
+/// place and form.
 #[test]
 fn the_overflow_flag_in_a_task_or_a_workflow_fails() {
+    let lines = [
+        "# RUSTFLAGS='-C overflow-checks=off' cargo build --release",
+        "# CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS=false cargo build --release",
+    ];
     for (i, path) in RUNNING_FILES.into_iter().enumerate() {
-        let case = format!("flag-{i}");
-        let dir = copy_files(&case, &Files::committed());
-        let at = write_tree_file(&dir, path, |text| {
-            format!("{text}\n# RUSTFLAGS='-C overflow-checks=off' cargo build --release\n")
-        });
-        let start = format!("{path}:{at}: sets overflow checks by the rustc flag; ");
-        assert_fails_with(&case, &dir, &format!("{start:?}"), |l| {
-            l.starts_with(&start)
-        });
+        for (j, line) in lines.into_iter().enumerate() {
+            let case = format!("flag-{i}-{j}");
+            let dir = copy_files(&case, &Files::committed());
+            let at = write_tree_file(&dir, path, |text| format!("{text}\n{line}\n"));
+            let start = format!("{path}:{at}: {STARTS_OVERFLOW}; ");
+            assert_fails_with(&case, &dir, &format!("{start:?}"), |l| {
+                l.starts_with(&start)
+            });
+        }
     }
 }
 
-/// `overflow-checks = true` in the release profile of a cargo config file passes, and so do the
-/// tree's own task and workflow files.
+/// rustflags naming an argument file (`@<path>`), added to a file that starts a build, fail,
+/// naming the file and the line: rustc reads the file's flags after the profile's (review
+/// report3, S4). The variable in capitals.
+#[test]
+fn rustflags_with_an_argument_file_in_a_task_or_a_workflow_fail() {
+    let path = ".github/workflows/check.yml";
+    let dir = copy_files("argfile-workflow", &Files::committed());
+    let at = write_tree_file(&dir, path, |text| {
+        format!("{text}\n# RUSTFLAGS=@/srv/build/flags cargo build --release\n")
+    });
+    let start = format!("{path}:{at}: rustflags with an argument file; ");
+    assert_fails_with("argfile-workflow", &dir, &format!("{start:?}"), |l| {
+        l.starts_with(&start)
+    });
+}
+
+/// rustflags in a cargo config file of the tree fail, naming the file and the line, whatever
+/// they hold: under `[build]`, and as a variable of `[env]` in capitals (fix round 3, S4).
+#[test]
+fn rustflags_in_a_config_file_fail() {
+    let config = Files::committed().config;
+    let n = config.lines().count();
+    for (case, added) in [
+        (
+            "config-build-rustflags",
+            "[build]\nrustflags = [\"-Cdebuginfo=0\"]\n",
+        ),
+        (
+            "config-env-rustflags",
+            "[env]\nCARGO_ENCODED_RUSTFLAGS = \"-Cdebuginfo=0\"\n",
+        ),
+    ] {
+        let dir = copy_files(
+            case,
+            &Files {
+                config: format!("{config}\n{added}"),
+                ..Files::committed()
+            },
+        );
+        let start = format!(".cargo/config.toml:{}: rustflags; ", n + 3);
+        assert_fails_with(case, &dir, &format!("{start:?}"), |l| l.starts_with(&start));
+    }
+}
+
+/// `overflow-checks = true` in the release profile of a cargo config file passes, and so does
+/// every committed file under `taskfiles/` and `.github/workflows/` with the root Taskfile: the
+/// check's own script and lists are not read as files that start a build.
 #[test]
 fn overflow_checks_on_in_a_config_file_pass() {
     let config = format!(
@@ -679,8 +751,13 @@ fn overflow_checks_on_in_a_config_file_pass() {
             ..Files::committed()
         },
     );
-    for path in RUNNING_FILES {
-        write_tree_file(&dir, path, |text| text);
+    let mut paths = tree_files("taskfiles");
+    paths.extend(tree_files(".github/workflows"));
+    paths.push("Taskfile.yml".to_string());
+    for path in &paths {
+        let file = dir.join(path);
+        fs::create_dir_all(file.parent().expect("a parent")).expect("create dir");
+        fs::copy(repository().join(path), &file).unwrap_or_else(|e| panic!("copy {path}: {e}"));
     }
     let (status, text) = check(&dir);
     assert_eq!(status, Some(0), "{text}");
