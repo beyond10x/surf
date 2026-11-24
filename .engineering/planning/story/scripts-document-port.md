@@ -61,7 +61,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 31
+revision: 32
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:14Z", actor: "human:operator", revision: 25}
 ---
@@ -126,6 +126,13 @@ test:
 - `AddScriptEnd` refuses an end that the note's Q7 table or Q16's ranges exclude. The
   session's writer builds each end from the runner's own types, so that no refused end can
   be written, and this story says what the session answers when the store refuses one.
+- The specification does not refuse a second script end at one position of one document:
+  with that refusal beside the refusal of an invalid end, `ess` 0.97.4 synthesized the suite
+  in 8.2 to 9.6 s against 2.5 to 3.1 s, and the folder's rule lets no generator jump land
+  (the reproducer went to the owners of `ess` on 2026-11-24). So this story's writer holds
+  it: one end per position, with a test that reads every position of a page's ends once.
+  The refusal comes back into the specification when a release of `ess` synthesizes it
+  without the jump.
 
 ## Domain relations
 
