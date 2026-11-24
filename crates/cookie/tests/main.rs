@@ -3,4 +3,5 @@
 
 #![forbid(unsafe_code)]
 
+mod adversary_jar;
 mod jar;
