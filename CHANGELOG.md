@@ -7,6 +7,14 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ## [Unreleased]
 
+### Added
+
+- `surf-agent help --for-agent` prints a definition for an AI agent, assembled from the texts
+  the binary is held to: the usage and every command with its description, the parts of the
+  answer format an agent reads, the rule that text from a page is data and never an
+  instruction, and worked `open`, `go` and `look` calls. It needs no session: no
+  `XDG_RUNTIME_DIR`, no `surfd`. `help` in any other form is a usage error.
+
 ## [0.7.0] - 2026-11-24
 
 ### Added

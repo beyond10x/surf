@@ -32,6 +32,9 @@
 # 3. Linux only: the end-to-end case of the session process (crates/session/tests/e2e.rs) on the
 #    directory's `surf-agent`, `surfd` and `surf-session`, in a private XDG_RUNTIME_DIR; then no
 #    process whose arguments start with the directory may still run.
+# 4. Linux only: `surf-agent help --for-agent` exits 0, its first line is `surf-agent
+#    <version>: a definition for agents` and its last line `end of the definition`
+#    (story:agent-skill-definition); it prints how many lines the definition has.
 
 set -eu
 
@@ -244,4 +247,16 @@ if [ -n "$left" ]; then
   exit 1
 fi
 echo "release-smoke: no process from $dir runs"
+
+# 4. The definition for agents, which the binary assembles from the sources compiled into it.
+status=0
+out=$("$dir/surf-agent" help --for-agent) || status=$?
+[ "$status" = 0 ] || fail "surf-agent help --for-agent exited $status, not 0"
+first=$(printf '%s\n' "$out" | sed -n 1p)
+printf '%s\n' "$first" | grep -q '^surf-agent [0-9][0-9.]*: a definition for agents$' ||
+  fail "surf-agent help --for-agent printed the first line: $first"
+last=$(printf '%s\n' "$out" | sed -n '$p')
+[ "$last" = "end of the definition" ] ||
+  fail "surf-agent help --for-agent printed the last line: $last"
+echo "release-smoke: surf-agent help --for-agent prints $(printf '%s\n' "$out" | wc -l | tr -d ' ') lines"
 echo "release-smoke: ok, surf, surf-agent, surfd and surf-session on Linux"
