@@ -2,12 +2,15 @@
 format: aep.planning-md/3
 id: epic:scripts-in-a-page
 kind: epic
-status: draft
+status: active
 title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, in the session process, against a DOM generated from Web IDL and under limits per page, when the session's option asks for it, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 41
+revision: 44
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T10:34:03Z", actor: "human:operator", revision: 43}
+- {from: "proposed", to: "active", at: "2026-11-24T10:34:09Z", actor: "human:operator", revision: 44}
 ---
 ## Context
 
@@ -918,6 +921,9 @@ Where "The DOM from Web IDL" counts differently from the two files of 2026-11-24
   `[LegacyUnenumerableNamedProperties]` twice (`HTMLCollection`, `NamedNodeMap`).
 - The DOM Standard's index holds the interface `NodeRange`; the Web IDL Standard's holds
   `QuotaExceededError`, three typedefs and two callbacks beside `DOMException`.
+- `surf-webidl` is not "standard library only": it depends by path on `surf-html`, the
+  repository's own parser, to take the IDL index out of the vendored pages. It still has no
+  third-party crate and ships nothing.
 - The selection is `crates/webidl/selection.txt` of `webidl-bindings`: 225 member rows and 7
   constructor rows. Questions 8 and 12 of the design note moved to that story and question 9 to
   `scripts-dom-selectors`.

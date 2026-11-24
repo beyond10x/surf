@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:webidl-reader
 kind: story
-status: draft
+status: active
 title: surf-webidl reads the vendored IDL Index of the DOM Standard and of Web IDL into a model, refusing every construct it does not know
 summary: The DOM and Web IDL commit snapshots the coordinating agent fetched on 2026-11-24 are vendored with SOURCE and digests; a reader of their IDL Index builds a model; a test asserts 146 members and 2 constructors of the four interfaces and 75 members and 5 constructors of the interfaces they return (the epic said 68), and the extended-attribute counts.
 relations:
@@ -12,7 +12,10 @@ scope:
   path: Cargo.lock
 - confidence: cited
   path: crates/webidl
-revision: 12
+revision: 16
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T10:34:04Z", actor: "human:operator", revision: 15}
+- {from: "proposed", to: "active", at: "2026-11-24T10:34:09Z", actor: "human:operator", revision: 16}
 ---
 ## Context
 
@@ -35,7 +38,11 @@ false` and one `[[test]]` named `main` (`AGENTS.md:276-287`; `task test-layout` 
 ## The files handed over
 
 The coordinating agent fetched both pages, each a commit snapshot, on 2026-11-24 at 09:57 UTC and
-hands them to the implementor unchanged, with the address each was fetched from (for `SOURCE`):
+hands them to the implementor unchanged. The address each was fetched from, for the `address:`
+line of `SOURCE` (both answered 200 with `text/html; charset=utf-8`):
+
+- `dom.html`: `https://dom.spec.whatwg.org/commit-snapshots/e4f4f4f0ace83fe6c52ab68e047351ce7f2dcd69/`
+- `webidl.html`: `https://webidl.spec.whatwg.org/commit-snapshots/54a5f2de6a34e27a517a49370bc07d8943b0be11/`
 
 | file | commit (read in the file) | bytes | sha256 | saved as |
 |---|---|---|---|---|
@@ -157,7 +164,8 @@ No binary: the binary `bindings` belongs to `story:webidl-bindings`.
    coordinating agent's `sha256sum` of a fresh fetch of each address equals its `SOURCE` line.
 3. `vendored::the_indexes_read_whole`: both pages read with no `ReadError`; the DOM index
    extracts to 673 lines and the Web IDL index to 58 (each equal to its `index-lines:`); the set of
-   `Model::unresolved` equals `tests/unresolved.txt`; and from `Model::counts`: `EventTarget` 3 own,
+   `Model::unresolved` equals `tests/unresolved.txt` and holds `EventHandler`,
+   `DOMHighResTimeStamp` and `TrustedType`, each asserted by name; and from `Model::counts`: `EventTarget` 3 own,
    0 from mixins, 0 constants, 0 attributes, 3 operations, a constructor; `Node` 47, 0, 18, 14, 15,
    none; `Element` 36, 17, 0, 18, 35, none; `Document` 28, 15, 0, 15, 28, a constructor; together
    146 members and 2 constructors.
@@ -185,8 +193,10 @@ No binary: the binary `bindings` belongs to `story:webidl-bindings`.
    `member_getter`, `member_iterable`, `argument_optional_defaults` (`= {}`, `= false`, `= ""`,
    `= null`, `= 0xFFFFFFFF`), `argument_variadic_union`, `type_nullable`, `type_sequence`,
    `type_union`, `type_extended_attribute`, `extended_attribute_arguments`,
-   `merged_mixin_counted_on_each`, `merged_partial`; and one case per entry of `ADDED`, a test
-   asserting that the case names cover `ADDED`.
+   `merged_mixin_counted_on_each`, `merged_partial`; and one case per entry of `ADDED`: the
+   module holds a table `ADDED_CASES` of pairs, an entry of `ADDED` and the function that tests
+   it, one test runs every function of the table, and it asserts that the table's entries equal
+   `ADDED`.
 8. `refusals`, named cases: `promise_type`, `overload`, `namespace`, `maplike`, `setlike`,
    `async_iterable`, `legacycaller`, `unknown_extended_attribute` (a name outside
    `EXTENDED_ATTRIBUTES`), each failing with `<file>:<line>: ...` naming the construct and the line

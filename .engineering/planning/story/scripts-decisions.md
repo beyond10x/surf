@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:scripts-decisions
 kind: story
-status: draft
+status: active
 title: 'Settle the first version of page scripts in a design note: boundary, limits, the session''s bounds, the swell tag and the engine''s requirements'
 summary: docs/design/scripts.md answers 15 questions the epic leaves open (Q8, Q9 and Q12 moved to webidl-bindings and scripts-dom-selectors), each closed by a table, a probe line or a citation; records S5 = a as decided on 2026-11-24, proposes the answer of the script-end blocker in five lines, and hands requirements 1 to 10 to the script engine's session.
 relations:
@@ -10,7 +10,10 @@ relations:
 scope:
 - confidence: cited
   path: docs/design/scripts.md
-revision: 4
+revision: 11
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T10:34:04Z", actor: "human:operator", revision: 10}
+- {from: "proposed", to: "active", at: "2026-11-24T10:34:09Z", actor: "human:operator", revision: 11}
 ---
 ## Context
 
@@ -60,17 +63,22 @@ works from the tree:
    other stories cite still names the same question. Each section ends with exactly one line that
    starts `Settled: `, which names the artifact its "Settled when" clause asks for: a table in the
    section, a line `probe: <command> -> <output line>`, or a cited address with the date or commit
-   of the text read. `Open: <story-id>` is allowed in Q13 only, naming `scripts-document-port`.
-2. Measurements are made by probe programs in the session scratch directory, never committed, in
-   Rust or POSIX sh (no Python). A probe that builds runs through `slot` and names its time with
-   `slot --timeout` when it needs more than 10 minutes (at most 30); a probe that only measures,
-   times or waits runs without `slot`. The note names each probe on a `probe:` line.
+   of the text read. Q13 holds its one `Settled:` line too, and beside it one line `Open:
+   scripts-document-port` only if no tag holds both conditions; no other section holds an `Open:`
+   line.
+2. Measurements are made by probe programs that are never committed, in Rust or POSIX sh (no
+   Python). A probe that builds is a cargo package under the story tree's ignored `.out/probes/`
+   with a `[workspace]` table of its own (a build from a directory outside a managed worktree is
+   refused on the build host), runs through `slot` and names its time with `slot --timeout` when
+   it needs more than 10 minutes (at most 30); a probe that only measures, times or waits runs
+   without `slot`. The note names each probe on a `probe:` line.
 3. swell is read at a tag with git in a clone of `https://github.com/beyond10x/swell`
    (`git show <tag>:<path>`, `git grep -n <pattern> <tag> -- <paths>`), read only; every fact about
-   swell in the note is a `file:line` at a tag of that repository, never a file of a scratch
-   directory. A change in swell belongs to the engine session; the note hands requirements to it and
-   does not write them there.
-4. S5 and S6 are decided. The operator decided on 2026-11-24, relayed by the coordinating agent:
+   swell in the note is written `<path>:<line> @ <tag>` for a tag of that repository, never a file
+   of a scratch directory. A change in swell belongs to the engine session; the note hands
+   requirements to it and does not write them there.
+4. S5 and S6 are decided, both by the operator session on 2026-11-24 (the epic's "Decisions
+   taken" quotes both answers):
    S5 = a, `surfd` starts `surf-session` through `setpriv --no-new-privs` and `prlimit`, a
    session with scripts is refused when either program is missing, and `#![forbid(unsafe_code)]`
    stays in every crate; S6 = a, the four members `Window.document`, `Window.window`,
@@ -98,9 +106,12 @@ Q1. Which script elements run. Settled when a table holds one row per case: no `
 attribute; `src` present, with and without text; `nomodule`; `async` or `defer` on an inline
 script; a script inside `template` contents; an SVG `script` in foreign content
 (`docs/design/html-parser.md:627`); a script element a script created or moved. Each row says
-"runs" or "not run: <reason>", with the reason word `story:html-script-hook` reports for it, and
-cites the step of "prepare the script element" of the HTML Standard (section number, anchor, the
-standard's date or commit). This confirms or corrects the sentence on `nomodule` (epic line 113).
+"runs" or "not run: <reason>" and cites the step of "prepare the script element" of the HTML
+Standard (section number, anchor, the standard's date or commit). The note fixes the reason
+words here, and every other story cites them: one lowercase word per reason, `src`, `module` and
+`nomodule` among them, and the section ends its table with the line `reasons: <word>, <word>,
+...`, the closed list `story:html-script-hook` reports from. This confirms or corrects the
+sentence on `nomodule` (epic line 113).
 
 Q2. The steps of the `script` end tag. Settled when a numbered table lists each step of 13.2.6.4.8
 for an end tag named `script` and each step of "prepare the script element", each "taken" or
@@ -129,7 +140,11 @@ summed from `last_entry_steps()`; the number of scripts run per document; the by
 script's source; the wall-clock bound per document through the interrupt handle; and the parser
 limits every DOM write is held to (`crates/html/src/limits.rs:16-47`: input bytes, depth 512,
 nodes 1,048,576, attributes 1,024, stored bytes 64 MiB, steps 2^27 by default), including what a
-write over one of them answers to the script (the result type `story:webidl-bindings` generates).
+write over one of them does to the script: it ends, `limit: <word>`. The column `outcome when
+reached` gives, for each row, the end word of the script that reached the limit (`limit: <word>`)
+and of each later script of the document where the limit is the document's (`not run: <word>`);
+the words `scripts-per-document`, `source-bytes`, `steps-per-document`, `wall-clock` and `memory`
+are among them, and `story:scripts-parse-run` cites the column.
 The basis: steps per second on this host in the test profile and in release, and the heap of a
 realm of the bindings' size from the engine's constants of requirement 10 at the tag, or a probe
 with 300 host functions and 40 host objects. Also stated: what follows `Terminated(MemoryBudget)`
@@ -163,8 +178,10 @@ YAML it proposes for `spec/domains/document.yaml` and `spec/domains/agent.yaml`,
   scripts records its script elements). These five lines are the answer of
   `decision-blocker:script-end-record`;
 - the closed list of ends: ran; threw (kind, message, line, column); refused by swell (its
-  `SyntaxError` message, which names the delivery slice); ended by a limit (which); not run (the
-  reason words of Q1, and after a limit of the document); 
+  `SyntaxError` message, which names the delivery slice); ended by a limit (each `limit: <word>`
+  of Q4's column); not run (each word of Q1's line `reasons:`, and each `not run: <word>` of Q4's
+  column). The list names every word, so `story:scripts-spec` writes its values from this list
+  alone;
 - the command and event that write it, which process issues the command, and what becomes of
   the marker "no component for script execution" (`spec/components.yaml:429-430`);
 - the option: its field on `surf.agent.OpenCall` (`spec/domains/agent.yaml:107-119`), its type
@@ -187,8 +204,8 @@ library read (`RUST_MIN_STACK`, `RUST_BACKTRACE`, the resolver's `LOCALDOMAIN`, 
 `HOSTALIASES`, `TZ`), and how the tests' `Config::session_env` (`crates/surfd/src/daemon.rs:83`)
 still add theirs.
 
-Q11. S5 and the bounds of the operating system. Settled when the section records the operator's
-decision of 2026-11-24 (S5 = a: `setpriv --no-new-privs` and `prlimit`, a session with scripts
+Q11. S5 and the bounds of the operating system. Settled when the section records the operator
+session's decision of 2026-11-24 (S5 = a: `setpriv --no-new-privs` and `prlimit`, a session with scripts
 refused when either is missing, `#![forbid(unsafe_code)]` kept), states that seccomp, Landlock,
 namespaces and `PR_SET_DUMPABLE` are absent under a and that option b (`unsafe` in one audited
 module) needs the owner's word, and gives:
@@ -221,8 +238,8 @@ their work and temporary storage first), whether that tag holds it, with the `fi
 swell's tree at the tag that says so (its `CHANGELOG.md`, `conformance/host/requirements.txt`,
 the code's documentation) and each exception swell names there, with its `file:line`. A `probe:`
 line gives the `git` command each fact was read with. The coordinating agent decides on this
-record whether the tag is taken for page scripts; if no tag holds both, the section ends `Open:
-scripts-document-port`.
+record whether the tag is taken for page scripts; if no tag holds both, the section also holds
+the line `Open: scripts-document-port`.
 
 Q14. Where swell is linked. Settled when the section gives the crate graph: `surf-script` alone
 depends on swell, and a closed list names the crates that may depend on `surf-script` (none when
@@ -283,20 +300,30 @@ promise exists before slice 10, so no microtask checkpoint is run; the note says
 ## Acceptance
 
 1. For each n of 1 to 7, 10, 11 and 13 to 18, the section `## Q<n>.` (in that order, titles as in
-   this story) contains exactly one line starting `Settled: ` and no line starting `Open: `, but
-   Q13, which may instead hold exactly one line `Open: scripts-document-port`. The reviewer checks
-   it with `awk '/^## Q[0-9]+\./{q=$2} /^Settled: /{s[q]++} /^Open: /{o[q]++} END{for(k in s)
-   print k, s[k], o[k]+0}' docs/design/scripts.md`, which is committed nowhere; `grep -c '^## Q'
-   docs/design/scripts.md` prints 15.
+   this story) contains exactly one line starting `Settled: ` and no line starting `Open: `; Q13
+   alone may hold, beside its `Settled:` line, one line `Open: scripts-document-port`, and only if
+   no tag holds both conditions. The reviewer checks it with `awk '/^## Q[0-9]+\./{q=$2; s[q]+=0;
+   o[q]+=0} /^Settled: /{s[q]++} /^Open: /{o[q]++} END{for(k in s) print k, s[k], o[k]}'
+   docs/design/scripts.md`, which is committed nowhere and prints 15 rows, each with 1 in its
+   second column; `grep -c '^## Q' docs/design/scripts.md` prints 15.
 2. Each `Settled:` line names its artifact: Q1, Q2 and Q4 a table of the section; Q5, Q6, Q10, Q11
    and Q13 a `probe:` line; Q1 and Q17 a cited address with date or commit. `grep -c '^probe: '
    docs/design/scripts.md` prints at least 5, and Q5, Q6, Q10, Q11 and Q13 each hold at least one.
 3. Q4's table has the five columns of its clause and no empty cell, and one row for each limit Q4
-   lists.
+   lists, one for `eval` and `Function` (refused or not, through which hook) and one for what
+   follows `Terminated(MemoryBudget)`.
+3a. No section passes empty: each of Q3, Q7, Q14, Q15, Q16 and Q17 holds, as lines or table rows,
+   every item its "Settled when" clause lists, and its `Settled:` line names them. Q3 holds the
+   number `task html-conformance` prints for the `#script-on` cases. Q7 holds the proposed YAML,
+   the closed list of ends and the option's spelling beside the five lines of statement 4. Q1
+   holds exactly one line starting `reasons: `, and each word of that line and each `limit:` and
+   `not run:` word of Q4's column `outcome when reached` appears in Q7's closed list of ends. Every
+   fact about swell is written `<path>:<line> @ <tag>` (decision 3); `grep -c ' @ 0\.'
+   docs/design/scripts.md` prints at least 10.
 4. Q7 holds the five lines `cardinality:`, `owner:`, `written:`, `outlives its document:` and
    `without scripts:`, each with a value. `decision-blocker:script-end-record` is cleared by the
    operator on that answer, or the report names why not.
-5. Q11 quotes the operator's decision on S5 with its date (2026-11-24) and gives each bound a
+5. Q11 quotes the decision on S5 (the operator session's, 2026-11-24) and gives each bound a
    starting value and the story that measures it again.
 6. The note ends with the 10-row table of requirements; each row's status is one of `held`,
    `partly: <HOST id>`, `absent`, `no tag`, with its `requirements.txt` line at the tag. The
