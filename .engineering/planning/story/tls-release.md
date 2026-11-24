@@ -10,6 +10,7 @@ relations:
 - depends_on: story:tls-decisions
 - depends_on: story:tls-session-anchors
 - depends_on: story:tls-tests-as-tables
+- depends_on: story:session-follow-press-https
 scope:
 - confidence: cited
   path: .github/workflows/release.yml
