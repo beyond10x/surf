@@ -162,6 +162,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "surf-cookie"
+version = "0.1.0"
+dependencies = [
+ "surf-url",
+]
+
+[[package]]
 name = "surf-fetch"
 version = "0.1.0"
 dependencies = [

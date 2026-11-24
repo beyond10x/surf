@@ -1,0 +1,18 @@
+[package]
+name = "surf-cookie"
+description = "The cookie jar of an agent session, by the revision of RFC 6265, with the standard library and surf-url only."
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+autotests = false
+
+[lib]
+test = false
+
+[dependencies]
+surf-url = { path = "../url" }
+
+[[test]]
+name = "main"
+path = "tests/main.rs"
