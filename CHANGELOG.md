@@ -7,6 +7,21 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ## [Unreleased]
 
+### Added
+
+- An agent session keeps cookies: each `surf-agent` session has a cookie jar of its own, so a
+  login with `fill` and `press` stays signed in on the next `follow`, `press` or `open`. The
+  transport takes `Set-Cookie` from every response, redirects included, and sends the `Cookie`
+  field on every hop, by the rules of the cookie draft (rfc6265bis): host-only cookies, `Path`,
+  `Max-Age` and `Expires`, `Secure` only over `https:`, and `SameSite` decided by the page that
+  started the request. `close` empties the jar. A cookie value is never printed: not in an
+  answer, an entry of the live view, a log line or a recording.
+- An agent answer has the line `cookies <n>` after `path` when the session holds cookies.
+- The agent task `login`: the measure now has six tasks, all passing.
+- The specification's `surf.net.Requests` view and the events `NavigationRequested`,
+  `NavigationStarted` and `RequestStarted` carry the initiator of a request: the origin of the
+  page that started it, none for an address the agent typed.
+
 ## [0.6.0] - 2026-11-23
 
 ### Added

@@ -184,7 +184,7 @@ above, and the list of standards itself was written from memory.
   prints that release; `.github/workflows/check.yml` and `release.yml` read the channel and the
   components from it and name no release of their own. A `RUSTUP_TOOLCHAIN` in the environment
   wins over the file; `task check-runner` unsets it.
-- `spec/scenarios/*.yaml`: forty-two authored scenario files (`ess-scenario/6`), for what
+- `spec/scenarios/*.yaml`: forty-four authored scenario files (`ess-scenario/6`), for what
   synthesis does not write. Two cover the flows synthesis refuses (the page load that commits and the one that
   fails); both also read the request's address back from `Requests`. The third,
   `two-of-each-entity.yaml`, creates two windows, two tabs in one window, two page loads, two
@@ -234,7 +234,11 @@ above, and the list of standards itself was written from memory.
   reads it back from `Requests`, `Navigations` and `SessionState`;
   `page-load-fails-certificate-expired.yaml` also sends `CertificateExpired` for a request
   already `Responded`, which ends in `wrong-state`, and reads the committed navigation back as
-  `Committed`.
+  `Committed`. Since `story:agent-cookie-jar` two more for a navigation's initiator:
+  `navigation-initiator-follow.yaml` (a `Navigate` with an initiator gives `NavigationStarted`
+  with it, and the request in `Requests` holds it) and `navigation-initiator-none.yaml` (without
+  one, the request holds none; a scenario's event payload cannot state an absent field, so that
+  file reads the absence from `Requests`).
 - `spec/ess-inputs.yaml`: the list of every file above, and the pin `requires: ess 0.97.4`. A new
   file under `spec/` is not read until it is listed there.
 - `generated/rust/`: the workspace `ess generate synthesize` writes, its own `Cargo.toml`
@@ -290,7 +294,8 @@ above, and the list of standards itself was written from memory.
   A target without a test of its own has `test = false` in its `[lib]` or `[[bin]]` entry, so
   that nextest neither builds nor lists an empty test binary for it
   (`story:test-step-scripts-and-binaries`): the libraries of `surf`, `surf-agent`,
-  `surf-agent-tasks`, `surf-answer`, `surf-html-conformance`, `surf-page`, `surf-page-text`,
+  `surf-agent-tasks`, `surf-answer`, `surf-cookie`, `surf-html-conformance`, `surf-page`,
+  `surf-page-text`,
   `surf-ports` (its `doctest` stays, so its two doc tests run), `surf-secret`, `surf-session`,
   `surf-url`, `surf-view` and `surf-test-process`, and the binaries of `surf-agent`, `surf-cli`,
   `surf-html-conformance` (both), `surf-session`, `surfd`, `surf-view-fixture` (both) and
@@ -305,9 +310,10 @@ above, and the list of standards itself was written from memory.
   with `cargo fmt -p <package>`: `cargo fmt --all` rewrites `generated/rust/`. `cargo fmt -p
   surf` also reformats a test file that is not rustfmt-clean (`review1_generated_check.rs`),
   `cargo fmt -p surf-cli` two others (`review1_cli.rs`, `review1_output.rs`) and `cargo fmt -p
-  surf-ports` one more (`review1_ports.rs`), and `cargo fmt -p surf-fetch` five (`fetch.rs`,
-  `redirects.rs`, `review1_fetch.rs`, `review1_security_fetch.rs`, `review2_fetch_limits.rs`;
-  `cargo fmt -p <package> -- --check` lists them, measured 2026-11-21); a unit that formats
+  surf-ports` one more (`review1_ports.rs`), and `cargo fmt -p surf-fetch` six (`fetch.rs`,
+  `redirects.rs`, `review1_fetch.rs`, `review1_security_fetch.rs`, `review2_fetch_limits.rs`,
+  `secreview_tls_fetch.rs`; `cargo fmt -p <package> -- --check` lists them, measured 2026-11-21,
+  the sixth 2026-11-24); a unit that formats
   restores the files it does not own.
   - `crates/answer` (`surf-answer`): renders an agent answer in the grammar of
     `docs/agent-answer.md` and reads it back (`parse`, `unquote`); every value from a page, a
@@ -335,7 +341,9 @@ above, and the list of standards itself was written from memory.
     the reasons `at-start`, `at-end` and `post-entry`. Since `story:agent-change-and-log` the
     `changed` block after `path` (`Changed`, `ControlChange`, `Change`: `changed <n>` with one `~`
     line per control, or `changed page` with at most `CHANGED_TEXTS_MAX` 10 `+ text` lines cut at
-    `CHANGED_TEXT_CHARS_MAX` 120 characters and `+ text more <n>`). No dependency.
+    `CHANGED_TEXT_CHARS_MAX` 120 characters and `+ text more <n>`). Since
+    `story:agent-cookie-jar` the `cookies <n>` line after `path` (`Answer::cookies`, from 1;
+    `render` refuses 0 with `RenderError::NoCookies`, `parse` refuses it). No dependency.
   - `crates/secret` (`surf-secret`): the operating system random source, the comparison in
     constant time and the 32-byte token. Every secret and every random identity of the agent
     and the view comes from here. No dependency.
@@ -384,19 +392,42 @@ above, and the list of standards itself was written from memory.
     embeds one: IPv4-mapped, IPv4-compatible, NAT64 `64:ff9b::/96`, 6to4 `2002::/16`)
     ends `ForbiddenDestination` before any connection. `send_through(&Request, &Limits, &dyn
     Network)` takes the resolver and the transport (`Network::resolve`, `Network::connect`);
-    `send` and `fetch` use `OsNetwork`. 136 tests: 14 unit tests, `adversary_redirect_memory` 4,
+    `send` and `fetch` use `OsNetwork`. Since `story:agent-cookie-jar` a `Request` also borrows
+    a cookie jar (`Request::jar`, a `surf_cookie::Jar`; `None` sends and keeps no cookie) and
+    the navigation's initiator (`Request::initiator`, a serialized origin): each hop sends the
+    one `Cookie` field the jar gives for its address, its method and whether it is same-site
+    with the initiator, and every `Set-Cookie` field of each response, redirects included, goes
+    into the jar before the next hop (the crate documentation, "Cookies"). `Request` has no
+    `PartialEq` since; its `Debug` shows the jar as `Jar { cookies: <n> }`. 171 tests: 14 unit
+    tests, `adversary_redirect_memory` 4, `adversary_tls_fetch` 9, `cookies` 18 (the wire
+    cases W1 to W14 against a recording server of the test and the secure cases X1 to X4
+    against `surf-tls-test-server`, its heads read back through `TestServer::requests`),
     `fetch` 24, `fetch_bounds` 7, `https` 19 (cases 1 to 17 of `story:tls-fetch-https` against
     `surf-tls-test-server` on 127.0.0.1, an empty set of anchors refused before any connection,
     and what a TLS connection adds to what a fetch holds), `post` 16, `redirects` 27 (cases 21
     to 26 and the review's case of other spellings over a `TestNetwork` of the test, no real
     name resolved; its case 10 moved to `https` as case 11), `review1_fetch` 5,
-    `review1_security_fetch` 13 and
-    `review2_fetch_limits` 7. `adversary_redirect_memory` holds an `unsafe`, a counting
+    `review1_security_fetch` 13, `review2_fetch_limits` 7 and `secreview_tls_fetch` 8.
+    `adversary_redirect_memory` holds an `unsafe`, a counting
     allocator, test only; since wave 10 `crates/html/tests/common/mod.rs` holds another, and
     since `story:tls-lock-allow` `crates/tls/tests/tls/alloc.rs` the third, each a counting
     allocator of tests; no file under a `src/` holds any. Depends on
-    `surf-url` and `surf-tls`; its tests also on `surf-tls-test-server` and
+    `surf-cookie`, `surf-url` and `surf-tls`; its tests also on `surf-tls-test-server` and
     `surf-tls-test-certs`.
+  - `crates/cookie` (`surf-cookie`, `story:agent-cookie-jar`): the cookie jar of one session,
+    by draft-ietf-httpbis-rfc6265bis-22: `Jar` (one `Mutex` inside, so a `&Jar` is shared),
+    `Jar::receive(url, set_cookie, now)`, `Jar::cookie_field(url, site, method, now)`,
+    `Jar::count(now)`, `site(initiator, url)` (same scheme and host as the initiator's origin,
+    ports ignored, or no initiator) and `parse_date`. Host-only cookies only: a `Domain`
+    attribute the host domain-matches keeps the cookie on the request host, any other ignores
+    it (no public suffix list). `Secure` by the scheme `https:` alone; `SameSite` `Strict`,
+    `Lax`, `None` and "Default" by site and the method of the hop; the `__Secure-` and
+    `__Host-` prefixes; a lifetime cut to 400 days; at most 50 cookies per domain and 3,000 per
+    jar, the least recently used evicted first (one without `Secure` first within a domain);
+    a `Cookie` field of at most 8,192 bytes. Every method takes the time, so the tests set it.
+    The crate documentation names each rule's section and the memory bound, 12,288,000 bytes
+    of names and values. `Debug` shows the count only. 14 tests (`jar`: the unit cases U1 to
+    U14). Depends on `surf-url`.
   - `crates/ports` (`surf-ports`): in-memory storage and version 4 identities for the generated
     components, one ports type per component. `AgentPorts<R = OsRandom>` stores `Session` and
     `Action`, assigns a version 4 `ActionId` from its random source (`with_source`,
@@ -439,7 +470,14 @@ above, and the list of standards itself was written from memory.
     `Browser::load` keep their signatures. `tests/request_method.rs` 5.
     Since `story:tls-fetch-https` `fetch_http` and `fetch_http_from` take the anchors of an
     `https:` fetch (`None`: the bundled list), and the five TLS failures of `surf-fetch` answer
-    the `FailureReason` of the same name (`tests/tls_failures.rs` 1).
+    the `FailureReason` of the same name (`tests/tls_failures.rs` 1). Since
+    `story:agent-cookie-jar` they take one per-session context in place of the anchors,
+    `RequestContext { anchors, jar }` (`Default`: the bundled list, no jar; `Debug` shows the
+    anchors' count and the jar's), and pass the jar and `RequestStarted::initiator` to
+    `surf-fetch`: the jar is used below the transport, so no `RequestStarted` or `Answer` holds
+    a cookie (`tests/cookies.rs` 1, case T1). `surf::initiator_of(address)` is the serialized
+    origin of a document's address (`null` for an opaque one or one that does not parse); the
+    submission step gives `SubmitForm` the origin of the form's document as its initiator.
     The library also runs the `document` component's parser step, a parameter of `Browser` like
     the transport: it decodes and parses each committed HTML body with `surf-html`, computes the
     title and the actionable elements with `surf-page`, and issues one command per actionable
@@ -477,15 +515,16 @@ above, and the list of standards itself was written from memory.
     lengths; since `story:agent-press-submit` the submitter's `formaction` and `formmethod`
     and the planned address). `tests/adversary_forms.rs` 12, its two probes of many forms and options at
     20,000 each, no wall time asserted.
-    Depends on the generated crates, `surf-ports`, `surf-fetch`, `surf-html`, `surf-page` and
-    `surf-url`.
+    Depends on the generated crates, `surf-ports`, `surf-fetch`, `surf-cookie`, `surf-html`,
+    `surf-page` and `surf-url`.
   - `crates/surf-cli` (`surf-cli`): the binary `surf` and its five tests, moved out of
     `crates/surf`, and since wave 7 `redirects` 2 (the `navigation` line holds the address the
     fetch ended at, the `request` line the address asked for). It loads one `http:` or, since
     `story:tls-fetch-https`, `https:` address, with `surf-fetch` as the transport (since wave 8
     through `surf::fetch_http`); `--ca-file <path>` adds the certificates of one PEM file to the
     bundled anchors and `--anchors` prints them (module `https`, 4 tests, against
-    `surf-tls-test-server` on 127.0.0.1). A package of
+    `surf-tls-test-server` on 127.0.0.1). It passes no cookie jar (`RequestContext { anchors,
+    jar: None }`): one process, one page. A package of
     its own so that it can depend on crates that depend on the `surf` library. Depends on `surf`,
     `surf-fetch` and `surf-ports`; its tests also on `surf-tls-test-server` and
     `surf-tls-test-certs`. The release workflow builds and versions `surf-cli`
@@ -582,13 +621,22 @@ above, and the list of standards itself was written from memory.
     `NavigationStarted` and `RequestStarted` carry `method`, `body` as `<n> bytes` and
     `body_type`, an absent one as the field with no value; its transport is `surf::fetch_http`,
     which since wave 9 sends a `Post` (since `story:agent-press-submit` the one of `press`).
-    327 tests: `adversary_anchors` 5,
+    Since `story:agent-cookie-jar` each session has one cookie jar (`surf_cookie::Jar`) in its
+    process's memory, in use on its thread for the length of each answer as its anchors are
+    (`SESSION_JAR`, `JarInUse`): every answer that shows the state has `cookies <n>` after its
+    path block while the jar holds a cookie, `close` empties it, and it is never written to a
+    file. `follow` gives `Follow` the origin of the link's document as the navigation's
+    initiator. The entries of `NavigationRequested`, `NavigationStarted`, `RequestStarted` and
+    `FormSubmitted` carry `initiator`, an absent one as the field with no value.
+    328 tests: `adversary_anchors` 5,
     `adversary_back_forward` 25, `adversary_change_log` 20, `adversary_controls` 1,
     `adversary_document_text` 7,
     `adversary_events` 1, `adversary_fill_pick` 16, `adversary_follow` 8,
     `adversary_https_targets` 8, `adversary_parse` 4,
     `adversary_press` 23, `adversary_values` 3, `adversary_view` 1, `back_forward` 13, `built`
-    16, `change_and_log` 18, `core` 22, `e2e` 2 (runs the three built binaries, or those in
+    16, `change_and_log` 18, `cookies` 1 (S1 to S7 of `story:agent-cookie-jar` in one test: the
+    built `surf-agent` against `surfd` in the test process and page servers on 127.0.0.1 and
+    127.0.0.2; golden `look-cookies.txt`), `core` 22, `e2e` 2 (runs the three built binaries, or those in
     `SURF_BIN_DIR`), `events` 26, `fill_pick` 22 (case 3 runs the built `surf-agent` against
     `surfd` in the test process), `follow` 18, `follow_refusals` 11 (over an in-memory transport
     that stands at any address), `form_rows` 1, `https` 16 (`open --ca-file`, and `follow` and
@@ -645,8 +693,8 @@ above, and the list of standards itself was written from memory.
     showed (`Shown`; a select compared by its selected options' places and labels), and `log [<n>]`
     is a read that answers every action in `path`, at most `LOG_BYTES_MAX` bytes of path lines.
     `cargo clippy -p surf-session` needs `--no-deps`: the generated `surf-types` fails clippy.
-    Depends on the `surf` library, `surf-ports`, `surf-fetch`, `surf-answer`, `surf-html`,
-    `surf-page`, `surf-page-text`, `surf-secret`, `surf-url`, the
+    Depends on the `surf` library, `surf-ports`, `surf-fetch`, `surf-cookie`, `surf-answer`,
+    `surf-html`, `surf-page`, `surf-page-text`, `surf-secret`, `surf-url`, the
     generated `surf-types`, and on `surf-agent` and `surfd` (the packages of the other two
     binaries, for the end-to-end test and the wire).
   - `crates/view` (`surf-view`): the live view's HTTP server, standard library only: `GET` only, a
@@ -740,8 +788,12 @@ above, and the list of standards itself was written from memory.
     `surf-session`; a dependency of `surf-view-fixture`.
   - `crates/agent-tasks` (`surf-agent-tasks`): test tooling, not shipped (`story:agent-tasks`,
     `story:agent-tasks-https`): the measure of what an agent can do with `surf-agent` alone.
-    `tasks.txt` holds one block per task (`article`, `table`, `link`, `search`, `https`),
-    `status.txt` the state each is listed in (all five `pass`), `sites/<task>/` their files.
+    `tasks.txt` holds one block per task (`article`, `table`, `link`, `search`, `https`,
+    `login`), `status.txt` the state each is listed in (all six `pass`), `sites/<task>/` their
+    files. Since `story:agent-cookie-jar` the fixture server has two routes for `login`: `POST
+    /login/login` with the right body answers `303` to the account page with a `Set-Cookie`
+    (`server::LOGIN_COOKIE`), and `GET /login/account.html` answers the page only to a request
+    that sends that cookie back, so `login` passes only when the session keeps its cookies.
     `tasks::every_task` runs every row with the scripted agent and the programs of
     `SURF_BIN_DIR`, in one private `XDG_RUNTIME_DIR` with one `surfd`, against the fixture
     server (a thread, 127.0.0.1, serving the sites of the `http` rows only) and, for the row
@@ -1041,7 +1093,9 @@ above, and the list of standards itself was written from memory.
     (`accepted`) and gives back what it saw on each (`wait_seen`, `Seen`: server name, ALPN,
     suite, group, scheme, ticket, request line, the request's body (the `Content-Length`
     bytes after the head, at most 64 KiB with the head), the records after the handshake, the
-    alerts, how it ended). A client silent for `IDLE` (2 s) is closed. A drop stops every
+    alerts, how it ended); since `story:agent-cookie-jar` `requests` gives the head of each
+    request it read, in the order read, kept before its response is written, so a test reads
+    the fields a client sent. A client silent for `IDLE` (2 s) is closed. A drop stops every
     connection and joins its threads; when the connection that wakes the accepting thread
     cannot be made, it returns without joining. It refuses a TLS 1.3 hello whose compression
     methods are not `[0]` (`illegal_parameter`), a session id over 32 bytes
@@ -1158,8 +1212,9 @@ A request has a method (wave 8). `Navigate` and `Fetch` carry a method (`surf.ne
 stores a body. The agent's `Go` navigates with `Get`. Since wave 9 the transports of `surf`
 and `surf-session` send a `Post` with its body and media type through `surf_fetch::send`, and
 end a `Get` with a body or a media type with `UnsupportedScheme`, before connecting. No command
-sends a `Post` yet; the form stories bring it. The marker of `spec/domains/net.yaml` is
-`UNMAPPED: request headers, cookies, caching and TLS.`
+sends a `Post` yet; the form stories bring it. Since `story:agent-cookie-jar` the marker of
+`spec/domains/net.yaml` about requests is `UNMAPPED: request headers and caching.`; cookies
+are specified there (the initiator of a navigation and the cookie rules).
 
 The agent's session: `Go` publishes `NavigationRequested`, which invokes `Navigate`.
 `NavigationStarted` also invokes `NoteNavigationStarted`; `NavigationCommitted` invokes
