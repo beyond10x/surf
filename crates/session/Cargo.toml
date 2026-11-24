@@ -33,6 +33,7 @@ surf-types = { path = "../../generated/rust/crates/surf-types" }
 
 [dev-dependencies]
 surf-test-process = { path = "../test-process" }
+surf-tls-test-server = { path = "../tls-test-server" }
 
 [[test]]
 name = "main"

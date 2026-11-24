@@ -25,6 +25,7 @@ mod fill_pick;
 mod follow;
 mod follow_refusals;
 mod form_rows;
+mod https;
 mod memory;
 mod press;
 mod redirect;
