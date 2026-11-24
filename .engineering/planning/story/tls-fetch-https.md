@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-fetch-https
 kind: story
-status: active
+status: implemented
 title: 'surf-fetch and the surf command load https: addresses and follow redirects between http: and https:'
 summary: The TLS client over Timed inside surf-fetch, the five failures mapped to their reasons, redirects across schemes, surf --ca-file and --anchors; end-to-end against the test server.
 relations:
@@ -30,10 +30,11 @@ scope:
   path: crates/surf/src/lib.rs
 - confidence: cited
   path: crates/surf/tests
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:30Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:30Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-24T05:02:54Z", actor: "human:operator", revision: 12, decided_on: {"recorded":{"test_result":2,"verification":2}}, executor: "agent:coordinator"}
 ---
 ## Context
 

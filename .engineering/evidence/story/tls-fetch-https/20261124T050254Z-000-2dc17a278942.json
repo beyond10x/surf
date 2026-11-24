@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T05:02:54Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-fetch-https",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the gate in runner form (task check-runner) on 75c888c, the tip of impl/tls-fetch-https, on the build node, 2026-11-24 05:45 to 05:48 CET",
+    "reference": "exit 0 in 111 s; conformance 201 of 201 scenarios, step 5.7 s; 1287 tests passed, test step 16.8 s; 545 TLS tests passed, 10.2 s; 71 page tests passed, page step 33.3 s of 120 s"
+  }
+}

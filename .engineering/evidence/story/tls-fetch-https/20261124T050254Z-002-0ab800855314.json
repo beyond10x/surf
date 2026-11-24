@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T05:02:54Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-fetch-https",
+  "kind": "story",
+  "revision": 11,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "two reviews of the unit on impl/tls-fetch-https by reviewers who did not write it, one for defects and one for the security claims, 2026-11-23 to 2026-11-24",
+    "reference": "no defect found in the code; 23 review tests merged into the unit (tip 75c888c); of seven one-line changes that passed the tests of the unit, six now fail a test; the seventh and one more item are the draft stories story:tls-test-server-sends-alerts and story:tls-fetch-memory-at-bounds"
+  }
+}

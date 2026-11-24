@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T05:02:54Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-spec",
+  "kind": "story",
+  "revision": 8,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the forge runs on main at 65dab49 (the merges of impl/tls-fetch-https at 75c888c and of plan/round-2 at cae41d0), 2026-11-24 05:51 to 06:02 CET",
+    "reference": "check 45329388526 success, Shared source gates 45329388991 success, Documentation validation 45329388512 success, Documentation site 45330180539 success"
+  }
+}
