@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-release
 kind: story
-status: active
+status: implemented
 title: 'Release builds carry ring on the four targets, and the smoke test checks https: and the anchors'
 summary: The compiler step of the design note in release.yml, the smoke test checks surf https://127.0.0.1:1/ and surf --anchors, the anchor age step in releasing.md, NOTICE, changelog and website.
 relations:
@@ -23,10 +23,11 @@ scope:
   path: taskfiles/release-smoke.sh
 - confidence: cited
   path: website/docs
-revision: 14
+revision: 16
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:31Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:31Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-24T08:16:58Z", actor: "human:operator", revision: 16, decided_on: {"recorded":{"test_result":4,"verification":2}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -159,3 +160,27 @@ and by `story:agent-cookie-public-suffixes` (the suffix list age step) after it;
 `story:agent-skill-definition` (the step `help --for-agent`) after it: never in the same wave. The
 probe workflow of `story:tls-decisions` is on a branch that is not merged. Coordinator:
 `README.md`, `AGENTS.md`, the badges.
+
+## As built
+
+Where the unit on `main` (`6217080`, the merge of `impl/tls-release` at `b39b77b`) differs from
+the text above:
+
+- `surf --anchors` prints 117, not the count of `SOURCE`: `SOURCE` holds 118 certificates and
+  one root gives no anchor (`NO_ANCHOR` in `crates/tls/tests/tls/anchors.rs`). The smoke test
+  compares the count for equality with the count of `SOURCE` less the length of `NO_ANCHOR`, so
+  acceptance 1 reads "`anchors 117 bundled ...`".
+- Step 2 of the smoke test also makes one TLS 1.3 handshake: `surf --ca-file <root.pem>
+  https://127.0.0.1:<port>/` against `openssl s_server` with the committed test certificate
+  `crates/tls-test-certs/certs/ok-ecdsa-p256`, so that ring's primitives run in the shipped
+  binary (added after the review, `e93ab1b`). The smoke test fails on a machine without an
+  `openssl` that has `s_server -tls1_3`.
+- On macOS `surf` links `/usr/lib/libiconv.2.dylib` beside `/usr/lib/libSystem.B.dylib` since
+  ring (`llvm-otool -L` on both macOS archives of runs 45344883467 and 45347703886);
+  `docs/releasing.md`, `docs/design/tls.md` and `CHANGELOG.md` say so.
+- Outside the Writes: `taskfiles/agent-tasks.yml`, `taskfiles/release.yml`,
+  `docs/design/tls.md`, `docs/badges/` and four more website pages, each for a sentence that the
+  change made false.
+
+Noticed and not changed: the test line of the release workflow runs 6 tests (`cli::` of
+`surf-cli`); the `https` module of that crate's tests does not run in a release job.

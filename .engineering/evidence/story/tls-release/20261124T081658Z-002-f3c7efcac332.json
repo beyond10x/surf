@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T08:16:58Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-release",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the gate in runner form (task check-runner) on b39b77b, the tip of impl/tls-release with main merged in, on the build node, 2026-11-24 08:45 to 08:46 CET",
+    "reference": "exit 0 in 60 s; conformance 201 of 201 scenarios, step 2.6 s; 1345 tests passed, test step 10.8 s; 552 TLS tests passed, 2.8 s; 71 page tests passed, page step 17.7 s of 120 s"
+  }
+}

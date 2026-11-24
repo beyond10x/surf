@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T08:16:58Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-release",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the smoke test here through the pool on the build node, from the tree at b39b77b, 2026-11-24 09:09 CET (acceptance 2 and 3)",
+    "reference": "on the x86_64 musl archive of run 45347703886: release-smoke: ok, surf, surf-agent, surfd and surf-session on Linux, exit 0; on the archive of release 0.3.0: exit 1, surf https://127.0.0.1:1/ did not end Unreachable: UnsupportedScheme"
+  }
+}
