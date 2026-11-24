@@ -52,14 +52,14 @@ the interpreter and the Rust system ran 203 scenario(s) each, of suite sha256:27
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 10 CLI artifact(s), generated in .out/cli
-Cargo.lock: 51 package(s), 19 from outside this repository, each on the allow-list
-test-layout: 25 test directories, 197 test files, one test binary each
+Cargo.lock: 58 package(s), 25 from outside this repository, each on the allow-list
+test-layout: 26 test directories, 203 test files, one test binary each
 tls-certs: 33 cases, certs/ matches its sources
 tls-flights: 6 recordings match SOURCE, the recorder matches DIGEST
 tls-flights: self-test: a changed copy of aes128-x25519-ecdsa.bin fails naming it
 doc-tests-check: no doc test outside crates/ports
     Finished `dev` profile [unoptimized] target(s) in 1.31s
-1547 tests: 1547 passed, 0 failed, 0 ignored (cargo-nextest 1545, doc tests 2)
+1616 tests: 1613 passed, 0 failed, 3 ignored (cargo-nextest 1614, doc tests 2)
 test step: 11.1 s of its budget of 120 s
 552 tests: 552 passed, 0 failed, 0 ignored (cargo-nextest 552)
 tls test step: 3.0 s of its budget of 120 s
@@ -94,10 +94,13 @@ tests each step also prints, the agent tasks' rows after their counts, npm's and
 own lines and the rows of the two conformance counts. It is the run of 2026-11-24 on `91f7ff1`,
 the Web IDL reader's branch, that `task check-runner` ended in 67 s, at a load of 34.40 at its
 start and 52.88 at its end; its test line counts the reader's tests as they stand after it
-(80, where that run had 72). Its test, test-layout and page tests' lines count the tests of
-`story:session-process-hardening` as they stand after it, from `task test`, `task
-test-layout` and `task view-test` on its tip (1547, 197 test files and 72, where that run had
-1504, 193 and 71); the times are that run's. That run's page tests' line, `71 passed
+(80, where that run had 72). Its page tests' line counts the tests of
+`story:session-process-hardening` as they stand after it, from `task view-test` on its tip
+(72, where that run had 71). Its lock-check, test and test-layout lines count the packages and
+tests of `story:scripts-engine-dependency` as they stand after it, from `task lock-check`,
+`task test` and `task test-layout` on its tip (58 packages, 25 from outside; 1616 tests, 3 of
+them ignored; 26 test directories and 203 test files; where that run had 51 and 19, 1504 and
+none, 25 and 193). The times are that run's. That run's page tests' line, `71 passed
 (18.3s)`, has its slowest test
 (`an entry over 1 MiB`) at 2.350 s; the run of 2026-11-24 on `8fab187` had `71 passed
 (12.7s)`, its slowest test (`adversary: an action streamed while the detail loads after a
@@ -115,9 +118,10 @@ load average of 110 to 140, and the 38 of before took 15.8 s.
 
 Third-party crates are used in two places: the scenario runner in
 [`conformance/`](https://github.com/beyond10x/surf/tree/main/conformance), with a lock of its
-own, and `surf-tls`, whose `ring` and the packages it needs are the 19 outside packages of the
-root lock, each on the allow-list `taskfiles/lock-allow.txt`; the lock check fails on one that
-is not. Nothing that ships depends on the scenario runner. Every binary built from `main` is
+own, and `surf-tls`, whose `ring` and the packages it needs are 19 of the 25 outside packages
+of the root lock; the other six are the packages of swell, the organization's script engine,
+which `surf-script` alone takes by a git dependency on a release tag. Each is on the
+allow-list `taskfiles/lock-allow.txt`; the lock check fails on one that is not. Nothing that ships depends on the scenario runner. Every binary built from `main` is
 built with `surf-tls` and so with ring, and so is every binary of every release since `0.7.0`.
 
 ## Build from source
