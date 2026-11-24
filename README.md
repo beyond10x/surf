@@ -9,13 +9,14 @@
 ![spec: ESS 0.97.4, valid](docs/badges/spec.svg)
 ![conformance: 196 of 196 scenarios](docs/badges/conformance.svg)
 ![tests: 1785 passed](docs/badges/tests.svg)
-![third-party crates shipped: 0](docs/badges/dependencies.svg)
+![third-party crates shipped: 5, ring 0.17.14 and 4 it needs](docs/badges/dependencies.svg)
 ![unsafe code: forbidden](docs/badges/unsafe.svg)
 ![standard sections marked complete: 0](docs/badges/complete.svg)
 ![roadmap: 10 of 22 waves delivered](docs/badges/roadmap.svg)
 
 surf is a small browser written in Rust. It does not wrap Chromium, WebKit or Gecko, and nothing
-that ships depends on a third-party crate. Every behaviour is written down as a specification
+that ships depends on a third-party crate, with one exception: on `main`, in no release yet, the
+cryptographic primitives of TLS come from ring (principle 4 below). Every behaviour is written down as a specification
 before any code exists, and a test suite generated from that specification runs against the
 real code on every change.
 
@@ -552,7 +553,9 @@ talking to the network, keeping each component's data, the command lines and the
 | `renderer` | styles, lays out and paints a document into a frame (specified, not rendering yet) |
 
 To build surf from source you need [`ess`](https://github.com/beyond10x/ess) 0.97.4,
-[`task`](https://taskfile.dev) and a Rust toolchain (built with 1.99.1); `task build` builds
+[`task`](https://taskfile.dev), a Rust toolchain (built with 1.99.1) and a C compiler (ring
+compiles its C and assembly with it: `cc` on Linux, the Xcode command line tools on macOS);
+`task build` builds
 the four binaries. `task check` also needs [`cargo-nextest`](https://nexte.st) 0.9.143 or later.
 That is for working on surf, not for using it.
 
@@ -626,7 +629,8 @@ install --only-shell chromium`. Third-party crates are used in two places: the s
 in [`conformance/`](conformance/), with a lock of its own, and `surf-tls`, whose `ring` and the
 packages it needs are the 19 outside packages of the root lock, each on the allow-list
 `taskfiles/lock-allow.txt`; the lock check fails on one that is not. Nothing that ships depends
-on either.
+on the scenario runner. Every binary built from `main` is built with `surf-tls` and so with
+ring; no release is built with it yet.
 
 `task open` lists the design questions that are still open.
 
