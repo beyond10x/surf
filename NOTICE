@@ -60,3 +60,9 @@ any shipped binary:
 - crates/html-conformance/data/html5lib-tests: html5lib-tests, the MIT
   License, copyright the html5lib-tests contributors
   (crates/html-conformance/data/html5lib-tests/LICENSE).
+- crates/webidl/data/whatwg: the DOM Standard (commit
+  e4f4f4f0ace83fe6c52ab68e047351ce7f2dcd69) and the Web IDL Standard (commit
+  54a5f2de6a34e27a517a49370bc07d8943b0be11), two pages of WHATWG standards,
+  Creative Commons Attribution 4.0 International (CC BY 4.0), Copyright ©
+  WHATWG (Apple, Google, Mozilla, Microsoft)
+  (crates/webidl/data/whatwg/SOURCE).
