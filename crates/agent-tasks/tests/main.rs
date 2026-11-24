@@ -11,6 +11,7 @@ mod archive_task;
 mod bounded;
 mod calls;
 mod check;
+mod check_rule;
 mod fixtures;
 mod format;
 mod judge;
