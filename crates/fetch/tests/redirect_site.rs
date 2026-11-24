@@ -35,8 +35,11 @@ fn hop_of(bytes: &[u8]) -> (String, Vec<String>) {
     (target, cookies)
 }
 
+/// The target and the `Cookie` lines of each request the server read, in order.
+type Hops = Arc<Mutex<Vec<(String, Vec<String>)>>>;
+
 /// The server of the module and the hops it read.
-fn server() -> (u16, Arc<Mutex<Vec<(String, Vec<String>)>>>) {
+fn server() -> (u16, Hops) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
     let port = listener.local_addr().expect("address").port();
     let hops = Arc::new(Mutex::new(Vec::new()));
@@ -115,8 +118,7 @@ fn chain(address: &str, method: Method, initiator: Option<&str>) -> Vec<(String,
     std::mem::take(&mut *hops.lock().expect("hops"))
 }
 
-static SERVER: std::sync::LazyLock<(u16, Arc<Mutex<Vec<(String, Vec<String>)>>>)> =
-    std::sync::LazyLock::new(server);
+static SERVER: std::sync::LazyLock<(u16, Hops)> = std::sync::LazyLock::new(server);
 
 fn hop(target: &str, cookie: Option<&str>) -> (String, Vec<String>) {
     (

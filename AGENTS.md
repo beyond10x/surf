@@ -402,16 +402,20 @@ above, and the list of standards itself was written from memory.
     documentation, "Cookies"). With a jar the address is parsed once, by `surf_url`: the
     connection, the `Host` field and the jar's lookup come from that parse on the first request
     as on every redirect. `Request` has no
-    `PartialEq` since; its `Debug` shows the jar as `Jar { cookies: <n> }`. 171 tests: 14 unit
-    tests, `adversary_redirect_memory` 4, `adversary_tls_fetch` 9, `cookies` 18 (the wire
-    cases W1 to W14 against a recording server of the test and the secure cases X1 to X4
-    against `surf-tls-test-server`, its heads read back through `TestServer::requests`),
-    `fetch` 24, `fetch_bounds` 7, `https` 19 (cases 1 to 17 of `story:tls-fetch-https` against
-    `surf-tls-test-server` on 127.0.0.1, an empty set of anchors refused before any connection,
-    and what a TLS connection adds to what a fetch holds), `post` 16, `redirects` 27 (cases 21
-    to 26 and the review's case of other spellings over a `TestNetwork` of the test, no real
-    name resolved; its case 10 moved to `https` as case 11), `review1_fetch` 5,
-    `review1_security_fetch` 13, `review2_fetch_limits` 7 and `secreview_tls_fetch` 8.
+    `PartialEq` since; its `Debug` shows the jar as `Jar { cookies: <n> }`. 176 tests: 14 unit
+    tests, `adversary_redirect_memory` 4, `adversary_tls_fetch` 9, `cookie_bytes` 1 (a
+    `Set-Cookie` field that is not UTF-8 is dropped), `cookies` 19 (the wire cases W1 to W14
+    against a recording server of the test, the secure cases X1 to X4 against
+    `surf-tls-test-server`, its heads read back through `TestServer::requests`, and the `Debug`
+    of a `Request`), `fetch` 24, `fetch_bounds` 7, `https` 19 (cases 1 to 17 of
+    `story:tls-fetch-https` against `surf-tls-test-server` on 127.0.0.1, an empty set of
+    anchors refused before any connection, and what a TLS connection adds to what a fetch
+    holds), `one_parse` 1 (addresses two parsers could read differently: the cookie sent belongs
+    to the host connected to), `post` 16, `redirect_site` 2 (a redirect chain that has been on
+    another site is cross-site from then on), `redirects` 27 (cases 21 to 26 and the review's
+    case of other spellings over a `TestNetwork` of the test, no real name resolved; its case
+    10 moved to `https` as case 11), `review1_fetch` 5, `review1_security_fetch` 13,
+    `review2_fetch_limits` 7 and `secreview_tls_fetch` 8.
     `adversary_redirect_memory` holds an `unsafe`, a counting
     allocator, test only; since wave 10 `crates/html/tests/common/mod.rs` holds another, and
     since `story:tls-lock-allow` `crates/tls/tests/tls/alloc.rs` the third, each a counting
@@ -433,8 +437,11 @@ above, and the list of standards itself was written from memory.
     `STORED_BYTES_MAX` (16 MiB) of names, values, paths and domains per jar, the least recently
     used evicted first (one without `Secure` first within a domain); a `Cookie` field of at most
     8,192 bytes. Every method takes the time, so the tests set it. The crate documentation
-    names each rule's section and the memory bound. `Debug` shows the count only. 14 tests (`jar`: the unit cases U1 to
-    U14). Depends on `surf-url`.
+    names each rule's section and the memory bound. `Debug` shows the count only. 29 tests:
+    `adversary_jar` 5 and `secreview_jar` 3 (the two reviews of `story:agent-cookie-jar`),
+    `bound` 2 (the stored bytes against `STORED_BYTES_MAX`), `hosts` 2 (an empty `Domain`, an
+    IPv6 host), `jar` 14 (the unit cases U1 to U14) and `shadow` 3 (the `Secure` shadow rule,
+    both directions of the path relation). Depends on `surf-url`.
   - `crates/ports` (`surf-ports`): in-memory storage and version 4 identities for the generated
     components, one ports type per component. `AgentPorts<R = OsRandom>` stores `Session` and
     `Action`, assigns a version 4 `ActionId` from its random source (`with_source`,
@@ -482,9 +489,10 @@ above, and the list of standards itself was written from memory.
     `RequestContext { anchors, jar }` (`Default`: the bundled list, no jar; `Debug` shows the
     anchors' count and the jar's), and pass the jar and `RequestStarted::initiator` to
     `surf-fetch`: the jar is used below the transport, so no `RequestStarted` or `Answer` holds
-    a cookie (`tests/cookies.rs` 1, case T1). `surf::initiator_of(address)` is the serialized
-    origin of a document's address (`null` for an opaque one or one that does not parse); the
-    submission step gives `SubmitForm` the origin of the form's document as its initiator.
+    a cookie (`tests/cookies.rs` 2: case T1, and the `Debug` of a `RequestContext`).
+    `surf::initiator_of(address)` is the serialized origin of a document's address (`null` for
+    an opaque one or one that does not parse); the submission step gives `SubmitForm` the
+    origin of the form's document as its initiator.
     The library also runs the `document` component's parser step, a parameter of `Browser` like
     the transport: it decodes and parses each committed HTML body with `surf-html`, computes the
     title and the actionable elements with `surf-page`, and issues one command per actionable
