@@ -7,7 +7,7 @@ title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, in the session process, against a DOM generated from Web IDL and under limits per page, when the session's option asks for it, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 37
+revision: 38
 ---
 ## Context
 
@@ -839,3 +839,9 @@ Later the same day the engine's session narrowed HOST-70 (its question D28, opti
 - An entry whose parse and script need more than the room `memory_bytes` − `heap_bytes()` ends in `Terminated(MemoryBudget)` again, with the agent still `Alive` (HOST-189). Once the host made room, by dropping roots and calling `collect()`, the script `1` answers `Normal(1)` when the room is at least 3,072 bytes (HOST-190).
 - surf: after an entry that ends in `Terminated(MemoryBudget)`, surf calls `collect()` once. If the next entry of that document ends in `Terminated(MemoryBudget)` again, surf runs no further script in that document.
 - Requirement 1 is built in the engine as `Agent::last_entry_error_site`, which answers the line, the column and whether the code was dynamic or host defined, after a parse error or an uncaught throw (HOST-172 to HOST-174).
+
+On 2026-11-24, with its release 0.8.0, the engine's session read `testharness.js` for the planning of its slice 4. What it states, and what surf does:
+
+- `testharness.js` lines 1257 and 1260 call `Date.now()` in the busy wait of `fake_set_timeout`. With a host clock that does not advance, that loop ends only at the step budget. In 0.8.0 `Date` is not defined; it comes with the first wave of slice 4, which is not built yet.
+- surf: the clock hook `host_system_utc_epoch_nanoseconds` (HOST-125) answers a value that advances between two calls. A fixed clock, as a test might choose for a stable output, makes that busy wait run to the step budget; a test that fixes the clock advances it by a fixed amount per call.
+- The seven `Math` calls of the harness (`floor`, `min`, `max`, `abs` twice, `ceil`: `testharness.js` lines 1708 to 1710, 1783, 1812 and 3018, and `common.js` line 5) depend on no answer of the host.
