@@ -7,5 +7,6 @@ mod adversary_jar;
 mod bound;
 mod hosts;
 mod jar;
+mod secreview2_chain;
 mod secreview_jar;
 mod shadow;
