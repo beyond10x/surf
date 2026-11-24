@@ -29,15 +29,24 @@ wanted, not mandatory: "I'm not saying we have to follow a spec, but would be gr
   could also spec it, implement it our own." Scope, decided by the operator on 2026-11-20 (option C):
   - No third-party crates in anything that ships. The Rust standard library and the operating
     system are allowed.
-  - Two exceptions. Audited cryptographic primitives come from ring 0.17.14, used by
-    `surf-tls` alone; and one crate of the organization, the script engine swell, by a git
-    dependency on a release tag, used by `surf-script` alone. `taskfiles/lock-allow.txt` names
-    each of their packages by name, version, source and checksum (`none` for a package from
-    git), and `taskfiles/lock-owners.txt` names the crates of this repository that may depend
-    on each (`task lock-check`).
+  - Two exceptions. `taskfiles/lock-allow.txt` names each of their packages by name,
+    version, source and checksum (`none` for a package from git), and
+    `taskfiles/lock-owners.txt` names the crates of this repository that may depend on
+    each (`task lock-check`).
+    - Audited cryptographic primitives (ciphers, hashes, key exchange, signature
+      verification) come from a third-party crate, because hand-written ones leak keys
+      through timing. The crate is ring 0.17.14 (the operator, 2026-11-22: "A: ring
+      0.17.14"), used by `surf-tls` alone. The TLS protocol code on top of it is written
+      here.
+    - One crate of the organization, the script engine swell, by a git dependency on a
+      release tag, used by `surf-script` alone (`docs/design/scripts.md`, Q15).
   - Build and test tooling (`ess`, `task`, test suites) is not runtime and is not covered.
   - `conformance/` is the one place in the repository where a third-party crate is allowed: the
-    `ess-conformance` runner and what it brings, in a Cargo workspace of its own.
+    `ess-conformance` runner and what it brings, in a Cargo workspace of its own. The root
+    `Cargo.lock` proves the rest: every package in it from outside this repository is on
+    `taskfiles/lock-allow.txt`, matched on name, version, source and checksum, and no crate
+    of this repository depends on one but those `taskfiles/lock-owners.txt` names (`task
+    lock-check`).
 
 Status on 2026-11-20: `spec/` was drafted by reasoning over the page load. No standard was read
 for it. Its names, lifecycle states and command boundaries are not checked against the standards
@@ -293,7 +302,7 @@ above, and the list of standards itself was written from memory.
   (`story:test-step-scripts-and-binaries`): the libraries of `surf`, `surf-agent`,
   `surf-agent-tasks`, `surf-answer`, `surf-cookie`, `surf-html-conformance`, `surf-page`,
   `surf-page-text`,
-  `surf-ports` (its `doctest` stays, so its two doc tests run), `surf-secret`, `surf-session`,
+  `surf-ports` (its `doctest` stays, so its two doc tests run), `surf-script`, `surf-secret`, `surf-session`,
   `surf-url`, `surf-view`, `surf-webidl` and `surf-test-process`, and the binaries of
   `surf-agent`, `surf-cli`,
   `surf-html-conformance` (both), `surf-session`, `surfd`, `surf-view-fixture` (both) and
@@ -342,6 +351,9 @@ above, and the list of standards itself was written from memory.
     `CHANGED_TEXT_CHARS_MAX` 120 characters and `+ text more <n>`). Since
     `story:agent-cookie-jar` the `cookies <n>` line after `path` (`Answer::cookies`, from 1;
     `render` refuses 0 with `RenderError::NoCookies`, `parse` refuses it). No dependency.
+  - `crates/script` (`surf-script`, `story:scripts-engine-dependency`): runs a source on one
+    swell 0.8.0 agent under surf's limits; no DOM yet, and no crate depends on it. Depends on
+    swell and `surf-secret`.
   - `crates/secret` (`surf-secret`): the operating system random source, the comparison in
     constant time and the 32-byte token. Every secret and every random identity of the agent
     and the view comes from here. No dependency.

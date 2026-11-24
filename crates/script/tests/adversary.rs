@@ -217,7 +217,9 @@ fn threads() -> usize {
 }
 
 /// Held: 100 runners, half of them never started, leave no thread behind: each runner's thread
-/// and its clock's thread end when the runner is dropped.
+/// and its clock's thread end when the runner is dropped. The count is read right after each
+/// runner is dropped, and a started runner's clock (30 s) is still waiting then, so a clock
+/// thread that is not joined on the drop is still counted (fix round 1, item 12 a).
 #[test]
 fn a_hundred_runners_leave_no_thread_behind() {
     let before = threads();
@@ -230,8 +232,8 @@ fn a_hundred_runners_leave_no_thread_behind() {
             }
         });
         assert!(matches!(end, Some(ScriptEnd::Ran) | None), "{end:?}");
+        assert_eq!(threads(), before, "after runner {i}");
     }
-    assert_eq!(threads(), before);
 }
 
 /// Held: the clock of one runner ends no script of another. Runner B runs an endless loop under

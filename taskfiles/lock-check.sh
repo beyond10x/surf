@@ -9,18 +9,29 @@
 # The allow-list holds one line per package from outside this repository that the lock may
 # hold: `<name> <version> <source> <checksum>`, four fields separated by one space, as cargo
 # writes them into the lock, with `none` for the checksum of a package that has none (cargo
-# writes no `checksum` line for a package from git); sorted, no comment lines, no empty lines.
+# writes no `checksum` line for a package from git); sorted, no comment lines, no empty lines,
+# no line twice.
 #
 # The owners file holds one line `<package> <crate>` per crate of this repository that may name
 # the package among its dependencies: a package of the allow-list, or surf-script, the one
 # crate that runs swell, which no crate may depend on without a line of its own
 # (docs/design/scripts.md, Q14 and Q15). Two fields separated by one space; sorted, no comment
-# lines, no empty lines.
+# lines, no empty lines, no line twice, and each line used: the crate depends on the package.
 #
-# The manifest is the root Cargo.toml: cargo reads profiles from the root workspace's manifest
-# only, so a dependency's own `overflow-checks = true` is not read, and each package from git
-# needs a table `[profile.release.package.<name>]` there holding `overflow-checks = true` (the
-# dev and test profiles check overflow by cargo's default).
+# The manifest is the root Cargo.toml. cargo reads no profile from a dependency's manifest, so
+# swell's own `overflow-checks = true` is not read, and each package from git needs a table
+# `[profile.release.package.<name>]` in the root manifest holding `overflow-checks = true` (the
+# dev and test profiles check overflow by cargo's default). The root manifest holds no
+# multi-line string (`"""` or `'''`), so that no table hides inside one; the lines inside one are
+# not read as tables.
+#
+# A cargo config file overrides the root manifest's profiles. The check reads the config files
+# of the tree, `.cargo/config.toml` and `.cargo/config` beside the manifest, when they exist, and
+# fails on a line in a `profile` table or key that names a package from git as a package of a
+# profile (`[profile.<any>.package.<name>]`, also in dotted keys or an inline table), or that
+# sets `overflow-checks` to false in any profile. Outside what a check of the tree can see: the
+# config file of a directory above the tree or of `$CARGO_HOME`, a `--config` on a command line,
+# and the `CARGO_PROFILE_*` variables of the environment.
 #
 # The lock is accepted only in the form cargo writes it. cargo reads the lock as TOML and, under
 # --locked, compares values, so it accepts the same lock in other spellings (keys without
@@ -44,13 +55,19 @@
 #   `<that package> <the crate>`: "<lock>: <crate> depends on <package>; lock-owners.txt does
 #   not allow it". A package of the allow-list may depend on another (ring's on theirs, swell on
 #   its five);
+# - a package without a `source` line bears the name of a package of the allow-list: "<lock>:
+#   <name> <version> has no source but the name of a listed package";
 # - a package with a `source` line that starts with `git+` has no `overflow-checks = true` in
 #   its table of the manifest's release profile: "<manifest>: <name> <version> from <source>: no
 #   overflow-checks = true under [profile.release.package.<name>]";
+# - a line of the manifest holds `"""` or `'''`: "<manifest>:<n>: a multi-line string ...";
+# - a line of a config file as above: "<config>:<n>: ...";
 # - a line of the allow-list matches no package of the lock: "<allow-list>: <name> <version> is
 #   in no package of <lock>";
-# - a line of the allow-list is not four fields, a line of the owners file not two, or the
-#   lock, the list, the owners file or the manifest is missing.
+# - a line of the owners file is used by no dependency: "<owners>: <package> <crate> is a
+#   permission nobody uses: <crate> does not depend on <package>";
+# - a line of the allow-list is not four fields, a line of the owners file not two, a line of
+#   either is there twice, or the lock, the list, the owners file or the manifest is missing.
 # Else it prints "<lock>: <n> package(s), <m> from outside this repository, each on the
 # allow-list", or "<lock>: <n> package(s), none from outside this repository" when <m> is 0.
 #
@@ -70,7 +87,22 @@ test -f "$allow" || { echo "$allow: missing; it lists the packages from outside 
 test -f "$owners" || { echo "$owners: missing; it lists the crates of this repository that may depend on a listed package or on surf-script"; exit 1; }
 test -f "$manifest" || { echo "$manifest: missing; it holds the release profile of each package from git"; exit 1; }
 
-exec awk -v lock="$lock" -v allow="$allow" -v owners="$owners" -v manifest="$manifest" '
+# The config files of the tree that cargo reads beside the manifest, those that exist.
+dir=$(dirname "$manifest")
+case $dir in
+  .) base=.cargo ;;
+  *) base=$dir/.cargo ;;
+esac
+config1=$base/config.toml
+config2=$base/config
+set -- "$allow" "$owners" "$manifest"
+test -f "$config1" && set -- "$@" "$config1"
+test -f "$config2" && set -- "$@" "$config2"
+set -- "$@" "$lock"
+
+exec awk -v lock="$lock" -v allow="$allow" -v owners="$owners" -v manifest="$manifest" \
+  -v config1="$config1" -v config2="$config2" '
+  BEGIN { sq = sprintf("%c", 39); tsq = sq sq sq; tdq = "\"\"\"" }
   # Whether line l is one cargo writes into a lock.
   function cargo_form(l) {
     if (l == "" || l == "[[package]]" || l == "dependencies = [" || l == "]") return 1
@@ -121,9 +153,30 @@ exec awk -v lock="$lock" -v allow="$allow" -v owners="$owners" -v manifest="$man
     psource[packages] = source; pchecksum[packages] = checksum
     pdeps[packages] = deps
   }
-  FILENAME == ARGV[1] {
+  # How many times t occurs in s, not overlapping.
+  function count(s, t,   n, i) {
+    n = 0
+    while ((i = index(s, t)) > 0) { n++; s = substr(s, i + length(t)) }
+    return n
+  }
+  # Whether s names the package g: g not inside a longer name.
+  function names(s, g,   i, before, after) {
+    while ((i = index(s, g)) > 0) {
+      before = i > 1 ? substr(s, i - 1, 1) : ""
+      after = substr(s, i + length(g), 1)
+      if (before !~ /[A-Za-z0-9_-]/ && after !~ /[A-Za-z0-9_-]/) return 1
+      s = substr(s, i + length(g))
+    }
+    return 0
+  }
+  FILENAME == allow {
     if (NF != 4 || $0 != $1 " " $2 " " $3 " " $4) {
       print allow ": line " FNR " is not \"<name> <version> <source> <checksum>\": " $0
+      bad++
+      next
+    }
+    if ($0 in entry) {
+      print allow ": line " FNR " is there twice: " $0
       bad++
       next
     }
@@ -133,29 +186,68 @@ exec awk -v lock="$lock" -v allow="$allow" -v owners="$owners" -v manifest="$man
     entry[$0] = listed
     next
   }
-  FILENAME == ARGV[2] {
+  FILENAME == owners {
     if (NF != 2 || $0 != $1 " " $2) {
       print owners ": line " FNR " is not \"<package> <crate>\": " $0
       bad++
       next
     }
+    if ($0 in owner) {
+      print owners ": line " FNR " is there twice: " $0
+      bad++
+      next
+    }
     owner[$0] = 1
+    owned[++owners_n] = $0
     next
   }
-  FILENAME == ARGV[3] {
+  FILENAME == manifest {
+    # The root manifest holds no multi-line string, and a line inside one is no table.
+    n = count($0, tdq) + count($0, tsq)
+    if (n) {
+      print manifest ":" FNR ": a multi-line string; the root manifest holds none, so that no table hides in one: " $0
+      bad++
+      if (n % 2) instring = !instring
+      next
+    }
+    if (instring) next
     s = trim(uncomment($0))
     if (substr(s, 1, 1) == "[") {
       table = s
-      gsub(/[ \t"\047]/, "", table)
+      gsub(/[ \t"]/, "", table)
+      gsub(sq, "", table)
       next
     }
     if (table !~ /^\[profile\.release\.package\.[^].]+\]$/) next
     eq = index(s, "=")
     if (!eq) next
-    k = trim(substr(s, 1, eq - 1)); gsub(/["\047]/, "", k)
+    k = trim(substr(s, 1, eq - 1)); gsub(/"/, "", k); gsub(sq, "", k)
     if (k != "overflow-checks") next
     p = substr(table, 26, length(table) - 26)
     checked[p] = (trim(substr(s, eq + 1)) == "true")
+    next
+  }
+  FILENAME == config1 || FILENAME == config2 {
+    # Each line of a profile table or key, kept with its key path for the END rules.
+    s = trim(uncomment($0))
+    if (s == "") next
+    if (substr(s, 1, 1) == "[") {
+      ctable = s
+      gsub(/[][ \t"]/, "", ctable)
+      gsub(sq, "", ctable)
+      path = ctable
+      cval = ""
+    } else {
+      eq = index(s, "=")
+      if (!eq) next
+      k = trim(substr(s, 1, eq - 1)); gsub(/[ \t"]/, "", k); gsub(sq, "", k)
+      path = ctable == "" ? k : ctable "." k
+      cval = trim(substr(s, eq + 1))
+    }
+    if (path != "profile" && substr(path, 1, 8) != "profile.") next
+    configs++
+    cfile[configs] = FILENAME; cline[configs] = FNR; cpath[configs] = path
+    cvalue[configs] = cval; ctext[configs] = $0
     next
   }
   {
@@ -193,9 +285,12 @@ exec awk -v lock="$lock" -v allow="$allow" -v owners="$owners" -v manifest="$man
     for (p = 1; p <= packages; p++) {
       if (psource[p] != "") {
         outside++
-        if (substr(psource[p], 1, 4) == "git+" && !checked[pname[p]]) {
-          print manifest ": " pname[p] " " pversion[p] " from " psource[p] ": no overflow-checks = true under [profile.release.package." pname[p] "]"
-          bad++
+        if (substr(psource[p], 1, 4) == "git+") {
+          fromgit[pname[p]] = 1
+          if (!checked[pname[p]]) {
+            print manifest ": " pname[p] " " pversion[p] " from " psource[p] ": no overflow-checks = true under [profile.release.package." pname[p] "]"
+            bad++
+          }
         }
         sum = pchecksum[p] == "" ? "none" : pchecksum[p]
         line = pname[p] " " pversion[p] " " psource[p] " " sum
@@ -209,12 +304,32 @@ exec awk -v lock="$lock" -v allow="$allow" -v owners="$owners" -v manifest="$man
         bad++
         continue
       }
+      if (pname[p] in allowed) {
+        print lock ": " pname[p] " " pversion[p] " has no source but the name of a listed package"
+        bad++
+        continue
+      }
       n = split(pdeps[p], ds, " ")
       for (i = 1; i <= n; i++) {
         if (ds[i] == pname[p]) continue
         if (!(ds[i] in allowed) && ds[i] != "surf-script") continue
-        if ((ds[i] " " pname[p]) in owner) continue
+        if ((ds[i] " " pname[p]) in owner) { used[ds[i] " " pname[p]] = 1; continue }
         print lock ": " pname[p] " depends on " ds[i] "; lock-owners.txt does not allow it"
+        bad++
+      }
+    }
+    for (c = 1; c <= configs; c++) {
+      n = split(cpath[c], seg, ".")
+      hit = ""
+      if (n >= 4 && seg[3] == "package" && (seg[4] in fromgit)) hit = seg[4]
+      else if (index(ctext[c], "{")) for (g in fromgit) if (names(ctext[c], g)) { hit = g; break }
+      if (hit != "") {
+        print cfile[c] ":" cline[c] ": names " hit ", a package from git, in a profile; a cargo config file overrides the profiles of " manifest ": " ctext[c]
+        bad++
+        continue
+      }
+      if ((seg[n] == "overflow-checks" && cvalue[c] ~ /false/) || (index(ctext[c], "{") && ctext[c] ~ /overflow-checks[ \t]*=[ \t]*false/)) {
+        print cfile[c] ":" cline[c] ": turns overflow-checks off in a profile; a cargo config file overrides the profiles of " manifest ": " ctext[c]
         bad++
       }
     }
@@ -222,11 +337,16 @@ exec awk -v lock="$lock" -v allow="$allow" -v owners="$owners" -v manifest="$man
       print allow ": " lname[l] " " lversion[l] " is in no package of " lock
       bad++
     }
+    for (o = 1; o <= owners_n; o++) if (!(owned[o] in used)) {
+      split(owned[o], pc, " ")
+      print owners ": " owned[o] " is a permission nobody uses: " pc[2] " does not depend on " pc[1]
+      bad++
+    }
     if (bad) {
-      print bad " finding(s); a package from outside this repository must be on " allow ", a crate may depend on one or on surf-script only by a line of " owners ", a package from git needs overflow-checks = true in the release profile of " manifest ", and the lock is read only in the form cargo writes"
+      print bad " finding(s); a package from outside this repository must be on " allow ", a crate may depend on one or on surf-script only by a line of " owners ", a package from git needs overflow-checks = true in the release profile of " manifest " and no cargo config file of the tree may change its profile, and the lock is read only in the form cargo writes"
       exit 1
     }
     if (outside) print lock ": " packages " package(s), " outside " from outside this repository, each on the allow-list"
     else print lock ": " packages " package(s), none from outside this repository"
   }
-' "$allow" "$owners" "$manifest" "$lock"
+' "$@"

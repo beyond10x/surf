@@ -4,6 +4,13 @@
 //! cases with surf's limits on the runner's thread (`docs/design/scripts.md`). Each test makes
 //! its own runner, a realm with the intrinsics and nothing else, in the test mode (a fixed clock
 //! and fixed seeds) unless it tests the session's hooks.
+//!
+//! Three tests are ignored until swell reaches what they call (HOST-125, HOST-26, HOST-127).
+//! Two claims of the runner no test holds yet, because swell `0.8.0` gives no way to see them
+//! (review S5, fix round 1): that a fault stays set, so that each script after `faulted` ends
+//! `not run: faulted` (no script makes swell fault on purpose), and that a runner of the test
+//! mode hands its agent the seeds of [`Mode::seeds`] (no script reads `hash_key` or
+//! `random_seed` before `Math.random`, HOST-26).
 
 use std::cell::Cell;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};

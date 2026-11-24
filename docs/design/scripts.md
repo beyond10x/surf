@@ -1108,9 +1108,15 @@ Settled: the fields (kind, message, line, column, `dynamic`) and their sources, 
   nomodule content attribute and its type is "classic", then return" (snapshot
   `546d834701d171e3b164da8463d62878deb1e954`, "Last Updated 23 November 2026").
 - "cargo reads profiles from the root workspace only", so surf sets `overflow-checks = true` for
-  swell's packages (epic, "The dependency rule"): confirmed. The Cargo Book, "Profiles": "Cargo
-  only looks at the profile settings in the Cargo.toml manifest at the root of the workspace.
-  Profile settings defined in dependencies will be ignored." (fetched 2026-11-24, sha256 above).
+  swell's packages (epic, "The dependency rule"): confirmed for the manifests, corrected for
+  config files. cargo reads no profile from a dependency's manifest. The Cargo Book, "Profiles":
+  "Cargo only looks at the profile settings in the Cargo.toml manifest at the root of the
+  workspace. Profile settings defined in dependencies will be ignored." (fetched 2026-11-24,
+  sha256 above). A cargo config file overrides the root manifest's profiles (The Cargo Book,
+  "Configuration", `[profile]`: it "can be used to globally change profile settings, and
+  override settings specified in Cargo.toml"), so `task lock-check` also reads the tree's
+  `.cargo/config.toml`; a config file above the tree, `--config` and `CARGO_PROFILE_*` are
+  outside what a check of the tree sees (`story:scripts-engine-dependency`, fix round 1).
   swell's root `Cargo.toml` sets `overflow-checks = true` in `dev`, `release`, `test` and `bench`
   (`Cargo.toml:10-20 @ 0.8.0`), which surf's build does not read; surf's dev and test profiles
   check overflow by default, and its release profile sets it for the six swell packages

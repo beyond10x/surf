@@ -60,22 +60,26 @@ fn manifest() -> String {
 /// The line of `task lock-check` (Taskfile.yml), which `check` runs in a copy.
 const LINE: &str = "sh taskfiles/lock-check.sh Cargo.lock taskfiles/lock-allow.txt taskfiles/lock-owners.txt Cargo.toml";
 
-/// The files of one copy: the lock, the allow-list, the owners file and the root manifest.
+/// The files of one copy: the lock, the allow-list, the owners file, the root manifest and
+/// `.cargo/config.toml`, which cargo reads profiles from too.
 struct Files {
     lock: String,
     allow: String,
     owners: String,
     manifest: String,
+    config: String,
 }
 
 impl Files {
-    /// The four files as committed.
+    /// The five files as committed.
     fn committed() -> Self {
         Self {
             lock: lock(),
             allow: allow_list(),
             owners: owners(),
             manifest: manifest(),
+            config: fs::read_to_string(repository().join(".cargo/config.toml"))
+                .expect("read .cargo/config.toml"),
         }
     }
 }
@@ -97,11 +101,13 @@ fn copy_files(name: &str, files: &Files) -> PathBuf {
     fs::write(dir.join("taskfiles/lock-owners.txt"), &files.owners).expect("write lock-owners.txt");
     fs::write(dir.join("Cargo.lock"), &files.lock).expect("write Cargo.lock");
     fs::write(dir.join("Cargo.toml"), &files.manifest).expect("write Cargo.toml");
+    fs::create_dir_all(dir.join(".cargo")).expect("create .cargo");
+    fs::write(dir.join(".cargo/config.toml"), &files.config).expect("write .cargo/config.toml");
     dir
 }
 
 /// A fresh copy named `name` of the check's script, `allow` as its allow-list and `lock` as the
-/// root `Cargo.lock`, with the owners file and the root manifest as committed.
+/// root `Cargo.lock`, with the owners file, the root manifest and the cargo config as committed.
 fn copy_with(name: &str, lock: &str, allow: &str) -> PathBuf {
     copy_files(
         name,
@@ -570,6 +576,118 @@ fn an_owners_line_not_two_fields_fails_naming_it() {
     let line =
         format!("taskfiles/lock-owners.txt: line {n} is not \"<package> <crate>\": surf-script");
     assert_fails_with("owners-form", &dir, &format!("{line:?}"), |l| l == line);
+}
+
+/// `.cargo/config.toml` turning overflow checks off in the release profile fails, naming the
+/// file and the line, in a table and in dotted keys: a cargo config file overrides the root
+/// manifest's profiles. `[profile.release.package.swell-num]` there is the review's case
+/// (`adversary::a_cargo_config_turning_overflow_checks_off_fails`).
+#[test]
+fn a_cargo_config_turning_overflow_checks_off_for_the_release_profile_fails() {
+    let config = Files::committed().config;
+    let n = config.lines().count();
+    let off = "turns overflow-checks off in a profile";
+    let names = "names swell-num, a package from git, in a profile";
+    for (case, edited, at, says) in [
+        (
+            "config-release-table",
+            format!("{config}\n[profile.release]\noverflow-checks = false\n"),
+            n + 3,
+            off,
+        ),
+        (
+            "config-release-dotted",
+            format!("profile.release.overflow-checks = false\n\n{config}"),
+            1,
+            off,
+        ),
+        (
+            "config-package-dotted",
+            format!("profile.release.package.swell-num.overflow-checks = false\n\n{config}"),
+            1,
+            names,
+        ),
+    ] {
+        let dir = copy_files(
+            case,
+            &Files {
+                config: edited,
+                ..Files::committed()
+            },
+        );
+        let start = format!(".cargo/config.toml:{at}: {says}; ");
+        assert_fails_with(case, &dir, &format!("{start:?}"), |l| l.starts_with(&start));
+    }
+}
+
+/// A package without a `source` line, so read as a crate of this repository, that bears the
+/// name of a package on the allow-list fails, naming it: here a path `ring` 0.17.15 beside the
+/// listed ring, used by `surf-tls`. The review's case does the same with swell
+/// (`adversary::a_path_package_named_like_a_listed_one_fails`).
+#[test]
+fn a_path_package_named_like_ring_fails() {
+    let lock = lock_with_package_edited("surf-tls", |b| {
+        b.replace(
+            " \"ring\",\n",
+            &format!(" \"ring 0.17.14 ({CRATES_IO})\",\n \"ring 0.17.15\",\n"),
+        )
+    });
+    let at = lock
+        .find("[[package]]\nname = \"shlex\"\n")
+        .expect("shlex in the lock");
+    let lock = format!(
+        "{}[[package]]\nname = \"ring\"\nversion = \"0.17.15\"\n\n{}",
+        &lock[..at],
+        &lock[at..]
+    );
+    let dir = copy_with("path-ring", &lock, &allow_list());
+    assert_fails_with("path-ring", &dir, "naming ring 0.17.15", |l| {
+        l == "Cargo.lock: ring 0.17.15 has no source but the name of a listed package"
+    });
+}
+
+/// A line written twice in the allow-list or in the owners file fails, saying "twice".
+#[test]
+fn a_line_listed_twice_fails() {
+    let allow = allow_list();
+    let swell = listed("swell");
+    let owners = owners();
+    for (case, files) in [
+        (
+            "allow-twice",
+            Files {
+                allow: allow.replace(&swell, &format!("{swell}\n{swell}")),
+                ..Files::committed()
+            },
+        ),
+        (
+            "owners-twice",
+            Files {
+                owners: owners.replace("ring surf-tls\n", "ring surf-tls\nring surf-tls\n"),
+                ..Files::committed()
+            },
+        ),
+    ] {
+        let dir = copy_files(case, &files);
+        assert_fails_with(case, &dir, "saying twice", |l| l.contains(" twice"));
+    }
+}
+
+/// A line of the owners file that no dependency of the named crate uses fails: a permission
+/// nobody uses.
+#[test]
+fn an_owners_line_nobody_uses_fails() {
+    let mut owners = owners();
+    owners.push_str("swell surf-fetch\n");
+    let dir = copy_files(
+        "owners-unused",
+        &Files {
+            owners,
+            ..Files::committed()
+        },
+    );
+    let line = "taskfiles/lock-owners.txt: swell surf-fetch is a permission nobody uses: surf-fetch does not depend on swell";
+    assert_fails_with("owners-unused", &dir, &format!("{line:?}"), |l| l == line);
 }
 
 /// No root lock at all proves nothing, so it fails too.

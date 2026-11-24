@@ -9,9 +9,26 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use swell::{
-    Agent, AgentState, CreateError, ErrorKind, HookCx, Host, InterruptHandle, Job, Limits,
-    LoadRequest, ObjectRef, Outcome, Parsed, Realm, Root, Seeds, Source, Termination,
+    Agent, AgentState, CreateError, ErrorKind, HookCx, Host, HostError, InterruptHandle, Job,
+    Limits, LoadRequest, ObjectRef, Outcome, Parsed, Realm, Root, Seeds, Source, Termination,
 };
+
+/// The host errors that are no fault of the engine (swell's `HostError` at `0.8.0` but
+/// `Faulted`): a stale or foreign handle, a value of the wrong kind, the module errors and an
+/// evaluation while another runs. Each is a defect of surf's own calls that a page cannot
+/// cause. It is read as `HostError::Faulted` is: a parse or a run ends `faulted`, a read
+/// (kind, message, site, steps) answers nothing. Every variant is named, so a
+/// variant a later tag adds stops the build where surf decides its word.
+macro_rules! surf_defect {
+    () => {
+        HostError::StaleHandle
+            | HostError::ForeignHandle
+            | HostError::WrongKind { .. }
+            | HostError::ModuleStatus { .. }
+            | HostError::ModuleTerminated
+            | HostError::EvaluationInProgress
+    };
+}
 
 /// The agent's limits in a session (`docs/design/scripts.md`, Q4).
 pub const SESSION_ENGINE_LIMITS: Limits = Limits {
@@ -48,13 +65,19 @@ pub const TEST_CLOCK_STEP: i128 = 1_000_000;
 pub struct RunnerLimits {
     /// The agent's seven limits.
     pub engine: Limits,
-    /// Steps of all the runner's scripts together, summed from `last_entry_steps()`.
+    /// Steps of all the runner's scripts together, summed from `last_entry_steps()`. Held and
+    /// counted here ([`Runner::steps`]); the caller enforces it (`story:scripts-parse-run`).
     pub steps_per_runner: u64,
-    /// Scripts one runner runs.
+    /// Scripts one runner runs. Held and counted here ([`Runner::scripts`]); the caller
+    /// enforces it (`story:scripts-parse-run`).
     pub scripts_per_runner: u32,
-    /// Bytes of one script's source, UTF-8.
+    /// Bytes of one script's source, UTF-8. Held here; the caller measures and enforces it
+    /// (`story:scripts-parse-run`).
     pub source_bytes: usize,
-    /// The wall clock from the first script's start, through the agent's interrupt handle.
+    /// The wall clock from the first script's start, through the agent's interrupt handle; a
+    /// script started after it ran out is `not run: wall-clock`. The first script's start is
+    /// the clock's start, so a bound of 0 ends the first script `limit: wall-clock`, or lets a
+    /// short one end `ran` before the interrupt is set.
     pub wall_clock: Duration,
 }
 
@@ -433,23 +456,23 @@ impl WallClock {
         })
     }
 
-    /// Before each script: at the first, start the clock with `bound`; at a later one, set the
-    /// interrupt when the deadline has passed and the thread has not set it yet, so that the
-    /// script ends `limit: wall-clock` at its start.
-    fn before_script(&mut self, bound: Duration, interrupt: &InterruptHandle) {
-        if !self.started {
-            self.started = true;
-            self.deadline = Instant::now().checked_add(bound);
-            if let (Some(deadline), Some(start)) = (self.deadline, &self.start) {
-                let _ = start.send(deadline);
-            }
+    /// Whether the clock started and its deadline has passed: a script now is not run.
+    fn ran_out(&self) -> bool {
+        self.started
+            && self
+                .deadline
+                .is_some_and(|deadline| Instant::now() >= deadline)
+    }
+
+    /// Before each script that runs: at the first, start the clock with `bound`.
+    fn before_script(&mut self, bound: Duration) {
+        if self.started {
             return;
         }
-        if self
-            .deadline
-            .is_some_and(|deadline| Instant::now() >= deadline)
-        {
-            interrupt.interrupt();
+        self.started = true;
+        self.deadline = Instant::now().checked_add(bound);
+        if let (Some(deadline), Some(start)) = (self.deadline, &self.start) {
+            let _ = start.send(deadline);
         }
     }
 }
@@ -485,8 +508,12 @@ impl Runner {
             Agent::new(ScriptHost::new(mode), limits.engine, seeds).map_err(RunnerError::Agent)?;
         let realm = match agent.create_realm(None, None) {
             Ok(Outcome::Normal(realm)) => realm,
-            Ok(other) => return Err(RunnerError::Realm(format!("{other:?}"))),
-            Err(error) => return Err(RunnerError::Realm(format!("{error:?}"))),
+            Ok(other @ (Outcome::Throw(_) | Outcome::Terminated(_))) => {
+                return Err(RunnerError::Realm(format!("{other:?}")));
+            }
+            Err(error @ (HostError::Faulted | surf_defect!())) => {
+                return Err(RunnerError::Realm(format!("{error:?}")));
+            }
         };
         let clock = WallClock::new(agent.interrupt_handle()).map_err(RunnerError::Thread)?;
         Ok(Self {
@@ -507,22 +534,31 @@ impl Runner {
     ///
     /// After `faulted`, each later script ends `not run: faulted`; after the first
     /// `limit: memory` the runner calls `collect()` once, and after a second each later script
-    /// ends `not run: memory` (Q4). The steps the script spent are added to [`Runner::steps`]
-    /// and the script to [`Runner::scripts`].
+    /// ends `not run: memory`; a script started after the wall clock ran out ends `not run:
+    /// wall-clock` (Q4). A script not run is not counted. The steps a script that ran spent are
+    /// added to [`Runner::steps`] and the script to [`Runner::scripts`].
     pub fn evaluate(&mut self, source: &str) -> ScriptEnd {
-        if self.faulted || matches!(self.agent.state(), AgentState::Faulted) {
+        let faulted = match self.agent.state() {
+            AgentState::Faulted => true,
+            AgentState::Alive => false,
+        };
+        if self.faulted || faulted {
             self.faulted = true;
             return ScriptEnd::NotRun(Reason::Faulted);
         }
         if self.memory_ends >= 2 {
             return ScriptEnd::NotRun(Reason::Memory);
         }
-        self.clock
-            .before_script(self.limits.wall_clock, &self.agent.interrupt_handle());
+        if self.clock.ran_out() {
+            return ScriptEnd::NotRun(Reason::WallClock);
+        }
+        self.clock.before_script(self.limits.wall_clock);
         self.scripts = self.scripts.saturating_add(1);
         let end = self.run_script(source);
-        if let Ok(steps) = self.agent.last_entry_steps() {
-            self.steps = self.steps.saturating_add(steps);
+        match self.agent.last_entry_steps() {
+            Ok(steps) => self.steps = self.steps.saturating_add(steps),
+            // A faulted agent answers no count; the script's end says `faulted`.
+            Err(HostError::Faulted | surf_defect!()) => {}
         }
         match end {
             ScriptEnd::Limit(Reason::Memory) => {
@@ -545,14 +581,14 @@ impl Runner {
             .parse_script(&self.realm, Source::Utf8(source), None)
         {
             Ok(parsed) => parsed,
-            Err(_) => return ScriptEnd::Faulted,
+            Err(HostError::Faulted | surf_defect!()) => return ScriptEnd::Faulted,
         };
         match parsed {
             Parsed::Parsed(script) => match self.agent.evaluate_script(&script) {
                 Ok(Outcome::Normal(_)) => ScriptEnd::Ran,
                 Ok(Outcome::Throw(thrown)) => ScriptEnd::Threw(self.error(&thrown)),
                 Ok(Outcome::Terminated(termination)) => terminated(termination),
-                Err(_) => ScriptEnd::Faulted,
+                Err(HostError::Faulted | surf_defect!()) => ScriptEnd::Faulted,
             },
             // The site is the first error's, and the error is the first of the list (Q16).
             Parsed::Errors(errors) => {
@@ -581,7 +617,8 @@ impl Runner {
                 error_kind(summary.kind),
                 summary.message.map(|units| message(&units)),
             ),
-            _ => (ScriptErrorKind::Value, None),
+            Ok(None) => (ScriptErrorKind::Value, None),
+            Err(HostError::Faulted | surf_defect!()) => (ScriptErrorKind::Value, None),
         };
         ScriptError {
             kind,
@@ -598,7 +635,8 @@ impl Runner {
                 column: site.column,
                 dynamic: site.dynamic,
             }),
-            _ => None,
+            Ok(None) => None,
+            Err(HostError::Faulted | surf_defect!()) => None,
         }
     }
 
@@ -606,8 +644,12 @@ impl Runner {
     fn collect(&mut self) {
         self.collections = self.collections.saturating_add(1);
         match self.agent.collect() {
-            Ok(Outcome::Terminated(Termination::EngineFault)) | Err(_) => self.faulted = true,
-            Ok(_) => {}
+            Ok(Outcome::Normal(_) | Outcome::Throw(_)) => {}
+            Ok(Outcome::Terminated(
+                Termination::StepBudget | Termination::MemoryBudget | Termination::Interrupted,
+            )) => {}
+            Ok(Outcome::Terminated(Termination::EngineFault)) => self.faulted = true,
+            Err(HostError::Faulted | surf_defect!()) => self.faulted = true,
         }
     }
 
@@ -636,7 +678,10 @@ impl Runner {
         self.limits
     }
 
-    /// The agent and its realm, for a caller that defines what the realm holds.
+    /// The agent and its realm, for the bindings that install their functions in the realm.
+    /// An entry run through it is outside the runner's totals ([`Runner::steps`],
+    /// [`Runner::scripts`]) and outside the wall clock; only the bindings' setup before the
+    /// first script may use it.
     pub fn agent_and_realm(&mut self) -> (&mut Agent<ScriptHost>, &Realm) {
         (&mut self.agent, &self.realm)
     }
@@ -652,17 +697,17 @@ fn terminated(termination: Termination) -> ScriptEnd {
     }
 }
 
-/// The kind of a swell error. `Error`, and a kind a later tag of swell adds (HOST-201 announces
-/// `AggregateError` and `#[non_exhaustive]`), read as `Error` (Q7).
+/// The kind of a swell error (Q7). Every variant is named: a kind a later tag of swell adds
+/// (HOST-201 announces `AggregateError`) stops the build here, where surf decides its word.
 fn error_kind(kind: ErrorKind) -> ScriptErrorKind {
     match kind {
+        ErrorKind::Error => ScriptErrorKind::Error,
         ErrorKind::EvalError => ScriptErrorKind::EvalError,
         ErrorKind::RangeError => ScriptErrorKind::RangeError,
         ErrorKind::ReferenceError => ScriptErrorKind::ReferenceError,
         ErrorKind::SyntaxError => ScriptErrorKind::SyntaxError,
         ErrorKind::TypeError => ScriptErrorKind::TypeError,
         ErrorKind::UriError => ScriptErrorKind::UriError,
-        _ => ScriptErrorKind::Error,
     }
 }
 
