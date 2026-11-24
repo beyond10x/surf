@@ -15,11 +15,12 @@ fn refused(text: &str) -> String {
     }
 }
 
+/// `text` fails with exactly `<file>:<line>: refused: <construct>`.
 fn assert_refused(text: &str, line: usize, construct: &str) {
-    let error = refused(text);
-    let prefix = format!("{FILE}:{line}: ");
-    assert!(error.starts_with(&prefix), "{error}");
-    assert!(error.contains(construct), "{error}");
+    assert_eq!(
+        refused(text),
+        format!("{FILE}:{line}: refused: {construct}")
+    );
 }
 
 #[test]
