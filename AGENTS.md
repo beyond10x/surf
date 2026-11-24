@@ -1012,14 +1012,20 @@ above, and the list of standards itself was written from memory.
     lists the five constructs the first runs over the pages named and the reader then
     learned. The names of `TYPE_EXTENDED_ATTRIBUTES` are read onto the type of the argument
     or dictionary member they are written before, and refused before any other member or a
-    definition (Web IDL, "Annotated types"); on the type itself they are read. `Model::new` also
-    refuses an operation name twice in the merged view of an interface, its partials and the
-    mixins it includes, a name two definitions define, and `A includes B;` where `B` is no
-    interface mixin or `A` no interface; `Model::counts`, `Model::members`,
+    definition (Web IDL, "Annotated types"); on the type itself they are read, and they are the
+    only names read on a type; one written both before and on the type is refused.
+    `Model::new` builds one map from each name to its definitions, then refuses, in the order
+    its doc comment gives, a name two definitions define, a `partial interface` of a name
+    defined as no interface, `A includes B;` where `B` is no interface mixin or `A` no
+    interface, an inheritance from another kind and a cycle of inheritance (walked in a
+    loop), and a member name twice in the merged view of an interface, its partials and the
+    mixins it includes (two operations are an overload); a name no definition defines is not
+    refused. `Model::counts`, `Model::members`,
     `Model::extended_attribute_counts` and `Model::unresolved` read it (for the two pages,
     `tests/unresolved.txt` lists the names no definition defines). Depends on `surf-html`
-    only. 72 tests in one test binary (`adversary` 11, `depth` 3, `reader` 35, `refusals` 20,
-    `source` 2, `vendored` 1; the model of both pages is built once per run, in `vendored`).
+    only. 80 tests in one test binary (`adversary` 11, `depth` 4, `reader` 36, `refusals` 26,
+    `source` 2, `vendored` 1; the model of both pages is built once per run, in `vendored`;
+    `depth` also holds a model of 16,000 interfaces under 2 s).
   - `crates/tls-conformance` (`surf-tls-conformance`, test tooling, not shipped): runs the
     x509-limbo cases of `crates/tls/tests/data/x509-limbo/` through `surf_tls::path::PathVerifier`
     at each case's `validation_time` or at `LIMBO_TIME` (the limbo commit date), never at the
