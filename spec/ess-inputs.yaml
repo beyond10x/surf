@@ -66,3 +66,5 @@ scenarios:
   - scenarios/adversary-script-ends-every-reason.yaml
   - scenarios/script-end-pairs-outside-q7-refused.yaml
   - scenarios/document-script-end-refusals-in-order.yaml
+  - scenarios/adversary-script-ends-q7-excluded.yaml
+  - scenarios/adversary-script-ends-q7-edges-added.yaml

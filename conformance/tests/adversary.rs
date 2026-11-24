@@ -65,7 +65,7 @@ const MARKS: &[&str] = &[
 
 /// The scenarios of `.out/suite.json` that write or read a script's end or a session's option,
 /// as a suite: made from the whole suite once per digest of its bytes, then read from disk.
-fn scripts_suite() -> String {
+pub(crate) fn scripts_suite() -> String {
     let whole = whole_suite().unwrap_or_else(|error| panic!("{error}"));
     let mut hasher = DefaultHasher::new();
     hasher.write(whole.as_bytes());
