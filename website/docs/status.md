@@ -12,15 +12,15 @@ JavaScript yet.
 
 ## Numbers
 
-On 2026-11-23, with ess 0.97.4, after round 2, which follows round 1 and wave 10 of the current
-plan, and after the live view's control states and changed panel:
+On 2026-11-24, with ess 0.97.4, after round 2, which follows round 1 and wave 10 of the current
+plan, after the live view's control states and changed panel, and after TLS 1.3 and `https:`:
 
 | what | value |
 |---|---|
 | specification | ESS 0.97.4, valid |
-| conformance scenarios | 196 of 196 pass, against the interpreter and against the Rust code |
-| tests | 1,785 passed: 1,240, and 545 of the TLS crates |
-| agent tasks | 4 of 4 pass (`article`, `table`, `link`, `search`) |
+| conformance scenarios | 201 of 201 pass, against the interpreter and against the Rust code |
+| tests | 1,897 passed: 1,345, and 552 of the TLS crates |
+| agent tasks | 5 of 5 pass (`article`, `table`, `link`, `search`, `https`) |
 | live view | the panel "Now" lists a page's links, buttons and fields with their state; the panel `Changed by <action>` shows what the action changed; a typed password is shown as a count of bytes, never its value |
 | live view's page tests | 71 passed, in Chromium's headless shell |
 | X.509 test data (x509-limbo) | 5,143 cases counted, 5,089 run, 5,060 pass; `task check` holds these counts |

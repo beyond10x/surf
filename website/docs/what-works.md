@@ -12,9 +12,9 @@ description: What surf does today, and what it does not do yet.
   `renderer`.
 - **Its own HTTP/1.1 client**, with one deadline for the whole exchange (40 seconds at most) and
   hard limits on header and body size.
-- **196 specified scenarios**, each passing twice: once against the specification's own
+- **201 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **1,785 tests** (1,240, and 545 of the TLS crates in a step of their own), built with
+- **1,897 tests** (1,345, and 552 of the TLS crates in a step of their own), built with
   warnings treated as errors, and 71 tests of the live view's page in a browser.
 
 New with TLS 1.3, shipped in release `0.7.0`:

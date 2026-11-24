@@ -7,8 +7,8 @@
 **A web browser written from scratch, where the specification comes first.**
 
 ![spec: ESS 0.97.4, valid](docs/badges/spec.svg)
-![conformance: 196 of 196 scenarios](docs/badges/conformance.svg)
-![tests: 1785 passed](docs/badges/tests.svg)
+![conformance: 201 of 201 scenarios](docs/badges/conformance.svg)
+![tests: 1897 passed](docs/badges/tests.svg)
 ![third-party crates shipped: 5, ring 0.17.14 and 4 it needs](docs/badges/dependencies.svg)
 ![unsafe code: forbidden](docs/badges/unsafe.svg)
 ![standard sections marked complete: 0](docs/badges/complete.svg)
@@ -254,8 +254,8 @@ there instead.
 6. **Text from the web stays text.** Anything from a page, a server or an address is escaped
    before it is printed, so a page cannot forge a line of surf's output.
 7. **A passing test must be able to fail.** Tests are tried against planted defects. Over the
-   whole suite (`task conform-slow`), a navigation storage that drops every write fails 50 of
-   the 196 scenarios; the gate runs each of the 29 planted defects over the first 3 scenarios
+   whole suite (`task conform-slow`), a navigation storage that drops every write fails 55 of
+   the 201 scenarios; the gate runs each of the 29 planted defects over the first 3 scenarios
    that notice it.
 8. **Small.** A standard is followed for what surf does, not implemented whole.
 
@@ -276,9 +276,9 @@ there instead.
   ways. A certificate that is not trusted, has expired or names another host, a server limited
   to TLS 1.2 and a failed handshake each fail the load with a reason of its own. surf does not
   check revocation: a revoked certificate that has not expired loads.
-- **196 specified scenarios**, each passing twice: once against the specification's own
+- **201 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **1,785 tests** (1,240, and 545 of the TLS crates in a step of their own), built with
+- **1,897 tests** (1,345, and 552 of the TLS crates in a step of their own), built with
   warnings treated as errors, and 71 tests of the live view's page in a browser.
 
 New after round 2, shipped in release `0.6.0`:
