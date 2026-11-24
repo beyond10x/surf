@@ -1827,7 +1827,7 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `conform-rust: the sources of conformance/tests/noticed.txt changed; run task conform-slow`.
   Then it builds the tests (`cargo nextest run --no-run`) and the binary (`cargo build`), and
   the setup step `surf-conformance --narrow .out/suite.json conformance/tests/noticed.txt`
-  writes the narrowed suites once per digest (`conform-rust: the narrowed suites of 29 planted
+  writes the narrowed suites once per digest (`conform-rust: the narrowed suites of 31 planted
   defects written to …` or `… are current`), all untimed. The timed part: its tests under
   cargo-nextest with the root's `.config/nextest.toml` (a test still running after 60 s is
   ended and fails), into `.out/conform-rust-test.log`, the planted-defect tests included (it
