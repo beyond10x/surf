@@ -21,7 +21,7 @@ after the cookie jar and `surf-agent help --for-agent`, and with the Web IDL rea
 |---|---|
 | specification | ESS 0.97.4, valid |
 | conformance scenarios | 203 of 203 pass, against the interpreter and against the Rust code |
-| tests | 2,056 passed: 1,504, and 552 of the TLS crates |
+| tests | 2,165 passed and 3 ignored: 1,613 passed and the 3 ignored tests of `surf-script`, and 552 of the TLS crates |
 | agent tasks | 6 of 6 pass (`article`, `table`, `link`, `search`, `https`, `login`) |
 | live view | the panel "Now" lists a page's links, buttons and fields with their state; the panel `Changed by <action>` shows what the action changed; a typed password is shown as a count of bytes, never its value |
 | live view's page tests | 71 passed, in Chromium's headless shell |

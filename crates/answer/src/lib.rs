@@ -202,10 +202,13 @@ pub enum RefusalReason {
     AtEnd,
     /// `post-entry`: the entry `back` or `forward` would go to was made by a `POST`.
     PostEntry,
+    /// `scripts-unavailable`: `open` asked for scripts, and `setpriv` or `prlimit` is missing;
+    /// a session with scripts runs only under both.
+    ScriptsUnavailable,
 }
 
 impl RefusalReason {
-    const ALL: [RefusalReason; 26] = [
+    const ALL: [RefusalReason; 27] = [
         RefusalReason::Token,
         RefusalReason::Closed,
         RefusalReason::Usage,
@@ -232,6 +235,7 @@ impl RefusalReason {
         RefusalReason::AtStart,
         RefusalReason::AtEnd,
         RefusalReason::PostEntry,
+        RefusalReason::ScriptsUnavailable,
     ];
 
     /// The word of the format.
@@ -263,6 +267,7 @@ impl RefusalReason {
             RefusalReason::AtStart => "at-start",
             RefusalReason::AtEnd => "at-end",
             RefusalReason::PostEntry => "post-entry",
+            RefusalReason::ScriptsUnavailable => "scripts-unavailable",
         }
     }
 }
@@ -544,6 +549,48 @@ pub enum Note {
     Visibility,
     /// `note text: <what>`: what the `text` block cannot show.
     Text(TextNote),
+    /// `note ended: signal <name>`, then ` bound <word>` with `bound`: the session process
+    /// ended by this signal, which `surfd` did not send. The name is `SIG` and one or more of
+    /// `[A-Z0-9]`, such as `SIGXCPU`.
+    Ended {
+        /// The signal's name.
+        signal: String,
+        /// The bound `surfd` set for the session whose signal this is ([`Bound::signal`]);
+        /// `None` when `surfd` set no such bound or the signal is another.
+        bound: Option<Bound>,
+    },
+}
+
+/// A bound `surfd` sets for a session, as a `note ended` line names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Bound {
+    /// `cpu`: the CPU time bound, which ends the session by `SIGXCPU`.
+    Cpu,
+}
+
+impl Bound {
+    /// The bound's word: `cpu`.
+    pub fn word(self) -> &'static str {
+        match self {
+            Bound::Cpu => "cpu",
+        }
+    }
+
+    /// The signal the bound sends: `SIGXCPU`.
+    pub fn signal(self) -> &'static str {
+        match self {
+            Bound::Cpu => "SIGXCPU",
+        }
+    }
+}
+
+/// The start of a `note ended` line.
+const ENDED_NOTE: &str = "note ended: signal ";
+
+/// Whether `name` is a signal name of a `note ended` line: `SIG` and one or more of `[A-Z0-9]`.
+fn is_signal_name(name: &str) -> bool {
+    name.strip_prefix("SIG")
+        .is_some_and(|rest| is_word(rest, |c| c.is_ascii_uppercase() || c.is_ascii_digit()))
 }
 
 /// The words of `note visibility:`.
@@ -1350,6 +1397,26 @@ fn render_note(note: &Note, out: &mut String) -> Result<(), RenderError> {
                 out.push_str(&format!(" {levels}"));
             }
         }
+        Note::Ended { signal, bound } => {
+            if !is_signal_name(signal) {
+                return Err(RenderError::NotAWord {
+                    field: "note ended signal",
+                    value: quote(signal),
+                });
+            }
+            out.push_str(ENDED_NOTE);
+            out.push_str(signal);
+            if let Some(bound) = bound {
+                if bound.signal() != signal {
+                    return Err(RenderError::NotAWord {
+                        field: "note ended bound",
+                        value: quote(bound.word()),
+                    });
+                }
+                out.push_str(" bound ");
+                out.push_str(bound.word());
+            }
+        }
     }
     out.push('\n');
     Ok(())
@@ -2098,6 +2165,26 @@ fn parse_notes(lines: &mut Lines<'_>, answer: &mut Answer) -> Result<(), ParseEr
                 .find(|what| what.word() == word)
                 .ok_or_else(|| line.error(ParseErrorKind::OutsideGrammar))?;
             answer.notes.push(Note::Text(what));
+            continue;
+        }
+        if let Some(rest) = line.text.strip_prefix(ENDED_NOTE) {
+            let (signal, bound) = match rest.split_once(" bound ") {
+                Some((signal, word)) => {
+                    let bound = [Bound::Cpu]
+                        .into_iter()
+                        .find(|bound| bound.word() == word && bound.signal() == signal)
+                        .ok_or_else(|| line.error(ParseErrorKind::OutsideGrammar))?;
+                    (signal, Some(bound))
+                }
+                None => (rest, None),
+            };
+            if !is_signal_name(signal) {
+                return Err(line.error(ParseErrorKind::OutsideGrammar));
+            }
+            answer.notes.push(Note::Ended {
+                signal: signal.to_string(),
+                bound,
+            });
             continue;
         }
         let Some(parts) = line.text.strip_prefix("note parser: ") else {

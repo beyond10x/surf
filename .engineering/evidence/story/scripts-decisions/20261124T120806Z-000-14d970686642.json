@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T12:08:06Z",
+  "actor": "human:operator",
+  "artifact": "story:scripts-decisions",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the gate in runner form (task check-runner) on 775cc83, the tip of impl/scripts-note, through the pool on the build node, 2026-11-24 12:47 CET",
+    "reference": "exit 0 in 75 s; 203 of 203 scenarios; 1424 tests passed; 552 TLS tests passed; the note changes no code"
+  }
+}

@@ -271,15 +271,17 @@ fn https_case_6_the_session_process_has_no_byte_of_the_file_in_its_arguments_or_
     let answer = go(&dir, &session, &address);
     assert_eq!(page_line(&answer), loaded(&address), "{answer}");
     let pid = session_pid(&dir, &session.id);
-    for part in ["cmdline", "environ"] {
-        let bytes = fs::read(format!("/proc/{pid}/{part}"))
-            .unwrap_or_else(|error| panic!("/proc/{pid}/{part}: {error}"));
-        assert!(!bytes.is_empty(), "/proc/{pid}/{part} is empty");
-        assert!(
-            !contains(&bytes, base64.as_bytes()),
-            "/proc/{pid}/{part} holds bytes of the file"
-        );
-    }
+    let cmdline = fs::read(format!("/proc/{pid}/cmdline"))
+        .unwrap_or_else(|error| panic!("/proc/{pid}/cmdline: {error}"));
+    assert!(!cmdline.is_empty(), "/proc/{pid}/cmdline is empty");
+    assert!(
+        !contains(&cmdline, base64.as_bytes()),
+        "/proc/{pid}/cmdline holds bytes of the file"
+    );
+    // `surfd` starts a session with an empty environment.
+    let environ = fs::read(format!("/proc/{pid}/environ"))
+        .unwrap_or_else(|error| panic!("/proc/{pid}/environ: {error}"));
+    assert_eq!(environ, b"", "/proc/{pid}/environ");
 }
 
 /// The session log of case 2, read from the live view of the built `surfd`: a

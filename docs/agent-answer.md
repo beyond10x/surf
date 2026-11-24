@@ -145,7 +145,7 @@ text form, lower case). `<state>` is one of:
 |---|---|
 | `open` | the session is open |
 | `closed` | the session was closed |
-| `died` | the session process ended under `surfd` without `close` |
+| `died` | the session process ended under `surfd` without `close`; a `note ended` line names the signal it ended by, when `surfd` did not send it (section "Note") |
 | `unknown` | an identity `surfd` does not list |
 
 ### Token
@@ -174,7 +174,7 @@ refusal of the action, with a reason from this list:
 | `closed` | the session is closed | 1 |
 | `usage` | the request is not one of the command | 2 |
 | `no-such-session` | `surfd` lists no session of that identity | 3 |
-| `session-died` | the session process ended without `close` | 3 |
+| `session-died` | the session process ended without `close`, by the signal of a `note ended` line when the answer has one | 3 |
 | `session-timeout` | the session process did not answer in time | 3 |
 | `unknown-handle` | the current document has no element of that handle, or there is none | 1 |
 | `hidden` | the element or an ancestor has the `hidden` attribute | 1 |
@@ -196,6 +196,11 @@ refusal of the action, with a reason from this list:
 | `at-start` | `back`: the session's history has no page before the current one | 1 |
 | `at-end` | `forward`: the session's history has no page after the current one | 1 |
 | `post-entry` | `back` or `forward`: the page it would go to is the answer to a form `POST`, which surf does not send again | 1 |
+| `scripts-unavailable` | `open` asked for scripts (`arg scripts "true"`): `setpriv` or `prlimit` is missing, or the start through them (`setpriv`, `prlimit`, the session program) ended by an exit, not a signal, before the session wrote its first byte, and a session with scripts runs only under both | 3 |
+
+An `open` without scripts whose session program is missing, or whose start ended by an exit
+before the session wrote its first byte, has no answer text: exit status 3 and the line
+`surf-agent: cannot start <program>: <what failed>` on standard error.
 
 `address-too-long`, `unsupported-scheme` and `forbidden-destination` are given for the address a
 `press` would submit to as for a link's target. `back` and `forward` are refused
@@ -448,6 +453,8 @@ note visibility: hidden attribute only
 note text: no-css
 note text: no-document
 note text: deep <n>
+note ended: signal <name>
+note ended: signal <name> bound <word>
 ```
 
 A `note` line says what the answer cannot show yet. The list is fixed, and a story that adds a
@@ -469,6 +476,33 @@ note adds it here:
   markers, because the prefix of their lines would pass 128 bytes
   (`surf_page_text::markdown::PREFIX_BYTES_MAX`). The answer has it when
   `surf_page_text::markdown::Markdown::deep` is not 0.
+- `note ended: signal <name>` and `note ended: signal <name> bound cpu`: the session
+  process ended by the signal `<name>`, which `surfd` did not send, so the head line reads
+  `died` and the `did` line `did refused session-died`. `<name>` is `SIG` and one or more of
+  `[A-Z0-9]`, such as `SIGABRT` (an allocation over the address-space bound or a stack
+  overflow ends a session so) or `SIGKILL` from another process (the kernel's out-of-memory
+  killer sends it). The bound's word is there when `surfd` set that bound for the session and
+  the signal is the one the bound sends, and never otherwise: `bound cpu` after `SIGXCPU` for
+  a session `surfd` started with its CPU time bound (a session with scripts); a session
+  without that bound that ended by `SIGXCPU` reads `note ended: signal SIGXCPU`, and
+  `SIGXFSZ` reads as any other signal. The line still cannot tell who sent the signal: a
+  `SIGXCPU` another process sent to a session with the bound reads `bound cpu` too. The line
+  is written from the session's start on: a session that dies by such a signal before it
+  wrote its first byte or while it answers `open` is answered as an `open` whose session ended
+  before it reported ready or while it answered (status 3 and a reason), with these lines as
+  its text: the head line `died`, `did refused session-died` and the `note ended` line. A
+  session that ended with an exit status and no signal has no `note ended` line, and neither
+  has one `surfd` killed itself: after the late read of a timed-out answer (the command that
+  waited was answered `did refused session-timeout`), at the end of `surfd`, when the session
+  did not end within the kill grace after its answer said `closed` or after it closed the
+  link, after it broke the rules of the link, after it wrote a byte on its standard output
+  past its `ready` line, after a first line other than `ready`, after it wrote no `ready`
+  line within the ready timeout, when it closed its standard output before its first byte
+  and kept running past the kill grace, and after an `open` it did not answer in time. The
+  one case among these that gets the line: a session that had already ended by a signal
+  `surfd` did not send when `surfd` came to kill it; `surfd` then sends nothing and names
+  that signal. A session that ends by a signal of its own in the instant `surfd` kills it
+  reads as killed by `surfd`, with no `note ended` line.
 
 ### Text
 
@@ -575,7 +609,7 @@ reason        = "token" / "closed" / "usage" / "no-such-session"
               / "unknown-option" / "readonly" / "no-default-action"
               / "password-in-query" / "no-form-owner" / "invalid-controls"
               / "invalid-action" / "unsupported-enctype" / "dialog-method"
-              / "at-start" / "at-end" / "post-entry"
+              / "at-start" / "at-end" / "post-entry" / "scripts-unavailable"
 
 page-line     = "page" SP (page-none / page-failed / page-loaded) LF
 page-none     = "none"
@@ -630,12 +664,17 @@ form-handle   = "F" %x31-39 *DIGIT
 kind          = 1*lower
 visibility    = "vis" / "hid" / "?"
 
-note-line     = "note" SP (note-parser / note-visibility / note-text) LF
+note-line     = "note" SP (note-parser / note-visibility / note-text / note-ended) LF
 note-parser   = "parser:" SP part *("," part)
 part          = 1*(lower / "-")
 note-visibility = "visibility:" SP "hidden attribute only"
 note-text     = "text:" SP ("no-css" / "no-document" / "deep" SP number)
                                               ; deep: at least 1
+note-ended    = "ended:" SP "signal" SP signal [SP "bound" SP bound]
+                                              ; bound "cpu" after "SIGXCPU" only, when
+                                              ; surfd set the CPU time bound for the session
+signal        = "SIG" 1*(%x41-5A / DIGIT)
+bound         = "cpu"
 
 text-block    = text-line *body-line [more-line]
                                               ; exactly <shown> body-line lines; more-line
