@@ -56,7 +56,7 @@ scope:
   path: spec/domains/net.yaml
 - confidence: cited
   path: spec/scenarios
-revision: 13
+revision: 15
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T07:42:31Z", actor: "human:operator", revision: 11, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T07:42:31Z", actor: "human:operator", revision: 12, decided_on: {"recorded":{"verification":1}}}
@@ -195,7 +195,9 @@ The rules, each with the case that holds it (Acceptance):
 - R4 Domain, host-only rule (option B): the attribute loses a leading `.` and is lower-cased
   (§5.6.3). When the request host domain-matches it (§5.1.3: equal, or a suffix after a `.`, and
   for an IP address host only when equal), the cookie is stored host-only for the request host;
-  otherwise the cookie is ignored (§5.7 step 10). So a cookie that `a.example.test` sets with
+  otherwise the cookie is ignored (§5.7 step 10). An empty attribute (`Domain=`, or `Domain=.`,
+  which is empty without its dot) gives a host-only cookie as no attribute does (the same step
+  10). So a cookie that `a.example.test` sets with
   `Domain=example.test` is sent to `a.example.test` only: not to the sibling `b.example.test`, not
   to `example.test`. Cases W4, W5.
 - R5 Path: a missing attribute, or one that does not start with `/`, gives the default-path of the
@@ -223,10 +225,15 @@ The rules, each with the case that holds it (Acceptance):
   initiator) or when
   the hop's address has the same scheme and the same host as the initiator's origin, ports
   ignored. `follow` and `press` carry the origin of the document they act on. Every hop of a
-  redirect keeps the navigation's initiator; its own address and method decide. Cases U10, W13,
-  S4.
+  redirect keeps the navigation's initiator; its own address and method decide. A redirect chain
+  adds the third condition of §5.2 (decision 11): a hop is same-site only if, besides the rule
+  above, every address of the chain so far (the first request and each hop before it) has the
+  same scheme and the same host as the hop's own address. Once the chain has been on another
+  site, every later hop is cross-site, also for a navigation without an initiator: it gets no
+  `Strict` cookie, and a `Lax` cookie only when its method is GET (R8). Cases U10, W13, S4, and
+  `crates/fetch/tests/redirect_site.rs`.
 - R10 Prefixes (§5.4, §5.7 steps 20 and 21), matched without regard to case: `__Secure-` needs
-  `Secure`; `__Host-` needs `Secure`, a `Path` attribute of `/` and no `Domain` attribute (under
+  `Secure`; `__Host-` needs `Secure`, a `Path` attribute of `/` and no `Domain` attribute or an empty one (under
   R4 the check reads whether a `Domain` attribute was given, as the draft's host-only flag would
   be false for one). Case U8.
 - R11 Replacement (§5.7 step 23): a cookie of the same name, domain and path replaces the stored
@@ -236,8 +243,13 @@ The rules, each with the case that holds it (Acceptance):
   Cases W7 (order) and every W and X case (one field: "receives" is defined below as exactly one
   `Cookie` line).
 - R13 Bounds and eviction (§5.7, "remove excess cookies", §6.1): at most 50 cookies per domain
-  and 3,000 per session (the draft's minimums; with R2 at most about 12 MiB of names and values
-  per session, the memory bound the crate documentation states). Expired cookies are evicted when
+  and 3,000 per session (the draft's minimums), and at most 16,777,216 bytes (16 MiB) stored per
+  session: the names, values, paths and domains of its cookies together, a path counted as
+  stored (decision 12; R2 bounds a name with its value and a `Path` attribute, and a default
+  path comes from the request address, which R2 does not bound). The draft's minimums fit:
+  3,000 x (4,096 + 1,024 + 253) = 16,119,000 bytes. Over the byte bound the cookie with the
+  earliest last access goes. This is the memory bound the crate documentation states, and
+  `Jar::stored_bytes()` reports the sum. Expired cookies are evicted when
   the jar is used. Over a bound, the draft's priorities: expired cookies; cookies without `Secure`
   of a domain that holds more than 50; any cookie of such a domain; any cookie. Within one
   priority the earliest last-access time goes first, then (surf's choice where the draft says
@@ -501,3 +513,29 @@ The jar is one per agent session, lives in the session process and shows in the 
 (`cookies <n>`), which that epic owns; cookies are item 4 of the order the operator's question led
 to (D85, the branch file above). It needs `https:` only for its `Secure` cases, which use the
 test server of `epic:tls-https`.
+
+## Decisions after the reviews
+
+Taken by the coordinating agent on 2026-11-24 after the two reviews of the unit (one for
+defects, one for its security claims), reversible, reported to the operator. They continue the
+list under "Decisions taken"; the rules under "Change" carry the new text.
+
+11. R9 follows §5.2 of the draft in full for a redirect chain. The story's first text gave a
+    hop the navigation's initiator and judged it by its own address alone, so a chain that
+    left a site and came back sent that site's `Strict` cookies on the hop back. Now a chain
+    that has been on another site stays cross-site for every later hop, with or without an
+    initiator. Tests: `crates/fetch/tests/redirect_site.rs`.
+12. R13 gets a bound in bytes, 16,777,216 per session, that counts names, values, paths and
+    domains. The first text bounded the count of cookies and, through R2, a name with its value
+    and a `Path` attribute; a cookie without a `Path` attribute takes the default path of the
+    request address, which R2 does not bound, so the bytes a server could make a session keep
+    had no bound. Tests: `crates/cookie/tests/bound.rs`.
+13. R4 and R10 name the empty `Domain` attribute. `Domain=` and `Domain=.` give a host-only
+    cookie as no attribute does (§5.7 step 10), and `__Host-` accepts them. The first text read
+    as if such a cookie were ignored, and the first build refused `__Host-` with `Domain=.`.
+    Tests: `crates/cookie/tests/hosts.rs`.
+14. A fetch that has a jar reads its address once: the URL parser's result gives the host the
+    connection goes to, the `Host` field and the host the jar is asked for. The first build
+    read the text a second time for the connection. A fetch without a jar (the `surf`
+    command) is unchanged; `story:agent-go-address-parsed` (draft) is the place where both
+    become one. Tests: `crates/fetch/tests/one_parse.rs`.
