@@ -36,7 +36,7 @@ scope:
   path: crates/webidl/tests
 - confidence: cited
   path: taskfiles/webidl.yml
-revision: 23
+revision: 24
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:12Z", actor: "human:operator", revision: 19}
 ---
@@ -124,10 +124,18 @@ selection, with its test.
    `this` is the `Window` (no `WindowProxy`). Requirements 1 to 10 are `held` at `0.8.0` (Q18), so
    no member is held back by a missing requirement; a later tag that lacks one marks the member
    `deviation: HOST-<id>`.
-7. The HTML source of S6: a file of the HTML Standard at a commit snapshot, vendored unchanged
-   under `crates/webidl/data/whatwg/` with its lines in `SOURCE` as the other two, the smallest
-   file of that snapshot that holds the definitions of `Window` and of the partial `Document` that
-   has `title`; its size measured with `wc -c` and named in the report. The reader gains a
+7. The HTML source of S6 (the operator session's pick of 2026-11-24, option B of three): the
+   single-page commit snapshot of the HTML Standard at
+   `546d834701d171e3b164da8463d62878deb1e954`
+   (`https://html.spec.whatwg.org/commit-snapshots/546d834701d171e3b164da8463d62878deb1e954/`;
+   15,266,649 bytes and 212 `pre` blocks of class `idl` when measured on 2026-11-24), vendored
+   unchanged under `crates/webidl/data/whatwg/` with its lines in `SOURCE` as the other two,
+   held by its address and its sha256. No multipage page exists at a commit snapshot address
+   (three addresses answered 404), and `Window` and the partial `Document` that has `title`
+   are on two pages (`nav-history-apis.html`, `dom.html`), so no smaller file of the snapshot
+   holds both. The implementor measures the file with `wc -c`, names the size in the report,
+   and times the reader on it before any test uses it: the file is read once per test run,
+   not once per test. The reader gains a
    selective extraction: from that file it reads only the `pre` blocks of class `idl` that define
    `Window` or a partial `Document`, and from them only the members the selection names; every
    other member of those blocks is listed as skipped with its line, so a construct the reader
