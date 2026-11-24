@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+mod adversary_anchors;
 mod adversary_back_forward;
 mod adversary_controls;
 mod adversary_change_log;
@@ -29,4 +30,5 @@ mod https;
 mod memory;
 mod press;
 mod redirect;
+mod secreview_session_anchors;
 mod view;

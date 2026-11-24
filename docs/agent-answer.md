@@ -667,17 +667,35 @@ as trust anchors beside the bundled ones, for every `https:` load of the session
 life (`docs/design/tls.md` item 8); a session opened without it trusts the bundled anchors only,
 and the anchors of one session are never those of another. The client reads the file before it
 connects to `surfd`: at most 32,768 bytes and 64 blocks, every block a `CERTIFICATE`, every
-certificate a CA. Its bytes travel in the `open` request (`arg anchors`) and `surfd` passes them
-to the session process over the session socket; neither the path nor the bytes are an argument
-or in the environment of a process.
+certificate a CA. The text of its certificate blocks, from each BEGIN line to its END line,
+travels in the `open` request (`arg anchors`); the lines before, between and after the blocks
+are not sent, and need not be UTF-8. `surfd` passes the request to the session process over the
+session socket; neither the path nor the blocks are an argument or in the environment of a
+process.
 
 A file the client refuses is an invalid input: exit status 2, nothing on standard output, and on
-standard error the line `surf-agent: the --ca-file file is refused: <error>` (or `surf-agent:
-the --ca-file file cannot be read: <error>` for a file that cannot be read, `... is not a
-regular file` for one that is not a regular file) followed by the usage. `<error>` is the
-`AnchorError` of `surf-tls` (`NoCertificate`, `NotACertificate`, `BadPem`, `BadCertificate`,
-`NotACa`, `TooLarge`, `TooMany`) with its text, such as `NotACa: certificate 0 is not a CA`.
-The line does not repeat the path. No request is sent, `surfd` is not started, and no session
+standard error one of these lines, followed by the usage:
+
+- `surf-agent: the --ca-file file cannot be read: <kind>`: no file at the path, or one the caller
+  may not read; `<kind>` is the kind of the error of the system, such as `entity not found`.
+- `surf-agent: the --ca-file file is not a regular file`: a directory, a device or a FIFO. The
+  path is looked at before it is opened, so a FIFO is refused and not waited on.
+- `surf-agent: the --ca-file file changed while it was read`: the file opened is not the file
+  looked at.
+- `surf-agent: the --ca-file file is refused: <error>`: `surf-tls` does not take the file.
+  `<error>` is the `AnchorError` of `surf-tls` (`NoCertificate`, `NotACertificate`, `BadPem`,
+  `BadCertificate`, `NotACa`, `TooLarge`, `TooMany`) by its kind and the index of the block at
+  fault, such as `NotACa: certificate 0 is not a CA`, `NotACertificate: block 0 is not a
+  CERTIFICATE` or `BadCertificate: certificate 0 is refused: UnexpectedTag` (the kind the
+  certificate reader names).
+- `surf-agent: the request is longer than 65536 bytes`: `surf-tls` takes the file, but the
+  quoted text of its blocks does not fit an `open` request (`docs/design/tls.md` item 8). The
+  quoting writes a line feed, a carriage return or a tab as 4 bytes, so only blocks full of them
+  get here, such as copies of a root with one base64 character per line; lines outside the
+  blocks are not sent and never lead here.
+
+No line repeats the path or a byte of the file: not the label of a block, and not a byte of a
+certificate the reader cannot read. No request is sent, `surfd` is not started, and no session
 is made. A session process that gets anchors it refuses in an `open` request (a client other
 than `surf-agent`) answers `did refused usage`, status 2, as for any `usage` refusal of `open`.
 

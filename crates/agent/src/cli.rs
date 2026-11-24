@@ -375,8 +375,9 @@ pub struct Call {
     /// The path of `--ca-file`, for `open`: the client reads the file before it connects
     /// ([`crate::client`]). The path itself is in no request.
     pub ca_file: Option<PathBuf>,
-    /// The text of the file of [`Call::ca_file`] once the client read and took it, sent as
-    /// `arg anchors`. The `Debug` of the call writes only its length.
+    /// The text of the certificate blocks of the file of [`Call::ca_file`], without the lines
+    /// around them, once the client read and took it, sent as `arg anchors`. The `Debug` of the
+    /// call writes only its length.
     pub anchors: Option<String>,
 }
 

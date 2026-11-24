@@ -274,8 +274,8 @@
 //!
 //! # Extra trust anchors
 //!
-//! An `open` with `arg anchors` (`surf-agent open --ca-file <path>`, which sends the file's
-//! text) gives the session the bundled trust anchors and the certificates of that text, read
+//! An `open` with `arg anchors` (`surf-agent open --ca-file <path>`, which sends the text of the
+//! file's certificate blocks) gives the session the bundled trust anchors and the certificates of that text, read
 //! once with [`surf_fetch::Anchors::with_extra_pem`]; every `https:` load of the session is
 //! authenticated against them for its life, and they are dropped with it. Text that reader
 //! refuses is `did refused usage`, status 2, as any other `usage` refusal of `open`, and the
@@ -1776,17 +1776,23 @@ impl<T: Transport> Session<T> {
         {
             return self.bare(RefusalReason::Usage);
         }
+        let mut anchors = None;
         if let Some(pem) = request.arg("anchors") {
-            let mut anchors = surf_fetch::Anchors::bundled();
-            if anchors.with_extra_pem(pem.as_bytes()).is_err() {
+            let mut extra = surf_fetch::Anchors::bundled();
+            if extra.with_extra_pem(pem.as_bytes()).is_err() {
                 return self.bare(RefusalReason::Usage);
             }
-            let anchors = Arc::new(anchors);
-            SESSION_ANCHORS.with(|current| current.replace(Some(Arc::clone(&anchors))));
-            self.anchors = Some(anchors);
+            let extra = Arc::new(extra);
+            // In use for this answer already, since the address of the open is loaded in it;
+            // the guard of `answer` takes them off the thread when it ends.
+            SESSION_ANCHORS.with(|current| current.replace(Some(Arc::clone(&extra))));
+            anchors = Some(extra);
         }
         match self.open_session(url) {
             Ok(()) => {
+                // The session's own only once it is open: an open that fails leaves the trust
+                // of the session as it was.
+                self.anchors = anchors;
                 let mut reply = self.state_reply(
                     0,
                     Some(Did::Action {
