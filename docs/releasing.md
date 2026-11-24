@@ -50,8 +50,16 @@ above, that `surf` exits 2 without an argument and 1 on `http://127.0.0.1:1/`, t
 https://127.0.0.1:1/` exits 1 and ends `Unreachable` (the scheme is accepted; a binary without
 `https:` ends `UnsupportedScheme`), that `surf --anchors` exits 0 and prints `anchors <n>
 bundled <date> sha256:<hex>` with the date and sha256 of `crates/tls/src/anchors/SOURCE` of the
-checkout and `<n>` at most its count (the binary finds its anchors), and on Linux, in a
-private `XDG_RUNTIME_DIR`, runs the end-to-end case of the session process
+checkout and `<n>` the count of `SOURCE` less the roots of `NO_ANCHOR` in
+`crates/tls/tests/tls/anchors.rs` (the binary finds its anchors), and that `surf --ca-file
+<root.pem> https://127.0.0.1:<port>/` makes one TLS 1.3 handshake with `openssl s_server`
+serving the committed test certificate `crates/tls-test-certs/certs/ok-ecdsa-p256`, exits 0 and
+prints `navigation <id> Committed https://127.0.0.1:<port>/`: ring's primitives run in the
+shipped binary, against a TLS implementation other than surf's own. The smoke test needs
+`openssl`, OpenSSL 3 preferred (on macOS the runner's Homebrew `openssl@3`; `/usr/bin/openssl`
+there is LibreSSL), and fails without one whose `s_server` takes `-tls1_3`; the port is the
+first of 48443, 48543, 48643, 48743 and 48843 that `s_server` can listen on. On Linux, in a
+private `XDG_RUNTIME_DIR`, it runs the end-to-end case of the session process
 (`crates/session/tests/e2e.rs`) on the directory's own `surf-agent`, `surfd` and
 `surf-session`: `open`, `go`, `look` and `close` against a page server inside the test, each
 answer compared with its golden text. It then fails if a process from the directory still runs.
