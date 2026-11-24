@@ -7,7 +7,11 @@
 //! session.sock`; neither is secret. Its standard input is a pipe `surfd` holds: the session
 //! ends itself, with status 0, when the pipe closes. Its standard output carries one line,
 //! [`READY`] ([`write_ready`]), written once the session socket listens, and nothing else; its
-//! standard error is discarded.
+//! standard error is discarded. Its environment is empty but the variables of
+//! `Config::session_env`, none in the binary. It is started through `setpriv --no-new-privs` and
+//! `prlimit` with the bounds of its form (`Config::session_bounds`, and
+//! `Config::script_session_bounds` for an `open` with `arg scripts "true"`), both of which
+//! replace themselves by the session program, so the process `surfd` holds is the session's.
 //!
 //! # One request
 //!

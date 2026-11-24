@@ -7,7 +7,12 @@
 //! `surf-secret`, prints it in its `open` answer, and compares every later request's token with
 //! [`surf_secret::Token::matches`].
 //!
-//! Its behaviour is set by files in the directory `STAND_IN_DIR` names, each read when needed:
+//! Its behaviour is set by files in the directory `STAND_IN_DIR` names, each read when needed.
+//! `surfd` gives a session no variable of its own environment, so a stand-in started by the
+//! built `surfd`, which has no `Config::session_env`, finds no `STAND_IN_DIR`: it takes the
+//! directory `c` beside the `XDG_RUNTIME_DIR` its socket path lies in (the layout of the tests'
+//! `TestDir`) and starts itself again in place, with `STAND_IN_DIR` set to it, so that the tests
+//! find it by its environment as before.
 //!
 //! - `ready`: `never` writes no `ready` line.
 //! - `open-status`: `1` or `2` answers `open` with that status (default `0`).
@@ -16,7 +21,9 @@
 //!   and exits with status 1; `break` writes a line that is not of the link and closes the
 //!   connection; `oversize` sends answer lines of `wire::ANSWER_TEXT_MAX` plus one byte;
 //!   `unprintable` sends an answer line holding the byte 0x01; `bad-entries` sends entries
-//!   whose event line holds an address that is not quoted.
+//!   whose event line holds an address that is not quoted. Read after `open` too: `spin`
+//!   loops on the processor once it answered `open`, until a CPU bound ends it; `abort` calls
+//!   `std::process::abort` once it answered `open`.
 //! - `address`, `title`: reported in the status record of every answer, exactly as the file
 //!   holds them.
 //!
@@ -39,7 +46,9 @@
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
@@ -76,6 +85,22 @@ fn main() {
         std::process::exit(2);
     };
     let Some(control) = std::env::var_os("STAND_IN_DIR").map(PathBuf::from) else {
+        // `<runtime>/surf/<identity>/session.sock`, and `c` beside `<runtime>`.
+        let Some(control) = Path::new(socket)
+            .ancestors()
+            .nth(4)
+            .map(|case| case.join("c"))
+        else {
+            std::process::exit(2);
+        };
+        let Ok(program) = std::env::current_exe() else {
+            std::process::exit(2);
+        };
+        let error = Command::new(program)
+            .args(&args)
+            .env("STAND_IN_DIR", control)
+            .exec();
+        drop(error);
         std::process::exit(2);
     };
     let pid = std::process::id();
@@ -221,6 +246,19 @@ fn serve(mut stream: UnixStream, session: &Session) {
             }
         };
         write(&mut stream, &answer);
+        drop(stream);
+        if status == 0 {
+            match setting(control, "behaviour").as_deref() {
+                Some("spin") => {
+                    let mut turns = 0u64;
+                    loop {
+                        turns = std::hint::black_box(turns.wrapping_add(1));
+                    }
+                }
+                Some("abort") => std::process::abort(),
+                _ => {}
+            }
+        }
         return;
     }
     let named = request.session.as_deref().and_then(wire::session_id);

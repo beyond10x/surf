@@ -7,6 +7,7 @@ mod adversary_controls;
 mod adversary_link;
 mod built;
 mod common;
+mod hardening;
 mod in_process;
 mod log;
 mod view;

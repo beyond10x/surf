@@ -42,7 +42,7 @@ pub enum SessionState {
 }
 
 /// A session summary,
-/// `{"id","state","address","title","opened_at","last_action_at","ended_at","page"}`.
+/// `{"id","state","address","title","opened_at","last_action_at","ended_at","signal","page"}`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Summary {
     /// The session identity.
@@ -61,6 +61,9 @@ pub struct Summary {
     pub ended_at: Option<u64>,
     /// The page line of its newest kept answer entry.
     pub page: Option<PageLine>,
+    /// The name of the signal its process ended by, such as `SIGXCPU`, when `surfd` did not
+    /// kill it; `None` otherwise.
+    pub signal: Option<String>,
 }
 
 /// The session list, the 200 of `/api/sessions`: `{"newest","sessions"}`.

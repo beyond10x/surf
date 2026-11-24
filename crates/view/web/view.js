@@ -160,7 +160,7 @@ function renderSelected() {
   } else {
     text(nodes.heading, "session " + String(summary.id).slice(0, 8));
   }
-  const facts = [summary.state, "session " + summary.id];
+  const facts = [typeof summary.signal === "string" ? summary.state + " (" + summary.signal + ")" : summary.state, "session " + summary.id];
   if (summary.opened_at !== null && summary.opened_at !== undefined) {
     facts.push("opened " + clock(summary.opened_at));
   }
