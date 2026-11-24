@@ -96,7 +96,7 @@ fn planted_drift() {
     assert!(difference.contains("look"), "{difference}");
 }
 
-fn read_binding() -> Json {
+pub(crate) fn read_binding() -> Json {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.out/cli/binding.json");
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("{}: {error}; run `slot task cli` first", path.display()));
@@ -255,7 +255,7 @@ fn compare(
 // --- A JSON reader, enough for binding.json -------------------------------------------------
 
 #[derive(Clone, Debug, PartialEq)]
-enum Json {
+pub(crate) enum Json {
     Null,
     Bool(bool),
     Number(String),
@@ -265,14 +265,14 @@ enum Json {
 }
 
 impl Json {
-    fn get(&self, key: &str) -> Option<&Json> {
+    pub(crate) fn get(&self, key: &str) -> Option<&Json> {
         match self {
             Json::Object(fields) => fields.get(key),
             _ => None,
         }
     }
 
-    fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         match self {
             Json::String(text) => text,
             other => panic!("not a string: {other:?}"),
@@ -286,7 +286,7 @@ impl Json {
         }
     }
 
-    fn as_array(&self) -> &[Json] {
+    pub(crate) fn as_array(&self) -> &[Json] {
         match self {
             Json::Array(items) => items,
             other => panic!("not an array: {other:?}"),

@@ -26,10 +26,7 @@ fn main() -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
     // Before the environment is read: the definition needs no XDG_RUNTIME_DIR and no `surfd`.
     if cli::is_help_for_agent(&args) {
-        let mut out = io::stdout().lock();
-        let _ = out.write_all(help::assemble(&SOURCES).as_bytes());
-        let _ = out.flush();
-        return ExitCode::SUCCESS;
+        return print_definition();
     }
     let status = client::run_with_input(
         &args,
@@ -40,4 +37,23 @@ fn main() -> ExitCode {
         &mut io::stderr().lock(),
     );
     ExitCode::from(status)
+}
+
+/// Write the definition to standard output: exit 0, also when the reader closed the pipe early
+/// (`| head -1`); exit 1 with one line on standard error when it cannot be assembled or written.
+fn print_definition() -> ExitCode {
+    let failed = |message: String| {
+        let _ = writeln!(io::stderr().lock(), "surf-agent: {message}");
+        ExitCode::from(1)
+    };
+    let text = match help::assemble(&SOURCES) {
+        Ok(text) => text,
+        Err(error) => return failed(format!("the definition cannot be assembled: {error}")),
+    };
+    let mut out = io::stdout().lock();
+    match out.write_all(text.as_bytes()).and_then(|()| out.flush()) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) if error.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
+        Err(error) => failed(format!("cannot write the definition: {}", error.kind())),
+    }
 }
