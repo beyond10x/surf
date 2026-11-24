@@ -97,24 +97,27 @@ path 2 of 2
   2 go "http://example.org/"
 ```
 
-Later in the same session, after a `go` to an unreachable address and one to an `https:`
-address:
+A load that fails is still an action taken: `go` exits 0, and the `page` line says
+`failed` and why, such as `page failed Unreachable "http://127.0.0.1:1/"`
+([`docs/agent-answer.md`](https://github.com/beyond10x/surf/blob/main/docs/agent-answer.md),
+section "Page", lists the reasons).
 
-```console
-$ surf-agent close
-surf 1 session cef9d223-7fdb-4151-85af-6c6d71d4fece closed
-did close
-page failed UnsupportedScheme "https://example.org/"
-path 5 of 5
-  1 open
-  2 go "http://example.org/"
-  3 go "http://127.0.0.1:1/"
-  4 go "https://example.org/"
-  5 close
-```
+## https
 
-A load that fails is still an action taken: that `go` exits 0, and the `page` line says
-`failed` and why.
+No release has `https:` yet. Built from `main`, `go` and `open` load an `https:` address, and
+`follow` and `press` an `https:` target, over surf's own TLS 1.3 client. The server is
+authenticated against the root list of Mozilla as curl publishes it, built into the binaries.
+`surf-agent open [<url>] --ca-file <path>` adds the CA certificates of one PEM file (at most
+32,768 bytes and 64 certificates, every one a CA) to the trust anchors of that session, for
+every `https:` load of the session and for its life; the anchors of one session are never those
+of another. A file `surf-agent` refuses exits 2 before `surfd` is started, with a line that
+says why and the usage on standard error.
+
+A certificate that is not trusted, has expired or names another host, a server limited to
+TLS 1.2 and a failed handshake each fail the load, `page failed` with the reason
+`CertificateNotTrusted`, `CertificateExpired`, `CertificateNameMismatch`,
+`TlsVersionUnsupported` or `TlsHandshakeFailed`. surf does not check revocation: a revoked
+certificate that has not expired loads.
 
 ## Links
 
@@ -138,9 +141,9 @@ or of an unresolved target is refused with status 1 (`did refused unknown-handle
 `unresolved`); a followed link's `path` line names its handle and label,
 `3 follow l1 "Opening hours"`. Three more refusals come before any navigation and leave the page
 as it was: a target over 65,536 bytes (`address-too-long`), a scheme surf does not fetch, such as
-`javascript:`, `mailto:` or `https:` (`unsupported-scheme`), and, from a page loaded from a
-public address, a target on a loopback or private address or `localhost`
-(`forbidden-destination`). A target never shows a `user:password@` part; `follow` still sends it.
+`javascript:` or `mailto:` (`unsupported-scheme`), and, from a page loaded from a public
+address, a target on a loopback or private address or `localhost` (`forbidden-destination`). A
+target never shows a `user:password@` part; `follow` still sends it.
 
 ## Form fields
 
@@ -274,7 +277,8 @@ answer and says why on standard error.
 
 ## Limits
 
-- Only `http:` addresses load. No `https:` yet.
+- No release has `https:` yet. Built from `main`, `http:` and `https:` addresses load,
+  `https:` over TLS 1.3 only ([https](#https)).
 - Release `0.2.0` follows no redirect. Since release `0.3.0`, a `go`
   follows up to 20 redirects inside one fetch: the `page` line holds the address it ended at,
   the `did go` line the address asked for, and a redirect after the twentieth fails with
@@ -282,8 +286,9 @@ answer and says why on standard error.
   loopback, private, link-local, unique-local, shared or unspecified address, or to an IPv6
   address that embeds one, fails with `ForbiddenDestination`, before any connection to it; a session that starts at a local
   address follows its redirects as before.
-- `follow` loads `http:` targets only and refuses the others (`unsupported-scheme`); from a page
-  on a public address it refuses a target on a local IP address or `localhost`
+- `follow` loads `http:` targets, and on `main` also `https:` (in no release yet), and refuses
+  the others (`unsupported-scheme`);
+  from a page on a public address it refuses a target on a local IP address or `localhost`
   (`forbidden-destination`), and it refuses a target over 65,536 bytes (`address-too-long`).
   From such a page a target that is a name is checked when the fetch resolves it: a name that
   resolves to a local address is refused `forbidden-destination` before any connection.

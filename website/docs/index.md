@@ -7,7 +7,8 @@ description: surf is a small web browser written from scratch in Rust, where the
 # What surf is
 
 surf is a small web browser written in Rust. It does not wrap Chromium, WebKit or Gecko, and
-nothing that ships depends on a third-party crate. Every behaviour is written down as a
+nothing that ships depends on a third-party crate, with one exception: on `main`, in no release
+yet, the cryptographic primitives of TLS come from ring. Every behaviour is written down as a
 specification before any code exists, and a test suite generated from that specification runs
 against the real code on every change.
 
@@ -26,9 +27,10 @@ runs no script today.
 
 :::caution[Not for daily use]
 
-surf has no window, no rendering, no JavaScript and no `https:` yet. It loads one `http:` address
-from the command line and prints what happened; `surf-agent` does the same for an agent, one
-call at a time, and shows a page as text when asked.
+surf has no window, no rendering and no JavaScript yet. It loads one address from the command
+line and prints what happened; `surf-agent` does the same for an agent, one call at a time, and
+shows a page as text when asked. The releases load `http:` addresses; `https:` loads on `main`,
+in no release yet.
 
 :::
 
@@ -43,8 +45,7 @@ call at a time, and shows a page as text when asked.
 
 ## What surf is not
 
-- **Not a browser for daily use.** There is no window, no rendering, no JavaScript and no
-  `https:` yet.
+- **Not a browser for daily use.** There is no window, no rendering and no JavaScript yet.
 - **Not a fork of an existing engine**, and not a shell around one.
 - **Not complete, and it says where.** A part of a standard is called complete only when all of
   it is specified and the standard's own tests for it pass. Nothing carries that mark yet.

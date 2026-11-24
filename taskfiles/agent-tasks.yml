@@ -34,7 +34,7 @@ tasks:
       SURF_AGENT_TASKS=measure: the listed states of status.txt play no part and no raise: line
       is written, and the file's first line names the lane archive. Then prints
       .out/agent-tasks.txt, whose first line goes into the release notes (docs/releasing.md,
-      step 7). DIR is the unpacked surf-<version>-<target>/ of a Linux archive; a relative DIR
+      step 8). DIR is the unpacked surf-<version>-<target>/ of a Linux archive; a relative DIR
       is taken from the directory task was called in. The first line names DIR as typed, an
       absolute DIR by its last component (the home directory itself and / by -); the absolute
       form only finds the files. No step of check, check-runner or a forge workflow runs it.

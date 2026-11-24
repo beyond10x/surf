@@ -193,14 +193,20 @@ What follows, per runner:
 2. **The two macOS targets need no step**: Apple clang 17.0.0 of the image builds ring's C and
    assembly. The probe links to two libraries, `/usr/lib/libSystem.B.dylib` and
    `/usr/lib/libiconv.2.dylib`, both system libraries that every macOS installs, so the binary
-   runs without anything installed beside it. Whether the `surf` binary of `main` already links
-   `libiconv` was not compared: no `otool` record of an earlier release run was at hand.
-   `story:tls-release` compares it in its first release run.
+   runs without anything installed beside it. Compared by `story:tls-release`: `llvm-otool -L
+   surf` on the `aarch64-apple-darwin` and `x86_64-apple-darwin` archives of release workflow
+   run 45344883467 (branch `impl/tls-release` at `70046fe`, the first build of `surf` with ring)
+   prints the same two lines for both, `/usr/lib/libSystem.B.dylib (compatibility version 1.0.0,
+   current version 1351.0.0)` and `/usr/lib/libiconv.2.dylib (compatibility version 7.0.0,
+   current version 7.0.0)`; the macOS `surf` of release `0.5.0` prints the `libSystem` line
+   only. So ring adds `libiconv.2.dylib` to the macOS `surf`.
 3. **`ubuntu-latest` of the gate needs no step**: its GCC 15.2.0 builds ring at opt-level 0 in
    13 s.
 
 The lines for the job `package` of `.github/workflows/release.yml`, a step after
-`dtolnay/rust-toolchain` and before the build (`story:tls-release` adds it):
+`dtolnay/rust-toolchain` and before the build. Since `story:tls-release` the job holds them as
+the step "Install a C compiler that targets musl, for ring", between "Set the build flags" and
+"Build, test and package", with a comment saying why:
 
 ```yaml
       - name: Install a C compiler that targets musl, for ring

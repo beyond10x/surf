@@ -1219,7 +1219,8 @@ actionable element its label (run by the tests only).
   CLIs can be specified": the agent's action surface is specified and "mapped to core operations
   of that browser". Planned as `epic:agent-cli-target` (draft). It has code since wave 4:
   `surf-agent open`, `go`, `look` and `close` against `surfd` and one `surf-session` process per
-  session, over `http:` only. Since round 2 the agent target has every command of the epic:
+  session, over `http:` only (`https:` since `story:tls-fetch-https`). Since round 2 the agent
+  target has every command of the epic:
   `open`, `go`, `look`, `close`, `follow`, `back`, `forward`, `fill`, `pick`, `press`, `log`.
   Before scripts a same-document `changed` block holds control state only
   (`docs/agent-answer.md`, "What an answer holds today"). ESS has a document for it:
@@ -1326,7 +1327,16 @@ is on that old history too, and stays local.
   `surf-session` carry the release version; the tag is checked against `surf-cli`. The smoke
   test is `taskfiles/release-smoke.sh` (task `release-smoke`, `DIR=<unpacked archive>`): the
   release workflow calls it with `sh`, and it runs unchanged on a workstation.
-  `docs/releasing.md` is the procedure.
+  `docs/releasing.md` is the procedure. Since `story:tls-release`: every shipped binary is
+  built with ring through `surf-tls`, and `NOTICE` names ring, the four crates it needs and the
+  root list; the job `package` installs `musl-tools` on the two Linux runners, because ring
+  compiles C and assembly and the images have no compiler for musl (`docs/design/tls.md` item
+  3); it runs the command-line test first and builds the shipped binaries after it into
+  `target/ship`, and fails when the marker of `test-tooling` (`surf-tls test-tooling, never
+  in a release`) is missing from the `surf` the test built or present in a binary it packs;
+  the smoke test also runs `surf https://127.0.0.1:1/` (exit 1, `Unreachable`) and `surf
+  --anchors` (exit 0, the date and sha256 of `crates/tls/src/anchors/SOURCE` of the checkout);
+  and the first step of a release is `task anchors-age`.
 - Examples in `README.md`, `docs/surf-command.md` and the website show the installed binary
   (`surf http://…`), never a build command or a path under `target/`. The operator,
   2026-11-21: "make sure that examples in the docs [...] do not contain cargo run stuff.
@@ -1672,7 +1682,8 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `////` comment; a root without `crates/` and `generated/` exits 2. `SCRIPT=<path>` runs a
   copy of the script.
 - `task release-smoke DIR=<unpacked archive>`: `taskfiles/release-smoke.sh` on a release
-  archive, as the release workflow runs it (`docs/releasing.md`).
+  archive, as the release workflow runs it (`docs/releasing.md`), from a checkout of the commit
+  built: step 2 reads `crates/tls/src/anchors/SOURCE`.
 - `task validate`, `task suite`, `task conform`: the specification steps on their own.
 - `task conform-rust`: the crate `conformance/`, warnings denied. First the fast check, `sh
   taskfiles/conform-noticed.sh check`: the sha256 of the sources of
