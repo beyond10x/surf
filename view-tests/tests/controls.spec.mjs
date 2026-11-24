@@ -4,7 +4,7 @@
 // "Changed by <action>" shows the changed member of the answer entry at the playhead. A password
 // is shown as the length its FillRequested entry holds, never as its value.
 
-import { test, expect } from "./fixture.mjs";
+import { test, expect, expectLive } from "./fixture.mjs";
 
 // The password of cases 3, 5 and 6, given on the standard input of surf-agent.
 const SECRET = "hunter2-view";
@@ -17,31 +17,9 @@ const FORGED_MARKDOWN = '"\\<script\\>alert(1)\\</script\\>\\<img src=x onerror=
 const segments = (page) => page.locator("#actions > li.segment");
 const changes = (page) => page.locator("#changes li.change");
 
-// When `live` is not reached, the error says what the page shows instead: the live marker's word
-// and class, the text of #message and the number of segments drawn. Each is read once, after
-// the failure, so a passing run waits for nothing more.
 async function load(page, address) {
   await page.goto(address);
-  try {
-    await expect(page.locator("#live-word")).toHaveText("live");
-  } catch (error) {
-    const read = (locator, what) =>
-      what(locator).then(
-        (value) => (value === "" || value === null ? "(empty)" : value),
-        (failure) => `(not read: ${failure.message.split("\n")[0]})`,
-      );
-    const shown = [
-      `live marker: ${await read(page.locator("#live-word"), (at) => at.textContent({ timeout: 2_000 }))}`,
-      `class ${await read(page.locator("#live"), (at) => at.getAttribute("class", { timeout: 2_000 }))}`,
-      `message: ${await read(page.locator("#message"), (at) => at.textContent({ timeout: 2_000 }))}`,
-      `segments drawn: ${await read(segments(page), (at) => at.count())}`,
-    ].join("; ");
-    error.message += `\nThe page shows: ${shown}`;
-    if (typeof error.stack === "string") {
-      error.stack = error.stack.replace(/\n    at /, `\nThe page shows: ${shown}\n    at `);
-    }
-    throw error;
-  }
+  await expectLive(page);
 }
 
 // The playhead onto segment `at`.

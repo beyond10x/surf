@@ -1515,7 +1515,17 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   ci --prefer-offline --no-audit --no-fund` and writes the digest. The forge's workflow runs
   the same task in place of its own `npm ci`. Then the timed part, the build and the setup
   left out: `./node_modules/.bin/playwright test --workers=2` in `view-tests/`, no `npx` and no
-  `npm`, so no request to a registry. `view-tests/playwright.config.mjs` ends a test still
+  `npm`, so no request to a registry, run by `taskfiles/page-netns.sh` in a user and network
+  namespace of its own with only loopback up (`unshare --user --map-root-user --net`, then `ip
+  link set lo up`): the browser and every fixture it starts see no change of the host's
+  interfaces and reach nothing but loopback (the live marker's record in the page step's
+  section). Without a namespace the step fails with one line, `page step: no network namespace
+  of its own (...)`, and runs no test; a Playwright run outside one fails in
+  `view-tests/global-setup.mjs` before any browser starts (escape for debugging:
+  `SURF_VIEW_TESTS_HOST_NETWORK=1`). The forge's runner (Ubuntu) restricts unprivileged user
+  namespaces through AppArmor; `.github/workflows/check.yml` lifts that with `sudo sysctl -w
+  kernel.apparmor_restrict_unprivileged_userns=0` before `task check` and runs the script once.
+  This host needs no setting. `view-tests/playwright.config.mjs` ends a test still
   running after 60 s (`timeout: 60_000`; no test sets more) and writes the JUnit report
   `.out/view-test/junit.xml` beside its list. The step prints `the ten slowest tests:` from
   that report (`taskfiles/slowest-tests.sh`, which prints a Playwright title whole), then
@@ -1529,7 +1539,8 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
 - `task page-step-cpu`: the page step's CPU seconds and instructions
   (`taskfiles/page-step-cpu.yml`, `story:page-step-holds-under-load`), not a step of `check`.
   It builds and sets up as `task view-test` does, then `taskfiles/page-step-cpu.sh` runs the
-  same Playwright call in the same directory under `perf stat -e task-clock,instructions` as
+  same Playwright call in the same directory and namespace (`taskfiles/page-netns.sh`) under
+  `perf stat -e task-clock,instructions` as
   one slot job and prints the load before and after, the ten slowest tests, the step's line,
   `page step cpu: T s` and `page step instructions: I G (user only)` (the loads and the step's
   seconds read inside the job, so a wait in the pool's queue is not in them), and writes T to
@@ -2129,13 +2140,36 @@ in four runs on `03f25c9` (loads 97.85 to 121.49), 6.6 s after cut (a) at load 1
 5.4, 3.9 and 3.0 s in the three runs on `c301a84` (two other tests took 5.7 and 5.2 s in the
 third) and 9.1, 1.5 and 1.3 s in the three D331 runs below. At loads of 50 to 70 no page test
 took over 3.0 s; at 96 to 107 four took 11 to 14 s.
-The cause of `#live-word` staying `connecting` for 10 s is open: `controls case 6` in the
-base's third run (load 121, under `perf record -s`) and `timeline of three actions` in the first
-D331 run (load 107); the code rules out a closed or refused stream and a failed first load
-(each writes another word), an error in drawing (it would repeat in every run) and a late head
-of `/events` (surfd writes it at once), 20 repeats of case 6 with traces passed, and since D331
-a failure of the `load` of `controls.spec.mjs` names the live marker's word and class, the
-text of `#message` and the segments drawn (the `load` of the other spec files does not yet).
+`#live-word` staying `connecting` for 10 s (story:view-live-marker-under-load): `controls case
+6` in the base's third run (load 121, under `perf record -s`), `timeline of three actions` in
+the first D331 run (load 107), later `page lists both sessions` at load 22 and `controls case 5`
+at load 44 to 68, so not a matter of load. Every wait for `live` is `expectLive(page)` of
+`view-tests/tests/fixture.mjs`; when it fails it adds `The page shows:` with the word and
+class, `#message`, the segments drawn, the page's `/events` fetch (sent, head arrived or not, ms
+from the navigation) and its other fetches, each of the browser's requests with its status or
+failure, the page errors and the console's errors and warnings, and a `GET /` of the view from
+the test. The cause: Chromium cancels the requests it has in flight with
+`net::ERR_NETWORK_CHANGED` when an address of any interface of its network namespace is added
+or removed, loopback targets included. On this host containers start and stop (a docker `veth`
+and its `fe80::` address: 10 address changes in 20 minutes, in two bursts), and a page's module
+files were cancelled so: `controls case 5` showed `/now.js no answer, /changes.js no answer,
+/timeline.js no answer`, three times `Failed to load resource: net::ERR_NETWORK_CHANGED`,
+`/events: not sent (the page made 0 other fetch(es))`; `view.js` never ran. The kernel log has
+a docker `veth` coming up within 2 s of each of the two low-load failures. Planted: in a user
+and network namespace of its own with loopback up and a dummy interface whose address is added
+and removed every 200 ms, 6 of 15 runs of three page tests failed with that text (or `page.goto:
+net::ERR_NETWORK_CHANGED`), and 17 of 45 page starts of a probe ran no script; the same runs
+without the plant: 0 of 196 page starts. The fix: the page step runs in a namespace of its own
+(`taskfiles/page-netns.sh`, task `view-test`); with the same plant in the namespace around it,
+0 of 227 page starts failed (702 address changes planted). No retry and no longer wait. The
+story's acceptance 4 is the committed check `view-tests/global-setup.mjs`: before any browser
+starts, a run whose process sees an interface other than `lo` in `/proc/self/net/dev` (the
+host's network, where the cause lives) fails with one line, `page tests: not in a network
+namespace of their own (interfaces: ...); run them through taskfiles/page-netns.sh (task
+view-test does), or set SURF_VIEW_TESTS_HOST_NETWORK=1 to debug on the host's network`.
+`/sys/class/net` would not do: it lists the interfaces of the namespace that mounted `/sys`.
+`SURF_VIEW_TESTS_HOST_NETWORK=1` is for a person who debugs one test on the host's network;
+`task view-test`, `task page-step-cpu` and the gate never set it.
 D331 looked for one more cut in the Playwright workers, compared by the instructions of a run
 (`perf stat -e instructions`, about 117 G a run, far less tied to the load than CPU seconds):
 - Playwright 1.65 installs `source-map-support` in its runner and each worker without a

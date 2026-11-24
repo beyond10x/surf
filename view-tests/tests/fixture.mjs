@@ -2,7 +2,8 @@
 // server, surfd in process, its own XDG_RUNTIME_DIR under the machine's), its commands, and a
 // record of the page: every request (its status; its headers and body when a test reads them),
 // every console message, page error, dialog and securitypolicyviolation. At the end of the test
-// the fixture's standard input is closed and the test waits for it to exit.
+// the fixture's standard input is closed and the test waits for it to exit. Also the one wait
+// for the live marker to read `live`, expectLive().
 
 import { test as base, expect } from "@playwright/test";
 import { spawn } from "node:child_process";
@@ -14,6 +15,202 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".
 const PROGRAM = path.join(ROOT, "target", "debug", "surf-view-fixture");
 const START_WAIT = 15_000;
 const EXIT_WAIT = 15_000;
+// How long each read after a failed wait for `live` may take.
+const READ_WAIT = 2_000;
+// How many of the page's latest fetch calls its note keeps.
+const FETCHES_KEPT = 64;
+
+// An init script of every page (the `page` fixture below): the page's own note of each fetch it
+// makes, its path, when it was called and when its answer's head arrived or it failed, in ms
+// from the navigation (performance.now()), in `surfTestFetches`. It makes no request and sends
+// nothing to the test; it is read only after a failed wait for `live`.
+function noteFetches(kept) {
+  const calls = [];
+  const original = window.fetch;
+  Object.defineProperty(window, "surfTestFetches", { value: calls });
+  window.fetch = function fetch(input, init) {
+    const answer = Reflect.apply(original, window, [input, init]);
+    let where;
+    try {
+      where = new URL(input instanceof Request ? input.url : String(input), location.href).pathname;
+    } catch {
+      where = String(input);
+    }
+    const call = { path: where, called: Math.round(performance.now()), head: null, status: null, failed: null, error: null };
+    calls.push(call);
+    if (calls.length > kept) {
+      calls.shift();
+    }
+    answer.then(
+      (response) => {
+        call.head = Math.round(performance.now());
+        call.status = response.status;
+      },
+      (error) => {
+        call.failed = Math.round(performance.now());
+        call.error = String(error && error.message ? error.message : error);
+      },
+    );
+    return answer;
+  };
+}
+
+// `promise`, or `fallback` when it has not settled within READ_WAIT.
+async function within(promise, fallback) {
+  let timer;
+  const late = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(fallback), READ_WAIT);
+  });
+  try {
+    return await Promise.race([promise, late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const NOT_READ = `(not read within ${READ_WAIT} ms)`;
+
+function shownText(value) {
+  return value === "" || value === null ? "(empty)" : value;
+}
+
+function notRead(failure) {
+  return `(not read: ${String(failure && failure.message ? failure.message : failure).split("\n")[0]})`;
+}
+
+// One fetch of the page's note: `<path> called at N ms, head at M ms (status S)`, or its head
+// not arrived, or failed.
+function fetchLine(call) {
+  const where = call.path.replace(/[0-9a-f-]{36}$/, "<id>");
+  if (call.head !== null) {
+    return `${where} called at ${call.called} ms, head at ${call.head} ms (${call.status})`;
+  }
+  if (call.failed !== null) {
+    return `${where} called at ${call.called} ms, failed at ${call.failed} ms (${call.error})`;
+  }
+  return `${where} called at ${call.called} ms, head not arrived`;
+}
+
+// What the page shows and did when `live` was not reached, each read once, all at the same
+// time, each within READ_WAIT: the live marker's word and class, #message, the segments drawn;
+// the page's /events fetches (sent, its head arrived or not, ms from the navigation) and its
+// other fetches; each of the browser's latest requests (the page's files included) with its
+// answer; the page's errors and its console's errors and warnings; and whether the view
+// answers `/` from here, outside the browser.
+async function shows(page) {
+  const origin = (() => {
+    try {
+      return new URL(page.url()).origin;
+    } catch {
+      return null;
+    }
+  })();
+  const askView = async () => {
+    if (origin === null || origin === "null") {
+      return "(no origin)";
+    }
+    const started = Date.now();
+    try {
+      const answer = await fetch(origin + "/", { signal: AbortSignal.timeout(READ_WAIT) });
+      await answer.arrayBuffer();
+      return `${answer.status} in ${Date.now() - started} ms`;
+    } catch (failure) {
+      return `${notRead(failure)} after ${Date.now() - started} ms`;
+    }
+  };
+  const [word, kind, message, drawn, fetches, requests, errors, messages, view] = await Promise.all([
+    page.locator("#live-word").textContent({ timeout: READ_WAIT }).then(shownText, notRead),
+    page.locator("#live").getAttribute("class", { timeout: READ_WAIT }).then(shownText, notRead),
+    page.locator("#message").textContent({ timeout: READ_WAIT }).then(shownText, notRead),
+    within(page.locator("#actions > li.segment").count(), NOT_READ).catch(notRead),
+    within(page.evaluate(() => (Array.isArray(window.surfTestFetches) ? window.surfTestFetches : null)), NOT_READ).catch(notRead),
+    within(page.requests(), NOT_READ).catch(notRead),
+    within(page.pageErrors(), NOT_READ).catch(notRead),
+    within(page.consoleMessages(), NOT_READ).catch(notRead),
+    askView(),
+  ]);
+  let stream;
+  let others;
+  if (Array.isArray(fetches)) {
+    const events = fetches.filter((call) => call.path === "/events");
+    stream =
+      events.length === 0
+        ? `not sent (the page made ${fetches.length} other fetch(es))`
+        : events
+            .map((call) =>
+              call.head !== null
+                ? `sent at ${call.called} ms from the navigation, head arrived at ${call.head} ms (${call.status})`
+                : call.failed !== null
+                  ? `sent at ${call.called} ms from the navigation, failed at ${call.failed} ms (${call.error})`
+                  : `sent at ${call.called} ms from the navigation, head not arrived`,
+            )
+            .join(" | ");
+    others = fetches.filter((call) => call.path !== "/events").map(fetchLine).join(", ") || "none";
+  } else {
+    stream = fetches === null ? "(the page has no note of its fetches)" : fetches;
+    others = stream;
+  }
+  // Each of the browser's latest requests (the page's files, its fetches): its path and its
+  // answer's status, its failure, or no answer yet.
+  let browser;
+  if (Array.isArray(requests)) {
+    browser =
+      requests
+        .map((request) => {
+          let where;
+          try {
+            where = new URL(request.url()).pathname.replace(/[0-9a-f-]{36}$/, "<id>");
+          } catch {
+            where = request.url();
+          }
+          const response = request.existingResponse();
+          if (response) {
+            const head = request.timing().responseStart;
+            return `${where} ${response.status()}` + (head >= 0 ? ` (head ${Math.round(head)} ms after it was sent)` : "");
+          }
+          const failure = request.failure();
+          return failure ? `${where} failed (${failure.errorText})` : `${where} no answer`;
+        })
+        .join(", ") || "none";
+  } else {
+    browser = requests;
+  }
+  const pageErrors = Array.isArray(errors) ? errors.map((error) => String(error.message || error).split("\n")[0]).join(" | ") || "none" : errors;
+  const consoleErrors = Array.isArray(messages)
+    ? messages
+        .filter((entry) => entry.type() === "error" || entry.type() === "warning")
+        .map((entry) => `${entry.type()}: ${entry.text().split("\n")[0]}`)
+        .join(" | ") || "none"
+    : messages;
+  return [
+    `live marker: ${word}`,
+    `class ${kind}`,
+    `message: ${message}`,
+    `segments drawn: ${drawn}`,
+    `/events: ${stream}`,
+    `the page's other fetches: ${others}`,
+    `the browser's requests: ${browser}`,
+    `page errors: ${pageErrors}`,
+    `console errors and warnings: ${consoleErrors}`,
+    `the view's / from the test: ${view}`,
+  ].join("; ");
+}
+
+// The one wait for the live marker (#live-word) to read `live`, within expect's timeout
+// (story:view-live-marker-under-load). When it is not reached, the error says what the page
+// shows and did instead (shows()); a passing wait reads nothing more and makes no request.
+export async function expectLive(page) {
+  try {
+    await expect(page.locator("#live-word")).toHaveText("live");
+  } catch (error) {
+    const shown = await shows(page);
+    error.message += `\nThe page shows: ${shown}`;
+    if (typeof error.stack === "string") {
+      error.stack = error.stack.replace(/\n    at /, `\nThe page shows: ${shown}\n    at `);
+    }
+    throw error;
+  }
+}
 
 // One running surf-view-fixture.
 export class Fixture {
@@ -166,6 +363,11 @@ export class Record {
 
 export const test = base.extend({
   fixtureArgs: [[], { option: true }],
+
+  page: async ({ page }, use) => {
+    await page.addInitScript(noteFetches, FETCHES_KEPT);
+    await use(page);
+  },
 
   record: async ({ page }, use) => {
     const record = new Record();
