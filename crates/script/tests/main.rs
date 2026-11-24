@@ -5,4 +5,10 @@
 
 mod adversary;
 mod adversary_2;
+mod bindings;
+mod dom_attributes;
+mod dom_mutation;
+mod dom_reading;
+mod dom_selectors;
 mod engine;
+mod parse_run;
