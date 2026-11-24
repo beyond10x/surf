@@ -53,10 +53,14 @@
 //! Every `Set-Cookie` field of each response, redirects included, goes into the jar for that
 //! response's address before the next hop is sent; one that is not UTF-8 is dropped. A
 //! `Set-Cookie` field longer than the header limit ends the fetch as every such field does
-//! ([`Failure::MalformedResponse`]), and nothing of that response goes into the jar. An address
-//! `surf_url::Url::parse` does not parse sends no cookie and keeps none. The rules of the jar
-//! (draft-ietf-httpbis-rfc6265bis-22) are those of the crate `surf-cookie`. A request without a
-//! jar sends no `Cookie` field and keeps no cookie.
+//! ([`Failure::MalformedResponse`]), and nothing of that response goes into the jar. With a jar
+//! the address is parsed once, by `surf_url::Url::parse`: the connection, the `Host` field and
+//! the jar's choice of cookies all come from that parse's serialization, on the first request as
+//! on every redirect, so a cookie goes only to the host it was chosen for (for
+//! `http://a.test\b.test/` that is `a.test`, as a browser reads it). An address
+//! `surf_url::Url::parse` does not parse is sent as above, with no cookie, and keeps none. The
+//! rules of the jar (draft-ietf-httpbis-rfc6265bis-22) are those of the crate `surf-cookie`. A
+//! request without a jar sends no `Cookie` field and keeps no cookie.
 //!
 //! The wire format follows HTTP/1.1 (RFC 9112, message syntax; RFC 9110, semantics) for what
 //! this crate does. No section of either is claimed complete. Where a rule is followed, the
@@ -265,7 +269,9 @@
 //! printable ASCII) is [`Failure::Unreachable`], also without a connection: the specification
 //! has no reason for an address that is not one. When a redirect arrives, the address passed to
 //! [`fetch`] or [`send`] is parsed with `surf_url::Url::parse` to resolve the `Location` against; one that
-//! does not parse is [`Failure::Unreachable`] for the same reason.
+//! does not parse is [`Failure::Unreachable`] for the same reason. A request with a jar
+//! ("Cookies") is checked as above and then sent to its address as `surf_url::Url::parse` reads
+//! it.
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
@@ -614,8 +620,18 @@ pub fn send_from(
     // The response URL once a redirect is followed; until then the asked address byte for byte,
     // copied only into a response.
     let mut url: Option<String> = None;
-    // The current URL parsed with surf-url, and its fragment, once a redirect needs them.
+    // The current URL parsed with surf-url, and its fragment: from the first request on for a
+    // fetch with a jar, otherwise once a redirect needs them.
     let mut current: Option<(surf_url::Url, Option<String>)> = None;
+    // The crate documentation, "Cookies": with a jar, the address is parsed once, and the
+    // connection, the `Host` field and the jar's lookup all come from that parse.
+    if request.jar.is_some() {
+        if let Ok(parsed) = surf_url::Url::parse(address, None) {
+            target = Target::parse(&parsed.href())?;
+            let fragment = parsed.fragment().map(str::to_owned);
+            current = Some((parsed, fragment));
+        }
+    }
     let mut redirects = 0;
     let mut connect_left = limits.connect_timeout;
     let mut read_left = limits.read_timeout;
@@ -658,16 +674,10 @@ pub fn send_from(
                 secure(Timed::new(stream, read_left), &target.host, verifier)?
             }
         };
-        // The crate documentation, "Cookies": the jar sees the address of this hop parsed; a
+        // The crate documentation, "Cookies": the jar sees the parse this hop connected by; a
         // fetch without a jar parses nothing for it.
-        let hop_url = match request.jar {
-            Some(_) => match current.as_ref() {
-                Some((url, _)) => Some(url.clone()),
-                None => surf_url::Url::parse(address, None).ok(),
-            },
-            None => None,
-        };
-        let cookie = match (request.jar, hop_url.as_ref()) {
+        let hop_url = request.jar.and(current.as_ref().map(|(url, _)| url));
+        let cookie = match (request.jar, hop_url) {
             (Some(jar), Some(url)) => jar.cookie_field(
                 url,
                 surf_cookie::site(request.initiator, url),
@@ -681,7 +691,7 @@ pub fn send_from(
         };
         let (head, wire) = exchange(&target, &outgoing, cookie.as_deref(), stream, limits)?;
         drop(cookie);
-        if let (Some(jar), Some(url)) = (request.jar, hop_url.as_ref()) {
+        if let (Some(jar), Some(url)) = (request.jar, hop_url) {
             // A field that is not UTF-8 is no cookie the jar can read: it is dropped.
             for set_cookie in head.values(b"set-cookie") {
                 if let Ok(set_cookie) = std::str::from_utf8(set_cookie) {
@@ -689,7 +699,6 @@ pub fn send_from(
                 }
             }
         }
-        drop(hop_url);
         let status = head.status;
         // The request is sent: of the address, only what a response needs is kept from here
         // (the crate documentation, "Memory").

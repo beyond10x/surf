@@ -26,7 +26,11 @@ fn field(jar: &Jar, address: &str) -> Option<String> {
 /// A jar holding `a=1; Secure; Path=/login` of `h.test`.
 fn secure_on_login() -> Jar {
     let jar = Jar::new();
-    jar.receive(&url("https://h.test/login"), "a=1; Secure; Path=/login", at(T));
+    jar.receive(
+        &url("https://h.test/login"),
+        "a=1; Secure; Path=/login",
+        at(T),
+    );
     jar
 }
 
