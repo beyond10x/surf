@@ -61,7 +61,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 27
+revision: 28
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:14Z", actor: "human:operator", revision: 25}
 ---
@@ -112,6 +112,16 @@ that tag in its first commit.
 - waits for a release of swell: the tag that holds requirement 11 (`docs/design/scripts.md`, Q18),
   as Q13 decides; this story starts when that tag exists and takes it in its first commit. The note
   records the tag when it comes back from swell (Q11, Q13).
+- with that tag, promises and jobs exist (swell's slice 10 is closed in the same release, as
+  swell's session said on 2026-11-24). The note leaves out step 1 of HTML's steps at a script's
+  end tag, "perform a microtask checkpoint", because "no promise and no job exist before swell's
+  slice 10" (`docs/design/scripts.md`, Q2, row 1, and Q18). So the first commit that takes the
+  tag also decides and writes into the note: the microtask checkpoint after each script, its
+  steps counted in that script's and the document's totals, and its end taken as the script's
+  end. Open until then: which call of the host interface runs the jobs, and what a job that
+  ends at a limit makes of the record of a script that already ended `ran`.
+- with that tag, the host interface's error type gains a variant (swell's session, 2026-11-24);
+  a `match` of surf over the host's errors takes it in.
 
 ## Decisions taken
 
