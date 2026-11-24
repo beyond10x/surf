@@ -5,6 +5,7 @@
 
 mod adversary_ca_file;
 mod adversary_fill_pick;
+mod adversary_skill_definition;
 mod ca_file;
 mod common;
 mod drift;
