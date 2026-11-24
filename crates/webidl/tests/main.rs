@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+mod adversary;
 mod reader;
 mod refusals;
 mod source;
