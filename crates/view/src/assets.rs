@@ -30,6 +30,7 @@ pub fn page_files() -> Vec<PageFile> {
         ),
         ("detail.js", JAVASCRIPT, include_str!("../web/detail.js")),
         ("now.js", JAVASCRIPT, include_str!("../web/now.js")),
+        ("changes.js", JAVASCRIPT, include_str!("../web/changes.js")),
     ]
     .into_iter()
     .map(|(name, content_type, text)| PageFile {

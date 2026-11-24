@@ -226,6 +226,9 @@ fn post<'a>(address: &'a str, body: Option<&'a [u8]>, media_type: Option<&'a str
         method: Method::Post,
         body,
         media_type,
+        anchors: None,
+        jar: None,
+        initiator: None,
     }
 }
 
@@ -498,6 +501,9 @@ fn get_with_body_or_media_type_fails_without_connecting() {
             method: Method::Get,
             body,
             media_type,
+            anchors: None,
+            jar: None,
+            initiator: None,
         };
         match send(&request, &limits()) {
             Err(Failure::Unreachable(detail)) => assert!(

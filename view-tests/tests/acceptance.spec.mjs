@@ -5,7 +5,7 @@
 // crates/view-fixture/tests/acceptance.rs. No fixed sleep: every wait is on an element, a count
 // or an attribute, with the runner's timeout.
 
-import { test, expect } from "./fixture.mjs";
+import { test, expect, expectLive } from "./fixture.mjs";
 
 const TITLE = "Start <script>alert(1)</script>";
 
@@ -18,7 +18,7 @@ const pagePart = (page, name) =>
 
 async function load(page, address) {
   await page.goto(address);
-  await expect(page.locator("#live-word")).toHaveText("live");
+  await expectLive(page);
 }
 
 // The index of the segment that carries the playhead, or -1.

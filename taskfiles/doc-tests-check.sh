@@ -4,9 +4,10 @@
 #
 # Usage: sh taskfiles/doc-tests-check.sh [<root>]   (default: .)
 #
-# - It reads every *.rs under <root>/crates and <root>/generated but those under crates/ports/;
-#   a directory named target and one whose name starts with a dot are not entered. A root that
-#   holds neither crates/ nor generated/ exits 2.
+# - It reads every *.rs under <root>/crates, <root>/generated and <root>/conformance/src but
+#   those under crates/ports/; a directory named target and one whose name starts with a dot are
+#   not entered. task conform-rust runs the conformance crate's tests with cargo-nextest, which
+#   runs no doc test. A root that holds neither crates/ nor generated/ exits 2.
 # - In the /// and //! lines of a file (//// is no doc comment) it follows the fences: a line
 #   whose text after the comment mark and blanks starts with three backticks or three tildes
 #   opens a block when none is open and closes the open one otherwise. An opening fence whose
@@ -35,6 +36,8 @@ done
   printf '%s\n' "doc-tests-check: $root holds neither crates/ nor generated/"
   exit 2
 }
+# The conformance crate's tests run under cargo-nextest, which runs no doc test either.
+if [ -d conformance/src ]; then dirs="$dirs conformance/src"; fi
 
 status=0
 # shellcheck disable=SC2086

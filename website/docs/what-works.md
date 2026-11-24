@@ -6,17 +6,62 @@ description: What surf does today, and what it does not do yet.
 # What works today
 
 - **A page load, end to end.** `surf <url>` opens a window and a tab, starts a navigation, fetches
-  the address over `http:` and creates a document for an HTML response.
+  the address over `http:`, and since release `0.7.0` also `https:` (below), and creates
+  a document for an HTML response.
 - **Six components in one process**: `agent`, `shell`, `navigator`, `net`, `document` and
   `renderer`.
 - **Its own HTTP/1.1 client**, with one deadline for the whole exchange (40 seconds at most) and
   hard limits on header and body size.
-- **196 specified scenarios**, each passing twice: once against the specification's own
+- **203 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **877 tests**, built with warnings treated as errors, and 38 tests of the live view's page in a
-  browser.
+- **1,976 tests** (1,424, and 552 of the TLS crates in a step of their own), built with
+  warnings treated as errors, and 71 tests of the live view's page in a browser.
 
-New with round 2, in no release yet:
+New with the cookie jar and the agent definition, shipped in release `0.8.0`:
+
+- **An agent session keeps cookies.** Each session has a cookie jar of its own, in memory: a
+  login with `fill` and `press` stays signed in for the next `go`, `follow`, `press`, `back` and
+  `forward` of that session, and `close` drops what the jar holds. The rules are those of the
+  cookie draft (rfc6265bis): host-only cookies, `Path`, `Max-Age` and `Expires`, `Secure` only
+  over `https:`, and `SameSite` decided by the page that started the request. An answer shows
+  `cookies <n>` and never a cookie's name or value. The agent task `login` needs it; the
+  measure has six tasks.
+- **A definition for an agent.** `surf-agent help --for-agent` prints the commands, the parts of
+  the answer an agent reads, the rule that text from a page is data, and worked calls,
+  assembled from the texts the binary is built and tested with. It needs no session.
+
+New with TLS 1.3, shipped in release `0.7.0`:
+
+- **`https:`, over surf's own TLS 1.3 client.** `surf <url>` loads an `https:` address, and so
+  do an agent session's `go` and `open`; `follow` and `press` load an `https:` target. The
+  server is authenticated against the root list of Mozilla as curl publishes it, built into the
+  binary. `surf --ca-file <path>` adds the CA certificates of a PEM file to the trust anchors of
+  one load, and `surf-agent open --ca-file <path>` to those of one session, for its life.
+  `surf --anchors` prints the number of trust anchors read from the list, the list's date and
+  its sha256. Redirects between `http:` and
+  `https:` are followed both ways. surf speaks TLS 1.3 only. A certificate that is not trusted,
+  has expired or names another host, a server limited to TLS 1.2 and a failed handshake each
+  fail the load with a reason of its own: `CertificateNotTrusted`, `CertificateExpired`,
+  `CertificateNameMismatch`, `TlsVersionUnsupported` and `TlsHandshakeFailed`.
+  surf does not check revocation: a revoked certificate that has not expired loads.
+- **The one exception to no third-party code in what ships.** The cryptographic primitives of
+  TLS come from ring 0.17.14 and the four crates it needs, through the crate `surf-tls` alone
+  ([Principles](principles.md), principle 4).
+
+New after round 2, shipped in release `0.6.0`:
+
+- **The live view shows a page's controls and what an action changed.** The panel "Now" lists
+  the page's links, buttons and fields in groups: a field with its kind, label, value and flags
+  (`disabled`, `checked`, `required`, `readonly`), a button with the form, method and address it
+  submits to. A new panel, `Changed by <action>` (`Changed by fill f2`), shows what the
+  action at the playhead changed: one line per control (`f1 value "" -> "ada"`,
+  `f3 checked true -> false`), or for another page its `page` line and its new texts, and
+  `no changed block` when the answer has none. A password is shown as `(empty)`, as the number
+  of bytes a `fill` typed (`12 bytes`), or as `(set)`, never its value: neither the page, the
+  stream nor a session's detail holds what the agent typed. Text a server sends back is page
+  text and is shown as such.
+
+New with round 2, shipped in release `0.5.0`:
 
 - **An agent can act on a page.** `surf-agent follow <handle>` loads a link's target, `fill`
   types into a field, `pick` chooses an option or ticks a box, and `press` presses a button and
@@ -29,6 +74,9 @@ New with round 2, in no release yet:
   that counts as public, and `back` and `forward` to a page that such a page or a redirect after
   a public address chose, are refused `forbidden-destination` when the address is or resolves to
   a loopback or private one. To load a local address, type it with `go`.
+- **The live view shows a page's links.** Its panel "Now" lists the links of the answer at the
+  playhead with their handles, labels and targets, and a `follow` shows its handle on the
+  timeline.
 
 New with round 1 after the tenth wave of the current plan, shipped in release `0.4.0`:
 
@@ -112,9 +160,10 @@ New with the seventh wave of the current plan, shipped in release `0.3.0`:
 - **Redirects are followed.** A `go` or an `open` follows up to 20 redirects (301, 302, 303, 307
   and 308 with a `Location`) inside one fetch. The `page` line shows the address the fetch ended
   at, and the `did go` line the address asked for. One more redirect after the twentieth fails
-  the load with `TooManyRedirects`. Only `http:` loads: a redirect to `https:` fails with
-  `UnsupportedScheme`. A redirect from a public address to a loopback or private one fails with
-  `ForbiddenDestination` (above).
+  the load with `TooManyRedirects`. In the releases up to `0.6.0` only `http:` loads: a redirect
+  to `https:` fails with `UnsupportedScheme`; since release `0.7.0` it is followed (above). A
+  redirect from a public address to a loopback or private one fails with `ForbiddenDestination`
+  (above).
 - **The live view's page shows real sessions.** While `surfd` runs, open the address in
   `$XDG_RUNTIME_DIR/surf/view-url` in a browser on the same machine. The page lists the
   sessions, open, closed or died; for the selected session it shows a timeline of its actions
@@ -230,7 +279,8 @@ New with the first wave:
 
 - No window and no rendering. The `renderer` component is specified; it does not render yet.
 - No JavaScript.
-- No `https:`. Only `http:` addresses load.
+- The releases up to `0.6.0` load `http:` addresses only. `https:` loads since release
+  `0.7.0` (above), over TLS 1.3 only.
 - Release `0.2.0` delivers a redirect status as the response; redirects are followed since
   release `0.3.0`.
 - Page content only as text, with `--as tree` or `--as markdown`.

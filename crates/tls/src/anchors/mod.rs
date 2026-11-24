@@ -37,6 +37,7 @@ const BUNDLE: &[u8] = include_bytes!("cacert.pem");
 const SOURCE: &str = include_str!("SOURCE");
 
 const BEGIN: &[u8] = b"-----BEGIN ";
+const END: &[u8] = b"-----END ";
 const DASHES: &[u8] = b"-----";
 const CERTIFICATE: &[u8] = b"CERTIFICATE";
 
@@ -200,6 +201,27 @@ impl Anchors {
     /// Adds the anchors of the extra PEM file `pem` (item 8) and returns how many, or refuses
     /// the whole file and adds nothing.
     pub fn with_extra_pem(&mut self, pem: &[u8]) -> Result<usize, AnchorError> {
+        self.take_extra(pem).map(|taken| taken.len())
+    }
+
+    /// [`Anchors::with_extra_pem`], giving back the text of the blocks it took instead of their
+    /// count: each block from its BEGIN line to its END line and a line feed, in the order of
+    /// the file. The lines before, between and after the blocks are left out. The text is ASCII,
+    /// since a block the PEM reader takes holds nothing else, and it is taken again whole by
+    /// [`Anchors::with_extra_pem`].
+    pub fn with_extra_pem_blocks(&mut self, pem: &[u8]) -> Result<String, AnchorError> {
+        let taken = self.take_extra(pem)?;
+        let mut text = String::new();
+        for block in taken {
+            text.extend(block.iter().map(|&b| char::from(b)));
+            text.push('\n');
+        }
+        Ok(text)
+    }
+
+    /// Adds the anchors of `pem` as [`Anchors::with_extra_pem`] tells, and returns the text of
+    /// each block taken, without the line feed after its END line.
+    fn take_extra<'a>(&mut self, pem: &'a [u8]) -> Result<Vec<&'a [u8]>, AnchorError> {
         if pem.len() > EXTRA_BYTES_MAX {
             return Err(AnchorError::TooLarge);
         }
@@ -211,6 +233,7 @@ impl Anchors {
             return Err(AnchorError::TooMany);
         }
         let mut added = Vec::with_capacity(blocks.len());
+        let mut taken = Vec::with_capacity(blocks.len());
         for (index, block) in blocks.into_iter().enumerate() {
             if let Some(label) = other_label(block) {
                 return Err(AnchorError::NotACertificate { index, label });
@@ -225,10 +248,16 @@ impl Anchors {
                 return Err(AnchorError::NotACa { index });
             }
             added.push(TrustAnchor::from_certificate(&cert));
+            // The PEM reader took the block whole, so its first END line after the BEGIN line
+            // closes it; what follows up to the next BEGIN line is outside every block.
+            let end = lines(block)
+                .skip(1)
+                .find(|(_, line)| line.starts_with(END))
+                .map_or(block.len(), |(start, line)| start + line.len());
+            taken.push(&block[..end]);
         }
-        let count = added.len();
         self.anchors.extend(added);
-        Ok(count)
+        Ok(taken)
     }
 
     /// The date of the bundled list, `yyyy-mm-dd`, from its header line.

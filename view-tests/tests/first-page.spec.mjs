@@ -3,7 +3,7 @@
 // thing itself; the deadline is the story's where it names one (2 s, 5 s), otherwise the
 // config's 10 s.
 
-import { test, expect } from "./fixture.mjs";
+import { test, expect, expectLive } from "./fixture.mjs";
 
 const DOMAINS = ["surf.shell", "surf.agent", "surf.navigation", "surf.net", "surf.document", "surf.render"];
 const HOSTILE_TITLE = "<img src=x onerror=alert(1)><script>alert(1)</script>";
@@ -50,7 +50,7 @@ const pageAddress = (page) => page.locator("#page-line .part.address dd, #page-l
 
 async function load(page, address) {
   await page.goto(address);
-  await expect(page.locator("#live-word")).toHaveText("live");
+  await expectLive(page);
 }
 
 // The index of the segment that carries the playhead, or -1.
@@ -127,8 +127,9 @@ test("a new session appears without a reload", async ({ page, surf, record }) =>
   const roots = record.requestsOf("/").length;
   const id = await surf.open(surf.pages + "/first/b.html");
   const summary = (await surf.api("/api/sessions")).sessions.find((s) => s.id === id);
-  await expect(items(page)).toHaveCount(2, { timeout: 2000 });
-  await expect(items(page).last().locator(".address")).toHaveText(summary.address, { timeout: 2000 });
+  // Each bound of 2 s below is the sentence's "listed within 2 s", named beside it.
+  await expect(items(page)).toHaveCount(2, { timeout: 2000 }); // .engineering/planning/story/view-first-page.md:213-214
+  await expect(items(page).last().locator(".address")).toHaveText(summary.address, { timeout: 2000 }); // .engineering/planning/story/view-first-page.md:213-214
   expect(record.requestsOf("/").length).toBe(roots);
 });
 
@@ -199,10 +200,11 @@ test("latest follows", async ({ page, surf }) => {
   await expect(segments(page)).toHaveCount(2);
   await expect(latest(page)).toHaveAttribute("aria-pressed", "true");
   await surf.agent(id, "go", surf.pages + "/first/b.html");
-  await expect(segments(page)).toHaveCount(3, { timeout: 2000 });
-  await expect(playhead(page)).toHaveCount(1, { timeout: 2000 });
-  await expect.poll(() => playheadAt(page), { timeout: 2000 }).toBe(2);
-  await expect(pageAddress(page)).toHaveText(surf.pages + "/first/b.html", { timeout: 2000 });
+  // Each bound of 2 s below is the sentence's "within 2 s", named beside it.
+  await expect(segments(page)).toHaveCount(3, { timeout: 2000 }); // .engineering/planning/story/view-first-page.md:225-226
+  await expect(playhead(page)).toHaveCount(1, { timeout: 2000 }); // .engineering/planning/story/view-first-page.md:225-226
+  await expect.poll(() => playheadAt(page), { timeout: 2000 }).toBe(2); // .engineering/planning/story/view-first-page.md:225-226
+  await expect(pageAddress(page)).toHaveText(surf.pages + "/first/b.html", { timeout: 2000 }); // .engineering/planning/story/view-first-page.md:225-226
 });
 
 test("playhead stays", async ({ page, surf }) => {
@@ -266,7 +268,7 @@ test("selection in the address", async ({ page, surf, record }) => {
   await expect.poll(() => page.evaluate(() => location.hash)).toBe("#session=" + id + "&at=2");
   expect(await page.evaluate(() => location.href)).not.toContain(surf.token);
   await page.reload();
-  await expect(page.locator("#live-word")).toHaveText("live");
+  await expectLive(page);
   await expect(segments(page)).toHaveCount(3);
   await expect.poll(() => playheadAt(page)).toBe(1);
   await expect(latest(page)).toHaveAttribute("aria-pressed", "false");
@@ -409,7 +411,7 @@ test("reconnect after a lost connection", async ({ page, surf, record }) => {
   await surf.mend();
   await expect(segments(page)).toHaveCount(4);
   await expect(pageAddress(page)).toHaveText(surf.pages + "/first/a.html");
-  await expect(page.locator("#live-word")).toHaveText("live");
+  await expectLive(page);
   const again = record.requestsOf("/events").filter((request) => request.order >= cutAt);
   expect(again.length).toBeGreaterThan(0);
   for (const request of again) {
@@ -431,7 +433,7 @@ test("reconnect after a lost connection", async ({ page, surf, record }) => {
 });
 
 test("reset after a long absence", async ({ page, surf, record }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(60_000);
   const id = await surf.open();
   await load(page, surf.piped);
   await expect(segments(page)).toHaveCount(1);
@@ -443,7 +445,7 @@ test("reset after a long absence", async ({ page, surf, record }) => {
   const mendAt = record.requests.length;
   await surf.mend();
   await expect(segments(page)).toHaveCount(26, { timeout: 30_000 });
-  await expect(page.locator("#live-word")).toHaveText("live");
+  await expectLive(page);
   // Loaded again twice: once as every new stream asks, once more for its `reset`
   // (docs/view-stream.md, "The stream").
   await expect
@@ -457,7 +459,7 @@ test("reset after a long absence", async ({ page, surf, record }) => {
 });
 
 test("dropped entries are a gap", async ({ page, startFixture }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(60_000);
   const bound = 30;
   const bounded = await startFixture(["--entries-per-session", String(bound)]);
   const id = await bounded.open();
@@ -500,20 +502,17 @@ test("dropped entries are a gap", async ({ page, startFixture }) => {
 });
 
 test("an entry over 1 MiB", async ({ page, surf }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(60_000);
   const id = await surf.open();
   await load(page, surf.view);
   await expect(segments(page)).toHaveCount(1);
+  // One go to an address of 60,000 bytes: its answer entry is over 1,048,576 bytes (the address
+  // is written three times, each `<` as <), which the session's test
+  // large_entry_one_go_makes_an_answer_over_1_mib_and_three_make_four_actions measures from the
+  // detail; here the view draws that entry (story:page-step-holds-under-load).
   const address = surf.pages + "/first/a.html?" + "<".repeat(60_000);
-  for (let at = 0; at < 3; at += 1) {
-    await surf.agent(id, "go", address);
-  }
-  const actions = actionsOf(await surf.api("/api/sessions/" + id));
-  expect(actions.length).toBe(4);
-  const answer = actions[3].answer;
-  expect(answer).not.toBeNull();
-  expect(Buffer.byteLength(toJson(answer))).toBeGreaterThan(1_048_576);
-  await expect(segments(page)).toHaveCount(4, { timeout: 30_000 });
+  expect(await surf.agent(id, "go", address)).toBe(0);
+  await expect(segments(page)).toHaveCount(2, { timeout: 30_000 });
   await expect(pageAddress(page)).toHaveCount(1, { timeout: 30_000 });
   await expect.poll(() => pageAddress(page).textContent(), { timeout: 30_000 }).toBe(address);
 });
@@ -531,7 +530,7 @@ test("the word is connecting until the stream is open", async ({ page, surf }) =
   await expect(items(page).nth(0).locator(".address")).toHaveText(summary.address);
   await expect(page.locator("#live-word"), "the first load is shown, the stream is not open").toHaveText("connecting");
   stream.release();
-  await expect(page.locator("#live-word")).toHaveText("live");
+  await expectLive(page);
 });
 
 test("the word is live after the load of the opening is drawn", async ({ page, surf }) => {
@@ -544,7 +543,7 @@ test("the word is live after the load of the opening is drawn", async ({ page, s
   await expect(segments(page), "an event of the open stream arrived and was drawn").toHaveCount(2);
   await expect(page.locator("#live-word"), "the load of the opening is not drawn yet").toHaveText("connecting");
   list.release();
-  await expect(page.locator("#live-word")).toHaveText("live");
+  await expectLive(page);
 });
 
 test("after a reconnect the word is live when its load is drawn", async ({ page, surf }) => {
@@ -559,7 +558,7 @@ test("after a reconnect the word is live when its load is drawn", async ({ page,
   await list.asked;
   await expect(page.locator("#live-word"), "the load of the new opening is not drawn yet").toHaveText("reconnecting");
   list.release();
-  await expect(page.locator("#live-word")).toHaveText("live");
+  await expectLive(page);
 });
 
 test("no render of the timeline follows live", async ({ page, surf, record }) => {
@@ -646,5 +645,5 @@ test("no word is written while the page does not follow", async ({ page, surf })
   await expect(word, "a load whose stream closed writes no word").toHaveText("reconnecting");
   expect(await written(), "a load whose stream closed writes no word").not.toContain("word live");
   stream.release();
-  await expect(word).toHaveText("live");
+  await expectLive(page);
 });

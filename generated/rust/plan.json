@@ -2,8 +2,8 @@
   "provenance": {
     "system": "surf",
     "specification_version": "v1",
-    "source_digest": "7ca14cb63147e575c7bbd41e1d348d0a4ce2682edfff219eaecbdadf6cdca2d1",
-    "contract_digest": "aac42d8ac87218cacd79d661cdfc6da87c457bcea21b6e55cbec893553faf526"
+    "source_digest": "750651f413d725d7fa69a5a78e4d0216dab9606c4f61c5425be76c5335dfd8c4",
+    "contract_digest": "0885760ec9338d6af6c9b21b424dde0557abe451edb6419c0f296bc37836f5f6"
   },
   "scope": {
     "profile": "component-skeletons"

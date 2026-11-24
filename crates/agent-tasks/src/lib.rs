@@ -4,7 +4,9 @@
 //! - `tasks.txt` holds one block per task and `status.txt` one line per task, read by
 //!   [`format`]. No count of tasks is written anywhere: every count is read from `tasks.txt`.
 //! - `sites/<task>/` holds the fixture files of each task, served by [`server`] under
-//!   `/<task>/`, one server for every task.
+//!   `/<task>/`, one server for every task whose `server` is `http` in the gate's lane. A row
+//!   whose `server` is `https` is served by the TLS test server its caller starts
+//!   (`tasks::every_task`), its files under their own paths.
 //! - [`agent`] is the scripted agent of the gate's lane: the steps of each task and the
 //!   `surf-agent` calls that take them, every handle found by its label in an answer.
 //! - [`judge`] decides a task from what the agent read, and [`report`] writes the run's file
@@ -26,7 +28,7 @@ pub mod report;
 pub mod server;
 
 pub use judge::{Run, StepFailure, Verdict, judge};
-pub use report::{TaskResult, report};
+pub use report::{CheckResult, TaskResult, report};
 
 use std::path::PathBuf;
 

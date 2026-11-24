@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T09:51:33Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-cookie-jar",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the forge runs on main at b3d1484 (the merges of impl/agent-cookie-jar at 5fba905 and of plan/round-2 at 87b0d8e), 2026-11-24, ended 10:51 CET",
+    "reference": "check 45366072652 success, Shared source gates 45366073185 success, Documentation validation 45366072847 success, Documentation site 45368007536 success"
+  }
+}

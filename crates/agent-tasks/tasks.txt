@@ -34,3 +34,21 @@ connections 2
 commands open look fill press look close
 question What is the title of the first result for lighthouse?
 answer The Lighthouse at Point Reyes
+
+task https
+server https
+start /notice.html
+target /notice.html
+connections 1
+commands open look close
+question What does the notice say is closed?
+answer the north entrance
+
+task login
+server http
+start /login.html
+target /account.html
+connections 3
+commands open look fill fill press look close
+question On which day is the next delivery?
+answer Tuesday

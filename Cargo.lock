@@ -113,6 +113,7 @@ dependencies = [
  "net",
  "renderer",
  "shell",
+ "surf-cookie",
  "surf-fetch",
  "surf-html",
  "surf-page",
@@ -124,11 +125,12 @@ dependencies = [
 
 [[package]]
 name = "surf-agent"
-version = "0.4.0"
+version = "0.8.0"
 dependencies = [
  "surf-answer",
  "surf-secret",
  "surf-test-process",
+ "surf-tls",
 ]
 
 [[package]]
@@ -137,6 +139,9 @@ version = "0.1.0"
 dependencies = [
  "surf-answer",
  "surf-test-process",
+ "surf-tls",
+ "surf-tls-test-certs",
+ "surf-tls-test-server",
 ]
 
 [[package]]
@@ -145,20 +150,33 @@ version = "0.1.0"
 
 [[package]]
 name = "surf-cli"
-version = "0.4.0"
+version = "0.8.0"
 dependencies = [
  "surf",
  "surf-answer",
  "surf-fetch",
  "surf-page-text",
  "surf-ports",
+ "surf-tls-test-certs",
+ "surf-tls-test-server",
  "surf-types",
+]
+
+[[package]]
+name = "surf-cookie"
+version = "0.1.0"
+dependencies = [
+ "surf-url",
 ]
 
 [[package]]
 name = "surf-fetch"
 version = "0.1.0"
 dependencies = [
+ "surf-cookie",
+ "surf-tls",
+ "surf-tls-test-certs",
+ "surf-tls-test-server",
  "surf-url",
 ]
 
@@ -209,11 +227,12 @@ version = "0.1.0"
 
 [[package]]
 name = "surf-session"
-version = "0.4.0"
+version = "0.8.0"
 dependencies = [
  "surf",
  "surf-agent",
  "surf-answer",
+ "surf-cookie",
  "surf-fetch",
  "surf-html",
  "surf-page",
@@ -221,6 +240,7 @@ dependencies = [
  "surf-ports",
  "surf-secret",
  "surf-test-process",
+ "surf-tls-test-server",
  "surf-types",
  "surf-url",
  "surfd",
@@ -300,7 +320,7 @@ dependencies = [
 
 [[package]]
 name = "surfd"
-version = "0.4.0"
+version = "0.8.0"
 dependencies = [
  "surf-agent",
  "surf-answer",

@@ -13,13 +13,25 @@
 //! it establishes, for the `agent` component's ports ([`Setup::agent_ports`]), and the elements,
 //! options and submissions it establishes, for the `document` component's
 //! ([`Setup::document_ports`]).
+//!
+//! A planted-defect test runs its defect over the few scenarios that notice it, as the committed
+//! list [`NOTICED`] names them, from the narrowed suite the setup step of `task conform-rust`
+//! wrote once ([`write_narrowed`], [`listed_suite`]), not over the whole suite; `task
+//! conform-slow` runs every defect over the whole suite with [`NOTICED_OUT`] set, and
+//! [`note_noticed`] writes the list again.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+mod noticed;
 mod target;
 mod values;
 
+pub use noticed::{
+    NARROWED, NOTICED, NOTICED_OUT, NOTICED_PER_DEFECT, STALE, SUITE, admit, each_planted, listed,
+    listed_suite, narrowed, not_noticed, note_noticed, suite_scenarios, whole_suite,
+    write_narrowed, writing_noticed,
+};
 pub use target::{ConformanceBrowser, Setup, SurfTarget, Unanswered, Unparsed};
 
 use ess_conformance::target::{ConformanceTarget, ImplementationIdentity};

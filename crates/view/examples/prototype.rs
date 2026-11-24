@@ -523,7 +523,8 @@ impl Data {
             Object::new()
                 .raw("page", &page.json())
                 .raw("path", &path)
-                .raw("now", "null"),
+                .raw("now", "null")
+                .raw("changed", "null"),
         );
         self.keep(session, at, "answer", &rest);
     }
@@ -604,6 +605,7 @@ impl Data {
                 ("url", Some(url)),
                 ("handle", None),
                 ("label", None),
+                ("initiator", None),
             ],
         );
         self.recorded(session, at, Some(url));
@@ -618,6 +620,7 @@ impl Data {
                 ("method", Some("Get")),
                 ("body", None),
                 ("body_type", None),
+                ("initiator", None),
             ],
         );
         self.event(
@@ -640,6 +643,7 @@ impl Data {
                 ("method", Some("Get")),
                 ("body", None),
                 ("body_type", None),
+                ("initiator", None),
             ],
         );
         self.event(
@@ -649,6 +653,7 @@ impl Data {
             &[
                 ("request_id", &navigation_id),
                 ("url", url),
+                ("method", "Get"),
                 ("status", "200"),
                 ("media_type", "text/html"),
                 ("body", &body),
@@ -710,6 +715,7 @@ impl Data {
                 ("method", Some("Get")),
                 ("body", None),
                 ("body_type", None),
+                ("initiator", None),
             ],
         );
         self.event_or_null(
@@ -722,6 +728,7 @@ impl Data {
                 ("method", Some("Get")),
                 ("body", None),
                 ("body_type", None),
+                ("initiator", None),
             ],
         );
         self.event(

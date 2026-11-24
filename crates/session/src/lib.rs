@@ -121,9 +121,10 @@
 //!
 //! - longer than [`surf_fetch::MAX_ADDRESS_BYTES`] bytes: `address-too-long`, the bound of an
 //!   address a redirect leads to ("What it keeps");
-//! - with a scheme other than `http`, the one scheme the transport fetches (`javascript:`,
-//!   `mailto:`, `data:`, `file:`, `https:`): `unsupported-scheme`. `go` still navigates to such
-//!   an address and its page line says `failed UnsupportedScheme`;
+//! - with a scheme other than `http` and `https` (`javascript:`, `mailto:`, `data:`, `file:`,
+//!   `ftp:`): `unsupported-scheme`. `go` still navigates to such an address, which ends with the
+//!   page line `failed UnsupportedScheme`. An `https:` target is loaded, by `follow` and `press`
+//!   as by `go`, against the session's trust anchors ("Extra trust anchors" below);
 //! - from a document whose address is not local by its text, a target whose host is
 //!   (`host_is_local`: an IP address [`surf_fetch::is_local`] names, the rule a redirect's
 //!   destination is checked by, or `localhost` or a name under it): `forbidden-destination`. A
@@ -166,7 +167,9 @@
 //! `SubmissionAbandoned` the session answers with its word, status 1, the action recorded:
 //! `no-form-owner`, `invalid-controls`, `invalid-action`, `unsupported-enctype`,
 //! `dialog-method`; `NotSubmitButton`, `UnsupportedScheme` and `AddressTooLong`, refused before,
-//! map to `no-default-action`, `unsupported-scheme` and `address-too-long`.
+//! map to `no-default-action`, `unsupported-scheme` and `address-too-long`. An `https:` action
+//! is submitted as an `http:` one is, its request authenticated against the session's trust
+//! anchors.
 //!
 //! # Back and forward
 //!
@@ -268,6 +271,33 @@
 //! The 32 bytes stay in this process's memory, as a [`surf_secret::Token`]; they are written once,
 //! as the `token` line of the answer to `open`, and nowhere else: not in the status record, not
 //! in another answer, not in a `Debug` form ([`Session`]'s writes `Token(..)`).
+//!
+//! # Extra trust anchors
+//!
+//! An `open` with `arg anchors` (`surf-agent open --ca-file <path>`, which sends the text of the
+//! file's certificate blocks) gives the session the bundled trust anchors and the certificates of that text, read
+//! once with [`surf_fetch::Anchors::with_extra_pem`]; every `https:` load of the session is
+//! authenticated against them for its life, and they are dropped with it. Text that reader
+//! refuses is `did refused usage`, status 2, as any other `usage` refusal of `open`, and the
+//! session is not opened. An `open` without it leaves the session with the bundled anchors
+//! alone. The anchors are the session's: [`Session::answer`] puts them in use on its thread for
+//! that answer only, so another session answering on the same thread never sees them. The text
+//! reaches the process in the request on its socket, never as an argument or in its
+//! environment.
+//!
+//! # Cookies
+//!
+//! Each session has one cookie jar (`surf_cookie::Jar`), in this process's memory only: every
+//! load of the session sends the cookies the jar gives for each hop and keeps those the
+//! responses set (the crate documentation of `surf-fetch`, "Cookies"), and no other session
+//! sees it. [`Session::answer`] puts it in use on its thread for that answer only, as the
+//! anchors. A `follow` and a `press` carry the origin of the document they act on as the
+//! navigation's initiator, which makes a request to another site cross-site; `go`, `open`,
+//! `back` and `forward` carry none. Every answer that shows the state has the line `cookies
+//! <n>` after its path block when the jar holds a cookie, expired ones removed first
+//! (`docs/agent-answer.md`, "Cookies"). `close` empties the jar, and it is dropped with the
+//! session; it is never written to a file. No answer, entry, event or `Debug` form holds a
+//! cookie's name or value: the jar is used below the transport, inside `surf::fetch_http`.
 //!
 //! # What it keeps
 //!
@@ -387,6 +417,8 @@ use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io;
+use std::sync::Arc;
+use std::time::SystemTime;
 
 use surf::{MemoryBrowser, NodeId, Transport, Tree, UnmetObligation};
 use surf_agent::wire::{self, Request};
@@ -396,6 +428,7 @@ use surf_answer::{
     SessionState as HeadState, State, TARGET_CHARS_MAX, Target, TextNote, VALUE_CHARS_MAX, Value,
     Visibility,
 };
+use surf_cookie::Jar;
 use surf_ports::{Caller, ComponentPorts};
 use surf_secret::Token;
 use surf_types::agent::{
@@ -467,8 +500,11 @@ pub const ACTION_AND_EVENT_BYTES_MAX: usize = link::ENTRIES_MAX - link::ANSWER_T
 const LEFT_OUT_LINE_MAX: usize = 64;
 
 /// The transport of the binary: [`surf::fetch_http`] at `surf-fetch`'s default limits, through
-/// [`surf::answer`]. An address that is not `http:` is `UnsupportedScheme` and nothing is read;
-/// so is a `Get` with a body or a media type, before any connection. A `Post` is sent with its
+/// [`surf::answer`]. An `https:` server is authenticated against the trust anchors of the
+/// session answering on this thread: the bundled list, and the certificates of the file of its
+/// `open --ca-file` when it was opened with one ("Extra trust anchors" above). An
+/// address that is neither `http:` nor `https:` is `UnsupportedScheme` and nothing is read; so
+/// is a `Get` with a body or a media type, before any connection. A `Post` is sent with its
 /// body and media type (an agent's `go` navigates with `Get`). Redirects are followed inside the
 /// one fetch, up to 20, and the answer carries the address of the last response. The first
 /// request of a `follow` or a `press` from a page that counts as public goes to public addresses
@@ -494,7 +530,21 @@ pub fn fetch_through(
         dialed: Cell::new(false),
         first_local: Cell::new(None),
     };
-    let result = surf::fetch_http_from(request, &surf_fetch::Limits::default(), &dialing, origin);
+    // The anchors of the session answering on this thread: the bundled list and the file of its
+    // `open --ca-file`, or the bundled list alone.
+    let anchors = SESSION_ANCHORS.with(|current| current.borrow().clone());
+    // The cookie jar of that session ("Cookies" above); none outside an answer.
+    let jar = SESSION_JAR.with(|current| current.borrow().clone());
+    let result = surf::fetch_http_from(
+        request,
+        &surf_fetch::Limits::default(),
+        surf::RequestContext {
+            anchors: anchors.as_deref(),
+            jar: jar.as_deref(),
+        },
+        &dialing,
+        origin,
+    );
     if from_public
         && !dialing.dialed.get()
         && matches!(result, Err(surf_fetch::Failure::ForbiddenDestination(_)))
@@ -539,6 +589,52 @@ thread_local! {
             redirected_public: RefCell::new(Vec::new()),
         }
     };
+
+    /// The trust anchors of the session whose request is being answered on this thread, set by
+    /// [`Session::answer`] for the length of that answer only ([`AnchorsInUse`]): `None` for the
+    /// bundled list alone. [`fetch`] reads them; no other session's answer sees them.
+    static SESSION_ANCHORS: RefCell<Option<Arc<surf_fetch::Anchors>>> = const {
+        RefCell::new(None)
+    };
+
+    /// The cookie jar of the session whose request is being answered on this thread, set by
+    /// [`Session::answer`] for the length of that answer only ([`JarInUse`]). [`fetch`] reads
+    /// it; no other session's answer sees it, and outside an answer there is none.
+    static SESSION_JAR: RefCell<Option<Arc<Jar>>> = const { RefCell::new(None) };
+}
+
+/// The jar of one session in use on this thread while it answers; none again when it is
+/// dropped.
+struct JarInUse;
+
+impl JarInUse {
+    fn set(jar: Arc<Jar>) -> JarInUse {
+        SESSION_JAR.with(|current| current.replace(Some(jar)));
+        JarInUse
+    }
+}
+
+impl Drop for JarInUse {
+    fn drop(&mut self) {
+        SESSION_JAR.with(|current| current.replace(None));
+    }
+}
+
+/// The anchors of one session in use on this thread while it answers; the bundled list alone
+/// again when it is dropped.
+struct AnchorsInUse;
+
+impl AnchorsInUse {
+    fn set(anchors: Option<Arc<surf_fetch::Anchors>>) -> AnchorsInUse {
+        SESSION_ANCHORS.with(|current| current.replace(anchors));
+        AnchorsInUse
+    }
+}
+
+impl Drop for AnchorsInUse {
+    fn drop(&mut self) {
+        SESSION_ANCHORS.with(|current| current.replace(None));
+    }
 }
 
 /// A [`surf_fetch::Network`] that notes whether a connection was attempted, and whether the
@@ -816,6 +912,13 @@ pub struct Session<T> {
     /// What the last answer that showed the session's state showed, for the `changed` block of
     /// the next ("What changed" above).
     shown: Shown,
+    /// The trust anchors of the session's `https:` loads when its `open` brought a file of extra
+    /// anchors (`arg anchors`): the bundled list and that file's. `None` for the bundled list
+    /// alone. Read once at `open` and dropped with the session ("Extra trust anchors" above).
+    anchors: Option<Arc<surf_fetch::Anchors>>,
+    /// The session's cookie jar, in memory only: emptied at `close` and dropped with the
+    /// session ("Cookies" above).
+    jar: Arc<Jar>,
 }
 
 /// The page state an answer showed ("What changed" above): the load its page came from, the
@@ -895,6 +998,8 @@ impl<T: Transport> Session<T> {
             from_public: Vec::new(),
             redirected_public: Vec::new(),
             shown: Shown::default(),
+            anchors: None,
+            jar: Arc::new(Jar::new()),
         })
     }
 
@@ -935,6 +1040,8 @@ impl<T: Transport> Session<T> {
         if request.command != "look" {
             self.rendered = None;
         }
+        let _anchors = AnchorsInUse::set(self.anchors.clone());
+        let _jar = JarInUse::set(Arc::clone(&self.jar));
         let mut reply = self.reply_to(request);
         reply.entries = self.entries(start);
         self.browser.forget_delivered();
@@ -1190,6 +1297,12 @@ impl<T: Transport> Session<T> {
         self.links.as_ref().map(|kept| kept.links.as_slice())
     }
 
+    /// The `cookies` line: the cookies the session's jar holds now, `None` for none.
+    fn cookies(&self) -> Option<u64> {
+        let count = self.jar.count(SystemTime::now());
+        (count > 0).then_some(count as u64)
+    }
+
     /// The title of the current document for the `page` line and the status record: `None`
     /// when it has none, an empty one, or one over [`TITLE_CHARS_MAX`] characters.
     fn title(&self) -> Option<String> {
@@ -1231,17 +1344,20 @@ impl<T: Transport> Session<T> {
         if url.len() > surf_fetch::MAX_ADDRESS_BYTES {
             return Ok(self.with_state(RefusalReason::AddressTooLong));
         }
-        if target.scheme() != "http" {
+        if !matches!(target.scheme(), "http" | "https") {
             return Ok(self.with_state(RefusalReason::UnsupportedScheme));
         }
         if from_public && host_is_local(target) {
             return Ok(self.with_state(RefusalReason::ForbiddenDestination));
         }
+        // The document the link is in started the navigation ("Cookies" above).
+        let initiator = self.current_row().map(|row| surf::initiator_of(&row.url.0));
         let outcome = self.browser.agent_mut().follow(Follow {
             session_id: self.session_id.clone(),
             url: Url(url.clone()),
             handle: link.handle.clone(),
             label: link.label.clone(),
+            initiator,
         })?;
         match outcome {
             FollowOutcome::Requested { .. } => {
@@ -1488,7 +1604,7 @@ impl<T: Transport> Session<T> {
                 if address.len() > surf_fetch::MAX_ADDRESS_BYTES {
                     return Ok(self.with_state(RefusalReason::AddressTooLong));
                 }
-                if action.scheme() != "http" {
+                if !matches!(action.scheme(), "http" | "https") {
                     return Ok(self.with_state(RefusalReason::UnsupportedScheme));
                 }
                 if from_public && host_is_local(action) {
@@ -1709,14 +1825,31 @@ impl<T: Transport> Session<T> {
         if self.opened
             || request.session.is_some()
             || request.token.is_some()
-            || request.unknown_arg(&["url", "form", "line"]).is_some()
+            || request
+                .unknown_arg(&["url", "form", "line", "anchors"])
+                .is_some()
             || text.is_err()
             || (url.is_none() && text.is_ok_and(|text| text.is_some()))
         {
             return self.bare(RefusalReason::Usage);
         }
+        let mut anchors = None;
+        if let Some(pem) = request.arg("anchors") {
+            let mut extra = surf_fetch::Anchors::bundled();
+            if extra.with_extra_pem(pem.as_bytes()).is_err() {
+                return self.bare(RefusalReason::Usage);
+            }
+            let extra = Arc::new(extra);
+            // In use for this answer already, since the address of the open is loaded in it;
+            // the guard of `answer` takes them off the thread when it ends.
+            SESSION_ANCHORS.with(|current| current.replace(Some(Arc::clone(&extra))));
+            anchors = Some(extra);
+        }
         match self.open_session(url) {
             Ok(()) => {
+                // The session's own only once it is open: an open that fails leaves the trust
+                // of the session as it was.
+                self.anchors = anchors;
                 let mut reply = self.state_reply(
                     0,
                     Some(Did::Action {
@@ -1805,6 +1938,8 @@ impl<T: Transport> Session<T> {
         match outcome {
             CloseSessionOutcome::Closed { .. } => {
                 self.record_and_run(ActionCommand::Close, None, None)?;
+                // A closed session keeps no cookie ("Cookies" above).
+                self.jar = Arc::new(Jar::new());
                 Ok(self.state_reply(
                     0,
                     Some(Did::Action {
@@ -2045,6 +2180,7 @@ impl<T: Transport> Session<T> {
             *title = self.title();
         }
         answer.path = Some(self.path());
+        answer.cookies = self.cookies();
         let shown = self.shown_now(answer.page.as_ref());
         answer.changed = Some(self.changed(&shown));
         self.shown = shown;

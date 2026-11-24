@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+mod adversary_noticed;
 mod planted_defect;
 mod review2_planted_defects;
 mod two_of_each_entity;

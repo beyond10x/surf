@@ -3,17 +3,48 @@ version: '3'
 set: [pipefail]
 
 tasks:
+  view-test-setup:
+    desc: Install view-tests/ from its package-lock.json, only when node_modules is not that install.
+    summary: |
+      Install view-tests/ from its package-lock.json, only when node_modules is not that install.
+
+      sh taskfiles/view-test-setup.sh compares the digest of view-tests/package.json and
+      view-tests/package-lock.json with the one the last install stored in
+      view-tests/node_modules/.surf-lock.sha256, and checks that each package the lock names has
+      its directory. Both hold, it prints "view-tests: node_modules matches package-lock.json"
+      and starts no npm. Otherwise
+      it runs npm --prefix view-tests ci --prefer-offline --no-audit --no-fund and writes the
+      digest. task view-test runs it before its timed part; the forge's check runs it in place
+      of its own npm ci.
+    dir: '{{.TASKFILE_DIR}}/..'
+    silent: true
+    cmds:
+      - sh taskfiles/view-test-setup.sh
+
   view-test:
-    desc: The live view's page tests in a browser (view-tests/, Playwright, Chromium's headless shell).
+    desc: The live view's page tests in a browser (view-tests/, Playwright, Chromium's headless shell), within 120 s.
     summary: |
       The live view's page tests in a browser (story:view-first-page; item 4 of
-      docs/design/live-view.md).
+      docs/design/live-view.md), within 120 s.
 
-      Builds surf-agent, surf-session and surf-view-fixture with the flags of task build, so it
-      rebuilds nothing check built; installs view-tests/ from its package-lock.json with npm ci
-      (offline when the npm cache holds the pin); runs npx playwright test --workers=2 in
-      view-tests/. Each test starts its own target/debug/surf-view-fixture: a page server, surfd
-      in process and sessions, under a directory of its own in $XDG_RUNTIME_DIR.
+      Removes .out/page-step.seconds, builds surf-agent, surf-session and surf-view-fixture with
+      the flags of task build, so it rebuilds nothing check built, and runs task
+      view-test-setup (npm ci only when view-tests/node_modules is not the install of its
+      package.json and package-lock.json). Then the timed part: ./node_modules/.bin/playwright test --workers=2
+      in view-tests/, no npx and no npm, so no request to a registry, run by
+      taskfiles/page-netns.sh in a user and network namespace of its own with only loopback up
+      (a change of the host's interfaces cancels Chromium's requests; without a namespace the
+      step fails with one line "page step: no network namespace of its own"). Each test starts its own
+      target/debug/surf-view-fixture: a page server, surfd in process and sessions, under a
+      directory of its own in $XDG_RUNTIME_DIR. view-tests/playwright.config.mjs ends a test
+      still running after 60 s and counts it failed, and writes the JUnit report
+      .out/view-test/junit.xml beside Playwright's list.
+
+      It prints the ten slowest tests from .out/view-test/junit.xml (taskfiles/slowest-tests.sh),
+      then the wall time of the Playwright run, the build and the setup left out: "page step: N
+      s of its budget of 120 s", or "page step: N s, over its budget of 120 s" and it fails. The
+      budget is PAGE_BUDGET seconds (120). It writes N to .out/page-step.seconds. It fails when
+      a test failed.
 
       It installs no browser: Chromium's headless shell of the revision @playwright/test names
       must be in the Playwright cache (npx --prefix view-tests playwright install --only-shell
@@ -22,7 +53,30 @@ tasks:
     dir: '{{.TASKFILE_DIR}}/..'
     env:
       RUSTFLAGS: -D warnings
+    vars:
+      PAGE_BUDGET: '{{.PAGE_BUDGET | default "120"}}'
     cmds:
+      - rm -f .out/page-step.seconds
       - cargo build --locked --quiet -p surf-agent -p surf-session -p surf-view-fixture
-      - npm --prefix view-tests ci --prefer-offline --no-audit --no-fund
-      - cd view-tests && npx playwright test --workers=2
+      - task: view-test-setup
+      - cmd: |
+          junit=.out/view-test/junit.xml
+          mkdir -p .out/view-test
+          rm -f "$junit"
+          start=$(date +%s%N)
+          tests=0
+          (cd view-tests && sh ../taskfiles/page-netns.sh ./node_modules/.bin/playwright test --workers=2) || tests=1
+          elapsed=$(( ($(date +%s%N) - start) / 1000000 ))
+          if [ -f "$junit" ]; then
+            echo "the ten slowest tests:"
+            sh taskfiles/slowest-tests.sh "$junit" 10
+          fi
+          seconds=$(( elapsed / 1000 )).$(( elapsed % 1000 / 100 ))
+          echo "$seconds" > .out/page-step.seconds
+          if [ "$elapsed" -gt $(( {{.PAGE_BUDGET}} * 1000 )) ]; then
+            echo "page step: ${seconds} s, over its budget of {{.PAGE_BUDGET}} s"
+            exit 1
+          fi
+          echo "page step: ${seconds} s of its budget of {{.PAGE_BUDGET}} s"
+          test "$tests" -eq 0
+        silent: true

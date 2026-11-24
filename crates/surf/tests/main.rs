@@ -4,8 +4,10 @@
 #![forbid(unsafe_code)]
 
 mod adversary_forms;
+mod adversary_page_budget;
 mod common;
 mod conform_totals;
+mod cookies;
 mod escape;
 mod forget_delivered;
 mod forms;
@@ -20,3 +22,5 @@ mod review1_generated_check;
 mod review1_library;
 mod review2_generated_check;
 mod slowest_tests;
+mod step_budgets;
+mod tls_failures;

@@ -51,6 +51,7 @@ fn review1_a_system_whose_request_was_answered_is_not_fetched_again_by_a_new_bro
             method: Method::Get,
             body: None,
             body_type: None,
+            initiator: None,
         })
         .expect("navigate");
     system.pump().expect("pump");
@@ -93,6 +94,7 @@ fn review1_two_fetches_of_one_request_reach_the_transport_once() {
                 method: Method::Get,
                 body: None,
                 body_type: None,
+                initiator: None,
             })
             .expect("fetch");
     }

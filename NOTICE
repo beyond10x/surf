@@ -7,6 +7,47 @@ This product includes software developed by beyond10x
 If you use surf, or a part of it, in a product or a publication, say so and
 name beyond10x and this repository.
 
+Third-party material built into every shipped binary (surf, surf-agent, surfd
+and surf-session), through the crate surf-tls:
+
+- ring 0.17.14 (https://github.com/briansmith/ring), the cryptographic
+  primitives of TLS, under Apache-2.0 AND ISC (its files LICENSE,
+  LICENSE-BoringSSL and LICENSE-other-bits). Copyright 2015-2025 Brian Smith;
+  parts copyright The OpenSSL Project Authors, The BoringSSL Authors, Google
+  Inc., Intel Corporation, CloudFlare, ARM Inc., Oracle and/or its affiliates,
+  the fiat-crypto authors and the others named at the top of each of its
+  source files. Its code from the once_cell project (src/polyfill/once_cell,
+  built for every target of surf) is under MIT OR Apache-2.0, used here under
+  the Apache License 2.0; its licence files name no copyright holder. Its
+  fiat-crypto code (third_party/fiat) is under the Apache License 2.0, as
+  third_party/fiat/LICENSE says. Every other file is under the Apache License
+  2.0, the text in LICENSE beside this file, or under the ISC license, as the
+  file says at its top:
+
+    Permission to use, copy, modify, and/or distribute this software for any
+    purpose with or without fee is hereby granted, provided that the above
+    copyright notice and this permission notice appear in all copies.
+
+    THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+    WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+    MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+    SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+    WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
+    OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
+    CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+- untrusted 0.9.0, which ring reads its input with, under the ISC license
+  above. Copyright 2015-2016 Brian Smith.
+- cfg-if 1.0.5 (copyright 2014 Alex Crichton), getrandom 0.2.17 (copyright
+  2018-2024 The rust-random Project Developers, 2014 The Rust Project
+  Developers) and libc 0.2.191 (copyright The Rust Project Developers), each
+  under MIT OR Apache-2.0, used here under the Apache License 2.0.
+- The trust anchors: the root store of Mozilla as curl publishes it
+  (https://curl.se/docs/caextract.html), compiled in unchanged from
+  crates/tls/src/anchors/cacert.pem, under the Mozilla Public License 2.0
+  (https://mozilla.org/MPL/2.0/). Its source form is that file in this
+  repository.
+
 Third-party material in this repository, used for tests only and not part of
 any shipped binary:
 

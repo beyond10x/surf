@@ -25,12 +25,12 @@ const ALLOWED: Duration = Duration::from_secs(10);
 
 // --- view-url and the routes ------------------------------------------------------------------
 
-struct ViewUrl {
+pub(crate) struct ViewUrl {
     port: u16,
     token: String,
 }
 
-fn view_url(dir: &TestDir) -> ViewUrl {
+pub(crate) fn view_url(dir: &TestDir) -> ViewUrl {
     let line = fs::read_to_string(dir.surf().join("view-url")).expect("view-url");
     let rest = line
         .strip_prefix("http://127.0.0.1:")
@@ -43,7 +43,7 @@ fn view_url(dir: &TestDir) -> ViewUrl {
 }
 
 /// The 200 body of `GET <target>` with the view token.
-fn body(view: &ViewUrl, target: &str) -> Vec<u8> {
+pub(crate) fn body(view: &ViewUrl, target: &str) -> Vec<u8> {
     let mut stream = TcpStream::connect(("127.0.0.1", view.port)).expect("the view listens");
     stream.set_read_timeout(Some(ALLOWED)).unwrap();
     let request = format!(
@@ -87,10 +87,10 @@ fn summary(view: &ViewUrl, id: &str) -> json::Value {
 // --- The stream -------------------------------------------------------------------------------
 
 #[derive(Clone, Debug)]
-struct Event {
+pub(crate) struct Event {
     id: u64,
-    event: String,
-    data: String,
+    pub(crate) event: String,
+    pub(crate) data: String,
 }
 
 impl Event {
@@ -101,7 +101,7 @@ impl Event {
 
 /// An open `GET /events`, read by a thread of its own that keeps every byte it read; closed
 /// when dropped.
-struct Events {
+pub(crate) struct Events {
     socket: TcpStream,
     received: Receiver<Event>,
     bytes: Arc<Mutex<Vec<u8>>>,
@@ -110,7 +110,7 @@ struct Events {
 
 impl Events {
     /// Open the stream and read its head: the server writes it once the reader is subscribed.
-    fn open(view: &ViewUrl) -> Events {
+    pub(crate) fn open(view: &ViewUrl) -> Events {
         let mut socket = TcpStream::connect(("127.0.0.1", view.port)).expect("the view listens");
         let request = format!(
             "GET /events HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {}\r\n\r\n",
@@ -175,7 +175,7 @@ impl Events {
     }
 
     /// Every event until one for which `last` holds, that one included.
-    fn until(&self, last: impl Fn(&Event) -> bool) -> Vec<Event> {
+    pub(crate) fn until(&self, last: impl Fn(&Event) -> bool) -> Vec<Event> {
         let mut events = Vec::new();
         loop {
             let event = self.event();
@@ -192,7 +192,7 @@ impl Events {
         self.until(|event| event.event == "session" && event.json().get("id").str() == id)
     }
 
-    fn bytes(&self) -> Vec<u8> {
+    pub(crate) fn bytes(&self) -> Vec<u8> {
         self.bytes.lock().unwrap().clone()
     }
 }
@@ -519,6 +519,89 @@ fn case_21_an_address_is_written_as_its_exact_value() {
             "an escape of the link left: {value:?}"
         );
     }
+}
+
+/// The bytes of each entry of a detail body as the view wrote them: an entry starts with
+/// `{"number":`, which no string of an entry holds (the writer escapes `"`), and the last one
+/// ends before the `]}` that closes the detail.
+fn entry_bytes(body: &[u8]) -> Vec<&[u8]> {
+    const START: &[u8] = b"{\"number\":";
+    let starts: Vec<usize> = (0..body.len())
+        .filter(|&at| body[at] == b'{' && body[at..].starts_with(START))
+        .collect();
+    let close = body.len() - b"]}".len();
+    assert!(body[close..].starts_with(b"]}"), "a detail ends with ]}}");
+    starts
+        .iter()
+        .enumerate()
+        .map(|(at, &start)| match starts.get(at + 1) {
+            Some(&next) => &body[start..next - 1],
+            None => &body[start..close],
+        })
+        .collect()
+}
+
+/// `story:page-step-holds-under-load` (1a): the page test `an entry over 1 MiB` goes once to an
+/// address of 60,000 bytes and has the view draw that answer; its size and the four actions of
+/// three such goes are measured here, from the detail as the view writes it, and not in the page
+/// test. One go: the answer entry is over 1,048,576 bytes, since the address is written three
+/// times (the page line, the path and `changed`), each `<` as `<`. Three goes: open and
+/// three goes in the detail, and the last answer over 1 MiB too.
+#[test]
+fn large_entry_one_go_makes_an_answer_over_1_mib_and_three_make_four_actions() {
+    const MIB: usize = 1_048_576;
+    let dir = TestDir::new();
+    let pages = PageServer::start();
+    let _daemon = surfd_in_process(&dir, |_| {});
+    let session = agent_open(&dir, None);
+    let address = pages.url(&format!("/first/a.html?{}", "<".repeat(60_000)));
+    let view = view_url(&dir);
+    // Whether the head of an entry, where `kind` is written after the numbers and the session,
+    // holds `text`.
+    let holds = |entry: &[u8], text: &[u8]| {
+        entry[..entry.len().min(256)]
+            .windows(text.len())
+            .any(|window| window == text)
+    };
+    // The detail's entries as written: the end of each action entry from its command on (the
+    // test's JSON reader takes seconds over an address of 60,000 bytes in a debug build), and
+    // the size of the last entry, an answer.
+    let read = |view: &ViewUrl| -> (Vec<String>, usize) {
+        let body = body(view, &format!("/api/sessions/{}", session.id));
+        let entries = entry_bytes(&body);
+        let actions = entries
+            .iter()
+            .filter(|entry| holds(entry, br#","kind":"action","#))
+            .map(|entry| {
+                let text = std::str::from_utf8(entry).expect("UTF-8");
+                let at = text.find(r#""command":"#).expect("a command");
+                text[at..].to_string()
+            })
+            .collect();
+        let last = entries.last().expect("an entry");
+        assert!(
+            holds(last, br#","kind":"answer","#),
+            "the last entry is an answer"
+        );
+        (actions, last.len())
+    };
+    // The address as the view writes it: its one character to escape is `<`.
+    let go = format!(
+        r#""command":"go","argument":"{}"}}"#,
+        address.replace('<', "\\u003c")
+    );
+    let open = r#""command":"open","argument":null}"#.to_string();
+
+    agent_go(&dir, &session, &address);
+    let (actions, first) = read(&view);
+    assert_eq!(actions, vec![open.clone(), go.clone()]);
+    assert!(first > MIB, "the answer of one go is {first} bytes");
+
+    agent_go(&dir, &session, &address);
+    agent_go(&dir, &session, &address);
+    let (actions, last) = read(&view);
+    assert_eq!(actions, vec![open, go.clone(), go.clone(), go]);
+    assert!(last > MIB, "the answer of the third go is {last} bytes");
 }
 
 /// A JSON reader for the tests: the values `surf-view` writes (no fraction, no exponent, no

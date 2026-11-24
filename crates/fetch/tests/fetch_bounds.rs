@@ -196,6 +196,9 @@ fn a_server_that_never_reads_the_request_ends_at_the_read_timeout() {
         method: Method::Post,
         body: Some(&body),
         media_type: Some("application/octet-stream"),
+        anchors: None,
+        jar: None,
+        initiator: None,
     };
     let result = send(&request, &limits());
     let ended = Instant::now();

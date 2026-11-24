@@ -28,7 +28,9 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
 #[test]
 fn each_answer_is_on_its_target_page_only() {
     let tasks = read_tasks(&fs::read_to_string(tasks_file()).unwrap()).unwrap();
-    for task in tasks.iter().filter(|task| task.server.word() == "http") {
+    // Every row, `https` included: the TLS server of `tasks::every_task` serves the target's
+    // file of `sites/<task>/` under its path, as the fixture server does under `/<task>/`.
+    for task in &tasks {
         let site = sites_dir().join(&task.name);
         let target = file_for(&site, &task.target)
             .unwrap_or_else(|| panic!("{}: no file for {}", task.name, task.target));

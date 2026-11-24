@@ -51,6 +51,7 @@ fn post_to(address: &str) -> Navigate {
         method: Method::Post,
         body: Some(b"a=1".to_vec()),
         body_type: Some(MediaType(FORM.to_owned())),
+        initiator: None,
     }
 }
 
@@ -67,6 +68,7 @@ fn request(
         method,
         body: body.map(<[u8]>::to_vec),
         body_type: body_type.map(|media_type| MediaType(media_type.to_owned())),
+        initiator: None,
     }
 }
 
@@ -96,7 +98,7 @@ fn assert_refused_without_connecting(
     request: &RequestStarted,
     method: &str,
 ) {
-    match fetch_http(request, &short()) {
+    match fetch_http(request, &short(), surf::RequestContext::default()) {
         Err(surf_fetch::Failure::UnsupportedScheme(detail)) => {
             assert!(detail.contains(method), "{detail:?}");
         }
@@ -138,6 +140,7 @@ fn post_navigation_reaches_the_transport() {
             method: Method::Post,
             body: Some(b"a=1".to_vec()),
             body_type: Some(MediaType(FORM.to_owned())),
+            initiator: None,
         }]
     );
 }
@@ -188,7 +191,13 @@ fn post_navigation_is_sent_by_fetch_http() {
     let local = listener.local_addr().expect("address");
     let address = format!("http://{local}/form");
     let server = serve_one(listener);
-    let transport = |request: &RequestStarted| answer(fetch_http(request, &short()));
+    let transport = |request: &RequestStarted| {
+        answer(fetch_http(
+            request,
+            &short(),
+            surf::RequestContext::default(),
+        ))
+    };
     let mut browser = Browser::from_ports(ComponentPorts::new(), transport);
     let NavigateOutcome::Started { navigation_started } = browser
         .navigator_mut()

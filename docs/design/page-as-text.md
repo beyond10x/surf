@@ -330,8 +330,8 @@ every specification change of the round); `page-text-on-other-commands` (deferre
 
 ## 8. Decisions
 
-- **D1, characters outside ASCII**: B, the operator, 2026-11-22 05:47 CET, relayed by the session
-  `host-operator`: "B: UTF-8 in page text" (only inside page-text lines; control,
+- **D1, characters outside ASCII**: B, the operator, 2026-11-22 05:47 CET, relayed by the operator
+  session: "B: UTF-8 in page text" (only inside page-text lines; control,
   bidirectional, zero-width, invisible and private-use characters stay escaped). The version
   stays 1 (section 3). B changes the Lines
   rule of `docs/agent-answer.md` (line 65, `page-text-answer-block`) and `check_text` in

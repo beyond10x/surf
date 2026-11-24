@@ -15,11 +15,16 @@ answer in plain lines, written to be read by a language model.
 <AgentTerminal
   id="agent-session"
   session={agentSession}
-  caption="An agent session recorded on 2026-11-22 with the binaries of release 0.4.0 against a local copy of this site on 127.0.0.1:43117, with the token replaced. An answer names a page's status, media type and address, still with no title; with --as markdown or --as tree it ends with the page as Markdown or as the outline of its tree, every line behind >. The agent reads the Principles page with look --as markdown (all 89 lines) and look --as tree --from-line 151 (lines 151 to 224 of 224, from the heading of its last section)."
+  caption="An agent session recorded on 2026-11-22 with the binaries of release 0.4.0 against a local copy of this site on 127.0.0.1:43117, with the token replaced. In that release an answer names a page's status, media type and address, with no title and no changed block, which round 2 adds; with --as markdown or --as tree it ends with the page as Markdown or as the outline of its tree, every line behind >. The agent reads the Principles page with look --as markdown (all 89 lines) and look --as tree --from-line 151 (lines 151 to 224 of 224, from the heading of its last section)."
 />
 
 It runs on Linux only: the agent binaries read the caller's user id from `/proc/self` and need
 `XDG_RUNTIME_DIR`, and macOS has neither.
+
+An agent, or you, gets the definition of the installed version with `surf-agent help
+--for-agent`: the commands, the parts of the answer an agent reads, the rule for text from a page
+and worked calls, assembled from the sources the binary is built and tested with. It needs no
+session and no `XDG_RUNTIME_DIR`.
 
 ## What you need
 
@@ -97,24 +102,31 @@ path 2 of 2
   2 go "http://example.org/"
 ```
 
-Later in the same session, after a `go` to an unreachable address and one to an `https:`
-address:
+A load that fails is still an action taken: `go` exits 0, and the `page` line says
+`failed` and why, such as `page failed Unreachable "http://127.0.0.1:1/"`
+([`docs/agent-answer.md`](https://github.com/beyond10x/surf/blob/main/docs/agent-answer.md),
+section "Page", lists the reasons).
 
-```console
-$ surf-agent close
-surf 1 session cef9d223-7fdb-4151-85af-6c6d71d4fece closed
-did close
-page failed UnsupportedScheme "https://example.org/"
-path 5 of 5
-  1 open
-  2 go "http://example.org/"
-  3 go "http://127.0.0.1:1/"
-  4 go "https://example.org/"
-  5 close
-```
+Since release `0.8.0` a session keeps the cookies its pages set, in memory and for itself, until
+`close`: a login with `fill` and `press` stays signed in for the next calls of that session, and
+`open` starts with none.
 
-A load that fails is still an action taken: that `go` exits 0, and the `page` line says
-`failed` and why.
+## https
+
+Since release `0.7.0`, `go` and `open` load an `https:` address, and
+`follow` and `press` an `https:` target, over surf's own TLS 1.3 client. The server is
+authenticated against the root list of Mozilla as curl publishes it, built into the binaries.
+`surf-agent open [<url>] --ca-file <path>` adds the CA certificates of one PEM file (at most
+32,768 bytes and 64 certificates, every one a CA) to the trust anchors of that session, for
+every `https:` load of the session and for its life; the anchors of one session are never those
+of another. A file `surf-agent` refuses exits 2 before `surfd` is started, with a line that
+says why and the usage on standard error.
+
+A certificate that is not trusted, has expired or names another host, a server limited to
+TLS 1.2 and a failed handshake each fail the load, `page failed` with the reason
+`CertificateNotTrusted`, `CertificateExpired`, `CertificateNameMismatch`,
+`TlsVersionUnsupported` or `TlsHandshakeFailed`. surf does not check revocation: a revoked
+certificate that has not expired loads.
 
 ## Links
 
@@ -138,9 +150,9 @@ or of an unresolved target is refused with status 1 (`did refused unknown-handle
 `unresolved`); a followed link's `path` line names its handle and label,
 `3 follow l1 "Opening hours"`. Three more refusals come before any navigation and leave the page
 as it was: a target over 65,536 bytes (`address-too-long`), a scheme surf does not fetch, such as
-`javascript:`, `mailto:` or `https:` (`unsupported-scheme`), and, from a page loaded from a
-public address, a target on a loopback or private address or `localhost`
-(`forbidden-destination`). A target never shows a `user:password@` part; `follow` still sends it.
+`javascript:` or `mailto:` (`unsupported-scheme`), and, from a page loaded from a public
+address, a target on a loopback or private address or `localhost` (`forbidden-destination`). A
+target never shows a `user:password@` part; `follow` still sends it.
 
 ## Form fields
 
@@ -249,9 +261,10 @@ $ surf-agent look
 
 Every answer starts with its head line, `surf 1 session <id> <state>`, then the action it is
 for (`did`), the page (`page`: `none` before the first load, the status, media type, address and
-title of a loaded page, or `failed` with the reason), the session's last actions (`path`) and
-what the last action changed (`changed`); without `--as` the page's links and form fields
-(`now`) follow, with `--as` the `note text:` lines and the `text` block with the page. Every
+title of a loaded page, or `failed` with the reason), the session's last actions (`path`),
+since release `0.8.0` the number of cookies the session keeps when it keeps any (`cookies
+<n>`, never a cookie's name or value), and what the last action changed (`changed`); without
+`--as` the page's links and form fields (`now`) follow, with `--as` the `note text:` lines and the `text` block with the page. Every
 value that comes from a page, a server or an address stands in double quotes, with every
 character that could start a line or look like a field escaped. The format, line by line, with
 its grammar:
@@ -274,7 +287,8 @@ answer and says why on standard error.
 
 ## Limits
 
-- Only `http:` addresses load. No `https:` yet.
+- Release `0.6.0` and the releases before it load `http:` only. Since release `0.7.0`,
+  `http:` and `https:` addresses load, `https:` over TLS 1.3 only ([https](#https)).
 - Release `0.2.0` follows no redirect. Since release `0.3.0`, a `go`
   follows up to 20 redirects inside one fetch: the `page` line holds the address it ended at,
   the `did go` line the address asked for, and a redirect after the twentieth fails with
@@ -282,8 +296,9 @@ answer and says why on standard error.
   loopback, private, link-local, unique-local, shared or unspecified address, or to an IPv6
   address that embeds one, fails with `ForbiddenDestination`, before any connection to it; a session that starts at a local
   address follows its redirects as before.
-- `follow` loads `http:` targets only and refuses the others (`unsupported-scheme`); from a page
-  on a public address it refuses a target on a local IP address or `localhost`
+- `follow` loads `http:` targets, and since release `0.7.0` also `https:`, and refuses
+  the others (`unsupported-scheme`);
+  from a page on a public address it refuses a target on a local IP address or `localhost`
   (`forbidden-destination`), and it refuses a target over 65,536 bytes (`address-too-long`).
   From such a page a target that is a name is checked when the fetch resolves it: a name that
   resolves to a local address is refused `forbidden-destination` before any connection.

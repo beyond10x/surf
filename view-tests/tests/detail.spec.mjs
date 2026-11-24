@@ -2,7 +2,7 @@
 // surf-view-fixture (fixture.mjs) and its existing commands only. Every wait is on the thing
 // itself; the deadline is the story's where it names one (2 s), otherwise the config's 10 s.
 
-import { test, expect } from "./fixture.mjs";
+import { test, expect, expectLive } from "./fixture.mjs";
 
 // The story's query is '?"<script>alert(1)</script><img src=x onerror=alert(1)>'; the session's
 // fetch fails a query with a space as Unreachable (measured on 2026-11-21), so there is no
@@ -38,7 +38,7 @@ const markButton = (page, at, short) =>
 
 async function load(page, address) {
   await page.goto(address);
-  await expect(page.locator("#live-word")).toHaveText("live");
+  await expectLive(page);
 }
 
 // The index of the segment that carries the playhead, or -1.
@@ -161,10 +161,11 @@ test("a go adds a row live", async ({ page, surf, record }) => {
   await expect(rows(page)).toHaveCount(3);
   const roots = record.requestsOf("/").length;
   await surf.agent(id, "go", surf.pages + "/first/b.html");
-  await expect(rows(page)).toHaveCount(4, { timeout: 2000 });
+  // The bound of 2 s is the sentence's "a fourth row within 2 s", named beside it.
+  await expect(rows(page)).toHaveCount(4, { timeout: 2000 }); // .engineering/planning/story/view-detail-panel.md:156-157
   const row = rows(page).nth(3);
-  await expect(row.locator(".status")).toHaveText("200", { timeout: 2000 });
-  await expect(row.locator(".size")).toHaveText("210 bytes", { timeout: 2000 });
+  await expect(row.locator(".status")).toHaveText("200");
+  await expect(row.locator(".size")).toHaveText("210 bytes");
   expect(await row.locator(".address").textContent()).toBe(surf.pages + "/first/b.html");
   expect(record.requestsOf("/").length).toBe(roots);
 });
@@ -180,7 +181,7 @@ test("event in the address", async ({ page, surf, record }) => {
   const fragment = "#session=" + id + "&at=2&event=" + response.number;
   await expect.poll(() => page.evaluate(() => location.hash)).toBe(fragment);
   await page.reload();
-  await expect(page.locator("#live-word")).toHaveText("live");
+  await expectLive(page);
   await expect(segments(page)).toHaveCount(3);
   await expect(selection(page).locator(".name")).toHaveText("surf.net.ResponseReceived");
   expect(new Map(await shownFields(page)).get("request_id")).toBe(response.fields.request_id);

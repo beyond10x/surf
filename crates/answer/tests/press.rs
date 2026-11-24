@@ -61,6 +61,7 @@ fn buttons(elements: Vec<Element>) -> Answer {
         }),
         page: None,
         path: None,
+        cookies: None,
         changed: None,
         now: Some(Now {
             total: elements.len() as u64,

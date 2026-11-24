@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T10:12:54Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-skill-definition",
+  "kind": "story",
+  "revision": 10,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the forge runs on main at 3dfc3b3 (the merges of impl/agent-skill-definition at dd9c3ed and of plan/round-2 at 1e59fea), 2026-11-24 10:59 to 11:12 CET",
+    "reference": "check 45370553545 success, Shared source gates 45370553747 success, Documentation validation 45370553460 success, Documentation site 45371759825 success"
+  }
+}

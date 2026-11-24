@@ -13,7 +13,8 @@
 //! response without `close_notify`.
 //!
 //! What the server saw and did on each connection is read back with [`TestServer::wait_seen`]
-//! ([`Seen`]). A connection whose client sends nothing for [`IDLE`] is closed. Dropping the
+//! ([`Seen`], with the request line and the request's body); the head of each request, its
+//! fields with it, with [`TestServer::requests`]. A connection whose client sends nothing for [`IDLE`] is closed. Dropping the
 //! server stops every connection and joins every thread it started; when the connection that
 //! wakes the accepting thread cannot be made (no file descriptor left), the drop returns
 //! without joining and the end of the process ends that thread.
@@ -208,6 +209,9 @@ pub struct Seen {
     pub ticket_sent: bool,
     /// The request line read.
     pub request: Option<String>,
+    /// The body of the request: the `Content-Length` bytes after its head (none without that
+    /// field), within the server's bound of a request.
+    pub body: Vec<u8>,
     /// Every record read after the client's Finished, in order.
     pub after_handshake: Vec<Received>,
     /// Every alert the client sent, in order.
@@ -227,6 +231,7 @@ struct Shared {
     stop: AtomicBool,
     accepted: AtomicUsize,
     seen: Mutex<Vec<Seen>>,
+    requests: Mutex<Vec<Vec<u8>>>,
     ended: Condvar,
 }
 
@@ -251,6 +256,7 @@ impl TestServer {
             stop: AtomicBool::new(false),
             accepted: AtomicUsize::new(0),
             seen: Mutex::new(Vec::new()),
+            requests: Mutex::new(Vec::new()),
             ended: Condvar::new(),
         });
         let acceptor = {
@@ -285,6 +291,16 @@ impl TestServer {
     pub fn seen(&self) -> Vec<Seen> {
         match self.shared.seen.lock() {
             Ok(seen) => seen.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
+    }
+
+    /// The head of each request the server read, its request line to the empty line that ends
+    /// it, in the order it read them. A head is kept before its response is written, so it is
+    /// here once the client has the response.
+    pub fn requests(&self) -> Vec<Vec<u8>> {
+        match self.shared.requests.lock() {
+            Ok(requests) => requests.clone(),
             Err(poisoned) => poisoned.into_inner().clone(),
         }
     }
@@ -346,7 +362,7 @@ fn accept(listener: TcpListener, shared: &Arc<Shared>, setup: &Arc<Setup>) {
         let worker = thread::Builder::new()
             .name("tls-test-server-connection".to_string())
             .spawn(move || {
-                let seen = conn::serve(stream, &setup_c, &shared_c.stop);
+                let seen = conn::serve(stream, &setup_c, &shared_c.stop, &shared_c.requests);
                 match shared_c.seen.lock() {
                     Ok(mut all) => all.push(seen),
                     Err(poisoned) => poisoned.into_inner().push(seen),

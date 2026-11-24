@@ -1,11 +1,31 @@
-//! Fetch one `http:` address over HTTP/1.1, with the Rust standard library only.
+//! Fetch one `http:` or `https:` address over HTTP/1.1, with the Rust standard library and, for
+//! `https:`, the TLS 1.3 client of `surf-tls`.
 //!
 //! [`fetch`] takes an address as text and a set of [`Limits`], sends a `GET` request with
 //! `Host` and `Connection: close`, follows redirects with one more such request each, and
 //! returns a [`Response`] (status code, media type, body bytes, the address it came from) or a
-//! [`Failure`] with one of five reasons: [`Failure::Unreachable`],
+//! [`Failure`] with one of ten reasons: [`Failure::Unreachable`],
 //! [`Failure::UnsupportedScheme`], [`Failure::MalformedResponse`],
-//! [`Failure::TooManyRedirects`] or [`Failure::ForbiddenDestination`].
+//! [`Failure::TooManyRedirects`], [`Failure::ForbiddenDestination`], and the five of TLS
+//! (`docs/design/tls.md`, item 7): [`Failure::CertificateNotTrusted`],
+//! [`Failure::CertificateExpired`], [`Failure::CertificateNameMismatch`],
+//! [`Failure::TlsVersionUnsupported`] and [`Failure::TlsHandshakeFailed`].
+//!
+//! An `https:` request connects as an `http:` one does, through the [`Network`] and under the
+//! rule of "Destinations", and then runs the TLS 1.3 handshake of
+//! `surf_tls::connection::Connection` on that connection, for the host of the address, with the
+//! server's certificates checked by `surf_tls::path::PathVerifier` over the trust anchors of the
+//! [`Request`] ([`Request::anchors`]: the bundled list of `surf-tls`, with the anchors of an
+//! extra file when the caller added them; [`fetch`] uses the bundled list) at the system clock.
+//! It offers ALPN `http/1.1`, and sends `server_name` for a host that is a name. The HTTP of the
+//! request and the response is then the same as over `http:`, written to and read from the TLS
+//! connection. A redirect from `http:` to `https:`, and from `https:` to `http:`, is followed
+//! like any other. A failure of the handshake is one of the five reasons of TLS, whose detail is
+//! the text of `surf_tls::error::Error` (a value the server chose only as
+//! `surf_tls::error::excerpt` shows it); a server that never finishes the handshake, a
+//! connection that ends during it, and one that ends without `close_notify` before the response
+//! is complete are [`Failure::Unreachable`]. An empty set of anchors is
+//! [`Failure::CertificateNotTrusted`] before any connection.
 //!
 //! [`send_through`] is [`send`] over a [`Network`] of the caller's: where names are resolved and
 //! connections made. [`send`] uses [`OsNetwork`], the operating system's resolver and
@@ -23,6 +43,25 @@
 //! 302 or 303 to a `POST`, the next request is a `GET` without a body, `Content-Type` or
 //! `Content-Length`, and stays one for the rest of the chain; a 307 or 308 repeats the method, the
 //! body and the media type. A 303 after a `GET` stays a `GET`.
+//!
+//! # Cookies
+//!
+//! A [`Request`] with a jar ([`Request::jar`], a `surf_cookie::Jar`) sends, on every hop, the
+//! `Cookie` field the jar gives for the hop's address, its method and whether it is same-site
+//! with the request's initiator ([`Request::initiator`], kept by every hop of a redirect), and
+//! cross-site on every hop after the chain has been on another site (`surf_cookie::Chain`); one
+//! field after `Host` and `Connection`, none when no cookie matches.
+//! Every `Set-Cookie` field of each response, redirects included, goes into the jar for that
+//! response's address before the next hop is sent; one that is not UTF-8 is dropped. A
+//! `Set-Cookie` field longer than the header limit ends the fetch as every such field does
+//! ([`Failure::MalformedResponse`]), and nothing of that response goes into the jar. With a jar
+//! the address is parsed once, by `surf_url::Url::parse`: the connection, the `Host` field and
+//! the jar's choice of cookies all come from that parse's serialization, on the first request as
+//! on every redirect, so a cookie goes only to the host it was chosen for (for
+//! `http://a.test\b.test/` that is `a.test`, as a browser reads it). An address
+//! `surf_url::Url::parse` does not parse is sent as above, with no cookie, and keeps none. The
+//! rules of the jar (draft-ietf-httpbis-rfc6265bis-22) are those of the crate `surf-cookie`. A
+//! request without a jar sends no `Cookie` field and keeps no cookie.
 //!
 //! The wire format follows HTTP/1.1 (RFC 9112, message syntax; RFC 9110, semantics) for what
 //! this crate does. No section of either is claimed complete. Where a rule is followed, the
@@ -46,7 +85,10 @@
 //!   outside the machine.
 //! - **Read timeout** ([`Limits::read_timeout`], default 30 s): bounds the whole exchange after
 //!   the connection is made, from sending the request to the last byte of the response, summed
-//!   over every request of the fetch, redirects included. Each
+//!   over every request of the fetch, redirects included. For `https:` the TLS handshake is
+//!   inside it: it starts when the connection is made, and the handshake's reads and writes
+//!   share the deadline of the exchange that follows, so one fetch over any mix of `http:` and
+//!   `https:` requests still lasts at most the two timeouts. Each
 //!   write and each read on the socket is given the time that is left, through
 //!   [`std::net::TcpStream::set_write_timeout`] and [`std::net::TcpStream::set_read_timeout`].
 //!   Running out is [`Failure::Unreachable`], the same failure a server that sends nothing
@@ -93,6 +135,12 @@
 //!
 //! - **Destinations**: see "Destinations" below. A refused destination ends the fetch with
 //!   [`Failure::ForbiddenDestination`], before any connection to it.
+//! - **TLS** (`docs/design/tls.md`, item 9; `surf-tls` holds each): a handshake message of at
+//!   most 65,535 bytes; at most 64 certificates in the server's Certificate message; at most 6
+//!   intermediates on a path; per verification at most 100 signature checks, 25,000 candidates
+//!   considered and 250,000 name-constraint comparisons; one HelloRetryRequest; at most
+//!   23,726,566 records under one AES-GCM write key; at most 32 records in a row that carry no
+//!   application data. Each refusal is one of the five reasons of TLS.
 //!
 //! So one fetch lasts at most the connect timeout plus the read timeout, whatever the number of
 //! redirects: 40 s at the defaults.
@@ -169,18 +217,40 @@
 //!   the response, the request target and the URL parsed as above. No bound is stated for
 //!   this moment: a header section of many short fields holds many times the header limit.
 //!
+//! An `https:` request holds, beside the above: the verifier's copy of the trust anchors, made
+//! before its first connection; the TLS connection, whose record layer holds at most one record
+//! and one handshake message (`surf_tls::record`: about 2^14 + 256 and 65,535 + 2^14 bytes);
+//! and, during the handshake, the server's certificates while they are verified. Measured by
+//! counting allocations on the fetch's thread (the module `https` of the tests): a `GET` of a
+//! 64 KiB body from the TLS test server (a chain of two certificates, the bundled anchors and
+//! one more) held 173,747 bytes at its peak, the same `GET` over `http:` 73,738, so the TLS
+//! connection added 100,009 bytes; that test holds it to at most 131,072. No bound is stated
+//! for a server's chain at the bounds of item 9 of `docs/design/tls.md` (a Certificate message
+//! of 65,535 bytes, up to 64 certificates): what parsing and verifying it takes was not
+//! measured.
+//!
+//! A request with a jar holds, beside the above, while the head of a hop is written and read,
+//! the address of the hop parsed with `surf-url` and the `Cookie` field, at most 8,192 bytes;
+//! both are dropped before a body is read. The jar is the caller's, and `surf-cookie` states
+//! its bound.
+//!
 //! # What it does not do
 //!
-//! It is not a complete HTTP client. It does not do HTTPS or any scheme other than `http:` (a
-//! redirect to one is [`Failure::UnsupportedScheme`]), methods other than `GET` and `POST`,
+//! It is not a complete HTTP client. It does not do any scheme other than `http:` and `https:`
+//! (a redirect to one is [`Failure::UnsupportedScheme`]), TLS 1.2 or below (a server limited to
+//! it fails with [`Failure::TlsVersionUnsupported`] or [`Failure::TlsHandshakeFailed`]), client
+//! certificates, TLS session resumption (a ticket the server sends is read and dropped), HTTP/2,
+//! methods other than `GET` and `POST`,
 //! `Expect: 100-continue` (a `POST` sends its body at once, after the head), chunked request
 //! bodies, a request media type with parameters, request header fields other than `Host`,
-//! `Connection`, `Content-Type` and `Content-Length` (no `Origin`, no `Referer`), persistent
-//! connections (every fetch opens and closes one connection), content codings (the
+//! `Connection`, `Cookie`, `Content-Type` and `Content-Length` (no `Origin`, no `Referer`),
+//! persistent connections (every fetch opens and closes one connection), content codings (the
 //! body is returned as sent; no `Accept-Encoding` is sent, and no `Content-Encoding` is decoded),
 //! transfer codings other than `chunked`, trailers (the chunked body ends at its last chunk; the
-//! trailer section is not read), proxies, cookies, caching, `Refresh`, or URL parsing beyond
-//! splitting an `http:` address into host, port and request target and resolving a `Location`.
+//! trailer section is not read), proxies, caching, `Refresh`, or URL parsing beyond
+//! splitting an address into host, port and request target and resolving a `Location`.
+//!
+//! It does not check revocation: a revoked certificate that has not expired loads.
 //!
 //! A server that answers and closes before it read a request body ends the fetch in one of two
 //! ways, and a caller may rely on neither. What decides is whether the write of the request met
@@ -191,15 +261,18 @@
 //!
 //! # Addresses
 //!
-//! An address is `http://host[:port][/path][?query][#fragment]`, the scheme in any case. The
-//! port defaults to 80, the fragment is not sent, and an empty path is sent as `/`. An address
-//! that does not start with `http:` is [`Failure::UnsupportedScheme`] and no connection is
-//! attempted. An `http:` address this crate cannot use (no `//`, an empty host, a host in
+//! An address is `http://host[:port][/path][?query][#fragment]` or the same with `https://`,
+//! the scheme in any case. The port defaults to 80 for `http:` and 443 for `https:`, the
+//! fragment is not sent, and an empty path is sent as `/`. An address that starts with neither
+//! `http:` nor `https:` is [`Failure::UnsupportedScheme`] and no connection is attempted. An
+//! address of either scheme this crate cannot use (no `//`, an empty host, a host in
 //! brackets that is not an IPv6 address, a bad port, user information, or a byte that is not
 //! printable ASCII) is [`Failure::Unreachable`], also without a connection: the specification
 //! has no reason for an address that is not one. When a redirect arrives, the address passed to
 //! [`fetch`] or [`send`] is parsed with `surf_url::Url::parse` to resolve the `Location` against; one that
-//! does not parse is [`Failure::Unreachable`] for the same reason.
+//! does not parse is [`Failure::Unreachable`] for the same reason. A request with a jar
+//! ("Cookies") is checked as above and then sent to its address as `surf_url::Url::parse` reads
+//! it.
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
@@ -208,7 +281,17 @@ use std::io::{ErrorKind, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream, ToSocketAddrs};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+use surf_cookie::Jar;
+use surf_tls::connection::Connection;
+use surf_tls::der::Time;
+use surf_tls::error::{AlertDescription, Error as TlsError};
+use surf_tls::path::PathVerifier;
+use surf_tls::verify::CertificateRejection;
+
+pub use surf_tls::anchors;
+pub use surf_tls::anchors::{AnchorError, Anchors};
 
 /// The media type of a response without a usable `Content-Type`.
 const DEFAULT_MEDIA_TYPE: &str = "application/octet-stream";
@@ -270,11 +353,13 @@ impl Method {
 
 /// A request to send, borrowed from the caller: nothing of it is copied, the body least of all.
 ///
-/// Its [`Debug`](fmt::Debug) text shows the address, the method and the media type, and the body
-/// by its length only, never its bytes, since a form's body can carry a password:
-/// `Request { address: "http://example.org/login", method: Post, body: Some(16 bytes),
-/// media_type: Some("application/x-www-form-urlencoded") }`.
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// Its [`Debug`](fmt::Debug) text shows the address, the method, the media type and the
+/// initiator, the body by its length only, never its bytes, since a form's body can carry a
+/// password, the anchors by their count, and the jar by the count of its cookies, never a
+/// cookie: `Request { address: "http://example.org/login", method: Post, body: Some(16 bytes),
+/// media_type: Some("application/x-www-form-urlencoded"), anchors: None, jar: Some(Jar {
+/// cookies: 1 }), initiator: Some("http://example.org") }`.
+#[derive(Clone, Copy)]
 pub struct Request<'a> {
     /// The address, as for [`fetch`].
     pub address: &'a str,
@@ -285,6 +370,19 @@ pub struct Request<'a> {
     /// The media type of the body, `type/subtype` without parameters, sent as `Content-Type`.
     /// Only a [`Method::Post`] may have one.
     pub media_type: Option<&'a str>,
+    /// The trust anchors the server of an `https:` request is authenticated against: the
+    /// bundled list with the anchors of an extra file ([`Anchors::with_extra_pem`]). `None` is
+    /// the bundled list alone ([`Anchors::bundled`]), read at the first `https:` request of the
+    /// fetch.
+    pub anchors: Option<&'a Anchors>,
+    /// The cookie jar of the session the request belongs to: each hop sends the `Cookie` field
+    /// the jar gives for its address, and every `Set-Cookie` field of each response goes into
+    /// it (the crate documentation, "Cookies"). `None` sends no cookie and keeps none.
+    pub jar: Option<&'a Jar>,
+    /// The serialized origin of the document that started the navigation, such as
+    /// `http://127.0.0.1:8080`, which decides whether a hop is same-site for the jar
+    /// ([`surf_cookie::site`]). `None` for a navigation nobody's document started.
+    pub initiator: Option<&'a str>,
 }
 
 impl fmt::Debug for Request<'_> {
@@ -294,7 +392,23 @@ impl fmt::Debug for Request<'_> {
             .field("method", &self.method)
             .field("body", &self.body.map(|body| BodyLength(body.len())))
             .field("media_type", &self.media_type)
+            .field(
+                "anchors",
+                &self.anchors.map(|anchors| AnchorCount(anchors.count())),
+            )
+            .field("jar", &self.jar)
+            .field("initiator", &self.initiator)
             .finish()
+    }
+}
+
+/// The number of trust anchors, which is all the [`Debug`](fmt::Debug) text of a [`Request`]
+/// shows of them: `<n> anchors`.
+struct AnchorCount(usize);
+
+impl fmt::Debug for AnchorCount {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} anchors", self.0)
     }
 }
 
@@ -346,6 +460,22 @@ pub enum Failure {
     /// A redirect led from a public address to a local one (the crate documentation,
     /// "Destinations"). No connection to it was attempted.
     ForbiddenDestination(String),
+    /// The certificates of an `https:` server lead to no trust anchor: the detail names the
+    /// check that failed (`docs/design/tls.md`, item 7). Also an empty set of anchors, refused
+    /// before any connection.
+    CertificateNotTrusted(String),
+    /// A certificate on the path of an `https:` server is outside its validity at the time of
+    /// the fetch.
+    CertificateExpired(String),
+    /// No subjectAltName entry of the `https:` server's certificate matches the host, or the
+    /// host is one no certificate can match (refused before a byte is sent).
+    CertificateNameMismatch(String),
+    /// The `https:` server does not speak TLS 1.3: it sent `protocol_version` before its
+    /// ServerHello, or its ServerHello selected TLS 1.2 or below.
+    TlsVersionUnsupported(String),
+    /// The TLS handshake, or the TLS connection after it, failed otherwise: an alert the server
+    /// sent, or one surf sent for a violation of the protocol.
+    TlsHandshakeFailed(String),
 }
 
 impl Failure {
@@ -356,7 +486,12 @@ impl Failure {
             | Failure::UnsupportedScheme(detail)
             | Failure::MalformedResponse(detail)
             | Failure::TooManyRedirects(detail)
-            | Failure::ForbiddenDestination(detail) => detail,
+            | Failure::ForbiddenDestination(detail)
+            | Failure::CertificateNotTrusted(detail)
+            | Failure::CertificateExpired(detail)
+            | Failure::CertificateNameMismatch(detail)
+            | Failure::TlsVersionUnsupported(detail)
+            | Failure::TlsHandshakeFailed(detail) => detail,
         }
     }
 }
@@ -369,6 +504,11 @@ impl fmt::Display for Failure {
             Failure::MalformedResponse(_) => "malformed response",
             Failure::TooManyRedirects(_) => "too many redirects",
             Failure::ForbiddenDestination(_) => "forbidden destination",
+            Failure::CertificateNotTrusted(_) => "certificate not trusted",
+            Failure::CertificateExpired(_) => "certificate expired",
+            Failure::CertificateNameMismatch(_) => "certificate name mismatch",
+            Failure::TlsVersionUnsupported(_) => "TLS version unsupported",
+            Failure::TlsHandshakeFailed(_) => "TLS handshake failed",
         };
         write!(f, "{reason}: {}", self.detail())
     }
@@ -388,6 +528,9 @@ pub fn fetch(address: &str, limits: &Limits) -> Result<Response, Failure> {
             method: Method::Get,
             body: None,
             media_type: None,
+            anchors: None,
+            jar: None,
+            initiator: None,
         },
         limits,
     )
@@ -478,9 +621,21 @@ pub fn send_from(
     // The response URL once a redirect is followed; until then the asked address byte for byte,
     // copied only into a response.
     let mut url: Option<String> = None;
-    // The current URL parsed with surf-url, and its fragment, once a redirect needs them.
+    // The current URL parsed with surf-url, and its fragment: from the first request on for a
+    // fetch with a jar, otherwise once a redirect needs them.
     let mut current: Option<(surf_url::Url, Option<String>)> = None;
+    // The crate documentation, "Cookies": with a jar, the address is parsed once, and the
+    // connection, the `Host` field and the jar's lookup all come from that parse.
+    if request.jar.is_some() {
+        if let Ok(parsed) = surf_url::Url::parse(address, None) {
+            target = Target::parse(&parsed.href())?;
+            let fragment = parsed.fragment().map(str::to_owned);
+            current = Some((parsed, fragment));
+        }
+    }
     let mut redirects = 0;
+    // The addresses of the chain so far, for whether a hop is same-site for cookies.
+    let mut chain = surf_cookie::Chain::new();
     let mut connect_left = limits.connect_timeout;
     let mut read_left = limits.read_timeout;
     // Whether the first request connected to a local address; none before it connected. A
@@ -489,7 +644,12 @@ pub fn send_from(
         Origin::Given => None,
         Origin::PublicPage => Some(false),
     };
+    // The verifier of the fetch's `https:` requests, made before the first one connects.
+    let mut verifier: Option<PathVerifier> = None;
     loop {
+        if target.scheme == Scheme::Https && verifier.is_none() {
+            verifier = Some(path_verifier(request.anchors)?);
+        }
         let connecting = Instant::now();
         // The crate documentation, "Destinations": after a first request to a public address,
         // and from a public page, every request must resolve to public addresses only.
@@ -503,8 +663,45 @@ pub fn send_from(
             started_local = Some(is_local(dialed.ip()));
         }
         connect_left = connect_left.saturating_sub(connecting.elapsed());
+        // From here the read timeout runs: the TLS handshake and the exchange share it.
         let exchanging = Instant::now();
-        let (head, wire) = exchange(&target, &outgoing, stream, read_left, limits)?;
+        let stream = match target.scheme {
+            Scheme::Http => Stream::Plain(Timed::new(stream, read_left)),
+            Scheme::Https => {
+                let Some(verifier) = verifier.as_ref() else {
+                    return Err(unreachable("no verifier was made for the https: request"));
+                };
+                // Each flight of the handshake is one write; without the delay of Nagle's
+                // algorithm the request that follows the client's Finished goes at once.
+                let _ = stream.set_nodelay(true);
+                secure(Timed::new(stream, read_left), &target.host, verifier)?
+            }
+        };
+        // The crate documentation, "Cookies": the jar sees the parse this hop connected by; a
+        // fetch without a jar parses nothing for it.
+        let hop_url = request.jar.and(current.as_ref().map(|(url, _)| url));
+        let cookie = match (request.jar, hop_url) {
+            (Some(jar), Some(url)) => jar.cookie_field(
+                url,
+                chain.site(request.initiator, url),
+                match outgoing.method {
+                    Method::Get => surf_cookie::Method::Get,
+                    Method::Post => surf_cookie::Method::Post,
+                },
+                SystemTime::now(),
+            ),
+            _ => None,
+        };
+        let (head, wire) = exchange(&target, &outgoing, cookie.as_deref(), stream, limits)?;
+        drop(cookie);
+        if let (Some(jar), Some(url)) = (request.jar, hop_url) {
+            // A field that is not UTF-8 is no cookie the jar can read: it is dropped.
+            for set_cookie in head.values(b"set-cookie") {
+                if let Ok(set_cookie) = std::str::from_utf8(set_cookie) {
+                    jar.receive(url, set_cookie, SystemTime::now());
+                }
+            }
+        }
         let status = head.status;
         // The request is sent: of the address, only what a response needs is kept from here
         // (the crate documentation, "Memory").
@@ -616,16 +813,16 @@ const MAX_REDIRECTS: usize = 20;
 /// [`fetch`] is not checked against it.
 pub const MAX_ADDRESS_BYTES: usize = 65_536;
 
-/// Send the request for `target` on `stream` and read the head of the final (not interim)
-/// response, all within `timeout`. Returns the head and the connection with what is left of it.
+/// Send the request for `target` on `stream`, with the `Cookie` field `cookie` when there is
+/// one, and read the head of the final (not interim) response, within the deadline of `stream`.
+/// Returns the head and the connection with what is left of it.
 fn exchange(
     target: &Target,
     outgoing: &Outgoing<'_>,
-    stream: TcpStream,
-    timeout: Duration,
+    cookie: Option<&str>,
+    mut stream: Stream,
     limits: &Limits,
-) -> Result<(Head, Wire<Timed>), Failure> {
-    let mut stream = Timed::new(stream, timeout);
+) -> Result<(Head, Wire<Stream>), Failure> {
     // Request target in origin-form and Host as the address's authority: RFC 9112 section
     // 3.2.1 and RFC 9110 section 7.2.
     let mut head = format!(
@@ -634,6 +831,11 @@ fn exchange(
         target.request_target,
         target.authority
     );
+    if let Some(cookie) = cookie {
+        head.push_str("Cookie: ");
+        head.push_str(cookie);
+        head.push_str("\r\n");
+    }
     if let Some(media_type) = outgoing.media_type {
         head.push_str("Content-Type: ");
         head.push_str(media_type);
@@ -652,9 +854,11 @@ fn exchange(
         .write_all(head.as_bytes())
         .and_then(|()| stream.write_all(body))
         .and_then(|()| stream.flush())
-        .map_err(|e| match e.kind() {
-            ErrorKind::WouldBlock | ErrorKind::TimedOut => unreachable(TIMED_OUT),
-            _ => unreachable(format!("sending the request failed: {e}")),
+        .map_err(|e| {
+            tls_io_failure(&e).unwrap_or_else(|| match e.kind() {
+                ErrorKind::WouldBlock | ErrorKind::TimedOut => unreachable(TIMED_OUT),
+                _ => unreachable(format!("sending the request failed: {e}")),
+            })
         })?;
     let mut wire = Wire::new(stream, limits.max_header_bytes.max(READ_CHUNK_BYTES));
     let head = read_final_head(&mut wire, limits)?;
@@ -771,6 +975,118 @@ impl Write for Timed {
     }
 }
 
+/// The connection of one request: `http:` over the socket, `https:` over a TLS connection on
+/// it. Both share the deadline of the [`Timed`] beneath.
+enum Stream {
+    Plain(Timed),
+    Tls(Box<Connection<Timed>>),
+}
+
+impl Read for Stream {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            Stream::Plain(timed) => timed.read(buf),
+            Stream::Tls(connection) => connection.read(buf),
+        }
+    }
+}
+
+impl Write for Stream {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            Stream::Plain(timed) => timed.write(buf),
+            Stream::Tls(connection) => connection.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            Stream::Plain(timed) => timed.flush(),
+            Stream::Tls(connection) => connection.flush(),
+        }
+    }
+}
+
+/// The detail of a fetch refused because its set of trust anchors is empty.
+const NO_ANCHORS: &str =
+    "NoPathToAnchor: the set of trust anchors is empty, so no certificate can be trusted";
+
+/// The verifier of a fetch's `https:` requests: path validation over `anchors`, or over the
+/// bundled list when the request names none. An empty set is refused here, before any
+/// connection (`surf_tls::anchors`: the place that builds a verifier refuses a count of 0).
+fn path_verifier(anchors: Option<&Anchors>) -> Result<PathVerifier, Failure> {
+    let bundled;
+    let anchors = match anchors {
+        Some(anchors) => anchors,
+        None => {
+            bundled = Anchors::bundled();
+            &bundled
+        }
+    };
+    if anchors.count() == 0 {
+        return Err(Failure::CertificateNotTrusted(NO_ANCHORS.to_string()));
+    }
+    Ok(PathVerifier::new(anchors.as_slice().to_vec()))
+}
+
+/// The system clock as the time certificates are checked at (`docs/design/tls.md`, item 13). A
+/// clock before 1970 reads as 1970, and every certificate is then not yet valid.
+fn now() -> Time {
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs());
+    Time::from_unix(i64::try_from(seconds).unwrap_or(i64::MAX))
+}
+
+/// The TLS handshake for `host` over `timed`, the server's certificates checked by `verifier`
+/// at the system clock: the connection, or the failure of `docs/design/tls.md` item 7.
+fn secure(timed: Timed, host: &str, verifier: &PathVerifier) -> Result<Stream, Failure> {
+    match Connection::new(timed, host, verifier, now()) {
+        Ok(connection) => Ok(Stream::Tls(Box::new(connection))),
+        Err(error) => Err(tls_failure(&error)),
+    }
+}
+
+/// The failure of a TLS error, as `docs/design/tls.md` item 7 maps it, with the error's own text
+/// as the detail (a value from the server only as `surf_tls::error::excerpt` shows it). A
+/// connection that ends, a socket's error and the read timeout are [`Failure::Unreachable`], as
+/// for `http:`.
+fn tls_failure(error: &TlsError) -> Failure {
+    let detail = error.to_string();
+    match error {
+        TlsError::Certificate(CertificateRejection::NotTrusted(_)) => {
+            Failure::CertificateNotTrusted(detail)
+        }
+        TlsError::Certificate(CertificateRejection::Expired { .. }) => {
+            Failure::CertificateExpired(detail)
+        }
+        TlsError::Certificate(CertificateRejection::NameMismatch { .. }) | TlsError::Host(_) => {
+            Failure::CertificateNameMismatch(detail)
+        }
+        TlsError::VersionUnsupported { .. }
+        | TlsError::AlertReceived {
+            description: AlertDescription::PROTOCOL_VERSION,
+            before_server_hello: true,
+        } => Failure::TlsVersionUnsupported(detail),
+        TlsError::AlertReceived { .. }
+        | TlsError::AlertSent { .. }
+        | TlsError::SequenceExhausted
+        | TlsError::KeyLimitReached => Failure::TlsHandshakeFailed(detail),
+        TlsError::TimedOut => unreachable(TIMED_OUT),
+        TlsError::ConnectionClosed | TlsError::Truncated | TlsError::Io(_) => {
+            unreachable(format!("the TLS connection ended: {detail}"))
+        }
+    }
+}
+
+/// The failure of an I/O error that carries a TLS error ([`tls_failure`]); `None` for any other.
+fn tls_io_failure(error: &std::io::Error) -> Option<Failure> {
+    error
+        .get_ref()
+        .and_then(|inner| inner.downcast_ref::<TlsError>())
+        .map(tls_failure)
+}
+
 fn unreachable(detail: impl Into<String>) -> Failure {
     Failure::Unreachable(detail.into())
 }
@@ -779,9 +1095,27 @@ fn malformed(detail: impl Into<String>) -> Failure {
     Failure::MalformedResponse(detail.into())
 }
 
-/// An `http:` address split into what the request needs.
+/// The scheme of an address this crate fetches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Scheme {
+    /// `http:`, port 80 by default.
+    Http,
+    /// `https:`, port 443 by default: HTTP/1.1 over TLS 1.3.
+    Https,
+}
+
+/// The address without its scheme when it starts with `scheme` (which ends in `:`), in any
+/// case.
+fn after_scheme<'a>(address: &'a str, scheme: &str) -> Option<&'a str> {
+    let head = address.get(..scheme.len())?;
+    head.eq_ignore_ascii_case(scheme)
+        .then(|| address.get(scheme.len()..).unwrap_or(""))
+}
+
+/// An `http:` or `https:` address split into what the request needs.
 #[derive(Debug, PartialEq, Eq)]
 struct Target {
+    scheme: Scheme,
     /// The host to resolve, without the brackets of an IPv6 literal.
     host: String,
     port: u16,
@@ -793,16 +1127,17 @@ struct Target {
 
 impl Target {
     fn parse(address: &str) -> Result<Target, Failure> {
-        let rest = match address.get(..5) {
-            Some(scheme) if scheme.eq_ignore_ascii_case("http:") => address.get(5..).unwrap_or(""),
-            _ => {
-                return Err(Failure::UnsupportedScheme(match address.split_once(':') {
-                    Some((scheme, _)) if scheme.len() <= 32 => {
-                        format!("the scheme {scheme:?} is not fetched; only http is")
-                    }
-                    _ => "the address does not start with the http: scheme".to_string(),
-                }))
-            }
+        let (scheme, rest) = if let Some(rest) = after_scheme(address, "http:") {
+            (Scheme::Http, rest)
+        } else if let Some(rest) = after_scheme(address, "https:") {
+            (Scheme::Https, rest)
+        } else {
+            return Err(Failure::UnsupportedScheme(match address.split_once(':') {
+                Some((scheme, _)) if scheme.len() <= 32 => {
+                    format!("the scheme {scheme:?} is not fetched; only http and https are")
+                }
+                _ => "the address does not start with the http: or https: scheme".to_string(),
+            }));
         };
         if let Some(byte) = rest.bytes().find(|b| !(0x21..=0x7e).contains(b)) {
             return Err(unreachable(format!(
@@ -811,7 +1146,7 @@ impl Target {
         }
         let Some(rest) = rest.strip_prefix("//") else {
             return Err(unreachable(
-                "the address is not of the form http://host/path",
+                "the address is not of the form http://host/path or https://host/path",
             ));
         };
         let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
@@ -850,9 +1185,13 @@ impl Target {
         if host.is_empty() {
             return Err(unreachable("the address has an empty host"));
         }
-        // An empty or absent port is 80: RFC 9110 section 4.2.1.
+        // An empty or absent port is 80 for http and 443 for https: RFC 9110 sections 4.2.1
+        // and 4.2.2.
         let port = match port {
-            None | Some("") => 80,
+            None | Some("") => match scheme {
+                Scheme::Http => 80,
+                Scheme::Https => 443,
+            },
             Some(text) => match text.parse::<u16>() {
                 Ok(port) if port != 0 && text.bytes().all(|b| b.is_ascii_digit()) => port,
                 _ => return Err(unreachable(format!("the address has the port {text:?}"))),
@@ -866,6 +1205,7 @@ impl Target {
             format!("/{path_and_query}")
         };
         Ok(Target {
+            scheme,
             host: host.to_string(),
             port,
             authority: authority.to_string(),
@@ -1091,11 +1431,16 @@ impl<R: Read> Wire<R> {
                     self.buf.extend_from_slice(got);
                     return Ok(got.len());
                 }
-                Err(e) if e.kind() == ErrorKind::Interrupted => continue,
-                Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
-                    return Err(unreachable(TIMED_OUT))
-                }
-                Err(e) => return Err(unreachable(format!("reading the response failed: {e}"))),
+                // A TLS error first: the TLS connection reports its own failures, a stream that
+                // ended without close_notify among them, inside an I/O error.
+                Err(e) => match tls_io_failure(&e) {
+                    Some(failure) => return Err(failure),
+                    None if e.kind() == ErrorKind::Interrupted => continue,
+                    None if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                        return Err(unreachable(TIMED_OUT))
+                    }
+                    None => return Err(unreachable(format!("reading the response failed: {e}"))),
+                },
             }
         }
     }
@@ -1622,6 +1967,14 @@ mod tests {
         assert_eq!(t.request_target, "/?q");
         let t = Target::parse("http://h:").expect("parses");
         assert_eq!(t.port, 80);
+        let t = Target::parse("HTTPS://h/x").expect("parses");
+        assert_eq!((t.scheme, t.port), (Scheme::Https, 443));
+        assert_eq!(t.request_target, "/x");
+        let t = Target::parse("https://h:8443").expect("parses");
+        assert_eq!(
+            (t.scheme, t.port, t.authority.as_str()),
+            (Scheme::Https, 8443, "h:8443")
+        );
     }
 
     #[test]
@@ -1636,13 +1989,22 @@ mod tests {
             "http://[::1]x/",
             "http://u@h/",
             "http://h/\u{e9}",
+            "https:h/x",
+            "https://u@h/",
         ] {
             assert!(
                 matches!(Target::parse(address), Err(Failure::Unreachable(_))),
                 "{address:?}"
             );
         }
-        for address in ["", "htt", "https://h/", "\u{e9}ttp://h/", "mailto:a@b"] {
+        for address in [
+            "",
+            "htt",
+            "httpss://h/",
+            "ftp://h/",
+            "\u{e9}ttp://h/",
+            "mailto:a@b",
+        ] {
             assert!(
                 matches!(Target::parse(address), Err(Failure::UnsupportedScheme(_))),
                 "{address:?}"

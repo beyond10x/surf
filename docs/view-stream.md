@@ -209,20 +209,21 @@ identity; `index` its number within the session, from 1; `kept_at` the time `sur
   text `<n> bytes`, never the bytes (D22).
 - `answer`: then `"page"`, the page line, `"path"`,
   `{"shown":<n>,"total":<n>,"actions":[{"sequence","command","handle","argument","argument_cut"},…]}`,
-  and `"now"` (below), each as `surf_answer::parse` reads it from the answer's lines (D20), or
-  `null` when the answer has none. In a `path` action, `handle` is the handle of the element the
-  action took (`follow l1`), `null` for an action on no element; `argument` is the address, or
-  with a handle the element's label, cut at 60 characters, and `argument_cut` is `true` when the
-  label was cut there (the answer writes `...` after it). A later story adds a member after
-  `now` (`changed` by `story:view-controls-and-changes`); no member is removed or renamed.
+  `"now"` and `"changed"` (below), each as `surf_answer::parse` reads it from the answer's lines
+  (D20), or `null` when the answer has none. In a `path` action, `handle` is the handle of the
+  element the action took (`follow l1`, `fill f2`), `null` for an action on no element;
+  `argument` is the address, or with a handle the element's label, cut at 60 characters, and
+  `argument_cut` is `true` when the label was cut there (the answer writes `...` after it); a
+  `fill`, a `pick` and a `press` have the handle and no argument. `changed` was added after `now`
+  by `story:view-controls-and-changes`; no member is removed or renamed.
 
 ### The `now` member
 
 The `now` block of an answer (`docs/agent-answer.md`, "Now"): what can be done on the current
 document, the first elements in document order. `null` when the answer has no `now` block: before
-the first page, when the session has no current HTML document or it has no link, for a closed
-session, and in an answer with page text (`--as`). A refused `follow` records no action, so it
-adds no entry.
+the first page, when the session has no current HTML document or it has no link, control or
+button, for a closed session, and in an answer with page text (`--as`). A refused `follow`,
+`fill`, `pick` or `press` records no action, so it adds no entry.
 
 `{"shown":<n>,"total":<n>,"elements":[<element>,…],"visibility_note":"<text>"}`:
 
@@ -235,36 +236,86 @@ adds no entry.
   closed `dialog` or `details` and a popover leave an element `?`.
 
 An element,
-`{"handle","kind","visibility","label","label_cut","target","target_cut","unresolved","text"}`:
+`{"handle","kind","visibility","label","label_cut","target","target_cut","unresolved","text","state"}`:
 
-- `handle`: `l<n>` for a link, numbered over the document's actionable elements;
-- `kind`: the kind word of the line, `link` for a link;
+- `handle`: `l<n>` for a link, `b<n>` for a button, `f<n>` for every other control, numbered
+  over the document's actionable elements;
+- `kind`: the kind word of the line: `link`, `button`, or the control's kind (`text`,
+  `password`, `checkbox`, `radio`, `select`, `textarea`, `file`);
 - `visibility`: the answer's word, `vis`, `hid` or `?`;
-- of a link: `label`, the accessible name cut at 60 characters, with `label_cut`; `target`, the
-  address resolved against the document base URL, written as its path, query and fragment when it
-  has the page's origin and whole otherwise, or, when it does not resolve, the `href` as the page
-  wrote it with `unresolved` `true`; cut at 1,024 characters, with `target_cut`. `text` is
-  `null`;
-- of a line whose kind the view does not know (a control, a button, a form, which later stories
-  add): `label`, `label_cut`, `target`, `target_cut` and `unresolved` are `null`, and `text` is
-  the line as the answer writes it, without its indentation, its quoted fields still quoted. A
-  story that adds a kind changes neither `surfd` nor this shape; one that wants the kind's own
-  members adds them here.
+- `label`: the accessible name cut at 60 characters, with `label_cut`;
+- of a link: `target`, the address resolved against the document base URL, written as its path,
+  query and fragment when it has the page's origin and whole otherwise, or, when it does not
+  resolve, the `href` as the page wrote it with `unresolved` `true`; cut at 1,024 characters,
+  with `target_cut`. `text` and `state` are `null`;
+- of a control or a button (`story:view-controls-and-changes`): `target`, `target_cut` and
+  `unresolved` are `null`; `text` is the line as the answer writes it, without its indentation,
+  its quoted fields still quoted; and `state` is what follows the label on the line,
+  `{"value","disabled","checked","required","readonly","submits"}`:
+  - `value`: the `= <value>` of the line as the answer prints it, `{"kind","text","cut"}`: a
+    quoted value (a text control's value, the label of a select's selected option) is
+    `{"kind":"text","text":"<value>","cut":<bool>}`, cut at 1,024 characters; a password is
+    `{"kind":"set","text":null,"cut":null}` or `{"kind":"empty","text":null,"cut":null}`, as the
+    answer prints `(set)` and `(empty)`, never its value; `null` for a checkbox, a radio button,
+    a button and a select with no option selected;
+  - `disabled`, `checked` (a checkbox or a radio button), `required`, `readonly`: `true` when the
+    line writes the flag;
+  - `submits`: of a submit button with a form owner, `{"form","method","action","action_cut"}`:
+    the form's handle (`F1`), the method word (`get`, `post`, `dialog`), and the action shown as
+    a link's target is, cut at 1,024 characters; `action` and `action_cut` are `null` for
+    `unresolved`. `null` for every other control.
 
-The view writes every one of these values as text (a label and a target come from the page);
-no target is a link the page follows. The stream carries each value unchanged; the page shows a
-bidirectional control in it (U+202A to U+202E, U+2066 to U+2069) as a mark that names it
-(`U+202E`), so a value cannot reorder what a person reads, and does so in every text that came
-from a session: a label, a target, a title, an address. Other format characters (U+200E,
-U+200F, joiners, a soft hyphen) are shown as they are.
+The view writes every one of these values as text (a label, a target, a value and an action
+come from the page); no target or action is a link the page follows. The stream carries each
+value unchanged; the page shows a bidirectional control in it (U+202A to U+202E, U+2066 to
+U+2069) as a mark that names it (`U+202E`), so a value cannot reorder what a person reads, and
+does so in every text that came from a session: a label, a target, a value, a title, an
+address. Other format characters (U+200E, U+200F, joiners, a soft hyphen) are shown as they are.
+
+### The `changed` member
+
+The `changed` block of an answer (`docs/agent-answer.md`, "Changed"): what the action changed,
+from the state the session's previous answer showed. `null` when the answer has none (an answer
+that shows no state, and the entries of a run before `story:agent-change-and-log`). One of two
+shapes, by `kind`:
+
+- `{"kind":"controls","lines":[<line>,…]}`: `changed <n>` and its `~` lines, the same page;
+  `lines` is empty for `changed 0`. A line, `{"handle","what","before","after"}`: the control's
+  handle; `what` is `value`, `checked` or `selected`; for `value`, `before` and `after` are each
+  a value as the `now` member writes it (a quoted value, or a password's `set` or `empty`, never
+  its value); for `checked`, `true` or `false`; for `selected`, a value of kind `text`, the labels
+  of the selected options joined by `, `, `""` when none was selected;
+- `{"kind":"page","from","to","texts":[{"text","cut"},…],"more":<n>}`: `changed page <old> ->
+  <new>`, another page; `from` and `to` the addresses of the previous answer's page and this
+  one's, `null` for `none`; `texts` the `+ text` lines, each the text of the new page cut at 120
+  characters with `cut`; `more` the count of `+ text more <n>`, 0 without that line.
+
+What is built: this member holds `~` control lines and `+ text` lines, nothing else. A
+document's tree does not change before scripts exist (D2 of
+`docs/plan/agent-plan-revision-1.md`), so the answer has no `+` or `-` line for an element that
+appears or goes, and neither has this member. The page's panel "Changed by <action>" shows a
+control line as `<handle> <what> <before> -> <after>` and a page change as its `page` line and
+its `+ text` lines; for an action whose answer has no `changed` block it shows
+`no changed block`. A refused command records no action (above), so it has no entry and the
+panel never shows it.
 
 What the view holds of a value, in the words of D22 and D21: a field of bytes (a response body, a
-request body) is written by the session process as its length, `<n> bytes`, never as the bytes;
-the answer prints a password's value as `(set)` or `(empty)`, never the value, and the event
-`surf.agent.FillRequested` holds the length of what a `fill` typed, `<n> bytes`, never its text;
-every other control value is kept as the answer prints it, which is what the `changed` panel
-shows. The token is not kept: the answer
-entry of `open` omits the `token` line, and no route and no stream event holds a session's token.
+request body) is written by the session process as its length, `<n> bytes`, never as the bytes.
+"A password's value is its length, as the answer prints it. Every other control value is kept
+as the answer prints it, which is what the `changed` panel shows." The answer prints a
+password's value as `(set)` or `(empty)`, never the value, and the event
+`surf.agent.FillRequested` holds the length of what a `fill` typed, `<n> bytes`, never its text.
+So the length the page shows for a password, in the panel "Now" and in the panel "Changed by
+<action>", comes from the `FillRequested` entry, not from the answer: the `value` of the newest
+`FillRequested` entry of that handle since the answer that loaded the document, as `<n> bytes`
+(`12 bytes`), or `(set)` when no `fill` of that document typed it. The token is not kept: the
+answer entry of `open` omits the `token` line, and no route and no stream event holds a
+session's token.
+
+This rule covers the value the agent types into a password control: the view and the stream
+never carry it from the `fill`. Text a server sends back is page text. A page that prints a
+posted value has that text in the `changed` block's `+ text` lines, in the stream and in
+`/api/sessions/<id>`, as the agent's own answer prints it.
 
 ### Event names
 
@@ -358,7 +409,10 @@ Session `0b7d4e21-…` then ran `open`, `go http://127.0.0.1:9/`, where nothing 
 `close` (numbers 18 to 38). A request shows the lines the server reads; a browser sends more
 headers, which the server ignores within the limits. A body is shown as its bytes: a JSON body
 has no line feed at its end, and a page file ends where the file does. The `Content-Length` of
-each example was counted with `wc -c` over the body, not by hand.
+each example was counted with `wc -c` over the body, not by hand. These examples were written
+before the `changed` block (`story:agent-change-and-log`), and their answers hold
+`"changed":null` and their links `"state":null`; an answer of today's session holds the block,
+as the two examples of the login form below show.
 
 ### `GET /`
 
@@ -441,9 +495,11 @@ with the page line `page none`) and its `go` (entries 7 to 17: the action, nine 
 answer), each event in the order the session's system published it. An absent optional field
 (`url` of the `ActionRecorded` of `open`; `handle` and `label` of every `ActionRecorded` and of
 the `NavigationRequested` of a `go`, which takes no link; `body` and `body_type` of the
-`NavigationStarted` and the `RequestStarted` of a `go`, which sends `Get` without a body) is
-`null`: every field `spec/` declares is written, present or not. A `follow` writes the link's
-handle and label there.
+`NavigationStarted` and the `RequestStarted` of a `go`, which sends `Get` without a body;
+`initiator` of the `NavigationRequested`, the `NavigationStarted` and the `RequestStarted` of a
+`go`, which no document started) is `null`: every field `spec/` declares is written, present or
+not. A `follow` writes the link's handle and label there, and the origin of the document whose
+link it followed as `initiator`.
 
 ```http
 GET /api/sessions/5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69 HTTP/1.1
@@ -454,7 +510,7 @@ Authorization: Bearer 0123456789abcdef0123456789abcdef0123456789abcdef0123456789
 ```http
 HTTP/1.1 200 OK
 Content-Type: application/json
-Content-Length: 5548
+Content-Length: 5629
 Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 X-Content-Type-Options: nosniff
 Referrer-Policy: no-referrer
@@ -463,7 +519,7 @@ Cross-Origin-Resource-Policy: same-origin
 Date: Sat, 21 Nov 2026 02:00:00 GMT
 Connection: close
 
-{"session":{"id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","state":"open","address":"http://127.0.0.1:41000/a.html","title":null,"opened_at":1795226400000,"last_action_at":1795226401500,"ended_at":null,"page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/a.html","title":null}},"dropped":0,"log_dropped":false,"unreadable":0,"entries":[{"number":1,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":1,"kept_at":1795226400010,"kind":"action","sequence":1,"command":"open","argument":null},{"number":2,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":2,"kept_at":1795226400011,"kind":"event","name":"surf.shell.WindowOpened","unmapped":false,"fields":{"window_id":"2c4e6a80-1b3d-4f57-9a2c-4e6a8b0d2f41"}},{"number":3,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":3,"kept_at":1795226400012,"kind":"event","name":"surf.shell.TabOpened","unmapped":false,"fields":{"tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","window_id":"2c4e6a80-1b3d-4f57-9a2c-4e6a8b0d2f41"}},{"number":4,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":4,"kept_at":1795226400013,"kind":"event","name":"surf.agent.SessionOpened","unmapped":false,"fields":{"session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","window_id":"2c4e6a80-1b3d-4f57-9a2c-4e6a8b0d2f41","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72"}},{"number":5,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":5,"kept_at":1795226400014,"kind":"event","name":"surf.agent.ActionRecorded","unmapped":false,"fields":{"action_id":"e5a7c9e1-3b5d-4f71-9a3c-5e7a9c1e3b51","session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","sequence":"1","command":"open","url":null,"handle":null,"label":null}},{"number":6,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":6,"kept_at":1795226400015,"kind":"answer","page":{"kind":"none"},"path":{"shown":1,"total":1,"actions":[{"sequence":1,"command":"open","handle":null,"argument":null,"argument_cut":false}]},"now":null},{"number":7,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":7,"kept_at":1795226401500,"kind":"action","sequence":2,"command":"go","argument":"http://127.0.0.1:41000/a.html"},{"number":8,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":8,"kept_at":1795226401501,"kind":"event","name":"surf.agent.NavigationRequested","unmapped":false,"fields":{"session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","url":"http://127.0.0.1:41000/a.html","handle":null,"label":null}},{"number":9,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":9,"kept_at":1795226401502,"kind":"event","name":"surf.agent.ActionRecorded","unmapped":false,"fields":{"action_id":"e5a7c9e1-3b5d-4f71-9a3c-5e7a9c1e3b52","session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","sequence":"2","command":"go","url":"http://127.0.0.1:41000/a.html","handle":null,"label":null}},{"number":10,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":10,"kept_at":1795226401503,"kind":"event","name":"surf.navigation.NavigationStarted","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","url":"http://127.0.0.1:41000/a.html","method":"Get","body":null,"body_type":null}},{"number":11,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":11,"kept_at":1795226401504,"kind":"event","name":"surf.agent.SessionNavigationChanged","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","state":"Started","sessions":"1"}},{"number":12,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":12,"kept_at":1795226401505,"kind":"event","name":"surf.net.RequestStarted","unmapped":false,"fields":{"request_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","url":"http://127.0.0.1:41000/a.html","method":"Get","body":null,"body_type":null}},{"number":13,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":13,"kept_at":1795226401506,"kind":"event","name":"surf.net.ResponseReceived","unmapped":false,"fields":{"request_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","url":"http://127.0.0.1:41000/a.html","method":"Get","status":"200","media_type":"text/html","body":"5000 bytes"}},{"number":14,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":14,"kept_at":1795226401507,"kind":"event","name":"surf.navigation.NavigationCommitted","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","url":"http://127.0.0.1:41000/a.html","status":"200","media_type":"text/html","body":"5000 bytes"}},{"number":15,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":15,"kept_at":1795226401508,"kind":"event","name":"surf.agent.SessionNavigationChanged","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","state":"Committed","sessions":"1"}},{"number":16,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":16,"kept_at":1795226401509,"kind":"event","name":"surf.document.ParsingStarted","unmapped":false,"fields":{"document_id":"d2f4b6d8-0a2c-4e4a-9b6d-8f0a2c4e6b84","body":"5000 bytes"}},{"number":17,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":17,"kept_at":1795226401510,"kind":"answer","page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/a.html","title":null},"path":{"shown":2,"total":2,"actions":[{"sequence":1,"command":"open","handle":null,"argument":null,"argument_cut":false},{"sequence":2,"command":"go","handle":null,"argument":"http://127.0.0.1:41000/a.html","argument_cut":false}]},"now":null}]}
+{"session":{"id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","state":"open","address":"http://127.0.0.1:41000/a.html","title":null,"opened_at":1795226400000,"last_action_at":1795226401500,"ended_at":null,"page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/a.html","title":null}},"dropped":0,"log_dropped":false,"unreadable":0,"entries":[{"number":1,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":1,"kept_at":1795226400010,"kind":"action","sequence":1,"command":"open","argument":null},{"number":2,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":2,"kept_at":1795226400011,"kind":"event","name":"surf.shell.WindowOpened","unmapped":false,"fields":{"window_id":"2c4e6a80-1b3d-4f57-9a2c-4e6a8b0d2f41"}},{"number":3,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":3,"kept_at":1795226400012,"kind":"event","name":"surf.shell.TabOpened","unmapped":false,"fields":{"tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","window_id":"2c4e6a80-1b3d-4f57-9a2c-4e6a8b0d2f41"}},{"number":4,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":4,"kept_at":1795226400013,"kind":"event","name":"surf.agent.SessionOpened","unmapped":false,"fields":{"session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","window_id":"2c4e6a80-1b3d-4f57-9a2c-4e6a8b0d2f41","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72"}},{"number":5,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":5,"kept_at":1795226400014,"kind":"event","name":"surf.agent.ActionRecorded","unmapped":false,"fields":{"action_id":"e5a7c9e1-3b5d-4f71-9a3c-5e7a9c1e3b51","session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","sequence":"1","command":"open","url":null,"handle":null,"label":null}},{"number":6,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":6,"kept_at":1795226400015,"kind":"answer","page":{"kind":"none"},"path":{"shown":1,"total":1,"actions":[{"sequence":1,"command":"open","handle":null,"argument":null,"argument_cut":false}]},"now":null,"changed":null},{"number":7,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":7,"kept_at":1795226401500,"kind":"action","sequence":2,"command":"go","argument":"http://127.0.0.1:41000/a.html"},{"number":8,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":8,"kept_at":1795226401501,"kind":"event","name":"surf.agent.NavigationRequested","unmapped":false,"fields":{"session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","url":"http://127.0.0.1:41000/a.html","handle":null,"label":null,"initiator":null}},{"number":9,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":9,"kept_at":1795226401502,"kind":"event","name":"surf.agent.ActionRecorded","unmapped":false,"fields":{"action_id":"e5a7c9e1-3b5d-4f71-9a3c-5e7a9c1e3b52","session_id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","sequence":"2","command":"go","url":"http://127.0.0.1:41000/a.html","handle":null,"label":null}},{"number":10,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":10,"kept_at":1795226401503,"kind":"event","name":"surf.navigation.NavigationStarted","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","url":"http://127.0.0.1:41000/a.html","method":"Get","body":null,"body_type":null,"initiator":null}},{"number":11,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":11,"kept_at":1795226401504,"kind":"event","name":"surf.agent.SessionNavigationChanged","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","state":"Started","sessions":"1"}},{"number":12,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":12,"kept_at":1795226401505,"kind":"event","name":"surf.net.RequestStarted","unmapped":false,"fields":{"request_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","url":"http://127.0.0.1:41000/a.html","method":"Get","body":null,"body_type":null,"initiator":null}},{"number":13,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":13,"kept_at":1795226401506,"kind":"event","name":"surf.net.ResponseReceived","unmapped":false,"fields":{"request_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","url":"http://127.0.0.1:41000/a.html","method":"Get","status":"200","media_type":"text/html","body":"5000 bytes"}},{"number":14,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":14,"kept_at":1795226401507,"kind":"event","name":"surf.navigation.NavigationCommitted","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","tab_id":"7e9a1c3e-5a7c-4e91-b3d5-7f9b1d3f5a72","url":"http://127.0.0.1:41000/a.html","status":"200","media_type":"text/html","body":"5000 bytes"}},{"number":15,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":15,"kept_at":1795226401508,"kind":"event","name":"surf.agent.SessionNavigationChanged","unmapped":false,"fields":{"navigation_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","state":"Committed","sessions":"1"}},{"number":16,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":16,"kept_at":1795226401509,"kind":"event","name":"surf.document.ParsingStarted","unmapped":false,"fields":{"document_id":"d2f4b6d8-0a2c-4e4a-9b6d-8f0a2c4e6b84","body":"5000 bytes"}},{"number":17,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":17,"kept_at":1795226401510,"kind":"answer","page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/a.html","title":null},"path":{"shown":2,"total":2,"actions":[{"sequence":1,"command":"open","handle":null,"argument":null,"argument_cut":false},{"sequence":2,"command":"go","handle":null,"argument":"http://127.0.0.1:41000/a.html","argument_cut":false}]},"now":null,"changed":null}]}
 ```
 
 The second session after the bound over all sessions dropped its log (D24), body only (264
@@ -499,7 +555,7 @@ Connection: close
 
 id: 38
 event: entry
-data: {"number":38,"session":"0b7d4e21-9c3a-4f58-b6e2-7a1d9c8e5f30","index":21,"kept_at":1795226403004,"kind":"answer","page":{"kind":"failed","reason":"Unreachable","address":"http://127.0.0.1:9/"},"path":{"shown":3,"total":3,"actions":[{"sequence":1,"command":"open","handle":null,"argument":null,"argument_cut":false},{"sequence":2,"command":"go","handle":null,"argument":"http://127.0.0.1:9/","argument_cut":false},{"sequence":3,"command":"close","handle":null,"argument":null,"argument_cut":false}]},"now":null}
+data: {"number":38,"session":"0b7d4e21-9c3a-4f58-b6e2-7a1d9c8e5f30","index":21,"kept_at":1795226403004,"kind":"answer","page":{"kind":"failed","reason":"Unreachable","address":"http://127.0.0.1:9/"},"path":{"shown":3,"total":3,"actions":[{"sequence":1,"command":"open","handle":null,"argument":null,"argument_cut":false},{"sequence":2,"command":"go","handle":null,"argument":"http://127.0.0.1:9/","argument_cut":false},{"sequence":3,"command":"close","handle":null,"argument":null,"argument_cut":false}]},"now":null,"changed":null}
 
 : keep-alive
 
@@ -542,20 +598,20 @@ Connection: close
 {"number":13,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":13,"kept_at":1795226401506,"kind":"event","name":"surf.net.ResponseReceived","unmapped":false,"fields":{"request_id":"c1e3a5c7-e9b1-4d3f-8a5c-7e9b1d3f5a73","url":"http://127.0.0.1:41000/a.html","method":"Get","status":"200","media_type":"text/html","body":"5000 bytes"}}
 ```
 
-`answer`, entry 17 (474 bytes):
+`answer`, entry 17 (489 bytes):
 
 ```json
-{"number":17,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":17,"kept_at":1795226401510,"kind":"answer","page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/a.html","title":null},"path":{"shown":2,"total":2,"actions":[{"sequence":1,"command":"open","handle":null,"argument":null,"argument_cut":false},{"sequence":2,"command":"go","handle":null,"argument":"http://127.0.0.1:41000/a.html","argument_cut":false}]},"now":null}
+{"number":17,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":17,"kept_at":1795226401510,"kind":"answer","page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/a.html","title":null},"path":{"shown":2,"total":2,"actions":[{"sequence":1,"command":"open","handle":null,"argument":null,"argument_cut":false},{"sequence":2,"command":"go","handle":null,"argument":"http://127.0.0.1:41000/a.html","argument_cut":false}]},"now":null,"changed":null}
 ```
 
 An `answer` entry with a `now` member, from another run: session `3d5f7b91-…` ran `open` and
 `go http://127.0.0.1:41000/now/links.html`, the three-link page of the page tests' fixture
 (`crates/view-fixture/pages/now/links.html`): a link to `next.html`, one inside an element with
 the `hidden` attribute, and one whose `href` is `http://[`, which does not resolve. Its answer
-entry, number 14 (1,047 bytes):
+entry, number 14 (1,101 bytes):
 
 ```json
-{"number":14,"session":"3d5f7b91-2a4c-4e6f-8b0d-1f3a5c7e9b20","index":14,"kept_at":1795226500014,"kind":"answer","page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/now/links.html","title":"Three links"},"path":{"shown":2,"total":2,"actions":[{"sequence":1,"command":"open","handle":null,"argument":null,"argument_cut":false},{"sequence":2,"command":"go","handle":null,"argument":"http://127.0.0.1:41000/now/links.html","argument_cut":false}]},"now":{"shown":3,"total":3,"elements":[{"handle":"l1","kind":"link","visibility":"?","label":"Next page","label_cut":false,"target":"/now/next.html","target_cut":false,"unresolved":false,"text":null},{"handle":"l2","kind":"link","visibility":"hid","label":"Members","label_cut":false,"target":"/now/members.html","target_cut":false,"unresolved":false,"text":null},{"handle":"l3","kind":"link","visibility":"?","label":"Broken","label_cut":false,"target":"http://[","target_cut":false,"unresolved":true,"text":null}],"visibility_note":"hidden attribute only"}}
+{"number":14,"session":"3d5f7b91-2a4c-4e6f-8b0d-1f3a5c7e9b20","index":14,"kept_at":1795226500014,"kind":"answer","page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/now/links.html","title":"Three links"},"path":{"shown":2,"total":2,"actions":[{"sequence":1,"command":"open","handle":null,"argument":null,"argument_cut":false},{"sequence":2,"command":"go","handle":null,"argument":"http://127.0.0.1:41000/now/links.html","argument_cut":false}]},"now":{"shown":3,"total":3,"elements":[{"handle":"l1","kind":"link","visibility":"?","label":"Next page","label_cut":false,"target":"/now/next.html","target_cut":false,"unresolved":false,"text":null,"state":null},{"handle":"l2","kind":"link","visibility":"hid","label":"Members","label_cut":false,"target":"/now/members.html","target_cut":false,"unresolved":false,"text":null,"state":null},{"handle":"l3","kind":"link","visibility":"?","label":"Broken","label_cut":false,"target":"http://[","target_cut":false,"unresolved":true,"text":null,"state":null}],"visibility_note":"hidden attribute only"},"changed":null}
 ```
 
 The same session's `follow l1` then has this action in the `path` of its answer:
@@ -564,15 +620,36 @@ The same session's `follow l1` then has this action in the `path` of its answer:
 {"sequence":3,"command":"follow","handle":"l1","argument":"Next page","argument_cut":false}
 ```
 
+Two `answer` entries with controls, buttons and a `changed` member, from another run (the golden
+files `crates/view/tests/golden/forms-go-answer.json` and `forms-fill-answer.json`, which a test
+holds equal to these blocks): session `8e2b4d6f-…` ran `open` and a `go` to
+`http://127.0.0.1:41000/forms/login.html`, the login form of the page tests' fixture
+(`crates/view-fixture/pages/forms/login.html`: a text control, a password, a checked checkbox, a
+select with `Editor` selected, and a submit button that posts to `answer.html`). Its answer
+entry, number 26 (2,678 bytes), whose `changed` is the new page and its texts:
+
+```json
+{"number":26,"session":"8e2b4d6f-1a3c-4e5f-9b7d-2c4e6f8a0b13","index":26,"kept_at":1795226600026,"kind":"answer","page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/forms/login.html","title":"Sign in"},"path":{"shown":2,"total":2,"actions":[{"sequence":1,"command":"open","handle":null,"argument":null,"argument_cut":false},{"sequence":2,"command":"go","handle":null,"argument":"http://127.0.0.1:41000/forms/login.html","argument_cut":false}]},"now":{"shown":5,"total":5,"elements":[{"handle":"f1","kind":"text","visibility":"?","label":"Name","label_cut":false,"target":null,"target_cut":null,"unresolved":null,"text":"f1 text ? \u0022Name\u0022 = \u0022\u0022","state":{"value":{"kind":"text","text":"","cut":false},"disabled":false,"checked":false,"required":false,"readonly":false,"submits":null}},{"handle":"f2","kind":"password","visibility":"?","label":"Password","label_cut":false,"target":null,"target_cut":null,"unresolved":null,"text":"f2 password ? \u0022Password\u0022 = (empty) required","state":{"value":{"kind":"empty","text":null,"cut":null},"disabled":false,"checked":false,"required":true,"readonly":false,"submits":null}},{"handle":"f3","kind":"checkbox","visibility":"?","label":"Remember me","label_cut":false,"target":null,"target_cut":null,"unresolved":null,"text":"f3 checkbox ? \u0022Remember me\u0022 checked","state":{"value":null,"disabled":false,"checked":true,"required":false,"readonly":false,"submits":null}},{"handle":"f4","kind":"select","visibility":"?","label":"Role","label_cut":false,"target":null,"target_cut":null,"unresolved":null,"text":"f4 select ? \u0022Role\u0022 = \u0022Editor\u0022","state":{"value":{"kind":"text","text":"Editor","cut":false},"disabled":false,"checked":false,"required":false,"readonly":false,"submits":null}},{"handle":"b1","kind":"button","visibility":"?","label":"Sign in","label_cut":false,"target":null,"target_cut":null,"unresolved":null,"text":"b1 button ? \u0022Sign in\u0022 submits F1 post \u0022/forms/answer.html\u0022","state":{"value":null,"disabled":false,"checked":false,"required":false,"readonly":false,"submits":{"form":"F1","method":"post","action":"/forms/answer.html","action_cut":false}}}],"visibility_note":"hidden attribute only"},"changed":{"kind":"page","from":null,"to":"http://127.0.0.1:41000/forms/login.html","texts":[{"text":"# Sign in","cut":false},{"text":"Name [@f1 text: Name]","cut":false},{"text":"Password [@f2 password required: Password]","cut":false},{"text":"[@f3 checkbox checked: Remember me] Remember me","cut":false},{"text":"Role [@f4 select: Role]","cut":false},{"text":"[@b1 button: Sign in]","cut":false}],"more":0}}
+```
+
+Then `fill f2 -`, the password typed on standard input. Its answer entry, number 31 (2,512
+bytes): the password is `(set)` in `now` and its line in `changed` is `(empty)` to `(set)`; the
+entries of that action hold its length only, in the `FillRequested` entry (`"value":"12
+bytes"`), which is where the page reads the length it shows.
+
+```json
+{"number":31,"session":"8e2b4d6f-1a3c-4e5f-9b7d-2c4e6f8a0b13","index":31,"kept_at":1795226601031,"kind":"answer","page":{"kind":"loaded","status":200,"media_type":"text/html","address":"http://127.0.0.1:41000/forms/login.html","title":"Sign in"},"path":{"shown":3,"total":3,"actions":[{"sequence":1,"command":"open","handle":null,"argument":null,"argument_cut":false},{"sequence":2,"command":"go","handle":null,"argument":"http://127.0.0.1:41000/forms/login.html","argument_cut":false},{"sequence":3,"command":"fill","handle":"f2","argument":null,"argument_cut":false}]},"now":{"shown":5,"total":5,"elements":[{"handle":"f1","kind":"text","visibility":"?","label":"Name","label_cut":false,"target":null,"target_cut":null,"unresolved":null,"text":"f1 text ? \u0022Name\u0022 = \u0022\u0022","state":{"value":{"kind":"text","text":"","cut":false},"disabled":false,"checked":false,"required":false,"readonly":false,"submits":null}},{"handle":"f2","kind":"password","visibility":"?","label":"Password","label_cut":false,"target":null,"target_cut":null,"unresolved":null,"text":"f2 password ? \u0022Password\u0022 = (set) required","state":{"value":{"kind":"set","text":null,"cut":null},"disabled":false,"checked":false,"required":true,"readonly":false,"submits":null}},{"handle":"f3","kind":"checkbox","visibility":"?","label":"Remember me","label_cut":false,"target":null,"target_cut":null,"unresolved":null,"text":"f3 checkbox ? \u0022Remember me\u0022 checked","state":{"value":null,"disabled":false,"checked":true,"required":false,"readonly":false,"submits":null}},{"handle":"f4","kind":"select","visibility":"?","label":"Role","label_cut":false,"target":null,"target_cut":null,"unresolved":null,"text":"f4 select ? \u0022Role\u0022 = \u0022Editor\u0022","state":{"value":{"kind":"text","text":"Editor","cut":false},"disabled":false,"checked":false,"required":false,"readonly":false,"submits":null}},{"handle":"b1","kind":"button","visibility":"?","label":"Sign in","label_cut":false,"target":null,"target_cut":null,"unresolved":null,"text":"b1 button ? \u0022Sign in\u0022 submits F1 post \u0022/forms/answer.html\u0022","state":{"value":null,"disabled":false,"checked":false,"required":false,"readonly":false,"submits":{"form":"F1","method":"post","action":"/forms/answer.html","action_cut":false}}}],"visibility_note":"hidden attribute only"},"changed":{"kind":"controls","lines":[{"handle":"f2","what":"value","before":{"kind":"empty","text":null,"cut":null},"after":{"kind":"set","text":null,"cut":null}}]}}
+```
+
 ### The three stream events
 
-`entry`, as it arrives live after the second session's `close` (538 bytes, the empty line
+`entry`, as it arrives live after the second session's `close` (553 bytes, the empty line
 included):
 
 ```text
 id: 38
 event: entry
-data: {"number":38,"session":"0b7d4e21-9c3a-4f58-b6e2-7a1d9c8e5f30","index":21,"kept_at":1795226403004,"kind":"answer","page":{"kind":"failed","reason":"Unreachable","address":"http://127.0.0.1:9/"},"path":{"shown":3,"total":3,"actions":[{"sequence":1,"command":"open","handle":null,"argument":null,"argument_cut":false},{"sequence":2,"command":"go","handle":null,"argument":"http://127.0.0.1:9/","argument_cut":false},{"sequence":3,"command":"close","handle":null,"argument":null,"argument_cut":false}]},"now":null}
+data: {"number":38,"session":"0b7d4e21-9c3a-4f58-b6e2-7a1d9c8e5f30","index":21,"kept_at":1795226403004,"kind":"answer","page":{"kind":"failed","reason":"Unreachable","address":"http://127.0.0.1:9/"},"path":{"shown":3,"total":3,"actions":[{"sequence":1,"command":"open","handle":null,"argument":null,"argument_cut":false},{"sequence":2,"command":"go","handle":null,"argument":"http://127.0.0.1:9/","argument_cut":false},{"sequence":3,"command":"close","handle":null,"argument":null,"argument_cut":false}]},"now":null,"changed":null}
 
 ```
 

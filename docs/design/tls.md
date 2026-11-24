@@ -30,7 +30,7 @@ below are wall times of the running job, not of the queue.
 ## 1. The decisions U1, U2 and U3, and the TLS 1.2 suites
 
 1. **U1, the source of the primitives: `ring` 0.17.14.** The operator, 2026-11-22 05:47 CET,
-   relayed by the session `host-operator`: "A: ring 0.17.14". Of the three options of the epic
+   relayed by the operator session: "A: ring 0.17.14". Of the three options of the epic
    that take an outside crate it adds the fewest packages (item 2; option D, primitives written
    here, adds none and was refused for the timing risk decision C names), covers every primitive TLS 1.3 needs, and is the source
    rustls calls easier to build. Its cost is a C compiler that also builds assembly on every
@@ -193,14 +193,20 @@ What follows, per runner:
 2. **The two macOS targets need no step**: Apple clang 17.0.0 of the image builds ring's C and
    assembly. The probe links to two libraries, `/usr/lib/libSystem.B.dylib` and
    `/usr/lib/libiconv.2.dylib`, both system libraries that every macOS installs, so the binary
-   runs without anything installed beside it. Whether the `surf` binary of `main` already links
-   `libiconv` was not compared: no `otool` record of an earlier release run was at hand.
-   `story:tls-release` compares it in its first release run.
+   runs without anything installed beside it. Compared by `story:tls-release`: `llvm-otool -L
+   surf` on the `aarch64-apple-darwin` and `x86_64-apple-darwin` archives of release workflow
+   run 45344883467 (branch `impl/tls-release` at `70046fe`, the first build of `surf` with ring)
+   prints the same two lines for both, `/usr/lib/libSystem.B.dylib (compatibility version 1.0.0,
+   current version 1351.0.0)` and `/usr/lib/libiconv.2.dylib (compatibility version 7.0.0,
+   current version 7.0.0)`; the macOS `surf` of release `0.5.0` prints the `libSystem` line
+   only. So ring adds `libiconv.2.dylib` to the macOS `surf`.
 3. **`ubuntu-latest` of the gate needs no step**: its GCC 15.2.0 builds ring at opt-level 0 in
    13 s.
 
 The lines for the job `package` of `.github/workflows/release.yml`, a step after
-`dtolnay/rust-toolchain` and before the build (`story:tls-release` adds it):
+`dtolnay/rust-toolchain` and before the build. Since `story:tls-release` the job holds them as
+the step "Install a C compiler that targets musl, for ring", between "Set the build flags" and
+"Build, test and package", with a comment saying why:
 
 ```yaml
       - name: Install a C compiler that targets musl, for ring
@@ -636,8 +642,11 @@ so in those words where `https:` is described.
 ## 8. The extra anchors
 
 `surf --ca-file <path> <url>` and `surf-agent open --ca-file <path> [<url>]`. The client reads
-the file and its bytes travel in the `open` request; not an environment variable, because a
-`surfd` started by an earlier `open` does not see the environment of a later caller. The file
+the file; `surf` takes it with `with_extra_pem`, and `surf-agent` checks it with
+`Anchors::with_extra_pem_blocks`, and only the certificate blocks it took travel in the `open`
+request (`arg anchors`), without the lines before, between and after them; not an environment
+variable, because a `surfd` started by an earlier `open` does not see the environment of a
+later caller. The file
 holds at most 32 KiB and 64 certificates; every block is a `CERTIFICATE`, every certificate a
 CA (basicConstraints cA). The reader of the file is `surf_tls::anchors::Anchors::with_extra_pem`;
 it refuses the file whole with an `AnchorError`: `NoCertificate` (no PEM block),
@@ -1018,4 +1027,4 @@ system clock, with certificates valid until 2125 and an expired one whose end li
   (`story:tls-handshake`).
 
 No requirement of sections 9.1 to 9.3 is deviated from. A deviation found later is a line here,
-named, and goes to the coordinating agent for `host-operator`.
+named, and goes to the coordinating agent for the operator session.

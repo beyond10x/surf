@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-skill-definition
 kind: story
-status: active
+status: implemented
 title: 'surf-agent help --for-agent: a definition an agent reads, assembled from the sources the binary is held to'
 summary: The binary prints the commands, the answer, the untrusted-text rule and worked calls from cli/surf-agent.yaml, docs/agent-answer.md and the golden answers compiled into it; a gate test compares output and sources; a thin SKILL.md is handed over to agentplugins.
 relations:
@@ -25,10 +25,11 @@ scope:
   path: crates/agent/tests
 - confidence: cited
   path: taskfiles/release-smoke.sh
-revision: 8
+revision: 11
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T07:42:30Z", actor: "human:operator", revision: 7, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T07:42:31Z", actor: "human:operator", revision: 8, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-24T10:12:54Z", actor: "human:operator", revision: 11, decided_on: {"recorded":{"test_result":3,"verification":2}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -239,3 +240,64 @@ test binary), no Python. Each test below runs within 1 s; its time is in the rep
 The definition is a front of the agent command line, assembled from `cli/surf-agent.yaml` and
 `docs/agent-answer.md`, both of which that epic owns, in the order the operator's question led to
 (D85, item 6, the branch file above).
+
+## Decisions after the review
+
+Taken by the coordinating agent on 2026-11-24 after the review of the unit, reversible, reported
+to the operator. They continue the list under "Decisions taken" and replace the fixed lines of
+sections 1, 2 and 5 under "Change" and the constant of acceptance case 5.
+
+8. Section 2 names three ways to carry the session and the token, where the first text named
+   one (`export`). An agent tool that starts a new shell for each command loses an export, so
+   the call after `open` ended "no session". The lines surf writes:
+   - `Start with surf-agent open [<url>]. Its answer names the session on its head line, surf 1 session <id> open, and its token on the line token <token>, once.`
+   - `Every later call needs the session and the token, in one of three forms:`
+   - `- in a shell that stays open between calls: export SURF_SESSION=<id> and export SURF_TOKEN=<token> once;`
+   - `- where each command runs in a new shell, which loses an export: the two in front of each call, as in SURF_SESSION=<id> SURF_TOKEN=<token> surf-agent look;`
+   - `- or --session <id> --token-file <path> on each call, the token in a file of yours of mode 0600.`
+   - `The token is never an argument word, since other users can read the words of a command; put in front of a call, it is an entry of that one process's environment.`
+   - `End with surf-agent close.`
+9. Section 1 says per command how an address of a scheme surf does not fetch ends: `go` answers
+   `page failed UnsupportedScheme "<address>"`; `follow` and `press` answer `did refused
+   unsupported-scheme`, exit status 1. The first text gave the first form for every command.
+10. Section 5 has four lines. The first two are unchanged. The third and fourth say how a handle
+    is written in each place: `l`, `b` or `f` and ASCII digits in the `now` block, the path, the
+    `changed` block and as a command's argument; `F` and digits for a form; after an ASCII `@`
+    inside a text line (`@l1` in a tree, `[@l1]` in Markdown). The first text described only the
+    Markdown form.
+11. The test of section 3 compares the printed lines with what `ess` reads from
+    `cli/surf-agent.yaml` (`.out/cli/binding.json`, as the `drift` tests read it), not with a
+    second run of the binary's own line scan. The scan refuses an `about` it cannot read (quoted,
+    over several lines, a block scalar): `help::assemble` answers an error that names the line and
+    the command, and a test over the file holds that no entry is refused.
+12. A definition that cannot be written (standard output on a full device) exits 1 with one line
+    on standard error; a reader that closes the pipe early leaves exit 0.
+13. The smoke step takes the version it expects from the name of the archive directory
+    (`surf-<version>-<target>`), so a version written as a literal in the source fails at the
+    next release and a pre-release version passes; it also fails when the output does not end
+    with a line feed.
+
+At the merge the definition has 315 lines, 87 of them outside section 4.
+
+## As built
+
+Where the unit on `main` (`e9ef6b0`, the merge of `impl/agent-skill-definition` at `dd9c3ed`)
+differs from the text above, beside "Decisions after the review":
+
+- `help::assemble` answers `Result<String, _>`, not `String`: it refuses a description of the
+  binding that its line scan cannot read (decision 11).
+- `crates/agent/src/lib.rs` gets `pub mod help;`: an integration test reaches only the library,
+  and cases 1a and 6 call `help::assemble`. Five items of `crates/agent/tests/drift.rs` became
+  `pub(crate)`, so the test of section 3 reads `.out/cli/binding.json` the way `drift` does.
+- The headings of `docs/agent-answer.md` are at lines 76, 156, 531 and 647 at the merge, not at
+  the lines the story cites; the part "Exit status and refusals" includes its subsection "Extra
+  trust anchors", by the story's own rule for where a body ends.
+- The grammar line of case 6 is padded (`state         = "open" / ...`); the test finds it by
+  its start and end and holds no copy of it.
+- Outside acceptance 11's list: `crates/agent/src/lib.rs`, `crates/agent/tests/drift.rs`,
+  `CHANGELOG.md`, `AGENTS.md`, `README.md`, `docs/releasing.md`,
+  `website/docs/drive-from-an-agent.md`, a comment in `.github/workflows/release.yml`, and the
+  public numbers (badges, `website/docs/`).
+- Tests at the merge: `surf-agent` 77 (61 before the unit), the gate's test step 1424.
+
+The hand-over to `agentplugins` (a `SKILL.md` that points to the command) is not filed yet.

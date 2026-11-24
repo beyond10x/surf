@@ -1,7 +1,7 @@
 // Adversary cases against story:view-first-page, and the cases of the fixes that answer them:
 // each names the statement it holds.
 
-import { test, expect } from "./fixture.mjs";
+import { test, expect, expectLive } from "./fixture.mjs";
 
 const HOSTILE = '"><img src=x onerror=alert(1)>';
 const REFUSED = "The view refused the token. Open the address the program printed, with its #token.";
@@ -13,7 +13,7 @@ const pageAddress = (page) => page.locator("#page-line .part.address dd, #page-l
 
 async function load(page, address) {
   await page.goto(address);
-  await expect(page.locator("#live-word")).toHaveText("live");
+  await expectLive(page);
 }
 
 // The index of the segment that carries the playhead, or -1.
@@ -72,7 +72,7 @@ test("adversary: an action streamed while the selected session's detail loads is
 // The same after a reset (docs/view-stream.md, "The stream"): forget() drops what is loaded and
 // the selected session's detail is asked for again; a go streamed while it loads is not lost.
 test("adversary: an action streamed while the detail loads after a reset is not lost", async ({ page, surf, record }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(60_000);
   const id = await surf.open();
   await load(page, surf.piped);
   await expect(segments(page)).toHaveCount(1);
@@ -93,7 +93,7 @@ test("adversary: an action streamed while the detail loads after a reset is not 
   held.release();
   // The state is read once both loads are in: live (the load of the opening is drawn), the end
   // of both answers, and two frames; not a deadline from the release (story D287).
-  await expect(page.locator("#live-word")).toHaveText("live");
+  await expectLive(page);
   await Promise.all(answers.map((answer) => answer.body));
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   expect(await segments(page).count(), "the go streamed while the detail loaded after the reset is lost").toBe(27);
@@ -106,7 +106,7 @@ test("adversary: an action streamed while the detail loads after a reset is not 
 // action held, Latest stays off, the marker counts the actions newer than it, and the fragment's
 // `at` is written once with its sequence.
 test("adversary: with Latest off the playhead stays after its action is dropped by the bound", async ({ page, startFixture, record }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(60_000);
   const surf = await startFixture(["--entries-per-session", "30"]);
   const id = await surf.open();
   await surf.agent(id, "go", surf.pages + "/first/a.html");
@@ -128,7 +128,7 @@ test("adversary: with Latest off the playhead stays after its action is dropped 
   await surf.cut();
   await expect(page.locator("#live-word")).toHaveText("reconnecting", { timeout: 5000 });
   await surf.mend();
-  await expect(page.locator("#live-word")).toHaveText("live");
+  await expectLive(page);
   await expect(page.locator("#actions > li.gap")).toHaveText(/ dropped$/);
   await expect(segments(page)).toHaveCount(kept.length);
   await expect.poll(() => playheadAt(page), "the playhead is on the oldest action held").toBe(0);
@@ -149,8 +149,18 @@ test("adversary: with Latest off the playhead stays after its action is dropped 
 // docs/design/live-view.md item 6: the token is valid until surfd exits. A stream refused with
 // 401 after the page loaded is not asked again (another program may listen on the old port): the
 // page reads offline, says the token was refused, and makes no further request.
+//
+// The page's timers run on Playwright's clock, installed before the page loads and flowing as
+// usual until the refusal. The page asks /events again after a delay of 500, 1,000, 2,000, 4,000
+// and then 5,000 ms (FIRST_DELAY and LAST_DELAY, crates/view/web/stream.js:9-10, doubled at
+// :140-141), so runFor(12_500), their sum, fires every timer a page that asks again would set,
+// in no time; the network is not on that clock. A request of the test's own after it is the
+// mark: the page's requests started before it are recorded before it.
+const AFTER = "/after-the-delays";
 test("adversary: a refused token on the stream stops the page", async ({ page, surf, record }) => {
   test.setTimeout(60_000);
+  await page.route(/\/after-the-delays$/, (route) => route.fulfill({ status: 204, body: "" }));
+  await page.clock.install();
   await surf.open();
   await load(page, surf.piped);
   await expect(segments(page)).toHaveCount(1);
@@ -168,8 +178,9 @@ test("adversary: a refused token on the stream stops the page", async ({ page, s
   await surf.mend();
   const refusedAt = record.requests.length;
   await items(page).nth(0).locator("button").click();
-  await page.waitForTimeout(12_000);
-  expect(record.requests.slice(refusedAt).map((request) => request.path)).toEqual([]);
+  await page.clock.runFor(12_500);
+  await page.evaluate((after) => fetch(after).then(() => {}, () => {}), AFTER);
+  expect(record.requests.slice(refusedAt).map((request) => request.path)).toEqual([AFTER]);
   await expect(page.locator("#live-word")).toHaveText("offline");
   await expect(page.locator("#message")).toHaveText(REFUSED);
 });

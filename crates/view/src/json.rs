@@ -5,8 +5,9 @@
 //! character as itself in UTF-8. So no output holds a line end, a raw `<`, `>` or `&`.
 
 use crate::model::{
-    Action, Detail, Entry, EntryKind, Now, NowElement, PageLine, Path, PathAction, Reset,
-    SessionList, SessionState, Summary,
+    Action, Change, Changed, ChangedText, ControlChange, ControlState, ControlValue, Detail, Entry,
+    EntryKind, Now, NowElement, PageLine, Path, PathAction, Reset, SessionList, SessionState,
+    Submits, Summary,
 };
 
 /// A value the writer writes.
@@ -242,6 +243,7 @@ impl ToJson for NowElement {
             .member("target_cut", &self.target_cut)
             .member("unresolved", &self.unresolved)
             .member("text", &self.text)
+            .member("state", &self.state)
             .close();
     }
 }
@@ -289,11 +291,109 @@ impl ToJson for Entry {
                 .member("unmapped", unmapped)
                 .member("fields", &Fields(if *unmapped { &[] } else { fields }))
                 .close(),
-            EntryKind::Answer { page, path, now } => object
+            EntryKind::Answer {
+                page,
+                path,
+                now,
+                changed,
+            } => object
                 .member("kind", "answer")
                 .member("page", page)
                 .member("path", path)
                 .member("now", now)
+                .member("changed", changed)
+                .close(),
+        }
+    }
+}
+
+impl ToJson for ControlValue {
+    fn write_json(&self, out: &mut String) {
+        let (kind, text, cut) = match self {
+            ControlValue::Text { text, cut } => ("text", Some(text.as_str()), Some(*cut)),
+            ControlValue::Set => ("set", None, None),
+            ControlValue::Empty => ("empty", None, None),
+        };
+        Object::open(out)
+            .member("kind", kind)
+            .member("text", &text.map(str::to_string))
+            .member("cut", &cut)
+            .close();
+    }
+}
+
+impl ToJson for Submits {
+    fn write_json(&self, out: &mut String) {
+        Object::open(out)
+            .member("form", &self.form)
+            .member("method", &self.method)
+            .member("action", &self.action)
+            .member("action_cut", &self.action_cut)
+            .close();
+    }
+}
+
+impl ToJson for ControlState {
+    fn write_json(&self, out: &mut String) {
+        Object::open(out)
+            .member("value", &self.value)
+            .member("disabled", &self.disabled)
+            .member("checked", &self.checked)
+            .member("required", &self.required)
+            .member("readonly", &self.readonly)
+            .member("submits", &self.submits)
+            .close();
+    }
+}
+
+impl ToJson for ControlChange {
+    fn write_json(&self, out: &mut String) {
+        let object = Object::open(out).member("handle", &self.handle);
+        match &self.change {
+            Change::Value { before, after } => object
+                .member("what", "value")
+                .member("before", before)
+                .member("after", after),
+            Change::Checked { before, after } => object
+                .member("what", "checked")
+                .member("before", before)
+                .member("after", after),
+            Change::Selected { before, after } => object
+                .member("what", "selected")
+                .member("before", before)
+                .member("after", after),
+        }
+        .close();
+    }
+}
+
+impl ToJson for ChangedText {
+    fn write_json(&self, out: &mut String) {
+        Object::open(out)
+            .member("text", &self.text)
+            .member("cut", &self.cut)
+            .close();
+    }
+}
+
+impl ToJson for Changed {
+    fn write_json(&self, out: &mut String) {
+        match self {
+            Changed::Controls(lines) => Object::open(out)
+                .member("kind", "controls")
+                .member("lines", lines)
+                .close(),
+            Changed::Page {
+                from,
+                to,
+                texts,
+                more,
+            } => Object::open(out)
+                .member("kind", "page")
+                .member("from", from)
+                .member("to", to)
+                .member("texts", texts)
+                .member("more", more)
                 .close(),
         }
     }

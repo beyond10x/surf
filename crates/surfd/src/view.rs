@@ -33,8 +33,9 @@ use std::time::{Duration, SystemTime};
 
 use surf_answer::{Element, Note, Page, Target};
 use surf_view::model::{
-    Action, Detail, Entry, EntryKind, Now, NowElement, PageLine, Path, PathAction, SessionList,
-    SessionState, Summary,
+    Action, Change, Changed, ChangedText, ControlChange, ControlState, ControlValue, Detail, Entry,
+    EntryKind, Now, NowElement, PageLine, Path, PathAction, SessionList, SessionState, Submits,
+    Summary,
 };
 use surf_view::{EventKind, Item, Next, Reader, Source, TooOld, to_json};
 
@@ -170,9 +171,82 @@ fn visibility_note_words(session: &str) -> Option<String> {
     line.strip_prefix("note visibility: ").map(str::to_string)
 }
 
-/// The view's element of one `now` line. A link has its label and target; a line of any other
-/// kind (a control, a button, a form, which later stories add) goes out with its kind and its
-/// text, the line as `surf_answer::render` writes it, so that a new kind changes nothing here.
+/// A control's value as `surf_answer::parse` read it.
+fn control_value(value: surf_answer::Value) -> ControlValue {
+    match value {
+        surf_answer::Value::Text(cut) => ControlValue::Text {
+            text: cut.kept,
+            cut: cut.cut,
+        },
+        surf_answer::Value::Set => ControlValue::Set,
+        surf_answer::Value::Empty => ControlValue::Empty,
+    }
+}
+
+/// The state of a control or a button line as `surf_answer::parse` read it.
+fn control_state(state: surf_answer::State) -> ControlState {
+    ControlState {
+        value: state.value.map(control_value),
+        disabled: state.disabled,
+        checked: state.checked,
+        required: state.required,
+        readonly: state.readonly,
+        submits: state.submits.map(|submits| Submits {
+            form: submits.form,
+            method: submits.method,
+            action_cut: submits.action.as_ref().map(|action| action.cut),
+            action: submits.action.map(|action| action.kept),
+        }),
+    }
+}
+
+/// The `changed` block as `surf_answer::parse` read it (`story:view-controls-and-changes`).
+fn changed(changed: surf_answer::Changed) -> Changed {
+    match changed {
+        surf_answer::Changed::Controls(lines) => Changed::Controls(
+            lines
+                .into_iter()
+                .map(|line| ControlChange {
+                    handle: line.handle,
+                    change: match line.change {
+                        surf_answer::Change::Value { before, after } => Change::Value {
+                            before: control_value(before),
+                            after: control_value(after),
+                        },
+                        surf_answer::Change::Checked { before, after } => {
+                            Change::Checked { before, after }
+                        }
+                        surf_answer::Change::Selected { before, after } => Change::Selected {
+                            before: control_value(surf_answer::Value::Text(before)),
+                            after: control_value(surf_answer::Value::Text(after)),
+                        },
+                    },
+                })
+                .collect(),
+        ),
+        surf_answer::Changed::Page {
+            from,
+            to,
+            texts,
+            more,
+        } => Changed::Page {
+            from,
+            to,
+            texts: texts
+                .into_iter()
+                .map(|text| ChangedText {
+                    text: text.kept,
+                    cut: text.cut,
+                })
+                .collect(),
+            more,
+        },
+    }
+}
+
+/// The view's element of one `now` line. A link has its label and target. Any other line (a
+/// control, a button) has its label, its state as `surf_answer::parse` read it, and its text,
+/// the line as `surf_answer::render` writes it.
 fn now_element(session: &str, element: Element) -> NowElement {
     let handle = element.handle.clone();
     let kind = element.kind.clone();
@@ -199,8 +273,14 @@ fn now_element(session: &str, element: Element) -> NowElement {
             target_cut: Some(target.cut),
             unresolved: Some(unresolved),
             text: None,
+            state: None,
         };
     }
+    let label = element.label.clone();
+    let state = match &element.target {
+        Target::State(state) => Some(control_state(state.clone())),
+        Target::Resolved(_) | Target::Unresolved(_) => None,
+    };
     let now = surf_answer::Now {
         total: 1,
         elements: vec![element],
@@ -213,12 +293,13 @@ fn now_element(session: &str, element: Element) -> NowElement {
         handle,
         kind,
         visibility,
-        label: None,
-        label_cut: None,
+        label: Some(label.kept),
+        label_cut: Some(label.cut),
         target: None,
         target_cut: None,
         unresolved: None,
         text,
+        state,
     }
 }
 
@@ -307,6 +388,7 @@ fn entry(kept: &log::Entry, unreadable: &mut u64) -> Entry {
                             .then(|| visibility_note_words(&kept.session))
                             .flatten(),
                     }),
+                    changed: answer.changed.map(changed),
                 }
             }
             Err(_) => {
@@ -315,6 +397,7 @@ fn entry(kept: &log::Entry, unreadable: &mut u64) -> Entry {
                     page: None,
                     path: None,
                     now: None,
+                    changed: None,
                 }
             }
         },
@@ -636,10 +719,7 @@ mod tests {
             panic!("a reader from the newest number");
         };
         assert_eq!(newest, before + 300);
-        assert!(matches!(
-            reader.next(Duration::from_millis(10)),
-            Next::Idle
-        ));
+        assert!(matches!(reader.next(Duration::from_millis(10)), Next::Idle));
         keep(&tables, action(301));
         match reader.next(Duration::from_secs(10)) {
             Next::Item(item) => assert_eq!(item.number, newest + 1),
@@ -673,7 +753,7 @@ mod tests {
         );
         assert!(
             detail.contains(
-                r#""index":4,"kept_at":1,"kind":"answer","page":null,"path":null,"now":null}"#
+                r#""index":4,"kept_at":1,"kind":"answer","page":null,"path":null,"now":null,"changed":null}"#
             ),
             "{detail}"
         );
@@ -687,8 +767,9 @@ mod tests {
     }
 
     /// `story:view-now-panel`: the title, the handle of a path action and the `now` block reach
-    /// the view; a `now` line of a kind the view does not know goes out with its kind and its
-    /// text, so a story that adds a kind changes nothing here.
+    /// the view; a `now` line of a control or a button goes out with its kind, its label, its text
+    /// and, since `story:view-controls-and-changes`, its state; an answer without a `changed` block
+    /// has `changed` `null`.
     #[test]
     fn now_block_title_and_handle_reach_the_view_and_other_kinds_go_out_as_text() {
         let tables = fixed(Bounds::default());
@@ -721,14 +802,19 @@ mod tests {
             r#""argument_cut":true}]},"#,
             r#""now":{"shown":3,"total":4,"elements":["#,
             r#"{"handle":"l1","kind":"link","visibility":"?","label":"Back","label_cut":false,"#,
-            r#""target":"/","target_cut":false,"unresolved":false,"text":null},"#,
-            r#"{"handle":"f1","kind":"text","visibility":"hid","label":null,"label_cut":null,"#,
+            r#""target":"/","target_cut":false,"unresolved":false,"text":null,"state":null},"#,
+            r#"{"handle":"f1","kind":"text","visibility":"hid","label":"Email","label_cut":false,"#,
             r#""target":null,"target_cut":null,"unresolved":null,"#,
-            "\"text\":\"f1 text hid \\u0022Email\\u0022 = \\u0022x\\u0022\"},",
-            r#"{"handle":"b1","kind":"button","visibility":"?","label":null,"label_cut":null,"#,
+            "\"text\":\"f1 text hid \\u0022Email\\u0022 = \\u0022x\\u0022\",",
+            r#""state":{"value":{"kind":"text","text":"x","cut":false},"disabled":false,"#,
+            r#""checked":false,"required":false,"readonly":false,"submits":null}},"#,
+            r#"{"handle":"b1","kind":"button","visibility":"?","label":"Sign in","label_cut":false,"#,
             r#""target":null,"target_cut":null,"unresolved":null,"#,
-            "\"text\":\"b1 button ? \\u0022Sign in\\u0022 submits F1 post \\u0022/session\\u0022\"}],",
-            r#""visibility_note":"hidden attribute only"}}"#,
+            "\"text\":\"b1 button ? \\u0022Sign in\\u0022 submits F1 post \\u0022/session\\u0022\",",
+            r#""state":{"value":null,"disabled":false,"checked":false,"required":false,"#,
+            r#""readonly":false,"submits":{"form":"F1","method":"post","action":"/session","#,
+            r#""action_cut":false}}}],"#,
+            r#""visibility_note":"hidden attribute only"},"changed":null}"#,
         );
         assert!(detail.contains(expected), "{detail}");
         assert!(detail.contains(r#""unreadable":0,"#), "{detail}");

@@ -114,15 +114,15 @@ macro_rules! storage {
 /// belong to the page load, a document's elements, forms, options and submissions included; the
 /// generated behaviours of a component ask only for their own.
 ///
-/// It also asks for the caller's `session_id`, an action's identity and the `Optional<String>`
-/// of a `Go`'s request, which only the `agent` component's commands read. These ports know no
-/// caller, record no action and issue no `Go`, so they answer all three as unmet rather than as
-/// a caller with none, an identity for no action or an absent value.
+/// It also asks for the caller's `session_id` and an action's identity, which only the `agent`
+/// component's commands read. These ports know no caller and record no action, so they answer
+/// both as unmet rather than as a caller with none or an identity for no action.
 ///
-/// And it asks for the `Optional<Bytes>` and `Optional<surf.net.MediaType>` of the
-/// `NavigationStarted` a `StartTraversal` emits, a traversal's request having no body. The
-/// navigator's ports answer both absent (`context!(NavigatorPorts, absent_body)`); the others
-/// start no traversal and answer them as unmet.
+/// And it asks for the `Optional<Bytes>`, `Optional<surf.net.MediaType>` and `Optional<String>`
+/// of the `NavigationStarted` a `StartTraversal` emits, a traversal's request having no body and
+/// no initiator (`story:agent-cookie-jar`). The navigator's ports answer the three absent
+/// (`context!(NavigatorPorts, absent_body)`); the others start no traversal and answer them as
+/// unmet (the `Optional<String>` of a `Go`'s request is the agent's ports' own).
 macro_rules! context {
     ($ports:ident) => {
         context!($ports, {
@@ -134,6 +134,10 @@ macro_rules! context {
                 &mut self,
             ) -> Result<Option<MediaType>, UnmetObligation> {
                 Err(unmet_context(OPTIONAL_MEDIA_TYPE))
+            }
+
+            fn try_generate_optional_string(&mut self) -> Result<Option<String>, UnmetObligation> {
+                Err(unmet_context(OPTIONAL_STRING))
             }
         });
     };
@@ -148,6 +152,10 @@ macro_rules! context {
             ) -> Result<Option<MediaType>, UnmetObligation> {
                 Ok(None)
             }
+
+            fn try_generate_optional_string(&mut self) -> Result<Option<String>, UnmetObligation> {
+                Ok(None)
+            }
         });
     };
     ($ports:ident, { $($body:item)* }) => {
@@ -156,10 +164,6 @@ macro_rules! context {
 
             fn try_caller_session_id(&self) -> Result<Option<SessionId>, UnmetObligation> {
                 Err(unmet_context(CALLER))
-            }
-
-            fn try_generate_optional_string(&mut self) -> Result<Option<String>, UnmetObligation> {
-                Err(unmet_context(OPTIONAL_STRING))
             }
 
             fn try_generate_surf_agent_action_id(&mut self) -> Result<ActionId, UnmetObligation> {

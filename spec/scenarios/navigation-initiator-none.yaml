@@ -1,0 +1,34 @@
+# A navigation the person at the keyboard started has no initiator: the request
+# `fetch-on-navigation-started` makes carries none (`spec/domains/net.yaml`, R9: such a request is
+# same-site for cookies), and `Requests` shows it as `null`. An event payload of ess-scenario/6
+# has no spelling for an absent field (an expected `initiator: null` failed against the
+# interpreter, which leaves the field out), so `NavigationStarted` is read for its other fields
+# only.
+type: ess-scenario/6
+domain: surf.navigation
+scenario: navigation-initiator-none
+summary: A Navigate without an initiator starts a navigation and a request without one.
+
+arrange:
+  - instance: load
+    entity: surf.navigation.Navigation
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 3f1d5b7e-0000-4000-8000-000000000052
+      url: http://b.test/echo
+      method: Get
+    outcome: started
+    events:
+      - event: surf.navigation.NavigationStarted
+        payload:
+          url: http://b.test/echo
+          method: Get
+    capture: {instance: load, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+assert:
+  - view: surf.net.Requests
+    contains: {request_id: {$instance: load}, url: http://b.test/echo, method: Get, initiator: null, state: Pending}
