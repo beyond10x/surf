@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T05:25:49Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-session-anchors",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "two reviews of the unit 2249184 to 77c4b83 by reviewers who did not write it, one for defects and one for the security claims, 2026-11-24",
+    "reference": "six items named, each changed in the fix round 99fa1f0 to 5a989c3; 13 review tests merged (febc78b, 733530c); left as draft stories: story:tls-anchor-check-without-ring and story:agent-ca-file-changed-line-test"
+  }
+}

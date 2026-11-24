@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T05:25:49Z",
+  "actor": "human:operator",
+  "artifact": "story:session-follow-press-https",
+  "kind": "story",
+  "revision": 6,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "one review of d819b4a for defects by a reviewer who did not write it, 2026-11-24",
+    "reference": "no defect found; 11 review tests merged (7af40bb); the stale sentences it named in README.md, AGENTS.md and docs/surf-command.md are changed in 7ade66e; the website sentences are handed to story:tls-release; left as a draft story: story:tls-test-server-answer-timeout"
+  }
+}
