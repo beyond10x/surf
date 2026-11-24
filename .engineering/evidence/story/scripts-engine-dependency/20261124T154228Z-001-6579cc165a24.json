@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T15:42:28Z",
+  "actor": "human:operator",
+  "artifact": "story:scripts-engine-dependency",
+  "kind": "story",
+  "revision": 28,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the forge runs on main at bb10540 (the merge f513b99 of impl/scripts-engine-dependency at 254a744, and a plan merge), 2026-11-24",
+    "reference": "check 45427755037 success, Shared source gates 45427756114 success, Documentation validation 45427754807 success, Documentation site 45427967297 success"
+  }
+}

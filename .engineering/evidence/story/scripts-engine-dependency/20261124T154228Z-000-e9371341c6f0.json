@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T15:42:28Z",
+  "actor": "human:operator",
+  "artifact": "story:scripts-engine-dependency",
+  "kind": "story",
+  "revision": 28,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the gate in runner form (task check-runner) on 254a744, the tip of impl/scripts-engine-dependency, through the pool on the build node (job 11304), 2026-11-24 16:36 CET",
+    "reference": "exit 0 in 72 s; 1616 tests: 1613 passed, 0 failed, 3 ignored; 552 TLS tests passed; 72 page tests passed; four steps 32.3 s"
+  }
+}
