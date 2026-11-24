@@ -6,6 +6,7 @@
 //! leaves a child, a bound of 0, and words with a backslash, a tab, ESC and a carriage return.
 //! No model is called.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -17,7 +18,7 @@ use surf_agent_tasks::agent::{Agent, Step};
 use surf_agent_tasks::format::{Task, read_tasks};
 use surf_agent_tasks::judge::row_cells;
 use surf_agent_tasks::lane::{self, Config};
-use surf_agent_tasks::process::{RuntimeDir, comm, signal_kill};
+use surf_agent_tasks::process::{END_BOUND, RuntimeDir, comm, signal_kill};
 use surf_agent_tasks::report::{Lane, shown_binaries};
 use surf_agent_tasks::{Run, Verdict, judge, tasks_file};
 
@@ -52,6 +53,7 @@ fn one_answer(lines: &[&str]) -> Run {
         connections: 1,
         failure: None,
         answers: vec![render(&answer).unwrap()],
+        opened: None,
     }
 }
 
@@ -133,12 +135,8 @@ fn a_call_past_its_bound_ends_with_its_child() {
         "http://127.0.0.1:9/article/article.html",
         &mut || {},
     );
-    let deadline = Instant::now() + Duration::from_secs(2);
-    let mut left = dir.processes();
-    while !left.is_empty() && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(20));
-        left = dir.processes();
-    }
+    // The child got SIGKILL with its group and ends after it.
+    let left = dir.left_within(&BTreeSet::new(), END_BOUND);
     drop(dir);
     let _ = fs::remove_dir_all(&bin);
     assert_eq!(
@@ -165,6 +163,7 @@ fn a_lane_that_panics_leaves_no_report_of_an_earlier_run() {
             binaries: bin.clone(),
         },
         out: out.clone(),
+        https: None,
     };
     let panicked = catch_unwind(AssertUnwindSafe(|| lane::run(&config))).is_err();
     let left = out.exists();

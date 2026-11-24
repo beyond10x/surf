@@ -44,6 +44,8 @@ pub struct Run {
     pub failure: Option<StepFailure>,
     /// The answers of every `look --as markdown` call, in order.
     pub answers: Vec<String>,
+    /// The answer of `open`, when it exited 0.
+    pub opened: Option<String>,
 }
 
 /// The judged result of a task.

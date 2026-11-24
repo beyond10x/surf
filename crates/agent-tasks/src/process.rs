@@ -1,16 +1,19 @@
 //! The processes of a private `XDG_RUNTIME_DIR`, found through `/proc`: every `/proc/<pid>`
 //! whose `environ` holds `XDG_RUNTIME_DIR=<the directory>`, as the tests of `surf-session` find
 //! a case's processes. Ending one is SIGKILL through `kill -9` and a wait with
-//! [`surf_test_process::ended_within`].
+//! [`surf_test_process::ended_within`]. Whether the processes of a directory have ended is
+//! decided by a wait too, [`RuntimeDir::left_within`], never by one read.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use surf_test_process::ended_within;
+use surf_test_process::{ended_within, runs};
 
 /// The bytes a session socket path adds to `XDG_RUNTIME_DIR`: `/surf/` 6, the identity 36, `/`
 /// 1, `session.sock` 12.
@@ -22,6 +25,18 @@ pub const SOCKET_PATH_MAX: usize = 107;
 /// How long a cleanup waits for the processes it sent SIGKILL: SIGKILL ends each within
 /// milliseconds.
 pub const KILL_BOUND: Duration = Duration::from_secs(5);
+
+/// How long [`RuntimeDir::left_within`] waits for processes that end on their own. A session
+/// exits after it answered `close`, and `surfd` relays that answer before the session process
+/// has gone; a session still open ends when the end of `surfd` closes its standard input. Each
+/// holds the directory in its environment until the kernel has released its memory: on an idle
+/// host within milliseconds, while on 2026-11-23, at a load of 37 to 263 on 20 CPUs, one read
+/// after `surfd` had been waited for found a process that was gone when its `comm` was read.
+/// Only a defect waits the bound out.
+pub const END_BOUND: Duration = Duration::from_secs(5);
+
+/// The pause between two reads of [`RuntimeDir::left_within`].
+const END_POLL: Duration = Duration::from_millis(10);
 
 /// A private `XDG_RUNTIME_DIR`, `<base>/atk-<pid>-<counter>-<nanoseconds>/r`, both directories
 /// of mode 0700. When it is dropped, every process whose environment holds it is sent SIGKILL
@@ -72,6 +87,36 @@ impl RuntimeDir {
     /// The process ids whose environment holds `XDG_RUNTIME_DIR=<this directory>`.
     pub fn processes(&self) -> Vec<u32> {
         with_runtime(&self.runtime())
+    }
+
+    /// Wait at most `bound` until no process of this directory runs but those of `except`,
+    /// reading `/proc` every 10 ms: one read decides too early, since a process that is
+    /// ending is still there. Empty when none is left; otherwise each process still there at
+    /// the bound with the text of its `/proc/<pid>/stat` (name, state, parent), the ones that
+    /// ended in the last moment left out.
+    pub fn left_within(&self, except: &BTreeSet<u32>, bound: Duration) -> Vec<(u32, String)> {
+        let deadline = Instant::now() + bound;
+        loop {
+            let left: Vec<u32> = self
+                .processes()
+                .into_iter()
+                .filter(|pid| !except.contains(pid))
+                .collect();
+            if left.is_empty() {
+                return Vec::new();
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                return left
+                    .into_iter()
+                    .filter_map(|pid| {
+                        let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+                        runs(&stat).then(|| (pid, stat.trim_end().to_string()))
+                    })
+                    .collect();
+            }
+            thread::sleep(END_POLL.min(deadline - now));
+        }
     }
 
     /// Whether process `pid` has this directory's `XDG_RUNTIME_DIR` in its environment.

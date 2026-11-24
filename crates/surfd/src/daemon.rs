@@ -1151,6 +1151,10 @@ fn abandon(shared: &Shared, id: &str, process: &Process) {
     forget(shared, id);
 }
 
+/// Start a session process with its identity and socket path as its only arguments, and pass it
+/// the `open` request `raw` unchanged over its socket: the extra trust anchors of `open
+/// --ca-file` (`arg anchors`) reach the session there, never as an argument or in the
+/// environment of its process (`link`, "One request").
 fn open_session(shared: &Arc<Shared>, raw: &[u8]) -> wire::Answer {
     let id = match next_identity(shared) {
         Ok(id) => id,

@@ -8,11 +8,21 @@ a tag that differs. The three packages of the agent binaries, `surf-agent` (`cra
 
 ## What a release holds
 
-[`.github/workflows/release.yml`](../.github/workflows/release.yml) builds the binaries with
-`--locked`, warnings denied, runner paths remapped and symbols stripped, runs the command-line
-tests of `surf` against them, packs them with `README.md`, `LICENSE` and `NOTICE`, and
-smoke-tests the unpacked archive with
-[`taskfiles/release-smoke.sh`](../taskfiles/release-smoke.sh).
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) runs the command-line
+tests of `surf` first, then builds the binaries with `--locked`, warnings denied, runner paths
+remapped and symbols stripped, into a directory of their own (`target/ship`), packs them with
+`README.md`, `LICENSE` and `NOTICE`, and smoke-tests the unpacked archive with
+[`taskfiles/release-smoke.sh`](../taskfiles/release-smoke.sh). The test's build turns on the
+feature `test-tooling` of `surf-tls`, whose marker `surf-tls test-tooling, never in a release`
+the job finds in the `surf` the test built and refuses in every binary it packs
+([`docs/design/tls.md`](design/tls.md), item 6).
+
+Every binary is built with outside code: `ring` 0.17.14, the cryptographic primitives of
+`surf-tls`, and the four crates it needs (`cfg-if`, `getrandom`, `libc`, `untrusted`); `NOTICE`
+names them and the bundled trust anchors. ring compiles C and assembly with a C compiler for the
+target. The Linux runners have none for musl, so the job installs `musl-tools` and builds ring
+with `musl-gcc` (`CC_<target>`); the macOS runners build it with Apple clang and need no step
+([`docs/design/tls.md`](design/tls.md), item 3).
 
 | target | runner | archive |
 |---|---|---|
@@ -32,15 +42,34 @@ Each archive holds one directory, `surf-<version>-<target>/`:
 The four binaries of a Linux archive stay in one directory, also when installed: `surf-agent`
 starts `surfd` from the directory it runs from, and `surfd` starts `surf-session` from its own.
 `SHA256SUMS` lists the four archives. The Linux binaries are statically linked (musl): they run
-on any distribution, and they load no name service module from the host. The macOS binaries are
-neither signed nor notarised.
+on any distribution, and they load no name service module from the host; the workflow refuses a
+Linux binary whose `readelf -lW` shows an `INTERP` header. The macOS `surf` links two libraries
+of the system, `/usr/lib/libSystem.B.dylib` and, since ring, `/usr/lib/libiconv.2.dylib`
+(`llvm-otool -L surf` on both macOS archives of release workflow run 45344883467; release
+`0.5.0` linked `libSystem.B.dylib` only). The macOS binaries are neither signed nor notarised.
 
 The smoke test runs on the unpacked directory of every archive: it checks the list of files
-above, that `surf` exits 2 without an argument and 1 on `http://127.0.0.1:1/`, and on Linux, in a
-private `XDG_RUNTIME_DIR`, runs the end-to-end case of the session process
+above, that `surf` exits 2 without an argument and 1 on `http://127.0.0.1:1/`, that `surf
+https://127.0.0.1:1/` exits 1 and ends `Unreachable` (the scheme is accepted; a binary without
+`https:` ends `UnsupportedScheme`), that `surf --anchors` exits 0 and prints `anchors <n>
+bundled <date> sha256:<hex>` with the date and sha256 of `crates/tls/src/anchors/SOURCE` of the
+checkout and `<n>` the count of `SOURCE` less the roots of `NO_ANCHOR` in
+`crates/tls/tests/tls/anchors.rs` (the binary finds its anchors), and that `surf --ca-file
+<root.pem> https://127.0.0.1:<port>/` makes one TLS 1.3 handshake with `openssl s_server`
+serving the committed test certificate `crates/tls-test-certs/certs/ok-ecdsa-p256`, exits 0 and
+prints `navigation <id> Committed https://127.0.0.1:<port>/`: ring's primitives run in the
+shipped binary, against a TLS implementation other than surf's own. The smoke test needs
+`openssl`, OpenSSL 3 preferred (on macOS the runner's Homebrew `openssl@3`; `/usr/bin/openssl`
+there is LibreSSL), and fails without one whose `s_server` takes `-tls1_3`; the port is the
+first of 48443, 48543, 48643, 48743 and 48843 that `s_server` can listen on. On Linux, in a
+private `XDG_RUNTIME_DIR`, it runs the end-to-end case of the session process
 (`crates/session/tests/e2e.rs`) on the directory's own `surf-agent`, `surfd` and
 `surf-session`: `open`, `go`, `look` and `close` against a page server inside the test, each
 answer compared with its golden text. It then fails if a process from the directory still runs.
+Last, it runs `surf-agent help --for-agent` in an empty environment: it must exit 0, end with a
+line feed, have the first line `surf-agent <version>: a definition for agents` with the version
+of the directory's name and the last line `end of the definition`; the step prints how many lines
+the definition has.
 It runs unchanged on a Linux workstation, from a checkout, on an unpacked archive:
 
     sh taskfiles/release-smoke.sh <dir>/surf-<version>-x86_64-unknown-linux-musl
@@ -58,34 +87,50 @@ The commands use the gates as the bot, from a checkout of this repository:
 
     gates="b10x-gates --policy ../gates-policy/policy.json --repository beyond10x/surf"
 
-1. **Version.** Set `version` to the new version in the four manifests of the shipped
+1. **Trust anchors.** The bundled list of `surf-tls` is at most 90 days old on the day of the
+   tag:
+
+       slot task anchors-age
+
+   It prints `anchors: <n> certificates of <date>, <d> days old` and passes, or fails with
+   `anchors: <d> days is older than 90 days; run task anchors-refresh before a release`. When it
+   fails, run `task anchors-refresh`, read the titles it prints as added and removed (below),
+   run the tests of `surf-tls`, and commit the new `cacert.pem` and `SOURCE` on `main` before
+   any other step; `DATE=<yyyy-mm-dd>` checks the age at the day the tag is planned for.
+2. **Version.** Set `version` to the new version in the four manifests of the shipped
    binaries, `crates/surf-cli/Cargo.toml`, `crates/agent/Cargo.toml`,
    `crates/surfd/Cargo.toml` and `crates/session/Cargo.toml`, then
-   `cargo generate-lockfile --offline`. Release `0.1.0` shipped the binary from the package
-   `surf`; `surf-cli` starts at that version, so the next release is above it.
-2. **Changelog.** In `CHANGELOG.md`, rename `## [Unreleased]` to `## [<version>] - <date>` and
+   `cargo generate-lockfile --offline`. `git diff Cargo.lock` then shows the version lines of
+   these four packages and nothing else: no third-party package moves in a release commit. The
+   command takes the newest version the local registry cache holds, so it can move one; pin it
+   back with `cargo update --offline -p <name> --precise <version of the lock before>`, and the
+   lock check passes again (for `0.5.0` and `0.6.0` on 2026-11-23 and again for `0.7.0` and
+   `0.8.0` on 2026-11-24, it moved `cc` from 1.11.1 to 1.11.3, which
+   `taskfiles/lock-allow.txt` does not list). Release `0.1.0` shipped the binary from the
+   package `surf`; `surf-cli` starts at that version, so the next release is above it.
+3. **Changelog.** In `CHANGELOG.md`, rename `## [Unreleased]` to `## [<version>] - <date>` and
    put an empty `## [Unreleased]` above it. Commit both on `main`; `slot task check-runner` is
    green on that commit, and the gate's output holds no line that starts with `raise:` (a task
    of `crates/agent-tasks/status.txt` listed `pending` that passes; give it its `pass` row
    first).
-3. **Try it.** Run the workflow by hand on `main`, wait for it, and take steps 6 and 7 on its
+4. **Try it.** Run the workflow by hand on `main`, wait for it, and take steps 7 and 8 on its
    run:
 
        $gates gh -- workflow run release.yml --ref main
        $gates gh -- run list --workflow release.yml --limit 1
        $gates gh -- run watch <run-id> --exit-status
 
-4. **Tag.** Write the tag message (the version's changelog section) to a file, then:
+5. **Tag.** Write the tag message (the version's changelog section) to a file, then:
 
        $gates bot -- tag -a <version> -F <message-file> <commit>
        $gates bot -- push origin <version>
 
-5. **Build.** The push starts the workflow on the tag. Wait for that run to be green:
+6. **Build.** The push starts the workflow on the tag. Wait for that run to be green:
 
        $gates gh -- run list --workflow release.yml --branch <version> --limit 1
        $gates gh -- run watch <run-id> --exit-status
 
-6. **Download and verify.** Download the tag run's artifacts by run id into an empty directory,
+7. **Download and verify.** Download the tag run's artifacts by run id into an empty directory,
    check that the four archives are there, check them against `SHA256SUMS`, and list them: each
    Linux archive lists `surf`, `surf-agent`, `surfd`, `surf-session` and the three files, each
    macOS archive `surf` and the three files:
@@ -97,7 +142,7 @@ The commands use the gates as the bot, from a checkout of this repository:
        (cd <dir> && sha256sum --check SHA256SUMS)
        for archive in <dir>/surf-<version>-*.tar.gz; do tar -tzf "$archive"; done
 
-7. **Scan.** Unpack the two Linux archives and scan their eight executables, four per archive:
+8. **Scan.** Unpack the two Linux archives and scan their eight executables, four per archive:
 
        tar -C <dir> -xzf <dir>/surf-<version>-x86_64-unknown-linux-musl.tar.gz
        tar -C <dir> -xzf <dir>/surf-<version>-aarch64-unknown-linux-musl.tar.gz
@@ -122,7 +167,7 @@ The commands use the gates as the bot, from a checkout of this repository:
        slot task agent-tasks-archive DIR=<dir>/surf-<version>-x86_64-unknown-linux-musl
 
    Its first line, `agent-tasks: <n> tasks, <p> pass, <f> fail, <s> skipped, lane archive,
-   binaries <dir>`, goes into the notes (step 8) as `agent tasks (scripted): <n> tasks, <p>
+   binaries <dir>`, goes into the notes (step 9) as `agent tasks (scripted): <n> tasks, <p>
    pass, <f> fail, <s> skipped`. `<dir>` is `DIR` as typed; an absolute `DIR` is named by its
    last component (`surf-<version>-x86_64-unknown-linux-musl`), the home directory itself and
    `/` by `-`, so the line holds no path of this machine and no user's name. The model lane's
@@ -131,8 +176,8 @@ The commands use the gates as the bot, from a checkout of this repository:
    `scan-artifact` reads ELF only, so the macOS binaries are covered by the workflow's own
    home-path check and not by it; whether that is accepted for surf is open, the operator's to
    decide.
-8. **Release.** Write the notes from the annotated tag to a file, add the line of the agent
-   tasks of step 7 to it, scan it, then create the release as the bot with the five files, and
+9. **Release.** Write the notes from the annotated tag to a file, add the line of the agent
+   tasks of step 8 to it, scan it, then create the release as the bot with the five files, and
    view it. When the model lane (`task agent-tasks-model MODEL=<model>`) was run on the release
    commit, the notes also carry `agent tasks: <n> tasks, <p> pass, <f> fail, <s> skipped, model
    <model>, <YYYY-MM-DD>`, the numbers, model and date copied from the first line of

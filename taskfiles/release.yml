@@ -11,8 +11,11 @@ tasks:
       Runs taskfiles/release-smoke.sh on DIR, the unpacked directory surf-<version>-<target>/ of
       a release archive or of a manual run of .github/workflows/release.yml. TARGET, when set,
       is the cargo target the end-to-end case is built for. The script checks the files of the
-      directory, runs surf on a usage error and an unreachable address, and on Linux runs the
-      end-to-end case of crates/session/tests/e2e.rs on the directory's surf-agent, surfd and
+      directory, runs surf on a usage error, on an unreachable http: and https: address and with
+      --anchors against crates/tls/src/anchors/SOURCE of the checkout, makes one TLS 1.3
+      handshake of surf with openssl s_server serving the test certificate
+      crates/tls-test-certs/certs/ok-ecdsa-p256 (it needs openssl, OpenSSL 3 preferred, and
+      fails without one), and on Linux runs the end-to-end case of crates/session/tests/e2e.rs on the directory's surf-agent, surfd and
       surf-session, then fails if a process from the directory still runs. docs/releasing.md
       says when it runs.
 

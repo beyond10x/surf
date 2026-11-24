@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest aac42d8ac87218cacd79d661cdfc6da87c457bcea21b6e55cbec893553faf526
+// contract digest 0885760ec9338d6af6c9b21b424dde0557abe451edb6419c0f296bc37836f5f6
 // do not edit: regenerate with `ess synthesize`
 
 //! What the specification fully determines, generated: the behaviour of every command the plan
@@ -471,7 +471,7 @@ where
         let _ = &held;
         let before = held.data.clone();
         let next = held;
-        let answer = crate::agent::FollowOutcome::Requested { navigation_requested: crate::agent::NavigationRequested { session_id: input.session_id.clone(), tab_id: before.tab_id.clone(), url: input.url.clone(), handle: Some(input.handle.clone()), label: Some(input.label.clone()) } };
+        let answer = crate::agent::FollowOutcome::Requested { navigation_requested: crate::agent::NavigationRequested { session_id: input.session_id.clone(), tab_id: before.tab_id.clone(), url: input.url.clone(), handle: Some(input.handle.clone()), label: Some(input.label.clone()), initiator: input.initiator.clone() } };
         SessionStorage::put(&mut self.ports, next);
         return Ok(answer);
     }
@@ -508,7 +508,7 @@ where
         let _ = &held;
         let before = held.data.clone();
         let next = held;
-        let answer = crate::agent::GoOutcome::Requested { navigation_requested: crate::agent::NavigationRequested { session_id: input.session_id.clone(), tab_id: before.tab_id.clone(), url: input.url.clone(), handle: self.ports.try_generate_optional_string()?, label: self.ports.try_generate_optional_string()? } };
+        let answer = crate::agent::GoOutcome::Requested { navigation_requested: crate::agent::NavigationRequested { session_id: input.session_id.clone(), tab_id: before.tab_id.clone(), url: input.url.clone(), handle: self.ports.try_generate_optional_string()?, label: self.ports.try_generate_optional_string()?, initiator: self.ports.try_generate_optional_string()? } };
         SessionStorage::put(&mut self.ports, next);
         return Ok(answer);
     }
@@ -1104,7 +1104,7 @@ where
             _ => return Ok(crate::document::SubmitFormOutcome::WrongState { error: crate::document::SubmissionStateConflict { state: held_state } }),
         };
         let next = moved.snapshot();
-        let answer = crate::document::SubmitFormOutcome::Submitted { form_submitted: crate::document::FormSubmitted { submission_id: input.submission_id.clone(), tab_id: input.tab_id.clone(), url: input.url.clone(), method: input.method.clone(), body: input.body.clone(), body_type: input.body_type.clone() } };
+        let answer = crate::document::SubmitFormOutcome::Submitted { form_submitted: crate::document::FormSubmitted { submission_id: input.submission_id.clone(), tab_id: input.tab_id.clone(), url: input.url.clone(), method: input.method.clone(), body: input.body.clone(), body_type: input.body_type.clone(), initiator: input.initiator.clone() } };
         SubmissionStorage::put(&mut self.ports, next);
         return Ok(answer);
     }
@@ -1194,7 +1194,7 @@ where
             entry_id: None,
             entry_next: None,
         };
-        let answer = crate::navigation::NavigateOutcome::Started { navigation_started: crate::navigation::NavigationStarted { navigation_id: identity.clone(), tab_id: input.tab_id.clone(), url: input.url.clone(), method: input.method.clone(), body: input.body.clone(), body_type: input.body_type.clone() } };
+        let answer = crate::navigation::NavigateOutcome::Started { navigation_started: crate::navigation::NavigationStarted { navigation_id: identity.clone(), tab_id: input.tab_id.clone(), url: input.url.clone(), method: input.method.clone(), body: input.body.clone(), body_type: input.body_type.clone(), initiator: input.initiator.clone() } };
         NavigationStorage::put(&mut self.ports, crate::navigation::AnyNavigation::Started(crate::navigation::Navigation::new(data)).snapshot());
         return Ok(answer);
     }
@@ -1220,7 +1220,7 @@ where
             entry_id: Some(input.entry_id.clone()),
             entry_next: input.entry_next.clone(),
         };
-        let answer = crate::navigation::StartTraversalOutcome::Started { navigation_started: crate::navigation::NavigationStarted { navigation_id: identity.clone(), tab_id: input.tab_id.clone(), url: input.url.clone(), method: crate::net::Method::Get, body: self.ports.try_generate_optional_bytes()?, body_type: self.ports.try_generate_optional_surf_net_media_type()? } };
+        let answer = crate::navigation::StartTraversalOutcome::Started { navigation_started: crate::navigation::NavigationStarted { navigation_id: identity.clone(), tab_id: input.tab_id.clone(), url: input.url.clone(), method: crate::net::Method::Get, body: self.ports.try_generate_optional_bytes()?, body_type: self.ports.try_generate_optional_surf_net_media_type()?, initiator: self.ports.try_generate_optional_string()? } };
         NavigationStorage::put(&mut self.ports, crate::navigation::AnyNavigation::Started(crate::navigation::Navigation::new(data)).snapshot());
         return Ok(answer);
     }
@@ -1303,8 +1303,9 @@ where
             url: input.url.clone(),
             method: input.method.clone(),
             body_type: input.body_type.clone(),
+            initiator: input.initiator.clone(),
         };
-        let answer = crate::net::FetchOutcome::Started { request_started: crate::net::RequestStarted { request_id: identity.clone(), url: input.url.clone(), method: input.method.clone(), body: input.body.clone(), body_type: input.body_type.clone() } };
+        let answer = crate::net::FetchOutcome::Started { request_started: crate::net::RequestStarted { request_id: identity.clone(), url: input.url.clone(), method: input.method.clone(), body: input.body.clone(), body_type: input.body_type.clone(), initiator: input.initiator.clone() } };
         RequestStorage::put(&mut self.ports, crate::net::AnyRequest::Pending(crate::net::Request::new(data)).snapshot());
         return Ok(answer);
     }
@@ -1678,6 +1679,7 @@ where
                 url: held.data.url,
                 method: held.data.method,
                 body_type: held.data.body_type,
+                initiator: held.data.initiator,
                 state: held.state,
             })
             .collect())

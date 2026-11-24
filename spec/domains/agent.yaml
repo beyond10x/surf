@@ -99,10 +99,15 @@ types:
   # shared record: an `ess-cli/2` argument binds a field of the callable's input by name, and a
   # field inside a nested record is not a source the binding is measured to take. `from_line`
   # counts the lines of the form asked for, from 1; the client takes it only beside `form`.
+  # `ca_file` is the path of a PEM file of extra trust anchors for the session's `https:` loads
+  # (`docs/design/tls.md` item 8): the client reads the file, refuses one `surf-tls` refuses
+  # before it connects, and sends its bytes in the `open` request, which `surfd` passes to the
+  # session process over the session socket; the path itself goes nowhere. The anchors belong to
+  # the session and end with it; no entity holds them (`epic:tls-https`, U2).
   - name: surf.agent.OpenCall
     kind: struct
     naming:
-      summary: The input of `open`, the address to load first if one is given, and the form to print it in.
+      summary: The input of `open`, the address to load first if one is given, the form to print it in, and a file of extra trust anchors.
     fields:
       - name: url
         type: Optional<surf.url.Url>
@@ -110,6 +115,8 @@ types:
         type: Optional<surf.agent.PageForm>
       - name: from_line
         type: Optional<Integer>
+      - name: ca_file
+        type: Optional<String>
 
   - name: surf.agent.LookCall
     kind: struct
@@ -558,6 +565,7 @@ commands:
             url: input.url
             handle: {generated: true}
             label: {generated: true}
+            initiator: {generated: true}
         summary: The navigator is asked to load the address into the session's tab.
 
   # `follow <handle>` (design section 4, step 3 of section 9). Handles are not modelled: a handle
@@ -585,6 +593,11 @@ commands:
       - name: label
         type: String
         example: "Offers"
+      # The serialised origin of the session's current document, whose link is followed: the
+      # initiator of the navigation (`spec/domains/net.yaml`, R9).
+      - name: initiator
+        type: Optional<String>
+        example: "http://example.org"
     outcomes:
       - name: not-holder
         when_subject: {predicate: holder != caller.session_id}
@@ -622,6 +635,7 @@ commands:
             url: input.url
             handle: input.handle
             label: input.label
+            initiator: input.initiator
         summary: The navigator is asked to load the link's target into the session's tab.
 
   # `fill <handle> <text>`, `pick <handle> [<option>]` and `press <handle>` (design section 4, step
@@ -1145,6 +1159,9 @@ events:
   # record (`RecordAction`); no binding reads them. ess 0.97.3 has no payload spelling for an
   # absent `Optional` event field: `Go` declares both `{generated: true}`, which lets the
   # implementation leave them absent, and the agent's ports answer absent.
+  # `initiator` is `Follow`'s input, the serialised origin of the document whose link is followed
+  # (`story:agent-cookie-jar`); a `Go` sets none, the same way. `navigate-on-navigation-requested`
+  # passes it to `surf.navigation.Navigate`.
   - name: surf.agent.NavigationRequested
     fields:
       - name: session_id
@@ -1156,6 +1173,8 @@ events:
       - name: handle
         type: Optional<String>
       - name: label
+        type: Optional<String>
+      - name: initiator
         type: Optional<String>
 
   # `step` is `back` for `GoBack` and `forward` for `GoForward`, the navigator's own type for where

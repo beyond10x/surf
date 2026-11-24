@@ -888,6 +888,8 @@ const TITLE: &str = "Say \"hi\" \\ caf\u{e9}";
 const LABEL: &str = "Sign \"in\" \u{e9}";
 /// The media type of a request body (`agent-request-body-spec`).
 const FORM: &str = "application/x-www-form-urlencoded";
+/// The origin of a document whose link or form started a navigation (`story:agent-cookie-jar`).
+const INITIATOR: &str = "http://a.example";
 /// What an agent typed into a control (`agent-forms-spec`): its entry gives its length only.
 const TYPED: &str = "s3cret";
 
@@ -911,6 +913,7 @@ fn covered() -> Vec<SystemEvent> {
             url: url(),
             handle: Some("l4".to_string()),
             label: Some(LABEL.to_string()),
+            initiator: Some(INITIATOR.to_string()),
         }),
         SystemEvent::SessionClosed(SessionClosed {
             session_id: SessionId(uuid(2)),
@@ -970,6 +973,7 @@ fn covered() -> Vec<SystemEvent> {
             method: Method::Post,
             body: Some(BODY.to_vec()),
             body_type: Some(MediaType(FORM.to_string())),
+            initiator: Some(INITIATOR.to_string()),
         }),
         SystemEvent::FetchFailed(FetchFailed {
             request_id: RequestId(uuid(5)),
@@ -982,6 +986,7 @@ fn covered() -> Vec<SystemEvent> {
             method: Method::Post,
             body: Some(BODY.to_vec()),
             body_type: Some(MediaType(FORM.to_string())),
+            initiator: Some(INITIATOR.to_string()),
         }),
         SystemEvent::ResponseReceived(ResponseReceived {
             request_id: RequestId(uuid(5)),
@@ -1057,6 +1062,7 @@ fn covered() -> Vec<SystemEvent> {
             method: Method::Post,
             body: Some(BODY.to_vec()),
             body_type: Some(MediaType(FORM.to_string())),
+            initiator: Some(INITIATOR.to_string()),
         }),
         SystemEvent::SubmissionAbandoned(SubmissionAbandoned {
             submission_id: SubmissionId(uuid(11)),
@@ -1119,6 +1125,7 @@ fn expected_value(event: &str, field: &str) -> Option<String> {
         (_, "method") => text("Post"),
         (_, "body_type") => text(FORM),
         (_, "body") => text("3 bytes"),
+        (_, "initiator") => text(INITIATOR),
         (_, "width") => text("800"),
         (_, "height") => text("600"),
         _ => panic!("no expected value for {event}.{field}"),
@@ -1205,7 +1212,8 @@ fn case_17_every_event_maps_with_all_its_fields() {
             "an event line of the link: {line}"
         );
     }
-    // A `Get` without a body: the method, then `body` and `body_type` with no value.
+    // A `Get` without a body and without an initiator: the method, then `body`, `body_type` and
+    // `initiator` with no value.
     let pairs = |list: &[(&str, Option<&str>)]| -> Vec<(String, Option<String>)> {
         list.iter()
             .map(|(name, value)| (name.to_string(), value.map(str::to_string)))
@@ -1218,6 +1226,7 @@ fn case_17_every_event_maps_with_all_its_fields() {
         method: Method::Get,
         body: None,
         body_type: None,
+        initiator: None,
     });
     assert_eq!(
         read_back(&get),
@@ -1228,6 +1237,7 @@ fn case_17_every_event_maps_with_all_its_fields() {
             ("method", Some("Get")),
             ("body", None),
             ("body_type", None),
+            ("initiator", None),
         ])
     );
     let get = SystemEvent::RequestStarted(RequestStarted {
@@ -1236,6 +1246,7 @@ fn case_17_every_event_maps_with_all_its_fields() {
         method: Method::Get,
         body: None,
         body_type: None,
+        initiator: None,
     });
     assert_eq!(
         read_back(&get),
@@ -1245,6 +1256,7 @@ fn case_17_every_event_maps_with_all_its_fields() {
             ("method", Some("Get")),
             ("body", None),
             ("body_type", None),
+            ("initiator", None),
         ])
     );
 }
@@ -1472,6 +1484,7 @@ fn a_recorded_label_is_cut_at_the_entry_bound() {
         url: Url(ADDRESS.to_string()),
         handle: Some("l4".to_string()),
         label: Some(label.clone()),
+        initiator: None,
     });
     assert_cut(&requested, &label);
 }
@@ -1556,6 +1569,7 @@ fn a_requested_navigations_handle_is_cut_at_the_entry_bound() {
             url: Url(ADDRESS.to_string()),
             handle: Some(handle.to_string()),
             label: Some(LABEL.to_string()),
+            initiator: None,
         })
     });
 }

@@ -1,6 +1,6 @@
 [package]
 name = "surf-fetch"
-description = "Fetch an http address over HTTP/1.1 with the Rust standard library only."
+description = "Fetch an http or https address over HTTP/1.1, with surf-tls for TLS 1.3."
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -8,9 +8,13 @@ license = "Apache-2.0"
 autotests = false
 
 [dependencies]
+surf-cookie = { path = "../cookie" }
+surf-tls = { path = "../tls" }
 surf-url = { path = "../url" }
 
 [dev-dependencies]
+surf-tls-test-certs = { path = "../tls-test-certs" }
+surf-tls-test-server = { path = "../tls-test-server" }
 
 [[test]]
 name = "main"

@@ -11,7 +11,7 @@ Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `s
 `surfd` and `surf-session`, for Linux only at first. The
 [releases page](https://github.com/beyond10x/surf/releases) lists the releases. After it, work
 moves to the script engine, [swell](https://beyond10x.github.io/swell/), a project of its own.
-Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. Wave 10 and round 1, which builds the stories of wave 11 and some of the waves after it, followed, and release `0.4.0` follows round 1: it adds the HTML parser on real pages and the page as text. The waves after them are planned, and they and the
+Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. Wave 10 and round 1, which builds the stories of wave 11 and some of the waves after it, followed, and release `0.4.0` follows round 1: it adds the HTML parser on real pages and the page as text. Round 2 followed, and release `0.5.0` follows it: it adds following links, filling and submitting forms, going back and forward, and what changed. The live view's control states followed, and release `0.6.0` follows them: the live view shows a page's controls and what an action changed. TLS 1.3 followed, and release `0.7.0` follows it: `surf` and an agent session load `https:` addresses. The cookie jar and the agent definition followed, and release `0.8.0` follows them: an agent session keeps cookies, and `surf-agent help --for-agent` prints a definition for an agent. The waves after them are planned, and they and the
 list under "After the plan" have no date.
 
 | after wave | what you can do |
@@ -24,7 +24,10 @@ list under "After the plan" have no date.
 | 22 | Record an agent's session, turn it into a test, and replay it against the recorded network. |
 
 Round 2 delivered following links, filling and submitting forms, going back and forward, the
-`changed` block and `log`; no release carries them yet. TLS and `https:` are on the list below.
+`changed` block and `log`; release `0.5.0` ships them. TLS 1.3 and `https:` followed:
+`surf` and an agent session's `go`, `open`, `follow` and `press` load `https:`, and a session
+takes an extra anchor file with `open --ca-file`; release `0.7.0` ships them. An agent
+session's cookie jar and `surf-agent help --for-agent` followed; release `0.8.0` ships them.
 None of the next steps has a date.
 
 The agent commands exist today: see [Drive surf from an agent](drive-from-an-agent.md). An
@@ -53,7 +56,6 @@ of its links, buttons and fields. Since round 2 the `page` line shows the page's
 
 Wanted, and not planned in detail yet:
 
-- **TLS 1.3**, and `https:` with it. Soon: most of the web is not reachable without it.
 - **Screenshots.** That takes CSS, layout, painting and text rendering, all written here.
 - **A JavaScript engine**: [swell](https://beyond10x.github.io/swell/), an ECMAScript engine
   written from scratch in Rust as a project of its own, which surf will embed.

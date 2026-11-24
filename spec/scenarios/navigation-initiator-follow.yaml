@@ -1,0 +1,33 @@
+# A navigation a link or a form of a document started carries that document's origin as its
+# initiator: `NavigationStarted` has it, and the request `fetch-on-navigation-started` makes keeps
+# it (`Requests`), for the transport's cookie rule (`spec/domains/net.yaml`, R9).
+type: ess-scenario/6
+domain: surf.navigation
+scenario: navigation-initiator-follow
+summary: A Navigate with an initiator starts a navigation and a request with that initiator.
+
+arrange:
+  - instance: load
+    entity: surf.navigation.Navigation
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 3f1d5b7e-0000-4000-8000-000000000051
+      url: http://b.test/echo
+      method: Get
+      initiator: http://a.test
+    outcome: started
+    events:
+      - event: surf.navigation.NavigationStarted
+        payload:
+          url: http://b.test/echo
+          method: Get
+          initiator: http://a.test
+    capture: {instance: load, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+assert:
+  - view: surf.net.Requests
+    contains: {request_id: {$instance: load}, url: http://b.test/echo, method: Get, initiator: http://a.test, state: Pending}

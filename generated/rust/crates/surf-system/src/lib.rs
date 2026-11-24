@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest aac42d8ac87218cacd79d661cdfc6da87c457bcea21b6e55cbec893553faf526
+// contract digest 0885760ec9338d6af6c9b21b424dde0557abe451edb6419c0f296bc37836f5f6
 // do not edit: regenerate with `ess synthesize`
 
 //! The `surf` system, v1: its components assembled, its bindings wired, and its one transport.
@@ -305,6 +305,7 @@ pub fn fetch_on_navigation_started(event: &surf_types::navigation::NavigationSta
         method: event.method.clone(),
         body: event.body.clone(),
         body_type: event.body_type.clone(),
+        initiator: event.initiator.clone(),
     }
 }
 
@@ -320,6 +321,7 @@ pub fn navigate_on_form_submitted(event: &surf_types::document::FormSubmitted) -
         method: event.method.clone(),
         body: event.body.clone(),
         body_type: event.body_type.clone(),
+        initiator: event.initiator.clone(),
     }
 }
 
@@ -335,6 +337,7 @@ pub fn navigate_on_navigation_requested(event: &surf_types::agent::NavigationReq
         method: surf_types::net::Method::Get,
         body: None,
         body_type: None,
+        initiator: event.initiator.clone(),
     }
 }
 

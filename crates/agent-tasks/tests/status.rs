@@ -24,6 +24,8 @@ fn base_a() -> Vec<TaskResult> {
         fail("table", "exit 2 on look"),
         fail("link", "no now line labelled \"Opening hours\""),
         fail("search", "no now line labelled \"Search\""),
+        fail("https", "exit 2 on look"),
+        fail("login", "no now line labelled \"Name\""),
     ]
 }
 
@@ -69,7 +71,7 @@ fn a_listed_pass_that_fails_fails() {
     let root = root_report_file();
     let before = modified(&root);
 
-    let outcome = report(&base_a(), &status, &lane(), &out);
+    let outcome = report(&base_a(), &[], &status, &lane(), &out);
 
     assert_eq!(
         outcome,
@@ -78,11 +80,13 @@ fn a_listed_pass_that_fails_fails() {
     let written = fs::read_to_string(&out).expect("the file is written");
     assert_eq!(
         written,
-        "agent-tasks: 4 tasks, 0 pass, 4 fail, 0 skipped, lane gate, binaries bin\n\
+        "agent-tasks: 6 tasks, 0 pass, 6 fail, 0 skipped, lane gate, binaries bin\n\
          task article fail 3 calls 1 connections: exit 2 on look\n\
          task table fail 3 calls 1 connections: exit 2 on look\n\
          task link fail 3 calls 1 connections: no now line labelled \"Opening hours\"\n\
-         task search fail 3 calls 1 connections: no now line labelled \"Search\"\n"
+         task search fail 3 calls 1 connections: no now line labelled \"Search\"\n\
+         task https fail 3 calls 1 connections: exit 2 on look\n\
+         task login fail 3 calls 1 connections: no now line labelled \"Name\"\n"
     );
     assert_eq!(modified(&root), before, "the root file is not touched");
     let _ = fs::remove_file(&out);
@@ -99,13 +103,13 @@ fn a_pending_task_that_passes_is_raised() {
     let root = root_report_file();
     let before = modified(&root);
 
-    let outcome = report(&results, &status, &lane(), &out);
+    let outcome = report(&results, &[], &status, &lane(), &out);
 
     assert_eq!(outcome, Ok(()));
     let written = fs::read_to_string(&out).expect("the file is written");
     assert!(
         written.starts_with(
-            "agent-tasks: 4 tasks, 1 pass, 3 fail, 0 skipped, lane gate, binaries bin\n"
+            "agent-tasks: 6 tasks, 1 pass, 5 fail, 0 skipped, lane gate, binaries bin\n"
         ),
         "{written}"
     );
@@ -132,7 +136,7 @@ fn first_line_of(name: &str, lane: &Lane) -> String {
     let tasks = read_tasks(&fs::read_to_string(tasks_file()).unwrap()).unwrap();
     let status = read_status(&fs::read_to_string(status_file()).unwrap(), &tasks).unwrap();
     let out = out_file(name);
-    let _ = report(&base_a(), &status, lane, &out);
+    let _ = report(&base_a(), &[], &status, lane, &out);
     let written = fs::read_to_string(&out).expect("the file is written");
     let _ = fs::remove_file(&out);
     let first = written.lines().next().unwrap().to_string();

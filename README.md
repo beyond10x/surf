@@ -7,15 +7,16 @@
 **A web browser written from scratch, where the specification comes first.**
 
 ![spec: ESS 0.97.4, valid](docs/badges/spec.svg)
-![conformance: 196 of 196 scenarios](docs/badges/conformance.svg)
-![tests: 877 passed](docs/badges/tests.svg)
-![third-party crates shipped: 0](docs/badges/dependencies.svg)
+![conformance: 203 of 203 scenarios](docs/badges/conformance.svg)
+![tests: 1976 passed](docs/badges/tests.svg)
+![third-party crates shipped: 5, ring 0.17.14 and 4 it needs](docs/badges/dependencies.svg)
 ![unsafe code: forbidden](docs/badges/unsafe.svg)
 ![standard sections marked complete: 0](docs/badges/complete.svg)
 ![roadmap: 10 of 22 waves delivered](docs/badges/roadmap.svg)
 
 surf is a small browser written in Rust. It does not wrap Chromium, WebKit or Gecko, and nothing
-that ships depends on a third-party crate. Every behaviour is written down as a specification
+that ships depends on a third-party crate, with one exception: since release `0.7.0`, the
+cryptographic primitives of TLS come from ring (principle 4 below). Every behaviour is written down as a specification
 before any code exists, and a test suite generated from that specification runs against the
 real code on every change.
 
@@ -42,7 +43,7 @@ archive (Apple silicon and Intel) holds `surf`: the agent binaries read the call
 file.
 
 ```console
-$ version=0.4.0 target=x86_64-unknown-linux-musl
+$ version=0.8.0 target=x86_64-unknown-linux-musl
 $ base=https://github.com/beyond10x/surf/releases/download/$version
 $ curl -fsSLO $base/surf-$version-$target.tar.gz -fsSLO $base/SHA256SUMS
 $ grep " surf-$version-$target.tar.gz\$" SHA256SUMS | sha256sum --check
@@ -84,6 +85,10 @@ last field is `-` for a row with neither target nor value.
 `surf <url> --as markdown` prints the page as Markdown, every line behind `>`.
 
 ## Driving surf from an agent
+
+`surf-agent help --for-agent` prints, for an agent to read, the definition of the installed
+version: its commands, the parts of the answer an agent reads, the rule for text from a page and
+worked calls. It needs no session.
 
 On Linux, `surf-agent` drives a browser session one call at a time, for an AI agent or a
 script. `surf-agent open <url>` opens a session, loads the address and prints the session's
@@ -136,7 +141,10 @@ note visibility: hidden attribute only
 
 What it does not do yet:
 
-- Only `http:` addresses load: no TLS.
+- Release `0.6.0` and the releases before it load `http:` only. Since release `0.7.0`, `go`,
+  `open`, `follow` and `press` load `https:` addresses against the bundled trust anchors, and
+  in a session opened with `surf-agent open --ca-file <path>` also against the CA
+  certificates of that file.
 - Release `0.2.0` delivers a redirect status as the response. Since release `0.3.0`, a `go`
   follows redirects.
 - No JavaScript and no rendering.
@@ -149,7 +157,7 @@ What it does not do yet:
   `follow`, `fill`, `pick`, `press`, `back`, `forward`, `log` and `close`. Visibility is not
   computed: `now` says `hid` for the `hidden` attribute and `?` for every other element.
 - Before scripts, `changed` within one page holds the state of controls only.
-- `follow` refuses, before any navigation, a link to a scheme other than `http:`
+- `follow` refuses, before any navigation, a link to a scheme other than `http:` and `https:`
   (`unsupported-scheme`), a target over 65,536 bytes (`address-too-long`) and, from a page on a
   public address, a target on a loopback or private address or `localhost`
   (`forbidden-destination`). The page stays.
@@ -194,6 +202,14 @@ timeline (`follow l1`). Labels, targets and titles are shown as text; no target 
 bidirectional control (U+202A to U+202E, U+2066 to U+2069) in a value from a session shows as a
 mark that names it (`U+202E`), so it cannot reorder what a person reads.
 
+Since the view's control states, shipped in release `0.6.0`, the panel "Now" lists the
+page's buttons and fields too, each with its state: a field's kind, label, value and flags, a
+button's form, method and the address it submits to. Below it, the panel
+`Changed by <action>` shows what the action at the playhead changed, a line per control
+(`f2 value (empty) -> 12 bytes`) or the new page's `page` line and its new texts. A password is
+shown as the number of bytes a `fill` typed, `(empty)`, or `(set)` when no `fill` of that page
+typed it; its value is in neither the page, the stream nor a session's detail.
+
 The view only reads: nothing on the page changes a session. It listens on 127.0.0.1 only. The
 token in the address is valid until `surfd` exits, and the browser may keep that address in its
 history. A `surfd` you start yourself writes one line on standard error, the path of
@@ -211,8 +227,7 @@ there instead.
 
 ## What surf is not
 
-- Not a browser for daily use. There is no window, no rendering, no JavaScript and no `https:`
-  yet.
+- Not a browser for daily use. There is no window, no rendering and no JavaScript yet.
 - Not a fork of an existing engine, and not a shell around one.
 - Not complete, and it says where. A part of a standard is called complete only when all of it
   is specified and the standard's own tests for it pass. Nothing carries that mark yet, which
@@ -229,9 +244,12 @@ there instead.
 3. **Isolation over speed.** A component is a security boundary. A design that needs two
    components to share memory is refused.
 4. **No third-party code in what ships.** The Rust standard library and the operating system
-   are allowed. The checks fail if the lock file lists an outside package. One exception:
-   audited cryptographic primitives for TLS come from ring 0.17.14, reviewed as a dependency in
-   the rustls audit of Cure53, 2020 (<https://cure53.de/pentest-report_rustls.pdf>). Only the
+   are allowed. Every outside package of the lock file is on the allow-list
+   `taskfiles/lock-allow.txt` (19 of its 49 packages), and the lock check fails on one that is
+   not. One exception:
+   audited cryptographic primitives for TLS come from ring, which was reviewed as a dependency
+   in the rustls audit of Cure53, 2020 (<https://cure53.de/pentest-report_rustls.pdf>); surf
+   uses ring 0.17.14. Only the
    crate `surf-tls` may depend on it, and the checks pin its packages by name, version and
    checksum.
 5. **No unsafe code.** Every hand-written crate forbids it. The exceptions are in tests: three
@@ -239,22 +257,76 @@ there instead.
    TLS code allocates.
 6. **Text from the web stays text.** Anything from a page, a server or an address is escaped
    before it is printed, so a page cannot forge a line of surf's output.
-7. **A passing test must be able to fail.** Tests are tried against planted defects. A storage
-   that drops every write fails 36 of the 170 scenarios.
+7. **A passing test must be able to fail.** Tests are tried against planted defects. Over the
+   whole suite (`task conform-slow`), a navigation storage that drops every write fails 55 of
+   the 203 scenarios; the gate runs each of the 29 planted defects over the first 3 scenarios
+   that notice it.
 8. **Small.** A standard is followed for what surf does, not implemented whole.
 
 ## What works today
 
 - **A page load, end to end.** `surf <url>` opens a window and a tab, starts a navigation,
-  fetches the address over `http:` and creates a document for an HTML response.
+  fetches the address over `http:` or `https:` and creates a document for an HTML response.
 - **Six components in one process**: `agent`, `shell`, `navigator`, `net`, `document` and
   `renderer`.
 - **Its own HTTP/1.1 client**, with one deadline for the whole exchange (40 seconds at most)
   and hard limits on header and body size.
-- **196 specified scenarios**, each passing twice: once against the specification's own
+- **`https:` over its own TLS 1.3 client**, since release `0.7.0`. The server is
+  authenticated against the root list of Mozilla as curl publishes it, built into the binary,
+  and for `surf --ca-file <path>` and a session of `surf-agent open --ca-file <path>` also
+  against the certificates of that file; `surf --anchors` prints
+  the number of trust anchors read from the list, the list's date and its sha256. Redirects
+  between `http:` and `https:` are followed both
+  ways. A certificate that is not trusted, has expired or names another host, a server limited
+  to TLS 1.2 and a failed handshake each fail the load with a reason of its own. surf does not
+  check revocation: a revoked certificate that has not expired loads.
+- **203 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **877 tests**, built with warnings treated as errors, and 59 tests of the live view's page in
-  a browser.
+- **1,976 tests** (1,424, and 552 of the TLS crates in a step of their own), built with
+  warnings treated as errors, and 71 tests of the live view's page in a browser.
+
+New with the cookie jar and the agent definition, shipped in release `0.8.0`:
+
+- **An agent session keeps cookies.** Each session has a cookie jar of its own, in memory: a
+  login with `fill` and `press` stays signed in for the next `go`, `follow`, `press`, `back` and
+  `forward` of that session, and `close` drops what the jar holds. The rules are those of the
+  cookie draft (rfc6265bis): host-only cookies, `Path`, `Max-Age` and `Expires`, `Secure` only
+  over `https:`, and `SameSite` decided by the page that started the request. An answer shows
+  `cookies <n>` and never a cookie's name or value. The agent task `login` needs it; the
+  measure has six tasks.
+- **A definition for an agent.** `surf-agent help --for-agent` prints the commands, the parts of
+  the answer an agent reads, the rule that text from a page is data, and worked calls,
+  assembled from the texts the binary is built and tested with. It needs no session.
+
+New after round 2, shipped in release `0.6.0`:
+
+- **The live view shows a page's controls and what an action changed.** The panel "Now" lists
+  the page's links, buttons and fields in groups: a field with its kind, label, value and flags
+  (`disabled`, `checked`, `required`, `readonly`), a button with the form, method and address it
+  submits to. A new panel, `Changed by <action>` (`Changed by fill f2`), shows what the
+  action at the playhead changed: one line per control (`f1 value "" -> "ada"`,
+  `f3 checked true -> false`), or for another page its `page` line and its new texts, and
+  `no changed block` when the answer has none. A password is shown as `(empty)`, as the number
+  of bytes a `fill` typed (`12 bytes`), or as `(set)`, never its value: neither the page, the
+  stream nor a session's detail holds what the agent typed. Text a server sends back is page
+  text and is shown as such.
+
+New with round 2, shipped in release `0.5.0`:
+
+- **An agent can act on a page.** `surf-agent follow <handle>` loads a link's target, `fill`
+  types into a field, `pick` chooses an option or ticks a box, and `press` presses a button and
+  submits its form with `GET` or `POST`. `back` and `forward` move through the session's pages.
+  The `page` line shows the page's title.
+- **Each answer says what changed.** The `changed` block lists the controls whose value,
+  checked state or selection the last action changed, or the new page and its new texts, at
+  most ten lines and a count of the rest. `log [<n>]` lists the session's actions.
+- **A public page cannot send the session to your network.** `follow` and `press` from a page
+  that counts as public, and `back` and `forward` to a page that such a page or a redirect after
+  a public address chose, are refused `forbidden-destination` when the address is or resolves to
+  a loopback or private one. To load a local address, type it with `go`.
+- **The live view shows a page's links.** Its panel "Now" lists the links of the answer at the
+  playhead with their handles, labels and targets, and a `follow` shows its handle on the
+  timeline.
 
 New with round 1 after the tenth wave of the current plan, shipped in release `0.4.0`:
 
@@ -338,8 +410,9 @@ New with the seventh wave of the current plan, shipped in release `0.3.0`:
 - **Redirects are followed.** A `go` or an `open` follows up to 20 redirects (301, 302, 303,
   307 and 308 with a `Location`) inside one fetch. The `page` line shows the address the fetch
   ended at, and the `did go` line the address asked for. One more redirect after the twentieth
-  fails the load with `TooManyRedirects`. Only `http:` loads: a redirect to `https:` fails with
-  `UnsupportedScheme`. A redirect from a public address to a loopback or private one fails with
+  fails the load with `TooManyRedirects`. In that release only `http:` loaded: a redirect to
+  `https:` failed with `UnsupportedScheme`. A redirect from a public address to a loopback or
+  private one fails with
   `ForbiddenDestination` (above).
 - **The live view's page shows real sessions**, with a playhead over each session's actions
   (see "Watching sessions live" above). After a refused token the page stops and reads
@@ -456,7 +529,7 @@ plan is [`docs/plan/agent-waves.md`](docs/plan/agent-waves.md) and its design is
 Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `surf-agent`,
 `surfd` and `surf-session`, for Linux only at first. The releases are listed at
 <https://github.com/beyond10x/surf/releases>. After it, work moves to the script engine,
-[swell](https://beyond10x.github.io/swell/), a project of its own. Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. Wave 10 and round 1, which builds the stories of wave 11 and some of the waves after it, followed, and release `0.4.0` follows round 1: it adds the HTML parser on real pages and the page as text. The waves after them are planned and have no date.
+[swell](https://beyond10x.github.io/swell/), a project of its own. Waves 5 to 9 followed, and release `0.3.0` follows wave 9: it adds the live view, redirects and the session log. Wave 10 and round 1, which builds the stories of wave 11 and some of the waves after it, followed, and release `0.4.0` follows round 1: it adds the HTML parser on real pages and the page as text. Round 2 followed, and release `0.5.0` follows it: it adds following links, filling and submitting forms, going back and forward, and what changed. The live view's control states followed, and release `0.6.0` follows them: the live view shows a page's controls and what an action changed. TLS 1.3 followed, and release `0.7.0` follows it: `surf` and an agent session load `https:` addresses. The cookie jar and the agent definition followed, and release `0.8.0` follows them: an agent session keeps cookies, and `surf-agent help --for-agent` prints a definition for an agent. The waves after them are planned and have no date.
 
 | after wave | what you can do |
 |---|---|
@@ -468,12 +541,14 @@ Release `0.2.0`, which follows wave 4, adds the agent binaries beside `surf`: `s
 | 22 | Record an agent's session, turn it into a test, and replay it against the recorded network. |
 
 Round 2 delivered following links, filling and submitting forms, going back and forward, the
-`changed` block and `log`; no release carries them yet. TLS and `https:` are on the list below.
+`changed` block and `log`; release `0.5.0` ships them. TLS 1.3 and `https:` followed:
+`surf` and an agent session's `go`, `open`, `follow` and `press` load `https:`, and a session
+takes an extra anchor file with `open --ca-file`; release `0.7.0` ships them. An agent
+session's cookie jar and `surf-agent help --for-agent` followed; release `0.8.0` ships them.
 None of the next steps has a date.
 
 Next after that, wanted and not planned in detail yet:
 
-- **TLS 1.3**, and `https:` with it. Soon: most of the web is not reachable without it.
 - **Screenshots.** That takes CSS, layout, painting and text rendering, all written here.
 - **A JavaScript engine**: [swell](https://beyond10x.github.io/swell/), an ECMAScript engine
   written from scratch in Rust as a project of its own, which surf will embed.
@@ -498,7 +573,9 @@ talking to the network, keeping each component's data, the command lines and the
 | `renderer` | styles, lays out and paints a document into a frame (specified, not rendering yet) |
 
 To build surf from source you need [`ess`](https://github.com/beyond10x/ess) 0.97.4,
-[`task`](https://taskfile.dev) and a Rust toolchain (built with 1.99.1); `task build` builds
+[`task`](https://taskfile.dev), a Rust toolchain (built with 1.99.1) and a C compiler (ring
+compiles its C and assembly with it: `cc` on Linux, the Xcode command line tools on macOS);
+`task build` builds
 the four binaries. `task check` also needs [`cargo-nextest`](https://nexte.st) 0.9.143 or later.
 That is for working on surf, not for using it.
 
@@ -506,41 +583,79 @@ One command checks everything:
 
 ```console
 $ task check
-surf v1 — 9 file(s), 24 scenario(s), valid
-170 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
-  170 scenarios: 170 passed, 0 failed, 0 error, 0 unsupported
-170 scenario(s) (24 authored), 48 refusal(s), written to .out/suite.json
-  170 scenarios: 170 passed, 0 failed, 0 error, 0 unsupported
-the interpreter and the Rust system ran 170 scenario(s) each, of suite sha256:8b5c4b2f27ec981e3b3d5dff934bc62e935606f9b441604980c929c185d9a132
+surf v1 — 9 file(s), 44 scenario(s), valid
+203 scenario(s) (44 authored), 56 refusal(s), written to .out/suite.json
+  203 scenarios: 203 passed, 0 failed, 0 error, 0 unsupported
+203 scenario(s) (44 authored), 56 refusal(s), written to .out/suite.json
+conform-noticed: conformance/tests/noticed.txt matches its sources
+conform-rust: the narrowed suites of 29 planted defects written to conformance/target/noticed/3c078a8015b3e1cb30f295ad7e4cee71733675f170dc35bf2bc3d30aef7d592b
+Summary [   1.173s] 39 tests run: 39 passed, 0 skipped
+  203 scenarios: 203 passed, 0 failed, 0 error, 0 unsupported
+conformance step: 2.5 s of its budget of 120 s
+the interpreter and the Rust system ran 203 scenario(s) each, of suite sha256:27d50358e22d9b7b06eb74922b781b6ee0956c4e4d2ec3ed7504ae41285bbb86
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
-Cargo.lock: 26 package(s), none from outside this repository
-    Finished `dev` profile [unoptimized] target(s) in 0.00s
-877 tests: 877 passed, 0 failed, 0 ignored (cargo-nextest 875, doc tests 2)
-test step: 62.3 s of its budget of 120 s
-agent-tasks: 4 tasks, 2 pass, 2 fail, 0 skipped, lane gate, binaries target/debug
-sh-echo: Summary [   2.623s] 40 tests run: 40 passed, 54 skipped
-view-stream-check: 19 event name(s), each a message of the AsyncAPI projection
-  59 passed (3.0m)
+10 CLI artifact(s), generated in .out/cli
+Cargo.lock: 50 package(s), 19 from outside this repository, each on the allow-list
+test-layout: 24 test directories, 187 test files, one test binary each
+tls-certs: 33 cases, certs/ matches its sources
+tls-flights: 6 recordings match SOURCE, the recorder matches DIGEST
+tls-flights: self-test: a changed copy of aes128-x25519-ecdsa.bin fails naming it
+doc-tests-check: no doc test outside crates/ports
+    Finished `dev` profile [unoptimized] target(s) in 7.52s
+1424 tests: 1424 passed, 0 failed, 0 ignored (cargo-nextest 1422, doc tests 2)
+test step: 10.8 s of its budget of 120 s
+552 tests: 552 passed, 0 failed, 0 ignored (cargo-nextest 552)
+tls test step: 2.8 s of its budget of 120 s
+agent-tasks: 6 tasks, 6 pass, 0 fail, 0 skipped, lane gate, binaries target/debug
+sh-echo: Summary [  10.278s] 51 tests run: 51 passed, 115 skipped
+view-stream-check: 23 event name(s), each a message of the AsyncAPI projection
+view-tests: node_modules installed from package-lock.json
+  71 passed (13.0s)
+page step: 13.4 s of its budget of 120 s
 html-conformance: 9107 cases, 9095 run, 9095 passed
+x509-limbo: 5143 cases, 5089 run, 5060 passed
+tls-x509-conformance: 1 s
+forge-watch-test: 6 case(s), each decided as expected by taskfiles/forge-watch.sh
+planning-only-test: 9 case(s), each decided as expected by taskfiles/planning-only.sh
+test-layout-test: 39 case(s), each decided as expected by taskfiles/test-layout.sh
+sh-echo-test: 2 case(s), each decided as expected by taskfiles/sh-echo.sh
+doc-tests-check-test: 14 case(s), each decided as expected by taskfiles/doc-tests-check.sh
+four steps: 29.5 s (test step 10.8 s, tls test step 2.8 s, conformance step 2.5 s, page step 13.4 s)
 ```
 
-It validates the specification, runs the 196 scenarios against the interpreter built into `ess`
+It validates the specification, runs the 203 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
-that the lock file holds no outside package, then builds and tests, checks that every event
-name of the live view's stream is an event of the specification, runs the live view's page
-tests in a browser, and last holds the HTML parser's test counts where they are. The tests run
-under cargo-nextest; a test still running after 60 seconds is ended and fails, the test step
-fails when it takes over 120 seconds, and the block leaves out the ten slowest tests the step
-also prints and the agent tasks' rows after their counts. The page tests' line, `59 passed
-(3.0m)` (the task 220 s), was measured at a load average of 126 to 127 on 20 CPUs, its slowest
-test (`an entry over 1 MiB`) 35.0 s; `53 passed` took 1.1m at a load average of 55 to 65;
-`47 passed` took 2.5m at a load average of 110 to 140, and the 38 of before took 15.8 s.
+that every package in the lock file from outside the repository is on its allow-list, then
+builds and tests, the TLS crates in a step of their own, checks that every event name of the
+live view's stream is an event of the specification, runs the live view's page tests in a
+browser, holds the HTML parser's and the X.509 checker's test counts where they are, and last
+tests the gate's own scripts. The tests run under cargo-nextest; a test still running after 60
+seconds is ended and fails, each of the four timed steps (the conformance step, the test step,
+the TLS test step and the page step) fails when it takes over 120 seconds, and the last line
+adds the four up. The block leaves out the ten slowest tests each step also prints, the agent
+tasks' rows after their counts, npm's and Playwright's own lines and the rows of the two
+conformance counts. It is the run of 2026-11-24 on `eb97549`, the commit of release `0.8.0`,
+that `task check-runner` ended in 125 s. The page tests' line, `71 passed (13.0s)`, has its
+slowest test (`adversary: an action streamed while the detail loads after a reset is not
+lost`) at 1.237 s and `an entry over 1 MiB` at 0.682 s; the run of 2026-11-24 on `b39b77b`
+had `71 passed (17.3s)`, its slowest test (`page line and three links after go`) at 1.703 s
+and `an entry over 1 MiB` at 779 ms; the run of 2026-11-23 at a load average of 87 to 90 on 20
+CPUs had `71 passed (1.4m)`, its slowest test (`reset after a long absence`) at 5.6 s and
+`an entry over 1 MiB` at 4.7 s; `60 passed (58.5s)` had `an entry over 1 MiB` as its slowest
+at 9.7 s; `59 passed (1.9m)` had
+it at 27.3 s at a load average of 96 to 132; `59 passed (1.6m)` at 16.0 s at a load average of
+111 to 117; `59 passed (3.0m)` took the task 220 s at a load
+average of 126 to 127; `53 passed` took 1.1m at a load average of 55 to 65; `47 passed` took
+2.5m at a load average of 110 to 140, and the 38 of before took 15.8 s.
 The page tests need Node and
 Chromium's headless shell; with Node there, install the shell once with `npm --prefix view-tests ci`, then `npx --prefix view-tests playwright
-install --only-shell chromium`. The scenario runner in
-[`conformance/`](conformance/) is the one place a third-party crate is used; nothing that
-ships depends on it.
+install --only-shell chromium`. Third-party crates are used in two places: the scenario runner
+in [`conformance/`](conformance/), with a lock of its own, and `surf-tls`, whose `ring` and the
+packages it needs are the 19 outside packages of the root lock, each on the allow-list
+`taskfiles/lock-allow.txt`; the lock check fails on one that is not. Nothing that ships depends
+on the scenario runner. Every binary built from `main` is built with `surf-tls` and so with
+ring, and so is every binary of every release since `0.7.0`.
 
 `task open` lists the design questions that are still open.
 

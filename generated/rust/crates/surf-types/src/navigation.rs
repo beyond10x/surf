@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest aac42d8ac87218cacd79d661cdfc6da87c457bcea21b6e55cbec893553faf526
+// contract digest 0885760ec9338d6af6c9b21b424dde0557abe451edb6419c0f296bc37836f5f6
 // do not edit: regenerate with `ess synthesize`
 
 //! Navigation — `surf.navigation`.
@@ -440,6 +440,8 @@ pub struct Navigate {
     pub body: Option<Vec<u8>>,
     /// `body_type` — `Optional<surf.net.MediaType>`.
     pub body_type: Option<crate::net::MediaType>,
+    /// `initiator` — `Optional<String>`.
+    pub initiator: Option<String>,
 }
 
 /// Everything `surf.navigation.Navigate` can result in — one variant per declared outcome.
@@ -588,6 +590,8 @@ pub struct NavigationStarted {
     pub body: Option<Vec<u8>>,
     /// `body_type` — `Optional<surf.net.MediaType>`.
     pub body_type: Option<crate::net::MediaType>,
+    /// `initiator` — `Optional<String>`.
+    pub initiator: Option<String>,
 }
 
 /// TraversalStarted — the event `surf.navigation.TraversalStarted`.

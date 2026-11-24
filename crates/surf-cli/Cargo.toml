@@ -1,7 +1,7 @@
 [package]
 name = "surf-cli"
 description = "The surf command line: load one address and print the rows it ends with."
-version = "0.4.0"
+version = "0.8.0"
 edition = "2024"
 publish = false
 license = "Apache-2.0"
@@ -19,6 +19,10 @@ surf-fetch = { path = "../fetch" }
 surf-page-text = { path = "../page-text" }
 surf-ports = { path = "../ports" }
 surf-types = { path = "../../generated/rust/crates/surf-types" }
+
+[dev-dependencies]
+surf-tls-test-certs = { path = "../tls-test-certs" }
+surf-tls-test-server = { path = "../tls-test-server" }
 
 [[test]]
 name = "main"

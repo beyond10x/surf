@@ -21,6 +21,7 @@ renderer = { path = "../../generated/rust/crates/renderer" }
 agent = { path = "../../generated/rust/crates/agent" }
 surf-ports = { path = "../ports" }
 surf-fetch = { path = "../fetch" }
+surf-cookie = { path = "../cookie" }
 surf-html = { path = "../html" }
 surf-page = { path = "../page" }
 surf-url = { path = "../url" }

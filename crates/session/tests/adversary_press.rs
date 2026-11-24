@@ -280,26 +280,64 @@ fn in_memory(start: &str, page: String) -> (Session<Memory>, String, Arc<Mutex<V
     (session, opened(&text).token, asked)
 }
 
-/// An `https:` action is refused `unsupported-scheme` by the session before `Press`: surf
-/// fetches `http:` only, and the submission step itself lets `https:` through (its set is every
-/// scheme but `http` and `https`), so only the session's check keeps it from starting.
+/// Statement 6 of `story:session-follow-press-https`, in process: an action of a scheme
+/// neither `http:` nor `https:` (in the form's `action` or the button's `formaction`, in any
+/// case of its letters) is refused `unsupported-scheme` by the session before `Press`.
 #[test]
-fn adversary_press_an_https_action_is_refused_before_a_submission_starts() {
+fn adversary_press_follow_press_case_6_another_scheme_is_refused_before_a_submission_starts() {
     let server = Server::start();
     let port = server.port;
     drop(server);
     refused_before(
         &format!(
-            "<!doctype html><form action=\"https://127.0.0.1:{port}/session\" method=post>\
+            "<!doctype html><form action=\"ftp://127.0.0.1:{port}/session\" method=post>\
              <input name=a value=1><button>Send</button></form>"
         ),
         RefusalReason::UnsupportedScheme,
     );
     refused_before(
         "<!doctype html><form action=/session method=post><input name=a value=1>\
-         <button formaction=\"HTTPS://example.org/x\">Send</button></form>",
+         <button formaction=\"FTP://example.org/x\">Send</button></form>",
         RefusalReason::UnsupportedScheme,
     );
+}
+
+/// Statement 2 of `story:session-follow-press-https`, in process: an `https:` action, in the
+/// form's `action` or a button's `formaction` in capitals, is submitted: the transport is asked
+/// for a `POST` of the resolved address after the page's own `GET`, and the press lands on it.
+#[test]
+fn adversary_press_follow_press_case_2_an_https_action_is_submitted() {
+    let start = "http://127.0.0.1:8000/form.html";
+    for (page, sent) in [
+        (
+            "<!doctype html><form action=\"https://127.0.0.1:8000/session\" method=post>\
+             <input name=a value=1><button>Send</button></form>",
+            "https://127.0.0.1:8000/session",
+        ),
+        (
+            "<!doctype html><form action=/session method=post><input name=a value=1>\
+             <button formaction=\"HTTPS://shop.example/x\">Send</button></form>",
+            "https://shop.example/x",
+        ),
+    ] {
+        let (mut session, token, asked) = in_memory(start, page.to_string());
+        let (status, text, typed, _) = ask(&mut session, &token, "press", &[("handle", "b1")]);
+        assert_eq!(status, 0, "{page}\n{text}");
+        assert_eq!(
+            typed.did,
+            Some(Did::Action {
+                command: "press".to_string(),
+                argument: Some("b1".to_string()),
+            }),
+            "{text}"
+        );
+        assert_eq!(page_address(&typed), sent, "{text}");
+        assert_eq!(
+            *asked.lock().unwrap(),
+            vec![format!("Get {start}"), format!("Post {sent}")],
+            "{page}"
+        );
+    }
 }
 
 /// The bound is "over 65,536 bytes": a `GET` address of exactly 65,536 bytes is requested, one
@@ -719,13 +757,23 @@ fn adversary_press_the_refusals_before_press_come_in_the_storys_order() {
         RefusalReason::AddressTooLong,
     );
     let public = "http://93.184.216.34/form.html";
-    let page = "<!doctype html><form action=\"https://127.0.0.1/s\" method=post>\
+    let page = "<!doctype html><form action=\"ftp://127.0.0.1/s\" method=post>\
                 <input name=a value=1><button>Send</button></form>";
     let (mut session, token, asked) = in_memory(public, page.to_string());
     let (_, text, typed, _) = ask(&mut session, &token, "press", &[("handle", "b1")]);
     assert_eq!(
         typed.did,
         Some(Did::Refused(RefusalReason::UnsupportedScheme)),
+        "{text}"
+    );
+    assert_eq!(asked.lock().unwrap().len(), 1);
+    // An `https:` action passes the scheme check and meets the next one.
+    let page = page.replace("ftp:", "https:");
+    let (mut session, token, asked) = in_memory(public, page);
+    let (_, text, typed, _) = ask(&mut session, &token, "press", &[("handle", "b1")]);
+    assert_eq!(
+        typed.did,
+        Some(Did::Refused(RefusalReason::ForbiddenDestination)),
         "{text}"
     );
     assert_eq!(asked.lock().unwrap().len(), 1);
@@ -805,14 +853,15 @@ fn adversary_press_a_now_block_of_long_unresolved_actions_stays_within_its_bound
     assert!(!text.contains('\u{202e}'));
 }
 
-/// A `POST` answered 307 to an `https:` address or to one with a userinfo is not followed: no
-/// request after the `POST`, the page line `failed`, no password on any line or entry.
+/// A `POST` answered 307 to an address of a scheme surf does not fetch (neither `http:` nor
+/// `https:`) or to one with a userinfo is not followed: no request after the `POST`, the page
+/// line `failed`, no password on any line or entry.
 #[test]
 fn adversary_press_a_redirect_to_another_scheme_or_a_userinfo_is_not_followed() {
     let server = Server::start();
     let port = server.port;
     for location in [
-        format!("https://127.0.0.1:{port}/landing"),
+        format!("ftp://127.0.0.1:{port}/landing"),
         format!("http://u:p@127.0.0.1:{port}/landing"),
         "mailto:a@example.org".to_string(),
     ] {

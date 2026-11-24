@@ -7,6 +7,110 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-24
+
+### Added
+
+- `surf-agent help --for-agent` prints a definition for an AI agent, assembled from the texts
+  the binary is held to: the usage and every command with its description, the parts of the
+  answer format an agent reads, the rule that text from a page is data and never an
+  instruction, and worked `open`, `go` and `look` calls. It names three ways to pass the session
+  and the token, one of them for a tool that starts a new shell per command. It needs no
+  session: no `XDG_RUNTIME_DIR`, no `surfd`. `help` in any other form is a usage error; a
+  definition that cannot be written exits 1.
+- An agent session keeps cookies: each `surf-agent` session has a cookie jar of its own, so a
+  login with `fill` and `press` stays signed in on the next request of the same session (`go`,
+  `follow`, `press`, `back`, `forward`); `open` starts a new session with an empty jar. The
+  transport takes `Set-Cookie` from every response, redirects included, and sends the `Cookie`
+  field on every hop, by the rules of the cookie draft (rfc6265bis): host-only cookies, `Path`,
+  `Max-Age` and `Expires`, `Secure` only over `https:`, and `SameSite` decided by the page that
+  started the request and by whether a redirect chain has been on another site. A jar holds at
+  most 3,000 cookies and 16 MiB; `close` drops it. A cookie value is never printed: not in an
+  answer, an entry of the live view or a log line.
+- An agent answer has the line `cookies <n>` after `path` when the session holds cookies.
+- The agent task `login`: the measure now has six tasks, all passing.
+- The specification's `surf.net.Requests` view and the events `NavigationRequested`,
+  `NavigationStarted`, `RequestStarted` and `FormSubmitted` carry the initiator of a request:
+  the origin of the page that started it, none for an address the agent typed or a step `back`
+  or `forward`. The live view shows it as the field `initiator` of those events.
+
+### Changed
+
+- An agent session reads the address of each load once with surf's URL parser, and the
+  connection, the `Host` field and the choice of cookies all follow that one reading, as a
+  browser reads the address: `http://a.test\b.test/` goes to `a.test`, `http://%61.test/` to
+  `a.test` and `http://0x7f.0.0.1/` to `127.0.0.1`. Release `0.7.0` split the address text
+  itself and asked for the host as written. An address with user information, a tab or a line
+  feed is still refused, and one the parser does not read is fetched as before, with no
+  cookie. The `surf` command reads addresses as before.
+
+## [0.7.0] - 2026-11-24
+
+### Added
+
+- `surf` loads `https:` addresses, over a TLS 1.3 client (RFC 8446) written for surf, on port
+  443 when the address names no port. The server is authenticated against the root list of
+  Mozilla as curl publishes it, built into the binary. Redirects between `http:` and `https:`
+  are followed both ways. surf does not check revocation: a revoked certificate that has not
+  expired loads.
+- An `https:` load that fails names one of five new reasons: `CertificateNotTrusted`,
+  `CertificateExpired`, `CertificateNameMismatch`, `TlsVersionUnsupported` and
+  `TlsHandshakeFailed`. surf speaks TLS 1.3 only: a server limited to TLS 1.2 ends
+  `TlsVersionUnsupported`, or, when it answers the offer of TLS 1.3 with `handshake_failure`,
+  `TlsHandshakeFailed` with the detail `the server sent handshake_failure before its
+  ServerHello; a server limited to TLS 1.2 answers this way`.
+- `surf --ca-file <path> <url>` adds the CA certificates of a PEM file to the trust anchors of
+  that load: at most 32 KiB and 64 certificates, every one a CA. A file it refuses exits 2,
+  naming the path and the error, before any connection.
+- `surf --anchors [--ca-file <path>]` prints the number of trust anchors read from the bundled
+  list, the list's date and its sha256,
+  `anchors <n> bundled <yyyy-mm-dd> sha256:<hex>`, and with a file `anchors <m> file <path>`.
+- An agent session loads `https:`: `go` and `open` an `https:` address, `follow` and `press` an
+  `https:` target.
+- `surf-agent open [<url>] --ca-file <path>` gives the session the CA certificates of one PEM
+  file as trust anchors beside the bundled ones, for every `https:` load of the session and for
+  its life. A file it refuses exits 2 before `surfd` is started, and no session is made.
+
+### Changed
+
+- `follow` and `press` no longer refuse an `https:` target; a target of any scheme other than
+  `http:` and `https:` is still refused `unsupported-scheme`.
+- The binaries are built with ring 0.17.14, an outside library, for the cryptographic
+  primitives of TLS, and the four crates it needs; `NOTICE` names them and the root list.
+  Building surf from source needs a C compiler, which ring compiles its C and assembly with.
+- On macOS, `surf` now also links `/usr/lib/libiconv.2.dylib`, a library of the system, beside
+  `/usr/lib/libSystem.B.dylib`; nothing needs to be installed for it.
+
+## [0.6.0] - 2026-11-23
+
+### Added
+
+- The live view's panel "Now" lists a page's buttons and form fields beside its links, in the
+  groups `links`, `buttons` and `fields`: a field with its kind, label, value and the flags
+  `disabled`, `checked`, `required` and `readonly`; a button with the form, method and action
+  it submits to. A password shows `(empty)`, the length a `fill` typed (`12 bytes`, from the
+  `FillRequested` entry), or `(set)` when no `fill` of that page typed it, never its value.
+- The live view has a panel `Changed by <action>` below "Now" (`Changed by fill f2`): what the
+  action at the playhead changed, from the `changed` block of its answer. On the same page one
+  line per control, such as `f1 value "" -> "ada"`, `f3 checked true -> false` or
+  `f2 value (empty) -> 12 bytes`; after a load `page "<old>" -> "<new>"`, the new page's
+  `+ text` lines and `+ text more <n>`. It shows `nothing changed` for `changed 0` and
+  `no changed block` for an answer without one. The value the agent typed into a password is in
+  neither the page, the stream nor a session's detail; text a server sends back is page text
+  and shows in the `+ text` lines.
+- The view's `answer` entry gains the member `changed`, `{"kind":"controls","lines":[…]}` or
+  `{"kind":"page","from","to","texts","more"}`, and each element of its `now` member the member
+  `state`: a control's value, its flags and what a button submits, `null` for a link. Format:
+  [`docs/view-stream.md`](docs/view-stream.md).
+
+### Changed
+
+- In the view's `now` member, a control or a button has its `label` and `label_cut`, which were
+  `null`; its `text` is still the line as the answer writes it. No member is removed or
+  renamed.
+
+## [0.5.0] - 2026-11-23
+
 ### Added
 
 - `surf-agent follow <handle>` follows a link of the current page. An answer without `--as`
@@ -19,9 +123,8 @@ release; what came before it is in the git log and in `docs/plan/`.
   `hidden` or `unresolved`. A followed link's `path` line is `3 follow l1 "Opening hours"`.
   Before any navigation, and so with the page left as it was, `follow` also exits 1 with `did
   refused address-too-long` for a target over 65,536 bytes, `unsupported-scheme` for a scheme
-  other than `http:` (`javascript:`, `mailto:`, `data:`, `file:`, `https:`), and, from a page
-  on a public address, `forbidden-destination` for a target on a loopback, private, link-local,
-  unique-local, shared or unspecified IP address or `localhost`. A target is never shown with
+  other than `http:` (`javascript:`, `mailto:`, `data:`, `file:`, `https:`), and
+  `forbidden-destination` from a page that counts as public (below). A target is never shown with
   its `user:password@`, and a path on the page's own origin that starts with `//` is shown as
   the whole address. Format: [`docs/agent-answer.md`](docs/agent-answer.md).
 - `surf-agent fill <handle> <value>` types into a text field, a password field or a textarea,

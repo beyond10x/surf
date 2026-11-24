@@ -1,0 +1,119 @@
+# A page load over `https:` whose server's certificate is outside its validity. Synthesis sends
+# only the first variant of a reason, so this is the scenario that sends CertificateExpired and
+# reads it back from the navigation and the session. It also holds the hostile case: the same
+# reason sent for a request that already has its response is refused, and the navigation that
+# committed stays committed.
+type: ess-scenario/6
+domain: surf.navigation
+scenario: page-load-fails-certificate-expired
+summary: >-
+  A navigation whose request ends with CertificateExpired is Failed and the session shows the
+  reason; the reason sent after a response is refused and the committed navigation stays.
+
+arrange:
+  - instance: session
+    entity: surf.agent.Session
+    setup:
+      identity: 7c3e5a00-0000-4000-8000-000000000021
+      fields:
+        window_id: 7c3e5a00-0000-4000-8000-000000000022
+        tab_id: 7c3e5a00-0000-4000-8000-000000000023
+        holder: 7c3e5a00-0000-4000-8000-000000000021
+      state: Open
+  - instance: committed-load
+    entity: surf.navigation.Navigation
+  - instance: load
+    entity: surf.navigation.Navigation
+
+timeline:
+  - at: 2026-01-08T09:00:00Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 7c3e5a00-0000-4000-8000-000000000023
+      url: http://example.org/
+      method: Get
+    outcome: started
+    events:
+      - event: surf.navigation.NavigationStarted
+        payload:
+          tab_id: 7c3e5a00-0000-4000-8000-000000000023
+          url: http://example.org/
+    capture: {instance: committed-load, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  # The body is `<html></html>`.
+  - at: 2026-01-08T09:00:01Z
+    command: surf.net.DeliverResponse
+    input:
+      request_id: {$instance: committed-load}
+      url: http://example.org/
+      method: Get
+      status: 200
+      media_type: text/html
+      body: PGh0bWw+PC9odG1sPg==
+    outcome: responded
+
+  # Hostile: a TLS failure reported for a request that already has its response.
+  - at: 2026-01-08T09:00:02Z
+    command: surf.net.FailRequest
+    input:
+      request_id: {$instance: committed-load}
+      reason: CertificateExpired
+    outcome: wrong-state
+    error:
+      name: surf.net.RequestStateConflict
+      fields:
+        state: Responded
+    no_events: [surf.net.FetchFailed]
+
+  - at: 2026-01-08T09:00:03Z
+    command: surf.navigation.Navigate
+    actor: surf.navigation.User
+    input:
+      tab_id: 7c3e5a00-0000-4000-8000-000000000023
+      url: https://expired.example.org/
+      method: Get
+    outcome: started
+    events:
+      - event: surf.navigation.NavigationStarted
+        payload:
+          tab_id: 7c3e5a00-0000-4000-8000-000000000023
+          url: https://expired.example.org/
+    capture: {instance: load, event: surf.navigation.NavigationStarted, field: navigation_id}
+
+  - at: 2026-01-08T09:00:04Z
+    command: surf.net.FailRequest
+    input:
+      request_id: {$instance: load}
+      reason: CertificateExpired
+    outcome: failed
+    events:
+      - event: surf.net.FetchFailed
+        payload:
+          request_id: {$instance: load}
+          url: https://expired.example.org/
+          reason: CertificateExpired
+
+assert:
+  - view: surf.net.Requests
+    contains: {request_id: {$instance: committed-load}, url: http://example.org/, state: Responded}
+
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: committed-load}, state: Committed}
+
+  - view: surf.net.Requests
+    contains: {request_id: {$instance: load}, url: https://expired.example.org/, state: Failed}
+
+  - view: surf.navigation.Navigations
+    contains: {navigation_id: {$instance: load}, state: Failed}
+
+  - view: surf.agent.SessionState
+    params: {session_id: {$instance: session}}
+    contains:
+      session_id: {$instance: session}
+      state: Open
+      url: https://expired.example.org/
+      navigation_state: Failed
+      status: null
+      media_type: null
+      failure_reason: CertificateExpired

@@ -213,6 +213,42 @@ impl<F: FnMut(&RequestStarted) -> Answer> Transport for F {
     }
 }
 
+/// What the requests of one session share: the trust anchors and the cookie jar. The
+/// [`Default`] is the bundled anchors alone and no jar.
+#[derive(Clone, Copy, Default)]
+pub struct RequestContext<'a> {
+    /// The trust anchors an `https:` server is authenticated against: the bundled list with the
+    /// anchors of an extra file ([`surf_fetch::Anchors::with_extra_pem`]), or the bundled list
+    /// alone with `None`.
+    pub anchors: Option<&'a surf_fetch::Anchors>,
+    /// The cookie jar of the session: each hop of a request sends the cookies it gives and
+    /// stores those the response sets (the crate documentation of `surf-fetch`, "Cookies").
+    /// `None` sends no cookie and keeps none.
+    pub jar: Option<&'a surf_cookie::Jar>,
+}
+
+impl fmt::Debug for RequestContext<'_> {
+    /// The anchors by their count and the jar by the count of its cookies, never a cookie:
+    /// `RequestContext { anchors: Some(<n>), jar: Some(Jar { cookies: 2 }) }`.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RequestContext")
+            .field("anchors", &self.anchors.map(surf_fetch::Anchors::count))
+            .field("jar", &self.jar)
+            .finish()
+    }
+}
+
+/// The serialized origin of the document at `address`, the initiator of a navigation the
+/// document starts (a link it follows, a form it submits): `http://127.0.0.1:8080` for
+/// `http://127.0.0.1:8080/a/b`, and `null` for an opaque origin or an address that does not
+/// parse, which is same-site with no address.
+pub fn initiator_of(address: &str) -> String {
+    match surf_url::Url::parse(address, None) {
+        Ok(url) => url.origin().serialize(),
+        Err(_) => "null".to_owned(),
+    }
+}
+
 /// Fetches `request` with `surf-fetch` within `limits`, for a transport that goes to the network.
 ///
 /// A request with [`Method::Get`], no body and no media type is sent as a `GET`; one with
@@ -221,13 +257,19 @@ impl<F: FnMut(&RequestStarted) -> Answer> Transport for F {
 /// the body). A [`Method::Get`] with a body or a media type ends with
 /// [`surf_fetch::Failure::UnsupportedScheme`], whose detail names the method, before any
 /// connection is attempted.
+///
+/// An `https:` request, and an `https:` redirect, authenticate the server against the anchors of
+/// `context`; the jar of `context` sends and keeps the cookies of every hop, same-site or not by
+/// [`RequestStarted::initiator`].
 pub fn fetch_http(
     request: &RequestStarted,
     limits: &surf_fetch::Limits,
+    context: RequestContext<'_>,
 ) -> Result<surf_fetch::Response, surf_fetch::Failure> {
     fetch_http_from(
         request,
         limits,
+        context,
         &surf_fetch::OsNetwork,
         surf_fetch::Origin::Given,
     )
@@ -239,6 +281,7 @@ pub fn fetch_http(
 pub fn fetch_http_from(
     request: &RequestStarted,
     limits: &surf_fetch::Limits,
+    context: RequestContext<'_>,
     network: &dyn surf_fetch::Network,
     origin: surf_fetch::Origin,
 ) -> Result<surf_fetch::Response, surf_fetch::Failure> {
@@ -260,6 +303,9 @@ pub fn fetch_http_from(
                 .body_type
                 .as_ref()
                 .map(|media_type| media_type.0.as_str()),
+            anchors: context.anchors,
+            jar: context.jar,
+            initiator: request.initiator.as_deref(),
         },
         limits,
         network,
@@ -293,6 +339,21 @@ pub fn answer(result: Result<surf_fetch::Response, surf_fetch::Failure>) -> Answ
         }
         Err(surf_fetch::Failure::ForbiddenDestination(_)) => {
             Answer::Failure(FailureReason::ForbiddenDestination)
+        }
+        Err(surf_fetch::Failure::CertificateNotTrusted(_)) => {
+            Answer::Failure(FailureReason::CertificateNotTrusted)
+        }
+        Err(surf_fetch::Failure::CertificateExpired(_)) => {
+            Answer::Failure(FailureReason::CertificateExpired)
+        }
+        Err(surf_fetch::Failure::CertificateNameMismatch(_)) => {
+            Answer::Failure(FailureReason::CertificateNameMismatch)
+        }
+        Err(surf_fetch::Failure::TlsVersionUnsupported(_)) => {
+            Answer::Failure(FailureReason::TlsVersionUnsupported)
+        }
+        Err(surf_fetch::Failure::TlsHandshakeFailed(_)) => {
+            Answer::Failure(FailureReason::TlsHandshakeFailed)
         }
     }
 }
@@ -1233,6 +1294,11 @@ fn failure_reason(reason: FailureReason) -> &'static str {
         FailureReason::MalformedResponse => "MalformedResponse",
         FailureReason::TooManyRedirects => "TooManyRedirects",
         FailureReason::ForbiddenDestination => "ForbiddenDestination",
+        FailureReason::CertificateNotTrusted => "CertificateNotTrusted",
+        FailureReason::CertificateExpired => "CertificateExpired",
+        FailureReason::CertificateNameMismatch => "CertificateNameMismatch",
+        FailureReason::TlsVersionUnsupported => "TlsVersionUnsupported",
+        FailureReason::TlsHandshakeFailed => "TlsHandshakeFailed",
     }
 }
 
@@ -1871,6 +1937,9 @@ where
                     method,
                     body,
                     body_type: body_type.map(MediaType),
+                    // The form's document started the navigation: its origin decides whether
+                    // the request is same-site for the cookie jar.
+                    initiator: Some(initiator_of(&prepared.document.url.0)),
                 })?;
             }
             Submit::Abandon(reason) => {
@@ -2081,6 +2150,7 @@ where
             method: Method::Get,
             body: None,
             body_type: None,
+            initiator: None,
         })? {
             NavigateOutcome::Started { navigation_started } => navigation_started.navigation_id,
         };

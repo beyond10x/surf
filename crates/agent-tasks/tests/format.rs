@@ -48,6 +48,12 @@ fn tasks_txt_is_read() {
     assert_eq!(article.question, "In which year was the bridge opened?");
     assert_eq!(article.answer, "1932");
     assert_eq!(article.matcher, Match::Text);
+    let https = tasks.iter().find(|t| t.name == "https").expect("https");
+    assert_eq!(https.server, Server::Https);
+    assert_eq!(https.start, "/notice.html");
+    assert_eq!(https.target, "/notice.html");
+    assert_eq!(https.connections, 1);
+    assert_eq!(https.answer, "the north entrance");
     let table = tasks.iter().find(|t| t.name == "table").expect("table");
     assert_eq!(table.matcher, Match::Row("Pears".to_string()));
     for task in &tasks {
@@ -182,9 +188,10 @@ fn commands_match_the_steps() {
         let words: Vec<&str> = steps.iter().map(|step| step.word()).collect();
         assert_eq!(words, task.commands, "{}", task.name);
         let named: Option<&[&str]> = match task.name.as_str() {
-            "article" | "table" => Some(&["open", "look", "close"]),
+            "article" | "table" | "https" => Some(&["open", "look", "close"]),
             "link" => Some(&["open", "look", "follow", "look", "close"]),
             "search" => Some(&["open", "look", "fill", "press", "look", "close"]),
+            "login" => Some(&["open", "look", "fill", "fill", "press", "look", "close"]),
             _ => None,
         };
         if let Some(named) = named {

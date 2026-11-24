@@ -2,7 +2,7 @@
 // (fixture.mjs) over the pages of crates/view-fixture/pages/adversary-now/ and now/. Each waits
 // on a poll of the page (expect), never on a fixed time.
 
-import { test, expect } from "./fixture.mjs";
+import { test, expect, expectLive } from "./fixture.mjs";
 
 // U+202E RIGHT-TO-LEFT OVERRIDE, a bidirectional control.
 const RLO = String.fromCodePoint(0x202e);
@@ -13,7 +13,7 @@ const elements = (page) => page.locator("#now li.now-element");
 
 async function load(page, address) {
   await page.goto(address);
-  await expect(page.locator("#live-word")).toHaveText("live");
+  await expectLive(page);
 }
 
 // The class of each child of each listed element, in order: where the cut marks are.

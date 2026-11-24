@@ -90,7 +90,11 @@ fn reply(mut stream: TcpStream, media_type: &str, body: &str) {
 
 /// The transport of the binaries over `surf-fetch`.
 fn http(request: &RequestStarted) -> Answer {
-    answer(fetch_http(request, &surf_fetch::Limits::default()))
+    answer(fetch_http(
+        request,
+        &surf_fetch::Limits::default(),
+        surf::RequestContext::default(),
+    ))
 }
 
 /// A parser step that counts its calls in `calls` and answers what `inner` answers.

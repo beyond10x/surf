@@ -9,10 +9,18 @@
 //! ([`wire::check_socket_path`]): a failed check is status 3 with the path and what is wrong, and
 //! nothing is connected to or written. `open` starts `surfd` only when that check finds no
 //! socket, or a socket nobody listens on, and checks again before it connects.
+//!
+//! Before that, `open --ca-file <path>` reads the file and checks it with `surf-tls`
+//! ([`read_ca_file`]); a file it refuses is a usage error (status 2), with nothing connected,
+//! started or written. Of a file it takes, the certificate blocks travel, without the lines
+//! around them, as the text of `arg anchors` in the `open` request; `surfd` passes the request
+//! to the session process unchanged, over its socket.
 
 use std::ffi::OsString;
 use std::fmt::Write as _;
+use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, Read, Write};
+use std::os::unix::fs::MetadataExt;
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -20,6 +28,8 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+
+use surf_tls::anchors::{AnchorError, Anchors, EXTRA_BYTES_MAX};
 
 use crate::cli::{self, Environment, USAGE};
 use crate::wire;
@@ -115,6 +125,10 @@ fn call(
     let from_stdin = call.command == "fill" && call.stdin;
     if from_stdin {
         call.value = Some(read_value(input)?);
+    }
+    // The file of `--ca-file` is read and checked before anything is connected or started.
+    if let Some(path) = &call.ca_file {
+        call.anchors = Some(read_ca_file(path)?);
     }
     let request = call.request();
     let request = request.encode().map_err(|error| match error {
@@ -258,6 +272,66 @@ fn read_value(input: &mut dyn Read) -> Result<String, Failure> {
     }
     String::from_utf8(bytes)
         .map_err(|_| Failure::Usage("the value read from standard input is not UTF-8".into()))
+}
+
+/// The certificate blocks of the file of `--ca-file` (`docs/design/tls.md` item 8), read before
+/// any connection: a regular file, read up to one byte past [`EXTRA_BYTES_MAX`] so that a larger
+/// one is refused as too large without being read whole, and taken only when
+/// [`Anchors::with_extra_pem_blocks`] of `surf-tls` takes it (at most 64 blocks, every block a
+/// `CERTIFICATE`, every certificate a CA). The text given back is that of the blocks taken, and
+/// none of the lines around them. A file it refuses is a usage error naming the kind of
+/// [`AnchorError`] and the block at fault ([`refusal`]); no message repeats the path or a byte
+/// of the file.
+fn read_ca_file(path: &Path) -> Result<String, Failure> {
+    let unreadable = |error: io::Error| {
+        Failure::Usage(format!(
+            "the --ca-file file cannot be read: {}",
+            error.kind()
+        ))
+    };
+    let not_regular = || Failure::Usage("the --ca-file file is not a regular file".to_string());
+    // The path is looked at before it is opened: opening a FIFO with no writer for reading
+    // waits for a writer without end. The file opened must then be the file looked at.
+    let looked = fs::metadata(path).map_err(unreadable)?;
+    if !looked.is_file() {
+        return Err(not_regular());
+    }
+    let file = File::open(path).map_err(unreadable)?;
+    let opened = file.metadata().map_err(unreadable)?;
+    if opened.dev() != looked.dev() || opened.ino() != looked.ino() || !opened.is_file() {
+        return Err(Failure::Usage(
+            "the --ca-file file changed while it was read".to_string(),
+        ));
+    }
+    let mut pem = Vec::new();
+    file.take(EXTRA_BYTES_MAX as u64 + 1)
+        .read_to_end(&mut pem)
+        .map_err(unreadable)?;
+    Anchors::bundled()
+        .with_extra_pem_blocks(&pem)
+        .map_err(|error| {
+            Failure::Usage(format!(
+                "the --ca-file file is refused: {}",
+                refusal(&error)
+            ))
+        })
+}
+
+/// The refusal of a `--ca-file` file as the client prints it: the kind of the [`AnchorError`]
+/// and the index of the block at fault, and no byte of the file. The `Display` of `surf-tls`
+/// shows the label of a block that is not a certificate, and the certificate reader's text can
+/// show a byte of the certificate; here they are the kind's name alone.
+fn refusal(error: &AnchorError) -> String {
+    let name = error.name();
+    match error {
+        AnchorError::NotACertificate { index, .. } => {
+            format!("{name}: block {index} is not a CERTIFICATE")
+        }
+        AnchorError::BadCertificate { index, error } => {
+            format!("{name}: certificate {index} is refused: {}", error.name())
+        }
+        other => other.to_string(),
+    }
 }
 
 /// [`wire::check_socket_path`]: whether the socket is there, or the refusal naming the path.

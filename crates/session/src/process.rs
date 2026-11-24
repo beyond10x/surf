@@ -15,6 +15,10 @@
 //! limit, one slower than the deadline and one whose connection ends before `end` are closed
 //! unanswered. The next request is served by the same process either way.
 //!
+//! The session's extra trust anchors (`surf-agent open --ca-file`) arrive only that way: as `arg
+//! anchors` of the `open` request on the socket. The process takes no argument and reads no
+//! environment variable for them, so its command line and environment hold no byte of them.
+//!
 //! It ends with status 0, removing its socket file first: after the answer to a `close` that
 //! closed the session, after [`IDLE_TIMEOUT`] without a connection (`--idle-timeout` sets
 //! another, a whole number of seconds from 1, for a test that starts the binary itself; `surfd`

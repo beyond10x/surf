@@ -5,12 +5,13 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "tests",
   testMatch: "*.spec.mjs",
+  globalSetup: "./global-setup.mjs",
   outputDir: "../.out/view-test/test-results",
   fullyParallel: true,
   forbidOnly: true,
   retries: 0,
-  reporter: "list",
-  timeout: 90_000,
+  reporter: [["list"], ["junit", { outputFile: "../.out/view-test/junit.xml" }]],
+  timeout: 60_000,
   expect: { timeout: 10_000 },
   use: {
     browserName: "chromium",

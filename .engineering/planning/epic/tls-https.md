@@ -368,7 +368,7 @@ and `surf-agent open --ca-file`.
 
 ## Decisions taken
 
-- U1, the source of the cryptographic primitives: option A, `ring` 0.17.14. The operator, 2026-11-22 05:47 CET, relayed by the session `host-operator`: "A: ring 0.17.14". It adds 8 packages to `Cargo.lock` and needs a C compiler that also builds assembly on every build; the first story checks that setup for the musl release build on the forge's runners before anything else is built. It is the one exception principle 4 of the README plans; the lock check allows these packages by name and version and only for the crate `surf-tls`.
+- U1, the source of the cryptographic primitives: option A, `ring` 0.17.14. The operator, 2026-11-22 05:47 CET, relayed by the operator session: "A: ring 0.17.14". It adds 8 packages to `Cargo.lock` and needs a C compiler that also builds assembly on every build; the first story checks that setup for the musl release build on the forge's runners before anything else is built. It is the one exception principle 4 of the README plans; the lock check allows these packages by name and version and only for the crate `surf-tls`.
 
 Taken by the coordinating agent on 2026-11-22, each reported to the operator, who can overrule it:
 

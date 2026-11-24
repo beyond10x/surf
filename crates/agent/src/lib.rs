@@ -15,4 +15,5 @@
 
 pub mod cli;
 pub mod client;
+pub mod help;
 pub mod wire;

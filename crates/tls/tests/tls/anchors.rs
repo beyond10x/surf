@@ -366,6 +366,53 @@ fn the_text_around_the_blocks_is_ignored() {
     assert_eq!(anchors.with_extra_pem(&text), Ok(2));
 }
 
+/// `with_extra_pem_blocks` gives back the blocks it took and nothing of the text around them:
+/// not the lines before, between and after them (bytes that are not UTF-8 among them), nor a
+/// stray END line, nor the white space after an END line. The text it gives is taken again
+/// whole, to the same anchors; a refused file gives the error of `with_extra_pem` and adds
+/// nothing.
+#[test]
+fn the_blocks_taken_are_given_back_without_the_text_around_them() {
+    let root = test_certs("ok-rsa2048/root.pem");
+    let ed = test_certs("ok-ed25519/root.pem");
+    let mut text = b"a comment line\n\xff\xfe not UTF-8\n".to_vec();
+    text.extend_from_slice(&root);
+    text.extend_from_slice(b"\nbetween \xc3\x28\n-----END CERTIFICATE-----\n\n");
+    let mut ed_trailing = ed.clone();
+    ed_trailing.truncate(ed_trailing.len() - 1);
+    text.extend_from_slice(&ed_trailing);
+    text.extend_from_slice(b" \t\r\nafter\n");
+    let mut anchors = Anchors::bundled();
+    let blocks = anchors
+        .with_extra_pem_blocks(&text)
+        .expect("the file is taken");
+    let mut expected = root.clone();
+    expected.extend_from_slice(&ed);
+    assert_eq!(blocks.as_bytes(), expected.as_slice());
+    let mut again = Anchors::bundled();
+    assert_eq!(again.with_extra_pem(blocks.as_bytes()), Ok(2));
+    assert_eq!(again, anchors);
+
+    let mut leaf = root.clone();
+    leaf.extend_from_slice(&first_block(&test_certs("ok-rsa2048/chain.pem")));
+    let mut refused_here = Anchors::bundled();
+    assert_eq!(
+        refused_here.with_extra_pem_blocks(&leaf),
+        Err(refused(&leaf))
+    );
+    assert_eq!(refused_here, Anchors::bundled());
+}
+
+/// The text of the first PEM block of `text`, its END line and line feed included.
+fn first_block(text: &[u8]) -> Vec<u8> {
+    let end = b"-----END CERTIFICATE-----\n";
+    let at = text
+        .windows(end.len())
+        .position(|window| window == end)
+        .expect("a certificate block");
+    text[..at + end.len()].to_vec()
+}
+
 #[test]
 fn the_bounds_are_32_kib_and_64_certificates() {
     assert_eq!(EXTRA_BYTES_MAX, 32 * 1024);

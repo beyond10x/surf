@@ -23,6 +23,8 @@
 //!   stays here;
 //! - `agent<TAB><id><TAB><word>…`: `surf-agent <word>…` as that session, answered
 //!   `{"status":<exit status>}`;
+//! - `agent-stdin<TAB><id><TAB><input><TAB><word>…`: the same with `<input>` on the standard
+//!   input of `surf-agent` (`fill <handle> -`), so that the value is in no command line;
 //! - `kill<TAB><id>`: kills the process of that session, answered `{}`; only for a session this
 //!   fixture opened, and only a `surf-session` whose environment holds this fixture's
 //!   `XDG_RUNTIME_DIR`, so no other process of the machine is ever killed; any other id is
@@ -41,7 +43,8 @@
 //! one request per connection, so only the first head is read, up to 64 KiB.
 //!
 //! The end of standard input stops the daemon (which kills its session processes) and the page
-//! server, and removes the directory.
+//! server, kills every process this fixture started that is still there (its descendants, read
+//! from `/proc/<pid>/task/<tid>/children`), and removes the directory.
 //!
 //! Options: `--entries-per-session <n>` and `--bytes-total <n>` set those fields of
 //! `surfd::log::Bounds`.
@@ -159,7 +162,9 @@ fn serve(dir: &Directory, bin: &Path, bounds: surfd::log::Bounds) -> Result<(), 
         Ok(surfd::Started::Another) => return Err("another surfd holds the lock".into()),
         Err(refused) => return Err(format!("surfd refused: {refused}")),
     };
-    let view = String::from_utf8_lossy(&guard(&view_line)).trim_end().to_string();
+    let view = String::from_utf8_lossy(&guard(&view_line))
+        .trim_end()
+        .to_string();
     let (view_port, token) = view
         .strip_prefix("http://127.0.0.1:")
         .and_then(|rest| rest.split_once("/#"))
@@ -211,7 +216,11 @@ fn serve(dir: &Directory, bin: &Path, bounds: surfd::log::Bounds) -> Result<(), 
             ["agent", _, ..] if daemon.is_none() => stopped(),
             ["open"] => agent.open(None),
             ["open", url] => agent.open(Some(url)),
-            ["agent", id, rest @ ..] if !rest.is_empty() => agent.run(id, rest),
+            ["agent-stdin", _, ..] if daemon.is_none() => stopped(),
+            ["agent", id, rest @ ..] if !rest.is_empty() => agent.run(id, None, rest),
+            ["agent-stdin", id, input, rest @ ..] if !rest.is_empty() => {
+                agent.run(id, Some(input), rest)
+            }
             ["kill", id] => agent.kill(id),
             ["stop-surfd"] => {
                 drop(daemon.take());
@@ -405,16 +414,26 @@ impl Agent {
         }
     }
 
-    fn run(&self, id: &str, words: &[&str]) -> String {
+    /// `surf-agent <words>…` as session `id`, with `input` on its standard input when given.
+    fn run(&self, id: &str, input: Option<&str>, words: &[&str]) -> String {
         let Some(token) = self.tokens.get(id) else {
             return "{\"error\":\"session\"}".to_string();
         };
-        let output = self
-            .command()
+        let mut command = self.command();
+        command
             .env("SURF_SESSION", id)
             .env("SURF_TOKEN", token)
             .args(words)
-            .output();
+            .stdout(Stdio::piped());
+        if input.is_some() {
+            command.stdin(Stdio::piped());
+        }
+        let output = command.spawn().and_then(|mut child| {
+            if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
+                stdin.write_all(input.as_bytes())?;
+            }
+            child.wait_with_output()
+        });
         match output {
             Ok(output) => {
                 let status = output.status.code().unwrap_or(-1);
@@ -473,14 +492,24 @@ fn in_runtime(pid: u32, runtime: &Path) -> bool {
         .any(|pair| pair == needle.as_slice())
 }
 
-/// Kill every process left whose environment holds `XDG_RUNTIME_DIR=<runtime>`.
+/// Kill every process this fixture started that is left: its descendants (the sessions its
+/// `surfd` started, a `surf-agent`), found from `/proc/<pid>/task/<tid>/children`. It reads no
+/// file of a process that is not one of them; reading the environment of every process of the
+/// host cost 112 to 174 ms per fixture at about 4,000 processes
+/// (`story:page-step-holds-under-load`). Only where this kernel has no such file (no
+/// `CONFIG_PROC_CHILDREN`) is every process whose environment holds `XDG_RUNTIME_DIR=<runtime>`
+/// killed, as before.
 fn kill_left(runtime: &Path) {
     let own = std::process::id();
-    let left: Vec<u32> = processes()
-        .into_iter()
-        .filter(|&pid| pid != own)
-        .filter(|&pid| in_runtime(pid, runtime))
-        .collect();
+    let left = if Path::new(&format!("/proc/{own}/task/{own}/children")).exists() {
+        descendants(own)
+    } else {
+        processes()
+            .into_iter()
+            .filter(|&pid| pid != own)
+            .filter(|&pid| in_runtime(pid, runtime))
+            .collect()
+    };
     for &pid in &left {
         signal_kill(pid);
     }
@@ -488,6 +517,39 @@ fn kill_left(runtime: &Path) {
     for pid in left {
         let _ = ended_within(pid, deadline.saturating_duration_since(Instant::now()));
     }
+}
+
+/// Every process under `root`, children first: the pids each thread of a process names in
+/// `/proc/<pid>/task/<tid>/children`, and theirs in turn. A child of a thread that ended is a
+/// child of another thread of its process, so it is listed too.
+fn descendants(root: u32) -> Vec<u32> {
+    let mut found: Vec<u32> = Vec::new();
+    let mut next = vec![root];
+    while let Some(pid) = next.pop() {
+        for child in children(pid) {
+            if !found.contains(&child) {
+                found.push(child);
+                next.push(child);
+            }
+        }
+    }
+    found
+}
+
+fn children(pid: u32) -> Vec<u32> {
+    let Ok(tasks) = fs::read_dir(format!("/proc/{pid}/task")) else {
+        return Vec::new();
+    };
+    tasks
+        .flatten()
+        .flat_map(|task| {
+            fs::read_to_string(task.path().join("children"))
+                .unwrap_or_default()
+                .split_whitespace()
+                .filter_map(|word| word.parse().ok())
+                .collect::<Vec<u32>>()
+        })
+        .collect()
 }
 
 fn processes() -> Vec<u32> {
@@ -535,20 +597,18 @@ impl Pages {
         let port = listener.local_addr()?.port();
         let stop = Arc::new(AtomicBool::new(false));
         let stopping = Arc::clone(&stop);
-        let thread = thread::Builder::new()
-            .name("pages".into())
-            .spawn(move || {
-                for stream in listener.incoming() {
-                    if stopping.load(Ordering::SeqCst) {
-                        return;
-                    }
-                    let Ok(stream) = stream else { continue };
-                    let root = root.clone();
-                    let _ = thread::Builder::new()
-                        .name("page".into())
-                        .spawn(move || answer_page(stream, &root));
+        let thread = thread::Builder::new().name("pages".into()).spawn(move || {
+            for stream in listener.incoming() {
+                if stopping.load(Ordering::SeqCst) {
+                    return;
                 }
-            })?;
+                let Ok(stream) = stream else { continue };
+                let root = root.clone();
+                let _ = thread::Builder::new()
+                    .name("page".into())
+                    .spawn(move || answer_page(stream, &root));
+            }
+        })?;
         Ok(Pages {
             port,
             stop,
@@ -585,6 +645,9 @@ fn answer_page(mut stream: TcpStream, root: &Path) {
             Ok(n) => head.extend_from_slice(&chunk[..n]),
         }
     };
+    if complete {
+        read_body(&mut stream, &head);
+    }
     let file = if complete { page(&head, root) } else { None };
     let answer = match file {
         Some(body) => {
@@ -603,13 +666,43 @@ fn answer_page(mut stream: TcpStream, root: &Path) {
     let _ = stream.flush();
 }
 
-/// The bytes of the `.html` file a `GET` of `head` names under `root`, the query ignored.
+/// Reads and drops the body a request's `Content-Length` announces, up to [`HEAD_MAX`] bytes
+/// after the head, so that closing the connection does not reset it before the answer is read.
+fn read_body(stream: &mut TcpStream, head: &[u8]) {
+    let Some(end) = head.windows(4).position(|w| w == b"\r\n\r\n") else {
+        return;
+    };
+    let length = std::str::from_utf8(&head[..end])
+        .ok()
+        .and_then(|text| {
+            text.split("\r\n").find_map(|line| {
+                let (name, value) = line.split_once(':')?;
+                name.eq_ignore_ascii_case("content-length")
+                    .then(|| value.trim().parse::<usize>().ok())
+                    .flatten()
+            })
+        })
+        .unwrap_or(0)
+        .min(HEAD_MAX);
+    let mut left = length.saturating_sub(head.len() - (end + 4));
+    let mut chunk = [0u8; 4096];
+    while left > 0 {
+        match stream.read(&mut chunk[..left.min(4096)]) {
+            Ok(0) | Err(_) => return,
+            Ok(n) => left -= n,
+        }
+    }
+}
+
+/// The bytes of the `.html` file a `GET` or a `POST` of `head` names under `root`, the query
+/// and a body ignored. A `POST` is answered as the `GET` of its target, so that a form's
+/// submission reaches a page (`pages/forms/`).
 fn page(head: &[u8], root: &Path) -> Option<Vec<u8>> {
     let line = head.split(|&b| b == b'\r').next()?;
     let line = std::str::from_utf8(line).ok()?;
     let mut parts = line.split(' ');
     let (method, target) = (parts.next()?, parts.next()?);
-    if method != "GET" {
+    if method != "GET" && method != "POST" {
         return None;
     }
     let path = target.split('?').next()?.strip_prefix('/')?;
@@ -655,37 +748,33 @@ impl Pipe {
         let port = listener.local_addr()?.port();
         let state = Arc::new(Mutex::new(PipeState::default()));
         let shared = Arc::clone(&state);
-        let thread = thread::Builder::new()
-            .name("pipe".into())
-            .spawn(move || {
-                for stream in listener.incoming() {
-                    let Ok(stream) = stream else { continue };
-                    let number = {
-                        let mut state = guard(&shared);
-                        if state.stopped {
-                            return;
-                        }
-                        if state.cut {
-                            // Closed without being read.
-                            continue;
-                        }
-                        let Ok(clone) = stream.try_clone() else {
-                            continue;
-                        };
-                        state.next += 1;
-                        let number = state.next;
-                        state.open.insert(number, vec![clone]);
-                        number
+        let thread = thread::Builder::new().name("pipe".into()).spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(stream) = stream else { continue };
+                let number = {
+                    let mut state = guard(&shared);
+                    if state.stopped {
+                        return;
+                    }
+                    if state.cut {
+                        // Closed without being read.
+                        continue;
+                    }
+                    let Ok(clone) = stream.try_clone() else {
+                        continue;
                     };
-                    let state = Arc::clone(&shared);
-                    let _ = thread::Builder::new()
-                        .name("piped".into())
-                        .spawn(move || {
-                            pass(&state, number, stream, view_port);
-                            guard(&state).open.remove(&number);
-                        });
-                }
-            })?;
+                    state.next += 1;
+                    let number = state.next;
+                    state.open.insert(number, vec![clone]);
+                    number
+                };
+                let state = Arc::clone(&shared);
+                let _ = thread::Builder::new().name("piped".into()).spawn(move || {
+                    pass(&state, number, stream, view_port);
+                    guard(&state).open.remove(&number);
+                });
+            }
+        })?;
         Ok(Pipe {
             port,
             state,
@@ -783,11 +872,13 @@ fn pass(state: &Mutex<PipeState>, number: u64, mut client: TcpStream, view_port:
     let (Ok(mut back_from), Ok(mut back_to)) = (upstream.try_clone(), client.try_clone()) else {
         return;
     };
-    let back = thread::Builder::new().name("piped-back".into()).spawn(move || {
-        let _ = io::copy(&mut back_from, &mut back_to);
-        let _ = back_to.shutdown(Shutdown::Both);
-        let _ = back_from.shutdown(Shutdown::Both);
-    });
+    let back = thread::Builder::new()
+        .name("piped-back".into())
+        .spawn(move || {
+            let _ = io::copy(&mut back_from, &mut back_to);
+            let _ = back_to.shutdown(Shutdown::Both);
+            let _ = back_from.shutdown(Shutdown::Both);
+        });
     let _ = io::copy(&mut client, &mut upstream);
     let _ = upstream.shutdown(Shutdown::Write);
     if let Ok(back) = back {

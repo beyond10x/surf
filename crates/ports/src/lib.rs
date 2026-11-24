@@ -55,6 +55,7 @@
 //!     method: Method::Get,
 //!     body: None,
 //!     body_type: None,
+//!     initiator: None,
 //! });
 //! assert!(matches!(outcome, Ok(NavigateOutcome::Started { .. })));
 //! ```
@@ -78,6 +79,7 @@
 //!     method: Method::Get,
 //!     body: None,
 //!     body_type: None,
+//!     initiator: None,
 //! });
 //! assert!(matches!(outcome, Ok(NavigateOutcome::Started { .. })));
 //! ```

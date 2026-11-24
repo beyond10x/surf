@@ -183,7 +183,8 @@ pub fn event_line(event: &SystemEvent) -> String {
             .text("tab_id", &e.tab_id.0.0)
             .text("url", &e.url.0)
             .optional_cut("handle", e.handle.as_deref(), TITLE_ENTRY_BYTES)
-            .optional_cut("label", e.label.as_deref(), TITLE_ENTRY_BYTES),
+            .optional_cut("label", e.label.as_deref(), TITLE_ENTRY_BYTES)
+            .optional("initiator", e.initiator.as_deref()),
         SystemEvent::SessionClosed(e) => line
             .text("session_id", &e.session_id.0.0)
             .text("window_id", &e.window_id.0.0)
@@ -238,7 +239,8 @@ pub fn event_line(event: &SystemEvent) -> String {
             .optional(
                 "body_type",
                 e.body_type.as_ref().map(|media_type| media_type.0.as_str()),
-            ),
+            )
+            .optional("initiator", e.initiator.as_deref()),
         SystemEvent::FetchFailed(e) => line
             .text("request_id", &e.request_id.0.0)
             .text("url", &e.url.0)
@@ -251,7 +253,8 @@ pub fn event_line(event: &SystemEvent) -> String {
             .optional(
                 "body_type",
                 e.body_type.as_ref().map(|media_type| media_type.0.as_str()),
-            ),
+            )
+            .optional("initiator", e.initiator.as_deref()),
         SystemEvent::ResponseReceived(e) => line
             .text("request_id", &e.request_id.0.0)
             .text("url", &e.url.0)
@@ -312,7 +315,8 @@ pub fn event_line(event: &SystemEvent) -> String {
             .optional(
                 "body_type",
                 e.body_type.as_ref().map(|media_type| media_type.0.as_str()),
-            ),
+            )
+            .optional("initiator", e.initiator.as_deref()),
         SystemEvent::SubmissionAbandoned(e) => line
             .text("submission_id", &e.submission_id.0.0)
             .text("reason", &variant(e.reason)),

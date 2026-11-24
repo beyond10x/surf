@@ -183,7 +183,6 @@ fn a_target_with_a_scheme_surf_does_not_fetch_is_refused_unsupported_scheme() {
         "data:text/html,<p>x</p>",
         "file:///etc/passwd",
         "ftp://shop.example/x",
-        "https://shop.example/x",
         "about:blank",
     ] {
         refused(LOCAL_PAGE, href, RefusalReason::UnsupportedScheme);
@@ -194,6 +193,45 @@ fn a_target_with_a_scheme_surf_does_not_fetch_is_refused_unsupported_scheme() {
         shown(&typed),
         ("javascript:alert(1)".to_string(), false),
         "{text}"
+    );
+}
+
+/// Statement 1 of `story:session-follow-press-https`, in process: `follow` takes an `https:`
+/// target as it takes an `http:` one, in any case of its scheme's letters, from a local page
+/// and from a public one (`press`: `adversary_press_follow_press_case_2_an_https_action_is_submitted`).
+#[test]
+fn follow_press_case_1_an_https_target_is_followed() {
+    followed(
+        LOCAL_PAGE,
+        "https://shop.example/x",
+        "https://shop.example/x",
+    );
+    followed(
+        LOCAL_PAGE,
+        "HTTPS://127.0.0.1:8443/x",
+        "https://127.0.0.1:8443/x",
+    );
+    followed(
+        PUBLIC_PAGE,
+        "https://93.184.216.35/x",
+        "https://93.184.216.35/x",
+    );
+}
+
+/// Statement 7 of `story:session-follow-press-https`: from a page that counts as public, an
+/// `https:` target whose host is local is refused `forbidden-destination` before any request,
+/// as an `http:` one is.
+#[test]
+fn follow_press_case_7_from_a_public_page_a_local_https_address_is_refused_forbidden_destination() {
+    refused(
+        "http://shop.example/start.html",
+        "https://127.0.0.1/x",
+        RefusalReason::ForbiddenDestination,
+    );
+    refused(
+        PUBLIC_PAGE,
+        "https://localhost:8443/x",
+        RefusalReason::ForbiddenDestination,
     );
 }
 

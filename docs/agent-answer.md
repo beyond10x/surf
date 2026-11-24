@@ -34,7 +34,7 @@ note parser: tables,foreign-content
 
 ## What an answer holds today
 
-The example above shows the whole format. The binaries of release `0.4.0` (`surf-agent`,
+The example above shows the whole format. The binaries of release `0.8.0` (`surf-agent`,
 `surfd`, `surf-session`) print fewer lines:
 
 - the head line, `surf 1 session <id> <state>`;
@@ -45,6 +45,8 @@ The example above shows the whole format. The binaries of release `0.4.0` (`surf
   `page none` before the first load;
 - `path <shown> of <total>` and its indented lines, `<n> follow <handle> "<label>"` for a
   `follow`; every action in the answer of `log`;
+- since `agent-cookie-jar`, `cookies <n>` in every answer that shows the session's state while
+  its jar holds a cookie (section "Cookies");
 - since `agent-change-and-log`, the `changed` block in every answer that shows the session's
   state (section "Changed");
 - without `--as`, for an HTML page with links, the `now` block of its links and `note
@@ -59,12 +61,18 @@ An answer of today's binaries, to `go`:
 
 ```
 surf 1 session 7ffade4a-4d71-491c-a6c5-b69681d68d07 open
-did go "http://example.org/missing"
-page 404 "text/html" "http://example.org/missing"
-path 3 of 3
+did go "http://example.org/"
+page 200 "text/html" "http://example.org/" "Example Domain"
+path 2 of 2
   1 open
   2 go "http://example.org/"
-  3 go "http://example.org/missing"
+changed page none -> "http://example.org/"
+  + text "# Example Domain"
+  + text "This domain is for use in documentation examples without needing permission. Avoid use in operations."
+  + text "[Learn more](<https://iana.org/domains/example>) [@l1]"
+now 1 of 1
+  l1 link ? "Learn more" -> "https://iana.org/domains/example"
+note visibility: hidden attribute only
 ```
 
 ## Lines
@@ -80,10 +88,11 @@ path 3 of 3
   2. `did`
   3. `page`
   4. `path` and its indented lines
-  5. `changed` and its indented lines
-  6. `now` and its indented lines
-  7. `note` lines, any number
-  8. `text`, its body lines and its `more` line, which is the last line of the answer
+  5. `cookies`
+  6. `changed` and its indented lines
+  7. `now` and its indented lines
+  8. `note` lines, any number
+  9. `text`, its body lines and its `more` line, which is the last line of the answer
 - A line is made of words of the format, numbers and quoted fields, separated by one space.
   Only a quoted field holds a value from a page, a server or an address. A word is checked
   against its character set below, and the renderer refuses an answer with a word outside it
@@ -171,7 +180,7 @@ refusal of the action, with a reason from this list:
 | `hidden` | the element or an ancestor has the `hidden` attribute | 1 |
 | `unresolved` | the link's target does not resolve against the document base URL | 1 |
 | `address-too-long` | the link's resolved target is longer than 65,536 bytes, the bound of an address `surf-fetch` follows | 1 |
-| `unsupported-scheme` | the link's resolved target has a scheme surf does not fetch: any but `http` (`javascript:`, `mailto:`, `data:`, `file:`, `https:`) | 1 |
+| `unsupported-scheme` | the link's resolved target has a scheme a session does not follow: any but `http` and `https` (`javascript:`, `mailto:`, `data:`, `file:`, `ftp:`) | 1 |
 | `forbidden-destination` | the page was loaded from a public address and the link's target is a local one: a loopback, private, link-local, unique-local, shared or unspecified IP address, an IPv6 address that embeds one, or the name `localhost` or one under it | 1 |
 | `disabled` | the control, or the option `pick` names, is disabled | 1 |
 | `wrong-kind` | the element is not of a kind the command acts on: `fill` takes `text`, `password` and `textarea`, `pick` takes `select`, `checkbox` and `radio` | 1 |
@@ -208,11 +217,23 @@ page failed <reason> "<address>"
 
 `page none` before the first load. A loaded page: its status, a number from 0 to 65535; its
 media type, from the server; its address; and its title when it has one. A failed load: the
-reason, a word of `[A-Za-z]+` (the variants of `surf.net.FailureReason`: `Unreachable`,
-`UnsupportedScheme`, `MalformedResponse`, `TooManyRedirects` and `ForbiddenDestination`, a
-redirect from a public address to a loopback or private one, as `docs/surf-command.md`, "Limits",
-says), and the address. The media type, the
-address and the title are quoted fields.
+reason, a word of `[A-Za-z]+`, and the address. The media type, the address and the title are
+quoted fields. The reason is a variant of `surf.net.FailureReason`:
+
+| reason | when |
+|---|---|
+| `Unreachable` | no connection could be made, or it ended before a response was complete; for `https:` also a server that never finishes the handshake, a connection closed before the handshake ended or after it without `close_notify`, and an error of the socket |
+| `UnsupportedScheme` | the address, or the `Location` of a redirect, has a scheme other than `http:` and `https:` |
+| `MalformedResponse` | bytes arrived that are not an HTTP response |
+| `TooManyRedirects` | a redirect arrived after 20 redirects of the same request were followed |
+| `ForbiddenDestination` | a redirect led from a public address to a loopback or private one, as `docs/surf-command.md`, "Limits", says |
+| `CertificateNotTrusted` | the server's certificate has no path to a trust anchor, or a certificate on its path is refused: unreadable, a signature that does not verify, an issuer that is no CA, a path too long, a limit of the path search, a key usage, an unknown critical extension, a name constraint, no `serverAuth`, a weak algorithm or a weak key |
+| `CertificateExpired` | a certificate on the path is outside its validity, either side |
+| `CertificateNameMismatch` | no `subjectAltName` entry of the server's certificate matches the host (no Common Name is read), or the host is one no certificate can match |
+| `TlsVersionUnsupported` | the server offers at best TLS 1.2: it sent `protocol_version` before its ServerHello, or its ServerHello selects TLS 1.2 or below |
+| `TlsHandshakeFailed` | the TLS connection failed, in the handshake or after it, with any other alert or violation of the protocol: after the handshake an alert the server sent or a record that does not verify (`bad_record_mac`); in it a server that sent `handshake_failure` before its ServerHello (a server limited to TLS 1.2 answers this way), a downgrade value in the ServerHello, a `supported_versions` other than TLS 1.3, an oversized handshake message |
+
+surf does not check revocation: a revoked certificate that has not expired loads.
 
 ### Path
 
@@ -234,6 +255,24 @@ field when it had one. An action on an element names the element's handle, a wor
 argument nor handle: `7 back`, `8 forward`.
 
 The block shows the last 5 actions; the answer of `log` shows more (section "Log").
+
+### Cookies
+
+```
+cookies <n>
+```
+
+The cookies the session's jar holds when the answer is made, expired ones removed first: one
+line directly after the `path` block, `<n>` from 1, and no line when the jar holds none. It
+counts them and names none: no cookie's name or value is ever in an answer. A session keeps its
+cookies in memory, for itself, until it ends (`crates/cookie`, `surf-cookie`).
+
+```
+path 2 of 2
+  1 open
+  2 go "http://127.0.0.1:8080/login"
+cookies 1
+```
 
 ### Changed
 
@@ -517,8 +556,8 @@ exactly as written, in its case (RFC 7405 writes this `%s"..."`). `SP` is U+0020
 U+000A, `DQUOTE` is U+0022, `DIGIT` is `0` to `9`, `ALPHA` is `A` to `Z` and `a` to `z`.
 
 ```
-answer        = head-line [token-line] [did-line] [page-line] [path-block] [changed-block]
-                [now-block] *note-line [text-block]
+answer        = head-line [token-line] [did-line] [page-line] [path-block] [cookies-line]
+                [changed-block] [now-block] *note-line [text-block]
 
 head-line     = "surf" SP "1" SP "session" SP session-id SP state LF
 session-id    = 1*(DIGIT / lower / "-")
@@ -551,6 +590,8 @@ path-line     = "path" SP number SP "of" SP number LF
 path-entry    = SP SP number SP command [SP quoted / SP handle [SP cut-quoted]] LF
                                               ; with a handle: a label of at most 60
 handle        = 1*(lower / DIGIT)
+
+cookies-line  = "cookies" SP number LF        ; number from 1
 
 changed-block = changed-line *change-entry    ; exactly <n> change-entry lines
               / changed-page *text-entry [text-more]
@@ -641,6 +682,45 @@ to the same session process) and of a request that is not in the format of the w
 the session's token. The head line of these three has the state `unknown`, whatever the state of
 the session, and the session process sends `surfd` no address and no title with them, so that
 `surfd` keeps what it knew of the session.
+
+### Extra trust anchors: `open --ca-file`
+
+`surf-agent open [<url>] --ca-file <path>` gives the session the CA certificates of one PEM file
+as trust anchors beside the bundled ones, for every `https:` load of the session and for its
+life (`docs/design/tls.md` item 8); a session opened without it trusts the bundled anchors only,
+and the anchors of one session are never those of another. The client reads the file before it
+connects to `surfd`: at most 32,768 bytes and 64 blocks, every block a `CERTIFICATE`, every
+certificate a CA. The text of its certificate blocks, from each BEGIN line to its END line,
+travels in the `open` request (`arg anchors`); the lines before, between and after the blocks
+are not sent, and need not be UTF-8. `surfd` passes the request to the session process over the
+session socket; neither the path nor the blocks are an argument or in the environment of a
+process.
+
+A file the client refuses is an invalid input: exit status 2, nothing on standard output, and on
+standard error one of these lines, followed by the usage:
+
+- `surf-agent: the --ca-file file cannot be read: <kind>`: no file at the path, or one the caller
+  may not read; `<kind>` is the kind of the error of the system, such as `entity not found`.
+- `surf-agent: the --ca-file file is not a regular file`: a directory, a device or a FIFO. The
+  path is looked at before it is opened, so a FIFO is refused and not waited on.
+- `surf-agent: the --ca-file file changed while it was read`: the file opened is not the file
+  looked at.
+- `surf-agent: the --ca-file file is refused: <error>`: `surf-tls` does not take the file.
+  `<error>` is the `AnchorError` of `surf-tls` (`NoCertificate`, `NotACertificate`, `BadPem`,
+  `BadCertificate`, `NotACa`, `TooLarge`, `TooMany`) by its kind and the index of the block at
+  fault, such as `NotACa: certificate 0 is not a CA`, `NotACertificate: block 0 is not a
+  CERTIFICATE` or `BadCertificate: certificate 0 is refused: UnexpectedTag` (the kind the
+  certificate reader names).
+- `surf-agent: the request is longer than 65536 bytes`: `surf-tls` takes the file, but the
+  quoted text of its blocks does not fit an `open` request (`docs/design/tls.md` item 8). The
+  quoting writes a line feed, a carriage return or a tab as 4 bytes, so only blocks full of them
+  get here, such as copies of a root with one base64 character per line; lines outside the
+  blocks are not sent and never lead here.
+
+No line repeats the path or a byte of the file: not the label of a block, and not a byte of a
+certificate the reader cannot read. No request is sent, `surfd` is not started, and no session
+is made. A session process that gets anchors it refuses in an `open` request (a client other
+than `surf-agent`) answers `did refused usage`, status 2, as for any `usage` refusal of `open`.
 
 ## Parsing
 
