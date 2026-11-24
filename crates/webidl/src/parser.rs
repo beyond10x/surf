@@ -346,6 +346,7 @@ impl Parser<'_> {
         } else {
             return self.unexpected("a definition");
         };
+        self.no_type_extended_attribute(&extended_attributes, "a definition")?;
         Ok(Definition {
             name,
             file: self.file.to_string(),
@@ -390,7 +391,7 @@ impl Parser<'_> {
     }
 
     fn member(&mut self, body: Body) -> Result<Member, ReadError> {
-        let mut extended_attributes = self.extended_attributes()?;
+        let extended_attributes = self.extended_attributes()?;
         let line = self.line();
         let first = self
             .peek(0)
@@ -494,14 +495,15 @@ impl Parser<'_> {
                 (Some(name), kind)
             }
         };
-        let mut kind = kind;
-        match &mut kind {
-            MemberKind::Attribute { ty, .. }
-            | MemberKind::Operation {
-                return_type: ty, ..
-            } => onto_type(&mut extended_attributes, ty),
-            _ => {}
-        }
+        let what = match kind {
+            MemberKind::Const { .. } => "a constant",
+            MemberKind::Attribute { .. } => "an attribute",
+            MemberKind::Operation { .. } => "an operation",
+            MemberKind::Stringifier => "a stringifier",
+            MemberKind::Constructor { .. } => "a constructor",
+            MemberKind::Iterable { .. } => "an iterable",
+        };
+        self.no_type_extended_attribute(&extended_attributes, what)?;
         Ok(Member {
             name,
             line,
@@ -709,6 +711,29 @@ impl Parser<'_> {
             );
         }
         self.unexpected("a constant value")
+    }
+
+    /// Refuses the first of [`TYPE_EXTENDED_ATTRIBUTES`] in `written`, the list before `what`:
+    /// Web IDL applies those to a type only when they stand before an argument or a dictionary
+    /// member, or on the type itself.
+    fn no_type_extended_attribute(
+        &self,
+        written: &[ExtendedAttribute],
+        what: &str,
+    ) -> Result<(), ReadError> {
+        match written
+            .iter()
+            .find(|attribute| TYPE_EXTENDED_ATTRIBUTES.contains(&attribute.name.as_str()))
+        {
+            Some(attribute) => self.refuse(
+                attribute.line,
+                format!(
+                    "the extended attribute `[{}]`, which applies to a type, before {what}",
+                    attribute.name
+                ),
+            ),
+            None => Ok(()),
+        }
     }
 
     /// The error for `what` in a kind of body that does not allow it.
@@ -930,8 +955,8 @@ fn plain(kind: TypeKind) -> Type {
     }
 }
 
-/// Moves the names of [`TYPE_EXTENDED_ATTRIBUTES`] in `written` (the list before an argument,
-/// an attribute, an operation or a dictionary member) onto `ty`, ahead of those `ty` holds;
+/// Moves the names of [`TYPE_EXTENDED_ATTRIBUTES`] in `written` (the list before an argument
+/// or a dictionary member) onto `ty`, ahead of those `ty` holds;
 /// the others stay in `written`.
 fn onto_type(written: &mut Vec<ExtendedAttribute>, ty: &mut Type) {
     let (on_type, stay): (Vec<_>, Vec<_>) = std::mem::take(written)

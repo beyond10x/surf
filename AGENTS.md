@@ -1010,8 +1010,9 @@ above, and the list of standards itself was written from memory.
     `setlike`, `async iterable`, `legacycaller`, an extended attribute outside
     `EXTENDED_ATTRIBUTES` and a type nested deeper than `MAX_TYPE_DEPTH` (32) levels; `ADDED`
     lists the five constructs the first runs over the pages named and the reader then
-    learned. The names of `TYPE_EXTENDED_ATTRIBUTES` are read onto the type of the argument,
-    attribute, operation or dictionary member they are written before. `Model::new` also
+    learned. The names of `TYPE_EXTENDED_ATTRIBUTES` are read onto the type of the argument
+    or dictionary member they are written before, and refused before any other member or a
+    definition (Web IDL, "Annotated types"); on the type itself they are read. `Model::new` also
     refuses an operation name twice in the merged view of an interface, its partials and the
     mixins it includes, a name two definitions define, and `A includes B;` where `B` is no
     interface mixin or `A` no interface; `Model::counts`, `Model::members`,

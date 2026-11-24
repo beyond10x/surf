@@ -81,8 +81,8 @@ pub struct Member {
     pub name: Option<String>,
     /// The line of its first token after its extended attributes.
     pub line: usize,
-    /// The extended attributes before it, but those of [`crate::TYPE_EXTENDED_ATTRIBUTES`],
-    /// which an attribute or an operation gives its type or return type.
+    /// The extended attributes before it; a name of [`crate::TYPE_EXTENDED_ATTRIBUTES`] there is
+    /// refused.
     pub extended_attributes: Vec<ExtendedAttribute>,
     /// What it is.
     pub kind: MemberKind,
@@ -100,8 +100,7 @@ pub enum MemberKind {
     },
     /// `attribute`, `readonly attribute` or `stringifier attribute`.
     Attribute {
-        /// The type, with the extended attributes written before it (`attribute [X] T`) and the
-        /// names of [`crate::TYPE_EXTENDED_ATTRIBUTES`] written before the attribute.
+        /// The type, with the extended attributes written on it (`attribute [X] T`).
         ty: Type,
         /// Whether it is `readonly`.
         readonly: bool,
@@ -110,8 +109,7 @@ pub enum MemberKind {
     },
     /// An operation: regular, `static` or a special `getter`.
     Operation {
-        /// The return type, with the names of [`crate::TYPE_EXTENDED_ATTRIBUTES`] written before
-        /// the operation.
+        /// The return type.
         return_type: Type,
         /// The arguments.
         arguments: Vec<Argument>,

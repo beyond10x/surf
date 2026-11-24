@@ -81,6 +81,47 @@ fn overload_across_mixin() {
     );
 }
 
+/// The refusal of a type's extended attribute `[name]` written before what `what` names.
+fn before(name: &str, what: &str) -> String {
+    format!("the extended attribute `[{name}]`, which applies to a type, before {what}")
+}
+
+#[test]
+fn type_extended_attribute_before_an_attribute() {
+    assert_refused(
+        "interface A {\n  [CEReactions,\n   EnforceRange] attribute unsigned long x;\n};",
+        3,
+        &before("EnforceRange", "an attribute"),
+    );
+}
+
+#[test]
+fn type_extended_attribute_before_an_operation() {
+    assert_refused(
+        "interface A {\n  [NewObject, EnforceRange] unsigned long f();\n};",
+        2,
+        &before("EnforceRange", "an operation"),
+    );
+}
+
+#[test]
+fn type_extended_attribute_before_a_const() {
+    assert_refused(
+        "interface A {\n  [EnforceRange] const unsigned long X = 1;\n};",
+        2,
+        &before("EnforceRange", "a constant"),
+    );
+}
+
+#[test]
+fn type_extended_attribute_before_a_definition() {
+    assert_refused(
+        "\n[LegacyNullToEmptyString]\ntypedef DOMString S;",
+        2,
+        &before("LegacyNullToEmptyString", "a definition"),
+    );
+}
+
 #[test]
 fn includes_of_what_is_no_mixin() {
     assert_eq!(

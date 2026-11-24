@@ -104,9 +104,11 @@ pub const EXTENDED_ATTRIBUTES: &[&str] = &[
 /// 2.13.33 "Annotated types", lists `[AllowResizable]`, `[AllowShared]`, `[Clamp]`,
 /// `[EnforceRange]` and `[LegacyNullToEmptyString]`; the two the indexes do not use,
 /// `[AllowResizable]` and `[Clamp]`, are refused like every name outside
-/// [`EXTENDED_ATTRIBUTES`]. Written before an argument, an attribute, an operation or a
-/// dictionary member, one of these is read onto its type ([`Type::extended_attributes`]); every
-/// other name stays on the argument, the member or the definition.
+/// [`EXTENDED_ATTRIBUTES`]. As that section says, one of these applies to a type when it is
+/// written on the type itself (`attribute [EnforceRange] long x`), or before an argument or a
+/// dictionary member: there it is read onto its type ([`Type::extended_attributes`]), and every
+/// other name stays on the argument or the member. Written before an attribute, an operation, a
+/// constant, any other member or a definition, it is refused.
 pub const TYPE_EXTENDED_ATTRIBUTES: &[&str] =
     &["AllowShared", "EnforceRange", "LegacyNullToEmptyString"];
 

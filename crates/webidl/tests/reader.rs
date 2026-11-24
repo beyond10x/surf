@@ -554,7 +554,7 @@ fn type_extended_attribute_on_an_argument() {
 #[test]
 fn type_extended_attribute_on_an_attribute() {
     let member =
-        member("interface A {\n  [CEReactions, EnforceRange] attribute unsigned long x;\n};");
+        member("interface A {\n  [CEReactions] attribute [EnforceRange] unsigned long x;\n};");
     assert_eq!(
         attribute_names(&member.extended_attributes),
         ["CEReactions"]
@@ -574,19 +574,6 @@ fn type_extended_attribute_on_a_dictionary_member() {
     assert!(members[0].extended_attributes.is_empty());
     assert_eq!(
         attribute_names(&members[0].ty.extended_attributes),
-        ["EnforceRange"]
-    );
-}
-
-#[test]
-fn type_extended_attribute_on_a_return_type() {
-    let member = member("interface A {\n  [NewObject, EnforceRange] unsigned long f();\n};");
-    assert_eq!(attribute_names(&member.extended_attributes), ["NewObject"]);
-    let MemberKind::Operation { return_type, .. } = &member.kind else {
-        panic!("not an operation");
-    };
-    assert_eq!(
-        attribute_names(&return_type.extended_attributes),
         ["EnforceRange"]
     );
 }
