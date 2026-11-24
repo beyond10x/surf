@@ -81,7 +81,7 @@ includes:
     optional: true
 
 vars:
-  REFUSALS_MAX: 56
+  REFUSALS_MAX: 57
   TLS_PACKAGES: [surf-tls, surf-tls-test-server, surf-tls-test-certs, surf-tls-conformance]
   GENERATED_PACKAGES: [agent, document, navigator, net, renderer, shell, surf-system, surf-types]
   SYNTHESIZE: ess generate synthesize --strict-requires --path spec --target rust
@@ -227,7 +227,7 @@ tasks:
       planted-defect test then runs its defects over the whole suite, the defects of one test
       each on a thread of its own, still asserts that each is noticed, and writes one line per
       defect, its label and the first 3 scenarios, in the suite's order, that do not pass over
-      it, and its count line over the whole suite. It prints nextest's summary and the 29 count
+      it, and its count line over the whole suite. It prints nextest's summary and the 31 count
       lines (sh taskfiles/conform-noticed.sh counts). sh taskfiles/conform-noticed.sh assemble
       puts the digest of the sources first and the lines after it, sorted, into
       .out/noticed.txt; its log is .out/conform-slow.log. It fails when a test failed or when

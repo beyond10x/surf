@@ -9,7 +9,7 @@
 //! | [`ShellPorts`] | `shell` | `Window`, `Tab` | yes |
 //! | [`NavigatorPorts`] | `navigator` | `Navigation` | yes |
 //! | [`NetPorts`] | `net` | `Request` | no |
-//! | [`DocumentPorts`] | `document` | `Document`, `Element`, `Form`, `Option`, `Submission` | yes |
+//! | [`DocumentPorts`] | `document` | `Document`, `Element`, `Form`, `Option`, `Submission`, `Script` | yes |
 //! | [`RendererPorts`] | `renderer` | `Frame` | yes |
 //! | [`AgentPorts`] | `agent` | `Session`, `Action` | the caller and an action's identity |
 //!
@@ -28,8 +28,11 @@
 //! also meets the four obligations the generation leaves to the component:
 //! `NoteNavigationStarted`, `NoteNavigationCommitted`, `NoteNavigationFailed` and
 //! `NoteNavigationEnded`, which change every session their filter selects. [`DocumentPorts`]
-//! meets the two the generation leaves to the `document` component, `Check` and `SelectOption`,
-//! which change a control and the others of its group or select. [`NavigatorPorts`] meets the
+//! meets the three the generation leaves to the `document` component: `Check` and
+//! `SelectOption`, which change a control and the others of its group or select, and
+//! `AddScriptEnd`, which refuses a message by the count of its characters;
+//! [`add_script_end`] meets it over any [`DocumentStorage`] and [`ScriptStorage`], for a ports
+//! type that wraps them. [`NavigatorPorts`] meets the
 //! two the generation leaves to the `navigator` component, `CommitNavigation` and
 //! `TraverseHistory`, which keep a tab's session history entries; [`commit_navigation`] and
 //! [`traverse_history`] meet them over any [`NavigationStorage`], for a ports type that wraps one.
@@ -91,6 +94,7 @@
 
 mod ports;
 mod random;
+mod script;
 mod store;
 
 pub use ports::{
@@ -98,6 +102,7 @@ pub use ports::{
     commit_navigation, traverse_history,
 };
 pub use random::{OsRandom, RandomSource};
+pub use script::{ScriptIdentity, add_script_end};
 
 use surf_types::agent::obligations::{
     NoteNavigationCommittedBehavior, NoteNavigationEndedBehavior, NoteNavigationFailedBehavior,
@@ -105,10 +110,12 @@ use surf_types::agent::obligations::{
 };
 use surf_types::behaviour::{
     ActionStorage, DocumentStorage, ElementStorage, FormStorage, FrameStorage, Generated,
-    ListOptionStorage, NavigationStorage, RequestStorage, SessionStorage, SubmissionStorage,
-    TabStorage, TryContext, WindowStorage,
+    ListOptionStorage, NavigationStorage, RequestStorage, ScriptStorage, SessionStorage,
+    SubmissionStorage, TabStorage, TryContext, WindowStorage,
 };
-use surf_types::document::obligations::{CheckBehavior, SelectOptionBehavior};
+use surf_types::document::obligations::{
+    AddScriptEndBehavior, CheckBehavior, SelectOptionBehavior,
+};
 use surf_types::navigation::obligations::{CommitNavigationBehavior, TraverseHistoryBehavior};
 
 /// The `shell` component's generated port over [`ShellPorts`].
@@ -149,7 +156,7 @@ where
     net::Net::new(Generated::new(ports))
 }
 
-/// The `document` component's port, its behaviours generated over `ports`, and the two its
+/// The `document` component's port, its behaviours generated over `ports`, and the three its
 /// generation leaves owed taken from `ports`.
 pub fn document_port<P>(ports: P) -> document::Document<Generated<P>>
 where
@@ -159,8 +166,10 @@ where
         + FormStorage
         + ListOptionStorage
         + SubmissionStorage
+        + ScriptStorage
         + CheckBehavior
-        + SelectOptionBehavior,
+        + SelectOptionBehavior
+        + AddScriptEndBehavior,
 {
     document::Document::new(Generated::new(ports))
 }

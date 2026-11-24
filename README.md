@@ -7,8 +7,8 @@
 **A web browser written from scratch, where the specification comes first.**
 
 ![spec: ESS 0.97.4, valid](docs/badges/spec.svg)
-![conformance: 203 of 203 scenarios](docs/badges/conformance.svg)
-![tests: 2165 passed](docs/badges/tests.svg)
+![conformance: 221 of 221 scenarios](docs/badges/conformance.svg)
+![tests: 2168 passed](docs/badges/tests.svg)
 ![third-party crates shipped: 5, ring 0.17.14 and 4 it needs](docs/badges/dependencies.svg)
 ![unsafe code: forbidden](docs/badges/unsafe.svg)
 ![standard sections marked complete: 0](docs/badges/complete.svg)
@@ -259,7 +259,7 @@ there instead.
    before it is printed, so a page cannot forge a line of surf's output.
 7. **A passing test must be able to fail.** Tests are tried against planted defects. Over the
    whole suite (`task conform-slow`), a navigation storage that drops every write fails 55 of
-   the 203 scenarios; the gate runs each of the 29 planted defects over the first 3 scenarios
+   the 221 scenarios; the gate runs each of the 31 planted defects over the first 3 scenarios
    that notice it.
 8. **Small.** A standard is followed for what surf does, not implemented whole.
 
@@ -280,9 +280,9 @@ there instead.
   ways. A certificate that is not trusted, has expired or names another host, a server limited
   to TLS 1.2 and a failed handshake each fail the load with a reason of its own. surf does not
   check revocation: a revoked certificate that has not expired loads.
-- **203 specified scenarios**, each passing twice: once against the specification's own
+- **221 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **2,168 tests** (1,616, and 552 of the TLS crates in a step of their own): 2,165 pass, and 3
+- **2,171 tests** (1,619, and 552 of the TLS crates in a step of their own): 2,168 pass, and 3
   of `surf-script` are ignored until swell reaches what they call. Built with warnings treated
   as errors, and 72 tests of the live view's page in a browser.
 
@@ -584,27 +584,27 @@ One command checks everything:
 
 ```console
 $ task check
-surf v1 — 9 file(s), 44 scenario(s), valid
-203 scenario(s) (44 authored), 56 refusal(s), written to .out/suite.json
-  203 scenarios: 203 passed, 0 failed, 0 error, 0 unsupported
-203 scenario(s) (44 authored), 56 refusal(s), written to .out/suite.json
+surf v1 — 9 file(s), 57 scenario(s), valid
+221 scenario(s) (57 authored), 57 refusal(s), written to .out/suite.json
+  221 scenarios: 221 passed, 0 failed, 0 error, 0 unsupported
+221 scenario(s) (57 authored), 57 refusal(s), written to .out/suite.json
 conform-noticed: conformance/tests/noticed.txt matches its sources
-conform-rust: the narrowed suites of 29 planted defects in conformance/target/noticed/3c078a8015b3e1cb30f295ad7e4cee71733675f170dc35bf2bc3d30aef7d592b are current
-Summary [   1.685s] 39 tests run: 39 passed, 0 skipped
-  203 scenarios: 203 passed, 0 failed, 0 error, 0 unsupported
+conform-rust: the narrowed suites of 31 planted defects in conformance/target/noticed/6faa23ddcf581f77cabfeb61025485e2f9ddb1a57259b1d734bd726dd75f14d4 are current
+Summary [   1.685s] 54 tests run: 54 passed, 0 skipped
+  221 scenarios: 221 passed, 0 failed, 0 error, 0 unsupported
 conformance step: 3.3 s of its budget of 120 s
-the interpreter and the Rust system ran 203 scenario(s) each, of suite sha256:27d50358e22d9b7b06eb74922b781b6ee0956c4e4d2ec3ed7504ae41285bbb86
+the interpreter and the Rust system ran 221 scenario(s) each, of suite sha256:29892e5537518e2b6290e5e134f03e324991488e6ca271cd5613409b7588dbc6
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 10 CLI artifact(s), generated in .out/cli
 Cargo.lock: 58 package(s), 25 from outside this repository, each on the allow-list
-test-layout: 26 test directories, 203 test files, one test binary each
+test-layout: 26 test directories, 206 test files, one test binary each
 tls-certs: 33 cases, certs/ matches its sources
 tls-flights: 6 recordings match SOURCE, the recorder matches DIGEST
 tls-flights: self-test: a changed copy of aes128-x25519-ecdsa.bin fails naming it
 doc-tests-check: no doc test outside crates/ports
     Finished `dev` profile [unoptimized] target(s) in 1.31s
-1616 tests: 1613 passed, 0 failed, 3 ignored (cargo-nextest 1614, doc tests 2)
+1619 tests: 1616 passed, 0 failed, 3 ignored (cargo-nextest 1617, doc tests 2)
 test step: 11.1 s of its budget of 120 s
 552 tests: 552 passed, 0 failed, 0 ignored (cargo-nextest 552)
 tls test step: 3.0 s of its budget of 120 s
@@ -625,7 +625,7 @@ doc-tests-check-test: 14 case(s), each decided as expected by taskfiles/doc-test
 four steps: 36.1 s (test step 11.1 s, tls test step 3.0 s, conformance step 3.3 s, page step 18.7 s)
 ```
 
-It validates the specification, runs the 203 scenarios against the interpreter built into `ess`
+It validates the specification, runs the 221 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
 that every package in the lock file from outside the repository is on its allow-list, then
 builds and tests, the TLS crates in a step of their own, checks that every event name of the
@@ -640,12 +640,16 @@ conformance counts. It is the run of 2026-11-24 on `91f7ff1`, the Web IDL reader
 that `task check-runner` ended in 67 s, at a load of 34.40 at its start and 52.88 at its end;
 its test line counts the reader's tests as they stand after it (80, where that run had 72).
 Its page tests' line counts the tests of `story:session-process-hardening` as they stand
-after it, from `task view-test` on its tip (72, where that run had 71). Its lock-check, test
-and test-layout lines count the packages and tests of `story:scripts-engine-dependency` as
-they stand after it, from `task lock-check`, `task test` and `task test-layout` on its tip
-(58 packages, 25 from outside; 1616 tests, 3 of them ignored; 26 test directories and 203
-test files; where that run had 51 and 19, 1504 and none, 25 and 193). The times are that
-run's.
+after it, from `task view-test` on its tip (72, where that run had 71). Its lock-check line
+counts the packages of `story:scripts-engine-dependency` as they stand after it, from `task
+lock-check` on its tip (58 packages, 25 from outside, where that run had 51 and 19). Its
+specification, suite, conformance, test and test-layout lines count the scenarios and tests of
+`story:scripts-spec` as they stand after it, from `task validate`, `task suite`, `task
+conform`, `task conform-rust`, `task conform-totals`, `task test` and `task test-layout` on its
+tip (57 authored scenarios and 221 in all, 57 refusals, 31 planted defects, 54 tests of the
+conformance crate; 1619 tests, 3 of them ignored; 26 test directories and 206 test files;
+where `story:scripts-engine-dependency`'s tip had 44 and 203, 56, 29, 39; 1616 and 203). The
+times are that run's.
 That run's page tests' line, `71 passed (18.3s)`, has its slowest test (`an entry over 1 MiB`) at
 2.350 s; the run of 2026-11-24 on `8fab187` had `71 passed (12.7s)`, its slowest test
 (`adversary: an action streamed while the detail loads after a reset is not lost`) at

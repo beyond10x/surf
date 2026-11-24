@@ -1,0 +1,28 @@
+# `surf-agent open` without `--scripts`, or with `--scripts false` (`docs/design/scripts.md`,
+# Q7): absent is false, so the session process opens the session with `scripts` false, and
+# `Sessions` shows it.
+type: ess-scenario/6
+domain: surf.agent
+scenario: agent-open-session-without-scripts
+summary: A session opened with scripts false is Open and records scripts false.
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.agent.OpenSession
+    actor: surf.agent.Opener
+    input:
+      session_id: 5c41e7d0-0000-4000-8000-000000000501
+      window_id: 5c41e7d0-0000-4000-8000-000000000502
+      tab_id: 5c41e7d0-0000-4000-8000-000000000503
+      scripts: false
+    outcome: opened
+    events:
+      - event: surf.agent.SessionOpened
+        payload:
+          session_id: 5c41e7d0-0000-4000-8000-000000000501
+          window_id: 5c41e7d0-0000-4000-8000-000000000502
+          tab_id: 5c41e7d0-0000-4000-8000-000000000503
+
+assert:
+  - view: surf.agent.Sessions
+    contains: {session_id: 5c41e7d0-0000-4000-8000-000000000501, state: Open, scripts: false}

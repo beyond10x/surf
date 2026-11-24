@@ -55,3 +55,16 @@ scenarios:
   - scenarios/adversary-history-forward-then-push-drops-and-keeps-earlier.yaml
   - scenarios/adversary-history-two-tabs.yaml
   - scenarios/adversary-history-push-during-traversal.yaml
+  - scenarios/document-records-script-ends.yaml
+  - scenarios/document-refuses-script-end-of-unknown-document.yaml
+  - scenarios/document-refuses-script-end-after-parsing.yaml
+  - scenarios/agent-open-session-with-scripts.yaml
+  - scenarios/agent-open-session-without-scripts.yaml
+  - scenarios/agent-open-two-sessions-scripts-apart.yaml
+  - scenarios/document-records-every-error-kind.yaml
+  - scenarios/document-scripts-of-two-documents.yaml
+  - scenarios/adversary-script-ends-every-reason.yaml
+  - scenarios/script-end-pairs-outside-q7-refused.yaml
+  - scenarios/document-script-end-refusals-in-order.yaml
+  - scenarios/adversary-script-ends-q7-excluded.yaml
+  - scenarios/adversary-script-ends-q7-edges-added.yaml

@@ -11,9 +11,10 @@
 //!   `press`, `back`, `forward` and `close` for `surf.agent.ActionCommand`, the lower-case name
 //!   for `surf.navigation.Standing` (`back`, `forward`, ...), the generated variant's name for
 //!   `surf.navigation.Navigation.State`, `surf.net.FailureReason`, `surf.net.Method`,
-//!   `surf.document.ParseLimit` and `surf.document.SubmissionEndReason`, which `spec/` spells the
-//!   same (`Committed`, `Unreachable`, `Post`, `Depth`, `InvalidControls`), so that a variant a
-//!   specification story adds is written without a change here;
+//!   `surf.document.ParseLimit`, `surf.document.SubmissionEndReason` and
+//!   `surf.document.ScriptEnd`, which `spec/` spells the same (`Committed`, `Unreachable`,
+//!   `Post`, `Depth`, `InvalidControls`, `NotRun`), so that a variant a specification story adds
+//!   is written without a change here;
 //! - a `Boolean` as `true` or `false`;
 //! - an identity in its text form, an address, a media type and an encoding's name as their
 //!   text;
@@ -296,6 +297,11 @@ pub fn event_line(event: &SystemEvent) -> String {
             .text("option_id", &e.option_id.0.0)
             .text("select_id", &e.select_id.0.0)
             .integer("position", e.position),
+        SystemEvent::ScriptEndAdded(e) => line
+            .text("script_id", &e.script_id.0.0)
+            .text("document_id", &e.document_id.0.0)
+            .integer("position", e.position)
+            .text("end", &variant(e.end)),
         SystemEvent::ValueSet(e) => line.text("element_id", &e.element_id.0.0),
         SystemEvent::CheckednessSet(e) => line
             .text("element_id", &e.element_id.0.0)

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use surf_agent::cli::{self, Source};
 
-/// What the binding declares and the parser refuses: the markers `UNMAPPED:` (b) and (c) of
+/// What the binding declares and the parser refuses: the markers `UNMAPPED:` (b), (c) and (g) of
 /// `cli/surf-agent.yaml`.
 const BINDING_ONLY: &[&str] = &[
     "back token protected hidden_tty --token-prompt",
@@ -26,6 +26,7 @@ const BINDING_ONLY: &[&str] = &[
     "log token protected stdin --token-stdin",
     "look token protected hidden_tty --token-prompt",
     "look token protected stdin --token-stdin",
+    "open scripts option --scripts",
     "pick token protected hidden_tty --token-prompt",
     "pick token protected stdin --token-stdin",
     "press token protected hidden_tty --token-prompt",
@@ -94,6 +95,34 @@ fn planted_drift() {
         .expect_err("a renamed command must fail the comparison");
     assert!(difference.contains("peek"), "{difference}");
     assert!(difference.contains("look"), "{difference}");
+}
+
+/// `story:scripts-spec`, acceptance 5: the binding declares `open --scripts`, and the client
+/// refuses it until `story:scripts-document-port`: status 2, the usage on standard error, and no
+/// session started (no `surfd` is started, nothing is made under the runtime directory).
+#[test]
+fn open_with_scripts_exits_2_and_starts_no_session() {
+    let dir = crate::common::TestDir::new();
+    for args in [
+        vec!["open", "--scripts", "true", "http://127.0.0.1:9/"],
+        vec!["open", "--scripts=true", "http://127.0.0.1:9/"],
+        vec!["open", "http://127.0.0.1:9/", "--scripts", "false"],
+    ] {
+        let output = crate::common::run(crate::common::agent(&dir).args(&args));
+        let stderr = crate::common::stderr(&output);
+        assert_eq!(output.status.code(), Some(2), "{args:?}: {stderr}");
+        assert_eq!(crate::common::stdout(&output), "", "{args:?}");
+        assert!(
+            stderr.contains("--scripts is not accepted"),
+            "{args:?}: {stderr}"
+        );
+        assert!(
+            stderr.contains("usage: surf-agent open [<url>]"),
+            "{args:?}: {stderr}"
+        );
+    }
+    assert!(!dir.runtime().join("surf").exists(), "nothing was sent");
+    assert!(dir.starts().is_empty(), "no surfd was started");
 }
 
 pub(crate) fn read_binding() -> Json {
@@ -196,6 +225,7 @@ fn parser_reading() -> (BTreeSet<String>, BTreeSet<String>) {
                     Source::TokenStdin { long } => format!("protected stdin --{long}"),
                     Source::TokenPrompt { long } => format!("protected hidden_tty --{long}"),
                     Source::Environment { name } => format!("environment {name}"),
+                    Source::Refused { long } => format!("option --{long}"),
                 };
                 let line = format!("{} {} {what}", command.name, argument.field);
                 if source.accepted() {

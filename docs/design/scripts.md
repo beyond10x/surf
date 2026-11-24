@@ -466,7 +466,7 @@ reached` among them:
   steps-per-document`, `not run: wall-clock`, `not run: memory`, `not run: faulted` (Q4 and the
   fault).
 
-The proposed YAML for `spec/domains/document.yaml` (types, entity, command, event):
+The proposed YAML for `spec/domains/document.yaml` (types, entity, command, event, view):
 
 ```yaml
 types:
@@ -584,6 +584,10 @@ entities:
         cardinality: many
         via: document_id
 
+errors:
+  - {name: surf.document.InvalidScriptEnd, fields: [{name: end, type: surf.document.ScriptEnd}]}
+  - {name: surf.document.InvalidScriptPosition, fields: [{name: position, type: Integer}]}
+
 commands:
   - name: surf.document.AddScriptEnd
     naming:
@@ -602,6 +606,30 @@ commands:
       - {name: column, type: Optional<Integer>}
       - {name: dynamic, type: Optional<Boolean>}
     outcomes:
+      # The closed list above is the rule; Q16 bounds the error's fields.
+      - name: invalid-end
+        when:
+          any:
+            - all: [{any: [end == Ran, end == Faulted]}, {any: [defined(reason), defined(error_kind), defined(message), defined(line), defined(column), defined(dynamic)]}]
+            - all: [{any: [end == Limit, end == NotRun]}, {any: [missing(reason), defined(error_kind), defined(message), defined(line), defined(column), defined(dynamic)]}]
+            - all: [{any: [end == Threw, end == Refused]}, {any: [defined(reason), missing(error_kind)]}]
+            - all: [end == Limit, defined(reason), reason != StepsPerScript, reason != Memory, reason != SourceBytes, reason != WallClock, reason != Nodes, reason != Depth, reason != Attributes, reason != StoredBytes]
+            - all: [end == NotRun, defined(reason), {any: [reason == StepsPerScript, reason == SourceBytes, reason == Nodes, reason == Depth, reason == Attributes, reason == StoredBytes]}]
+            - all: [end == Threw, defined(error_kind), error_kind == Value, defined(message)]
+            - all: [end == Refused, defined(error_kind), error_kind != SyntaxError]
+            - all: [defined(message), message.count > 1024]
+        error: surf.document.InvalidScriptEnd
+        payload: {surf.document.InvalidScriptEnd: {end: input.end}}
+      - name: invalid-position
+        when:
+          any:
+            - position < 1
+            - all: [defined(line), line < 1]
+            - all: [defined(line), line >= 4294967296]
+            - all: [defined(column), column < 1]
+            - all: [defined(column), column >= 4294967296]
+        error: surf.document.InvalidScriptPosition
+        payload: {surf.document.InvalidScriptPosition: {position: input.position}}
       # no-such-document and already-parsed as `AddForm` has them.
       - name: added
         creates: surf.document.Script
@@ -623,7 +651,45 @@ events:
       - {name: document_id, type: surf.document.DocumentId}
       - {name: position, type: Integer}
       - {name: end, type: surf.document.ScriptEnd}
+
+views:
+  - name: surf.document.Scripts
+    source: surf.document.Script
+    consistency: read_your_writes
+    params:
+      - {name: document_id, type: surf.document.DocumentId}
+    filter: document_id == param.document_id
+    order_by: [position asc]
+    fields:
+      - {name: script_id, type: surf.document.ScriptId}
+      - {name: document_id, type: surf.document.DocumentId}
+      - {name: position, type: Integer}
+      - {name: end, type: surf.document.ScriptEnd}
+      - {name: reason, type: Optional<surf.document.ScriptReason>}
+      - {name: error_kind, type: Optional<surf.document.ScriptErrorKind>}
+      - {name: message, type: Optional<String>}
+      - {name: line, type: Optional<Integer>}
+      - {name: column, type: Optional<Integer>}
+      - {name: dynamic, type: Optional<Boolean>}
+    naming:
+      wire: scripts
+      display: Scripts
 ```
+
+The view `surf.document.Scripts` reads every stored field of a document's records, in the order
+the scripts ended, as `surf.document.Elements` reads its elements: each entity of the domain has a
+view, and without one no scenario sees the record.
+
+The command refuses what this list and Q16 exclude, and adds nothing then: `invalid-end`, an end
+with a reason or an error the list does not give it (`Ran` and `Faulted` carry nothing, `Limit` a
+limit's word, `NotRun` a not-run word, `Threw` a kind and, for `value`, no message, `Refused` its
+`SyntaxError`; only `Threw` and `Refused` carry a kind, a message, a line, a column or `dynamic`;
+no message over 1,024 characters); `invalid-position`, a position below 1 or a line or column
+outside 1 to 2^32 - 1, whose error names the end's position whichever of the three was outside.
+The input's refusals answer before the document's existence and its state.
+A second end at one position of one document is not refused by the specification; the session
+writes one end per position, and the refusal comes back when the specification language
+synthesizes it within the suite's time.
 
 The command is the document component's, issued by its parser step in the session process
 (`surf-session`), as `AddElement` and `AddForm` are; no other process runs page script (S7). The

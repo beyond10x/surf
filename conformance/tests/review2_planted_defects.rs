@@ -15,20 +15,23 @@ use surf_conformance::{
     run, whole_suite,
 };
 use surf_ports::{
-    DocumentPorts, NavigatorPorts, NetPorts, RandomSource, RendererPorts, ShellPorts, agent_port,
-    commit_navigation, document_port, navigator_port, net_port, renderer_port, shell_port,
-    traverse_history,
+    DocumentPorts, NavigatorPorts, NetPorts, RandomSource, RendererPorts, ScriptIdentity,
+    ShellPorts, add_script_end, agent_port, commit_navigation, document_port, navigator_port,
+    net_port, renderer_port, shell_port, traverse_history,
 };
 use surf_types::agent::{ActionId, SessionId};
 use surf_types::behaviour::{
     DocumentStorage, ElementStorage, FormStorage, FrameStorage, ListOptionStorage,
-    NavigationStorage, RequestStorage, SubmissionStorage, TabStorage, TryContext, WindowStorage,
+    NavigationStorage, RequestStorage, ScriptStorage, SubmissionStorage, TabStorage, TryContext,
+    WindowStorage,
 };
-use surf_types::document::obligations::{CheckBehavior, SelectOptionBehavior};
+use surf_types::document::obligations::{
+    AddScriptEndBehavior, CheckBehavior, SelectOptionBehavior,
+};
 use surf_types::document::{
-    Check, CheckOutcome, DocumentId, DocumentSnapshot, ElementId, ElementSnapshot, FormId,
-    FormSnapshot, ListOptionSnapshot, OptionId, SelectOption, SelectOptionOutcome, SubmissionId,
-    SubmissionSnapshot,
+    AddScriptEnd, AddScriptEndOutcome, Check, CheckOutcome, DocumentId, DocumentSnapshot,
+    ElementId, ElementSnapshot, FormId, FormSnapshot, ListOptionSnapshot, OptionId, ScriptId,
+    ScriptSnapshot, SelectOption, SelectOptionOutcome, SubmissionId, SubmissionSnapshot,
 };
 use surf_types::navigation::obligations::{CommitNavigationBehavior, TraverseHistoryBehavior};
 use surf_types::navigation::{
@@ -169,6 +172,7 @@ mutant_storage!(FormStorage, FormSnapshot, FormId);
 mutant_storage!(ListOptionStorage, ListOptionSnapshot, OptionId);
 mutant_storage!(SubmissionStorage, SubmissionSnapshot, SubmissionId);
 mutant_storage!(FrameStorage, FrameSnapshot, FrameId);
+mutant_storage!(ScriptStorage, ScriptSnapshot, ScriptId);
 
 /// The `document` component's obligations, handed through to the ports the mutant wraps: they
 /// read and write its tables without the policy.
@@ -184,6 +188,22 @@ impl<P: SelectOptionBehavior> SelectOptionBehavior for Mutant<P> {
         input: SelectOption,
     ) -> Result<SelectOptionOutcome, UnmetObligation> {
         self.inner.select_option(input)
+    }
+}
+
+/// A script's end, met over the mutant's own storage, so its records are put with the policy.
+impl<P: ScriptIdentity + DocumentStorage + ScriptStorage> AddScriptEndBehavior for Mutant<P> {
+    fn add_script_end(
+        &mut self,
+        input: AddScriptEnd,
+    ) -> Result<AddScriptEndOutcome, UnmetObligation> {
+        add_script_end(self, input)
+    }
+}
+
+impl<P: ScriptIdentity> ScriptIdentity for Mutant<P> {
+    fn assign_script_id(&mut self) -> Result<ScriptId, UnmetObligation> {
+        self.inner.assign_script_id()
     }
 }
 

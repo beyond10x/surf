@@ -2,8 +2,8 @@
   "provenance": {
     "system": "surf",
     "specification_version": "v1",
-    "source_digest": "750651f413d725d7fa69a5a78e4d0216dab9606c4f61c5425be76c5335dfd8c4",
-    "contract_digest": "0885760ec9338d6af6c9b21b424dde0557abe451edb6419c0f296bc37836f5f6"
+    "source_digest": "79ba7191c7269fe664933cfcbfb671aef6ecfb443b5cc383c4dbeb7fd20ed4bf",
+    "contract_digest": "8a6a9f1bd1962c0655a4273e57621bd9c11144463771cf0d9887841440044e63"
   },
   "scope": {
     "profile": "component-skeletons"
@@ -214,6 +214,41 @@
     },
     {
       "kind": "domain_type",
+      "source": "surf.document.Script.State",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.document.ScriptEnd",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.document.ScriptErrorKind",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.document.ScriptId",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
+      "source": "surf.document.ScriptReason",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "domain_type",
       "source": "surf.document.Submission.State",
       "disposition": {
         "disposition": "generated"
@@ -383,6 +418,13 @@
     {
       "kind": "entity_lifecycle",
       "source": "surf.document.Option",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "entity_lifecycle",
+      "source": "surf.document.Script",
       "disposition": {
         "disposition": "generated"
       }
@@ -699,6 +741,25 @@
       "source": "surf.document.AddOption",
       "disposition": {
         "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_contract",
+      "source": "surf.document.AddScriptEnd",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "command_behavior",
+      "source": "surf.document.AddScriptEnd",
+      "disposition": {
+        "disposition": "obligation",
+        "reason": {
+          "class": "undetermined",
+          "construct": "the guard path `message.count`, in `invalid-end`"
+        },
+        "contract": "given `surf.document.AddScriptEnd` input, decide and enact exactly one outcome. Selection precedence: on commands with `when_related:`, check `existing_instance` then `exists: false` before input-guarded refusals; choose the first declared input refusal whose guard holds; then check addressed-row existence (`unknown_instance`, and `existing_instance` on commands without `when_related:`); then the held state (`when_subject_state` and `when_subject`), with `wrong_state` only if the selected branch moves from a state the row does not hold; then choose the present `when_related:` predicate refusal whose predicate and optional input guard hold; then accepting and external branches in declaration order. An accepting branch that moves nothing answers in every state. Related-presence predicates do not precede input-guarded refusals. Declared outcomes (declaration order, not selection precedence): `invalid-end` when `(((end == Ran or end == Faulted) and (defined(reason) or defined(error_kind) or defined(message) or defined(line) or defined(column) or defined(dynamic))) or ((end == Limit or end == NotRun) and (not (defined(reason)) or defined(error_kind) or defined(message) or defined(line) or defined(column) or defined(dynamic))) or ((end == Threw or end == Refused) and (defined(reason) or not (defined(error_kind)))) or (end == Limit and defined(reason) and reason != StepsPerScript and reason != Memory and reason != SourceBytes and reason != WallClock and reason != Nodes and reason != Depth and reason != Attributes and reason != StoredBytes) or (end == NotRun and defined(reason) and (reason == StepsPerScript or reason == SourceBytes or reason == Nodes or reason == Depth or reason == Attributes or reason == StoredBytes)) or (end == Threw and defined(error_kind) and error_kind == Value and defined(message)) or (end == Refused and defined(error_kind) and error_kind != SyntaxError) or (defined(message) and message.count > 1024))`, error `surf.document.InvalidScriptEnd`; `invalid-position` when `(position < 1 or (defined(line) and line < 1) or (defined(line) and line >= 4294967296) or (defined(column) and column < 1) or (defined(column) and column >= 4294967296))`, error `surf.document.InvalidScriptPosition`; `no-such-document` when no `surf.document.Document` carries the identity `input.document_id` names, error `surf.document.DocumentNotFound`; `already-parsed` when the `surf.document.Document` that `input.document_id` names satisfies `state == Parsed`, error `surf.document.DocumentStateConflict`; `added` otherwise, creates `surf.document.Script`, emits `surf.document.ScriptEndAdded`"
       }
     },
     {
@@ -1129,6 +1190,13 @@
     },
     {
       "kind": "event_type",
+      "source": "surf.document.ScriptEndAdded",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "event_type",
       "source": "surf.document.SubmissionAbandoned",
       "disposition": {
         "disposition": "generated"
@@ -1305,6 +1373,20 @@
     {
       "kind": "error_type",
       "source": "surf.document.ElementNotFound",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "error_type",
+      "source": "surf.document.InvalidScriptEnd",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "error_type",
+      "source": "surf.document.InvalidScriptPosition",
       "disposition": {
         "disposition": "generated"
       }
@@ -1508,6 +1590,20 @@
     {
       "kind": "view_query",
       "source": "surf.document.Options",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "view_type",
+      "source": "surf.document.Scripts",
+      "disposition": {
+        "disposition": "generated"
+      }
+    },
+    {
+      "kind": "view_query",
+      "source": "surf.document.Scripts",
       "disposition": {
         "disposition": "generated"
       }

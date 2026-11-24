@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T15:42:28Z",
+  "actor": "human:operator",
+  "artifact": "story:scripts-engine-dependency",
+  "kind": "story",
+  "revision": 28,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "three passes on the unit by a reviewer who did not write it, 2026-11-24",
+    "reference": "first, on b9ddc37: 19 tests merged, 4 red; second, on f54fa3e: 1 must (a test that failed 1 run in 20 on correct code), 3 shoulds, 7 tests merged, 3 red; third, on 8b64f0f: no must, 4 shoulds, 5 tests merged, 4 red; three fix rounds by the implementor, every red test green on 254a744; the check on overflow checks holds the plain forms and its head says where it ends"
+  }
+}

@@ -1827,7 +1827,7 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `conform-rust: the sources of conformance/tests/noticed.txt changed; run task conform-slow`.
   Then it builds the tests (`cargo nextest run --no-run`) and the binary (`cargo build`), and
   the setup step `surf-conformance --narrow .out/suite.json conformance/tests/noticed.txt`
-  writes the narrowed suites once per digest (`conform-rust: the narrowed suites of 29 planted
+  writes the narrowed suites once per digest (`conform-rust: the narrowed suites of 31 planted
   defects written to …` or `… are current`), all untimed. The timed part: its tests under
   cargo-nextest with the root's `.config/nextest.toml` (a test still running after 60 s is
   ended and fails), into `.out/conform-rust-test.log`, the planted-defect tests included (it
@@ -2493,14 +2493,14 @@ the root workspace (14 in its first commit, 4 in the review fix), so `task test`
 `579 tests: 579 passed, 0 failed, 0 ignored (cargo-nextest 577, doc tests 2)`, counted from the
 `#[test]` lines of the diff; the gate on `main` counted the same 579 since.
 
-`REFUSALS_MAX` in `Taskfile.yml` is 56. `task suite` fails above it. Lower it when a refusal goes
+`REFUSALS_MAX` in `Taskfile.yml` is 57. `task suite` fails above it. Lower it when a refusal goes
 away; raise it only with the new refusal listed here. The list is `grep '^refused:'
 .out/synthesize.log` (read on 2026-11-21 after wave 6: 28 lines, the same as below; the gate
 after wave 7 printed `28 refusal(s)`; in wave 8 the unit of `agent-request-body-spec` read the
 same 28 lines; the gate after wave 9 printed `28 refusal(s)`, and `task suite` after wave 10
 too; after round 1, 48 lines with ess 0.97.3: the 28 and the 20 of `story:agent-forms-spec`;
 after round 2, 56 lines with ess 0.97.4: the 48 and the 8 of `story:agent-history-spec`, both
-listed last).
+listed last; after `story:scripts-spec`, 57 lines with ess 0.97.4).
 Twenty-two of the 28 are `ESS-SYNTH-010`:
 
 - 10 × `<binding>/binding/delivery`: every binding is `at_most_once`, which has no second
@@ -2567,6 +2567,12 @@ The 8 refusals `story:agent-history-spec` added (48 to 56), with cause:
   `navigation-traverse-refused-at-end`, `navigation-traverse-refused-for-post-entry`,
   `navigation-traverse-commits-without-entry`, `navigation-commits-at-response-url`,
   `page-load-commits-and-parses` and the five `adversary-history-*` files.
+
+The 1 refusal `story:scripts-spec` added (56 to 57), with cause:
+
+- `ESS-SYNTH-014` × 1: `AddScriptEnd/added`. The view `Scripts` declares an order, and the
+  guards of `AddScriptEnd` leave synthesis one record, as `AddElement/added` above.
+  `document-records-script-ends` covers it: six records, read back in order.
 
 One note is printed with them: the specification declares actors and no component is served over
 a network, so no `<command>/grant/denied` scenario is generated.
