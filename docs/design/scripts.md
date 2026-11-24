@@ -685,7 +685,8 @@ with a reason or an error the list does not give it (`Ran` and `Faulted` carry n
 limit's word, `NotRun` a not-run word, `Threw` a kind and, for `value`, no message, `Refused` its
 `SyntaxError`; only `Threw` and `Refused` carry a kind, a message, a line, a column or `dynamic`;
 no message over 1,024 characters); `invalid-position`, a position below 1 or a line or column
-outside 1 to 2^32 - 1. The input's refusals answer before the document's existence and its state.
+outside 1 to 2^32 - 1, whose error names the end's position whichever of the three was outside.
+The input's refusals answer before the document's existence and its state.
 A second end at one position of one document is not refused by the specification; the session
 writes one end per position, and the refusal comes back when the specification language
 synthesizes it within the suite's time.

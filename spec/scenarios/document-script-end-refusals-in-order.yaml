@@ -86,6 +86,17 @@ timeline:
       name: surf.document.DocumentStateConflict
       fields: {state: Parsed}
 
+  - at: 2026-01-08T09:00:07Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 0
+      end: Ran
+    outcome: invalid-position
+    error:
+      name: surf.document.InvalidScriptPosition
+      fields: {position: 0}
+
 assert:
   - view: surf.document.Scripts
     params: {document_id: {$instance: page}}

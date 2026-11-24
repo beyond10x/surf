@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 815b5846cd605d5ad5bf889b9e1b2b924cfbeb7d6931ec05ff659e3ea3fc4b79
+// contract digest 8a6a9f1bd1962c0655a4273e57621bd9c11144463771cf0d9887841440044e63
 // do not edit: regenerate with `ess synthesize`
 
 //! Document — `surf.document`.
@@ -1474,7 +1474,7 @@ pub enum AddScriptEndOutcome {
     },
     /// `invalid-position` — when `(position < 1 or (defined(line) and line < 1) or (defined(line) and line >= 4294967296) or (defined(column) and column < 1) or (defined(column) and column >= 4294967296))`.
     ///
-    /// The position, line or column is outside its range; nothing is added.
+    /// The position, the line or the column is outside its range; nothing is added, and the error's `position` names the end's position, whichever was outside.
     InvalidPosition {
         /// Why it was refused: `surf.document.InvalidScriptPosition`.
         error: InvalidScriptPosition,
@@ -2081,7 +2081,7 @@ pub struct InvalidScriptEnd {
 
 /// The declared error `surf.document.InvalidScriptPosition`.
 ///
-/// The position, line or column is outside its range, so nothing is added.
+/// The position, the line or the column is outside its range, so nothing is added; `position` names the end's position, whichever was outside.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InvalidScriptPosition {
     /// `position` — `Integer`.

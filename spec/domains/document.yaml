@@ -600,7 +600,7 @@ errors:
         type: surf.document.ScriptEnd
 
   - name: surf.document.InvalidScriptPosition
-    summary: The position, line or column is outside its range, so nothing is added.
+    summary: The position, the line or the column is outside its range, so nothing is added; `position` names the end's position, whichever was outside.
     fields:
       - name: position
         type: Integer
@@ -932,7 +932,7 @@ commands:
         payload:
           surf.document.InvalidScriptPosition:
             position: input.position
-        summary: The position, line or column is outside its range; nothing is added.
+        summary: The position, the line or the column is outside its range; nothing is added, and the error's `position` names the end's position, whichever was outside.
 
       # no-such-document and already-parsed as `AddForm` has them.
       - name: no-such-document
