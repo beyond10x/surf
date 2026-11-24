@@ -490,14 +490,19 @@ note adds it here:
   is written from the session's start on: a session that dies by such a signal before it
   wrote its first byte or while it answers `open` is answered as an `open` whose session ended
   before it reported ready or while it answered (status 3 and a reason), with these lines as
-  its text: the head line `died`, `did refused session-died` and the `note ended` line. A session that ended with an
-  exit status and no signal has no `note ended` line, and neither has one `surfd` killed
-  itself: after the late read of a timed-out answer (the command that waited was answered
-  `did refused session-timeout`), at the end of `surfd`, when the session did not end within
-  the kill grace after its answer said `closed` or after it closed the link, after it broke
-  the rules of the link, after it wrote a byte on its standard output past its `ready` line,
-  and after an `open` it did not answer in time. A session that ends by a signal of its own
-  in the instant `surfd` kills it reads as killed by `surfd`, with no `note ended` line.
+  its text: the head line `died`, `did refused session-died` and the `note ended` line. A
+  session that ended with an exit status and no signal has no `note ended` line, and neither
+  has one `surfd` killed itself: after the late read of a timed-out answer (the command that
+  waited was answered `did refused session-timeout`), at the end of `surfd`, when the session
+  did not end within the kill grace after its answer said `closed` or after it closed the
+  link, after it broke the rules of the link, after it wrote a byte on its standard output
+  past its `ready` line, after a first line other than `ready`, after it wrote no `ready`
+  line within the ready timeout, when it closed its standard output before its first byte
+  and kept running past the kill grace, and after an `open` it did not answer in time. The
+  one case among these that gets the line: a session that had already ended by a signal
+  `surfd` did not send when `surfd` came to kill it; `surfd` then sends nothing and names
+  that signal. A session that ends by a signal of its own in the instant `surfd` kills it
+  reads as killed by `surfd`, with no `note ended` line.
 
 ### Text
 

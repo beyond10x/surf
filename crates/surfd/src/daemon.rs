@@ -1348,6 +1348,13 @@ fn abandon(shared: &Shared, id: &str, process: &Process) -> Option<Note> {
 /// ([`not_started`]). A session that dies by a signal `surfd` did not send from its start on,
 /// before its first byte or while it answers `open`, adds its `note ended` line to the answer
 /// ([`with_ended`]).
+///
+/// After the ready timeout the note depends on the supervisor reaching its reap within
+/// [`abandon`]'s wait: a child of the session that holds the session's standard output open
+/// longer than that keeps the supervisor in its first read, and the note is lost. After a link
+/// the session closed with no answer to `open` the note depends on the wait of the kill grace
+/// before [`abandon`]: without it `Process::kill` could find the dying session not yet reaped
+/// and take its signal for its own.
 fn open_session(shared: &Arc<Shared>, raw: &[u8], scripts: bool) -> wire::Answer {
     let id = match next_identity(shared) {
         Ok(id) => id,
