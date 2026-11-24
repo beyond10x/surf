@@ -61,7 +61,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 29
+revision: 30
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:14Z", actor: "human:operator", revision: 25}
 ---
@@ -101,6 +101,20 @@ Found while `story:scripts-spec` was built (2026-11-24): the session's cap of 25
 per request does not count the event `ScriptEndAdded`. A page may add up to 1,000 script records
 (Q4), so this story decides whether those events count against the cap or have a bound of their
 own, and holds the answer with a test.
+
+Found by the reviews of `story:session-process-hardening` and `story:scripts-engine-dependency`
+(2026-11-24), each for this story to hold with a test:
+
+- No test starts the built `surf-session` under the bounds of a session with scripts: until this
+  story the session refuses `open` with `arg scripts` as usage, so every case with scripts ran the
+  test stand-in. This story's first test of the option starts the built session through `surfd`
+  and reads `/proc/<pid>/limits` and `NoNewPrivs` of it.
+- Three tests of `surf-script` are ignored at swell `0.8.0` (`clock_advances`, `seeds_fixed`,
+  `time_zone`; `Date` and `Math.random` are `pending slice 4`). They hide one claim: that the
+  runner hands its mode's seeds to the agent. The commit that takes a swell tag with those
+  builtins removes the `#[ignore]` lines.
+- `surf-script` matches swell's error types arm by arm, so a tag that adds a variant stops the
+  build where surf must choose the word.
 
 ## Domain relations
 
