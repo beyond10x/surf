@@ -29,7 +29,7 @@ scope:
   path: crates/tls/tests/tls
 - confidence: cited
   path: crates/tls/tests/tls/path.rs
-revision: 17
+revision: 19
 ---
 ## Why
 
@@ -154,7 +154,9 @@ statements 2 to 6 in any order.
 
 - `story:tls-fetch-https` scopes `crates/surf/tests`; this story depends on it and changes no
   file there (`lock_check.rs` went to `story:test-step-scripts-and-binaries` with statement 7).
-- `story:tls-release` depends on this story.
+- `story:tls-release` no longer depends on this story (2026-11-24): on `75c888c` and
+  on `7ade66e` the gate printed a `tls test step` of 10.2 s and 3.0 s of its budget of 120 s,
+  so the release does not wait for a lower `test-tls`.
 - `AGENTS.md` on the wave: this story changes the bullet of `.cargo/config.toml` (:230) and the
   TLS counts (:662, :724-748, :769, :792). `story:tls-step-within-budget` changes the bullets of
   `task test` and `task test-tls` and the paragraph of `task check`;
