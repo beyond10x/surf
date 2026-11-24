@@ -29,18 +29,15 @@ wanted, not mandatory: "I'm not saying we have to follow a spec, but would be gr
   could also spec it, implement it our own." Scope, decided by the operator on 2026-11-20 (option C):
   - No third-party crates in anything that ships. The Rust standard library and the operating
     system are allowed.
-  - One exception: audited cryptographic primitives (ciphers, hashes, key exchange, signature
-    verification) come from a third-party crate, because hand-written ones leak keys through
-    timing. The crate is ring 0.17.14 (the operator, 2026-11-22: "A: ring 0.17.14"), used by
-    `surf-tls` alone and allowed by `taskfiles/lock-allow.txt`. The TLS protocol code on top of
-    it is written here.
+  - Two exceptions. Audited cryptographic primitives come from ring 0.17.14, used by
+    `surf-tls` alone; and one crate of the organization, the script engine swell, by a git
+    dependency on a release tag, used by `surf-script` alone. `taskfiles/lock-allow.txt` names
+    each of their packages by name, version, source and checksum (`none` for a package from
+    git), and `taskfiles/lock-owners.txt` names the crates of this repository that may depend
+    on each (`task lock-check`).
   - Build and test tooling (`ess`, `task`, test suites) is not runtime and is not covered.
   - `conformance/` is the one place in the repository where a third-party crate is allowed: the
-    `ess-conformance` runner and what it brings, in a Cargo workspace of its own. The root
-    `Cargo.lock` proves the rest: every package in it from outside this repository is one of
-    the 19 packages of ring on `taskfiles/lock-allow.txt`, matched on name, version, source and
-    checksum, and no crate of this repository but `surf-tls` depends on one (`task
-    lock-check`).
+    `ess-conformance` runner and what it brings, in a Cargo workspace of its own.
 
 Status on 2026-11-20: `spec/` was drafted by reasoning over the page load. No standard was read
 for it. Its names, lifecycle states and command boundaries are not checked against the standards

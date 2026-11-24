@@ -48,6 +48,24 @@ and surf-session), through the crate surf-tls:
   (https://mozilla.org/MPL/2.0/). Its source form is that file in this
   repository.
 
+Material of the organization built into the crate surf-script, which no shipped
+binary links yet:
+
+- swell (https://github.com/beyond10x/swell, tag 0.8.0), the script engine,
+  under the Apache License 2.0, the text in LICENSE beside this file. Its
+  NOTICE file reads, in the parts that pertain to what surf builds:
+
+    swell
+    Copyright 2026 beyond10x
+
+    This product includes software developed by beyond10x
+    (https://github.com/beyond10x).
+
+    - data/unicode/17.0.0: data files of the Unicode Character Database and
+      of UTS #51, version 17.0.0, copyright Unicode, Inc., under the Unicode
+      License V3 (data/unicode/17.0.0/LICENSE). Each file's address and
+      SHA-256 are in data/unicode/17.0.0/SOURCE.
+
 Third-party material in this repository, used for tests only and not part of
 any shipped binary:
 

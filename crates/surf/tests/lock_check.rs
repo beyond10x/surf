@@ -1,10 +1,13 @@
 //! `task lock-check` (Taskfile.yml, which runs `taskfiles/lock-check.sh` over the root
-//! `Cargo.lock` and `taskfiles/lock-allow.txt`): nothing that ships uses a third-party crate but
-//! the packages of ring, which the allow-list pins by name, version, source and checksum and
-//! only `surf-tls` may depend on. Each case copies `Cargo.lock`, `taskfiles/lock-check.sh` and
-//! `taskfiles/lock-allow.txt` into a directory of its own under `CARGO_TARGET_TMPDIR`, changes
-//! the lock or the list or not, and runs the task's line there,
-//! `sh taskfiles/lock-check.sh Cargo.lock taskfiles/lock-allow.txt`, without `task`.
+//! `Cargo.lock`, `taskfiles/lock-allow.txt`, `taskfiles/lock-owners.txt` and the root
+//! `Cargo.toml`): nothing that ships uses a third-party crate but the packages of ring and of
+//! the script engine swell, which the allow-list pins by name, version, source and checksum
+//! (`none` for a package from git); a crate of this repository depends on one of them, or on
+//! `surf-script`, only by a line of the owners file; and each package from git has
+//! `overflow-checks = true` in the root manifest's release profile. Each case copies
+//! `Cargo.lock`, `Cargo.toml`, `taskfiles/lock-check.sh`, `taskfiles/lock-allow.txt` and
+//! `taskfiles/lock-owners.txt` into a directory of its own under `CARGO_TARGET_TMPDIR`, changes
+//! one of them or none, and runs the task's line there, [`LINE`], without `task`.
 //! `the_unchanged_lock_passes` holds the task to that line with `task --dry --verbose
 //! lock-check` in the repository, so it needs `task` on `PATH`, as `task check` does.
 
@@ -13,6 +16,20 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const CRATES_IO: &str = "registry+https://github.com/rust-lang/crates.io-index";
+
+/// The source cargo writes for the six packages of swell at the tag the root manifest names.
+const SWELL: &str =
+    "git+https://github.com/beyond10x/swell?tag=0.8.0#0c1827128b57845e203713e87a0b0949fc8d63be";
+
+/// The six packages a host takes from swell (`docs/design/scripts.md`, Q13).
+const SWELL_PACKAGES: [&str; 6] = [
+    "swell",
+    "swell-compiler",
+    "swell-num",
+    "swell-regexp",
+    "swell-syntax",
+    "swell-unicode",
+];
 
 fn repository() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -29,12 +46,42 @@ fn allow_list() -> String {
         .expect("read taskfiles/lock-allow.txt")
 }
 
-/// The line of `task lock-check` (Taskfile.yml), which `check` runs in a copy.
-const LINE: &str = "sh taskfiles/lock-check.sh Cargo.lock taskfiles/lock-allow.txt";
+/// The owners file as committed.
+fn owners() -> String {
+    fs::read_to_string(repository().join("taskfiles/lock-owners.txt"))
+        .expect("read taskfiles/lock-owners.txt")
+}
 
-/// A fresh copy named `name` of the check's script, `allow` as its allow-list and `lock` as the
-/// root `Cargo.lock`.
-fn copy_with(name: &str, lock: &str, allow: &str) -> PathBuf {
+/// The root `Cargo.toml` as committed.
+fn manifest() -> String {
+    fs::read_to_string(repository().join("Cargo.toml")).expect("read Cargo.toml")
+}
+
+/// The line of `task lock-check` (Taskfile.yml), which `check` runs in a copy.
+const LINE: &str = "sh taskfiles/lock-check.sh Cargo.lock taskfiles/lock-allow.txt taskfiles/lock-owners.txt Cargo.toml";
+
+/// The files of one copy: the lock, the allow-list, the owners file and the root manifest.
+struct Files {
+    lock: String,
+    allow: String,
+    owners: String,
+    manifest: String,
+}
+
+impl Files {
+    /// The four files as committed.
+    fn committed() -> Self {
+        Self {
+            lock: lock(),
+            allow: allow_list(),
+            owners: owners(),
+            manifest: manifest(),
+        }
+    }
+}
+
+/// A fresh copy named `name` of the check's script with `files`.
+fn copy_files(name: &str, files: &Files) -> PathBuf {
     let root = repository();
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
         .join("lock-check")
@@ -46,9 +93,24 @@ fn copy_with(name: &str, lock: &str, allow: &str) -> PathBuf {
         dir.join("taskfiles/lock-check.sh"),
     )
     .expect("copy taskfiles/lock-check.sh");
-    fs::write(dir.join("taskfiles/lock-allow.txt"), allow).expect("write lock-allow.txt");
-    fs::write(dir.join("Cargo.lock"), lock).expect("write Cargo.lock");
+    fs::write(dir.join("taskfiles/lock-allow.txt"), &files.allow).expect("write lock-allow.txt");
+    fs::write(dir.join("taskfiles/lock-owners.txt"), &files.owners).expect("write lock-owners.txt");
+    fs::write(dir.join("Cargo.lock"), &files.lock).expect("write Cargo.lock");
+    fs::write(dir.join("Cargo.toml"), &files.manifest).expect("write Cargo.toml");
     dir
+}
+
+/// A fresh copy named `name` of the check's script, `allow` as its allow-list and `lock` as the
+/// root `Cargo.lock`, with the owners file and the root manifest as committed.
+fn copy_with(name: &str, lock: &str, allow: &str) -> PathBuf {
+    copy_files(
+        name,
+        &Files {
+            lock: lock.to_string(),
+            allow: allow.to_string(),
+            ..Files::committed()
+        },
+    )
 }
 
 /// A fresh copy named `name` with `extra` appended to the lock.
@@ -58,8 +120,7 @@ fn copy(name: &str, extra: &str) -> PathBuf {
     copy_with(name, &lock, &allow_list())
 }
 
-/// The line of `task lock-check` in `dir`, `sh taskfiles/lock-check.sh Cargo.lock
-/// taskfiles/lock-allow.txt`: its exit status and everything it printed.
+/// The line of `task lock-check` in `dir`, [`LINE`]: its exit status and everything it printed.
 fn check(dir: &Path) -> (Option<i32>, String) {
     let mut words = LINE.split(' ');
     let output = Command::new(words.next().expect("a program"))
@@ -91,7 +152,11 @@ fn assert_fails_naming(case: &str, package: &str, line: &str) {
 
 /// The lock with the block of the package `name` passed through `edit`, which must change it.
 fn lock_with_package_edited(name: &str, edit: impl Fn(&str) -> String) -> String {
-    let lock = lock();
+    package_edited(&lock(), name, edit)
+}
+
+/// `lock` with the block of the package `name` passed through `edit`, which must change it.
+fn package_edited(lock: &str, name: &str, edit: impl Fn(&str) -> String) -> String {
     let head = format!("[[package]]\nname = \"{name}\"\n");
     let start = lock
         .find(&head)
@@ -138,7 +203,7 @@ fn the_unchanged_lock_passes() {
     let (status, text) = check(&dir);
     assert_eq!(status, Some(0), "{text}");
     let line = format!(
-        "Cargo.lock: {packages} package(s), 19 from outside this repository, each on the allow-list"
+        "Cargo.lock: {packages} package(s), 25 from outside this repository, each on the allow-list"
     );
     assert!(
         text.lines().any(|l| l == line),
@@ -243,14 +308,15 @@ fn ring_from_git_fails_naming_it() {
     });
 }
 
-/// A crate of this repository other than surf-tls that depends on ring fails, naming it.
+/// A crate of this repository other than surf-tls that depends on ring fails, naming it: only
+/// the line `ring surf-tls` of the owners file allows a crate to.
 #[test]
 fn another_crate_depending_on_ring_fails_naming_it() {
     let lock = lock_with_package_edited("surf-fetch", |b| {
         b.replace("dependencies = [\n", "dependencies = [\n \"ring\",\n")
     });
     let dir = copy_with("fetch-ring", &lock, &allow_list());
-    let line = "Cargo.lock: surf-fetch depends on ring; only surf-tls may";
+    let line = "Cargo.lock: surf-fetch depends on ring; lock-owners.txt does not allow it";
     assert_fails_with("fetch-ring", &dir, &format!("{line:?}"), |l| l == line);
 }
 
@@ -281,6 +347,229 @@ fn a_line_cargo_does_not_write_fails_naming_it() {
         );
         assert_fails_with(case, &dir, &format!("{line:?}"), |l| l == line);
     }
+}
+
+/// The lock with the `source` of the package `name` replaced by `source`.
+fn lock_with_source(name: &str, source: &str) -> String {
+    lock_with_package_edited(name, |b| {
+        b.replace(
+            &format!("source = \"{SWELL}\""),
+            &format!("source = \"{source}\""),
+        )
+    })
+}
+
+/// The allow-list's line of `name`.
+fn listed(name: &str) -> String {
+    allow_list()
+        .lines()
+        .find(|l| l.starts_with(&format!("{name} ")))
+        .unwrap_or_else(|| panic!("{name} on the allow-list"))
+        .to_string()
+}
+
+/// Runs the check on `lock` and asserts it fails with the line of the allow-list for swell
+/// 0.8.0 from `source`, naming the listed line.
+fn assert_swell_from_fails(case: &str, lock: &str, source: &str) {
+    let dir = copy_with(case, lock, &allow_list());
+    let start = format!("Cargo.lock: swell 0.8.0 from {source}: not on the allow-list");
+    let listed = listed("swell");
+    assert_fails_with(case, &dir, &format!("{start:?} naming {listed:?}"), |l| {
+        l.starts_with(&start) && l.contains(&listed)
+    });
+}
+
+/// swell of the listed version and commit under another tag fails, naming it and the listed line.
+#[test]
+fn a_swell_package_of_another_tag_fails_naming_it() {
+    let source = SWELL.replace("?tag=0.8.0#", "?tag=0.7.0#");
+    assert_swell_from_fails("swell-tag", &lock_with_source("swell", &source), &source);
+}
+
+/// swell of the listed tag at another commit fails, naming it and the listed line.
+#[test]
+fn a_swell_package_at_another_commit_fails_naming_it() {
+    let source = SWELL.replace("#0c18", "#1c18");
+    assert_swell_from_fails("swell-commit", &lock_with_source("swell", &source), &source);
+}
+
+/// swell of the listed tag and commit from another address fails, naming it and the listed line.
+#[test]
+fn a_swell_package_from_another_address_fails_naming_it() {
+    let source = SWELL.replace("github.com/beyond10x/swell", "github.com/beyond11x/swell");
+    assert_swell_from_fails(
+        "swell-address",
+        &lock_with_source("swell", &source),
+        &source,
+    );
+}
+
+/// A swell line of the allow-list with a checksum, where the lock (a package from git) has
+/// none, fails, naming the package with its checksum `none` and the listed line.
+#[test]
+fn a_listed_swell_line_with_a_checksum_fails_naming_it() {
+    let listed = listed("swell");
+    let with_checksum = format!(
+        "{} {}",
+        listed
+            .strip_suffix(" none")
+            .expect("swell listed with none"),
+        "ab".repeat(32)
+    );
+    let allow = allow_list().replace(&listed, &with_checksum);
+    let dir = copy_with("swell-checksum", &lock(), &allow);
+    let start =
+        format!("Cargo.lock: swell 0.8.0 from {SWELL}: not on the allow-list; its checksum none");
+    assert_fails_with(
+        "swell-checksum",
+        &dir,
+        &format!("{start:?} naming {with_checksum:?}"),
+        |l| l.starts_with(&start) && l.contains(&with_checksum),
+    );
+}
+
+/// A crate of this repository other than surf-script that depends on swell fails, naming it.
+#[test]
+fn another_crate_depending_on_swell_fails_naming_it() {
+    let lock = lock_with_package_edited("surf-fetch", |b| {
+        b.replace(" \"surf-url\",\n]", " \"surf-url\",\n \"swell\",\n]")
+    });
+    let dir = copy_with("fetch-swell", &lock, &allow_list());
+    let line = "Cargo.lock: surf-fetch depends on swell; lock-owners.txt does not allow it";
+    assert_fails_with("fetch-swell", &dir, &format!("{line:?}"), |l| l == line);
+}
+
+/// `surf` depending on `surf-script` fails, naming it: the owners file names no crate that may
+/// (`docs/design/scripts.md`, Q14), so `surf` links no swell.
+#[test]
+fn surf_depending_on_surf_script_fails_naming_it() {
+    let lock = lock_with_package_edited("surf", |b| {
+        b.replace(
+            "dependencies = [\n",
+            "dependencies = [\n \"surf-script\",\n",
+        )
+    });
+    let dir = copy_with("surf-script", &lock, &allow_list());
+    let line = "Cargo.lock: surf depends on surf-script; lock-owners.txt does not allow it";
+    assert_fails_with("surf-script", &dir, &format!("{line:?}"), |l| l == line);
+}
+
+/// `surf-script` depending on ring fails, naming it: its line of the owners file is for swell.
+#[test]
+fn surf_script_depending_on_ring_fails_naming_it() {
+    let lock = lock_with_package_edited("surf-script", |b| {
+        b.replace("dependencies = [\n", "dependencies = [\n \"ring\",\n")
+    });
+    let dir = copy_with("script-ring", &lock, &allow_list());
+    let line = "Cargo.lock: surf-script depends on ring; lock-owners.txt does not allow it";
+    assert_fails_with("script-ring", &dir, &format!("{line:?}"), |l| l == line);
+}
+
+/// A crate given the line `surf-script <crate>` in an owners file written for the test may
+/// depend on `surf-script`, and the check passes.
+#[test]
+fn a_crate_with_a_line_of_the_owners_file_may_depend_on_surf_script() {
+    let lock = lock_with_package_edited("surf-session", |b| {
+        b.replace(
+            " \"surf-answer\",\n",
+            " \"surf-answer\",\n \"surf-script\",\n",
+        )
+    });
+    let mut owners = owners();
+    owners.push_str("surf-script surf-session\n");
+    let dir = copy_files(
+        "session-script",
+        &Files {
+            lock,
+            owners,
+            ..Files::committed()
+        },
+    );
+    let (status, text) = check(&dir);
+    assert_eq!(status, Some(0), "{text}");
+    assert!(
+        text.lines()
+            .any(|l| l
+                .ends_with(" package(s), 25 from outside this repository, each on the allow-list")),
+        "{text}"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// The root manifest's section `[profile.release.package.<name>]` of a package from git.
+fn release_section(name: &str) -> String {
+    format!("[profile.release.package.{name}]\n")
+}
+
+/// A swell package of the lock without `overflow-checks = true` in its section of the root
+/// manifest's release profile fails, naming the package: cargo reads profiles from the root
+/// manifest only (`docs/design/scripts.md`, Q17). Two forms: the section gone, and the setting
+/// `false`.
+#[test]
+fn a_swell_package_without_overflow_checks_fails_naming_it() {
+    let manifest = manifest();
+    let section = format!("{}overflow-checks = true\n", release_section("swell-num"));
+    assert!(manifest.contains(&section), "no {section:?} in Cargo.toml");
+    for (case, edited) in [
+        ("overflow-gone", manifest.replace(&section, "")),
+        (
+            "overflow-false",
+            manifest.replace(
+                &section,
+                &format!("{}overflow-checks = false\n", release_section("swell-num")),
+            ),
+        ),
+    ] {
+        let dir = copy_files(
+            case,
+            &Files {
+                manifest: edited,
+                ..Files::committed()
+            },
+        );
+        let line = format!(
+            "Cargo.toml: swell-num 0.8.0 from {SWELL}: no overflow-checks = true under [profile.release.package.swell-num]"
+        );
+        assert_fails_with(case, &dir, &format!("{line:?}"), |l| l == line);
+    }
+}
+
+/// A root manifest that holds the six sections and nothing else passes: the check reads the
+/// sections, not the rest of the manifest.
+#[test]
+fn the_root_manifest_with_every_entry_passes() {
+    let manifest: String = SWELL_PACKAGES
+        .iter()
+        .map(|name| format!("{}overflow-checks = true\n\n", release_section(name)))
+        .collect();
+    let dir = copy_files(
+        "manifest-entries",
+        &Files {
+            manifest,
+            ..Files::committed()
+        },
+    );
+    let (status, text) = check(&dir);
+    assert_eq!(status, Some(0), "{text}");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// A line of the owners file that is not two fields fails, naming it.
+#[test]
+fn an_owners_line_not_two_fields_fails_naming_it() {
+    let mut owners = owners();
+    owners.push_str("surf-script\n");
+    let n = owners.lines().count();
+    let dir = copy_files(
+        "owners-form",
+        &Files {
+            owners,
+            ..Files::committed()
+        },
+    );
+    let line =
+        format!("taskfiles/lock-owners.txt: line {n} is not \"<package> <crate>\": surf-script");
+    assert_fails_with("owners-form", &dir, &format!("{line:?}"), |l| l == line);
 }
 
 /// No root lock at all proves nothing, so it fails too.
@@ -338,7 +627,7 @@ fn adversary_another_crate_depending_on_ring_in_an_inline_array_fails() {
         b.replace("dependencies = [\n", "dependencies = [\"ring\",\n")
     });
     let dir = copy_with("adversary-fetch-ring-inline", &lock, &allow_list());
-    let line = "Cargo.lock: surf-fetch depends on ring; only surf-tls may";
+    let line = "Cargo.lock: surf-fetch depends on ring; lock-owners.txt does not allow it";
     assert_fails_with(
         "adversary-fetch-ring-inline",
         &dir,
@@ -356,7 +645,7 @@ fn adversary_another_crate_depending_on_a_package_of_ring_last_fails() {
         b.replace(" \"surf-url\",\n]", " \"surf-url\",\n \"untrusted\",\n]")
     });
     let dir = copy_with("adversary-fetch-untrusted-last", &lock, &allow_list());
-    let line = "Cargo.lock: surf-fetch depends on untrusted; only surf-tls may";
+    let line = "Cargo.lock: surf-fetch depends on untrusted; lock-owners.txt does not allow it";
     assert_fails_with(
         "adversary-fetch-untrusted-last",
         &dir,
@@ -372,7 +661,7 @@ fn adversary_another_crate_depending_on_ring_as_a_literal_string_fails() {
         b.replace("dependencies = [\n", "dependencies = [\n 'ring',\n")
     });
     let dir = copy_with("adversary-fetch-ring-literal", &lock, &allow_list());
-    let line = "Cargo.lock: surf-fetch depends on ring; only surf-tls may";
+    let line = "Cargo.lock: surf-fetch depends on ring; lock-owners.txt does not allow it";
     assert_fails_with(
         "adversary-fetch-ring-literal",
         &dir,

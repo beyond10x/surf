@@ -1,0 +1,19 @@
+[package]
+name = "surf-script"
+description = "Runs a script source on one agent of the script engine swell, on a thread of its own, under surf's limits, and answers how the script ended."
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "Apache-2.0"
+autotests = false
+
+[lib]
+test = false
+
+[dependencies]
+surf-secret = { path = "../secret" }
+swell = { git = "https://github.com/beyond10x/swell", tag = "0.8.0" }
+
+[[test]]
+name = "main"
+path = "tests/main.rs"
