@@ -1,0 +1,6 @@
+CustomElementRegistry
+DOMHighResTimeStamp
+EventHandler
+HTMLSlotElement
+TrustedType
+Window

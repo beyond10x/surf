@@ -14,7 +14,7 @@ description: What surf does today, and what it does not do yet.
   hard limits on header and body size.
 - **203 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **1,976 tests** (1,424, and 552 of the TLS crates in a step of their own), built with
+- **2,056 tests** (1,504, and 552 of the TLS crates in a step of their own), built with
   warnings treated as errors, and 71 tests of the live view's page in a browser.
 
 New with the cookie jar and the agent definition, shipped in release `0.8.0`:

@@ -1,0 +1,31 @@
+The two files below are copied unchanged from commit snapshots of two WHATWG standards. The
+crate surf-webidl reads the Web IDL of each from its section "IDL Index": the text content of
+the pre element after the h2 element whose id is idl-index.
+
+file: dom.html
+address: https://dom.spec.whatwg.org/commit-snapshots/e4f4f4f0ace83fe6c52ab68e047351ce7f2dcd69/
+commit: e4f4f4f0ace83fe6c52ab68e047351ce7f2dcd69
+last-updated: 15 November 2026 (the DOM Living Standard, Commit Snapshot)
+fetched: 2026-11-24 09:57 UTC
+licence: CC BY 4.0, Creative Commons Attribution 4.0 International (WHATWG IPR policy, https://whatwg.org/ipr-policy)
+copyright: Copyright © WHATWG (Apple, Google, Mozilla, Microsoft).
+index-lines: 673
+
+file: webidl.html
+address: https://webidl.spec.whatwg.org/commit-snapshots/54a5f2de6a34e27a517a49370bc07d8943b0be11/
+commit: 54a5f2de6a34e27a517a49370bc07d8943b0be11
+last-updated: 14 November 2026 (the Web IDL Living Standard, Commit Snapshot)
+fetched: 2026-11-24 09:57 UTC
+licence: CC BY 4.0, Creative Commons Attribution 4.0 International (WHATWG IPR policy, https://whatwg.org/ipr-policy)
+copyright: Copyright © WHATWG (Apple, Google, Mozilla, Microsoft).
+index-lines: 57
+
+generated: nothing yet. Bindings generated from these files are portions of the standards
+incorporated into source code; under the WHATWG IPR policy they are licensed under the BSD
+3-Clause License instead and carry that notice in their header, as
+crates/html/src/charref_table.rs does.
+
+sha256 of each file, path relative to this directory:
+
+80cf04abd88405c6c1f0ec7c28a0a53634df5fdd55e8833c6b6fe68511ca2aa6  dom.html
+3915f58aa923a43fd03dd6fee040bbf8468856ef51270071b0a8bf11378658fe  webidl.html

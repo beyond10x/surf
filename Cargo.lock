@@ -319,6 +319,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "surf-webidl"
+version = "0.1.0"
+dependencies = [
+ "surf-html",
+]
+
+[[package]]
 name = "surfd"
 version = "0.8.0"
 dependencies = [

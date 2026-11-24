@@ -297,7 +297,8 @@ above, and the list of standards itself was written from memory.
   `surf-agent-tasks`, `surf-answer`, `surf-cookie`, `surf-html-conformance`, `surf-page`,
   `surf-page-text`,
   `surf-ports` (its `doctest` stays, so its two doc tests run), `surf-secret`, `surf-session`,
-  `surf-url`, `surf-view` and `surf-test-process`, and the binaries of `surf-agent`, `surf-cli`,
+  `surf-url`, `surf-view`, `surf-webidl` and `surf-test-process`, and the binaries of
+  `surf-agent`, `surf-cli`,
   `surf-html-conformance` (both), `surf-session`, `surfd`, `surf-view-fixture` (both) and
   `surf-agent-tasks`. The eight generated packages hold no test either; ess writes their
   manifests, so `task test` excludes them (`GENERATED_PACKAGES`). A new test of such a target
@@ -994,6 +995,37 @@ above, and the list of standards itself was written from memory.
     `task check`; `.github/workflows/check.yml` fetches the full history and sets
     `HTML_BASE: origin/main`. 27 tests in `surf-html-conformance` (`check` 17,
     `entities_table` 2, `inventory` 4, `readers` 2, `tree_format` 2).
+  - `crates/webidl` (`surf-webidl`, tooling, not shipped: a library only, and no crate depends
+    on it): reads the Web IDL of the DOM Standard and of the Web IDL Standard into a model.
+    `data/whatwg/` holds both pages unchanged, each a commit snapshot (`dom.html`, commit
+    `e4f4f4f0ace83fe6c52ab68e047351ce7f2dcd69`, Last Updated 15 November 2026; `webidl.html`,
+    commit `54a5f2de6a34e27a517a49370bc07d8943b0be11`, Last Updated 14 November 2026; CC BY
+    4.0), with a `SOURCE` file naming each file's address, commit, date, licence, copyright,
+    index lines and sha256; `data/.gitattributes` (`* -text`); the two pages are never
+    edited. `read_page` parses a page with `surf-html` and takes the text of every `pre`
+    element after the `h2` whose `id` is `idl-index`, up to the next `h2` (each page has one
+    such `pre`: 673 lines of the DOM, 57 of Web IDL); `read` lexes and parses such a text.
+    Every construct it does not know fails as `<file>:<line>: refused: <construct>`, the line
+    one of the extracted index, among them `Promise<T>`, an overload, `namespace`, `maplike`,
+    `setlike`, `async iterable`, `legacycaller`, an extended attribute outside
+    `EXTENDED_ATTRIBUTES` and a type nested deeper than `MAX_TYPE_DEPTH` (32) levels; `ADDED`
+    lists the five constructs the first runs over the pages named and the reader then
+    learned. The names of `TYPE_EXTENDED_ATTRIBUTES` are read onto the type of the argument
+    or dictionary member they are written before, and refused before any other member or a
+    definition (Web IDL, "Annotated types"); on the type itself they are read, and they are the
+    only names read on a type; one written both before and on the type is refused.
+    `Model::new` builds one map from each name to its definitions, then refuses, in the order
+    its doc comment gives, a name two definitions define, a `partial interface` of a name
+    defined as no interface, `A includes B;` where `B` is no interface mixin or `A` no
+    interface, an inheritance from another kind and a cycle of inheritance (walked in a
+    loop), and a member name twice in the merged view of an interface, its partials and the
+    mixins it includes (two operations are an overload); a name no definition defines is not
+    refused. `Model::counts`, `Model::members`,
+    `Model::extended_attribute_counts` and `Model::unresolved` read it (for the two pages,
+    `tests/unresolved.txt` lists the names no definition defines). Depends on `surf-html`
+    only. 80 tests in one test binary (`adversary` 11, `depth` 4, `reader` 36, `refusals` 26,
+    `source` 2, `vendored` 1; the model of both pages is built once per run, in `vendored`;
+    `depth` also holds a model of 16,000 interfaces under 2 s).
   - `crates/tls-conformance` (`surf-tls-conformance`, test tooling, not shipped): runs the
     x509-limbo cases of `crates/tls/tests/data/x509-limbo/` through `surf_tls::path::PathVerifier`
     at each case's `validation_time` or at `LIMBO_TIME` (the limbo commit date), never at the
