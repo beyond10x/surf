@@ -44,10 +44,10 @@
 //! - "short": the type `short` (`dom.html`, line 524);
 //! - "buffer related type": the grammar's `BufferRelatedType`s, `ArrayBuffer`,
 //!   `SharedArrayBuffer`, `DataView` and the twelve typed arrays (`webidl.html`, line 14);
-//! - "[Serializable]": the extended attribute with no value (`webidl.html`, line 1). The HTML
+//! - "\[Serializable\]": the extended attribute with no value (`webidl.html`, line 1). The HTML
 //!   Standard defines it, not the Web IDL Standard; only its form, `ExtendedAttributeNoArgs`, is
 //!   Web IDL's grammar;
-//! - "[AllowShared]": the extended attribute with no value, on a union member type
+//! - "\[AllowShared\]": the extended attribute with no value, on a union member type
 //!   (`webidl.html`, line 20).
 //!
 //! # Refused
