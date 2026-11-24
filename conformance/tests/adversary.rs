@@ -38,8 +38,8 @@ use surf_types::behaviour::{
 use surf_types::document::obligations::{CheckBehavior, SelectOptionBehavior};
 use surf_types::document::{
     Check, CheckOutcome, DocumentId, DocumentSnapshot, ElementId, ElementSnapshot, FormId,
-    FormSnapshot, ListOptionSnapshot, OptionId, ScriptId, ScriptReason, ScriptSnapshot,
-    SelectOption, SelectOptionOutcome, SubmissionId, SubmissionSnapshot,
+    FormSnapshot, ListOptionSnapshot, OptionId, ScriptErrorKind, ScriptId, ScriptReason,
+    ScriptSnapshot, SelectOption, SelectOptionOutcome, SubmissionId, SubmissionSnapshot,
 };
 use surf_types::net::{MediaType, RequestId};
 use surf_types::obligation::UnmetObligation;
@@ -107,22 +107,40 @@ enum Defect {
     ScriptsDropLastRow,
     /// Every session reads back the opposite of the `scripts` it was opened with.
     ScriptsInverted,
+    /// The error kind `UriError` is stored as `Error`: two kinds, one stored value.
+    UriErrorStoredAsError,
+    /// Every session but the first one opened reads back the first one's `scripts`.
+    ScriptsOfTheFirstSession,
 }
 
 /// A ports type with one [`Defect`] planted.
 struct Planted<P> {
     inner: P,
     defect: Defect,
+    /// The first session put, with the `scripts` it was put with.
+    first: Option<(SessionId, bool)>,
 }
 
 impl<P> Planted<P> {
     fn new(inner: P, defect: Defect) -> Self {
-        Self { inner, defect }
+        Self {
+            inner,
+            defect,
+            first: None,
+        }
     }
 
     fn session(&self, mut snapshot: SessionSnapshot) -> SessionSnapshot {
-        if self.defect == Defect::ScriptsInverted {
-            snapshot.data.scripts = !snapshot.data.scripts;
+        match self.defect {
+            Defect::ScriptsInverted => snapshot.data.scripts = !snapshot.data.scripts,
+            Defect::ScriptsOfTheFirstSession => {
+                if let Some((first, scripts)) = &self.first
+                    && *first != snapshot.data.session_id
+                {
+                    snapshot.data.scripts = *scripts;
+                }
+            }
+            _ => {}
         }
         snapshot
     }
@@ -168,6 +186,9 @@ impl<P: ScriptStorage> ScriptStorage for Planted<P> {
             Defect::WallClockStoredAsMemory if data.reason == Some(ScriptReason::WallClock) => {
                 data.reason = Some(ScriptReason::Memory);
             }
+            Defect::UriErrorStoredAsError if data.error_kind == Some(ScriptErrorKind::UriError) => {
+                data.error_kind = Some(ScriptErrorKind::Error);
+            }
             Defect::DynamicStoredFalse if data.dynamic == Some(true) => {
                 data.dynamic = Some(false);
             }
@@ -199,6 +220,9 @@ impl<P: SessionStorage> SessionStorage for Planted<P> {
     }
 
     fn put(&mut self, snapshot: SessionSnapshot) {
+        if self.first.is_none() {
+            self.first = Some((snapshot.data.session_id.clone(), snapshot.data.scripts));
+        }
         SessionStorage::put(&mut self.inner, snapshot);
     }
 
@@ -405,6 +429,48 @@ fn adversary_wall_clock_stored_as_memory_is_noticed() {
 #[test]
 fn adversary_dynamic_true_stored_false_is_noticed() {
     assert_noticed(Defect::DynamicStoredFalse);
+}
+
+/// Q7 and Q16 name eight error kinds; the scenarios write five (`TypeError`, `SyntaxError`,
+/// `Error`, `RangeError`, `Value`) and none writes `URIError`, `EvalError` or
+/// `ReferenceError`. A store that keeps `URIError` as `Error` (the note's wildcard arm,
+/// misapplied) answers a wrong row that no scenario reads.
+#[test]
+fn adversary_uri_error_stored_as_error_is_noticed() {
+    assert_noticed(Defect::UriErrorStoredAsError);
+}
+
+/// Q7, the option: one value per session. No scenario opens two sessions with different values
+/// (`two-of-each-entity` opens two, both `false`), so the value of the wrong session of two is
+/// not seen.
+#[test]
+fn adversary_scripts_of_the_first_session_read_on_the_second_is_noticed() {
+    assert_noticed(Defect::ScriptsOfTheFirstSession);
+}
+
+/// `surf.document.Scripts` declares `order_by: [position asc]`. Synthesis refuses the scenario
+/// that would check it (`ESS-SYNTH-014` on `AddScriptEnd/added`, `REFUSALS_MAX` 57), and
+/// `AGENTS.md` says `document-records-script-ends` covers it, "read back in order"; that
+/// scenario reads its rows with `contains` and `counts` only. Some scenario of the suite must
+/// expect the view's rows ranked by its order, as `parsed-page-with-title-links-and-form` does
+/// for `surf.document.Elements`; else a view answering its rows in any order passes.
+#[test]
+fn adversary_some_scenario_expects_the_scripts_view_ranked() {
+    let compact: String = whole_suite()
+        .unwrap_or_else(|error| panic!("{error}"))
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    let ranked =
+        |view: &str| format!("\"view\":\"{view}\",\"expectation\":{{\"expect\":\"ranked\"");
+    assert!(
+        compact.contains(&ranked("surf.document.Elements")),
+        "the form this test reads is not the suite's: no ranked check of Elements found"
+    );
+    assert!(
+        compact.contains(&ranked("surf.document.Scripts")),
+        "no scenario of the suite expects surf.document.Scripts ranked by position"
+    );
 }
 
 /// Held: `document-records-script-ends` writes line 3, column 5.
