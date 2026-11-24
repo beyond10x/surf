@@ -18,6 +18,7 @@ arrange:
         window_id: 5a7c1e00-0000-4000-8000-000000000092
         tab_id: 5a7c1e00-0000-4000-8000-000000000093
         holder: 5a7c1e00-0000-4000-8000-000000000091
+        scripts: false
       state: Open
   - instance: austria
     entity: surf.document.Option

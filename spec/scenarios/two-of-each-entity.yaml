@@ -171,6 +171,7 @@ timeline:
       session_id: 5a7c1e00-0000-4000-8000-000000000041
       window_id: {$instance: first-window}
       tab_id: {$instance: first-tab}
+      scripts: false
     outcome: opened
     events:
       - event: surf.agent.SessionOpened
@@ -183,6 +184,7 @@ timeline:
       session_id: 5a7c1e00-0000-4000-8000-000000000042
       window_id: {$instance: first-window}
       tab_id: {$instance: second-tab}
+      scripts: false
     outcome: opened
     events:
       - event: surf.agent.SessionOpened

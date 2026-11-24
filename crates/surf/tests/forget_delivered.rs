@@ -62,6 +62,7 @@ fn opened<T: Transport>(transport: T) -> (MemoryBrowser<T>, Caller, SessionId) {
             session_id: session_id.clone(),
             window_id: window_opened.window_id,
             tab_id: tab_opened.tab_id,
+            scripts: false,
         })
         .unwrap();
     assert!(matches!(outcome, OpenSessionOutcome::Opened { .. }));

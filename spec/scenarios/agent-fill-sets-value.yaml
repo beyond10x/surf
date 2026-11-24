@@ -17,6 +17,7 @@ arrange:
         window_id: 5a7c1e00-0000-4000-8000-000000000062
         tab_id: 5a7c1e00-0000-4000-8000-000000000063
         holder: 5a7c1e00-0000-4000-8000-000000000061
+        scripts: false
       state: Open
   - instance: user-name
     entity: surf.document.Element

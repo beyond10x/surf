@@ -67,6 +67,7 @@ fn session_data(id: u32) -> SessionData {
         status: None,
         media_type: None,
         failure_reason: None,
+        scripts: false,
     }
 }
 
@@ -500,6 +501,7 @@ fn a_command_is_sent_as_the_session_the_shared_caller_names() {
             session_id: session_id(0x10),
             window_id: WindowId(uuid(0x11)),
             tab_id: tab(0x12),
+            scripts: false,
         })
         .expect("the obligation is met");
     assert!(
@@ -614,6 +616,7 @@ fn component_ports_hold_the_agent_port_and_its_caller() {
             session_id: session_id(0x10),
             window_id: WindowId(uuid(0x11)),
             tab_id: tab(0x12),
+            scripts: false,
         })
         .expect("the obligation is met");
     assert!(matches!(

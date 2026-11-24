@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest 0885760ec9338d6af6c9b21b424dde0557abe451edb6419c0f296bc37836f5f6
+// contract digest 8a6a9f1bd1962c0655a4273e57621bd9c11144463771cf0d9887841440044e63
 // do not edit: regenerate with `ess synthesize`
 
 //! Agent — `surf.agent`.
@@ -124,7 +124,7 @@ pub struct LookCall {
 
 /// OpenCall — `surf.agent.OpenCall`.
 ///
-/// The input of `open`, the address to load first if one is given, the form to print it in, and a file of extra trust anchors.
+/// The input of `open`, the address to load first if one is given, the form to print it in, a file of extra trust anchors, and whether the session runs its pages' scripts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenCall {
     /// `url` — `Optional<surf.url.Url>`.
@@ -135,6 +135,8 @@ pub struct OpenCall {
     pub from_line: Option<i64>,
     /// `ca_file` — `Optional<String>`.
     pub ca_file: Option<String>,
+    /// `scripts` — `Optional<Boolean>`.
+    pub scripts: Option<bool>,
 }
 
 /// OpenedSession — `surf.agent.OpenedSession`.
@@ -417,6 +419,8 @@ pub struct SessionData {
     pub media_type: Option<crate::net::MediaType>,
     /// `failure_reason` — `Optional<surf.net.FailureReason>`.
     pub failure_reason: Option<crate::net::FailureReason>,
+    /// `scripts` — `Boolean`.
+    pub scripts: bool,
 }
 
 /// The states of `surf.agent.Session`, at the type level.
@@ -1003,6 +1007,8 @@ pub struct OpenSession {
     pub window_id: crate::shell::WindowId,
     /// `tab_id` — `surf.shell.TabId`.
     pub tab_id: crate::shell::TabId,
+    /// `scripts` — `Boolean`.
+    pub scripts: bool,
 }
 
 /// Everything `surf.agent.OpenSession` can result in — one variant per declared outcome.
@@ -1411,6 +1417,8 @@ pub struct Sessions {
     pub media_type: Option<crate::net::MediaType>,
     /// `failure_reason` — `Optional<surf.net.FailureReason>`.
     pub failure_reason: Option<crate::net::FailureReason>,
+    /// `scripts` — `Boolean`.
+    pub scripts: bool,
 }
 
 /// What this bounded context owes its implementor, and the seams of what is generated.

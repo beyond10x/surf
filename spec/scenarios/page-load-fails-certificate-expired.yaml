@@ -19,6 +19,7 @@ arrange:
         window_id: 7c3e5a00-0000-4000-8000-000000000022
         tab_id: 7c3e5a00-0000-4000-8000-000000000023
         holder: 7c3e5a00-0000-4000-8000-000000000021
+        scripts: false
       state: Open
   - instance: committed-load
     entity: surf.navigation.Navigation

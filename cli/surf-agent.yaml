@@ -109,6 +109,12 @@ commands:
         source: {kind: option, long: from-line}
       - field: ca_file
         source: {kind: option, long: ca-file}
+      # UNMAPPED: `--scripts true|false`, the field `scripts` of `surf.agent.OpenCall`
+      # (`docs/design/scripts.md`, Q7), declared because `ess-cli/2` maps each input field to
+      # one argument. The client refuses the option until `story:scripts-document-port` (exit 2,
+      # the usage, no session started); what settles it: that story.
+      - field: scripts
+        source: {kind: option, long: scripts}
   - path: [go]
     callable: go
     about: Load an address into the session's tab and print the session's state; with --as tree or markdown, print the page from --from-line

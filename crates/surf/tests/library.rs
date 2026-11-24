@@ -227,6 +227,7 @@ fn an_agent_session_goes_through_the_browser_and_reads_its_navigation_back() {
             session_id: session_id.clone(),
             window_id,
             tab_id: tab_opened.tab_id.clone(),
+            scripts: false,
         })
         .expect("session");
     assert!(

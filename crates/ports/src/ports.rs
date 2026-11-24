@@ -14,16 +14,16 @@ use surf_types::agent::{
 };
 use surf_types::behaviour::{
     ActionStorage, DocumentStorage, ElementStorage, FormStorage, FrameStorage, ListOptionStorage,
-    NavigationStorage, RequestStorage, SessionStorage, SubmissionStorage, TabStorage, TryContext,
-    WindowStorage, unmet_context,
+    NavigationStorage, RequestStorage, ScriptStorage, SessionStorage, SubmissionStorage,
+    TabStorage, TryContext, WindowStorage, unmet_context,
 };
 use surf_types::document::obligations::{CheckBehavior, SelectOptionBehavior};
 use surf_types::document::{
     Check, CheckOutcome, CheckednessSet, ControlDisabled, ControlHidden, ControlKindConflict,
     DocumentId, DocumentSnapshot, ElementData, ElementId, ElementKind, ElementNotFound,
     ElementSnapshot, FormId, FormSnapshot, ListOptionData, ListOptionSnapshot, OptionId,
-    OptionNotFound, OptionSelected, SelectOption, SelectOptionOutcome, SubmissionId,
-    SubmissionSnapshot,
+    OptionNotFound, OptionSelected, ScriptId, ScriptSnapshot, SelectOption, SelectOptionOutcome,
+    SubmissionId, SubmissionSnapshot,
 };
 use surf_types::navigation::obligations::{CommitNavigationBehavior, TraverseHistoryBehavior};
 use surf_types::navigation::{
@@ -38,6 +38,7 @@ use surf_types::render::{FrameId, FrameSnapshot};
 use surf_types::shell::{TabId, TabSnapshot, WindowId, WindowSnapshot};
 
 use crate::random::{OsRandom, RandomSource, assign};
+use crate::script::ScriptIdentity;
 use crate::store::{Keyed, Rows};
 
 macro_rules! keyed {
@@ -65,6 +66,7 @@ keyed!(ElementSnapshot, ElementId, element_id);
 keyed!(FormSnapshot, FormId, form_id);
 keyed!(ListOptionSnapshot, OptionId, option_id);
 keyed!(SubmissionSnapshot, SubmissionId, submission_id);
+keyed!(ScriptSnapshot, ScriptId, script_id);
 keyed!(FrameSnapshot, FrameId, frame_id);
 keyed!(SessionSnapshot, SessionId, session_id);
 keyed!(ActionSnapshot, ActionId, action_id);
@@ -112,7 +114,8 @@ macro_rules! storage {
 ///
 /// `TryContext` asks for all ten kinds of identity. These ports assign each of the nine that
 /// belong to the page load, a document's elements, forms, options and submissions included; the
-/// generated behaviours of a component ask only for their own.
+/// generated behaviours of a component ask only for their own. A script end's identity is not
+/// among them: [`crate::ScriptIdentity`] assigns it, for the `AddScriptEnd` these ports meet.
 ///
 /// It also asks for the caller's `session_id` and an action's identity, which only the `agent`
 /// component's commands read. These ports know no caller and record no action, so they answer
@@ -506,10 +509,13 @@ impl NetPorts {
 storage!(RequestStorage for NetPorts, requests: RequestSnapshot, RequestId);
 
 /// The `document` component's ports: its documents, their forms, elements and options, the
-/// submissions of their forms, and the random source their identities come from.
+/// submissions of their forms, the records of their scripts' ends, and the random source their
+/// identities come from.
 ///
-/// It also meets the two obligations the generation leaves to it, `Check` and `SelectOption`,
-/// which change other rows beside their subject (`affects:`).
+/// It also meets the three obligations the generation leaves to it: `Check` and `SelectOption`,
+/// which change other rows beside their subject (`affects:`), and `AddScriptEnd`
+/// ([`crate::add_script_end`]), whose `invalid-end` refusal reads the count of a message's
+/// characters.
 #[derive(Debug)]
 pub struct DocumentPorts<R = OsRandom> {
     documents: Rows<DocumentSnapshot>,
@@ -517,6 +523,7 @@ pub struct DocumentPorts<R = OsRandom> {
     elements: Rows<ElementSnapshot>,
     options: Rows<ListOptionSnapshot>,
     submissions: Rows<SubmissionSnapshot>,
+    scripts: Rows<ScriptSnapshot>,
     random: R,
 }
 
@@ -529,6 +536,7 @@ impl<R: RandomSource> DocumentPorts<R> {
             elements: Rows::default(),
             options: Rows::default(),
             submissions: Rows::default(),
+            scripts: Rows::default(),
             random: source,
         }
     }
@@ -569,7 +577,15 @@ storage!(FormStorage for DocumentPorts<R>, forms: FormSnapshot, FormId, R);
 storage!(ElementStorage for DocumentPorts<R>, elements: ElementSnapshot, ElementId, R);
 storage!(ListOptionStorage for DocumentPorts<R>, options: ListOptionSnapshot, OptionId, R);
 storage!(SubmissionStorage for DocumentPorts<R>, submissions: SubmissionSnapshot, SubmissionId, R);
+storage!(ScriptStorage for DocumentPorts<R>, scripts: ScriptSnapshot, ScriptId, R);
 context!(DocumentPorts);
+
+/// A script end's identity, drawn from the same source as the document's other identities.
+impl<R: RandomSource> ScriptIdentity for DocumentPorts<R> {
+    fn assign_script_id(&mut self) -> Result<ScriptId, UnmetObligation> {
+        assign(&mut self.random, "surf.document.ScriptId").map(ScriptId)
+    }
+}
 
 /// A checkbox's or a radio button's activation, its outcomes chosen in the order `spec/` declares
 /// them: an element no row holds, one neither a checkbox nor a radio button, a disabled one and

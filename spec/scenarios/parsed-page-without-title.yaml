@@ -1,6 +1,6 @@
 # A page with no `title` element and no actionable element: `document.title` is then the empty
-# string, and the document has no element rows. While it is parsed it is `Parsing` with no title
-# and no encoding.
+# string, and the document has no element rows and, with no `script` element, no script rows.
+# While it is parsed it is `Parsing` with no title and no encoding.
 type: ess-scenario/6
 domain: surf.document
 scenario: parsed-page-without-title
@@ -53,5 +53,8 @@ assert:
       unsupported_encoding: null
       stopped_by: null
   - view: surf.document.Elements
+    params: {document_id: {$instance: page}}
+    counts: {at_least: 0, at_most: 0}
+  - view: surf.document.Scripts
     params: {document_id: {$instance: page}}
     counts: {at_least: 0, at_most: 0}

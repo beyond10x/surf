@@ -75,6 +75,7 @@ components:
         - surf.document.AddForm
         - surf.document.AddElement
         - surf.document.AddOption
+        - surf.document.AddScriptEnd
         - surf.document.FinishParsing
         - surf.document.SetValue
         - surf.document.Check
@@ -88,6 +89,7 @@ components:
         - surf.document.FormAdded
         - surf.document.ElementAdded
         - surf.document.OptionAdded
+        - surf.document.ScriptEndAdded
         - surf.document.DocumentParsed
         - surf.document.ValueSet
         - surf.document.CheckednessSet
@@ -426,5 +428,6 @@ bindings:
 # to the tab or its window, and neither declares one. The renderer also needs the document's
 # nodes, and a component reads no other component's rows, so how the tree reaches it is open.
 #
-# UNMAPPED: no component for script execution, storage (cookies, cache, history) or input
-# events. None is declared until its first command is.
+# UNMAPPED: no component for storage (cookies, cache, history) or input events. None is
+# declared until its first command is. Script execution is part of the document component's
+# parser step (`docs/design/scripts.md`, Q7).
