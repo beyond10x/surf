@@ -349,3 +349,26 @@ fn a_session_surfd_killed_names_no_signal() {
     assert_eq!(answer.text, refusal(&session.id, "died", "session-died"));
     assert_eq!(listed_signal(&dir, &session), json::Value::Null);
 }
+
+/// Statement 4: a session `surfd` kills itself with `SIGKILL` after the late read of a
+/// timed-out answer keeps today's answers: `session-timeout` for the command that waited, then
+/// `died` and `session-died` with no `note ended` line; the view lists no signal.
+#[test]
+fn a_session_surfd_killed_after_its_late_answer_names_no_signal() {
+    let dir = TestDir::new();
+    let mut config = config(&dir);
+    config.session_answer_timeout = Duration::from_secs(1);
+    config.late_answer_timeout = Duration::from_secs(1);
+    let daemon = start(config);
+    let session = open(&dir);
+    let hold = dir.hold();
+    dir.set("behaviour", "stall");
+    let first = look(&dir, &session);
+    assert_eq!(first.status, 3);
+    assert_eq!(first.text, refusal(&session.id, "open", "session-timeout"));
+    let answer = died_and_look(&daemon, &dir, &session, ALLOWED);
+    drop(hold);
+    assert_eq!(answer.status, 3);
+    assert_eq!(answer.text, refusal(&session.id, "died", "session-died"));
+    assert_eq!(listed_signal(&dir, &session), json::Value::Null);
+}

@@ -710,9 +710,14 @@ standard library or the C library reads:
   session reads one (the probe), the session starts no program, and `setpriv` and `prlimit` are
   started by absolute path (Q11).
 
-The tests still add theirs: `Config::session_env` is applied after `env_clear()`, so
-`crates/session/tests/common/mod.rs:535` (`XDG_RUNTIME_DIR`), `crates/surfd/tests/common/mod.rs:322`
-(`STAND_IN_DIR`) and `crates/view-fixture/src/main.rs:156` (`XDG_RUNTIME_DIR`) keep working.
+The tests that start `surfd` in process still add theirs: `Config::session_env` is applied
+after `env_clear()`, so `crates/session/tests/common/mod.rs:545` (`XDG_RUNTIME_DIR`),
+`crates/surfd/tests/common/mod.rs:322` (`STAND_IN_DIR`) and `crates/view-fixture/src/main.rs:156`
+(`XDG_RUNTIME_DIR`) keep working. The tests that run the built `surfd`, whose
+`Config::session_env` is empty, found the session by `XDG_RUNTIME_DIR` in its environment; they
+now find it by its socket path argument, a path under the case's runtime directory
+(`processes_among`, `crates/session/tests/common/mod.rs:127`), and the stand-in of
+`crates/surfd/tests` sets `STAND_IN_DIR` on itself when it has none.
 
 Settled: the empty allow-list and the decisions on the six variables, from the `probe:` line above run on `29945f5`.
 
