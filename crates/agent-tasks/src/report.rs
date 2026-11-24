@@ -13,7 +13,8 @@
 //! A `task` line is the judged result alone. (`pending`, pass) adds `raise: <name>`; (`pass`,
 //! fail) makes [`report`] return an error after the file is written; (`pass`, pass) and
 //! (`pending`, fail) add nothing. A failed check makes it return `agent-tasks: check <name>
-//! failed: <reason>` after the file is written, when no task did. With
+//! failed: <reason>` after the file is written, except when a task listed `pass` failed too:
+//! then both lines are written and the task's error is returned. With
 //! `SURF_AGENT_TASKS=measure` the listed states are not enforced, a failed check returns no
 //! error, and no `raise:` line is written.
 //!

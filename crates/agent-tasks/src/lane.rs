@@ -13,24 +13,28 @@
 //!
 //! A row whose `server` is `https` runs against the TLS server the caller gives
 //! ([`Config::https`]): its start address is `<origin><start>`, its `open` is `open --ca-file
-//! <root> <address>`, and its connections are those that server counts. Without one such a row
+//! <root> <address>`, its connections are those that server counts, and it passes only when
+//! `open` loaded `<origin><start>` with status 200 ([`opened_at`]); the fixture server does not
+//! serve its site ([`fixture_server`]). Without one such a row
 //! has no result and the report writes it `skipped`. With one, after the last task and in the
 //! same `surfd`, the check `https-without-root` runs ([`without_root`]) on the start address of
 //! the first such row.
 
 use std::collections::BTreeSet;
 use std::fs;
+use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use surf_answer::Page;
 use surf_test_process::ended_within;
 
 use crate::agent::{Agent, steps};
-use crate::format::{Server, read_status, read_tasks};
+use crate::format::{Server, Task, read_status, read_tasks};
 use crate::judge::{Verdict, judge};
 use crate::process::{self, END_BOUND, KILL_BOUND, RuntimeDir};
 use crate::report::{CheckResult, Lane, TaskResult, report};
-use crate::server::serve;
+use crate::server::{self as fixture, serve_sites};
 use crate::{sites_dir, status_file, tasks_file};
 
 /// The name of the check of a session opened without the root of the TLS server.
@@ -101,7 +105,7 @@ pub fn run(config: &Config) -> LaneRun {
     .unwrap_or_else(|error| panic!("{error}"));
     let dir = RuntimeDir::new(&config.fallback);
     let directory = dir.path().to_path_buf();
-    let server = serve(sites_dir()).expect("the fixture server listens");
+    let server = fixture_server(&tasks).expect("the fixture server listens");
     let agent = Agent::new(config.bin.clone(), dir.runtime()).with_call_bound(config.call_bound);
     let own = std::process::id();
 
@@ -153,11 +157,19 @@ pub fn run(config: &Config) -> LaneRun {
         let before = accepted();
         let mut run = agent.run_with_ca_file(&steps, &start, ca_file, &mut sample);
         run.connections = accepted() - before;
+        let verdict = match (judge(task, &run), &config.https) {
+            // The page came over TLS from the caller's server, whatever the start address was.
+            (Verdict::Pass, Some(https)) if task.server == Server::Https => opened_at(
+                &format!("{}{}", https.origin, task.start),
+                run.opened.as_deref(),
+            ),
+            (verdict, _) => verdict,
+        };
         results.push(TaskResult {
             task: task.name.clone(),
             calls: run.calls,
             connections: run.connections,
-            verdict: judge(task, &run),
+            verdict,
         });
     }
     let mut checks = Vec::new();
@@ -231,5 +243,35 @@ pub fn without_root(address: &str, opened: &str, looked: &str) -> Verdict {
             Verdict::Fail("look answered no note text: no-document".to_string())
         }
         Some(_) => Verdict::Pass,
+    }
+}
+
+/// The lane's fixture server: the sites of the rows whose `server` is `http`, the path of any
+/// other directory of `sites/` (`/https/notice.html`) a 404, so that a row whose `server` is
+/// `https` finds its page on the TLS server only.
+pub fn fixture_server(tasks: &[Task]) -> io::Result<fixture::Server> {
+    let http = tasks
+        .iter()
+        .filter(|task| task.server == Server::Http)
+        .map(|task| task.name.clone())
+        .collect();
+    serve_sites(sites_dir(), Some(http))
+}
+
+/// Whether an `https` row's page came from `address`, the TLS server's start address of the
+/// row: `opened`, the answer of its `open`, has a `page` line of status 200 at that address.
+/// Otherwise it fails with `open answered <page line>` or `open answered no page line`.
+pub fn opened_at(address: &str, opened: Option<&str>) -> Verdict {
+    let Some(line) = opened.and_then(|text| text.lines().find(|line| line.starts_with("page ")))
+    else {
+        return Verdict::Fail("open answered no page line".to_string());
+    };
+    match surf_answer::parse(opened.unwrap_or_default()).map(|answer| answer.page) {
+        Ok(Some(Page::Loaded {
+            status: 200,
+            address: loaded,
+            ..
+        })) if loaded == address => Verdict::Pass,
+        _ => Verdict::Fail(format!("open answered {line}")),
     }
 }

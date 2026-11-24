@@ -33,6 +33,7 @@ fn run(answers: Vec<String>, connections: usize) -> Run {
         connections,
         failure: None,
         answers,
+        opened: None,
     }
 }
 

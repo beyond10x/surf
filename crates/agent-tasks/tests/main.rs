@@ -14,6 +14,7 @@ mod check;
 mod check_rule;
 mod fixtures;
 mod format;
+mod https_row;
 mod judge;
 mod model_driver;
 mod status;

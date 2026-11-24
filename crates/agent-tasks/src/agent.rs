@@ -331,7 +331,9 @@ impl Agent {
                     let Some(output) = self.step(&mut run, &words, None, None, after_call) else {
                         continue;
                     };
-                    let parsed = surf_answer::parse(&String::from_utf8_lossy(&output.stdout));
+                    let opened = String::from_utf8_lossy(&output.stdout).into_owned();
+                    let parsed = surf_answer::parse(&opened);
+                    run.opened = Some(opened);
                     match parsed.ok().and_then(|a| Some((a.head.session, a.token?))) {
                         Some((id, token)) => session = Some(Session { id, token }),
                         None => {

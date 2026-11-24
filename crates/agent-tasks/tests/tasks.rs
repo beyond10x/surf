@@ -15,6 +15,7 @@ use std::sync::Arc;
 use surf_agent_tasks::agent::CALL_BOUND;
 use surf_agent_tasks::format::{Listed, Server, read_status, read_tasks};
 use surf_agent_tasks::lane::{self, Config, Https, LaneRun};
+use surf_agent_tasks::process::END_BOUND;
 use surf_agent_tasks::report::Lane;
 use surf_agent_tasks::server::file_for;
 use surf_agent_tasks::{root_report_file, sites_dir, status_file, tasks_file};
@@ -169,6 +170,27 @@ fn every_task() {
         1 + run.results.len() + run.checks.len() + written.matches("\nraise: ").count(),
         "{written}"
     );
+    // Each `https` row came over TLS: its connection to the TLS server finished the handshake
+    // (the ticket goes after the client's Finished) for the name `localhost`, and asked for the
+    // row's start page. The count of accepted connections alone is taken before any handshake.
+    // The check's connection ends in the handshake, without a request.
+    let seen = tls.wait_seen(tls.accepted(), END_BOUND);
+    let over_tls: Vec<(Option<&str>, &str)> = seen
+        .iter()
+        .filter(|seen| seen.ticket_sent)
+        .filter_map(|seen| Some((seen.server_name.as_deref(), seen.request.as_deref()?)))
+        .collect();
+    let tasks = read_tasks(&fs::read_to_string(tasks_file()).unwrap()).unwrap();
+    let requests: Vec<String> = tasks
+        .iter()
+        .filter(|task| task.server == Server::Https)
+        .map(|task| format!("GET {} HTTP/1.1", task.start))
+        .collect();
+    let expected: Vec<(Option<&str>, &str)> = requests
+        .iter()
+        .map(|request| (Some("localhost"), request.as_str()))
+        .collect();
+    assert_eq!(over_tls, expected, "the TLS server saw {seen:#?}");
     if let Err(error) = &run.outcome {
         panic!("{error}");
     }
