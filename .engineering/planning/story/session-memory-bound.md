@@ -16,7 +16,7 @@ scope:
   path: crates/session/tests
 - confidence: cited
   path: crates/surf/src/lib.rs
-revision: 5
+revision: 7
 ---
 ## Why
 
@@ -67,6 +67,23 @@ anything of an earlier document.
 - `crates/session/src/lib.rs`, "What it keeps", states the bound over all documents.
 - The text cache of round 1 keeps its rule (the current document only).
 
+What the scripts epic needs from this story (`docs/design/scripts.md`, Q11, "The value
+`story:scripts-document-port` ships with"), added 2026-11-24:
+
+- The stated number of kept trees per session counts the document being parsed: with the
+  current tree only, a session holds two trees while a `go` parses the next page.
+- The rows of a kept document include the records of its scripts' ends (Q7 of the note: owned
+  by the document through the relation `scripts`, at most 1,000 per document). They are deleted
+  or bounded with the document's other rows.
+- A document the session left holds no state of the script engine: the agent is dropped at the
+  end of the document's parse (Q5 of the note). This story states it in "What it keeps" and
+  changes nothing for it.
+- The address-space bound of a session with scripts follows from this story's number: with one
+  kept tree and one tab the note's sum is about 1,480 MiB, and `story:scripts-document-port`
+  ships with `--as=2147483648` (2 GiB) in place of the 4 GiB backstop. Each further tab adds a
+  tree of up to 536 MiB. If this story is not built before `story:scripts-document-port`, that
+  story keeps 4 GiB and says so.
+
 ## Acceptance
 
 - A count test, no time bound: a session that loads `n` and `2n` HTML pages in turn (each
@@ -79,3 +96,11 @@ anything of an earlier document.
   as before; a document whose tree was dropped answers `note text: no-document`.
 - `memory::bodies_of_answered_commands_are_not_kept` still passes.
 - No test of the story runs over 60 s; the step of `surf-session` within 120 s.
+- The count test reads the number of kept trees also while a page is being parsed (through
+  the same counting hook, called from the stub transport or the parser step): it is at most
+  the stated number plus one.
+- When the `document` component holds script records (after `story:scripts-spec`), the same
+  test holds their rows to the bound after `n` and `2n` pages.
+- `crates/session/src/lib.rs`, "What it keeps", names the number of kept trees per tab, says
+  that it counts the document being parsed, and says that a left document holds no state of
+  the script engine.
