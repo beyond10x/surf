@@ -1,13 +1,16 @@
 //! Adversary cases of `story:tls-session-anchors`, the client's half: the empty path of
-//! `--ca-file`, a path that is not a regular file, and the size bound of the file at 32 KiB and
-//! at one byte more, with a file that is valid PEM on both sides of the bound. With a copy of the
-//! built `surf-agent` and the stand-in beside it as `surfd`.
+//! `--ca-file`, a path that is not a regular file (a FIFO among them), and the size bound of the
+//! file at 32 KiB and at one byte more, with a file that is valid PEM on both sides of the bound.
+//! With a copy of the built `surf-agent` and the stand-in beside it as `surfd`.
 
 use crate::common;
 
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use common::*;
 
@@ -50,6 +53,54 @@ fn adversary_ca_file_a_path_that_is_no_regular_file_is_refused_without_reading_i
             "the --ca-file file is not a regular file",
         );
     }
+}
+
+/// A FIFO that nobody writes to: opening it for reading would wait for a writer forever, so the
+/// client looks at the path before it opens it. It must end within 5 s with exit 2, the line of a
+/// path that is not a regular file, nothing started and nothing sent.
+#[test]
+fn adversary_ca_file_a_fifo_is_refused_and_does_not_hang() {
+    let dir = TestDir::new();
+    let fifo = dir.path.join("anchors.fifo");
+    let made = Command::new("mkfifo")
+        .arg(&fifo)
+        .status()
+        .expect("mkfifo runs");
+    assert!(made.success());
+    let mut child = agent(&dir)
+        .arg("open")
+        .arg("--ca-file")
+        .arg(&fifo)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("surf-agent starts");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let ended = loop {
+        if child.try_wait().unwrap().is_some() {
+            break true;
+        }
+        if Instant::now() >= deadline {
+            break false;
+        }
+        thread::sleep(Duration::from_millis(10));
+    };
+    if !ended {
+        let _ = child.kill();
+    }
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        ended,
+        "surf-agent open --ca-file <fifo> did not end within 5 s"
+    );
+    let err = stderr(&output);
+    assert_eq!(output.status.code(), Some(2), "{err}");
+    assert!(
+        err.contains("the --ca-file file is not a regular file"),
+        "{err}"
+    );
+    assert!(dir.starts().is_empty(), "surfd was started");
+    assert_eq!(dir.requests(), "", "a request was sent");
 }
 
 /// The root followed by `#` outside any block, `size` bytes in all: valid PEM of one CA.

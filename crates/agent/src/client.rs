@@ -17,8 +17,9 @@
 
 use std::ffi::OsString;
 use std::fmt::Write as _;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, Read, Write};
+use std::os::unix::fs::MetadataExt;
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -285,10 +286,18 @@ fn read_ca_file(path: &Path) -> Result<String, Failure> {
             error.kind()
         ))
     };
+    let not_regular = || Failure::Usage("the --ca-file file is not a regular file".to_string());
+    // The path is looked at before it is opened: opening a FIFO with no writer for reading
+    // waits for a writer without end. The file opened must then be the file looked at.
+    let looked = fs::metadata(path).map_err(unreadable)?;
+    if !looked.is_file() {
+        return Err(not_regular());
+    }
     let file = File::open(path).map_err(unreadable)?;
-    if !file.metadata().map_err(unreadable)?.is_file() {
+    let opened = file.metadata().map_err(unreadable)?;
+    if opened.dev() != looked.dev() || opened.ino() != looked.ino() || !opened.is_file() {
         return Err(Failure::Usage(
-            "the --ca-file file is not a regular file".to_string(),
+            "the --ca-file file changed while it was read".to_string(),
         ));
     }
     let mut pem = Vec::new();

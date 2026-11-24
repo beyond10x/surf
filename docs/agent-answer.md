@@ -674,7 +674,9 @@ or in the environment of a process.
 A file the client refuses is an invalid input: exit status 2, nothing on standard output, and on
 standard error the line `surf-agent: the --ca-file file is refused: <error>` (or `surf-agent:
 the --ca-file file cannot be read: <error>` for a file that cannot be read, `... is not a
-regular file` for one that is not a regular file) followed by the usage. `<error>` is the
+regular file` for one that is not a regular file, such as a directory, a device or a FIFO: the
+path is looked at before it is opened, so a FIFO is refused and not waited on; `... changed while
+it was read` when the file opened is not the file looked at) followed by the usage. `<error>` is the
 `AnchorError` of `surf-tls` (`NoCertificate`, `NotACertificate`, `BadPem`, `BadCertificate`,
 `NotACa`, `TooLarge`, `TooMany`) with its text, such as `NotACa: certificate 0 is not a CA`.
 The line does not repeat the path. No request is sent, `surfd` is not started, and no session
