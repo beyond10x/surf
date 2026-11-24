@@ -625,3 +625,29 @@ fn x4_http_cannot_set_a_secure_cookie_nor_shadow_one() {
     secure.get(&secure.https("/echo"));
     assert_eq!(secure.tls_hops()[2..], [hop("/echo", Some("sec=1"))]);
 }
+
+/// R16: the `Debug` text of a request with a jar shows the jar's count, never a cookie.
+#[test]
+fn a_request_prints_the_count_of_its_jar_not_its_cookies() {
+    let jar = Jar::new();
+    let url = surf_url::Url::parse("http://a.example.test/", None).expect("parses");
+    jar.receive(&url, "zqdbg=k4w8p2r6; Path=/", std::time::SystemTime::now());
+    let request = Request {
+        address: "http://a.example.test/",
+        method: Method::Get,
+        body: None,
+        media_type: None,
+        anchors: None,
+        jar: Some(&jar),
+        initiator: Some("http://b.example.test"),
+    };
+    let text = format!("{request:?}");
+    assert!(
+        text.contains("jar: Some(Jar { cookies: 1 })"),
+        "the jar is not shown by its count"
+    );
+    assert!(
+        !text.contains("zqdbg") && !text.contains("k4w8p2r6"),
+        "the Debug text holds the cookie"
+    );
+}

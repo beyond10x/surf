@@ -6,6 +6,7 @@
 mod adversary_document_command;
 mod adversary_tls_command;
 mod cli;
+mod cookies;
 mod https;
 mod output_streams;
 mod page;

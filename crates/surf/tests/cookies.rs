@@ -123,3 +123,20 @@ fn a_transport_sees_no_cookie() {
         );
     }
 }
+
+/// R16: the `Debug` text of a request context shows the jar's count, never a cookie.
+#[test]
+fn a_request_context_prints_the_count_of_its_jar_not_its_cookies() {
+    let jar = Jar::new();
+    let url = surf_url::Url::parse("http://127.0.0.1/", None).expect("parses");
+    jar.receive(&url, "zqctx=m3t7v1y9; Path=/", std::time::SystemTime::now());
+    let context = RequestContext {
+        anchors: None,
+        jar: Some(&jar),
+    };
+    let text = format!("{context:?}");
+    assert_eq!(
+        text,
+        "RequestContext { anchors: None, jar: Some(Jar { cookies: 1 }) }"
+    );
+}
