@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T09:51:33Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-cookie-jar",
+  "kind": "story",
+  "revision": 16,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "two passes of a security reviewer over the unit, the first on 86be5ce, the second on the fix round at 8528976, 2026-11-24",
+    "reference": "first pass: four findings, two of them blocking; second pass: the four fixes hold (one parse of the address 4524a48, the path order of the Secure shadow check 65bb6f7, the redirect chain rule a05c53c, the bound of 16,777,216 stored bytes 4f94619), no Domain value widens a cookie over 24 values, 4 setting hosts and 9 reading hosts, nothing reopened; 3 and 4 tests of the reviewer merged (2901048, 4179e8e)"
+  }
+}

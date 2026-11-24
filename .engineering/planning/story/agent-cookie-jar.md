@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-cookie-jar
 kind: story
-status: active
+status: implemented
 title: 'A cookie jar per session: Set-Cookie and Cookie, never printed'
 summary: 'One jar per session in memory by draft 22 of the RFC 6265 revision: host-only Domain rule, Secure tested against the TLS test server, SameSite by the navigation initiator, never printed; look shows cookies <n>.'
 relations:
@@ -56,10 +56,11 @@ scope:
   path: spec/domains/net.yaml
 - confidence: cited
   path: spec/scenarios
-revision: 15
+revision: 17
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T07:42:31Z", actor: "human:operator", revision: 11, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T07:42:31Z", actor: "human:operator", revision: 12, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-24T09:51:33Z", actor: "human:operator", revision: 17, decided_on: {"recorded":{"test_result":2,"verification":3}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -539,3 +540,36 @@ list under "Decisions taken"; the rules under "Change" carry the new text.
     read the text a second time for the connection. A fetch without a jar (the `surf`
     command) is unchanged; `story:agent-go-address-parsed` (draft) is the place where both
     become one. Tests: `crates/fetch/tests/one_parse.rs`.
+
+## As built
+
+Where the unit on `main` (`a54441f`, the merge of `impl/agent-cookie-jar` at `5fba905`)
+differs from the text above. The rules R4, R9, R10 and R13 under "Change" are already the
+built ones ("Decisions after the reviews").
+
+- The initiator is also stored on `surf.net.Request` and shown in the view
+  `surf.net.Requests`: a scenario payload (`ess-scenario/6`) cannot state that a field is
+  absent, so the scenario `navigation-initiator-none` asserts through that view. The bindings
+  of the initiator are in `spec/components.yaml` and `spec/domains/document.yaml`, not in
+  `spec/domains/agent.yaml`.
+- The `login` task's fixture answers the form with `Location: /login/account.html` (the
+  fixture's site prefix), where the story wrote `/account.html`.
+- A fetch that has a jar reads its address once (decision 14): `http://a.test\b.test/` then
+  connects to the host the URL parser reads, and `Host` is that authority. A fetch without a
+  jar, the `surf` command, is unchanged. Every session has a jar for every fetch.
+- `surf_fetch::Request` lost `PartialEq` and `Eq` (it holds a reference to the jar);
+  `RenderError::NoCookies` is new in `surf-answer`.
+- `conformance/Cargo.lock` locks `surf-cookie` and the two doc examples of `surf-ports` give
+  `Navigate` its initiator (`4b9cddd`, `90b495b`): the first gate run on the unit failed on
+  each, the doc tests run in the gate only.
+- Outside the Writes: `spec/domains/document.yaml`, `spec/components.yaml`, `crates/ports`,
+  `crates/view` (tests and example), `docs/view-stream.md`, `crates/session/src/entries.rs`,
+  `conformance/tests/noticed.txt`, `crates/tls-test-server` (`requests()`, so a test reads the
+  head the TLS server saw), `Cargo.lock`, `conformance/Cargo.lock`, and the public numbers
+  (`README.md`, `docs/badges/`, four website pages).
+- Tests at the merge: `surf-cookie` 33, the gate's test step 1408 (1345 before the unit), 203
+  scenarios of which 44 authored (201 and 42 before), agent tasks 6 of 6 with `login`.
+
+Noticed and not changed: `spec/components.yaml:429` still says there is no component for
+storage (cookies, cache, history); the cookies live in `surf-fetch` and `surf-cookie` with no
+component of the specification.
