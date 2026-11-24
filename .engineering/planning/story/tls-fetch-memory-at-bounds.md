@@ -8,7 +8,7 @@ summary: a fixture chain of 65,535 bytes and one of 64 certificates, a case that
 relations:
 - decomposes: epic:tls-https
 - informed_by: story:tls-fetch-https
-revision: 1
+revision: 2
 ---
 ## Why
 
@@ -17,7 +17,7 @@ The fetch documentation's "Memory" section (`crates/fetch/src/lib.rs`, written i
 the TLS bounds was not measured: a Certificate message of 65,535 bytes, up to 64 certificates.
 No fixture of that size exists. The independent review of the unit (2026-11-24) could not decide
 its bound on memory for that reason, and the adversary pass did not get to it. What is measured:
-the 50-certificate `candidate-limit` chain is refused with `CandidateLimit` in 7.5 ms and held
+the 50-certificate `candidate-limit` chain is refused with `CandidateLimit` in 46.7 ms (one local run on a loaded host) and held
 139,137 bytes at its peak.
 
 A server chooses its chain, so this is memory a hostile server controls.
