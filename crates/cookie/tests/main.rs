@@ -4,5 +4,6 @@
 #![forbid(unsafe_code)]
 
 mod bound;
+mod hosts;
 mod jar;
 mod shadow;

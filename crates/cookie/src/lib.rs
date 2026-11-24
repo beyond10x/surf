@@ -19,10 +19,10 @@
 //!   `Expires` that does not parse is ignored and the cookie lasts as long as the jar (5.6.1).
 //!   A cookie is expired once its expiry time is before the time given.
 //! - **Domain**, host-only (surf's option B until the public suffix list is bundled): the
-//!   attribute loses a leading `.` and is lower-cased (5.6.3). When the request host
-//!   domain-matches it (5.1.3: equal, or a suffix after a `.`, and for an IP address host only
-//!   when equal) the cookie is stored host-only for the request host; otherwise it is ignored
-//!   (5.7 step 10). So a cookie that `a.example.test` sets with `Domain=example.test` is sent
+//!   attribute loses a leading `.` and is lower-cased (5.6.3); the last one counts. When the
+//!   request host domain-matches it (5.1.3: equal, or a suffix after a `.`, and for an IP address
+//!   host only when equal), or it is empty (`Domain=`, `Domain=.`), the cookie is stored
+//!   host-only for the request host; otherwise it is ignored (5.7 step 10). So a cookie that `a.example.test` sets with `Domain=example.test` is sent
 //!   to `a.example.test` only.
 //! - **Path**: a missing attribute, or one that does not start with `/`, gives the default-path
 //!   of the request address (5.6.4, 5.1.4); a cookie is sent where its path path-matches the
@@ -46,8 +46,9 @@
 //!   chain has its scheme and host: once the chain has been on another site, every later request
 //!   is cross-site, also for a navigation without an initiator.
 //! - **Prefixes** (5.4, 5.7 steps 20 and 21), in any case: `__Secure-` needs `Secure`; `__Host-`
-//!   needs `Secure`, a `Path` attribute of `/` and no `Domain` attribute (with every cookie
-//!   host-only, the draft's host-only flag is read as "no `Domain` attribute was given").
+//!   needs `Secure`, a `Path` attribute of `/` and no `Domain` attribute or an empty one (with
+//!   every cookie host-only, the draft's host-only flag is read as "no `Domain` attribute, or an
+//!   empty one, was given").
 //! - **Replacement** (5.7 step 23): a cookie of the same name, domain and path replaces the
 //!   stored one and keeps its creation time.
 //! - **The `Cookie` field** (5.8.3): longer paths first, then earlier creation; `name=value`
@@ -286,8 +287,9 @@ impl Jar {
             return;
         }
         // Step 10, host-only: a Domain attribute the host domain-matches keeps the cookie on
-        // the request host; any other ignores it.
+        // the request host, and so does an empty one; any other ignores it.
         if let Some(domain) = &parsed.domain
+            && !domain.is_empty()
             && !domain_matches(&host.text, host.is_ip, domain)
         {
             return;
@@ -323,7 +325,10 @@ impl Jar {
             return;
         }
         if starts_with_ignoring_case(&parsed.name, "__Host-")
-            && !(parsed.secure && parsed.domain.is_none() && parsed.path.is_some() && path == "/")
+            && !(parsed.secure
+                && parsed.domain.as_deref().is_none_or(str::is_empty)
+                && parsed.path.is_some()
+                && path == "/")
         {
             return;
         }
@@ -714,7 +719,8 @@ fn starts_with_ignoring_case(text: &str, prefix: &str) -> bool {
 struct Parsed {
     name: String,
     value: String,
-    /// The last `Domain` attribute, without its leading `.` and lower-cased.
+    /// The last `Domain` attribute, without its leading `.` and lower-cased; empty for `Domain=`
+    /// and `Domain=.`, which give a host-only cookie as no attribute does (5.7 step 10).
     domain: Option<String>,
     /// The last `Path` attribute: its value when it starts with `/`, `Some(None)` for one that
     /// stands for the default-path (5.6.4).
@@ -788,10 +794,8 @@ fn parse_set_cookie(set_cookie: &str, now: i64) -> Option<Parsed> {
                 });
             }
         } else if key.eq_ignore_ascii_case("Domain") {
-            if !attribute_value.is_empty() {
-                let domain = attribute_value.strip_prefix('.').unwrap_or(attribute_value);
-                parsed.domain = Some(domain.to_ascii_lowercase());
-            }
+            let domain = attribute_value.strip_prefix('.').unwrap_or(attribute_value);
+            parsed.domain = Some(domain.to_ascii_lowercase());
         } else if key.eq_ignore_ascii_case("Path") {
             parsed.path = Some(
                 attribute_value
