@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T15:32:59Z",
+  "actor": "human:operator",
+  "artifact": "story:session-process-hardening",
+  "kind": "story",
+  "revision": 26,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the gate in runner form (task check-runner) on 9cab4c5, the tip of impl/session-process-hardening, through the pool on the build node (job 10862), 2026-11-24 16:25 CET",
+    "reference": "exit 0 in 74 s; 1547 tests passed, 0 failed, 0 ignored; 552 TLS tests passed; 72 page tests passed; four steps 32.1 s"
+  }
+}

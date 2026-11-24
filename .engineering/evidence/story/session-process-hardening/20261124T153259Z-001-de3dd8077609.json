@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T15:32:59Z",
+  "actor": "human:operator",
+  "artifact": "story:session-process-hardening",
+  "kind": "story",
+  "revision": 26,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the forge runs on main at 4ad4797 (the merge 91494cf of impl/session-process-hardening at 9cab4c5, and a plan merge), 2026-11-24",
+    "reference": "check 45425711309 success (its step finds setpriv and prlimit on the runner), Shared source gates 45425712296 success, Documentation validation 45425711109 success, Documentation site 45426227681 success"
+  }
+}
