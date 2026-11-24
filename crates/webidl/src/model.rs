@@ -13,7 +13,8 @@ pub struct Definition {
     pub name: String,
     /// The file named to [`crate::read`].
     pub file: String,
-    /// The line, counted from 1 in the text read.
+    /// The line of its first token after its extended attributes: a line of the extracted IDL
+    /// index, counted from 1, not a line of the page.
     pub line: usize,
     /// The extended attributes before it.
     pub extended_attributes: Vec<ExtendedAttribute>,
@@ -79,7 +80,8 @@ pub enum DefinitionKind {
 pub struct Member {
     /// Its name; `None` for a constructor, a bare `stringifier` and `iterable`.
     pub name: Option<String>,
-    /// The line of its first token after its extended attributes.
+    /// The line of its first token after its extended attributes: a line of the extracted IDL
+    /// index, counted from 1, not a line of the page.
     pub line: usize,
     /// The extended attributes before it; a name of [`crate::TYPE_EXTENDED_ATTRIBUTES`] there is
     /// refused.
@@ -137,7 +139,8 @@ pub enum MemberKind {
 pub struct Argument {
     /// Its name, a leading `_` removed.
     pub name: String,
-    /// The line of its name.
+    /// The line of its name: a line of the extracted IDL index, counted from 1, not a line of
+    /// the page.
     pub line: usize,
     /// The extended attributes before it (before `optional`, or before the type), but those of
     /// [`crate::TYPE_EXTENDED_ATTRIBUTES`], which are on [`Argument::ty`].
@@ -158,7 +161,8 @@ pub struct Argument {
 pub struct DictionaryMember {
     /// Its name.
     pub name: String,
-    /// The line of its first token after its extended attributes.
+    /// The line of its first token after its extended attributes: a line of the extracted IDL
+    /// index, counted from 1, not a line of the page.
     pub line: usize,
     /// The extended attributes before it, but those of [`crate::TYPE_EXTENDED_ATTRIBUTES`],
     /// which are on [`DictionaryMember::ty`].
@@ -220,7 +224,8 @@ pub enum TypeKind {
     Named {
         /// The name, a leading `_` removed.
         name: String,
-        /// The line it is written on.
+        /// The line it is written on: a line of the extracted IDL index, counted from 1, not a
+        /// line of the page.
         line: usize,
     },
 }
@@ -265,7 +270,8 @@ pub enum DefaultValue {
 pub struct ExtendedAttribute {
     /// Its name, one of [`crate::EXTENDED_ATTRIBUTES`].
     pub name: String,
-    /// The line of its name.
+    /// The line of its name: a line of the extracted IDL index, counted from 1, not a line of
+    /// the page.
     pub line: usize,
     /// Its value.
     pub value: ExtendedAttributeValue,
@@ -307,7 +313,8 @@ pub struct Counts {
 pub struct Reference {
     /// The name, a leading `_` removed.
     pub name: String,
-    /// The line the name is written on.
+    /// The line the name is written on: a line of the extracted IDL index, counted from 1, not
+    /// a line of the page.
     pub line: usize,
 }
 
@@ -318,7 +325,8 @@ pub struct Unresolved {
     pub name: String,
     /// The file it is written in.
     pub file: String,
-    /// The line it is written on.
+    /// The line it is written on: a line of the extracted IDL index, counted from 1, not a line
+    /// of the page.
     pub line: usize,
 }
 

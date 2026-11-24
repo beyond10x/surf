@@ -123,11 +123,14 @@ pub const ADDED: &[&str] = &[
 ];
 
 /// A construct the reader refuses, or a text it cannot read, with the file and line it starts on.
+/// It prints as `<file>:<line>: refused: <construct>`, where the line is a line of the extracted
+/// IDL index (the text [`read`] is given), counted from 1, not a line of the page.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReadError {
     /// The file named to [`read`] or [`read_page`].
     pub file: String,
-    /// The line in the text read, counted from 1; 0 for a page without an IDL Index.
+    /// A line of the extracted IDL index (the text [`read`] is given), counted from 1, not a
+    /// line of the page; 0 for a page without an IDL Index.
     pub line: usize,
     /// What was refused.
     pub construct: String,
