@@ -314,7 +314,7 @@ with the reason.
 | parser: stored bytes | 67,108,864, the parser's | none: the parser's own limit | `crates/html/src/limits.rs:67` (`max_stored_bytes: 64 * 1024 * 1024`) | `limit: stored-bytes` |
 | parser: steps | 134,217,728 (2^27), the parser's | none: the parser's own limit | `crates/html/src/limits.rs:68` (`max_steps: 1 << 27`) | counts tree construction's scans after each token, not a script's writes; parsing stops as today (`stopped_by` `Steps`), and no later script element is reached |
 | `eval` and `Function` | allowed, chosen: `host_ensure_can_compile_strings` answers `Ok` (the default, `crates/swell/src/host/hooks.rs:176-181 @ 0.8.0`) | `R limits` and `T limits`, with a hook that answers `Throw` | `eval refused: throw not an error`; `Function refused: throw not an error` in both profiles (the hook's thrown value is what `eval` throws, HOST-116 and HOST-117, `conformance/host/requirements.txt:116-117 @ 0.8.0`) | ran: `eval` charges a step per code unit of its source before the parse (`crates/swell/tests/frontend_ledger.rs:172-176 @ 0.8.0`) and its tree to `memory_bytes` (`:127 @ 0.8.0`), and they reach nothing an inline script does not. HTML refuses them only under a Content Security Policy, which surf does not read (Q2) |
-| after `Terminated(MemoryBudget)` | `collect()` once, chosen; a second in the same document stops it | `T limits` | `memory 4 MiB, array growth: terminated MemoryBudget`; `state after memory budget: Alive`; `collect: Ok(true)`; `next entry after collect: normal` | the script: `limit: memory`; surf calls `collect()` (HOST-188 to HOST-190, `conformance/host/requirements.txt:188-190 @ 0.8.0`); if the next script of that document ends `limit: memory` too, each later one: `not run: memory` |
+| after `Terminated(MemoryBudget)` | `collect()` once, chosen; a second in the same document stops it | `T limits` | `memory 4 MiB, array growth: terminated MemoryBudget`; `state after memory budget: Alive`; `collect: Ok(true)`; `next entry after collect: normal` | the script: `limit: memory`; after the first such end in a document surf calls `collect()` once (HOST-188 to HOST-190, `conformance/host/requirements.txt:188-190 @ 0.8.0`); the second script of that document that ends `limit: memory`, next to the first or not, makes each later script `not run: memory` |
 
 The DOM a script makes is charged to `memory_bytes` (requirement 3, HOST-175 to HOST-177): each
 wrapper is a host object on the engine's heap, `HOST_OBJECT_LIVE_BYTES` (256) bytes plus its
@@ -375,12 +375,18 @@ is measured: `(reentry_depth + 1)` × 14,336 bytes, as much again per re-entry a
 plus 1 MiB for the frames below the first entry: 257 × 14,336 + 1,048,576 = 4,732,928 bytes, so
 the thread of a scripted document has 4,006,656 + 4,732,928 = 8,739,584 bytes for Q4's limits.
 `story:scripts-parse-run` measures the margin with a test that runs the deepest nesting the
-limits allow on a thread of exactly that size: a script whose source nests to `parser_nesting`,
-parsed inside a call that re-enters through a binding (a getter of a DOM wrapper that calls
-`eval`) `reentry_depth` times; the margin is then that test's need plus a fifth, as swell rounds
-its own. A stack that overflows ends the session: Rust's handler of the guard page prints a line
-to the standard error, which `surfd` closes, and aborts, so `surfd` reaps a `SIGABRT`, not a
-`SIGSEGV`:
+limits allow on a thread of exactly that size, with the first version's bindings and no binding
+made for the test: a call of a binding with a `DOMString` argument whose argument object's
+`toString` calls the same binding again, `reentry_depth` times, the innermost `toString` calling
+`eval` of a source nested to `parser_nesting`. A generated binding calls no script by itself;
+its conversion of the argument (`Cx::to_string`, `crates/swell/src/host/mod.rs:887-898 @ 0.8.0`)
+calls the object's `toString` (`crates/swell/src/ops/conversion.rs:132 @ 0.8.0`), and that call
+is a re-entry from a host function, checked against `reentry_depth`
+(`crates/swell/src/object/ecmascript_function.rs:147 @ 0.8.0`,
+`crates/swell/src/interp/mod.rs:9-16,129-130 @ 0.8.0`). The margin is then that test's need
+plus a fifth, as swell rounds its own. A stack that overflows ends the session: Rust's handler
+of the guard page prints a line to the standard error, which `surfd` closes, and aborts, so
+`surfd` reaps a `SIGABRT`, not a `SIGSEGV`:
 
 probe: (workstation) /usr/bin/prlimit --core=0:0 -- .out/probes/swell-limits/target/release/swell-limits-probe overflow -> thread '<unknown>' (...) has overflowed its stack; fatal runtime error: stack overflow, aborting; overflow: exit 134 signal ABRT
 
