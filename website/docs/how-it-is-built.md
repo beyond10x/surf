@@ -44,10 +44,10 @@ surf v1 — 9 file(s), 44 scenario(s), valid
   203 scenarios: 203 passed, 0 failed, 0 error, 0 unsupported
 203 scenario(s) (44 authored), 56 refusal(s), written to .out/suite.json
 conform-noticed: conformance/tests/noticed.txt matches its sources
-conform-rust: the narrowed suites of 29 planted defects written to conformance/target/noticed/3c078a8015b3e1cb30f295ad7e4cee71733675f170dc35bf2bc3d30aef7d592b
-Summary [   1.217s] 39 tests run: 39 passed, 0 skipped
+conform-rust: the narrowed suites of 29 planted defects in conformance/target/noticed/3c078a8015b3e1cb30f295ad7e4cee71733675f170dc35bf2bc3d30aef7d592b are current
+Summary [   1.685s] 39 tests run: 39 passed, 0 skipped
   203 scenarios: 203 passed, 0 failed, 0 error, 0 unsupported
-conformance step: 2.5 s of its budget of 120 s
+conformance step: 3.3 s of its budget of 120 s
 the interpreter and the Rust system ran 203 scenario(s) each, of suite sha256:27d50358e22d9b7b06eb74922b781b6ee0956c4e4d2ec3ed7504ae41285bbb86
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
@@ -58,17 +58,17 @@ tls-certs: 33 cases, certs/ matches its sources
 tls-flights: 6 recordings match SOURCE, the recorder matches DIGEST
 tls-flights: self-test: a changed copy of aes128-x25519-ecdsa.bin fails naming it
 doc-tests-check: no doc test outside crates/ports
-    Finished `dev` profile [unoptimized] target(s) in 7.61s
-1496 tests: 1496 passed, 0 failed, 0 ignored (cargo-nextest 1494, doc tests 2)
-test step: 11.6 s of its budget of 120 s
+    Finished `dev` profile [unoptimized] target(s) in 1.31s
+1504 tests: 1504 passed, 0 failed, 0 ignored (cargo-nextest 1502, doc tests 2)
+test step: 11.1 s of its budget of 120 s
 552 tests: 552 passed, 0 failed, 0 ignored (cargo-nextest 552)
-tls test step: 4.2 s of its budget of 120 s
+tls test step: 3.0 s of its budget of 120 s
 agent-tasks: 6 tasks, 6 pass, 0 fail, 0 skipped, lane gate, binaries target/debug
-sh-echo: Summary [  10.250s] 51 tests run: 51 passed, 115 skipped
+sh-echo: Summary [  10.326s] 51 tests run: 51 passed, 115 skipped
 view-stream-check: 23 event name(s), each a message of the AsyncAPI projection
 view-tests: node_modules installed from package-lock.json
-  71 passed (12.7s)
-page step: 13.2 s of its budget of 120 s
+  71 passed (18.3s)
+page step: 18.7 s of its budget of 120 s
 html-conformance: 9107 cases, 9095 run, 9095 passed
 x509-limbo: 5143 cases, 5089 run, 5060 passed
 tls-x509-conformance: 1 s
@@ -77,7 +77,7 @@ planning-only-test: 9 case(s), each decided as expected by taskfiles/planning-on
 test-layout-test: 39 case(s), each decided as expected by taskfiles/test-layout.sh
 sh-echo-test: 2 case(s), each decided as expected by taskfiles/sh-echo.sh
 doc-tests-check-test: 14 case(s), each decided as expected by taskfiles/doc-tests-check.sh
-four steps: 31.5 s (test step 11.6 s, tls test step 4.2 s, conformance step 2.5 s, page step 13.2 s)
+four steps: 36.1 s (test step 11.1 s, tls test step 3.0 s, conformance step 3.3 s, page step 18.7 s)
 ```
 
 It validates the specification, runs the 203 scenarios against the interpreter built into `ess`
@@ -91,11 +91,13 @@ cargo-nextest; a test still running after 60 seconds is ended and fails, each of
 steps (the conformance step, the test step, the TLS test step and the page step) fails when it
 takes over 120 seconds, and the last line adds the four up. The block leaves out the ten slowest
 tests each step also prints, the agent tasks' rows after their counts, npm's and Playwright's
-own lines and the rows of the two conformance counts. It is the run of 2026-11-24 on `8fab187`,
-the Web IDL reader's branch, that `task check-runner` ended in 75 s; its test line counts the
-reader's tests as they stand after it (72, where that run had 69). The page tests' line,
-`71 passed (12.7s)`, has its slowest test (`adversary: an action streamed while the detail
-loads after a reset is not lost`) at 1.214 s and `an entry over 1 MiB` at 0.682 s; the run of
+own lines and the rows of the two conformance counts. It is the run of 2026-11-24 on `91f7ff1`,
+the Web IDL reader's branch, that `task check-runner` ended in 67 s, at a load of 34.40 at its
+start and 52.88 at its end; its test line counts the reader's tests as they stand after it
+(80, where that run had 72). The page tests' line, `71 passed (18.3s)`, has its slowest test
+(`an entry over 1 MiB`) at 2.350 s; the run of 2026-11-24 on `8fab187` had `71 passed
+(12.7s)`, its slowest test (`adversary: an action streamed while the detail loads after a
+reset is not lost`) at 1.214 s and `an entry over 1 MiB` at 0.682 s; the run of
 2026-11-24 on `eb97549`, the commit of release `0.8.0`, had `71 passed (13.0s)`, the same
 slowest test at 1.237 s and `an entry over 1 MiB` at 0.682 s; the run of
 2026-11-24 on `b39b77b` had `71 passed (17.3s)`, its slowest test (`page line and three links
