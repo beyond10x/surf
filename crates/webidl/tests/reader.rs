@@ -2,8 +2,9 @@
 //! here.
 
 use surf_webidl::{
-    ADDED, Argument, ConstValue, DefaultValue, Definition, DefinitionKind, ExtendedAttributeValue,
-    IntegerSize, Member, MemberKind, Model, Reference, Type, TypeKind, read,
+    ADDED, Argument, ConstValue, DefaultValue, Definition, DefinitionKind, EXTENDED_ATTRIBUTES,
+    ExtendedAttributeValue, IntegerSize, Member, MemberKind, Model, Reference,
+    TYPE_EXTENDED_ATTRIBUTES, Type, TypeKind, read,
 };
 
 const FILE: &str = "test.idl";
@@ -520,12 +521,84 @@ fn extended_attribute_arguments() {
         ExtendedAttributeValue::IdentifierList(vec!["Window".to_string(), "Worker".to_string()])
     );
     assert_eq!(
-        arguments(&list[0])[0].extended_attributes[0].name,
+        arguments(&list[0])[0].ty.extended_attributes[0].name,
         "EnforceRange"
     );
     assert_eq!(
         list[1].extended_attributes[1].value,
         ExtendedAttributeValue::Identifier("value".to_string())
+    );
+}
+
+/// The names of `list`.
+fn attribute_names(list: &[surf_webidl::ExtendedAttribute]) -> Vec<&str> {
+    list.iter()
+        .map(|attribute| attribute.name.as_str())
+        .collect()
+}
+
+#[test]
+fn type_extended_attribute_on_an_argument() {
+    let member = member(
+        "interface A {\n  undefined f([EnforceRange] unsigned long a, [EnforceRange] optional unsigned long b);\n};",
+    );
+    for argument in arguments(&member) {
+        assert!(argument.extended_attributes.is_empty(), "{argument:?}");
+        assert_eq!(
+            attribute_names(&argument.ty.extended_attributes),
+            ["EnforceRange"]
+        );
+    }
+}
+
+#[test]
+fn type_extended_attribute_on_an_attribute() {
+    let member =
+        member("interface A {\n  [CEReactions, EnforceRange] attribute unsigned long x;\n};");
+    assert_eq!(
+        attribute_names(&member.extended_attributes),
+        ["CEReactions"]
+    );
+    assert_eq!(
+        attribute_names(&attribute_type(&member).extended_attributes),
+        ["EnforceRange"]
+    );
+}
+
+#[test]
+fn type_extended_attribute_on_a_dictionary_member() {
+    let definition = one("dictionary D {\n  [EnforceRange] unsigned long x = 0;\n};");
+    let DefinitionKind::Dictionary { members, .. } = &definition.kind else {
+        panic!("not a dictionary");
+    };
+    assert!(members[0].extended_attributes.is_empty());
+    assert_eq!(
+        attribute_names(&members[0].ty.extended_attributes),
+        ["EnforceRange"]
+    );
+}
+
+#[test]
+fn type_extended_attribute_on_a_return_type() {
+    let member = member("interface A {\n  [NewObject, EnforceRange] unsigned long f();\n};");
+    assert_eq!(attribute_names(&member.extended_attributes), ["NewObject"]);
+    let MemberKind::Operation { return_type, .. } = &member.kind else {
+        panic!("not an operation");
+    };
+    assert_eq!(
+        attribute_names(&return_type.extended_attributes),
+        ["EnforceRange"]
+    );
+}
+
+#[test]
+fn type_extended_attributes_are_known_ones() {
+    for name in TYPE_EXTENDED_ATTRIBUTES {
+        assert!(EXTENDED_ATTRIBUTES.contains(name), "{name}");
+    }
+    assert_eq!(
+        TYPE_EXTENDED_ATTRIBUTES,
+        ["AllowShared", "EnforceRange", "LegacyNullToEmptyString"]
     );
 }
 

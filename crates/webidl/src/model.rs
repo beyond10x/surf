@@ -81,7 +81,8 @@ pub struct Member {
     pub name: Option<String>,
     /// The line of its first token after its extended attributes.
     pub line: usize,
-    /// The extended attributes before it.
+    /// The extended attributes before it, but those of [`crate::TYPE_EXTENDED_ATTRIBUTES`],
+    /// which an attribute or an operation gives its type or return type.
     pub extended_attributes: Vec<ExtendedAttribute>,
     /// What it is.
     pub kind: MemberKind,
@@ -99,7 +100,8 @@ pub enum MemberKind {
     },
     /// `attribute`, `readonly attribute` or `stringifier attribute`.
     Attribute {
-        /// The type, with the extended attributes written before it.
+        /// The type, with the extended attributes written before it (`attribute [X] T`) and the
+        /// names of [`crate::TYPE_EXTENDED_ATTRIBUTES`] written before the attribute.
         ty: Type,
         /// Whether it is `readonly`.
         readonly: bool,
@@ -108,7 +110,8 @@ pub enum MemberKind {
     },
     /// An operation: regular, `static` or a special `getter`.
     Operation {
-        /// The return type.
+        /// The return type, with the names of [`crate::TYPE_EXTENDED_ATTRIBUTES`] written before
+        /// the operation.
         return_type: Type,
         /// The arguments.
         arguments: Vec<Argument>,
@@ -138,9 +141,11 @@ pub struct Argument {
     pub name: String,
     /// The line of its name.
     pub line: usize,
-    /// The extended attributes before it (before `optional`, or before the type).
+    /// The extended attributes before it (before `optional`, or before the type), but those of
+    /// [`crate::TYPE_EXTENDED_ATTRIBUTES`], which are on [`Argument::ty`].
     pub extended_attributes: Vec<ExtendedAttribute>,
-    /// The type; for `optional`, with the extended attributes written after `optional`.
+    /// The type, with the extended attributes written after `optional` and the names of
+    /// [`crate::TYPE_EXTENDED_ATTRIBUTES`] written before the argument.
     pub ty: Type,
     /// Whether it is `optional`.
     pub optional: bool,
@@ -157,7 +162,8 @@ pub struct DictionaryMember {
     pub name: String,
     /// The line of its first token after its extended attributes.
     pub line: usize,
-    /// The extended attributes before it.
+    /// The extended attributes before it, but those of [`crate::TYPE_EXTENDED_ATTRIBUTES`],
+    /// which are on [`DictionaryMember::ty`].
     pub extended_attributes: Vec<ExtendedAttribute>,
     /// The type.
     pub ty: Type,

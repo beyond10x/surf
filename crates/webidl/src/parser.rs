@@ -9,7 +9,7 @@ use crate::model::{
     ExtendedAttribute, ExtendedAttributeValue, IntegerSize, Member, MemberKind, Reference, Type,
     TypeKind,
 };
-use crate::{EXTENDED_ATTRIBUTES, ReadError};
+use crate::{EXTENDED_ATTRIBUTES, ReadError, TYPE_EXTENDED_ATTRIBUTES};
 
 /// The keywords of the grammar of the Web IDL Standard: an identifier token with one of these
 /// texts is no name.
@@ -390,7 +390,7 @@ impl Parser<'_> {
     }
 
     fn member(&mut self, body: Body) -> Result<Member, ReadError> {
-        let extended_attributes = self.extended_attributes()?;
+        let mut extended_attributes = self.extended_attributes()?;
         let line = self.line();
         let first = self
             .peek(0)
@@ -494,6 +494,14 @@ impl Parser<'_> {
                 (Some(name), kind)
             }
         };
+        let mut kind = kind;
+        match &mut kind {
+            MemberKind::Attribute { ty, .. }
+            | MemberKind::Operation {
+                return_type: ty, ..
+            } => onto_type(&mut extended_attributes, ty),
+            _ => {}
+        }
         Ok(Member {
             name,
             line,
@@ -557,13 +565,14 @@ impl Parser<'_> {
     }
 
     fn argument(&mut self) -> Result<Argument, ReadError> {
-        let extended_attributes = self.extended_attributes()?;
+        let mut extended_attributes = self.extended_attributes()?;
         let optional = self.eat("optional");
-        let ty = if optional {
+        let mut ty = if optional {
             self.type_with_extended_attributes()?
         } else {
             self.ty()?
         };
+        onto_type(&mut extended_attributes, &mut ty);
         let variadic = !optional && self.eat("...");
         let (name, line) = self.argument_name()?;
         let default = if optional && self.eat("=") {
@@ -601,14 +610,15 @@ impl Parser<'_> {
             if self.peek(0).is_none() {
                 return self.unexpected("`}`");
             }
-            let extended_attributes = self.extended_attributes()?;
+            let mut extended_attributes = self.extended_attributes()?;
             let line = self.line();
             let required = self.eat("required");
-            let ty = if required {
+            let mut ty = if required {
                 self.type_with_extended_attributes()?
             } else {
                 self.ty()?
             };
+            onto_type(&mut extended_attributes, &mut ty);
             let (name, _) = self.identifier("the name of a dictionary member")?;
             let default = if !required && self.eat("=") {
                 Some(self.default_value()?)
@@ -918,4 +928,16 @@ fn plain(kind: TypeKind) -> Type {
         nullable: false,
         extended_attributes: Vec::new(),
     }
+}
+
+/// Moves the names of [`TYPE_EXTENDED_ATTRIBUTES`] in `written` (the list before an argument,
+/// an attribute, an operation or a dictionary member) onto `ty`, ahead of those `ty` holds;
+/// the others stay in `written`.
+fn onto_type(written: &mut Vec<ExtendedAttribute>, ty: &mut Type) {
+    let (on_type, stay): (Vec<_>, Vec<_>) = std::mem::take(written)
+        .into_iter()
+        .partition(|attribute| TYPE_EXTENDED_ATTRIBUTES.contains(&attribute.name.as_str()));
+    *written = stay;
+    let after = std::mem::replace(&mut ty.extended_attributes, on_type);
+    ty.extended_attributes.extend(after);
 }
