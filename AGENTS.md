@@ -1520,7 +1520,9 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   link set lo up`): the browser and every fixture it starts see no change of the host's
   interfaces and reach nothing but loopback (the live marker's record in the page step's
   section). Without a namespace the step fails with one line, `page step: no network namespace
-  of its own (...)`, and runs no test. The forge's runner (Ubuntu) restricts unprivileged user
+  of its own (...)`, and runs no test; a Playwright run outside one fails in
+  `view-tests/global-setup.mjs` before any browser starts (escape for debugging:
+  `SURF_VIEW_TESTS_HOST_NETWORK=1`). The forge's runner (Ubuntu) restricts unprivileged user
   namespaces through AppArmor; `.github/workflows/check.yml` lifts that with `sudo sysctl -w
   kernel.apparmor_restrict_unprivileged_userns=0` before `task check` and runs the script once.
   This host needs no setting. `view-tests/playwright.config.mjs` ends a test still
@@ -2159,7 +2161,15 @@ and removed every 200 ms, 6 of 15 runs of three page tests failed with that text
 net::ERR_NETWORK_CHANGED`), and 17 of 45 page starts of a probe ran no script; the same runs
 without the plant: 0 of 196 page starts. The fix: the page step runs in a namespace of its own
 (`taskfiles/page-netns.sh`, task `view-test`); with the same plant in the namespace around it,
-0 of 227 page starts failed (702 address changes planted). No retry and no longer wait.
+0 of 227 page starts failed (702 address changes planted). No retry and no longer wait. The
+story's acceptance 4 is the committed check `view-tests/global-setup.mjs`: before any browser
+starts, a run whose process sees an interface other than `lo` in `/proc/self/net/dev` (the
+host's network, where the cause lives) fails with one line, `page tests: not in a network
+namespace of their own (interfaces: ...); run them through taskfiles/page-netns.sh (task
+view-test does), or set SURF_VIEW_TESTS_HOST_NETWORK=1 to debug on the host's network`.
+`/sys/class/net` would not do: it lists the interfaces of the namespace that mounted `/sys`.
+`SURF_VIEW_TESTS_HOST_NETWORK=1` is for a person who debugs one test on the host's network;
+`task view-test`, `task page-step-cpu` and the gate never set it.
 D331 looked for one more cut in the Playwright workers, compared by the instructions of a run
 (`perf stat -e instructions`, about 117 G a run, far less tied to the load than CPU seconds):
 - Playwright 1.65 installs `source-map-support` in its runner and each worker without a
