@@ -39,6 +39,8 @@ release; what came before it is in the git log and in `docs/plan/`.
 - The binaries are built with ring 0.17.14, an outside library, for the cryptographic
   primitives of TLS, and the four crates it needs; `NOTICE` names them and the root list.
   Building surf from source needs a C compiler, which ring compiles its C and assembly with.
+- On macOS, `surf` now also links `/usr/lib/libiconv.2.dylib`, a library of the system, beside
+  `/usr/lib/libSystem.B.dylib`; nothing needs to be installed for it.
 
 ## [0.6.0] - 2026-11-23
 

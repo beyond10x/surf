@@ -42,8 +42,11 @@ Each archive holds one directory, `surf-<version>-<target>/`:
 The four binaries of a Linux archive stay in one directory, also when installed: `surf-agent`
 starts `surfd` from the directory it runs from, and `surfd` starts `surf-session` from its own.
 `SHA256SUMS` lists the four archives. The Linux binaries are statically linked (musl): they run
-on any distribution, and they load no name service module from the host. The macOS binaries are
-neither signed nor notarised.
+on any distribution, and they load no name service module from the host; the workflow refuses a
+Linux binary whose `readelf -lW` shows an `INTERP` header. The macOS `surf` links two libraries
+of the system, `/usr/lib/libSystem.B.dylib` and, since ring, `/usr/lib/libiconv.2.dylib`
+(`llvm-otool -L surf` on both macOS archives of release workflow run 45344883467; release
+`0.5.0` linked `libSystem.B.dylib` only). The macOS binaries are neither signed nor notarised.
 
 The smoke test runs on the unpacked directory of every archive: it checks the list of files
 above, that `surf` exits 2 without an argument and 1 on `http://127.0.0.1:1/`, that `surf
