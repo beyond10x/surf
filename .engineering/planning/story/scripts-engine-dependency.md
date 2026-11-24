@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:scripts-engine-dependency
 kind: story
-status: draft
+status: proposed
 title: surf depends on swell by a release tag, lock-check allows exactly that source, and surf-script runs an agent under surf's limits
 summary: A git dependency on the tag the note names; the allow-list, its rule per package, and a closed list of crates that may depend on surf-script; overflow checks enforced by lock-check; NOTICE and the Goals sentence; surf-script evaluates a source with no DOM under the step, memory, frame-depth and wall-clock limits, with the clock, seed, time-zone and compile-strings hooks of Q4 and Q6, HOST-17, 152 and 163 tested in surf's profile.
 relations:
@@ -37,7 +37,9 @@ scope:
   path: taskfiles/lock-check.sh
 - confidence: cited
   path: website/docs/principles.md
-revision: 18
+revision: 19
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T10:46:12Z", actor: "human:operator", revision: 19}
 ---
 ## Context
 

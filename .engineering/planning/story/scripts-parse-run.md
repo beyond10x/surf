@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:scripts-parse-run
 kind: story
-status: draft
+status: proposed
 title: Run a page's inline scripts during its parse, with limits per document
 summary: surf_script::run::parse_with_scripts joins the parser's script hook to swell through the runner, one agent per document, and adds the per-document policy (scripts per document, source size, step total, wall clock, the stop after a second memory end), each tested, every end written with the note's words, and the values of Q4 and Q5 measured again.
 relations:
@@ -20,7 +20,9 @@ scope:
   path: crates/script/tests/parse_run.rs
 - confidence: cited
   path: docs/design/scripts.md
-revision: 13
+revision: 14
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 ---
 ## Context
 

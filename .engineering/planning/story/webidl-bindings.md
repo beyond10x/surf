@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:webidl-bindings
 kind: story
-status: draft
+status: proposed
 title: The binary bindings generates the DOM's interfaces from the model and the selection, every member throwing NotSupportedError until its slice
 summary: selection.txt is the one table of the Web IDL selection (formerly Q8) with every member's slice, S6 = a decided 2026-11-24 with the HTML source and its selective extraction (formerly Q12); generated interfaces, brands, conversions, one trait per slice, the context type, the wrapper hook and the limit result; DOMException; the digest check and regeneration in the lane slow.
 relations:
@@ -36,7 +36,9 @@ scope:
   path: crates/webidl/tests
 - confidence: cited
   path: taskfiles/webidl.yml
-revision: 18
+revision: 19
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T10:46:12Z", actor: "human:operator", revision: 19}
 ---
 ## Context
 

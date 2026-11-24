@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:scripts-document-port
 kind: story
-status: draft
+status: proposed
 title: A session opened with the scripting option runs a page's inline scripts and shows what they wrote
 summary: A session opened with the option runs each document's scripts through parse_with_scripts and records each end; the epic's two examples, no state between pages and noscript pass; surf <url> runs none; surf-session joins the closed list; the bounds measured again with scripts; on the swell tag the coordinating agent names from Q13.
 relations:
@@ -57,7 +57,9 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 24
+revision: 25
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T10:46:14Z", actor: "human:operator", revision: 25}
 ---
 ## Context
 

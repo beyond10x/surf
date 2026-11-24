@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:scripts-hostile-pages
 kind: story
-status: draft
+status: proposed
 title: Hostile pages end at a recorded limit with the rest of the page parsed, and a session at its process bounds is listed died with the bound named
 summary: 'Tests only: an endless loop, many small scripts, a wall-clock-only loop, allocation, node creation, deep trees and recursion, 10,000 scripts, an attribute and a source over their limits each end with their limit within 5 s; a scripted session at an address-space bound is listed died with the bound named and surfd goes on.'
 relations:
@@ -13,7 +13,9 @@ scope:
   path: crates/script/tests
 - confidence: cited
   path: crates/session/tests
-revision: 8
+revision: 9
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T10:46:14Z", actor: "human:operator", revision: 9}
 ---
 ## Context
 

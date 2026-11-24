@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:scripts-html-conformance
 kind: story
-status: draft
+status: proposed
 title: The four DOM-only needs-script parsing cases run and pass
 summary: The conformance harness runs the needs-script cases that use no document.write through parse_with_scripts and prints 9107 cases, 9099 run, 9099 passed; not-run:needs-script counts the 3 that do; surf-html-conformance joins the closed list of surf-script dependents.
 relations:
@@ -29,7 +29,9 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 15
+revision: 16
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 16}
 ---
 ## Context
 

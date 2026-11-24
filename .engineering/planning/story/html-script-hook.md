@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:html-script-hook
 kind: story
-status: draft
+status: proposed
 title: The tree builder calls a hook at an inline classic script's end tag, and Tree gains a public write surface held to the parser's limits
 summary: With scripting enabled, the text insertion mode calls a hook at each parser-inserted script end tag, to run it or to report it skipped with its reason, and parsing goes on over the tree the hook left; public writes answer the limit they reach; a parse without a hook is unchanged.
 relations:
@@ -25,7 +25,9 @@ scope:
   path: crates/html/tests/script_hook.rs
 - confidence: cited
   path: docs/design/html-parser.md
-revision: 14
+revision: 15
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T10:46:12Z", actor: "human:operator", revision: 15}
 ---
 ## Context
 

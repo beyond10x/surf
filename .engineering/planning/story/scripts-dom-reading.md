@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:scripts-dom-reading
 kind: story
-status: draft
+status: proposed
 title: The reading members (98 rows), the Window global and one wrapper per node
 summary: Node, Element and Document's 73 reading members, 21 of the interfaces they return and the four of S6 (decided a on 2026-11-24) read a parsed tree as the standards say, with one wrapper per node for the document's life and the snapshot and global-this deviations, the case names asserted equal to the slice's rows.
 relations:
@@ -19,7 +19,9 @@ scope:
   path: crates/script/src/lib.rs
 - confidence: cited
   path: crates/script/tests/dom_reading.rs
-revision: 13
+revision: 14
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 ---
 ## Context
 

@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:scripts-dom-selectors
 kind: story
-status: draft
+status: proposed
 title: The 9 selector members over a subset of Selectors Level 4 this story settles
 summary: querySelector, querySelectorAll, closest, matches and webkitMatchesSelector, and DocumentFragment's two, for the subset (formerly the note's Q9) with its grammar cited; a valid selector outside it throws NotSupportedError, an invalid one SyntaxError.
 relations:
@@ -13,7 +13,9 @@ scope:
   path: crates/script/src/dom/selectors.rs
 - confidence: cited
   path: crates/script/tests/dom_selectors.rs
-revision: 12
+revision: 13
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 13}
 ---
 ## Context
 

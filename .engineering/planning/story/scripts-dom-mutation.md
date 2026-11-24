@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:scripts-dom-mutation
 kind: story
-status: draft
+status: proposed
 title: The mutating members (46 rows), four setters and four constructors
 summary: Tree mutation of Node, Element, Document and the interfaces they return, with the DOM Standard's exceptions, a write over a parser limit ending the script through the generated limit result, and host bytes charged to the agent; the case names asserted equal to the slice's rows.
 relations:
@@ -15,7 +15,9 @@ scope:
   path: crates/script/src/dom/mutation.rs
 - confidence: cited
   path: crates/script/tests/dom_mutation.rs
-revision: 14
+revision: 15
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 15}
 ---
 ## Context
 

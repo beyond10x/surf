@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:scripts-spec
 kind: story
-status: draft
+status: proposed
 title: Specify the record of a script's end and the scripting option of surf-agent open
 summary: surf.document records each script's end with its document and surf.agent.OpenCall gains the scripting option, in the shape the note gives; scenarios for every outcome; the binding declares the option and the client refuses it until the document port.
 relations:
@@ -53,7 +53,9 @@ scope:
   path: website/docs/principles.md
 - confidence: cited
   path: website/docs/status.md
-revision: 25
+revision: 26
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T10:46:12Z", actor: "human:operator", revision: 26}
 ---
 ## Context
 

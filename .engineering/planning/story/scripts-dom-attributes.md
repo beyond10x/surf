@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:scripts-dom-attributes
 kind: story
-status: draft
+status: proposed
 title: The 14 attribute members, held to the attribute and stored-byte limits
 summary: Element's id, className, slot and the attribute operations as the DOM Standard says, each write over the attribute or stored-byte limit ending the script through the generated limit result, the TrustedType deviation tested, 14 cases asserted equal to the slice's rows.
 relations:
@@ -14,7 +14,9 @@ scope:
   path: crates/script/src/dom/attributes.rs
 - confidence: cited
   path: crates/script/tests/dom_attributes.rs
-revision: 12
+revision: 13
+transitions:
+- {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 13}
 ---
 ## Context
 
