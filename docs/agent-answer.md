@@ -660,6 +660,27 @@ the session's token. The head line of these three has the state `unknown`, whate
 the session, and the session process sends `surfd` no address and no title with them, so that
 `surfd` keeps what it knew of the session.
 
+### Extra trust anchors: `open --ca-file`
+
+`surf-agent open [<url>] --ca-file <path>` gives the session the CA certificates of one PEM file
+as trust anchors beside the bundled ones, for every `https:` load of the session and for its
+life (`docs/design/tls.md` item 8); a session opened without it trusts the bundled anchors only,
+and the anchors of one session are never those of another. The client reads the file before it
+connects to `surfd`: at most 32,768 bytes and 64 blocks, every block a `CERTIFICATE`, every
+certificate a CA. Its bytes travel in the `open` request (`arg anchors`) and `surfd` passes them
+to the session process over the session socket; neither the path nor the bytes are an argument
+or in the environment of a process.
+
+A file the client refuses is an invalid input: exit status 2, nothing on standard output, and on
+standard error the line `surf-agent: the --ca-file file is refused: <error>` (or `surf-agent:
+the --ca-file file cannot be read: <error>` for a file that cannot be read, `... is not a
+regular file` for one that is not a regular file) followed by the usage. `<error>` is the
+`AnchorError` of `surf-tls` (`NoCertificate`, `NotACertificate`, `BadPem`, `BadCertificate`,
+`NotACa`, `TooLarge`, `TooMany`) with its text, such as `NotACa: certificate 0 is not a CA`.
+The line does not repeat the path. No request is sent, `surfd` is not started, and no session
+is made. A session process that gets anchors it refuses in an `open` request (a client other
+than `surf-agent`) answers `did refused usage`, status 2, as for any `usage` refusal of `open`.
+
 ## Parsing
 
 `parse` reads lines back to the typed answer. It accepts exactly what `render` writes: parsing
