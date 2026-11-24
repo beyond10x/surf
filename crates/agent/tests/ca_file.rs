@@ -2,8 +2,9 @@
 //! the file of `--ca-file` before it connects, refuses one `surf-tls` refuses as an invalid input
 //! (exit 2 and the usage, as `docs/agent-answer.md` gives a usage error) with nothing connected
 //! and no session made, and sends the blocks of a file it takes, and nothing around them, as
-//! `arg anchors` of the `open` request. With a copy of the built `surf-agent` and the stand-in
-//! beside it as `surfd`. The certificates are those of `crates/tls-test-certs/certs/`.
+//! `arg anchors` of the `open` request. Each line of a refusal is held to the form
+//! `docs/agent-answer.md` gives it. With a copy of the built `surf-agent` and the stand-in beside
+//! it as `surfd`. The certificates are those of `crates/tls-test-certs/certs/`.
 
 use crate::common;
 
@@ -177,4 +178,90 @@ fn ca_file_bytes_that_are_not_utf_8_outside_the_blocks_are_not_sent() {
     assert!(requests.contains(&line), "{}: {requests}", stderr(&output));
     assert!(!requests.contains("before "), "{requests}");
     assert!(!requests.contains("after "), "{requests}");
+}
+
+/// The file of the adversary's case: the root and 16,500 line feeds after it, 17,083 bytes. The
+/// line feeds are outside the block and not sent, so the request holds the root alone and fits.
+#[test]
+fn ca_file_blank_lines_after_the_root_are_not_sent() {
+    let dir = TestDir::new();
+    let _surfd = StandIn::start(&dir);
+    let root = fs::read_to_string(case("ok-ecdsa-p256").join("root.pem")).unwrap();
+    let file = dir.path.join("blank-lines.pem");
+    fs::write(&file, format!("{root}{}", "\n".repeat(16_500))).unwrap();
+    let output = run(agent(&dir).arg("open").arg("--ca-file").arg(&file));
+    let requests = dir.requests();
+    let line = format!("arg anchors {}\n", surf_answer::quote(&root));
+    assert!(requests.contains(&line), "{}: {requests}", stderr(&output));
+}
+
+/// A file of at most 32 KiB that `surf-tls` takes, whose blocks quote to more than an `open`
+/// request holds: copies of the root of `ok-ed25519` with one base64 character per line (the
+/// quoting writes each line feed as 4 bytes).
+fn short_lines(dir: &TestDir) -> PathBuf {
+    let root = fs::read_to_string(case("ok-ed25519").join("root.pem")).unwrap();
+    let mut block = String::from("-----BEGIN CERTIFICATE-----\n");
+    for character in root
+        .lines()
+        .filter(|line| !line.starts_with("-----"))
+        .flat_map(str::chars)
+    {
+        block.push(character);
+        block.push('\n');
+    }
+    block.push_str("-----END CERTIFICATE-----\n");
+    let copies = FILE_MAX / block.len();
+    assert!(copies <= 64, "{copies} blocks");
+    let file = dir.path.join("short-lines.pem");
+    fs::write(&file, block.repeat(copies)).unwrap();
+    file
+}
+
+/// Each line by which the client refuses a `--ca-file` file, as it prints it, and the form
+/// `docs/agent-answer.md` gives it in: exit 2, nothing sent, and the form in the document.
+#[test]
+fn ca_file_each_refusal_line_is_in_the_agent_answer_document() {
+    let dir = TestDir::new();
+    let _surfd = StandIn::start(&dir);
+    let document = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/agent-answer.md"),
+    )
+    .unwrap();
+    let document = document.split_whitespace().collect::<Vec<_>>().join(" ");
+    let directory = dir.path.join("a-directory");
+    fs::create_dir(&directory).unwrap();
+    let leaf = hostile(&dir).remove(2).0;
+    let cases = [
+        (
+            dir.path.join("missing.pem"),
+            "surf-agent: the --ca-file file cannot be read: entity not found",
+            "surf-agent: the --ca-file file cannot be read: <kind>",
+        ),
+        (
+            directory,
+            "surf-agent: the --ca-file file is not a regular file",
+            "surf-agent: the --ca-file file is not a regular file",
+        ),
+        (
+            leaf,
+            "surf-agent: the --ca-file file is refused: NotACa: certificate 0 is not a CA",
+            "surf-agent: the --ca-file file is refused: <error>",
+        ),
+        (
+            short_lines(&dir),
+            "surf-agent: the request is longer than 65536 bytes",
+            "surf-agent: the request is longer than 65536 bytes",
+        ),
+    ];
+    for (file, printed, form) in cases {
+        let output = run(agent(&dir).arg("open").arg("--ca-file").arg(&file));
+        let err = stderr(&output);
+        assert_eq!(output.status.code(), Some(2), "{err}");
+        assert_eq!(err.lines().next(), Some(printed), "{err}");
+        assert_eq!(dir.requests(), "", "{printed}: a request was sent");
+        assert!(
+            document.contains(&format!("`{form}`")),
+            "docs/agent-answer.md does not give `{form}`"
+        );
+    }
 }
