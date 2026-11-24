@@ -581,10 +581,6 @@ entities:
 errors:
   - {name: surf.document.InvalidScriptEnd, fields: [{name: end, type: surf.document.ScriptEnd}]}
   - {name: surf.document.InvalidScriptPosition, fields: [{name: position, type: Integer}]}
-  - name: surf.document.ScriptPositionTaken
-    fields:
-      - {name: document_id, type: surf.document.DocumentId}
-      - {name: position, type: Integer}
 
 commands:
   - name: surf.document.AddScriptEnd
@@ -629,13 +625,6 @@ commands:
         error: surf.document.InvalidScriptPosition
         payload: {surf.document.InvalidScriptPosition: {position: input.position}}
       # no-such-document and already-parsed as `AddForm` has them.
-      - name: position-taken
-        when_related:
-          entity: surf.document.Script
-          where: {all: [document_id == input.document_id, position == input.position]}
-          exists: true
-        error: surf.document.ScriptPositionTaken
-        payload: {surf.document.ScriptPositionTaken: {document_id: input.document_id, position: input.position}}
       - name: added
         creates: surf.document.Script
         instance: script_id
@@ -690,8 +679,10 @@ with a reason or an error the list does not give it (`Ran` and `Faulted` carry n
 limit's word, `NotRun` a not-run word, `Threw` a kind and, for `value`, no message, `Refused` its
 `SyntaxError`; only `Threw` and `Refused` carry a kind, a message, a line, a column or `dynamic`;
 no message over 1,024 characters); `invalid-position`, a position below 1 or a line or column
-outside 1 to 2^32 - 1; and `position-taken`, a second end at one position of one document. The
-input's refusals answer before the document's existence, its state and its other records.
+outside 1 to 2^32 - 1. The input's refusals answer before the document's existence and its state.
+A second end at one position of one document is not refused by the specification; the session
+writes one end per position, and the refusal comes back when the specification language
+synthesizes it within the suite's time.
 
 The command is the document component's, issued by its parser step in the session process
 (`surf-session`), as `AddElement` and `AddForm` are; no other process runs page script (S7). The

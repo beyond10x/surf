@@ -2699,14 +2699,6 @@ where
                         "surf.document.InvalidScriptPosition",
                         vec![("position", values::integer(error.position))],
                     )?,
-                    AddScriptEndOutcome::PositionTaken { error } => refused(
-                        "position-taken",
-                        "surf.document.ScriptPositionTaken",
-                        vec![
-                            ("document_id", uuid(&error.document_id.0)),
-                            ("position", values::integer(error.position)),
-                        ],
-                    )?,
                     AddScriptEndOutcome::NoSuchDocument { error } => refused(
                         "no-such-document",
                         "surf.document.DocumentNotFound",

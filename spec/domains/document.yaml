@@ -605,14 +605,6 @@ errors:
       - name: position
         type: Integer
 
-  - name: surf.document.ScriptPositionTaken
-    summary: The document already holds an end at this position, so nothing is added.
-    fields:
-      - name: document_id
-        type: surf.document.DocumentId
-      - name: position
-        type: Integer
-
 commands:
   # Parsing takes time, so it is a command that starts it, one per actionable element, and one
   # that ends it (`AGENTS.md`, "Rules"; `docs/design/html-parser.md`, item 2). An HTML parser makes
@@ -959,19 +951,9 @@ commands:
             state: Parsed
         summary: The document was already Parsed; nothing is added.
 
-      # Q7: never a second record for one element, so one end per position of a document.
-      - name: position-taken
-        when_related:
-          entity: surf.document.Script
-          where: {all: [document_id == input.document_id, position == input.position]}
-          exists: true
-        error: surf.document.ScriptPositionTaken
-        payload:
-          surf.document.ScriptPositionTaken:
-            document_id: input.document_id
-            position: input.position
-        summary: The document already holds an end at this position; nothing is added.
-
+      # A second end at one position of one document is not refused here: the session writes one
+      # end per position, and the refusal comes back when the specification language synthesizes
+      # it within the suite's time (`docs/design/scripts.md`, Q7).
       - name: added
         creates: surf.document.Script
         instance: script_id

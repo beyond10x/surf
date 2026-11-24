@@ -1,13 +1,13 @@
 # The order in which `surf.document.AddScriptEnd` answers when more than one refusal holds
 # (`docs/design/scripts.md`, Q7): the input's own refusals first, so an end Q7 does not allow
 # is `invalid-end` on a document no row holds and on one already parsed, and a position below 1
-# is `invalid-position` there too; then the document's existence and its state, so a position
-# the document already holds is `already-parsed` once it is parsed. Nothing is added but the one
-# `Ran` at position 1.
+# is `invalid-position` there too; then the document's existence and its state, so a valid end
+# on the parsed document is `already-parsed`. Nothing is added but the one `Ran` at position
+# 1.
 type: ess-scenario/6
 domain: surf.document
 scenario: document-script-end-refusals-in-order
-summary: AddScriptEnd answers the input's refusals before the document's existence, its state and a taken position.
+summary: AddScriptEnd answers the input's refusals before the document's existence and its state.
 
 arrange:
   - instance: page

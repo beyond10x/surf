@@ -30,7 +30,7 @@
 //! `NoteNavigationEnded`, which change every session their filter selects. [`DocumentPorts`]
 //! meets the three the generation leaves to the `document` component: `Check` and
 //! `SelectOption`, which change a control and the others of its group or select, and
-//! `AddScriptEnd`, which refuses a position its document already holds an end at;
+//! `AddScriptEnd`, which refuses a message by the count of its characters;
 //! [`add_script_end`] meets it over any [`DocumentStorage`] and [`ScriptStorage`], for a ports
 //! type that wraps them. [`NavigatorPorts`] meets the
 //! two the generation leaves to the `navigator` component, `CommitNavigation` and

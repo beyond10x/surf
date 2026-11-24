@@ -7,10 +7,11 @@
 # `NotRun` with a limit's word, `Limit` with `eof`, `Threw` without a kind, `Refused` with
 # `TypeError`, `NotRun` without a reason, `Faulted` with a reason and a kind (at position -1),
 # a message of 1,025 characters and `Ran` with an error; `invalid-position` for positions 0,
-# line and column 0, and line and column 2^32; `position-taken` for a second record at
-# position 6, after the one `Ran` there that is added. Written by the adversary of
-# `story:scripts-spec` to pin what `AddScriptEnd` accepted; rewritten in its fix round 2, when
-# the command gained these refusals, so that each pair is refused with its outcome.
+# line and column 0, and line and column 2^32. The one `Ran` at position 6 is added, after the
+# refused `NotRun` there. Written by the adversary of `story:scripts-spec` to pin what
+# `AddScriptEnd` accepted; rewritten in its fix round 2, when the command gained these refusals,
+# so that each pair is refused with its outcome. Its pair "a second end at one position" left in
+# round 4 with the refusal `position-taken` (`docs/design/scripts.md`, Q7).
 type: ess-scenario/6
 domain: surf.document
 scenario: script-end-pairs-outside-q7-refused
@@ -118,18 +119,6 @@ timeline:
           document_id: {$instance: page}
           position: 6
           end: Ran
-
-  - at: 2026-01-08T09:00:08Z
-    command: surf.document.AddScriptEnd
-    input:
-      document_id: {$instance: page}
-      position: 6
-      end: NotRun
-      reason: Eof
-    outcome: position-taken
-    error:
-      name: surf.document.ScriptPositionTaken
-      fields: {position: 6}
 
   - at: 2026-01-08T09:00:09Z
     command: surf.document.AddScriptEnd

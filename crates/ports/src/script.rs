@@ -1,13 +1,12 @@
-//! `surf.document.AddScriptEnd`, met by hand: its `position-taken` refusal is a guard over the rows
-//! a selector selects, and its `invalid-end` refusal reads `message.count`; the generation keeps a
-//! command with either an obligation.
+//! `surf.document.AddScriptEnd`, met by hand: its `invalid-end` refusal reads `message.count`, and
+//! the generation keeps a command with such a guard an obligation.
 
 use surf_types::behaviour::{DocumentStorage, ScriptStorage};
 use surf_types::document::obligations::AddScriptEndBehavior;
 use surf_types::document::{
     AddScriptEnd, AddScriptEndOutcome, AnyScript, DocumentNotFound, DocumentState,
     DocumentStateConflict, InvalidScriptEnd, InvalidScriptPosition, Script, ScriptData, ScriptEnd,
-    ScriptEndAdded, ScriptErrorKind, ScriptId, ScriptPositionTaken, ScriptReason,
+    ScriptEndAdded, ScriptErrorKind, ScriptId, ScriptReason,
 };
 use surf_types::obligation::UnmetObligation;
 
@@ -35,8 +34,8 @@ pub trait ScriptIdentity {
 /// The end of one script element of a document being parsed, its outcomes chosen in the order
 /// `spec/` declares them and the interpreter answers them: the input's own refusals first
 /// (`invalid-end`, then `invalid-position`), then a document no row holds (`no-such-document`),
-/// one already `Parsed` (`already-parsed`), and a position the document already holds an end at
-/// (`position-taken`); otherwise the record is added with an identity from `ports`.
+/// and one already `Parsed` (`already-parsed`); otherwise the record is added with an identity
+/// from `ports`.
 ///
 /// It reads and writes through `ports`' storage traits only, so a ports type that wraps a
 /// [`DocumentStorage`] and a [`ScriptStorage`] meets the obligation over its own storage.
@@ -71,17 +70,6 @@ pub fn add_script_end<P: ScriptIdentity + DocumentStorage + ScriptStorage + ?Siz
         return Ok(AddScriptEndOutcome::AlreadyParsed {
             error: DocumentStateConflict {
                 state: DocumentState::Parsed,
-            },
-        });
-    }
-    let taken = ScriptStorage::list(ports).into_iter().any(|held| {
-        held.data.document_id == input.document_id && held.data.position == input.position
-    });
-    if taken {
-        return Ok(AddScriptEndOutcome::PositionTaken {
-            error: ScriptPositionTaken {
-                document_id: input.document_id,
-                position: input.position,
             },
         });
     }

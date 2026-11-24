@@ -514,8 +514,8 @@ storage!(RequestStorage for NetPorts, requests: RequestSnapshot, RequestId);
 ///
 /// It also meets the three obligations the generation leaves to it: `Check` and `SelectOption`,
 /// which change other rows beside their subject (`affects:`), and `AddScriptEnd`
-/// ([`crate::add_script_end`]), whose `position-taken` refusal reads the document's other
-/// records.
+/// ([`crate::add_script_end`]), whose `invalid-end` refusal reads the count of a message's
+/// characters.
 #[derive(Debug)]
 pub struct DocumentPorts<R = OsRandom> {
     documents: Rows<DocumentSnapshot>,
