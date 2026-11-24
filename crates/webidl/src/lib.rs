@@ -74,8 +74,8 @@ mod parser;
 pub use extract::extract_index;
 pub use model::{
     Argument, ConstValue, Counts, DefaultValue, Definition, DefinitionKind, DictionaryMember,
-    ExtendedAttribute, ExtendedAttributeValue, IntegerSize, Member, MemberKind, Model, Type,
-    TypeKind, Unresolved,
+    ExtendedAttribute, ExtendedAttributeValue, IntegerSize, Member, MemberKind, Model, Reference,
+    Type, TypeKind, Unresolved,
 };
 pub use parser::MAX_TYPE_DEPTH;
 

@@ -3,7 +3,7 @@
 
 use surf_webidl::{
     ADDED, Argument, ConstValue, DefaultValue, Definition, DefinitionKind, ExtendedAttributeValue,
-    IntegerSize, Member, MemberKind, Model, Type, TypeKind, read,
+    IntegerSize, Member, MemberKind, Model, Reference, Type, TypeKind, read,
 };
 
 const FILE: &str = "test.idl";
@@ -105,7 +105,7 @@ fn definition_interface_inherits() {
     let definition = one("interface Node : EventTarget {};");
     assert!(matches!(
         definition.kind,
-        DefinitionKind::Interface { partial: false, inherits: Some(ref parent), .. } if parent == "EventTarget"
+        DefinitionKind::Interface { partial: false, inherits: Some(ref parent), .. } if parent.name == "EventTarget"
     ));
 }
 
@@ -142,7 +142,10 @@ fn definition_includes() {
     assert_eq!(
         definition.kind,
         DefinitionKind::Includes {
-            mixin: "Slottable".to_string()
+            mixin: Reference {
+                name: "Slottable".to_string(),
+                line: 1
+            }
         }
     );
 }
@@ -188,7 +191,10 @@ fn definition_dictionary() {
     let DefinitionKind::Dictionary { inherits, members } = definition.kind else {
         panic!("not a dictionary");
     };
-    assert_eq!(inherits.as_deref(), Some("Base"));
+    assert_eq!(
+        inherits.map(|parent| (parent.name, parent.line)),
+        Some(("Base".to_string(), 1))
+    );
     let summary: Vec<_> = members
         .iter()
         .map(|m| (m.name.as_str(), m.required, m.default.clone(), m.line))
@@ -632,6 +638,26 @@ fn added_allow_shared() {
         panic!("not a union");
     };
     assert_eq!(list[1].extended_attributes[0].name, "AllowShared");
+}
+
+#[test]
+fn unresolved_names_carry_the_line_they_are_written_on() {
+    let model = model(all(
+        "interface A\n  : Missing {\n};\ndictionary D\n\n  : Absent {};\nA\n  includes\n  Gone;\n",
+    ));
+    let lines: Vec<(String, usize)> = model
+        .unresolved()
+        .into_iter()
+        .map(|unresolved| (unresolved.name, unresolved.line))
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            ("Absent".to_string(), 6),
+            ("Gone".to_string(), 9),
+            ("Missing".to_string(), 2)
+        ]
+    );
 }
 
 /// One case per entry of [`ADDED`]: the entry and the function that tests it.

@@ -6,7 +6,8 @@ use std::collections::BTreeSet;
 use crate::lexer::{Kind, Token};
 use crate::model::{
     Argument, ConstValue, DefaultValue, Definition, DefinitionKind, DictionaryMember,
-    ExtendedAttribute, ExtendedAttributeValue, IntegerSize, Member, MemberKind, Type, TypeKind,
+    ExtendedAttribute, ExtendedAttributeValue, IntegerSize, Member, MemberKind, Reference, Type,
+    TypeKind,
 };
 use crate::{EXTENDED_ATTRIBUTES, ReadError};
 
@@ -335,8 +336,12 @@ impl Parser<'_> {
         } else if self.is(1, "includes") {
             let (name, _) = self.identifier("the name of an interface")?;
             self.expect("includes")?;
-            let (mixin, _) = self.identifier("the name of an interface mixin")?;
+            let (mixin, mixin_line) = self.identifier("the name of an interface mixin")?;
             self.expect(";")?;
+            let mixin = Reference {
+                name: mixin,
+                line: mixin_line,
+            };
             (name, DefinitionKind::Includes { mixin })
         } else {
             return self.unexpected("a definition");
@@ -350,9 +355,10 @@ impl Parser<'_> {
         })
     }
 
-    fn inheritance(&mut self) -> Result<Option<String>, ReadError> {
+    fn inheritance(&mut self) -> Result<Option<Reference>, ReadError> {
         if self.eat(":") {
-            Ok(Some(self.identifier("the name inherited from")?.0))
+            let (name, line) = self.identifier("the name inherited from")?;
+            Ok(Some(Reference { name, line }))
         } else {
             Ok(None)
         }

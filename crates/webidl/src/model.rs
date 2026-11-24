@@ -28,8 +28,8 @@ pub enum DefinitionKind {
     Interface {
         /// Whether it is a `partial interface`.
         partial: bool,
-        /// The interface it inherits from.
-        inherits: Option<String>,
+        /// The interface it inherits from, with the line its name is written on.
+        inherits: Option<Reference>,
         /// Its members.
         members: Vec<Member>,
     },
@@ -52,8 +52,8 @@ pub enum DefinitionKind {
     },
     /// `dictionary`, with its inheritance.
     Dictionary {
-        /// The dictionary it inherits from.
-        inherits: Option<String>,
+        /// The dictionary it inherits from, with the line its name is written on.
+        inherits: Option<Reference>,
         /// Its members.
         members: Vec<DictionaryMember>,
     },
@@ -69,8 +69,8 @@ pub enum DefinitionKind {
     },
     /// `<interface> includes <mixin>`; the interface is [`Definition::name`].
     Includes {
-        /// The mixin.
-        mixin: String,
+        /// The mixin, with the line its name is written on.
+        mixin: Reference,
     },
 }
 
@@ -297,6 +297,16 @@ pub struct Counts {
     pub constructor: bool,
 }
 
+/// A name a definition refers to (the one it inherits from, the mixin of `includes`) and the
+/// line it is written on.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Reference {
+    /// The name, a leading `_` removed.
+    pub name: String,
+    /// The line the name is written on.
+    pub line: usize,
+}
+
 /// A name a type, an inheritance or an `includes` names that no definition read defines.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Unresolved {
@@ -389,7 +399,9 @@ impl Model {
                         .iter()
                         .map(|member| (definition.file.as_str(), member)),
                 ),
-                DefinitionKind::Includes { mixin } => mixins.extend(self.mixin_members(mixin)),
+                DefinitionKind::Includes { mixin } => {
+                    mixins.extend(self.mixin_members(&mixin.name))
+                }
                 _ => {}
             }
         }
@@ -486,10 +498,10 @@ impl Model {
                 | DefinitionKind::Dictionary {
                     inherits: Some(parent),
                     ..
-                } => names.push((parent.clone(), definition.line)),
+                } => names.push((parent.name.clone(), parent.line)),
                 DefinitionKind::Includes { mixin } => {
                     names.push((definition.name.clone(), definition.line));
-                    names.push((mixin.clone(), definition.line));
+                    names.push((mixin.name.clone(), mixin.line));
                 }
                 _ => {}
             }

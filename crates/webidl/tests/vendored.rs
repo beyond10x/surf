@@ -53,7 +53,7 @@ fn includes(model: &Model, interface: &str) -> Vec<(String, usize)> {
         .iter()
         .filter(|definition| definition.name == interface)
         .filter_map(|definition| match &definition.kind {
-            DefinitionKind::Includes { mixin } => Some(mixin.clone()),
+            DefinitionKind::Includes { mixin } => Some(mixin.name.clone()),
             _ => None,
         })
         .map(|mixin| {
