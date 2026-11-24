@@ -1324,11 +1324,14 @@ fn forget(shared: &Shared, id: &str) {
     shared.changed.notify_all();
 }
 
-/// Kill a session that did not get listed, wait for its end and drop its entry.
-fn abandon(shared: &Shared, id: &str, process: &Process) {
+/// Kill a session that did not get listed, wait for its end and drop its entry. Its `note
+/// ended` line, when it had ended by a signal `surfd` did not send before the kill.
+fn abandon(shared: &Shared, id: &str, process: &Process) -> Option<Note> {
     process.kill();
     let _ = wait_end(shared, id, shared.kill_grace.max(KILL_GRACE));
+    let ended = ended_note_of(shared, id);
     forget(shared, id);
+    ended
 }
 
 /// Start a session process with its identity and socket path as its only arguments, and pass it
@@ -1342,8 +1345,9 @@ fn abandon(shared: &Shared, id: &str, process: &Process) {
 /// holds is the session's. Without both programs a session without scripts starts without
 /// them, and one with scripts is refused `scripts-unavailable`, with no process started; a
 /// start that ends by an exit before the session wrote a byte is answered so too
-/// ([`not_started`]). A session that dies by a signal of its own while it answers `open` adds
-/// its `note ended` line to the answer.
+/// ([`not_started`]). A session that dies by a signal `surfd` did not send from its start on,
+/// before its first byte or while it answers `open`, adds its `note ended` line to the answer
+/// ([`with_ended`]).
 fn open_session(shared: &Arc<Shared>, raw: &[u8], scripts: bool) -> wire::Answer {
     let id = match next_identity(shared) {
         Ok(id) => id,
@@ -1464,15 +1468,23 @@ fn open_session(shared: &Arc<Shared>, raw: &[u8], scripts: bool) -> wire::Answer
         Ok(Start::Ready) => {}
         Ok(Start::Nothing) => return not_started(shared, &id, &process, scripts),
         Ok(Start::Other) => {
-            abandon(shared, &id, &process);
-            return unreachable("the session ended or wrote another line before it reported ready");
+            let ended = abandon(shared, &id, &process);
+            return with_ended(
+                unreachable("the session ended or wrote another line before it reported ready"),
+                &id,
+                ended,
+            );
         }
         Err(_) => {
-            abandon(shared, &id, &process);
-            return unreachable(format!(
-                "the session did not report ready within {} seconds",
-                shared.ready_timeout.as_secs_f64()
-            ));
+            let ended = abandon(shared, &id, &process);
+            return with_ended(
+                unreachable(format!(
+                    "the session did not report ready within {} seconds",
+                    shared.ready_timeout.as_secs_f64()
+                )),
+                &id,
+                ended,
+            );
         }
     }
     match exchange(shared, &id, raw, after(shared.answer_timeout)) {
@@ -1521,9 +1533,8 @@ fn open_session(shared: &Arc<Shared>, raw: &[u8], scripts: bool) -> wire::Answer
             if matches!(failure, Failure::Gone) {
                 let _ = wait_end(shared, &id, shared.kill_grace);
             }
-            let ended = ended_note_of(shared, &id);
-            abandon(shared, &id, &process);
-            let mut answer = unreachable(match failure {
+            let ended = abandon(shared, &id, &process);
+            let answer = unreachable(match failure {
                 Failure::Timeout(_) => format!(
                     "the session did not answer open within {} seconds",
                     shared.answer_timeout.as_secs_f64()
@@ -1532,12 +1543,19 @@ fn open_session(shared: &Arc<Shared>, raw: &[u8], scripts: bool) -> wire::Answer
                     "the session ended or broke the link while it answered open".to_string()
                 }
             });
-            if let Some(ended) = ended {
-                answer.text = ended_answer(&id, State::Died, Some(ended)).text;
-            }
-            answer
+            with_ended(answer, &id, ended)
         }
     }
+}
+
+/// `answer` to an `open` whose session did not get listed; for a session that ended by a
+/// signal `surfd` did not send (`ended`), with the lines of a session that died so as its text:
+/// the head line `died`, `did refused session-died` and the `note ended` line.
+fn with_ended(mut answer: wire::Answer, id: &str, ended: Option<Note>) -> wire::Answer {
+    if let Some(ended) = ended {
+        answer.text = ended_answer(id, State::Died, Some(ended)).text;
+    }
+    answer
 }
 
 /// The answer to an `open` whose session process closed its standard output before it wrote a
@@ -1545,14 +1563,19 @@ fn open_session(shared: &Arc<Shared>, raw: &[u8], scripts: bool) -> wire::Answer
 /// a signal, it is answered as a missing program is: with `scripts` `did refused
 /// scripts-unavailable`, as a session with scripts runs only under both programs, and without
 /// them the reason `cannot start <program>: ...`. Any other end is answered as a session that
-/// ended before it reported ready.
+/// ended before it reported ready, with its `note ended` line when it ended by a signal `surfd`
+/// did not send ([`with_ended`]).
 fn not_started(shared: &Shared, id: &str, process: &Process, scripts: bool) -> wire::Answer {
-    let exited = wait_end(shared, id, shared.kill_grace).is_some()
-        && !process.killed.load(Ordering::SeqCst)
-        && ended_note_of(shared, id).is_none();
-    abandon(shared, id, process);
+    let ended = wait_end(shared, id, shared.kill_grace).is_some();
+    let exited =
+        ended && ended_note_of(shared, id).is_none() && !process.killed.load(Ordering::SeqCst);
+    let note = abandon(shared, id, process);
     if !exited {
-        return unreachable("the session ended or wrote another line before it reported ready");
+        return with_ended(
+            unreachable("the session ended or wrote another line before it reported ready"),
+            id,
+            note,
+        );
     }
     if scripts {
         return own(id, HeadState::Unknown, RefusalReason::ScriptsUnavailable);

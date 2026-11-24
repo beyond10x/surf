@@ -444,6 +444,41 @@ fn died_id(answer: &Answer) -> String {
         .to_string()
 }
 
+/// A session that dies by a signal before it wrote its first byte gets the answer it gets
+/// without the signal, status 3 and its reason, with the lines of a session that died that way,
+/// as one that dies while it answers `open`: the stand-in aborts before its `ready` line.
+fn a_session_that_aborts_before_its_first_byte(scripts: bool) {
+    let dir = TestDir::new();
+    dir.set("start-behaviour", "abort");
+    let daemon = start(config(&dir));
+    let answer = call(&dir, &open_request(scripts));
+    assert_eq!(answer.status, 3, "{answer:?}");
+    assert_eq!(
+        answer.reason.as_deref(),
+        Some("the session ended or wrote another line before it reported ready")
+    );
+    let id = died_id(&answer);
+    assert_eq!(
+        answer.text,
+        format!(
+            "{}note ended: signal SIGABRT\n",
+            refusal(&id, "died", "session-died")
+        )
+    );
+    assert!(daemon.sessions().is_empty());
+    assert_eq!(children_of(std::process::id()), [] as [u32; 0]);
+}
+
+#[test]
+fn a_session_with_scripts_that_aborts_before_its_first_byte_names_its_signal() {
+    a_session_that_aborts_before_its_first_byte(true);
+}
+
+#[test]
+fn a_session_without_scripts_that_aborts_before_its_first_byte_names_its_signal() {
+    a_session_that_aborts_before_its_first_byte(false);
+}
+
 /// A session that dies by a signal while it answers `open` gets the answer it gets without the
 /// signal, status 3 and its reason, with the lines of a session that died that way: here a
 /// session with scripts that aborts before it writes its `open` answer.

@@ -486,10 +486,11 @@ note adds it here:
   a session `surfd` started with its CPU time bound (a session with scripts); a session
   without that bound that ended by `SIGXCPU` reads `note ended: signal SIGXCPU`, and
   `SIGXFSZ` reads as any other signal. The line still cannot tell who sent the signal: a
-  `SIGXCPU` another process sent to a session with the bound reads `bound cpu` too. A session
-  that dies by a signal while it answers `open` is answered as an `open` whose session ended
-  while it answered (status 3 and a reason), with these lines as its text: the head line
-  `died`, `did refused session-died` and the `note ended` line. A session that ended with an
+  `SIGXCPU` another process sent to a session with the bound reads `bound cpu` too. The line
+  is written from the session's start on: a session that dies by such a signal before it
+  wrote its first byte or while it answers `open` is answered as an `open` whose session ended
+  before it reported ready or while it answered (status 3 and a reason), with these lines as
+  its text: the head line `died`, `did refused session-died` and the `note ended` line. A session that ended with an
   exit status and no signal has no `note ended` line, and neither has one `surfd` killed
   itself: after the late read of a timed-out answer (the command that waited was answered
   `did refused session-timeout`), at the end of `surfd`, when the session did not end within

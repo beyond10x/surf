@@ -14,6 +14,7 @@
 //! `TestDir`) and starts itself again in place, with `STAND_IN_DIR` set to it, so that the tests
 //! find it by its environment as before.
 //!
+//! - `start-behaviour`: `abort` calls `std::process::abort` before it writes a byte.
 //! - `ready`: `never` writes no `ready` line.
 //! - `open-status`: `1` or `2` answers `open` with that status (default `0`).
 //! - `open-behaviour`, while it answers `open`, before it writes the answer: `abort` calls
@@ -132,6 +133,9 @@ fn main() {
             }
         }
     });
+    if setting(&control, "start-behaviour").as_deref() == Some("abort") {
+        std::process::abort();
+    }
     if setting(&control, "ready").as_deref() == Some("never") {
         loop {
             thread::park();
