@@ -7,7 +7,7 @@ title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, in the session process, against a DOM generated from Web IDL and under limits per page, when the session's option asks for it, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 44
+revision: 45
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:34:03Z", actor: "human:operator", revision: 43}
 - {from: "proposed", to: "active", at: "2026-11-24T10:34:09Z", actor: "human:operator", revision: 44}
@@ -909,7 +909,9 @@ Where the stories differ from "Candidate stories, in dependency order":
   and `scripts-document-port` measure them again.
 - Each story changes the public numbers it makes false (`README.md`, `docs/badges`, the gate
   block's copy in `website/docs/how-it-is-built.md`) in its last commit, after it merged `main`,
-  from one gate log. These three paths are not in the stories' recorded scope: two units built at
+  from one gate log. `website/docs/status.md` and `website/docs/what-works.md` carry the test
+  count too and are changed the same way; a story records them as scope only where it changes
+  another sentence of theirs. These three paths are not in the stories' recorded scope: two units built at
   once both change them, and the unit merged second repeats its numbers commit, as the cookie jar
   and the agent definition units did on 2026-11-24.
 

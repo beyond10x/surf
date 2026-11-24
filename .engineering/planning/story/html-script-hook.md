@@ -25,7 +25,7 @@ scope:
   path: crates/html/tests/script_hook.rs
 - confidence: cited
   path: docs/design/html-parser.md
-revision: 13
+revision: 14
 ---
 ## Context
 
@@ -46,11 +46,11 @@ passed` on `main` of 2026-11-24.
 ## Decisions taken
 
 1. The hook has the signature the note's Q2 gives, with two calls: one to run a script element,
-   and one that reports a script element it does not run, with the reason word of Q1 (`src`,
-   `module`, `nomodule`, another type, inside `template` contents, and the others Q1 names). The
-   tree builder calls one of the two for every parser-inserted `script` end tag while scripting
-   is enabled, so `story:scripts-parse-run` can turn every skipped element into an end `not run`
-   with its reason.
+   and one that reports a script element it does not run, with its reason word. The words are
+   those of Q1's line `reasons:`, the closed list the note fixes (`src`, `module` and `nomodule`
+   among them); this story invents none. The tree builder calls one of the two for every
+   parser-inserted `script` end tag while scripting is enabled, so `story:scripts-parse-run` can
+   turn every skipped element into an end `not run: <word>`.
 2. A parse without a hook, or with scripting disabled, is the parse of today: no call is made,
    and the tree is the same.
 
@@ -60,9 +60,20 @@ passed` on `main` of 2026-11-24.
   called after the steps Q2 marks "taken"; parsing goes on with its stack of open elements and
   list of active formatting elements over the tree the hook left, including elements the hook
   removed or moved, as Q2 says.
-- `crates/html/src/tree.rs`: a public write surface for the DOM (create a node, insert before,
-  append, remove, replace, set and remove an attribute, set text and data), each admitted against
-  the parser's limits and answering the `Limit` it reached instead of writing.
+- `crates/html/src/tree.rs`: the whole public write surface the DOM slices need, so that this
+  file stays this story's alone: create an element, a text node, a comment, a processing
+  instruction and a document fragment; insert before, append, remove, replace, and move a node
+  (`moveBefore`, keeping the node); insert a document fragment's children; clone a node, shallow
+  or deep (`cloneNode`, and `importNode`, which in the one document of a parse clones);
+  adopt a node (`adoptNode`, which in that document removes it from its parent); normalize a
+  subtree (merge adjacent text nodes, drop empty ones); split a text node at an offset
+  (`splitText`); set a character data's text and replace a range of it (`data`, `appendData`,
+  `insertData`, `deleteData`, `replaceData`); replace all children by one text node
+  (`textContent`); set, remove and toggle an attribute, with and without a namespace
+  (`setAttribute`, `setAttributeNS`, `removeAttribute`, `removeAttributeNS`,
+  `toggleAttribute`). Each is admitted against the parser's limits and answers the `Limit` it
+  reached instead of writing. A slice that finds an operation missing adds it to this file and
+  names it in its report.
 - `docs/design/html-parser.md`: item 9's sentences on the script hooks, and the line
   `tree-construction script-processing` (line 539) as Q2 leaves it.
 - `crates/html/tests/main.rs` and `crates/html/tests/script_hook.rs`: a module `script_hook` in
@@ -72,9 +83,10 @@ passed` on `main` of 2026-11-24.
 ## Acceptance
 
 1. A hook that records its calls sees, in document order, one run call per script element Q1
-   says runs and one skip call with its reason word for each row Q1 says is not run (`src`,
-   `type=module`, `nomodule`, another type, inside `template` contents), over a document holding
-   one element of each row; with scripting disabled it sees no call.
+   says runs and one skip call for each row Q1 says is not run, with that row's word of Q1's
+   line `reasons:` (`src`, `module`, `nomodule`, and the words of another type and of `template`
+   contents), over a document holding one element of each row; with scripting disabled it sees
+   no call.
 2. `no_op_hook_same_tree`: a set of documents written in the test (a script in head, in body, in
    a table, in `select`, in `template` contents, in foreign content, and one of each row of Q1),
    each parsed with scripting enabled once without a hook and once with a hook that does nothing,
@@ -84,18 +96,22 @@ passed` on `main` of 2026-11-24.
 4. A hook that removes an open ancestor of the script (`<div><script></script>x</div>`, the hook
    removes the `div`): the text `x` goes where Q2 says (the removed `div`, as the standard's
    stack of open elements keeps it), and the parse ends without a panic.
-5. Each public write over its limit (nodes, depth, attributes, stored bytes) answers that
-   `Limit` and leaves the tree unchanged.
+5. Each operation of the write surface in the Change has a named case, and each write over its
+   limit (nodes, depth, attributes, stored bytes) answers that `Limit` and leaves the tree
+   unchanged.
 6. `slot task html-conformance` prints `html-conformance: 9107 cases, 9095 run, 9095 passed`, the
    line of `main` (no case runs a hook); `git grep -n 'script-processing'
    docs/design/html-parser.md` shows the line as Q2 leaves it.
 7. `slot task check` exits 0; `git diff --stat` names only the files of the Change.
-8. Public surfaces: the story names every public surface its change makes false (a badge, a
-   `README.md` line, a website page, a count) and changes it in its last commit, every number
-   from the log of a gate run on its tip, which the coordinating agent orders. For this story,
-   lines on `main` at `29945f5` (2026-11-24): the test count of `README.md:11` and `:285-286` and `docs/badges/make.sh:38` with
-   `docs/badges/tests.svg`; the gate block of `README.md:584-625` and of
-   `website/docs/how-it-is-built.md:40-81`.
+8. Public surfaces: the story changes, in its last commit and after merging `main`, every
+   public surface its change makes false, each number taken from the `slot task check` log of
+   its tip. After that commit, `git grep -n -F -e '<old>' -- README.md website/docs docs/badges`
+   prints nothing for each old string below, as the story's base holds it (the strings and lines
+   given are those of `main` at `29945f5`, 2026-11-24); each new number equals the one in that log;
+   and the gate block, `README.md:584-625` and `website/docs/how-it-is-built.md:40-81`, holds that
+   log's lines. The old strings of this story: the test count `1976 passed` (`README.md:11`,
+   `docs/badges/make.sh:38`, `docs/badges/tests.svg`), `1,976` and `1,424, and 552`
+   (`README.md:285`, `website/docs/status.md:23`, `website/docs/what-works.md:17`).
 9. The folder's bounds hold: the test step ends within 120 s and no test runs over 60 s; no model
    call and no network request in a test; nothing expensive is made per test (each case parses a
    document of a few lines); no Python; no generator with a committed output is added; a build

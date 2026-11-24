@@ -29,6 +29,8 @@ scope:
   path: crates/agent/src
 - confidence: cited
   path: crates/agent/tests/drift.rs
+- confidence: inferred
+  path: crates/answer/src/lib.rs
 - confidence: cited
   path: crates/page/src/lib.rs
 - confidence: cited
@@ -55,7 +57,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 22
+revision: 24
 ---
 ## Context
 
@@ -132,7 +134,9 @@ only when the coordinating agent has named the tag, and moves the pin to it (one
 - `crates/agent/src/`, `cli/surf-agent.yaml`, `crates/agent/tests/drift.rs`: the client accepts
   the option and sends it in the `open` request; the `UNMAPPED:` marker and the `BINDING_ONLY`
   entry of `story:scripts-spec` go.
-- `docs/agent-answer.md`: what an answer prints of a script's end, if Q7 says it prints one.
+- `docs/agent-answer.md`, `crates/answer/src/lib.rs` and its tests: the line an answer prints of
+  a script's end, if Q7 says it prints one (the answer crate parses and renders every line of
+  that document, as `story:session-process-hardening` adds its line there).
 - `conformance/src/target.rs` and `conformance/tests/noticed.txt`: the target issues what the
   session issues; the list gets its new digest from `task conform-slow WRITE=1`.
 - `crates/surf-cli/tests/`: only tests.
@@ -156,12 +160,15 @@ only when the coordinating agent has named the tag, and moves the pin to it (one
    document.title = "one"` and page 2 runs `document.title = typeof x`; after `go` to page 2 its
    title is `undefined`.
 4. `noscript_scripted`: a page with `<noscript><p>Off</p></noscript>` in body shows `Off` in a
-   session without the option and follows the rule of Q3 in one with it (both sessions in one
-   test).
+   session without the option, and in one with it shows the text Q3 names for a `noscript`
+   element of a scripted document (Q3's sentence of `surf-page`'s hidden rule), held in the test
+   as a string (both sessions in one test).
 5. `surf <url>` on the page of example 1 prints `title <document-id> "Before"` (a test in
-   `crates/surf-cli/tests/`). If `story:runner-run` has merged on this story's base, `surf run`
-   over a page with a script runs no page script, shown by a test in `crates/surf-cli/tests/`; if
-   not, the report says so and `story:runner-run` keeps that case.
+   `crates/surf-cli/tests/`). `surf run`: either the test `surf_run_runs_no_script` in
+   `crates/surf-cli/tests/` exists and passes (a page with a script, the script's effect absent),
+   or on the story's base `git grep -n 'surf run' -- crates/surf-cli/src` prints nothing (the
+   usage line of `crates/surf-cli/src/main.rs:28` at `29945f5` names no `run`), and the report
+   names the case for `story:runner-run`.
 6. `slot task lock-check` passes with `surf-session` on the closed list; its case that `surf`
    depending on `surf-script` fails still passes; `git diff --stat` names neither
    `conformance/Cargo.toml` nor `conformance/Cargo.lock`.
@@ -171,18 +178,24 @@ only when the coordinating agent has named the tag, and moves the pin to it (one
    marker of `story:scripts-spec`; `sh taskfiles/conform-noticed.sh check` passes.
 9. `slot task lock-check` names swell by the tag the coordinating agent named on the record of
    `docs/design/scripts.md` Q13.
-10. Decision 3: the report gives the measured `VmHWM` and descriptor count of each page beside the
-    bound of Q11, with the probe.
+10. Decision 3: each page's `VmHWM` is below the address-space bound of Q11 and its descriptor
+    count below the open-files bound, or the story changes that bound in Q11 and in `Config` and
+    names the page that forced it; the report gives each value with its probe.
 11. `slot task check` exits 0; `git diff --stat` names only the files of the Change.
-12. Public surfaces: the story names every public surface its change makes false (a badge, a
-    `README.md` line, a website page, a count) and changes it in its last commit, every number
-    from the log of a gate run on its tip, which the coordinating agent orders. For this story,
-    lines on `main` at `29945f5` (2026-11-24): the sentences that surf has no JavaScript at
-    `README.md:31-34`, `:150`, `:230`, `website/docs/index.md:23-26`, `:30`, `:48`,
-    `website/docs/status.md:11`, `website/docs/what-works.md:281` and
-    `website/docs/drive-from-an-agent.md:309`; the test count of `README.md:11` and `:285-286`
-    and `docs/badges/make.sh:38` with `docs/badges/tests.svg`; the gate block of
-    `README.md:584-625` and of `website/docs/how-it-is-built.md:40-81`.
+12. Public surfaces: the story changes, in its last commit and after merging `main`, every
+    public surface its change makes false, each number taken from the `slot task check` log of
+    its tip. After that commit, `git grep -n -F -e '<old>' -- README.md website/docs docs/badges`
+    prints nothing for each old string below, as the story's base holds it (the strings and lines
+    given are those of `main` at `29945f5`, 2026-11-24); each new number equals the one in that
+    log; and the gate block, `README.md:584-625` and `website/docs/how-it-is-built.md:40-81`,
+    holds that log's lines. The old strings of this story: the sentences that surf runs
+    no script, `no JavaScript yet` (`README.md:31`, `:230`, `website/docs/index.md:23`,
+    `:30`, `:48`, `website/docs/status.md:11`), `runs no script today` (`README.md:34`,
+    `website/docs/index.md:26`), `No JavaScript and no rendering` (`README.md:150`),
+    `- No JavaScript.` (`website/docs/what-works.md:281`) and `No JavaScript, and no rendering`
+    (`website/docs/drive-from-an-agent.md:309`); the test count `1976 passed` (`README.md:11`,
+    `docs/badges/make.sh:38`, `docs/badges/tests.svg`), `1,976` and `1,424, and 552`
+    (`README.md:285`, `website/docs/status.md:23`, `website/docs/what-works.md:17`).
 13. The folder's bounds hold: the test step ends within 120 s and no test runs over 60 s; the test
     servers start in Rust on 127.0.0.1, so no request leaves the host; no model call; each case
     starts one session, nothing more per test; no Python, the probes of decision 3 included; no

@@ -29,7 +29,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 14
+revision: 15
 ---
 ## Context
 
@@ -78,15 +78,19 @@ passed`. The crate `surf-html-conformance` depends on `surf-html` only
    that a crate off the list depending on `surf-script` fails still passes.
 4. `slot task check` exits 0.
 5. `git diff --stat` names only the files of the Change.
-6. Public surfaces: the story names every public surface its change makes false (a badge, a
-   `README.md` line, a website page, a count) and changes it in its last commit, every number
-   from the log of a gate run on its tip, which the coordinating agent orders. For this story,
-   lines on `main` at `29945f5` (2026-11-24): the parser counts "9,095" at `README.md:508-510`,
-   `docs/design/html-parser.md:677` and `:731`, `website/docs/status.md:29` and
-   `website/docs/what-works.md:264-266`; the line `html-conformance: ...` of the gate block of
-   `README.md:584-625` (line 616) and of `website/docs/how-it-is-built.md:40-81` (line 72); the
-   test count of `README.md:11` and `:285-286` and `docs/badges/make.sh:38` with
-   `docs/badges/tests.svg`.
+6. Public surfaces: the story changes, in its last commit and after merging `main`, every
+   public surface its change makes false, each number taken from the `slot task check` log of
+   its tip. After that commit, `git grep -n -F -e '<old>' -- README.md website/docs docs/badges`
+   prints nothing for each old string below, as the story's base holds it (the strings and lines
+   given are those of `main` at `29945f5`, 2026-11-24); each new number equals the one in that log;
+   and the gate block, `README.md:584-625` and `website/docs/how-it-is-built.md:40-81`, holds that
+   log's lines. The old strings of this story: the parser counts, `9095 run` (`README.md:616`,
+   `website/docs/how-it-is-built.md:72`), `9,095 run` (`website/docs/status.md:29`),
+   `runs 9,095` and `9,095: 82` (`README.md:509-510`, `website/docs/what-works.md:265-266`)
+   and `1,967 tree construction` (`README.md:510`, `website/docs/status.md:29`,
+   `website/docs/what-works.md:266`); the test count `1976 passed` (`README.md:11`,
+   `docs/badges/make.sh:38`, `docs/badges/tests.svg`), `1,976` and `1,424, and 552`
+   (`README.md:285`, `website/docs/status.md:23`, `website/docs/what-works.md:17`).
 7. The folder's bounds hold: the test step and `task html-conformance` each end within 120 s and
    no test runs over 60 s; no model call and no network request; one agent per case for the four
    cases, nothing else added per case; no Python; no generator with a committed output is added;

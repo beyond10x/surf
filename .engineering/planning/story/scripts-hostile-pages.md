@@ -13,7 +13,7 @@ scope:
   path: crates/script/tests
 - confidence: cited
   path: crates/session/tests
-revision: 7
+revision: 8
 ---
 ## Context
 
@@ -39,32 +39,41 @@ This story adds tests only: every behaviour it shows is written by an earlier st
 ## Acceptance
 
 1. Each page ends with its limit recorded as the script's end and the page's other elements
-   present in the document's rows, one named case per page:
-   - an endless loop: the step limit per script;
-   - many small scripts (200 scripts of `for (let i = 0; i < 100000; i++) {}`): the step total
-     per document, the later scripts `not run`;
+   present in the document's rows, one named case per page, each end written with the note's word
+   (Q4's column `outcome when reached`, Q7's closed list; where the note spells a word otherwise
+   than this text, the note's spelling holds):
+   - an endless loop: `limit: steps-per-entry`;
+   - many small scripts (200 scripts of `for (let i = 0; i < 100000; i++) {}`):
+     `limit: steps-per-document`, the later scripts `not run: steps-per-document`;
    - a loop that the step limits do not end first (`while (true) {}` under step limits set high
-     for the case): the wall-clock bound alone;
-   - an endless allocation: memory, then no further script after the second (epic line 840);
-   - endless node creation: the node limit;
-   - a tree built deep by `appendChild`: the depth limit;
-   - deep recursion: `frame_depth`, ending `Threw` with `RangeError`;
-   - 10,000 script elements: scripts per document;
-   - an attribute over the limit: attributes, then stored bytes;
-   - a script over the source limit: `not run`, the reason named.
-2. `bound_with_script`: a scripted session under an address-space bound low enough for a page of
-   a few large allocations held by the host (strings appended to the tree) ends at that bound;
-   `surfd` lists it `died` with the signal or bound line of `story:session-process-hardening`,
-   keeps answering, and another session opened after it loads a page.
+     for the case): `limit: wall-clock`, the elapsed time under 10 s;
+   - an endless allocation, `{ const a = []; for (;;) a.push(new Array(1000)); }` twice:
+     `limit: memory` twice, then `not run: memory` (epic line 840);
+   - endless node creation: the node limit's `limit:` word;
+   - a tree built deep by `appendChild`: the depth limit's `limit:` word;
+   - deep recursion: `Threw` with `RangeError`;
+   - 10,000 script elements: `not run: scripts-per-document` from the limit on;
+   - an attribute over the limit: the attribute limit's `limit:` word, then the stored-byte
+     limit's;
+   - a script over the source limit: `not run: source-bytes`.
+2. `bound_with_script`: the test sets the address-space bound in `Config` to a constant of the
+   case, `AS_BOUND_MIB`, written as the `VmPeak` of a session without scripts on the same page
+   (measured once by a probe, the value and probe in the report) plus 64 MiB; a page of a few
+   large strings appended to the tree passes that bound; the session ends at it; `surfd` lists it
+   `died` with the `note` line of `story:session-process-hardening` acceptance 4 naming the
+   signal, keeps answering, and another session opened after it loads a page.
 3. `slot task check` exits 0.
 4. `git diff --stat` names only test files under `crates/session/tests/` and `crates/script/tests/`
    and the files of acceptance 5.
-5. Public surfaces: the story names every public surface its change makes false (a badge, a
-   `README.md` line, a website page, a count) and changes it in its last commit, every number
-   from the log of a gate run on its tip, which the coordinating agent orders. For this story,
-   lines on `main` at `29945f5` (2026-11-24): the test count of `README.md:11` and `:285-286` and
-   `docs/badges/make.sh:38` with `docs/badges/tests.svg`; the gate block of `README.md:584-625` and
-   of `website/docs/how-it-is-built.md:40-81`.
+5. Public surfaces: the story changes, in its last commit and after merging `main`, every
+   public surface its change makes false, each number taken from the `slot task check` log of
+   its tip. After that commit, `git grep -n -F -e '<old>' -- README.md website/docs docs/badges`
+   prints nothing for each old string below, as the story's base holds it (the strings and lines
+   given are those of `main` at `29945f5`, 2026-11-24); each new number equals the one in that log;
+   and the gate block, `README.md:584-625` and `website/docs/how-it-is-built.md:40-81`, holds that
+   log's lines. The old strings of this story: the test count `1976 passed` (`README.md:11`,
+   `docs/badges/make.sh:38`, `docs/badges/tests.svg`), `1,976` and `1,424, and 552`
+   (`README.md:285`, `website/docs/status.md:23`, `website/docs/what-works.md:17`).
 6. The folder's bounds hold: the test step ends within 120 s and no test runs over 60 s; every
    case here ends within 5 s, its time in the report; the servers start in Rust on 127.0.0.1; no
    model call; one session per case; no Python; no generator with a committed output is added; a

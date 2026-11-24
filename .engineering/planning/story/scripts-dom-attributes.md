@@ -14,7 +14,7 @@ scope:
   path: crates/script/src/dom/attributes.rs
 - confidence: cited
   path: crates/script/tests/dom_attributes.rs
-revision: 11
+revision: 12
 ---
 ## Context
 
@@ -30,6 +30,11 @@ none of the returned interfaces (the 7 attribute operations of `ProcessingInstru
 `throws`), with the deviation that `TrustedType` is read as `DOMString` on `setAttribute` and
 `setAttributeNS`. Every trait method answers `DomResult`, whose `DomEnd::Limit` ends the script
 with the parser limit it reached (decision 9 of that story).
+The write surface is `story:html-script-hook`'s, in `crates/html/src/tree.rs`, which stays that
+story's: if this story finds an operation it needs missing there (the namespaced operations and
+`toggleAttribute` are on its list), it adds it to that file and names it in its report. The end
+words are the note's (Q4's column `outcome when reached`, Q7's closed list of ends); where the
+note spells a word otherwise than this text, the note's spelling holds.
 
 ## Change
 
@@ -47,20 +52,23 @@ with the parser limit it reached (decision 9 of that story).
    script with what the DOM Standard says, and each exception case named by its exception; a test
    asserts that the set of case names equals the rows of `selection.txt` with the slice
    `attributes`: 14.
-2. `setAttribute` past the attribute limit, and past the stored-byte limit, ends the script with
-   the end `limit: attributes` (then `limit: stored-bytes`), also inside `try { ... } catch {}`,
-   and the element keeps its attributes.
+2. `setAttribute` past the attribute limit, and past the stored-byte limit, ends the script
+   `limit: <the attribute limit's word in Q4>` (then `limit: <the stored-byte limit's word in
+   Q4>`), also inside `try { ... } catch {}`, and the element keeps its attributes.
 3. `a.setAttribute("href", "/next")` on an `a` of a parsed tree: the element's attribute in the
    `surf-html` tree reads `/next`; `a.setAttribute("x", { toString() { return "y" } })` sets `y`
    (the `TrustedType` deviation).
 4. A member of another slice still throws `NotSupportedError` naming the member.
 5. `slot task check` exits 0; `git diff --stat` names only the files of the Change.
-6. Public surfaces: the story names every public surface its change makes false (a badge, a
-   `README.md` line, a website page, a count) and changes it in its last commit, every number
-   from the log of a gate run on its tip, which the coordinating agent orders. For this story,
-   lines on `main` at `29945f5` (2026-11-24): the test count of `README.md:11` and `:285-286` and `docs/badges/make.sh:38` with
-   `docs/badges/tests.svg`; the gate block of `README.md:584-625` and of
-   `website/docs/how-it-is-built.md:40-81`.
+6. Public surfaces: the story changes, in its last commit and after merging `main`, every
+   public surface its change makes false, each number taken from the `slot task check` log of
+   its tip. After that commit, `git grep -n -F -e '<old>' -- README.md website/docs docs/badges`
+   prints nothing for each old string below, as the story's base holds it (the strings and lines
+   given are those of `main` at `29945f5`, 2026-11-24); each new number equals the one in that log;
+   and the gate block, `README.md:584-625` and `website/docs/how-it-is-built.md:40-81`, holds that
+   log's lines. The old strings of this story: the test count `1976 passed` (`README.md:11`,
+   `docs/badges/make.sh:38`, `docs/badges/tests.svg`), `1,976` and `1,424, and 552`
+   (`README.md:285`, `website/docs/status.md:23`, `website/docs/what-works.md:17`).
 7. The folder's bounds hold: the test step ends within 120 s and no test runs over 60 s; no model
    call and no network request in a test; each case parses a few lines and makes one realm; no
    Python; no generator with a committed output is added; a build or test job in the pool ends

@@ -36,7 +36,7 @@ scope:
   path: crates/webidl/tests
 - confidence: cited
   path: taskfiles/webidl.yml
-revision: 17
+revision: 18
 ---
 ## Context
 
@@ -64,10 +64,10 @@ members (`target` and seven attribute operations), where the epic counts 1 and n
 
 `surf-html` (`crates/html`) exports `Tree` and `NodeId` (`crates/html/src/lib.rs:172`) and the
 parser limits as `surf_html::limits::Limit` (`crates/html/src/limits.rs:76-89`: `InputBytes`,
-`Depth`, `Nodes`, `Attributes`, `StoredBytes`, `Steps`). swell `0.8.0` ends an entry
-`Terminated(Interrupted)` once its `InterruptHandle` is set (`crates/swell/src/host/
-interrupt.rs:1-30` at the tag), and a host function returns `Completion<T>`, a value or an
-`Abrupt` (`crates/swell/src/host/outcome.rs:41-48`).
+`Depth`, `Nodes`, `Attributes`, `StoredBytes`, `Steps`). swell ends an entry
+`Terminated(Interrupted)` once its `InterruptHandle` is set, and clears the flag itself when it
+ends the entry so (`crates/swell/src/host/interrupt.rs:1-5 @ 0.8.0`); a host function returns
+`Completion<T>`, a value or an `Abrupt` (`crates/swell/src/host/outcome.rs:41-48 @ 0.8.0`).
 
 Conditions on swell, named and not known today: the tag pinned holds requirement 8
 (`Cx::set_prototype_of`), 9 (the closed lists of intrinsics and well-known symbols, with
@@ -136,12 +136,18 @@ moving the tag is one line of `crates/script/Cargo.toml`, the lock and the allow
    `story:scripts-dom-reading` writes the real one in `wrapper.rs`.
 9. The result of a write over a limit. Every trait method returns `DomResult<T> = Result<T,
    DomEnd>`, `DomEnd` being `Throw(DomException)` (thrown to the script as a `DOMException` of
-   that name) or `Limit(surf_html::limits::Limit)`. On `Limit` the generated glue changes nothing
-   in the tree, records the limit in `DomCx`, sets the interrupt handle and returns a throw, so
-   the entry ends `Terminated(Interrupted)` at swell's next check, even under a `catch`; the
-   runner reports the end as "ended by a limit" with that limit, not as an interrupt.
+   that name) or `Limit(surf_html::limits::Limit)`. On `Limit` the generated glue, one public
+   function `end_with_limit(cx, limit)`, changes nothing in the tree, records the limit in
+   `DomCx`, sets the interrupt handle and returns a throw, so the entry ends
+   `Terminated(Interrupted)` at swell's next check, even under a `catch`.
    `story:scripts-dom-mutation` and `story:scripts-dom-attributes` both use it.
-10. `crates/script` gains the dependency `surf-html` by path (the context type names its types).
+10. The runner of `story:scripts-engine-dependency` knows nothing of `DomCx`, so this story extends
+    it in `crates/script/src/lib.rs` with one rule: when an entry of a document ends
+    `Terminated(Interrupted)`, a limit recorded in `DomCx` is the end (`limit: <that limit's word
+    in Q4's column>`) and the record is cleared; otherwise the end is `limit: wall-clock`. The
+    end words are the note's (Q4's column, Q7's closed list); where the note spells a word
+    otherwise than this text, the note's spelling holds.
+11. `crates/script` gains the dependency `surf-html` by path (the context type names its types).
 
 ## Change
 
@@ -165,8 +171,9 @@ moving the tag is one line of `crates/script/Cargo.toml`, the lock and the allow
 - `crates/script/src/bindings.rs` (generated): its header names the sha256 of each source (the
   vendored files, the selection, the generator's sources) and carries the WHATWG BSD 3-Clause
   notice as `crates/html/src/charref_table.rs:1-31` does.
-- `crates/script/Cargo.toml`, `Cargo.lock`: decision 10.
-- `crates/script/src/lib.rs`, `crates/script/src/dom/mod.rs` and one file per slice
+- `crates/script/Cargo.toml`, `Cargo.lock`: decision 11.
+- `crates/script/src/lib.rs`: the rule of decision 10 over the runner;
+  `crates/script/src/dom/mod.rs` and one file per slice
   (`reading.rs`, `attributes.rs`, `mutation.rs`, `selectors.rs`), each with an empty `impl` of
   its trait, and `wrapper.rs` with the `Wrap` of decision 8, so every member throws its
   `NotSupportedError` until its slice; the realm's setup defines the interface objects and the
@@ -214,17 +221,23 @@ moving the tag is one line of `crates/script/Cargo.toml`, the lock and the allow
 9. `trusted_type_as_domstring`: with a test implementation of the `attributes` trait,
    `el.setAttribute("a", { toString() { return "x" } })` hands the trait the string `x`; a
    `limit_end` case with a test implementation of `mutation` that answers
-   `DomEnd::Limit(Nodes)` ends the script with that limit, `try { ... } catch {}` around the call
-   included, and the tree unchanged.
+   `DomEnd::Limit(Nodes)` ends the script `limit: <the node limit's word in Q4>`,
+   `try { ... } catch {}` around the call included, and the tree unchanged; a
+   `wall_clock_without_record` case ends `while (true) {}` under a wall-clock bound of 100 ms
+   `limit: wall-clock`, the elapsed time under 10 s; and a script `1` after the `limit_end`
+   script ends `Ran`, the record cleared.
 10. The generator is timed before and after each source it gains (the HTML file, each interface
     added to the selection), both times in the report; a run over twice its time before the
     source was added is a defect fixed in this story.
-11. Public surfaces: the story names every public surface its change makes false (a badge, a
-    `README.md` line, a website page, a count) and changes it in its last commit, every number
-    from the log of a gate run on its tip, which the coordinating agent orders. For this story,
-    lines on `main` at `29945f5` (2026-11-24): the test count of `README.md:11` and `:285-286` and `docs/badges/make.sh:38` with
-    `docs/badges/tests.svg`; the gate block of `README.md:584-625` and of
-    `website/docs/how-it-is-built.md:40-81`.
+11. Public surfaces: the story changes, in its last commit and after merging `main`, every
+    public surface its change makes false, each number taken from the `slot task check` log of
+    its tip. After that commit, `git grep -n -F -e '<old>' -- README.md website/docs docs/badges`
+    prints nothing for each old string below, as the story's base holds it (the strings and lines
+    given are those of `main` at `29945f5`, 2026-11-24); each new number equals the one in that log;
+    and the gate block, `README.md:584-625` and `website/docs/how-it-is-built.md:40-81`, holds that
+    log's lines. The old strings of this story: the test count `1976 passed` (`README.md:11`,
+    `docs/badges/make.sh:38`, `docs/badges/tests.svg`), `1,976` and `1,424, and 552`
+    (`README.md:285`, `website/docs/status.md:23`, `website/docs/what-works.md:17`).
 12. `slot task check` exits 0; `git diff --stat` names only the files of the Change.
 13. The folder's bounds hold: the test step ends within 120 s and no test runs over 60 s; no model
     call and no network request in a test; the bindings are generated once, committed, and read

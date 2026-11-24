@@ -4,7 +4,7 @@ id: story:scripts-engine-dependency
 kind: story
 status: draft
 title: surf depends on swell by a release tag, lock-check allows exactly that source, and surf-script runs an agent under surf's limits
-summary: A git dependency on the tag the note names; the allow-list, its rule per package, and a closed list of crates that may depend on surf-script; overflow checks enforced by lock-check; NOTICE and the Goals sentence; surf-script evaluates a source with no DOM under the step, memory, frame-depth and wall-clock limits, HOST-17, 152 and 163 tested in surf's profile.
+summary: A git dependency on the tag the note names; the allow-list, its rule per package, and a closed list of crates that may depend on surf-script; overflow checks enforced by lock-check; NOTICE and the Goals sentence; surf-script evaluates a source with no DOM under the step, memory, frame-depth and wall-clock limits, with the clock, seed, time-zone and compile-strings hooks of Q4 and Q6, HOST-17, 152 and 163 tested in surf's profile.
 relations:
 - decomposes: epic:scripts-in-a-page
 - depends_on: story:scripts-decisions
@@ -37,7 +37,7 @@ scope:
   path: taskfiles/lock-check.sh
 - confidence: cited
   path: website/docs/principles.md
-revision: 16
+revision: 18
 ---
 ## Context
 
@@ -65,16 +65,31 @@ The tree on `main` of 2026-11-24, which wins where the epic differs:
 - `NOTICE` exists and every release archive carries it (`.github/workflows/release.yml:207`,
   `notices=(README.md LICENSE NOTICE)`).
 - swell `0.8.0` (2026-11-24, commit `0c1827128b57845e203713e87a0b0949fc8d63be`, the newest
-  release): its root `Cargo.lock` lists 8 packages, none with a `source` line; `swell` depends by
+  release): its root `Cargo.lock` lists 8 packages (`git show 0.8.0:Cargo.lock | grep -c
+  '^\[\[package\]\]'` prints 8), none with a `source` line; `swell` depends by
   path on `swell-compiler`, `swell-num`, `swell-regexp`, `swell-syntax` and `swell-unicode`
-  (`crates/swell/Cargo.toml`), six packages for a host where the epic counts five; its root
-  `Cargo.toml` sets `overflow-checks = true` in the profiles dev, release, test and bench; it has
-  a `NOTICE` ("swell / Copyright 2026 beyond10x"). An entry ends `Normal`, `Throw` or
+  (`crates/swell/Cargo.toml:13-17 @ 0.8.0`), six packages for a host where the epic counts five;
+  its root `Cargo.toml` sets `overflow-checks = true` in the profiles dev, release, test and bench
+  (`Cargo.toml:10-20 @ 0.8.0`); its `NOTICE` reads "swell / Copyright 2026 beyond10x"
+  (`NOTICE:1-2 @ 0.8.0`). An entry ends `Normal`, `Throw` or
   `Terminated(StepBudget | MemoryBudget | Interrupted | EngineFault)`
-  (`crates/swell/src/host/outcome.rs:12-28` at `0.8.0`); a call past `frame_depth` throws a
-  `RangeError` with the message `frame_depth exceeded` (`crates/swell/src/interp/budget.rs:45`);
-  a parse error is `Parsed::Errors` with `SyntaxError` objects (`outcome.rs:32-36`). Read with
-  `git show 0.8.0:<path>` in a clone of `https://github.com/beyond10x/swell`.
+  (`crates/swell/src/host/outcome.rs:12-28 @ 0.8.0`); a call past `frame_depth` throws a
+  `RangeError` with the message `frame_depth exceeded`
+  (`crates/swell/src/interp/budget.rs:45 @ 0.8.0`); a parse error is `Parsed::Errors` with
+  `SyntaxError` objects (`crates/swell/src/host/outcome.rs:32-36 @ 0.8.0`). `let` and `const` are
+  in the language at the tag (`CHANGELOG.md:409-410 @ 0.8.0`,
+  `crates/swell/tests/lexical_declarations.rs:1-3 @ 0.8.0`),
+  and a script's top-level `let` binding stays in the global record, so the same `let` script run
+  twice in one agent throws a `SyntaxError` (HOST-156,
+  `crates/swell/tests/lexical_declarations.rs:38 @ 0.8.0`); the scripts below that run twice keep
+  their bindings in a block. The host hooks the note decides in Q4 and Q6:
+  `host_ensure_can_compile_strings` (`crates/swell/src/host/hooks.rs:176 @ 0.8.0`), the clock
+  `host_system_utc_epoch_nanoseconds` (`crates/swell/src/host/hooks.rs:308 @ 0.8.0`), the time
+  zone `system_time_zone_identifier` (`crates/swell/src/host/hooks.rs:310-312 @ 0.8.0`, "UTC" by
+  default) and the seeds `Seeds { hash_key, random_seed }` given to `Agent::new`
+  (`crates/swell/src/host/limits.rs:100-106 @ 0.8.0`); HOST-125 to HOST-128 are `pending slice 4`
+  (`conformance/host/requirements.txt:125-128 @ 0.8.0`). Read with `git show 0.8.0:<path>` in a
+  clone of `https://github.com/beyond10x/swell`.
 
 ## Waits for the note
 
@@ -86,8 +101,10 @@ The tree on `main` of 2026-11-24, which wins where the epic differs:
   of the closed list of crates that may depend on `surf-script`;
 - waits for the note: Q14, that `surf-script` alone depends on swell and that the closed list is
   empty when this story lands;
-- waits for the note: Q4 and Q5, surf's starting limits and the stack size the runner's thread
-  gets, measured in surf's profiles;
+- waits for the note: Q4 and Q5, surf's starting limits, whether `eval` and `Function` are
+  refused, and the stack size the runner's thread gets, measured in surf's profiles;
+- waits for the note: Q6, the clock, the seeds and the time zone, each with what it answers in a
+  session and in a test;
 - waits for the note: Q17, the citation for profiles read from the root workspace only, and for
   section 4(d) of Apache-2.0.
 
@@ -127,6 +144,15 @@ The tree on `main` of 2026-11-24, which wins where the epic differs:
    test profile in the gate; the engine shows its own release profile, and surf tests its own
    profile (epic line 824). A run of the same three in surf's release profile is recorded in the
    report, outside the gate.
+8. The host hooks the note decides, each in the runner's `Host`: the clock answers a value that
+   advances between two calls (in a test, by a fixed step per call), the seeds come from Q6's
+   source in a session and are fixed in a test, the time zone is Q6's, and
+   `host_ensure_can_compile_strings` refuses `eval` and `Function` where Q4 says so. A hook whose
+   HOST id the tag lists as pending keeps its case, `#[ignore = "HOST-<id>"]`, named in the
+   report.
+9. The end words are the note's: Q4's column `outcome when reached` and Q7's closed list of ends.
+   This story invents none; where the note spells a word otherwise than this text, the note's
+   spelling holds.
 
 ## Change
 
@@ -135,7 +161,7 @@ The tree on `main` of 2026-11-24, which wins where the epic differs:
   "https://github.com/beyond10x/swell", tag = "<tag>" }`, no feature turned on, neither
   `collect-every-safe-point` nor `fault-injection`; `autotests = false` and one `[[test]]` `main`),
   `crates/script/src/lib.rs` (`#![forbid(unsafe_code)]`) and `crates/script/src/runner.rs`:
-  decision 5.
+  decisions 5, 8 and 9.
 - `crates/script/tests/main.rs` and `crates/script/tests/engine.rs`: decision 6 and 7.
 - `Cargo.lock`: the swell packages with their `source` lines, and `surf-script`.
 - `taskfiles/lock-allow.txt`, `taskfiles/lock-check.sh` (its head states the new line form, the
@@ -165,25 +191,35 @@ The tree on `main` of 2026-11-24, which wins where the epic differs:
    - `ran`: `1 + 1` ends `Ran`;
    - `threw`: `throw new Error("x")` ends `Threw` with kind `Error` and message `x`;
    - `refused`: `1 +;` ends `Refused` with kind `SyntaxError`, the message equal to a constant of
-     the test that cites the `file:line` of that message in swell at the tag;
-   - `step_limit`: `while (true) {}` ends with the step limit, and the runner then runs `1` to
-     `Ran`;
+     the test that cites that message as `<path>:<line> @ <tag>`;
+   - `step_limit`: `while (true) {}` ends `limit: steps-per-entry`, and the
+     runner then runs `1` to `Ran`;
    - `memory_limit`: under a memory limit of 1 MiB and a step limit large enough not to end it
-     first, `let a = []; for (;;) a.push(new Array(1000));` ends with `Terminated(MemoryBudget)`;
-     the runner calls `collect()` once and runs `1` to `Ran`; the same script again ends with the
-     memory limit, and a further `1` ends `not run` with the reason of the memory limit;
+     first, `{ const a = []; for (;;) a.push(new Array(1000)); }` ends `limit: memory`; the runner
+     calls `collect()` once and runs `1` to `Ran`; the same script again ends `limit: memory`, and
+     a further `1` ends `not run: memory`;
    - `frame_depth`: `function f(n) { return 1 + f(n + 1); } f(0)` ends `Threw` with kind
-     `RangeError` and message `frame_depth exceeded` (at `0.8.0`; the constant cites the tag's
-     `file:line`);
+     `RangeError` and message `frame_depth exceeded` (the constant cites
+     `crates/swell/src/interp/budget.rs:45 @ 0.8.0`);
    - `wall_clock`: under a wall-clock bound of 100 ms, `while (true) {}` with a step limit that
-     does not end it first ends `Interrupted` within 1 s;
+     does not end it first ends `limit: wall-clock`, the elapsed time under 10 s;
    - `totals`: the runner's step total and script count rise with each script;
+   - `clock_advances`: `var a = Date.now(); var b = Date.now(); b - a` answers the test clock's
+     step in milliseconds;
+   - `seeds_fixed`: `Math.random()` answers the same number in two runners made with the test
+     seeds, and another number in a runner made with other seeds;
+   - `time_zone`: `new Date(0).getTimezoneOffset()` answers the offset of Q6's time zone (0 for
+     UTC);
+   - `compile_strings`: `eval("1")` and `Function("return 1")()` each end as Q4 says: `Threw`
+     with kind `EvalError` where Q4 refuses them, `Ran` with the value 1 where it does not;
    - `host_17_reentry_at_full_nesting`, `host_152_eval_at_full_nesting`,
      `host_163_call_at_full_nesting`: the three cases of swell's `crates/swell/tests` at the tag
-     (`host_17_deepest_reentry_parses_at_full_nesting`, `limits_scripts.rs:126`;
-     `host_152_deepest_reentry_evals_at_full_nesting`, `eval_stack.rs:173`;
+     (`host_17_deepest_reentry_parses_at_full_nesting`,
+     `crates/swell/tests/limits_scripts.rs:126 @ 0.8.0`;
+     `host_152_deepest_reentry_evals_at_full_nesting`,
+     `crates/swell/tests/eval_stack.rs:173 @ 0.8.0`;
      `host_163_deepest_reentry_calls_function_with_parameters_and_body_at_full_nesting`,
-     `eval_stack.rs:201`; all at `0.8.0`), run with
+     `crates/swell/tests/eval_stack.rs:201 @ 0.8.0`), run with
      surf's limits on the runner's thread with the stack of Q5, each ending without a crash.
    Each test under 5 s.
 4. Recorded in the report, outside the gate: the three cases of acceptance 3's last item pass in
@@ -201,16 +237,21 @@ The tree on `main` of 2026-11-24, which wins where the epic differs:
    committed output is added; a test over 5 s is named with its time. A build or test job in the
    pool ends within 10 minutes or names its time (`SLOT_TIMEOUT` for the first cold build of swell
    through the cargo shim, at most 30 minutes).
-9. Public surfaces: the story names every public surface its change makes false (a badge, a
-   `README.md` line, a website page, a count) and changes it in its last commit, every number
-   from the log of a gate run on its tip, which the coordinating agent orders. For this story,
-   lines on `main` at `29945f5` (2026-11-24): the dependencies badge (`docs/badges/make.sh:39`,
-   `docs/badges/dependencies.svg`); principle 4 of `README.md:246-254` and of
-   `website/docs/principles.md:18-25` ("19 of its 49 packages", ring the one exception);
-   `README.md:599` (the lock line of the gate) and `README.md:652-658`;
-   `website/docs/how-it-is-built.md:55` and `:107-112`; the test count of `README.md:11` and `:285-286` and
-   `docs/badges/make.sh:38` with `docs/badges/tests.svg`; the gate block of `README.md:584-625`
-   and of `website/docs/how-it-is-built.md:40-81`.
+9. Public surfaces: the story changes, in its last commit and after merging `main`, every
+   public surface its change makes false, each number taken from the `slot task check` log of
+   its tip. After that commit, `git grep -n -F -e '<old>' -- README.md website/docs docs/badges`
+   prints nothing for each old string below, as the story's base holds it (the strings and lines
+   given are those of `main` at `29945f5`, 2026-11-24); each new number equals the one in that
+   log; and the gate block, `README.md:584-625` and `website/docs/how-it-is-built.md:40-81`,
+   holds that log's lines. The old strings of this story: the lock and its exception,
+   `19 of its 49 packages` (`README.md:248`, `website/docs/principles.md:20`), `One exception`
+   (`README.md:249`, `website/docs/principles.md:21`), `50 package(s), 19 from outside`
+   (`README.md:599`, `website/docs/how-it-is-built.md:55`), `the 19 outside packages`
+   (`README.md:655`, `website/docs/how-it-is-built.md:109`) and `5: ring 0.17.14 and 4 it needs`
+   (`docs/badges/make.sh:39`, `docs/badges/dependencies.svg`); the test count
+   `1976 passed` (`README.md:11`, `docs/badges/make.sh:38`, `docs/badges/tests.svg`),
+   `1,976` and `1,424, and 552` (`README.md:285`, `website/docs/status.md:23`,
+   `website/docs/what-works.md:17`).
 
 ## Out of scope
 
@@ -227,6 +268,9 @@ orders the two gate runs), `story:scripts-spec`, `story:session-process-hardenin
 `story:conformance-lock-and-lints`, and `Taskfile.yml` by the active
 `story:test-step-holds-with-tls` and `story:agent-cookie-public-suffixes`: never in the same
 wave.
+`website/docs/principles.md` is also written by `story:scripts-spec`, which may run beside this
+story: this story rewrites principle 4 (lines 18-25 at `29945f5`), that story the scenario count
+of line 33; neither changes the other's lines, and the second to merge keeps the first's.
 
 ## Why `epic:scripts-in-a-page`
 

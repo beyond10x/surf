@@ -13,7 +13,7 @@ scope:
   path: crates/script/src/dom/selectors.rs
 - confidence: cited
   path: crates/script/tests/dom_selectors.rs
-revision: 11
+revision: 12
 ---
 ## Context
 
@@ -62,16 +62,20 @@ The coordinating agent moved the question of the subset here from `story:scripts
 3. `document.querySelector("table")` on the parsed document of each case of
    `crates/html-conformance/data/wpt/html/syntax/parsing/resources/scripted_foster01.dat` finds
    its `table`.
-4. A selector over a tree near the node limit ends within the step limit, the script's end naming
-   it, under 5 s.
+4. A selector over a tree near the node limit, matched in a loop, ends `limit: steps-per-entry`
+   under 5 s (the word Q4's column gives the row `steps_per_entry`; where the note spells it
+   otherwise, the note's spelling holds).
 5. `slot task check` exits 0; `git diff --stat` names only the files of the Change.
 6. A member of another slice still throws `NotSupportedError` naming the member.
-7. Public surfaces: the story names every public surface its change makes false (a badge, a
-   `README.md` line, a website page, a count) and changes it in its last commit, every number
-   from the log of a gate run on its tip, which the coordinating agent orders. For this story,
-   lines on `main` at `29945f5` (2026-11-24): the test count of `README.md:11` and `:285-286` and `docs/badges/make.sh:38` with
-   `docs/badges/tests.svg`; the gate block of `README.md:584-625` and of
-   `website/docs/how-it-is-built.md:40-81`.
+7. Public surfaces: the story changes, in its last commit and after merging `main`, every
+   public surface its change makes false, each number taken from the `slot task check` log of
+   its tip. After that commit, `git grep -n -F -e '<old>' -- README.md website/docs docs/badges`
+   prints nothing for each old string below, as the story's base holds it (the strings and lines
+   given are those of `main` at `29945f5`, 2026-11-24); each new number equals the one in that log;
+   and the gate block, `README.md:584-625` and `website/docs/how-it-is-built.md:40-81`, holds that
+   log's lines. The old strings of this story: the test count `1976 passed` (`README.md:11`,
+   `docs/badges/make.sh:38`, `docs/badges/tests.svg`), `1,976` and `1,424, and 552`
+   (`README.md:285`, `website/docs/status.md:23`, `website/docs/what-works.md:17`).
 8. The folder's bounds hold: the test step ends within 120 s and no test runs over 60 s; no model
    call and no network request in a test; each case parses a few lines and makes one realm; no
    Python; no generator with a committed output is added; a build or test job in the pool ends

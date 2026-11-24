@@ -15,7 +15,7 @@ scope:
   path: crates/script/src/dom/mutation.rs
 - confidence: cited
   path: crates/script/tests/dom_mutation.rs
-revision: 13
+revision: 14
 ---
 ## Context
 
@@ -32,8 +32,11 @@ of the returned interfaces, 46 member rows; four setters (`nodeValue`, `textCont
 the constructors of `Text`, `Comment`, `DocumentFragment` and `ProcessingInstruction`. Every
 trait method answers `DomResult`, whose `DomEnd::Limit` ends the script with the parser limit it
 reached (decision 9 of that story). Every write goes through the public write surface of
-`story:html-script-hook`. The parse that runs a page's scripts is `story:scripts-parse-run`'s,
-which this story uses in its tests.
+`story:html-script-hook`, in `crates/html/src/tree.rs`, which stays that story's: if this story
+finds an operation it needs missing there, it adds it to that file and names it in its report.
+The end words are the note's (Q4's column `outcome when reached`, Q7's closed list of ends);
+where the note spells a word otherwise than this text, the note's spelling holds. The parse
+that runs a page's scripts is `story:scripts-parse-run`'s, which this story uses in its tests.
 
 ## Change
 
@@ -48,7 +51,7 @@ which this story uses in its tests.
   each with the DOM Standard's exceptions (`HierarchyRequestError`, `NotFoundError`,
   `InvalidCharacterError`, `NotSupportedError`) as `DomEnd::Throw`, and a write over a parser
   limit answered as `DomEnd::Limit`. The bytes a write adds to the tree are charged to the agent
-  through `Cx::charge_host_bytes` (`crates/swell/src/host/mod.rs:577` at `0.8.0`) and credited
+  through `Cx::charge_host_bytes` (`crates/swell/src/host/mod.rs:577 @ 0.8.0`) and credited
   when they leave it (requirement 3, as revised).
 - `crates/script/tests/dom_mutation.rs`: the module `dom_mutation`, declared by
   `story:webidl-bindings`.
@@ -67,19 +70,22 @@ which this story uses in its tests.
 3. A script that appends to `body`, then markup after its end tag: the appended node and the
    later markup are both in the tree, in the order the standard gives.
 4. `node_limit_ends_script`: a script that creates and appends elements past the node limit of
-   its `ParseOptions` ends with the end `limit: nodes`, also inside `try { ... } catch {}`;
-   parsing goes on and the rest of the page is in the tree.
+   its `ParseOptions` ends `limit: <the node limit's word in Q4>`, also inside
+   `try { ... } catch {}`; parsing goes on and the rest of the page is in the tree.
 5. `host_bytes_end_memory_budget`: under a memory limit of 4 MiB and parser limits above what it
    holds, `const s = "x".repeat(100000); for (;;) document.body.append(s);` ends
-   `Terminated(MemoryBudget)`, not at the parser's stored-bytes limit. If the tag lacks the host
+   `limit: memory`, not at the parser's stored-bytes limit. If the tag lacks the host
    bytes of requirement 3, the case is `#[ignore = "HOST-<id>"]` beside the deviation line.
 6. `slot task check` exits 0; `git diff --stat` names only the files of the Change.
-7. Public surfaces: the story names every public surface its change makes false (a badge, a
-   `README.md` line, a website page, a count) and changes it in its last commit, every number
-   from the log of a gate run on its tip, which the coordinating agent orders. For this story,
-   lines on `main` at `29945f5` (2026-11-24): the test count of `README.md:11` and `:285-286` and `docs/badges/make.sh:38` with
-   `docs/badges/tests.svg`; the gate block of `README.md:584-625` and of
-   `website/docs/how-it-is-built.md:40-81`.
+7. Public surfaces: the story changes, in its last commit and after merging `main`, every
+   public surface its change makes false, each number taken from the `slot task check` log of
+   its tip. After that commit, `git grep -n -F -e '<old>' -- README.md website/docs docs/badges`
+   prints nothing for each old string below, as the story's base holds it (the strings and lines
+   given are those of `main` at `29945f5`, 2026-11-24); each new number equals the one in that log;
+   and the gate block, `README.md:584-625` and `website/docs/how-it-is-built.md:40-81`, holds that
+   log's lines. The old strings of this story: the test count `1976 passed` (`README.md:11`,
+   `docs/badges/make.sh:38`, `docs/badges/tests.svg`), `1,976` and `1,424, and 552`
+   (`README.md:285`, `website/docs/status.md:23`, `website/docs/what-works.md:17`).
 8. The folder's bounds hold: the test step ends within 120 s and no test runs over 60 s; no model
    call and no network request in a test; each case parses a few lines and makes one realm; no
    Python; no generator with a committed output is added; a build or test job in the pool ends

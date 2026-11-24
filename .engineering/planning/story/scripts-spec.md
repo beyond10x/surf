@@ -53,7 +53,7 @@ scope:
   path: website/docs/principles.md
 - confidence: cited
   path: website/docs/status.md
-revision: 24
+revision: 25
 ---
 ## Context
 
@@ -91,8 +91,8 @@ The tree on `main` of 2026-11-24:
   `crates/session/src/lib.rs`, `crates/session/tests`, `crates/surf/src/lib.rs`,
   `crates/surf/tests`, `crates/view/examples/prototype.rs`, `crates/view/tests/json.rs` and
   `docs/view-stream.md`. A new command of `document` adds a generated `...Behavior` trait that
-  `DocumentBehaviors` in `crates/surf/src/lib.rs:1362-1381` (and its blanket impl from line 1383) lists and the document port
-  implements.
+  `DocumentBehaviors` in `crates/surf/src/lib.rs:1362-1381` (and its blanket impl from line 1383)
+  lists and the document port implements.
 
 
 ## Domain relations
@@ -182,15 +182,20 @@ The tree on `main` of 2026-11-24:
    with the line number of its `refs:` or comment, read with `git grep -n` on the story's tip.
 7. `slot task check` exits 0 (`validate`, `conform`, `conform-rust`, `generated-check` and `cli`
    among its steps); `git diff --stat` names only the files of the Change.
-8. Public surfaces: the story names every public surface its change makes false (a badge, a
-   `README.md` line, a website page, a count) and changes it in its last commit, every number
-   from the log of a gate run on its tip, which the coordinating agent orders. For this story,
-   lines on `main` at `29945f5` (2026-11-24): the scenario count "203" at `README.md:10`, `:262`, `:283`, `:627`,
-   `website/docs/how-it-is-built.md:83`, `website/docs/principles.md:33`,
-   `website/docs/status.md:22`, `website/docs/what-works.md:15` and `docs/badges/make.sh:37` with `docs/badges/conformance.svg`;
-   the test count of `README.md:11` and `:285-286` and `docs/badges/make.sh:38` with
-   `docs/badges/tests.svg`; the gate block of `README.md:584-625` and of
-   `website/docs/how-it-is-built.md:40-81`.
+8. Public surfaces: the story changes, in its last commit and after merging `main`, every
+   public surface its change makes false, each number taken from the `slot task check` log of
+   its tip. After that commit, `git grep -n -F -e '<old>' -- README.md website/docs docs/badges`
+   prints nothing for each old string below, as the story's base holds it (the strings and lines
+   given are those of `main` at `29945f5`, 2026-11-24); each new number equals the one in that
+   log; and the gate block, `README.md:584-625` and `website/docs/how-it-is-built.md:40-81`,
+   holds that log's lines. The old strings of this story: the scenario count,
+   `203 of 203` (`README.md:10`, `docs/badges/make.sh:37`, `docs/badges/conformance.svg`,
+   `website/docs/status.md:22`), `203 scenario` (`README.md:262`, `:627`, the gate blocks,
+   `website/docs/how-it-is-built.md:83`, `website/docs/principles.md:33`), `203 specified`
+   (`README.md:283`, `website/docs/what-works.md:15`) and `(44 authored)` (the gate blocks); the
+   test count `1976 passed` (`README.md:11`, `docs/badges/make.sh:38`, `docs/badges/tests.svg`),
+   `1,976` and `1,424, and 552` (`README.md:285`, `website/docs/status.md:23`,
+   `website/docs/what-works.md:17`).
 9. The folder's bounds hold: the test step ends within 120 s and no test runs over 60 s; no model
    call and no network request in a test; the synthesized specification is made once per step
    run, not per test; no Python; the ESS output `generated/rust/` keeps its own check,
@@ -216,6 +221,10 @@ the active `story:runner-record-option` (`open --record`), `story:agent-open-tab
 `crates/session` and `generated/rust` by `story:agent-cookie-jar` until its merge: never in the
 same wave. `story:scripts-document-port` writes `crates/surf/src/lib.rs`, `crates/session` and
 `conformance/` after this story, ordered by its edge.
+`website/docs/principles.md` is also written by `story:scripts-engine-dependency`, which may run
+beside this story: this story changes the scenario count of line 33 (at `29945f5`), that story
+principle 4 at lines 18-25; neither changes the other's lines, and the second to merge keeps the
+first's.
 
 ## Why `epic:scripts-in-a-page`
 
