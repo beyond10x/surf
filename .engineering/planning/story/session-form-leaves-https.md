@@ -8,6 +8,7 @@ summary: 'press on an https: page with an http: action, and a 307 or 308 from an
 relations:
 - decomposes: epic:tls-https
 - informed_by: story:session-follow-press-https
+- depends_on: story:session-follow-press-https
 revision: 1
 ---
 ## Why

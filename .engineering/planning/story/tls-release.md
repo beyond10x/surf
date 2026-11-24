@@ -24,7 +24,7 @@ scope:
   path: taskfiles/release-smoke.sh
 - confidence: cited
   path: website/docs
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:31Z", actor: "human:operator", revision: 9, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:31Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
@@ -98,6 +98,11 @@ test certificates turn on `test-tooling` in every `cargo test` build of `surf-cl
   `website/docs/reference/surf-command.md` (the hand copy of `docs/surf-command.md`); where
   `what-works.md` and `try-it.md` describe `https:`, the sentence "surf does not check
   revocation: a revoked certificate that has not expired loads."
+  In `drive-from-an-agent.md` and the hand copy of `docs/surf-command.md`, every sentence that
+  says a session refuses an `https:` address, link or action goes, with the example that
+  shows `page failed UnsupportedScheme "https://example.org/"` and the line "Only `http:`
+  addresses load" (handed over by `story:session-follow-press-https`, which lifts the refusal
+  before this story).
 - For the coordinator: `README.md` ("What works", "What surf is not", the roadmap, principle 4 if
   not done), `AGENTS.md` ("Publishing", "Commands": only `http:` loads goes), the badges.
 
@@ -131,6 +136,9 @@ A manual run of the release workflow on the story branch, started and watched by
    change to a `--test` argument or a test filter: only the order of build and test, the
    `--target-dir`, the copy path, the marker search, the compiler step and step 2 of the smoke
    test.
+
+9. `git grep -n -F -e 'No `https:` yet' -e 'or `https:` (`unsupported-scheme`)' -e
+   'failed UnsupportedScheme "https://' -- website/docs` prints nothing.
 
 Budget: no test of the root workspace is added; the smoke test runs in the release workflow and
 by hand, never in `task test`; no model call.

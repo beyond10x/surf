@@ -9,7 +9,7 @@ relations:
 - decomposes: epic:tls-https
 - depends_on: story:tls-session-anchors
 - informed_by: story:tls-session-anchors
-revision: 3
+revision: 4
 ---
 ## Why
 
@@ -73,8 +73,8 @@ fixed before it binds, so a link or an action to the same server is relative.
    line `POST /send HTTP/1.1` and the body `q=blue`.
 3. A second server with the case `untrusted-root` runs on port `<p2>` and is started first; the
    page of the first holds `<a href="https://localhost:<p2>/">`: `follow <handle>` answers `page
-   failed CertificateNotTrusted "https://localhost:<p2>/"`, and a `look` after it answers `page
-   200 "text/html" "https://localhost:<p>/"` (the failed load left the session on its page).
+   failed CertificateNotTrusted "https://localhost:<p2>/"`, and a `look` after it answers the
+   same page line (the page line is that of the last navigation, as after a failed `go`).
 4. A session opened without `--ca-file` on an `http:` page (the plain page server of the
    session tests) with a link to `https://localhost:<p>/`: `follow <handle>` answers `page
    failed CertificateNotTrusted "https://localhost:<p>/"` (today: `did refused
@@ -112,7 +112,8 @@ test over 60 s, the test step within 120 s; 127.0.0.1 only, no network, no model
 ## Writes
 
 `crates/session/src/lib.rs`; the modules `https`, `follow_refusals` and `adversary_press` of the
-test binary of `crates/session`; `crates/tls-test-server/src/conn.rs` and the server's own
+test binary of `crates/session`; `crates/tls-test-server/src/conn.rs`, `src/lib.rs` (the record
+`Seen`) and the server's own
 tests; `docs/agent-answer.md`, `docs/surf-command.md`. Coordinating role: `README.md`,
 `AGENTS.md`. `story:tls-release`, after this story: the two website pages named under
 "Placement".
