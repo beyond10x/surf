@@ -4,3 +4,4 @@
 #![forbid(unsafe_code)]
 
 mod jar;
+mod secreview_jar;
