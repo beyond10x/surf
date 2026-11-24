@@ -6,7 +6,7 @@ description: "surf <url>: what it does, its output format, its exit statuses and
 # The `surf` command
 
 `surf <url>` loads one address: it opens a window and a tab, navigates the tab to the address,
-fetches it over `http:` or `https:` (`https:` on `main`, in no release yet) and runs the page
+fetches it over `http:` or `https:` (`https:` since release `0.7.0`) and runs the page
 load to its end. Each release has a pre-built binary
 for Linux and macOS (see the installation steps). A run on 2026-11-20 against a
 local server:
@@ -121,7 +121,7 @@ text markdown 14 of 14 lines from 1, 263 of 263 bytes
 
 ## `https:` and the trust anchors
 
-No release has `https:` yet; what follows holds for a build of `main`. An `https:` address is
+Release `0.7.0` is the first to load `https:`; what follows holds since it. An `https:` address is
 fetched over TLS 1.3 (RFC 8446), on port 443 when the address names no
 port. The server is authenticated against the bundled trust anchors and the anchors of
 `--ca-file`. surf does not check revocation: a revoked certificate that has not expired loads.

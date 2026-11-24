@@ -104,7 +104,7 @@ section "Page", lists the reasons).
 
 ## https
 
-No release has `https:` yet. Built from `main`, `go` and `open` load an `https:` address, and
+Since release `0.7.0`, `go` and `open` load an `https:` address, and
 `follow` and `press` an `https:` target, over surf's own TLS 1.3 client. The server is
 authenticated against the root list of Mozilla as curl publishes it, built into the binaries.
 `surf-agent open [<url>] --ca-file <path>` adds the CA certificates of one PEM file (at most
@@ -277,8 +277,8 @@ answer and says why on standard error.
 
 ## Limits
 
-- No release has `https:` yet. Built from `main`, `http:` and `https:` addresses load,
-  `https:` over TLS 1.3 only ([https](#https)).
+- Release `0.6.0` and the releases before it load `http:` only. Since release `0.7.0`,
+  `http:` and `https:` addresses load, `https:` over TLS 1.3 only ([https](#https)).
 - Release `0.2.0` follows no redirect. Since release `0.3.0`, a `go`
   follows up to 20 redirects inside one fetch: the `page` line holds the address it ended at,
   the `did go` line the address asked for, and a redirect after the twentieth fails with
@@ -286,7 +286,7 @@ answer and says why on standard error.
   loopback, private, link-local, unique-local, shared or unspecified address, or to an IPv6
   address that embeds one, fails with `ForbiddenDestination`, before any connection to it; a session that starts at a local
   address follows its redirects as before.
-- `follow` loads `http:` targets, and on `main` also `https:` (in no release yet), and refuses
+- `follow` loads `http:` targets, and since release `0.7.0` also `https:`, and refuses
   the others (`unsupported-scheme`);
   from a page on a public address it refuses a target on a local IP address or `localhost`
   (`forbidden-destination`), and it refuses a target over 65,536 bytes (`address-too-long`).

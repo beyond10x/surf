@@ -39,48 +39,48 @@ One command checks everything:
 
 ```console
 $ task check
-surf v1 — 9 file(s), 37 scenario(s), valid
-196 scenario(s) (37 authored), 56 refusal(s), written to .out/suite.json
-  196 scenarios: 196 passed, 0 failed, 0 error, 0 unsupported
-196 scenario(s) (37 authored), 56 refusal(s), written to .out/suite.json
+surf v1 — 9 file(s), 42 scenario(s), valid
+201 scenario(s) (42 authored), 56 refusal(s), written to .out/suite.json
+  201 scenarios: 201 passed, 0 failed, 0 error, 0 unsupported
+201 scenario(s) (42 authored), 56 refusal(s), written to .out/suite.json
 conform-noticed: conformance/tests/noticed.txt matches its sources
-conform-rust: the narrowed suites of 29 planted defects written to conformance/target/noticed/6d99491696333b9a70c2b009b42634243f65bbe23190765d981e5e6ab8c09ee1
-Summary [   6.576s] 39 tests run: 39 passed, 0 skipped
-  196 scenarios: 196 passed, 0 failed, 0 error, 0 unsupported
-conformance step: 14.7 s of its budget of 120 s
-the interpreter and the Rust system ran 196 scenario(s) each, of suite sha256:dcc7e7c2c534eb6f98ef03cbd07da620efd16fbe16e8d448de697919b0a56bf3
+conform-rust: the narrowed suites of 29 planted defects in conformance/target/noticed/7fdca6f4d0ca2239922cb4f94e766a1fbe6a37d36de9b673e484d141e7b93c05 are current
+Summary [   1.280s] 39 tests run: 39 passed, 0 skipped
+  201 scenarios: 201 passed, 0 failed, 0 error, 0 unsupported
+conformance step: 2.6 s of its budget of 120 s
+the interpreter and the Rust system ran 201 scenario(s) each, of suite sha256:37d44ac72625057db2a80be53dc951f77fbe3df811f8b3dc36430f42ab97a6cc
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 10 CLI artifact(s), generated in .out/cli
 Cargo.lock: 49 package(s), 19 from outside this repository, each on the allow-list
-test-layout: 23 test directories, 152 test files, one test binary each
+test-layout: 23 test directories, 171 test files, one test binary each
 tls-certs: 33 cases, certs/ matches its sources
 tls-flights: 6 recordings match SOURCE, the recorder matches DIGEST
 tls-flights: self-test: a changed copy of aes128-x25519-ecdsa.bin fails naming it
 doc-tests-check: no doc test outside crates/ports
-    Finished `dev` profile [unoptimized] target(s) in 1m 07s
-1240 tests: 1240 passed, 0 failed, 0 ignored (cargo-nextest 1238, doc tests 2)
-test step: 44.9 s of its budget of 120 s
-545 tests: 545 passed, 0 failed, 0 ignored (cargo-nextest 545)
-tls test step: 15.7 s of its budget of 120 s
-agent-tasks: 4 tasks, 4 pass, 0 fail, 0 skipped, lane gate, binaries target/debug
-sh-echo: Summary [  13.489s] 41 tests run: 41 passed, 112 skipped
+    Finished `dev` profile [unoptimized] target(s) in 0.03s
+1345 tests: 1345 passed, 0 failed, 0 ignored (cargo-nextest 1343, doc tests 2)
+test step: 10.8 s of its budget of 120 s
+552 tests: 552 passed, 0 failed, 0 ignored (cargo-nextest 552)
+tls test step: 2.8 s of its budget of 120 s
+agent-tasks: 5 tasks, 5 pass, 0 fail, 0 skipped, lane gate, binaries target/debug
+sh-echo: Summary [  10.433s] 51 tests run: 51 passed, 113 skipped
 view-stream-check: 23 event name(s), each a message of the AsyncAPI projection
 view-tests: node_modules installed from package-lock.json
-  71 passed (1.4m)
-page step: 84.5 s of its budget of 120 s
+  71 passed (17.3s)
+page step: 17.7 s of its budget of 120 s
 html-conformance: 9107 cases, 9095 run, 9095 passed
 x509-limbo: 5143 cases, 5089 run, 5060 passed
-tls-x509-conformance: 6 s
+tls-x509-conformance: 1 s
 forge-watch-test: 6 case(s), each decided as expected by taskfiles/forge-watch.sh
 planning-only-test: 9 case(s), each decided as expected by taskfiles/planning-only.sh
 test-layout-test: 39 case(s), each decided as expected by taskfiles/test-layout.sh
 sh-echo-test: 2 case(s), each decided as expected by taskfiles/sh-echo.sh
 doc-tests-check-test: 14 case(s), each decided as expected by taskfiles/doc-tests-check.sh
-four steps: 159.8 s (test step 44.9 s, tls test step 15.7 s, conformance step 14.7 s, page step 84.5 s)
+four steps: 33.9 s (test step 10.8 s, tls test step 2.8 s, conformance step 2.6 s, page step 17.7 s)
 ```
 
-It validates the specification, runs the 196 scenarios against the interpreter built into `ess`
+It validates the specification, runs the 201 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
 that every package in the lock file from outside the repository is on its allow-list, then
 builds and tests, the TLS crates in a step of their own, checks that every event name of the
@@ -91,10 +91,12 @@ cargo-nextest; a test still running after 60 seconds is ended and fails, each of
 steps (the conformance step, the test step, the TLS test step and the page step) fails when it
 takes over 120 seconds, and the last line adds the four up. The block leaves out the ten slowest
 tests each step also prints, the agent tasks' rows after their counts, npm's and Playwright's
-own lines and the rows of the two conformance counts. It is the run of 2026-11-23 that
-`task check-runner` ended in 600 s, at a load average of 87 to 90 on 20 CPUs. The page tests'
-line, `71 passed (1.4m)`, has its slowest test (`reset after a long absence`) at 5.6 s and
-`an entry over 1 MiB` at 4.7 s; `60 passed (58.5s)` had `an entry over 1 MiB` as its slowest at
+own lines and the rows of the two conformance counts. It is the run of 2026-11-24 on `b39b77b`
+that `task check-runner` ended in 60 s, at a load of 35.62 at its start and 29.93 at its end.
+The page tests' line, `71 passed (17.3s)`, has its slowest test (`page line and three links
+after go`) at 1.703 s and `an entry over 1 MiB` at 779 ms; the run of 2026-11-23 at a load
+average of 87 to 90 on 20 CPUs had `71 passed (1.4m)`, its slowest test (`reset after a long
+absence`) at 5.6 s and `an entry over 1 MiB` at 4.7 s; `60 passed (58.5s)` had `an entry over 1 MiB` as its slowest at
 9.7 s; `59 passed (1.9m)` had it at 27.3 s at a load average of 96 to 132; `59 passed (1.6m)`
 at 16.0 s at a load average of 111 to 117; `59 passed (3.0m)` took the task 220 s at a load
 average of 126 to 127, `53 passed` 1.1m at a load average of 55 to 65, `47 passed` 2.5m at a
@@ -105,7 +107,7 @@ Third-party crates are used in two places: the scenario runner in
 own, and `surf-tls`, whose `ring` and the packages it needs are the 19 outside packages of the
 root lock, each on the allow-list `taskfiles/lock-allow.txt`; the lock check fails on one that
 is not. Nothing that ships depends on the scenario runner. Every binary built from `main` is
-built with `surf-tls` and so with ring; no release is built with it yet.
+built with `surf-tls` and so with ring, and so is every binary of release `0.7.0`.
 
 ## Build from source
 
