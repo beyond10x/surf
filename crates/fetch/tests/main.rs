@@ -3,6 +3,7 @@
 
 mod adversary_redirect_memory;
 mod adversary_tls_fetch;
+mod cookie_bytes;
 mod cookies;
 mod fetch;
 mod fetch_bounds;

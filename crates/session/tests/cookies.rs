@@ -314,6 +314,15 @@ fn a_session_keeps_its_cookies_to_itself() {
         site.take() == [hop("GET", "/echo", Some(&cross_get))],
         "S4: the follow from 127.0.0.2 did not send the session, lax and dflt cookies"
     );
+    // Decision 9: `back` is the browser's control and has no initiator, so going back over the
+    // page of 127.0.0.2 to the page of 127.0.0.1 is same-site and sends the Strict cookie.
+    let all = format!("{session_cookie}; lax=1; strict=1; dflt=1");
+    calls.call(&a, &["back"]);
+    calls.call(&a, &["back"]);
+    assert!(
+        site.take() == [hop("GET", "/set-site", Some(&all))],
+        "decision 9: back to /set-site did not send all four cookies"
+    );
     calls.call(&a, &["go", &other.url("/from")]);
     let from = calls.call(&a, &["look"]);
     calls.call(&a, &["press", &handle_of(&from, "Send")]);
