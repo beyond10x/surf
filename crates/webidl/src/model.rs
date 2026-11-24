@@ -334,8 +334,74 @@ impl Model {
     /// The model of `definitions`, in the order given.
     pub fn new(definitions: Vec<Definition>) -> Result<Model, ReadError> {
         let model = Model { definitions };
+        model.check_names()?;
+        model.check_includes()?;
         model.check_overloads()?;
         Ok(model)
+    }
+
+    /// The definitions that define a name: all but `partial interface` and `includes`.
+    fn defining(&self) -> impl Iterator<Item = &Definition> {
+        self.definitions.iter().filter(|definition| {
+            !matches!(
+                definition.kind,
+                DefinitionKind::Includes { .. } | DefinitionKind::Interface { partial: true, .. }
+            )
+        })
+    }
+
+    /// Refuses a name that two definitions define, naming the second and the first.
+    fn check_names(&self) -> Result<(), ReadError> {
+        let mut first: BTreeMap<&str, &Definition> = BTreeMap::new();
+        for definition in self.defining() {
+            if let Some(earlier) = first.get(definition.name.as_str()) {
+                return Err(ReadError::new(
+                    &definition.file,
+                    definition.line,
+                    format!(
+                        "a second definition of `{}`, the first at {}:{}",
+                        definition.name, earlier.file, earlier.line
+                    ),
+                ));
+            }
+            first.insert(&definition.name, definition);
+        }
+        Ok(())
+    }
+
+    /// Refuses `A includes B;` where `B` is defined and is no interface mixin, or `A` is defined
+    /// and is no interface, naming the statement. An undefined name is left to
+    /// [`Model::unresolved`].
+    fn check_includes(&self) -> Result<(), ReadError> {
+        for statement in &self.definitions {
+            let DefinitionKind::Includes { mixin } = &statement.kind else {
+                continue;
+            };
+            let refuse = |what: String| {
+                Err(ReadError::new(
+                    &statement.file,
+                    statement.line,
+                    format!("`{} includes {}`, where {what}", statement.name, mixin.name),
+                ))
+            };
+            if let Some(definition) = self.defining().find(|d| d.name == mixin.name)
+                && !matches!(definition.kind, DefinitionKind::InterfaceMixin { .. })
+            {
+                return refuse(format!("`{}` is no interface mixin", mixin.name));
+            }
+            let mut named = self
+                .definitions
+                .iter()
+                .filter(|d| d.name == statement.name)
+                .filter(|d| !matches!(d.kind, DefinitionKind::Includes { .. }))
+                .peekable();
+            if named.peek().is_some()
+                && !named.any(|d| matches!(d.kind, DefinitionKind::Interface { .. }))
+            {
+                return refuse(format!("`{}` is no interface", statement.name));
+            }
+        }
+        Ok(())
     }
 
     /// Refuses an operation name twice in the merged view of an interface (its definitions and

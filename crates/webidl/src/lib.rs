@@ -61,6 +61,10 @@
 //! `record`, `FrozenArray`, `long`, `float`, `byte`, `octet`, `bigint`, `ByteString`, floating
 //! point constants and the defaults `[]` and `undefined`.
 //!
+//! [`Model::new`] also refuses a name that two definitions define (a `partial interface` and an
+//! `includes` define none), naming both, and `A includes B;` where `B` is defined and is no
+//! interface mixin or `A` is defined and is no interface.
+//!
 //! A type that nests deeper than [`MAX_TYPE_DEPTH`] levels is refused too, so a hostile text
 //! cannot drive the recursion of the type parser past that many calls.
 

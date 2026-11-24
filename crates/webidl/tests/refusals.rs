@@ -82,6 +82,43 @@ fn overload_across_mixin() {
 }
 
 #[test]
+fn includes_of_what_is_no_mixin() {
+    assert_eq!(
+        model_refused(&[
+            ("a.idl", "interface A {};\n\nA includes B;"),
+            ("b.idl", "dictionary B {};"),
+        ]),
+        "a.idl:3: refused: `A includes B`, where `B` is no interface mixin"
+    );
+}
+
+#[test]
+fn includes_into_what_is_no_interface() {
+    assert_eq!(
+        model_refused(&[(
+            "a.idl",
+            "dictionary A {};\ninterface mixin B {};\nA\n  includes B;"
+        )]),
+        "a.idl:3: refused: `A includes B`, where `A` is no interface"
+    );
+}
+
+#[test]
+fn two_definitions_of_one_name() {
+    assert_eq!(
+        model_refused(&[
+            ("a.idl", "interface A {};\npartial interface A {};"),
+            ("b.idl", "\n\ndictionary A {};"),
+        ]),
+        "b.idl:3: refused: a second definition of `A`, the first at a.idl:1"
+    );
+    assert_eq!(
+        model_refused(&[("a.idl", "enum E { \"a\" };\ntypedef DOMString E;")]),
+        "a.idl:2: refused: a second definition of `E`, the first at a.idl:1"
+    );
+}
+
+#[test]
 fn namespace() {
     assert_refused(
         "\n\nnamespace console {\n  undefined log();\n};",
