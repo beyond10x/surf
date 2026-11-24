@@ -3,5 +3,6 @@
 
 #![forbid(unsafe_code)]
 
+mod bound;
 mod jar;
 mod shadow;

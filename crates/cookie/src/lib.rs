@@ -55,7 +55,8 @@
 //!   [`COOKIE_FIELD_BYTES_MAX`] bytes: cookies are dropped from the end of that order until it
 //!   fits.
 //! - **Bounds and eviction** (5.7, "remove excess cookies", 6.1): at most
-//!   [`COOKIES_PER_DOMAIN_MAX`] cookies per domain and [`COOKIES_MAX`] per jar. Expired cookies
+//!   [`COOKIES_PER_DOMAIN_MAX`] cookies per domain, [`COOKIES_MAX`] per jar and
+//!   [`STORED_BYTES_MAX`] bytes stored per jar ("Memory"). Expired cookies
 //!   are evicted whenever the jar is used. Over a bound, in the draft's order of priority:
 //!   expired cookies; cookies without `Secure` of a domain that holds more than 50; any cookie of
 //!   such a domain; any cookie. Within one priority the earliest last access goes first, then
@@ -68,10 +69,14 @@
 //!
 //! # Memory
 //!
-//! Names and values: at most 4,096 bytes per cookie and 3,000 cookies, 12,288,000 bytes per
-//! jar. Besides them each cookie holds its domain, a host, at most as long as the address it
-//! came from, and its path, a `Path` attribute of at most 1,024 bytes or the default-path of that
-//! address.
+//! A cookie stores its name and value (at most 4,096 bytes), its domain, a host as long as the
+//! address it came from allows, and its path, a `Path` attribute of at most 1,024 bytes or the
+//! default-path of that address, which can be as long as the address. The bytes of all four
+//! over every cookie of the jar are at most [`STORED_BYTES_MAX`], 16 MiB (16,777,216 bytes):
+//! after a cookie is stored and the bounds of the count are applied, the cookie with the
+//! earliest last access (then the earliest creation) goes while the jar stores more. The
+//! draft's minimums fit: 3,000 cookies of 4,096 bytes with a `Path` attribute of 1,024 bytes
+//! and a host of 253 bytes store 16,119,000 bytes.
 //!
 //! # Never printed
 //!
@@ -109,6 +114,12 @@ pub const ATTRIBUTE_VALUE_BYTES_MAX: usize = 1024;
 
 /// The most bytes of the value of the `Cookie` field one request sends.
 pub const COOKIE_FIELD_BYTES_MAX: usize = 8192;
+
+/// The most bytes the cookies of one jar store together: names, values, paths and domains
+/// ([`Jar::stored_bytes`]), 16 MiB. The draft's minimums fit: 3,000 cookies of 4,096 bytes of
+/// name and value, each with a `Path` attribute of 1,024 bytes and a host of 253 bytes, the
+/// longest DNS name, store 3,000 × 5,373 = 16,119,000 bytes.
+pub const STORED_BYTES_MAX: usize = 16 * 1024 * 1024;
 
 /// The longest lifetime a cookie gets, 400 days in seconds (5.5).
 const AGE_MAX_SECONDS: i64 = 400 * 24 * 60 * 60;
@@ -159,6 +170,11 @@ impl Cookie {
     fn expired(&self, now: i64) -> bool {
         self.expiry.is_some_and(|expiry| expiry < now)
     }
+
+    /// The bytes it stores, counted against [`STORED_BYTES_MAX`].
+    fn bytes(&self) -> usize {
+        self.name.len() + self.value.len() + self.path.len() + self.domain.len()
+    }
 }
 
 /// What the jar holds behind its lock.
@@ -182,7 +198,8 @@ impl Store {
     /// Remove excess cookies (5.7) after a cookie for `domain` was stored, the one domain that
     /// can have gone over its bound: first while it holds more than [`COOKIES_PER_DOMAIN_MAX`],
     /// its cookies without `Secure` before the others, then while the jar holds more than
-    /// [`COOKIES_MAX`]; the earliest last access goes first, then the earliest creation.
+    /// [`COOKIES_MAX`], then while it stores more than [`STORED_BYTES_MAX`] bytes; the earliest
+    /// last access goes first, then the earliest creation.
     fn evict_excess(&mut self, domain: &str) {
         while self.cookies.iter().filter(|c| c.domain == domain).count() > COOKIES_PER_DOMAIN_MAX {
             let insecure = self.oldest(|c| c.domain == domain && !c.secure);
@@ -199,6 +216,14 @@ impl Store {
                 Some(at) => {
                     self.cookies.remove(at);
                 }
+                None => break,
+            }
+        }
+        // The bytes stored: no domain is over its bound here, so any cookie goes.
+        let mut stored: usize = self.cookies.iter().map(Cookie::bytes).sum();
+        while stored > STORED_BYTES_MAX {
+            match self.oldest(|_| true) {
+                Some(at) => stored -= self.cookies.remove(at).bytes(),
                 None => break,
             }
         }
@@ -418,6 +443,12 @@ impl Jar {
         let mut store = self.lock();
         store.evict_expired(seconds(now));
         store.cookies.len()
+    }
+
+    /// The bytes the jar's cookies store: their names, values, paths and domains together, at
+    /// most [`STORED_BYTES_MAX`].
+    pub fn stored_bytes(&self) -> usize {
+        self.lock().cookies.iter().map(Cookie::bytes).sum()
     }
 }
 

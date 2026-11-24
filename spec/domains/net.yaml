@@ -181,9 +181,10 @@ types:
 #   time (5.7 step 23).
 # R12 The `Cookie` field (5.8.3): longer paths first, then earlier creation; `name=value` pairs
 #   joined by `; `; one field per request, none when no cookie matches.
-# R13 At most 50 cookies per domain and 3,000 per session; expired cookies are evicted when the jar
-#   is used; over a bound the draft's priorities of "remove excess cookies", the earliest last
-#   access first, then the earliest creation.
+# R13 At most 50 cookies per domain and 3,000 per session, and at most 16 MiB stored per session:
+#   the names, values, paths and domains of its cookies together, a path counted as stored;
+#   expired cookies are evicted when the jar is used; over a bound the draft's priorities of
+#   "remove excess cookies", the earliest last access first, then the earliest creation.
 # R14 The `Cookie` field value is at most 8,192 bytes: cookies are dropped from the end of R12's
 #   order until it fits. A `Set-Cookie` field over the header limit ends the request with
 #   MalformedResponse and nothing of that response is stored.
