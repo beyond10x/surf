@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:webidl-reader
 kind: story
-status: active
+status: implemented
 title: surf-webidl reads the vendored IDL Index of the DOM Standard and of Web IDL into a model, refusing every construct it does not know
 summary: The DOM and Web IDL commit snapshots the coordinating agent fetched on 2026-11-24 are vendored with SOURCE and digests; a reader of their IDL Index builds a model; a test asserts 146 members and 2 constructors of the four interfaces and 75 members and 5 constructors of the interfaces they return (the epic said 68), and the extended-attribute counts.
 relations:
@@ -12,10 +12,11 @@ scope:
   path: Cargo.lock
 - confidence: cited
   path: crates/webidl
-revision: 18
+revision: 20
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:34:04Z", actor: "human:operator", revision: 15}
 - {from: "proposed", to: "active", at: "2026-11-24T10:34:09Z", actor: "human:operator", revision: 16}
+- {from: "active", to: "implemented", at: "2026-11-24T12:12:39Z", actor: "human:operator", revision: 20, decided_on: {"recorded":{"test_result":2,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -240,3 +241,39 @@ commits at once; the coordinating agent orders the gate runs.
 
 The DOM a page's script sees is generated from Web IDL (S4, b); the reader is the first part of
 that path and the epic's second candidate.
+
+## As built
+
+The unit is on `main` at `859118d` (the merge of `impl/webidl-reader` at `fbcf768`, which holds
+the reviewer's tests and one merge of `main`). The crate `crates/webidl` (package
+`surf-webidl`, 2,314 lines in `src/`) runs 80 tests. Where it differs from the text above:
+
+- The Web IDL index is 57 lines (corrected in this story on 2026-11-24, when the reader counted
+  57 and stopped as acceptance 6 asks).
+- `Model::new` answers a `Result`: it refuses, with file and line, an overload across partials
+  and mixins, a name defined twice, a partial interface of a name defined as another kind, a
+  parent of another kind, a cycle of parents, an `includes` whose sides are of the wrong kinds,
+  and two members of one name. It checks in that fixed order, not in the order of the text.
+- Nested types are bounded: `MAX_TYPE_DEPTH` is 32 levels; the pages nest 2 deep. The first
+  pass of the reviewer found that 700 nested sequences overflowed the stack.
+- Extended attributes that apply to a type (`TYPE_EXTENDED_ATTRIBUTES`: `AllowShared`,
+  `EnforceRange`, `LegacyNullToEmptyString`) are stored on the type. Written before an argument
+  or a dictionary member they are read onto its type, as Web IDL's "Annotated types" says;
+  before any other member, or any other name on a type, is refused.
+- A parent and an included mixin are a `Reference` with the line the name is written on.
+- `Model::unresolved` lists six names the pages use and do not define:
+  `CustomElementRegistry`, `DOMHighResTimeStamp`, `EventHandler`, `HTMLSlotElement`,
+  `TrustedType` and `Window` (the DOM page holds `partial interface Window`).
+- A `ReadError` prints `<file>:<line>: ...` as acceptance 8 says; the line is a line of the
+  extracted index, counted from 1, not a line of the page. The doc comments say so.
+- `ADDED` names what the reader reads beyond the story's list: argument names that are
+  keywords, `short`, the buffer types, `[Serializable]` and `[AllowShared]`.
+- Outside acceptance 10's list: `NOTICE` (an entry for the two vendored pages, CC BY 4.0) and
+  `website/docs/principles.md` (the count of packages in the lock, 51, which said 49).
+- The public numbers at the merge: 2,056 tests (1,504, and 552 of the TLS crates), 193 test
+  files in 25 test directories.
+
+Two passes by a reviewer who did not write the crate. The first: 1 must (the stack overflow),
+2 shoulds, 3 notes, and 11 tests merged into the unit. The second, on the fixed unit: no must,
+4 shoulds, 4 notes, and one test taken over. All are closed except these, which stand as
+written: `Model::new` reports in its fixed order; a release build was not attacked.
