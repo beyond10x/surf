@@ -7,6 +7,8 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-24
+
 ### Added
 
 - `surf` loads `https:` addresses, over a TLS 1.3 client (RFC 8446) written for surf, on port

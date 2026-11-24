@@ -6,8 +6,8 @@ description: Where surf stands, in the numbers its gate prints.
 # Project status
 
 surf is young, and not a browser for daily use. It loads one address from the command line and
-prints what happened, and on Linux `surf-agent` drives a session. The releases load `http:`
-addresses; `main` also loads `https:`, in no release yet. It has no window, no rendering and no
+prints what happened, and on Linux `surf-agent` drives a session. It loads `http:`
+addresses, and `https:` ones since release `0.7.0`. It has no window, no rendering and no
 JavaScript yet.
 
 ## Numbers
@@ -26,10 +26,10 @@ plan, and after the live view's control states and changed panel:
 | X.509 test data (x509-limbo) | 5,143 cases counted, 5,089 run, 5,060 pass; `task check` holds these counts |
 | URL test data | 872 of 904 cases pass; 32 skipped, listed by name |
 | HTML parser test data | 9,107 cases counted, 9,095 run, 9,095 pass (82 encoding, 7,046 tokenizer and 1,967 tree construction cases); the parser decides the encoding, tokenizes, and builds a tree in every insertion mode, foreign content and fragments included, within six limits on untrusted input, and `surf` parses every `text/html` response with it; `task check` holds these counts |
-| third-party crates in what ships | 0 in release `0.6.0`; on `main`, in no release yet, ring 0.17.14 and the four crates it needs, for the cryptographic primitives of TLS, through `surf-tls` alone |
+| third-party crates in what ships | 0 up to release `0.6.0`; since release `0.7.0`, ring 0.17.14 and the four crates it needs, for the cryptographic primitives of TLS, through `surf-tls` alone |
 | unsafe code | forbidden in every hand-written crate; three test files hold a counting allocator |
 | standard sections marked complete | 0 |
-| roadmap | 10 of 22 waves delivered, and round 2 delivered the step after wave 18 (follow, fill, press, back, forward, what changed); release `0.4.0` follows round 1, release `0.5.0` round 2 and release `0.6.0` the live view's control states ([releases](https://github.com/beyond10x/surf/releases)) |
+| roadmap | 10 of 22 waves delivered, and round 2 delivered the step after wave 18 (follow, fill, press, back, forward, what changed); release `0.4.0` follows round 1, release `0.5.0` round 2, release `0.6.0` the live view's control states and release `0.7.0` TLS 1.3 and `https:` ([releases](https://github.com/beyond10x/surf/releases)) |
 
 ## What is not checked yet
 

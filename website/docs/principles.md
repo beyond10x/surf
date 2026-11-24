@@ -22,7 +22,7 @@ that.
    reviewed as a dependency in the rustls audit of Cure53, 2020
    ([the report](https://cure53.de/pentest-report_rustls.pdf)); surf uses ring 0.17.14. Only
    the crate `surf-tls` may depend on it, and the checks pin its packages by name, version and
-   checksum. The binaries built from `main` use it; no release does yet.
+   checksum. The binaries built from `main` use it, and so do those of release `0.7.0`.
 5. **No unsafe code.** Every hand-written crate forbids it. The exceptions are in tests: three
    counting allocators that measure what a fetch holds, what a parse allocates and what the
    TLS code allocates.

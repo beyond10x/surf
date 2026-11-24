@@ -517,7 +517,7 @@ above, and the list of standards itself was written from memory.
     `fill f1 -- -`), and a value from standard input whose request is over 65,536 bytes is
     refused naming its quoted size (`client::STDIN_VALUE_FITS`, 16,000 bytes, always fits beside
     a handle of up to 1,364); the `Debug` of a wire `Arg` writes its value's length. The
-    package carries the release version, `0.6.0`, as do `surf-cli`, `surfd` and
+    package carries the release version, `0.7.0`, as do `surf-cli`, `surfd` and
     `surf-session`. `open` starts `surfd` from the directory of its own executable. 61 tests in
     one binary: `adversary_ca_file` 4, `adversary_fill_pick` 6, `ca_file` 6, `drift` 2,
     `secreview_refusal_text` 2, `stand_in` 10, `start` 12, `token` 9, `usage` 10. Depends on
@@ -1397,8 +1397,9 @@ the others were written to a scratch directory and not compiled:
   repository. The waves after 4 stay in the plan; they are planned and not scheduled.
 - Present state: wave 10 and rounds 1 and 2 are delivered (10 of 22 waves, and the stories of
   rounds 1 and 2); release `0.2.0` follows wave 4, release `0.3.0` wave 9, release `0.4.0`
-  round 1, release `0.5.0` round 2 and release `0.6.0` the view's control states and changed
-  panel (the releases are listed at https://github.com/beyond10x/surf/releases). The
+  round 1, release `0.5.0` round 2, release `0.6.0` the view's control states and changed
+  panel and release `0.7.0` TLS 1.3 and `https:` (the releases are listed at
+  https://github.com/beyond10x/surf/releases). The
   operator session ordered the continuation after the checkpoint on 2026-11-21, for the
   operator: "continue as its `AGENTS.md` says". The next is round 3 of
   `docs/plan/agent-waves.md` ("Rounds after wave 10": the waves 11 to 22 in three rounds). The stories
@@ -1844,9 +1845,11 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `UnsupportedScheme`), `https:` against the bundled trust anchors, and for a session opened
   with `surf-agent open --ca-file <path>` also against the CA certificates of that file
   (`docs/agent-answer.md`, "Extra trust anchors"), by `go` and `open` as by `follow` and
-  `press`, which refuse a target of any other scheme (`unsupported-scheme`); and an answer
-  shows no
-  page content (status, media type and address only), because no page is parsed yet. While
+  `press`, which refuse a target of any other scheme (`unsupported-scheme`); and the body of
+  an HTML response is parsed with `surf-html` (`surf::HtmlParser`, `crates/surf/src/lib.rs`),
+  so an answer shows the page's title on its `page` line, the `now` block of its links,
+  buttons and fields and the `changed` block, and with `--as tree|markdown` the page as text
+  (`docs/agent-answer.md`); nothing renders it. While
   `surfd` runs, `$XDG_RUNTIME_DIR/surf/view-url` holds the live view's address and token
   (`http://127.0.0.1:<port>/#<token>`); open it in a browser on the same machine to see the
   sessions. `docs/view-stream.md` gives its routes.

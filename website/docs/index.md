@@ -7,8 +7,8 @@ description: surf is a small web browser written from scratch in Rust, where the
 # What surf is
 
 surf is a small web browser written in Rust. It does not wrap Chromium, WebKit or Gecko, and
-nothing that ships depends on a third-party crate, with one exception: on `main`, in no release
-yet, the cryptographic primitives of TLS come from ring. Every behaviour is written down as a
+nothing that ships depends on a third-party crate, with one exception: since release `0.7.0`,
+the cryptographic primitives of TLS come from ring. Every behaviour is written down as a
 specification before any code exists, and a test suite generated from that specification runs
 against the real code on every change.
 
@@ -29,8 +29,8 @@ runs no script today.
 
 surf has no window, no rendering and no JavaScript yet. It loads one address from the command
 line and prints what happened; `surf-agent` does the same for an agent, one call at a time, and
-shows a page as text when asked. The releases load `http:` addresses; `https:` loads on `main`,
-in no release yet.
+shows a page as text when asked. It loads `http:` addresses, and `https:` ones since release
+`0.7.0`.
 
 :::
 
