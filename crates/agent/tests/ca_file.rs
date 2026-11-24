@@ -48,7 +48,7 @@ fn hostile(dir: &TestDir) -> Vec<(PathBuf, &'static str)> {
         (missing, "the --ca-file file cannot be read"),
         (large, "TooLarge"),
         (leaf, "NotACa: certificate 0 is not a CA"),
-        (key, "NotACertificate: block 0 is labelled PRIVATE KEY"),
+        (key, "NotACertificate: block 0 is not a CERTIFICATE"),
     ]
 }
 

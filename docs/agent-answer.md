@@ -678,8 +678,11 @@ regular file` for one that is not a regular file, such as a directory, a device 
 path is looked at before it is opened, so a FIFO is refused and not waited on; `... changed while
 it was read` when the file opened is not the file looked at) followed by the usage. `<error>` is the
 `AnchorError` of `surf-tls` (`NoCertificate`, `NotACertificate`, `BadPem`, `BadCertificate`,
-`NotACa`, `TooLarge`, `TooMany`) with its text, such as `NotACa: certificate 0 is not a CA`.
-The line does not repeat the path. No request is sent, `surfd` is not started, and no session
+`NotACa`, `TooLarge`, `TooMany`) by its kind and the index of the block at fault, such as
+`NotACa: certificate 0 is not a CA`, `NotACertificate: block 0 is not a CERTIFICATE` or
+`BadCertificate: certificate 0 is refused: UnexpectedTag` (the kind the certificate reader
+names). The line repeats neither the path nor a byte of the file: not the label of a block, and
+not a byte of a certificate the reader cannot read. No request is sent, `surfd` is not started, and no session
 is made. A session process that gets anchors it refuses in an `open` request (a client other
 than `surf-agent`) answers `did refused usage`, status 2, as for any `usage` refusal of `open`.
 

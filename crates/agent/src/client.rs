@@ -28,7 +28,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use surf_tls::anchors::{Anchors, EXTRA_BYTES_MAX};
+use surf_tls::anchors::{AnchorError, Anchors, EXTRA_BYTES_MAX};
 
 use crate::cli::{self, Environment, USAGE};
 use crate::wire;
@@ -277,8 +277,9 @@ fn read_value(input: &mut dyn Read) -> Result<String, Failure> {
 /// connection: a regular file, read up to one byte past [`EXTRA_BYTES_MAX`] so that a larger one
 /// is refused as too large without being read whole, and taken only when
 /// [`Anchors::with_extra_pem`] of `surf-tls` takes it (at most 64 blocks, every block a
-/// `CERTIFICATE`, every certificate a CA). A file it refuses is a usage error naming the
-/// [`surf_tls::anchors::AnchorError`]; no message repeats the path.
+/// `CERTIFICATE`, every certificate a CA). A file it refuses is a usage error naming the kind of
+/// [`AnchorError`] and the block at fault ([`refusal`]); no message repeats the path or a byte
+/// of the file.
 fn read_ca_file(path: &Path) -> Result<String, Failure> {
     let unreadable = |error: io::Error| {
         Failure::Usage(format!(
@@ -304,11 +305,31 @@ fn read_ca_file(path: &Path) -> Result<String, Failure> {
     file.take(EXTRA_BYTES_MAX as u64 + 1)
         .read_to_end(&mut pem)
         .map_err(unreadable)?;
-    Anchors::bundled()
-        .with_extra_pem(&pem)
-        .map_err(|error| Failure::Usage(format!("the --ca-file file is refused: {error}")))?;
+    Anchors::bundled().with_extra_pem(&pem).map_err(|error| {
+        Failure::Usage(format!(
+            "the --ca-file file is refused: {}",
+            refusal(&error)
+        ))
+    })?;
     String::from_utf8(pem)
         .map_err(|_| Failure::Usage("the --ca-file file is not UTF-8 text".to_string()))
+}
+
+/// The refusal of a `--ca-file` file as the client prints it: the kind of the [`AnchorError`]
+/// and the index of the block at fault, and no byte of the file. The `Display` of `surf-tls`
+/// shows the label of a block that is not a certificate, and the certificate reader's text can
+/// show a byte of the certificate; here they are the kind's name alone.
+fn refusal(error: &AnchorError) -> String {
+    let name = error.name();
+    match error {
+        AnchorError::NotACertificate { index, .. } => {
+            format!("{name}: block {index} is not a CERTIFICATE")
+        }
+        AnchorError::BadCertificate { index, error } => {
+            format!("{name}: certificate {index} is refused: {}", error.name())
+        }
+        other => other.to_string(),
+    }
 }
 
 /// [`wire::check_socket_path`]: whether the socket is there, or the refusal naming the path.

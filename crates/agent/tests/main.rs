@@ -8,6 +8,7 @@ mod adversary_fill_pick;
 mod ca_file;
 mod common;
 mod drift;
+mod secreview_refusal_text;
 mod stand_in;
 mod start;
 mod token;
