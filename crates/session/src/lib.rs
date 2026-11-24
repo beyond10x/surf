@@ -285,6 +285,20 @@
 //! reaches the process in the request on its socket, never as an argument or in its
 //! environment.
 //!
+//! # Cookies
+//!
+//! Each session has one cookie jar (`surf_cookie::Jar`), in this process's memory only: every
+//! load of the session sends the cookies the jar gives for each hop and keeps those the
+//! responses set (the crate documentation of `surf-fetch`, "Cookies"), and no other session
+//! sees it. [`Session::answer`] puts it in use on its thread for that answer only, as the
+//! anchors. A `follow` and a `press` carry the origin of the document they act on as the
+//! navigation's initiator, which makes a request to another site cross-site; `go`, `open`,
+//! `back` and `forward` carry none. Every answer that shows the state has the line `cookies
+//! <n>` after its path block when the jar holds a cookie, expired ones removed first
+//! (`docs/agent-answer.md`, "Cookies"). `close` empties the jar, and it is dropped with the
+//! session; it is never written to a file. No answer, entry, event or `Debug` form holds a
+//! cookie's name or value: the jar is used below the transport, inside `surf::fetch_http`.
+//!
 //! # What it keeps
 //!
 //! The answer lines hold the page line, the `did` line and at most [`PATH_SHOWN`] path lines,
@@ -404,6 +418,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use surf::{MemoryBrowser, NodeId, Transport, Tree, UnmetObligation};
 use surf_agent::wire::{self, Request};
@@ -413,6 +428,7 @@ use surf_answer::{
     SessionState as HeadState, State, TARGET_CHARS_MAX, Target, TextNote, VALUE_CHARS_MAX, Value,
     Visibility,
 };
+use surf_cookie::Jar;
 use surf_ports::{Caller, ComponentPorts};
 use surf_secret::Token;
 use surf_types::agent::{
@@ -517,12 +533,14 @@ pub fn fetch_through(
     // The anchors of the session answering on this thread: the bundled list and the file of its
     // `open --ca-file`, or the bundled list alone.
     let anchors = SESSION_ANCHORS.with(|current| current.borrow().clone());
+    // The cookie jar of that session ("Cookies" above); none outside an answer.
+    let jar = SESSION_JAR.with(|current| current.borrow().clone());
     let result = surf::fetch_http_from(
         request,
         &surf_fetch::Limits::default(),
         surf::RequestContext {
             anchors: anchors.as_deref(),
-            jar: None,
+            jar: jar.as_deref(),
         },
         &dialing,
         origin,
@@ -578,6 +596,28 @@ thread_local! {
     static SESSION_ANCHORS: RefCell<Option<Arc<surf_fetch::Anchors>>> = const {
         RefCell::new(None)
     };
+
+    /// The cookie jar of the session whose request is being answered on this thread, set by
+    /// [`Session::answer`] for the length of that answer only ([`JarInUse`]). [`fetch`] reads
+    /// it; no other session's answer sees it, and outside an answer there is none.
+    static SESSION_JAR: RefCell<Option<Arc<Jar>>> = const { RefCell::new(None) };
+}
+
+/// The jar of one session in use on this thread while it answers; none again when it is
+/// dropped.
+struct JarInUse;
+
+impl JarInUse {
+    fn set(jar: Arc<Jar>) -> JarInUse {
+        SESSION_JAR.with(|current| current.replace(Some(jar)));
+        JarInUse
+    }
+}
+
+impl Drop for JarInUse {
+    fn drop(&mut self) {
+        SESSION_JAR.with(|current| current.replace(None));
+    }
 }
 
 /// The anchors of one session in use on this thread while it answers; the bundled list alone
@@ -876,6 +916,9 @@ pub struct Session<T> {
     /// anchors (`arg anchors`): the bundled list and that file's. `None` for the bundled list
     /// alone. Read once at `open` and dropped with the session ("Extra trust anchors" above).
     anchors: Option<Arc<surf_fetch::Anchors>>,
+    /// The session's cookie jar, in memory only: emptied at `close` and dropped with the
+    /// session ("Cookies" above).
+    jar: Arc<Jar>,
 }
 
 /// The page state an answer showed ("What changed" above): the load its page came from, the
@@ -956,6 +999,7 @@ impl<T: Transport> Session<T> {
             redirected_public: Vec::new(),
             shown: Shown::default(),
             anchors: None,
+            jar: Arc::new(Jar::new()),
         })
     }
 
@@ -997,6 +1041,7 @@ impl<T: Transport> Session<T> {
             self.rendered = None;
         }
         let _anchors = AnchorsInUse::set(self.anchors.clone());
+        let _jar = JarInUse::set(Arc::clone(&self.jar));
         let mut reply = self.reply_to(request);
         reply.entries = self.entries(start);
         self.browser.forget_delivered();
@@ -1252,6 +1297,12 @@ impl<T: Transport> Session<T> {
         self.links.as_ref().map(|kept| kept.links.as_slice())
     }
 
+    /// The `cookies` line: the cookies the session's jar holds now, `None` for none.
+    fn cookies(&self) -> Option<u64> {
+        let count = self.jar.count(SystemTime::now());
+        (count > 0).then_some(count as u64)
+    }
+
     /// The title of the current document for the `page` line and the status record: `None`
     /// when it has none, an empty one, or one over [`TITLE_CHARS_MAX`] characters.
     fn title(&self) -> Option<String> {
@@ -1299,12 +1350,14 @@ impl<T: Transport> Session<T> {
         if from_public && host_is_local(target) {
             return Ok(self.with_state(RefusalReason::ForbiddenDestination));
         }
+        // The document the link is in started the navigation ("Cookies" above).
+        let initiator = self.current_row().map(|row| surf::initiator_of(&row.url.0));
         let outcome = self.browser.agent_mut().follow(Follow {
             session_id: self.session_id.clone(),
             url: Url(url.clone()),
             handle: link.handle.clone(),
             label: link.label.clone(),
-            initiator: None,
+            initiator,
         })?;
         match outcome {
             FollowOutcome::Requested { .. } => {
@@ -1885,6 +1938,8 @@ impl<T: Transport> Session<T> {
         match outcome {
             CloseSessionOutcome::Closed { .. } => {
                 self.record_and_run(ActionCommand::Close, None, None)?;
+                // A closed session keeps no cookie ("Cookies" above).
+                self.jar = Arc::new(Jar::new());
                 Ok(self.state_reply(
                     0,
                     Some(Did::Action {
@@ -2125,6 +2180,7 @@ impl<T: Transport> Session<T> {
             *title = self.title();
         }
         answer.path = Some(self.path());
+        answer.cookies = self.cookies();
         let shown = self.shown_now(answer.page.as_ref());
         answer.changed = Some(self.changed(&shown));
         self.shown = shown;

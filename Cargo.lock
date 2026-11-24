@@ -232,6 +232,7 @@ dependencies = [
  "surf",
  "surf-agent",
  "surf-answer",
+ "surf-cookie",
  "surf-fetch",
  "surf-html",
  "surf-page",

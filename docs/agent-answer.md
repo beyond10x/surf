@@ -45,6 +45,8 @@ The example above shows the whole format. The binaries of release `0.6.0` (`surf
   `page none` before the first load;
 - `path <shown> of <total>` and its indented lines, `<n> follow <handle> "<label>"` for a
   `follow`; every action in the answer of `log`;
+- since `agent-cookie-jar`, `cookies <n>` in every answer that shows the session's state while
+  its jar holds a cookie (section "Cookies");
 - since `agent-change-and-log`, the `changed` block in every answer that shows the session's
   state (section "Changed");
 - without `--as`, for an HTML page with links, the `now` block of its links and `note
