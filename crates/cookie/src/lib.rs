@@ -41,7 +41,10 @@
 //!   ones never. "Lax-allowing-unsafe" (5.6.7.2) is not applied.
 //! - **Same site** ([`site`], 5.2): a request without an initiator is same-site; with one, it is
 //!   same-site when the request's address has the initiator's scheme and host, ports ignored.
-//!   Without the public suffix list "site" is the host, not the registrable domain.
+//!   Without the public suffix list "site" is the host, not the registrable domain. A request of
+//!   a redirect chain ([`Chain`]) is same-site only if, besides, every earlier address of the
+//!   chain has its scheme and host: once the chain has been on another site, every later request
+//!   is cross-site, also for a navigation without an initiator.
 //! - **Prefixes** (5.4, 5.7 steps 20 and 21), in any case: `__Secure-` needs `Secure`; `__Host-`
 //!   needs `Secure`, a `Path` attribute of `/` and no `Domain` attribute (with every cookie
 //!   host-only, the draft's host-only flag is read as "no `Domain` attribute was given").
@@ -434,6 +437,41 @@ pub fn site(initiator: Option<&str>, url: &Url) -> Site {
         && origin.host().is_some()
         && origin.host().map(Host::serialize) == url.host().map(Host::serialize);
     if same { Site::Same } else { Site::Cross }
+}
+
+/// The addresses one redirect chain has been on, for [`Chain::site`] (5.2: a request is
+/// same-site only if it is not the result of a cross-site redirect).
+#[derive(Default)]
+pub struct Chain {
+    /// The scheme and host of the first address of the chain.
+    first: Option<(String, Option<String>)>,
+    /// Whether an address of the chain had another scheme or host than the first.
+    left: bool,
+}
+
+impl Chain {
+    /// A chain no request has been sent on yet.
+    pub fn new() -> Chain {
+        Chain::default()
+    }
+
+    /// Whether the next request of the chain, to `url`, of a navigation `initiator` started, is
+    /// same-site: [`site`] says so, and every earlier address of the chain has the scheme and
+    /// host of `url`, ports ignored. Once the chain has been on two sites every later request is
+    /// cross-site, also without an initiator. `url` becomes an address of the chain.
+    pub fn site(&mut self, initiator: Option<&str>, url: &Url) -> Site {
+        let here = (url.scheme().to_owned(), url.host().map(Host::serialize));
+        match &self.first {
+            None => self.first = Some(here),
+            Some(first) if *first != here => self.left = true,
+            Some(_) => {}
+        }
+        if self.left {
+            Site::Cross
+        } else {
+            site(initiator, url)
+        }
+    }
 }
 
 /// A date of `Expires` by the cookie-date algorithm (5.1.1), as seconds since the epoch (UTC),

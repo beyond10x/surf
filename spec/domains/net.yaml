@@ -170,7 +170,11 @@ types:
 #   "Lax-allowing-unsafe".
 # R9 Same site (5.2): a request is same-site when it has no initiator, or when the hop's address
 #   has the same scheme and the same host as the initiator, ports ignored. Every hop of a
-#   redirect keeps the initiator; its own address and method decide.
+#   redirect keeps the navigation's initiator. A hop is same-site only if, besides the rule
+#   above, every address of the chain so far (the first request and each hop before it) has the
+#   same scheme and host as the hop's own address; once the chain has been on another site,
+#   every later hop is cross-site, also for a navigation without an initiator. A cross-site hop
+#   gets no `Strict` cookie, and a `Lax` cookie only when its method is `Get`.
 # R10 Prefixes (5.4), in any case: `__Secure-` needs `Secure`; `__Host-` needs `Secure`, a `Path`
 #   attribute of `/` and no `Domain` attribute.
 # R11 A cookie of the same name, domain and path replaces the stored one and keeps its creation

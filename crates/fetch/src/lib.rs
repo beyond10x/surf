@@ -48,8 +48,9 @@
 //!
 //! A [`Request`] with a jar ([`Request::jar`], a `surf_cookie::Jar`) sends, on every hop, the
 //! `Cookie` field the jar gives for the hop's address, its method and whether it is same-site
-//! with the request's initiator ([`Request::initiator`], kept by every hop of a redirect;
-//! `surf_cookie::site`); one field after `Host` and `Connection`, none when no cookie matches.
+//! with the request's initiator ([`Request::initiator`], kept by every hop of a redirect), and
+//! cross-site on every hop after the chain has been on another site (`surf_cookie::Chain`); one
+//! field after `Host` and `Connection`, none when no cookie matches.
 //! Every `Set-Cookie` field of each response, redirects included, goes into the jar for that
 //! response's address before the next hop is sent; one that is not UTF-8 is dropped. A
 //! `Set-Cookie` field longer than the header limit ends the fetch as every such field does
@@ -633,6 +634,8 @@ pub fn send_from(
         }
     }
     let mut redirects = 0;
+    // The addresses of the chain so far, for whether a hop is same-site for cookies.
+    let mut chain = surf_cookie::Chain::new();
     let mut connect_left = limits.connect_timeout;
     let mut read_left = limits.read_timeout;
     // Whether the first request connected to a local address; none before it connected. A
@@ -680,7 +683,7 @@ pub fn send_from(
         let cookie = match (request.jar, hop_url) {
             (Some(jar), Some(url)) => jar.cookie_field(
                 url,
-                surf_cookie::site(request.initiator, url),
+                chain.site(request.initiator, url),
                 match outgoing.method {
                     Method::Get => surf_cookie::Method::Get,
                     Method::Post => surf_cookie::Method::Post,
