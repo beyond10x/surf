@@ -396,8 +396,12 @@ above, and the list of standards itself was written from memory.
     a cookie jar (`Request::jar`, a `surf_cookie::Jar`; `None` sends and keeps no cookie) and
     the navigation's initiator (`Request::initiator`, a serialized origin): each hop sends the
     one `Cookie` field the jar gives for its address, its method and whether it is same-site
-    with the initiator, and every `Set-Cookie` field of each response, redirects included, goes
-    into the jar before the next hop (the crate documentation, "Cookies"). `Request` has no
+    with the initiator (cross-site on every hop after the chain has been on another site,
+    `surf_cookie::Chain`), and every `Set-Cookie` field of each response, redirects included,
+    goes into the jar before the next hop; a field that is not UTF-8 is dropped (the crate
+    documentation, "Cookies"). With a jar the address is parsed once, by `surf_url`: the
+    connection, the `Host` field and the jar's lookup come from that parse on the first request
+    as on every redirect. `Request` has no
     `PartialEq` since; its `Debug` shows the jar as `Jar { cookies: <n> }`. 171 tests: 14 unit
     tests, `adversary_redirect_memory` 4, `adversary_tls_fetch` 9, `cookies` 18 (the wire
     cases W1 to W14 against a recording server of the test and the secure cases X1 to X4
@@ -417,16 +421,19 @@ above, and the list of standards itself was written from memory.
   - `crates/cookie` (`surf-cookie`, `story:agent-cookie-jar`): the cookie jar of one session,
     by draft-ietf-httpbis-rfc6265bis-22: `Jar` (one `Mutex` inside, so a `&Jar` is shared),
     `Jar::receive(url, set_cookie, now)`, `Jar::cookie_field(url, site, method, now)`,
-    `Jar::count(now)`, `site(initiator, url)` (same scheme and host as the initiator's origin,
-    ports ignored, or no initiator) and `parse_date`. Host-only cookies only: a `Domain`
-    attribute the host domain-matches keeps the cookie on the request host, any other ignores
-    it (no public suffix list). `Secure` by the scheme `https:` alone; `SameSite` `Strict`,
-    `Lax`, `None` and "Default" by site and the method of the hop; the `__Secure-` and
-    `__Host-` prefixes; a lifetime cut to 400 days; at most 50 cookies per domain and 3,000 per
-    jar, the least recently used evicted first (one without `Secure` first within a domain);
-    a `Cookie` field of at most 8,192 bytes. Every method takes the time, so the tests set it.
-    The crate documentation names each rule's section and the memory bound, 12,288,000 bytes
-    of names and values. `Debug` shows the count only. 14 tests (`jar`: the unit cases U1 to
+    `Jar::count(now)`, `Jar::stored_bytes()`, `site(initiator, url)` (same scheme and host as
+    the initiator's origin, ports ignored, or no initiator), `Chain::site(initiator, url)` (the
+    same, and cross-site once a redirect chain has been on another site) and `parse_date`.
+    Host-only cookies only: a `Domain` attribute the host domain-matches, or an empty one
+    (`Domain=.`), keeps the cookie on the request host, any other ignores it (no public suffix
+    list). `Secure` by the scheme `https:` alone, and a cookie from `http:` on the path of a
+    stored `Secure` one of its name, or below it, ignored; `SameSite` `Strict`, `Lax`, `None`
+    and "Default" by site and the method of the hop; the `__Secure-` and `__Host-` prefixes; a
+    lifetime cut to 400 days; at most 50 cookies per domain, 3,000 per jar and
+    `STORED_BYTES_MAX` (16 MiB) of names, values, paths and domains per jar, the least recently
+    used evicted first (one without `Secure` first within a domain); a `Cookie` field of at most
+    8,192 bytes. Every method takes the time, so the tests set it. The crate documentation
+    names each rule's section and the memory bound. `Debug` shows the count only. 14 tests (`jar`: the unit cases U1 to
     U14). Depends on `surf-url`.
   - `crates/ports` (`surf-ports`): in-memory storage and version 4 identities for the generated
     components, one ports type per component. `AgentPorts<R = OsRandom>` stores `Session` and
@@ -524,7 +531,8 @@ above, and the list of standards itself was written from memory.
     through `surf::fetch_http`); `--ca-file <path>` adds the certificates of one PEM file to the
     bundled anchors and `--anchors` prints them (module `https`, 4 tests, against
     `surf-tls-test-server` on 127.0.0.1). It passes no cookie jar (`RequestContext { anchors,
-    jar: None }`): one process, one page. A package of
+    jar: None }`): one process, one page; `cookies` 1 holds that a cookie a redirect sets is not
+    sent on the next hop and is in no output line. A package of
     its own so that it can depend on crates that depend on the `surf` library. Depends on `surf`,
     `surf-fetch` and `surf-ports`; its tests also on `surf-tls-test-server` and
     `surf-tls-test-certs`. The release workflow builds and versions `surf-cli`
@@ -636,7 +644,8 @@ above, and the list of standards itself was written from memory.
     `adversary_press` 23, `adversary_values` 3, `adversary_view` 1, `back_forward` 13, `built`
     16, `change_and_log` 18, `cookies` 1 (S1 to S7 of `story:agent-cookie-jar` in one test: the
     built `surf-agent` against `surfd` in the test process and page servers on 127.0.0.1 and
-    127.0.0.2; golden `look-cookies.txt`), `core` 22, `e2e` 2 (runs the three built binaries, or those in
+    127.0.0.2; golden `look-cookies.txt`; also `back` without an initiator, which sends a
+    `Strict` cookie), `core` 22, `e2e` 2 (runs the three built binaries, or those in
     `SURF_BIN_DIR`), `events` 26, `fill_pick` 22 (case 3 runs the built `surf-agent` against
     `surfd` in the test process), `follow` 18, `follow_refusals` 11 (over an in-memory transport
     that stands at any address), `form_rows` 1, `https` 16 (`open --ca-file`, and `follow` and
