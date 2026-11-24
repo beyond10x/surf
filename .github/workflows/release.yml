@@ -124,20 +124,44 @@ jobs:
         run: |
           set -euo pipefail
           # Warnings denied as in `task check`; runner paths kept out of the executables; symbols
-          # stripped. The smoke test builds its case with the same flags, so it reuses this build.
+          # stripped. The smoke test builds its case with the same flags, so it reuses what the test
+          # of the next step compiled under target/.
           echo "RUSTFLAGS=-D warnings --remap-path-prefix=$HOME=/build --remap-path-prefix=$GITHUB_WORKSPACE=/src -C strip=symbols" >> "$GITHUB_ENV"
+      # ring, the one outside crate of `surf-tls`, compiles C and assembly with the C compiler
+      # cc finds for the target. The Linux images have none for musl, and without one ring's
+      # build fails (`failed to find tool "x86_64-linux-musl-gcc"`); musl-tools installs
+      # `musl-gcc`, which makes static objects. The macOS images build ring with Apple clang
+      # and need no step (docs/design/tls.md, item 3).
+      - name: Install a C compiler that targets musl, for ring
+        if: contains(matrix.target, '-linux-musl')
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends musl-tools
+          echo "CC_${TARGET//-/_}=musl-gcc" >> "$GITHUB_ENV"
       - name: Build, test and package
         env:
           TARGET: ${{ matrix.target }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
+          # The test comes first and the shipped binaries are built after it, into a directory
+          # of their own. The test's dev-dependencies turn on the feature `test-tooling` of
+          # `surf-tls` in every crate the test build compiles, so the `surf` it builds under
+          # target/$TARGET/release has that feature and carries its marker "surf-tls
+          # test-tooling, never in a release" (docs/design/tls.md, item 6). A build
+          # of `--bins` only turns on no dev-dependency feature, and target/ship holds no file of
+          # the test build. The cost: ring and every crate the two builds share compile twice.
+          # The command-line cases run the `surf` the test builds against servers it starts.
+          cargo test --locked --release --package "$PACKAGE" --target "$TARGET" --test main cli:: -- --skip review1_cli::
           case "$TARGET" in
             *-linux-*)
               # The agent binaries find each other in one directory: `surf-agent` starts `surfd`
               # from its own, and `surfd` starts `surf-session` from its own.
               binaries=(surf surf-agent surfd surf-session)
-              cargo build --locked --release -p surf-cli -p surf-agent -p surfd -p surf-session --bins --target "$TARGET"
+              cargo build --locked --release -p surf-cli -p surf-agent -p surfd -p surf-session --bins --target "$TARGET" --target-dir target/ship
               ;;
             *)
               # macOS gets `surf` only. The agent binaries build there and cannot run there:
@@ -145,15 +169,21 @@ jobs:
               # not have, and `surf-agent` and `surfd` require XDG_RUNTIME_DIR, which macOS does
               # not set.
               binaries=(surf)
-              cargo build --locked --release --package "$PACKAGE" --bin surf --target "$TARGET"
+              cargo build --locked --release --package "$PACKAGE" --bin surf --target "$TARGET" --target-dir target/ship
               ;;
           esac
-          # The command-line cases run `surf` built above against servers started by the test.
-          cargo test --locked --release --package "$PACKAGE" --target "$TARGET" --test main cli:: -- --skip review1_cli::
+          # The marker search, checked once on the binary the test built, which must hold the
+          # marker; a search that finds nothing there would pass every shipped binary.
+          marker="surf-tls test-tooling, never in a release"
+          if ! grep -q -F "$marker" "target/$TARGET/release/surf"; then
+            echo "::error::the marker search finds no marker in target/$TARGET/release/surf, the binary the test built" >&2
+            exit 1
+          fi
+          echo "the marker search finds the marker in target/$TARGET/release/surf, the binary the test built"
           package="$ARCHIVE-$VERSION-$TARGET"
           mkdir -p "dist/$package"
           for binary in "${binaries[@]}"; do
-            bin="target/$TARGET/release/$binary"
+            bin="target/ship/$TARGET/release/$binary"
             case "$TARGET" in
               *-linux-*)
                 if readelf -lW "$bin" | grep INTERP; then
@@ -166,6 +196,11 @@ jobs:
               echo "::error::$bin holds a home directory path" >&2
               exit 1
             fi
+            if grep -q -F "$marker" "$bin"; then
+              echo "::error::$bin holds the marker \"$marker\": it was built with test-tooling" >&2
+              exit 1
+            fi
+            echo "the marker search finds no marker in $bin"
             cp "$bin" "dist/$package/"
           done
           # Every archive carries the licence and the notice beside the binaries.
@@ -182,7 +217,8 @@ jobs:
           check="$RUNNER_TEMP/unpacked"
           mkdir -p "$check"
           tar -C "$check" -xzf "dist/$ARCHIVE-$VERSION-$TARGET.tar.gz"
-          # What the directory holds; `surf` on a usage error and an unreachable address; on
+          # What the directory holds; `surf` on a usage error, on an unreachable `http:` and
+          # `https:` address, and `surf --anchors` against crates/tls/src/anchors/SOURCE; on
           # Linux, in a private XDG_RUNTIME_DIR, `surf-agent open`, `go`, `look` and `close` on
           # a local page through the unpacked `surfd` and `surf-session`
           # (crates/session/tests/e2e.rs), then no process left from the directory. The same

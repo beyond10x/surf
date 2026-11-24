@@ -16,7 +16,12 @@
 #
 # 1. The file list of the directory, and every binary in it executable.
 # 2. `surf` without an argument exits 2; `surf http://127.0.0.1:1/` exits 1 and prints
-#    `fetch-failed <id> Unreachable http://127.0.0.1:1/`.
+#    `fetch-failed <id> Unreachable http://127.0.0.1:1/`; `surf https://127.0.0.1:1/` exits 1
+#    and prints `fetch-failed <id> Unreachable https://127.0.0.1:1/`, so the scheme is accepted
+#    (a binary without `https:` ends `UnsupportedScheme`); `surf --anchors` exits 0 and prints
+#    `anchors <n> bundled <date> sha256:<hex>`, the date and sha256 those of
+#    crates/tls/src/anchors/SOURCE of the checkout and <n> from 1 to its count (a root the
+#    certificate reader cannot take gives no anchor), so the binary finds its anchors.
 # 3. Linux only: the end-to-end case of the session process (crates/session/tests/e2e.rs) on the
 #    directory's `surf-agent`, `surfd` and `surf-session`, in a private XDG_RUNTIME_DIR; then no
 #    process whose arguments start with the directory may still run.
@@ -70,6 +75,32 @@ out=$("$dir/surf" http://127.0.0.1:1/ 2>/dev/null) || status=$?
 printf '%s\n' "$out" | grep -q '^fetch-failed [0-9a-f-]* Unreachable http://127.0.0.1:1/$' ||
   fail "surf http://127.0.0.1:1/ printed no fetch-failed line: $out"
 echo "release-smoke: surf exits 2 without an argument and 1 on http://127.0.0.1:1/"
+
+status=0
+out=$("$dir/surf" https://127.0.0.1:1/ 2>/dev/null) || status=$?
+line=$(printf '%s\n' "$out" | grep '^fetch-failed ') || line=$out
+[ "$status" = 1 ] || fail "surf https://127.0.0.1:1/ exited $status, not 1: $line"
+printf '%s\n' "$line" | grep -q '^fetch-failed [0-9a-f-]* Unreachable https://127.0.0.1:1/$' ||
+  fail "surf https://127.0.0.1:1/ did not end Unreachable: $line"
+echo "release-smoke: surf https://127.0.0.1:1/ exits 1: $line"
+
+source=crates/tls/src/anchors/SOURCE
+[ -f "$source" ] || fail "$source is missing: run the script from a checkout of the commit built"
+date=$(sed -n 's/^date: //p' "$source")
+sha256=$(sed -n 's/^sha256: //p' "$source")
+count=$(sed -n 's/^count: //p' "$source")
+case "$count" in
+  '' | *[!0-9]*) fail "$source has no count that is a number: $count" ;;
+esac
+[ -n "$date" ] && [ -n "$sha256" ] || fail "$source has no date or no sha256"
+status=0
+out=$("$dir/surf" --anchors 2>/dev/null) || status=$?
+[ "$status" = 0 ] || fail "surf --anchors exited $status, not 0: $out"
+n=$(printf '%s\n' "$out" | sed -n "s/^anchors \([1-9][0-9]*\) bundled $date sha256:$sha256\$/\1/p")
+[ -n "$n" ] && [ "$out" = "anchors $n bundled $date sha256:$sha256" ] ||
+  fail "surf --anchors printed no line anchors <n> bundled $date sha256:$sha256: $out"
+[ "$n" -le "$count" ] || fail "surf --anchors counts $n anchors, over the $count of $source: $out"
+echo "release-smoke: surf --anchors exits 0: $out ($source: $count certificates of $date)"
 
 [ "$agent" = yes ] || {
   echo "release-smoke: ok, surf only on $(uname -s)"
