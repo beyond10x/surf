@@ -10,8 +10,6 @@ relations:
 - depends_on: story:scripts-decisions
 scope:
 - confidence: cited
-  path: README.md
-- confidence: cited
   path: crates/answer/src/lib.rs
 - confidence: inferred
   path: crates/answer/tests
@@ -25,11 +23,7 @@ scope:
   path: crates/surfd/tests
 - confidence: cited
   path: docs/agent-answer.md
-- confidence: cited
-  path: docs/badges
-- confidence: cited
-  path: website/docs/how-it-is-built.md
-revision: 13
+revision: 14
 ---
 ## Context
 

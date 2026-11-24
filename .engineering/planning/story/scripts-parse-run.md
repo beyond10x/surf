@@ -11,20 +11,14 @@ relations:
 - depends_on: story:scripts-dom-reading
 scope:
 - confidence: cited
-  path: README.md
-- confidence: cited
   path: crates/script/src/lib.rs
 - confidence: cited
   path: crates/script/src/run.rs
 - confidence: cited
   path: crates/script/tests/parse_run.rs
 - confidence: cited
-  path: docs/badges
-- confidence: cited
   path: docs/design/scripts.md
-- confidence: cited
-  path: website/docs/how-it-is-built.md
-revision: 9
+revision: 10
 ---
 ## Context
 

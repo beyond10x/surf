@@ -10,8 +10,6 @@ relations:
 - depends_on: story:webidl-bindings
 scope:
 - confidence: cited
-  path: README.md
-- confidence: cited
   path: crates/script/src/dom/reading.rs
 - confidence: cited
   path: crates/script/src/dom/window.rs
@@ -21,11 +19,7 @@ scope:
   path: crates/script/src/lib.rs
 - confidence: cited
   path: crates/script/tests/dom_reading.rs
-- confidence: cited
-  path: docs/badges
-- confidence: cited
-  path: website/docs/how-it-is-built.md
-revision: 11
+revision: 12
 ---
 ## Context
 

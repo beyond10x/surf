@@ -20,8 +20,6 @@ scope:
 - confidence: cited
   path: Cargo.lock
 - confidence: cited
-  path: README.md
-- confidence: cited
   path: cli/surf-agent.yaml
 - confidence: cited
   path: conformance/src/target.rs
@@ -46,22 +44,18 @@ scope:
 - confidence: cited
   path: docs/agent-answer.md
 - confidence: cited
-  path: docs/badges
-- confidence: cited
   path: docs/design/scripts.md
 - confidence: cited
   path: taskfiles/lock-allow.txt
 - confidence: cited
   path: website/docs/drive-from-an-agent.md
 - confidence: cited
-  path: website/docs/how-it-is-built.md
-- confidence: cited
   path: website/docs/index.md
 - confidence: cited
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 21
+revision: 22
 ---
 ## Context
 

@@ -10,8 +10,6 @@ relations:
 - depends_on: story:scripts-decisions
 scope:
 - confidence: cited
-  path: README.md
-- confidence: cited
   path: cli/surf-agent.yaml
 - confidence: cited
   path: conformance/src/target.rs
@@ -37,8 +35,6 @@ scope:
   path: crates/view/examples/prototype.rs
 - confidence: inferred
   path: crates/view/tests/json.rs
-- confidence: cited
-  path: docs/badges
 - confidence: inferred
   path: docs/view-stream.md
 - confidence: cited
@@ -54,12 +50,10 @@ scope:
 - confidence: cited
   path: spec/scenarios
 - confidence: cited
-  path: website/docs/how-it-is-built.md
-- confidence: cited
   path: website/docs/principles.md
 - confidence: cited
   path: website/docs/status.md
-revision: 23
+revision: 24
 ---
 ## Context
 

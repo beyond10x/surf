@@ -16,26 +16,20 @@ scope:
 - confidence: cited
   path: Cargo.lock
 - confidence: cited
-  path: README.md
-- confidence: cited
   path: crates/html-conformance/Cargo.toml
 - confidence: cited
   path: crates/html-conformance/expected
 - confidence: cited
   path: crates/html-conformance/src
 - confidence: cited
-  path: docs/badges
-- confidence: cited
   path: docs/design/html-parser.md
 - confidence: inferred
   path: taskfiles/lock-allow.txt
 - confidence: cited
-  path: website/docs/how-it-is-built.md
-- confidence: cited
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 13
+revision: 14
 ---
 ## Context
 

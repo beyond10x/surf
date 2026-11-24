@@ -13,8 +13,6 @@ scope:
 - confidence: cited
   path: Cargo.lock
 - confidence: cited
-  path: README.md
-- confidence: cited
   path: Taskfile.yml
 - confidence: cited
   path: crates/script/Cargo.toml
@@ -37,12 +35,8 @@ scope:
 - confidence: cited
   path: crates/webidl/tests
 - confidence: cited
-  path: docs/badges
-- confidence: cited
   path: taskfiles/webidl.yml
-- confidence: cited
-  path: website/docs/how-it-is-built.md
-revision: 16
+revision: 17
 ---
 ## Context
 

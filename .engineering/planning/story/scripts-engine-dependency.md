@@ -18,8 +18,6 @@ scope:
 - confidence: cited
   path: NOTICE
 - confidence: cited
-  path: README.md
-- confidence: cited
   path: Taskfile.yml
 - confidence: cited
   path: crates/script/Cargo.toml
@@ -34,16 +32,12 @@ scope:
 - confidence: cited
   path: crates/surf/tests/lock_check.rs
 - confidence: cited
-  path: docs/badges
-- confidence: cited
   path: taskfiles/lock-allow.txt
 - confidence: cited
   path: taskfiles/lock-check.sh
 - confidence: cited
-  path: website/docs/how-it-is-built.md
-- confidence: cited
   path: website/docs/principles.md
-revision: 15
+revision: 16
 ---
 ## Context
 

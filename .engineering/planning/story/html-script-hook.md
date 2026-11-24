@@ -12,8 +12,6 @@ relations:
 - depends_on: story:html-parser-limits
 scope:
 - confidence: cited
-  path: README.md
-- confidence: cited
   path: crates/html/src/lib.rs
 - confidence: cited
   path: crates/html/src/tree.rs
@@ -26,12 +24,8 @@ scope:
 - confidence: cited
   path: crates/html/tests/script_hook.rs
 - confidence: cited
-  path: docs/badges
-- confidence: cited
   path: docs/design/html-parser.md
-- confidence: cited
-  path: website/docs/how-it-is-built.md
-revision: 12
+revision: 13
 ---
 ## Context
 

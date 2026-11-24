@@ -11,16 +11,10 @@ relations:
 - depends_on: story:scripts-dom-reading
 scope:
 - confidence: cited
-  path: README.md
-- confidence: cited
   path: crates/script/src/dom/attributes.rs
 - confidence: cited
   path: crates/script/tests/dom_attributes.rs
-- confidence: cited
-  path: docs/badges
-- confidence: cited
-  path: website/docs/how-it-is-built.md
-revision: 10
+revision: 11
 ---
 ## Context
 

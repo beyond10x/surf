@@ -11,14 +11,8 @@ scope:
 - confidence: cited
   path: Cargo.lock
 - confidence: cited
-  path: README.md
-- confidence: cited
   path: crates/webidl
-- confidence: cited
-  path: docs/badges
-- confidence: cited
-  path: website/docs/how-it-is-built.md
-revision: 11
+revision: 12
 ---
 ## Context
 
