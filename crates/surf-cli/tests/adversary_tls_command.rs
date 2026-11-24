@@ -75,7 +75,7 @@ fn server(case: &str, mode: Mode) -> TestServer {
 /// A directory of this test process under `CARGO_TARGET_TMPDIR`, made empty.
 fn scratch(name: &str) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-        .join("surf-cli-adversary-tls")
+        .join("surf-cli-adversary-tls-command")
         .join(format!("{name}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("the scratch directory");

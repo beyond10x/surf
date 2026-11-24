@@ -52,7 +52,7 @@ fn surf(args: &[&str]) -> Run {
 
 fn scratch(name: &str) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-        .join("surf-cli-secreview-tls")
+        .join("surf-cli-secreview-tls-command")
         .join(format!("{name}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("the scratch directory");
