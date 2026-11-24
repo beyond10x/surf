@@ -5,9 +5,10 @@ description: Download surf, load one page, and find the agent binaries.
 
 # Try it
 
-surf comes as pre-built binaries. `surf` loads one `http:` address and prints what happened; it
-shows no page. On Linux, `surf-agent` drives a browser session one call at a time, for an AI
-agent or a script ([Drive surf from an agent](drive-from-an-agent.md)).
+surf comes as pre-built binaries. `surf` loads one `http:` or `https:` address and prints what
+happened; it shows no page. `https:` loads since release `0.7.0` ([below](#https)). On Linux,
+`surf-agent` drives a browser session one call at a time, for an AI agent or a script
+([Drive surf from an agent](drive-from-an-agent.md)).
 
 ## Install
 
@@ -25,7 +26,7 @@ Each [release](https://github.com/beyond10x/surf/releases) has an archive per ta
 On Linux:
 
 ```console
-$ version=0.6.0 target=x86_64-unknown-linux-musl
+$ version=0.7.0 target=x86_64-unknown-linux-musl
 $ base=https://github.com/beyond10x/surf/releases/download/$version
 $ curl -fsSLO $base/surf-$version-$target.tar.gz -fsSLO $base/SHA256SUMS
 $ grep " surf-$version-$target.tar.gz\$" SHA256SUMS | sha256sum --check
@@ -59,6 +60,22 @@ document 9ed741bc-a98b-428b-9585-c90c379a8e4d http://127.0.0.1:41977/index.html
 One line per thing that happened, in a format a script can rely on. The exit status is 0 when the
 page loaded and 1 when it did not. [The `surf` command](reference/surf-command.md) gives the full
 output format, the exit statuses and the limits.
+
+## https
+
+Since release `0.7.0`, `surf` loads an `https:` address over its own
+TLS 1.3 client, and authenticates the server against the root list of Mozilla as curl
+publishes it, built into the binary. `--ca-file <path>` adds the CA certificates of a PEM file
+for that load, and `surf --anchors` prints the number of trust anchors read from the list, the
+list's date and its sha256:
+
+```text
+anchors <n> bundled <yyyy-mm-dd> sha256:<64 hex>
+```
+
+A certificate that is not trusted, has expired or names another host, a server limited to
+TLS 1.2 and a failed handshake each fail the load with a reason of its own.
+surf does not check revocation: a revoked certificate that has not expired loads.
 
 ## Working on surf itself
 

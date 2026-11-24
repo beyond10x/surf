@@ -564,7 +564,7 @@ above, and the list of standards itself was written from memory.
     `fill f1 -- -`), and a value from standard input whose request is over 65,536 bytes is
     refused naming its quoted size (`client::STDIN_VALUE_FITS`, 16,000 bytes, always fits beside
     a handle of up to 1,364); the `Debug` of a wire `Arg` writes its value's length. The
-    package carries the release version, `0.6.0`, as do `surf-cli`, `surfd` and
+    package carries the release version, `0.7.0`, as do `surf-cli`, `surfd` and
     `surf-session`. `open` starts `surfd` from the directory of its own executable. 61 tests in
     one binary: `adversary_ca_file` 4, `adversary_fill_pick` 6, `ca_file` 6, `drift` 2,
     `secreview_refusal_text` 2, `stand_in` 10, `start` 12, `token` 9, `usage` 10. Depends on
@@ -1283,7 +1283,8 @@ actionable element its label (run by the tests only).
   CLIs can be specified": the agent's action surface is specified and "mapped to core operations
   of that browser". Planned as `epic:agent-cli-target` (draft). It has code since wave 4:
   `surf-agent open`, `go`, `look` and `close` against `surfd` and one `surf-session` process per
-  session, over `http:` only. Since round 2 the agent target has every command of the epic:
+  session, over `http:` only (`https:` since `story:tls-fetch-https`). Since round 2 the agent
+  target has every command of the epic:
   `open`, `go`, `look`, `close`, `follow`, `back`, `forward`, `fill`, `pick`, `press`, `log`.
   Before scripts a same-document `changed` block holds control state only
   (`docs/agent-answer.md`, "What an answer holds today"). ESS has a document for it:
@@ -1390,7 +1391,16 @@ is on that old history too, and stays local.
   `surf-session` carry the release version; the tag is checked against `surf-cli`. The smoke
   test is `taskfiles/release-smoke.sh` (task `release-smoke`, `DIR=<unpacked archive>`): the
   release workflow calls it with `sh`, and it runs unchanged on a workstation.
-  `docs/releasing.md` is the procedure.
+  `docs/releasing.md` is the procedure. Since `story:tls-release`: every shipped binary is
+  built with ring through `surf-tls`, and `NOTICE` names ring, the four crates it needs and the
+  root list; the job `package` installs `musl-tools` on the two Linux runners, because ring
+  compiles C and assembly and the images have no compiler for musl (`docs/design/tls.md` item
+  3); it runs the command-line test first and builds the shipped binaries after it into
+  `target/ship`, and fails when the marker of `test-tooling` (`surf-tls test-tooling, never
+  in a release`) is missing from the `surf` the test built or present in a binary it packs;
+  the smoke test also runs `surf https://127.0.0.1:1/` (exit 1, `Unreachable`) and `surf
+  --anchors` (exit 0, the date and sha256 of `crates/tls/src/anchors/SOURCE` of the checkout);
+  and the first step of a release is `task anchors-age`.
 - Examples in `README.md`, `docs/surf-command.md` and the website show the installed binary
   (`surf http://…`), never a build command or a path under `target/`. The operator,
   2026-11-21: "make sure that examples in the docs [...] do not contain cargo run stuff.
@@ -1451,14 +1461,19 @@ the others were written to a scratch directory and not compiled:
   repository. The waves after 4 stay in the plan; they are planned and not scheduled.
 - Present state: wave 10 and rounds 1 and 2 are delivered (10 of 22 waves, and the stories of
   rounds 1 and 2); release `0.2.0` follows wave 4, release `0.3.0` wave 9, release `0.4.0`
-  round 1, release `0.5.0` round 2 and release `0.6.0` the view's control states and changed
-  panel (the releases are listed at https://github.com/beyond10x/surf/releases). The
+  round 1, release `0.5.0` round 2, release `0.6.0` the view's control states and changed
+  panel and release `0.7.0` TLS 1.3 and `https:` (the releases are listed at
+  https://github.com/beyond10x/surf/releases). The
   operator session ordered the continuation after the checkpoint on 2026-11-21, for the
-  operator: "continue as its `AGENTS.md` says". The next is round 3 of
-  `docs/plan/agent-waves.md` ("Rounds after wave 10": the waves 11 to 22 in three rounds). The stories
+  operator: "continue as its `AGENTS.md` says". Round 3 of `docs/plan/agent-waves.md`
+  ("Rounds after wave 10": the waves 11 to 22 in three rounds) is the runner, and it moves
+  behind items 2 and 4 of that file's list "What an agent needs from surf" (D85). The stories
   accepted behind the planned waves are listed in
-  that file, in "Accepted on 2026-11-21, behind the planned waves". Open for the next steps:
-  links, forms and history (round 2), and TLS.
+  that file, in "Accepted on 2026-11-21, behind the planned waves". Open for the next steps,
+  in the order of that list: cookies (`story:agent-cookie-jar`, active), pages that build
+  their content by script (`epic:scripts-in-a-page`, draft), a skill definition for agents
+  (`story:agent-skill-definition`, active); round 3 (`epic:e2e-scenario-runner`, active)
+  comes after cookies.
 - Branches: `wave/<n>-<name>` for a wave, `impl/<story-slug>` for a unit. Every checkout is a
   managed worktree (`worktree create`); nothing is edited in the primary checkout during a wave.
 - An implementor leaves its changes uncommitted; the coordinator commits, merges and owns every
@@ -1736,7 +1751,8 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `////` comment; a root without `crates/` and `generated/` exits 2. `SCRIPT=<path>` runs a
   copy of the script.
 - `task release-smoke DIR=<unpacked archive>`: `taskfiles/release-smoke.sh` on a release
-  archive, as the release workflow runs it (`docs/releasing.md`).
+  archive, as the release workflow runs it (`docs/releasing.md`), from a checkout of the commit
+  built: step 2 reads `crates/tls/src/anchors/SOURCE`.
 - `task validate`, `task suite`, `task conform`: the specification steps on their own.
 - `task conform-rust`: the crate `conformance/`, warnings denied. First the fast check, `sh
   taskfiles/conform-noticed.sh check`: the sha256 of the sources of
@@ -1769,7 +1785,7 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   tests and the controls only, by a nextest filter; the defects of one test each on a thread
   of its own), each still held to being noticed. It prints one count line per defect over the
   whole suite (`sh taskfiles/conform-noticed.sh counts`), for example `navigation storage
-  drops every put: 196 scenarios: 146 passed, 50 failed, 0 error, 0 unsupported`, writes
+  drops every put: 201 scenarios: 146 passed, 55 failed, 0 error, 0 unsupported`, writes
   `.out/noticed.txt` (`sh taskfiles/conform-noticed.sh assemble`) and fails when that differs
   from `conformance/tests/noticed.txt` byte for byte. `WRITE=1` writes the committed file. A
   change to a source of the list runs `task conform-slow WRITE=1` and commits `noticed.txt` in
@@ -1897,9 +1913,11 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `UnsupportedScheme`), `https:` against the bundled trust anchors, and for a session opened
   with `surf-agent open --ca-file <path>` also against the CA certificates of that file
   (`docs/agent-answer.md`, "Extra trust anchors"), by `go` and `open` as by `follow` and
-  `press`, which refuse a target of any other scheme (`unsupported-scheme`); and an answer
-  shows no
-  page content (status, media type and address only), because no page is parsed yet. While
+  `press`, which refuse a target of any other scheme (`unsupported-scheme`); and the body of
+  an HTML response is parsed with `surf-html` (`surf::HtmlParser`, `crates/surf/src/lib.rs`),
+  so an answer shows the page's title on its `page` line, the `now` block of its links,
+  buttons and fields and the `changed` block, and with `--as tree|markdown` the page as text
+  (`docs/agent-answer.md`); nothing renders it. While
   `surfd` runs, `$XDG_RUNTIME_DIR/surf/view-url` holds the live view's address and token
   (`http://127.0.0.1:<port>/#<token>`); open it in a browser on the same machine to see the
   sessions. `docs/view-stream.md` gives its routes.

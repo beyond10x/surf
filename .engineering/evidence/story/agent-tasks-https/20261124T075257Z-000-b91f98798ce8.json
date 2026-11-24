@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T07:52:57Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-tasks-https",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the gate in runner form (task check-runner) on e3109a6, the tip of impl/agent-tasks-https, on the build node, 2026-11-24 08:20 to 08:24 CET",
+    "reference": "exit 0 in 245 s; conformance 201 of 201 scenarios, step 5.3 s; 1345 tests passed, test step 12.2 s; 552 TLS tests passed, 4.4 s; 71 page tests passed, page step 20.2 s of 120 s; agent-tasks: 5 tasks, 5 pass, 0 fail, 0 skipped"
+  }
+}
