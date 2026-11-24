@@ -1002,18 +1002,23 @@ above, and the list of standards itself was written from memory.
     commit `54a5f2de6a34e27a517a49370bc07d8943b0be11`, Last Updated 14 November 2026; CC BY
     4.0), with a `SOURCE` file naming each file's address, commit, date, licence, copyright,
     index lines and sha256; `data/.gitattributes` (`* -text`); the two pages are never
-    edited. `read_page` parses a page with `surf-html` and takes the text of the `pre` element
-    after the `h2` whose `id` is `idl-index` (673 lines of the DOM, 57 of Web IDL); `read`
-    lexes and parses such a text. Every construct it does not know fails as `<file>:<line>:
-    refused: <construct>`, among them `Promise<T>`, an overload, `namespace`, `maplike`,
-    `setlike`, `async iterable`, `legacycaller` and an extended attribute outside
-    `EXTENDED_ATTRIBUTES`; `ADDED` lists the five constructs the first runs over the pages
-    named and the reader then learned. `Model::new` also refuses an operation name twice in the
-    merged view of an interface, its partials and the mixins it includes; `Model::counts`,
-    `Model::members`, `Model::extended_attribute_counts` and `Model::unresolved` read it (for
-    the two pages, `tests/unresolved.txt` lists the names no definition defines). Depends on
-    `surf-html` only. 43 tests in one test binary (`reader` 29, `refusals` 11, `source` 2,
-    `vendored` 1; the model of both pages is built once per run, in `vendored`).
+    edited. `read_page` parses a page with `surf-html` and takes the text of every `pre`
+    element after the `h2` whose `id` is `idl-index`, up to the next `h2` (each page has one
+    such `pre`: 673 lines of the DOM, 57 of Web IDL); `read` lexes and parses such a text.
+    Every construct it does not know fails as `<file>:<line>: refused: <construct>`, the line
+    one of the extracted index, among them `Promise<T>`, an overload, `namespace`, `maplike`,
+    `setlike`, `async iterable`, `legacycaller`, an extended attribute outside
+    `EXTENDED_ATTRIBUTES` and a type nested deeper than `MAX_TYPE_DEPTH` (32) levels; `ADDED`
+    lists the five constructs the first runs over the pages named and the reader then
+    learned. The names of `TYPE_EXTENDED_ATTRIBUTES` are read onto the type of the argument,
+    attribute, operation or dictionary member they are written before. `Model::new` also
+    refuses an operation name twice in the merged view of an interface, its partials and the
+    mixins it includes, a name two definitions define, and `A includes B;` where `B` is no
+    interface mixin or `A` no interface; `Model::counts`, `Model::members`,
+    `Model::extended_attribute_counts` and `Model::unresolved` read it (for the two pages,
+    `tests/unresolved.txt` lists the names no definition defines). Depends on `surf-html`
+    only. 69 tests in one test binary (`adversary` 11, `depth` 3, `reader` 36, `refusals` 16,
+    `source` 2, `vendored` 1; the model of both pages is built once per run, in `vendored`).
   - `crates/tls-conformance` (`surf-tls-conformance`, test tooling, not shipped): runs the
     x509-limbo cases of `crates/tls/tests/data/x509-limbo/` through `surf_tls::path::PathVerifier`
     at each case's `validation_time` or at `LIMBO_TIME` (the limbo commit date), never at the
