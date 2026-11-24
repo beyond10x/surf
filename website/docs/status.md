@@ -13,7 +13,8 @@ keeps cookies. It has no window, no rendering and no JavaScript yet.
 ## Numbers
 
 On 2026-11-24, with ess 0.97.4, after round 2, which follows round 1 and wave 10 of the current
-plan, after the live view's control states and changed panel, and after TLS 1.3 and `https:`:
+plan, after the live view's control states and changed panel, after TLS 1.3 and `https:`, and
+after the cookie jar and `surf-agent help --for-agent` (the gate run on `eb97549`):
 
 | what | value |
 |---|---|
