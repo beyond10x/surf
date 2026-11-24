@@ -7,6 +7,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// The source cargo writes for the six packages of swell at the tag the root manifest names.
+const SWELL: &str =
+    "git+https://github.com/beyond10x/swell?tag=0.8.0#0c1827128b57845e203713e87a0b0949fc8d63be";
+
 const SWELL_PACKAGES: [&str; 6] = [
     "swell",
     "swell-compiler",
@@ -181,4 +185,222 @@ fn profile_sections_inside_a_string_fail() {
         "naming swell-num and overflow-checks",
         |l| l.contains("swell-num") && l.contains("overflow-checks"),
     );
+}
+
+/// Held: the section of another profile, or a nested table of the release section, does not
+/// stand for the release section of swell-num.
+#[test]
+fn a_section_of_another_profile_does_not_count() {
+    for (i, other) in [
+        "[profile.dev.package.swell-num]\noverflow-checks = true\n",
+        "[profile.bench.package.swell-num]\noverflow-checks = true\n",
+        "[profile.release.package.swell-num.build-override]\noverflow-checks = true\n",
+        "[profile.release.package.\"*\"]\noverflow-checks = true\n",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let mut files = Files::committed();
+        let manifest = files.manifest.take().expect("a manifest");
+        files.manifest = Some(manifest.replace(&release_section("swell-num"), other));
+        let line = format!(
+            "Cargo.toml: swell-num 0.8.0 from {SWELL}: no overflow-checks = true under [profile.release.package.swell-num]"
+        );
+        assert_fails(&format!("other-profile-{i}"), &files, &line, |l| l == line);
+    }
+}
+
+/// Held: swell 0.8.0 from every other spelling of a source fails, naming it.
+#[test]
+fn swell_from_any_other_source_fails_naming_it() {
+    let commit = "0c1827128b57845e203713e87a0b0949fc8d63be";
+    let sources = [
+        format!("git+https://github.com/beyond10x/swell?branch=main#{commit}"),
+        format!("git+https://github.com/beyond10x/swell?rev={commit}#{commit}"),
+        format!("git+https://github.com/beyond10x/swell#{commit}"),
+        format!("git+https://github.com/someone/swell?tag=0.8.0#{commit}"),
+        format!("git+https://github.com/Beyond10x/swell?tag=0.8.0#{commit}"),
+        format!("git+https://github.com/beyond10x/swell.git?tag=0.8.0#{commit}"),
+        format!("git+https://github.com/beyond10x/swell/?tag=0.8.0#{commit}"),
+        format!("git+http://github.com/beyond10x/swell?tag=0.8.0#{commit}"),
+        format!("git+ssh://git@github.com/beyond10x/swell?tag=0.8.0#{commit}"),
+        format!(
+            "git+https://github.com/beyond10x/swell?tag=0.8.0#{}",
+            &commit[..8]
+        ),
+    ];
+    for (i, source) in sources.iter().enumerate() {
+        let mut files = Files::committed();
+        files.lock = Some(edit_package(files.lock(), "swell", |b| {
+            b.replace(SWELL, source)
+        }));
+        let start = format!("Cargo.lock: swell 0.8.0 from {source}: not on the allow-list");
+        assert_fails(&format!("source-{i}"), &files, &start, |l| {
+            l.starts_with(&start)
+        });
+    }
+    // A registry package named swell, with a checksum.
+    let mut files = Files::committed();
+    files.lock = Some(edit_package(files.lock(), "swell", |b| {
+        b.replace(
+            &format!("source = \"{SWELL}\"\n"),
+            &format!(
+                "source = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"{}\"\n",
+                "ab".repeat(32)
+            ),
+        )
+    }));
+    assert_fails(
+        "source-registry",
+        &files,
+        "naming swell from the registry",
+        |l| l.starts_with("Cargo.lock: swell 0.8.0 from registry+"),
+    );
+}
+
+/// Held: the lock writes a renamed, target-specific, build, dev or workspace-inherited
+/// dependency as one more entry of `dependencies`, also as `"<name> <version> (<source>)"`
+/// when two packages share the name; a crate without a line of the owners file fails.
+#[test]
+fn a_dependency_entry_with_version_and_source_fails_naming_the_crate() {
+    for (i, entry) in [
+        "swell 0.8.0",
+        &format!("swell 0.8.0 ({SWELL})"),
+        "swell-syntax",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let mut files = Files::committed();
+        files.lock = Some(edit_package(files.lock(), "surf-fetch", |b| {
+            b.replace(
+                " \"surf-url\",\n]",
+                &format!(" \"surf-url\",\n \"{entry}\",\n]"),
+            )
+        }));
+        let name = entry.split(' ').next().expect("a name");
+        let line =
+            format!("Cargo.lock: surf-fetch depends on {name}; lock-owners.txt does not allow it");
+        assert_fails(&format!("entry-{i}"), &files, &line, |l| l == line);
+    }
+}
+
+/// Held: `[patch]` of swell to a path copy leaves swell without `source`; the six listed
+/// lines then match nothing and the check fails naming them. An old `replace` line is not in
+/// the form cargo writes.
+#[test]
+fn a_patch_or_replace_of_swell_fails() {
+    let mut files = Files::committed();
+    let mut lock = files.lock().to_string();
+    for name in SWELL_PACKAGES {
+        lock = edit_package(&lock, name, |b| {
+            b.replace(&format!("source = \"{SWELL}\"\n"), "")
+        });
+    }
+    files.lock = Some(lock);
+    assert_fails("patch-path", &files, "naming swell-num 0.8.0", |l| {
+        l == "taskfiles/lock-allow.txt: swell-num 0.8.0 is in no package of Cargo.lock"
+    });
+    let mut files = Files::committed();
+    files.lock = Some(edit_package(files.lock(), "swell", |b| {
+        b.replace(
+            "version = \"0.8.0\"\n",
+            &format!("version = \"0.8.0\"\nreplace = \"swell 0.8.0 ({SWELL})\"\n"),
+        )
+    }));
+    assert_fails("replace", &files, "naming the replace line", |l| {
+        l.contains("not in the form cargo writes: replace = ")
+    });
+}
+
+/// Held: an empty or missing list, owners file or manifest fails; so does a line with a
+/// trailing space or a carriage return, and a listed line written twice.
+#[test]
+fn empty_missing_or_malformed_lists_fail() {
+    let committed = Files::committed();
+    let allow = committed.allow.clone().expect("allow");
+    let owners = committed.owners.clone().expect("owners");
+    let mut cases: Vec<(&str, Files)> = Vec::new();
+    let with = |f: &dyn Fn(&mut Files)| {
+        let mut files = committed.clone();
+        f(&mut files);
+        files
+    };
+    cases.push(("allow-empty", with(&|f| f.allow = Some(String::new()))));
+    cases.push(("owners-empty", with(&|f| f.owners = Some(String::new()))));
+    cases.push(("allow-missing", with(&|f| f.allow = None)));
+    cases.push(("owners-missing", with(&|f| f.owners = None)));
+    cases.push(("manifest-missing", with(&|f| f.manifest = None)));
+    cases.push((
+        "manifest-empty",
+        with(&|f| f.manifest = Some(String::new())),
+    ));
+    cases.push((
+        "allow-trailing-space",
+        with(&|f| f.allow = Some(allow.replace(" none\n", " none \n"))),
+    ));
+    cases.push((
+        "owners-trailing-space",
+        with(&|f| f.owners = Some(owners.replace("swell surf-script\n", "swell surf-script \n"))),
+    ));
+    cases.push((
+        "allow-crlf",
+        with(&|f| f.allow = Some(allow.replace('\n', "\r\n"))),
+    ));
+    cases.push((
+        "owners-crlf",
+        with(&|f| f.owners = Some(owners.replace('\n', "\r\n"))),
+    ));
+    let swell_line = allow
+        .lines()
+        .find(|l| l.starts_with("swell "))
+        .expect("swell listed")
+        .to_string();
+    cases.push((
+        "allow-duplicate",
+        with(&|f| {
+            f.allow = Some(allow.replace(&swell_line, &format!("{swell_line}\n{swell_line}")))
+        }),
+    ));
+    for (name, files) in &cases {
+        let (status, text) = check(name, files);
+        assert_ne!(status, Some(0), "{name}: the check passed:\n{text}");
+    }
+}
+
+/// Held: a seventh package from swell's address, listed, without its section of the release
+/// profile fails naming it; with the section it passes.
+#[test]
+fn a_seventh_swell_package_needs_its_profile_section() {
+    let mut files = Files::committed();
+    let block = format!(
+        "[[package]]\nname = \"swell-extra\"\nversion = \"0.8.0\"\nsource = \"{SWELL}\"\n\n"
+    );
+    let lock = files.lock().to_string();
+    let at = lock
+        .find("[[package]]\nname = \"swell-num\"\n")
+        .expect("swell-num");
+    let lock = format!("{}{block}{}", &lock[..at], &lock[at..]);
+    let lock = edit_package(&lock, "swell", |b| {
+        b.replace(
+            " \"swell-compiler\",\n",
+            " \"swell-compiler\",\n \"swell-extra\",\n",
+        )
+    });
+    files.lock = Some(lock);
+    let mut allow = files.allow.take().expect("allow");
+    allow = allow.replace(
+        &format!("swell-num 0.8.0 {SWELL} none\n"),
+        &format!("swell-extra 0.8.0 {SWELL} none\nswell-num 0.8.0 {SWELL} none\n"),
+    );
+    files.allow = Some(allow);
+    let line = format!(
+        "Cargo.toml: swell-extra 0.8.0 from {SWELL}: no overflow-checks = true under [profile.release.package.swell-extra]"
+    );
+    assert_fails("seventh", &files, &line, |l| l == line);
+    let mut manifest = files.manifest.take().expect("manifest");
+    manifest.push_str(&format!("\n{}", release_section("swell-extra")));
+    files.manifest = Some(manifest);
+    let (status, text) = check("seventh-with-section", &files);
+    assert_eq!(status, Some(0), "{text}");
 }
