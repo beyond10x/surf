@@ -437,8 +437,9 @@ above, and the list of standards itself was written from memory.
     `STORED_BYTES_MAX` (16 MiB) of names, values, paths and domains per jar, the least recently
     used evicted first (one without `Secure` first within a domain); a `Cookie` field of at most
     8,192 bytes. Every method takes the time, so the tests set it. The crate documentation
-    names each rule's section and the memory bound. `Debug` shows the count only. 29 tests:
-    `adversary_jar` 5 and `secreview_jar` 3 (the two reviews of `story:agent-cookie-jar`),
+    names each rule's section and the memory bound. `Debug` shows the count only. 33 tests:
+    `adversary_jar` 5, `secreview_jar` 3 and `secreview2_chain` 4 (the reviews of
+    `story:agent-cookie-jar`),
     `bound` 2 (the stored bytes against `STORED_BYTES_MAX`), `hosts` 2 (an empty `Domain`, an
     IPv6 host), `jar` 14 (the unit cases U1 to U14) and `shadow` 3 (the `Secure` shadow rule,
     both directions of the path relation). Depends on `surf-url`.
@@ -1793,7 +1794,7 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   tests and the controls only, by a nextest filter; the defects of one test each on a thread
   of its own), each still held to being noticed. It prints one count line per defect over the
   whole suite (`sh taskfiles/conform-noticed.sh counts`), for example `navigation storage
-  drops every put: 201 scenarios: 146 passed, 55 failed, 0 error, 0 unsupported`, writes
+  drops every put: 203 scenarios: 148 passed, 55 failed, 0 error, 0 unsupported`, writes
   `.out/noticed.txt` (`sh taskfiles/conform-noticed.sh assemble`) and fails when that differs
   from `conformance/tests/noticed.txt` byte for byte. `WRITE=1` writes the committed file. A
   change to a source of the list runs `task conform-slow WRITE=1` and commits `noticed.txt` in

@@ -7,8 +7,8 @@
 **A web browser written from scratch, where the specification comes first.**
 
 ![spec: ESS 0.97.4, valid](docs/badges/spec.svg)
-![conformance: 201 of 201 scenarios](docs/badges/conformance.svg)
-![tests: 1897 passed](docs/badges/tests.svg)
+![conformance: 203 of 203 scenarios](docs/badges/conformance.svg)
+![tests: 1960 passed](docs/badges/tests.svg)
 ![third-party crates shipped: 5, ring 0.17.14 and 4 it needs](docs/badges/dependencies.svg)
 ![unsafe code: forbidden](docs/badges/unsafe.svg)
 ![standard sections marked complete: 0](docs/badges/complete.svg)
@@ -255,7 +255,7 @@ there instead.
    before it is printed, so a page cannot forge a line of surf's output.
 7. **A passing test must be able to fail.** Tests are tried against planted defects. Over the
    whole suite (`task conform-slow`), a navigation storage that drops every write fails 55 of
-   the 201 scenarios; the gate runs each of the 29 planted defects over the first 3 scenarios
+   the 203 scenarios; the gate runs each of the 29 planted defects over the first 3 scenarios
    that notice it.
 8. **Small.** A standard is followed for what surf does, not implemented whole.
 
@@ -276,9 +276,9 @@ there instead.
   ways. A certificate that is not trusted, has expired or names another host, a server limited
   to TLS 1.2 and a failed handshake each fail the load with a reason of its own. surf does not
   check revocation: a revoked certificate that has not expired loads.
-- **201 specified scenarios**, each passing twice: once against the specification's own
+- **203 specified scenarios**, each passing twice: once against the specification's own
   interpreter and once against the Rust code.
-- **1,897 tests** (1,345, and 552 of the TLS crates in a step of their own), built with
+- **1,960 tests** (1,408, and 552 of the TLS crates in a step of their own), built with
   warnings treated as errors, and 71 tests of the live view's page in a browser.
 
 New after round 2, shipped in release `0.6.0`:
@@ -565,27 +565,27 @@ One command checks everything:
 
 ```console
 $ task check
-surf v1 — 9 file(s), 42 scenario(s), valid
-201 scenario(s) (42 authored), 56 refusal(s), written to .out/suite.json
-  201 scenarios: 201 passed, 0 failed, 0 error, 0 unsupported
-201 scenario(s) (42 authored), 56 refusal(s), written to .out/suite.json
+surf v1 — 9 file(s), 44 scenario(s), valid
+203 scenario(s) (44 authored), 56 refusal(s), written to .out/suite.json
+  203 scenarios: 203 passed, 0 failed, 0 error, 0 unsupported
+203 scenario(s) (44 authored), 56 refusal(s), written to .out/suite.json
 conform-noticed: conformance/tests/noticed.txt matches its sources
-conform-rust: the narrowed suites of 29 planted defects in conformance/target/noticed/7fdca6f4d0ca2239922cb4f94e766a1fbe6a37d36de9b673e484d141e7b93c05 are current
+conform-rust: the narrowed suites of 29 planted defects in conformance/target/noticed/3c078a8015b3e1cb30f295ad7e4cee71733675f170dc35bf2bc3d30aef7d592b are current
 Summary [   1.280s] 39 tests run: 39 passed, 0 skipped
-  201 scenarios: 201 passed, 0 failed, 0 error, 0 unsupported
+  203 scenarios: 203 passed, 0 failed, 0 error, 0 unsupported
 conformance step: 2.6 s of its budget of 120 s
-the interpreter and the Rust system ran 201 scenario(s) each, of suite sha256:37d44ac72625057db2a80be53dc951f77fbe3df811f8b3dc36430f42ab97a6cc
+the interpreter and the Rust system ran 203 scenario(s) each, of suite sha256:27d50358e22d9b7b06eb74922b781b6ee0956c4e4d2ec3ed7504ae41285bbb86
 generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 10 CLI artifact(s), generated in .out/cli
 Cargo.lock: 50 package(s), 19 from outside this repository, each on the allow-list
-test-layout: 24 test directories, 184 test files, one test binary each
+test-layout: 24 test directories, 185 test files, one test binary each
 tls-certs: 33 cases, certs/ matches its sources
 tls-flights: 6 recordings match SOURCE, the recorder matches DIGEST
 tls-flights: self-test: a changed copy of aes128-x25519-ecdsa.bin fails naming it
 doc-tests-check: no doc test outside crates/ports
     Finished `dev` profile [unoptimized] target(s) in 0.03s
-1345 tests: 1345 passed, 0 failed, 0 ignored (cargo-nextest 1343, doc tests 2)
+1408 tests: 1408 passed, 0 failed, 0 ignored (cargo-nextest 1406, doc tests 2)
 test step: 10.8 s of its budget of 120 s
 552 tests: 552 passed, 0 failed, 0 ignored (cargo-nextest 552)
 tls test step: 2.8 s of its budget of 120 s
@@ -606,7 +606,7 @@ doc-tests-check-test: 14 case(s), each decided as expected by taskfiles/doc-test
 four steps: 33.9 s (test step 10.8 s, tls test step 2.8 s, conformance step 2.6 s, page step 17.7 s)
 ```
 
-It validates the specification, runs the 201 scenarios against the interpreter built into `ess`
+It validates the specification, runs the 203 scenarios against the interpreter built into `ess`
 and against the Rust code, checks that the generated code still matches the specification and
 that every package in the lock file from outside the repository is on its allow-list, then
 builds and tests, the TLS crates in a step of their own, checks that every event name of the
