@@ -1,4 +1,4 @@
-sources 1de7cb9ca0ad438a07e3cbfd3d7b679dbd21bbdb7bccb83fde20b96d9f3b4d38
+sources 86998019d77686075855e2803eea9bf3c7747c72fc5c58c400e9a6db2091f0f1
 FirstRowOnly(Action): surf.agent/authored/agent-follow-records-handle-and-label surf.agent/authored/agent-session-log-in-sequence-order surf.navigation/authored/two-of-each-entity
 FirstRowOnly(Document): surf.document.AddElement/outcome/added surf.document.AddElement/outcome/already-parsed surf.document.AddForm/outcome/added
 FirstRowOnly(Element): submit-on-press-requested/binding/flow submit-on-press-requested/binding/mapping surf.agent/authored/agent-pick-unchecks-radio-group
@@ -6,7 +6,7 @@ FirstRowOnly(Frame): surf.navigation/authored/two-of-each-entity
 FirstRowOnly(Navigation): surf.agent/authored/agent-go-back-traverses surf.agent/authored/agent-go-forward-traverses surf.agent/authored/agent-session-shows-failure-reason
 FirstRowOnly(Option): surf.agent/authored/agent-pick-selects-option surf.document.SelectOption/outcome/disabled
 FirstRowOnly(Request): surf.agent/authored/agent-go-back-traverses surf.navigation/authored/navigation-traverse-commits-without-entry surf.navigation/authored/page-load-fails-certificate-expired
-FirstRowOnly(Script): surf.document/authored/document-records-script-ends
+FirstRowOnly(Script): surf.document/authored/adversary-script-end-pairs-outside-q7 surf.document/authored/adversary-script-ends-every-reason surf.document/authored/document-records-script-ends
 FirstRowOnly(Session): check-on-pick-requested/binding/condition-false check-on-pick-requested/binding/mapping close-tab-on-session-closed/binding/flow
 FirstRowOnly(Submission): surf.agent/authored/agent-press-submission-ends-without-body surf.agent/authored/agent-press-submits-post
 FirstRowOnly(Tab): close-tab-on-session-closed/binding/flow surf.navigation/authored/two-of-each-entity
@@ -18,7 +18,7 @@ SameIdentity(Document): surf.document.AddElement/outcome/added surf.document.Add
 SameIdentity(Element): submit-on-press-requested/binding/flow submit-on-press-requested/binding/mapping surf.document.AddOption/outcome/added
 SameIdentity(Frame): surf.navigation/authored/two-of-each-entity
 SameIdentity(Navigation): surf.agent/authored/agent-go-back-traverses surf.agent/authored/agent-go-forward-traverses surf.navigation/authored/adversary-history-back-back-keeps-later
-SameIdentity(Script): surf.document.AddScriptEnd/outcome/added surf.document/authored/document-records-script-ends
+SameIdentity(Script): surf.document.AddScriptEnd/outcome/added surf.document/authored/adversary-script-end-pairs-outside-q7 surf.document/authored/adversary-script-ends-every-reason
 SameIdentity(Tab): surf.navigation/authored/two-of-each-entity
 SameIdentity(Window): surf.navigation/authored/two-of-each-entity
 an ended navigation reads back Started: surf.navigation.Navigation/state/Cancelled/refuses/surf.navigation.CancelNavigation surf.navigation.Navigation/state/Cancelled/refuses/surf.navigation.CommitNavigation surf.navigation.Navigation/state/Cancelled/refuses/surf.navigation.FailNavigation
