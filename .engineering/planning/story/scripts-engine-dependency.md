@@ -4,7 +4,7 @@ id: story:scripts-engine-dependency
 kind: story
 status: draft
 title: surf depends on swell by a release tag, lock-check allows exactly that source, and surf-script runs an agent under surf's limits
-summary: A git dependency on the tag the note names; the allow-list and its rule extended to swell's packages and surf-script; overflow checks, NOTICE and the Goals sentence; surf-script evaluates a source with no DOM under the step, memory and wall-clock limits.
+summary: A git dependency on the tag the note names; the allow-list, its rule per package, and a closed list of crates that may depend on surf-script; overflow checks enforced by lock-check; NOTICE and the Goals sentence; surf-script evaluates a source with no DOM under the step, memory, frame-depth and wall-clock limits, HOST-17, 152 and 163 tested in surf's profile.
 relations:
 - decomposes: epic:scripts-in-a-page
 - depends_on: story:scripts-decisions
@@ -18,16 +18,32 @@ scope:
 - confidence: cited
   path: NOTICE
 - confidence: cited
+  path: README.md
+- confidence: cited
   path: Taskfile.yml
 - confidence: cited
-  path: crates/script
+  path: crates/script/Cargo.toml
+- confidence: cited
+  path: crates/script/src/lib.rs
+- confidence: cited
+  path: crates/script/src/runner.rs
+- confidence: cited
+  path: crates/script/tests/engine.rs
+- confidence: cited
+  path: crates/script/tests/main.rs
 - confidence: cited
   path: crates/surf/tests/lock_check.rs
+- confidence: cited
+  path: docs/badges
 - confidence: cited
   path: taskfiles/lock-allow.txt
 - confidence: cited
   path: taskfiles/lock-check.sh
-revision: 2
+- confidence: cited
+  path: website/docs/how-it-is-built.md
+- confidence: cited
+  path: website/docs/principles.md
+revision: 15
 ---
 ## Context
 
@@ -59,18 +75,24 @@ The tree on `main` of 2026-11-24, which wins where the epic differs:
   path on `swell-compiler`, `swell-num`, `swell-regexp`, `swell-syntax` and `swell-unicode`
   (`crates/swell/Cargo.toml`), six packages for a host where the epic counts five; its root
   `Cargo.toml` sets `overflow-checks = true` in the profiles dev, release, test and bench; it has
-  a `NOTICE` ("swell / Copyright 2026 beyond10x"). Read in a clone at the tag.
+  a `NOTICE` ("swell / Copyright 2026 beyond10x"). An entry ends `Normal`, `Throw` or
+  `Terminated(StepBudget | MemoryBudget | Interrupted | EngineFault)`
+  (`crates/swell/src/host/outcome.rs:12-28` at `0.8.0`); a call past `frame_depth` throws a
+  `RangeError` with the message `frame_depth exceeded` (`crates/swell/src/interp/budget.rs:45`);
+  a parse error is `Parsed::Errors` with `SyntaxError` objects (`outcome.rs:32-36`). Read with
+  `git show 0.8.0:<path>` in a clone of `https://github.com/beyond10x/swell`.
 
 ## Waits for the note
 
-`story:scripts-decisions` must settle, before this story starts:
+`story:scripts-decisions` settles, before this story starts:
 
 - waits for the note: Q13, the tag pinned, its commit and its package list;
 - waits for the note: Q15, the allow-list line of a package from git (the lock may carry no
-  `checksum` for it) and the rule naming which crate may depend on which listed package;
-- waits for the note: Q14, that `surf-script` alone depends on swell (and who may depend on
-  `surf-script`), so the lock rule can say it;
-- waits for the note: Q4 and Q5, surf's default limits and the stack size the runner's thread
+  `checksum` for it), the rule naming which crate may depend on which listed package, and the form
+  of the closed list of crates that may depend on `surf-script`;
+- waits for the note: Q14, that `surf-script` alone depends on swell and that the closed list is
+  empty when this story lands;
+- waits for the note: Q4 and Q5, surf's starting limits and the stack size the runner's thread
   gets, measured in surf's profiles;
 - waits for the note: Q17, the citation for profiles read from the root workspace only, and for
   section 4(d) of Apache-2.0.
@@ -86,78 +108,131 @@ The tree on `main` of 2026-11-24, which wins where the epic differs:
    The rule "only `surf-tls`" becomes one rule per listed package naming the crate that may depend
    on it: ring's packages `surf-tls`, swell's `surf-script`. A listed package may still depend on
    another listed package.
-3. `[profile.release.package.<name>] overflow-checks = true` in the root `Cargo.toml` for each
+3. The lock rule also holds a closed list of the crates of this repository that may depend on
+   `surf-script` (S7: only a session process runs scripts). The list is empty when this story
+   lands; `story:scripts-html-conformance` adds `surf-html-conformance` and
+   `story:scripts-document-port` adds `surf-session`, each in its own change. Any other crate
+   depending on `surf-script`, directly, fails the check naming that crate; so `surf`, `surf-agent`
+   and `surfd` link no swell.
+4. `[profile.release.package.<name>] overflow-checks = true` in the root `Cargo.toml` for each
    swell package (cargo reads profiles from the root workspace only; Q17). The dev and test
-   profiles keep cargo's default, which checks overflow.
-4. `surf-script`'s first public surface, no DOM: limits (surf's defaults from Q4), a runner that
-   creates one agent and runs on a thread of its own with the stack of Q5, `evaluate(source) ->
-   ScriptEnd`, totals per runner (steps summed from `last_entry_steps()`, scripts run), a
-   wall-clock bound through swell's `InterruptHandle` set by a timer thread, and `ScriptEnd`: ran,
-   threw (kind, message, line and column when the tag has `Agent::last_entry_error_site`),
-   refused by swell (its `SyntaxError` message), ended by a limit (which), not run (why). After
-   `Terminated(MemoryBudget)` it calls `collect()` once; a second one in the same runner runs no
-   further script (epic line 840).
-5. Tests run in one binary, `crates/script/tests/main.rs`, module `engine`. Each test makes its
+   profiles keep cargo's default, which checks overflow. `lock-check` reads the root manifest and
+   fails naming a swell package of the lock that has no such entry.
+5. `surf-script`'s first public surface, no DOM: limits (surf's starting values from Q4), a runner
+   that creates one agent and runs on a thread of its own with the stack of Q5,
+   `evaluate(source) -> ScriptEnd`, totals per runner (steps summed from `last_entry_steps()`,
+   scripts run), a wall-clock bound through swell's `InterruptHandle` set by a timer thread, and
+   `ScriptEnd`: ran, threw (kind, message, line and column when the tag has
+   `Agent::last_entry_error_site`), refused by swell (its `SyntaxError` message), ended by a limit
+   (which), not run (why). After `Terminated(MemoryBudget)` it calls `collect()` once; a second one
+   in the same runner runs no further script (epic line 840).
+6. Tests run in one binary, `crates/script/tests/main.rs`, module `engine`. Each test makes its
    own runner (a small realm, measured; the time is in the report); nothing heavier is built per
    test.
+7. Requirement 6 (epic lines 341-343): the HOST-17, HOST-152 and HOST-163 cases run in surf's
+   test profile in the gate; the engine shows its own release profile, and surf tests its own
+   profile (epic line 824). A run of the same three in surf's release profile is recorded in the
+   report, outside the gate.
 
 ## Change
 
-- `Cargo.toml` (root): the release profile settings of decision 3.
-- `crates/script/` (new; package `surf-script`; `swell = { git =
+- `Cargo.toml` (root): the release profile settings of decision 4.
+- `crates/script/Cargo.toml` (new; package `surf-script`, `publish = false`; `swell = { git =
   "https://github.com/beyond10x/swell", tag = "<tag>" }`, no feature turned on, neither
-  `collect-every-safe-point` nor `fault-injection`; `#![forbid(unsafe_code)]`; one test binary):
-  decision 4.
+  `collect-every-safe-point` nor `fault-injection`; `autotests = false` and one `[[test]]` `main`),
+  `crates/script/src/lib.rs` (`#![forbid(unsafe_code)]`) and `crates/script/src/runner.rs`:
+  decision 5.
+- `crates/script/tests/main.rs` and `crates/script/tests/engine.rs`: decision 6 and 7.
 - `Cargo.lock`: the swell packages with their `source` lines, and `surf-script`.
-- `taskfiles/lock-allow.txt`, `taskfiles/lock-check.sh` (its head states the new line form and
-  rule), `crates/surf/tests/lock_check.rs`: decision 2 and its tests.
-- `Taskfile.yml`: the `desc` and `summary` of `lock-check` (lines 283-301) name swell and
-  `surf-script` beside ring and `surf-tls`.
+- `taskfiles/lock-allow.txt`, `taskfiles/lock-check.sh` (its head states the new line form, the
+  rule per package, the closed list of `surf-script` dependents and the profile check),
+  `crates/surf/tests/lock_check.rs`: decisions 2 to 4 and their tests.
+- `Taskfile.yml`: the `desc` and `summary` of `lock-check` (lines 283-301) name swell,
+  `surf-script` and the closed list beside ring and `surf-tls`.
 - `AGENTS.md`, "Goals": the sentence of the exception names swell, "one crate of the
   organization", and the root lock's proof counts its packages.
 - `NOTICE`: swell's notice, its address and tag, Apache-2.0 (section 4(d), Q17).
+- In the last commit, the public surfaces of acceptance 9.
 
 ## Acceptance
-
-`slot task check` exits 0. The folder's bounds hold: the test step ends within 120 s and no test
-runs over 60 s (`.config/nextest.toml:5`); no model call and no network request in a test (cargo
-fetches swell before the tests, as it fetches ring); nothing expensive is made per test (a runner
-per test is a realm of a few objects, its time measured and reported); no Python; no generator with a committed output is added; a test over 5 s
-is named with its time. A build or test job in the pool ends within 10 minutes or names its time
-(`SLOT_TIMEOUT` for the first cold build of swell through the cargo shim, at most 30 minutes).
 
 1. `slot task lock-check` prints `Cargo.lock: <n> package(s), <m> from outside this repository,
    each on the allow-list`, with `<m>` 19 plus the number of swell packages of the tag (six at
    `0.8.0`).
-2. `crates/surf/tests/lock_check.rs`, new cases, each failing with a message naming the package:
-   a swell package of another tag; of the same tag at another commit; from another address; a
-   crate other than `surf-script` depending on `swell`; `surf-script` depending on `ring`. The
-   ring cases there pass unchanged, and `the_unchanged_lock_passes` passes on the new lock.
-3. `crates/script/tests/main.rs`, module `engine`, named cases: `1 + 1` ends `Ran`; `throw new
-   Error("x")` ends `Threw` with kind `Error` and message `x`; a construct the tag refuses ends
-   `Refused` with swell's message; `while (true) {}` ends with the step limit and the runner runs
-   `1` afterwards; an endless allocation ends with the memory limit, the runner collects once and
-   runs `1`, and a second memory end stops further scripts; a deep recursion ends with
-   `frame_depth`; a script under a wall-clock bound of 100 ms that loops ends `Interrupted` within
-   1 s; the runner's step total and script count rise per script. Each test under 5 s.
-4. Outside the gate, recorded in the report: `slot cargo build --release -p surf-script -v`
-   shows `-C overflow-checks=on` on the rustc line of each swell package.
+2. `crates/surf/tests/lock_check.rs`, new cases, each failing with a message naming the package or
+   crate: a swell package of another tag; of the same tag at another commit; from another address;
+   a crate other than `surf-script` depending on `swell`; `surf-script` depending on `ring`;
+   `surf` depending on `surf-script` while the closed list is empty (fails naming `surf`); a swell
+   package of the lock without its `overflow-checks = true` entry in the root manifest (fails
+   naming that package). Pass cases: a lock where a crate on a closed list written for the test
+   depends on `surf-script`; the root manifest with every entry. The ring cases there pass
+   unchanged, and `the_unchanged_lock_passes` passes on the new lock.
+3. `crates/script/tests/main.rs`, module `engine`, named cases, each with its script text:
+   - `ran`: `1 + 1` ends `Ran`;
+   - `threw`: `throw new Error("x")` ends `Threw` with kind `Error` and message `x`;
+   - `refused`: `1 +;` ends `Refused` with kind `SyntaxError`, the message equal to a constant of
+     the test that cites the `file:line` of that message in swell at the tag;
+   - `step_limit`: `while (true) {}` ends with the step limit, and the runner then runs `1` to
+     `Ran`;
+   - `memory_limit`: under a memory limit of 1 MiB and a step limit large enough not to end it
+     first, `let a = []; for (;;) a.push(new Array(1000));` ends with `Terminated(MemoryBudget)`;
+     the runner calls `collect()` once and runs `1` to `Ran`; the same script again ends with the
+     memory limit, and a further `1` ends `not run` with the reason of the memory limit;
+   - `frame_depth`: `function f(n) { return 1 + f(n + 1); } f(0)` ends `Threw` with kind
+     `RangeError` and message `frame_depth exceeded` (at `0.8.0`; the constant cites the tag's
+     `file:line`);
+   - `wall_clock`: under a wall-clock bound of 100 ms, `while (true) {}` with a step limit that
+     does not end it first ends `Interrupted` within 1 s;
+   - `totals`: the runner's step total and script count rise with each script;
+   - `host_17_reentry_at_full_nesting`, `host_152_eval_at_full_nesting`,
+     `host_163_call_at_full_nesting`: the three cases of swell's `crates/swell/tests` at the tag
+     (`host_17_deepest_reentry_parses_at_full_nesting`, `limits_scripts.rs:126`;
+     `host_152_deepest_reentry_evals_at_full_nesting`, `eval_stack.rs:173`;
+     `host_163_deepest_reentry_calls_function_with_parameters_and_body_at_full_nesting`,
+     `eval_stack.rs:201`; all at `0.8.0`), run with
+     surf's limits on the runner's thread with the stack of Q5, each ending without a crash.
+   Each test under 5 s.
+4. Recorded in the report, outside the gate: the three cases of acceptance 3's last item pass in
+   surf's release profile (`slot cargo nextest run --release -p surf-script engine::host_`), and
+   `slot cargo build --release -p surf-script -v` shows `-C overflow-checks=on` on the rustc line
+   of each swell package.
 5. `grep -c swell NOTICE` prints at least 1; `grep -n swell AGENTS.md` shows the "Goals"
    sentence.
-6. `git diff --stat` names only the files of the Change.
+6. `slot task check` exits 0.
+7. `git diff --stat` names only the files of the Change.
+8. The folder's bounds hold: the test step ends within 120 s and no test runs over 60 s
+   (`.config/nextest.toml:5`); no model call and no network request in a test (cargo fetches swell
+   before the tests, as it fetches ring); nothing expensive is made per test (a runner per test is
+   a realm of a few objects, its time measured and reported); no Python; no generator with a
+   committed output is added; a test over 5 s is named with its time. A build or test job in the
+   pool ends within 10 minutes or names its time (`SLOT_TIMEOUT` for the first cold build of swell
+   through the cargo shim, at most 30 minutes).
+9. Public surfaces: the story names every public surface its change makes false (a badge, a
+   `README.md` line, a website page, a count) and changes it in its last commit, every number
+   from the log of a gate run on its tip, which the coordinating agent orders. For this story,
+   lines on `main` at `29945f5` (2026-11-24): the dependencies badge (`docs/badges/make.sh:39`,
+   `docs/badges/dependencies.svg`); principle 4 of `README.md:246-254` and of
+   `website/docs/principles.md:18-25` ("19 of its 49 packages", ring the one exception);
+   `README.md:599` (the lock line of the gate) and `README.md:652-658`;
+   `website/docs/how-it-is-built.md:55` and `:107-112`; the test count of `README.md:11` and `:285-286` and
+   `docs/badges/make.sh:38` with `docs/badges/tests.svg`; the gate block of `README.md:584-625`
+   and of `website/docs/how-it-is-built.md:40-81`.
 
 ## Out of scope
 
-The DOM and the bindings (`story:webidl-bindings`), a page's scripts (`story:scripts-document-port`),
-the tag with the review's fixes, and any change in swell.
+The DOM and the bindings (`story:webidl-bindings`, which adds `surf-html` to
+`crates/script/Cargo.toml`), a page's scripts (`story:scripts-parse-run`,
+`story:scripts-document-port`), the tag with the review's fixes, and any change in swell.
 
 ## Placement
 
-After `story:scripts-decisions`. Beside `story:webidl-reader` (both write `Cargo.lock`: the second
-to merge takes the other's entries), `story:scripts-spec` and `story:session-process-hardening`.
-`taskfiles/lock-check.sh` is also written by the draft `story:conformance-lock-and-lints`, and
-`Taskfile.yml` by the active `story:test-step-holds-with-tls` and `story:agent-cookie-public-suffixes`:
-never in the same wave.
+After `story:scripts-decisions`. Beside `story:webidl-reader` (both write `Cargo.lock` and the
+public surfaces: the second to merge takes the other's lock entries, and the coordinating agent
+orders the two gate runs), `story:scripts-spec`, `story:session-process-hardening` and
+`story:html-script-hook`. `taskfiles/lock-check.sh` is also written by the draft
+`story:conformance-lock-and-lints`, and `Taskfile.yml` by the active
+`story:test-step-holds-with-tls` and `story:agent-cookie-public-suffixes`: never in the same
+wave.
 
 ## Why `epic:scripts-in-a-page`
 

@@ -10,11 +10,37 @@ relations:
 - depends_on: story:scripts-decisions
 scope:
 - confidence: cited
+  path: README.md
+- confidence: cited
   path: cli/surf-agent.yaml
-- confidence: inferred
+- confidence: cited
   path: conformance/src/target.rs
+- confidence: cited
+  path: conformance/tests/noticed.txt
 - confidence: inferred
   path: crates/agent/tests/drift.rs
+- confidence: cited
+  path: crates/ports/src
+- confidence: inferred
+  path: crates/ports/tests
+- confidence: cited
+  path: crates/session/src/entries.rs
+- confidence: cited
+  path: crates/session/src/lib.rs
+- confidence: inferred
+  path: crates/session/tests
+- confidence: cited
+  path: crates/surf/src/lib.rs
+- confidence: inferred
+  path: crates/surf/tests
+- confidence: inferred
+  path: crates/view/examples/prototype.rs
+- confidence: inferred
+  path: crates/view/tests/json.rs
+- confidence: cited
+  path: docs/badges
+- confidence: inferred
+  path: docs/view-stream.md
 - confidence: cited
   path: generated/rust
 - confidence: inferred
@@ -23,9 +49,17 @@ scope:
   path: spec/domains/agent.yaml
 - confidence: cited
   path: spec/domains/document.yaml
+- confidence: inferred
+  path: spec/ess-inputs.yaml
 - confidence: cited
   path: spec/scenarios
-revision: 3
+- confidence: cited
+  path: website/docs/how-it-is-built.md
+- confidence: cited
+  path: website/docs/principles.md
+- confidence: cited
+  path: website/docs/status.md
+revision: 23
 ---
 ## Context
 
@@ -47,12 +81,25 @@ The tree on `main` of 2026-11-24:
   that no entity holds them. `surf.agent.Session` is at line 271.
 - `spec/components.yaml:429-430`: "UNMAPPED: no component for script execution, storage
   (cookies, cache, history) or input events. None is declared until its first command is."
-- `cli/surf-agent.yaml:97-108`: the `open` command and its arguments (`url`, `as`, `from-line`,
+- `cli/surf-agent.yaml:100-111`: the `open` command and its arguments (`url`, `as`, `from-line`,
   `ca-file`). `ess-cli/2` maps each input field to exactly one argument, and a Boolean option
   takes an explicit `true` or `false` (ESS `docs/design/cli-presentation-binding.md:175-178`).
   The client's parser is held to the binding by `crates/agent/tests/drift.rs`; what the binding
   declares and the parser refuses is listed in `BINDING_ONLY` (line 11) beside an `UNMAPPED:`
   marker of the binding (`--token-stdin`, `--token-prompt`, `--session-dir`).
+- What a change of the model forces outside `spec/`, read from the last change of the model,
+  `ee86329` ("Specify the initiator of a navigation and the cookie rules"): besides `spec/` and
+  `generated/rust/` it touched `conformance/src/target.rs`, `conformance/tests/noticed.txt` (its
+  digest covers the suite, `conformance/src`, `conformance/tests`, `conformance/Cargo.toml` and
+  `conformance/Cargo.lock`, `taskfiles/conform-noticed.sh:10-13`; a stale list fails the fast
+  check of `task conform-rust`, `Taskfile.yml:118-123`), `crates/ports/src/ports.rs`,
+  `crates/ports/tests`, `crates/session/src/entries.rs` ("every field the spec declares"),
+  `crates/session/src/lib.rs`, `crates/session/tests`, `crates/surf/src/lib.rs`,
+  `crates/surf/tests`, `crates/view/examples/prototype.rs`, `crates/view/tests/json.rs` and
+  `docs/view-stream.md`. A new command of `document` adds a generated `...Behavior` trait that
+  `DocumentBehaviors` in `crates/surf/src/lib.rs:1362-1381` (and its blanket impl from line 1383) lists and the document port
+  implements.
+
 
 ## Domain relations
 
@@ -82,7 +129,7 @@ The tree on `main` of 2026-11-24:
 ## Decisions taken
 
 1. The `refs:` of each new command and outcome cite the HTML Standard's sections the note names
-   (Q1, Q2); a deliberate deviation says so beside it (`AGENTS.md`, "Rules").
+   (Q1, Q2); a deliberate deviation says so in a comment beside it (`AGENTS.md`, "Rules").
 2. The option reaches the session the way `ca_file` does: in the `open` request, passed by `surfd`
    unchanged; the comment beside the field says so.
 3. The binding declares the option in `cli/surf-agent.yaml` now, because each field of
@@ -92,8 +139,16 @@ The tree on `main` of 2026-11-24:
    `BINDING_ONLY` in `crates/agent/tests/drift.rs` lists it. No session runs a script after this
    story.
 4. One scenario per new outcome under `spec/scenarios/`, so both conformance reports hold a
-   passed scenario for each (`task conform`, `task conform-rust`). Where `conform-rust` needs the
-   Rust target to issue the new command, `conformance/src/target.rs` gains it here.
+   passed scenario for each (`task conform`, `task conform-rust`). `conformance/src/target.rs`
+   maps the new command and field, and `conformance/tests/noticed.txt` gets its new digest and
+   lines from `task conform-slow WRITE=1` (`Taskfile.yml:215`).
+5. The hand-written code the generated change forces follows `ee86329`: the document port
+   implements the new behaviour as the specification says (it records the end it is given; no
+   code issues the command until `story:scripts-parse-run` and `story:scripts-document-port`),
+   `DocumentBehaviors` lists it, the session's entries write every field the specification
+   declares, and a hand-written value of a new field is the option's off value until the code
+   that sets it comes with its test. The view stream changes only if Q7 puts the record or the
+   option into a view event.
 
 ## Change
 
@@ -101,46 +156,72 @@ The tree on `main` of 2026-11-24:
 - `spec/domains/agent.yaml`: the field of `OpenCall` (and of `Session`, if Q7 says so), its
   comment.
 - `spec/components.yaml`: the marker of lines 429-430 as Q7 says.
+- `spec/ess-inputs.yaml`: only if `task generate` asks for it, as `ee86329` changed it.
 - `spec/scenarios/`: decision 4.
 - `generated/rust/`: `task generate`.
 - `cli/surf-agent.yaml`, `crates/agent/tests/drift.rs`: decision 3.
-- `conformance/src/target.rs`: only as decision 4 says.
+- `conformance/src/target.rs`, `conformance/tests/noticed.txt`: decision 4.
+- `crates/ports/src`, `crates/surf/src/lib.rs`, `crates/session/src/entries.rs`,
+  `crates/session/src/lib.rs`, and the constructors of changed types in `crates/ports/tests`,
+  `crates/session/tests` and `crates/surf/tests`: decision 5.
+- `crates/view/examples/prototype.rs`, `crates/view/tests/json.rs`, `docs/view-stream.md`: only
+  as decision 5 says.
+- In the last commit, the public surfaces of acceptance 8.
 
 ## Acceptance
-
-`slot task check` exits 0 (`validate`, `conform`, `conform-rust`, `generated-check` and `cli`
-among its steps). The folder's bounds hold: the test step ends within 120 s and no test runs over
-60 s; no model call and no network request in a test; the synthesized specification is made once
-per step run, not per test; no Python; the ESS output `generated/rust/` keeps its own check, `generated-check`, and no other generator with a committed output is added; a build or test job in the pool ends within 10 minutes or names its time with `slot --timeout`, at most 30 minutes; a test over 5 s is named with its time.
 
 1. `slot task validate` and `slot task generated-check` pass; `generated/rust/` changed only by
    `task generate`.
 2. The conformance reports of `slot task conform` and `slot task conform-rust` each hold at least
    one passed scenario for every outcome of the new command and of `OpenSession` with and without
    the option; the report lists the scenario names per outcome.
-3. `slot task cli` passes with the new argument of `open`; `task open` lists the new `UNMAPPED:`
-   marker; `drift` passes with the option in `BINDING_ONLY`.
-4. `surf-agent open` with the option exits 2 with the usage on standard error and starts no
+3. `sh taskfiles/conform-noticed.sh check` passes, and `slot --timeout 30m task conform-slow`
+   prints `.out/noticed.txt equals conformance/tests/noticed.txt`.
+4. `slot task cli` passes with the new argument of `open`; `git grep -c 'UNMAPPED:'
+   cli/surf-agent.yaml` prints one more than on the story's base (6 on `main` of 2026-11-24);
+   `drift` passes with the option in `BINDING_ONLY`.
+5. `surf-agent open` with the option exits 2 with the usage on standard error and starts no
    session (a test in `crates/agent/tests/`, module `drift` or the client's refusal module).
-5. Every new command and outcome that follows the standard has `refs:`; `git grep -n
-   'UNMAPPED:' spec cli` shows each open question of the change at its place.
-6. `git diff --stat` names only the files of the Change.
+6. Each new command and outcome of `spec/domains/document.yaml` and `spec/domains/agent.yaml`
+   has a `refs:` line or a comment beside it that says `deliberate deviation` (as
+   `spec/domains/document.yaml:82` and `:163` do); the report lists each
+   with the line number of its `refs:` or comment, read with `git grep -n` on the story's tip.
+7. `slot task check` exits 0 (`validate`, `conform`, `conform-rust`, `generated-check` and `cli`
+   among its steps); `git diff --stat` names only the files of the Change.
+8. Public surfaces: the story names every public surface its change makes false (a badge, a
+   `README.md` line, a website page, a count) and changes it in its last commit, every number
+   from the log of a gate run on its tip, which the coordinating agent orders. For this story,
+   lines on `main` at `29945f5` (2026-11-24): the scenario count "203" at `README.md:10`, `:262`, `:283`, `:627`,
+   `website/docs/how-it-is-built.md:83`, `website/docs/principles.md:33`,
+   `website/docs/status.md:22`, `website/docs/what-works.md:15` and `docs/badges/make.sh:37` with `docs/badges/conformance.svg`;
+   the test count of `README.md:11` and `:285-286` and `docs/badges/make.sh:38` with
+   `docs/badges/tests.svg`; the gate block of `README.md:584-625` and of
+   `website/docs/how-it-is-built.md:40-81`.
+9. The folder's bounds hold: the test step ends within 120 s and no test runs over 60 s; no model
+   call and no network request in a test; the synthesized specification is made once per step
+   run, not per test; no Python; the ESS output `generated/rust/` keeps its own check,
+   `generated-check`, and no other generator with a committed output is added; `task
+   conform-slow` runs in the lane `slow` because the sources changed; a build or test job in the
+   pool ends within 10 minutes or names its time with `slot --timeout`, at most 30 minutes; a test
+   over 5 s is named with its time.
 
 ## Out of scope
 
-Any code that runs a script; the client's acceptance of the option and the session's use of it
-(`story:scripts-document-port`); the answer's grammar if Q7 adds a line (written with the code
-that prints it, in `story:scripts-document-port`).
+Any code that runs a script or issues the new command; the client's acceptance of the option and
+the session's use of it (`story:scripts-document-port`); the answer's grammar if Q7 adds a line
+(written with the code that prints it, in `story:scripts-document-port`).
 
 ## Placement
 
 After `story:scripts-decisions` and the clearing of `decision-blocker:script-end-record`; beside
-`story:webidl-reader`, `story:scripts-engine-dependency` and `story:session-process-hardening`.
-`spec/domains/agent.yaml` and `cli/surf-agent.yaml` are also written by the active
-`story:runner-record-option` (`open --record`), `story:agent-open-tab-caller-id` and
-`story:agent-skill-definition` (which reads the binding when it is built); `spec/domains/agent.yaml`,
-`conformance/src/target.rs` and `generated/rust` by `story:agent-cookie-jar` until its merge:
-never in the same wave.
+`story:webidl-reader`, `story:scripts-engine-dependency`, `story:session-process-hardening` and
+`story:html-script-hook`. `spec/domains/agent.yaml` and `cli/surf-agent.yaml` are also written by
+the active `story:runner-record-option` (`open --record`), `story:agent-open-tab-caller-id` and
+`story:agent-skill-definition` (which reads the binding when it is built);
+`spec/domains/agent.yaml`, `conformance/src/target.rs`, `conformance/tests/noticed.txt`,
+`crates/session` and `generated/rust` by `story:agent-cookie-jar` until its merge: never in the
+same wave. `story:scripts-document-port` writes `crates/surf/src/lib.rs`, `crates/session` and
+`conformance/` after this story, ordered by its edge.
 
 ## Why `epic:scripts-in-a-page`
 

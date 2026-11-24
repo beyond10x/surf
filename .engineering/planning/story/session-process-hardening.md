@@ -4,18 +4,32 @@ id: story:session-process-hardening
 kind: story
 status: draft
 title: surfd starts surf-session with a cleared environment, no new privileges and resource limits of its own
-summary: 'Under S5 = a: env_clear and the note''s allow-list, setpriv --no-new-privs and prlimit with the note''s bounds; a test reads the running session''s environ, limits and status from /proc.'
+summary: 'S5 = a, decided 2026-11-24: env_clear and the note''s allow-list, setpriv --no-new-privs and prlimit with the note''s bounds, read from /proc by tests; a session ending at a bound is listed died and its answer names the signal and bound, shown with the stand-in session and no script.'
 relations:
 - decomposes: epic:scripts-in-a-page
 - depends_on: story:scripts-decisions
 scope:
+- confidence: cited
+  path: README.md
+- confidence: cited
+  path: crates/answer/src/lib.rs
+- confidence: inferred
+  path: crates/answer/tests
+- confidence: cited
+  path: crates/surfd/examples/stand_in_session.rs
 - confidence: cited
   path: crates/surfd/src/daemon.rs
 - confidence: inferred
   path: crates/surfd/src/link.rs
 - confidence: cited
   path: crates/surfd/tests
-revision: 3
+- confidence: cited
+  path: docs/agent-answer.md
+- confidence: cited
+  path: docs/badges
+- confidence: cited
+  path: website/docs/how-it-is-built.md
+revision: 13
 ---
 ## Context
 
@@ -43,75 +57,120 @@ The tree on `main` of 2026-11-24:
   `unsafe` (epic lines 266-271). On this host `command -v setpriv prlimit` prints
   `/usr/bin/setpriv` and `/usr/bin/prlimit` (`setpriv --version`: util-linux 2.42.4, 2026-11-24).
 
-## Assumes S5 = a
+- A session that ends without `close` is listed `died`, and every later request for it is
+  answered with the head state `died` and the refusal `session-died` (`crates/surfd/src/daemon.rs:
+  269-272`, `:850-855`, `:983`; `docs/agent-answer.md:148`, `:177`); the answer does not say why
+  the process ended. An answer may carry `note` lines from a fixed list (`crates/answer/src/
+  lib.rs:536-547`, grammar `docs/agent-answer.md:560`).
+- The tests of `surfd` start a stand-in session, `crates/surfd/examples/stand_in_session.rs`,
+  whose behaviour a test sets by files in its control directory (`behaviour`: `answer`, `stall`,
+  `exit`, `break`, ...; lines 10-21), named as the session program in the test's `Config`
+  (`crates/surfd/tests/common/mod.rs:304-321`).
 
-S5 is open with default a (epic lines 504-517): `surfd` starts `surf-session` through
+## S5, decided
+
+The operator decided S5 on 2026-11-24 (relayed by the coordinating agent; recorded in
+`docs/design/scripts.md` Q11): option a. `surfd` starts `surf-session` through
 `setpriv --no-new-privs` and `prlimit`, and refuses to start a session with scripts when either
-is missing. Under b (an audited `unsafe` module in `surf-session`) this story would write
-`crates/session/src/` instead of the helper; under c it writes the reduced environment only, and
-no session ever runs a page's script. The note records the answer (Q11); this body is written for
-a.
+program is missing; `#![forbid(unsafe_code)]` stays in every crate. Seccomp, Landlock, namespaces
+and `PR_SET_DUMPABLE` are absent under a; option b (an audited `unsafe` module) needs the owner's
+word and is not this story.
 
 ## Waits for the note
 
 - waits for the note: Q10, the allow-list of variables (possibly empty) and the decision on the
   variables the standard library and the C library read;
-- waits for the note: Q11, the operator's answer to S5; each bound and its value (address space,
-  CPU seconds, open files, core size 0, no new privileges; processes only as Q11 says, since
-  `RLIMIT_NPROC` counts every process of the user); the programs' absolute paths; whether every
-  session or only a scripted one runs under them, and how `surfd` learns which; what `open`
-  answers when a program is missing; and the probe that shows both programs `exec` the next one,
-  so the pid `surfd` holds is `surf-session`'s.
+- waits for the note: Q11, each bound and its starting value (address space, CPU seconds, open
+  files, core size 0, no new privileges; processes only as Q11 says, since `RLIMIT_NPROC` counts
+  every process of the user); the programs' absolute paths; whether every session or only a
+  scripted one runs under them, and how `surfd` learns which; what `open` answers when a program
+  is missing; the probe that shows both programs `exec` the next one, so the pid `surfd` holds is
+  `surf-session`'s; and the words of the answer when a session ends at a bound.
 
 ## Decisions taken
 
 1. The environment: `env_clear()`, then the allow-list of Q10, then `Config::session_env` for
    tests. `current_dir("/")` and `process_group(0)` stay.
-2. The command line under a: `<setpriv> --no-new-privs -- <prlimit> <one --<resource>=<soft>:<hard>
-   per bound of Q11> -- <session program> <identity> <socket>`, the program paths in `Config`
-   (the shipped values Q11 names; a test can name others), so that a test can start a session
-   with a missing program.
-3. Before the session runs: nothing is read from the session to check the bounds; the tests read
-   them from `/proc/<pid>/` from outside, as the epic says (lines 264-266).
+2. The command line: `<setpriv> --no-new-privs -- <prlimit> <one --<resource>=<soft>:<hard> per
+   bound of Q11> -- <session program> <identity> <socket>`, the program paths and the bounds in
+   `Config` (the shipped values Q11 names; a test can name others), so that a test can start a
+   session with a missing program or a bound of its own.
+3. Nothing is read from the session to check the bounds; the tests read them from `/proc/<pid>/`
+   from outside, as the epic says (lines 264-266).
+4. A session that ends at a bound of the operating system: when `surfd` reaps a session process
+   it did not kill and that did not close, it reads the signal from the exit status
+   (`std::os::unix::process::ExitStatusExt::signal`, no `unsafe`), keeps it with the entry, and
+   still lists the session `died`. Every answer that names the session `died` then holds one more
+   line of the fixed list, `note ended: signal <NAME>`, with `bound <resource>` added where the
+   signal names a bound (`SIGXCPU`: `cpu`, `SIGXFSZ`: `fsize`); its exact words are Q11's. A
+   session that ended with a status and no signal gets no such line. `surf-answer` parses and
+   renders the line, and `docs/agent-answer.md` documents it.
+5. The test of decision 4 needs no script: the stand-in session gains the `behaviour` value
+   `spin`, a loop on the processor after it answers `open`, and the test starts it with a CPU
+   bound of 1 second.
 
 ## Change
 
-- `crates/surfd/src/daemon.rs`: decisions 1 and 2, and the answer of Q11 to a missing program;
-  `Config` gains the programs and the bounds.
+- `crates/surfd/src/daemon.rs`: decisions 1, 2 and 4, and the answer of Q11 to a missing
+  program; `Config` gains the programs and the bounds.
 - `crates/surfd/src/link.rs`: its "Start" text, if it describes the environment or the command
   line (inferred).
+- `crates/surfd/examples/stand_in_session.rs`: the `behaviour` value `spin` and its line in the
+  head comment.
+- `crates/answer/src/lib.rs` and its tests: the note line of decision 4.
+- `docs/agent-answer.md`: the note line, beside the state `died` and the refusal `session-died`.
 - `crates/surfd/tests/`: the cases below, in the crate's one test binary.
+- In the last commit, the public surfaces of acceptance 8.
 
 ## Acceptance
 
-`slot task check` exits 0. The folder's bounds hold: the test step ends within 120 s and no test
-runs over 60 s; no model call and no network request in a test; each case starts one `surfd` and
-one session, nothing more per test; no Python; no generator with a committed output is added (one that were would carry a digest of its sources, a fast check in the gate and full regeneration in the lane `slow`); a build or test job in the pool ends within 10 minutes or names its time with `slot --timeout`, at most 30 minutes; a test over 5 s is named with its time.
-
-1. A test opens a session and reads `/proc/<pid>/environ` of its `surf-session`: it holds exactly
-   the variables of the allow-list and those of the test's `Config::session_env`, and none of a
-   variable the test set in `surfd`'s environment before starting it (`SURF_PROBE_SECRET=1`).
+1. A test opens a session and reads `/proc/<pid>/environ` of its session process: it holds
+   exactly the variables of the allow-list and those of the test's `Config::session_env`, and
+   none of a variable the test set in `surfd`'s environment before starting it
+   (`SURF_PROBE_SECRET=1`).
 2. The same session's `/proc/<pid>/limits` shows each bound of Q11 with its soft and hard value,
-   and `/proc/<pid>/status` holds `NoNewPrivs:	1`; `/proc/<pid>/exe` names `surf-session`.
+   `/proc/<pid>/status` holds `NoNewPrivs:	1`, and `/proc/<pid>/exe` names the session program.
 3. With the path of `setpriv` (then of `prlimit`) in `Config` pointing to a file that does not
-   exist, an `open` that Q11 says needs them is answered as Q11 says, and no process is left.
-4. The tests of `surfd` and `surf-session` that ran before pass unchanged (`slot task test`), the
+   exist, an `open` that Q11 says needs them is answered as Q11 says, and afterwards no process
+   whose parent is the process that runs the `surfd` under test exists (a scan of the fourth
+   field of `/proc/*/stat`).
+4. `bound_ends_session`: a stand-in session with `behaviour` `spin` under a CPU bound of 1 second
+   ends within 10 s; `surfd` lists it `died`, and the answer to the next request for it has the
+   head state `died`, the refusal `session-died` and the line `note ended: signal SIGXCPU bound
+   cpu` (in Q11's words); a stand-in that ends with `behaviour` `exit` gets no such line.
+   `surf-answer`'s tests parse and render the line, and refuse it with another signal word.
+5. The tests of `surfd` and `surf-session` that ran before pass unchanged (`slot task test`), the
    end-to-end case `e2e::` of `surf-session` included.
-5. `git diff --stat` names only `crates/surfd/src/daemon.rs`, `crates/surfd/src/link.rs` and
-   `crates/surfd/tests/`.
+6. `slot task check` exits 0.
+7. `git diff --stat` names only the files of the Change.
+8. Public surfaces: the story names every public surface its change makes false (a badge, a
+   `README.md` line, a website page, a count) and changes it in its last commit, every number
+   from the log of a gate run on its tip, which the coordinating agent orders. For this story,
+   lines on `main` at `29945f5` (2026-11-24): the test count of `README.md:11` and `:285-286` and `docs/badges/make.sh:38` with
+   `docs/badges/tests.svg`; the gate block of `README.md:584-625` and of
+   `website/docs/how-it-is-built.md:40-81`.
+9. The folder's bounds hold: the test step ends within 120 s and no test runs over 60 s; no model
+   call and no network request in a test; each case starts one `surfd` and one session, nothing
+   more per test; no Python; no generator with a committed output is added; a build or test job in
+   the pool ends within 10 minutes or names its time with `slot --timeout`, at most 30 minutes; a
+   test over 5 s is named with its time (`bound_ends_session` spends about 1 s of processor time
+   by design).
 
 ## Out of scope
 
-Seccomp, Landlock, namespaces and `PR_SET_DUMPABLE` (not reachable under S5 a); bounds on `surf
-<url>` and `surf run`, which run no page script (S7); a process of its own for scripts (S2 = a).
+Seccomp, Landlock, namespaces and `PR_SET_DUMPABLE` (absent under S5 a); bounds on `surf <url>`
+and `surf run`, which run no page script (S7); a process of its own for scripts (S2 = a); a
+session that ends at a bound while running a script (`story:scripts-hostile-pages` shows it with
+the behaviour of this story).
 
 ## Placement
 
-After `story:scripts-decisions`; beside `story:webidl-reader`, `story:scripts-engine-dependency`
-and `story:scripts-spec`. `crates/surfd/src/daemon.rs` is also written by the active
-`story:agent-surfd-session-limit`, `story:agent-surfd-idle-exit-race` and `story:agent-token-hash`
-(none on `main` on 2026-11-24): never in the same wave; this story takes no edge to them, since it
-needs nothing they deliver.
+After `story:scripts-decisions`; beside `story:webidl-reader`, `story:scripts-engine-dependency`,
+`story:scripts-spec` and `story:html-script-hook`. `crates/surfd/src/daemon.rs` is also written by
+the active `story:agent-surfd-session-limit`, `story:agent-surfd-idle-exit-race` and
+`story:agent-token-hash` (none on `main` on 2026-11-24). This story takes no edge to them, since
+it needs nothing they deliver; whichever of the four starts later is based on the merge of the
+one that started before it.
 
 ## Why `epic:scripts-in-a-page`
 

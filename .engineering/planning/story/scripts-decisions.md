@@ -3,14 +3,14 @@ format: aep.planning-md/3
 id: story:scripts-decisions
 kind: story
 status: draft
-title: 'Settle the first version of page scripts in a design note: boundary, limits, the Web IDL selection, the session''s bounds and the engine''s requirements'
-summary: docs/design/scripts.md answers the 18 questions the epic leaves open, each by a measured value, a table or a cited section, records the operator's answers to S5 and S6, and hands requirements 1 to 10 to the script engine's session.
+title: 'Settle the first version of page scripts in a design note: boundary, limits, the session''s bounds, the swell tag and the engine''s requirements'
+summary: docs/design/scripts.md answers 15 questions the epic leaves open (Q8, Q9 and Q12 moved to webidl-bindings and scripts-dom-selectors), each closed by a table, a probe line or a citation; records S5 = a as decided on 2026-11-24, proposes the answer of the script-end blocker in five lines, and hands requirements 1 to 10 to the script engine's session.
 relations:
 - decomposes: epic:scripts-in-a-page
 scope:
 - confidence: cited
   path: docs/design/scripts.md
-revision: 2
+revision: 4
 ---
 ## Context
 
@@ -51,23 +51,32 @@ works from the tree:
 
 ## Decisions taken
 
-1. The note is `docs/design/scripts.md`. One section per question below, headed
-   `## Q<n>. <title>` with the number and title of this story, in this order. Each section ends
-   with one line that starts `Settled: ` and names how: a value with the command that measured it
-   and its output line, a table in the section, or a cited section of a standard with its address
-   and the date or commit of the text read. An answer the note cannot give is a line that starts
-   `Open: ` naming the story it stops; no `Open:` line may name `scripts-engine-dependency`,
-   `scripts-spec` or `session-process-hardening`.
+1. The note is `docs/design/scripts.md`. One section per question below, headed `## Q<n>. <title>`
+   with the number and title of this story, in this order: Q1 to Q7, Q10, Q11, Q13 to Q18, 15
+   sections. The numbers Q8, Q9 and Q12 are not used: the coordinating agent moved the Web IDL
+   selection and the source of HTML's definitions (formerly Q8 and Q12) to
+   `story:webidl-bindings`, whose `crates/webidl/selection.txt` is the one table, and the selector
+   subset (formerly Q9) to `story:scripts-dom-selectors`; the numbers stay so that every "Q<n>" the
+   other stories cite still names the same question. Each section ends with exactly one line that
+   starts `Settled: `, which names the artifact its "Settled when" clause asks for: a table in the
+   section, a line `probe: <command> -> <output line>`, or a cited address with the date or commit
+   of the text read. `Open: <story-id>` is allowed in Q13 only, naming `scripts-document-port`.
 2. Measurements are made by probe programs in the session scratch directory, never committed, in
-   Rust or POSIX sh (no Python). A probe that builds runs through `slot` and names its time when it
-   needs more than 10 minutes (`slot --timeout`, at most 30 minutes); a probe that only measures,
-   times or waits runs without `slot`. The note names each probe by its command.
-3. swell is read at a tag in a clone of `https://github.com/beyond10x/swell`, read only. A change
-   in swell is the engine session's; the note hands it requirements, it does not write them there.
-4. S5 and S6 are the operator's. The coordinating agent puts each to the operator with its default
-   (a and a, epic lines 504-532); the note records the answer, or "S5 taken on default a" and "S6
-   taken on default a" after 15 minutes without one (the organization rule "A default proceeds").
-5. The note records the answer of `decision-blocker:script-end-record` (Q7); clearing the blocker
+   Rust or POSIX sh (no Python). A probe that builds runs through `slot` and names its time with
+   `slot --timeout` when it needs more than 10 minutes (at most 30); a probe that only measures,
+   times or waits runs without `slot`. The note names each probe on a `probe:` line.
+3. swell is read at a tag with git in a clone of `https://github.com/beyond10x/swell`
+   (`git show <tag>:<path>`, `git grep -n <pattern> <tag> -- <paths>`), read only; every fact about
+   swell in the note is a `file:line` at a tag of that repository, never a file of a scratch
+   directory. A change in swell belongs to the engine session; the note hands requirements to it and
+   does not write them there.
+4. S5 and S6 are decided. The operator decided on 2026-11-24, relayed by the coordinating agent:
+   S5 = a, `surfd` starts `surf-session` through `setpriv --no-new-privs` and `prlimit`, a
+   session with scripts is refused when either program is missing, and `#![forbid(unsafe_code)]`
+   stays in every crate; S6 = a, the four members `Window.document`, `Window.window`,
+   `Window.self` and `Document.title` are generated from HTML's IDL. Q11 records S5 and its
+   consequences. S6 is recorded in `story:webidl-bindings`, which took the former Q12.
+5. The note records its answer to `decision-blocker:script-end-record` (Q7). Clearing the blocker
    is the operator's.
 
 ## Domain relations
@@ -89,9 +98,9 @@ Q1. Which script elements run. Settled when a table holds one row per case: no `
 attribute; `src` present, with and without text; `nomodule`; `async` or `defer` on an inline
 script; a script inside `template` contents; an SVG `script` in foreign content
 (`docs/design/html-parser.md:627`); a script element a script created or moved. Each row says
-"runs" or "not run: <reason>", citing the step of "prepare the script element" of the HTML
-Standard (section number, anchor, the standard's date or commit). This confirms or corrects the
-sentence on `nomodule` (epic line 113).
+"runs" or "not run: <reason>", with the reason word `story:html-script-hook` reports for it, and
+cites the step of "prepare the script element" of the HTML Standard (section number, anchor, the
+standard's date or commit). This confirms or corrects the sentence on `nomodule` (epic line 113).
 
 Q2. The steps of the `script` end tag. Settled when a numbered table lists each step of 13.2.6.4.8
 for an end tag named `script` and each step of "prepare the script element", each "taken" or
@@ -99,57 +108,63 @@ for an end tag named `script` and each step of "prepare the script element", eac
 parsing-blocking script, spinning the event loop, `document.write`). Today the end tag pops the
 element and returns to the original insertion mode (`crates/html/src/tree_builder/modes.rs:
 1120-1141`). The section also gives the hook's signature that `story:html-script-hook` writes:
-what it receives (the tree, the script element) and what it returns, and what the tree builder
-does with an open element or a formatting element the hook removed or moved; and which part of
-the `html-sections` line `tree-construction script-processing` (`docs/design/html-parser.md:539`)
-stays open.
+what it receives (the tree, the script element), what it returns, how it reports a script
+element it does not run with the reason word of Q1, and what the tree builder does with an open
+element or a formatting element the hook removed or moved; and which part of the `html-sections`
+line `tree-construction script-processing` (`docs/design/html-parser.md:539`) stays open.
 
 Q3. Parser scripting enabled. Settled when the section states that a document whose scripts run
 is parsed with `scripting_disabled: false` (`crates/html/src/lib.rs:180-195`, default `true`),
 what that changes for `noscript` in head and in body (the insertion modes cited), the new
-sentence of `surf-page`'s hidden rule, which today says `noscript` is not hidden because surf parses
-with scripting disabled (`crates/page/src/lib.rs:56`, `docs/design/html-parser.md:318`), and the
-count of `#script-on` cases `task html-conformance` prints (`crates/html-conformance/src/
+sentence of `surf-page`'s hidden rule, which today says `noscript` is not hidden because surf
+parses with scripting disabled (`crates/page/src/lib.rs:56`, `docs/design/html-parser.md:318`),
+and the count of `#script-on` cases `task html-conformance` prints (`crates/html-conformance/src/
 runner.rs:121` runs them with the flag false).
 
-Q4. Limits, with values. Settled when a table gives, for each limit, its value, the probe command
-and output line it rests on, and the outcome recorded when it is reached: swell's agent limits
-(`steps_per_entry`, `memory_bytes`, `frame_depth`, `reentry_depth`, `parser_nesting`,
-`string_length`, `bigint_bits`; epic lines 199-205); a step total per document summed from
-`last_entry_steps()`; a number of scripts run per document; the bytes of one script's source; a
-wall-clock bound per document through the interrupt handle; and the parser limits every DOM
-write is held to (`crates/html/src/limits.rs:16-47`: input bytes, depth 512, nodes 1,048,576,
-attributes 1,024, stored bytes 64 MiB, steps 2^27 by default). The basis: steps per second on
-this host in the test profile and in release, the heap of a realm of the bindings' size (from
-the engine's constants of requirement 10 where the tag has them, else from a probe with 300 host
-functions and 40 host objects). Also: what follows `Terminated(MemoryBudget)` (epic line 840:
-`collect()` once, then no further script in that document), and whether `eval` and `Function`
-are refused through `host_ensure_can_compile_strings` (HOST-116, HOST-117; epic line 210).
+Q4. Limits, with values. Settled when a table has one row per limit and the columns `limit`,
+`value`, `probe command`, `output line` and `outcome when reached`, no cell empty. Its rows:
+swell's agent limits (`steps_per_entry`, `memory_bytes`, `frame_depth`, `reentry_depth`,
+`parser_nesting`, `string_length`, `bigint_bits`; epic lines 199-205); the step total per document
+summed from `last_entry_steps()`; the number of scripts run per document; the bytes of one
+script's source; the wall-clock bound per document through the interrupt handle; and the parser
+limits every DOM write is held to (`crates/html/src/limits.rs:16-47`: input bytes, depth 512,
+nodes 1,048,576, attributes 1,024, stored bytes 64 MiB, steps 2^27 by default), including what a
+write over one of them answers to the script (the result type `story:webidl-bindings` generates).
+The basis: steps per second on this host in the test profile and in release, and the heap of a
+realm of the bindings' size from the engine's constants of requirement 10 at the tag, or a probe
+with 300 host functions and 40 host objects. Also stated: what follows `Terminated(MemoryBudget)`
+(epic line 840: `collect()` once, then no further script in that document), and whether `eval`
+and `Function` are refused through `host_ensure_can_compile_strings` (HOST-116, HOST-117; epic
+line 210). These are starting values; `story:scripts-parse-run` measures them again with the
+bindings and the DOM and changes the note where they do not hold.
 
-Q5. The thread and the stack. Settled when `Limits::min_stack_bytes()` for the limits of Q4 is
-measured by a probe in surf's test profile (`debug = false`, `.cargo/config.toml`) and in release
-(swell measured 14,672,640 bytes in a debug build for depths of 1,000, epic lines 222-224), and
-the section names the thread a scripted document is parsed on and its stack size (the session
-serves its requests on its main thread today, `crates/session/src/process.rs:144-148`), and when
-the agent is dropped: at the end of the document's parse, or with the document (scripts run only
-while parsing, epic lines 117-119; HOST-136: an `Agent` is not `Send`).
+Q5. The thread and the stack. Settled when a `probe:` line gives `Limits::min_stack_bytes()` for
+the limits of Q4 in surf's test profile (`debug = false`, `.cargo/config.toml`) and one in
+release (swell measured 14,672,640 bytes in a debug build for depths of 1,000, epic lines
+222-224), and the section names the thread a scripted document is parsed on and its stack size
+(the session serves its requests on its main thread today, `crates/session/src/process.rs:
+144-148`), and when the agent is dropped: at the end of the document's parse, or with the document
+(scripts run only while parsing, epic lines 117-119; HOST-136: an `Agent` is not `Send`). This is
+a starting value without bindings or DOM; `story:scripts-parse-run` measures it again with them.
 
 Q6. Seeds, clock and time zone. Settled when each hook is named with its HOST id and what it
 answers in a session and in a test: the clock `host_system_utc_epoch_nanoseconds` (HOST-125), a
 value that advances between two calls (epic line 846; a test advances it by a fixed amount per
 call); the time-zone hooks (HOST-126 to HOST-128); the seeds of `Math.random` (HOST-26, HOST-27,
-HOST-144, HOST-147), with their source in a session and fixed values in a test; and whether the
-tag of Q13 has each.
+HOST-144, HOST-147), with their source in a session and fixed values in a test; and a `probe:`
+line that reads each HOST id's status at the tag of Q13 (`git show <tag>:conformance/host/
+requirements.txt`).
 
 Q7. The specification of a script's end and of the option. Settled when the section holds the
 YAML it proposes for `spec/domains/document.yaml` and `spec/domains/agent.yaml`, and states:
-- the record of a script's end and its relation to `surf.document.Document` (cardinality, owner,
-  when it is written, that it never outlives its document): the answer of
+- the record of a script's end and its relation to `surf.document.Document`, as one line per item
+  of the blocker's "The undecided relation", each with a value: `cardinality:`, `owner:`,
+  `written:`, `outlives its document:`, `without scripts:` (whether a document parsed without
+  scripts records its script elements). These five lines are the answer of
   `decision-blocker:script-end-record`;
 - the closed list of ends: ran; threw (kind, message, line, column); refused by swell (its
   `SyntaxError` message, which names the delivery slice); ended by a limit (which); not run (the
-  reasons of Q1, and after a limit of the document); and whether a document parsed without
-  scripts records its script elements at all;
+  reason words of Q1, and after a limit of the document); 
 - the command and event that write it, which process issues the command, and what becomes of
   the marker "no component for script execution" (`spec/components.yaml:429-430`);
 - the option: its field on `surf.agent.OpenCall` (`spec/domains/agent.yaml:107-119`), its type
@@ -161,75 +176,69 @@ YAML it proposes for `spec/domains/document.yaml` and `spec/domains/agent.yaml`,
 - what an answer prints of a script's end (a line of `docs/agent-answer.md`, its grammar, every
   text from the page quoted as untrusted), or that it prints nothing.
 
-Q8. The Web IDL selection. Settled when a table holds one row per member, `| <interface> |
-<member> | <slice> | <reason or deviation> |`, for the 146 members of `EventTarget`, `Node`,
-`Element` and `Document` (epic lines 631-642) and the 68 of the interfaces they return (epic lines
-644-650), the slice one of `reading`, `attributes`, `mutation`, `selectors`, `throws`; over the
-146 the counts are 73, 14, 29, 7 and 23 (epic lines 681-715), and the 68 are assigned by the same
-rules. Each deviation stands beside its member: the 9 members that return a snapshot for a live
-collection, `[SameObject]` on `childNodes` and `children`, an element's wrapper being an
-`Element`, `TrustedType` read as `DOMString`, the global `this` being the `Window` (no
-`WindowProxy`). The section also gives the grammar of `crates/webidl/selection.txt`, which
-`story:webidl-bindings` writes from this table.
-
-Q9. The selector subset. Settled when the section gives the grammar of the subset (type,
-universal, `#id`, `.class`, attribute presence and equality, compounds, descendant and child
-combinators, lists; epic lines 701-705), each production cited to its section of Selectors Level
-4, the case rules in an HTML document cited, and which input throws `NotSupportedError` (valid,
-outside the subset) and which `SyntaxError` (invalid).
-
 Q10. The session's environment. Settled when the section gives the allow-list of variables
-`surf-session` is started with (it may be empty) and, for each, the line of code that reads it.
-For this story, `git grep -n 'env::var\|var_os' main -- 'crates/*/src/*.rs'
-'crates/*/src/**/*.rs'` on 2026-11-24 finds reads in `crates/agent-tasks`, `crates/agent`
-(the client), `crates/surfd/src/main.rs` and `crates/view-fixture`, none in `crates/session`,
-`crates/surf`, `crates/fetch` or `crates/tls`; the note runs it again on its base. The section
-also decides, each with its reason, on the variables the standard library and the C library read
-(`RUST_MIN_STACK`, `RUST_BACKTRACE`, the resolver's `LOCALDOMAIN`, `RES_OPTIONS`, `HOSTALIASES`,
-`TZ`), and how the tests' `Config::session_env` (`crates/surfd/src/daemon.rs:83`) still add
-theirs.
+`surf-session` is started with (it may be empty) and, for each, the line of code that reads it,
+from a `probe:` line running `git grep -n 'env::var\|var_os' -- 'crates/*/src/*.rs'
+'crates/*/src/**/*.rs'` on the note's base. On `main` of 2026-11-24 it finds reads in
+`crates/agent-tasks`, `crates/agent` (the client), `crates/surfd/src/main.rs` and
+`crates/view-fixture`, none in `crates/session`, `crates/surf`, `crates/fetch` or `crates/tls`.
+The section also decides, each with its reason, on the variables the standard library and the C
+library read (`RUST_MIN_STACK`, `RUST_BACKTRACE`, the resolver's `LOCALDOMAIN`, `RES_OPTIONS`,
+`HOSTALIASES`, `TZ`), and how the tests' `Config::session_env` (`crates/surfd/src/daemon.rs:83`)
+still add theirs.
 
-Q11. S5, and the bounds of the operating system. Settled when the section records the
-operator's answer to S5 (default a) and, under a: the two programs by absolute path and their
-presence on this host (`command -v setpriv prlimit` on 2026-11-24: `/usr/bin/setpriv`,
-`/usr/bin/prlimit`, util-linux 2.42.4) and on the forge's runner image (a workflow run's output,
-or the image's package list cited); each bound with its value and the measurement it rests on,
-the peak of a session (`VmHWM` in `/proc/<pid>/status`, open descriptors counted in
-`/proc/<pid>/fd`) on a named set of pages: address space, CPU seconds, open files, core size 0,
-`NoNewPrivs`; the number of processes only with care, because `RLIMIT_NPROC` counts every process
-of the user, so a value below the user's count stops the session from starting a thread; whether
-every session runs under them or only one whose `open` asks for scripts, and in the second case
-how `surfd` learns it (it passes the `open` request on unchanged today,
-`crates/surfd/src/daemon.rs:1154-1157`); that both programs replace themselves by `exec`, so the
-pid `surfd` holds is the session's (from memory today: confirmed by a probe); and what `open`
-answers when a program is missing.
-
-Q12. S6, and the source of HTML's definitions. Settled when the section records the operator's
-answer to S6 (default a) and the file `story:webidl-bindings` vendors for it: the HTML Standard
-at a commit snapshot (`https://html.spec.whatwg.org/commit-snapshots/<commit>/`, its size
-measured with `wc -c`) or another extraction of its IDL, with address, commit and licence; and,
-under a, the definitions the reader must read for the four members (`Window`, and the partial
-`Document` that holds `title`).
+Q11. S5 and the bounds of the operating system. Settled when the section records the operator's
+decision of 2026-11-24 (S5 = a: `setpriv --no-new-privs` and `prlimit`, a session with scripts
+refused when either is missing, `#![forbid(unsafe_code)]` kept), states that seccomp, Landlock,
+namespaces and `PR_SET_DUMPABLE` are absent under a and that option b (`unsafe` in one audited
+module) needs the owner's word, and gives:
+- the two programs by absolute path, with a `probe:` line for this host (on 2026-11-24 `command
+  -v setpriv prlimit` printed `/usr/bin/setpriv` and `/usr/bin/prlimit`, util-linux 2.42.4) and
+  one for the forge's runner image (a workflow run's output, or the image's package list cited);
+- a rule and starting values for each bound: address space, CPU seconds, open files, core size 0,
+  `NoNewPrivs`; the number of processes only with care, because `RLIMIT_NPROC` counts every process
+  of the user, so a value below the user's count stops the session from starting a thread. The
+  starting values rest on a `probe:` of today's session without scripts (`VmHWM` in
+  `/proc/<pid>/status`, the descriptors in `/proc/<pid>/fd`, on a named set of pages); a scripted
+  session exists only from `story:scripts-document-port`, which measures it under these bounds and
+  changes the values where they do not hold;
+- whether every session runs under the two programs or only one whose `open` asks for scripts,
+  and in the second case how `surfd` learns it (it passes the `open` request on unchanged today,
+  `crates/surfd/src/daemon.rs:1154-1157`);
+- a `probe:` showing that both programs replace themselves by `exec`, so the pid `surfd` holds is
+  `surf-session`'s;
+- what `open` answers when a program is missing, and what a client is answered when a session
+  ends at a bound (the signal, and the bound where the signal names one;
+  `story:session-process-hardening` builds it).
 
 Q13. The tag of swell. Settled when the section names the tag `story:scripts-engine-dependency`
 pins, with its commit and the package list of its root `Cargo.lock` (at `0.8.0`, the newest
 release on 2026-11-24: 8 packages, none with a `source` line; the host takes the six above, and
-`swell-test262` and `swell-unicode-gen` are tooling), and states whether a tag holds the fixes
-of "From the security review of 2026-11-22" (epic lines 598-603), read from its `CHANGELOG.md` and
-`conformance/host/requirements.txt` with the HOST ids that state them. "No tag yet" is an answer;
-it stops only `story:scripts-document-port`.
+`swell-test262` and `swell-unicode-gen` are tooling), and records, for each of the two
+conditions of "From the security review of 2026-11-22" (epic lines 598-603: parsing and
+compilation charged to the memory budget before they allocate; property operations charging
+their work and temporary storage first), whether that tag holds it, with the `file:line` in
+swell's tree at the tag that says so (its `CHANGELOG.md`, `conformance/host/requirements.txt`,
+the code's documentation) and each exception swell names there, with its `file:line`. A `probe:`
+line gives the `git` command each fact was read with. The coordinating agent decides on this
+record whether the tag is taken for page scripts; if no tag holds both, the section ends `Open:
+scripts-document-port`.
 
 Q14. Where swell is linked. Settled when the section gives the crate graph: `surf-script` alone
-depends on swell and only `surf-session` on `surf-script`, so `surf`, `surf-agent` and `surfd`
-link no swell (S7); the scripting parser step reaches the session through `Browser::with_parser`
-(`crates/surf/src/lib.rs:1563`), not through a change of `HtmlParser` (`:415`); and the check that
-holds the graph in the gate.
+depends on swell, and a closed list names the crates that may depend on `surf-script` (none when
+`story:scripts-engine-dependency` lands; `story:scripts-html-conformance` adds
+`surf-html-conformance` and `story:scripts-document-port` adds `surf-session`, each in its own
+change), so `surf`, `surf-agent` and `surfd` link no swell (S7); the scripting parser step reaches
+the session through `Browser::with_parser` (`crates/surf/src/lib.rs:1563`), not through a change
+of `HtmlParser` (`:415`), and `crates/surf` gains no dependency on `surf-script`; the lock rule of
+Q15 holds the list.
 
 Q15. `lock-check` for a git source. Settled when the section gives the allow-list line for a
 package from git (read from a lock cargo writes for a probe that depends on the tag: whether it
 has a `checksum` line), the rule that names which crate of this repository may depend on which
-listed package (today only `surf-tls` on any, `taskfiles/lock-check.sh:28-30`), and the new
-sentence of `AGENTS.md` "Goals" and of the `lock-check` description.
+listed package (today only `surf-tls` on any, `taskfiles/lock-check.sh:28-30`), the form of the
+closed list of Q14, and the new sentence of `AGENTS.md` "Goals" and of the `lock-check`
+description.
 
 Q16. What a recorded error holds. Settled when the section names the fields read after a script
 threw or was refused, the kind and own `message` of the error (requirement 5) and the line and
@@ -243,9 +252,10 @@ lines 180-183; swell's root `Cargo.toml` at `0.8.0` sets it in all four profiles
 section 4(d) and swell's `NOTICE` (epic lines 183-184); `TrustedType` read as `DOMString` (epic
 lines 668-669).
 
-Q18. Requirements 1 to 10 for the engine. Settled when the table of the next section stands in the
-note with, for each row, its HOST ids and its status at the tag of Q13, read from
-`conformance/host/requirements.txt` there.
+Q18. Requirements 1 to 10 for the engine. Settled when the table of the next section stands at the
+end of the note with, for each row, its HOST ids and its status at the tag of Q13, one of `held`,
+`partly: <HOST id>`, `absent`, `no tag`, each citing its line of `conformance/host/
+requirements.txt` at the tag.
 
 ## Requirements 1 to 10, as the epic's last section revised them
 
@@ -272,29 +282,47 @@ promise exists before slice 10, so no microtask checkpoint is run; the note says
 
 ## Acceptance
 
-1. `grep -c '^## Q[0-9]' docs/design/scripts.md` prints 18, and `grep -c '^Settled: '
-   docs/design/scripts.md` prints 18; `grep '^Open: ' docs/design/scripts.md` prints no line
-   that names `scripts-engine-dependency`, `scripts-spec` or `session-process-hardening`.
-2. Q8's table has 214 member rows; counting its slice column over the 146 rows of the four
-   interfaces gives 73 `reading`, 14 `attributes`, 29 `mutation`, 7 `selectors` and 23 `throws`
-   (each count by a `grep -c` the section names, run by the reviewer).
-3. The requirements table has 10 rows, each with its HOST ids and its status at the tag of Q13.
-4. Q11 and Q12 each name the operator's answer or "taken on default a"; Q7 states the answer the
-   blocker `decision-blocker:script-end-record` asks for.
-5. Every measured value names its probe command and the output line it was read from; no probe
-   file is in the change.
-6. `slot task check` exits 0 on the story branch. The folder's bounds hold: the change adds no
-   test, so the test step keeps its time within 120 s and no test runs over 60 s; no model call,
-   no network request in a test; nothing is built per test; no Python is committed or run; no generator with a committed output is added; no build or test job is started for the note but its probes, each ending within 10 minutes or naming its time with `slot --timeout`.
-7. `git diff --stat` of the story names only `docs/design/scripts.md`.
+1. For each n of 1 to 7, 10, 11 and 13 to 18, the section `## Q<n>.` (in that order, titles as in
+   this story) contains exactly one line starting `Settled: ` and no line starting `Open: `, but
+   Q13, which may instead hold exactly one line `Open: scripts-document-port`. The reviewer checks
+   it with `awk '/^## Q[0-9]+\./{q=$2} /^Settled: /{s[q]++} /^Open: /{o[q]++} END{for(k in s)
+   print k, s[k], o[k]+0}' docs/design/scripts.md`, which is committed nowhere; `grep -c '^## Q'
+   docs/design/scripts.md` prints 15.
+2. Each `Settled:` line names its artifact: Q1, Q2 and Q4 a table of the section; Q5, Q6, Q10, Q11
+   and Q13 a `probe:` line; Q1 and Q17 a cited address with date or commit. `grep -c '^probe: '
+   docs/design/scripts.md` prints at least 5, and Q5, Q6, Q10, Q11 and Q13 each hold at least one.
+3. Q4's table has the five columns of its clause and no empty cell, and one row for each limit Q4
+   lists.
+4. Q7 holds the five lines `cardinality:`, `owner:`, `written:`, `outlives its document:` and
+   `without scripts:`, each with a value. `decision-blocker:script-end-record` is cleared by the
+   operator on that answer, or the report names why not.
+5. Q11 quotes the operator's decision on S5 with its date (2026-11-24) and gives each bound a
+   starting value and the story that measures it again.
+6. The note ends with the 10-row table of requirements; each row's status is one of `held`,
+   `partly: <HOST id>`, `absent`, `no tag`, with its `requirements.txt` line at the tag. The
+   story's report names the date the table was handed to the script engine's session and where
+   that message is recorded.
+7. `slot task check` exits 0 on the story branch.
+8. `git diff --stat` of the story names only `docs/design/scripts.md`; no probe file is in the
+   change.
+9. The folder's bounds hold: the change adds no test, so the test step keeps its time within 120 s
+   and no test runs over 60 s; no model call and no network request in a test; nothing is built
+   per test; no Python is committed or run; no generator with a committed output is added; each
+   probe that builds ends within 10 minutes or names its time with `slot --timeout`, at most 30
+   minutes.
+10. Public surfaces: the story names every public surface its change makes false (a badge, a
+    `README.md` line, a website page, a count) and changes it in its last commit, every number
+    from the log of a gate run on its tip, which the coordinating agent orders. For this story:
+    none.
 
 ## Out of scope
 
-Code, specification, the vendored IDL (`story:webidl-reader`), any change in swell's repository,
-and the questions the epic puts after the first version (external, module, `async` and `defer`
-scripts, timers, events, `document.write`).
+Code, specification, the vendored IDL (`story:webidl-reader`), the Web IDL selection and HTML's
+source (`story:webidl-bindings`), the selector subset (`story:scripts-dom-selectors`), any change
+in swell's repository, and the questions the epic puts after the first version (external,
+module, `async` and `defer` scripts, timers, events, `document.write`).
 
 ## Why `epic:scripts-in-a-page`
 
-It is the epic's first candidate story, and the one every other story of the epic but
-`webidl-reader` waits on.
+It is the epic's first candidate story, and the one `scripts-engine-dependency`, `scripts-spec`,
+`session-process-hardening` and `html-script-hook` start on.
