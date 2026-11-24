@@ -113,6 +113,11 @@ const ARGUMENT_NAME_KEYWORDS: &[&str] = &[
     "unrestricted",
 ];
 
+/// The most levels a type nests: a named type alone is 1 level, `sequence<DOMString>` and
+/// `(A or B)` are 2. Generic arguments and union members count alike. The vendored pages nest
+/// 2 deep; a deeper type is refused, so the recursion of the type parser stays this shallow.
+pub const MAX_TYPE_DEPTH: usize = 32;
+
 /// The grammar's `BufferRelatedType`s (`ADDED`: "buffer related type").
 const BUFFER_RELATED_TYPES: &[&str] = &[
     "ArrayBuffer",
@@ -153,6 +158,8 @@ impl Body {
 pub(crate) struct Parser<'a> {
     tokens: Vec<Token>,
     at: usize,
+    /// How many types are open around the one being read ([`MAX_TYPE_DEPTH`]).
+    depth: usize,
     file: &'a str,
 }
 
@@ -161,6 +168,7 @@ pub(crate) fn parse(tokens: Vec<Token>, file: &str) -> Result<Vec<Definition>, R
     let mut parser = Parser {
         tokens,
         at: 0,
+        depth: 0,
         file,
     };
     let mut definitions = Vec::new();
@@ -772,8 +780,23 @@ impl Parser<'_> {
         Ok(ty)
     }
 
-    /// A type: a union, `any`, or a distinguishable type, then `?` for nullable.
+    /// A type: a union, `any`, or a distinguishable type, then `?` for nullable. Every nested
+    /// type (a union member, a generic argument) passes through here, so the depth of the
+    /// recursion is at most [`MAX_TYPE_DEPTH`] calls of `ty`.
     fn ty(&mut self) -> Result<Type, ReadError> {
+        if self.depth == MAX_TYPE_DEPTH {
+            return self.refuse(
+                self.line(),
+                format!("a type that nests deeper than {MAX_TYPE_DEPTH} levels"),
+            );
+        }
+        self.depth += 1;
+        let ty = self.ty_at_depth();
+        self.depth -= 1;
+        ty
+    }
+
+    fn ty_at_depth(&mut self) -> Result<Type, ReadError> {
         if self.is(0, "any") {
             self.at += 1;
             if self.is(0, "?") {

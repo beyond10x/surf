@@ -55,10 +55,14 @@
 //! Every other construct, each with `<file>:<line>: refused: <construct>`, among them
 //! `Promise<T>`, an operation name twice in one interface, mixin or callback interface (an
 //! overload, refused by [`read`]) or twice in the merged view of an interface, its partials and
-//! the mixins it includes (refused by [`Model::new`], naming the second), `namespace`, `maplike`, `setlike`, `async iterable`, `legacycaller`, an extended
-//! attribute not in [`EXTENDED_ATTRIBUTES`] or with an argument list, `setter`, `deleter`,
-//! `static` attributes, `record`, `FrozenArray`, `long`, `float`, `byte`, `octet`, `bigint`,
-//! `ByteString`, floating point constants and the defaults `[]` and `undefined`.
+//! the mixins it includes (refused by [`Model::new`], naming the second), `namespace`,
+//! `maplike`, `setlike`, `async iterable`, `legacycaller`, an extended attribute not in
+//! [`EXTENDED_ATTRIBUTES`] or with an argument list, `setter`, `deleter`, `static` attributes,
+//! `record`, `FrozenArray`, `long`, `float`, `byte`, `octet`, `bigint`, `ByteString`, floating
+//! point constants and the defaults `[]` and `undefined`.
+//!
+//! A type that nests deeper than [`MAX_TYPE_DEPTH`] levels is refused too, so a hostile text
+//! cannot drive the recursion of the type parser past that many calls.
 
 #![forbid(unsafe_code)]
 
@@ -73,6 +77,7 @@ pub use model::{
     ExtendedAttribute, ExtendedAttributeValue, IntegerSize, Member, MemberKind, Model, Type,
     TypeKind, Unresolved,
 };
+pub use parser::MAX_TYPE_DEPTH;
 
 /// The names of the extended attributes the reader knows; every other one is refused.
 pub const EXTENDED_ATTRIBUTES: &[&str] = &[
