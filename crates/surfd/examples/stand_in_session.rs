@@ -16,6 +16,8 @@
 //!
 //! - `ready`: `never` writes no `ready` line.
 //! - `open-status`: `1` or `2` answers `open` with that status (default `0`).
+//! - `open-behaviour`, while it answers `open`, before it writes the answer: `abort` calls
+//!   `std::process::abort`; `stall` waits for the lock on `hold`, which the test holds.
 //! - `behaviour`, for every request but `open`: `answer` (the default); `stall` waits for the
 //!   lock on `hold`, which the test holds, then answers; `exit` writes the start of an answer
 //!   and exits with status 1; `break` writes a line that is not of the link and closes the
@@ -198,6 +200,15 @@ fn serve(mut stream: UnixStream, session: &Session) {
     };
     let id = &session.id;
     if request.command == "open" {
+        match setting(control, "open-behaviour").as_deref() {
+            Some("abort") => std::process::abort(),
+            Some("stall") => {
+                if let Ok(hold) = File::open(control.join("hold")) {
+                    let _ = hold.lock();
+                }
+            }
+            _ => {}
+        }
         let status = setting(control, "open-status")
             .and_then(|status| status.parse().ok())
             .unwrap_or(0u8);

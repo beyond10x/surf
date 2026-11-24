@@ -1,9 +1,9 @@
-//! What `story:session-process-hardening` adds to the format: the two forms of the `note ended`
+//! What `story:session-process-hardening` adds to the format: the forms of the `note ended`
 //! line of a session that ended by a signal, each against its golden file and read back, the
-//! bound words the parser takes, and the refusal `scripts-unavailable`.
+//! one bound word and where the parser takes it, and the refusal `scripts-unavailable`.
 
 use surf_answer::{
-    Answer, Did, Head, Note, RefusalReason, RenderError, SessionState, parse, render, signal_bound,
+    Answer, Bound, Did, Head, Note, RefusalReason, RenderError, SessionState, parse, render,
 };
 
 fn golden(name: &str) -> String {
@@ -11,48 +11,59 @@ fn golden(name: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{path}: {error}"))
 }
 
-fn died(signal: &str) -> Answer {
+fn died(signal: &str, bound: Option<Bound>) -> Answer {
     let mut answer = Answer::new(Head {
         session: "7f3a".to_string(),
         state: SessionState::Died,
     });
     answer.did = Some(Did::Refused(RefusalReason::SessionDied));
-    answer.notes = vec![Note::Ended(signal.to_string())];
+    answer.notes = vec![Note::Ended {
+        signal: signal.to_string(),
+        bound,
+    }];
     answer
 }
 
 #[test]
 fn golden_note_ended_with_a_bound_and_without() {
-    for (name, signal) in [("note-ended-bound", "SIGXCPU"), ("note-ended", "SIGABRT")] {
+    for (name, signal, bound) in [
+        ("note-ended-bound", "SIGXCPU", Some(Bound::Cpu)),
+        ("note-ended-no-bound", "SIGXCPU", None),
+        ("note-ended", "SIGABRT", None),
+    ] {
         let text = golden(name);
         assert_eq!(
-            render(&died(signal)).as_deref(),
+            render(&died(signal, bound)).as_deref(),
             Ok(text.as_str()),
             "{name}"
         );
         let parsed = parse(&text).unwrap_or_else(|error| panic!("{name}: {error:?}"));
-        assert_eq!(parsed, died(signal), "{name}");
+        assert_eq!(parsed, died(signal, bound), "{name}");
         assert_eq!(render(&parsed).as_deref(), Ok(text.as_str()), "{name}");
     }
 }
 
 #[test]
-fn note_ended_names_the_bound_of_its_signal_only() {
-    assert_eq!(signal_bound("SIGXCPU"), Some("cpu"));
-    assert_eq!(signal_bound("SIGXFSZ"), Some("fsize"));
-    assert_eq!(signal_bound("SIGABRT"), None);
-    assert_eq!(signal_bound("SIGKILL"), None);
-    let fsize = "surf 1 session 7f3a died\ndid refused session-died\nnote ended: signal SIGXFSZ \
-                 bound fsize\n";
-    assert_eq!(
-        parse(fsize).map(|answer| answer.notes),
-        Ok(died("SIGXFSZ").notes)
-    );
-    assert_eq!(render(&died("SIGXFSZ")).as_deref(), Ok(fsize));
-    assert_eq!(
-        render(&died("SIGKILL")).as_deref(),
-        Ok("surf 1 session 7f3a died\ndid refused session-died\nnote ended: signal SIGKILL\n")
-    );
+fn the_bound_word_is_cpu_after_sigxcpu_only() {
+    assert_eq!(Bound::Cpu.word(), "cpu");
+    assert_eq!(Bound::Cpu.signal(), "SIGXCPU");
+    for signal in ["SIGXFSZ", "SIGKILL", "SIGABRT"] {
+        let text = format!(
+            "surf 1 session 7f3a died\ndid refused session-died\nnote ended: signal {signal}\n"
+        );
+        assert_eq!(render(&died(signal, None)).as_deref(), Ok(text.as_str()));
+        assert_eq!(parse(&text), Ok(died(signal, None)));
+        assert!(
+            matches!(
+                render(&died(signal, Some(Bound::Cpu))),
+                Err(RenderError::NotAWord {
+                    field: "note ended bound",
+                    ..
+                })
+            ),
+            "rendered a bound after {signal}"
+        );
+    }
 }
 
 #[test]
@@ -63,8 +74,9 @@ fn note_ended_refuses_another_bound_word_and_a_bound_out_of_place() {
         "note ended: signal SIGXCPU bound CPU",
         "note ended: signal SIGXCPU bound",
         "note ended: signal SIGXCPU bound cpu ",
-        "note ended: signal SIGXCPU",
+        "note ended: signal SIGXCPU  bound cpu",
         "note ended: signal SIGXCPU bound fsize",
+        "note ended: signal SIGXFSZ bound fsize",
         "note ended: signal SIGXFSZ bound cpu",
         "note ended: signal SIGABRT bound cpu",
         "note ended: signal SIGABRT bound fsize",
@@ -91,7 +103,7 @@ fn note_ended_renders_no_signal_name_outside_its_set() {
     ] {
         assert!(
             matches!(
-                render(&died(name)),
+                render(&died(name, None)),
                 Err(RenderError::NotAWord {
                     field: "note ended signal",
                     ..

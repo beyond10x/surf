@@ -9,7 +9,10 @@ use crate::common;
 use crate::view::{json, listed, sessions, view_url};
 
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+use std::process::Command;
+use std::thread;
 use std::time::{Duration, Instant};
 
 use common::*;
@@ -371,4 +374,140 @@ fn a_session_surfd_killed_after_its_late_answer_names_no_signal() {
     assert_eq!(answer.status, 3);
     assert_eq!(answer.text, refusal(&session.id, "died", "session-died"));
     assert_eq!(listed_signal(&dir, &session), json::Value::Null);
+}
+
+/// Send `signal` (`XCPU`, `KILL`) to process `pid` with kill(1).
+fn send(pid: u32, signal: &str) {
+    let status = Command::new("kill")
+        .arg(format!("-{signal}"))
+        .arg(pid.to_string())
+        .status()
+        .expect("kill runs");
+    assert!(status.success(), "kill -{signal} {pid}: {status}");
+}
+
+/// Statement 4 under the rule of the bound's word: a session without scripts has no CPU bound,
+/// so `SIGXCPU`, sent here by the test, is named without `bound cpu`.
+#[test]
+fn a_session_without_a_cpu_bound_ended_by_sigxcpu_names_no_bound() {
+    let dir = TestDir::new();
+    let daemon = start(config(&dir));
+    let session = open(&dir);
+    send(session_pid(&dir, &daemon, &session), "XCPU");
+    let answer = died_and_look(&daemon, &dir, &session, ALLOWED);
+    assert_eq!(answer.status, 3);
+    assert_eq!(
+        answer.text,
+        format!(
+            "{}note ended: signal SIGXCPU\n",
+            refusal(&session.id, "died", "session-died")
+        )
+    );
+    assert_eq!(
+        listed_signal(&dir, &session),
+        json::Value::Str("SIGXCPU".to_string())
+    );
+}
+
+/// A start chain that ends by an exit before the session wrote a byte: `prlimit` is a sh script
+/// that exits with status 1. An `open` without scripts is answered as a missing program is,
+/// status 3 and the reason `cannot start <program>: ...` with no answer text, and nothing is
+/// listed or left running.
+#[test]
+fn a_start_chain_that_exits_first_answers_an_open_without_scripts_as_a_missing_program() {
+    let dir = TestDir::new();
+    let prlimit = dir.path.join("prlimit");
+    fs::write(&prlimit, "#!/bin/sh\nexit 1\n").unwrap();
+    fs::set_permissions(&prlimit, fs::Permissions::from_mode(0o755)).unwrap();
+    let mut config = config(&dir);
+    config.prlimit = prlimit;
+    let program = config.session_program.clone();
+    let daemon = start(config);
+    let answer = call(&dir, &open_request(false));
+    assert_eq!(answer.status, 3, "{answer:?}");
+    assert_eq!(answer.text, "", "{answer:?}");
+    let reason = answer.reason.clone().unwrap_or_default();
+    assert!(
+        reason.starts_with(&format!("cannot start {}: ", program.display())),
+        "{answer:?}"
+    );
+    assert!(daemon.sessions().is_empty());
+    assert_eq!(children_of(std::process::id()), [] as [u32; 0]);
+}
+
+/// The id of the head line `surf 1 session <id> died` of `answer`.
+fn died_id(answer: &Answer) -> String {
+    let head = answer.text.lines().next().unwrap_or_default();
+    head.strip_prefix("surf 1 session ")
+        .and_then(|rest| rest.strip_suffix(" died"))
+        .unwrap_or_else(|| panic!("no head line of a died session: {answer:?}"))
+        .to_string()
+}
+
+/// A session that dies by a signal while it answers `open` gets the answer it gets without the
+/// signal, status 3 and its reason, with the lines of a session that died that way: here a
+/// session with scripts that aborts before it writes its `open` answer.
+#[test]
+fn a_session_that_aborts_while_it_answers_open_names_its_signal() {
+    let dir = TestDir::new();
+    dir.set("open-behaviour", "abort");
+    let daemon = start(config(&dir));
+    let answer = call(&dir, &open_request(true));
+    assert_eq!(answer.status, 3, "{answer:?}");
+    assert_eq!(
+        answer.reason.as_deref(),
+        Some("the session ended or broke the link while it answered open")
+    );
+    let id = died_id(&answer);
+    assert_eq!(
+        answer.text,
+        format!(
+            "{}note ended: signal SIGABRT\n",
+            refusal(&id, "died", "session-died")
+        )
+    );
+    assert!(daemon.sessions().is_empty());
+}
+
+/// As above, a session without scripts that the test kills with `SIGKILL` while it holds its
+/// `open` answer back.
+#[test]
+fn a_session_killed_by_another_process_while_it_answers_open_names_sigkill() {
+    let dir = TestDir::new();
+    dir.set("open-behaviour", "stall");
+    let hold = dir.hold();
+    let daemon = start(config(&dir));
+    let opening = {
+        let socket = dir.socket();
+        thread::spawn(move || {
+            let mut stream = std::os::unix::net::UnixStream::connect(socket).unwrap();
+            std::io::Write::write_all(&mut stream, &open_request(false).encode().unwrap()).unwrap();
+            surf_agent::wire::read_answer(&mut stream, surf_agent::wire::ANSWER_TIMEOUT)
+                .expect("an answer")
+        })
+    };
+    let began = Instant::now();
+    let pid = loop {
+        let started = dir.starts();
+        if let Some((pid, id)) = started.first()
+            && dir.requests(id).contains("command open")
+        {
+            break *pid;
+        }
+        assert!(began.elapsed() < ALLOWED, "the stand-in did not read open");
+        thread::sleep(Duration::from_millis(10));
+    };
+    send(pid, "KILL");
+    let answer = opening.join().unwrap();
+    drop(hold);
+    assert_eq!(answer.status, 3, "{answer:?}");
+    let id = died_id(&answer);
+    assert_eq!(
+        answer.text,
+        format!(
+            "{}note ended: signal SIGKILL\n",
+            refusal(&id, "died", "session-died")
+        )
+    );
+    assert!(daemon.sessions().is_empty());
 }

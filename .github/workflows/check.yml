@@ -118,7 +118,7 @@ jobs:
           command -v setpriv prlimit || true
           missing=0
           for program in /usr/bin/setpriv /usr/bin/prlimit; do
-            if [ ! -x "$program" ]; then
+            if ! { [ -f "$program" ] && [ -x "$program" ]; }; then
               printf '::error::%s is missing on the runner; surfd starts every session through it\n' "$program"
               missing=1
             fi

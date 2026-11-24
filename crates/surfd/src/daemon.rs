@@ -18,7 +18,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
 use surf_agent::wire;
-use surf_answer::{Did, Head, Note, RefusalReason, SessionState as HeadState};
+use surf_answer::{Bound, Did, Head, Note, RefusalReason, SessionState as HeadState};
 use surf_secret::Token;
 
 use crate::directory::{self, Lock};
@@ -277,19 +277,30 @@ impl Hardening {
     /// `setpriv --no-new-privs prlimit <bounds> -- <program>`, the bounds of the form `scripts`
     /// names; the session's arguments follow.
     fn command(&self, program: &Path, scripts: bool) -> Command {
-        let bounds = if scripts {
-            &self.script_session_bounds
-        } else {
-            &self.session_bounds
-        };
         let mut command = Command::new(&self.setpriv);
         command
             .arg("--no-new-privs")
             .arg(&self.prlimit)
-            .args(bounds)
+            .args(self.bounds(scripts))
             .arg("--")
             .arg(program);
         command
+    }
+
+    /// The `prlimit` arguments of the form `scripts` names.
+    fn bounds(&self, scripts: bool) -> &[String] {
+        if scripts {
+            &self.script_session_bounds
+        } else {
+            &self.session_bounds
+        }
+    }
+
+    /// Whether the bounds of the form `scripts` names set a CPU time bound (`--cpu=`).
+    fn sets_cpu(&self, scripts: bool) -> bool {
+        self.bounds(scripts)
+            .iter()
+            .any(|bound| bound.starts_with("--cpu="))
     }
 }
 
@@ -387,6 +398,20 @@ struct Entry {
     process: Arc<Process>,
     /// The name of the signal its process ended by, when `surfd` did not kill it.
     signal: Option<String>,
+    /// `surfd` started it with a CPU time bound (`prlimit --cpu`), which ends it by `SIGXCPU`.
+    cpu_bound: bool,
+}
+
+impl Entry {
+    /// The line `note ended: signal <name>` of a process that ended by a signal `surfd` did not
+    /// send, with `bound cpu` when `surfd` set the CPU time bound for it and the signal is
+    /// `SIGXCPU`, the one that bound sends. Who sent the signal is not known: a `SIGXCPU` from
+    /// another process to a session with the bound reads `bound cpu` too.
+    fn ended_note(&self) -> Option<Note> {
+        let signal = self.signal.clone()?;
+        let bound = (self.cpu_bound && signal == Bound::Cpu.signal()).then_some(Bound::Cpu);
+        Some(Note::Ended { signal, bound })
+    }
 }
 
 struct Process {
@@ -987,29 +1012,26 @@ fn own_with(id: &str, state: HeadState, reason: RefusalReason, notes: Vec<Note>)
     }
 }
 
-/// The answer for a session that ended in `state`; for one that died by `signal`, which `surfd`
-/// did not send, with the line `note ended: signal <name>` (and the bound the signal names).
-fn ended_answer(id: &str, state: State, signal: Option<&str>) -> wire::Answer {
+/// The answer for a session that ended in `state`; for one that died by a signal `surfd` did
+/// not send, with its `note ended` line ([`Entry::ended_note`]).
+fn ended_answer(id: &str, state: State, ended: Option<Note>) -> wire::Answer {
     match state {
         State::Closed => own(id, HeadState::Closed, RefusalReason::Closed),
         State::Died | State::Open => own_with(
             id,
             HeadState::Died,
             RefusalReason::SessionDied,
-            signal
-                .map(|signal| Note::Ended(signal.to_string()))
-                .into_iter()
-                .collect(),
+            ended.into_iter().collect(),
         ),
     }
 }
 
-/// The signal the session `id` ended by, while its entry is kept.
-fn signal_of(shared: &Shared, id: &str) -> Option<String> {
+/// The `note ended` line of the session `id`, while its entry is kept.
+fn ended_note_of(shared: &Shared, id: &str) -> Option<Note> {
     guard(&shared.table)
         .entries
         .get(id)
-        .and_then(|entry| entry.signal.clone())
+        .and_then(Entry::ended_note)
 }
 
 fn relay(answer: link::Answer) -> wire::Answer {
@@ -1191,13 +1213,13 @@ fn process_of(shared: &Shared, id: &str) -> Option<Arc<Process>> {
 /// its end state.
 fn finish(shared: &Shared, id: &str) -> wire::Answer {
     if let Some(state) = wait_end(shared, id, shared.kill_grace) {
-        return ended_answer(id, state, signal_of(shared, id).as_deref());
+        return ended_answer(id, state, ended_note_of(shared, id));
     }
     if let Some(process) = process_of(shared, id) {
         process.kill();
     }
     match wait_end(shared, id, shared.kill_grace.max(KILL_GRACE)) {
-        Some(state) => ended_answer(id, state, signal_of(shared, id).as_deref()),
+        Some(state) => ended_answer(id, state, ended_note_of(shared, id)),
         None => own(id, HeadState::Died, RefusalReason::SessionDied),
     }
 }
@@ -1210,7 +1232,7 @@ fn call_session(shared: &Arc<Shared>, id: &str, raw: &[u8]) -> wire::Answer {
             return own(id, HeadState::Unknown, RefusalReason::NoSuchSession);
         };
         match entry.phase {
-            Phase::Ended(state) => return ended_answer(id, state, entry.signal.as_deref()),
+            Phase::Ended(state) => return ended_answer(id, state, entry.ended_note()),
             Phase::Closing => {
                 drop(table);
                 return finish(shared, id);
@@ -1318,7 +1340,10 @@ fn abandon(shared: &Shared, id: &str, process: &Process) {
 /// `setpriv --no-new-privs` and `prlimit` with the bounds of its form, `scripts` (`arg scripts
 /// "true"`) or not; both replace themselves by the session program, so the process `surfd`
 /// holds is the session's. Without both programs a session without scripts starts without
-/// them, and one with scripts is refused `scripts-unavailable`, with no process started.
+/// them, and one with scripts is refused `scripts-unavailable`, with no process started; a
+/// start that ends by an exit before the session wrote a byte is answered so too
+/// ([`not_started`]). A session that dies by a signal of its own while it answers `open` adds
+/// its `note ended` line to the answer.
 fn open_session(shared: &Arc<Shared>, raw: &[u8], scripts: bool) -> wire::Answer {
     let id = match next_identity(shared) {
         Ok(id) => id,
@@ -1405,6 +1430,10 @@ fn open_session(shared: &Arc<Shared>, raw: &[u8], scripts: bool) -> wire::Answer
                 title: None,
                 process: Arc::clone(&process),
                 signal: None,
+                cpu_bound: shared
+                    .hardening
+                    .as_ref()
+                    .is_some_and(|hardening| hardening.sets_cpu(scripts)),
             },
         );
         table.live += 1;
@@ -1432,8 +1461,9 @@ fn open_session(shared: &Arc<Shared>, raw: &[u8], scripts: bool) -> wire::Answer
         return unreachable("cannot start a thread for the session");
     }
     match ready.recv_timeout(shared.ready_timeout) {
-        Ok(true) => {}
-        Ok(false) => {
+        Ok(Start::Ready) => {}
+        Ok(Start::Nothing) => return not_started(shared, &id, &process, scripts),
+        Ok(Start::Other) => {
             abandon(shared, &id, &process);
             return unreachable("the session ended or wrote another line before it reported ready");
         }
@@ -1486,8 +1516,14 @@ fn open_session(shared: &Arc<Shared>, raw: &[u8], scripts: bool) -> wire::Answer
             relay(answer)
         }
         Err(failure) => {
+            // A session that closed the link with no answer may be ending by a signal of its
+            // own: wait for its end before it is killed, so that the signal is not lost.
+            if matches!(failure, Failure::Gone) {
+                let _ = wait_end(shared, &id, shared.kill_grace);
+            }
+            let ended = ended_note_of(shared, &id);
             abandon(shared, &id, &process);
-            unreachable(match failure {
+            let mut answer = unreachable(match failure {
                 Failure::Timeout(_) => format!(
                     "the session did not answer open within {} seconds",
                     shared.answer_timeout.as_secs_f64()
@@ -1495,9 +1531,36 @@ fn open_session(shared: &Arc<Shared>, raw: &[u8], scripts: bool) -> wire::Answer
                 Failure::Gone | Failure::Broken => {
                     "the session ended or broke the link while it answered open".to_string()
                 }
-            })
+            });
+            if let Some(ended) = ended {
+                answer.text = ended_answer(&id, State::Died, Some(ended)).text;
+            }
+            answer
         }
     }
+}
+
+/// The answer to an `open` whose session process closed its standard output before it wrote a
+/// byte. When the start chain (`setpriv`, `prlimit`, the session program) ended by an exit, not
+/// a signal, it is answered as a missing program is: with `scripts` `did refused
+/// scripts-unavailable`, as a session with scripts runs only under both programs, and without
+/// them the reason `cannot start <program>: ...`. Any other end is answered as a session that
+/// ended before it reported ready.
+fn not_started(shared: &Shared, id: &str, process: &Process, scripts: bool) -> wire::Answer {
+    let exited = wait_end(shared, id, shared.kill_grace).is_some()
+        && !process.killed.load(Ordering::SeqCst)
+        && ended_note_of(shared, id).is_none();
+    abandon(shared, id, process);
+    if !exited {
+        return unreachable("the session ended or wrote another line before it reported ready");
+    }
+    if scripts {
+        return own(id, HeadState::Unknown, RefusalReason::ScriptsUnavailable);
+    }
+    unreachable(format!(
+        "cannot start {}: it ended by an exit before the session wrote its first byte",
+        shared.program.display()
+    ))
 }
 
 /// Keep `id` among the listed ended sessions, its log among the ended ones, dropping the session
@@ -1522,15 +1585,30 @@ fn now_millis() -> u64 {
         })
 }
 
+/// What a session process wrote first on its standard output.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Start {
+    /// Its `ready` line.
+    Ready,
+    /// No byte: its standard output closed first.
+    Nothing,
+    /// Another line, a line over the bound, or a failed read.
+    Other,
+}
+
 /// The thread of one session process: read its `ready` line and tell the opener, then hold its
 /// standard output (a byte there breaks the link), reap it, remove its directory and set its
 /// end state.
+///
+/// The signal it ended by is kept only when `surfd` did not kill it ([`Process::kill`]): a
+/// session that ends by a signal of its own in the instant `surfd` kills it reads as killed by
+/// `surfd`, with no signal and so no `note ended` line.
 fn supervise(
     shared: Arc<Shared>,
     id: String,
     process: Arc<Process>,
     stdout: Option<ChildStdout>,
-    ready: mpsc::Sender<bool>,
+    ready: mpsc::Sender<Start>,
 ) {
     match stdout {
         Some(stdout) => {
@@ -1539,8 +1617,13 @@ fn supervise(
             let read = (&mut reader)
                 .take(wire::START_LINE_MAX as u64)
                 .read_until(b'\n', &mut line);
-            let is_ready = read.is_ok() && line.strip_suffix(b"\n") == Some(link::READY.as_bytes());
-            let _ = ready.send(is_ready);
+            let start = match read {
+                Ok(0) => Start::Nothing,
+                Ok(_) if line.strip_suffix(b"\n") == Some(link::READY.as_bytes()) => Start::Ready,
+                _ => Start::Other,
+            };
+            let is_ready = start == Start::Ready;
+            let _ = ready.send(start);
             if is_ready {
                 let mut byte = [0u8; 1];
                 loop {
@@ -1557,7 +1640,7 @@ fn supervise(
             }
         }
         None => {
-            let _ = ready.send(false);
+            let _ = ready.send(Start::Other);
         }
     }
     drop(ready);

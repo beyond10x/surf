@@ -907,17 +907,24 @@ process; the request is still passed on unchanged.
 
 The answers, each line literal:
 
-- `open` with `--scripts true` while a program is missing: the action line `did refused
+- `open` with `--scripts true` while a program is missing, or when the start through both ended
+  by an exit before the session wrote its first byte: the action line `did refused
   scripts-unavailable`, exit status 3 (like `session-died`, the cause is outside the request), and
   a new row of the table in `docs/agent-answer.md` ("`setpriv` or `prlimit` is missing, and a
   session with scripts runs only under both").
-- A session that ended by a signal that names a bound: the head reads `died`, the action `did
-  refused session-died`, as today, and the answer gains the note line `note ended: signal
-  SIGXCPU bound cpu` (the form `note ended: signal <NAME> bound <word>`; `SIGXCPU` names `cpu`,
-  `SIGXFSZ` would name `fsize`).
-- A session that ended by a signal that names no bound (an allocation over the address space or a
-  stack overflow, both `SIGABRT`): the same head and action, and the note line `note ended:
-  signal SIGABRT` (the form `note ended: signal <NAME>`).
+- A session `surfd` started with the CPU bound (a session with scripts) that ended by
+  `SIGXCPU`, the signal of that bound: the head reads `died`, the action `did refused
+  session-died`, as today, and the answer gains the note line `note ended: signal SIGXCPU bound
+  cpu` (the form `note ended: signal <NAME> bound <word>`). The bound's word is there when
+  `surfd` set that bound for the session and the signal is the one the bound sends, and never
+  otherwise: a session without the CPU bound that ended by `SIGXCPU` reads `note ended: signal
+  SIGXCPU`, and `surfd` sets no file-size bound, so no line names one. The line cannot tell who
+  sent the signal.
+- A session that ended by another signal (an allocation over the address space or a stack
+  overflow, both `SIGABRT`): the same head and action, and the note line `note ended: signal
+  SIGABRT` (the form `note ended: signal <NAME>`). A session ended by a signal `surfd` did not
+  send, `SIGKILL` from another process included (the kernel's out-of-memory killer sends it),
+  answers `note ended: signal SIGKILL`.
 - A session that `surfd` killed itself (the `killed` flag of its process, set by `Process::kill`,
   `crates/surfd/src/daemon.rs:265`, `:275`; after the late read of 600 s, or at its stop) keeps
   today's answer: the command that waited was answered `did refused session-timeout` after 60 s
