@@ -2430,7 +2430,8 @@ fn refusal_status(reason: RefusalReason) -> u8 {
         RefusalReason::Usage => 2,
         RefusalReason::NoSuchSession
         | RefusalReason::SessionDied
-        | RefusalReason::SessionTimeout => 3,
+        | RefusalReason::SessionTimeout
+        | RefusalReason::ScriptsUnavailable => 3,
     }
 }
 

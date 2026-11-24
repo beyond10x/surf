@@ -168,6 +168,7 @@ impl ToJson for Summary {
             .member("opened_at", &self.opened_at)
             .member("last_action_at", &self.last_action_at)
             .member("ended_at", &self.ended_at)
+            .member("signal", &self.signal)
             .member("page", &self.page)
             .close();
     }

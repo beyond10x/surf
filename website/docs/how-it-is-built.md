@@ -53,13 +53,13 @@ generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 10 CLI artifact(s), generated in .out/cli
 Cargo.lock: 51 package(s), 19 from outside this repository, each on the allow-list
-test-layout: 25 test directories, 193 test files, one test binary each
+test-layout: 25 test directories, 197 test files, one test binary each
 tls-certs: 33 cases, certs/ matches its sources
 tls-flights: 6 recordings match SOURCE, the recorder matches DIGEST
 tls-flights: self-test: a changed copy of aes128-x25519-ecdsa.bin fails naming it
 doc-tests-check: no doc test outside crates/ports
     Finished `dev` profile [unoptimized] target(s) in 1.31s
-1504 tests: 1504 passed, 0 failed, 0 ignored (cargo-nextest 1502, doc tests 2)
+1547 tests: 1547 passed, 0 failed, 0 ignored (cargo-nextest 1545, doc tests 2)
 test step: 11.1 s of its budget of 120 s
 552 tests: 552 passed, 0 failed, 0 ignored (cargo-nextest 552)
 tls test step: 3.0 s of its budget of 120 s
@@ -67,7 +67,7 @@ agent-tasks: 6 tasks, 6 pass, 0 fail, 0 skipped, lane gate, binaries target/debu
 sh-echo: Summary [  10.326s] 51 tests run: 51 passed, 115 skipped
 view-stream-check: 23 event name(s), each a message of the AsyncAPI projection
 view-tests: node_modules installed from package-lock.json
-  71 passed (18.3s)
+  72 passed (18.3s)
 page step: 18.7 s of its budget of 120 s
 html-conformance: 9107 cases, 9095 run, 9095 passed
 x509-limbo: 5143 cases, 5089 run, 5060 passed
@@ -94,7 +94,11 @@ tests each step also prints, the agent tasks' rows after their counts, npm's and
 own lines and the rows of the two conformance counts. It is the run of 2026-11-24 on `91f7ff1`,
 the Web IDL reader's branch, that `task check-runner` ended in 67 s, at a load of 34.40 at its
 start and 52.88 at its end; its test line counts the reader's tests as they stand after it
-(80, where that run had 72). The page tests' line, `71 passed (18.3s)`, has its slowest test
+(80, where that run had 72). Its test, test-layout and page tests' lines count the tests of
+`story:session-process-hardening` as they stand after it, from `task test`, `task
+test-layout` and `task view-test` on its tip (1547, 197 test files and 72, where that run had
+1504, 193 and 71); the times are that run's. That run's page tests' line, `71 passed
+(18.3s)`, has its slowest test
 (`an entry over 1 MiB`) at 2.350 s; the run of 2026-11-24 on `8fab187` had `71 passed
 (12.7s)`, its slowest test (`adversary: an action streamed while the detail loads after a
 reset is not lost`) at 1.214 s and `an entry over 1 MiB` at 0.682 s; the run of

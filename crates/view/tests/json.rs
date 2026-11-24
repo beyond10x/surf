@@ -121,6 +121,7 @@ fn summary_a() -> Summary {
         last_action_at: Some(1_795_226_401_500),
         ended_at: None,
         page: Some(loaded()),
+        signal: None,
     }
 }
 
@@ -134,6 +135,7 @@ fn summary_b() -> Summary {
         last_action_at: Some(1_795_226_403_000),
         ended_at: Some(1_795_226_403_010),
         page: Some(unreachable()),
+        signal: None,
     }
 }
 
@@ -352,7 +354,7 @@ fn case_01_the_session_list_is_the_documents_example() {
     };
     let written = to_json(&list);
     let expected = body_of("/api/sessions");
-    assert_eq!(expected.len(), 603, "the document's example");
+    assert_eq!(expected.len(), 631, "the document's example");
     assert_eq!(text(&written), text(&expected));
 }
 
@@ -367,7 +369,7 @@ fn case_02_a_detail_whose_page_is_committed_is_the_documents_example() {
     };
     let written = to_json(&detail);
     let expected = body_of(&format!("/api/sessions/{A}"));
-    assert_eq!(expected.len(), 5_629, "the document's example");
+    assert_eq!(expected.len(), 5_643, "the document's example");
     assert_eq!(text(&written), text(&expected));
 }
 
@@ -403,7 +405,7 @@ fn case_03_a_detail_whose_page_failed_names_its_reason() {
     let expected = concat!(
         r#"{"session":{"id":"0b7d4e21-9c3a-4f58-b6e2-7a1d9c8e5f30","state":"closed","#,
         r#""address":"http://127.0.0.1:9/","title":null,"opened_at":1795226401990,"#,
-        r#""last_action_at":1795226403000,"ended_at":1795226403010,"#,
+        r#""last_action_at":1795226403000,"ended_at":1795226403010,"signal":null,"#,
         r#""page":{"kind":"failed","reason":"Unreachable","address":"http://127.0.0.1:9/"}},"#,
         r#""dropped":20,"log_dropped":false,"unreadable":0,"entries":["#,
         r#"{"number":38,"session":"0b7d4e21-9c3a-4f58-b6e2-7a1d9c8e5f30","index":21,"#,
@@ -437,7 +439,7 @@ fn case_04_a_detail_before_the_first_page_has_the_page_none() {
     let expected = concat!(
         r#"{"session":{"id":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","state":"open","#,
         r#""address":null,"title":null,"opened_at":1795226400000,"#,
-        r#""last_action_at":1795226400010,"ended_at":null,"page":{"kind":"none"}},"#,
+        r#""last_action_at":1795226400010,"ended_at":null,"signal":null,"page":{"kind":"none"}},"#,
         r#""dropped":0,"log_dropped":false,"unreadable":0,"entries":["#,
         r#"{"number":1,"session":"5f0c2a9e-3b1d-4c6e-8a7f-1e2d3c4b5a69","index":1,"#,
         r#""kept_at":1795226400010,"kind":"action","sequence":1,"command":"open","argument":null},"#,
@@ -492,7 +494,7 @@ fn case_08_the_detail_whose_log_was_dropped() {
     };
     let written = to_json(&detail);
     let expected = json_block(r#"{"session":{"id":"0b7d4e21"#);
-    assert_eq!(expected.len(), 264, "the example as corrected");
+    assert_eq!(expected.len(), 278, "the example as corrected");
     assert_eq!(text(&written), text(&expected));
 }
 
@@ -575,7 +577,7 @@ fn case_09_the_string_matrix_reads_back_exactly() {
 #[test]
 fn case_22_the_data_of_the_session_and_reset_events() {
     let session = stream_data("session");
-    assert_eq!(session.len(), 269);
+    assert_eq!(session.len(), 283);
     assert_eq!(text(&to_json(&summary_b())), text(&session));
     let reset = stream_data("reset");
     assert_eq!(text(&reset), r#"{"newest":38}"#);
@@ -974,6 +976,36 @@ fn case_01_controls_checked_and_selected_changes_and_a_cut_value() {
     assert_eq!(
         text(&to_json(&more)),
         r#"{"kind":"page","from":"http://127.0.0.1:41000/forms/login.html","to":null,"texts":[],"more":3}"#
+    );
+}
+
+// --- story:session-process-hardening -----------------------------------------------------------
+
+#[test]
+fn a_summary_names_the_signal_its_session_ended_by_or_null() {
+    let mut died = summary_b();
+    died.state = SessionState::Died;
+    died.signal = Some("SIGXCPU".to_string());
+    assert_eq!(
+        text(&to_json(&died)),
+        concat!(
+            r#"{"id":"0b7d4e21-9c3a-4f58-b6e2-7a1d9c8e5f30","state":"died","#,
+            r#""address":"http://127.0.0.1:9/","title":null,"opened_at":1795226401990,"#,
+            r#""last_action_at":1795226403000,"ended_at":1795226403010,"signal":"SIGXCPU","#,
+            r#""page":{"kind":"failed","reason":"Unreachable","address":"http://127.0.0.1:9/"}}"#,
+        )
+    );
+    let open = text(&to_json(&summary_a()));
+    assert!(
+        open.contains(r#","ended_at":null,"signal":null,"page":"#),
+        "{open}"
+    );
+    let document = document();
+    let section = &document[document.find("### A session summary").expect("the section")..];
+    let section = &section[..section.find("\n### ").expect("the next section")];
+    assert!(
+        section.contains(r#""ended_at","signal","page"}`"#) && section.contains("- `signal`: "),
+        "{section}"
     );
 }
 

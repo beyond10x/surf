@@ -7,9 +7,9 @@ use std::fmt;
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, TcpListener};
-use std::os::unix::fs::FileTypeExt;
+use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::os::unix::process::CommandExt;
+use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -18,7 +18,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
 use surf_agent::wire;
-use surf_answer::{Did, Head, RefusalReason, SessionState as HeadState};
+use surf_answer::{Bound, Did, Head, Note, RefusalReason, SessionState as HeadState};
 use surf_secret::Token;
 
 use crate::directory::{self, Lock};
@@ -51,6 +51,26 @@ pub const CONNECTION_LIMIT: usize = 64;
 /// The session program, looked for in the directory of `surfd`'s own executable.
 pub const SESSION_PROGRAM: &str = "surf-session";
 
+/// The program that starts a session with no new privileges, `setpriv --no-new-privs`, by
+/// absolute path (`docs/design/scripts.md`, Q11).
+const SETPRIV: &str = "/usr/bin/setpriv";
+
+/// The program that starts a session under its bounds, `prlimit`, by absolute path.
+const PRLIMIT: &str = "/usr/bin/prlimit";
+
+/// The bounds of a session without scripts, as arguments of `prlimit`: no core file.
+const SESSION_BOUNDS: [&str; 1] = ["--core=0:0"];
+
+/// The bounds of a session with scripts, as arguments of `prlimit`: 4 GiB of address space,
+/// 3,600 s of CPU time soft and 3,601 s hard (so the kernel sends `SIGXCPU` at the soft one), 64
+/// open files and no core file.
+const SCRIPT_SESSION_BOUNDS: [&str; 4] = [
+    "--as=4294967296:4294967296",
+    "--cpu=3600:3601",
+    "--nofile=64:64",
+    "--core=0:0",
+];
+
 /// How long `surfd` takes to write one answer to a client.
 const ANSWER_WRITE_TIMEOUT: Duration = wire::REQUEST_TIMEOUT;
 
@@ -78,9 +98,20 @@ pub struct Config {
     pub runtime_dir: Option<PathBuf>,
     /// The session program, an absolute path: [`SESSION_PROGRAM`] beside the running executable.
     pub session_program: PathBuf,
-    /// Variables added to a session's environment, which is `surfd`'s own without `SURF_TOKEN`
-    /// and `SURF_SESSION`. None in the binary.
+    /// A session's whole environment: the session starts with an empty one and gets these
+    /// variables only, none of `surfd`'s own. None in the binary.
     pub session_env: Vec<(OsString, OsString)>,
+    /// `/usr/bin/setpriv`; when it is not an executable file at `surfd`'s start, a session
+    /// without scripts starts without it and without `prlimit`, and an `open` with scripts is
+    /// refused.
+    pub setpriv: PathBuf,
+    /// `/usr/bin/prlimit`, read as `setpriv` is.
+    pub prlimit: PathBuf,
+    /// The arguments of `prlimit` for a session without scripts: `--core=0:0`.
+    pub session_bounds: Vec<String>,
+    /// The arguments of `prlimit` for a session with scripts: `--as=4294967296:4294967296
+    /// --cpu=3600:3601 --nofile=64:64 --core=0:0`.
+    pub script_session_bounds: Vec<String>,
     /// [`SESSION_READY_TIMEOUT`].
     pub session_ready_timeout: Duration,
     /// [`SESSION_ANSWER_TIMEOUT`].
@@ -118,6 +149,10 @@ impl Config {
             runtime_dir,
             session_program,
             session_env: Vec::new(),
+            setpriv: PathBuf::from(SETPRIV),
+            prlimit: PathBuf::from(PRLIMIT),
+            session_bounds: SESSION_BOUNDS.map(String::from).to_vec(),
+            script_session_bounds: SCRIPT_SESSION_BOUNDS.map(String::from).to_vec(),
             session_ready_timeout: SESSION_READY_TIMEOUT,
             session_answer_timeout: SESSION_ANSWER_TIMEOUT,
             late_answer_timeout: LATE_ANSWER_TIMEOUT,
@@ -139,6 +174,10 @@ impl fmt::Debug for Config {
             .field("runtime_dir", &self.runtime_dir)
             .field("session_program", &self.session_program)
             .field("session_env", &self.session_env)
+            .field("setpriv", &self.setpriv)
+            .field("prlimit", &self.prlimit)
+            .field("session_bounds", &self.session_bounds)
+            .field("script_session_bounds", &self.script_session_bounds)
             .field("session_ready_timeout", &self.session_ready_timeout)
             .field("session_answer_timeout", &self.session_answer_timeout)
             .field("late_answer_timeout", &self.late_answer_timeout)
@@ -198,6 +237,8 @@ struct Shared {
     caller: u32,
     program: PathBuf,
     env: Vec<(OsString, OsString)>,
+    /// `None` when `setpriv` or `prlimit` was not an executable file at the start.
+    hardening: Option<Hardening>,
     ready_timeout: Duration,
     answer_timeout: Duration,
     late_answer_timeout: Duration,
@@ -207,6 +248,104 @@ struct Shared {
     identities: Mutex<VecDeque<String>>,
     table: Mutex<Table>,
     changed: Condvar,
+}
+
+/// The two programs a session starts through, and the bounds of each form.
+struct Hardening {
+    setpriv: PathBuf,
+    prlimit: PathBuf,
+    session_bounds: Vec<String>,
+    script_session_bounds: Vec<String>,
+}
+
+impl Hardening {
+    /// The programs and bounds of `config`, when both programs are executable files.
+    fn of(config: &Config) -> Option<Hardening> {
+        let runnable = |path: &Path| {
+            path.is_absolute()
+                && fs::metadata(path)
+                    .is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+        };
+        (runnable(&config.setpriv) && runnable(&config.prlimit)).then(|| Hardening {
+            setpriv: config.setpriv.clone(),
+            prlimit: config.prlimit.clone(),
+            session_bounds: config.session_bounds.clone(),
+            script_session_bounds: config.script_session_bounds.clone(),
+        })
+    }
+
+    /// `setpriv --no-new-privs prlimit <bounds> -- <program>`, the bounds of the form `scripts`
+    /// names; the session's arguments follow.
+    fn command(&self, program: &Path, scripts: bool) -> Command {
+        let mut command = Command::new(&self.setpriv);
+        command
+            .arg("--no-new-privs")
+            .arg(&self.prlimit)
+            .args(self.bounds(scripts))
+            .arg("--")
+            .arg(program);
+        command
+    }
+
+    /// The `prlimit` arguments of the form `scripts` names.
+    fn bounds(&self, scripts: bool) -> &[String] {
+        if scripts {
+            &self.script_session_bounds
+        } else {
+            &self.session_bounds
+        }
+    }
+
+    /// Whether the bounds of the form `scripts` names set a CPU time bound (`--cpu=`).
+    fn sets_cpu(&self, scripts: bool) -> bool {
+        self.bounds(scripts)
+            .iter()
+            .any(|bound| bound.starts_with("--cpu="))
+    }
+}
+
+/// The name of signal `number` as Linux numbers signals on x86_64 and aarch64 (`signal(7)`),
+/// such as `SIGXCPU` for 24; `SIG<number>` for a number outside 1 to 31.
+fn signal_name(number: i32) -> String {
+    const NAMES: [&str; 31] = [
+        "SIGHUP",
+        "SIGINT",
+        "SIGQUIT",
+        "SIGILL",
+        "SIGTRAP",
+        "SIGABRT",
+        "SIGBUS",
+        "SIGFPE",
+        "SIGKILL",
+        "SIGUSR1",
+        "SIGSEGV",
+        "SIGUSR2",
+        "SIGPIPE",
+        "SIGALRM",
+        "SIGTERM",
+        "SIGSTKFLT",
+        "SIGCHLD",
+        "SIGCONT",
+        "SIGSTOP",
+        "SIGTSTP",
+        "SIGTTIN",
+        "SIGTTOU",
+        "SIGURG",
+        "SIGXCPU",
+        "SIGXFSZ",
+        "SIGVTALRM",
+        "SIGPROF",
+        "SIGWINCH",
+        "SIGIO",
+        "SIGPWR",
+        "SIGSYS",
+    ];
+    let number = number.unsigned_abs();
+    usize::try_from(number)
+        .ok()
+        .and_then(|number| number.checked_sub(1))
+        .and_then(|index| NAMES.get(index))
+        .map_or_else(|| format!("SIG{number}"), |name| (*name).to_string())
 }
 
 /// Everything that changes, under one lock; [`Shared::changed`] is notified on each change.
@@ -257,6 +396,22 @@ struct Entry {
     address: Option<Quoted>,
     title: Option<Quoted>,
     process: Arc<Process>,
+    /// The name of the signal its process ended by, when `surfd` did not kill it.
+    signal: Option<String>,
+    /// `surfd` started it with a CPU time bound (`prlimit --cpu`), which ends it by `SIGXCPU`.
+    cpu_bound: bool,
+}
+
+impl Entry {
+    /// The line `note ended: signal <name>` of a process that ended by a signal `surfd` did not
+    /// send, with `bound cpu` when `surfd` set the CPU time bound for it and the signal is
+    /// `SIGXCPU`, the one that bound sends. Who sent the signal is not known: a `SIGXCPU` from
+    /// another process to a session with the bound reads `bound cpu` too.
+    fn ended_note(&self) -> Option<Note> {
+        let signal = self.signal.clone()?;
+        let bound = (self.cpu_bound && signal == Bound::Cpu.signal()).then_some(Bound::Cpu);
+        Some(Note::Ended { signal, bound })
+    }
 }
 
 struct Process {
@@ -441,6 +596,7 @@ fn refused(reason: impl Into<String>) -> Refused {
 }
 
 fn begin(config: Config, began: Instant) -> Result<Started, Refused> {
+    let hardening = Hardening::of(&config);
     let runtime = config.runtime_dir.ok_or_else(|| {
         refused("XDG_RUNTIME_DIR is not set; surfd does not fall back to a shared directory")
     })?;
@@ -495,6 +651,7 @@ fn begin(config: Config, began: Instant) -> Result<Started, Refused> {
         caller,
         program: config.session_program,
         env: config.session_env,
+        hardening,
         ready_timeout: config.session_ready_timeout,
         answer_timeout: config.session_answer_timeout,
         late_answer_timeout: config.late_answer_timeout,
@@ -621,6 +778,7 @@ fn snapshot(table: &Table) -> Sessions {
                     address: entry.address.clone(),
                     title: entry.title.clone(),
                     log_dropped: table.log.log_dropped(id),
+                    signal: entry.signal.clone(),
                 },
             )
         })
@@ -807,11 +965,17 @@ fn unreachable(reason: impl Into<String>) -> wire::Answer {
 /// An answer `surfd` writes itself: the head line naming `id` (lower case) and `did refused`,
 /// with the exit status of the reason table of `docs/agent-answer.md`.
 fn own(id: &str, state: HeadState, reason: RefusalReason) -> wire::Answer {
+    own_with(id, state, reason, Vec::new())
+}
+
+/// [`own`] with `notes` after the `did` line.
+fn own_with(id: &str, state: HeadState, reason: RefusalReason, notes: Vec<Note>) -> wire::Answer {
     let mut answer = surf_answer::Answer::new(Head {
         session: id.to_string(),
         state,
     });
     answer.did = Some(Did::Refused(reason));
+    answer.notes = notes;
     let status = match reason {
         RefusalReason::Token
         | RefusalReason::Closed
@@ -838,7 +1002,8 @@ fn own(id: &str, state: HeadState, reason: RefusalReason) -> wire::Answer {
         RefusalReason::Usage => 2,
         RefusalReason::NoSuchSession
         | RefusalReason::SessionDied
-        | RefusalReason::SessionTimeout => 3,
+        | RefusalReason::SessionTimeout
+        | RefusalReason::ScriptsUnavailable => 3,
     };
     wire::Answer {
         status,
@@ -847,11 +1012,26 @@ fn own(id: &str, state: HeadState, reason: RefusalReason) -> wire::Answer {
     }
 }
 
-fn ended_answer(id: &str, state: State) -> wire::Answer {
+/// The answer for a session that ended in `state`; for one that died by a signal `surfd` did
+/// not send, with its `note ended` line ([`Entry::ended_note`]).
+fn ended_answer(id: &str, state: State, ended: Option<Note>) -> wire::Answer {
     match state {
         State::Closed => own(id, HeadState::Closed, RefusalReason::Closed),
-        State::Died | State::Open => own(id, HeadState::Died, RefusalReason::SessionDied),
+        State::Died | State::Open => own_with(
+            id,
+            HeadState::Died,
+            RefusalReason::SessionDied,
+            ended.into_iter().collect(),
+        ),
     }
+}
+
+/// The `note ended` line of the session `id`, while its entry is kept.
+fn ended_note_of(shared: &Shared, id: &str) -> Option<Note> {
+    guard(&shared.table)
+        .entries
+        .get(id)
+        .and_then(Entry::ended_note)
 }
 
 fn relay(answer: link::Answer) -> wire::Answer {
@@ -867,7 +1047,7 @@ fn route(shared: &Arc<Shared>, request: &wire::Request, raw: &[u8]) -> wire::Ans
         if request.session.is_some() || request.token.is_some() {
             return usage("open takes no session and no token");
         }
-        return open_session(shared, raw);
+        return open_session(shared, raw, request.arg("scripts") == Some("true"));
     }
     let Some(named) = &request.session else {
         return usage(format!("{} needs a session", request.command));
@@ -1033,13 +1213,13 @@ fn process_of(shared: &Shared, id: &str) -> Option<Arc<Process>> {
 /// its end state.
 fn finish(shared: &Shared, id: &str) -> wire::Answer {
     if let Some(state) = wait_end(shared, id, shared.kill_grace) {
-        return ended_answer(id, state);
+        return ended_answer(id, state, ended_note_of(shared, id));
     }
     if let Some(process) = process_of(shared, id) {
         process.kill();
     }
     match wait_end(shared, id, shared.kill_grace.max(KILL_GRACE)) {
-        Some(state) => ended_answer(id, state),
+        Some(state) => ended_answer(id, state, ended_note_of(shared, id)),
         None => own(id, HeadState::Died, RefusalReason::SessionDied),
     }
 }
@@ -1052,7 +1232,7 @@ fn call_session(shared: &Arc<Shared>, id: &str, raw: &[u8]) -> wire::Answer {
             return own(id, HeadState::Unknown, RefusalReason::NoSuchSession);
         };
         match entry.phase {
-            Phase::Ended(state) => return ended_answer(id, state),
+            Phase::Ended(state) => return ended_answer(id, state, entry.ended_note()),
             Phase::Closing => {
                 drop(table);
                 return finish(shared, id);
@@ -1144,24 +1324,47 @@ fn forget(shared: &Shared, id: &str) {
     shared.changed.notify_all();
 }
 
-/// Kill a session that did not get listed, wait for its end and drop its entry.
-fn abandon(shared: &Shared, id: &str, process: &Process) {
+/// Kill a session that did not get listed, wait for its end and drop its entry. Its `note
+/// ended` line, when it had ended by a signal `surfd` did not send before the kill.
+fn abandon(shared: &Shared, id: &str, process: &Process) -> Option<Note> {
     process.kill();
     let _ = wait_end(shared, id, shared.kill_grace.max(KILL_GRACE));
+    let ended = ended_note_of(shared, id);
     forget(shared, id);
+    ended
 }
 
 /// Start a session process with its identity and socket path as its only arguments, and pass it
 /// the `open` request `raw` unchanged over its socket: the extra trust anchors of `open
-/// --ca-file` (`arg anchors`) reach the session there, never as an argument or in the
-/// environment of its process (`link`, "One request").
-fn open_session(shared: &Arc<Shared>, raw: &[u8]) -> wire::Answer {
+/// --ca-file` (`arg anchors`) and `arg scripts` reach the session there, never as an argument
+/// or in the environment of its process (`link`, "One request").
+///
+/// The process starts with an empty environment but [`Config::session_env`], through
+/// `setpriv --no-new-privs` and `prlimit` with the bounds of its form, `scripts` (`arg scripts
+/// "true"`) or not; both replace themselves by the session program, so the process `surfd`
+/// holds is the session's. Without both programs a session without scripts starts without
+/// them, and one with scripts is refused `scripts-unavailable`, with no process started; a
+/// start that ends by an exit before the session wrote a byte is answered so too
+/// ([`not_started`]). A session that dies by a signal `surfd` did not send from its start on,
+/// before its first byte or while it answers `open`, adds its `note ended` line to the answer
+/// ([`with_ended`]).
+///
+/// After the ready timeout the note depends on the supervisor reaching its reap within
+/// [`abandon`]'s wait: a child of the session that holds the session's standard output open
+/// longer than that keeps the supervisor in its first read, and the note is lost. After a link
+/// the session closed with no answer to `open` the note depends on the wait of the kill grace
+/// before [`abandon`]: without it `Process::kill` could find the dying session not yet reaped
+/// and take its signal for its own.
+fn open_session(shared: &Arc<Shared>, raw: &[u8], scripts: bool) -> wire::Answer {
     let id = match next_identity(shared) {
         Ok(id) => id,
         Err(error) => {
             return unreachable(format!("the session identity cannot be drawn: {error}"));
         }
     };
+    if scripts && shared.hardening.is_none() {
+        return own(&id, HeadState::Unknown, RefusalReason::ScriptsUnavailable);
+    }
     let dir = shared.surf.join(&id);
     let socket = dir.join(link::SESSION_SOCKET);
     let length = socket.as_os_str().len();
@@ -1186,12 +1389,17 @@ fn open_session(shared: &Arc<Shared>, raw: &[u8]) -> wire::Answer {
     if let Err(reason) = directory::create_session_dir(&dir, shared.caller) {
         return unreachable(reason);
     }
-    let mut command = Command::new(&shared.program);
+    let (mut command, started) = match &shared.hardening {
+        Some(hardening) => (
+            hardening.command(&shared.program, scripts),
+            &hardening.setpriv,
+        ),
+        None => (Command::new(&shared.program), &shared.program),
+    };
     command
         .arg(&id)
         .arg(&socket)
-        .env_remove("SURF_TOKEN")
-        .env_remove("SURF_SESSION")
+        .env_clear()
         .envs(shared.env.iter().map(|(name, value)| (name, value)))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -1202,10 +1410,7 @@ fn open_session(shared: &Arc<Shared>, raw: &[u8]) -> wire::Answer {
         Ok(child) => child,
         Err(error) => {
             let _ = fs::remove_dir(&dir);
-            return unreachable(format!(
-                "cannot start {}: {error}",
-                shared.program.display()
-            ));
+            return unreachable(format!("cannot start {}: {error}", started.display()));
         }
     };
     let stdout = child.stdout.take();
@@ -1235,6 +1440,11 @@ fn open_session(shared: &Arc<Shared>, raw: &[u8]) -> wire::Answer {
                 address: None,
                 title: None,
                 process: Arc::clone(&process),
+                signal: None,
+                cpu_bound: shared
+                    .hardening
+                    .as_ref()
+                    .is_some_and(|hardening| hardening.sets_cpu(scripts)),
             },
         );
         table.live += 1;
@@ -1262,17 +1472,26 @@ fn open_session(shared: &Arc<Shared>, raw: &[u8]) -> wire::Answer {
         return unreachable("cannot start a thread for the session");
     }
     match ready.recv_timeout(shared.ready_timeout) {
-        Ok(true) => {}
-        Ok(false) => {
-            abandon(shared, &id, &process);
-            return unreachable("the session ended or wrote another line before it reported ready");
+        Ok(Start::Ready) => {}
+        Ok(Start::Nothing) => return not_started(shared, &id, &process, scripts),
+        Ok(Start::Other) => {
+            let ended = abandon(shared, &id, &process);
+            return with_ended(
+                unreachable("the session ended or wrote another line before it reported ready"),
+                &id,
+                ended,
+            );
         }
         Err(_) => {
-            abandon(shared, &id, &process);
-            return unreachable(format!(
-                "the session did not report ready within {} seconds",
-                shared.ready_timeout.as_secs_f64()
-            ));
+            let ended = abandon(shared, &id, &process);
+            return with_ended(
+                unreachable(format!(
+                    "the session did not report ready within {} seconds",
+                    shared.ready_timeout.as_secs_f64()
+                )),
+                &id,
+                ended,
+            );
         }
     }
     match exchange(shared, &id, raw, after(shared.answer_timeout)) {
@@ -1316,8 +1535,13 @@ fn open_session(shared: &Arc<Shared>, raw: &[u8]) -> wire::Answer {
             relay(answer)
         }
         Err(failure) => {
-            abandon(shared, &id, &process);
-            unreachable(match failure {
+            // A session that closed the link with no answer may be ending by a signal of its
+            // own: wait for its end before it is killed, so that the signal is not lost.
+            if matches!(failure, Failure::Gone) {
+                let _ = wait_end(shared, &id, shared.kill_grace);
+            }
+            let ended = abandon(shared, &id, &process);
+            let answer = unreachable(match failure {
                 Failure::Timeout(_) => format!(
                     "the session did not answer open within {} seconds",
                     shared.answer_timeout.as_secs_f64()
@@ -1325,9 +1549,48 @@ fn open_session(shared: &Arc<Shared>, raw: &[u8]) -> wire::Answer {
                 Failure::Gone | Failure::Broken => {
                     "the session ended or broke the link while it answered open".to_string()
                 }
-            })
+            });
+            with_ended(answer, &id, ended)
         }
     }
+}
+
+/// `answer` to an `open` whose session did not get listed; for a session that ended by a
+/// signal `surfd` did not send (`ended`), with the lines of a session that died so as its text:
+/// the head line `died`, `did refused session-died` and the `note ended` line.
+fn with_ended(mut answer: wire::Answer, id: &str, ended: Option<Note>) -> wire::Answer {
+    if let Some(ended) = ended {
+        answer.text = ended_answer(id, State::Died, Some(ended)).text;
+    }
+    answer
+}
+
+/// The answer to an `open` whose session process closed its standard output before it wrote a
+/// byte. When the start chain (`setpriv`, `prlimit`, the session program) ended by an exit, not
+/// a signal, it is answered as a missing program is: with `scripts` `did refused
+/// scripts-unavailable`, as a session with scripts runs only under both programs, and without
+/// them the reason `cannot start <program>: ...`. Any other end is answered as a session that
+/// ended before it reported ready, with its `note ended` line when it ended by a signal `surfd`
+/// did not send ([`with_ended`]).
+fn not_started(shared: &Shared, id: &str, process: &Process, scripts: bool) -> wire::Answer {
+    let ended = wait_end(shared, id, shared.kill_grace).is_some();
+    let exited =
+        ended && ended_note_of(shared, id).is_none() && !process.killed.load(Ordering::SeqCst);
+    let note = abandon(shared, id, process);
+    if !exited {
+        return with_ended(
+            unreachable("the session ended or wrote another line before it reported ready"),
+            id,
+            note,
+        );
+    }
+    if scripts {
+        return own(id, HeadState::Unknown, RefusalReason::ScriptsUnavailable);
+    }
+    unreachable(format!(
+        "cannot start {}: it ended by an exit before the session wrote its first byte",
+        shared.program.display()
+    ))
 }
 
 /// Keep `id` among the listed ended sessions, its log among the ended ones, dropping the session
@@ -1352,15 +1615,30 @@ fn now_millis() -> u64 {
         })
 }
 
+/// What a session process wrote first on its standard output.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Start {
+    /// Its `ready` line.
+    Ready,
+    /// No byte: its standard output closed first.
+    Nothing,
+    /// Another line, a line over the bound, or a failed read.
+    Other,
+}
+
 /// The thread of one session process: read its `ready` line and tell the opener, then hold its
 /// standard output (a byte there breaks the link), reap it, remove its directory and set its
 /// end state.
+///
+/// The signal it ended by is kept only when `surfd` did not kill it ([`Process::kill`]): a
+/// session that ends by a signal of its own in the instant `surfd` kills it reads as killed by
+/// `surfd`, with no signal and so no `note ended` line.
 fn supervise(
     shared: Arc<Shared>,
     id: String,
     process: Arc<Process>,
     stdout: Option<ChildStdout>,
-    ready: mpsc::Sender<bool>,
+    ready: mpsc::Sender<Start>,
 ) {
     match stdout {
         Some(stdout) => {
@@ -1369,8 +1647,13 @@ fn supervise(
             let read = (&mut reader)
                 .take(wire::START_LINE_MAX as u64)
                 .read_until(b'\n', &mut line);
-            let is_ready = read.is_ok() && line.strip_suffix(b"\n") == Some(link::READY.as_bytes());
-            let _ = ready.send(is_ready);
+            let start = match read {
+                Ok(0) => Start::Nothing,
+                Ok(_) if line.strip_suffix(b"\n") == Some(link::READY.as_bytes()) => Start::Ready,
+                _ => Start::Other,
+            };
+            let is_ready = start == Start::Ready;
+            let _ = ready.send(start);
             if is_ready {
                 let mut byte = [0u8; 1];
                 loop {
@@ -1387,7 +1670,7 @@ fn supervise(
             }
         }
         None => {
-            let _ = ready.send(false);
+            let _ = ready.send(Start::Other);
         }
     }
     drop(ready);
@@ -1404,15 +1687,21 @@ fn supervise(
     };
     process.close_input();
     let _ = directory::remove_tree(&shared.surf.join(&id));
-    let clean =
-        status.is_some_and(|status| status.success()) && !process.killed.load(Ordering::SeqCst);
+    let killed = process.killed.load(Ordering::SeqCst);
+    let clean = status.is_some_and(|status| status.success()) && !killed;
     let state = if clean { State::Closed } else { State::Died };
+    // The signal of an end `surfd` did not cause: a bound of the session, or another process.
+    let signal = status
+        .and_then(|status| status.signal())
+        .filter(|_| !killed)
+        .map(signal_name);
     let mut table = guard(&shared.table);
     table.live = table.live.saturating_sub(1);
     let mut listed = false;
     if let Some(entry) = table.entries.get_mut(&id) {
         entry.phase = Phase::Ended(state);
         entry.ended = Some(SystemTime::now());
+        entry.signal = signal;
         listed = entry.listed;
     }
     if listed {

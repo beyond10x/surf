@@ -40,7 +40,8 @@ pub const SOCKET_PATH_MAX: usize = 107;
 /// A directory of one case, removed when it is dropped, after every process of the case is
 /// stopped: `r` is the `XDG_RUNTIME_DIR` of the case.
 ///
-/// The processes of the case are those whose environment holds `XDG_RUNTIME_DIR=<r>`. A helper
+/// The processes of the case are those whose environment holds `XDG_RUNTIME_DIR=<r>` or whose
+/// arguments name a path under `r` (a session process, whose environment is empty). A helper
 /// that starts a built program (`agent`, `Started::start`) marks the directory, and its drop
 /// looks for them among every process of the host ([`TestDir::processes`]): such a program can
 /// leave the test's tree (the `surfd` a `surf-agent` starts is reparented when it exits). An
@@ -120,19 +121,28 @@ impl TestDir {
     }
 
     /// The processes of `candidates`, this one left out, whose environment holds
-    /// `XDG_RUNTIME_DIR=<this case's runtime>`.
+    /// `XDG_RUNTIME_DIR=<this case's runtime>`, or one of whose arguments is a path under it: a
+    /// session process, which `surfd` starts with an empty environment and its socket path,
+    /// `<runtime>/surf/<identity>/session.sock`, as an argument.
     fn processes_among(&self, candidates: impl IntoIterator<Item = u32>) -> Vec<u32> {
+        let runtime = self.runtime().as_os_str().as_encoded_bytes().to_vec();
         let mut needle = b"XDG_RUNTIME_DIR=".to_vec();
-        needle.extend_from_slice(self.runtime().as_os_str().as_encoded_bytes());
+        needle.extend_from_slice(&runtime);
+        let mut under = runtime;
+        under.push(b'/');
         let own = std::process::id();
+        let holds = |pid: u32, part: &str, test: &dyn Fn(&[u8]) -> bool| {
+            fs::read(format!("/proc/{pid}/{part}"))
+                .unwrap_or_default()
+                .split(|&b| b == 0)
+                .any(test)
+        };
         candidates
             .into_iter()
             .filter(|&pid| pid != own)
-            .filter(|pid| {
-                fs::read(format!("/proc/{pid}/environ"))
-                    .unwrap_or_default()
-                    .split(|&b| b == 0)
-                    .any(|pair| pair == needle.as_slice())
+            .filter(|&pid| {
+                holds(pid, "environ", &|pair| pair == needle.as_slice())
+                    || holds(pid, "cmdline", &|argument| argument.starts_with(&under))
             })
             .collect()
     }
