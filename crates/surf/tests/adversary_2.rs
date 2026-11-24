@@ -117,3 +117,90 @@ fn a_config_with_rustflags_turning_overflow_checks_off_fails() {
         assert_fails(name, check_config(name, config));
     }
 }
+
+/// Held: the spellings of a profile that names swell-num or turns overflow checks off fail:
+/// spaces and quotes in a header, an inline table, the dotted key at the root, the "*" package,
+/// the build override, a profile that inherits release, and the file `.cargo/config`.
+#[test]
+fn spellings_of_a_profile_override_fail() {
+    let cases = [
+        (
+            "spaced-quoted",
+            config_after("[ profile.release.package.\"swell-num\" ]\nopt-level = 3\n"),
+        ),
+        (
+            "spaced-release",
+            config_after("[ profile.release ]\noverflow-checks = false\n"),
+        ),
+        (
+            "inline-table",
+            config_after(
+                "[profile.release]\npackage = { swell-num = { overflow-checks = false } }\n",
+            ),
+        ),
+        (
+            "dotted-root",
+            format!(
+                "profile.release.package.swell-num.overflow-checks = false\n\n{}",
+                read(".cargo/config.toml")
+            ),
+        ),
+        (
+            "star",
+            config_after("[profile.release.package.\"*\"]\noverflow-checks = false\n"),
+        ),
+        (
+            "build-override",
+            config_after("[profile.release.build-override]\noverflow-checks = false\n"),
+        ),
+        (
+            "inherits",
+            config_after(
+                "[profile.dist]\ninherits = \"release\"\n\n[profile.dist.package.swell-num]\noverflow-checks = false\n",
+            ),
+        ),
+    ];
+    for (name, config) in cases {
+        assert_fails(name, check_config(name, config));
+    }
+    let name = "config-without-toml";
+    assert_fails(
+        name,
+        check_with(
+            name,
+            |m| m,
+            &[(
+                ".cargo/config",
+                "[profile.release.package.swell-num]\noverflow-checks = false\n".to_string(),
+            )],
+        ),
+    );
+}
+
+/// Held: lines that leave overflow checks alone pass: `opt-level` and `debug-assertions` in the
+/// release profile, and an `[env]` table.
+#[test]
+fn harmless_config_lines_pass() {
+    let config = config_after(
+        "[profile.release]\nopt-level = 3\ndebug-assertions = true\n\n[env]\nSURF_PROBE = \"1\"\n",
+    );
+    let (status, text) = check_config("config-harmless", config);
+    assert_eq!(status, Some(0), "{text}");
+}
+
+/// Held: `"""` in a comment of the root manifest fails, naming the line, as any multi-line
+/// string does.
+#[test]
+fn triple_quotes_in_a_manifest_comment_fail() {
+    let (status, text) = check_with(
+        "manifest-comment",
+        |m| format!("# a note with \"\"\" in it\n{m}"),
+        &[],
+    );
+    assert_ne!(status, Some(0), "{text}");
+    assert!(
+        text.lines()
+            .any(|l| l.starts_with("Cargo.toml:1: a multi-line string")),
+        "{text}"
+    );
+}
