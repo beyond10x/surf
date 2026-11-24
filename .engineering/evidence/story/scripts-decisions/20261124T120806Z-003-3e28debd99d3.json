@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T12:08:06Z",
+  "actor": "human:operator",
+  "artifact": "story:scripts-decisions",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "two reviews of the note by a reviewer who did not write it, 2026-11-24",
+    "reference": "first: 3 musts, 12 shoulds, 9 notes, all fixed; second: no must, 8 shoulds, 6 notes, all answered; 82 and then 33 citations read at the swell tag and the surf tip, every number compared with its probe log"
+  }
+}

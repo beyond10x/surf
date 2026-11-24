@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T12:08:06Z",
+  "actor": "human:operator",
+  "artifact": "story:scripts-decisions",
+  "kind": "story",
+  "revision": 13,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the forge runs on main at 35db3d4 (the merge of impl/scripts-note at 775cc83), 2026-11-24, ended 13:03 CET",
+    "reference": "check 45387714566 success, Shared source gates 45387715110 success, Documentation validation 45387714402 success, Documentation site 45388352115 success"
+  }
+}

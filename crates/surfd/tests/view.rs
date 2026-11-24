@@ -24,13 +24,13 @@ use surfd::{Daemon, State};
 // --- view-url and the routes ------------------------------------------------------------------
 
 /// The line of `view-url`, read into its port and token.
-struct ViewUrl {
+pub(crate) struct ViewUrl {
     line: String,
     port: u16,
     token: String,
 }
 
-fn view_url(dir: &TestDir) -> ViewUrl {
+pub(crate) fn view_url(dir: &TestDir) -> ViewUrl {
     let line = fs::read_to_string(dir.surf().join("view-url")).expect("view-url");
     let rest = line
         .strip_prefix("http://127.0.0.1:")
@@ -77,7 +77,7 @@ fn json_of(view: &ViewUrl, target: &str) -> json::Value {
     json::parse(std::str::from_utf8(&body).expect("UTF-8"))
 }
 
-fn sessions(view: &ViewUrl) -> json::Value {
+pub(crate) fn sessions(view: &ViewUrl) -> json::Value {
     json_of(view, "/api/sessions")
 }
 
@@ -86,7 +86,7 @@ fn detail(view: &ViewUrl, id: &str) -> json::Value {
 }
 
 /// The listed summary of `id`.
-fn listed(list: &json::Value, id: &str) -> json::Value {
+pub(crate) fn listed(list: &json::Value, id: &str) -> json::Value {
     list.get("sessions")
         .array()
         .iter()
@@ -767,7 +767,7 @@ fn case_27_the_idle_exit_ends_the_stream_and_removes_view_url() {
 
 /// A JSON reader for the tests: the values `surf-view` writes (no fraction, no exponent, no
 /// sign), every escape of RFC 8259 read.
-mod json {
+pub(crate) mod json {
     #[derive(Clone, Debug, PartialEq)]
     pub enum Value {
         Null,

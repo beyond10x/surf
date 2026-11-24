@@ -53,6 +53,9 @@ pub struct Session {
     pub title: Option<Quoted>,
     /// Whether the bound over all sessions dropped its log whole ([`crate::log`]).
     pub log_dropped: bool,
+    /// The name of the signal its process ended by, such as `SIGXCPU`, when `surfd` did not
+    /// kill it; `None` while it runs, after an end with a status, and after `surfd` killed it.
+    pub signal: Option<String>,
 }
 
 /// The list at one moment, in the order the sessions were opened.
