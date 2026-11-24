@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:agent-tasks-https
 kind: story
-status: active
+status: implemented
 title: 'The https agent task: a page behind https: on the TLS test server, read with surf-agent alone'
 summary: 'Adds the https row to crates/agent-tasks: a notice served by the TLS test server, opened with open --ca-file and the test root, read with look --as markdown; listed pass.'
 relations:
@@ -13,10 +13,11 @@ relations:
 scope:
 - confidence: cited
   path: crates/agent-tasks
-revision: 6
+revision: 8
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T07:42:30Z", actor: "human:operator", revision: 5, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T07:42:30Z", actor: "human:operator", revision: 6, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-24T07:52:57Z", actor: "human:operator", revision: 8, decided_on: {"recorded":{"test_result":2,"verification":2}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -140,3 +141,18 @@ from `/etc/hosts`; one TLS server and one `surfd` per run, never per test; no Py
 
 - TLS in the model lane's fixture server; a task against a site on the internet.
 - The TLS client, the anchors and `open --ca-file` themselves (`epic:tls-https`).
+
+## As built
+
+Where the unit on `main` (`6f3cc89`, the merge of `impl/agent-tasks-https` at `e3109a6`) differs
+from the text above:
+
+- Change, the reporting function: when a listed task and the check both fail, both lines are
+  written and the function returns the task's error; the check's error is returned only when
+  every listed task passed. The text above names only the check's error. A review test holds the
+  order (`crates/agent-tasks/tests/check_rule.rs`).
+- The `https` row passes only when the TLS test server saw a finished handshake with the request
+  for `/notice.html` and `open` answered `page 200` at that server's address; the plain fixture
+  server does not serve `sites/https/` (`0397eee`, after the review).
+- `surf-tls` is a third dev-dependency of `crates/agent-tasks`, for the type of the server's
+  signature scheme. The crate is not shipped.

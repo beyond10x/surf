@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T07:52:57Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-tasks-https",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "verification",
+    "source": "one review of d353794 to ef3450a for defects by a reviewer who did not write it, 2026-11-24",
+    "reference": "no case red; one gap named (nothing held that the page of the https row came over TLS), closed in 0397eee; 7 review tests merged (0f7732d), 48 tests in the crate"
+  }
+}

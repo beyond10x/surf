@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T07:52:57Z",
+  "actor": "human:operator",
+  "artifact": "story:agent-tasks-https",
+  "kind": "story",
+  "revision": 7,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the forge runs on main at f781cc8 (the merges of impl/agent-tasks-https at e3109a6 and of plan/round-2 at e1c5657), 2026-11-24 08:25 to 08:52 CET",
+    "reference": "check 45347917259 success, Shared source gates 45347917846 success, Documentation validation 45347917323 success, Documentation site 45350631872 success"
+  }
+}
