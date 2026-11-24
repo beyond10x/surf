@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:tls-session-anchors
 kind: story
-status: active
+status: implemented
 title: 'surf-agent open --ca-file gives a session its extra anchors, and surf-agent go loads https: pages'
 summary: 'OpenCall and the CLI gain --ca-file; the client sends the file bytes through surfd to the session, which fetches https: with them; end-to-end against the test server.'
 relations:
@@ -39,10 +39,11 @@ scope:
   path: generated/rust
 - confidence: cited
   path: spec/domains/agent.yaml
-revision: 12
+revision: 13
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-22T06:24:30Z", actor: "human:operator", revision: 10, decided_on: {"recorded":{"verification":1}}}
 - {from: "proposed", to: "active", at: "2026-11-22T06:24:30Z", actor: "human:operator", revision: 11, decided_on: {"recorded":{"verification":1}}}
+- {from: "active", to: "implemented", at: "2026-11-24T05:25:49Z", actor: "human:operator", revision: 13, decided_on: {"recorded":{"test_result":2,"verification":2}}, executor: "agent:coordinator"}
 ---
 ## Context
 

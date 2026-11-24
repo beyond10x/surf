@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-24T05:25:49Z",
+  "actor": "human:operator",
+  "artifact": "story:tls-session-anchors",
+  "kind": "story",
+  "revision": 12,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the gate in runner form (task check-runner) on 7ade66e, the tip of impl/session-follow-press-https with impl/tls-session-anchors merged in, on the build node, 2026-11-24 06:03 to 06:07 CET",
+    "reference": "exit 0 in 244 s; conformance 201 of 201 scenarios, step 4.8 s; 1335 tests passed, test step 11.8 s; 552 TLS tests passed, 3.0 s; 71 page tests passed, page step 42.7 s of 120 s"
+  }
+}
