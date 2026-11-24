@@ -129,6 +129,7 @@ dependencies = [
  "surf-answer",
  "surf-secret",
  "surf-test-process",
+ "surf-tls",
 ]
 
 [[package]]
@@ -226,6 +227,7 @@ dependencies = [
  "surf-ports",
  "surf-secret",
  "surf-test-process",
+ "surf-tls-test-server",
  "surf-types",
  "surf-url",
  "surfd",

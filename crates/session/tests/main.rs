@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+mod adversary_anchors;
 mod adversary_back_forward;
 mod adversary_controls;
 mod adversary_change_log;
@@ -10,6 +11,7 @@ mod adversary_document_text;
 mod adversary_events;
 mod adversary_fill_pick;
 mod adversary_follow;
+mod adversary_https_targets;
 mod adversary_parse;
 mod adversary_press;
 mod adversary_values;
@@ -25,7 +27,9 @@ mod fill_pick;
 mod follow;
 mod follow_refusals;
 mod form_rows;
+mod https;
 mod memory;
 mod press;
 mod redirect;
+mod secreview_session_anchors;
 mod view;

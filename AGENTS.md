@@ -518,8 +518,10 @@ above, and the list of standards itself was written from memory.
     refused naming its quoted size (`client::STDIN_VALUE_FITS`, 16,000 bytes, always fits beside
     a handle of up to 1,364); the `Debug` of a wire `Arg` writes its value's length. The
     package carries the release version, `0.6.0`, as do `surf-cli`, `surfd` and
-    `surf-session`. `open` starts `surfd` from the directory of its own executable. Depends on
-    `surf-answer` and `surf-secret`.
+    `surf-session`. `open` starts `surfd` from the directory of its own executable. 61 tests in
+    one binary: `adversary_ca_file` 4, `adversary_fill_pick` 6, `ca_file` 6, `drift` 2,
+    `secreview_refusal_text` 2, `stand_in` 10, `start` 12, `token` 9, `usage` 10. Depends on
+    `surf-answer`, `surf-secret` and `surf-tls` (which reads the file of `open --ca-file`).
   - `crates/surfd` (`surfd`): a library and the binary `surfd`, the daemon the agent command line
     talks to. Lock and socket in `$XDG_RUNTIME_DIR/surf`, one session process per session in a
     directory of mode 0700, each request passed unchanged to the session and the answer back,
@@ -561,7 +563,8 @@ above, and the list of standards itself was written from memory.
     `docs/agent-answer.md`, issues the model commands for each (`OpenSession`, `Go`,
     `CloseSession`, `RecordAction`) and loads pages through the `surf` library with
     `surf-fetch`: `http:` and, since `story:tls-fetch-https`, `https:` against the bundled
-    anchors only. The token is compared in constant time and is in no command
+    anchors, and since `story:tls-session-anchors` for a session whose `open` brought `arg
+    anchors` (`surf-agent open --ca-file`) also against the certificates of that text. The token is compared in constant time and is in no command
     line, environment or file; a request with a wrong token or for another identity gets the
     head line and the refusal only, and since `story:security-review-fixes` that head line says
     `unknown` and the status record holds the state `unknown` with no address and no title, for
@@ -579,17 +582,20 @@ above, and the list of standards itself was written from memory.
     `NavigationStarted` and `RequestStarted` carry `method`, `body` as `<n> bytes` and
     `body_type`, an absent one as the field with no value; its transport is `surf::fetch_http`,
     which since wave 9 sends a `Post` (since `story:agent-press-submit` the one of `press`).
-    289 tests:
+    327 tests: `adversary_anchors` 5,
     `adversary_back_forward` 25, `adversary_change_log` 20, `adversary_controls` 1,
     `adversary_document_text` 7,
-    `adversary_events` 1, `adversary_fill_pick` 16, `adversary_follow` 8, `adversary_parse` 4,
-    `adversary_press` 22, `adversary_values` 3, `adversary_view` 1, `back_forward` 13, `built`
+    `adversary_events` 1, `adversary_fill_pick` 16, `adversary_follow` 8,
+    `adversary_https_targets` 8, `adversary_parse` 4,
+    `adversary_press` 23, `adversary_values` 3, `adversary_view` 1, `back_forward` 13, `built`
     16, `change_and_log` 18, `core` 22, `e2e` 2 (runs the three built binaries, or those in
     `SURF_BIN_DIR`), `events` 26, `fill_pick` 22 (case 3 runs the built `surf-agent` against
-    `surfd` in the test process), `follow` 18, `follow_refusals` 9 (over an in-memory transport
-    that stands at any address), `form_rows` 1, `memory` 2, `press` 25 (the cases of
+    `surfd` in the test process), `follow` 18, `follow_refusals` 11 (over an in-memory transport
+    that stands at any address), `form_rows` 1, `https` 16 (`open --ca-file`, and `follow` and
+    `press` to `https:` targets, against `surf-tls-test-server` on 127.0.0.1), `memory` 2, `press` 25 (the cases of
     `story:agent-press-submit` and the usage of `press`, against a server that records each
-    request), `redirect` 2 and `view` 5 (the live view of `surfd` over the real session). The
+    request), `redirect` 2, `secreview_session_anchors` 5 and `view` 6 (the live view of `surfd`
+    over the real session). The
     bound of 256 row entries
     per request counts `FormAdded` and `OptionAdded` with `ElementAdded`
     (`story:agent-form-port`).
@@ -607,7 +613,9 @@ above, and the list of standards itself was written from memory.
     with the address, handle and label, or is refused `unknown-handle`, `hidden` or
     `unresolved` (status 1). Since the fix round of its adversary's cases `follow` also refuses,
     before any navigation, a target over `surf_fetch::MAX_ADDRESS_BYTES` (`address-too-long`),
-    one with a scheme other than `http` (`unsupported-scheme`), and from a page whose host is
+    one with a scheme other than `http` (`unsupported-scheme`; since
+    `story:session-follow-press-https` other than `http` and `https`, for `press` too), and
+    from a page whose host is
     not local by its text a target whose host is (`forbidden-destination`: an IP address
     `surf_fetch::is_local` names, or `localhost`); a shown target holds no userinfo, and a
     same-origin path that starts with `//` is shown whole. Since `story:agent-fill-pick` the
@@ -965,7 +973,7 @@ above, and the list of standards itself was written from memory.
     (10); `der` (34), `pem` (13), `x509_parse` (30: the DER writer of the tests and the checks
     of item 7, `check_names` read against the table of item 7), `limbo_parse` (7: the vendored
     x509-limbo subset of `tests/data/x509-limbo/`, five files by case group, one test per
-    file, each read once; `parse-counts.txt`) and `adversary_x509` (24); `anchors` (40 tests) and `adversary_anchors` (9: the bundle against
+    file, each read once; `parse-counts.txt`) and `adversary_x509` (24); `anchors` (41 tests) and `adversary_anchors` (9: the bundle against
     `SOURCE`, the extra file and its refusals, the two tasks run with `sh` on local files under
     `CARGO_TARGET_TMPDIR`); `names` (11), `path` (71) and `adversary_path` (11); `handshake`
     (16, among them `handshake_through_the_path_verifier`, a whole handshake through
@@ -1004,7 +1012,8 @@ above, and the list of standards itself was written from memory.
     keys of `crates/tls-test-certs/certs/`. `TestServer::start(Config)` serves one HTTP/1.1
     response per connection from a map of paths, counts the connections it accepts
     (`accepted`) and gives back what it saw on each (`wait_seen`, `Seen`: server name, ALPN,
-    suite, group, scheme, ticket, request line, the records after the handshake, the
+    suite, group, scheme, ticket, request line, the request's body (the `Content-Length`
+    bytes after the head, at most 64 KiB with the head), the records after the handshake, the
     alerts, how it ended). A client silent for `IDLE` (2 s) is closed. A drop stops every
     connection and joins its threads; when the connection that wakes the accepting thread
     cannot be made, it returns without joining. It refuses a TLS 1.3 hello whose compression
@@ -1016,8 +1025,9 @@ above, and the list of standards itself was written from memory.
     and the compatibility `change_cipher_spec` to a hello with a session id), `NeverAnswer`
     (reads raw bytes, writes nothing), `OversizedCertificate`, `BadFinished` and
     `NoCloseNotify`. The tests assert outcomes and counts, never an upper bound on wall
-    time; each prints its time. 46 tests (`adversary_server` 17, `handshake` 12, `hostile`
-    7, `hundred` 1, `modes` 9). Depends on `surf-tls` with `test-tooling`.
+    time; each prints its time. 52 tests (`adversary_request_body` 3, `adversary_server` 17,
+    `handshake` 12, `hostile` 7, `hundred` 1, `modes` 9, `request_body` 3). Depends on
+    `surf-tls` with `test-tooling`.
 - `view-tests/`: the Playwright tests of the live view's page (`@playwright/test` 1.65.0,
   Chromium's headless shell, a committed `package-lock.json`), each case with its own
   `surf-view-fixture`: 71 cases, 23 in `tests/first-page.spec.mjs`, 6 in
@@ -1758,8 +1768,10 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   `surf_page::attribute_visits()`), not by a wall time.
 - `task test-tls`: `cargo nextest run --locked` with `-p` for each of the four TLS packages, the
   ones `task test` leaves out, under the same `.config/nextest.toml` and environment
-  (`RUSTFLAGS=-D warnings`, `SURF_BIN_DIR`). They hold no doc test. No other package depends on
-  them and only they set a feature of `surf-tls`, so its build and the one of `task test` share
+  (`RUSTFLAGS=-D warnings`, `SURF_BIN_DIR`). They hold no doc test. Of the other packages
+  `surf-fetch` and `surf-agent` depend on `surf-tls`, and the tests of `surf-fetch`, `surf-cli`
+  and `surf-session` on `surf-tls-test-server` (those of the first two on `surf-tls-test-certs`
+  too); only the four set a feature of `surf-tls`, so its build and the one of `task test` share
   every artifact. Log `.out/test-tls.log`, JUnit report copied to `.out/test-tls-junit.xml`. It
   prints the ten slowest tests, nextest's `Summary` line, `N tests: P passed, F failed, I ignored
   (cargo-nextest N)` and `tls test step: <s> s of its budget of 120 s`; it fails when a test
@@ -1791,9 +1803,11 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   starts the next from the directory of its own executable. `XDG_RUNTIME_DIR` must be set
   (the session's socket lives under it). Two notes: `http:` and `https:` load (a redirect is
   followed inside the fetch, between the two schemes too; one to any other scheme ends as
-  `UnsupportedScheme`), `https:` against the bundled trust anchors only, since a session takes
-  no `--ca-file` before `story:tls-session-anchors`, and `follow` and `press` still refuse an
-  `https:` target (`unsupported-scheme`); and an answer shows no
+  `UnsupportedScheme`), `https:` against the bundled trust anchors, and for a session opened
+  with `surf-agent open --ca-file <path>` also against the CA certificates of that file
+  (`docs/agent-answer.md`, "Extra trust anchors"), by `go` and `open` as by `follow` and
+  `press`, which refuse a target of any other scheme (`unsupported-scheme`); and an answer
+  shows no
   page content (status, media type and address only), because no page is parsed yet. While
   `surfd` runs, `$XDG_RUNTIME_DIR/surf/view-url` holds the live view's address and token
   (`http://127.0.0.1:<port>/#<token>`); open it in a browser on the same machine to see the

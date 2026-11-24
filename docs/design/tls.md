@@ -636,8 +636,11 @@ so in those words where `https:` is described.
 ## 8. The extra anchors
 
 `surf --ca-file <path> <url>` and `surf-agent open --ca-file <path> [<url>]`. The client reads
-the file and its bytes travel in the `open` request; not an environment variable, because a
-`surfd` started by an earlier `open` does not see the environment of a later caller. The file
+the file; `surf` takes it with `with_extra_pem`, and `surf-agent` checks it with
+`Anchors::with_extra_pem_blocks`, and only the certificate blocks it took travel in the `open`
+request (`arg anchors`), without the lines before, between and after them; not an environment
+variable, because a `surfd` started by an earlier `open` does not see the environment of a
+later caller. The file
 holds at most 32 KiB and 64 certificates; every block is a `CERTIFICATE`, every certificate a
 CA (basicConstraints cA). The reader of the file is `surf_tls::anchors::Anchors::with_extra_pem`;
 it refuses the file whole with an `AnchorError`: `NoCertificate` (no PEM block),

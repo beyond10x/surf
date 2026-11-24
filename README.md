@@ -136,10 +136,9 @@ note visibility: hidden attribute only
 
 What it does not do yet:
 
-- `go` and `open` load `https:` addresses against the bundled trust anchors only: a session
-  takes no extra anchor file yet, and no release has `https:` yet. Inside a session, `follow`
-  and `press` refuse an `https:` target with `did refused unsupported-scheme`; the one-shot
-  `surf` command loads `https:`.
+- No release has `https:` yet. Built from source, `go`, `open`, `follow` and `press` load
+  `https:` addresses against the bundled trust anchors, and in a session opened with
+  `surf-agent open --ca-file <path>` also against the CA certificates of that file.
 - Release `0.2.0` delivers a redirect status as the response. Since release `0.3.0`, a `go`
   follows redirects.
 - No JavaScript and no rendering.
@@ -152,7 +151,7 @@ What it does not do yet:
   `follow`, `fill`, `pick`, `press`, `back`, `forward`, `log` and `close`. Visibility is not
   computed: `now` says `hid` for the `hidden` attribute and `?` for every other element.
 - Before scripts, `changed` within one page holds the state of controls only.
-- `follow` refuses, before any navigation, a link to a scheme other than `http:`
+- `follow` refuses, before any navigation, a link to a scheme other than `http:` and `https:`
   (`unsupported-scheme`), a target over 65,536 bytes (`address-too-long`) and, from a page on a
   public address, a target on a loopback or private address or `localhost`
   (`forbidden-destination`). The page stays.
@@ -267,7 +266,8 @@ there instead.
   and hard limits on header and body size.
 - **`https:` over its own TLS 1.3 client**, on `main` and in no release yet. The server is
   authenticated against the root list of Mozilla as curl publishes it, built into the binary,
-  and for `surf` also against the certificates of `--ca-file <path>`; `surf --anchors` prints
+  and for `surf --ca-file <path>` and a session of `surf-agent open --ca-file <path>` also
+  against the certificates of that file; `surf --anchors` prints
   the list's count, date and sha256. Redirects between `http:` and `https:` are followed both
   ways. A certificate that is not trusted, has expired or names another host, a server limited
   to TLS 1.2 and a failed handshake each fail the load with a reason of its own. surf does not
@@ -525,8 +525,9 @@ None of the next steps has a date.
 
 Next after that, wanted and not planned in detail yet:
 
-- **TLS 1.3**, and `https:` with it. Under way: `surf` and an agent's `go` load `https:` on
-  `main`; an agent session's extra anchor file and the release come next.
+- **TLS 1.3**, and `https:` with it. Under way: `surf` and an agent session's `go`, `open`,
+  `follow` and `press` load `https:`, and a session takes an extra anchor file with `open
+  --ca-file`; the release comes next.
 - **Screenshots.** That takes CSS, layout, painting and text rendering, all written here.
 - **A JavaScript engine**: [swell](https://beyond10x.github.io/swell/), an ECMAScript engine
   written from scratch in Rust as a project of its own, which surf will embed.

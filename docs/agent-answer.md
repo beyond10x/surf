@@ -177,7 +177,7 @@ refusal of the action, with a reason from this list:
 | `hidden` | the element or an ancestor has the `hidden` attribute | 1 |
 | `unresolved` | the link's target does not resolve against the document base URL | 1 |
 | `address-too-long` | the link's resolved target is longer than 65,536 bytes, the bound of an address `surf-fetch` follows | 1 |
-| `unsupported-scheme` | the link's resolved target has a scheme a session does not follow: any but `http` (`javascript:`, `mailto:`, `data:`, `file:`, `https:`). `go` and `open` load an `https:` address, but `follow` and `press` refuse an `https:` target with `did refused unsupported-scheme`, while the one-shot `surf` command loads `https:` | 1 |
+| `unsupported-scheme` | the link's resolved target has a scheme a session does not follow: any but `http` and `https` (`javascript:`, `mailto:`, `data:`, `file:`, `ftp:`) | 1 |
 | `forbidden-destination` | the page was loaded from a public address and the link's target is a local one: a loopback, private, link-local, unique-local, shared or unspecified IP address, an IPv6 address that embeds one, or the name `localhost` or one under it | 1 |
 | `disabled` | the control, or the option `pick` names, is disabled | 1 |
 | `wrong-kind` | the element is not of a kind the command acts on: `fill` takes `text`, `password` and `textarea`, `pick` takes `select`, `checkbox` and `radio` | 1 |
@@ -659,6 +659,45 @@ to the same session process) and of a request that is not in the format of the w
 the session's token. The head line of these three has the state `unknown`, whatever the state of
 the session, and the session process sends `surfd` no address and no title with them, so that
 `surfd` keeps what it knew of the session.
+
+### Extra trust anchors: `open --ca-file`
+
+`surf-agent open [<url>] --ca-file <path>` gives the session the CA certificates of one PEM file
+as trust anchors beside the bundled ones, for every `https:` load of the session and for its
+life (`docs/design/tls.md` item 8); a session opened without it trusts the bundled anchors only,
+and the anchors of one session are never those of another. The client reads the file before it
+connects to `surfd`: at most 32,768 bytes and 64 blocks, every block a `CERTIFICATE`, every
+certificate a CA. The text of its certificate blocks, from each BEGIN line to its END line,
+travels in the `open` request (`arg anchors`); the lines before, between and after the blocks
+are not sent, and need not be UTF-8. `surfd` passes the request to the session process over the
+session socket; neither the path nor the blocks are an argument or in the environment of a
+process.
+
+A file the client refuses is an invalid input: exit status 2, nothing on standard output, and on
+standard error one of these lines, followed by the usage:
+
+- `surf-agent: the --ca-file file cannot be read: <kind>`: no file at the path, or one the caller
+  may not read; `<kind>` is the kind of the error of the system, such as `entity not found`.
+- `surf-agent: the --ca-file file is not a regular file`: a directory, a device or a FIFO. The
+  path is looked at before it is opened, so a FIFO is refused and not waited on.
+- `surf-agent: the --ca-file file changed while it was read`: the file opened is not the file
+  looked at.
+- `surf-agent: the --ca-file file is refused: <error>`: `surf-tls` does not take the file.
+  `<error>` is the `AnchorError` of `surf-tls` (`NoCertificate`, `NotACertificate`, `BadPem`,
+  `BadCertificate`, `NotACa`, `TooLarge`, `TooMany`) by its kind and the index of the block at
+  fault, such as `NotACa: certificate 0 is not a CA`, `NotACertificate: block 0 is not a
+  CERTIFICATE` or `BadCertificate: certificate 0 is refused: UnexpectedTag` (the kind the
+  certificate reader names).
+- `surf-agent: the request is longer than 65536 bytes`: `surf-tls` takes the file, but the
+  quoted text of its blocks does not fit an `open` request (`docs/design/tls.md` item 8). The
+  quoting writes a line feed, a carriage return or a tab as 4 bytes, so only blocks full of them
+  get here, such as copies of a root with one base64 character per line; lines outside the
+  blocks are not sent and never lead here.
+
+No line repeats the path or a byte of the file: not the label of a block, and not a byte of a
+certificate the reader cannot read. No request is sent, `surfd` is not started, and no session
+is made. A session process that gets anchors it refuses in an `open` request (a client other
+than `surf-agent`) answers `did refused usage`, status 2, as for any `usage` refusal of `open`.
 
 ## Parsing
 

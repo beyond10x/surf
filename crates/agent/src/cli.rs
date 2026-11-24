@@ -1,5 +1,6 @@
 //! The parser of the `surf-agent` command line, written from `cli/surf-agent.yaml` (an
-//! `ess-cli/2` document) with the standard library only. [`COMMANDS`] and [`GLOBALS`] are the
+//! `ess-cli/2` document) with the standard library only (the client reads the file of
+//! `--ca-file` with `surf-tls`, `crate::client`). [`COMMANDS`] and [`GLOBALS`] are the
 //! parser's table: [`parse`] reads the words through them and nothing else, and the test `drift`
 //! holds them to `.out/cli/binding.json`, which `task cli` writes from the document.
 //!
@@ -202,6 +203,11 @@ const FROM_LINE: Argument = Argument {
     sources: &[Source::Option { long: "from-line" }],
 };
 
+const CA_FILE: Argument = Argument {
+    field: "ca_file",
+    sources: &[Source::Option { long: "ca-file" }],
+};
+
 /// The forms `--as` takes, the variants of `surf.agent.PageForm`.
 pub const FORMS: &[&str] = &["tree", "markdown"];
 
@@ -209,12 +215,13 @@ pub const FORMS: &[&str] = &["tree", "markdown"];
 /// `pick <handle> <option>`, `press <handle>`, `back`, `forward`, `log [<n>]`, `close`. `open`
 /// takes no session and no token.
 /// `open`, `go` and `look` take `--as tree|markdown [--from-line <n>]`; `open` only with an
-/// address. The value `-` of `fill` is read from standard input by the client
+/// address. `open` takes `--ca-file <path>`, a file of extra trust anchors the client reads
+/// ([`Call::ca_file`]). The value `-` of `fill` is read from standard input by the client
 /// ([`STDIN_VALUE`]).
 pub const COMMANDS: &[Command] = &[
     Command {
         name: "open",
-        arguments: &[URL_OPTIONAL, FORM, FROM_LINE],
+        arguments: &[URL_OPTIONAL, FORM, FROM_LINE, CA_FILE],
     },
     Command {
         name: "go",
@@ -267,7 +274,7 @@ pub const GLOBALS: &[Global] = &[Global {
 
 /// The usage, written to standard error after every usage error.
 pub const USAGE: &str = "\
-usage: surf-agent open [<url>] [--as tree|markdown [--from-line <n>]]
+usage: surf-agent open [<url>] [--ca-file <path>] [--as tree|markdown [--from-line <n>]]
        surf-agent go <url> [--session <id>] [--token-file <path>] [--as tree|markdown [--from-line <n>]]
        surf-agent look [--session <id>] [--token-file <path>] [--as tree|markdown [--from-line <n>]]
        surf-agent follow <handle> [--session <id>] [--token-file <path>]
@@ -282,6 +289,8 @@ The session comes from --session or SURF_SESSION, the token from --token-file or
 A token file is a regular file of yours that group and others cannot read (mode 0600).
 --as prints the page as an outline of its tree or as Markdown, from line --from-line (from 1);
 open takes it only with an address.
+--ca-file adds the CA certificates of a PEM file (at most 32768 bytes and 64 certificates) to
+the bundled trust anchors of the session's https loads.
 follow, fill, pick and press take a handle of the now block of the last answer, such as l3,
 f1 or b1.
 fill - reads the value from standard input; give a secret that way, since other users can
@@ -363,6 +372,13 @@ pub struct Call {
     /// The value of `fill` is read from standard input: its word is [`STDIN_VALUE`], given before
     /// any `--` (after `--` the word `-` is a value of one dash).
     pub stdin: bool,
+    /// The path of `--ca-file`, for `open`: the client reads the file before it connects
+    /// ([`crate::client`]). The path itself is in no request.
+    pub ca_file: Option<PathBuf>,
+    /// The text of the certificate blocks of the file of [`Call::ca_file`], without the lines
+    /// around them, once the client read and took it, sent as `arg anchors`. The `Debug` of the
+    /// call writes only its length.
+    pub anchors: Option<String>,
 }
 
 impl fmt::Debug for Call {
@@ -385,13 +401,21 @@ impl fmt::Debug for Call {
             .field("from_line", &self.from_line)
             .field("count", &self.count)
             .field("stdin", &self.stdin)
+            .field("ca_file", &self.ca_file)
+            .field(
+                "anchors",
+                &self
+                    .anchors
+                    .as_ref()
+                    .map(|anchors| format!("{} bytes", anchors.len())),
+            )
             .finish()
     }
 }
 
 impl Call {
     /// The request of the wire for this call: `arg url`, `arg handle`, `arg value`, `arg option`,
-    /// `arg form`, `arg line` and `arg count`, each when the call has it.
+    /// `arg form`, `arg line`, `arg count` and `arg anchors`, each when the call has it.
     pub fn request(&self) -> Request {
         let arg = |name: &str, value: String| Arg {
             name: name.to_string(),
@@ -405,6 +429,7 @@ impl Call {
             self.form.map(|form| arg("form", form.to_string())),
             self.from_line.map(|line| arg("line", line.to_string())),
             self.count.map(|count| arg("count", count.to_string())),
+            self.anchors.clone().map(|anchors| arg("anchors", anchors)),
         ];
         Request {
             command: self.command.to_string(),
@@ -541,6 +566,8 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
         from_line: None,
         count: None,
         stdin: false,
+        ca_file: None,
+        anchors: None,
     };
     let positional_count = command
         .arguments
@@ -589,6 +616,12 @@ pub fn parse(args: &[OsString], env: &Environment) -> Result<Call, UsageError> {
     }
     if call.form.is_some() && command.name == "open" && positionals.is_empty() {
         return Err(usage("open takes --as only with an address"));
+    }
+    if let Some((_, path)) = option("ca_file") {
+        if path.is_empty() {
+            return Err(usage("--ca-file needs a path"));
+        }
+        call.ca_file = Some(PathBuf::from(path));
     }
     if declares("token") {
         call.token = Some(match option("token") {

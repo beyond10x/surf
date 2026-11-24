@@ -19,7 +19,7 @@ use crate::{IDLE, Mode, Received, Response, Seen, Setup};
 /// How often a blocked read looks at the stop flag and the idle bound.
 const POLL: Duration = Duration::from_millis(20);
 
-/// The longest request head the server reads.
+/// The longest request the server reads, its head and its body together.
 const MAX_REQUEST: usize = 64 * 1024;
 
 /// The socket of one connection: a read gives up when the server stops or after [`IDLE`]
@@ -491,27 +491,29 @@ impl Server<'_> {
         }
     }
 
-    /// Reads one request head, answers it from the map and ends as the mode says.
+    /// Reads one request, its head and the `Content-Length` bytes of its body, together at most
+    /// [`MAX_REQUEST`] bytes; answers it from the map and ends as the mode says.
     fn http(&mut self) -> Result<(), End> {
-        let mut head = Vec::new();
-        while !head.windows(4).any(|w| w == b"\r\n\r\n") {
-            match self.next()? {
-                Message::ApplicationData(data) => head.extend_from_slice(&data),
-                Message::Alert { description, .. }
-                    if description != AlertDescription::USER_CANCELED =>
-                {
-                    return Err(format!("the client sent {description}"));
-                }
-                _ => {}
+        let mut request = Vec::new();
+        let head_end = loop {
+            if let Some(at) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                break at + 4;
             }
-            if head.len() > MAX_REQUEST {
-                return Err(self.abort(AlertDescription::INTERNAL_ERROR));
-            }
-        }
+            self.read_request(&mut request)?;
+        };
+        let head = &request[..head_end];
         let line_end = head.windows(2).position(|w| w == b"\r\n").unwrap_or(0);
         let line = String::from_utf8_lossy(&head[..line_end]).into_owned();
+        let length = content_length(head);
         let path = line.split(' ').nth(1).unwrap_or("").to_string();
         self.seen.request = Some(line);
+        if head_end.saturating_add(length) > MAX_REQUEST {
+            return Err(self.abort(AlertDescription::INTERNAL_ERROR));
+        }
+        while request.len() < head_end + length {
+            self.read_request(&mut request)?;
+        }
+        self.seen.body = request[head_end..head_end + length].to_vec();
         let response = self
             .setup
             .config
@@ -531,6 +533,40 @@ impl Server<'_> {
             .map_err(ended)?;
         self.drain("answered")
     }
+
+    /// Reads the next record of a request onto `request`: application data is kept, an alert
+    /// other than `user_canceled` ends the connection, and more than [`MAX_REQUEST`] bytes are
+    /// `internal_error`.
+    fn read_request(&mut self, request: &mut Vec<u8>) -> Result<(), End> {
+        match self.next()? {
+            Message::ApplicationData(data) => request.extend_from_slice(&data),
+            Message::Alert { description, .. }
+                if description != AlertDescription::USER_CANCELED =>
+            {
+                return Err(format!("the client sent {description}"));
+            }
+            _ => {}
+        }
+        if request.len() > MAX_REQUEST {
+            return Err(self.abort(AlertDescription::INTERNAL_ERROR));
+        }
+        Ok(())
+    }
+}
+
+/// The value of the `Content-Length` field of a request head (its name in any case), 0 without
+/// one or when it is not a decimal number.
+fn content_length(head: &[u8]) -> usize {
+    String::from_utf8_lossy(head)
+        .split("\r\n")
+        .skip(1)
+        .find_map(|field| {
+            let (name, value) = field.split_once(':')?;
+            name.trim()
+                .eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse().unwrap_or(0))
+        })
+        .unwrap_or(0)
 }
 
 /// The transcript hash so far.

@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest ab11f6612ea9e8cac0562933f8bc6c5facdf23efa6383fb395b012d3ed91413e
+// contract digest 153f12c9bc6989d7738d48778d89afd6338830f138bc654b26d0f1a53611f3d7
 // do not edit: regenerate with `ess synthesize`
 
 //! shell — the `shell` component of `surf` v1.

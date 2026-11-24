@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest ab11f6612ea9e8cac0562933f8bc6c5facdf23efa6383fb395b012d3ed91413e
+// contract digest 153f12c9bc6989d7738d48778d89afd6338830f138bc654b26d0f1a53611f3d7
 // do not edit: regenerate with `ess synthesize`
 
 //! Agent — `surf.agent`.
@@ -124,7 +124,7 @@ pub struct LookCall {
 
 /// OpenCall — `surf.agent.OpenCall`.
 ///
-/// The input of `open`, the address to load first if one is given, and the form to print it in.
+/// The input of `open`, the address to load first if one is given, the form to print it in, and a file of extra trust anchors.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenCall {
     /// `url` — `Optional<surf.url.Url>`.
@@ -133,6 +133,8 @@ pub struct OpenCall {
     pub form: Option<PageForm>,
     /// `from_line` — `Optional<Integer>`.
     pub from_line: Option<i64>,
+    /// `ca_file` — `Optional<String>`.
+    pub ca_file: Option<String>,
 }
 
 /// OpenedSession — `surf.agent.OpenedSession`.
