@@ -267,6 +267,73 @@ fn chain(tree: &mut Tree, length: usize) -> (NodeId, NodeId) {
     (first, last)
 }
 
+// The cases from here to the next such line fail on the tip they were written against
+// (`d69866b`).
+
+/// The markup of the two cases below: `a` holds the script; after the script, markup 5
+/// elements deep goes under `a`, then the page goes on in the `body`.
+const UNDER_A_REMOVED_DIV: &str = "<body><div id=a><script id=s>x</script>\
+    <p><span><em><i><u>y</u></i></em></span></p></div><p id=after>z</p>";
+
+/// A node out of the tree keeps the depth it had in its last place (`tree.rs`, `Depth`), and
+/// the parser checks that kept depth. The crate documentation, "Limits", says an element "is
+/// not created under a parent 512 deep", depth being "the elements on its path from the
+/// root", and Q2 of `docs/design/scripts.md` has later markup go into a removed element. Two
+/// hooks leave the same document: the first removes `a`; the second moves `a` to the end of
+/// a chain of six `div` it made out of the tree, then removes it, so `a` keeps a depth of 7
+/// though nothing is above it. At a limit of 8 the first parse goes on to `p#after`; the
+/// second stops at `Depth` at the `span`, 3 deep in its own tree, and the rest of the page,
+/// which is within the limit, is lost. The same with the chain in the document.
+#[test]
+fn a_removed_element_is_not_checked_at_a_depth_it_no_longer_has() {
+    const N: usize = 8;
+    let removed = parse_document_with_hook(
+        UNDER_A_REMOVED_DIV,
+        &deep(N),
+        &mut Recorder::with(|tree, script| {
+            let a = tree.parent(script).unwrap();
+            tree.remove_node(a).unwrap();
+        }),
+    );
+    assert_eq!(removed.stopped_by(), None);
+    assert!(by_id(&removed, "after").is_some());
+    let mut wrong = Vec::new();
+    for in_document in [false, true] {
+        let mut hook = Recorder::with(move |tree, script| {
+            let a = tree.parent(script).unwrap();
+            let body = tree.parent(a).unwrap();
+            let (first, last) = chain(tree, if in_document { N - 4 } else { N - 2 });
+            if in_document {
+                tree.append_child(body, first).unwrap();
+            }
+            tree.append_child(last, a).unwrap();
+            tree.remove_node(a).unwrap();
+            if in_document {
+                tree.remove_node(first).unwrap();
+            }
+        });
+        let tree = parse_document_with_hook(UNDER_A_REMOVED_DIV, &deep(N), &mut hook);
+        assert_a_tree(&tree, &[], UNDER_A_REMOVED_DIV);
+        if shape(&tree) != shape(&removed) || tree.stopped_by() != removed.stopped_by() {
+            wrong.push(format!(
+                "a moved to a chain {} and removed: stopped by {:?}, p#after {}",
+                if in_document {
+                    "in the document"
+                } else {
+                    "out of the tree"
+                },
+                tree.stopped_by(),
+                if by_id(&tree, "after").is_some() {
+                    "parsed"
+                } else {
+                    "lost"
+                }
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "limit {N}: {wrong:#?}");
+}
+
 // The cases below held on the tip they were written against (`d69866b`).
 
 /// Writes that move an open element away and back, into a template's contents and out, or
