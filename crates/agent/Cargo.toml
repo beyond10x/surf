@@ -1,6 +1,6 @@
 [package]
 name = "surf-agent"
-description = "The agent command line of surf: a parser held to cli/surf-agent.yaml, the token, and the wire to surfd, with the standard library only."
+description = "The agent command line of surf: a parser held to cli/surf-agent.yaml, the token, the file of extra trust anchors read with surf-tls, and the wire to surfd."
 version = "0.6.0"
 edition = "2024"
 publish = false
@@ -20,6 +20,7 @@ test = false
 [dependencies]
 surf-answer = { path = "../answer" }
 surf-secret = { path = "../secret" }
+surf-tls = { path = "../tls" }
 
 [dev-dependencies]
 surf-test-process = { path = "../test-process" }

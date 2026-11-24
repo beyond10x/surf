@@ -96,7 +96,7 @@ callables:
 commands:
   - path: [open]
     callable: open
-    about: Open a session, load the address if one is given, and print its identity and token once; with --as tree or markdown and an address, print the page from --from-line
+    about: Open a session, load the address if one is given, and print its identity and token once; with --as tree or markdown and an address, print the page from --from-line; with --ca-file, trust the CA certificates of that PEM file beside the bundled ones for the session's https loads
     arguments:
       - field: url
         source: {kind: positional, index: 1}
@@ -104,6 +104,8 @@ commands:
         source: {kind: option, long: as}
       - field: from_line
         source: {kind: option, long: from-line}
+      - field: ca_file
+        source: {kind: option, long: ca-file}
   - path: [go]
     callable: go
     about: Load an address into the session's tab and print the session's state; with --as tree or markdown, print the page from --from-line

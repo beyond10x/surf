@@ -9,9 +9,15 @@
 //! ([`wire::check_socket_path`]): a failed check is status 3 with the path and what is wrong, and
 //! nothing is connected to or written. `open` starts `surfd` only when that check finds no
 //! socket, or a socket nobody listens on, and checks again before it connects.
+//!
+//! Before that, `open --ca-file <path>` reads the file and checks it with `surf-tls`
+//! ([`read_ca_file`]); a file it refuses is a usage error (status 2), with nothing connected,
+//! started or written. A file it takes travels as the text of `arg anchors` in the `open`
+//! request; `surfd` passes the request to the session process unchanged, over its socket.
 
 use std::ffi::OsString;
 use std::fmt::Write as _;
+use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
@@ -20,6 +26,8 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+
+use surf_tls::anchors::{Anchors, EXTRA_BYTES_MAX};
 
 use crate::cli::{self, Environment, USAGE};
 use crate::wire;
@@ -115,6 +123,10 @@ fn call(
     let from_stdin = call.command == "fill" && call.stdin;
     if from_stdin {
         call.value = Some(read_value(input)?);
+    }
+    // The file of `--ca-file` is read and checked before anything is connected or started.
+    if let Some(path) = &call.ca_file {
+        call.anchors = Some(read_ca_file(path)?);
     }
     let request = call.request();
     let request = request.encode().map_err(|error| match error {
@@ -258,6 +270,36 @@ fn read_value(input: &mut dyn Read) -> Result<String, Failure> {
     }
     String::from_utf8(bytes)
         .map_err(|_| Failure::Usage("the value read from standard input is not UTF-8".into()))
+}
+
+/// The text of the file of `--ca-file` (`docs/design/tls.md` item 8), read before any
+/// connection: a regular file, read up to one byte past [`EXTRA_BYTES_MAX`] so that a larger one
+/// is refused as too large without being read whole, and taken only when
+/// [`Anchors::with_extra_pem`] of `surf-tls` takes it (at most 64 blocks, every block a
+/// `CERTIFICATE`, every certificate a CA). A file it refuses is a usage error naming the
+/// [`surf_tls::anchors::AnchorError`]; no message repeats the path.
+fn read_ca_file(path: &Path) -> Result<String, Failure> {
+    let unreadable = |error: io::Error| {
+        Failure::Usage(format!(
+            "the --ca-file file cannot be read: {}",
+            error.kind()
+        ))
+    };
+    let file = File::open(path).map_err(unreadable)?;
+    if !file.metadata().map_err(unreadable)?.is_file() {
+        return Err(Failure::Usage(
+            "the --ca-file file is not a regular file".to_string(),
+        ));
+    }
+    let mut pem = Vec::new();
+    file.take(EXTRA_BYTES_MAX as u64 + 1)
+        .read_to_end(&mut pem)
+        .map_err(unreadable)?;
+    Anchors::bundled()
+        .with_extra_pem(&pem)
+        .map_err(|error| Failure::Usage(format!("the --ca-file file is refused: {error}")))?;
+    String::from_utf8(pem)
+        .map_err(|_| Failure::Usage("the --ca-file file is not UTF-8 text".to_string()))
 }
 
 /// [`wire::check_socket_path`]: whether the socket is there, or the refusal naming the path.

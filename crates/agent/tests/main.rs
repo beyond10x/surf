@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 mod adversary_fill_pick;
+mod ca_file;
 mod common;
 mod drift;
 mod stand_in;
