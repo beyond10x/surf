@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:scripts-spec
 kind: story
-status: active
+status: implemented
 title: Specify the record of a script's end and the scripting option of surf-agent open
 summary: surf.document records each script's end with its document and surf.agent.OpenCall gains the scripting option, in the shape the note gives; scenarios for every outcome; the binding declares the option and the client refuses it until the document port.
 relations:
@@ -53,10 +53,11 @@ scope:
   path: website/docs/principles.md
 - confidence: cited
   path: website/docs/status.md
-revision: 33
+revision: 35
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:12Z", actor: "human:operator", revision: 26}
 - {from: "proposed", to: "active", at: "2026-11-24T12:08:07Z", actor: "human:operator", revision: 33, executor: "agent:coordinator"}
+- {from: "active", to: "implemented", at: "2026-11-24T18:33:39Z", actor: "human:operator", revision: 35, decided_on: {"recorded":{"test_result":2,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -270,3 +271,38 @@ first's.
 
 The specification of what the epic's outcome records and of the option that turns it on, which
 the epic's "Specs first" puts before its code.
+
+## As built
+
+The unit is on `main` at `e326cd5` (the merge of `impl/scripts-spec` at `59161d9`, which holds
+the reviewer's cases of two passes and one merge of `main`). 221 scenarios pass on both
+runners (203 before), 57 of them authored (44 before); the synthesis refuses 57 outcomes
+(56 before); the conformance crate runs 54 tests. Where it differs from the text above:
+
+- Outside the Change, applied: `crates/agent/src/cli.rs` (the parser declares `--scripts` as
+  refused, and the drift test compares its list with `BINDING_ONLY`), and the test ports under
+  `conformance/tests/` pass the new script storage and identity through.
+- A name beyond decision 6: the view `surf.document.Scripts` over `surf.document.Script`, in
+  the form of `Elements`. Without it no scenario saw the record: a planted "AddScriptEnd
+  stores nothing" passed every scenario. The note's Q7 holds the view. Scenarios read the
+  view ranked, of two documents and of two sessions.
+- `AddScriptEnd` refuses what Q7 and Q16 exclude, beyond decision 6, which took Q7's YAML as
+  it stood: `invalid-end` (an outcome with a reason or an error Q7's table does not give it)
+  and `invalid-position` (a position, line or column outside Q16's range). The order of the
+  refusals is held by scenarios, on a parsed document too. `InvalidScriptPosition` names the
+  end's position also when the line or the column is out of range.
+- Not in the specification, by a ruling: a second end at one position of one document. With
+  that third refusal the synthesis of the suite went from about 3 s to 8 to 9 s, against a
+  bound of 4.65 s, in every form tried. `story:scripts-document-port` holds one end per
+  position in the writer.
+- Not in the specification because the language has no guard for it: the 1,024 characters of
+  a message. The same story holds it in the writer.
+- `REFUSALS_MAX` is 57: one synthesis refusal ESS-SYNTH-014 on `AddScriptEnd/added`, from the
+  view's `order_by`, the same `AddElement/added` has.
+- Acceptance 6 against the first review: `refs:` stand on the command, as Q7 writes it.
+  Acceptance 7 stands as written.
+- 20 existing scenarios gained `scripts: false`; `scripts` is in the `Sessions` view; the
+  document component lists the new command and event.
+- `--scripts false` is refused like `true`, and the completions offer the option.
+- Left, noticed by the second review: `AddScriptEnd` is hand-written in the ports and only
+  the scenarios hold it; the YAML outcomes of Q7 carry no summaries.
