@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest d6c21bcc6a807c12b12c5e62e83d4b3cf21db6c45d1dd9135d8affd63032a0ae
+// contract digest 9c22228725ec026d04133d2c8165113494f9c35a0dc46838ad91f6a4bc16f0f1
 // do not edit: regenerate with `ess synthesize`
 
 //! Document — `surf.document`.
@@ -1465,6 +1465,20 @@ pub struct AddScriptEnd {
 /// outcomes exist to prevent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AddScriptEndOutcome {
+    /// `invalid-end` — when `(((end == Ran or end == Faulted) and (defined(reason) or defined(error_kind) or defined(message) or defined(line) or defined(column) or defined(dynamic))) or ((end == Limit or end == NotRun) and (not (defined(reason)) or defined(error_kind) or defined(message) or defined(line) or defined(column) or defined(dynamic))) or ((end == Threw or end == Refused) and (defined(reason) or not (defined(error_kind)))) or (end == Limit and defined(reason) and reason != StepsPerScript and reason != Memory and reason != SourceBytes and reason != WallClock and reason != Nodes and reason != Depth and reason != Attributes and reason != StoredBytes) or (end == NotRun and defined(reason) and (reason == StepsPerScript or reason == SourceBytes or reason == Nodes or reason == Depth or reason == Attributes or reason == StoredBytes)) or (end == Threw and defined(error_kind) and error_kind == Value and defined(message)) or (end == Refused and defined(error_kind) and error_kind != SyntaxError) or (defined(message) and message.count > 1024))`.
+    ///
+    /// The end carries a reason or an error Q7 does not give it; nothing is added.
+    InvalidEnd {
+        /// Why it was refused: `surf.document.InvalidScriptEnd`.
+        error: InvalidScriptEnd,
+    },
+    /// `invalid-position` — when `(position < 1 or (defined(line) and line < 1) or (defined(line) and line >= 4294967296) or (defined(column) and column < 1) or (defined(column) and column >= 4294967296))`.
+    ///
+    /// The position, line or column is outside its range; nothing is added.
+    InvalidPosition {
+        /// Why it was refused: `surf.document.InvalidScriptPosition`.
+        error: InvalidScriptPosition,
+    },
     /// `no-such-document` — when no `surf.document.Document` carries the identity `input.document_id` names.
     ///
     /// No document has this identity; nothing is added.
@@ -1478,6 +1492,13 @@ pub enum AddScriptEndOutcome {
     AlreadyParsed {
         /// Why it was refused: `surf.document.DocumentStateConflict`.
         error: DocumentStateConflict,
+    },
+    /// `position-taken` — when, of the `surf.document.Script` rows satisfying `(document_id == input.document_id and position == input.position)`, at least one row is selected.
+    ///
+    /// The document already holds an end at this position; nothing is added.
+    PositionTaken {
+        /// Why it was refused: `surf.document.ScriptPositionTaken`.
+        error: ScriptPositionTaken,
     },
     /// `added` — otherwise.
     ///
@@ -2056,6 +2077,24 @@ pub struct ElementNotFound {
     pub element_id: ElementId,
 }
 
+/// The declared error `surf.document.InvalidScriptEnd`.
+///
+/// The end carries a reason or an error that Q7 does not give it, so nothing is added.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvalidScriptEnd {
+    /// `end` — `surf.document.ScriptEnd`.
+    pub end: ScriptEnd,
+}
+
+/// The declared error `surf.document.InvalidScriptPosition`.
+///
+/// The position, line or column is outside its range, so nothing is added.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvalidScriptPosition {
+    /// `position` — `Integer`.
+    pub position: i64,
+}
+
 /// The declared error `surf.document.OptionNotFound`.
 ///
 /// No option has this identity.
@@ -2063,6 +2102,17 @@ pub struct ElementNotFound {
 pub struct OptionNotFound {
     /// `option_id` — `surf.document.OptionId`.
     pub option_id: OptionId,
+}
+
+/// The declared error `surf.document.ScriptPositionTaken`.
+///
+/// The document already holds an end at this position, so nothing is added.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScriptPositionTaken {
+    /// `document_id` — `surf.document.DocumentId`.
+    pub document_id: DocumentId,
+    /// `position` — `Integer`.
+    pub position: i64,
 }
 
 /// The declared error `surf.document.SubmissionNotFound`.
@@ -2320,14 +2370,16 @@ pub mod obligations {
         fn add_option(&mut self, input: super::AddOption) -> Result<super::AddOptionOutcome, crate::obligation::UnmetObligation>;
     }
 
-    /// The behaviour `surf.document.AddScriptEnd` — generated.
+    /// The behaviour `surf.document.AddScriptEnd` — an implementation obligation.
     ///
-    /// The specification fully determines it: [`crate::behaviour::Generated`] implements it
-    /// over the storage and context ports. Implement it yourself to replace that behaviour.
+    /// Why it is not generated: kept an obligation by the guard path `message.count`, in `invalid-end`.
+    ///
+    /// Contract: given `surf.document.AddScriptEnd` input, decide and enact exactly one outcome. Selection precedence: on commands with `when_related:`, check `existing_instance` then `exists: false` before input-guarded refusals; choose the first declared input refusal whose guard holds; then check addressed-row existence (`unknown_instance`, and `existing_instance` on commands without `when_related:`); then the held state (`when_subject_state` and `when_subject`), with `wrong_state` only if the selected branch moves from a state the row does not hold; then choose the present `when_related:` predicate refusal whose predicate and optional input guard hold; then accepting and external branches in declaration order. An accepting branch that moves nothing answers in every state. Related-presence predicates do not precede input-guarded refusals. Declared outcomes (declaration order, not selection precedence): `invalid-end` when `(((end == Ran or end == Faulted) and (defined(reason) or defined(error_kind) or defined(message) or defined(line) or defined(column) or defined(dynamic))) or ((end == Limit or end == NotRun) and (not (defined(reason)) or defined(error_kind) or defined(message) or defined(line) or defined(column) or defined(dynamic))) or ((end == Threw or end == Refused) and (defined(reason) or not (defined(error_kind)))) or (end == Limit and defined(reason) and reason != StepsPerScript and reason != Memory and reason != SourceBytes and reason != WallClock and reason != Nodes and reason != Depth and reason != Attributes and reason != StoredBytes) or (end == NotRun and defined(reason) and (reason == StepsPerScript or reason == SourceBytes or reason == Nodes or reason == Depth or reason == Attributes or reason == StoredBytes)) or (end == Threw and defined(error_kind) and error_kind == Value and defined(message)) or (end == Refused and defined(error_kind) and error_kind != SyntaxError) or (defined(message) and message.count > 1024))`, error `surf.document.InvalidScriptEnd`; `invalid-position` when `(position < 1 or (defined(line) and line < 1) or (defined(line) and line >= 4294967296) or (defined(column) and column < 1) or (defined(column) and column >= 4294967296))`, error `surf.document.InvalidScriptPosition`; `no-such-document` when no `surf.document.Document` carries the identity `input.document_id` names, error `surf.document.DocumentNotFound`; `already-parsed` when the `surf.document.Document` that `input.document_id` names satisfies `state == Parsed`, error `surf.document.DocumentStateConflict`; `position-taken` when, of the `surf.document.Script` rows satisfying `(document_id == input.document_id and position == input.position)`, at least one row is selected, error `surf.document.ScriptPositionTaken`; `added` otherwise, creates `surf.document.Script`, emits `surf.document.ScriptEndAdded`.
     pub trait AddScriptEndBehavior {
         /// Decides and enacts exactly one declared outcome of `surf.document.AddScriptEnd`.
         ///
-        /// `Err` is the typed refusal of a request the model declares no outcome for.
+        /// `Err` is the typed refusal of an obligation nothing has satisfied; a satisfying
+        /// implementation never returns it.
         fn add_script_end(&mut self, input: super::AddScriptEnd) -> Result<super::AddScriptEndOutcome, crate::obligation::UnmetObligation>;
     }
 
@@ -2494,6 +2546,12 @@ pub mod obligations {
     /// Each method returns the typed refusal naming what is owed — never a panic, never a guessed
     /// value — so a workspace built on this stub compiles and reports its own gaps.
     pub struct Unimplemented;
+
+    impl AddScriptEndBehavior for Unimplemented {
+        fn add_script_end(&mut self, _input: super::AddScriptEnd) -> Result<super::AddScriptEndOutcome, crate::obligation::UnmetObligation> {
+            Err(crate::obligation::UnmetObligation { capability: "command behaviour", source: "surf.document.AddScriptEnd" })
+        }
+    }
 
     impl CheckBehavior for Unimplemented {
         fn check(&mut self, _input: super::Check) -> Result<super::CheckOutcome, crate::obligation::UnmetObligation> {

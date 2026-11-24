@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest d6c21bcc6a807c12b12c5e62e83d4b3cf21db6c45d1dd9135d8affd63032a0ae
+// contract digest 9c22228725ec026d04133d2c8165113494f9c35a0dc46838ad91f6a4bc16f0f1
 // do not edit: regenerate with `ess synthesize`
 
 //! What the specification fully determines, generated: the behaviour of every command the plan
@@ -293,10 +293,6 @@ pub trait Context {
     /// `{generated: true}` value, or an event field the model leaves undetermined.
     fn generate_surf_document_option_id(&mut self) -> crate::document::OptionId;
 
-    /// A new `surf.document.ScriptId`, which the model says the implementation assigns — a created identity, a
-    /// `{generated: true}` value, or an event field the model leaves undetermined.
-    fn generate_surf_document_script_id(&mut self) -> crate::document::ScriptId;
-
     /// A new `surf.document.SubmissionId`, which the model says the implementation assigns — a created identity, a
     /// `{generated: true}` value, or an event field the model leaves undetermined.
     fn generate_surf_document_submission_id(&mut self) -> crate::document::SubmissionId;
@@ -340,8 +336,6 @@ fn try_generate_surf_document_form_id(&mut self) -> Result<crate::document::Form
 /// Assigns the value, or names the unavailable answer.
 fn try_generate_surf_document_option_id(&mut self) -> Result<crate::document::OptionId, UnmetObligation>;
 /// Assigns the value, or names the unavailable answer.
-fn try_generate_surf_document_script_id(&mut self) -> Result<crate::document::ScriptId, UnmetObligation>;
-/// Assigns the value, or names the unavailable answer.
 fn try_generate_surf_document_submission_id(&mut self) -> Result<crate::document::SubmissionId, UnmetObligation>;
 /// Assigns the value, or names the unavailable answer.
 fn try_generate_surf_net_request_id(&mut self) -> Result<crate::net::RequestId, UnmetObligation>;
@@ -363,7 +357,6 @@ fn try_generate_surf_document_document_id(&mut self) -> Result<crate::document::
 fn try_generate_surf_document_element_id(&mut self) -> Result<crate::document::ElementId, UnmetObligation> { Ok(Context::generate_surf_document_element_id(self)) }
 fn try_generate_surf_document_form_id(&mut self) -> Result<crate::document::FormId, UnmetObligation> { Ok(Context::generate_surf_document_form_id(self)) }
 fn try_generate_surf_document_option_id(&mut self) -> Result<crate::document::OptionId, UnmetObligation> { Ok(Context::generate_surf_document_option_id(self)) }
-fn try_generate_surf_document_script_id(&mut self) -> Result<crate::document::ScriptId, UnmetObligation> { Ok(Context::generate_surf_document_script_id(self)) }
 fn try_generate_surf_document_submission_id(&mut self) -> Result<crate::document::SubmissionId, UnmetObligation> { Ok(Context::generate_surf_document_submission_id(self)) }
 fn try_generate_surf_net_request_id(&mut self) -> Result<crate::net::RequestId, UnmetObligation> { Ok(Context::generate_surf_net_request_id(self)) }
 fn try_generate_surf_render_frame_id(&mut self) -> Result<crate::render::FrameId, UnmetObligation> { Ok(Context::generate_surf_render_frame_id(self)) }
@@ -943,49 +936,9 @@ where
     }
 }
 
-/// `surf.document.AddScriptEnd`, generated: every outcome is one the specification fully determines.
-impl<P> crate::document::obligations::AddScriptEndBehavior for Generated<P>
-where
-    P: TryContext + DocumentStorage + ScriptStorage,
-{
+impl<P: crate::document::obligations::AddScriptEndBehavior> crate::document::obligations::AddScriptEndBehavior for Generated<P> {
     fn add_script_end(&mut self, input: crate::document::AddScriptEnd) -> Result<crate::document::AddScriptEndOutcome, UnmetObligation> {
-        let _ = &input;
-        // `when_related:` reads the `surf.document.Document` row `input.document_id` names, through its storage port; an absent
-        // reference reads no row and selects no related branch.
-        let reference = Some(&input.document_id);
-        let related = reference.and_then(|identity| DocumentStorage::get(&self.ports, identity));
-        let _ = &related;
-        // The addressed row's existence and held state, for the branch the request selects
-        // before any present related row's refusal.
-        {
-        }
-        // `no-such-document`: the reference names an identity no row carries.
-        if reference.is_some() && related.is_none() {
-            return Ok(crate::document::AddScriptEndOutcome::NoSuchDocument { error: crate::document::DocumentNotFound { document_id: input.document_id.clone() } });
-        }
-        // `already-parsed`: a present related row's refusal, before every accepting branch.
-        if let Some(related) = &related {
-        if decided(equal(Some(&related.state).map(|value| match value { crate::document::DocumentState::Parsed => "Parsed", crate::document::DocumentState::Parsing => "Parsing" }.to_owned()), Some("Parsed".to_owned())), "surf.document.AddScriptEnd")? {
-            return Ok(crate::document::AddScriptEndOutcome::AlreadyParsed { error: crate::document::DocumentStateConflict { state: crate::document::DocumentState::Parsed } });
-        }
-        }
-        // `added`: the default.
-        let identity: crate::document::ScriptId = self.ports.try_generate_surf_document_script_id()?;
-        let data = crate::document::ScriptData {
-            script_id: identity.clone(),
-            document_id: input.document_id.clone(),
-            position: input.position.clone(),
-            end: input.end.clone(),
-            reason: input.reason.clone(),
-            error_kind: input.error_kind.clone(),
-            message: input.message.clone(),
-            line: input.line.clone(),
-            column: input.column.clone(),
-            dynamic: input.dynamic.clone(),
-        };
-        let answer = crate::document::AddScriptEndOutcome::Added { script_end_added: crate::document::ScriptEndAdded { script_id: identity.clone(), document_id: input.document_id.clone(), position: input.position.clone(), end: input.end.clone() } };
-        ScriptStorage::put(&mut self.ports, crate::document::AnyScript::Added(crate::document::Script::new(data)).snapshot());
-        return Ok(answer);
+        crate::document::obligations::AddScriptEndBehavior::add_script_end(&mut self.ports, input)
     }
 }
 

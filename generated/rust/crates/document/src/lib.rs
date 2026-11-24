@@ -1,5 +1,5 @@
 // generated from surf v1
-// contract digest d6c21bcc6a807c12b12c5e62e83d4b3cf21db6c45d1dd9135d8affd63032a0ae
+// contract digest 9c22228725ec026d04133d2c8165113494f9c35a0dc46838ad91f6a4bc16f0f1
 // do not edit: regenerate with `ess synthesize`
 
 //! document — the `document` component of `surf` v1.
@@ -151,8 +151,11 @@ where
     pub fn add_script_end(&mut self, input: surf_types::document::AddScriptEnd) -> Result<surf_types::document::AddScriptEndOutcome, surf_types::obligation::UnmetObligation> {
         let outcome = self.behaviors.add_script_end(input)?;
         match &outcome {
+            surf_types::document::AddScriptEndOutcome::InvalidEnd { .. } => {}
+            surf_types::document::AddScriptEndOutcome::InvalidPosition { .. } => {}
             surf_types::document::AddScriptEndOutcome::NoSuchDocument { .. } => {}
             surf_types::document::AddScriptEndOutcome::AlreadyParsed { .. } => {}
+            surf_types::document::AddScriptEndOutcome::PositionTaken { .. } => {}
             surf_types::document::AddScriptEndOutcome::Added { script_end_added, .. } => {
                 self.outbox.push(PublishedEvent::ScriptEndAdded(script_end_added.clone()));
             }

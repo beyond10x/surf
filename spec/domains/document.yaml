@@ -593,6 +593,26 @@ errors:
       - name: state
         type: surf.document.Submission.State
 
+  - name: surf.document.InvalidScriptEnd
+    summary: The end carries a reason or an error that Q7 does not give it, so nothing is added.
+    fields:
+      - name: end
+        type: surf.document.ScriptEnd
+
+  - name: surf.document.InvalidScriptPosition
+    summary: The position, line or column is outside its range, so nothing is added.
+    fields:
+      - name: position
+        type: Integer
+
+  - name: surf.document.ScriptPositionTaken
+    summary: The document already holds an end at this position, so nothing is added.
+    fields:
+      - name: document_id
+        type: surf.document.DocumentId
+      - name: position
+        type: Integer
+
 commands:
   # Parsing takes time, so it is a command that starts it, one per actionable element, and one
   # that ends it (`AGENTS.md`, "Rules"; `docs/design/html-parser.md`, item 2). An HTML parser makes
@@ -874,6 +894,54 @@ commands:
       - name: dynamic
         type: Optional<Boolean>
     outcomes:
+      # Q7's closed list of ends is the rule: `Ran` and `Faulted` carry nothing; `Threw` has a
+      # kind, and a thrown value that is no error object (`Value`) no message (Q16); `Refused`
+      # has the `SyntaxError` of the refusal (Q16, "A refusal is read the same way"); `Limit` has
+      # one of Q4's eight limit words; `NotRun` has one of the seventeen not-run words of Q1 and
+      # Q4 (`WallClock` and `Memory` are in both lists). Only `Threw` and `Refused` carry an
+      # error kind, a message, a line, a column or `dynamic`, and a message keeps at most 1,024
+      # characters (Q16).
+      - name: invalid-end
+        when:
+          any:
+            - all:
+                - any: [end == Ran, end == Faulted]
+                - any: [defined(reason), defined(error_kind), defined(message), defined(line), defined(column), defined(dynamic)]
+            - all:
+                - any: [end == Limit, end == NotRun]
+                - any: [missing(reason), defined(error_kind), defined(message), defined(line), defined(column), defined(dynamic)]
+            - all:
+                - any: [end == Threw, end == Refused]
+                - any: [defined(reason), missing(error_kind)]
+            - all: [end == Limit, defined(reason), reason != StepsPerScript, reason != Memory, reason != SourceBytes, reason != WallClock, reason != Nodes, reason != Depth, reason != Attributes, reason != StoredBytes]
+            - all:
+                - end == NotRun
+                - defined(reason)
+                - any: [reason == StepsPerScript, reason == SourceBytes, reason == Nodes, reason == Depth, reason == Attributes, reason == StoredBytes]
+            - all: [end == Threw, defined(error_kind), error_kind == Value, defined(message)]
+            - all: [end == Refused, defined(error_kind), error_kind != SyntaxError]
+            - all: [defined(message), message.count > 1024]
+        error: surf.document.InvalidScriptEnd
+        payload:
+          surf.document.InvalidScriptEnd:
+            end: input.end
+        summary: The end carries a reason or an error Q7 does not give it; nothing is added.
+
+      # Q7 counts positions from 1; Q16 keeps a line and a column from 1 and below 2^32.
+      - name: invalid-position
+        when:
+          any:
+            - position < 1
+            - all: [defined(line), line < 1]
+            - all: [defined(line), line >= 4294967296]
+            - all: [defined(column), column < 1]
+            - all: [defined(column), column >= 4294967296]
+        error: surf.document.InvalidScriptPosition
+        payload:
+          surf.document.InvalidScriptPosition:
+            position: input.position
+        summary: The position, line or column is outside its range; nothing is added.
+
       # no-such-document and already-parsed as `AddForm` has them.
       - name: no-such-document
         when_related: {via: input.document_id, exists: false}
@@ -890,6 +958,19 @@ commands:
           surf.document.DocumentStateConflict:
             state: Parsed
         summary: The document was already Parsed; nothing is added.
+
+      # Q7: never a second record for one element, so one end per position of a document.
+      - name: position-taken
+        when_related:
+          entity: surf.document.Script
+          where: {all: [document_id == input.document_id, position == input.position]}
+          exists: true
+        error: surf.document.ScriptPositionTaken
+        payload:
+          surf.document.ScriptPositionTaken:
+            document_id: input.document_id
+            position: input.position
+        summary: The document already holds an end at this position; nothing is added.
 
       - name: added
         creates: surf.document.Script

@@ -38,6 +38,7 @@ use surf_types::render::{FrameId, FrameSnapshot};
 use surf_types::shell::{TabId, TabSnapshot, WindowId, WindowSnapshot};
 
 use crate::random::{OsRandom, RandomSource, assign};
+use crate::script::ScriptIdentity;
 use crate::store::{Keyed, Rows};
 
 macro_rules! keyed {
@@ -111,9 +112,10 @@ macro_rules! storage {
 
 /// Implements `TryContext` for a ports type over its random source.
 ///
-/// `TryContext` asks for all eleven kinds of identity. These ports assign each of the ten that
-/// belong to the page load, a document's elements, forms, options, submissions and script ends
-/// included; the generated behaviours of a component ask only for their own.
+/// `TryContext` asks for all ten kinds of identity. These ports assign each of the nine that
+/// belong to the page load, a document's elements, forms, options and submissions included; the
+/// generated behaviours of a component ask only for their own. A script end's identity is not
+/// among them: [`crate::ScriptIdentity`] assigns it, for the `AddScriptEnd` these ports meet.
 ///
 /// It also asks for the caller's `session_id` and an action's identity, which only the `agent`
 /// component's commands read. These ports know no caller and record no action, so they answer
@@ -191,12 +193,6 @@ macro_rules! context {
                 &mut self,
             ) -> Result<OptionId, UnmetObligation> {
                 assign(&mut self.random, "surf.document.OptionId").map(OptionId)
-            }
-
-            fn try_generate_surf_document_script_id(
-                &mut self,
-            ) -> Result<ScriptId, UnmetObligation> {
-                assign(&mut self.random, "surf.document.ScriptId").map(ScriptId)
             }
 
             fn try_generate_surf_document_submission_id(
@@ -516,9 +512,10 @@ storage!(RequestStorage for NetPorts, requests: RequestSnapshot, RequestId);
 /// submissions of their forms, the records of their scripts' ends, and the random source their
 /// identities come from.
 ///
-/// It also meets the two obligations the generation leaves to it, `Check` and `SelectOption`,
-/// which change other rows beside their subject (`affects:`). `AddScriptEnd` is generated whole:
-/// these ports store the record it writes, as they store a form's.
+/// It also meets the three obligations the generation leaves to it: `Check` and `SelectOption`,
+/// which change other rows beside their subject (`affects:`), and `AddScriptEnd`
+/// ([`crate::add_script_end`]), whose `position-taken` refusal reads the document's other
+/// records.
 #[derive(Debug)]
 pub struct DocumentPorts<R = OsRandom> {
     documents: Rows<DocumentSnapshot>,
@@ -582,6 +579,13 @@ storage!(ListOptionStorage for DocumentPorts<R>, options: ListOptionSnapshot, Op
 storage!(SubmissionStorage for DocumentPorts<R>, submissions: SubmissionSnapshot, SubmissionId, R);
 storage!(ScriptStorage for DocumentPorts<R>, scripts: ScriptSnapshot, ScriptId, R);
 context!(DocumentPorts);
+
+/// A script end's identity, drawn from the same source as the document's other identities.
+impl<R: RandomSource> ScriptIdentity for DocumentPorts<R> {
+    fn assign_script_id(&mut self) -> Result<ScriptId, UnmetObligation> {
+        assign(&mut self.random, "surf.document.ScriptId").map(ScriptId)
+    }
+}
 
 /// A checkbox's or a radio button's activation, its outcomes chosen in the order `spec/` declares
 /// them: an element no row holds, one neither a checkbox nor a radio button, a disabled one and
@@ -873,10 +877,6 @@ impl<R: RandomSource> TryContext for AgentPorts<R> {
 
     fn try_generate_surf_document_option_id(&mut self) -> Result<OptionId, UnmetObligation> {
         Err(unmet_context("surf.document.OptionId"))
-    }
-
-    fn try_generate_surf_document_script_id(&mut self) -> Result<ScriptId, UnmetObligation> {
-        Err(unmet_context("surf.document.ScriptId"))
     }
 
     fn try_generate_surf_document_submission_id(

@@ -2689,6 +2689,24 @@ where
                     AddScriptEndOutcome::Added { script_end_added } => {
                         took("added", SystemEvent::ScriptEndAdded(script_end_added))
                     }
+                    AddScriptEndOutcome::InvalidEnd { error } => refused(
+                        "invalid-end",
+                        "surf.document.InvalidScriptEnd",
+                        vec![("end", values::text(script_end(error.end)))],
+                    )?,
+                    AddScriptEndOutcome::InvalidPosition { error } => refused(
+                        "invalid-position",
+                        "surf.document.InvalidScriptPosition",
+                        vec![("position", values::integer(error.position))],
+                    )?,
+                    AddScriptEndOutcome::PositionTaken { error } => refused(
+                        "position-taken",
+                        "surf.document.ScriptPositionTaken",
+                        vec![
+                            ("document_id", uuid(&error.document_id.0)),
+                            ("position", values::integer(error.position)),
+                        ],
+                    )?,
                     AddScriptEndOutcome::NoSuchDocument { error } => refused(
                         "no-such-document",
                         "surf.document.DocumentNotFound",

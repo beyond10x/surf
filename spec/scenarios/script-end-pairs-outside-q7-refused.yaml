@@ -1,0 +1,228 @@
+# What `surf.document.AddScriptEnd` refuses because `docs/design/scripts.md` does not have it.
+# Q7's closed list pairs `Ran` and `Faulted` with nothing, `Limit` with the eight limit words,
+# `NotRun` with the seventeen not-run words, `Threw` with a kind, and `Refused` with the
+# `SyntaxError` of a refusal (Q16); it records one end per element, each with its position from
+# 1; Q16 keeps at most 1,024 characters of a message and a line and column from 1 below 2^32.
+# Each record below is refused and nothing is added: `invalid-end` for `Ran` with a reason,
+# `NotRun` with a limit's word, `Limit` with `eof`, `Threw` without a kind, `Refused` with
+# `TypeError`, `NotRun` without a reason, `Faulted` with a reason and a kind (at position -1),
+# a message of 1,025 characters and `Ran` with an error; `invalid-position` for positions 0,
+# line and column 0, and line and column 2^32; `position-taken` for a second record at
+# position 6, after the one `Ran` there that is added. Written by the adversary of
+# `story:scripts-spec` to pin what `AddScriptEnd` accepted; rewritten in its fix round 2, when
+# the command gained these refusals, so that each pair is refused with its outcome.
+type: ess-scenario/6
+domain: surf.document
+scenario: script-end-pairs-outside-q7-refused
+summary: AddScriptEnd refuses records whose end and reason, position or error fields Q7 and Q16 do not allow.
+
+arrange:
+  - instance: page
+    entity: surf.document.Document
+
+timeline:
+  - at: 2026-01-08T09:00:00Z
+    command: surf.document.ParseDocument
+    input:
+      url: https://example.org/pairs
+      body: PHNjcmlwdD4=
+      navigation_id: 5c41e7d0-0000-4000-8000-000000000b01
+      tab_id: 5c41e7d0-0000-4000-8000-000000000b02
+    outcome: started
+    capture: {instance: page, event: surf.document.ParsingStarted, field: document_id}
+
+  - at: 2026-01-08T09:00:01Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 1
+      end: Ran
+      reason: Eof
+    outcome: invalid-end
+    error:
+      name: surf.document.InvalidScriptEnd
+      fields: {end: Ran}
+
+  - at: 2026-01-08T09:00:02Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 2
+      end: NotRun
+      reason: StepsPerScript
+    outcome: invalid-end
+    error:
+      name: surf.document.InvalidScriptEnd
+      fields: {end: NotRun}
+
+  - at: 2026-01-08T09:00:03Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 3
+      end: Limit
+      reason: Eof
+    outcome: invalid-end
+    error:
+      name: surf.document.InvalidScriptEnd
+      fields: {end: Limit}
+
+  - at: 2026-01-08T09:00:04Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 4
+      end: Threw
+    outcome: invalid-end
+    error:
+      name: surf.document.InvalidScriptEnd
+      fields: {end: Threw}
+
+  - at: 2026-01-08T09:00:05Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 5
+      end: Refused
+      error_kind: TypeError
+      message: "not a refusal"
+      line: 1
+      column: 1
+      dynamic: false
+    outcome: invalid-end
+    error:
+      name: surf.document.InvalidScriptEnd
+      fields: {end: Refused}
+
+  - at: 2026-01-08T09:00:06Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 6
+      end: NotRun
+    outcome: invalid-end
+    error:
+      name: surf.document.InvalidScriptEnd
+      fields: {end: NotRun}
+
+  - at: 2026-01-08T09:00:07Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 6
+      end: Ran
+    outcome: added
+    events:
+      - event: surf.document.ScriptEndAdded
+        payload:
+          document_id: {$instance: page}
+          position: 6
+          end: Ran
+
+  - at: 2026-01-08T09:00:08Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 6
+      end: NotRun
+      reason: Eof
+    outcome: position-taken
+    error:
+      name: surf.document.ScriptPositionTaken
+      fields: {position: 6}
+
+  - at: 2026-01-08T09:00:09Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 0
+      end: Ran
+    outcome: invalid-position
+    error:
+      name: surf.document.InvalidScriptPosition
+      fields: {position: 0}
+
+  - at: 2026-01-08T09:00:10Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: -1
+      end: Faulted
+      reason: Faulted
+      error_kind: Value
+    outcome: invalid-end
+    error:
+      name: surf.document.InvalidScriptEnd
+      fields: {end: Faulted}
+
+  - at: 2026-01-08T09:00:11Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 7
+      end: Threw
+      error_kind: Error
+      message: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      line: 1
+      column: 1
+      dynamic: false
+    outcome: invalid-end
+    error:
+      name: surf.document.InvalidScriptEnd
+      fields: {end: Threw}
+
+  - at: 2026-01-08T09:00:12Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 7
+      end: Threw
+      error_kind: Error
+      message: "x"
+      line: 0
+      column: 0
+      dynamic: false
+    outcome: invalid-position
+    error:
+      name: surf.document.InvalidScriptPosition
+      fields: {position: 7}
+
+  - at: 2026-01-08T09:00:13Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 8
+      end: Threw
+      error_kind: RangeError
+      message: "x"
+      line: 4294967296
+      column: 4294967296
+      dynamic: false
+    outcome: invalid-position
+    error:
+      name: surf.document.InvalidScriptPosition
+      fields: {position: 8}
+
+  - at: 2026-01-08T09:00:14Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 9
+      end: Ran
+      error_kind: TypeError
+      message: "ran and threw"
+      line: 2
+      column: 2
+      dynamic: false
+    outcome: invalid-end
+    error:
+      name: surf.document.InvalidScriptEnd
+      fields: {end: Ran}
+
+assert:
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    counts: {at_least: 1, at_most: 1}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {position: 6, end: Ran, reason: null}

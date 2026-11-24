@@ -21,7 +21,7 @@ use surf_ports::{
 };
 use surf_types::agent::{ActionId, SessionId};
 use surf_types::behaviour::{NavigationStorage, TryContext};
-use surf_types::document::{DocumentId, ElementId, FormId, OptionId, ScriptId, SubmissionId};
+use surf_types::document::{DocumentId, ElementId, FormId, OptionId, SubmissionId};
 use surf_types::navigation::obligations::{CommitNavigationBehavior, TraverseHistoryBehavior};
 use surf_types::navigation::{
     CommitNavigation, CommitNavigationOutcome, NavigationSnapshot, TraverseHistory,
@@ -108,10 +108,6 @@ impl TryContext for DropsEveryPut {
 
     fn try_generate_surf_document_option_id(&mut self) -> Result<OptionId, UnmetObligation> {
         self.0.try_generate_surf_document_option_id()
-    }
-
-    fn try_generate_surf_document_script_id(&mut self) -> Result<ScriptId, UnmetObligation> {
-        self.0.try_generate_surf_document_script_id()
     }
 
     fn try_generate_surf_document_submission_id(

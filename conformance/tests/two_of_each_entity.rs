@@ -20,8 +20,9 @@ use surf_conformance::{
     SurfTarget, Unanswered, each_planted, listed_suite, not_noticed, note_noticed, run, whole_suite,
 };
 use surf_ports::{
-    NavigatorPorts, NetPorts, RendererPorts, ShellPorts, agent_port, commit_navigation,
-    document_port, navigator_port, net_port, renderer_port, shell_port, traverse_history,
+    NavigatorPorts, NetPorts, RendererPorts, ScriptIdentity, ShellPorts, add_script_end,
+    agent_port, commit_navigation, document_port, navigator_port, net_port, renderer_port,
+    shell_port, traverse_history,
 };
 use surf_types::agent::obligations::{
     NoteNavigationCommittedBehavior, NoteNavigationEndedBehavior, NoteNavigationFailedBehavior,
@@ -38,11 +39,13 @@ use surf_types::behaviour::{
     NavigationStorage, RequestStorage, ScriptStorage, SessionStorage, SubmissionStorage,
     TabStorage, TryContext, WindowStorage,
 };
-use surf_types::document::obligations::{CheckBehavior, SelectOptionBehavior};
+use surf_types::document::obligations::{
+    AddScriptEndBehavior, CheckBehavior, SelectOptionBehavior,
+};
 use surf_types::document::{
-    Check, CheckOutcome, DocumentId, DocumentSnapshot, ElementId, ElementSnapshot, FormId,
-    FormSnapshot, ListOptionSnapshot, OptionId, ScriptId, ScriptSnapshot, SelectOption,
-    SelectOptionOutcome, SubmissionId, SubmissionSnapshot,
+    AddScriptEnd, AddScriptEndOutcome, Check, CheckOutcome, DocumentId, DocumentSnapshot,
+    ElementId, ElementSnapshot, FormId, FormSnapshot, ListOptionSnapshot, OptionId, ScriptId,
+    ScriptSnapshot, SelectOption, SelectOptionOutcome, SubmissionId, SubmissionSnapshot,
 };
 use surf_types::navigation::obligations::{CommitNavigationBehavior, TraverseHistoryBehavior};
 use surf_types::navigation::{
@@ -222,6 +225,26 @@ planted_obligation!(
     SelectOptionOutcome
 );
 
+/// A script's end, met over the planted storage and identities themselves, as the generated
+/// behaviours meet the other commands.
+impl<P: ScriptIdentity + DocumentStorage + ScriptStorage> AddScriptEndBehavior for Planted<P> {
+    fn add_script_end(
+        &mut self,
+        input: AddScriptEnd,
+    ) -> Result<AddScriptEndOutcome, UnmetObligation> {
+        add_script_end(self, input)
+    }
+}
+
+impl<P: ScriptIdentity> ScriptIdentity for Planted<P> {
+    fn assign_script_id(&mut self) -> Result<ScriptId, UnmetObligation> {
+        if self.same(Entity::Script) {
+            return Ok(ScriptId(same()));
+        }
+        self.inner.assign_script_id()
+    }
+}
+
 /// The `navigator` component's obligations, met over the planted storage itself: they read and
 /// write a tab's entries through it, as the component's generated behaviours do.
 impl<P: NavigationStorage> CommitNavigationBehavior for Planted<P> {
@@ -292,13 +315,6 @@ impl<P: TryContext> TryContext for Planted<P> {
 
     fn try_generate_surf_document_option_id(&mut self) -> Result<OptionId, UnmetObligation> {
         self.inner.try_generate_surf_document_option_id()
-    }
-
-    fn try_generate_surf_document_script_id(&mut self) -> Result<ScriptId, UnmetObligation> {
-        if self.same(Entity::Script) {
-            return Ok(ScriptId(same()));
-        }
-        self.inner.try_generate_surf_document_script_id()
     }
 
     fn try_generate_surf_document_submission_id(

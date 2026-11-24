@@ -1,0 +1,36 @@
+# The option is one value per session (`docs/design/scripts.md`, Q7): two sessions opened one
+# after the other, the first with `scripts` true and the second with `false`, each keep their
+# own value; `Sessions` shows both.
+type: ess-scenario/6
+domain: surf.agent
+scenario: agent-open-two-sessions-scripts-apart
+summary: Two sessions opened with scripts true and false each record their own value.
+
+timeline:
+  - at: 2026-01-06T09:00:00Z
+    command: surf.agent.OpenSession
+    actor: surf.agent.Opener
+    input:
+      session_id: 5c41e7d0-0000-4000-8000-000000000c01
+      window_id: 5c41e7d0-0000-4000-8000-000000000c02
+      tab_id: 5c41e7d0-0000-4000-8000-000000000c03
+      scripts: true
+    outcome: opened
+
+  - at: 2026-01-06T09:00:01Z
+    command: surf.agent.OpenSession
+    actor: surf.agent.Opener
+    input:
+      session_id: 5c41e7d0-0000-4000-8000-000000000c11
+      window_id: 5c41e7d0-0000-4000-8000-000000000c12
+      tab_id: 5c41e7d0-0000-4000-8000-000000000c13
+      scripts: false
+    outcome: opened
+
+assert:
+  - view: surf.agent.Sessions
+    counts: {at_least: 2, at_most: 2}
+  - view: surf.agent.Sessions
+    contains: {session_id: 5c41e7d0-0000-4000-8000-000000000c01, state: Open, scripts: true}
+  - view: surf.agent.Sessions
+    contains: {session_id: 5c41e7d0-0000-4000-8000-000000000c11, state: Open, scripts: false}

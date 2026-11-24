@@ -18,8 +18,8 @@ use ess_conformance::target::ImplementationIdentity;
 use surf::{Browser, System};
 use surf_conformance::{SurfTarget, Unanswered, admit, narrowed, run, whole_suite};
 use surf_ports::{
-    NavigatorPorts, NetPorts, RendererPorts, ShellPorts, agent_port, document_port, navigator_port,
-    net_port, renderer_port, shell_port,
+    NavigatorPorts, NetPorts, RendererPorts, ScriptIdentity, ShellPorts, add_script_end,
+    agent_port, document_port, navigator_port, net_port, renderer_port, shell_port,
 };
 use surf_types::agent::obligations::{
     NoteNavigationCommittedBehavior, NoteNavigationEndedBehavior, NoteNavigationFailedBehavior,
@@ -35,11 +35,14 @@ use surf_types::behaviour::{
     ActionStorage, DocumentStorage, ElementStorage, FormStorage, ListOptionStorage, ScriptStorage,
     SessionStorage, SubmissionStorage, TryContext,
 };
-use surf_types::document::obligations::{CheckBehavior, SelectOptionBehavior};
+use surf_types::document::obligations::{
+    AddScriptEndBehavior, CheckBehavior, SelectOptionBehavior,
+};
 use surf_types::document::{
-    Check, CheckOutcome, DocumentId, DocumentSnapshot, ElementId, ElementSnapshot, FormId,
-    FormSnapshot, ListOptionSnapshot, OptionId, ScriptErrorKind, ScriptId, ScriptReason,
-    ScriptSnapshot, SelectOption, SelectOptionOutcome, SubmissionId, SubmissionSnapshot,
+    AddScriptEnd, AddScriptEndOutcome, Check, CheckOutcome, DocumentId, DocumentSnapshot,
+    ElementId, ElementSnapshot, FormId, FormSnapshot, ListOptionSnapshot, OptionId,
+    ScriptErrorKind, ScriptId, ScriptReason, ScriptSnapshot, SelectOption, SelectOptionOutcome,
+    SubmissionId, SubmissionSnapshot,
 };
 use surf_types::net::{MediaType, RequestId};
 use surf_types::obligation::UnmetObligation;
@@ -280,6 +283,23 @@ through_obligation!(
     SelectOptionOutcome
 );
 
+/// A script's end, met over the planted storage itself, so a defect in its records stays in the
+/// path (fix round 2: `AddScriptEnd` became an obligation of the ports).
+impl<P: ScriptIdentity + DocumentStorage + ScriptStorage> AddScriptEndBehavior for Planted<P> {
+    fn add_script_end(
+        &mut self,
+        input: AddScriptEnd,
+    ) -> Result<AddScriptEndOutcome, UnmetObligation> {
+        add_script_end(self, input)
+    }
+}
+
+impl<P: ScriptIdentity> ScriptIdentity for Planted<P> {
+    fn assign_script_id(&mut self) -> Result<ScriptId, UnmetObligation> {
+        self.inner.assign_script_id()
+    }
+}
+
 impl<P: TryContext> TryContext for Planted<P> {
     fn try_caller_session_id(&self) -> Result<Option<SessionId>, UnmetObligation> {
         self.inner.try_caller_session_id()
@@ -317,10 +337,6 @@ impl<P: TryContext> TryContext for Planted<P> {
 
     fn try_generate_surf_document_option_id(&mut self) -> Result<OptionId, UnmetObligation> {
         self.inner.try_generate_surf_document_option_id()
-    }
-
-    fn try_generate_surf_document_script_id(&mut self) -> Result<ScriptId, UnmetObligation> {
-        self.inner.try_generate_surf_document_script_id()
     }
 
     fn try_generate_surf_document_submission_id(

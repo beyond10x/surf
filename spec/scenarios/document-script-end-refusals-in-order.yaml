@@ -1,0 +1,98 @@
+# The order in which `surf.document.AddScriptEnd` answers when more than one refusal holds
+# (`docs/design/scripts.md`, Q7): the input's own refusals first, so an end Q7 does not allow
+# is `invalid-end` on a document no row holds and on one already parsed, and a position below 1
+# is `invalid-position` there too; then the document's existence and its state, so a position
+# the document already holds is `already-parsed` once it is parsed. Nothing is added but the one
+# `Ran` at position 1.
+type: ess-scenario/6
+domain: surf.document
+scenario: document-script-end-refusals-in-order
+summary: AddScriptEnd answers the input's refusals before the document's existence, its state and a taken position.
+
+arrange:
+  - instance: page
+    entity: surf.document.Document
+
+timeline:
+  - at: 2026-01-08T09:00:00Z
+    command: surf.document.ParseDocument
+    input:
+      url: https://example.org/order
+      body: PHNjcmlwdD4=
+      navigation_id: 5c41e7d0-0000-4000-8000-000000000f01
+      tab_id: 5c41e7d0-0000-4000-8000-000000000f02
+    outcome: started
+    capture: {instance: page, event: surf.document.ParsingStarted, field: document_id}
+
+  - at: 2026-01-08T09:00:01Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: 5c41e7d0-0000-4000-8000-000000000fff
+      position: 1
+      end: Ran
+      reason: Eof
+    outcome: invalid-end
+    error:
+      name: surf.document.InvalidScriptEnd
+      fields: {end: Ran}
+
+  - at: 2026-01-08T09:00:02Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: 5c41e7d0-0000-4000-8000-000000000fff
+      position: 0
+      end: Ran
+    outcome: invalid-position
+    error:
+      name: surf.document.InvalidScriptPosition
+      fields: {position: 0}
+
+  - at: 2026-01-08T09:00:03Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 1
+      end: Ran
+    outcome: added
+
+  - at: 2026-01-08T09:00:04Z
+    command: surf.document.FinishParsing
+    input:
+      document_id: {$instance: page}
+      title: ""
+      encoding: UTF-8
+    outcome: parsed
+
+  - at: 2026-01-08T09:00:05Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 1
+      end: Ran
+      reason: Eof
+    outcome: invalid-end
+    error:
+      name: surf.document.InvalidScriptEnd
+      fields: {end: Ran}
+
+  - at: 2026-01-08T09:00:06Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 1
+      end: Ran
+    outcome: already-parsed
+    error:
+      name: surf.document.DocumentStateConflict
+      fields: {state: Parsed}
+
+assert:
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    counts: {at_least: 1, at_most: 1}
+  - view: surf.document.Scripts
+    params: {document_id: {$instance: page}}
+    contains: {position: 1, end: Ran, reason: null}
+  - view: surf.document.Scripts
+    params: {document_id: 5c41e7d0-0000-4000-8000-000000000fff}
+    counts: {at_least: 0, at_most: 0}

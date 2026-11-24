@@ -15,9 +15,9 @@ use surf_conformance::{
     run, whole_suite,
 };
 use surf_ports::{
-    DocumentPorts, NavigatorPorts, NetPorts, RandomSource, RendererPorts, ShellPorts, agent_port,
-    commit_navigation, document_port, navigator_port, net_port, renderer_port, shell_port,
-    traverse_history,
+    DocumentPorts, NavigatorPorts, NetPorts, RandomSource, RendererPorts, ScriptIdentity,
+    ShellPorts, add_script_end, agent_port, commit_navigation, document_port, navigator_port,
+    net_port, renderer_port, shell_port, traverse_history,
 };
 use surf_types::agent::{ActionId, SessionId};
 use surf_types::behaviour::{
@@ -25,11 +25,13 @@ use surf_types::behaviour::{
     NavigationStorage, RequestStorage, ScriptStorage, SubmissionStorage, TabStorage, TryContext,
     WindowStorage,
 };
-use surf_types::document::obligations::{CheckBehavior, SelectOptionBehavior};
+use surf_types::document::obligations::{
+    AddScriptEndBehavior, CheckBehavior, SelectOptionBehavior,
+};
 use surf_types::document::{
-    Check, CheckOutcome, DocumentId, DocumentSnapshot, ElementId, ElementSnapshot, FormId,
-    FormSnapshot, ListOptionSnapshot, OptionId, ScriptId, ScriptSnapshot, SelectOption,
-    SelectOptionOutcome, SubmissionId, SubmissionSnapshot,
+    AddScriptEnd, AddScriptEndOutcome, Check, CheckOutcome, DocumentId, DocumentSnapshot,
+    ElementId, ElementSnapshot, FormId, FormSnapshot, ListOptionSnapshot, OptionId, ScriptId,
+    ScriptSnapshot, SelectOption, SelectOptionOutcome, SubmissionId, SubmissionSnapshot,
 };
 use surf_types::navigation::obligations::{CommitNavigationBehavior, TraverseHistoryBehavior};
 use surf_types::navigation::{
@@ -189,6 +191,22 @@ impl<P: SelectOptionBehavior> SelectOptionBehavior for Mutant<P> {
     }
 }
 
+/// A script's end, met over the mutant's own storage, so its records are put with the policy.
+impl<P: ScriptIdentity + DocumentStorage + ScriptStorage> AddScriptEndBehavior for Mutant<P> {
+    fn add_script_end(
+        &mut self,
+        input: AddScriptEnd,
+    ) -> Result<AddScriptEndOutcome, UnmetObligation> {
+        add_script_end(self, input)
+    }
+}
+
+impl<P: ScriptIdentity> ScriptIdentity for Mutant<P> {
+    fn assign_script_id(&mut self) -> Result<ScriptId, UnmetObligation> {
+        self.inner.assign_script_id()
+    }
+}
+
 /// The `navigator` component's obligations for `$ty`, met over its own storage: they read and
 /// write a tab's entries through it, as the component's generated behaviours do.
 macro_rules! navigator_obligations {
@@ -265,12 +283,6 @@ macro_rules! context_through {
                 &mut self,
             ) -> Result<OptionId, UnmetObligation> {
                 self.$field.try_generate_surf_document_option_id()
-            }
-
-            fn try_generate_surf_document_script_id(
-                &mut self,
-            ) -> Result<ScriptId, UnmetObligation> {
-                self.$field.try_generate_surf_document_script_id()
             }
 
             fn try_generate_surf_document_submission_id(
