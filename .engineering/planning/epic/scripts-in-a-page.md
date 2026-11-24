@@ -7,7 +7,7 @@ title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, in the session process, against a DOM generated from Web IDL and under limits per page, when the session's option asks for it, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 45
+revision: 46
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:34:03Z", actor: "human:operator", revision: 43}
 - {from: "proposed", to: "active", at: "2026-11-24T10:34:09Z", actor: "human:operator", revision: 44}
@@ -598,6 +598,33 @@ which belongs to the session working on swell, given requirements 1 to 10 of "Th
 - S7, `surf <url>` and page scripts: option c, scripts run only in sessions of `surfd` (`surf-agent open --scripts`); `surf <url>` gets no script option until `surf` is a thin client of `surfd`, and nothing is built for it. The operator, 2026-11-22 05:48 CET, relayed by the operator session: "C: scripts only in surfd". It was not the default the epic named (a).
 - S5, privileges and limits of the session process: option a, `surfd` starts `surf-session` through `setpriv --no-new-privs` and `prlimit`, and a session with scripts is refused when either program is missing; `#![forbid(unsafe_code)]` stays in every crate. Decided by the operator session, 2026-11-24, about 11:00 CET: "S5 = A (`setpriv --no-new-privs` and `prlimit`, a session with scripts is refused when either is missing; `forbid(unsafe_code)` stays). Reason: it meets the review's second condition with no rule change. Record in the design note that seccomp and Landlock are absent and that B needs the owner's word." It was the default the epic named. The design note of `story:scripts-decisions` records both: no seccomp filter and no Landlock rule set in the first version, and option b only on the operator's word.
 - S6, the HTML Standard's definitions beside the DOM Standard's: option a, the four members `Window`'s `document`, `window`, `self` and `Document`'s `title`. Decided by the operator session, 2026-11-24, about 11:00 CET: "S6 = A (the four members). Reason: the first deliverable needs only these and B waits on swell's slice 9." It was the default the epic named.
+
+
+Decided by the coordinating agent on 2026-11-24, reversible, reported to the operator, after two
+reviews of `docs/design/scripts.md`:
+
+- The tag of swell (Q13 of the note): `story:scripts-engine-dependency` pins swell `0.8.0`, and
+  every story before `story:scripts-document-port` builds and tests on it.
+  `story:scripts-document-port`, which lets a page's scripts run in a session, waits for the
+  swell tag that holds requirement 11 (Q18 of the note) and takes that tag in its first commit.
+  Reason: swell lists copies it does not charge (`docs/plan/second-batch.md:284-285` at `0.8.0`);
+  until they are charged, the only bound on them is the session's address-space backstop.
+- Which sessions get which bound (Q11): no new privileges and no core file for every session;
+  the address-space, CPU and open-files bounds for a session opened with scripts only. Reason:
+  the decision on S5 binds a session with scripts, and a bound over a session's whole life
+  would end sessions without scripts that work today. A session keeps every document's tree
+  (`story:session-memory-bound`), so the address-space value is a chosen backstop, 4 GiB, until
+  that story is built; `story:scripts-document-port` ships with 2 GiB.
+- surf's limits are not lowered to cover a gap of swell; the gap is a requirement on swell
+  (requirement 11), handed to swell's session on 2026-11-24.
+- An unfixed finding of swell is described in this repository only as far as swell's own public
+  documents at the tag describe it; the measurement and the detail were handed to swell's
+  session and come into the note with the tag that closes the requirement.
+- The Web IDL reader's rules beyond the story's text, from two adversary passes: nested types
+  are bounded at 32 levels; an extended attribute that applies to a type is read onto the type
+  when written before an argument or a dictionary member and refused before any other member;
+  a name defined twice, a partial or a parent of the wrong kind, a cycle of parents and an
+  `includes` of the wrong kinds are refused.
 
 ## From the security review of 2026-11-22
 

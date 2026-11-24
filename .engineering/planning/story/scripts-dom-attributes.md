@@ -14,7 +14,7 @@ scope:
   path: crates/script/src/dom/attributes.rs
 - confidence: cited
   path: crates/script/tests/dom_attributes.rs
-revision: 13
+revision: 14
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 13}
 ---
@@ -50,25 +50,24 @@ note spells a word otherwise than this text, the note's spelling holds.
 
 ## Acceptance
 
-1. A named case per member, over a parsed tree, comparing the element's attributes after the
-   script with what the DOM Standard says, and each exception case named by its exception; a test
-   asserts that the set of case names equals the rows of `selection.txt` with the slice
-   `attributes`: 14.
+1. A named case per member, over a parsed tree, comparing the element's attributes after the script
+   with what the DOM Standard says, and each exception case named by its exception; a test asserts
+   that the set of case names equals the rows of `selection.txt` with the slice `attributes`: 14.
 2. `setAttribute` past the attribute limit, and past the stored-byte limit, ends the script
-   `limit: <the attribute limit's word in Q4>` (then `limit: <the stored-byte limit's word in
-   Q4>`), also inside `try { ... } catch {}`, and the element keeps its attributes.
+   `limit: attributes` (then `limit: stored-bytes`), also inside `try { ... } catch {}`, and the
+   element keeps its attributes.
 3. `a.setAttribute("href", "/next")` on an `a` of a parsed tree: the element's attribute in the
    `surf-html` tree reads `/next`; `a.setAttribute("x", { toString() { return "y" } })` sets `y`
    (the `TrustedType` deviation).
 4. A member of another slice still throws `NotSupportedError` naming the member.
 5. `slot task check` exits 0; `git diff --stat` names only the files of the Change.
-6. Public surfaces: the story changes, in its last commit and after merging `main`, every
-   public surface its change makes false, each number taken from the `slot task check` log of
-   its tip. After that commit, `git grep -n -F -e '<old>' -- README.md website/docs docs/badges`
-   prints nothing for each old string below, as the story's base holds it (the strings and lines
-   given are those of `main` at `29945f5`, 2026-11-24); each new number equals the one in that log;
-   and the gate block, `README.md:584-625` and `website/docs/how-it-is-built.md:40-81`, holds that
-   log's lines. The old strings of this story: the test count `1976 passed` (`README.md:11`,
+6. Public surfaces: the story changes, in its last commit and after merging `main`, every public
+   surface its change makes false, each number taken from the `slot task check` log of its tip.
+   After that commit, `git grep -n -F -e '<old>' -- README.md website/docs docs/badges` prints
+   nothing for each old string below, as the story's base holds it (the strings and lines given are
+   those of `main` at `29945f5`, 2026-11-24); each new number equals the one in that log; and the
+   gate block, `README.md:584-625` and `website/docs/how-it-is-built.md:40-81`, holds that log's
+   lines. The old strings of this story: the test count `1976 passed` (`README.md:11`,
    `docs/badges/make.sh:38`, `docs/badges/tests.svg`), `1,976` and `1,424, and 552`
    (`README.md:285`, `website/docs/status.md:23`, `website/docs/what-works.md:17`).
 7. The folder's bounds hold: the test step ends within 120 s and no test runs over 60 s; no model

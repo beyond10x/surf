@@ -20,7 +20,7 @@ scope:
   path: crates/script/tests/parse_run.rs
 - confidence: cited
   path: docs/design/scripts.md
-revision: 14
+revision: 20
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 ---
@@ -49,111 +49,150 @@ What exists before it, and what this story only calls:
 - the hook, which reports each script element it runs and each it skips with a word of Q1's line
   `reasons:` (`story:html-script-hook`, decision 1).
 
-The end words are the note's: the words of Q1's line `reasons:`, the `limit: <word>` and `not run:
-<word>` of Q4's column `outcome when reached`, and Q7's closed list of ends, which holds all of
-them. This story invents none; where the note spells a word otherwise than this text, the note's
-spelling holds.
-
-## Waits for the note
-
-- waits for the note: Q4, the starting values of the per-document limits (scripts per document,
-  bytes of one script's source, step total per document, wall-clock bound), the agent's limits,
-  and the column `outcome when reached`;
-- waits for the note: Q5, the thread a scripted document is parsed on, its stack size, and when
-  the agent is dropped;
-- waits for the note: Q1, the line `reasons:`; Q7, the closed list of ends.
+The end words are the closed list of ends of `docs/design/scripts.md`, Q7: `ran`;
+`threw <kind> "<message>" <line>:<column>`; `refused "<message>" <line>:<column>`;
+`limit: steps-per-script`, `limit: memory`, `limit: source-bytes`, `limit: wall-clock`,
+`limit: nodes`, `limit: depth`, `limit: attributes`, `limit: stored-bytes`; `faulted`; and
+`not run:` with each word of Q1's line `reasons:` (`empty`, `src`, `type`, `module`, `importmap`,
+`speculationrules`, `disconnected`, `nomodule`, `event`, `svg`, `inserted`, `eof`) and with
+`scripts-per-document`, `steps-per-document`, `wall-clock`, `memory` and `faulted`. They are the 23
+variants of `surf.document.ScriptReason` behind `Limit` and `NotRun` (Q7's YAML). This story
+invents none.
 
 ## Decisions taken
 
-1. `surf_script::run::parse_with_scripts(bytes, address, options, limits) -> ScriptedParse`:
-   parses with scripting enabled on the runner's thread, makes one runner with the bindings for
-   the document, runs each script element the hook hands it through the runner, and answers the
-   parsed document, the list of ends in document order (one per parser-inserted script element,
-   run or not), and the per-document limit that stopped scripts, if one did. The runner and its
-   agent are dropped when the parse ends, as Q5 says.
+1. `surf_script::run::parse_with_scripts(bytes, address, options, limits) -> ScriptedParse`: parses
+   with scripting enabled on the runner's thread, makes one runner with the bindings for the
+   document at its first script element that runs, runs each script element the hook hands it
+   through the runner, and answers the parsed document, the list of ends in the order they happened
+   (one per script element the parser reached, run or not, `eof` included, and one per element a
+   script inserted, `not run: inserted`; never two for one element; Q7's `cardinality:`), and the
+   per-document limit that stopped scripts, if one did. The runner and its agent are dropped at the
+   end of the parse, on that thread, after the tree is taken out of the host value (Q5).
 2. This story re-implements none of the runner's mechanisms: the memory end and its one
    `collect()`, the wall-clock timer, the step and script totals and the mapping of an interrupted
    entry are the runner's and `story:webidl-bindings`' (epic lines 225-229, 840), called here. Its
-   own part is the per-document policy and its tests:
-   - a skipped element the hook reports becomes the end `not run: <its word of Q1>`;
-   - scripts per document: a script past the number is not run, end `not run:
-     scripts-per-document`;
-   - source bytes: a script whose text is longer is not run, end `not run: source-bytes`; the
-     next script that fits runs;
-   - step total per document: each entry runs with the smaller of `steps_per_entry` and what is
-     left of the runner's step total; an entry that ends `Terminated(StepBudget)` on the total
-     ends `limit: steps-per-document`;
-   - wall clock per document: the runner's timer is set once for the document;
-   - after a document limit (`steps-per-document`, `wall-clock`) or the runner's stop after a
-     second memory end, every later script element ends `not run: <that word>`, and parsing goes
-     on to the end of the document. A limit of the DOM (a node, depth, attribute or stored-byte
-     limit) ends only the script that reached it: a later script of the document runs.
-3. The values of Q4 and Q5 were measured without bindings or DOM; this story measures them again
-   with both (steps per second in the test profile and in release, the heap of a realm with the
-   bindings, `Limits::min_stack_bytes()`) with probes in the session scratch directory, never
-   committed. A value holds if a script at that limit ends with that limit's end word. Where one
-   does not hold, the story changes it where it lives in code (the agent's limits, the wall-clock
-   bound and the stack in `crates/script/src/runner.rs`; the per-document limits in
-   `crates/script/src/run.rs`) and in the note's Q4 or Q5, with its `probe:` line.
+   own part is the per-document policy of `docs/design/scripts.md`, Q4, and its tests:
+   - a skipped element the hook reports becomes the end `not run: <its word of Q1>`, `not run: eof`
+     for an element the end of the input closed; an element a script inserts and connects gets the
+     end `not run: inserted`, written by the DOM write that connects it through a function of
+     `run.rs` the mutation slice calls;
+   - scripts per document, 1,000: the 1,001st script element and each later one ends
+     `not run: scripts-per-document`;
+   - bytes of one script's source, 524,288 (UTF-8, as the tree holds it): a longer script is not
+     parsed and ends `limit: source-bytes`; later scripts run;
+   - step total per document, 50,000,000, summed from `last_entry_steps()` after each script: the
+     agent's limits are fixed at `Agent::new`, so a script starts only while the total is under the
+     limit; the script whose steps take the total to it keeps its own end, and each later script
+     ends `not run: steps-per-document`;
+   - wall clock per document, 5 s from its first script's start, through the interrupt handle: the
+     running script ends `limit: wall-clock`, each later one `not run: wall-clock`;
+   - after `Terminated(MemoryBudget)` the runner calls `collect()` once; a second `limit: memory` in
+     the same document makes each later script `not run: memory`; after `faulted` each later script
+     ends `not run: faulted`;
+   - a limit of the DOM (`limit: nodes`, `limit: depth`, `limit: attributes`, `limit: stored-bytes`)
+     ends only the script that reached it, through the interrupt, so a `try` does not catch it
+     (Q4); a later script of the document runs. Parsing goes on to the end of the document after
+     every end.
+3. The agent's limits are Q4's session values: `steps_per_entry` 10,000,000, `memory_bytes`
+   67,108,864, `frame_depth` 10,000, `reentry_depth` 256, `parser_nesting` 1,000, `string_length`
+   16,777,216, `bigint_bits` 1,048,576; `eval` and `Function` are allowed. A test gives limits of
+   its own, as Q4 says; in the test profile a script runs about 1.4 million steps per second (Q4),
+   so a case of a step limit sets limits its time allows.
+4. The stack margin of Q5. The thread of a scripted document has `min_stack_bytes()` (4,006,656
+   bytes at Q4's limits) plus a margin, chosen at (`reentry_depth` + 1) × 14,336 + 1,048,576 =
+   4,732,928 bytes, 8,739,584 bytes in all. This story measures the margin with the test Q5 names,
+   `deepest_nesting_on_parse_thread`: on a thread of exactly `min_stack_bytes()` plus the margin, a
+   script whose source nests to `parser_nesting`, parsed (through `eval`) inside a call that
+   re-enters through a binding (a getter of a DOM wrapper that calls `eval`) `reentry_depth` times;
+   the margin then becomes that test's need plus a fifth, as swell rounds its own, written in
+   `crates/script/src/runner.rs` and in Q5 with its `probe:` line. A stack that overflows is not an
+   end of a script: Rust's handler of the guard page aborts the process, so a session ends in
+   `SIGABRT` and its client reads `note ended: signal SIGABRT` (Q5, Q11).
+5. The values of Q4 were measured without bindings or DOM; this story measures them again with both
+   (steps per second in the test profile and in release, the heap of a realm with the bindings,
+   whether a page with more than 1,000 scripts reaches the script count) with probes in the session
+   scratch directory, never committed. A value holds if a script at that limit ends with that
+   limit's end word. Where one does not hold, the story changes it where it lives in code (the
+   agent's limits, the wall-clock bound and the stack in `crates/script/src/runner.rs`; the
+   per-document limits in `crates/script/src/run.rs`) and in the note's Q4 or Q5, with its `probe:`
+   line.
 
 ## Change
 
-- `crates/script/src/run.rs` (new) and `crates/script/src/lib.rs`: decisions 1 and 2.
-- `crates/script/src/runner.rs`: only a value that decision 3 changes.
-- `crates/script/tests/parse_run.rs`: the module `parse_run`, declared by
-  `story:webidl-bindings`.
-- `docs/design/scripts.md`: Q4 and Q5 as decision 3 finds them, only where a value changes.
-- In the last commit, the public surfaces of acceptance 11.
+- `crates/script/src/run.rs` (new) and `crates/script/src/lib.rs`: decisions 1 to 3, the function
+  that records `not run: inserted` included.
+- `crates/script/src/runner.rs`: only a value that decision 4 or 5 changes.
+- `crates/script/tests/parse_run.rs`: the module `parse_run`, declared by `story:webidl-bindings`.
+- `docs/design/scripts.md`: Q4 and Q5 as decisions 4 and 5 find them, only where a value changes.
+- In the last commit, the public surfaces of acceptance 14.
 
 ## Acceptance
 
-1. `scripts_per_document`: with the limit 2, a page of three inline scripts `1` ends `Ran`,
-   `Ran`, `not run: scripts-per-document`, and the markup after the third is in the tree.
-2. `source_bytes`: with the limit 100, a script of 101 bytes ends `not run: source-bytes` and a
-   later script of 10 bytes ends `Ran`.
-3. `steps_per_document`: the test runs `for (let i = 0; i < 100000; i++) {}` once and reads its
+1. `scripts_per_document`: with the limit 2, a page of three inline scripts `1` ends `ran`, `ran`,
+   `not run: scripts-per-document`, and the markup after the third is in the tree.
+2. `source_bytes`: with the limit 100, a script of 101 bytes ends `limit: source-bytes` and a later
+   script of 10 bytes ends `ran`.
+3. `steps_per_document`: the test runs `{ for (let i = 0; i < 100000; i++) {} }` once and reads its
    `last_entry_steps()`; with a per-entry limit that ends none of the scripts and a document total
-   of 1.5 times that count, a page of that script three times ends `Ran`,
-   `limit: steps-per-document`, `not run: steps-per-document`, and the returned limit is
-   `steps-per-document`.
+   of 1.5 times that count, a page of that script three times ends `ran`, `ran`,
+   `not run: steps-per-document` (the second script takes the total past the limit and keeps its
+   own end), and the returned limit is `steps-per-document`.
 4. `wall_clock`: with a bound of 100 ms and step limits that end nothing first, `while (true) {}`
-   ends `limit: wall-clock`, the elapsed time under 10 s; a later script ends `not run:
-   wall-clock`; the returned limit is `wall-clock`; the markup after both is in the tree.
-5. `skipped_reasons`: a page with `<script src=a.js>`, `<script type=module>`, `<script nomodule>`
-   and an inline classic script ends `not run: src`, `not run: module`, `not run: nomodule`, `Ran`
-   (the words of Q1's line `reasons:`).
-6. `memory_twice`: under a memory limit of 1 MiB, two scripts `{ const a = []; for (;;)
-   a.push(new Array(1000)); }` and then `1` end `limit: memory`, `limit: memory`, `not run:
-   memory`; the returned limit is `memory`.
-7. `scripting_off_same_tree`: with scripting disabled, `parse_with_scripts` answers the tree
+   ends `limit: wall-clock`, the elapsed time under 10 s; a later script ends
+   `not run: wall-clock`; the returned limit is `wall-clock`; the markup after both is in the tree.
+5. `skipped_reasons`: a page holding one element per variant of the hook's `NotRun`
+   (`<script></script>`, `<script src=a.js>`, `<script type=text/template>x</script>`,
+   `<script type=module>x</script>`, `<script type=importmap>{}</script>`,
+   `<script type=speculationrules>{}</script>`, a script in `template` contents,
+   `<script nomodule>x</script>`, `<script event=onclick for=window>x</script>`, an SVG `script`)
+   and an inline classic script ends, in document order, `not run: empty`, `not run: src`,
+   `not run: type`, `not run: module`, `not run: importmap`, `not run: speculationrules`,
+   `not run: disconnected`, `not run: nomodule`, `not run: event`, `not run: svg`, `ran`.
+6. `eof_recorded`: the page `<p>a</p><script>x = 1` ends `not run: eof`, one end, and the `p` is in
+   the tree.
+7. `inserted_recorded`: the test defines on the global a host function `insertScript` that creates
+   a `script` element with text, appends it to `body` through the write surface and calls the
+   function of decision 2; a page `<script>insertScript()</script><script>1</script>` ends `ran`,
+   `not run: inserted`, `ran`, in that order of writing.
+8. `memory_twice`: under a memory limit of 1 MiB, two scripts
+   `{ const a = []; for (;;) a.push(new Array(1000)); }` and then `1` end `limit: memory`,
+   `limit: memory`, `not run: memory`; the returned limit is `memory`.
+9. `scripting_off_same_tree`: with scripting disabled, `parse_with_scripts` answers the tree
    `surf_html` parses today and no end.
-8. `dom_limit_then_next_runs`: the mutation slice comes after this story, so the test defines on the
-   global a host function `reachNodeLimit` that does what the generated glue of
-   `story:webidl-bindings` does for `DomEnd::Limit` of the node limit; a first script
-   `reachNodeLimit(); 1` ends `limit: <the node limit's word of Q4>`, also inside `try { ... }
-   catch {}`, and a later script `1` of the same document ends `Ran`.
-9. `frame_depth_on_parse_thread`: `function f(n) { return 1 + f(n + 1); } f(0)` through
-   `parse_with_scripts` at the `frame_depth` of Q4 ends `Threw` with kind `RangeError`, without a
-   crash.
-10. Decision 3: the report lists, per row of Q4 and Q5, `holds` or `<old> -> <new>` with its
-    `probe:` line; `git diff --stat` names `docs/design/scripts.md` and
+10. `dom_limit_then_next_runs`: the mutation slice comes after this story, so the test defines on
+    the global a host function `reachNodeLimit` that does what the generated glue of
+    `story:webidl-bindings` does for `DomEnd::Limit` of the node limit; a first script
+    `reachNodeLimit(); 1` ends `limit: nodes`, also inside `try { ... } catch {}`, and a later
+    script `1` of the same document ends `ran`.
+11. `frame_depth_on_parse_thread`: `function f(n) { return 1 + f(n + 1); } f(0)` through
+    `parse_with_scripts` at the `frame_depth` of Q4 ends
+    `threw RangeError "frame_depth exceeded" <line>:<column>`, without a crash.
+12. `deepest_nesting_on_parse_thread`: the test of decision 4 passes on a thread of exactly
+    `min_stack_bytes()` plus the margin the story ships, each re-entry ending as swell answers it
+    and the process alive; the report gives the test's measured need and the margin with its
+    `probe:` line, and, from a probe outside the gate, the same program on a thread below that need
+    ending `exit 134 signal ABRT`.
+13. Decisions 4 and 5: the report lists, per row of Q4 and for Q5's margin, `holds` or
+    `<old> -> <new>` with its `probe:` line; `git diff --stat` names `docs/design/scripts.md` and
     `crates/script/src/runner.rs` only if a value changed.
-11. Public surfaces: the story changes, in its last commit and after merging `main`, every
-    public surface its change makes false, each number taken from the `slot task check` log of
-    its tip. After that commit, `git grep -n -F -e '<old>' -- README.md website/docs docs/badges`
-    prints nothing for each old string below, as the story's base holds it (the strings and lines
-    given are those of `main` at `29945f5`, 2026-11-24); each new number equals the one in that log;
-    and the gate block, `README.md:584-625` and `website/docs/how-it-is-built.md:40-81`, holds that
+14. Public surfaces: the story changes, in its last commit and after merging `main`, every public
+    surface its change makes false, each number taken from the `slot task check` log of its tip.
+    After that commit, `git grep -n -F -e '<old>' -- README.md website/docs docs/badges` prints
+    nothing for each old string below, as the story's base holds it (the strings and lines given
+    are those of `main` at `29945f5`, 2026-11-24); each new number equals the one in that log; and
+    the gate block, `README.md:584-625` and `website/docs/how-it-is-built.md:40-81`, holds that
     log's lines. The old strings of this story: the test count `1976 passed` (`README.md:11`,
     `docs/badges/make.sh:38`, `docs/badges/tests.svg`), `1,976` and `1,424, and 552`
     (`README.md:285`, `website/docs/status.md:23`, `website/docs/what-works.md:17`).
-12. `slot task check` exits 0; `git diff --stat` names only the files of the Change.
-13. The folder's bounds hold: the test step ends within 120 s and no test runs over 60 s; no model
+15. `slot task check` exits 0; `git diff --stat` names only the files of the Change.
+16. The folder's bounds hold: the test step ends within 120 s and no test runs over 60 s; no model
     call and no network request in a test; each case parses a page of a few lines and makes one
-    agent; no Python, the probes of decision 3 included; a probe that only measures runs without
-    `slot`, one that builds through it; no generator with a committed output is added; a build or
-    test job in the pool ends within 10 minutes or names its time with `slot --timeout`, at most
-    30 minutes; a test over 5 s is named (`wall_clock` waits 100 ms by design).
+    agent; no Python, the probes of decisions 4 and 5 included; a probe that only measures runs
+    without `slot`, one that builds through it; no generator with a committed output is added; a
+    build or test job in the pool ends within 10 minutes or names its time with `slot --timeout`,
+    at most 30 minutes; a test over 5 s is named (`wall_clock` waits 100 ms by design;
+    `deepest_nesting_on_parse_thread` is timed and named if over 5 s).
 
 ## Out of scope
 

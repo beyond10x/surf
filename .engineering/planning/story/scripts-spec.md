@@ -53,7 +53,7 @@ scope:
   path: website/docs/principles.md
 - confidence: cited
   path: website/docs/status.md
-revision: 26
+revision: 32
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:12Z", actor: "human:operator", revision: 26}
 ---
@@ -100,27 +100,23 @@ The tree on `main` of 2026-11-24:
 ## Domain relations
 
 - `surf.document.Document` and the record of a script's end: requires-stakeholder-input; filed as
-  `decision-blocker:script-end-record`, which blocks this story. The note's Q7 proposes the answer
-  and the operator clears the blocker.
+  `decision-blocker:script-end-record`, which blocks this story. `docs/design/scripts.md`, Q7,
+  answers it with its five lines (`cardinality:`, `owner:`, `written:`, `outlives its document:`,
+  `without scripts:`): many records per document, one per script element the parser reached
+  (`not run: eof` included) and one per element a script inserted (`not run: inserted`), never two
+  for one element, each with its position from 1; owned by the document through a relation
+  `scripts`, `owns`, many, via `document_id`, as `forms` is; written while the document is
+  `Parsing`, by `surf.document.AddScriptEnd` from the parser step, before `FinishParsing`, in the
+  order the ends happened; never outliving its document; none for a document parsed without
+  scripts. The operator clears the blocker.
 - `surf.document.Element` to `surf.document.Document`, many to one: inferable,
-  `spec/domains/document.yaml`, entity `surf.document.Element`, relation `document` (line 297).
-  An element a script made is recorded as a parsed one is; nothing in this relation changes.
+  `spec/domains/document.yaml`, entity `surf.document.Element`, relation `document` (line 297). An
+  element a script made is recorded as a parsed one is; nothing in this relation changes.
 - `surf.agent.Session` and its scripting option, one per session, set by `open`, ending with the
-  session: inferable (inferred from `surf.agent.OpenCall.ca_file`, `spec/domains/agent.yaml:
-  102-119`, an `ess/1` field and its comment, no `relations:` entry; S3 and S7 of the epic's
-  "Decisions taken", lines 594 and 596).
-
-## Waits for the note
-
-- waits for the note: Q7, the YAML of the record of a script's end (entity or field, the closed
-  list of ends, command, event, outcomes, which process issues it), and the answer of
-  `decision-blocker:script-end-record`;
-- waits for the note: Q7, the option's field, type and spelling under `ess-cli/2` (a bare
-  `--scripts` is not a form the binding takes), whether the session's row records it, and what an
-  answer prints;
-- waits for the note: Q1 and Q16, the reasons a script is not run and the fields of a recorded
-  error with their bounds;
-- waits for the note: Q7, what becomes of the marker at `spec/components.yaml:429-430`.
+  session: inferable (inferred from `surf.agent.OpenCall.ca_file`,
+  `spec/domains/agent.yaml:102-119`, an `ess/1` field and its comment, no `relations:` entry; S3
+  and S7 of the epic's "Decisions taken", lines 594 and 596); Q7 records it on `surf.agent.Session`
+  as `scripts: Boolean`.
 
 ## Decisions taken
 
@@ -139,29 +135,67 @@ The tree on `main` of 2026-11-24:
    maps the new command and field, and `conformance/tests/noticed.txt` gets its new digest and
    lines from `task conform-slow WRITE=1` (`Taskfile.yml:215`).
 5. The hand-written code the generated change forces follows `ee86329`: the document port
-   implements the new behaviour as the specification says (it records the end it is given; no
-   code issues the command until `story:scripts-parse-run` and `story:scripts-document-port`),
+   implements the new behaviour as the specification says (it records the end it is given; no code
+   issues the command until `story:scripts-parse-run` and `story:scripts-document-port`),
    `DocumentBehaviors` lists it, the session's entries write every field the specification
-   declares, and a hand-written value of a new field is the option's off value until the code
-   that sets it comes with its test. The view stream changes only if Q7 puts the record or the
-   option into a view event.
+   declares, and a hand-written value of a new field is the option's off value until the code that
+   sets it comes with its test. The event `ScriptEndAdded` carries no page text (Q7); the view
+   stream changes only where the generated change of the event or of `surf.agent.Session.scripts`
+   reaches `crates/view`, as `ee86329` did.
+6. The record of a script's end is the YAML `docs/design/scripts.md`, Q7, proposes for
+   `spec/domains/document.yaml`, taken as it stands: the types `surf.document.ScriptId` (a newtype
+   of `Uuid`, minted when the record is written), `surf.document.ScriptEnd` (`Ran`, `Threw`,
+   `Refused`, `Limit`, `Faulted`, `NotRun`), `surf.document.ScriptReason` (23 variants, reached
+   through `Limit` or `NotRun` only: `Empty`, `Src`, `Type`, `Module`, `Importmap`,
+   `Speculationrules`, `Disconnected`, `Nomodule`, `Event`, `Svg`, `Inserted`, `Eof`,
+   `StepsPerScript`, `Memory`, `SourceBytes`, `WallClock`, `Nodes`, `Depth`, `Attributes`,
+   `StoredBytes`, `ScriptsPerDocument`, `StepsPerDocument`, `Faulted`, each summary its word) and
+   `surf.document.ScriptErrorKind` (`Error`, `EvalError`, `RangeError`, `ReferenceError`,
+   `SyntaxError`, `TypeError`, `UriError` with the summary `URIError`, and `Value` for a thrown
+   value that is no error object); the entity `surf.document.Script` (identity `script_id`; fields
+   `document_id`, `position`, `end`, `reason`, `error_kind`, `message`, `line`, `column`,
+   `dynamic`, all but the first three optional; lifecycle `Added`, terminal) and the relation
+   `scripts` of `surf.document.Document`; the command `surf.document.AddScriptEnd` (wire
+   `add-script-end`,
+   `refs: ["whatwg-html:prepare-the-script-element", "whatwg-html:execute-the-script-element"]`)
+   with the outcome `added`, which creates the record and emits `surf.document.ScriptEndAdded`
+   (`script_id`, `document_id`, `position`, `end`), and the outcomes `no-such-document` and
+   `already-parsed` as `AddForm` has them.
+7. A recorded error holds what Q16 reads: the kind and own `message` from `Agent::error_summary`,
+   the line and column (from 1, the column in UTF-16 code units) and `dynamic` from
+   `Agent::last_entry_error_site`; the message decoded from UTF-16 with unpaired surrogates
+   replaced and cut to its first 1,024 characters, the comment beside the field says so and that
+   the text is the page's, untrusted; nothing else of the error.
+8. The option is Q7's: `surf.agent.OpenCall` gains `scripts: Optional<Boolean>` with the comment Q7
+   gives (absent is false; only `open` takes it), `surf.agent.OpenSession`'s input and
+   `surf.agent.Session`'s fields gain `scripts: Boolean`, set by `opened`; `cli/surf-agent.yaml`,
+   path `[open]`, gains the argument `field: scripts`, `source: {kind: option, long: scripts}`. The
+   spelling is `surf-agent open --scripts true <url>`; `--scripts false` and no option are the
+   default, and a bare `--scripts` is not a form `ess-cli/2` takes (Q7).
+9. The marker at `spec/components.yaml:429-430` loses "script execution"; its new text is Q7's:
+   "UNMAPPED: no component for storage (cookies, cache, history) or input events. None is declared
+   until its first command is. Script execution is part of the document component's parser step
+   (`docs/design/scripts.md`, Q7)."
+10. What an answer prints of the record (Q7's `scripts` line and the lines after it) is not this
+    story's: `story:scripts-document-port` writes it with the code that prints it.
 
 ## Change
 
-- `spec/domains/document.yaml`: the types, the record and the command, event and outcomes of Q7.
-- `spec/domains/agent.yaml`: the field of `OpenCall` (and of `Session`, if Q7 says so), its
+- `spec/domains/document.yaml`: decisions 6 and 7 (the types, the record, the relation `scripts` of
+  `Document`, the command, event and outcomes of Q7).
+- `spec/domains/agent.yaml`: decision 8 (`OpenCall`, `OpenSession` and `Session`), with Q7's
   comment.
-- `spec/components.yaml`: the marker of lines 429-430 as Q7 says.
+- `spec/components.yaml`: the marker of lines 429-430, decision 9.
 - `spec/ess-inputs.yaml`: only if `task generate` asks for it, as `ee86329` changed it.
 - `spec/scenarios/`: decision 4.
 - `generated/rust/`: `task generate`.
-- `cli/surf-agent.yaml`, `crates/agent/tests/drift.rs`: decision 3.
+- `cli/surf-agent.yaml`, `crates/agent/tests/drift.rs`: decisions 3 and 8.
 - `conformance/src/target.rs`, `conformance/tests/noticed.txt`: decision 4.
 - `crates/ports/src`, `crates/surf/src/lib.rs`, `crates/session/src/entries.rs`,
   `crates/session/src/lib.rs`, and the constructors of changed types in `crates/ports/tests`,
   `crates/session/tests` and `crates/surf/tests`: decision 5.
-- `crates/view/examples/prototype.rs`, `crates/view/tests/json.rs`, `docs/view-stream.md`: only
-  as decision 5 says.
+- `crates/view/examples/prototype.rs`, `crates/view/tests/json.rs`, `docs/view-stream.md`: only as
+  decision 5 says.
 - In the last commit, the public surfaces of acceptance 8.
 
 ## Acceptance
@@ -169,48 +203,51 @@ The tree on `main` of 2026-11-24:
 1. `slot task validate` and `slot task generated-check` pass; `generated/rust/` changed only by
    `task generate`.
 2. The conformance reports of `slot task conform` and `slot task conform-rust` each hold at least
-   one passed scenario for every outcome of the new command and of `OpenSession` with and without
-   the option; the report lists the scenario names per outcome.
+   one passed scenario for every outcome of `surf.document.AddScriptEnd` (`added`,
+   `no-such-document`, `already-parsed`) and of `OpenSession` with `scripts` true and with it
+   false; the scenarios of `added` together record each of the six variants of `ScriptEnd`, one of
+   them `NotRun` with the reason `Eof` and one `Threw` with an error kind, a message, a line and a
+   column; the report lists the scenario names per outcome.
 3. `sh taskfiles/conform-noticed.sh check` passes, and `slot --timeout 30m task conform-slow`
    prints `.out/noticed.txt equals conformance/tests/noticed.txt`.
-4. `slot task cli` passes with the new argument of `open`; `git grep -c 'UNMAPPED:'
-   cli/surf-agent.yaml` prints one more than on the story's base (6 on `main` of 2026-11-24);
-   `drift` passes with the option in `BINDING_ONLY`.
-5. `surf-agent open` with the option exits 2 with the usage on standard error and starts no
+4. `slot task cli` passes with the new argument of `open`;
+   `git grep -c 'UNMAPPED:' cli/surf-agent.yaml` prints one more than on the story's base (6 on
+   `main` of 2026-11-24); `drift` passes with the option in `BINDING_ONLY`.
+5. `surf-agent open --scripts true <url>` exits 2 with the usage on standard error and starts no
    session (a test in `crates/agent/tests/`, module `drift` or the client's refusal module).
-6. Each new command and outcome of `spec/domains/document.yaml` and `spec/domains/agent.yaml`
-   has a `refs:` line or a comment beside it that says `deliberate deviation` (as
-   `spec/domains/document.yaml:82` and `:163` do); the report lists each
-   with the line number of its `refs:` or comment, read with `git grep -n` on the story's tip.
+6. Each new command and outcome of `spec/domains/document.yaml` and `spec/domains/agent.yaml` has a
+   `refs:` line or a comment beside it that says `deliberate deviation` (as
+   `spec/domains/document.yaml:82` and `:163` do); the report lists each with the line number of
+   its `refs:` or comment, read with `git grep -n` on the story's tip.
 7. `slot task check` exits 0 (`validate`, `conform`, `conform-rust`, `generated-check` and `cli`
    among its steps); `git diff --stat` names only the files of the Change.
-8. Public surfaces: the story changes, in its last commit and after merging `main`, every
-   public surface its change makes false, each number taken from the `slot task check` log of
-   its tip. After that commit, `git grep -n -F -e '<old>' -- README.md website/docs docs/badges`
-   prints nothing for each old string below, as the story's base holds it (the strings and lines
-   given are those of `main` at `29945f5`, 2026-11-24); each new number equals the one in that
-   log; and the gate block, `README.md:584-625` and `website/docs/how-it-is-built.md:40-81`,
-   holds that log's lines. The old strings of this story: the scenario count,
-   `203 of 203` (`README.md:10`, `docs/badges/make.sh:37`, `docs/badges/conformance.svg`,
-   `website/docs/status.md:22`), `203 scenario` (`README.md:262`, `:627`, the gate blocks,
-   `website/docs/how-it-is-built.md:83`, `website/docs/principles.md:33`), `203 specified`
-   (`README.md:283`, `website/docs/what-works.md:15`) and `(44 authored)` (the gate blocks); the
-   test count `1976 passed` (`README.md:11`, `docs/badges/make.sh:38`, `docs/badges/tests.svg`),
-   `1,976` and `1,424, and 552` (`README.md:285`, `website/docs/status.md:23`,
+8. Public surfaces: the story changes, in its last commit and after merging `main`, every public
+   surface its change makes false, each number taken from the `slot task check` log of its tip.
+   After that commit, `git grep -n -F -e '<old>' -- README.md website/docs docs/badges` prints
+   nothing for each old string below, as the story's base holds it (the strings and lines given are
+   those of `main` at `29945f5`, 2026-11-24); each new number equals the one in that log; and the
+   gate block, `README.md:584-625` and `website/docs/how-it-is-built.md:40-81`, holds that log's
+   lines. The old strings of this story: the scenario count, `203 of 203` (`README.md:10`,
+   `docs/badges/make.sh:37`, `docs/badges/conformance.svg`, `website/docs/status.md:22`),
+   `203 scenario` (`README.md:262`, `:627`, the gate blocks, `website/docs/how-it-is-built.md:83`,
+   `website/docs/principles.md:33`), `203 specified` (`README.md:283`,
+   `website/docs/what-works.md:15`) and `(44 authored)` (the gate blocks); the test count
+   `1976 passed` (`README.md:11`, `docs/badges/make.sh:38`, `docs/badges/tests.svg`), `1,976` and
+   `1,424, and 552` (`README.md:285`, `website/docs/status.md:23`,
    `website/docs/what-works.md:17`).
 9. The folder's bounds hold: the test step ends within 120 s and no test runs over 60 s; no model
-   call and no network request in a test; the synthesized specification is made once per step
-   run, not per test; no Python; the ESS output `generated/rust/` keeps its own check,
-   `generated-check`, and no other generator with a committed output is added; `task
-   conform-slow` runs in the lane `slow` because the sources changed; a build or test job in the
-   pool ends within 10 minutes or names its time with `slot --timeout`, at most 30 minutes; a test
-   over 5 s is named with its time.
+   call and no network request in a test; the synthesized specification is made once per step run,
+   not per test; no Python; the ESS output `generated/rust/` keeps its own check,
+   `generated-check`, and no other generator with a committed output is added; `task conform-slow`
+   runs in the lane `slow` because the sources changed; a build or test job in the pool ends within
+   10 minutes or names its time with `slot --timeout`, at most 30 minutes; a test over 5 s is named
+   with its time.
 
 ## Out of scope
 
 Any code that runs a script or issues the new command; the client's acceptance of the option and
-the session's use of it (`story:scripts-document-port`); the answer's grammar if Q7 adds a line
-(written with the code that prints it, in `story:scripts-document-port`).
+the session's use of it (`story:scripts-document-port`); the `scripts` line of an answer (Q7),
+which `story:scripts-document-port` writes with the code that prints it.
 
 ## Placement
 

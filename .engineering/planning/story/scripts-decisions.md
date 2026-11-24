@@ -10,7 +10,7 @@ relations:
 scope:
 - confidence: cited
   path: docs/design/scripts.md
-revision: 11
+revision: 12
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:34:04Z", actor: "human:operator", revision: 10}
 - {from: "proposed", to: "active", at: "2026-11-24T10:34:09Z", actor: "human:operator", revision: 11}
@@ -269,12 +269,12 @@ lines 180-183; swell's root `Cargo.toml` at `0.8.0` sets it in all four profiles
 section 4(d) and swell's `NOTICE` (epic lines 183-184); `TrustedType` read as `DOMString` (epic
 lines 668-669).
 
-Q18. Requirements 1 to 10 for the engine. Settled when the table of the next section stands at the
+Q18. Requirements 1 to 11 for the engine. Settled when the table of the next section stands at the
 end of the note with, for each row, its HOST ids and its status at the tag of Q13, one of `held`,
 `partly: <HOST id>`, `absent`, `no tag`, each citing its line of `conformance/host/
 requirements.txt` at the tag.
 
-## Requirements 1 to 10, as the epic's last section revised them
+## Requirements 1 to 11: 1 to 10 as the epic's last section revised them, and requirement 11
 
 | n | requirement | how the engine states it | batch | first surf story that needs it |
 |---|---|---|---|---|
@@ -288,6 +288,7 @@ requirements.txt` at the tag.
 | 8 | a host function's [[Prototype]] named or set | `Cx::set_prototype_of`, `Cx::get_prototype_of` | H1 | `webidl-bindings` |
 | 9 | a closed list of intrinsics and well-known symbols | two closed enumerations: `%Error.prototype%`, `%Function.prototype%`, `%Array.prototype.values%`, `entries`, `keys`, `forEach`; `@@toStringTag`, `@@unscopables`, `@@iterator` | H2, H3 | `webidl-bindings` |
 | 10 | stated costs of a host function, a host object and a property | constants `HOST_FUNCTION_LIVE_BYTES`, `HOST_OBJECT_LIVE_BYTES`, `PROPERTY_LIVE_BYTES`, `BINDINGS_REALM_HEAP_BYTES` and a test of 300 host functions and 40 host objects; surf's test reads the constants | H3 | `webidl-bindings` |
+| 11 | no copy that is alive while the engine calls into script is left without a charge: requirement 11 (`docs/design/scripts.md`, Q18) | status at `0.8.0`: `absent`; the engine lists such copies as open | none | `scripts-document-port` (Q13: it waits for the tag that holds it) |
 
 Beside them, as the engine narrowed HOST-70 (HOST-188 to HOST-190), and slice 10 with surf's
 requests (HOST-192, HOST-193, HOST-197 to HOST-200), which the first version does not need: no
@@ -325,7 +326,7 @@ promise exists before slice 10, so no microtask checkpoint is run; the note says
    operator on that answer, or the report names why not.
 5. Q11 quotes the decision on S5 (the operator session's, 2026-11-24) and gives each bound a
    starting value and the story that measures it again.
-6. The note ends with the 10-row table of requirements; each row's status is one of `held`,
+6. The note ends with the 11-row table of requirements; each row's status is one of `held`,
    `partly: <HOST id>`, `absent`, `no tag`, with its `requirements.txt` line at the tag. The
    story's report names the date the table was handed to the script engine's session and where
    that message is recorded.
