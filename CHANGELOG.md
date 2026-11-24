@@ -7,6 +7,38 @@ release; what came before it is in the git log and in `docs/plan/`.
 
 ## [Unreleased]
 
+### Added
+
+- `surf` loads `https:` addresses, over a TLS 1.3 client (RFC 8446) written for surf, on port
+  443 when the address names no port. The server is authenticated against the root list of
+  Mozilla as curl publishes it, built into the binary. Redirects between `http:` and `https:`
+  are followed both ways. surf does not check revocation: a revoked certificate that has not
+  expired loads.
+- An `https:` load that fails names one of five new reasons: `CertificateNotTrusted`,
+  `CertificateExpired`, `CertificateNameMismatch`, `TlsVersionUnsupported` and
+  `TlsHandshakeFailed`. surf speaks TLS 1.3 only: a server limited to TLS 1.2 ends
+  `TlsVersionUnsupported`, or, when it answers the offer of TLS 1.3 with `handshake_failure`,
+  `TlsHandshakeFailed` with the detail `the server sent handshake_failure before its
+  ServerHello; a server limited to TLS 1.2 answers this way`.
+- `surf --ca-file <path> <url>` adds the CA certificates of a PEM file to the trust anchors of
+  that load: at most 32 KiB and 64 certificates, every one a CA. A file it refuses exits 2,
+  naming the path and the error, before any connection.
+- `surf --anchors [--ca-file <path>]` prints the bundled list's count, date and sha256,
+  `anchors <n> bundled <yyyy-mm-dd> sha256:<hex>`, and with a file `anchors <m> file <path>`.
+- An agent session loads `https:`: `go` and `open` an `https:` address, `follow` and `press` an
+  `https:` target.
+- `surf-agent open [<url>] --ca-file <path>` gives the session the CA certificates of one PEM
+  file as trust anchors beside the bundled ones, for every `https:` load of the session and for
+  its life. A file it refuses exits 2 before `surfd` is started, and no session is made.
+
+### Changed
+
+- `follow` and `press` no longer refuse an `https:` target; a target of any scheme other than
+  `http:` and `https:` is still refused `unsupported-scheme`.
+- The binaries are built with ring 0.17.14, an outside library, for the cryptographic
+  primitives of TLS, and the four crates it needs; `NOTICE` names them and the root list.
+  Building surf from source needs a C compiler, which ring compiles its C and assembly with.
+
 ## [0.6.0] - 2026-11-23
 
 ### Added
