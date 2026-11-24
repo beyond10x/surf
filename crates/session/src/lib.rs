@@ -121,10 +121,10 @@
 //!
 //! - longer than [`surf_fetch::MAX_ADDRESS_BYTES`] bytes: `address-too-long`, the bound of an
 //!   address a redirect leads to ("What it keeps");
-//! - with a scheme other than `http` (`javascript:`, `mailto:`, `data:`, `file:`, `https:`):
-//!   `unsupported-scheme`. `go` still navigates to such an address: an `https:` one loads
-//!   against the session's trust anchors ("Extra trust anchors" below), any other ends with the
-//!   page line `failed UnsupportedScheme`. `follow` and `press` refuse `https:`;
+//! - with a scheme other than `http` and `https` (`javascript:`, `mailto:`, `data:`, `file:`,
+//!   `ftp:`): `unsupported-scheme`. `go` still navigates to such an address, which ends with the
+//!   page line `failed UnsupportedScheme`. An `https:` target is loaded, by `follow` and `press`
+//!   as by `go`, against the session's trust anchors ("Extra trust anchors" below);
 //! - from a document whose address is not local by its text, a target whose host is
 //!   (`host_is_local`: an IP address [`surf_fetch::is_local`] names, the rule a redirect's
 //!   destination is checked by, or `localhost` or a name under it): `forbidden-destination`. A
@@ -167,7 +167,9 @@
 //! `SubmissionAbandoned` the session answers with its word, status 1, the action recorded:
 //! `no-form-owner`, `invalid-controls`, `invalid-action`, `unsupported-enctype`,
 //! `dialog-method`; `NotSubmitButton`, `UnsupportedScheme` and `AddressTooLong`, refused before,
-//! map to `no-default-action`, `unsupported-scheme` and `address-too-long`.
+//! map to `no-default-action`, `unsupported-scheme` and `address-too-long`. An `https:` action
+//! is submitted as an `http:` one is, its request authenticated against the session's trust
+//! anchors.
 //!
 //! # Back and forward
 //!
@@ -1288,7 +1290,7 @@ impl<T: Transport> Session<T> {
         if url.len() > surf_fetch::MAX_ADDRESS_BYTES {
             return Ok(self.with_state(RefusalReason::AddressTooLong));
         }
-        if target.scheme() != "http" {
+        if !matches!(target.scheme(), "http" | "https") {
             return Ok(self.with_state(RefusalReason::UnsupportedScheme));
         }
         if from_public && host_is_local(target) {
@@ -1545,7 +1547,7 @@ impl<T: Transport> Session<T> {
                 if address.len() > surf_fetch::MAX_ADDRESS_BYTES {
                     return Ok(self.with_state(RefusalReason::AddressTooLong));
                 }
-                if action.scheme() != "http" {
+                if !matches!(action.scheme(), "http" | "https") {
                     return Ok(self.with_state(RefusalReason::UnsupportedScheme));
                 }
                 if from_public && host_is_local(action) {

@@ -5,6 +5,12 @@
 //! port 0 with the certificates of `crates/tls-test-certs/certs/`, on the system clock (the
 //! certificates run to 2125, `expired` ended in 2001). Case 5, the files the client refuses, is
 //! the module `ca_file` of the tests of `surf-agent`.
+//!
+//! Statements 1 to 6 of `story:session-follow-press-https` (the tests `follow_press_case_<n>_*`):
+//! inside such a session `follow` and `press` load `https:` targets through the session's
+//! anchors, and every scheme but `http:` and `https:` stays `unsupported-scheme`. The pages of
+//! a TLS server are fixed before it binds its port, so a link or an action to the same server
+//! is relative.
 
 #![forbid(unsafe_code)]
 
@@ -16,7 +22,9 @@ use std::net::TcpStream;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use common::{Opened, TestDir, agent, agent_call, cmdline, contains, opened, run, stderr, stdout};
+use common::{
+    Opened, PageServer, TestDir, agent, agent_call, cmdline, contains, opened, run, stderr, stdout,
+};
 use surf_tls_test_server::{Config, Mode, Response, TestServer, certs_dir};
 
 /// The body every server of these cases answers `/` with: HTML without a title, so that the
@@ -319,4 +327,262 @@ fn view_get(dir: &TestDir, target: &str) -> String {
     );
     let at = answer.find("\r\n\r\n").expect("a head") + 4;
     answer[at..].to_string()
+}
+
+// --- story:session-follow-press-https ---------------------------------------------------------
+
+/// How long a case waits for a TLS server to end the connections it expects.
+const SEEN_WITHIN: Duration = Duration::from_secs(10);
+
+/// The page a link or a form of these cases leads to: HTML without a title, like [`BODY`].
+const NEXT: &str = "<!doctype html><p>next</p>";
+
+/// The TLS test server of the certificate case `case` in [`Mode::Normal`], answering each path
+/// of `pages` with 200 `text/html` and its body, any other path 404.
+fn tls_pages(case: &str, pages: &[(&str, &str)]) -> TestServer {
+    let mut config = Config {
+        case: case.to_string(),
+        ..Config::default()
+    };
+    config.responses.clear();
+    for (path, body) in pages {
+        config.responses.insert(
+            (*path).to_string(),
+            Response {
+                status: 200,
+                reason: "OK".to_string(),
+                fields: vec![("Content-Type".to_string(), "text/html".to_string())],
+                body: body.as_bytes().to_vec(),
+            },
+        );
+    }
+    TestServer::start(config).expect("the TLS test server starts")
+}
+
+/// `surf-agent <words>` as the holder of `session`: its exit status and its answer.
+fn call(dir: &TestDir, session: &Opened, words: &[&str]) -> (Option<i32>, String) {
+    let output = agent_call(dir, words, &session.id, &session.token);
+    (output.status.code(), stdout(&output))
+}
+
+/// A session opened with the root of `ok-ecdsa-p256` as its `--ca-file`, on `start`.
+fn trusting_at(dir: &TestDir, start: &str) -> Opened {
+    let session = open(dir, Some(&root("ok-ecdsa-p256")));
+    let answer = go(dir, &session, start);
+    assert_eq!(page_line(&answer), loaded(start), "{answer}");
+    session
+}
+
+/// The `now` line of `handle` in an answer.
+fn now_line<'a>(answer: &'a str, handle: &str) -> &'a str {
+    let start = format!("  {handle} ");
+    answer
+        .lines()
+        .find(|line| line.starts_with(&start))
+        .unwrap_or_else(|| panic!("no now line of {handle} in:\n{answer}"))
+}
+
+/// The request lines of the connections a server ended, waiting for `count` of them.
+fn request_lines(server: &TestServer, count: usize) -> Vec<String> {
+    server
+        .wait_seen(count, SEEN_WITHIN)
+        .into_iter()
+        .filter_map(|seen| seen.request)
+        .collect()
+}
+
+/// Statement 1: a relative link on an `https:` page is followed through the session's anchors.
+#[test]
+fn follow_press_case_1_follow_loads_a_relative_https_link() {
+    let dir = TestDir::new();
+    let server = tls_pages(
+        "ok-ecdsa-p256",
+        &[
+            ("/", "<!doctype html><a href=\"/next\">Next</a>"),
+            ("/next", NEXT),
+        ],
+    );
+    let start = address(&server);
+    let session = trusting_at(&dir, &start);
+    let (status, answer) = call(&dir, &session, &["follow", "l1"]);
+    assert_eq!(status, Some(0), "{answer}");
+    assert!(answer.contains("\ndid follow \"l1\"\n"), "{answer}");
+    assert_eq!(
+        page_line(&answer),
+        loaded(&format!("{start}next")),
+        "{answer}"
+    );
+    assert_eq!(
+        request_lines(&server, 2),
+        vec![
+            "GET / HTTP/1.1".to_string(),
+            "GET /next HTTP/1.1".to_string()
+        ]
+    );
+}
+
+/// Statement 2: a form of `method=post` with the relative action `/send` is sent with the value
+/// filled; the server reads one `POST /send` with the body `q=blue`.
+#[test]
+fn follow_press_case_2_press_posts_a_form_to_a_relative_https_action() {
+    let dir = TestDir::new();
+    let server = tls_pages(
+        "ok-ecdsa-p256",
+        &[
+            (
+                "/",
+                "<!doctype html><form method=post action=/send><input name=q>\
+                 <button>Send</button></form>",
+            ),
+            ("/send", NEXT),
+        ],
+    );
+    let start = address(&server);
+    let session = trusting_at(&dir, &start);
+    let (status, answer) = call(&dir, &session, &["fill", "f1", "blue"]);
+    assert_eq!(status, Some(0), "{answer}");
+    let (status, answer) = call(&dir, &session, &["press", "b1"]);
+    assert_eq!(status, Some(0), "{answer}");
+    assert!(answer.contains("\ndid press \"b1\"\n"), "{answer}");
+    assert_eq!(
+        page_line(&answer),
+        loaded(&format!("{start}send")),
+        "{answer}"
+    );
+    let seen = server.wait_seen(2, SEEN_WITHIN);
+    let posts: Vec<_> = seen
+        .iter()
+        .filter(|seen| seen.request.as_deref() == Some("POST /send HTTP/1.1"))
+        .collect();
+    assert_eq!(posts.len(), 1, "one POST /send: {seen:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&posts[0].body),
+        "q=blue",
+        "{seen:?}"
+    );
+}
+
+/// Statement 3: a link to a server whose chain leads to no anchor of the session fails
+/// `CertificateNotTrusted`, and `look` shows the page line of that last navigation.
+#[test]
+fn follow_press_case_3_a_link_to_an_untrusted_server_fails_certificate_not_trusted() {
+    let dir = TestDir::new();
+    let untrusted = server("untrusted-root", Mode::Normal);
+    let other = address(&untrusted);
+    let server = tls_pages(
+        "ok-ecdsa-p256",
+        &[(
+            "/",
+            &format!("<!doctype html><a href=\"{other}\">Other</a>"),
+        )],
+    );
+    let session = trusting_at(&dir, &address(&server));
+    let (status, answer) = call(&dir, &session, &["follow", "l1"]);
+    assert_eq!(status, Some(0), "{answer}");
+    let failed_line = failed("CertificateNotTrusted", &other);
+    assert_eq!(page_line(&answer), failed_line, "{answer}");
+    let (status, look) = call(&dir, &session, &["look"]);
+    assert_eq!(status, Some(0), "{look}");
+    assert_eq!(page_line(&look), failed_line, "{look}");
+    assert_eq!(
+        untrusted.accepted(),
+        1,
+        "the link reached the second server"
+    );
+}
+
+/// Statement 4: from an `http:` page, in a session opened without `--ca-file`, a link to the
+/// TLS server is followed and fails `CertificateNotTrusted` (the bundled anchors alone).
+#[test]
+fn follow_press_case_4_without_ca_file_an_https_link_fails_certificate_not_trusted() {
+    let dir = TestDir::new();
+    let tls = server("ok-ecdsa-p256", Mode::Normal);
+    let target = address(&tls);
+    let plain = PageServer::with_body(
+        format!("<!doctype html><a href=\"{target}\">Secure</a>").into_bytes(),
+    );
+    let session = open(&dir, None);
+    let start = plain.url("/");
+    let answer = go(&dir, &session, &start);
+    assert_eq!(page_line(&answer), loaded(&start), "{answer}");
+    let (status, answer) = call(&dir, &session, &["follow", "l1"]);
+    assert_eq!(status, Some(0), "{answer}");
+    assert_eq!(
+        page_line(&answer),
+        failed("CertificateNotTrusted", &target),
+        "{answer}"
+    );
+    assert_eq!(tls.accepted(), 1, "the link reached the TLS server");
+}
+
+/// Statement 5: from an `https:` page, a link to an `http:` page is followed.
+#[test]
+fn follow_press_case_5_from_an_https_page_an_http_link_is_followed() {
+    let dir = TestDir::new();
+    let plain = PageServer::start();
+    let target = plain.url("/plain");
+    let server = tls_pages(
+        "ok-ecdsa-p256",
+        &[(
+            "/",
+            &format!("<!doctype html><a href=\"{target}\">Plain</a>"),
+        )],
+    );
+    let session = trusting_at(&dir, &address(&server));
+    let (status, answer) = call(&dir, &session, &["follow", "l1"]);
+    assert_eq!(status, Some(0), "{answer}");
+    assert_eq!(page_line(&answer), loaded(&target), "{answer}");
+}
+
+/// Statement 6: on an `https:` page every other scheme stays `unsupported-scheme`, for a link
+/// and for a form's action, with nothing requested.
+#[test]
+fn follow_press_case_6_every_scheme_but_http_and_https_is_refused_unsupported_scheme() {
+    let dir = TestDir::new();
+    let hrefs = [
+        "javascript:void(0)",
+        "mailto:a@example.test",
+        "data:text/plain,x",
+        "file:///etc/hostname",
+        "ftp://127.0.0.1/x",
+    ];
+    let mut page = String::from("<!doctype html>");
+    for href in hrefs {
+        page.push_str(&format!("<a href=\"{href}\">x</a>"));
+    }
+    page.push_str(
+        "<form method=post action=\"ftp://127.0.0.1/x\"><input name=q value=1>\
+         <button>Send</button></form>",
+    );
+    let server = tls_pages("ok-ecdsa-p256", &[("/", &page)]);
+    let start = address(&server);
+    let session = trusting_at(&dir, &start);
+    let (_, look) = call(&dir, &session, &["look"]);
+    for (at, href) in hrefs.iter().enumerate() {
+        let handle = format!("l{}", at + 1);
+        let scheme = &href[..=href.find(':').expect("a scheme")];
+        assert!(
+            now_line(&look, &handle).contains(&format!("\"{scheme}")),
+            "{handle} is {href}: {look}"
+        );
+        let (status, answer) = call(&dir, &session, &["follow", &handle]);
+        assert_eq!(status, Some(1), "{href}: {answer}");
+        assert!(
+            answer.contains("\ndid refused unsupported-scheme\n"),
+            "{href}: {answer}"
+        );
+        assert_eq!(page_line(&answer), loaded(&start), "{href}: {answer}");
+    }
+    assert!(
+        now_line(&look, "b1").contains("\"ftp://127.0.0.1/x\""),
+        "{look}"
+    );
+    let (status, answer) = call(&dir, &session, &["press", "b1"]);
+    assert_eq!(status, Some(1), "{answer}");
+    assert!(
+        answer.contains("\ndid refused unsupported-scheme\n"),
+        "{answer}"
+    );
+    assert_eq!(page_line(&answer), loaded(&start), "{answer}");
+    assert_eq!(server.accepted(), 1, "only the page itself was requested");
 }

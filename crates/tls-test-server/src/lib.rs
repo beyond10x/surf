@@ -13,7 +13,7 @@
 //! response without `close_notify`.
 //!
 //! What the server saw and did on each connection is read back with [`TestServer::wait_seen`]
-//! ([`Seen`]). A connection whose client sends nothing for [`IDLE`] is closed. Dropping the
+//! ([`Seen`], with the request line and the request's body). A connection whose client sends nothing for [`IDLE`] is closed. Dropping the
 //! server stops every connection and joins every thread it started; when the connection that
 //! wakes the accepting thread cannot be made (no file descriptor left), the drop returns
 //! without joining and the end of the process ends that thread.
@@ -208,6 +208,9 @@ pub struct Seen {
     pub ticket_sent: bool,
     /// The request line read.
     pub request: Option<String>,
+    /// The body of the request: the `Content-Length` bytes after its head (none without that
+    /// field), within the server's bound of a request.
+    pub body: Vec<u8>,
     /// Every record read after the client's Finished, in order.
     pub after_handshake: Vec<Received>,
     /// Every alert the client sent, in order.
