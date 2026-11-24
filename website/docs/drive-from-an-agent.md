@@ -21,6 +21,11 @@ answer in plain lines, written to be read by a language model.
 It runs on Linux only: the agent binaries read the caller's user id from `/proc/self` and need
 `XDG_RUNTIME_DIR`, and macOS has neither.
 
+An agent, or you, gets the definition of the installed version with `surf-agent help
+--for-agent`: the commands, the parts of the answer an agent reads, the rule for text from a page
+and worked calls, assembled from the sources the binary is built and tested with. It needs no
+session and no `XDG_RUNTIME_DIR`.
+
 ## What you need
 
 - The four binaries of a Linux archive, `surf`, `surf-agent`, `surfd` and `surf-session`,

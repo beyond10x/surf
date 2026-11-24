@@ -221,8 +221,10 @@ jobs:
           # `https:` address, and `surf --anchors` against crates/tls/src/anchors/SOURCE; on
           # Linux, in a private XDG_RUNTIME_DIR, `surf-agent open`, `go`, `look` and `close` on
           # a local page through the unpacked `surfd` and `surf-session`
-          # (crates/session/tests/e2e.rs), then no process left from the directory. The same
-          # script runs on a workstation.
+          # (crates/session/tests/e2e.rs), then no process left from the directory, then
+          # `surf-agent help --for-agent` in an empty environment: exit 0, a final line feed, the
+          # version of the directory's name in its first line. The same script runs on a
+          # workstation.
           sh taskfiles/release-smoke.sh "$check/$ARCHIVE-$VERSION-$TARGET" "$TARGET"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

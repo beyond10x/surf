@@ -32,6 +32,10 @@
 # 3. Linux only: the end-to-end case of the session process (crates/session/tests/e2e.rs) on the
 #    directory's `surf-agent`, `surfd` and `surf-session`, in a private XDG_RUNTIME_DIR; then no
 #    process whose arguments start with the directory may still run.
+# 4. Linux only: `surf-agent help --for-agent`, in an empty environment, exits 0, its first line
+#    is `surf-agent <version>: a definition for agents` with the <version> of the directory's
+#    name, its last line `end of the definition`, and it ends with a line feed
+#    (story:agent-skill-definition); it prints how many lines the definition has.
 
 set -eu
 
@@ -244,4 +248,29 @@ if [ -n "$left" ]; then
   exit 1
 fi
 echo "release-smoke: no process from $dir runs"
+
+# 4. The definition for agents, which the binary assembles from the sources compiled into it, in
+# an empty environment. The version of its first line is the one of the directory's name
+# `surf-<version>-<arch>-unknown-linux-<abi>`, a pre-release version included. The `x` after
+# the output keeps its last line feed from the command substitution, so a definition without one
+# fails.
+version=$(basename "$dir" | sed -n 's/^surf-\(.*\)-[a-z0-9_]*-unknown-linux-[a-z]*$/\1/p')
+[ -n "$version" ] ||
+  fail "$(basename "$dir") is not named surf-<version>-<arch>-unknown-linux-<abi>"
+status=0
+out=$(env -i "$dir/surf-agent" help --for-agent && printf x) || status=$?
+[ "$status" = 0 ] || fail "surf-agent help --for-agent exited $status, not 0"
+case "$out" in
+  *'
+x') out=${out%x} ;;
+  *) fail "surf-agent help --for-agent does not end with a line feed" ;;
+esac
+first=$(printf '%s' "$out" | sed -n 1p)
+[ "$first" = "surf-agent $version: a definition for agents" ] ||
+  fail "surf-agent help --for-agent printed the first line: $first" \
+    "(expected surf-agent $version: a definition for agents)"
+last=$(printf '%s' "$out" | sed -n '$p')
+[ "$last" = "end of the definition" ] ||
+  fail "surf-agent help --for-agent printed the last line: $last"
+echo "release-smoke: surf-agent help --for-agent prints $(printf '%s' "$out" | wc -l | tr -d ' ') lines"
 echo "release-smoke: ok, surf, surf-agent, surfd and surf-session on Linux"

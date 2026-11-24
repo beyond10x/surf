@@ -53,13 +53,13 @@ generated/rust matches spec/ (30 artifact(s) and .ess-output)
 cli/surf-agent.yaml — valid CLI presentation binding
 10 CLI artifact(s), generated in .out/cli
 Cargo.lock: 50 package(s), 19 from outside this repository, each on the allow-list
-test-layout: 24 test directories, 185 test files, one test binary each
+test-layout: 24 test directories, 187 test files, one test binary each
 tls-certs: 33 cases, certs/ matches its sources
 tls-flights: 6 recordings match SOURCE, the recorder matches DIGEST
 tls-flights: self-test: a changed copy of aes128-x25519-ecdsa.bin fails naming it
 doc-tests-check: no doc test outside crates/ports
     Finished `dev` profile [unoptimized] target(s) in 0.03s
-1408 tests: 1408 passed, 0 failed, 0 ignored (cargo-nextest 1406, doc tests 2)
+1424 tests: 1424 passed, 0 failed, 0 ignored (cargo-nextest 1422, doc tests 2)
 test step: 10.8 s of its budget of 120 s
 552 tests: 552 passed, 0 failed, 0 ignored (cargo-nextest 552)
 tls test step: 2.8 s of its budget of 120 s
