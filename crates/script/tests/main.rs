@@ -10,6 +10,7 @@ mod adversary_4;
 mod adversary_5;
 mod adversary_6;
 mod adversary_checkpoint;
+mod adversary_checkpoint_2;
 mod bindings;
 mod dom_attributes;
 mod dom_mutation;
