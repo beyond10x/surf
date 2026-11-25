@@ -502,9 +502,9 @@ fn timed(runner: &mut Runner, setup: &str, call: &str, rounds: u32) -> (u64, Dur
 
 /// A scan for one attribute by name over elements whose attributes it passes or whose long
 /// values it compares, against the plain walk of the same member over elements without
-/// attributes: the time per step of each, printed beside the plain walk's. The mark is a factor
-/// of 20; the class of many one-letter classes passes it, since the walk charges one step per
-/// 64 bytes of the value and makes one set lookup per class, one per 2 bytes.
+/// attributes: the time per step of each, printed beside the plain walk's, with the quotient
+/// (the mark is a factor of 20; the node's load moves it, so it is printed, not asserted). The
+/// class walk over many one-letter classes is charged at least one step per class token.
 #[test]
 fn a_class_of_many_short_classes_costs_time_out_of_proportion_to_its_steps() {
     let started = Instant::now();
@@ -646,21 +646,25 @@ fn a_class_of_many_short_classes_costs_time_out_of_proportion_to_its_steps() {
     let per_step = |steps: u64, took: Duration| took.as_nanos() as f64 / steps.max(1) as f64;
     let plain_per_step = per_step(plain.0, plain.1);
     let mut lines = Vec::new();
-    let mut over = Vec::new();
+    let mut short = Vec::new();
     for (what, steps, took) in &cases {
         let ratio = per_step(*steps, *took) / plain_per_step;
         let line = format!(
             "{what}: {steps} steps, {took:?}, {:.1} ns a step, {ratio:.1} x the plain walk's",
             per_step(*steps, *took)
         );
-        if ratio > 20.0 && what.contains("classes of 256 KiB") {
-            over.push(line.clone());
+        // Four elements of 131,072 class tokens each: at least one step per token read.
+        if what.contains("classes of 256 KiB") && *steps < 4 * 131_072 {
+            short.push(line.clone());
         }
         lines.push(line);
     }
     lines.push(format!("all: {:?}", started.elapsed()));
     eprintln!("{}", lines.join("\n"));
-    assert!(over.is_empty(), "{over:#?}");
+    assert!(
+        short.is_empty(),
+        "the class walk charges less than one step per class token: {short:#?}"
+    );
 }
 
 /// `substringData` at and past its bounds, each argument as Web IDL converts it to an

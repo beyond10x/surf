@@ -1859,10 +1859,10 @@ fn steps_in_proportion() {
 
 /// A member charges the attributes it reads, before it reads them. A scan for attributes by
 /// name (`getElementById` for `id`, `getElementsByClassName` for `class`, `namedItem` for `id`
-/// and `name`, `baseURI`'s walk for `href`) charges one step per 64 attributes it passes and one
+/// and `name`, `baseURI`'s walk for `href`) charges one step per 4 attributes it passes and one
 /// per 64 bytes of each value of those names, and nothing for the bytes of the others. A compare
-/// of whole lists (`isEqualNode`) or a scan by value (`lookupPrefix`) charges every attribute's
-/// bytes. Values of 128,000 bytes against 64, and 640 attributes against 2.
+/// of whole lists (`isEqualNode`) charges every attribute's bytes. Values of 128,000 bytes
+/// against 64, and 640 attributes against 2.
 #[test]
 fn attributes_are_charged_where_they_are_read() {
     let spent = |page: String, read: &str| {
@@ -1892,7 +1892,6 @@ fn attributes_are_charged_where_they_are_read() {
         ),
         ("namedItem", "all.namedItem(\"none\");"),
         ("isEqualNode", "a.isEqualNode(b);"),
-        ("lookupPrefix", "a.lookupPrefix(\"urn:x\");"),
     ] {
         let (long, short) = (spent(read(128_000), source), spent(read(64), source));
         eprintln!("{name}: a value it reads of 128,000 bytes {long} steps, of 64 bytes {short}");
@@ -1926,6 +1925,37 @@ fn attributes_are_charged_where_they_are_read() {
         let (more, few) = (spent(many(640), source), spent(many(0), source));
         eprintln!("{name}: 640 attributes {more} steps, 2 {few}");
         assert!(more >= few + 10, "{name}: {more} against {few}");
+    }
+}
+
+/// The namespace lookups charge the `xmlns` values they read: `lookupNamespaceURI(prefix)` the
+/// one it finds by name, `lookupPrefix(namespace)` each it compares, one step per 64 bytes
+/// before the read; a value of another attribute is not read and costs nothing. An `svg`
+/// element's `xmlns:xlink` (the parser gives it the `xmlns` namespace) of 128,000 bytes against
+/// 64, and a `data-x` of the same lengths.
+#[test]
+fn the_lookups_charge_the_xmlns_values_they_read() {
+    let spent = |attribute: &str, bytes: usize, read: &str| {
+        let value = "x".repeat(bytes);
+        let page = format!("<svg {attribute}=\"urn:{value}\"><g></g></svg>");
+        with_page(limits(), page, info(), |runner| {
+            ran(runner, "var g = document.getElementsByTagName(\"g\")[0];");
+            steps(runner, read)
+        })
+    };
+    for (name, read) in [
+        ("lookupNamespaceURI", "g.lookupNamespaceURI(\"xlink\");"),
+        ("lookupPrefix", "g.lookupPrefix(\"urn:none\");"),
+    ] {
+        let (long, short) = (
+            spent("xmlns:xlink", 128_000, read),
+            spent("xmlns:xlink", 64, read),
+        );
+        eprintln!("{name}: an xmlns value of 128,000 bytes {long} steps, of 64 bytes {short}");
+        assert!(long >= short + 1_000, "{name}: {long} against {short}");
+        let (long, short) = (spent("data-x", 128_000, read), spent("data-x", 64, read));
+        eprintln!("{name}: another value of 128,000 bytes {long} steps, of 64 bytes {short}");
+        assert!(long < short + 10, "{name}: {long} against {short}");
     }
 }
 

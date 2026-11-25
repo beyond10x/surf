@@ -6,10 +6,11 @@
 //! charges one step per node it visits and one per 64 bytes of a String it builds, before the
 //! work, so a script over a large tree ends at its step limit and not at the wall clock. The
 //! walks keep their own list of nodes, so a deep tree does not deepen the call stack. A member
-//! that looks for attributes by name charges one step per 64 attributes it passes and one per 64
-//! bytes of each value it reads or compares; one that reads attributes whole (a compare of two
-//! lists, a scan by value) charges one step per attribute and per 64 bytes of their names and
-//! values. Either is linear in what it charges.
+//! that looks for an attribute by name charges one step per 4 attributes it passes, from the
+//! list's length before its one pass, and one per 64 bytes of each value it reads or compares;
+//! the class walk also one per class token. One that reads attributes whole (a compare of two
+//! lists) charges one step per attribute and per 64 bytes of their names and values. So a step
+//! buys a bounded piece of work: a few name compares, a token's lookup, 64 bytes compared.
 //!
 //! Strings. A String a member answers with more UTF-16 code units than the agent's
 //! `string_length` is the realm's `RangeError`; the bindings check every answer before the
@@ -169,15 +170,19 @@ impl SurfReading {
     /// longer than the URL parser reads, or gives a `data` or `javascript` URL gives the address.
     fn base_url(&self, cx: &mut DomCx<'_, '_>) -> DomResult<String> {
         let root = cx.tree().root();
-        // The walk passes the attributes' names; the one `href` it reads is charged below.
-        let base = find(cx, root, Reads::Named(&[]), |tree, node| {
-            html_element(tree, node, "base") && attribute(tree, node, "href").is_some()
+        // The walk finds `href` by name without reading it; the one it reads is charged before
+        // it is copied.
+        let base = find(cx, root, Reads::Name("href"), |tree, node, at| {
+            at.is_some() && html_element(tree, node, "base")
         })?;
-        let href = base.and_then(|base| attribute(cx.tree(), base, "href").map(str::to_string));
-        let Some(href) = href else {
+        let Some(base) = base else {
             return Ok(self.info.address.href());
         };
-        charge(cx, href.len() / 64)?;
+        let at = scan_for(cx, base, Reads::Value("href"))?;
+        let Some(at) = at else {
+            return Ok(self.info.address.href());
+        };
+        let href = value_at(cx.tree(), base, at).to_string();
         // HTML, "set the frozen base URL": a href that does not parse, or parses to a URL whose
         // scheme is `data` or `javascript`, gives the fallback base URL; a later `base` is not
         // read instead.
@@ -293,22 +298,6 @@ fn html_element(tree: &Tree, node: NodeId, name: &str) -> bool {
     matches!(tree.data(node), NodeData::Element { namespace: Namespace::Html, local_name, .. } if local_name == name)
 }
 
-/// The value of `node`'s attribute `name` in no namespace, if it is an element with one.
-fn attribute<'t>(tree: &'t Tree, node: NodeId, name: &str) -> Option<&'t str> {
-    match tree.data(node) {
-        NodeData::Element { attributes, .. } => attributes
-            .iter()
-            .find(|attribute| attribute.namespace.is_none() && attribute.local_name == name)
-            .map(|attribute| attribute.value.as_str()),
-        NodeData::Document
-        | NodeData::DocumentFragment
-        | NodeData::Doctype { .. }
-        | NodeData::Text(_)
-        | NodeData::Comment(_)
-        | NodeData::ProcessingInstruction { .. } => None,
-    }
-}
-
 /// The data of character data: a text's, a comment's or a processing instruction's.
 fn character_data(tree: &Tree, node: NodeId) -> Option<&str> {
     match tree.data(node) {
@@ -326,26 +315,25 @@ fn character_data(tree: &Tree, node: NodeId) -> Option<&str> {
 enum Reads {
     /// The node's kind and names only: one step a node.
     Names,
-    /// Also the attributes of the given names, found by name: one step a node, plus
-    /// [`named_steps`].
-    Named(&'static [&'static str]),
+    /// Also the attribute of a name, found by name and its value not read: one step per 4
+    /// attributes of the element, from the list's length, before the one pass that finds it.
+    Name(&'static str),
+    /// As `Name`, and the value of the attribute found is read or compared: one step per 64
+    /// bytes of it, before it is read.
+    Value(&'static str),
+    /// As `Value` for `class`, and one step per class token of the value, before the first
+    /// token is looked up; the pass that counts the tokens is paid by the bytes' charge.
+    Classes,
 }
 
-/// The steps of a scan of `node`'s attributes for those of `names` in no namespace: one per 64
-/// attributes passed, and one per 64 bytes of each value of those names, which the scan reads or
-/// compares. The bytes of the other attributes are not read and not charged.
-fn named_steps(tree: &Tree, node: NodeId, names: &[&str]) -> usize {
+/// The step of passing attributes in a scan for one by name: one per 4 attributes, so that a
+/// step buys a bounded number of name compares.
+const ATTRIBUTES_A_STEP: usize = 4;
+
+/// The number of attributes of `node`, 0 for a node that is no element.
+fn attribute_count(tree: &Tree, node: NodeId) -> usize {
     match tree.data(node) {
-        NodeData::Element { attributes, .. } => {
-            let values: usize = attributes
-                .iter()
-                .filter(|attribute| {
-                    attribute.namespace.is_none() && names.contains(&attribute.local_name.as_str())
-                })
-                .map(|attribute| attribute.value.len() / 64)
-                .sum();
-            attributes.len() / 64 + values
-        }
+        NodeData::Element { attributes, .. } => attributes.len(),
         NodeData::Document
         | NodeData::DocumentFragment
         | NodeData::Doctype { .. }
@@ -353,6 +341,63 @@ fn named_steps(tree: &Tree, node: NodeId, names: &[&str]) -> usize {
         | NodeData::Comment(_)
         | NodeData::ProcessingInstruction { .. } => 0,
     }
+}
+
+/// The positions in `node`'s attribute list of the attributes `names` in no namespace, found in
+/// one pass over the list.
+fn positions<const N: usize>(tree: &Tree, node: NodeId, names: [&str; N]) -> [Option<usize>; N] {
+    let mut found = [None; N];
+    if let NodeData::Element { attributes, .. } = tree.data(node) {
+        for (at, attribute) in attributes.iter().enumerate() {
+            if attribute.namespace.is_some() {
+                continue;
+            }
+            for (slot, name) in found.iter_mut().zip(names) {
+                if slot.is_none() && attribute.local_name == name {
+                    *slot = Some(at);
+                }
+            }
+        }
+    }
+    found
+}
+
+/// The value of the attribute at `at` of `node`'s list, as [`positions`] found it.
+fn value_at(tree: &Tree, node: NodeId, at: usize) -> &str {
+    match tree.data(node) {
+        NodeData::Element { attributes, .. } => attributes
+            .get(at)
+            .map_or("", |attribute| attribute.value.as_str()),
+        NodeData::Document
+        | NodeData::DocumentFragment
+        | NodeData::Doctype { .. }
+        | NodeData::Text(_)
+        | NodeData::Comment(_)
+        | NodeData::ProcessingInstruction { .. } => "",
+    }
+}
+
+/// Charges the scan of `node`'s attributes for `name`, finds it in one pass, and charges what
+/// `reads` reads of its value: the position found.
+fn scan_for(cx: &mut DomCx<'_, '_>, node: NodeId, reads: Reads) -> DomResult<Option<usize>> {
+    let (name, value, tokens) = match reads {
+        Reads::Names => return Ok(None),
+        Reads::Name(name) => (name, false, false),
+        Reads::Value(name) => (name, true, false),
+        Reads::Classes => ("class", true, true),
+    };
+    charge(cx, attribute_count(cx.tree(), node) / ATTRIBUTES_A_STEP)?;
+    let [at] = positions(cx.tree(), node, [name]);
+    if let (Some(at), true) = (at, value) {
+        charge(cx, value_at(cx.tree(), node, at).len() / 64)?;
+        if tokens {
+            let count = value_at(cx.tree(), node, at)
+                .split_ascii_whitespace()
+                .count();
+            charge(cx, count)?;
+        }
+    }
+    Ok(at)
 }
 
 /// The steps of reading `node`'s attributes whole: one per attribute and one per 64 bytes of
@@ -377,23 +422,21 @@ fn attribute_steps(tree: &Tree, node: NodeId) -> usize {
 }
 
 /// `node` and the nodes under it in tree order, each charged before it is visited (one step,
-/// and its attributes when the walk `reads` them), until `stop` answers true for one: that
-/// node.
+/// and its attribute scan as [`scan_for`] charges it when the walk `reads` one), until `stop`
+/// answers true for one: that node. `stop` gets the position of the attribute the walk looks
+/// for, if the node has it.
 fn find(
     cx: &mut DomCx<'_, '_>,
     node: NodeId,
     reads: Reads,
-    mut stop: impl FnMut(&Tree, NodeId) -> bool,
+    mut stop: impl FnMut(&Tree, NodeId, Option<usize>) -> bool,
 ) -> DomResult<Option<NodeId>> {
     let mut pending = vec![node];
     while let Some(next) = pending.pop() {
-        let steps = match reads {
-            Reads::Names => 1,
-            Reads::Named(names) => 1 + named_steps(cx.tree(), next, names),
-        };
-        charge(cx, steps)?;
+        charge(cx, 1)?;
+        let at = scan_for(cx, next, reads)?;
         let tree = cx.tree();
-        if stop(tree, next) {
+        if stop(tree, next, at) {
             return Ok(Some(next));
         }
         pending.extend(tree.children(next).iter().rev());
@@ -407,11 +450,11 @@ fn select(
     cx: &mut DomCx<'_, '_>,
     node: NodeId,
     reads: Reads,
-    mut keep: impl FnMut(&Tree, NodeId) -> bool,
+    mut keep: impl FnMut(&Tree, NodeId, Option<usize>) -> bool,
 ) -> DomResult<Vec<NodeId>> {
     let mut kept = Vec::new();
-    find(cx, node, reads, |tree, next| {
-        if next != node && keep(tree, next) {
+    find(cx, node, reads, |tree, next, at| {
+        if next != node && keep(tree, next, at) {
             kept.push(next);
         }
         false
@@ -429,22 +472,24 @@ fn by_tag_name(
     qualified_name: &str,
 ) -> DomResult<Vec<NodeId>> {
     let lower = qualified_name.to_ascii_lowercase();
-    select(cx, node, Reads::Names, |tree, next| match tree.data(next) {
-        NodeData::Element {
-            namespace,
-            local_name,
-            ..
-        } => {
-            qualified_name == "*"
-                || (*namespace == Namespace::Html && *local_name == lower)
-                || (*namespace != Namespace::Html && local_name == qualified_name)
+    select(cx, node, Reads::Names, |tree, next, _| {
+        match tree.data(next) {
+            NodeData::Element {
+                namespace,
+                local_name,
+                ..
+            } => {
+                qualified_name == "*"
+                    || (*namespace == Namespace::Html && *local_name == lower)
+                    || (*namespace != Namespace::Html && local_name == qualified_name)
+            }
+            NodeData::Document
+            | NodeData::DocumentFragment
+            | NodeData::Doctype { .. }
+            | NodeData::Text(_)
+            | NodeData::Comment(_)
+            | NodeData::ProcessingInstruction { .. } => false,
         }
-        NodeData::Document
-        | NodeData::DocumentFragment
-        | NodeData::Doctype { .. }
-        | NodeData::Text(_)
-        | NodeData::Comment(_)
-        | NodeData::ProcessingInstruction { .. } => false,
     })
 }
 
@@ -458,25 +503,27 @@ fn by_tag_name_ns(
     local_name: &str,
 ) -> DomResult<Vec<NodeId>> {
     let namespace = namespace.filter(|namespace| !namespace.is_empty());
-    select(cx, node, Reads::Names, |tree, next| match tree.data(next) {
-        NodeData::Element {
-            namespace: own,
-            local_name: own_name,
-            ..
-        } => {
-            let namespace_matches = match namespace.as_deref() {
-                Some("*") => true,
-                Some(namespace) => own.url() == namespace,
-                None => false,
-            };
-            namespace_matches && (local_name == "*" || own_name == local_name)
+    select(cx, node, Reads::Names, |tree, next, _| {
+        match tree.data(next) {
+            NodeData::Element {
+                namespace: own,
+                local_name: own_name,
+                ..
+            } => {
+                let namespace_matches = match namespace.as_deref() {
+                    Some("*") => true,
+                    Some(namespace) => own.url() == namespace,
+                    None => false,
+                };
+                namespace_matches && (local_name == "*" || own_name == local_name)
+            }
+            NodeData::Document
+            | NodeData::DocumentFragment
+            | NodeData::Doctype { .. }
+            | NodeData::Text(_)
+            | NodeData::Comment(_)
+            | NodeData::ProcessingInstruction { .. } => false,
         }
-        NodeData::Document
-        | NodeData::DocumentFragment
-        | NodeData::Doctype { .. }
-        | NodeData::Text(_)
-        | NodeData::Comment(_)
-        | NodeData::ProcessingInstruction { .. } => false,
     })
 }
 
@@ -489,8 +536,10 @@ fn by_class_name(
     class_names: &str,
 ) -> DomResult<Vec<NodeId>> {
     // The wanted classes: an ordered set (duplicates dropped), built once, one step per 64
-    // bytes of the argument; in quirks mode each in ASCII lower case.
+    // bytes of the argument and one per token of it, before it is built; in quirks mode each
+    // in ASCII lower case.
     charge(cx, class_names.len() / 64)?;
+    charge(cx, class_names.split_ascii_whitespace().count())?;
     let quirks = cx.tree().quirks_mode() == QuirksMode::Quirks;
     let mut wanted: HashMap<String, usize> = HashMap::new();
     for token in class_names.split_ascii_whitespace() {
@@ -505,13 +554,13 @@ fn by_class_name(
     if wanted.is_empty() {
         return Ok(Vec::new());
     }
-    // An element matches when its classes hold every wanted one: one set lookup per class, so
-    // the match is linear in the bytes of its `class`, which the walk charges before it.
+    // An element matches when its classes hold every wanted one: one set lookup per class (in
+    // quirks mode after its fold), each paid by the step per token the walk charges before it.
     let mut matched_by = vec![0usize; wanted.len()];
     let mut element = 0usize;
     let mut folded = String::new();
-    select(cx, node, Reads::Named(&["class"]), |tree, next| {
-        let Some(classes) = attribute(tree, next, "class") else {
+    select(cx, node, Reads::Classes, |tree, next, at| {
+        let Some(classes) = at.map(|at| value_at(tree, next, at)) else {
             return false;
         };
         element += 1;
@@ -524,10 +573,10 @@ fn by_class_name(
             } else {
                 class
             };
-            if let Some(&at) = wanted.get(key)
-                && matched_by[at] != element
+            if let Some(&index) = wanted.get(key)
+                && matched_by[index] != element
             {
-                matched_by[at] = element;
+                matched_by[index] = element;
                 matched += 1;
             }
         }
@@ -540,8 +589,8 @@ fn by_id(cx: &mut DomCx<'_, '_>, node: NodeId, id: &str) -> DomResult<Option<Nod
     if id.is_empty() {
         return Ok(None);
     }
-    find(cx, node, Reads::Named(&["id"]), |tree, next| {
-        next != node && attribute(tree, next, "id") == Some(id)
+    find(cx, node, Reads::Value("id"), |tree, next, at| {
+        next != node && at.map(|at| value_at(tree, next, at)) == Some(id)
     })
 }
 
@@ -662,9 +711,13 @@ fn locate_namespace(
             Some(_) | None => {}
         }
     }
+    // A scan for one attribute by name on each element: one step for the element and one per 4
+    // attributes it passes, before the scan, and one per 64 bytes of the one value it reads.
     while let Some(element) = at {
-        let steps = 1 + attribute_steps(cx.tree(), element);
-        charge(cx, steps)?;
+        charge(
+            cx,
+            1 + attribute_count(cx.tree(), element) / ATTRIBUTES_A_STEP,
+        )?;
         let tree = cx.tree();
         let NodeData::Element {
             namespace,
@@ -678,7 +731,7 @@ fn locate_namespace(
         if prefix.is_none() {
             return Ok(Some(namespace.url().to_string()));
         }
-        let declared = attributes.iter().find(|attribute| {
+        let declared = attributes.iter().position(|attribute| {
             attribute.namespace == Some(Namespace::Xmlns)
                 && match prefix {
                     Some(prefix) => {
@@ -689,9 +742,11 @@ fn locate_namespace(
                 }
         });
         if let Some(declared) = declared {
-            return Ok(Some(declared.value.clone()).filter(|value| !value.is_empty()));
+            charge(cx, value_at(cx.tree(), element, declared).len() / 64)?;
+            let value = value_at(cx.tree(), element, declared);
+            return Ok(Some(value.to_string()).filter(|value| !value.is_empty()));
         }
-        at = parent_element(tree, element);
+        at = parent_element(cx.tree(), element);
     }
     Ok(None)
 }
@@ -704,20 +759,37 @@ fn locate_prefix(
     namespace: &str,
 ) -> DomResult<Option<String>> {
     let mut at = lookup_start(cx, node)?;
+    // On each element: one step and one per 4 attributes it passes, before the pass, and one
+    // per 64 bytes of each `xmlns` value it compares, before the compare; other values are not
+    // read.
     while let Some(element) = at {
-        let steps = 1 + attribute_steps(cx.tree(), element);
-        charge(cx, steps)?;
-        let tree = cx.tree();
-        let NodeData::Element { attributes, .. } = tree.data(element) else {
-            break;
-        };
-        let declared = attributes.iter().find(|attribute| {
-            attribute.prefix.as_deref() == Some("xmlns") && attribute.value == namespace
-        });
-        if let Some(declared) = declared {
-            return Ok(Some(declared.local_name.clone()));
+        let count = attribute_count(cx.tree(), element);
+        charge(cx, 1 + count / ATTRIBUTES_A_STEP)?;
+        for index in 0..count {
+            let compared = match cx.tree().data(element) {
+                NodeData::Element { attributes, .. } => attributes
+                    .get(index)
+                    .filter(|attribute| attribute.prefix.as_deref() == Some("xmlns"))
+                    .map(|attribute| attribute.value.len()),
+                NodeData::Document
+                | NodeData::DocumentFragment
+                | NodeData::Doctype { .. }
+                | NodeData::Text(_)
+                | NodeData::Comment(_)
+                | NodeData::ProcessingInstruction { .. } => None,
+            };
+            let Some(bytes) = compared else {
+                continue;
+            };
+            charge(cx, bytes / 64)?;
+            if let NodeData::Element { attributes, .. } = cx.tree().data(element)
+                && let Some(attribute) = attributes.get(index)
+                && attribute.value == namespace
+            {
+                return Ok(Some(attribute.local_name.clone()));
+            }
         }
-        at = parent_element(tree, element);
+        at = parent_element(cx.tree(), element);
     }
     Ok(None)
 }
@@ -1079,7 +1151,7 @@ impl Reading for SurfReading {
             return Ok(false);
         };
         // An inclusive descendant: the nodes under `this` in tree order, one step each.
-        Ok(find(cx, this, Reads::Names, |_, node| node == other)?.is_some())
+        Ok(find(cx, this, Reads::Names, |_, node, _| node == other)?.is_some())
     }
 
     fn node_lookup_prefix(
@@ -1398,7 +1470,7 @@ impl Reading for SurfReading {
     fn document_title(&mut self, cx: &mut DomCx<'_, '_>, this: NodeId) -> DomResult<String> {
         // HTML, "document.title": the child text content of the first `title` element in tree
         // order, with ASCII whitespace stripped and collapsed; the empty string without one.
-        let Some(title) = find(cx, this, Reads::Names, |tree, node| {
+        let Some(title) = find(cx, this, Reads::Names, |tree, node, _| {
             html_element(tree, node, "title")
         })?
         else {
@@ -1713,19 +1785,29 @@ impl Reading for SurfReading {
         if name.is_empty() {
             return Ok(None);
         }
-        // One step per element visited, and its `id` and `name` found by name, before it is read.
+        // One step per element visited and one per 4 attributes it passes, before the one pass
+        // that finds `id` and `name`; one per 64 bytes of each value it then compares, before
+        // the compare: `id` always, `name` of an element of the HTML namespace only.
         for &node in this {
-            let steps = 1 + named_steps(cx.tree(), node, &["id", "name"]);
-            charge(cx, steps)?;
+            charge(cx, 1 + attribute_count(cx.tree(), node) / ATTRIBUTES_A_STEP)?;
             let tree = cx.tree();
-            if attribute(tree, node, "id") == Some(name.as_str())
-                || (matches!(
-                    tree.data(node),
-                    NodeData::Element {
-                        namespace: Namespace::Html,
-                        ..
-                    }
-                ) && attribute(tree, node, "name") == Some(name.as_str()))
+            let html = matches!(
+                tree.data(node),
+                NodeData::Element {
+                    namespace: Namespace::Html,
+                    ..
+                }
+            );
+            let [id, named] = positions(tree, node, ["id", "name"]);
+            let named = named.filter(|_| html);
+            for at in [id, named].into_iter().flatten() {
+                charge(cx, value_at(cx.tree(), node, at).len() / 64)?;
+            }
+            let tree = cx.tree();
+            if [id, named]
+                .into_iter()
+                .flatten()
+                .any(|at| value_at(tree, node, at) == name)
             {
                 return Ok(Some(node));
             }
