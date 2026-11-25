@@ -2,7 +2,7 @@
 format: aep.planning-md/3
 id: story:webidl-bindings
 kind: story
-status: active
+status: implemented
 title: The binary bindings generates the DOM's interfaces from the model and the selection, every member throwing NotSupportedError until its slice
 summary: selection.txt is the one table of the Web IDL selection (formerly Q8) with every member's slice, S6 = a decided 2026-11-24 with the HTML source and its selective extraction (formerly Q12); generated interfaces, brands, conversions, one trait per slice, the context type, the wrapper hook and the limit result; DOMException; the digest check and regeneration in the lane slow.
 relations:
@@ -36,10 +36,11 @@ scope:
   path: crates/webidl/tests
 - confidence: cited
   path: taskfiles/webidl.yml
-revision: 25
+revision: 27
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:12Z", actor: "human:operator", revision: 19}
 - {from: "proposed", to: "active", at: "2026-11-24T15:36:43Z", actor: "human:operator", revision: 25, executor: "agent:coordinator"}
+- {from: "active", to: "implemented", at: "2026-11-25T07:40:32Z", actor: "human:operator", revision: 27, decided_on: {"recorded":{"test_result":2,"verification":1}}, executor: "agent:coordinator"}
 ---
 ## Context
 
@@ -307,3 +308,192 @@ never in the same wave.
 ## Why `epic:scripts-in-a-page`
 
 The generated DOM of S4, b: every member exists before any has behaviour.
+
+## As built
+
+The unit is on `main` at `6bd9bc9` (the merge of `impl/webidl-bindings` at `c61ddfa`).
+Where it differs from the text above:
+
+- Decision 5, acceptance 2 and acceptance 4: the selection has 226 member rows and 7 constructor
+  rows, not 225 (233 rows besides the `iterable` row of `NodeList`). The DOM index holds a
+  `partial interface Window` with the legacy attribute `event` (`[Replaceable]`), so `Window` has
+  four members and S6's four members of decision 4 are five. The added row is `Window event
+  reading`, with a comment above it: outside the dispatch of an event its value is `undefined`,
+  surf dispatches none, so `undefined` is the standard's value and the row names no deviation.
+  The totals, members (constructors): `reading` 99 (0), `mutation` 46 (4), `attributes` 14 (0),
+  `selectors` 9 (0), `throws` 30 (2), `exception` 28 (1). The counts over the four interfaces of
+  decision 2 are unchanged. The table test has 226 cases.
+- Decision 7, the count: the page holds 213 `pre` blocks of class `idl`, not 212. The three
+  `pre class=extract` examples are left out, and the block of `CustomElementRegistry`, whose class
+  is on the `code` element inside its `pre`, is counted.
+- Decision 7 and the Change, the form: `crates/webidl/data/whatwg/` holds `html-idl.html`, a cut
+  of the HTML Standard's snapshot, and not the page. The cut is the 213 blocks, each byte for
+  byte from `<pre` to `</pre>` and followed by one line feed, in the page's order (573,184 bytes).
+  The page is 15,266,649 bytes (sha256 `818723cb...`, in `SOURCE` as `snapshot-sha256`); one
+  line of it is an example with a home path, which the repository's source gates refuse, so
+  "vendored unchanged" could not hold for it. `SOURCE` says that two of its three files are
+  unchanged copies and gives the cut's rule, the snapshot's byte count and sha256, the block
+  count and the cut's own byte count. The cut is made by `surf_webidl::cut_idl_blocks`, called
+  as `bindings --cut <snapshot> <out>`.
+- A third task, `webidl-html-cut` (`taskfiles/webidl.yml`, not in the story): given
+  `SNAPSHOT=<file>` it refuses a file whose sha256 is not `snapshot-sha256`, cuts it and compares
+  the bytes with `html-idl.html`. It fetches nothing, is no step of `check` or of `slow`, and
+  trusts a snapshot file that a person fetched from the address `SOURCE` names; the file must
+  lie inside the tree. `AGENTS.md` names it beside the other tasks outside the gate.
+- Decision 7, the reader: `extract_selected` reads from the cut only the blocks that define
+  `Window` or a partial `Document`, and from them the members the selection names. One test,
+  `selection::rows_match_the_model`, reads the cut, once; no other test does. The reader of a
+  page and the reader of its cut give one model (`extraction::the_cut_of_a_page_is_its_blocks`,
+  `extraction::a_page_and_its_cut_give_the_same_model`).
+- The reader of a page reads tags, not bytes. It follows HTML's tokenizer for comments (`<!-->`,
+  `<!--->`, `-->`, `--!>`), for the text of `script`, `style`, `textarea`, `title`, `xmp`,
+  `iframe`, `noembed` and `noframes` (ended by their own end tag only), for `plaintext` (nothing
+  after it is a tag) and for a tag that the end of the input cuts (dropped, and the scan ends),
+  so each byte is read a bounded number of times. Two departures from HTML are documented in
+  `crates/webidl/src/html.rs`: script data's escaped states (`<!--` inside `script`), and a `</`
+  with no letter after it.
+- The selection's grammar gains the lines `definitions:` (the definitions generated) and
+  `global:` (the one that is the global object), read by `surf_webidl::Selection`; the clauses of
+  a note are `setter:`, `reason:` and `deviation:`. A comment line in the head names a deviation
+  of every `DOMString` argument: a lone surrogate reaches the slice as U+FFFD, because the tree
+  holds Rust strings. The same sentence stands in Q17 of `docs/design/scripts.md`.
+- Decision 9: `end_with_limit(cx, limit)` returns an `Abrupt`, not a throw. It records the limit,
+  sets the interrupt handle and reads it at once with `Cx::charge_steps(0)`, which ends the run
+  in `Terminated(Interrupted)` (HOST-177); that termination is sticky for the run (HOST-72) and
+  what the host function returns after it is not used. So no `catch` and no `finally` of the
+  script runs after the limit, and the entry does not wait for swell's next check. Should the
+  charge answer `Ok`, the function answers `Terminated(Interrupted)` itself.
+- Decision 10: the rule is `Runner::document_end` in `crates/script/src/runner.rs`, not in
+  `crates/script/src/lib.rs`. A limit recorded during the entry is the script's end, in the words
+  of Q4, whatever swell answered (a normal end, a throw, a refusal, another limit, not run),
+  except `limit: memory` and `faulted`, which keep their own word. The record is cleared and the
+  interrupt withdrawn after every script that recorded one. `Limit::InputBytes` and
+  `Limit::Steps`, which Q4 gives no word, end `limit: wall-clock`; no member of this story
+  records them, and the comment says the first story with a member that writes into the tree
+  gives each a word or shows that no write reaches it. `docs/design/scripts.md` (Q4) says the
+  rule as built.
+- `crates/script/src/lib.rs` declares `pub mod bindings` and `pub mod dom` and exports
+  `run_document` and `Document` from the runner: `run_document` makes a runner whose realm is
+  made with the `Window` as global and the interface objects installed in one `with_cx` right
+  after `create_realm`, outside the totals and the clock. `ScriptHost` gains the field `dom`.
+- Decision 12: the one copy function is `Copies::copy` (`bindings.rs:553`); 68 generated call
+  sites use it. It copies with `to_utf16`, replaces a lone surrogate by U+FFFD, charges one step
+  per 64 bytes, and counts the copy until the member's ledger is dropped after the slice's
+  method (`uncharged_copies()`); it does not use `charge_host_bytes`. `to_rust_string_lossy` is
+  not called. `to_utf16` is also called twice in `prefix_units`, for the record of an uncaught
+  `DOMException`. A member of `throws` checks the brand of `this` and converts no argument; the
+  doc comment of its generated function says that Web IDL converts first and that a call whose
+  argument's conversion throws gets `NotSupportedError` here. The generator refuses a
+  `USVString` argument (none is selected).
+- Decision 13 and acceptance 12: the node charge is 416 bytes for `createTextNode("abcd")`, not
+  1,232. 3 × `NODE_BYTES` is 3 × 136 = 408, which is the story's "3 × 408" once; with twice the
+  four bytes stored it is 416. `node_charge` asserts that the charged growth of `heap_bytes()`
+  exceeds an uncharged run's by at least 416 (6,560 and 6,144 bytes were measured), and that
+  under 1 MiB `for (;;) document.createTextNode("x")` ends `limit: memory`. `DomCx::charge_node`
+  is the one function.
+- Acceptance 13: the old strings are those of `main` at `0f49fc8`, not `29945f5`: `2168 passed`
+  (`README.md:11`, `docs/badges/make.sh:38`, `docs/badges/tests.svg`); `2,171` and `2,168`
+  (`README.md:285`, `website/docs/what-works.md:17`; `2,168` also `website/docs/status.md:28`);
+  `1,619, and 552` (`README.md:285`, `website/docs/what-works.md:17`). The gate block is
+  `README.md:596-637` and `website/docs/how-it-is-built.md:40-81`; its test-layout line, `207
+  test files`, is `README.md:612` and `website/docs/how-it-is-built.md:56`. The unit's last
+  commit, `c61ddfa`, writes them from the log of the gate on `5dcedfb`: 1723 tests, 1720 passed
+  and 3 ignored (2,275 and 2,272 with the 552 tests of the TLS crates), 223 test files, and
+  the eight lines of `webidl-check`, a step of `check` after `tls-flights-check`
+  (`Taskfile.yml:570`). The gate ran three times on `5dcedfb`: at a load of 84.87 on the build
+  node its test step took 132.1 s, over the budget of 120 s, and the conformance step, which the
+  unit does not touch, 50.4 s; at a load of 51.50 they took 18.8 s and 12.8 s. `main`'s test
+  step took 18.8 s for 1619 tests.
+- Acceptance 14: the diff names four files outside the story's `scope:` list and its Change:
+  `crates/script/src/runner.rs` (decisions 9 and 10, the realm's setup, the record of an uncaught
+  `DOMException`), `AGENTS.md` (the tasks of `taskfiles/webidl.yml`, the entry for
+  `rustfmt.toml`, the three files of `data/whatwg/`, the step `webidl-slow` of `slow`),
+  `docs/design/scripts.md` (Q4, the paragraph on copies, Q16, Q17) and `rustfmt.toml`. The list
+  names `crates/webidl/Cargo.toml`, which the Change does not: it gains the `bindings` binary
+  and a new description. Every other changed path lies inside the list.
+- `rustfmt.toml` is new: `edition = "2024"`, the edition every crate names, so `cargo fmt` formats
+  as without it. The generator runs `rustfmt --edition 2024 --config-path` on that file, so no
+  `rustfmt.toml` above the checkout and no user configuration changes the bytes of `bindings.rs`.
+- What the header of `bindings.rs` digests: 18 sources, not the vendored files, the selection and
+  the generator's sources alone. Those are the three data files, `selection.txt`, the ten files
+  of `crates/webidl/src`, the manifests of `surf-webidl` and `surf-html`, `rust-toolchain.toml`
+  (it pins the `rustfmt`) and `rustfmt.toml`. `crates/html/src` stays out. Instead the header
+  holds one line per data file with the byte count and the FNV-1a (64 bits) of the Web IDL text
+  the generator read from it, and `selection::rows_match_the_model` reads the three files again
+  and compares those lines.
+- `webidl-check` does more than recompute the sources' digests. It reads `Cargo.lock` with `awk`
+  and fails unless one package `surf-html` has no source and no dependencies and one package
+  `surf-webidl` has no source and depends on `surf-html` alone, so the lock decides no byte of
+  `bindings.rs`; its self-test runs the locks of nine forms of a dependency outside the
+  workspace. It digests the whole of `bindings.rs` with the 64 digits of its own digest line read
+  as zeros, so a changed byte anywhere fails naming the file; its self-test makes three copies
+  (a byte after the header, a `//!` line rewritten, an inner attribute inserted before the
+  line). A digest line recomputed by hand for an edited file passes `webidl-check`; the byte
+  comparison of `webidl-slow` is the check against that. The task ran in 198 to 205 ms.
+- The generator refuses what the story named and more, naming the rows or both names: two members,
+  interfaces, dictionaries or unions that give one Rust name, and two members of one dictionary;
+  a name that the prelude of `bindings.rs` defines or imports, or one of the 45 names of Rust's
+  prelude (`RUST_PRELUDE`); a name that is no Rust identifier or is a Rust keyword without a raw
+  form; an `iterable<T>` without an indexed getter; `[LegacyUnforgeable]` off the global
+  interface; two arguments of one member that give one Rust name. A name that Rust or the
+  generator keeps (`self`, `Self`, `super`, `crate`, `cx`, `this`) gets a `_` at its end. Each
+  dictionary member is read into a local named by its position (`m0`, `m1`), never by its name.
+  A note's control characters and bidirectional controls are written as escapes, its square
+  brackets as `\[` and `\]`.
+- `NodeList` and `HTMLCollection` have `@@iterator` on their prototypes, the realm's
+  `%Array.prototype.values%` read once when the realm is made (Web IDL 3.7.9: an indexed
+  property getter); no row of `selection.txt` is for it. An attribute setter called without an
+  argument converts `undefined`. A `TypeError` for an object that is no node of the document
+  reaches the script as a `TypeError`.
+- `DOMException`: `name` and `message` are the engine's Strings, listed in the host data's
+  `trace`, so surf keeps no copy and a script reads back every code unit it gave. The texts of
+  the exceptions the bindings make are cut at 1,024 bytes (`EXCEPTION_TEXT_BYTES`). `code` reads
+  the name's length without a copy and answers 0 above 26 code units, the longest legacy name;
+  at or below 26 it copies the name through the ledger.
+- The record of an uncaught `DOMException` (Q16; not in the story): kind `Error`, message
+  `<name>: <message>`, read from the exception's data without running a script of the page, a
+  lone surrogate written U+FFFD, cut at 1,024 characters. The read takes at most 2,048 code
+  units each of the name and of the message (a longer String is read one index at a time, never
+  copied whole). An engine call of the read that fails ends it: the memory budget spent by the
+  one-unit Strings, or an interrupt set after the throw, which the read's first engine call
+  takes. The record is then an `Error` without a message.
+- `Runner::error` reads the entry's step count before it reads the exception, and `evaluate` adds
+  that count to the totals: the read of a `DOMException`'s data begins engine entries of its own.
+- Acceptance 8: the realm with the bindings holds 463,175 bytes against
+  `BINDINGS_REALM_HEAP_BYTES`, 506,112 (a realm without them, 202,424). The test imports the
+  engine's constant and prints the heap; it asserts the bound and no number of its own. A runner
+  with the bindings is made in 5.9 to 16.4 ms, so each test makes its own (acceptance 15).
+  `docs/design/scripts.md` names the bound (lines 276 and 303).
+- Acceptance 10: the generator's read took 0.35 s without the HTML data and 0.39 to 0.40 s with
+  `html-idl.html`; with the whole page, before the cut, the whole run took 0.71 s against 0.44 s.
+  A later run read in 0.39 s, generated in 0.008 s and ran `rustfmt` in 0.07 s. `bindings.rs` is
+  8,256 lines and 307,479 bytes. `bindings --without-html` reads the other two files only, for
+  that timing.
+- Review: four passes of the security review, each with its cases merged into the unit. Pass 1,
+  on `60404cd`: 23 cases, 8 red, two musts. Pass 2, on `8dac713`: 20 cases, 7 red, two musts.
+  Pass 3, on `f2d0ec1`: 15 cases, 3 red, no must. Pass 4, on `6cfdfe9`: 9 new cases and one
+  rewritten, 3 red, no must. The cases are `adversary_3` to `adversary_6` of `crates/script/tests`
+  and `adversary_2` to `adversary_5` of `crates/webidl/tests`; each red case is green at
+  `5dcedfb`.
+- Tests and times at `5dcedfb`: `surf-webidl` and `surf-script` run 210 tests, 210 passed and 3
+  skipped (the three ignored tests of `engine.rs`, HOST-125, HOST-26 and HOST-127), in 2.861 s;
+  the slowest is 2.803 s. Under heavier load three tests ran over 5 s, each far under it in a
+  quiet run:
+  `adversary_3::every_generated_function_checks_the_brand_of_this` 6.504 s (1.604 s),
+  `adversary_5::strings_only_exceptions_hold_survive_collections_inside_and_between_scripts`
+  5.644 s (2.447 s) and
+  `adversary_6::the_steps_of_a_script_are_its_entrys_whatever_its_end` 7.708 s (2.199 s).
+  No test ran over 60 s.
+- Left to other stories: the slices' methods (`crates/script/src/dom/reading.rs`, `attributes.rs`,
+  `mutation.rs`, `selectors.rs` hold an empty `impl`) and the real `Wrap`
+  (`crates/script/src/dom/wrapper.rs:1-3`: `story:scripts-dom-reading`). `HTMLCollection.length`
+  and `NodeList.length` are `reading` rows, so `for (x of collection)` over a snapshot that a slice
+  makes throws `NotSupportedError` until `story:scripts-dom-reading` gives `length` its behaviour.
+- What surf's files say rests on swell and is left to it: the doc comment of `end_with_limit`
+  (`crates/script/src/bindings.rs:434-444`) says that the answer `Terminated(Interrupted)` of a
+  host function works at the tag but swell does not promise it there; the main path rests on
+  HOST-177 and HOST-72. The doc comment of `ExceptionData` (`bindings.rs:303-312`) says that a
+  String listed with `Tracer::value` stays alive by the host interface's sentence and the
+  signature, not by a requirement: HOST-109 tests an object only. The doc comment of
+  `string_length` (`bindings.rs:871`) says only that the length is read as
+  `ToObject(string).length` without a copy; surf's files name no request to swell for a length.
