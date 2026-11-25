@@ -5,6 +5,7 @@ mod adversary_limits;
 mod adversary_script_hook;
 mod adversary_script_hook_2;
 mod adversary_script_hook_3;
+mod adversary_script_hook_4;
 mod adversary_tree;
 mod common;
 mod encoding;

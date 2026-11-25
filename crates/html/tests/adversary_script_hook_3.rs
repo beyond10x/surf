@@ -527,11 +527,13 @@ fn template_contents_under_the_furthest_block_count_toward_its_shift() {
     assert_eq!(by_id(&tree, "after"), None);
 }
 
-/// The walks of an iteration that shifts the furthest block's children down are steps
-/// (`limits.rs`, `Steps`): the hook moved `p` up to `html`, so the `</b>` shifts its 1,002
-/// nodes 3 down, walking them once for the deepest and once for the shift. Without the move
-/// the shift is 0 and nothing is walked. The parse with the move takes at least 2,004 more
-/// steps than the parse with a hook that writes nothing.
+/// The walk of an iteration that moves the furthest block's children down is steps (`limits.rs`,
+/// `max_steps`; ruling 2 of fix round 3: "A move that does make nodes deeper may walk what it
+/// moves, each node a step"): the hook moved `p` up to `html`, so the `</b>` puts its 1,002
+/// nodes 3 deeper, and every node it makes deeper is at least one step. Without the move no
+/// node gets deeper and nothing is walked. The parse with the move takes at least 1,002 more
+/// steps than the parse with a hook that writes nothing. (Changed in pass 4: round 2 asked
+/// for two walks, 2,004 steps.)
 #[test]
 fn the_walks_of_a_shift_down_are_steps() {
     const S: usize = 1_000;
@@ -552,7 +554,7 @@ fn the_walks_of_a_shift_down_are_steps() {
     assert_eq!(moved.stopped_by(), None);
     assert_eq!(still.stopped_by(), None);
     let more = moved.steps() - still.steps();
-    assert!(more >= 2 * (S + 2), "{more} more steps");
+    assert!(more >= S + 2, "{more} more steps");
 }
 
 /// The `selectedcontent` copy cut at the limit: the copy is a chain of `i` from the top, as
