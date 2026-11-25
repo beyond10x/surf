@@ -3,8 +3,10 @@
 //! `crates/script/src/bindings.rs`, from the vendored files of `crates/webidl/data/whatwg/` and
 //! the selection `crates/webidl/selection.txt` (or `<file>`). The header names the sha256 of
 //! each source, computed with `sha256sum`, among them `rust-toolchain.toml`, which pins the
-//! `rustfmt` that formats the text; after `rustfmt`, its last line gets the sha256 of the lines
-//! after it (`surf_webidl::BODY_DIGEST_LINE`). The time of each phase goes to standard error.
+//! `rustfmt` that formats the text, and `rustfmt.toml`, its one configuration; then what was
+//! read of each page through `surf-html` (`surf_webidl::ReadText`); after `rustfmt`, its last
+//! line gets the sha256 of the whole file with that line's 64 digits read as zeros
+//! (`surf_webidl::FILE_DIGEST_LINE`). The time of each phase goes to standard error.
 //!
 //! `--without-html` reads the DOM Standard and the Web IDL Standard only, for timing the
 //! generator before the HTML Standard is added; a selection that names `Window` then fails.
@@ -20,7 +22,8 @@ use std::process::{Command, ExitCode, Stdio};
 use std::time::Instant;
 
 use surf_webidl::{
-    Digest, Model, Selection, bindings_model, cut_idl_blocks, fill_body_digest, generate, read_page,
+    Digest, Model, ReadText, Selection, bindings_model, cut_idl_blocks, fill_file_digest,
+    generate_bindings, read_page,
 };
 
 fn main() -> ExitCode {
@@ -80,9 +83,9 @@ fn run() -> Result<(), String> {
     let selection = Selection::read(&selection_text, &label).map_err(|error| error.to_string())?;
     let dom = read(&data.join("dom.html"))?;
     let webidl = read(&data.join("webidl.html"))?;
-    let model = if with_html {
+    let (model, reads) = if with_html {
         let html = read(&data.join("html-idl.html"))?;
-        let (model, extracted) =
+        let (model, extracted, reads) =
             bindings_model(&dom, &webidl, &html, &selection).map_err(|error| error.to_string())?;
         eprintln!(
             "bindings: html-idl.html: {} blocks of Web IDL, {} taken, {} parts skipped",
@@ -90,17 +93,18 @@ fn run() -> Result<(), String> {
             extracted.taken,
             extracted.skipped.len()
         );
-        model
+        (model, reads)
     } else {
-        let mut definitions = read_page(&dom, "dom.html")
-            .map_err(|error| error.to_string())?
-            .definitions;
-        definitions.extend(
-            read_page(&webidl, "webidl.html")
-                .map_err(|error| error.to_string())?
-                .definitions,
-        );
-        Model::new(definitions).map_err(|error| error.to_string())?
+        let dom = read_page(&dom, "dom.html").map_err(|error| error.to_string())?;
+        let webidl = read_page(&webidl, "webidl.html").map_err(|error| error.to_string())?;
+        let reads = vec![
+            ReadText::new("dom.html", &dom.index),
+            ReadText::new("webidl.html", &webidl.index),
+        ];
+        let mut definitions = dom.definitions;
+        definitions.extend(webidl.definitions);
+        let model = Model::new(definitions).map_err(|error| error.to_string())?;
+        (model, reads)
     };
     let read_time = started.elapsed();
 
@@ -113,8 +117,13 @@ fn run() -> Result<(), String> {
     }
     sources.push(label);
     sources.push("crates/webidl/Cargo.toml".to_string());
+    // Its `[dependencies]` is empty, which `task webidl-check` holds: no crate outside the
+    // workspace builds the generator, so `Cargo.lock` decides nothing.
+    sources.push("crates/html/Cargo.toml".to_string());
     // It pins the toolchain, so the version of the `rustfmt` that formats the file.
     sources.push("rust-toolchain.toml".to_string());
+    // The one configuration of that `rustfmt` (`--config-path`).
+    sources.push(RUSTFMT_CONFIG.to_string());
     let mut code = Vec::new();
     rust_files(&root.join("crates/webidl/src"), &mut code)?;
     code.sort();
@@ -122,14 +131,15 @@ fn run() -> Result<(), String> {
     let digests = sha256(&root, &sources)?;
 
     let started_generate = Instant::now();
-    let text = generate(&model, &selection, &digests).map_err(|error| error.to_string())?;
+    let text = generate_bindings(&model, &selection, &digests, &reads)
+        .map_err(|error| error.to_string())?;
     let generate_time = started_generate.elapsed();
 
     let started_format = Instant::now();
-    let formatted = rustfmt(&text)?;
+    let formatted = rustfmt(&text, &root.join(RUSTFMT_CONFIG))?;
     let format_time = started_format.elapsed();
-    let formatted = fill_body_digest(&formatted, sha256_of)
-        .ok_or("the generated text holds no line of the body's digest")??;
+    let formatted = fill_file_digest(&formatted, sha256_of)
+        .ok_or("the generated text holds no line of the file's digest")??;
     std::fs::write(&out, &formatted).map_err(|error| format!("{}: {error}", out.display()))?;
     eprintln!(
         "bindings: wrote {} ({} lines, {} bytes); read {:.3} s, generate {:.3} s, rustfmt {:.3} s",
@@ -252,10 +262,17 @@ fn sha256_of(bytes: &[u8]) -> Result<String, String> {
     Ok(digest)
 }
 
-/// `text` formatted by `rustfmt --edition 2024`.
-fn rustfmt(text: &str) -> Result<String, String> {
+/// The configuration of `rustfmt`, from the repository root: the one `cargo fmt` of the
+/// workspace reads, named to `rustfmt` with `--config-path`, so that no `rustfmt.toml` of a
+/// directory above the repository and none of the user's configuration directory changes the
+/// bytes of the file.
+const RUSTFMT_CONFIG: &str = "rustfmt.toml";
+
+/// `text` formatted by `rustfmt --edition 2024 --config-path <config>`.
+fn rustfmt(text: &str, config: &Path) -> Result<String, String> {
     let mut child = Command::new("rustfmt")
-        .args(["--edition", "2024"])
+        .args(["--edition", "2024", "--config-path"])
+        .arg(config)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

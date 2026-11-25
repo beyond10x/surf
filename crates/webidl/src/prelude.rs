@@ -233,15 +233,44 @@ impl HostData for CollectionData {
     fn trace(&self, _tracer: &mut Tracer<'_>) {}
 }
 
-/// The data of a `DOMException` object.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// The data of a `DOMException` object: its `name` and `message` as the engine's Strings, every
+/// code unit a script gave kept (`DOMString`), no copy of them in surf. The Strings are on
+/// swell's heap and charged there, under the run's `memory_bytes`. They stay alive because
+/// [`ExceptionData::trace`] lists them: swell's host interface, "What keeps an object alive for
+/// the host is a `Root` (decision 4), or a handle that host data the engine reaches lists in its
+/// `trace` from the scope it was handed in onward (decision 15); such a handle is strong"
+/// (`docs/design/host-interface.md:382-384 @ 0.8.0`, `:394-396 @ 0.9.0`), with
+/// `Tracer::value(&mut self, value: Value)` in decision 15 (`:1720 @ 0.8.0`, `:1736 @ 0.9.0`).
+/// The sentence names "an object" and "a handle", and the requirement under it (HOST-109) tests
+/// an object only: that a String listed with `Tracer::value` lives is read from the sentence and
+/// the signature, not from a requirement.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ExceptionData {
-    name: String,
-    message: String,
+    name: StringRef,
+    message: StringRef,
 }
 
 impl HostData for ExceptionData {
-    fn trace(&self, _tracer: &mut Tracer<'_>) {}
+    fn trace(&self, tracer: &mut Tracer<'_>) {
+        tracer.value(Value::String(self.name));
+        tracer.value(Value::String(self.message));
+    }
+}
+
+/// The most bytes of the name and of the message of a `DOMException` the bindings make
+/// themselves (a member's label with its reason from `selection.txt`, a fixed sentence, or the
+/// [`DomException`] a slice answers): a longer text is cut at a character's boundary. The text
+/// lives in surf only until [`new_exception`] made it the engine's String, before any script
+/// runs.
+pub const EXCEPTION_TEXT_BYTES: usize = 1024;
+
+/// `text` cut to at most [`EXCEPTION_TEXT_BYTES`] bytes at a character's boundary.
+fn bounded(text: &str) -> &str {
+    let mut end = text.len().min(EXCEPTION_TEXT_BYTES);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
 }
 
 /// A new wrapper of `node` implementing `interface`: a host object of the interface's brand,
@@ -274,15 +303,18 @@ pub fn wrapper_node(cx: &DomCx<'_, '_>, value: Value) -> Option<NodeId> {
 
 /// What a `DOMException` holds, for the runner's record of one a script did not catch (Q16):
 /// `<name>: <message>`, read from the exception's own data without running script, whether
-/// the bindings or a script made it; `None` for any other value.
+/// the bindings or a script made it, a lone surrogate written U+FFFD; `None` for any other
+/// value. It runs after the script's end, where no script runs; the runner cuts the text.
 pub fn exception_text(cx: &Cx<'_, ScriptHost>, value: Value) -> Option<String> {
     let Value::Object(object) = value else {
         return None;
     };
-    let data = cx
+    let data = *cx
         .host_data::<ExceptionData>(object, Interface::DomException.brand())
         .ok()??;
-    Some(format!("{}: {}", data.name, data.message))
+    let name = cx.to_rust_string_lossy(data.name).ok()?;
+    let message = cx.to_rust_string_lossy(data.message).ok()?;
+    Some(format!("{name}: {message}"))
 }
 
 /// The throw of `exception`: a new `DOMException` object of the realm.
@@ -500,27 +532,30 @@ fn throw_exception(
         Ok(prototype) => prototype,
         Err(abrupt) => return abrupt,
     };
-    match new_exception(cx, prototype, &exception.name, &exception.message) {
+    let made = (|| {
+        let name = cx.new_string(bounded(&exception.name))?;
+        let message = cx.new_string(bounded(&exception.message))?;
+        new_exception(cx, prototype, name, message)
+    })();
+    match made {
         Ok(object) => Abrupt::Throw(Value::Object(object)),
         Err(abrupt) => abrupt,
     }
 }
 
 /// A `DOMException` object with `prototype`, `name` and `message`: a host object of the brand
-/// of `DOMException` with an [[ErrorData]] slot (`HostObjectSpec::error_kind`).
+/// of `DOMException` with an [[ErrorData]] slot (`HostObjectSpec::error_kind`), whose data
+/// holds the two Strings ([`ExceptionData`]).
 fn new_exception(
     cx: &mut Cx<'_, ScriptHost>,
     prototype: ObjectRef,
-    name: &str,
-    message: &str,
+    name: StringRef,
+    message: StringRef,
 ) -> Completion<ObjectRef> {
     engine(cx.new_host_object(HostObjectSpec {
         prototype: Prototype::Object(prototype),
         brand: Interface::DomException.brand(),
-        data: Some(Box::new(ExceptionData {
-            name: name.to_string(),
-            message: message.to_string(),
-        })),
+        data: Some(Box::new(ExceptionData { name, message })),
         error_kind: Some(ErrorKind::Error),
     }))
 }
@@ -1344,17 +1379,15 @@ fn dom_exception_constructor(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) ->
             | Value::Symbol(_)
             | Value::BigInt(_) => prototype_object(dcx.engine, dcx.installed, Interface::DomException)?,
         };
-        let mut copies = Copies::new();
         let message = match message {
-            Some(message) => copies.copy(dcx.engine, message)?,
-            None => String::new(),
+            Some(message) => message,
+            None => dcx.engine.new_string("")?,
         };
         let name = match name {
-            Some(name) => copies.copy(dcx.engine, name)?,
-            None => "Error".to_string(),
+            Some(name) => name,
+            None => dcx.engine.new_string("Error")?,
         };
-        drop(copies);
-        new_exception(dcx.engine, prototype, &name, &message).map(Value::Object)
+        new_exception(dcx.engine, prototype, name, message).map(Value::Object)
     })
 }
 
@@ -1365,24 +1398,28 @@ fn this_exception(cx: &mut Cx<'_, ScriptHost>, this: Value, member: &str) -> Com
         .host_data::<ExceptionData>(object, Interface::DomException.brand())
         .map_err(defect)?
     {
-        Some(data) => Ok(data.clone()),
+        Some(data) => Ok(*data),
         None => Err(type_error(cx, &format!("{member}: `this` holds no exception"))),
     }
 }
 
 fn dom_exception_name(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Completion<Value> {
     let data = this_exception(cx, call.this, "DOMException.name")?;
-    string_value(cx, &data.name)
+    Ok(Value::String(data.name))
 }
 
 fn dom_exception_message(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Completion<Value> {
     let data = this_exception(cx, call.this, "DOMException.message")?;
-    string_value(cx, &data.message)
+    Ok(Value::String(data.message))
 }
 
+/// The legacy code of the name: the name is copied for the comparison with the ledger of
+/// [`Copies`] (a step per 64 bytes), and the copy is gone when the getter returns.
 fn dom_exception_code(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Completion<Value> {
     let data = this_exception(cx, call.this, "DOMException.code")?;
-    Ok(number(f64::from(legacy_code(&data.name))))
+    let mut copies = Copies::new();
+    let name = copies.copy(cx, data.name)?;
+    Ok(number(f64::from(legacy_code(&name))))
 }
 
 /// The steps of an interface object without a constructor: Web IDL throws a `TypeError`.

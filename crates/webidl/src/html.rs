@@ -116,7 +116,7 @@ fn idl_blocks(bytes: &[u8]) -> Vec<(usize, usize)> {
         }
         let mut idl = tag.has_class("idl");
         if !idl
-            && let Some(code) = tag_at(bytes, tag.end)
+            && let Read::Tag(code) = tag_at(bytes, tag.end)
             && !code.end_tag
             && code.name == "code"
         {
@@ -157,9 +157,22 @@ impl Tag {
     }
 }
 
-/// The tags of a page in order, after `at`: comments (`<!-- ... -->`), doctypes and other
-/// markup declarations, processing instructions and the text of `script` and `style` are
-/// skipped, as HTML's tokenizer reads them.
+/// The elements whose text holds no tag but their own end tag (HTML 13.2.6.4.7, "A start tag
+/// whose tag name is ..."): RCDATA (`textarea`, `title`), RAWTEXT (`style`, `xmp`, `iframe`,
+/// `noembed`, `noframes`) and script data (`script`).
+const TEXT_ONLY: [&str; 8] = [
+    "script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes",
+];
+
+/// The tags of a page in order, after `at`, as HTML's tokenizer (13.2.5) reads them: a comment
+/// (`<!-- ... -->`) ends at `<!-->`, `<!--->`, the next `-->` or the next `--!>` (13.2.5.43 to
+/// 13.2.5.52); doctypes and other markup declarations and processing instructions end at the
+/// next `>`; the text of each element of [`TEXT_ONLY`] ends at its own end tag, `</` and its
+/// name in either case followed by a space, `/` or `>` (13.2.5.17, "appropriate end tag"); after
+/// a `plaintext` start tag nothing is a tag; and a tag the end of the input cuts, in its name, an
+/// attribute or a quoted value, is dropped and ends the scan (13.2.5.36, "EOF in tag"). So each
+/// byte is read a bounded number of times. Not read as HTML does: script data's escaped states
+/// (`<!--` inside `script`), and a `</` without a letter after it.
 struct Tags<'b> {
     bytes: &'b [u8],
     at: usize,
@@ -174,46 +187,110 @@ impl Iterator for Tags<'_> {
             let start = self.at + bytes.get(self.at..)?.iter().position(|&b| b == b'<')?;
             let rest = &bytes[start..];
             if rest.starts_with(b"<!--") {
-                // `<!-->` and `<!--->` end at once; any other comment at the next `-->`.
-                let body = start + 4;
-                self.at = if bytes[body..].starts_with(b">") {
-                    body + 1
-                } else if bytes[body..].starts_with(b"->") {
-                    body + 2
-                } else {
-                    find(bytes, b"-->", body).map_or(bytes.len(), |end| end + 3)
-                };
+                self.at = comment_end(bytes, start + 4);
                 continue;
             }
             if rest.starts_with(b"<!") || rest.starts_with(b"<?") {
                 self.at = find(bytes, b">", start).map_or(bytes.len(), |end| end + 1);
                 continue;
             }
-            let Some(tag) = tag_at(bytes, start) else {
-                self.at = start + 1;
-                continue;
+            let tag = match tag_at(bytes, start) {
+                Read::Tag(tag) => tag,
+                Read::Text => {
+                    self.at = start + 1;
+                    continue;
+                }
+                Read::Cut => {
+                    self.at = bytes.len();
+                    return None;
+                }
             };
             self.at = tag.end;
-            if !tag.end_tag && (tag.name == "script" || tag.name == "style") {
-                let close = format!("</{}", tag.name);
-                self.at = find_ascii_case(bytes, close.as_bytes(), tag.end).unwrap_or(bytes.len());
+            if !tag.end_tag {
+                if tag.name == "plaintext" {
+                    self.at = bytes.len();
+                } else if TEXT_ONLY.contains(&tag.name.as_str()) {
+                    self.at = end_tag_of(bytes, &tag.name, tag.end);
+                }
             }
             return Some(tag);
         }
     }
 }
 
+/// Where the comment whose text starts at `body` (after its `<!--`) ends: after `<!-->` or
+/// `<!--->`, after the first `-->` or `--!>`, or at the end of the input.
+fn comment_end(bytes: &[u8], body: usize) -> usize {
+    if bytes[body..].starts_with(b">") {
+        return body + 1;
+    }
+    if bytes[body..].starts_with(b"->") {
+        return body + 2;
+    }
+    let mut at = body;
+    while let Some(dashes) = find(bytes, b"--", at) {
+        let after = &bytes[dashes + 2..];
+        if after.starts_with(b">") {
+            return dashes + 3;
+        }
+        if after.starts_with(b"!>") {
+            return dashes + 4;
+        }
+        at = dashes + 1;
+    }
+    bytes.len()
+}
+
+/// Where the text of the element `name` that starts at `from` ends: at the first `</` with
+/// `name` in either case followed by a space, `/` or `>`, or at the end of the input.
+fn end_tag_of(bytes: &[u8], name: &str, from: usize) -> usize {
+    let close = format!("</{name}");
+    let mut at = from;
+    while let Some(found) = find_ascii_case(bytes, close.as_bytes(), at) {
+        let after = found + close.len();
+        if bytes
+            .get(after)
+            .is_some_and(|&b| matches!(b, b'\t' | b'\n' | b'\x0c' | b'\r' | b' ' | b'/' | b'>'))
+        {
+            return found;
+        }
+        at = found + 1;
+    }
+    bytes.len()
+}
+
+/// What [`tag_at`] reads at a `<`.
+enum Read {
+    /// A start or end tag.
+    Tag(Tag),
+    /// No tag: the `<` is text.
+    Text,
+    /// A tag the end of the input cuts before its `>`.
+    Cut,
+}
+
 /// The start or end tag at `at` (a `<` followed by an ASCII letter, or `</` and one), read up
-/// to the `>` that is not inside a quoted attribute value; `None` when there is none, or no
-/// `>` ends it.
-fn tag_at(bytes: &[u8], at: usize) -> Option<Tag> {
-    let mut i = at.checked_add(1)?;
-    let end_tag = bytes.get(i) == Some(&b'/');
+/// to the `>` that is not inside a quoted attribute value; [`Read::Text`] when no letter
+/// follows, [`Read::Cut`] when no `>` ends it.
+fn tag_at(bytes: &[u8], at: usize) -> Read {
+    match read_tag(bytes, at) {
+        Ok(tag) => tag,
+        Err(Cut) => Read::Cut,
+    }
+}
+
+/// The end of the input inside a tag.
+struct Cut;
+
+fn read_tag(bytes: &[u8], at: usize) -> Result<Read, Cut> {
+    let byte = |i: usize| bytes.get(i).copied().ok_or(Cut);
+    let mut i = at + 1;
+    let end_tag = byte(i)? == b'/';
     if end_tag {
         i += 1;
     }
-    if !bytes.get(i)?.is_ascii_alphabetic() {
-        return None;
+    if !byte(i)?.is_ascii_alphabetic() {
+        return Ok(Read::Text);
     }
     let name_start = i;
     while bytes
@@ -231,7 +308,7 @@ fn tag_at(bytes: &[u8], at: usize) -> Option<Tag> {
         {
             i += 1;
         }
-        if *bytes.get(i)? == b'>' {
+        if byte(i)? == b'>' {
             break;
         }
         // The first character of a name may be `=` (HTML's tokenizer).
@@ -253,9 +330,9 @@ fn tag_at(bytes: &[u8], at: usize) -> Option<Tag> {
             while bytes.get(i).is_some_and(u8::is_ascii_whitespace) {
                 i += 1;
             }
-            match bytes.get(i)? {
-                &quote @ (b'"' | b'\'') => {
-                    let close = bytes[i + 1..].iter().position(|&b| b == quote)? + i + 1;
+            match byte(i)? {
+                quote @ (b'"' | b'\'') => {
+                    let close = bytes[i + 1..].iter().position(|&b| b == quote).ok_or(Cut)? + i + 1;
                     value = String::from_utf8_lossy(&bytes[i + 1..close]).into_owned();
                     i = close + 1;
                 }
@@ -275,13 +352,13 @@ fn tag_at(bytes: &[u8], at: usize) -> Option<Tag> {
             attributes.push((attribute, value));
         }
     }
-    Some(Tag {
+    Ok(Read::Tag(Tag {
         start: at,
         end: i + 1,
         end_tag,
         name,
         attributes,
-    })
+    }))
 }
 
 fn find(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {

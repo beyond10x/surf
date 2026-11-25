@@ -259,6 +259,67 @@ fn legacy_unforgeable_off_the_global_is_refused() {
     assert!(text.contains("name: \"length\""), "Window.length generated");
 }
 
+/// Gap N17 of the second review: `iterable<T>` on an interface without an indexed getter is
+/// refused naming the row (the bindings make its iterator from the indexed getter, Web IDL
+/// 3.7.9); with one it is generated.
+#[test]
+fn iterable_without_an_indexed_getter_is_refused() {
+    let idl = |getter: &str| {
+        format!(
+            "interface EventTarget {{}};\ninterface Node : EventTarget {{}};\n\
+             interface NodeList {{\n  {getter}\n  iterable<Node>;\n}};\n\
+             interface Window : EventTarget {{}};\n\
+             interface DOMException {{ readonly attribute DOMString name; }};\n"
+        )
+    };
+    let text = "definitions: EventTarget Node NodeList Window DOMException\nglobal: Window\n\
+                NodeList iterable reading\n";
+    let selection = Selection::read(text, "s.txt").expect("reads");
+    let without =
+        Model::new(read(&idl("readonly attribute unsigned long length;"), "a.idl").expect("read"))
+            .expect("model");
+    let error = generate(&without, &selection, &[]).expect_err("iterable without getter");
+    assert_eq!(
+        error.to_string(),
+        "s.txt:3: `NodeList iterable`: `iterable<T>` without an indexed getter"
+    );
+    let with =
+        Model::new(read(&idl("getter Node? item(unsigned long index);"), "b.idl").expect("read"))
+            .expect("model");
+    generate(&with, &selection, &[]).expect("iterable with an indexed getter");
+}
+
+/// Notes 3 and 4 of the second review, as ruled: an argument named like a parameter the
+/// generator writes itself (`cx`, `this`) gets a `_` at its end, the rule of `self`; two
+/// members of one interface with one Rust name are refused naming both.
+#[test]
+fn own_parameter_names_are_renamed_and_member_names_are_distinct() {
+    let idl = "interface EventTarget {};\ninterface Node : EventTarget {\n\
+               \x20 undefined a(DOMString cx, DOMString this);\n\
+               \x20 undefined fooBar();\n  undefined foo_bar();\n};\n\
+               interface Window : EventTarget {};\n\
+               interface DOMException { readonly attribute DOMString name; };\n";
+    let model = Model::new(read(idl, "small.idl").expect("read")).expect("model");
+    let head = "definitions: EventTarget Node Window DOMException\nglobal: Window\n";
+    let selection = Selection::read(&format!("{head}Node a mutation\n"), "s.txt").expect("reads");
+    let text = generate(&model, &selection, &[]).expect("generates");
+    assert!(
+        text.contains("this: NodeId, cx_: String, this_: String)"),
+        "the parameters of node_a"
+    );
+    let selection = Selection::read(
+        &format!("{head}Node fooBar mutation\nNode foo_bar mutation\n"),
+        "s.txt",
+    )
+    .expect("reads");
+    let error = generate(&model, &selection, &[]).expect_err("two members, one name");
+    assert_eq!(
+        error.to_string(),
+        "s.txt:4: `Node foo_bar`: the members `Node.fooBar` and `Node.foo_bar` are both written \
+         `node_foo_bar`"
+    );
+}
+
 /// The rule of the generator's names: `-` is written `_`, a keyword with a raw form is raw, and
 /// `self` gets a `_` at its end (no raw `self` exists).
 #[test]
@@ -300,14 +361,16 @@ fn two_arguments_with_one_rust_name_are_refused() {
         "s.txt:3: `Node foo`: the arguments `my-arg` and `my_arg` are both written `my_arg`"
     );
 }
-
+/// The model of the bindings, the only test that reads the cut of the HTML Standard; and the
+/// header of `bindings.rs` names what this reading gives of each page (note 7 of the second
+/// review): a change of `surf-html` that changes what is read fails here.
 /// The model of the bindings, the only test that reads the cut of the HTML Standard.
 #[test]
 fn rows_match_the_model() {
     let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("data/whatwg");
     let page = |name: &str| std::fs::read(data.join(name)).expect("read a page");
     let selection = committed();
-    let (model, _) = surf_webidl::bindings_model(
+    let (model, _, reads) = surf_webidl::bindings_model(
         &page("dom.html"),
         &page("webidl.html"),
         &page("html-idl.html"),
@@ -345,4 +408,18 @@ fn rows_match_the_model() {
         .filter(|row| !row.is_iterable())
         .count();
     assert_eq!(rows, 233, "226 member rows and 7 constructor rows");
+    let bindings = Path::new(env!("CARGO_MANIFEST_DIR")).join("../script/src/bindings.rs");
+    let bindings = std::fs::read_to_string(bindings).expect("read bindings.rs");
+    let header: Vec<&str> = bindings
+        .lines()
+        .take_while(|line| !line.starts_with(surf_webidl::FILE_DIGEST_LINE))
+        .filter_map(|line| line.strip_prefix("//! "))
+        .filter(|line| line.ends_with(".html") && line.split("  ").count() == 3)
+        .collect();
+    let read: Vec<String> = reads.iter().map(surf_webidl::ReadText::line).collect();
+    assert_eq!(
+        header, read,
+        "the header of crates/script/src/bindings.rs names another reading of the pages than \
+         surf-html gives now: run cargo run -p surf-webidl --bin bindings"
+    );
 }

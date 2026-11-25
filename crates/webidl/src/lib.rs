@@ -94,7 +94,9 @@ mod prelude;
 mod selection;
 
 pub use extract::extract_index;
-pub use generate::{BODY_DIGEST_LINE, Digest, camel, fill_body_digest, generate, snake};
+pub use generate::{
+    Digest, FILE_DIGEST_LINE, camel, fill_file_digest, generate, generate_bindings, snake,
+};
 pub use html::{HTML_DEFINITIONS, HtmlIdl, Skipped, cut_idl_blocks, extract_selected};
 pub use model::{
     Argument, ConstValue, Counts, DefaultValue, Definition, DefinitionKind, DictionaryMember,
@@ -225,16 +227,64 @@ pub fn html_wanted(selection: &Selection) -> BTreeMap<String, BTreeSet<String>> 
 /// The model of the bindings: the IDL Indexes of the DOM Standard and of the Web IDL Standard,
 /// and of the HTML Standard's cut (`html-idl.html`, [`cut_idl_blocks`]) what `selection` names
 /// of [`HTML_DEFINITIONS`] ([`extract_selected`]), each file named by its name in
-/// `data/whatwg/`.
+/// `data/whatwg/`; with the model, what was read of the cut, and the Web IDL text read of each
+/// of the three files, in this order ([`ReadText`]).
 pub fn bindings_model(
     dom: &[u8],
     webidl: &[u8],
     html: &[u8],
     selection: &Selection,
-) -> Result<(Model, HtmlIdl), ReadError> {
-    let mut definitions = read_page(dom, "dom.html")?.definitions;
-    definitions.extend(read_page(webidl, "webidl.html")?.definitions);
+) -> Result<(Model, HtmlIdl, Vec<ReadText>), ReadError> {
+    let dom = read_page(dom, "dom.html")?;
+    let webidl = read_page(webidl, "webidl.html")?;
     let extracted = extract_selected(html, "html-idl.html", &html_wanted(selection))?;
+    let mut definitions = dom.definitions;
+    definitions.extend(webidl.definitions);
     definitions.extend(read(&extracted.text, "html-idl.html")?);
-    Ok((Model::new(definitions)?, extracted))
+    let texts = vec![
+        ReadText::new("dom.html", &dom.index),
+        ReadText::new("webidl.html", &webidl.index),
+        ReadText::new("html-idl.html", &extracted.text),
+    ];
+    Ok((Model::new(definitions)?, extracted, texts))
+}
+
+/// What the generator read of one file of `data/whatwg/` through `surf-html`: the Web IDL text
+/// ([`Page::index`], or [`HtmlIdl::text`] of the cut), as its count of bytes and its 64-bit
+/// FNV-1a ([`fnv1a_64`]). The header of `bindings.rs` holds one line per file
+/// ([`ReadText::line`]), so that a change of `surf-html` that changes what is read shows as a
+/// change of those lines, and one that does not changes nothing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReadText {
+    /// The file's path from the repository root.
+    pub path: String,
+    /// The bytes of the text read.
+    pub bytes: usize,
+    /// The FNV-1a of the text read.
+    pub fnv1a: u64,
+}
+
+impl ReadText {
+    /// The text `text` read of the file `file` of `data/whatwg/`.
+    pub fn new(file: &str, text: &str) -> ReadText {
+        ReadText {
+            path: format!("crates/webidl/data/whatwg/{file}"),
+            bytes: text.len(),
+            fnv1a: fnv1a_64(text.as_bytes()),
+        }
+    }
+
+    /// The line of the header of `bindings.rs`, after its `//! `: the FNV-1a in 16 lowercase
+    /// hex digits, the count of bytes and the path, two spaces apart.
+    pub fn line(&self) -> String {
+        format!("{:016x}  {}  {}", self.fnv1a, self.bytes, self.path)
+    }
+}
+
+/// The 64-bit FNV-1a hash of `bytes` (offset basis `0xcbf29ce484222325`, prime
+/// `0x100000001b3`).
+pub fn fnv1a_64(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, &byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+    })
 }

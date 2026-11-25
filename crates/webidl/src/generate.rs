@@ -6,25 +6,27 @@
 //! function per getter, setter, operation and interface object, and the table the realm's setup
 //! reads. It refuses, naming the row, a definition the selection does not name, a member the
 //! model does not hold ([`Selection::check`]), a type or a member it does not convert,
-//! `[LegacyUnforgeable]` off the global interface, and two arguments of one member that get one
-//! Rust name.
+//! `[LegacyUnforgeable]` off the global interface, two arguments of one member that get one
+//! Rust name, and two members that get one Rust name (`fooBar` and `foo_bar`), naming both.
 //!
 //! What it writes from the model and the selection is Rust: a name of the model becomes an
-//! identifier by [`identifier`]'s rule (`snake` form, `-` written `_`, a keyword raw, `self`,
-//! `super` and `crate` with a `_` at the end), and a note of the selection goes into a one-line
-//! `///` comment with each control character written as its escape ([`doc_text`]); in a string
-//! literal it is written with Rust's escapes.
+//! identifier by [`identifier`]'s one rule (`snake` form, `-` written `_`, a keyword raw; `self`,
+//! `Self`, `super`, `crate` and the generator's own parameter names `cx` and `this` with a `_`
+//! at the end), and a note of the selection goes into a one-line `///` comment with each control
+//! character and each bidirectional control character written as its escape ([`doc_text`]); in a
+//! string literal it is written with Rust's escapes.
 //!
-//! Beside the digests of its sources, the header holds the sha256 of the file's lines after
-//! the header, which the binary `bindings` fills in after `rustfmt` ([`BODY_DIGEST_LINE`]), so
-//! that `task webidl-check` notices a change of the file itself.
+//! Beside the digests of its sources, the header holds the sha256 of the whole file with the 64
+//! digits of that line read as zeros, which the binary `bindings` fills in after `rustfmt`
+//! ([`FILE_DIGEST_LINE`]), so that `task webidl-check` notices a change of any byte of the file.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 use crate::selection::{Row, Selection, SelectionError, Slice};
 use crate::{
-    Argument, ConstValue, DefaultValue, DefinitionKind, Member, MemberKind, Model, Type, TypeKind,
+    Argument, ConstValue, DefaultValue, DefinitionKind, Member, MemberKind, Model, ReadText, Type,
+    TypeKind,
 };
 
 /// The sha256 of a source and its path from the repository root.
@@ -252,6 +254,9 @@ struct Generator<'m> {
     unions: BTreeSet<Conversion>,
     methods: BTreeMap<Slice, Vec<Method>>,
     functions: String,
+    /// The Rust name each member of the selection is written with (`<interface>_<member>` in
+    /// `snake` form, a setter's with `set_` before it), and the member's label.
+    names: BTreeMap<String, String>,
     specs: String,
 }
 
@@ -267,35 +272,53 @@ impl Ord for Conversion {
     }
 }
 
-/// The start of the header's last line, which ends in the sha256 of the file's lines after it:
-/// [`generate`] writes 64 zeros there, and the binary `bindings` the digest, after `rustfmt`
-/// ([`fill_body_digest`]).
-pub const BODY_DIGEST_LINE: &str = "//! The sha256 of the lines after this one: ";
+/// The start of the header's last line, which ends in the sha256 of the whole file, every byte
+/// of it, with the 64 digits of this line read as zeros: [`generate`] writes 64 zeros there,
+/// and the binary `bindings` the digest, after `rustfmt` ([`fill_file_digest`]).
+pub const FILE_DIGEST_LINE: &str =
+    "//! The sha256 of this whole file, with the 64 digits of this line read as zeros: ";
 
-/// `text` with the 64 digits of its [`BODY_DIGEST_LINE`] replaced by what `sha256` answers for
-/// the bytes after that line; `None` when `text` holds no such line.
-pub fn fill_body_digest(
+/// `text` with the 64 digits of its first [`FILE_DIGEST_LINE`] replaced by what `sha256`
+/// answers for all of `text` with those digits read as zeros; `None` when `text` holds no such
+/// line with 64 digits.
+pub fn fill_file_digest(
     text: &str,
     sha256: impl FnOnce(&[u8]) -> Result<String, String>,
 ) -> Option<Result<String, String>> {
-    let start = if text.starts_with(BODY_DIGEST_LINE) {
+    let start = if text.starts_with(FILE_DIGEST_LINE) {
         0
     } else {
-        text.find(&format!("\n{BODY_DIGEST_LINE}"))? + 1
+        text.find(&format!("\n{FILE_DIGEST_LINE}"))? + 1
     };
-    let digits = start + BODY_DIGEST_LINE.len();
-    let body = text[digits..].find('\n')? + digits + 1;
+    let digits = start + FILE_DIGEST_LINE.len();
+    let end = digits + 64;
+    if text.get(digits..end)?.len() != 64 {
+        return None;
+    }
+    let zeroed = format!("{}{}{}", &text[..digits], "0".repeat(64), &text[end..]);
     Some(
-        sha256(&text.as_bytes()[body..])
-            .map(|digest| format!("{}{digest}{}", &text[..digits], &text[digits + 64..])),
+        sha256(zeroed.as_bytes())
+            .map(|digest| format!("{}{digest}{}", &text[..digits], &text[end..])),
     )
 }
 
-/// Writes `bindings.rs` from `model` and `selection`, with `digests` in its header.
+/// Writes `bindings.rs` from `model` and `selection`, with `digests` in its header:
+/// [`generate_bindings`] with no line of what was read.
 pub fn generate(
     model: &Model,
     selection: &Selection,
     digests: &[Digest],
+) -> Result<String, SelectionError> {
+    generate_bindings(model, selection, digests, &[])
+}
+
+/// Writes `bindings.rs` from `model` and `selection`, with `digests` in its header and, when
+/// `reads` holds any, one line per page of what was read of it ([`ReadText::line`]).
+pub fn generate_bindings(
+    model: &Model,
+    selection: &Selection,
+    digests: &[Digest],
+    reads: &[ReadText],
 ) -> Result<String, SelectionError> {
     selection.check(model)?;
     let mut generator = Generator {
@@ -306,13 +329,14 @@ pub fn generate(
         unions: BTreeSet::new(),
         methods: BTreeMap::new(),
         functions: String::new(),
+        names: BTreeMap::new(),
         specs: String::new(),
     };
     generator.order_interfaces()?;
     for index in 0..generator.interfaces.len() {
         generator.interface(index)?;
     }
-    Ok(generator.write(digests))
+    Ok(generator.write(digests, reads))
 }
 
 /// `getElementsByTagNameNS` as `get_elements_by_tag_name_ns`, `DOMException` as
@@ -353,10 +377,16 @@ pub fn camel(name: &str) -> String {
         .collect()
 }
 
+/// The names of the parameters [`Generator::write_traits`] gives a slice's method before its
+/// arguments (beside `self`).
+const OWN_PARAMETERS: [&str; 2] = ["cx", "this"];
+
 /// A Rust identifier for the Web IDL identifier `name` (`/_?[A-Za-z][0-9A-Z_a-z-]*/`): its
 /// [`snake`] form with each `-` written `_`; a keyword that has a raw form is written raw
-/// (`r#type`), and one that has none (`self`, `Self`, `super`, `crate`) gets a `_` at its end
-/// (`self_`). Two names of one member that give the same identifier are refused by the
+/// (`r#type`), and a name Rust or the generator keeps for itself gets a `_` at its end: the
+/// keywords without a raw form (`self`, `Self`, `super`, `crate`) and [`OWN_PARAMETERS`], the
+/// names of the parameters the generator writes before the arguments of a slice's method
+/// (`cx_`). Two names of one member that give the same identifier are refused by the
 /// generator, naming the row.
 fn identifier(name: &str) -> String {
     const KEYWORDS: &[&str] = &[
@@ -368,7 +398,7 @@ fn identifier(name: &str) -> String {
     ];
     const NOT_RAW: &[&str] = &["self", "Self", "super", "crate"];
     let snake = snake(name).replace('-', "_");
-    if NOT_RAW.contains(&snake.as_str()) {
+    if NOT_RAW.contains(&snake.as_str()) || OWN_PARAMETERS.contains(&snake.as_str()) {
         format!("{snake}_")
     } else if KEYWORDS.contains(&snake.as_str()) {
         format!("r#{snake}")
@@ -377,13 +407,15 @@ fn identifier(name: &str) -> String {
     }
 }
 
-/// `text` for a one-line `///` comment: each control character (a carriage return, a tab)
-/// written as its Rust escape (`\r`), so that the line holds no bare CR, which rustc refuses
-/// in a doc comment, and no line break.
+/// `text` for a one-line `///` comment: each control character (a carriage return, a tab) and
+/// each bidirectional control character rustc's lint `text_direction_codepoint_in_comment`
+/// refuses in a comment (U+202A to U+202E, U+2066 to U+2069) written as its Rust escape
+/// (`\r`, `\u{202e}`), so that the line holds no bare CR, which rustc refuses in a doc comment,
+/// no line break, and no character that lint refuses.
 fn doc_text(text: &str) -> String {
     text.chars()
         .map(|c| {
-            if c.is_control() {
+            if c.is_control() || matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}') {
                 c.escape_default().to_string()
             } else {
                 c.to_string()
@@ -445,6 +477,19 @@ impl Generator<'_> {
             line: row.line,
             what: format!("`{} {}`: {what}", row.interface, row.member),
         }
+    }
+
+    /// Takes `rust` as the name of the member `label` of `row`; refused, naming both members,
+    /// when another member of the selection is written with it. No second name is invented.
+    fn claim(&mut self, row: &Row, label: &str, rust: String) -> Result<(), SelectionError> {
+        if let Some(before) = self.names.get(&rust) {
+            return Err(self.refuse(
+                row,
+                format!("the members `{before}` and `{label}` are both written `{rust}`"),
+            ));
+        }
+        self.names.insert(rust, label.to_string());
+        Ok(())
     }
 
     /// The parent of the interface `name` in the model.
@@ -930,6 +975,11 @@ impl Generator<'_> {
                     );
                 }
                 MemberKind::Attribute { ty, readonly, .. } => {
+                    let base = format!("{}_{}", snake(&name), snake(&row.member));
+                    self.claim(row, &label, base.clone())?;
+                    if !readonly {
+                        self.claim(row, &label, format!("set_{base}"))?;
+                    }
                     let getter = format!("getter_{}_{}", snake(&name), snake(&row.member));
                     let replaceable = has_attribute(&member, "Replaceable");
                     let forwards = member
@@ -1050,6 +1100,11 @@ impl Generator<'_> {
                     if *is_static {
                         return Err(self.refuse(row, "a static operation".to_string()));
                     }
+                    self.claim(
+                        row,
+                        &label,
+                        format!("{}_{}", snake(&name), snake(&row.member)),
+                    )?;
                     let function = format!("operation_{}_{}", snake(&name), snake(&row.member));
                     let length = arguments
                         .iter()
@@ -1335,7 +1390,7 @@ impl Generator<'_> {
     }
 
     /// The text of the file.
-    fn write(&self, digests: &[Digest]) -> String {
+    fn write(&self, digests: &[Digest], reads: &[ReadText]) -> String {
         let mut out = String::new();
         out.push_str(NOTICE);
         out.push('\n');
@@ -1353,8 +1408,8 @@ impl Generator<'_> {
 //! Written by `cargo run -p surf-webidl --bin bindings` (`story:webidl-bindings`). Never
 //! edited by hand: a member enters or leaves by a change of the selection, and gets
 //! behaviour in the hand-written slice behind its trait (`crate::dom`). `task webidl-check`
-//! recomputes the sha256 of each source below and of the file's lines after this header, and
-//! compares; `task webidl-slow` writes the file again and compares the bytes.
+//! recomputes the sha256 of each source below and of this whole file (its line at the end of
+//! this header), and compares; `task webidl-slow` writes the file again and compares the bytes.
 //!
 //! The sha256 of each source, its path from the repository root:
 //!
@@ -1364,8 +1419,18 @@ impl Generator<'_> {
             let _ = writeln!(out, "//! {}  {}", digest.sha256, digest.path);
         }
         let _ = writeln!(out, "//! {fence}");
+        if !reads.is_empty() {
+            let _ = writeln!(
+                out,
+                "//!\n//! What the generator read of each page through `surf-html`: the FNV-1a (64 bits) of the\n//! Web IDL text, its bytes and the page's path (a test of `surf-webidl` reads them again):\n//!\n//! {fence}text"
+            );
+            for read in reads {
+                let _ = writeln!(out, "//! {}", read.line());
+            }
+            let _ = writeln!(out, "//! {fence}");
+        }
         let _ = writeln!(out, "//!");
-        let _ = writeln!(out, "{BODY_DIGEST_LINE}{}", "0".repeat(64));
+        let _ = writeln!(out, "{FILE_DIGEST_LINE}{}", "0".repeat(64));
         out.push_str(crate::prelude::PRELUDE);
         out.push('\n');
         self.write_interfaces(&mut out);

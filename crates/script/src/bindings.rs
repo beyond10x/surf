@@ -34,8 +34,8 @@
 //! Written by `cargo run -p surf-webidl --bin bindings` (`story:webidl-bindings`). Never
 //! edited by hand: a member enters or leaves by a change of the selection, and gets
 //! behaviour in the hand-written slice behind its trait (`crate::dom`). `task webidl-check`
-//! recomputes the sha256 of each source below and of the file's lines after this header, and
-//! compares; `task webidl-slow` writes the file again and compares the bytes.
+//! recomputes the sha256 of each source below and of this whole file (its line at the end of
+//! this header), and compares; `task webidl-slow` writes the file again and compares the bytes.
 //!
 //! The sha256 of each source, its path from the repository root:
 //!
@@ -45,20 +45,31 @@
 //! cc3aaecd4aaf3d0e63c7405191056e99d9e16eb64d356e1c8d59d5bc01265371  crates/webidl/data/whatwg/html-idl.html
 //! 9b355fa6fa753f930e321be6f7d0a57e41cbce61c84bcf40850b2251f664cb79  crates/webidl/selection.txt
 //! e8b1d6e0efc188db4e1608564a7fcf305e3781c42884985e77e99f7e91d3fe5f  crates/webidl/Cargo.toml
+//! 143aaa6923355a7101127f3db0aecd9b7b3d9adeff8689c23628335884d31df1  crates/html/Cargo.toml
 //! b9c8d2d59f6f46474c0cfa0b8b77bea21d94fc73a30ad93d5bf6385c422197d2  rust-toolchain.toml
-//! 8bd13a24e2b10151bd955e9393fb07f148857ba5f93b2d9e20f5c3a473a9454c  crates/webidl/src/bin/bindings.rs
+//! f32d2f03b3f4b1e295c79ed49d543f1205c7dac7c3dc74f05a5a27af4fea0584  rustfmt.toml
+//! 75291cf6fa7a72d5062db3fca1f659463b3187e258d6a2d34f4f7bcf6ab86b68  crates/webidl/src/bin/bindings.rs
 //! 91c0cd2b8dc96f725518046a15c01115e61e0dec125f0ae36656c3a4e73b7356  crates/webidl/src/extract.rs
-//! 8264caeb1d19169f69f1792b2e0bfef7bd248dfe545f193e05ae910bd5f235af  crates/webidl/src/generate.rs
-//! 20a67ac3fa19c920b25fd4a6a8de30f9e6254824431501590c4a83d3f9aa1c26  crates/webidl/src/html.rs
+//! 540de6b344c7f7949904f2387271ef345433f6e1b566821959f4488277ce2711  crates/webidl/src/generate.rs
+//! bb39103dd61d3152cfb7258514bc234c3992f1aec09d79b47b30ef3acb365e10  crates/webidl/src/html.rs
 //! 2f5c4d359f13f497b0e1d87d12b0163b20cd7c972a22cf4761106f889ecde900  crates/webidl/src/lexer.rs
-//! e09115e64c5cbbf67d4b963ae0d5e7ea50072d62aa42dbcddf6ed47362cc9406  crates/webidl/src/lib.rs
+//! 12af9cd4b9912546b2fc1d4b93a0b651bc56194b72751f173c7c03ba549418ad  crates/webidl/src/lib.rs
 //! fa6e285bfc241f9e68384ebbfd5f04e1c9172fbc254baca4c4fc8e1a154cd930  crates/webidl/src/model.rs
 //! 8db6c1d01d7d0b8dc68530edc4f5bf982f1b5cc2b1c49fbbb38496b9ff60dacd  crates/webidl/src/parser.rs
-//! 6446670cd0eb29bbd898b67373e80dd8deedb4838c20d3cc4b51b9e8e2c4f5b5  crates/webidl/src/prelude.rs
+//! 3f1c097f71fc482f809857f677a982f03cc9867d6553ca058a8a9b4e0de3dae0  crates/webidl/src/prelude.rs
 //! 22baac7ca4bee83065ca31df9ddab4faf4d6227668cb327360b0473564ed85a3  crates/webidl/src/selection.rs
 //! ```
 //!
-//! The sha256 of the lines after this one: f46ad4e7b154529b7504f3c9ef70d24e6e22f560eb9d0fa44d9a81f23961975c
+//! What the generator read of each page through `surf-html`: the FNV-1a (64 bits) of the
+//! Web IDL text, its bytes and the page's path (a test of `surf-webidl` reads them again):
+//!
+//! ```text
+//! 2bb8d6c403026eb3  23424  crates/webidl/data/whatwg/dom.html
+//! 35b61f04d5105dbe  2279  crates/webidl/data/whatwg/webidl.html
+//! 36612fcd0caea180  6266  crates/webidl/data/whatwg/html-idl.html
+//! ```
+//!
+//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 68ee19471eadfb0ed6219f25ea2ab69a2403331b5959bf70c514e2805e11f606
 
 use std::cell::Cell;
 
@@ -289,15 +300,44 @@ impl HostData for CollectionData {
     fn trace(&self, _tracer: &mut Tracer<'_>) {}
 }
 
-/// The data of a `DOMException` object.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// The data of a `DOMException` object: its `name` and `message` as the engine's Strings, every
+/// code unit a script gave kept (`DOMString`), no copy of them in surf. The Strings are on
+/// swell's heap and charged there, under the run's `memory_bytes`. They stay alive because
+/// [`ExceptionData::trace`] lists them: swell's host interface, "What keeps an object alive for
+/// the host is a `Root` (decision 4), or a handle that host data the engine reaches lists in its
+/// `trace` from the scope it was handed in onward (decision 15); such a handle is strong"
+/// (`docs/design/host-interface.md:382-384 @ 0.8.0`, `:394-396 @ 0.9.0`), with
+/// `Tracer::value(&mut self, value: Value)` in decision 15 (`:1720 @ 0.8.0`, `:1736 @ 0.9.0`).
+/// The sentence names "an object" and "a handle", and the requirement under it (HOST-109) tests
+/// an object only: that a String listed with `Tracer::value` lives is read from the sentence and
+/// the signature, not from a requirement.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ExceptionData {
-    name: String,
-    message: String,
+    name: StringRef,
+    message: StringRef,
 }
 
 impl HostData for ExceptionData {
-    fn trace(&self, _tracer: &mut Tracer<'_>) {}
+    fn trace(&self, tracer: &mut Tracer<'_>) {
+        tracer.value(Value::String(self.name));
+        tracer.value(Value::String(self.message));
+    }
+}
+
+/// The most bytes of the name and of the message of a `DOMException` the bindings make
+/// themselves (a member's label with its reason from `selection.txt`, a fixed sentence, or the
+/// [`DomException`] a slice answers): a longer text is cut at a character's boundary. The text
+/// lives in surf only until [`new_exception`] made it the engine's String, before any script
+/// runs.
+pub const EXCEPTION_TEXT_BYTES: usize = 1024;
+
+/// `text` cut to at most [`EXCEPTION_TEXT_BYTES`] bytes at a character's boundary.
+fn bounded(text: &str) -> &str {
+    let mut end = text.len().min(EXCEPTION_TEXT_BYTES);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
 }
 
 /// A new wrapper of `node` implementing `interface`: a host object of the interface's brand,
@@ -330,15 +370,18 @@ pub fn wrapper_node(cx: &DomCx<'_, '_>, value: Value) -> Option<NodeId> {
 
 /// What a `DOMException` holds, for the runner's record of one a script did not catch (Q16):
 /// `<name>: <message>`, read from the exception's own data without running script, whether
-/// the bindings or a script made it; `None` for any other value.
+/// the bindings or a script made it, a lone surrogate written U+FFFD; `None` for any other
+/// value. It runs after the script's end, where no script runs; the runner cuts the text.
 pub fn exception_text(cx: &Cx<'_, ScriptHost>, value: Value) -> Option<String> {
     let Value::Object(object) = value else {
         return None;
     };
-    let data = cx
+    let data = *cx
         .host_data::<ExceptionData>(object, Interface::DomException.brand())
         .ok()??;
-    Some(format!("{}: {}", data.name, data.message))
+    let name = cx.to_rust_string_lossy(data.name).ok()?;
+    let message = cx.to_rust_string_lossy(data.message).ok()?;
+    Some(format!("{name}: {message}"))
 }
 
 /// The throw of `exception`: a new `DOMException` object of the realm.
@@ -555,27 +598,30 @@ fn throw_exception(
         Ok(prototype) => prototype,
         Err(abrupt) => return abrupt,
     };
-    match new_exception(cx, prototype, &exception.name, &exception.message) {
+    let made = (|| {
+        let name = cx.new_string(bounded(&exception.name))?;
+        let message = cx.new_string(bounded(&exception.message))?;
+        new_exception(cx, prototype, name, message)
+    })();
+    match made {
         Ok(object) => Abrupt::Throw(Value::Object(object)),
         Err(abrupt) => abrupt,
     }
 }
 
 /// A `DOMException` object with `prototype`, `name` and `message`: a host object of the brand
-/// of `DOMException` with an [[ErrorData]] slot (`HostObjectSpec::error_kind`).
+/// of `DOMException` with an [[ErrorData]] slot (`HostObjectSpec::error_kind`), whose data
+/// holds the two Strings ([`ExceptionData`]).
 fn new_exception(
     cx: &mut Cx<'_, ScriptHost>,
     prototype: ObjectRef,
-    name: &str,
-    message: &str,
+    name: StringRef,
+    message: StringRef,
 ) -> Completion<ObjectRef> {
     engine(cx.new_host_object(HostObjectSpec {
         prototype: Prototype::Object(prototype),
         brand: Interface::DomException.brand(),
-        data: Some(Box::new(ExceptionData {
-            name: name.to_string(),
-            message: message.to_string(),
-        })),
+        data: Some(Box::new(ExceptionData { name, message })),
         error_kind: Some(ErrorKind::Error),
     }))
 }
@@ -1478,17 +1524,15 @@ fn dom_exception_constructor(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) ->
                 prototype_object(dcx.engine, dcx.installed, Interface::DomException)?
             }
         };
-        let mut copies = Copies::new();
         let message = match message {
-            Some(message) => copies.copy(dcx.engine, message)?,
-            None => String::new(),
+            Some(message) => message,
+            None => dcx.engine.new_string("")?,
         };
         let name = match name {
-            Some(name) => copies.copy(dcx.engine, name)?,
-            None => "Error".to_string(),
+            Some(name) => name,
+            None => dcx.engine.new_string("Error")?,
         };
-        drop(copies);
-        new_exception(dcx.engine, prototype, &name, &message).map(Value::Object)
+        new_exception(dcx.engine, prototype, name, message).map(Value::Object)
     })
 }
 
@@ -1503,7 +1547,7 @@ fn this_exception(
         .host_data::<ExceptionData>(object, Interface::DomException.brand())
         .map_err(defect)?
     {
-        Some(data) => Ok(data.clone()),
+        Some(data) => Ok(*data),
         None => Err(type_error(
             cx,
             &format!("{member}: `this` holds no exception"),
@@ -1513,17 +1557,21 @@ fn this_exception(
 
 fn dom_exception_name(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Completion<Value> {
     let data = this_exception(cx, call.this, "DOMException.name")?;
-    string_value(cx, &data.name)
+    Ok(Value::String(data.name))
 }
 
 fn dom_exception_message(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Completion<Value> {
     let data = this_exception(cx, call.this, "DOMException.message")?;
-    string_value(cx, &data.message)
+    Ok(Value::String(data.message))
 }
 
+/// The legacy code of the name: the name is copied for the comparison with the ledger of
+/// [`Copies`] (a step per 64 bytes), and the copy is gone when the getter returns.
 fn dom_exception_code(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Completion<Value> {
     let data = this_exception(cx, call.this, "DOMException.code")?;
-    Ok(number(f64::from(legacy_code(&data.name))))
+    let mut copies = Copies::new();
+    let name = copies.copy(cx, data.name)?;
+    Ok(number(f64::from(legacy_code(&name))))
 }
 
 /// The steps of an interface object without a constructor: Web IDL throws a `TypeError`.

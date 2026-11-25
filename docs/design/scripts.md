@@ -335,7 +335,9 @@ and `Cx::to_rust_string_lossy` (`crates/swell/src/host/mod.rs:504-513 @ 0.8.0`, 
 every argument (Web IDL's conversions may run script) before it copies any String out of the
 engine, or charges the copy with `Cx::charge_host_bytes` before it makes it and drops the
 `HostBytes` with the copy; no uncharged copy of surf's is alive while script runs.
-`story:webidl-bindings` holds the rule with a test.
+`story:webidl-bindings` holds the rule with a test. A `DOMException` holds its `name` and
+`message` as the engine's Strings, which its host data lists in `trace`: they are on swell's heap
+and charged there, and surf keeps no copy of them.
 
 A test gives limits of its own, as swell's tests do (`crates/swell/tests/support/host.rs:70-80 @
 0.8.0`): the values above are the session's.
@@ -1241,6 +1243,7 @@ Settled: the fields (kind, message, line, column, `dynamic`) and their sources, 
   it stays a named deviation in the selection. A deviation of every `DOMString` argument of the
   bindings, named once in the head of `selection.txt`: a lone surrogate reaches the slice as
   U+FFFD, because the tree holds Rust strings, where Web IDL's `DOMString` keeps every code unit.
+  `DOMException`'s `name` and `message` reach no slice and keep every code unit.
 
 Settled: each of the four statements confirmed or corrected with its citation: HTML Standard 4.12.1.1 step 21 (snapshot `546d834701d171e3b164da8463d62878deb1e954`), The Cargo Book "Profiles" (fetched 2026-11-24), Apache License 2.0 section 4(d) with `NOTICE:1-2 @ 0.8.0`, and Trusted Types (Editor's Draft 18 November 2026) with DOM Standard 4.9 (snapshot `e4f4f4f0ace83fe6c52ab68e047351ce7f2dcd69`).
 

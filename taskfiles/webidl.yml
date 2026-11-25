@@ -11,23 +11,30 @@ tasks:
     summary: |
       Fail when a source of the generated DOM bindings, or the file itself, differs from its sha256 in their header (no build, no generation).
 
-      What decides the bytes of crates/script/src/bindings.rs, and where each is held:
-      - in its header's digests, so this task fails on a change: the two vendored pages and
-        the cut of the HTML Standard (crates/webidl/data/whatwg/), crates/webidl/selection.txt,
-        crates/webidl/Cargo.toml, every file of crates/webidl/src, and rust-toolchain.toml,
-        which pins the rustfmt that formats the file;
-      - in the trigger list of the lane slow (AGENTS.md, `task slow`), so webidl-slow is run
-        after a change: surf-html (crates/html/src and crates/html/Cargo.toml), with which the
-        generator reads the DOM and Web IDL pages and each block of the HTML cut, and
-        Cargo.lock, which fixes the versions it builds with.
+      What decides the bytes of crates/script/src/bindings.rs, and where each is held; no
+      trigger list is left:
+      - its header's digests, so this task fails on a change: the two vendored pages and the
+        cut of the HTML Standard (crates/webidl/data/whatwg/), crates/webidl/selection.txt,
+        crates/webidl/Cargo.toml, crates/html/Cargo.toml, every file of crates/webidl/src,
+        rust-toolchain.toml, which pins the rustfmt that formats the file, and rustfmt.toml,
+        the one configuration the generator names to it (--config-path);
+      - Cargo.lock decides nothing: surf-html has no dependency and surf-webidl surf-html
+        alone, which this task holds; when that changes it fails, saying that the digests must
+        then name Cargo.lock;
+      - crates/html/src is not digested: what the generator takes from surf-html is the Web
+        IDL text it reads of each of the three files, whose byte count and FNV-1a the header
+        names, and a test of surf-webidl reads the files again and compares.
 
       The task fails when the header lists another set of files than the first list, and runs
       `sha256sum --check --strict` over the listed lines, which names each file that differs.
       Its self-test: a copy of the sources with one byte of selection.txt changed must fail
-      naming that file and no other. Then it compares the sha256 of the file's lines after its
-      header's last line ("The sha256 of the lines after this one: ...") with that line, so a
-      change of the file by hand fails naming it; its self-test changes one byte of a copy and
-      must fail. Regenerate with `cargo run -p surf-webidl --bin bindings`. A step of check;
+      naming that file and no other. Then it compares the sha256 of the whole file, with the 64
+      digits of its header's last line ("The sha256 of this whole file, with the 64 digits of
+      this line read as zeros: ...") read as zeros, with that line, so a change of any byte of
+      the file by hand fails naming it; its self-test makes three copies (a byte after the
+      header changed, a //! line of the header rewritten, an inner attribute inserted before
+      that line), and each must fail naming its copy. Regenerate with
+      `cargo run -p surf-webidl --bin bindings`. A step of check;
       the lane slow regenerates the file and compares the bytes (webidl-slow).
     dir: '{{.TASKFILE_DIR}}/..'
     silent: true
@@ -42,7 +49,7 @@ tasks:
         {
           printf '%s\n' crates/webidl/data/whatwg/dom.html crates/webidl/data/whatwg/webidl.html \
             crates/webidl/data/whatwg/html-idl.html crates/webidl/selection.txt crates/webidl/Cargo.toml \
-            rust-toolchain.toml
+            crates/html/Cargo.toml rust-toolchain.toml rustfmt.toml
           find crates/webidl/src -type f -name '*.rs'
         } | sort > "$out/sources"
         if ! cmp -s "$out/listed" "$out/sources"; then
@@ -55,6 +62,57 @@ tasks:
           exit 1
         fi
         echo "webidl-check: the $(wc -l < "$out/digests" | tr -d ' ') sources of {{.BINDINGS}} match its header"
+      - |
+        set -eu
+        out=.out/webidl-check
+        deps() {
+          awk '
+            /^[[:space:]]*\[/ {
+              h = $0
+              gsub(/[[:space:]]/, "", h)
+              gsub(/^\[+|\]+$/, "", h)
+              n = split(h, part, ".")
+              table = 0
+              if (part[n] == "dependencies" || part[n] == "build-dependencies") {
+                if (n == 1 || part[1] == "target") table = 1
+              } else if (part[1] == "dependencies" || part[1] == "build-dependencies") {
+                print part[2]
+              } else if (part[1] == "target" && n > 2 && (part[n - 1] == "dependencies" || part[n - 1] == "build-dependencies")) {
+                print part[n]
+              }
+              next
+            }
+            table && /^[[:space:]]*[A-Za-z0-9_"-]/ {
+              name = $0
+              sub(/[[:space:]]*[=.].*$/, "", name)
+              gsub(/[[:space:]"]/, "", name)
+              print name
+            }
+          ' "$1" | sort | tr '\n' ' ' | sed 's/ $//'
+        }
+        deps_check() {
+          html=$(deps "$1")
+          webidl=$(deps "$2")
+          if [ -n "$html" ] || [ "$webidl" != surf-html ]; then
+            echo "webidl-check: the generator of {{.BINDINGS}} builds with more than the workspace ($1: ${html:-nothing}; $2: ${webidl:-nothing}; allowed: nothing and surf-html): Cargo.lock then decides its bytes, and the digests in its header must name Cargo.lock"
+            return 1
+          fi
+        }
+        deps_check crates/html/Cargo.toml crates/webidl/Cargo.toml
+        echo "webidl-check: surf-html has no dependency and surf-webidl surf-html alone, so Cargo.lock decides no byte of {{.BINDINGS}}"
+        copy="$out/self-test-deps/Cargo.toml"
+        mkdir -p "$(dirname "$copy")"
+        awk '{ print } /^\[dependencies\]$/ { print "memchr = \"2\"" }' crates/html/Cargo.toml > "$copy"
+        if deps_check "$copy" crates/webidl/Cargo.toml > "$out/self-test-deps.txt" 2>&1; then
+          echo "webidl-check: self-test: a dependency of a copy of crates/html/Cargo.toml passed"
+          exit 1
+        fi
+        if ! grep -q "$copy: memchr;" "$out/self-test-deps.txt"; then
+          echo "webidl-check: self-test: the failure does not name the dependency of the copy:"
+          cat "$out/self-test-deps.txt"
+          exit 1
+        fi
+        echo "webidl-check: self-test: a dependency in a copy of crates/html/Cargo.toml fails naming it"
       - |
         set -eu
         out=.out/webidl-check
@@ -80,38 +138,53 @@ tasks:
       - |
         set -eu
         out=.out/webidl-check
-        body_check() {
-          line=$(grep -n '^//! The sha256 of the lines after this one: ' "$1" | head -n 1 | cut -d: -f1)
-          if [ -z "$line" ]; then
-            echo "webidl-check: $1 holds no line with the sha256 of its lines after the header"
+        prefix='//! The sha256 of this whole file, with the 64 digits of this line read as zeros: '
+        zeros=0000000000000000000000000000000000000000000000000000000000000000
+        file_check() {
+          at=$(grep -n -E "^$prefix[0-9a-f]{64}\$" "$1" | head -n 1 | cut -d: -f1)
+          if [ -z "$at" ]; then
+            echo "webidl-check: $1 holds no line with the sha256 of the whole file"
             return 1
           fi
-          expected=$(sed -n "${line}s/^.*: //p" "$1")
-          actual=$(tail -n +"$((line + 1))" "$1" | sha256sum | cut -c 1-64)
+          expected=$(sed -n "${at}s/^.*: //p" "$1")
+          actual=$(sed "${at}s/[0-9a-f]\{64\}\$/$zeros/" "$1" | sha256sum | cut -c 1-64)
           if [ "$actual" != "$expected" ]; then
-            echo "webidl-check: $1: its lines after the header have sha256 $actual, not $expected; it was changed by hand: run cargo run -p surf-webidl --bin bindings"
+            echo "webidl-check: $1: the whole file has sha256 $actual, not $expected; it was changed by hand: run cargo run -p surf-webidl --bin bindings"
             return 1
           fi
         }
-        body_check '{{.BINDINGS}}'
-        echo "webidl-check: the lines of {{.BINDINGS}} after its header match their sha256"
-        copy="$out/self-test-body/bindings.rs"
-        mkdir -p "$(dirname "$copy")"
-        line=$(grep -n '^//! The sha256 of the lines after this one: ' '{{.BINDINGS}}' | head -n 1 | cut -d: -f1)
-        {
-          head -n "$line" '{{.BINDINGS}}'
-          tail -n +"$((line + 1))" '{{.BINDINGS}}' | { printf 'X'; tail -c +2; }
-        } > "$copy"
-        if body_check "$copy" > "$out/self-test-body.txt" 2>&1; then
-          echo "webidl-check: self-test: a changed byte of bindings.rs passed"
-          exit 1
-        fi
-        if ! grep -q "^webidl-check: $copy: its lines after the header" "$out/self-test-body.txt"; then
-          echo "webidl-check: self-test: the failure does not name the copy of bindings.rs:"
-          cat "$out/self-test-body.txt"
-          exit 1
-        fi
-        echo "webidl-check: self-test: one changed byte of bindings.rs fails naming it"
+        file_check '{{.BINDINGS}}'
+        echo "webidl-check: every byte of {{.BINDINGS}} matches the sha256 in its header"
+        line=$(grep -n -E "^$prefix[0-9a-f]{64}\$" '{{.BINDINGS}}' | head -n 1 | cut -d: -f1)
+        doc=$(grep -n '^//! ' '{{.BINDINGS}}' | head -n 1 | cut -d: -f1)
+        for case in body header attribute; do
+          copy="$out/self-test-$case/bindings.rs"
+          mkdir -p "$(dirname "$copy")"
+          case $case in
+            body)
+              {
+                head -n "$line" '{{.BINDINGS}}'
+                tail -n +"$((line + 1))" '{{.BINDINGS}}' | { printf 'X'; tail -c +2; }
+              } > "$copy"
+              what='one byte after the header changed' ;;
+            header)
+              awk -v n="$doc" 'NR == n { $0 = "//! A line of the header rewritten." } { print }' '{{.BINDINGS}}' > "$copy"
+              what='a //! line of the header rewritten' ;;
+            attribute)
+              awk -v n="$line" 'NR == n { print "#![allow(clippy::all, unused)]" } { print }' '{{.BINDINGS}}' > "$copy"
+              what='an inner attribute inserted before the digest line' ;;
+          esac
+          if file_check "$copy" > "$out/self-test-$case.txt" 2>&1; then
+            echo "webidl-check: self-test: a copy of bindings.rs with $what passed"
+            exit 1
+          fi
+          if ! grep -q "^webidl-check: $copy: the whole file has sha256" "$out/self-test-$case.txt"; then
+            echo "webidl-check: self-test: the copy of bindings.rs with $what fails without naming it:"
+            cat "$out/self-test-$case.txt"
+            exit 1
+          fi
+          echo "webidl-check: self-test: a copy of bindings.rs with $what fails naming it"
+        done
 
   webidl-slow:
     desc: Generate the DOM bindings again into .out/webidl-slow and compare them byte for byte with crates/script/src/bindings.rs.
@@ -121,6 +194,8 @@ tasks:
       A step of the lane slow, never of check: it builds and runs the binary bindings of
       surf-webidl, which reads the vendored files and crates/webidl/selection.txt and
       formats its output with rustfmt, and fails when the bytes differ from the committed file.
+      No list of files triggers it (webidl-check holds what decides the bytes); it is the full
+      regeneration with a byte compare, run by hand like the other steps of `task slow`.
     dir: '{{.TASKFILE_DIR}}/..'
     silent: true
     cmds:
