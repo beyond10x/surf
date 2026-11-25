@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use surf_webidl::{Model, Selection, Slice, generate, read};
+use surf_webidl::{Model, RUST_PRELUDE, Selection, Slice, generate, read};
 
 fn committed() -> Selection {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("selection.txt");
@@ -391,6 +391,79 @@ fn every_kind_of_rust_name_is_written_once() {
             "Node",
             "Node a mutation\n",
             "s.txt:3: `Node a`: the members `fooBar` and `foo_bar` of `D` are both written `foo_bar`",
+        ),
+    ];
+    let wrong: Vec<String> = cases
+        .iter()
+        .filter_map(|(extra, definitions, rows, expected)| {
+            let got = refusal(extra, definitions, rows);
+            (got != *expected).then(|| format!("{expected}\n   got {got}"))
+        })
+        .collect();
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// Should 1 of the fourth review, as ruled: every name of the generator's hand list of Rust's
+/// prelude is refused as the name of a dictionary, and a name the prelude's `use` imports is
+/// refused naming that `use`.
+#[test]
+fn every_name_of_rusts_prelude_and_of_the_preludes_use_is_refused() {
+    let dictionary = |name: &str| {
+        format!(
+            "dictionary {name} {{ boolean a = false; }};\n\
+             interface Node : EventTarget {{\n  undefined a(optional {name} x = {{}});\n}};\n"
+        )
+    };
+    let mut wrong: Vec<String> = RUST_PRELUDE
+        .iter()
+        .filter_map(|name| {
+            let expected = format!(
+                "s.txt:3: `Node a`: Rust's prelude and the dictionary `{name}` are both written \
+                 `{name}`"
+            );
+            let got = refusal(&dictionary(name), "Node", "Node a mutation\n");
+            (got != expected).then(|| format!("{expected}\n   got {got}"))
+        })
+        .collect();
+    let expected = "s.txt:3: `Node a`: the prelude's `use` and the dictionary `PropertyKey` are \
+                    both written `PropertyKey`";
+    let got = refusal(&dictionary("PropertyKey"), "Node", "Node a mutation\n");
+    if got != expected {
+        wrong.push(format!("{expected}\n   got {got}"));
+    }
+    assert!(RUST_PRELUDE.len() > 40, "{}", RUST_PRELUDE.len());
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// Notes 2 and 3 of the fourth review, as ruled: by one rule a definition whose Rust name is a
+/// keyword of Rust or no Rust identifier is refused, naming its Web IDL name.
+#[test]
+fn a_definition_written_as_a_keyword_or_no_identifier_is_refused() {
+    let dictionary = |name: &str| {
+        format!(
+            "dictionary {name} {{ boolean a = false; }};\n\
+             interface Node : EventTarget {{\n  undefined a(optional {name} x = {{}});\n}};\n"
+        )
+    };
+    let cases = [
+        (
+            dictionary("self"),
+            "Node",
+            "Node a mutation\n",
+            "s.txt:3: `Node a`: the dictionary `self` is written `Self`, which is a keyword of Rust",
+        ),
+        (
+            dictionary("Foo-Bar"),
+            "Node",
+            "Node a mutation\n",
+            "s.txt:3: `Node a`: the dictionary `Foo-Bar` is written `Foo-bar`, which is no Rust \
+             identifier",
+        ),
+        (
+            "interface Self { readonly attribute DOMString x; };\n".to_string(),
+            "Self",
+            "Self x reading\n",
+            "s.txt:1: the interface `Self` is written `Self`, which is a keyword of Rust",
         ),
     ];
     let wrong: Vec<String> = cases

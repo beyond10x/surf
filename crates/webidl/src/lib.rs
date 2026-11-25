@@ -95,7 +95,8 @@ mod selection;
 
 pub use extract::extract_index;
 pub use generate::{
-    Digest, FILE_DIGEST_LINE, camel, fill_file_digest, generate, generate_bindings, snake,
+    Digest, FILE_DIGEST_LINE, RUST_PRELUDE, camel, fill_file_digest, generate, generate_bindings,
+    snake,
 };
 pub use html::{HTML_DEFINITIONS, HtmlIdl, Skipped, cut_idl_blocks, extract_selected};
 pub use model::{

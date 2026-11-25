@@ -325,7 +325,8 @@ pub struct ScriptError {
     /// The own `message`, decoded from UTF-16 with unpaired surrogates replaced and cut to its
     /// first [`MESSAGE_CHARS`] characters; for a `DOMException`, `<name>: <message>` from its
     /// data, cut the same; `None` for a value that is no error object or an error without a
-    /// String `message`.
+    /// String `message`, and for a `DOMException` whose read an interrupt set after the throw
+    /// or the memory budget ended.
     pub message: Option<String>,
     /// `None` when swell names no site: a throw raised outside any ECMAScript frame.
     pub site: Option<Site>,
@@ -775,7 +776,9 @@ impl Runner {
     /// [`MESSAGE_CHARS`] characters (Q16, as ruled in fix round 1 of `story:webidl-bindings`; no
     /// longer prefix is copied), read from its data in a `with_cx` that runs no code
     /// (`bindings::exception_text`); `None` for a runner without a document and for any other
-    /// value.
+    /// value, and when the read ends early: the memory budget spent by the read, or an
+    /// interrupt set after the throw, which the read's first engine call takes. The record is
+    /// then an `Error` without a message.
     fn exception_text(&mut self, value: &Root) -> Option<String> {
         self.agent.host().dom.as_ref()?;
         let text = self

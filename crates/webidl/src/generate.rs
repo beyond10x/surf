@@ -10,8 +10,14 @@
 //! Rust name, and, by one rule, two names that get one Rust name, naming both and inventing no
 //! second name: two members (`fooBar` and `foo_bar`), two interfaces (`HTMLFoo` and
 //! `HtmlFoo`), two members of a dictionary, and a dictionary or a union whose items meet
-//! another's or the prelude's. Web IDL enums, callbacks and constants get no Rust name: enums
-//! and callbacks are not generated, and a constant is written as a string.
+//! another's or a name the file has in scope besides them: what the prelude defines, what its
+//! `use` declarations import (read from its text) and the names of Rust's prelude
+//! ([`RUST_PRELUDE`]). Web IDL enums, callbacks and constants get no Rust name: enums and
+//! callbacks are not generated, and a constant is written as a string. And by one rule,
+//! [`not_rust`], a definition, a member or an argument whose Rust name is not a Rust identifier
+//! (a `-` kept, an empty name) or is a keyword of Rust without a raw form (`Self`, `self`,
+//! `super`, `crate`, or a strict or reserved keyword of edition 2024 not written raw) is
+//! refused, naming its Web IDL name: `dictionary Self` and `dictionary Foo-Bar` are refused.
 //!
 //! What it writes from the model and the selection is Rust: a name of the model becomes an
 //! identifier by [`identifier`]'s one rule (`snake` form, `-` written `_`, a keyword raw; `self`,
@@ -328,6 +334,11 @@ pub fn generate_bindings(
     reads: &[ReadText],
 ) -> Result<String, SelectionError> {
     selection.check(model)?;
+    let items = fixed_items().map_err(|what| SelectionError {
+        file: selection.file.clone(),
+        line: selection.definitions_line,
+        what,
+    })?;
     let mut generator = Generator {
         model,
         selection,
@@ -337,7 +348,7 @@ pub fn generate_bindings(
         methods: BTreeMap::new(),
         functions: String::new(),
         names: BTreeMap::new(),
-        items: fixed_items(),
+        items,
         specs: String::new(),
     };
     generator.order_interfaces()?;
@@ -385,12 +396,141 @@ pub fn camel(name: &str) -> String {
         .collect()
 }
 
-/// The items the file holds whatever the selection: each item of [`crate::prelude`]'s text
-/// written at the start of a line (`fn`, `struct`, `enum`, `trait`, `type`, `const`,
-/// `static`, after an optional `pub`), the enum `Interface` with `GLOBAL` and `legacy_code`,
-/// the table `INTERFACES` and the slices' traits; keyed as [`Generator::take_items`] keys them.
-fn fixed_items() -> BTreeMap<String, String> {
+/// The names of Rust's prelude (edition 2024, `std::prelude::rust_2024`, with the derive
+/// macros of `core::prelude::v1`) that a struct, an enum or a trait of the generated file could
+/// take: each is refused as the name of a dictionary or a union. Its functions (`drop`,
+/// `size_of`) and the primitive types (`u32`, `str`) are lower case, and no name the generator
+/// writes in their namespaces is: every function it writes has a prefix (`convert_`, `finish_`,
+/// `interface_`, `getter_`, `operation_`).
+pub const RUST_PRELUDE: &[&str] = &[
+    "AsMut",
+    "AsRef",
+    "AsyncFn",
+    "AsyncFnMut",
+    "AsyncFnOnce",
+    "Box",
+    "Clone",
+    "Copy",
+    "Debug",
+    "Default",
+    "DoubleEndedIterator",
+    "Drop",
+    "Eq",
+    "Err",
+    "ExactSizeIterator",
+    "Extend",
+    "Fn",
+    "FnMut",
+    "FnOnce",
+    "From",
+    "FromIterator",
+    "Future",
+    "Hash",
+    "Into",
+    "IntoFuture",
+    "IntoIterator",
+    "Iterator",
+    "None",
+    "Ok",
+    "Option",
+    "Ord",
+    "PartialEq",
+    "PartialOrd",
+    "Result",
+    "Send",
+    "Sized",
+    "Some",
+    "String",
+    "Sync",
+    "ToOwned",
+    "ToString",
+    "TryFrom",
+    "TryInto",
+    "Unpin",
+    "Vec",
+];
+
+/// The names a `use` declaration of `text` written at the start of a line brings into the
+/// file's scope: the last segment of each path, or the name after `as`, and for `self` in a
+/// list the module before it. `Err` names a glob import (`*`), whose names cannot be read.
+fn imported_names(text: &str) -> Result<Vec<String>, String> {
+    let mut names = Vec::new();
+    let mut statement = String::new();
+    for line in text.lines() {
+        if statement.is_empty() {
+            let Some(rest) = line
+                .strip_prefix("use ")
+                .or_else(|| line.strip_prefix("pub use "))
+            else {
+                continue;
+            };
+            statement.push_str(rest);
+        } else {
+            statement.push_str(line);
+        }
+        statement.push(' ');
+        let Some(end) = statement.find(';') else {
+            continue;
+        };
+        let mut prefixes = vec![String::new()];
+        let mut current = String::new();
+        for c in statement[..end].chars().chain([',']) {
+            match c {
+                '{' => {
+                    let top = prefixes.last().cloned().unwrap_or_default();
+                    prefixes.push(format!("{top}{}", current.trim()));
+                    current.clear();
+                }
+                ',' | '}' => {
+                    let path = current.trim();
+                    if path.contains('*') {
+                        return Err(format!("a glob import `{}`", statement.trim()));
+                    }
+                    if !path.is_empty() {
+                        let name = match path.split_once(" as ") {
+                            Some((_, alias)) => alias.trim(),
+                            None => path.rsplit("::").next().unwrap_or(path),
+                        };
+                        let name = if name == "self" {
+                            let top = prefixes.last().map_or("", String::as_str);
+                            top.trim_end_matches("::").rsplit("::").next().unwrap_or("")
+                        } else {
+                            name
+                        };
+                        names.push(name.to_string());
+                    }
+                    current.clear();
+                    if c == '}' {
+                        prefixes.pop();
+                    }
+                }
+                _ => current.push(c),
+            }
+        }
+        statement.clear();
+    }
+    Ok(names)
+}
+
+/// The items the file holds whatever the selection, keyed as [`Generator::take_items`] keys
+/// them: each item of [`crate::prelude`]'s text written at the start of a line (`fn`,
+/// `struct`, `enum`, `trait`, `type`, `const`, `static`, after an optional `pub`), each name
+/// its `use` declarations import (read from the text by [`imported_names`], in both
+/// namespaces), the names of [`RUST_PRELUDE`], the enum `Interface` with `GLOBAL` and
+/// `legacy_code`, the table `INTERFACES` and the slices' traits. `Err` for a glob import of the
+/// prelude, whose names it cannot hold.
+fn fixed_items() -> Result<BTreeMap<String, String>, String> {
     let mut items = BTreeMap::new();
+    for name in imported_names(crate::prelude::PRELUDE)? {
+        for space in ["type", "value"] {
+            items.insert(format!("{space} {name}"), "the prelude's `use`".to_string());
+        }
+    }
+    for name in RUST_PRELUDE {
+        for space in ["type", "value"] {
+            items.insert(format!("{space} {name}"), "Rust's prelude".to_string());
+        }
+    }
     for line in crate::prelude::PRELUDE.lines() {
         let line = line.strip_prefix("pub ").unwrap_or(line);
         let Some((keyword, rest)) = line.split_once(' ') else {
@@ -422,12 +562,44 @@ fn fixed_items() -> BTreeMap<String, String> {
     {
         items.insert(item, "the generator's own item".to_string());
     }
-    items
+    Ok(items)
 }
 
 /// The names of the parameters [`Generator::write_traits`] gives a slice's method before its
 /// arguments (beside `self`).
 const OWN_PARAMETERS: [&str; 2] = ["cx", "this"];
+
+/// Rust's strict and reserved keywords of edition 2024 that have a raw form (`r#type`).
+const KEYWORDS: &[&str] = &[
+    "as", "async", "await", "break", "const", "continue", "dyn", "else", "enum", "extern", "false",
+    "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref",
+    "return", "static", "struct", "trait", "true", "type", "unsafe", "use", "where", "while",
+    "abstract", "become", "box", "do", "final", "gen", "macro", "override", "priv", "try",
+    "typeof", "unsized", "virtual", "yield",
+];
+
+/// Rust's keywords without a raw form.
+const NOT_RAW: &[&str] = &["self", "Self", "super", "crate"];
+
+/// Why `rust`, a name the generator writes, is not a Rust identifier, or `None` when it is: it
+/// must be one or more ASCII letters, digits and `_`, start with a letter or `_`, not be `_`
+/// alone, not be a keyword of [`NOT_RAW`], and be a keyword of [`KEYWORDS`] only in its raw
+/// form.
+fn not_rust(rust: &str) -> Option<&'static str> {
+    let raw = rust.strip_prefix("r#");
+    let name = raw.unwrap_or(rust);
+    let starts = name
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_');
+    if !starts || name == "_" || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        Some("no Rust identifier")
+    } else if NOT_RAW.contains(&name) || (raw.is_none() && KEYWORDS.contains(&name)) {
+        Some("a keyword of Rust")
+    } else {
+        None
+    }
+}
 
 /// A Rust identifier for the Web IDL identifier `name` (`/_?[A-Za-z][0-9A-Z_a-z-]*/`): its
 /// [`snake`] form with each `-` written `_`; a keyword that has a raw form is written raw
@@ -437,14 +609,6 @@ const OWN_PARAMETERS: [&str; 2] = ["cx", "this"];
 /// (`cx_`). Two names of one member that give the same identifier are refused by the
 /// generator, naming the row.
 fn identifier(name: &str) -> String {
-    const KEYWORDS: &[&str] = &[
-        "as", "async", "await", "break", "const", "continue", "dyn", "else", "enum", "extern",
-        "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut",
-        "pub", "ref", "return", "static", "struct", "trait", "true", "type", "unsafe", "use",
-        "where", "while", "abstract", "become", "box", "do", "final", "gen", "macro", "override",
-        "priv", "try", "typeof", "unsized", "virtual", "yield",
-    ];
-    const NOT_RAW: &[&str] = &["self", "Self", "super", "crate"];
     let snake = snake(name).replace('-', "_");
     if NOT_RAW.contains(&snake.as_str()) || OWN_PARAMETERS.contains(&snake.as_str()) {
         format!("{snake}_")
@@ -531,8 +695,15 @@ impl Generator<'_> {
     }
 
     /// Takes `rust` as the name of the member `label` of `row`; refused, naming both members,
-    /// when another member of the selection is written with it. No second name is invented.
+    /// when another member of the selection is written with it, and when it is no Rust
+    /// identifier ([`not_rust`]). No second name is invented.
     fn claim(&mut self, row: &Row, label: &str, rust: String) -> Result<(), SelectionError> {
+        if let Some(why) = not_rust(&rust) {
+            return Err(self.refuse(
+                row,
+                format!("the member `{label}` is written `{rust}`, which is {why}"),
+            ));
+        }
         if let Some(before) = self.names.get(&rust) {
             return Err(self.refuse(
                 row,
@@ -549,8 +720,11 @@ impl Generator<'_> {
     /// name. No second name is invented.
     fn take_items(&mut self, label: &str, items: &[String]) -> Result<(), String> {
         for item in items {
+            let rust = item.split_once(' ').map_or(item.as_str(), |(_, name)| name);
+            if let Some(why) = not_rust(rust) {
+                return Err(format!("{label} is written `{rust}`, which is {why}"));
+            }
             if let Some(before) = self.items.get(item) {
-                let rust = item.split_once(' ').map_or(item.as_str(), |(_, name)| name);
                 return Err(format!("{before} and {label} are both written `{rust}`"));
             }
         }
@@ -855,6 +1029,15 @@ impl Generator<'_> {
                 return Err(self.refuse(row, format!("a required member of `{name}`")));
             }
             let rust = identifier(&member.name);
+            if let Some(why) = not_rust(&rust) {
+                return Err(self.refuse(
+                    row,
+                    format!(
+                        "the member `{}` of `{name}` is written `{rust}`, which is {why}",
+                        member.name
+                    ),
+                ));
+            }
             if let Some(before) = fields
                 .iter()
                 .find(|field: &&DictionaryField| identifier(&field.name) == rust)
@@ -955,6 +1138,15 @@ impl Generator<'_> {
         let mut out: Vec<Arg> = Vec::new();
         for (index, argument) in arguments.iter().enumerate() {
             let name = identifier(&argument.name);
+            if let Some(why) = not_rust(&name) {
+                return Err(self.refuse(
+                    row,
+                    format!(
+                        "the argument `{}` is written `{name}`, which is {why}",
+                        argument.name
+                    ),
+                ));
+            }
             if let Some(before) = arguments[..index]
                 .iter()
                 .find(|before| identifier(&before.name) == name)

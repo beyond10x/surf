@@ -50,13 +50,13 @@
 //! f32d2f03b3f4b1e295c79ed49d543f1205c7dac7c3dc74f05a5a27af4fea0584  rustfmt.toml
 //! 75291cf6fa7a72d5062db3fca1f659463b3187e258d6a2d34f4f7bcf6ab86b68  crates/webidl/src/bin/bindings.rs
 //! 91c0cd2b8dc96f725518046a15c01115e61e0dec125f0ae36656c3a4e73b7356  crates/webidl/src/extract.rs
-//! 2b1a9f8b6f90e47981a808676407736b576ecf38db67cecd66bbb64363cae255  crates/webidl/src/generate.rs
+//! fb1eb4d44a918e37011a1cc2880d91de11ca4d904121911814a540a210816a57  crates/webidl/src/generate.rs
 //! bb39103dd61d3152cfb7258514bc234c3992f1aec09d79b47b30ef3acb365e10  crates/webidl/src/html.rs
 //! 2f5c4d359f13f497b0e1d87d12b0163b20cd7c972a22cf4761106f889ecde900  crates/webidl/src/lexer.rs
-//! 12af9cd4b9912546b2fc1d4b93a0b651bc56194b72751f173c7c03ba549418ad  crates/webidl/src/lib.rs
+//! 9803d546bb474bc834b29498ec0e075e0ef88ceed3de1989601c2ae8cf12eeed  crates/webidl/src/lib.rs
 //! fa6e285bfc241f9e68384ebbfd5f04e1c9172fbc254baca4c4fc8e1a154cd930  crates/webidl/src/model.rs
 //! 8db6c1d01d7d0b8dc68530edc4f5bf982f1b5cc2b1c49fbbb38496b9ff60dacd  crates/webidl/src/parser.rs
-//! 3c55f88744f1a46d60f537c2e6e585d3021af0af10aa926fd61081ef6041a3ab  crates/webidl/src/prelude.rs
+//! 57699ee05d4e9ae15deafbcc61e4634f45e8e44ac21f3eabda074cd4d79dcd70  crates/webidl/src/prelude.rs
 //! 22baac7ca4bee83065ca31df9ddab4faf4d6227668cb327360b0473564ed85a3  crates/webidl/src/selection.rs
 //! ```
 //!
@@ -69,7 +69,7 @@
 //! 36612fcd0caea180  6266  crates/webidl/data/whatwg/html-idl.html
 //! ```
 //!
-//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 05df3ae4d8c70ef84fb29ff599d422bc3e5327bdb7bca746ebc7f35c52c74f88
+//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 4916e19da89d6e49c4fa84c307030f421b43c59c8c596bf8d135aa7c6fe40986
 
 use std::cell::Cell;
 
@@ -375,8 +375,9 @@ pub fn wrapper_node(cx: &DomCx<'_, '_>, value: Value) -> Option<NodeId> {
 /// units each are read (`prefix_units`; 2,048 each for the runner's 1,024 characters), so no
 /// copy of a longer text is made. No script of the page runs while they are read: it runs after
 /// the script's end, and a length and an own index property of a String run no code. `None`
-/// too when an engine call fails (the memory budget spent by the one-unit Strings the read
-/// makes).
+/// too when an engine call fails: the memory budget spent by the one-unit Strings the read
+/// makes, or an interrupt set after the throw, which the read's first engine call takes and
+/// which ends the read; the record is then an `Error` without a message.
 pub fn exception_text(cx: &mut Cx<'_, ScriptHost>, value: Value, chars: usize) -> Option<String> {
     let Value::Object(object) = value else {
         return None;

@@ -308,8 +308,9 @@ pub fn wrapper_node(cx: &DomCx<'_, '_>, value: Value) -> Option<NodeId> {
 /// units each are read (`prefix_units`; 2,048 each for the runner's 1,024 characters), so no
 /// copy of a longer text is made. No script of the page runs while they are read: it runs after
 /// the script's end, and a length and an own index property of a String run no code. `None`
-/// too when an engine call fails (the memory budget spent by the one-unit Strings the read
-/// makes).
+/// too when an engine call fails: the memory budget spent by the one-unit Strings the read
+/// makes, or an interrupt set after the throw, which the read's first engine call takes and
+/// which ends the read; the record is then an `Error` without a message.
 pub fn exception_text(cx: &mut Cx<'_, ScriptHost>, value: Value, chars: usize) -> Option<String> {
     let Value::Object(object) = value else {
         return None;
