@@ -250,3 +250,26 @@ fn a_wall_clock_end_by_the_rule_leaves_no_job_for_a_later_script() {
     .expect("a runner with the bindings");
     assert_eq!(ends, ["limit: wall-clock", "Ok(0)", "ran", "ran"]);
 }
+
+/// The interrupt is set by a getter (a property get reads no flag after it) and the step limit
+/// ends the script in straight-line code before swell reads the flag. The script ends
+/// `limit: steps-per-script`; the clock did not run out, so by Q4 ("a flag set while the clock
+/// had not run out leaves the next script to run") the next script runs. Red: the flag is left
+/// set and ends the next script `limit: wall-clock` before its first step.
+#[test]
+fn a_step_limit_with_the_interrupt_set_leaves_no_flag_for_the_next_script() {
+    let source = format!(
+        "var G = this; let x = 0; G.document.getElementById(\"set\"); G.document; {}",
+        "x = x + 1; ".repeat(5_000)
+    );
+    let end = ends(limits(Duration::from_secs(20), 1_000), &source);
+    assert_eq!(
+        end,
+        (
+            ScriptEnd::Limit(Reason::StepsPerScript),
+            false,
+            0,
+            ScriptEnd::Ran
+        )
+    );
+}
