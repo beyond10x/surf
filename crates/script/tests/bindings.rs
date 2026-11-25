@@ -16,9 +16,9 @@ use std::time::{Duration, Instant};
 use surf_html::limits::{Limit, Limits as ParserLimits, NODE_BYTES};
 use surf_html::{NodeData, NodeId, ParseOptions, Tree, parse_document};
 use surf_script::bindings::{
-    Attributes, DomCx, DomEnd, DomResult, Interface, Mutation, Reading, Selectors, Slices,
-    StringOrElementCreationOptions, Wrap, new_wrapper, not_supported, uncharged_copies,
-    wrapper_node,
+    Attributes, DomCx, DomEnd, DomException, DomResult, EXCEPTION_TEXT_BYTES, Interface, Mutation,
+    Reading, Selectors, Slices, StringOrElementCreationOptions, Wrap, new_wrapper, not_supported,
+    uncharged_copies, wrapper_node,
 };
 use surf_script::{
     Document, Mode, Reason, Runner, RunnerLimits, ScriptEnd, ScriptErrorKind, ScriptHost, dom,
@@ -103,6 +103,12 @@ impl Reading for TestReading {
         _this: NodeId,
         element_id: String,
     ) -> DomResult<Option<NodeId>> {
+        if element_id == "throw-long" {
+            return Err(DomEnd::Throw(DomException::new(
+                &"N".repeat(2_000),
+                format!("a{}", "\u{e9}".repeat(1_000)),
+            )));
+        }
         Ok(element(cx.tree(), &element_id))
     }
 }
@@ -547,6 +553,57 @@ check(threw, "name on another object");
         let end = runner.evaluate(&source);
         assert_eq!(end, ScriptEnd::Ran, "{end}");
     });
+}
+
+/// Must 1 of the second review, as ruled: a `DOMException` holds its `name` and `message` as
+/// the engine's Strings, listed by the `trace` of its data; no other handle keeps them, and they
+/// outlive a collection, every code unit kept, for one a script made and one the bindings threw.
+#[test]
+fn the_strings_of_a_dom_exception_outlive_a_collection() {
+    with_document(limits(), surf_document, |runner| {
+        let end = runner.evaluate(
+            r#"var G = this;
+               G.e = new DOMException(String.fromCharCode(0x6D, 0xD800), String.fromCharCode(0x4E));
+               try { G.document; } catch (x) { G.thrown = x; }"#,
+        );
+        assert_eq!(end, ScriptEnd::Ran, "{end}");
+        let collected = runner.agent_and_realm().0.collect();
+        assert!(
+            matches!(collected, Ok(swell::Outcome::Normal(_))),
+            "{collected:?}"
+        );
+        let end = runner.evaluate(
+            r#"function check(holds, what) { if (!holds) { throw new Error(what); } }
+               check(G.e.message === "m\uD800" && G.e.name === "N" && G.e.code === 0, "made");
+               check(G.thrown.name === "NotSupportedError" && G.thrown.code === 9, "thrown");
+               check(G.thrown.message === "Window.document is not supported", G.thrown.message);"#,
+        );
+        assert_eq!(end, ScriptEnd::Ran, "{end}");
+    });
+}
+
+/// The texts of a `DOMException` the bindings make from a slice's answer are cut at
+/// `EXCEPTION_TEXT_BYTES` bytes, at a character's boundary: a name of 2,000 ASCII letters keeps
+/// 1,024; a message of one letter and 1,000 two-byte characters keeps 1,023 bytes, 512
+/// characters.
+#[test]
+fn the_texts_of_a_thrown_dom_exception_are_bounded() {
+    assert_eq!(EXCEPTION_TEXT_BYTES, 1024);
+    with_document(
+        limits(),
+        test_document(Writes::None, Record::default()),
+        |runner| {
+            ran(
+                runner,
+                r#"var caught = null;
+                   try { document.getElementById("throw-long"); } catch (x) { caught = x; }
+                   check(caught instanceof DOMException, "a DOMException");
+                   check(caught.name.length === 1024, "name: " + caught.name.length);
+                   check(caught.message.length === 512 && caught.message[511] === "é",
+                         "message: " + caught.message.length);"#,
+            );
+        },
+    );
 }
 
 #[test]

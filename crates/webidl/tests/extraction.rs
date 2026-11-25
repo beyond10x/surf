@@ -169,3 +169,32 @@ fn a_page_and_its_cut_give_the_same_model() {
         "the same blocks, text and parts skipped"
     );
 }
+
+/// Note 2 of the second review, as ruled: the scan of a page reads each byte a bounded number
+/// of times. A page of 8,000 of each construct the end of the input cuts (a comment, a tag
+/// without a quote, a `script`, a markup declaration, and a `script` whose `</scriptx` ends no
+/// script) is cut in under a second each, and gives no block.
+#[test]
+fn a_page_of_unclosed_constructs_is_read_in_linear_time() {
+    let pages = [
+        ("an unclosed comment", "<!-- ".repeat(8_000)),
+        ("an unclosed tag without a quote", "<a b ".repeat(8_000)),
+        ("an unclosed script", "<script>".repeat(8_000)),
+        ("an unclosed declaration", "<!x ".repeat(8_000)),
+        (
+            "a script no end tag ends",
+            format!("<script>{}", "</scriptx".repeat(8_000)),
+        ),
+    ];
+    let mut slow = Vec::new();
+    for (what, page) in &pages {
+        let started = std::time::Instant::now();
+        let cut = cut_idl_blocks(page.as_bytes());
+        let took = started.elapsed();
+        assert!(cut.is_empty(), "{what}");
+        if took >= std::time::Duration::from_secs(1) {
+            slow.push(format!("{what}: {took:?}"));
+        }
+    }
+    assert!(slow.is_empty(), "{slow:#?}");
+}
