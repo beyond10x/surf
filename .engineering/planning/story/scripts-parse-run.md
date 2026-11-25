@@ -21,7 +21,7 @@ scope:
   path: crates/script/tests/parse_run.rs
 - confidence: cited
   path: docs/design/scripts.md
-revision: 27
+revision: 28
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 ---
@@ -221,7 +221,7 @@ Found by the review of `story:html-script-hook` (2026-11-24), and ruled in that 
     `document.baseURI`, `document.contentType` and `document.compatMode` with
     `https://example.com/dir/page`, `https://example.com/dir/page` (no `base` element),
     `text/html` and `BackCompat` (no doctype), and throws an `Error` whose message is the four
-    values read, joined by a space, when one differs. The script's end is `ran`; an `error:` end
+    values read, joined by a space, when one differs. The script's end is `ran`; a `threw` end
     shows the values in its record. The same page after `<!DOCTYPE html>`, its script comparing
     with `CSS1Compat`, ends `ran`. The script's end is the reader: the test reads nothing from
     the realm, which is dropped when the parse ends (decision 1). Decision 1's signature has no
