@@ -9,7 +9,22 @@ use std::process::Command;
 
 /// The source cargo writes for the six packages of swell at the tag the root manifest names.
 const SWELL: &str =
-    "git+https://github.com/beyond10x/swell?tag=0.8.0#0c1827128b57845e203713e87a0b0949fc8d63be";
+    "git+https://github.com/beyond10x/swell?tag=0.10.0#b9d3d46fa7ac4abc982f2248e903e6301e277a9f";
+
+/// The version of the six packages of swell at that tag.
+const SWELL_VERSION: &str = "0.10.0";
+
+/// The commit `SWELL` names.
+fn swell_commit() -> &'static str {
+    SWELL.rsplit_once('#').expect("a commit in SWELL").1
+}
+
+/// The listed version with its patch number raised by one: a version beside the listed one.
+fn next_patch() -> String {
+    let (head, patch) = SWELL_VERSION.rsplit_once('.').expect("a patch number");
+    let patch: u32 = patch.parse().expect("a numeric patch number");
+    format!("{head}.{}", patch + 1)
+}
 
 const SWELL_PACKAGES: [&str; 6] = [
     "swell",
@@ -124,23 +139,29 @@ fn release_section(name: &str) -> String {
 }
 
 /// A path package (no `source` line) that bears the name of a listed package from outside, here
-/// `swell` 0.8.1 beside the git `swell` 0.8.0, used by `surf-script`: cargo writes it so for a
-/// dependency `swell2 = { package = "swell", path = "<a directory outside the tree>" }`. The
-/// check reads a package without `source` as a crate of this repository, and `surf-script` may
-/// depend on a package named `swell`, so the copy passes.
+/// `swell` of the listed version with its patch number raised by one beside the git `swell` of
+/// the listed version, used by `surf-script`: cargo writes it so for a dependency
+/// `swell2 = { package = "swell", path = "<a directory outside the tree>" }`. The check reads a
+/// package without `source` as a crate of this repository, and `surf-script` may depend on a
+/// package named `swell`, so the copy passes.
 #[test]
 fn a_path_package_named_like_a_listed_one_fails() {
     let mut files = Files::committed();
+    let beside = next_patch();
     let lock = edit_package(files.lock(), "surf-script", |b| {
-        b.replace(" \"swell\",\n", " \"swell 0.8.0\",\n \"swell 0.8.1\",\n")
+        b.replace(
+            " \"swell\",\n",
+            &format!(" \"swell {SWELL_VERSION}\",\n \"swell {beside}\",\n"),
+        )
     });
-    let shadow = "[[package]]\nname = \"swell\"\nversion = \"0.8.1\"\n\n";
+    let shadow = format!("[[package]]\nname = \"swell\"\nversion = \"{beside}\"\n\n");
     let at = lock
         .find("[[package]]\nname = \"swell-compiler\"\n")
         .expect("swell-compiler in the lock");
     files.lock = Some(format!("{}{shadow}{}", &lock[..at], &lock[at..]));
-    assert_fails("path-shadow", &files, "naming swell 0.8.1", |l| {
-        l.contains("swell 0.8.1")
+    let named = format!("swell {beside}");
+    assert_fails("path-shadow", &files, &format!("naming {named}"), |l| {
+        l.contains(&named)
     });
 }
 
@@ -204,28 +225,28 @@ fn a_section_of_another_profile_does_not_count() {
         let manifest = files.manifest.take().expect("a manifest");
         files.manifest = Some(manifest.replace(&release_section("swell-num"), other));
         let line = format!(
-            "Cargo.toml: swell-num 0.8.0 from {SWELL}: no overflow-checks = true under [profile.release.package.swell-num]"
+            "Cargo.toml: swell-num {SWELL_VERSION} from {SWELL}: no overflow-checks = true under [profile.release.package.swell-num]"
         );
         assert_fails(&format!("other-profile-{i}"), &files, &line, |l| l == line);
     }
 }
 
-/// Held: swell 0.8.0 from every other spelling of a source fails, naming it.
+/// Held: swell of the listed version from every other spelling of a source fails, naming it.
 #[test]
 fn swell_from_any_other_source_fails_naming_it() {
-    let commit = "0c1827128b57845e203713e87a0b0949fc8d63be";
+    let commit = swell_commit();
     let sources = [
         format!("git+https://github.com/beyond10x/swell?branch=main#{commit}"),
         format!("git+https://github.com/beyond10x/swell?rev={commit}#{commit}"),
         format!("git+https://github.com/beyond10x/swell#{commit}"),
-        format!("git+https://github.com/someone/swell?tag=0.8.0#{commit}"),
-        format!("git+https://github.com/Beyond10x/swell?tag=0.8.0#{commit}"),
-        format!("git+https://github.com/beyond10x/swell.git?tag=0.8.0#{commit}"),
-        format!("git+https://github.com/beyond10x/swell/?tag=0.8.0#{commit}"),
-        format!("git+http://github.com/beyond10x/swell?tag=0.8.0#{commit}"),
-        format!("git+ssh://git@github.com/beyond10x/swell?tag=0.8.0#{commit}"),
+        format!("git+https://github.com/someone/swell?tag={SWELL_VERSION}#{commit}"),
+        format!("git+https://github.com/Beyond10x/swell?tag={SWELL_VERSION}#{commit}"),
+        format!("git+https://github.com/beyond10x/swell.git?tag={SWELL_VERSION}#{commit}"),
+        format!("git+https://github.com/beyond10x/swell/?tag={SWELL_VERSION}#{commit}"),
+        format!("git+http://github.com/beyond10x/swell?tag={SWELL_VERSION}#{commit}"),
+        format!("git+ssh://git@github.com/beyond10x/swell?tag={SWELL_VERSION}#{commit}"),
         format!(
-            "git+https://github.com/beyond10x/swell?tag=0.8.0#{}",
+            "git+https://github.com/beyond10x/swell?tag={SWELL_VERSION}#{}",
             &commit[..8]
         ),
     ];
@@ -234,7 +255,8 @@ fn swell_from_any_other_source_fails_naming_it() {
         files.lock = Some(edit_package(files.lock(), "swell", |b| {
             b.replace(SWELL, source)
         }));
-        let start = format!("Cargo.lock: swell 0.8.0 from {source}: not on the allow-list");
+        let start =
+            format!("Cargo.lock: swell {SWELL_VERSION} from {source}: not on the allow-list");
         assert_fails(&format!("source-{i}"), &files, &start, |l| {
             l.starts_with(&start)
         });
@@ -254,7 +276,7 @@ fn swell_from_any_other_source_fails_naming_it() {
         "source-registry",
         &files,
         "naming swell from the registry",
-        |l| l.starts_with("Cargo.lock: swell 0.8.0 from registry+"),
+        |l| l.starts_with(&format!("Cargo.lock: swell {SWELL_VERSION} from registry+")),
     );
 }
 
@@ -264,8 +286,8 @@ fn swell_from_any_other_source_fails_naming_it() {
 #[test]
 fn a_dependency_entry_with_version_and_source_fails_naming_the_crate() {
     for (i, entry) in [
-        "swell 0.8.0",
-        &format!("swell 0.8.0 ({SWELL})"),
+        &format!("swell {SWELL_VERSION}"),
+        &format!("swell {SWELL_VERSION} ({SWELL})"),
         "swell-syntax",
     ]
     .iter()
@@ -298,14 +320,17 @@ fn a_patch_or_replace_of_swell_fails() {
         });
     }
     files.lock = Some(lock);
-    assert_fails("patch-path", &files, "naming swell-num 0.8.0", |l| {
-        l == "taskfiles/lock-allow.txt: swell-num 0.8.0 is in no package of Cargo.lock"
-    });
+    let line = format!(
+        "taskfiles/lock-allow.txt: swell-num {SWELL_VERSION} is in no package of Cargo.lock"
+    );
+    assert_fails("patch-path", &files, &line, |l| l == line);
     let mut files = Files::committed();
     files.lock = Some(edit_package(files.lock(), "swell", |b| {
         b.replace(
-            "version = \"0.8.0\"\n",
-            &format!("version = \"0.8.0\"\nreplace = \"swell 0.8.0 ({SWELL})\"\n"),
+            &format!("version = \"{SWELL_VERSION}\"\n"),
+            &format!(
+                "version = \"{SWELL_VERSION}\"\nreplace = \"swell {SWELL_VERSION} ({SWELL})\"\n"
+            ),
         )
     }));
     assert_fails("replace", &files, "naming the replace line", |l| {
@@ -374,7 +399,7 @@ fn empty_missing_or_malformed_lists_fail() {
 fn a_seventh_swell_package_needs_its_profile_section() {
     let mut files = Files::committed();
     let block = format!(
-        "[[package]]\nname = \"swell-extra\"\nversion = \"0.8.0\"\nsource = \"{SWELL}\"\n\n"
+        "[[package]]\nname = \"swell-extra\"\nversion = \"{SWELL_VERSION}\"\nsource = \"{SWELL}\"\n\n"
     );
     let lock = files.lock().to_string();
     let at = lock
@@ -390,12 +415,14 @@ fn a_seventh_swell_package_needs_its_profile_section() {
     files.lock = Some(lock);
     let mut allow = files.allow.take().expect("allow");
     allow = allow.replace(
-        &format!("swell-num 0.8.0 {SWELL} none\n"),
-        &format!("swell-extra 0.8.0 {SWELL} none\nswell-num 0.8.0 {SWELL} none\n"),
+        &format!("swell-num {SWELL_VERSION} {SWELL} none\n"),
+        &format!(
+            "swell-extra {SWELL_VERSION} {SWELL} none\nswell-num {SWELL_VERSION} {SWELL} none\n"
+        ),
     );
     files.allow = Some(allow);
     let line = format!(
-        "Cargo.toml: swell-extra 0.8.0 from {SWELL}: no overflow-checks = true under [profile.release.package.swell-extra]"
+        "Cargo.toml: swell-extra {SWELL_VERSION} from {SWELL}: no overflow-checks = true under [profile.release.package.swell-extra]"
     );
     assert_fails("seventh", &files, &line, |l| l == line);
     let mut manifest = files.manifest.take().expect("manifest");

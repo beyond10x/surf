@@ -13,7 +13,7 @@ test = false
 [dependencies]
 surf-html = { path = "../html" }
 surf-secret = { path = "../secret" }
-swell = { git = "https://github.com/beyond10x/swell", tag = "0.8.0" }
+swell = { git = "https://github.com/beyond10x/swell", tag = "0.10.0" }
 
 [[test]]
 name = "main"

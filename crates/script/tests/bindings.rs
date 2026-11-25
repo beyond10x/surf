@@ -792,6 +792,50 @@ fn limit_end() {
     );
 }
 
+/// A DOM limit ends the script with no checkpoint and clears the microtask queue: the job the
+/// script queued before the limit never runs, neither after it nor in the next script's
+/// checkpoint.
+#[test]
+fn dom_limit_drops_the_jobs() {
+    with_document(
+        limits(),
+        test_document(Writes::LimitNodes, Record::default()),
+        |runner| {
+            let end = runner.evaluate(&format!(
+                "{PRELUDE}Promise.resolve().then(function () {{ globalThis.q = 1; }});
+                 document.createElement(\"p\");"
+            ));
+            assert_eq!(end, ScriptEnd::Limit(Reason::Nodes), "{end}");
+            assert_eq!(runner.evaluate("1"), ScriptEnd::Ran);
+            let after = runner.evaluate("if (typeof q !== \"undefined\") throw new Error(\"q\")");
+            assert_eq!(after, ScriptEnd::Ran, "{after}");
+        },
+    );
+}
+
+/// `limit_end` with the write in a promise job: the checkpoint's end is the script's, so the
+/// limit the job reached ends the script `limit: nodes`, and the next script runs.
+#[test]
+fn limit_end_in_a_then_callback() {
+    with_document(
+        limits(),
+        test_document(Writes::LimitNodes, Record::default()),
+        |runner| {
+            let (_, before) = recorded(runner);
+            let end = runner.evaluate(&format!(
+                "{PRELUDE}Promise.resolve().then(function () {{ document.createElement(\"p\"); }});"
+            ));
+            assert_eq!(end, ScriptEnd::Limit(Reason::Nodes), "{end}");
+            assert_eq!(
+                recorded(runner),
+                (None, before),
+                "the record cleared, the tree unchanged"
+            );
+            assert_eq!(runner.evaluate("1"), ScriptEnd::Ran);
+        },
+    );
+}
+
 /// Decision 9 as ruled in fix round 1: a limit ends the script where it is reached; no
 /// `catch` and no `finally` of the page runs after it, the interrupt flag is clear after the
 /// entry and the record is cleared, and the next script runs.
