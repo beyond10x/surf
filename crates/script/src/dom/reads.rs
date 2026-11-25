@@ -461,15 +461,37 @@ fn find(
     reads: Reads,
     mut stop: impl FnMut(&Tree, NodeId, Option<usize>) -> bool,
 ) -> DomResult<Option<NodeId>> {
-    let mut pending = vec![node];
-    while let Some(next) = pending.pop() {
+    preorder(cx, node, |cx, next| {
         charge(cx, 1 + name_bytes(cx.tree(), next) / BYTES_A_STEP)?;
         let at = scan_for(cx, next, reads)?;
-        let tree = cx.tree();
-        if stop(tree, next, at) {
-            return Ok(Some(next));
+        Ok(stop(cx.tree(), next, at))
+    })
+}
+
+/// `node` and the nodes under it in tree order, each given to `visit` until it answers true:
+/// that node. The walk keeps its place by a stack of (parent, index of the next child), one
+/// entry per level of depth, and copies no child list; it charges nothing itself: `visit`
+/// charges each node before it reads it.
+fn preorder(
+    cx: &mut DomCx<'_, '_>,
+    node: NodeId,
+    mut visit: impl FnMut(&mut DomCx<'_, '_>, NodeId) -> DomResult<bool>,
+) -> DomResult<Option<NodeId>> {
+    if visit(cx, node)? {
+        return Ok(Some(node));
+    }
+    let mut stack: Vec<(NodeId, usize)> = vec![(node, 0)];
+    while let Some(top) = stack.last_mut() {
+        let (parent, next) = *top;
+        let Some(&child) = cx.tree().children(parent).get(next) else {
+            stack.pop();
+            continue;
+        };
+        top.1 = next + 1;
+        if visit(cx, child)? {
+            return Ok(Some(child));
         }
-        pending.extend(tree.children(next).iter().rev());
+        stack.push((child, 0));
     }
     Ok(None)
 }
@@ -1025,38 +1047,46 @@ pub(super) fn text_content(cx: &mut DomCx<'_, '_>, node: NodeId) -> DomResult<Op
             // one step per node visited; the walk stops at the text that would take the
             // String past `string_length`.
             let mut content = Gathered::new(cx.string_length());
-            let mut pending = vec![node];
-            while let Some(next) = pending.pop() {
+            preorder(cx, node, |cx, next| {
                 charge(cx, 1)?;
-                let tree = cx.tree();
-                pending.extend(tree.children(next).iter().rev());
-                if matches!(tree.data(next), NodeData::Text(_)) {
+                if matches!(cx.tree().data(next), NodeData::Text(_)) {
                     gather(cx, &mut content, next)?;
                 }
-            }
+                Ok(false)
+            })?;
             Ok(Some(content.text))
         }
     }
 }
 
-/// `isEqualNode`: the two trees compared node by node, each pair charged as [`equal_cost`]
-/// of `this`'s node before it is compared.
+/// `isEqualNode`: the two trees compared node by node in tree order, each pair charged as
+/// [`equal_cost`] of `this`'s node before it is compared; the walk keeps its place by a stack of
+/// (pair, index of the next child), one entry per level, and copies no child list.
 pub(super) fn is_equal(cx: &mut DomCx<'_, '_>, this: NodeId, other: NodeId) -> DomResult<bool> {
-    let mut pending = vec![(this, other)];
-    while let Some((a, b)) = pending.pop() {
+    let pair_equal = |cx: &mut DomCx<'_, '_>, a: NodeId, b: NodeId| -> DomResult<bool> {
         let cost = equal_cost(cx.tree(), a);
         charge(cx, cost)?;
         let tree = cx.tree();
-        if !shallow_equal(tree, a, b) || tree.children(a).len() != tree.children(b).len() {
+        Ok(shallow_equal(tree, a, b) && tree.children(a).len() == tree.children(b).len())
+    };
+    if !pair_equal(cx, this, other)? {
+        return Ok(false);
+    }
+    let mut stack: Vec<(NodeId, NodeId, usize)> = vec![(this, other, 0)];
+    while let Some(top) = stack.last_mut() {
+        let (a, b, next) = *top;
+        let tree = cx.tree();
+        let (Some(&child_a), Some(&child_b)) =
+            (tree.children(a).get(next), tree.children(b).get(next))
+        else {
+            stack.pop();
+            continue;
+        };
+        top.2 = next + 1;
+        if !pair_equal(cx, child_a, child_b)? {
             return Ok(false);
         }
-        pending.extend(
-            tree.children(a)
-                .iter()
-                .copied()
-                .zip(tree.children(b).iter().copied())
-                .rev(),
-        );
+        stack.push((child_a, child_b, 0));
     }
     Ok(true)
 }

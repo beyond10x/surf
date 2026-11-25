@@ -10,8 +10,8 @@
 //! count is not known before the walk (a scan that stops at its first match), the step goes
 //! before each node it reads. So a step buys a bounded piece of work: one node, four name
 //! compares, sixteen bytes, one token; a script over a large tree ends at its step limit and
-//! not at the wall clock. The walks keep their own list of nodes, so a deep tree does not
-//! deepen the call stack.
+//! not at the wall clock. The walks keep their place by a stack of one entry a level, so a
+//! deep tree does not deepen the call stack, and copy no child list.
 //!
 //! Strings. A String a member answers with more UTF-16 code units than the agent's
 //! `string_length` is the realm's `RangeError`; the bindings check every answer before the
