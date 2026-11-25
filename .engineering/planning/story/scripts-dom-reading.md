@@ -66,7 +66,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 30
+revision: 31
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 - {from: "proposed", to: "active", at: "2026-11-25T08:44:48Z", actor: "human:operator", revision: 27, executor: "agent:coordinator"}
@@ -287,9 +287,8 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
    requirements.txt` in a clone of swell) and the report holds them (acceptance 15). There is no
    edge between this story and `story:swell-0-9-0`: the two are built in separate trees and merged
    one after the other. They write the same files (Placement), so whichever merges second merges
-   `main` first and takes its numbers from its own log, as `swell-0-9-0.md:556-562` says for its
-   pair with `story:script-error-kind-aggregate`; if swell's story merged first the pin is its
-   tag and the rows are read there.
+   `main` first and takes its numbers from its own log, as the Placement of that story says for
+   this pair; if swell's story merged first the pin is its tag and the rows are read there.
 9. Sibling reads keep position hints in the slice, and `Tree` gets no sibling read. `Tree` has no
    sibling read, so a sibling member would scan the parent's children: `nextSibling` over `n`
    siblings visits about `n * n / 2` nodes, which passes the 10,000,000 steps of an entry
@@ -812,8 +811,8 @@ They write `AGENTS.md`, `Cargo.lock`, `crates/script/Cargo.toml`, `crates/script
 and `docs/design/scripts.md`, and both rewrite the public surfaces (`README.md`,
 `docs/badges/make.sh`, `docs/badges/tests.svg`, `website/docs/how-it-is-built.md`,
 `website/docs/status.md`, `website/docs/what-works.md`). Whichever merges second merges `main`
-first and takes its numbers from its own log, as `swell-0-9-0.md:556-562` says for its pair with
-`story:script-error-kind-aggregate`. This story adds the line `surf-url` right after
+first and takes its numbers from its own log, as the Placement of `story:swell-0-9-0` says for
+this pair. This story adds the line `surf-url` right after
 `surf-secret` in `crates/script/Cargo.toml` and in the lock; swell's story changes the pin on the
 next line.
 
