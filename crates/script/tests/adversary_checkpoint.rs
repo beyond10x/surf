@@ -2,10 +2,19 @@
 //! each script, the clear of the queue after a limit, the error kind `AggregateError` and the
 //! records of hostile thrown values. Each test makes its own runner with limits of its own.
 
+use std::cell::Cell;
 use std::time::Duration;
 
-use surf_script::{Mode, Reason, Runner, RunnerLimits, ScriptEnd, ScriptErrorKind, run};
-use swell::Limits;
+use surf_html::limits::Limits as ParserLimits;
+use surf_html::{NodeData, NodeId, ParseOptions, parse_document};
+use surf_script::bindings::{
+    Attributes, DomCx, DomEnd, DomException, DomResult, Interface, Mutation, Reading, Selectors,
+    Slices, TheWindow, Wrap, new_wrapper, wrapper_node,
+};
+use surf_script::{
+    Document, Mode, Reason, Runner, RunnerLimits, ScriptEnd, ScriptErrorKind, run, run_document,
+};
+use swell::{Completion, Limits, Value};
 
 use super::adversary_5;
 
@@ -294,4 +303,106 @@ fn an_aggregate_error_of_many_entries_records_its_message() {
         runner.evaluate("var a = []; a.length = 100000; throw new AggregateError(a, \"big\");")
     });
     assert_eq!(end.to_string(), "threw AggregateError \"big\" 1:32");
+}
+
+thread_local! {
+    /// Set by `getElementById("arm")`: the next read of `Window.document` sets the interrupt
+    /// and throws.
+    static ARMED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// A `Reading` slice whose `Window.document` getter, once armed, sets the agent's interrupt and
+/// throws a `DOMException`: the flag is set at the end of the script, as the wall clock's
+/// thread sets it when its bound passes between the script's last step and the runner's read
+/// of the record.
+struct ArmedReading;
+
+impl Reading for ArmedReading {
+    fn window_document(&mut self, cx: &mut DomCx<'_, '_>) -> DomResult<NodeId> {
+        if ARMED.with(|armed| armed.replace(false)) {
+            cx.interrupt().interrupt();
+            return Err(DomEnd::Throw(DomException::new("m", "N")));
+        }
+        Ok(cx.tree().root())
+    }
+
+    fn window_window(&mut self, _cx: &mut DomCx<'_, '_>) -> DomResult<TheWindow> {
+        Ok(TheWindow)
+    }
+
+    fn document_get_element_by_id(
+        &mut self,
+        _cx: &mut DomCx<'_, '_>,
+        _this: NodeId,
+        element_id: String,
+    ) -> DomResult<Option<NodeId>> {
+        if element_id == "arm" {
+            ARMED.with(|armed| armed.set(true));
+        }
+        Ok(None)
+    }
+}
+
+struct NoAttributes;
+impl Attributes for NoAttributes {}
+struct NoMutation;
+impl Mutation for NoMutation {}
+struct NoSelectors;
+impl Selectors for NoSelectors {}
+struct DocumentWrap;
+
+impl Wrap for DocumentWrap {
+    fn wrap(&mut self, cx: &mut DomCx<'_, '_>, node: NodeId) -> Completion<Value> {
+        let interface = match cx.tree().data(node) {
+            NodeData::Document => Interface::Document,
+            _ => Interface::Element,
+        };
+        new_wrapper(cx, interface, node).map(Value::Object)
+    }
+
+    fn unwrap(&self, cx: &DomCx<'_, '_>, value: Value) -> Option<NodeId> {
+        wrapper_node(cx, value)
+    }
+}
+
+fn armed_document() -> Document {
+    Document {
+        tree: parse_document("<!DOCTYPE html><p>a</p>", &ParseOptions::default()),
+        limits: ParserLimits::default(),
+        slices: Slices {
+            reading: Box::new(ArmedReading),
+            attributes: Box::new(NoAttributes),
+            mutation: Box::new(NoMutation),
+            selectors: Box::new(NoSelectors),
+            wrap: Box::new(DocumentWrap),
+        },
+    }
+}
+
+/// The wall clock's interrupt set after a script's last step and before the runner reads the
+/// record of the `DOMException` it threw: the read takes the flag (`Runner::exception_text`),
+/// and the checkpoint after the script then begins with no flag set, so the page's jobs run
+/// after the wall clock's bound has passed, up to a whole `steps_per_entry`. An interrupt set
+/// before the checkpoint must end the script at the wall clock with no job run, as it does for
+/// a script that ended `ran` (the checkpoint's start reads the flag, HOST-198).
+#[test]
+fn an_interrupt_the_record_read_takes_still_ends_the_script_at_the_wall_clock() {
+    let (first, flag, second) =
+        run_document(limits(100_000_000), Mode::Test, armed_document, |runner| {
+            let first = runner.evaluate(
+                "var G = this; Promise.resolve().then(function () { G.job = 1; }); \
+             G.document.getElementById(\"arm\"); G.document;",
+            );
+            let flag = runner.agent_and_realm().0.interrupt_handle().is_set();
+            let second = runner.evaluate(
+            "if (typeof job !== \"undefined\") throw new Error(\"a job ran after the interrupt\")",
+        );
+            (first, flag, second)
+        })
+        .expect("a runner with the bindings");
+    assert!(!flag, "the interrupt flag after the script");
+    assert_eq!(
+        (first, second),
+        (ScriptEnd::Limit(Reason::WallClock), ScriptEnd::Ran)
+    );
 }
