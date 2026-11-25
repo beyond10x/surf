@@ -250,7 +250,7 @@ const DOM_EXCEPTION: &str = "interface DOMException { readonly attribute DOMStri
 
 /// The bindings of `extra` IDL beside `EventTarget`, `Node`, `Window` and `DOMException`, with
 /// `definitions` more and `rows`.
-fn generated_with(extra: &str, definitions: &str, rows: &str) -> Result<String, String> {
+pub(crate) fn generated_with(extra: &str, definitions: &str, rows: &str) -> Result<String, String> {
     let idl = format!(
         "interface EventTarget {{}};\ninterface Window : EventTarget {{}};\n{extra}{DOM_EXCEPTION}"
     );
