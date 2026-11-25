@@ -11,8 +11,6 @@ relations:
 - depends_on: story:scripts-dom-reading
 scope:
 - confidence: cited
-  path: .engineering/planning/epic/scripts-in-a-page.md
-- confidence: cited
   path: AGENTS.md
 - confidence: cited
   path: README.md
@@ -58,7 +56,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 42
+revision: 43
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 13}
 ---
