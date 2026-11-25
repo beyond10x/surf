@@ -90,7 +90,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 45
+revision: 46
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 - {from: "proposed", to: "active", at: "2026-11-25T08:44:48Z", actor: "human:operator", revision: 27, executor: "agent:coordinator"}
@@ -583,6 +583,16 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
       node is read. `crates/script/src/dom/reading.rs` keeps the members and holds no call of
       `tree()`; a test reads its source and fails when one is added. The slices after this
       one follow the same form.
+    - No walk of `reads.rs` builds its stack from a copy of a child list. A walk reads
+      `Tree::children(parent)[index]` one step at a time and charges before each node, so that
+      the first step of a walk over a 100,000-child list is not preceded by a copy of it. At
+      `83e6b8a` the property is false (`find`, `text_content` and `is_equal` extend a stack from
+      a child list; `children` and `whole_text` copy one); at `14f8a2a`, with the fix round
+      `cd43273`, it holds. This unit owns it. `story:scripts-dom-mutation` checks it at its
+      start with two `git grep` commands over `reads.rs` and builds its `Document.title` setter
+      on `find`. No test of this unit holds it: `dom_reading_cost.rs:597` is an `include_str!`
+      test over `reading.rs` only. A source test over `reads.rs` for the tokens
+      `pending.extend(`, `.to_vec()` and `.collect` is for this unit's review.
     - One price for a byte: one step per 16 bytes (8 UTF-16 units), for every byte a member or
       the glue reads, compares, folds, collapses or copies, charged before the work. The
       64-byte rate of decisions 17 to 19 is gone. A String argument is charged at the same

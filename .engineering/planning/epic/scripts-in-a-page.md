@@ -7,7 +7,7 @@ title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, in the session process, against a DOM generated from Web IDL and under limits per page, when the session's option asks for it, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 64
+revision: 65
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:34:03Z", actor: "human:operator", revision: 43}
 - {from: "proposed", to: "active", at: "2026-11-24T10:34:09Z", actor: "human:operator", revision: 44}
@@ -1003,7 +1003,7 @@ From swell's tree at tag `0.8.0`, read on 2026-11-24:
 - Lines 478-481 (candidate 11): "Writes `crates/script/src/dom/selectors.rs`, `crates/script/src/dom/selector_reads.rs` and their tests." Now: `story:scripts-dom-selectors` writes those two files and their tests (`crates/script/tests/dom_selectors.rs`), and also `crates/script/src/dom/reads.rs` (visibility only: seven items made `pub(super)` and the lifetime of `Reads`, no function changes its body), `crates/script/src/dom/mod.rs` (two lines, `mod selector_reads;` and `pub use selector_reads::Frames;`), `crates/webidl/selection.txt` (one note of two clauses on the nine rows of the slice `selectors`), `crates/script/src/bindings.rs` (regenerated: the nine doc comments and the digest lines), `crates/script/tests/dom_reading.rs` (line 2426, `el.querySelector("p")`, becomes `el.attachShadow({})`), `docs/design/scripts.md` (one row of the table of question 4) and `AGENTS.md` (the entry of `crates/script`). The public numbers (`README.md`, `docs/badges`, `website/docs/how-it-is-built.md`, `website/docs/status.md`, `website/docs/what-works.md`) it changes in its last commit as the epic says at lines 955-961, and they are not in its recorded scope. Decisions 11, 13 and 17 of the story.
 
 2026-11-25. `story:scripts-dom-mutation` corrects these places of this epic; where they differ,
-the story's decisions win, and the lines named are this file's at plan commit `929269e`:
+the story's decisions win, and the lines named are this file's at plan commit `9a88a16`:
 
 - Lines 472-475 (candidate 9): "the 29 mutating members, the setters of `nodeValue`,
   `textContent` and `document.title`, the constructors of `Text`, `Comment` and
@@ -1012,23 +1012,35 @@ the story's decisions win, and the lines named are this file's at plan commit `9
   `ProcessingInstruction`), 54 methods of the trait `Mutation`, in three files (`mutation.rs`,
   `mutation_reads.rs`, `mutation_writes.rs`); it also depends on `story:scripts-dom-attributes`
   and `story:scripts-parse-run`. The story also writes `crates/html/src/tree.rs` (a validity
-  check, a bulk removal, a work counter), `crates/webidl/src/prelude.rs`,
-  `crates/webidl/src/generate.rs` and `crates/script/src/bindings.rs` (a bulk node charge, a
-  charge for each item of a variadic list, the refill charged before its copy), the selection,
-  `reads.rs`, the comment of `runner.rs` at the arm for `Limit::InputBytes` and `Limit::Steps`,
-  `docs/design/scripts.md` and `AGENTS.md`; the public numbers it changes in its last commit
-  are not its recorded scope (lines 955-961).
+  check, a bulk removal, a work counter, a rule for the capacity of a child list that makes a
+  reallocation paid by the writes between two of them, and one read made public,
+  `parent_or_host`), `crates/webidl/src/prelude.rs`, `crates/webidl/src/generate.rs` and
+  `crates/script/src/bindings.rs` (a bulk node charge settled to what was made, a charge for each
+  item of a variadic list, the refill charged before its copy), the selection, `reads.rs`
+  (visibility only), `crates/script/src/dom/mod.rs` (two `mod` lines), the comment of `runner.rs`
+  at the arm for `Limit::InputBytes` and `Limit::Steps`, `crates/script/tests/dom_reading.rs` (one
+  line), `crates/script/tests/bindings.rs` (three tests and a unit test),
+  `crates/script/tests/main.rs` (one `mod` line), `docs/design/scripts.md` and `AGENTS.md`; the
+  public numbers it changes in its last commit are not its recorded scope (lines 955-961).
 - Lines 736-741 ("Tree mutation, 29"): "Every write is held to the parser's limits". Now: held to
   the parser's limits and to the engine's `memory_bytes`, each write charged in steps for the
   passes the tree makes, before the call (the story lists them and a counter in the tree holds
   the formulas to them). At the default limits a script that makes nodes ends `limit: memory`
   before `limit: nodes`: a created node takes 408 bytes of charge and 423 of wrapper (80,756
-  nodes, `docs/design/scripts.md:329-332`). A removed node is not refunded; 5,000 removals from
-  the front of one child list end `limit: steps-per-script`.
+  nodes, `docs/design/scripts.md:329-332`). A removed node is not refunded. A removal costs two
+  steps for each child behind it, so 5,000 removals from the front of one child list (25,020,000
+  steps) end `limit: steps-per-script` at about the 1,127th, and a list of 3,161 children removed
+  whole from the front ends it. A script can also end `limit: steps-per-script` where a browser
+  throws a `DOMException`, because a check that needs a walk runs after the charge of its walk:
+  a named allowance, not a deviation of behaviour (decision 13 of the story).
 - Lines 761-770 (deviations): three more, each named beside its member in `selection.txt`:
-  `cloneNode` of a `Document` throws `NotSupportedError` (the standard clones it);
   `createElementNS` with a prefix or a namespace outside the six throws `NotSupportedError` (the
-  tree's element has no prefix and no open namespace); a clone of a `script` element is recorded
-  as inserted when it is inserted, where a browser does not prepare a copy of a started script
+  tree's element has no prefix and no open namespace); `cloneNode` of a `Document` throws
+  `NotSupportedError` (the standard clones it); a clone of a `script` element is recorded as
+  inserted when it is inserted, where a browser does not prepare a copy of a started script
   again. `importNode` and `adoptNode` of a `Document` throw as the standard says. Deviations
-  1 to 3 of the story.
+  1 to 3 of the story, in this order.
+- Lines 955-961 (the rule on public numbers): the stories that write the public-number files
+  are also `story:swell-0-9-0` and the reading unit; two units built at once both change them,
+  and the one merged second repeats its numbers commit. The story's last commit changes them
+  from one gate log and does not record them in its scope.
