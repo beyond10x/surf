@@ -8,6 +8,7 @@ summary: The sibling members answer from a position the tree or the slice keeps 
 relations:
 - decomposes: epic:scripts-in-a-page
 - depends_on: story:scripts-dom-reading
+- depends_on: story:scripts-dom-mutation
 revision: 1
 ---
 ## Context
