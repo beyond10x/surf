@@ -163,8 +163,8 @@ impl SurfReading {
 
     /// The document base URL (HTML, "document base URL"): the frozen base URL of the first
     /// `base` element of the HTML namespace with an `href` in tree order, else the fallback
-    /// base URL, the document's address. A `href` that does not parse against the address, or
-    /// is longer than the URL parser reads, gives the address.
+    /// base URL, the document's address. A `href` that does not parse against the address, is
+    /// longer than the URL parser reads, or gives a `data` or `javascript` URL gives the address.
     fn base_url(&self, cx: &mut DomCx<'_, '_>) -> DomResult<String> {
         let root = cx.tree().root();
         let base = find(cx, root, Reads::Attributes, |tree, node| {
@@ -175,8 +175,13 @@ impl SurfReading {
             return Ok(self.info.address.href());
         };
         charge(cx, href.len() / 64)?;
-        let url = Url::parse(&href, Some(&self.info.address))
-            .unwrap_or_else(|_| self.info.address.clone());
+        // HTML, "set the frozen base URL": a href that does not parse, or parses to a URL whose
+        // scheme is `data` or `javascript`, gives the fallback base URL; a later `base` is not
+        // read instead.
+        let url = match Url::parse(&href, Some(&self.info.address)) {
+            Ok(url) if !matches!(url.scheme(), "data" | "javascript") => url,
+            Ok(_) | Err(_) => self.info.address.clone(),
+        };
         text(cx, url.href())
     }
 }
@@ -617,12 +622,17 @@ fn locate_namespace(
     node: NodeId,
     prefix: Option<&str>,
 ) -> DomResult<Option<String>> {
-    match prefix {
-        Some("xml") => return Ok(Some(Namespace::Xml.url().to_string())),
-        Some("xmlns") => return Ok(Some(Namespace::Xmlns.url().to_string())),
-        Some(_) | None => {}
-    }
     let mut at = lookup_start(cx, node)?;
+    // The prefixes `xml` and `xmlns` are the first steps of the case of an element: a node
+    // without an element to start from (a doctype, a fragment, a document without a document
+    // element, a node without a parent element) answers null for them too.
+    if at.is_some() {
+        match prefix {
+            Some("xml") => return Ok(Some(Namespace::Xml.url().to_string())),
+            Some("xmlns") => return Ok(Some(Namespace::Xmlns.url().to_string())),
+            Some(_) | None => {}
+        }
+    }
     while let Some(element) = at {
         let steps = 1 + attribute_steps(cx.tree(), element);
         charge(cx, steps)?;

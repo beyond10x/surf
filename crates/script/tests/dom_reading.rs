@@ -1386,6 +1386,74 @@ if (t.baseURI !== {expected:?} || document.baseURI !== {expected:?}) throw new E
     }
 }
 
+/// HTML, "set the frozen base URL": the first `base` with an `href` decides; a URL that does
+/// not parse, or whose scheme is `data` or `javascript`, gives the fallback base URL, and a
+/// later `base` is not read instead.
+#[test]
+fn the_first_base_decides_even_when_it_gives_the_fallback() {
+    for href in [
+        "data:text/html,x",
+        "javascript:void(0)",
+        "DATA:,x",
+        "http://[::1",
+    ] {
+        let page =
+            format!("<base href=\"{href}\"><base href=\"https://other.example/\"><p id=\"t\"></p>");
+        with_page(limits(), page, info(), |runner| {
+            ran(
+                runner,
+                &format!(
+                    r#"{CHECK}
+check(document.baseURI === {ADDRESS:?}, {href:?} + " gives " + document.baseURI);
+check(document.getElementById("t").baseURI === {ADDRESS:?}, "an element's");"#
+                ),
+            );
+        });
+    }
+}
+
+/// DOM, "locate a namespace" (`crates/webidl/data/whatwg/dom.html:7588-7648`): the prefixes
+/// `xml` and `xmlns` are the first steps of the case of an element (`:7598`, `:7602`); a
+/// `DocumentType` and a `DocumentFragment` return null (`:7643-7648`), and so does a node
+/// with no element to start from. "locate a namespace prefix" (`:7561-7587`) starts from the
+/// same element.
+#[test]
+fn namespace_lookups_without_an_element() {
+    with_page(
+        limits(),
+        "<!DOCTYPE html><p id=\"p\">t</p>".to_string(),
+        info(),
+        |runner| {
+            ran(
+                runner,
+                &format!(
+                    r#"{CHECK}
+var XML = "http://www.w3.org/XML/1998/namespace", XMLNS = "http://www.w3.org/2000/xmlns/";
+var HTML = "http://www.w3.org/1999/xhtml";
+var p = document.getElementById("p"), f = document.createDocumentFragment();
+var t = p.firstChild;
+f.appendChild(t);
+[["doctype", document.doctype], ["fragment", f], ["a text without a parent element", t]]
+  .forEach(function (pair) {{
+    var node = pair[1], what = pair[0];
+    check(node.lookupNamespaceURI("xml") === null, what + ": xml");
+    check(node.lookupNamespaceURI("xmlns") === null, what + ": xmlns");
+    check(node.lookupNamespaceURI(null) === null, what + ": null");
+    check(node.lookupPrefix(HTML) === null, what + ": lookupPrefix");
+    check(node.isDefaultNamespace(null) === true, what + ": isDefaultNamespace(null)");
+    check(node.isDefaultNamespace(HTML) === false, what + ": isDefaultNamespace(HTML)");
+  }});
+check(p.lookupNamespaceURI("xml") === XML && p.lookupNamespaceURI("xmlns") === XMLNS,
+  "an element: xml and xmlns");
+check(document.lookupNamespaceURI("xml") === XML, "the document: through its element");
+check(document.lookupNamespaceURI(null) === HTML, "the document: its element's namespace");
+"#
+                ),
+            );
+        },
+    );
+}
+
 /// The three deviations of `baseURI` are named in the note of its row.
 #[test]
 fn the_deviations_of_base_uri_are_in_its_note() {
