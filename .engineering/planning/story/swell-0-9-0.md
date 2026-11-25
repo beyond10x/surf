@@ -30,6 +30,8 @@ scope:
 - confidence: cited
   path: crates/script/tests/adversary_6.rs
 - confidence: cited
+  path: crates/script/tests/adversary_checkpoint.rs
+- confidence: cited
   path: crates/script/tests/bindings.rs
 - confidence: cited
   path: crates/script/tests/engine.rs
@@ -53,7 +55,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 23
+revision: 25
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-25T03:16:34Z", actor: "human:operator", revision: 16}
 - {from: "proposed", to: "active", at: "2026-11-25T10:35:48Z", actor: "human:operator", revision: 23, executor: "agent:coordinator"}
@@ -522,8 +524,10 @@ process that ran on `0.9.0`.
     script `document.getElementById("interrupt");` ends `limit: wall-clock`, the interrupt flag
     is clear after it, and the next script, `throw new DOMException("m", "N");`, ends `threw Error
     "N: m" 1:1` with the record whole. The read-failure branch of `Runner::exception_text` (an
-    interrupt set between the throw and the read) is no longer reachable from a test slice and
-    stays, as written, for the watchdog; no test of this story holds it (acceptance 10). The
+    interrupt set between the throw and the read) stays reachable: `HOST-216` covers a host
+    function reached by a call or a construction, and a getter of a slice that sets the
+    interrupt and throws leaves the run ended by a throw with the flag set. Decision 14 rules
+    what the runner does with it. The
     comments at `adversary_3.rs:312-316` and in the doc comment of the rewritten test are
     reworded for `0.10.0`.
 12. What the new requirements mean for surf, one line each. `HOST-216` and `HOST-217`: used by
@@ -599,6 +603,27 @@ process that ran on `0.9.0`.
       `held` with HOST-215, `conformance/host/requirements.txt:215 @ 0.10.0` and the probe of
       decision 10; a paragraph after the table lists HOST-216 to HOST-220 as decision 12 says,
       each with its line `conformance/host/requirements.txt:216-220 @ 0.10.0`.
+
+14. What the review of the unit's first tip found, as rules. Each narrows the decision it names
+    and wins where the two differ.
+    - An interrupt that is set when a script ends is the script's end (decisions 6 and 11).
+      After the script's own run answered, whatever it answered, the runner decides the end
+      before it reads a thrown value and before the checkpoint: when the wall clock ran out or
+      the interrupt is set, the script ends with the limit (`limit: wall-clock`, or the limit
+      the bindings recorded), no text of a thrown value is read, no checkpoint runs and the
+      microtask queue is cleared. A read of a thrown value that an interrupt ends all the same
+      gives the same end and never a record `threw` with no message. The reason: the read's
+      first engine call takes a set interrupt, and a checkpoint that starts after it runs the
+      page's jobs past the wall clock, up to one `steps_per_entry`.
+    - The clear of the queue after a script's own `limit: memory`, its place before the
+      collection, and the collection itself are each held by a test.
+    - Q4 of the design note names the two code-from-string paths new at `0.9.0`,
+      `%AsyncFunction%` and `%AsyncGeneratorFunction%`, with the hook they pass; Q6 says that
+      a page can time its own run against the wall-clock bound with `Date.now()`; Q2 says what
+      bounds a script and its checkpoint at this tip (the wall clock and each entry's
+      `steps_per_entry`) and names `story:scripts-document-port` for the document's step total.
+    - Whether `HOST-216` means a host accessor too is swell's to rule and to fix. surf's rule
+      above does not wait for a swell tag and stays when one comes.
 
 ## Change
 
@@ -784,9 +809,10 @@ process that ran on `0.9.0`.
    bound the copies swell lists as open'` (2), `'while requirement 11 is open'` (1), `'and
    requirement 11 are closed'` (1) and `'asks swell to charge every copy'` (3).
 10. The report lists what no test of this story holds at `0.10.0`: the reading of a checkpoint's
-    `Throw` and of its `Terminated(EngineFault)` as `faulted`, that the script count does not rise
-    for a checkpoint, that the clear comes before the collection after `limit: memory`, and the
-    read-failure branch of `Runner::exception_text` (decision 11). It also lists that the test
+    `Throw` and of its `Terminated(EngineFault)` as `faulted`. The script count is held by
+    `engine::totals`; the clear after `limit: memory`, the clear before the collection and the
+    read of a thrown value that an interrupt ends are held by acceptance 12. It also lists that
+    the test
     `a_record_read_that_an_interrupt_ends_gives_no_text` was read, not run, before the unit
     replaced it with `interrupt_set_before_a_throw_ends_at_wall_clock_and_the_next_record_is_whole`
     (decision 11), and the comments that decision 12 leaves stale (the four of the generated code
@@ -799,6 +825,24 @@ process that ran on `0.9.0`.
     out is not started again unchanged; a script that measures or waits starts without the `slot`
     prefix; no Python in anything that stays in the repository; no generator with a committed
     output is added; a test over 5 s is named with its time.
+
+12. The review's rules (decision 14), in the module `adversary_checkpoint` of
+    `crates/script/tests`.
+    a. A script whose last operation sets the interrupt and throws ends `limit: wall-clock`; no
+       job it queued runs; the queue is empty for what follows. The same for a thrown value
+       that is no Error, for a normal end with one queued job, and for a script whose entry
+       recorded a limit of the bindings and threw (that limit is the end).
+    b. After a script's own `limit: memory` no job it queued runs, and memory held only by a
+       queued job's closure is free after the collection.
+    c. A checkpoint raises no script count; an interrupt inside a job ends the checkpoint and
+       the next script's checkpoint runs.
+    d. Endless jobs (an `async` loop, a thenable that queues itself, an endless `for await`)
+       end `limit: steps-per-script` within two times `steps_per_entry` and leave no job.
+    e. A thrown value with accessors on `message`, `errors`, `stack` or `constructor` ends
+       with a record and runs no accessor; an `AggregateError` of 100,000 entries records its
+       message.
+    f. `new (async function () {}).constructor("…")` and the async generator form end as Q4's
+       row says for `Function` in a session.
 
 ## Out of scope
 

@@ -27,6 +27,8 @@ scope:
 - confidence: cited
   path: crates/html/tests/adversary_tree_state.rs
 - confidence: cited
+  path: crates/html/tests/adversary_tree_state_2.rs
+- confidence: cited
   path: crates/html/tests/main.rs
 - confidence: cited
   path: crates/html/tests/tree_state.rs
@@ -47,6 +49,8 @@ scope:
 - confidence: cited
   path: crates/script/tests/adversary_dom_reading.rs
 - confidence: cited
+  path: crates/script/tests/adversary_dom_reading_2.rs
+- confidence: cited
   path: crates/script/tests/bindings.rs
 - confidence: cited
   path: crates/script/tests/dom_reading.rs
@@ -58,6 +62,8 @@ scope:
   path: crates/webidl/src/prelude.rs
 - confidence: cited
   path: crates/webidl/tests/adversary_same_object.rs
+- confidence: cited
+  path: crates/webidl/tests/adversary_same_object_2.rs
 - confidence: cited
   path: crates/webidl/tests/main.rs
 - confidence: cited
@@ -74,7 +80,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 35
+revision: 37
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 - {from: "proposed", to: "active", at: "2026-11-25T08:44:48Z", actor: "human:operator", revision: 27, executor: "agent:coordinator"}
@@ -486,6 +492,38 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
       `namedItem` answers. A named deviation in the notes of its rows; a later story builds
       them.
 
+18. What the review of the unit's second tip found, as rules. Each narrows decision 17 and wins
+    where the two differ.
+    - A refill that an end of the run cuts short (decision 17's first rule). The put-back is
+      for a step the object refuses with a throw. An end of the run (the memory limit met while
+      a wrapper or an index key is made, or an interrupt) that leaves the refill after its
+      first define and before the data is written is not put back: the put-back needs the
+      Strings and wrappers the limit just refused. Instead that object is read by no script
+      again: the glue records the half refill, and the runner runs no later script of the
+      document. After `limit: memory` each later script ends `not run: memory`, as after a
+      second memory end; after `limit: wall-clock`, `not run: wall-clock` holds already. No
+      new end word. A memory end outside a refill keeps its rule (the next script runs after
+      the collection).
+    - An attribute scan charges what it reads (decision 17's second rule, which this
+      replaces for the class walk). A scan for one attribute by name (`getElementsByClassName`,
+      `getElementById`, `namedItem`) charges per element one step, one per 64 attributes it
+      passes and one per 64 bytes of each value it reads or compares; no step for the bytes of
+      a value it does not read. A compare of whole attribute lists (`isEqualNode`) charges one
+      per attribute and one per 64 bytes of names and values. A walk that reads no attribute
+      charges one step a node.
+    - Three readers on one parent stay quadratic in this story (decision 9: two positions a
+      parent): every scan is charged and no answer is wrong. 500 children read by three
+      readers in turn cost 180,250 steps; 5,000 end at the step limit. The design note names
+      it; `story:scripts-dom-sibling-positions` decides the tree's own positions.
+    - The generator refuses every `[SameObject]` attribute it does not hold, whatever its
+      return form. Held: a collection on a node, and a return that is a node. A later return
+      form is refused until its story says how it is held. `MutationRecord.addedNodes` stays
+      refused; the slice that selects it changes the generator.
+    - `substringData` charges before its walk, one step per 64 of the lesser of offset plus
+      count and the data's bytes.
+    - The wall clock is read between member calls: one call of a walking member is linear in
+      the nodes it visits and bounded by the tree's node bound. The design note says so.
+
 ## Change
 
 - `crates/script/src/dom/reading.rs`: the 81 methods of `Reading`, decisions 1 to 7, 9, 11, 13:
@@ -850,6 +888,29 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
        writes the counter moves if and only if a child list changed.
     i. The generator's run on a selection with a `[SameObject]` collection attribute of the
        global ends with an error that names the row.
+
+18. The second review's rules (decision 18), in the modules `adversary_dom_reading_2` of
+    `crates/script/tests`, `adversary_tree_state_2` of `crates/html/tests` and
+    `adversary_same_object_2` of `crates/webidl/tests`.
+    a. A read of `childNodes` whose refill the memory limit ends half way ends `limit: memory`;
+       each later script of that document ends `not run: memory`; a new document of the same
+       session runs. A script that ends `limit: memory` outside a refill is followed by a
+       script that runs.
+    b. A refill that the step limit ends changes nothing: `length`, `item(0)`, `c[0]` and
+       `c[1]` answer the old list.
+    c. Over 413 kept objects (two members, five changes of the list, nine shapes of an index
+       and the object's own freezes) each refused refill leaves the old list index by index
+       and no accessor of the script is called.
+    d. On 10,000 elements with ten attributes of 100 bytes and a class of one byte,
+       `getElementsByClassName`, `getElementById` and `namedItem` each charge under 30,000
+       steps; the test prints the four numbers.
+    e. A class repeated on an element counts once (`class="a a"` does not match `'a b'`); the
+       wanted set and `substringData`'s walk are charged.
+    f. Three readers on one parent of 500 children end `Ran`; the test prints the steps.
+    g. The generator's run on a made-up `[SameObject]` row whose return form is neither a
+       node nor a held collection ends with an error that names the row.
+    h. Over 60 seeds of the writes the first review did not draw, and over 40 hooked parses,
+       no child list changes with the counter left.
 
 ## Out of scope
 
