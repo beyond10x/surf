@@ -4,7 +4,7 @@ id: story:scripts-parse-run
 kind: story
 status: proposed
 title: Run a page's inline scripts during its parse, with limits per document
-summary: surf_script::run::parse_with_scripts joins the parser's script hook to swell on one thread, one runner per document, given the page's address, content type and encoding name from a new surf-html entry that restarts under the hook as parse_document_bytes does (one parse, or two when a meta changes the encoding) and equals its tree; it enforces the three limits the runner only counts (scripts, step total, source bytes) beside the runner's wall clock, memory and fault stops, the first stop of a document keeping its word for every later script, records each skipped and inserted script element with the note's words, lends the parser's tree to the DOM for each script, and measures the values of Q4 and Q5 again.
+summary: surf_script::run::parse_with_scripts joins the parser's script hook to swell on one thread, one runner per document, given the page's address, content type and encoding name from a new surf-html entry that restarts under the hook as parse_document_bytes does (one parse, or two when a meta changes the encoding) and equals its tree; it enforces the three limits the runner only counts (scripts, step total, source bytes) beside the runner's wall clock, memory and fault stops, the first stop of a document keeping its word for every later script, records each skipped and inserted script element with the note's words, answers Err when the host cannot make a runner, lends the parser's tree to the DOM for each script, and measures the values of Q4 and Q5 again.
 relations:
 - decomposes: epic:scripts-in-a-page
 - depends_on: story:html-script-hook
@@ -42,6 +42,8 @@ scope:
 - confidence: cited
   path: docs/badges/tests.svg
 - confidence: cited
+  path: docs/design/html-parser.md
+- confidence: cited
   path: docs/design/scripts.md
 - confidence: cited
   path: website/docs/how-it-is-built.md
@@ -49,7 +51,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 46
+revision: 49
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 ---
@@ -58,9 +60,11 @@ transitions:
 This story is the function that joins the parser's script hook to swell, with the limits of one
 document. It was cut out of `story:scripts-dom-mutation` so that it is built and tested before the
 members that write. It is written for the tree after `impl/scripts-dom-reading` and
-`impl/swell-0-10-0` are merged into `main`, in that order. A line is read at `a14e3b0` (`main`),
-`8086a30` (the reading unit's tip) or `f463e24` (the swell unit's tip), as it says; the implementor
-reads each again on the merged tree and names those that moved.
+`impl/swell-0-10-0` are merged into `main`, in either order: the story holds whichever merges
+first (Placement). A line is read at `a14e3b0` (`main`), `8086a30` (the reading unit's tip when
+this was written; its scope has grown since, so that tip is not its last) or `f463e24` (the swell
+unit's tip), as it says; the implementor reads each again on the merged tree and names those that
+moved.
 
 The epic's words (`.engineering/planning/epic/scripts-in-a-page.md`): one agent per document,
 created at its first script and dropped with the document, on one thread (lines 225-230); "Limits
@@ -91,7 +95,16 @@ The hook, on `main` (`a14e3b0`):
   `InputEncoding` answers `reparse_with` today; no change of `tree_builder.rs` makes it. Only
   `parse_document_with_hook` never does, because it passes `None` (`lib.rs:307`). After a
   restart is decided, `run` still reports the script elements that were open
-  (`tree_builder.rs:691-697`). The comment at `:1104-1106` says the second pass takes no hook.
+  (`tree_builder.rs:691-697`). The comment at `:1104-1106` and `docs/design/html-parser.md:422-423`
+  say that second pass takes no hook, "so its stack stays inside the depth limit".
+- That reason is false for every parse since the hook unit, with a hook or without. The stack of
+  open elements has no bound of its own: a node is on it at most once, so the node limit bounds
+  its length and the step limit bounds every read of it (`story/html-script-hook.md:334-339`;
+  `docs/design/html-parser.md:414-421 @ a14e3b0`). The depth limit bounds the tree: `room_at`
+  stops the parse at `Limit::Depth` when a place would be deeper (`tree_builder.rs:1226-1228`).
+  A hooked second pass is bounded the same way, so the entry needs no guard for it; acceptance
+  23 (f) shows a restarted page nested to the depth bound under a hook ending at `Depth` without
+  a crash.
 - `ScriptHook` has `run(&mut self, tree: &mut Tree, script: NodeId)` and
   `skip(&mut self, tree: &Tree, script: NodeId, reason: NotRun)`
   (`crates/html/src/tree_builder.rs:82-88`). `NotRun` has 11 variants, each with a `word()`
@@ -104,10 +117,11 @@ The hook, on `main` (`a14e3b0`):
   surface are public (`crates/html/src/tree.rs:520,554,595,605,962-1561`). `Tree::document` and
   `Tree::stop_at` are crate-private (`tree.rs:273,513`), as are `tree_builder::parse*`,
   `Parsed` (`tree_builder.rs:573-583`), `InputEncoding` (`tree_builder.rs:565`) and
-  `limits::cut_bytes` (`limits.rs:146`). `parse_document_bytes` cuts the bytes, decodes them,
-  parses, parses again with `Certain` after a `meta` that changes the encoding, and marks the
-  tree `InputBytes` when it cut (`lib.rs:324-360`); it passes the decoded text to the parser
-  without a second cut.
+  `limits::cut_bytes` (`limits.rs:146`). `parse_document_bytes` is two functions: itself
+  (`lib.rs:324-331`) and the private `parse_cut_bytes` (`:334-360`). Together they cut the bytes,
+  decode them, parse, parse again with `Certain` after a `meta` that changes the encoding, and
+  mark the tree `InputBytes` when they cut; the decoded text goes to the parser without a second
+  cut.
 - `encoding::decode(bytes)` sniffs and decodes; its confidence is `Tentative` unless a byte order
   mark decided; it reads the first `PRESCAN_BYTES` (1,024, `encoding.rs:361`) for a `meta`.
   `encoding::decode_with(bytes, name)` decodes again with a named encoding and the confidence
@@ -144,11 +158,12 @@ The swell unit (`f463e24`):
   at the first script's start; a script after it ran out is `not run: wall-clock`), `not run:
   memory` after the second `limit: memory`, `not run: faulted`, one `collect()` after the first
   `limit: memory`, and the rule of the interrupt below.
-- The microtask checkpoint follows a script that ended `ran`, `threw` or `refused`; its end is the
-  script's end; its steps are in `Runner::steps()`; after any `limit: <word>` the queue is cleared
-  (`runner.rs:820-834`, `:836`). An interrupt set when a script ends is that script's end, and no
-  script inherits an interrupt: `evaluate` withdraws it after every end, `not run` included
-  (`runner.rs:675`, doc comment `:629-669`).
+- The microtask checkpoint (`Runner::checkpoint`, `runner.rs:820-834`) follows a script that
+  ended `ran`, `threw` or `refused`; its end is the script's end; its steps are in
+  `Runner::steps()`; after any `limit: <word>` the queue is cleared (`Runner::clear_microtasks`,
+  `:836`, called from `evaluate`, `:670-689`). An interrupt set when a script ends is that
+  script's end, and no script inherits an interrupt: `evaluate` withdraws it after every end,
+  `not run` included (`runner.rs:675`, doc comment `:629-669`).
 - The thread's stack: `min_stack_bytes()` 4,006,656 plus the margin
   `(reentry_depth + 1) × 14,336 + 1,048,576` = 4,732,928, in all 8,739,584 bytes
   (`runner.rs:56,59,107-120`; pinned by `crates/script/tests/engine.rs:240-250`). `run` and
@@ -171,7 +186,7 @@ The swell unit (`f463e24`):
 2. The session's values are `RunnerLimits::SESSION` and are in code already (Context); this story
    restates none of them in code. A test passes limits of its own, as Q4 says, and sets them so
    that it ends within the test bounds (Q4's rate for release is about 20 million steps per
-   second, `docs/design/scripts.md:404 @ f463e24`; the test profile's is measured, acceptance 18).
+   second, `docs/design/scripts.md:404 @ f463e24`; the test profile's is measured, acceptance 20).
 3. The thread and its stack margin are `RunnerLimits::stack_bytes()`, in code already. This story
    measures the margin on the parse thread, whose first frames are the parser and the hook, and
    changes it only where the measure says so.
@@ -206,7 +221,17 @@ The swell unit (`f463e24`):
     `not run: wall-clock` when the clock ran out, in that order, before it runs anything
     (`runner.rs:691-704 @ f463e24`). Those three are private (`faulted` and `memory_ends` fields,
     `WallClock::ran_out` at `:529`), so `run.rs` cannot learn them without running a script: the
-    Change adds `Runner::stop`.
+    Change adds `Runner::stop`. The clock can run out, or a fault can set in, between the hook's
+    call of `stop()` and the check at the start of `script_end`; then `evaluate` answers
+    `not run: faulted`, `memory` or `wall-clock` for a script the hook had let through, so the
+    hook records that word as the stop as well. The invariant: whenever an end of the list is a
+    `not run` with one of the three stop words, `stopped()` is not `None` and is that word, because
+    the first stop keeps its word (the helper of the Acceptance holds it). Two things are held
+    by the shared code of `Runner::stop` and `script_end` and by no test through the parse: the
+    `faulted` word (no script makes swell fault on purpose,
+    `crates/script/tests/engine.rs:11-12 @ f463e24`) and the order of `wall-clock` before
+    `scripts-per-document` when both hold at one check (a test would need the clock to run out
+    at that very check).
 10. The bytes of a page parsed with a hook are decoded and parsed by `surf-html`, in one new public
     entry that restarts under the hook as `parse_document_bytes` does and makes no pre-parse.
     A page that does not change its encoding is parsed once and each of its scripts runs once. A
@@ -218,12 +243,16 @@ The swell unit (`f463e24`):
     `document.characterSet` reads the tentative name, in the second the final one. There is at
     most one restart, because the second parse has the confidence `Certain`. The limits are per
     runner, so a page that restarts can use each per-document limit twice (the wall clock: two
-    bounds, one for each runner). The tree, `stopped_by` and every mark equal
-    `parse_document_bytes`' for the same bytes when the hook writes nothing, by one private
-    function that both entries call; the hook is the only difference. A script's write before a
-    later `meta` can make the parse reach that `meta` differently from an unscripted parse; that
-    is what the Standard does as well. The entry uses the crate's own `Tree::stop_at` and
-    `limits::cut_bytes`, which are private to it (Context; `lib.rs:324-360`, `limits.rs:146`).
+    bounds, one for each runner). That is the rule and the bound of the whole page: at most two
+    parses, so each per-document limit at most twice, and no limit of the page across the
+    restart. The epic's Decisions and `story:scripts-hostile-pages` record it (a case with the
+    wall clock spent before a late `meta` and again after it). The tree, `stopped_by` and every
+    mark equal `parse_document_bytes`' for the same bytes when the hook writes nothing, by one
+    private function that both entries call; the hook is the only difference. A script's write
+    before a later `meta` can make the parse reach that `meta` differently from an unscripted
+    parse; that is what the Standard does as well. The entry uses the crate's own
+    `Tree::stop_at` and `limits::cut_bytes`, which are private to it (Context; `lib.rs:324-360`,
+    `limits.rs:146`).
 11. Scripts do not become visible to a user of surf in this story. The option and the session that
    run them are `story:scripts-document-port`'s (`scripts-document-port.md:7,149-156`); the
    README's "surf has no JavaScript yet" (`README.md:31`) and "no binary uses `surf-script` yet"
@@ -247,6 +276,7 @@ pub struct ScriptedParse {
     pub encoding: Option<&'static str>,
     pub steps: u64,
     pub scripts: u32,
+    stop: Option<Reason>,
 }
 impl ScriptedParse { pub fn stopped(&self) -> Option<Reason> }
 pub fn parse_with_scripts(bytes: &[u8], page: &Page<'_>, options: &ParseOptions, config: &Config)
@@ -258,9 +288,10 @@ pub fn record_inserted(cx: &mut DomCx<'_, '_>, node: NodeId)
 ```
 
 `parse_with_scripts` is `parse_with_slices` with `dom::slices`; the second is the seam for a test
-that replaces a slice (the pattern of the reading unit's decision 14). `stopped()` is the stop
-recorded by decision 9, one of `scripts-per-document`, `steps-per-document`, `wall-clock`, `memory`,
-`faulted`, or `None`; a stop is recorded at the first script element handed over after it held, so
+that replaces a slice (the pattern of the reading unit's decision 14). `stopped()` returns the
+private field `stop`, the stop recorded by decision 9, one of `scripts-per-document`,
+`steps-per-document`, `wall-clock`, `memory`, `faulted`, or `None`; a stop is recorded at the
+first script element handed over after it held (or from the answer of `evaluate`, decision 9), so
 a stop that held only after the last script is not recorded. `steps` and `scripts` are
 `Runner::steps()` and `Runner::scripts()` at the end of the parse, 0 and 0 when no runner was
 made.
@@ -274,7 +305,20 @@ made.
    when the page restarts), then drop the last runner on that thread, and hand back the tree, the
    encoding, and the ends, the totals and any `RunnerError` of the last hook alone. A
    `RunnerError` (the thread, the seeds, the agent, the realm) is a failure of the host and not
-   of the page; the call answers `Err` after the parse.
+   of the page; the call answers `Err(<that error>)` after the parse, with no panic and the tree
+   not answered. After its first `RunnerError` the hook keeps it and returns at once from every
+   later `run`: it pushes no end, makes no second runner (an agent and a clock thread each time)
+   and does not call `make_slices` again.
+
+`make_slices` is held as follows, one form that compiles by reading. `parse_with_slices` puts it
+in a `RefCell<F>` made inside the parse thread (so the cell needs no `Send`; `F: Send` is what
+carries the factory to that thread), and each hook holds a `&RefCell<F>`, which is `Copy`, so
+one `make_hook` closure serves both hooks. A hook borrows the cell mutably and calls
+`make_slices` only at the moment it makes its runner. A `&mut F` held by the hook would not
+compile: a `FnMut` closure cannot hand out a reborrow of what it captured. The implementor may
+change the form. It may not change that the factory is called once for each runner, on the parse
+thread, and only when a runner is made (a page with no script that runs calls it never; a page
+with a restart calls it once for each parse that ran a script; acceptance 16 and 17 count it).
 
 The entry of `surf-html`, in `crates/html/src/lib.rs`, named after `parse_document_bytes` and
 `parse_document_with_hook`:
@@ -303,15 +347,21 @@ parses with `tree_builder::parse`; the new entry makes a hook and parses with
 3. When that parse answers `reparse_with` (Context): drop the hook (the caller's runner, ends and
    totals go with it, on the parse thread, before the next step), decode the cut bytes again with
    `encoding::decode_with` (`lib.rs:347-351`), call `make_hook(final name)` a second time, and
-   parse the new text once with that hook and the confidence `Certain` (`lib.rs:352-358`). There
-   is no third parse. `make_hook` is called once or twice.
+   parse the new text once with that hook and the confidence `Certain` (`lib.rs:352-358`). The
+   order is drop, then make: the entry holds the hook in an `Option` and takes it out (`take()`,
+   which drops it) before it calls `make_hook` again; `slot = Some(make_hook(name))` would make
+   the new hook before it dropped the old one, with two runners alive. There is no third parse.
+   `make_hook` is called once or twice.
 4. When step 1 cut, `Tree::stop_at(Limit::InputBytes)` on the last tree, as `parse_document_bytes`
    does (`lib.rs:325-329`). The tree, `stopped_by` and every mark equal those of
    `parse_document_bytes` for the same bytes and options when the hook writes nothing.
 
-`tree_builder.rs` needs no change for the restart (Context). The comment at `:1104-1106`, which
-says the second pass takes no hook, is wrong for the new entry; the Change corrects that comment
-and nothing else in the file.
+`tree_builder.rs` needs no change for the restart (Context). The comment at `:1104-1106` and the
+sentence of `docs/design/html-parser.md:422-423`, which say the second pass takes no hook so
+that its stack stays inside the depth limit, are wrong for the new entry and, by the reason in
+the Context, for every parse. The Change corrects both to what the Context says (the pass of a
+restart may have a hook; the node and step limits bound the stack, the depth limit bounds the
+tree) and nothing else in either file.
 
 The hook of `run.rs` keeps the ends, the set of elements it has reported, the recorded stop and
 an `Option<Runner>`. `parse_with_slices` makes one hook for each call of `make_hook`; the first
@@ -329,11 +379,14 @@ and `ScriptedParse` is built from the last hook alone:
   `steps-per-document` (with no runner both are 0); the first that holds is recorded and is the
   end `not run: <word>`; if none holds, a source over `source_bytes` bytes gives
   `limit: source-bytes`, not parsed, and no stop; otherwise the runner is made if it is not yet
-  (below) and `Runner::evaluate(source)` gives the end. Around `evaluate` the parser's tree is
-  swapped into the bindings' `DomState` and out
-  again; between scripts `DomState` holds a placeholder tree. After the end is pushed, each node
-  that `record_inserted` listed during the script, its checkpoint included, and that the set does
-  not hold yet, is pushed as `not run: inserted` and joins the set.
+  (below) and `Runner::evaluate(source)` gives the end. When `evaluate` answers
+  `not run: faulted`, `memory` or `wall-clock` and no stop is recorded, that word is recorded as
+  the stop (decision 9, the race between `stop()` and `script_end`). Around `evaluate` the
+  parser's tree is swapped into the bindings' `DomState` and out again; between scripts
+  `DomState` holds a placeholder tree. After the end is pushed, each node that `record_inserted`
+  listed during the script, its checkpoint included, and that the set does not hold yet, is
+  pushed as `not run: inserted` and joins the set. After the first `RunnerError` the hook keeps
+  it and returns at once from every later `run` (step 2 of `parse_with_slices`).
 - The runner is made on the parse thread with `Runner::new` (made `pub(crate)`), a `Document`
   whose tree is the placeholder `parse_document("", options)`, whose limits are `options.limits`
   and whose slices are `make_slices(DocumentInfo { address, content_type, encoding })`, with the
@@ -343,7 +396,9 @@ and `ScriptedParse` is built from the last hook alone:
   cost that does not grow with the list; the mutation slice calls it from the write that connects
   a `script` element (`scripts-dom-mutation.md:81-83`).
 
-`crates/script/src/runner.rs`: `Runner::new` and a function that runs a closure on the runner's
+`crates/script/src/runner.rs`: the two intra-doc links [`run`] (`:440,559 @ 8086a30`) become
+[`run()`], because `run` is then also a module (`pub mod run;`) and a bare link is ambiguous;
+`Runner::new` and a function that runs a closure on the runner's
 thread (the part of `run_on` that makes the thread, `:457-486`) become `pub(crate)`; `ScriptHost`
 gains the list of `record_inserted`; `Runner` gains `pub(crate)` access to its `Dom`, and
 `pub(crate) fn stop(&mut self) -> Option<Reason>`: the first of `faulted` (the field, or the
@@ -354,32 +409,43 @@ margin changes only where decision 3 says (`:56,59`), with the pins of `engine.r
 
 `crates/html/src/lib.rs`: the entry above and the private function both entries call.
 `crates/html/src/tree_builder.rs`: the comment at `:1104-1106`, nothing else.
+`docs/design/html-parser.md`: the sentence at `:422-423` and the paragraph it ends (`:414-423 @
+a14e3b0`), which gain the hooked restart and the reason of the Context, nothing else.
 `crates/html/tests/bytes_with_hook.rs`, declared in `crates/html/tests/main.rs` (one module per
-file, `AGENTS.md`, Layout): acceptance 21. In `main.rs` the line comes after the three modules
+file, `AGENTS.md`, Layout): acceptance 23. In `main.rs` the line comes after the three modules
 the reading unit adds (`tree_state`, `adversary_tree_state`, `adversary_tree_state_2`).
 
 `crates/script/src/bindings.rs` and `crates/webidl/src/prelude.rs`: `DomState::swap_tree(&mut self,
 other: &mut Tree)`. `bindings.rs` is generated from `prelude.rs` and holds digests of its sources
-(`bindings.rs:59-62`, `task webidl-check`); the story edits `prelude.rs` and writes `bindings.rs`
-again with `slot cargo run -p surf-webidl --bin bindings` (`bindings.rs:36`).
+(the digest list is `bindings.rs:43-60 @ 8086a30`, `selection.txt` at `:46` and `prelude.rs` at
+`:59`; gates `task webidl-check` and `webidl-slow`); the story edits `prelude.rs` and writes
+`bindings.rs` again with `slot cargo run -p surf-webidl --bin bindings` (the line is
+`bindings.rs:34 @ 8086a30`).
 
-`crates/script/tests/parse_run.rs`: the module of acceptance 1 to 16 and 22.
-`docs/design/scripts.md`:
-the edits of acceptance 18. `AGENTS.md`: the entry of `surf-script` (`:365-368` at `a14e3b0`, which
-both units rewrite): `run.rs`, `parse_with_scripts`, the test counts of its log. In the last
-commit, the public surfaces of acceptance 19.
+`crates/script/tests/parse_run.rs`: the module of acceptance 1 to 17 and 24.
+`docs/design/scripts.md`: the edits of acceptance 19 and 20. `AGENTS.md`: the entry of
+`surf-script` (`:365-368` at `a14e3b0`, which both units rewrite): `run.rs`,
+`parse_with_scripts`, the test counts of its log; and the entry of `surf-html` (`:873` on, the
+test counts at `:922-929 @ a14e3b0`): the new `tests/bytes_with_hook.rs` and its count. In the
+last commit, the public surfaces of acceptance 21.
 
 ## Acceptance
 
-Every test below but 17 and 21 is in the module `parse_run` of
-`crates/script/tests/parse_run.rs`, runs with
-`slot cargo nextest run -p surf-script parse_run::`, makes no network request and no model call,
-parses a page of a few lines with its own runner, and uses `Mode::Test`. A test that needs limits
+Items 1 to 17 and 24 are tests in the module `parse_run` of
+`crates/script/tests/parse_run.rs`, run with
+`slot cargo nextest run -p surf-script parse_run::`, make no network request and no model call,
+parse a page of a few lines with their own runner, and use `Mode::Test`. A test that needs limits
 of its own sets them in `Config`. Each end is compared as `ScriptEnd` and, where a word is named,
 as its `to_string()`. No test states a step count of its own. The tests of steps (3, 4) run
 scripts that call no DOM member, so the charges of the reading members (the reading unit's
 decision 19: 8 steps for each node of a collection made or refilled, one step for 16 bytes of a
 String answer) do not enter them; a test with a member reads the count from `ScriptedParse.steps`.
+One helper, `assert_stop_word(&ScriptedParse)`, holds the invariant of decision 9 and is called at
+the end of every test of the module that answers `Ok`: for each end that is `not run:
+faulted`, `not run: memory` or `not run: wall-clock`, `stopped()` is not `None` and its word is
+the end's word, so a race that leaves a stop unrecorded fails whichever test it happens in. Items
+18 to 22 are checks by command, 23 is in `crates/html/tests/bytes_with_hook.rs`, and 25 is the
+folder's bounds.
 
 1. `scripts_per_document`: with `scripts_per_runner` 2, `<script>1</script><script>1</script>
    <script>1</script><p>after</p>` ends `ran`, `ran`, `not run: scripts-per-document`; the `p` is
@@ -392,15 +458,18 @@ String answer) do not enter them; a test with a member reads the count from `Scr
    (the second script takes the total past the limit and keeps its own end); `stopped()` is
    `steps-per-document`.
 4. `checkpoint_steps_count`: let T be `steps` of a page of one script that queues a promise job
-   which loops, and U that of the same script without the job, U < T. With `steps_per_runner` T,
-   the page of the job script twice ends `ran`, `not run: steps-per-document`, and the page of the
-   plain script twice ends `ran`, `ran`.
+   whose body is the finite loop `for (let i = 0; i < 100000; i++) {}`, and U that of the same
+   script without the job, U < T; the loop count is chosen so that T is below `steps_per_entry`,
+   and the test asserts it (T from a run with `steps_per_entry` at its session value). With
+   `steps_per_runner` T, the page of the job script twice ends `ran`, `not run:
+   steps-per-document`, and the page of the plain script twice ends `ran`, `ran`.
 5. `parse_wall_clock`: with `wall_clock` 100 ms and `steps_per_entry` `u64::MAX`, `while (true) {}`
    ends `limit: wall-clock` after 100 ms and before 10 s; a later script ends
    `not run: wall-clock`; `stopped()` is `wall-clock`; the markup after both is in the tree. With
-   `source_bytes` 100, the page `while (true) {}`, a script of 101 bytes and `1` ends
-   `limit: wall-clock`, `not run: wall-clock`, `not run: wall-clock`: a script too long that
-   follows a clock that ran out is `not run: wall-clock`, not `limit: source-bytes`.
+   the first case's `wall_clock` and `steps_per_entry` and `source_bytes` 100, the page
+   `while (true) {}`, a script of 101 bytes and `1` ends `limit: wall-clock`,
+   `not run: wall-clock`, `not run: wall-clock`: a script too long that follows a clock that ran
+   out is `not run: wall-clock`, not `limit: source-bytes`.
 6. `skipped_reasons`: one page holding `<script></script>`, `<script src=a.js></script>`,
    `<script type=text/template>x</script>`, `<script type=module>x</script>`,
    `<script type=importmap>{}</script>`, `<script type=speculationrules>{}</script>`,
@@ -423,14 +492,15 @@ String answer) do not enter them; a test with a member reads the count from `Scr
    document.getElementById("b")) throw new Error("tree");</script><p id=b>y</p>` ends `ran`, and
    both `p` are in the returned tree, so the parser's tree is back with the parser after the
    script.
-10. `memory_twice`: with `memory_bytes` 1 MiB, the scripts `{ const a = []; for (;;) a.push(new
-    Array(1000)); }` twice and then `1` end `limit: memory`, `limit: memory`, `not run: memory`;
-    `stopped()` is `memory`. With `scripts_per_runner` 2 as well, the third script still ends
-    `not run: memory`, not `not run: scripts-per-document` (the order of decision 9). The reading
-    unit's test of a refill the memory limit cuts (at
-    `8086a30`, `adversary_dom_reading_2::a_refill_ended_by_the_memory_limit_leaves_one_list`),
-    by the name it has on the merged tree, passes with the checkpoint of the swell unit in
-    `evaluate`.
+10. `memory_twice`: M is the least `memory_bytes` at which the realm with the bindings is made,
+    measured by the test: it tries 256 KiB, 512 KiB, 1 MiB and 2 MiB in that order and takes the
+    first at which the page `1` ends `ran` (a realm that is not made answers `Err`; the heap of a
+    realm with the bindings is 202,424 to 506,112 bytes, `docs/design/scripts.md:370-371 @
+    f463e24`), and fails with a message when none of them makes it. With `memory_bytes` M, the
+    scripts `{ const a = []; for (;;) a.push(new Array(1000)); }` twice and then `1` end
+    `limit: memory`, `limit: memory`, `not run: memory`; `stopped()` is `memory`. With
+    `scripts_per_runner` 2 as well, the third script still ends `not run: memory`, not
+    `not run: scripts-per-document` (the order of decision 9).
 11. `scripting_off_same_tree`: with `scripting_disabled` true, `parse_with_scripts` answers
     the tree and encoding `parse_document_bytes` answers for the same bytes, no end, `steps` 0.
 12. `dom_limit_then_next_runs`: the test replaces `mutation` with a slice whose
@@ -475,20 +545,49 @@ String answer) do not enter them; a test with a member reads the count from `Scr
     script and `max_input_bytes` in `options.limits` set 100 bytes below its length (the cut falls
     after both scripts) ends the same, and the tree and its `stopped_by`, `InputBytes`, equal
     `parse_document_bytes`'.
-17. The checks of the generator: `slot task webidl-check` exits 0, and
-    `ESS_TOOLCHAIN=0.97.4 slot task webidl-slow` finds `bindings.rs` the bytes the binary writes.
-18. `docs/design/scripts.md`, read on the merged tree. Q2's sentence "no caller enforces it yet;
-    `story:scripts-document-port` does" (`:182-183 @ f463e24`) names this story;
-    `git grep -n -F 'no caller enforces it yet' -- docs/design/scripts.md` prints nothing. Q5's
-    "after the tree is taken out of the host value" (`:497-499 @ f463e24`) says the tree is
-    the parser's and goes back to it after each script, and its test is the test of acceptance 14.
-    Q4's row "scripts run per document" says its records are bounded by the parser's nodes, not
-    by 1,000 (`:405 @ f463e24`). Where a value of Q4 or Q5 changed, the row and the `probe:` line
-    say so. The report lists, per row of Q4 and for Q5's margin, `holds` or `<old> -> <new>` with
-    its `probe:` line, measured with the bindings and the DOM on swell's tag `0.10.0`: steps per
-    second in the test profile and in release, the heap of a realm with the bindings, and whether
-    a page of more than 1,000 scripts reaches the script count.
-19. Public surfaces: in its last commit, after merging `main`, the story changes every public
+17. `runner_cannot_be_made`: a page of three scripts, `<script>1</script>` three times, parsed
+    with `parse_with_slices` and a `Config` whose `limits.engine.memory_bytes` is 0 (the other
+    limits are `RunnerLimits::SESSION`'s), the factory counting its calls. The call answers
+    `Err(RunnerError::Realm(message))` where `message` contains `MemoryBudget`: swell `0.10.0`
+    answers `Terminated(MemoryBudget)` when the realm is made over a budget of 0, and
+    `Runner::new` maps that to `Realm` (`runner.rs:598-602 @ f463e24`; swell's own test of the
+    budget, `crates/swell/tests/realms.rs:20-36 @ 0.10.0`, tries 0 and 1,000). The call does not
+    panic and answers no tree; the factory counter reads 1 (the hook kept the first error and
+    returned at once from the second and third script, which made no runner); and a second call
+    on the same thread with `Config::SESSION` answers `Ok` with the end `ran` for the same page,
+    so the thread and the process stay usable. If swell makes a runner with a budget of 0, the
+    implementor takes the next cause in this order and says which in the report: `memory_bytes`
+    1,000, then a `reentry_depth` large enough that `stack_bytes()` cannot be mapped
+    (`Err(RunnerError::Thread(_))`).
+18. The checks of the generator. `slot task webidl-check` exits 0 and
+    `ESS_TOOLCHAIN=0.97.4 slot --timeout 30m task webidl-slow` finds `bindings.rs` the bytes the
+    binary writes; the report names the time `webidl-slow` took, and the job is not started again
+    unchanged if it ends at the limit. Both pass on the merged base (they guard it); the
+    transition they show is the edit: after `prelude.rs` gains `swap_tree` and before
+    `bindings.rs` is written again, `webidl-check` fails on the digest of `prelude.rs`
+    (`bindings.rs:59 @ 8086a30`), and after, it exits 0.
+19. The three notes of `docs/design/scripts.md`, read on the merged base, where each command
+    prints a line (Q2 at `:182-183`, Q5 at `:497-499`, Q4 at `:405`, all `@ f463e24`) and prints
+    nothing after the story's change:
+    - `git grep -n -F 'no caller enforces it yet' -- docs/design/scripts.md`: Q2's "no caller
+      enforces it yet; `story:scripts-document-port` does" names this story instead;
+    - `git grep -n -F 'after the tree is taken out of the host value' -- docs/design/scripts.md`:
+      Q5 says the tree is the parser's and goes back to it after each script, and its test is
+      the test of acceptance 14;
+    - `git grep -n -F 'at most 1,000 per document' -- docs/design/scripts.md`: Q4's row "scripts
+      run per document" says its records are bounded by the parser's nodes.
+    After the change, `git grep -n -F "bounded by the parser's nodes" -- docs/design/scripts.md`
+    prints that row.
+20. The re-measured values of Q4 and Q5, measured with the bindings and the DOM on swell's tag
+    `0.10.0` by probes that start without `slot` (acceptance 25) and live in `.out/probes/`: steps
+    per second in the test profile and in release, the heap of a realm with the bindings, whether
+    a page of more than 1,000 scripts reaches the script count, and Q5's margin. The carrier of
+    each is a `probe:` line in the row of Q4 (or in Q5's margin paragraph) that the value
+    belongs to, which says `holds` or `<old> -> <new>` and gives the command and its output;
+    where a value changed, the row changes with it. After the change,
+    `git diff -U0 -- docs/design/scripts.md | /usr/bin/grep -c '^+probe:'` prints at least 5, one
+    for each of the five measures, and the report lists them as `holds` or `<old> -> <new>`.
+21. Public surfaces: in its last commit, after merging `main`, the story changes every public
     surface its change makes false, each number taken from the `slot task check` log of its tip.
     The strings it replaces are the ones `git grep -n -E 'passed|tests' -- README.md website/docs
     docs/badges` finds on its base; at `a14e3b0` they are the test count `2394 passed`
@@ -498,8 +597,24 @@ String answer) do not enter them; a test with a member reads the count from `Scr
     `website/docs/how-it-is-built.md:40-89`), with the paragraph that names the gate run
     (`README.md:658`, `how-it-is-built.md:102-105`). After the commit, `git grep -n -F '<old>'`
     over those files prints nothing for each old string, and each new number equals the log's.
-20. `slot task check` exits 0; `git diff --stat` names only the files of the Change.
-21. `bytes_with_hook`, module of `crates/html/tests/bytes_with_hook.rs`, run with
+    "After merging `main`" is the order against the stories that write the same lines
+    (Placement).
+22. The gate and the guards of the merge. `slot task check` exits 0 (true on the merged base: a
+    guard); `git diff --stat` names only the files of the Change. The reading unit's test of a
+    refill the memory limit cuts (at `8086a30`,
+    `adversary_dom_reading_2::a_refill_ended_by_the_memory_limit_leaves_one_list`, by the name it
+    has on the merged tree) passes: it is the check that the merged `Runner::evaluate` kept the
+    block that reads the record of a cut refill into `memory_ends` (`runner.rs:663-677 @
+    8086a30`), whichever unit merged first. Each edit of the Change shows by a command that is
+    true after it and false before:
+    - `git grep -n -F 'takes no hook' -- crates/html/src/tree_builder.rs docs/design/html-parser.md`
+      prints nothing (`tree_builder.rs:1106` and `html-parser.md:423` at `a14e3b0`);
+    - `git grep -n -F 'parse_with_scripts' -- AGENTS.md` and
+      `git grep -n -F 'bytes_with_hook' -- AGENTS.md` each print a line;
+    - `git grep -n -F 'fn swap_tree' -- crates/webidl/src/prelude.rs
+      crates/script/src/bindings.rs` prints one line in each file;
+    - ``git grep -n -F '[`run`]' -- crates/script/src/runner.rs`` prints nothing.
+23. `bytes_with_hook`, module of `crates/html/tests/bytes_with_hook.rs`, run with
     `slot cargo nextest run -p surf-html bytes_with_hook::`; the hook is a recording hook that
     writes nothing. (a) On the page of acceptance 16 (a `meta` after the first 1,024 bytes names
     `windows-1251`, which the sniffing did not pick, with one script before and one after it),
@@ -511,30 +626,41 @@ String answer) do not enter them; a test with a member reads the count from `Scr
     `make_hook` is called once, and the tree equals `parse_document_bytes`'. (c) On the page of
     (a) with `max_input_bytes` below its length, the tree and its mark (`InputBytes`) equal
     `parse_document_bytes`'. (d) With `scripting_disabled` true the hooks are made and never
-    called, and the tree equals `parse_document_bytes`'. (e) A page whose restarted parse meets a
-    `meta` again calls `make_hook` twice and no third time.
-22. `stop_word_holds`, in `parse_run`, the decision 9 cases not in 5 and 10. A page where the
+    called, and the tree equals `parse_document_bytes`'. (e) The page of (a) with a second
+    `<meta charset=koi8-r>` right after the first: the restarted parse meets a `meta` that names a
+    third encoding and does not restart again, so `make_hook` is called twice and no third time,
+    the second name is `windows-1251`, and the tree and `encoding` equal `parse_document_bytes`'.
+    (f) A page with a script, a comment of 1,100 bytes, a `meta` naming `windows-1251` and then
+    `<div>` nested one level past `options.limits.max_depth`, which the test sets to 64 (a test
+    of a limit sets a small limit): `make_hook` is called twice, the tree and `stopped_by`
+    (`Depth`) equal `parse_document_bytes`', and the call returns without a crash.
+24. `stop_word_holds`, in `parse_run`, the decision 9 cases not in 5 and 10. A page where the
     script count is reached and the clock runs out later keeps `not run: scripts-per-document`
     for every later script. The test lets the bound's own clock run out between two checks, with
     no sleep and no spinning script (a script that spins ends `limit: wall-clock` and records
     the wall clock first): `scripts_per_runner` 1; the page is `<script>1</script>`,
-    `<script>1</script>`, a filler of `<p></p>` and `<script>1</script>`; the test sizes the
-    filler by measurement, doubling the number of `<p></p>` until one parse of the filler with
-    scripting disabled takes at least 20 ms (the node limit stops the doubling; the whole sizing
-    ends under 1 s), and sets `wall_clock` to half of that time. The ends are `ran`,
-    `not run: scripts-per-document`, `not run: scripts-per-document`; the first end `ran` is
-    asserted before the others, so that a bound that ran out in the first script fails the test
-    visibly and not as a wrong word; `stopped()` is `scripts-per-document`. The time of the test
-    is named.
-23. The folder's bounds hold. The test step ends within 120 s and no test runs over 60 s; a test
+    `<script>1</script>`, a filler of `<p></p>` and `<script>1</script>`. The test sizes the
+    filler by measurement: it doubles the number of `<p></p>` until one parse of the filler with
+    scripting disabled takes 200 ms or more, and sets `wall_clock` to a quarter of the time it
+    measured (50 ms or more), so that the check before the second script, which follows the first
+    script by far less than that, finds the clock still running. When the parser's limit ends
+    the doubling first (`stopped_by` of the filler's tree names which limit), the test raises
+    that limit and the input limit of its page by the same factor, at most 4 times, and fails
+    with a message that names the limit and the time reached if the filler is still short. The
+    ends are `ran`, `not run: scripts-per-document`, `not run: scripts-per-document`; the first
+    end `ran` is asserted before the others, so that a bound that ran out in the first script
+    fails the test visibly and not as a wrong word; `stopped()` is `scripts-per-document`. The
+    test prints the time it took, and is named in the report if that is over 5 s.
+25. The folder's bounds hold. The test step ends within 120 s and no test runs over 60 s; a test
     over 5 s is named in the report with its time (`parse_wall_clock` waits 100 ms by design; the
-    deepest-nesting test is timed). No model call and no network request in a test; each case
-    parses a page of a few lines and makes one runner, and no expensive product is made per test.
-    No Python in anything that stays in the repository, the probes included. A script that only
-    measures or waits starts without `slot`; a build or a test goes through it. A job in the pool
-    ends within 10 minutes or names its time with `slot --timeout`, at most 30 minutes, and is not
-    started again unchanged. A probe lives in `.out/probes/` of the managed worktree, which git
-    ignores (`AGENTS.md:78`), and is not committed. A brief to a sub-agent that runs tests names
+    deepest-nesting test and `stop_word_holds` are timed). No model call and no network request
+    in a test; each case parses a page of a few lines and makes one runner, and no expensive
+    product is made per test (the filler of item 24 is sized once for that test). No Python in
+    anything that stays in the repository, the probes included. A script that only measures or
+    waits starts without `slot`; a build or a test goes through it. A job in the pool ends within
+    10 minutes or names its time with `slot --timeout`, at most 30 minutes, and is not started
+    again unchanged. A probe lives in `.out/probes/` of the managed worktree, which git ignores
+    (`AGENTS.md:78 @ a14e3b0`), and is not committed. A brief to a sub-agent that runs tests names
     the 60 s bound and the 120 s step budget.
 
 ## Out of scope
@@ -543,8 +669,7 @@ The members that write (`story:scripts-dom-mutation`, `story:scripts-dom-attribu
 `story:scripts-dom-selectors`); the runner's mechanisms (`story:scripts-engine-dependency`,
 `story:swell-0-9-0`); the harness of html5lib cases (`story:scripts-html-conformance`); the option,
 the session and what a user sees (`story:scripts-document-port`); a page meant to break the limits
-(`story:scripts-hostile-pages`); a limit of the whole page across a restart (the limits are per
-runner, decision 10).
+(`story:scripts-hostile-pages`).
 
 ## Placement
 
@@ -552,23 +677,66 @@ After `story:html-script-hook` (on `main`), `story:scripts-dom-reading` and `sto
 before `story:scripts-dom-mutation`, `story:scripts-html-conformance` and
 `story:scripts-document-port`, which call `parse_with_scripts` (`scripts-dom-mutation.md:94`,
 `scripts-html-conformance.md:54`, `scripts-document-port.md:149-156`) and, for the first, also
-`record_inserted`. The document-port story passes the page's address and content type in `Page`.
-`crates/script/src/runner.rs` is written by this story, `story:scripts-dom-reading` (where
-`ScriptHost` is made, `:171,585 @ 8086a30`) and `story:swell-0-9-0` (`evaluate`, merged after the
-reading unit); this story reads the merged file. `bindings.rs` and `prelude.rs` are the reading
-unit's generated files; a story that changes the selection regenerates them, and the second to
-merge regenerates again. Beside `story:scripts-dom-attributes` and `story:scripts-dom-selectors`,
-which write other files of `crates/script`.
+`record_inserted`. The document-port story passes the page's address and content type in `Page`,
+the conformance story the case's UTF-8 bytes, `about:blank`, `text/html` and `Config::SESSION`,
+and both read `Err(RunnerError)` as a failure of the host. The records of one document are
+bounded by the parser's nodes, not by 1,000 (acceptance 19); `story:scripts-document-port` and
+`story:scripts-hostile-pages` are told so in their texts.
 
-`crates/html` (the new entry): the other story that changes `crates/html/src/lib.rs` is
-`story:scripts-dom-reading` (status active; one line, the `pub use` of `QuirksMode`, at
-`8086a30`), which also changes `tree_builder.rs` and adds three modules to
-`crates/html/tests/main.rs`; it is a dependency of this story, so it is merged before. The draft
-`story:html-parser-hook-cost` changes `tree.rs` and `tree_builder.rs`, not `lib.rs`; this story
-changes `tree_builder.rs` only in the one comment at `:1104-1106` (the draft changes the step
-counting, not that comment), and `tree.rs` not at all. Every other story whose scope names `lib.rs`
-is implemented. This story reads `lib.rs`, `tree_builder.rs` and `main.rs` as the reading unit
-leaves them.
+The merge order of the two units does not matter: the story holds whichever merges first.
+`Runner::evaluate` at `8086a30` holds the block that reads the reading unit's record of a cut
+refill into `memory_ends` (`runner.rs:663-677`); at `f463e24` (`:670-689`) it does not. The unit
+that merges second keeps the block, and the check that it did is the reading unit's test of
+acceptance 22. The reading story's scope has grown since `8086a30` (three more test files); that
+tip is not its last.
+
+What the story shares with other open stories, by file. Where it says "no edge", no story names
+the other as a dependency, and the merge is the ordinary one: the story that merges second takes
+the merged file and resolves what overlaps.
+
+- `crates/script/src/runner.rs`: this story, `story:scripts-dom-reading` (where `ScriptHost` is
+  made, `:171,585 @ 8086a30`), `story:swell-0-9-0` (`evaluate`) and the draft
+  `story:scripts-job-errors` (`host_clean_up_after_job`, `scripts-job-errors.md:49`), which
+  depends on `story:swell-0-9-0` and has no edge to this story. This story reads the merged file.
+- `crates/script/src/bindings.rs` is generated from `crates/webidl/selection.txt`,
+  `crates/webidl/src/prelude.rs` and the generator (`crates/webidl/src/`, the files listed at
+  `bindings.rs:51-60 @ 8086a30`); its header holds their digests. Three open stories write that
+  set: this story (`prelude.rs`, `DomState::swap_tree`), `story:scripts-utf16-length`
+  (`prelude.rs`, `string_length`; `scripts-utf16-length.md:18-41`) and
+  `story:scripts-dom-collection-names` (`selection.txt`; `scripts-dom-collection-names.md:17`);
+  the last two depend on the reading story and have no edge to this one. No new edge. The rule:
+  `bindings.rs` is never merged by hand; the story that merges second writes it again from the
+  merged sources with `slot cargo run -p surf-webidl --bin bindings`, and `slot task webidl-check`
+  (the digests) and `webidl-slow` (the bytes) in its gate hold it (acceptance 18).
+- The public-surface lines of acceptance 21 (`README.md:285`, `docs/badges/make.sh:38`,
+  `docs/badges/tests.svg`, `website/docs/status.md`, `what-works.md`) are rewritten in the last
+  commit of this story and of `story:scripts-dom-attributes` and `story:scripts-dom-selectors`
+  too (`scripts-dom-attributes.md:64-72`, `scripts-dom-selectors.md:72-80`), which also write
+  other files of `crates/script`. Acceptance 21's "after merging `main`" is the order: the last
+  to merge takes the numbers of its own log.
+- `AGENTS.md` and `website/docs/status.md` are in the scope of `story:conformance-lock-and-lints`
+  (draft); `AGENTS.md` is also in that of `story:session-argument-checks` (draft),
+  `story:test-step-holds-with-tls` (active) and `story:tls-tests-as-tables` (draft, which changes
+  the TLS count behind `552` in `README.md:285` and `what-works.md:17`). No edge; the same rule:
+  the last to merge re-reads the counts from its own log.
+- `crates/html/src/lib.rs`: the other story that changes it is `story:scripts-dom-reading`
+  (status active; one line, the `pub use` of `QuirksMode`, at `8086a30`), which also changes
+  `tree_builder.rs` and adds three modules to `crates/html/tests/main.rs`; it is a dependency of
+  this story, so it is merged before. Every other story whose scope names `lib.rs` is
+  implemented. This story reads `lib.rs`, `tree_builder.rs` and `main.rs` as the reading unit
+  leaves them.
+- `crates/html/src/tree_builder.rs`: the draft `story:html-parser-hook-cost` changes it and
+  `tree.rs`, not `lib.rs`; its scope is inferred, and the comment at `:1104-1106` belongs to the
+  doc comment of `stop_parsing`, which says "The pops are not steps". No edge; the one-comment
+  hunk is resolved by whichever merges second. This story changes `tree.rs` not at all.
+- `docs/design/html-parser.md` (the paragraph at `:414-423 @ a14e3b0`): also in the scope of
+  `story:scripts-document-port`, `story:scripts-html-conformance`, `story:select-content-rows`
+  and `story:html-parser-hook-cost`. No edge; the story that merges second resolves a conflict
+  in that paragraph, if the other edited it.
+- `docs/design/scripts.md`: Q2, Q4 and Q5, which acceptance 19 and 20 edit, are also edited by
+  the two units (the Q4 rows "after `Terminated(MemoryBudget)`" and "wall clock", the reading
+  unit's `[SameObject]` paragraph beside the swell unit's rewrites of Q2 and Q4); this story
+  edits the merged text, and the lines it cites at `f463e24` move.
 
 ## Why `epic:scripts-in-a-page`
 
