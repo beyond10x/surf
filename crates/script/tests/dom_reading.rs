@@ -1933,7 +1933,9 @@ fn attributes_are_charged_where_they_are_read() {
 /// one it finds by name, `lookupPrefix(namespace)` each it compares, one step per 64 bytes
 /// before the read; a value of another attribute is not read and costs nothing. An `svg`
 /// element's `xmlns:xlink` (the parser gives it the `xmlns` namespace) of 128,000 bytes against
-/// 64, and a `data-x` of the same lengths.
+/// 64, and a `data-x` of the same lengths. `lookupNamespaceURI` answers the value it read, so
+/// the glue's copy of that String (one step per 16 bytes, 8,000) comes beside the read's 2,000;
+/// `lookupPrefix` answers null.
 #[test]
 fn the_lookups_charge_the_xmlns_values_they_read() {
     let spent = |attribute: &str, bytes: usize, read: &str| {
@@ -1944,16 +1946,23 @@ fn the_lookups_charge_the_xmlns_values_they_read() {
             steps(runner, read)
         })
     };
-    for (name, read) in [
-        ("lookupNamespaceURI", "g.lookupNamespaceURI(\"xlink\");"),
-        ("lookupPrefix", "g.lookupPrefix(\"urn:none\");"),
+    for (name, read, charged) in [
+        (
+            "lookupNamespaceURI",
+            "g.lookupNamespaceURI(\"xlink\");",
+            10_000,
+        ),
+        ("lookupPrefix", "g.lookupPrefix(\"urn:none\");", 2_000),
     ] {
         let (long, short) = (
             spent("xmlns:xlink", 128_000, read),
             spent("xmlns:xlink", 64, read),
         );
         eprintln!("{name}: an xmlns value of 128,000 bytes {long} steps, of 64 bytes {short}");
-        assert!(long >= short + 1_000, "{name}: {long} against {short}");
+        assert!(
+            (short + charged - 10..short + charged + 100).contains(&long),
+            "{name}: {long} against {short}"
+        );
         let (long, short) = (spent("data-x", 128_000, read), spent("data-x", 64, read));
         eprintln!("{name}: another value of 128,000 bytes {long} steps, of 64 bytes {short}");
         assert!(long < short + 10, "{name}: {long} against {short}");
