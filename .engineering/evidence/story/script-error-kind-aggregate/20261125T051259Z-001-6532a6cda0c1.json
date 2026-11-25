@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-25T05:12:59Z",
+  "actor": "human:operator",
+  "artifact": "story:script-error-kind-aggregate",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the forge runs on main at 0f49fc8 (the merge of impl/script-error-kind-aggregate at c0bb9db), 2026-11-25",
+    "reference": "check 45550763612 success, Shared source gates 45550763895 success, Documentation validation 45550763553 success, Documentation site 45551107012 success"
+  }
+}

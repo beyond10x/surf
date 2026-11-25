@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-25T05:12:59Z",
+  "actor": "human:operator",
+  "artifact": "story:script-error-kind-aggregate",
+  "kind": "story",
+  "revision": 15,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the gate in runner form (task check-runner) on c0bb9db, the tip of impl/script-error-kind-aggregate, through the pool on the build node, 2026-11-25 05:15 CET",
+    "reference": "exit 0 in 229 s; 221 of 221 scenarios; 1619 tests: 1616 passed, 0 failed, 3 ignored; 552 TLS tests passed; 72 page tests passed; four steps 76.6 s; the docs site builds"
+  }
+}
