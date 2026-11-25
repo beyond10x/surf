@@ -4,7 +4,7 @@ id: story:scripts-dom-selectors
 kind: story
 status: proposed
 title: The 9 selector members over a subset of Selectors Level 4, bounded in text, count and steps
-summary: 'querySelector, querySelectorAll, closest, matches and webkitMatchesSelector on Element and the two of Document and DocumentFragment, for the subset of type, universal, #id, .class, [a], [a=v] (CSS escapes, strings, comments and the newlines CR, FF and CRLF included; an unterminated string or an unclosed block at the end of the text is closed, not an error), compounds, descendant and child combinators and lists, with the case rules of the HTML Standard (a type name and an attribute name lower-cased for an HTML element and compared exactly, the 46-name list of case-insensitive attribute values held as a table) and the tree''s quirks mode, every refusal a SyntaxError (a text that is not valid says so; a valid selector outside the subset or over the bounds of 4,096 bytes and 512 simple selectors says surf does not support it, as does a pseudo-class recognised by its shape even where a browser calls it not valid, two named deviations beside the nine rows), every read of the tree in a file of its own (selector_reads.rs) that charges before the work at one step per 16 bytes, through the glue''s constant, and a step a token, a node, an ancestor and a cell of the matcher against the entry''s 10,000,000 steps, the walk keeping a stack of at most 513 frames and copying no list of children, the matcher filling every cell of a two-byte memo of compounds times chain that is charged before it is made, and querySelectorAll a static NodeList that is not a [SameObject] and keeps nothing.'
+summary: 'querySelector, querySelectorAll, closest, matches and webkitMatchesSelector on Element and the two of Document and DocumentFragment, for the subset of type, universal, #id, .class, [a], [a=v] (CSS escapes, strings, comments and the newlines CR, FF and CRLF included; an unterminated string or an unclosed block at the end of the text is closed, not an error), compounds, descendant and child combinators and lists, with the case rules of the HTML Standard (a type name and an attribute name lower-cased for an HTML element and compared exactly, the 46-name list of case-insensitive attribute values held as a table) and the tree''s quirks mode, every refusal a SyntaxError (a text that is not valid says so; a valid selector outside the subset or over the bounds of 4,096 bytes and 512 simple selectors says surf does not support it, as does a pseudo-class recognised by its shape even where a browser calls it not valid, two named deviations beside the nine rows), every read of the tree in a file of its own (selector_reads.rs) that charges before the work at one step per 16 bytes, through the glue''s constant, and a step a token, a node, an ancestor, a cell of the matcher and each further simple selector of a compound against the entry''s 10,000,000 steps, the walk keeping a stack of at most 513 frames and copying no list of children, the matcher filling every cell of a two-byte memo of compounds times chain that is charged before it is made, and querySelectorAll a static NodeList that is not a [SameObject] and keeps nothing.'
 relations:
 - decomposes: epic:scripts-in-a-page
 - depends_on: story:scripts-dom-reading
@@ -41,20 +41,22 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 32
+revision: 34
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 13}
 ---
 ## Context
 
-The epic's eleventh candidate (`.engineering/planning/epic/scripts-in-a-page.md:476-479 @
-0759016`), the slice "Selectors, 9" (`:740-746`) and the deviation lines (`:134-136`,
-`:762-764`): `querySelector`, `querySelectorAll`, `closest`, `matches` and
-`webkitMatchesSelector` for a subset of Selectors Level 4. The epic's text was corrected at
-`0759016` to what this story rules (decision 5: the DOM Standard gives a caller only
-`SyntaxError`, so a valid selector outside the subset throws a `SyntaxError` whose message says
-surf does not support it, not `NotSupportedError`; decision 14 says what was corrected and what
-is left). There are nine members, not the seven the epic once counted; the selection
+The epic's eleventh candidate (`.engineering/planning/epic/scripts-in-a-page.md:478-481 @
+929269e`), the slice "Selectors, 9" (`:742-750`) and the deviation lines (`:134-138`,
+`:762-770`): `querySelector`, `querySelectorAll`, `closest`, `matches` and
+`webkitMatchesSelector` for a subset of Selectors Level 4. The epic's text was corrected to
+what this story rules (decision 5: the DOM Standard gives a caller only `SyntaxError`, so a
+valid selector outside the subset throws a `SyntaxError` whose message says surf does not
+support it, not `NotSupportedError`, and a pseudo-class recognised by its shape gets the same
+message also where a browser says not valid: the epic holds both clauses of the deviation, since
+plan commit `4013bde`; decision 14 says what was corrected). There are nine members, not the
+seven the epic once counted; the selection
 has nine rows with the slice `selectors` (`crates/webidl/selection.txt:110-112, 126-127,
 175-176, 231-232 @ 83e6b8a`, checked with `awk '$3=="selectors"{n++} END{print n}'`): `Element`
 `closest`, `matches`, `webkitMatchesSelector`, `querySelector`, `querySelectorAll`; `Document`
@@ -160,15 +162,15 @@ slice keeps none), 7, 19 and 20 (charges), 14 and 15 (the test slice and the tab
 
 1. The members are the nine methods of `Selectors` (`bindings.rs:3790-3881`), the nine rows of
    the Context. The title, the summary and acceptance 1 say 9.
-2. The subset is the epic's (`epic:740-746 @ 0759016`): the type selector, the universal
-   selector, `#id`,
-   `.class`, attribute presence `[a]` and equality `[a=v]`, compound selectors, the descendant
-   and the child combinator, and selector lists (a comma), with the lexical rules of decision 15
-   (escapes, comments, strings, quoted and unquoted attribute values). Whitespace around a
-   combinator is allowed (Selectors Level 4, section 16: it is required between units only
-   where the combinator between them is omitted) and so around a comma (section 4.1). Whitespace
-   around the whole text is allowed too, by CSS Syntax's tokenizing, which the agent did not
-   read for this point (decision 16). The head comment of `selectors.rs` gives the grammar,
+2. The subset is the epic's (`epic:742-750 @ 929269e`): the type selector, the universal
+   selector, `#id`, `.class`, attribute presence `[a]` and equality `[a=v]`, compound
+   selectors, the descendant and the child combinator, and selector lists (a comma), with the
+   lexical rules of decision 15 (escapes, comments, strings, quoted and unquoted attribute
+   values). Whitespace around a combinator is allowed (Selectors Level 4, section 16: it is
+   required between units only where the combinator between them is omitted) and so around a
+   comma (section 4.1). Whitespace around the whole text is allowed too, by CSS Syntax's
+   tokenizing, which the agent did not read for this point (decision 16). The head comment of
+   `selectors.rs` gives the grammar,
    each production cited to its section of Selectors Level 4 with the date of the text read,
    and the case rules of decisions 4 and 16 cited to the DOM and HTML Standards. The four
    texts are not in the tree; the implementor reads each once, when the work starts, at the
@@ -252,19 +254,23 @@ slice keeps none), 7, 19 and 20 (charges), 14 and 15 (the test slice and the tab
      namespaces within selectors is not planned) and `a || b` (the draft of 10 November 2026
      has no `||`: its production is `<combinator> = '>' | '+' | '~'`; a later draft may add it,
      so the implementor reads the production again, decision 16).
-   - The parser reads the whole text first. A text with any fault of the grammar is not valid
-     whatever construct precedes it (`a:hover[` is not valid); the first construct outside the
-     subset of a text without a fault is named. An excluded pseudo-class or pseudo-element is
-     recognised by its shape (a colon or two, an identifier, and an argument in balanced
-     parentheses, skipped by token, so a string inside it is one token and a parenthesis in the
-     string does not count); its name and argument are not validated, so `a:hovr` and
-     `a:nth-child(x y z)` get the not-supported message where a browser says they are not valid:
-     the name and the code are the same, the message differs, and the pseudo-class texts of
-     Selectors were not read (decision 16). This is a second deviation, beside the subset: the
-     second clause of the note of decision 11, tested by acceptance 4a, and added to the epic's
-     deviation text by decision 14. The end of the text closes what is open (decision 15):
-     `a:not(b`, whose `(` the end closes, is a pseudo-class by shape, not supported, as
-     `a:not(b)` is.
+   - The parser reads the whole text first, up to the bounds of decision 6. A text with any
+     fault of the grammar is not valid whatever construct precedes it (`a:hover[` is not valid);
+     the first construct outside the subset of a text without a fault is named. The two bounds
+     are one rule: a text over 4,096 bytes is refused whatever it holds, and the 513th simple
+     selector ends the parse whatever follows it, so a fault after it is not read (513 simple
+     selectors then `[` get the message of the bound, not the one of an invalid selector; a
+     construct outside the subset met before that selector is named first). An excluded
+     pseudo-class or pseudo-element is recognised by its shape (a colon or two, an identifier,
+     and an argument in balanced parentheses, skipped by token, so a string inside it is one
+     token and a parenthesis in the string does not count); its name and argument are not
+     validated, so `a:hovr` and `a:nth-child(x y z)` get the not-supported message where a
+     browser says they are not valid: the name and the code are the same, the message differs,
+     and the pseudo-class texts of Selectors were not read (decision 16). This is a second
+     deviation, beside the subset: the second clause of the note of decision 11, tested by
+     acceptance 4a, and held by the epic's deviation text since plan commit `4013bde`
+     (decision 14). The end of the text closes what is open (decision 15): `a:not(b`, whose
+     `(` the end closes, is a pseudo-class by shape, not supported, as `a:not(b)` is.
 6. The bounds. No recursion: the parser is one loop, the matcher is loops over indexes and the
    walk keeps a stack of frames of its own (decision 17), so a hostile text or tree needs no
    stack beyond the frame. The selector text is at most 4,096 bytes of UTF-8 after the glue's
@@ -278,7 +284,8 @@ slice keeps none), 7, 19 and 20 (charges), 14 and 15 (the test slice and the tab
    whatever it holds, valid or not (the text may be a valid selector, which a browser would run:
    the message says surf does not support it, and a script is not told its selector is invalid);
    the 513th simple selector is the same kind of `SyntaxError` naming its bound (`more than 512
-   simple selectors`), where the parser is when it reaches it.
+   simple selectors`): the parse ends where it meets that selector and reads nothing after it,
+   so a later fault is not found, as the byte bound refuses a text whatever it holds (decision 5).
    The buffers the story's code makes, each with its bound and its capacity (a `Vec` that grows
    by doubling holds up to twice its length). None of them is on the engine's heap, so none is
    in `memory_bytes` (the engine's 64 MiB, which counts wrappers, host objects and collections:
@@ -304,15 +311,19 @@ slice keeps none), 7, 19 and 20 (charges), 14 and 15 (the test slice and the tab
      time (a list makes and drops one memo for each complex selector in turn).
    - The result `Vec<NodeId>` of `querySelectorAll`: an id is pushed only for a node whose
      visit step was charged, so at most 1,048,575 ids; capacity at most 2^20 ids, 8,388,608
-     bytes.
+     bytes. While it grows by doubling the old buffer and the new one are both alive: at most
+     4,194,304 + 8,388,608 = 12,582,912 bytes, the peak of this buffer. The glue then clones
+     the list into the collection's data (`bindings.rs:1338`), a second buffer of up to
+     8,388,608 bytes that is the glue's.
    - The glue's copy of the argument (the reading unit's, not changed here): the UTF-16 units
      of a String of at most 16,777,216 units, 33,554,432 bytes while the copy is made, and the
      UTF-8 `String` made from them, at most 3 bytes a unit, 50,331,648 bytes (its capacity is the
      glue's and is not read here), alive for the call. A text over 4,096 bytes is refused after
      this copy and before the slice reads it.
    The story's own buffers at the bounds add up to 8,388,608 + 524,288 + 524,288 + 16,384 +
-   4,096 = 9,457,664 bytes, and the glue's copy to up to 83,886,080 beside them while the copy
-   is made. The report names these as outside the engine's budget.
+   4,096 = 9,457,664 bytes, 13,651,968 at the result buffer's peak (the 4,194,304 of its old
+   buffer more), and the glue's copy to up to 83,886,080 beside them while the copy is made.
+   The report names these as outside the engine's budget.
 7. What is charged and by whom, against the entry's 10,000,000 steps. The rules are the reading
    story's decision 20: one price for a byte, one step per `STRING_BYTES_A_STEP` bytes (16,
    `bindings.rs:1257 @ 83e6b8a`), for every byte the glue or the slice reads, compares, folds or
@@ -351,59 +362,74 @@ slice keeps none), 7, 19 and 20 (charges), 14 and 15 (the test slice and the tab
    - The matcher, for each complex selector of the list and each element it tests. Its
      algorithm and its price are one statement, so that a floor of acceptance equals a
      ceiling. Call the compounds `C1` to `Cm`, left to right, and the element's chain `P0`
-     (the element) to `P(n-1)` (its outermost element ancestor), `n` at most 512.
-     1. The gate: `Cm` is tested against `P0` (one compound test: 1 step, and one step per 16
-        bytes of the selector's type name for the form the element's namespace calls for,
-        decision 4, charged before the compare; an id, class or attribute test reads through
-        `selector_reads` as below). A complex selector of one compound is answered here. If the
-        gate fails, nothing more is done for this selector at this element.
+     (the element) to `P(n-1)` (its outermost element ancestor), `n` at most 512. A compound
+     of `s` simple selectors is tested in order and the test stops at the first simple
+     selector that fails; one step is charged before each simple selector it tests: the first
+     is the step of the caller (the gate's or the cell's, below) and each further one is
+     `selector_reads::test_compound`'s own. So a compound test costs from 1 to `s` steps, and
+     at least 1 a cell, before the bytes its simple selectors read (as below).
+     1. The gate (`selector_reads::gate`): one step, then `Cm` is tested against `P0` (a compound
+        test; a type name also costs one step per 16 bytes of the selector's type name for the
+        form the element's namespace calls for, decision 4, charged before the compare; an id,
+        class or attribute test reads through `selector_reads` as below). A complex selector of
+        one compound is answered here. If the gate fails, nothing more is done for this
+        selector at this element.
      2. The chain, read whole and once for an element (a later selector of the list at the
-        same element uses it): `P1` to `P(n-1)` through `next_ancestor`, one step per
-        ancestor, before each read, `n - 1` steps. Only then is the memo sized.
+        same element uses it): `P1` onward through `next_ancestor`, one step before each read,
+        until the read finds no element parent: the outermost element's read, which finds the
+        document or a fragment, is charged like the others, so a chain of `n` elements costs
+        `n` steps. Only then is the memo sized.
      3. The memo: one record of two bytes for each pair (compound `i`, position `p`): `yes`,
         the answer of `Ci` at `Pp` with everything left of it, and `some`, whether `yes` holds
-        at `p` or at any later position. It is `2 x m x n` bytes, charged `bytes / 16` steps
-        before it is made (`selector_reads::memo`), made zeroed, dropped when the selector's
-        answer is known; a list makes one memo for each complex selector, one after another,
-        and never has two alive.
+        at `p` or at any later position (false past the chain, where there is no later
+        position). It is `2 x m x n` bytes, charged `bytes / 16` steps before it is made
+        (`selector_reads::memo`), made zeroed, dropped when the selector's answer is known; a
+        list makes one memo for each complex selector, one after another, and never has two
+        alive.
      4. The fill, with no recursion, rows `i` from 1 to `m` and, in a row, `p` from `n - 1`
-        down to 0, every cell of the memo: one step before each cell is filled (the step of
-        a compound's test). If everything left of `Ci` can hold at `Pp` (`i` is 1; or `p + 1`
-        is in the chain and the cell `(i - 1, p + 1)` is `yes` for a child combinator, `some`
-        for a descendant one), `Ci` is tested against `Pp` and the cell is `yes` when it
-        matches, `some` also when the cell `(i, p + 1)` is `some`; else the test is not run and
-        the cell is no. The bytes a test reads (a type name, an attribute scan, a value, class
-        tokens) are charged beside the cell's step, before the read, as below. A descendant
-        step is one lookup of the `some` byte, a child step one lookup of the `yes` byte.
+        down to 0, every cell of the memo, through `selector_reads::cell`: one step before
+        each cell is filled, and no more for a cell whose compound is not tested. If everything
+        left of `Ci` can hold at `Pp` (`i` is 1; or `p + 1` is in the chain and the cell
+        `(i - 1, p + 1)` is `yes` for a child combinator, `some` for a descendant one), `Ci` is
+        tested against `Pp` (a compound test: the cell's step is its first simple selector's)
+        and the cell is `yes` when it matches, `some` also when the cell `(i, p + 1)` is `some`
+        (false past the chain); else the test is not run and the cell is no. The bytes a test
+        reads (a type name, an attribute scan, a value, class tokens) are charged beside the
+        steps, before the read, as below. A descendant step is one lookup of the `some` byte,
+        a child step one lookup of the `yes` byte.
      5. The answer is the cell `(m, 0)`. The gate's test of `Cm` at `P0` is made once more
         by the fill and paid again: one more compound test.
-     So a complex selector of `m > 1` compounds at an element that passed the gate costs `n - 1`
-     (the chain) + `m x n` (the cells) + `2 x m x n / 16` (the memo) + the bytes the tests read,
-     whether it matches or not. Filling every cell is the choice: the cost is a function of the
-     selector and the chain alone, apart from what the tests read of the element, so a floor
-     of an acceptance equals the ceiling it is a floor of; a fill on demand would be cheaper
-     for an ordinary page but cannot give the `some` lookup, and its floors would need a lower
-     bound the algorithm only guarantees by reading the data. The price for an ordinary page is
-     small: `div p` at a chain of 20 costs 19 + 40 + 5 = 64 steps for a `p`, and nothing for an
-     element that fails the gate.
+     So a complex selector of `m > 1` compounds at an element that passed the gate costs `n`
+     (the chain) + the cells + `2 x m x n / 16` (the memo) + the bytes the tests read, whether
+     it matches or not. The cells cost `m x n` when each compound is one simple selector, and
+     at most the text's simple selectors, 512, at each position when it is not (a pass over
+     all the compounds at one position tests each simple selector once, at most), so they are
+     at most `512 x n` whatever the split. Filling every cell is the choice: the cost is a
+     function of the selector and the chain alone, apart from what the tests read of the
+     element, so a floor of an acceptance equals the ceiling it is a floor of; a fill on
+     demand would be cheaper for an ordinary page but cannot give the `some` lookup, and its
+     floors would need a lower bound the algorithm only guarantees by reading the data. The
+     price for an ordinary page is small: `div p` at a chain of 20 costs 20 + 40 + 5 = 65
+     steps for a `p`, and nothing beyond the gate for an element that fails it.
    - An id, class or attribute test reads through `selector_reads`, over the items of
      `reads.rs` that both slices use (decision 17), at the price of the reading unit's scan.
      `selector_reads` charges one step per 16 bytes of the selector's attribute name for each
-     attribute of the element's list (`attribute_count x name bytes / 16`, none for a name
-     under 16 bytes), before it calls the scan. The scan then charges as the reading unit has
-     it: one step per 4 attributes of the list before the pass, one per 16 bytes of the
-     element's value it reads or compares, before it is read (the compare reads no more than
-     that value), and one per class token of a `class` value. In quirks mode the fold of a
-     value is paid by the bytes' price. No existing charge of `reads.rs` changes.
+     attribute of the element's list (`attribute_count x (name bytes / 16)`, none for a name
+     under 16 bytes however many attributes), before it calls the scan. The scan then charges
+     as the reading unit has it: one step per 4 attributes of the list before the pass (none
+     for a list of fewer than 4), one per 16 bytes of the element's value it reads or
+     compares, before it is read (the compare reads no more than that value), and one per
+     class token of a `class` value. In quirks mode the fold of a value is paid by the bytes'
+     price. No existing charge of `reads.rs` changes.
    - How a charge that fails ends the member: `reads.rs`'s private `charge` answers a throw the
      engine does not deliver (the run is ending) and records no limit (reading decision 6);
      `charge` becomes `pub(super)` and `selector_reads` calls it, each function there that
      charges returns that `DomResult`, and `selectors.rs` passes it up with `?`.
-   So the longest stretch of surf's own work between two charges is one compound test of one
-   cell: the walk charges before it reads a node, the memo and the chain are charged before
-   they are made, and a frame pops only after a node it holds was charged. Every end a script
-   can reach through a selector is the engine's: `limit: steps-per-script` or `limit: memory`,
-   or a throw.
+   So the longest stretch of surf's own work between two charges is one test of one simple
+   selector in one cell: the walk charges before it reads a node, the memo and the chain are
+   charged before they are made, and a frame pops only after a node it holds was charged.
+   Every end a script can reach through a selector is the engine's: `limit: steps-per-script`
+   or `limit: memory`, or a throw.
 8. The worst cases in numbers, which the story's tests hold. Walk: a tree of the node limit
    (1,048,576 nodes) costs at most 2 steps per node to search for a single selector that matches
    nothing (the visit, and the gate at an element), 2,097,152 at the limit: 4 calls fit in an
@@ -412,42 +438,51 @@ slice keeps none), 7, 19 and 20 (charges), 14 and 15 (the test slice and the tab
    selectors adds `k` gate steps an element. The walk's frames add no step: it copies no list
    (decision 17).
    Matcher: an element has at most 511 element ancestors, so its chain holds at most 512
-   elements. For one element at the bounds, a text of 512 compounds (`m` = 512), a chain of
-   512 (`n` = 512) and the names at their bound (12,288 bytes, at most 768 steps in one pass
-   over every compound), the steps are:
+   elements. For one element at the bounds, a text of 512 compounds (`m` = 512, one simple
+   selector each), a chain of 512 (`n` = 512) and the names at their bound (12,288 bytes, at
+   most 768 steps in one pass over every compound), the steps are:
    - 1 for the visit and 1 for the gate;
    - 768 for the type names of the gate (the pass over the rightmost compound alone cannot
      exceed the pass over all of them);
-   - 511 for the chain (`n - 1`);
+   - 512 for the chain (`n`: the read that finds no element parent is charged);
    - the memo, 2 x 512 x 512 = 524,288 bytes, charged 524,288 / 16 = 32,768 steps before it is
      made;
    - 512 x 512 = 262,144 for the cells;
    - 768 x 512 = 393,216 for the type names, one pass over every compound at each of the 512
      positions;
-   in all 1 + 1 + 768 + 511 + 32,768 + 262,144 + 393,216 = 689,409 steps for elements without
+   in all 1 + 1 + 768 + 512 + 32,768 + 262,144 + 393,216 = 689,410 steps for elements without
    attributes (an attribute test adds the scan of decision 7, up to 256 steps a test on a list
-   of 1,024 attributes; the engine's limit ends such a text, charged as it goes). A list of
-   `k` complex selectors whose compounds add up to 512 shares the same memo bytes and cells
-   and adds `k - 1` gates, at most 511: 689,920 steps. That is a ceiling no text reaches in
-   full (the terms do not all reach their maxima in one text), and the entry holds 14 elements
-   of the ceiling (14 x 689,920 = 9,658,880) and ends in the 15th (15 x 689,920 =
-   10,348,800).
+   of 1,024 attributes; the engine's limit ends such a text, charged as it goes). A text of
+   fewer compounds with more simple selectors in each costs less: the cells' steps are bounded
+   by the 512 simple selectors a text holds, `512 x n` at most, which is the figure above, and
+   the memo is smaller. A list of `k` complex selectors whose compounds add up to 512 shares
+   the same memo bytes and cells and adds `k - 1` gates, at most 511: 689,921 steps. That is a
+   ceiling no text reaches in full (the terms do not all reach their maxima in one text), for
+   elements without attributes, and the entry holds 14 elements of the ceiling (14 x 689,921 =
+   9,658,894) and ends in the 15th (15 x 689,921 = 10,348,815).
    The gate is why the memo is made late: for an element that fails the gate, nothing but the
    visit and the gate is paid, and a selector of one compound pays no memo (acceptance 15g).
    `closest` tests at most 512 candidates (`this` and 511 ancestors), each its own gate,
    chain and memo, one memo alive at a time. A candidate whose chain has `n` elements, for 512
-   compounds all matching its gate, costs 1 + (n - 1) + 64 n + 512 n = 577 n steps before the
-   names (64 n is the memo, 2 x 512 x n / 16). The sum over the chains 512 down to 1 is
-   577 x 131,328 = 75,776,256 steps, 7.6 times the entry: the entry ends in the 36th candidate
-   (35 candidates cost 577 x (512 x 35 - 595) = 9,996,525), `limit: steps-per-script`, and
-   the memos are never more than 524,288 bytes alive.
-   Result: a `NodeList` costs 8 steps a node in the glue (8,388,608 for 1,048,576 nodes) and
-   ends `limit: memory` in the glue while it wraps, after the slice charged its walk, at about
-   123,000 nodes (Context); the slice's own `Vec<NodeId>` is at most 8 MiB of capacity (decision
-   6), each id paid by its node's visit step. In the test profile a script runs 1,372,567 to
-   1,405,663 steps per second (`docs/design/scripts.md:273-274 @ a14e3b0`, the same lines at
-   `83e6b8a`; `:369 @ f463e24`, a commit not on `main`, holds the same text), so 10,000,000
-   steps take about 7.4 s there (7.358 s measured, `:271-272`) and the wall clock of 5 s
+   compounds all matching its gate, costs 1 (the step that reaches it, none for `this`) + 1
+   (its gate) + `n` (its chain) + 64 n (the memo, 2 x 512 x n / 16) + 512 n (the cells) = 577 n
+   + 2 steps before the names, for elements without attributes. The sum over the chains 512
+   down to 1, with the step that finds no element parent past the outermost, is 577 x 131,328
+   + 1,024 = 75,777,280 steps, 7.6 times the entry: the entry ends in the 36th candidate
+   (35 candidates cost 577 x (512 x 35 - 595) + 69 = 9,996,594: 35 gates and 34 reaching
+   steps), `limit: steps-per-script`, and the memos are never more than 524,288 bytes alive.
+   Result: a `NodeList` costs 8 steps a node in the glue, charged for the whole list in one
+   call before the collection object is made (`bindings.rs:1333`: the count times
+   `COLLECTION_NODE_STEPS`), then the wrappers one by one. For `querySelectorAll("*")` a node
+   costs 2 steps in the slice and 8 in the glue, 10 in all, so a list of 1,048,576 elements
+   costs 10,485,760 steps and the entry's step limit ends the call in the glue's charge,
+   before a wrapper is made. The heap ends the call (`limit: memory`, while it wraps, at about
+   123,000 nodes, Context) only for a list of at least about 123,000 and at most 1,000,000
+   nodes. The slice's own `Vec<NodeId>` is at most 8 MiB of capacity (decision 6), each id
+   paid by its node's visit step. In the test profile a script runs 1,372,567 to 1,405,663
+   steps per second (`docs/design/scripts.md:273-274 @ a14e3b0`, the same lines at `83e6b8a`;
+   `:369 @ f463e24`, a commit not on `main`, holds the same text), so 10,000,000 steps take
+   about 7.4 s there (7.358 s measured, `:271-272`) and the wall clock of 5 s
    (`docs/design/scripts.md:312 @ a14e3b0`; `:302` is the `steps_per_entry` row) ends a script
    first. A test gives limits of its own and asserts no time (acceptance 12).
 9. The collections. Three members return a collection, the three `querySelectorAll`, a
@@ -469,22 +504,22 @@ slice keeps none), 7, 19 and 20 (charges), 14 and 15 (the test slice and the tab
     record of a limit is `None`
     through the helper of acceptance 1 (the reading unit's `recorded`,
     `dom_reading.rs:160-166`), except the cases that assert a limit's end.
-11. The deviations are named beside the members, as the epic says (`epic:757 @ 0759016`: "each
+11. The deviations are named beside the members, as the epic says (`epic:761 @ 929269e`: "each
     named beside its member in the selection"). Each of the nine rows gains one note of two
     clauses, `deviation: a valid selector outside the subset, and a selector over the bounds,
     throws a SyntaxError whose message says surf does not support it, where a browser runs it;
     deviation: a pseudo-class or pseudo-element is recognised by its shape, so an unknown name
     or a bad argument gets that message, not the one of an invalid selector`, and
     `crates/script/src/bindings.rs` is regenerated (the note is part of each member's doc
-    comment, as at `bindings.rs:2512`). The first clause is the epic's own deviation
-    (`epic:134-136`, `:743-746`, `:762-764 @ 0759016`). The second clause is this story's
-    reading, kept as a
-    named deviation of its own: surf calls `a:hovr` and `a:nth-child(x y z)` not supported
-    where a browser calls them not valid, because it does not validate the name or the
-    argument of an excluded pseudo-class (decision 5). The epic's deviation text does not hold
-    it at `0759016`, and decision 14 gives the edit that adds it; acceptance 4a tests both
-    texts. The generator does not change: `git diff --stat "$(git merge-base main HEAD)"..HEAD`
-    names nothing of `crates/webidl/src/`. No line of `crates/webidl/selection.txt` says
+    comment, as at `bindings.rs:2512`). Both clauses are in the epic's deviation text, which
+    holds them since plan commit `4013bde` (`epic:134-138`, `:743-750`, `:762-770 @ 929269e`;
+    decision 14). The first clause is the epic's own deviation, the subset. The second clause is
+    this story's reading, kept as a named deviation of its own: surf calls `a:hovr` and
+    `a:nth-child(x y z)` not supported where a browser calls them not valid, because it does
+    not validate the name or the argument of an excluded pseudo-class (decision 5); acceptance
+    4a tests both texts, and acceptance 9 tests that the nine rows carry both clauses. The
+    generator does not change: `git diff --stat "$(git merge-base main HEAD)"..HEAD` names
+    nothing of `crates/webidl/src/`. No line of `crates/webidl/selection.txt` says
     `NotSupportedError` for a selector at `83e6b8a` (`git grep -n -i 'NotSupportedError'
     83e6b8a -- crates/webidl/selection.txt` prints nothing); the nine rows carry no note, so the
     note above is new and replaces no text.
@@ -508,23 +543,28 @@ slice keeps none), 7, 19 and 20 (charges), 14 and 15 (the test slice and the tab
     `crates/script/tests/bindings.rs` and none of the `adversary` modules reads one of the nine
     as throwing (`git grep -n -F 'Element.querySelector is not supported' 83e6b8a --
     crates/script/tests` prints that one line, `dom_reading.rs:2426`, and nothing after the
-    story). The attributes story at plan commit `fece9eb` changes the line before it (`:2425`,
-    `el.getAttribute("id")`) and says each of the three stories changes its own line: the
-    three adjacent lines are `document.appendChild(el)` (`:2424`), `el.getAttribute("id")` and
-    `el.querySelector("p")`.
+    story). The attributes story at plan commit `9e5b717` changes the line before it (`:2425`,
+    `el.getAttribute("id")`, to `el.getAttributeNode("id")`) and says each of the three stories
+    changes its own line: the three adjacent lines are `document.appendChild(el)` (`:2424`),
+    `el.getAttribute("id")` and `el.querySelector("p")`.
 14. The plan's text this story made false was corrected before the story was built, as plan
-    work and not as this story's code. At plan commit `0759016` the epic
-    (`.engineering/planning/epic/scripts-in-a-page.md`) says what the story says: the deviation
-    line (`:134-136`) and the list of deviations (`:762-764`) say a `SyntaxError` whose message
-    says surf does not support a selector outside the subset or over its bounds; candidate 11
-    (`:476-479`) says 9 members, a `SyntaxError`, and the files `selectors.rs` and
-    `selector_reads.rs`; the slice "Selectors, 9" (`:740-746`) says 9, `scripts-dom-selectors`
-    and the DOM Standard's `SyntaxError`; and its section "Corrections of 2026-11-25" has a
-    bullet for them (`:994` at `0759016`, `:995` at `1b13eb7`). The second clause of decision
-    11 (a pseudo-class recognised by its shape) is in the epic since plan commit `4013bde`: its
-    three deviation texts name it (the deviation line, the slice "Selectors, 9" and the list of
-    deviations) and the corrections list has a bullet for it. The attributes story
-    at `fece9eb` asserts no member of another slice in its acceptance 8 (it says only which
+    work and not as this story's code. At plan commit `929269e` the epic
+    (`.engineering/planning/epic/scripts-in-a-page.md`) says what the story says, and nothing
+    of it is left to edit: the deviation line (`:134-138`) and the list of deviations
+    (`:762-770`) say a `SyntaxError` whose message says surf does not support a selector
+    outside the subset or over its bounds, and that a pseudo-class or pseudo-element
+    recognised by its shape gets the same message also where a browser says not valid (the
+    second clause of decision 11); candidate 11 (`:478-481`) says 9 members, a `SyntaxError`,
+    and the files `selectors.rs` and `selector_reads.rs`; the slice "Selectors, 9"
+    (`:742-750`) says 9, `scripts-dom-selectors`, the DOM Standard's `SyntaxError` and both
+    clauses; and its section "Corrections of 2026-11-25" has two bullets for them (`:1001` for
+    the error kind, `:1002` for the second deviation). The first clause was corrected at plan
+    commit `0759016` and the second is in the epic since plan commit `4013bde`. The epic's
+    corrections list also says what the other stories write beside their own files (`:1000`
+    for the attributes story, `:1007-1018` for the mutation story); for this story it holds no
+    such bullet, and a bullet for the files of the Change that candidate 11 does not name is
+    plan work too, made in the plan store and not by this story. The attributes story at
+    `9e5b717` asserts no member of another slice in its acceptance 8 (it says only which
     line of `other_slices_still_throw` each story changes, as its Change and Placement do), so
     it needs no edit.
 15. Lexical rules, as CSS Syntax Level 3 defines them. The agent read the draft of 20 October
@@ -647,9 +687,12 @@ slice keeps none), 7, 19 and 20 (charges), 14 and 15 (the test slice and the tab
     (`Compound`, a complex selector, the list), the table of decision 16, the matcher over
     those types and the nine methods, and holds no call of `tree()`, no `tree_mut()`, no
     `charge(` and no `charge_steps(`; `selector_reads.rs` holds no `tree_mut()` and no
-    `charge_steps(` (it charges through `charge` of `reads.rs`). A test reads both sources with
-    `include_str!` and fails when one of those strings is added to the file that must not hold
-    it (the form of `dom_reading_cost.rs:593-598`).
+    `charge_steps(` (it charges through `charge` of `reads.rs`). The two modules use each
+    other: `selector_reads.rs` takes the parser's types (`Compound` and the attribute record)
+    from `selectors.rs`, and `selectors.rs` calls the functions of `selector_reads.rs`; the
+    test of strings below does not see this and does not need to. A test reads both sources
+    with `include_str!` and fails when one of those strings is added to the file that must not
+    hold it (the form of `dom_reading_cost.rs:593-598`).
     `reads.rs` changes by visibility and by one widening, and in no other way: `pub(super)` on
     what both slices use, `charge`, `ATTRIBUTES_A_STEP` and `attribute_count` (the attributes
     story makes the same three `pub(super)`) and the attribute scan with its helpers, `Reads`,
@@ -685,16 +728,22 @@ slice keeps none), 7, 19 and 20 (charges), 14 and 15 (the test slice and the tab
       `find` (`reads.rs:349-366`) copies a node's children before it charges any of them; that
       is the reading unit's to change, in its own fix round, and this story does not edit it.
     - `next_ancestor(cx, node)`: the parent of `node` when it is an element, else none; one
-      step, before the read.
+      step, before the read, so the read that finds no element parent is charged too (a chain
+      of `n` elements costs `n` steps, decision 7).
     - `memo(cx, compounds, chain)`: a `Vec<u8>` of `2 x compounds x chain` zeroed bytes;
       `bytes / STRING_BYTES_A_STEP` steps, before it is allocated (decision 7).
+    - `gate(cx, node, compound, quirks)`: one step, then `test_compound` of the rightmost
+      compound at the element itself: the step the matcher pays for each element and each
+      complex selector before anything else.
     - `cell(cx, node, compound, quirks, left)`: one step; when `left` holds, then
       `test_compound` and its answer, else no. The one step before each cell of the fill.
     - `test_compound(cx, node, compound, quirks)`: whether the element `node` matches the
-      compound; one step per 16 bytes of its type name, before the compare, then the id, class
-      and attribute tests below. (Its one step a test is the cell's, or the gate's.)
+      compound; the simple selectors in order, stopping at the first that fails: one step
+      before each simple selector after the first (the first one's step is the gate's or the
+      cell's), and for a type name one step per 16 bytes of the name, before the compare, then
+      the id, class and attribute tests below.
     - `has_class`, `has_id`, `attribute_equals` and `has_attribute`, called by `test_compound`:
-      each charges `attribute_count x name bytes / 16` for the selector's attribute name (the
+      each charges `attribute_count x (name bytes / 16)` for the selector's attribute name (the
       class and id names are the fixed `class` and `id`: none), then calls `scan_for` for its
       charge of one step per 4 attributes and of the value's bytes before the compare, and one
       step per class token before the first token is looked up; they use `positions` and
@@ -750,7 +799,8 @@ slice keeps none), 7, 19 and 20 (charges), 14 and 15 (the test slice and the tab
   CASES` and the helper `run_case` as `dom_reading.rs:252-268` and `:841-863` have them (private
   there, so copied), the test `mutation` slice (decision 12), the module `cost` (decision 19),
   the cases of acceptances 13 and 14, the source test of decision 17, the table's test with
-  its own copy of the list and the test of `Frames` (acceptance 15i).
+  its own copy of the list, the test of `Frames` (acceptance 15i) and the test
+  `the_rows_carry_the_note` (acceptance 9).
 - `crates/script/tests/dom_reading.rs`: the line of decision 13 (`:2426`).
 - `crates/webidl/selection.txt`: the note of decision 11 on the nine rows;
   `crates/script/src/bindings.rs`: regenerated with `slot cargo run -p surf-webidl --bin
@@ -763,11 +813,18 @@ slice keeps none), 7, 19 and 20 (charges), 14 and 15 (the test slice and the tab
 - `AGENTS.md`: the entry of `crates/script` (`AGENTS.md:365-369`: it names the slice `reading`
   and its story, the dependencies including `surf-url`, and `29 tests` with per-file counts
   of three files, which the reading story's last commit replaces by the log's): this story names
-  the slice `selectors` and sets the count of tests from the log of its own tip.
-- In the last commit, the public surfaces of acceptance 10: `README.md`, `docs/badges/make.sh`
-  (edit `:38`, then run `sh docs/badges/make.sh .`: it writes `docs/badges/tests.svg`, which is
-  its output and not edited by hand), `website/docs/how-it-is-built.md`,
-  `website/docs/status.md`, `website/docs/what-works.md`.
+  the slice `selectors` and cites `story:scripts-dom-selectors` beside it, as the entry cites
+  `story:scripts-dom-reading` today (`AGENTS.md:367 @ 83e6b8a`), and sets the count of tests
+  from the log of its own tip.
+- In the last commit, after merging `main`, from one gate log, the public surfaces of
+  acceptance 10: `README.md`, `docs/badges/make.sh` (edit `:38`, then run `sh
+  docs/badges/make.sh .`: it writes `docs/badges/tests.svg`, which is its output and not
+  edited by hand), `website/docs/how-it-is-built.md`, `website/docs/status.md` and
+  `website/docs/what-works.md`. By the epic's rule (`epic:955-961 @ 929269e`) these are not in
+  the story's recorded scope: `README.md`, `docs/badges` and `how-it-is-built.md` never are,
+  and `status.md` and `what-works.md` are only where a story changes another sentence of
+  theirs, which this story does not (it changes their test counts, `status.md:31` and
+  `what-works.md:17`, and nothing else).
 
 ## Acceptance
 
@@ -855,10 +912,13 @@ merge commit or a later one, because acceptance 1a holds the work until the read
       pseudo-class of a 2,000-character name, and asserts each message equals its fixed words
       and is under `EXCEPTION_TEXT_BYTES`.
 5. Bounds (decision 6). A text of 4,096 bytes of valid selectors runs; one of 4,097 bytes is a
-   `SyntaxError` of the not-supported kind ending `text over 4096 bytes`, and the call's steps
-   rise by no more than the glue's copy and a constant (the slice charges nothing before
-   refusing); 512 simple selectors run and 513 are a `SyntaxError` of the not-supported kind
-   ending `more than 512 simple selectors`; a text of 1,048,576 bytes, made by one script and
+   `SyntaxError` of the not-supported kind ending `text over 4096 bytes`, and the steps of the
+   script that makes the call (the text made by an earlier one) are at most 1 + 4,097 / 16 +
+   20 = 277: the glue's step and copy, 257, and 20 for the script's own few steps (the slice
+   charges nothing before refusing; `selector_text` alone would add 257); 512 simple
+   selectors run and 513 are a `SyntaxError` of the not-supported kind ending `more than 512
+   simple selectors`, and so are 513 followed by `[`, where the bound ends the parse and the
+   fault after it is not read; a text of 1,048,576 bytes, made by one script and
    passed by a second, is refused with the steps of the second at least 65,536 (the glue's copy
    at one step per 16 bytes: 1,048,576 / 16) and under 70,000, so the case fails at the old
    price of 64 bytes a step, which gives 16,384. The report records the steps measured.
@@ -867,28 +927,31 @@ merge commit or a later one, because acceptance 1a holds the work until the read
    and the ends. The page of 6b, 6d and 17a is `<div>` 500 times and `<span></span>`, no
    doctype: the parser adds `html`, `head` and `body`, so the page has 504 elements and the
    `span` has a chain of 503.
-   a. `querySelector("zzz")` over a document of 1,000 elements raises `runner.steps()` by at
-      least 2,000 (a visit and a gate an element).
+   a. `document.querySelector("zzz")` over a document of 1,000 elements parsed from text raises
+      `runner.steps()` by at least 2,000 (a visit and a gate an element); without the walk's
+      step, or without the gate's, the rise is about 1,010.
    b. Over the page, `document.querySelector("x div div div div div div div div span")` (10
       compounds, no `x` exists) ends `Ran`, answers `null`, and its steps are at least 7,000
-      and under 8,000: 504 visits, 504 gates, 502 for the chain, the memo of 2 x 10 x 503 =
-      10,060 bytes, 628 steps, and 10 x 503 = 5,030 cells, 7,168 in all, and about 30 for the
+      and under 8,000: 504 visits, 504 gates, 503 for the chain, the memo of 2 x 10 x 503 =
+      10,060 bytes, 628 steps, and 10 x 503 = 5,030 cells, 7,169 in all, and about 30 for the
       glue and the parse. A matcher that backtracks does not end. The selector `div div div div
       div div div div span` (9 compounds) answers the `span`, with the steps at least 6,500
-      and under 8,000: 504 + 504 + 502 + 565 (9,054 bytes) + 4,527 cells = 6,602, and about 30.
-   c. A document of 100,000 elements and a script `var n = 0; for (;;) { n++;
-      document.querySelector("zzz"); }` under a step limit of the test's own (1,000,000) ends
-      `limit: steps-per-script`, and a later `runner.evaluate("n")` is at most 5 (a call costs at
-      least 200,000 steps, so no more than 5 calls end in it). The case asserts the end and the
-      count, no time.
-   d. Over the page, a selector of 512 simple selectors (511 times `div `, then `span`), under
-      a step limit of the test's own (1,000,000), ends `Ran` (the chain holds 500 `div`, not
-      511), answers `null`, never a stack overflow, and its steps are at least 280,000 and
-      under 300,000: 504 + 504 + 502 for the walk, the gates and the chain, the memo of
-      2 x 512 x 503 = 515,072 bytes, 32,192 steps, and 512 x 503 = 257,536 cells, 291,238 in
-      all, and 1,281 for the glue and the parse (129 + 1 + 128 + 1,023). Without the memo's
-      charge the steps are about 260,300 and without the cells' steps about 35,000, so the floor
-      fails for each. It asserts the end and the floor, no time.
+      and under 8,000: 504 + 504 + 503 + 565 (9,054 bytes) + 4,527 cells = 6,603, and about 30.
+   c. A document of 100,000 elements parsed from text (`document(tree, info)`, not built by the
+      script, whose steps would count against the limit) and a script `var n = 0; for (;;) {
+      n++; document.querySelector("zzz"); }` under a step limit of the test's own (1,000,000)
+      ends `limit: steps-per-script`, and a later `runner.evaluate("n")` is at most 5 (a call
+      costs at least 200,000 steps, so no more than 5 calls end in it). The case asserts the
+      end and the count, no time.
+   d. Over the page, `document.querySelector` of a selector of 512 simple selectors (511 times
+      `div `, then `span`), under a step limit of the test's own (1,000,000), ends `Ran` (the
+      chain holds 500 `div`, not 511), answers `null`, never a stack overflow, and its steps
+      are at least 280,000 and under 300,000: 504 + 504 + 503 for the walk, the gates and the
+      chain, the memo of 2 x 512 x 503 = 515,072 bytes, 32,192 steps, and 512 x 503 = 257,536
+      cells, 291,239 in all, and 1,281 for the glue and the parse (129 + 1 + 128 + 1,023),
+      292,520. Without the memo's charge the steps are about 260,300 and without the cells'
+      steps about 35,000, so the floor fails for each. It asserts the end and the floor, no
+      time.
    e. `for (;;) document.querySelectorAll("*")` over 1,000 elements under a memory limit of
       1 MiB ends `ScriptEnd::Limit` with `memory`, and a later `runner.evaluate("1 + 1")` ends
       `Ran`. By the arithmetic of the Context: the realm's 202,424 bytes, 1,003 wrappers of 423
@@ -913,27 +976,45 @@ merge commit or a later one, because acceptance 1a holds the work until the read
    scripts is `story:scripts-html-conformance`'s.
 9. The files and the other tests. `slot task webidl-check` exits 0 (the header of `bindings.rs`
    holds the new digests); `slot task webidl-slow` regenerates `bindings.rs` byte for byte; the
-   nine rows have the note of decision 11 and a case reads it from `selection.txt`; `git diff
-   --stat "$(git merge-base main HEAD)"..HEAD` names nothing under `crates/webidl/src/`; `git
-   diff -U0 "$(git merge-base main HEAD)"..HEAD -- crates/script/src/bindings.rs` holds hunks
-   only of the header's digest lines, the nine members' doc comments and the last line; the
-   `TestSelectors` types of `tests/bindings.rs`, `adversary_3.rs`, `adversary_4.rs` and
-   `adversary_5.rs` compile unchanged; a member of another slice still throws
-   `NotSupportedError` naming the member (`Element.attachShadow`, the message of decision 13);
-   `git grep -n -F 'Element.querySelector is not supported' -- crates/script/tests` prints
-   nothing (it prints `dom_reading.rs:2426` at `83e6b8a`); `git diff -U0
-   "$(git merge-base main HEAD)"..HEAD -- crates/script/src/dom/reads.rs` shows only lines that
-   add `pub(super)` or give `Reads` its lifetime and `&'a str` (decision 17); `slot task check`
-   exits 0 and `git diff --stat "$(git merge-base main HEAD)"..HEAD` names only the files of the
-   Change.
+   test `dom_selectors::the_rows_carry_the_note` reads the nine rows with the slice `selectors`
+   from `selection.txt` (as `cases_are_the_rows` does, acceptance 1b) and asserts that each
+   holds both clauses of the note of decision 11 (the words `a valid selector outside the
+   subset` and `recognised by its shape`); `git diff --stat "$(git merge-base main HEAD)"..HEAD`
+   names nothing under `crates/webidl/src/`; `git diff -U0 "$(git merge-base main
+   HEAD)"..HEAD -- crates/script/src/bindings.rs` holds hunks only of the header's digest
+   lines, the nine members' doc comments and the last line; the `TestSelectors` types of
+   `tests/bindings.rs`, `adversary_3.rs`, `adversary_4.rs` and `adversary_5.rs` compile
+   unchanged; a member of another slice still throws `NotSupportedError` naming the member
+   (`Element.attachShadow`, the message of decision 13); `git grep -n -F 'Element.querySelector
+   is not supported' -- crates/script/tests` prints nothing (it prints `dom_reading.rs:2426` at
+   `83e6b8a`); `slot task check` exits 0 and `git diff --stat "$(git merge-base main
+   HEAD)"..HEAD` names only the files the Change names (not the scope list: the Change also
+   names the public surfaces that the epic keeps out of a story's recorded scope).
+   The change of `reads.rs` is visibility and the lifetime only (decision 17). This command,
+   run in zsh or bash at the tip, prints nothing and exits 0: the lines the diff removes equal
+   the lines it adds once `pub(super) ` is taken out of the added lines, `Reads<'a>` and
+   `Reads<'_>` are read as `Reads` and `&'a str` as `&'static str`:
+   ```
+   b=$(git merge-base main HEAD); f=crates/script/src/dom/reads.rs
+   diff <(git diff -U0 "$b"..HEAD -- $f | sed -n 's/^-\([^-]\)/\1/p') \
+        <(git diff -U0 "$b"..HEAD -- $f | sed -n 's/^+\([^+]\)/\1/p' \
+          | sed -e 's/pub(super) //' -e "s/Reads<'a>/Reads/" -e "s/Reads<'_>/Reads/" \
+                -e "s/&'a str/\&'static str/g")
+   ```
+   At `83e6b8a` the lines it can touch are `reads.rs:120, 236, 241, 244, 252, 255, 269, 287`
+   and `303`; against a base that already holds some of them (the attributes story's three
+   tokens, if it merged first) the diff is smaller and the command still prints nothing.
 10. Public surfaces: the story changes, in its last commit and after merging `main`, every public
     surface its change makes false, each number taken from the `slot task check` log of its tip.
+    These files change in the last commit, after merging `main`, from one gate log, and by the
+    epic's rule (`epic:955-961 @ 929269e`) they are not in the story's recorded scope; the
+    Change names each of them and acceptance 9's `git diff --stat` check reads the Change.
     a. The old strings are read first, after the last merge of `main` (the reading story's merge
        included), by a command run before any change: `git grep -n -e 'passed' -e 'test files'
        -e 'tests:' -- README.md website/docs docs/badges`; the report records its output (59
        lines at `83e6b8a` and at `a14e3b0`).
     b. After the last commit, `git grep -n -F -e '<old>' -- README.md website/docs docs/badges`
-       prints nothing for each old string of 10a, except lines of the paragraph that 10d keeps
+       prints nothing for each old string of 10c, except lines of the paragraph that 10d keeps
        (the run's history: at `83e6b8a` `README.md:661` and `website/docs/how-it-is-built.md:
        105` hold `230 test files`); the report names each such line as `<file>:<line>`, and
        each new number equals the one in the log. The lines of the gate block and of the
@@ -954,20 +1035,21 @@ merge commit or a later one, because acceptance 1a holds the work until the read
        earlier ones, and keeps the earlier run's numbers as its history.
 11. Housekeeping: `git grep -n -F 'scripts-dom-selectors' -- docs/design/scripts.md` prints
     line 5 and the new row of Q4; `git grep -n -F 'scripts-dom-selectors' -- AGENTS.md` prints
-    one line, the entry of `crates/script`, which names the slice `selectors` (it prints
-    nothing at `83e6b8a`), and that entry's test count equals the tests of that crate in the log
-    of the tip. The epic is not in the story's scope list: its correction is plan work,
-    made at plan commit `0759016` (decision 14), and what is left of it, the second clause of
-    decision 11, is a file of plan edits beside the story.
+    one line, the entry of `crates/script`, which cites `story:scripts-dom-selectors` beside the
+    slice `selectors` (it prints nothing at `83e6b8a`), and that entry's test count equals the
+    tests of that crate in the log of the tip. The epic is not in the story's scope list and
+    nothing of it is left to edit: its correction is plan work, and the epic holds both
+    clauses of the deviation since plan commit `4013bde` (decision 14).
 12. The folder's bounds hold. The test step ends within 120 s and no test runs over 60 s; a test
     over 5 s is named with its time in the report, which also gives the time of `dom_selectors`
     as a whole; no test asserts a time (the only bound on a time a test may hold is a wait for
     an event with a limit at least 10 times the time the test takes alone, `AGENTS.md:1966 @
     a14e3b0`, and a cost is proved by a count of steps); each case makes its own runner and
-    parses a few lines, apart from 6c to 6f, 15c to 15g and the cost module, which build their
-    trees in the script or in Rust; no model call and no network request in a test; no Python in
-    anything that stays in the repository; no generator with a committed output is added (the
-    existing one gains no source: its time is not measured again); a build or test job in the
+    parses a few lines, apart from 6c to 6f, 15c to 15g, 15i and the cost module, which build
+    their trees in the script, from text or in Rust; no model call and no network request in a
+    test; no Python in anything that stays in the repository; no generator with a committed
+    output is added (the existing one gains no source: its time is not measured again); a
+    build or test job in the
     pool ends within 10 minutes or names its time with `slot --timeout`, at most 30 minutes, and
     is not started again unchanged; every compiling or testing command carries `slot`, and a
     script that measures or waits starts without the prefix; an expensive product (a large
@@ -999,7 +1081,9 @@ merge commit or a later one, because acceptance 1a holds the work until the read
     i. Bounds: 4,096 bytes of `a` and comment run and 4,097 bytes are the not-supported
        `SyntaxError` ending `text over 4096 bytes`; 4,097 bytes that end in an unterminated
        comment are the same; 512 times `\61 ,` then `\61` is the not-supported `SyntaxError`
-       ending `more than 512 simple selectors`.
+       ending `more than 512 simple selectors`, and so is the same text followed by `[`: the
+       513th simple selector ends the parse and the fault after it is not read (decision 5),
+       where `a[` alone is not valid.
     j. Newlines (decision 15), each of CR, FF and CRLF written in the script as `\r`, `\f` and
        `\r\n`: (1) `[title="x` NL `y"]` is a not-valid `SyntaxError`; (2) `[title="x\` NL
        `y"]` finds `title="xy"`, where a CRLF taken as two newlines would leave one in the
@@ -1027,48 +1111,82 @@ merge commit or a later one, because acceptance 1a holds the work until the read
        `crates/script/src/dom/selectors.rs` and fails when it holds `tree()`, `tree_mut()`,
        `charge(` or `charge_steps(`, as `dom_reading_cost.rs:593-598` does for `reading.rs`;
        it reads `selector_reads.rs` too and fails when that holds `tree_mut()` or
-       `charge_steps(`. The implementor shows it red once, with a string added, and reports the
-       output.
-    b. A text of 4,096 bytes charges at least 255 steps more than a text of 16 bytes of the same
-       shape (the bytes alone: (1 + 256) - (1 + 1)), and a text of 1,000 tokens at least 990
-       more than one of 10 tokens (the tokens alone), the texts valid and within the 512 simple
-       selectors.
-    c. `[a]` over 100 elements of 1,024 attributes each charges at least 100 x 256 steps for the
-       attribute scans beyond the same selector over bare elements; `[` and a name of 4,000
-       bytes and `]` over 10 elements of 100 attributes each charges at least 10 x 100 x 250
-       steps (the name's bytes / 16 for each attribute passed).
-    d. `.a` over 100 elements whose `class` is 64 KiB of one-letter tokens charges at least one
-       step per 16 bytes and one per token of each value (at least 100 x (4,096 + 32,768) =
-       3,686,400); in quirks mode the same, the fold paid by the bytes' charge. At the old price
-       of 64 bytes a step the floor fails (100 x (1,024 + 32,768)).
-    e. `[a="v"]` over 100 elements whose `a` is 64 KiB charges at least 100 x 4,096 steps (one
-       per 16 bytes of the value, before the compare), and the value of an attribute other than
-       `a` is not charged. At the old price the floor fails (100 x 1,024).
+       `charge_steps(`, or when `children(` occurs in it anywhere but inside `Frames::next` (the
+       test cuts the text of `Frames::next`, from its `fn next(` to the first line that is
+       four spaces and a closing brace, asserts it holds `children(`, and asserts the rest of
+       the file holds none), so that `descendant_elements` cannot copy a child list itself. The
+       implementor shows each failure red once, with a string added, and reports the output.
+    b. Two pairs of texts, each pair valid and within the 512 simple selectors. First, one
+       comment around `a` (`/*`, filler, `*/`, `a`), padded to 4,096 bytes in one text and to 16
+       bytes in the other: both hold the same two tokens, so only the bytes differ. Through
+       `document.querySelector`, the text of 4,096 bytes charges at least 500 steps more than
+       the text of 16: the glue's copy differs by 4,096 / 16 - 16 / 16 = 255 and
+       `selector_text` by (1 + 256) - (1 + 1) = 255, 510 in all (both byte counts are
+       multiples of 16, so nothing is lost to rounding). Without `selector_text`'s charge the
+       difference is 255 and the floor fails. Second, 999 comments `/**/` then `a` (3,997
+       bytes, 1,000 tokens) against one comment of 3,996 bytes then `a` (3,997 bytes, 2
+       tokens): the bytes are equal, so the glue's and `selector_text`'s charges are equal and
+       the first text charges at least 990 steps more (998 for the tokens). Without
+       `selector_token`'s charge the difference is 0.
+    c. `document.querySelector("[a]")` over 100 elements of 1,024 attributes each (none named
+       `a`) charges at least 100 x 256 steps for the attribute scans beyond the same selector
+       over bare elements; `document.querySelector` of `[`, a name of 4,000 bytes and `]` over
+       10 elements of 100 attributes each charges at least 10 x 100 x 250 = 250,000 steps (the
+       name's bytes / 16 for each attribute passed; the scans add 10 x 25 and the visits and
+       gates 20), and without that charge it charges about 1,030.
+    d. `document.querySelector(".a")` over 100 elements whose `class` is 64 KiB of one-letter
+       tokens (none is `a`) charges at least one step per 16 bytes and one per token of each
+       value (at least 100 x (4,096 + 32,768) = 3,686,400); in quirks mode the same, the fold
+       paid by the bytes' charge. At the old price of 64 bytes a step the floor fails (100 x
+       (1,024 + 32,768)).
+    e. `document.querySelector('[a="v"]')` over 100 elements whose `a` is 64 KiB (never `v`)
+       and that carry a second attribute `b` of 64 KiB charges at least 100 x 4,096 = 409,600
+       steps (one per 16 bytes of the value of `a`, before the compare) and under 100 x 4,096 +
+       1,000 = 410,600: each element costs its visit and gate and the 4,096, about 409,820 in
+       all, and a charge for the value of `b` would add 409,600 and fail the ceiling. At the
+       old price the floor fails (100 x 1,024).
     f. The fold of a name (decision 4), charged once at the parse: over a document of the three
-       elements `html`, `head` and `body`, a selector that is one type name of 4,000 bytes
-       charges at least 990 steps more than the same length made of a comment around `a`: the
-       parse alone differs by 249 (250 for the name's bytes, less the one token more the comment
-       form has), and each of the 3 elements tested adds 250 for the type name in the
+       elements `html`, `head` and `body`, `document.querySelector` of one type name of 4,000
+       bytes charges at least 990 steps more than the same length made of a comment around `a`:
+       the parse alone differs by 249 (250 for the name's bytes, less the one token more the
+       comment form has), and each of the 3 elements tested adds 250 for the type name in the
        matcher (249 + 3 x 250 = 999). The fold is charged once, so the same text on a second
-       call charges the same as on the first.
+       call charges the same as on the first. Without `selector_name`'s charge the difference is
+       749 and without the matcher's charge for the name 249: the floor fails for each.
     g. The memo is made late. Over 1,000 `div` siblings in `body` (1,003 elements), through
        `document.querySelector`, a selector that matches nothing (`zzz`) and `x y` (no `y`)
        each charge at least 2,006 and under 2,100 steps (the visits and the gates, and the
        glue and the parse: no chain, no memo); `x div` (no `x`, so it matches nothing either)
        charges at least 7,500 more than `zzz` does: each `div` passes the gate, its chain is
-       `div`, `body`, `html` (2 steps), its memo is 2 x 2 x 3 = 12 bytes (0 steps) and its
-       cells are 2 x 3 = 6, so 8 more steps a `div`, 8,000 in all.
-    h. Each charge of decision 17 is held by a floor that fails without it, tried by hand
-       (`cargo-mutants` is not installed on the host, so there is no tool for it): for each
-       charge of `selector_reads.rs`, one line changed so that it charges nothing, the test
-       that then fails, run with `slot cargo test -p surf-script --test main dom_selectors`,
-       and the change removed. The charges: `selector_text`, `selector_token`, `selector_name`,
-       the walk's step, `next_ancestor`, `memo`, the step of `cell`, the type-name bytes of
-       `test_compound`, `attribute_count x name bytes / 16` of `has_attribute` and its kin. The
-       scans of `reads.rs` are the reading unit's and are held by its tests. After the last
+       `div`, `body`, `html` (3 steps), its memo is 2 x 2 x 3 = 12 bytes (0 steps) and its
+       cells are 2 x 3 = 6, so 9 more steps a `div`, 9,000 in all.
+    h. Each charge of decision 17 that a floor can see is held by a case that fails without
+       it, tried by hand (`cargo-mutants` is not installed on the host, so there is no tool
+       for it): for each charge of `selector_reads.rs`, one line changed so that it charges
+       nothing, the test that then fails, run with `slot cargo test -p surf-script --test main
+       dom_selectors`, and the change removed. Each charge, the case that goes red and the
+       arithmetic that shows it:
+       - `selector_text`: 15b, first pair: the difference falls from 510 to 255, under 500.
+       - `selector_token`: 15b, second pair: from 998 to 0, under 990.
+       - `selector_name`: 15f: from 999 to 749, under 990.
+       - the type-name bytes of `test_compound`: 15f: from 999 to 249.
+       - the walk's step for each node: 6a: about 1,010 for 1,000 elements, under 2,000.
+       - `gate`'s step: 6a: the same, about 1,010.
+       - `next_ancestor`: 6b: 7,169 less the 503 steps of the chain is 6,666, under 7,000.
+       - `memo`: 6d: 292,520 less 32,192 is 260,328, under 280,000; and 17h: about 530,900,
+         under 560,000.
+       - `cell`'s step: 6d: 292,520 less the 257,536 cells is 34,984, under 280,000.
+       - the further simple selectors of `test_compound`: 17i: 3,700 for 1,000 elements,
+         under 500,000.
+       - `attribute_count x (name bytes / 16)` of `has_attribute` and its kin: 15c, second
+         case: about 1,030, under 250,000.
+       Two charges are one step in a whole walk or chain, and no floor of this
+       story is that close to its arithmetic: the step that finds the end of the walk, and the
+       read of `next_ancestor` that finds no element parent. The report says they are not held.
+       The scans of `reads.rs` are the reading unit's and are held by its tests. After the last
        removal `git diff --quiet` exits 0. The report lists, for each charge, the line, the
-       test that failed (6b, 6d, 15b, 15c, 15f, 15g or 17h, by name) and its steps before and
-       after.
+       test that failed (6a, 6b, 6d, 15b, 15c, 15f or 17h and 17i, by name) and its steps before
+       and after.
     i. `Frames` (decision 17), a test over a tree parsed from text: a `body` with 100,000 `<b>`
        children, walked from the document with `Frames::next` until it ends, yields every node
        under the document (100,003: `html`, `head`, `body` and the `b`) in tree order and
@@ -1083,43 +1201,64 @@ merge commit or a later one, because acceptance 1a holds the work until the read
 17. The cost module (decision 19), each case at its worst shape with a floor of steps and no
     assertion on a time, printing its steps; a case over 5 s is named with its time in the
     report. Each floor is under the exact arithmetic written with it (the glue and the parse add
-    a few steps), and the arithmetic is the prices of decisions 7 and 8:
-    a. `Element.querySelector("[zzz]")` over 5,000 elements of 100 attributes each: floor
-       5,000 x (2 + 25) = 135,000 steps (a visit, a gate and 100 / 4 for the scan). And, over
-       the page of acceptance 6 with `this` = `document.body`, `Element.querySelector` with the
-       selector of 6b (the `span` in the innermost, no `x`): floor 7,000: 501 visits, 501 gates,
-       502 for the chain, 628 for the memo, 5,030 cells, 7,162 in all.
-    b. `Element.querySelectorAll("*")` over 50,000 elements: floor 50,000 x (2 + 8).
+    a few steps), and the arithmetic is the prices of decisions 7 and 8. The nine members each
+    have a case, and each case names its member:
+    a. `Element.querySelector("[zzz]")` from `document.body` over 5,000 elements of 100
+       attributes each: floor 5,000 x (2 + 25) = 135,000 steps (a visit, a gate and 100 / 4 for
+       the scan). And, over the page of acceptance 6 with `this` = `document.body`,
+       `Element.querySelector` with the selector of 6b (the `span` in the innermost, no `x`):
+       floor 7,000: 501 visits, 501 gates, 503 for the chain, 628 for the memo, 5,030 cells,
+       7,163 in all.
+    b. `Element.querySelectorAll("*")` from `document.body` over 50,000 elements: floor
+       50,000 x (2 + 8) = 500,000.
     c. `Element.closest("x div div div div div div div div span")` from the `span` of the page of
-       acceptance 6: floor 7,000, ends `Ran`, answers `null`: the gate 1, the chain 502, the memo
-       628, the cells 5,030, then for each of the 502 ancestors one step to reach it and one for
-       its gate, 1,004: 7,165 in all. And `Element.closest` of 512 times `div` (`div div ... div`)
-       from the innermost `div` of 500 nested `div`, under a step limit of the test's own
-       (1,000,000): ends `limit: steps-per-script`, in the fourth candidate (the chains are
-       502, 501, 500 and 499 elements and a candidate costs 577 x its chain: 289,654, 289,077,
-       288,500 and 287,923, 867,231 for three and 1,155,154 for four), and a later
+       acceptance 6: floor 7,000, ends `Ran`, answers `null`: the gate 1, the chain 503, the
+       memo 628, the cells 5,030, then for each of the 502 ancestors one step to reach it and
+       one for its gate, 1,004, and the step that finds no element parent past `html`, 1:
+       7,167 in all. And `Element.closest` of 512 times `div` (`div div ... div`) from the
+       innermost `div` of 500 nested `div`, under a step limit of the test's own (1,000,000):
+       ends `limit: steps-per-script`, in the fourth candidate (the chains are 502, 501, 500
+       and 499 elements and a candidate costs 577 x its chain + 2, the first one 1 less: 289,655,
+       289,079, 288,502 and 287,925, 867,236 for three and 1,155,161 for four), and a later
        `runner.evaluate("1 + 1")` ends `Ran`.
     d. `Element.matches` of an element that has the attributes `a`, `b`, `c` and 1,021 more,
-       against `[a][b][c]`: floor 3 x 256 steps.
-    e. A list of 512 selectors `a,a,...,a` over 1,000 elements named `b`: floor 1,000 x 512
-       steps, ends `Ran`; over 10,000 elements under a step limit of the test's own (1,000,000)
-       it ends `limit: steps-per-script` (the case asserts the end, no time).
-    f. A selector text at the 4,096-byte bound made of the most tokens the grammar admits within
-       the 512 simple selectors (the case counts its tokens): floor of 1 + 256 + its tokens, and
+       against `[a][b][c]`: floor 3 x 256 = 768 steps (the exact arithmetic adds the gate's and
+       the two further steps, 3).
+    e. `document.querySelector` of a list of 512 selectors `a,a,...,a` over 1,000 elements named
+       `b`: floor 1,000 x 512 steps, ends `Ran`; over 10,000 elements under a step limit of the
+       test's own (1,000,000) it ends `limit: steps-per-script` (the case asserts the end, no
+       time).
+    f. `document.querySelector` of a selector text at the 4,096-byte bound made of the most
+       tokens the grammar admits within the 512 simple selectors (the case counts its tokens):
+       floor of 514 + its tokens (the glue's 257, `selector_text`'s 257 and a step a token), and
        it ends `Ran`.
-    g. One case per remaining member (`Document.querySelector`, `Document.querySelectorAll`,
-       `DocumentFragment.querySelector` and `querySelectorAll` over a filled fragment,
-       `Element.webkitMatchesSelector`) with the shape of its sibling above, so each of the
-       nine rows has a cost case.
+    g. One case for each of the five other members, each over a shape and with a floor written
+       here, the exact arithmetic a few steps above it:
+       - `Document.querySelector("[zzz]")` over 5,000 elements of 100 attributes each: floor
+         135,000, as 17a.
+       - `Document.querySelectorAll("*")` over 50,000 elements: floor 50,000 x (2 + 8) = 500,000.
+       - `DocumentFragment.querySelector("[zzz]")` over a fragment of 1,000 elements of 100
+         attributes each, which the test's `createDocumentFragment` answers already filled
+         (built in Rust, decision 12): floor 1,000 x (2 + 25) = 27,000.
+       - `DocumentFragment.querySelectorAll("*")` over a fragment of 10,000 elements built the
+         same way: floor 10,000 x (2 + 8) = 100,000.
+       - `Element.webkitMatchesSelector` over the element and the selector of 17d: floor 768.
     h. The memo (decisions 7 and 8): a chain of 100 nested `div` in `body`, and
        `Element.querySelector` from `body` of the selector `x > x > ... > x > div` (99 times
        `x >`, then `div`: 100 compounds, one simple selector each). Each `div` passes the gate;
        for the `div` at depth k the chain is n = k + 2 elements (itself, k - 1 `div`, `body`,
-       `html`), and it costs a visit and a gate (2), the chain (n - 1), the memo
+       `html`), and it costs a visit and a gate (2), the chain (n), the memo
        (floor(2 x 100 x n / 16)) and 100 n cells. Over k = 1 to 100 the n add up to 5,250: 200 +
-       5,150 + 65,600 + 525,000 = 595,950 steps, and about 450 for the glue and the parse. Floor
-       560,000, ceiling 650,000: without the memo's charge the steps are about 530,800 and the
+       5,250 + 65,600 + 525,000 = 596,050 steps, and about 450 for the glue and the parse. Floor
+       560,000, ceiling 650,000: without the memo's charge the steps are about 530,900 and the
        floor fails. It ends `Ran`.
+    i. The further simple selectors of a compound (decision 7): `Element.querySelector` from
+       `document.body` of 511 times `[a]` then `[zzz]` (one compound of 512 simple selectors,
+       1,538 bytes) over 1,000 `<b a>` siblings (one attribute each, so the scan of an element
+       and the name's bytes charge nothing): no element matches and each is tested through all
+       512 simple selectors, a visit and a gate and 511 further steps, 513 an element, 513,000
+       in all and about 1,700 for the glue and the parse. Floor 500,000, ceiling 520,000, ends
+       `Ran`; without the 511 further steps the steps are about 3,700.
 
 ## Out of scope
 
@@ -1137,27 +1276,38 @@ After `story:scripts-dom-reading`, which this story needs for `Window.document`,
 table, the quirks mode, `reads.rs`, the price of a byte and the shape of the cases (acceptance 1a
 holds the work until its merge is on `main`); `story:webidl-bindings` and
 `story:html-script-hook` are on `main`. Beside `story:scripts-dom-mutation` and
-`story:scripts-dom-attributes`, both under revision; the lists of their scopes are read at plan
-commits `fece9eb` (attributes) and `439fd32` (mutation). The attributes story lists
-`selection.txt`, `bindings.rs`, `reads.rs`, `dom/mod.rs`, `tests/main.rs`,
-`tests/dom_reading.rs`, `docs/design/scripts.md`, `AGENTS.md` and the public surfaces, as this
-story does. The mutation story lists its own three files of the slice and two test files, and
-of this story's files `dom/mod.rs`, `reads.rs`, `bindings.rs`, `selection.txt`,
-`tests/dom_reading.rs`, `docs/design/scripts.md`, `AGENTS.md` and the public surfaces; it
-depends on the attributes story and has no edge to this one. No edge to
-`story:scripts-parse-run`: that story calls the slices through
-`dom::slices(info)` and adds `DomState::swap_tree` to `prelude.rs` and `bindings.rs`, which this
-slice does not use.
+`story:scripts-dom-attributes`, both under revision; the lists of their scopes and their
+Placement are read at plan commit `929269e`, where the attributes story's text is that of
+`9e5b717` and the mutation story's that of `439fd32`. The attributes story lists
+`selection.txt`, `bindings.rs`, `reads.rs`, `dom/mod.rs`, `tests/dom_reading.rs`,
+`docs/design/scripts.md`, `AGENTS.md` and the public surfaces, as this story does, and also
+`tests/main.rs`, which this story does not edit. The mutation story lists its own three files
+of the slice and two test files, and of this story's files `dom/mod.rs`, `reads.rs`,
+`bindings.rs`, `selection.txt`, `tests/dom_reading.rs`, `docs/design/scripts.md`, `AGENTS.md`
+and the public surfaces, and also `tests/main.rs`; it depends on the attributes story and has
+no edge to this one. No edge to `story:scripts-parse-run`: that story calls the slices
+through `dom::slices(info)` and adds `DomState::swap_tree` to `prelude.rs` and `bindings.rs`,
+which this slice does not use.
 
 The files shared with a story beside it or one the drafts below name:
 
 - `crates/script/src/bindings.rs` is generated and never merged by hand. This story, the
-  attributes story, `story:scripts-parse-run` and `story:scripts-utf16-length` all change it
-  (this one the nine doc comments and the digest lines; the attributes story its members and
-  the generator's prelude; parse-run a method of `DomState`); whichever merges later runs the
-  generator again (`slot cargo run -p surf-webidl --bin bindings`), and `slot task
-  webidl-check` and `slot task webidl-slow` hold the result. The same holds for the glue's
-  prices if they merge after this story.
+  attributes story, the mutation story, `story:scripts-parse-run` and
+  `story:scripts-utf16-length` all change it or its generator: this one the nine doc comments
+  and the digest lines; the attributes story the fields `stored`, `live` and `charged` of
+  `DomState`, `charge_stored`, `settle_stored`, four accessors, the change of `strings_value`
+  in `prelude.rs` and a doc comment (the `setAttributeNS` note, row 96); the mutation story
+  `charge_nodes`, the charge for each item of a variadic list and the charge of a refill, in
+  `prelude.rs`; parse-run `DomState::swap_tree`; utf16-length `string_length`. The edits to
+  `prelude.rs` are in one region and are merged by hand by the story that merges later;
+  `bindings.rs` is regenerated by whichever merges later (`slot cargo run -p surf-webidl --bin
+  bindings`), and `slot task webidl-check` and `slot task webidl-slow` hold the result. The
+  same holds for the glue's prices if they merge after this story. The draft
+  `story:scripts-dom-collection-names` is a further editor of the glue (it names the glue's
+  refill and the `HTMLCollection` notes, and `NodeList` goes through the same glue); that it
+  edits `bindings.rs` beyond the regeneration is inferred, not stated. The mutation story's
+  text still calls `undo_stored`, which the attributes story renamed `settle_stored`: that is
+  for the mutation story to revise, and this story uses neither.
 - `crates/webidl/selection.txt`: this story changes the nine rows of its slice (lines 110-112,
   126-127, 175-176 and 231-232 at `83e6b8a`); the attributes story also lists the file and
   edits the `setAttributeNS` note at `:96`, not adjacent to any of them. Both regenerate
@@ -1169,59 +1319,79 @@ The files shared with a story beside it or one the drafts below name:
 - `crates/script/src/dom/reads.rs`: the reading unit's file. Each slice has its own file for its
   reads: this story's are in the new `selector_reads.rs` and the attributes story's in
   `attribute_reads.rs`. This story changes `reads.rs` by visibility and one widening:
-  `pub(super)` on `charge`, `ATTRIBUTES_A_STEP`, `attribute_count`, `Reads`, `scan_for`,
-  `positions` and `value_at`, and `Reads`'s lifetime with `&'a str`. The attributes story makes
-  `charge`, `ATTRIBUTES_A_STEP` and `attribute_count` `pub(super)` too (three of the same
-  tokens, on the same lines), so the two stories' edits of those lines are the same edit, and
-  the story that merges second resolves it by keeping the one. There is no edge between the two
-  stories. The mutation story at `439fd32` makes `charge` and `Reads` `pub(super)` too: the
-  same token edits again, and the later merger keeps one.
-  `story:scripts-dom-sibling-positions` and `story:scripts-dom-collection-names` (drafts)
-  change other functions of the file (the sibling and collection reads): a merge
-  conflict there is a conflict of position and is resolved by keeping both.
+  `pub(super)` on `charge` (`:120 @ 83e6b8a`), `ATTRIBUTES_A_STEP` (`:252`), `attribute_count`
+  (`:255`), `Reads` (`:236`), `scan_for` (`:303`), `positions` (`:269`) and `value_at`
+  (`:287`), and `Reads`'s lifetime with `&'a str` in `Name` (`:241`) and `Value` (`:244`).
+  The attributes story makes `charge`, `ATTRIBUTES_A_STEP` and `attribute_count`
+  `pub(super)` too (three of the same tokens, on the same lines), so the two stories' edits of
+  those lines are the same edit, and the story that merges second resolves it by keeping the
+  one. There is no edge between the two stories. The mutation story makes `charge`, `find`
+  (`:349`), `Reads` and `html_element` (`:218`) `pub(super)`: `charge` is the same edit again,
+  but `enum Reads` is not: this story writes `pub(super) enum Reads<'a>` and the mutation story
+  `pub(super) enum Reads`, two hunks on one line that conflict as text, resolved by hand by
+  keeping the `<'a>` form (`Name` and `Value` are this story's alone). `find` and
+  `html_element` are the mutation story's alone, but `find` takes `reads: Reads`, so the later
+  merger checks that it still compiles. The two drafts `story:scripts-dom-sibling-positions`
+  and `story:scripts-dom-collection-names` name no file of this slice's: the first names no
+  file at all, and the second only `selection.txt` and the glue; whether either changes
+  `reads.rs` is inferred, not stated, and a conflict there is a conflict of position,
+  resolved by keeping both.
 - `crates/script/src/dom/mod.rs`: two lines, `mod selector_reads;` and `pub use
   selector_reads::Frames;`; the attributes story adds two (`mod attribute_reads;`, `mod
-  attribute_writes;`) and the mutation story its own `mod` lines, in other places of the lists
+  attribute_writes;`) and the mutation story two `mod` lines, in other places of the lists
   of `mod` and `pub use` lines, so the later merge keeps all of them.
 - `crates/script/tests/main.rs`: this story does not edit it (`mod dom_selectors;` is declared at
-  `:21` already). The attributes story's text says it shares `tests/main.rs` with this one;
-  it shares no line, and that sentence of its text is the attributes story's to fix.
+  `:21` already). The attributes story adds `mod dom_attributes_cost;` after `mod
+  dom_attributes;` (`:17`) and the mutation story adds `mod dom_mutation_cost;` after `mod
+  dom_mutation;` (`:18`), each in its Change; this story adds no line there, so it shares
+  none.
 - `crates/script/tests/dom_reading.rs`: the case `other_slices_still_throw` holds three lines,
   one for each slice, at `:2424-2426`; this story changes the third; the attributes story, at
-  plan commit `fece9eb`, changes the second and names the three in its Change and Placement.
-  The first, `document.appendChild(el)`, is the mutation slice's: the mutation story at
-  `439fd32` lists `dom_reading.rs` and changes that line (its acceptance 18). The later merge
-  keeps all three changes.
+  plan commit `9e5b717`, changes the second (to `el.getAttributeNode("id")`) and names the
+  three in its Change and Placement. The first, `document.appendChild(el)`, is the mutation
+  slice's: the mutation story at `439fd32` lists `dom_reading.rs` and changes that line (its
+  acceptance 18), but its scope there names the file only for that line. The later merge keeps
+  all three changes.
 - `crates/script/tests/dom_selectors.rs` uses `Namespace`, `Tree::create_element_ns` and
   `Tree::set_attribute_ns` in the Rust cases of acceptance 3; the draft
   `story:html-open-namespace` changes `Namespace` (it depends on the attributes story): when it
   merges first, the cases take its form of the type.
 - `docs/design/scripts.md` (also the stories beside it): this story adds one row to the table
-  of Q4 after the row `parser: attributes per element` (`:316 @ 83e6b8a`). The rows the others
-  name: `story:scripts-parse-run` the rows `wall clock per document` (`:312`) and
-  `after Terminated(MemoryBudget)` (`:320`); `story:scripts-dom-mutation` at `439fd32` the row
-  `parser: steps` (`:318`) and sentences in the paragraphs at `:322-332` and `:902-904`;
-  `story:scripts-dom-attributes` the paragraphs at `:322-332` and `:902-904`;
-  `story:swell-0-9-0` the paragraph at `:338-341`. The new row after `:316` is two lines from
-  the mutation story's `:318`: with no edge between the two stories the later merger resolves
-  that hunk by hand and keeps both.
+  of Q4 after the row `parser: attributes per element` (`:316 @ 83e6b8a`). The places the
+  others name: `story:scripts-parse-run` the rows `wall clock per document` (`:312`) and
+  `after Terminated(MemoryBudget)` (`:320`); `story:scripts-dom-mutation` at `439fd32` Q1's row
+  (`:86`), the row `parser: steps` (`:318`) and sentences in the paragraphs at `:322-332` and
+  `:902-904`; `story:scripts-dom-attributes` the paragraphs at `:322-332` and `:902-904`;
+  `story:swell-0-9-0` (decision 13, `story/swell-0-9-0.md:565-592`) the Q4 rows `:302`,
+  `:303`, `:307` and `:320`, the paragraphs `:255-265` and `:338-341`, and Q11 `:902-909`.
+  None of the swell story's places is adjacent to the new row after `:316`; `:320` is also
+  parse-run's. The new row is two lines from the mutation story's `:318` with `:317`
+  unchanged between them, so git should merge the two clean; the later merger checks anyway
+  and keeps both.
 - `AGENTS.md`, `README.md`, `docs/badges/make.sh`, `docs/badges/tests.svg` and the other public
-  surfaces, which the stories beside it rewrite too: `story:swell-0-9-0` (active; it lists
-  README, `docs/badges/make.sh`, `tests.svg`, `how-it-is-built.md`, `status.md`,
-  `what-works.md`, `AGENTS.md` and `scripts.md`), `story:scripts-dom-attributes`,
+  surfaces, which the stories beside it rewrite too (by the epic's rule `README.md`,
+  `docs/badges` and `how-it-is-built.md` are in no story's recorded scope, and `status.md` and
+  `what-works.md` only where a story changes another sentence of theirs; the stories still
+  change them): `story:swell-0-9-0` (active; it lists README, `docs/badges/make.sh`,
+  `tests.svg`, `how-it-is-built.md`, `status.md`, `what-works.md`, `AGENTS.md` and
+  `scripts.md`), `story:scripts-dom-attributes`, `story:scripts-dom-mutation`,
   `story:scripts-parse-run`, `story:test-step-holds-with-tls` and `story:tls-tests-as-tables`
   (they change the count of tests the TLS step prints, the `552` of acceptance 10c, and list
   `AGENTS.md`), `story:session-argument-checks` and `story:conformance-lock-and-lints` (each
-  lists `AGENTS.md`; the second also `website/docs/status.md`). Whichever merges later merges
-  `main` first and takes its numbers from its own log, as the reading story's Placement says of
-  its pair with `story:swell-0-9-0`. `AGENTS.md:365-369` is one entry of five lines that each of
-  them rewrites, so the second merge resolves its text by hand. `docs/badges/tests.svg` is
-  written by `docs/badges/make.sh`: the story edits `make.sh:38` and runs the script, and the
-  second merger runs it again after taking the other's `make.sh`. The public-surface lines the
-  last commit rewrites are those of acceptance 10 (`README.md:11, 285, 596-645, 612, 626, 658`,
-  `docs/badges/make.sh:38`, `docs/badges/tests.svg:1, 2, 10`,
-  `website/docs/how-it-is-built.md:40-89, 56, 70, 102`, `website/docs/status.md:31`,
-  `website/docs/what-works.md:17`).
+  lists `AGENTS.md`; the second also `website/docs/status.md`) and
+  `story:scripts-document-port` (it lists `docs/design/scripts.md`, `website/docs/status.md`
+  and `website/docs/what-works.md` and cites `README.md:285`, `status.md:23` and
+  `what-works.md:17`; it has no edge to this story, and comes after it through
+  `story:scripts-html-conformance`, which it depends on and which waits for this story).
+  Whichever merges later merges `main` first and takes its numbers from its own log, as the
+  reading story's Placement says of its pair with `story:swell-0-9-0`. `AGENTS.md:365-369` is
+  one entry of five lines that each of them rewrites, so the second merge resolves its text by
+  hand. `docs/badges/tests.svg` is written by `docs/badges/make.sh`: the story edits
+  `make.sh:38` and runs the script, and the second merger runs it again after taking the
+  other's `make.sh`. The public-surface lines the last commit rewrites are those of acceptance
+  10 (`README.md:11, 285, 596-645, 612, 626, 658`, `docs/badges/make.sh:38`,
+  `docs/badges/tests.svg:1, 2, 10`, `website/docs/how-it-is-built.md:40-89, 56, 70, 102`,
+  `website/docs/status.md:31`, `website/docs/what-works.md:17`).
 
 This story changes `selection.txt` and `bindings.rs`, so it lists both; the reading unit's
 merge makes them its base. `story:scripts-html-conformance` waits for this story.
