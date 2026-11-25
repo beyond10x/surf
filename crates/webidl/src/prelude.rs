@@ -546,18 +546,22 @@ impl Copies {
     /// The one function that copies a String out of the engine (decision 12): the host
     /// interface's `to_utf16`, uncharged, counted until the ledger is dropped. Every code unit
     /// is copied (`DOMString`); a lone surrogate is then replaced by U+FFFD, since the tree
-    /// stores UTF-8. A step is charged per [`STRING_BYTES_A_STEP`] bytes of the code units
-    /// copied (8 units), the price of a String answer's copy. The charge comes after the copy:
-    /// the host interface of the engine's pinned tag answers a String's length only by copying
-    /// it (`to_utf16` and `to_rust_string_lossy` are its only reads of a String), and the copy
-    /// is bounded by the agent's `string_length`.
+    /// stores UTF-8. A step is charged per [`STRING_BYTES_A_STEP`] bytes of the code units to
+    /// be copied (8 units), the price of a String answer's copy, before the copy: the length
+    /// is read first as [`string_length`] reads it, which copies nothing, so a call past its
+    /// steps ends before any unit is copied.
     fn copy(&mut self, cx: &mut Cx<'_, ScriptHost>, string: StringRef) -> Completion<String> {
+        let length = string_length(cx, string)?;
+        let count = if length.is_finite() && length > 0.0 {
+            length as u64
+        } else {
+            0
+        };
+        cx.charge_steps(count.saturating_mul(2) / STRING_BYTES_A_STEP)?;
         let units = cx.to_utf16(string).map_err(defect)?;
         let text = String::from_utf16_lossy(&units);
         self.0 = self.0.saturating_add(1);
         UNCHARGED.with(|count| count.set(count.get().saturating_add(1)));
-        let count = u64::try_from(units.len()).unwrap_or(u64::MAX);
-        cx.charge_steps(count.saturating_mul(2) / STRING_BYTES_A_STEP)?;
         Ok(text)
     }
 }

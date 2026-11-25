@@ -56,7 +56,7 @@
 //! 9803d546bb474bc834b29498ec0e075e0ef88ceed3de1989601c2ae8cf12eeed  crates/webidl/src/lib.rs
 //! fa6e285bfc241f9e68384ebbfd5f04e1c9172fbc254baca4c4fc8e1a154cd930  crates/webidl/src/model.rs
 //! 8db6c1d01d7d0b8dc68530edc4f5bf982f1b5cc2b1c49fbbb38496b9ff60dacd  crates/webidl/src/parser.rs
-//! d733233eaba2ef342587fc9bc7923bd30ad2e86be9084e6eeb55c3443e662a30  crates/webidl/src/prelude.rs
+//! e153c94cce1e549a19ca492eca99716026b001f19a1901f2e5ed85173381f8e8  crates/webidl/src/prelude.rs
 //! 22baac7ca4bee83065ca31df9ddab4faf4d6227668cb327360b0473564ed85a3  crates/webidl/src/selection.rs
 //! ```
 //!
@@ -69,7 +69,7 @@
 //! 36612fcd0caea180  6266  crates/webidl/data/whatwg/html-idl.html
 //! ```
 //!
-//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 75c681fa5df24e40995cb80d519852602ca832e5eef02c9cab7f5ab569efa8b8
+//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 32277900367f651b0909502f8d969adc485b60b059124e6d6bef1b393e194974
 
 use std::cell::Cell;
 
@@ -616,18 +616,22 @@ impl Copies {
     /// The one function that copies a String out of the engine (decision 12): the host
     /// interface's `to_utf16`, uncharged, counted until the ledger is dropped. Every code unit
     /// is copied (`DOMString`); a lone surrogate is then replaced by U+FFFD, since the tree
-    /// stores UTF-8. A step is charged per [`STRING_BYTES_A_STEP`] bytes of the code units
-    /// copied (8 units), the price of a String answer's copy. The charge comes after the copy:
-    /// the host interface of the engine's pinned tag answers a String's length only by copying
-    /// it (`to_utf16` and `to_rust_string_lossy` are its only reads of a String), and the copy
-    /// is bounded by the agent's `string_length`.
+    /// stores UTF-8. A step is charged per [`STRING_BYTES_A_STEP`] bytes of the code units to
+    /// be copied (8 units), the price of a String answer's copy, before the copy: the length
+    /// is read first as [`string_length`] reads it, which copies nothing, so a call past its
+    /// steps ends before any unit is copied.
     fn copy(&mut self, cx: &mut Cx<'_, ScriptHost>, string: StringRef) -> Completion<String> {
+        let length = string_length(cx, string)?;
+        let count = if length.is_finite() && length > 0.0 {
+            length as u64
+        } else {
+            0
+        };
+        cx.charge_steps(count.saturating_mul(2) / STRING_BYTES_A_STEP)?;
         let units = cx.to_utf16(string).map_err(defect)?;
         let text = String::from_utf16_lossy(&units);
         self.0 = self.0.saturating_add(1);
         UNCHARGED.with(|count| count.set(count.get().saturating_add(1)));
-        let count = u64::try_from(units.len()).unwrap_or(u64::MAX);
-        cx.charge_steps(count.saturating_mul(2) / STRING_BYTES_A_STEP)?;
         Ok(text)
     }
 }

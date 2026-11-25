@@ -600,6 +600,39 @@ fn the_members_read_the_tree_only_through_the_reads() {
     }
 }
 
+/// `source` without its comment lines (a line whose text starts with `//`).
+fn code_of(source: &str) -> String {
+    source
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// A String argument is charged before it is copied out of the engine: in the one copy
+/// function of the bindings, `Copies::copy`, the length is read (`string_length(`, which copies
+/// nothing) and charged (`charge_steps(`) before the first `to_utf16`. A source test: a call
+/// that ends at the step limit drops its ledger of copies, so no count a slice reads shows a
+/// copy made before the charge.
+#[test]
+fn a_string_argument_is_charged_before_its_copy() {
+    let code = code_of(include_str!("../src/bindings.rs"));
+    let start = code
+        .find("fn copy(&mut self, cx: &mut Cx<'_, ScriptHost>, string: StringRef)")
+        .expect("Copies::copy in bindings.rs");
+    let body = &code[start..];
+    let body = &body[..body.find("\n    }\n").expect("the end of Copies::copy")];
+    let at = |text: &str| {
+        body.find(text)
+            .unwrap_or_else(|| panic!("Copies::copy holds no `{text}`:\n{body}"))
+    };
+    let (length, charge, copy) = (at("string_length("), at("charge_steps("), at("to_utf16"));
+    assert!(
+        length < charge && charge < copy,
+        "Copies::copy reads the length at {length}, charges at {charge}, copies at {copy}:\n{body}"
+    );
+}
+
 /// `with_tree` under `limits` in place of the sweep's own.
 fn with_tree_under<R: Send>(
     limits: RunnerLimits,
