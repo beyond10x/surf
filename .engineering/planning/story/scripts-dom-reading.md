@@ -51,9 +51,13 @@ scope:
 - confidence: cited
   path: crates/script/tests/adversary_dom_reading_2.rs
 - confidence: cited
+  path: crates/script/tests/adversary_dom_reading_3.rs
+- confidence: cited
   path: crates/script/tests/bindings.rs
 - confidence: cited
   path: crates/script/tests/dom_reading.rs
+- confidence: cited
+  path: crates/script/tests/dom_reading_cost.rs
 - confidence: cited
   path: crates/webidl/selection.txt
 - confidence: cited
@@ -64,6 +68,8 @@ scope:
   path: crates/webidl/tests/adversary_same_object.rs
 - confidence: cited
   path: crates/webidl/tests/adversary_same_object_2.rs
+- confidence: cited
+  path: crates/webidl/tests/adversary_same_object_3.rs
 - confidence: cited
   path: crates/webidl/tests/main.rs
 - confidence: cited
@@ -80,7 +86,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 37
+revision: 39
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 - {from: "proposed", to: "active", at: "2026-11-25T08:44:48Z", actor: "human:operator", revision: 27, executor: "agent:coordinator"}
@@ -524,6 +530,42 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
     - The wall clock is read between member calls: one call of a walking member is linear in
       the nodes it visits and bounded by the tree's node bound. The design note says so.
 
+19. What the review of the unit's third tip found, as rules. Each narrows decision 18 and wins
+    where the two differ.
+    - A step buys a bounded piece of work. The charges of decision 18 (one step per 64 bytes,
+      one per 64 attributes) hold for bytes that are only compared or copied. Where a unit of
+      work is smaller than 64 bytes, the unit is charged: a class token, an attribute passed.
+      The mark the charges are set by: for every member of the slice and every shape of a tree
+      the parser admits, the time of one call divided by its steps stays within 20 times the
+      same quotient of a walk that reads no attribute. A test asserts steps and never a time.
+    - The class walk (`getElementsByClassName`) charges, for each element whose `class` it
+      reads, one step for the element, one per 64 bytes of the value and one per class token
+      of the value, all before the first lookup of that element; in quirks mode the fold of a
+      token is paid by the token's step. The wanted set is charged one step per 64 bytes of
+      the argument and one per token, before it is built.
+    - A scan for one attribute by name charges one step per 4 attributes it passes (where
+      decision 18 said 64) and passes the list once: the charge comes from the list's length,
+      before the scan.
+    - A member charges a value only where it reads it. `namedItem` charges an element's `name`
+      on an HTML element and not on another. `lookupNamespaceURI` is a scan for one attribute
+      by name and charges the one value it reads; `lookupPrefix` charges the values it
+      compares. `baseURI` charges for the `href` before it copies it.
+    - The glue charges what it makes. A collection made or refilled costs 8 steps a node (a
+      wrapper and an index define), and a String answer one step per 16 bytes it copies (8
+      UTF-16 units), charged before the copy. Measured before the two weights: the collection
+      walks ran 23 to 54 times the plain walk's time a step and String answers of 1 MiB 32 to
+      43 times; after them every member measured stays within 13 times. A call of a handful
+      of steps (`item`, `isDefaultNamespace`) is the script's own entry and parse and gets no
+      charge for it.
+    - One call of a walking member is linear in the nodes it visits and in the bytes and
+      attributes it reads; the parser's node bound and its bound of stored bytes bound it. The
+      design note says so, where decision 18 named the node bound alone.
+    - The record of a cut refill (decision 18's first rule) is made in the refill's first step
+      too. No test holds that place at the swell tag this unit pins (`0.8.0`): the memory
+      limit cannot be placed there, and no call inside a host function takes the interrupt.
+      The record is conservative there: it stops a document's scripts and gives no wrong
+      answer.
+
 ## Change
 
 - `crates/script/src/dom/reading.rs`: the 81 methods of `Reading`, decisions 1 to 7, 9, 11, 13:
@@ -902,8 +944,9 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
        and the object's own freezes) each refused refill leaves the old list index by index
        and no accessor of the script is called.
     d. On 10,000 elements with ten attributes of 100 bytes and a class of one byte,
-       `getElementsByClassName`, `getElementById` and `namedItem` each charge under 30,000
-       steps; the test prints the four numbers.
+       `getElementsByClassName` charges under 150,000 steps with the charges of decision 19
+       (120,021 measured: a step an element, one per 4 attributes passed, one per class
+       token, eight per node of the collection); the test prints the four numbers.
     e. A class repeated on an element counts once (`class="a a"` does not match `'a b'`); the
        wanted set and `substringData`'s walk are charged.
     f. Three readers on one parent of 500 children end `Ran`; the test prints the steps.
@@ -911,6 +954,29 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
        node nor a held collection ends with an error that names the row.
     h. Over 60 seeds of the writes the first review did not draw, and over 40 hooked parses,
        no child list changes with the counter left.
+
+19. The third review's rules (decision 19), in the modules `adversary_dom_reading_3` and
+    `dom_reading_cost` of `crates/script/tests` and `adversary_same_object_3` of
+    `crates/webidl/tests`.
+    a. `getElementsByClassName` over elements whose `class` holds many one-letter classes
+       charges at least one step per class token of each element it reads; the test prints
+       the steps and the time.
+    b. A scan by name over elements of 1,024 and more attributes charges at least one step per
+       4 attributes of each element it passes.
+    c. `namedItem` over SVG elements with a long `name` charges nothing for the `name`; over
+       HTML elements it charges the `name` it compares.
+    d. `lookupNamespaceURI` over an element of many long attributes charges for the one value
+       it reads; one test fails when the attribute charge of `lookupNamespaceURI` is removed
+       and one when that of `lookupPrefix` is removed.
+    e. A list that is not extensible and whose last index a script deleted shrinks on its
+       refill.
+    f. The module `dom_reading_cost` runs, for each member that reads more than its own node,
+       the worst shape the parser admits and prints its steps and its time; each case asserts
+       a floor of steps that follows from decision 19; no case runs over 5 s.
+    g. A collection of 100,000 nodes charges at least 8 steps a node when it is made and when
+       it is refilled; a String answer of 1 MiB charges at least one step per 16 bytes.
+    h. `baseURI` of a `href` of 64,000 bytes charges about 6,000 steps more than of 64 bytes
+       (the read, the member's String and the glue's copy), each before its work.
 
 ## Out of scope
 
