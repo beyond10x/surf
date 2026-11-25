@@ -373,31 +373,43 @@ Open: whether the answer wants kinds for those states, or for `summary`, `detail
 | limit | default |
 |---|---|
 | input bytes | 16,777,216 (16 MiB, the `surf-fetch` body limit) |
-| tree depth (elements on the stack of open elements, and on the path from the root to any node of the tree) | 512 |
+| tree depth (elements on the path from the root to any node of the tree, or from the top of a subtree out of it) | 512 |
 | nodes, template contents included | 1,048,576 |
 | attributes on one element | 1,024 |
 | stored bytes (every string the tree holds, clones included, and 80 for each attribute) | 67,108,864 (64 MiB) |
-| steps (entries tree construction visits in its scans) | 134,217,728 (2^27) |
+| steps (entries tree construction visits in its scans, and nodes the walks of the depth limit visit) | 134,217,728 (2^27) |
 
 Reaching one stops parsing as "stop parsing" does; the document holds what was built and names
 the limit (a row field, item 2).
 
-Depth, since fix round 2 of `story:html-script-hook`: the limit bounds the tree as well as the
-stack, in every parse, with a script hook or without. Markup alone made a tree deeper than its
-stack before (a random search at a limit of 16 found 18; the `selectedcontent` copy made 2N − 4
-at a limit of N), and a hook's writes can make it deeper still. No node of a parsed tree is
+Depth, since fix rounds 2 and 3 of `story:html-script-hook`: the limit bounds the tree, in
+every parse, with a script hook or without, and not the stack of open elements. Markup alone
+made a tree deeper than its stack before (a random search at a limit of 16 found 18; the
+`selectedcontent` copy made 2N − 4 at a limit of N), and a hook's writes can make it deeper
+still; foster parenting makes the stack deeper than the tree. No node of a parsed tree is
 deeper than the limit, counted as the write surface counts: the elements on its path from the
-root, itself included, a template counted for the nodes of its contents. The tree keeps each
-node's depth in its record (a `u32` in the record's padding: `NODE_BYTES` stays 136), so an
-insertion reads its parent's depth and visits nothing. The parse stops with `Depth` before:
-an element inserted under a parent at the limit (each insertion of an element, the in-head
-`script` and the `template` start tag included); an outer iteration of the adoption agency
-algorithm whose moves would put a node past it, checked for the whole iteration before its
-first move, so the iteration changes nothing and the tree holds every node where it was; an
-element of the `selectedcontent` copy under a copy at the limit, which leaves the copy cut
-there. A move that shifts nodes (the adoption agency's furthest block's children, a write's
-subtree) gives each node under it its new depth, each visited a step for the parser; a check of
-a move down reads the deepest depth under the furthest block, each node a step too.
+root, itself included, a template counted for the nodes of its contents; a subtree out of the
+tree is counted from its own top. The parse stops with `Depth` only before a node it would
+make or move would pass the limit in the tree as it is then: an element inserted under a
+parent at the limit (each insertion of an element, the in-head `script`, the `template` start
+tag and the `html` element included); an outer iteration of the adoption agency algorithm
+whose moves would put a node past it, checked for the whole iteration before its first move, so
+the iteration changes nothing and the tree holds every node where it was; an element of the
+`selectedcontent` copy under a node at the limit, which leaves the copy cut there.
+
+How the parser knows a depth (fix round 3): no node's record keeps one (`NODE_BYTES` stays
+136). The parser keeps the depth of each entry of the stack of open elements, set when the
+entry is pushed from the depth of its place, and reads them again from the tree after a hook's
+write that moved or removed an element and after each adoption agency iteration: each entry
+from its parent up to the first entry already read, most often one step. After an iteration
+only the entries from the formatting element's place up are read, unless a hook's writes put
+an entry under one above it (then all). An insertion place is an entry, the parent of the
+foster parenting `table` or a template's contents, so a check reads a kept depth; a place that
+is no entry is walked up to one. The adoption agency walks the furthest block's subtree only
+when its children would end deeper than they were, for the deepest of them; a move that makes
+no node deeper walks nothing of what it moves. The `selectedcontent` update counts the depth
+of each `selectedcontent` on its walk down the document. Every parent or host a walk up passes
+to, and every node the adoption agency's walk down visits, is a step.
 
 Stored bytes, as `story:html-parser-limits` made them exact: the UTF-8 bytes of every string the
 tree holds, element local names, attribute names, prefixes and values, text, comment data,

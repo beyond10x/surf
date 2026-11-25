@@ -257,15 +257,15 @@ impl TreeBuilder {
     /// The `html` element of the before html mode: created for the token, appended to the
     /// document and put on the stack of open elements, when the limits admit it.
     fn insert_html_root(&mut self, name: &str, attributes: &[TokenAttribute]) {
-        if !self.room_on_stack() {
+        let document = self.document();
+        let Some(depth) = self.room_at((document, None)) else {
             return;
-        }
+        };
         let Some(element) = self.create_element(name, attributes) else {
             return;
         };
-        let document = self.document();
         self.insert_element_at(element, (document, None));
-        self.open.push(element);
+        self.push_inserted(element, depth);
     }
 
     /// 13.2.6.4.3 The "before head" insertion mode.
@@ -357,15 +357,14 @@ impl TreeBuilder {
             Token::StartTag {
                 name, attributes, ..
             } if name == "script" => {
-                let (parent, reference) = self.appropriate_place(None);
-                if !self.room_on_stack() || !self.room_under(parent) {
+                let Some((location, depth)) = self.place_with_room() else {
                     return Flow::Done;
-                }
+                };
                 let Some(element) = self.create_element(name, attributes) else {
                     return Flow::Done;
                 };
-                self.insert_element_at(element, (parent, reference));
-                self.open.push(element);
+                self.insert_element_at(element, location);
+                self.push_inserted(element, depth);
                 self.watch_script(element);
                 self.tokenizer.switch_to(tokenizer::State::ScriptData);
                 self.original_mode = self.mode;
@@ -480,7 +479,11 @@ impl TreeBuilder {
                 let Some(head) = self.head else {
                     return Flow::Done;
                 };
-                self.open.push(head);
+                // The head has its place in the tree already, and what is under it: its depth
+                // and the order of the stack are read from the tree (the stack holds the `html`
+                // element and the head).
+                self.open.push(head, None);
+                self.settle_entries(0);
                 let flow = self.in_head(t);
                 self.remove_from_stack(head);
                 flow
@@ -572,6 +575,11 @@ impl TreeBuilder {
                 let body = self.open[1];
                 self.tree.remove(body, &self.steps);
                 self.open.truncate(1);
+                // The `html` element is under the `body` only on a stack that is not ordered
+                // (a hook's writes put it there).
+                if !self.ordered {
+                    self.settle_entries(0);
+                }
                 self.insert_html_element(name, attributes);
                 self.mode = Mode::InFrameset;
                 Flow::Done

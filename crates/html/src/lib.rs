@@ -107,20 +107,28 @@
 //!   to its end, the end-of-file step included, so the tree is that of the prefix, and
 //!   [`limits::Limit::InputBytes`] is named unless another limit stopped the parse of the
 //!   prefix. The parse again after a `meta` that changes the encoding reads the same cut bytes.
-//! - **Depth** ([`limits::Limits::max_depth`], default 512): it bounds the stack of open
-//!   elements and the tree, in every parse, with a hook or without. An element that would be
-//!   entry 513 of the stack is not created. No node of the tree is deeper than 512: the
-//!   elements on its path from the root, itself included, a template counted for the nodes of
-//!   its contents (the count the write surface refuses a write by). Markup alone makes a tree
-//!   deeper than its stack (foster parenting, the adoption agency algorithm, the
-//!   `selectedcontent` copy), and so do a hook's writes, so each place that gives a node a
-//!   parent checks the tree before it: an element inserted (also the in-head `script` and the
-//!   `template` start tag) is not created under a parent 512 deep; an outer iteration of the
-//!   adoption agency algorithm that would move a node past the limit makes no change, checked
-//!   before its first move; the `selectedcontent` copy makes no element under a copy 512 deep.
-//!   Each stops the parse with [`limits::Limit::Depth`]. Text, comments and processing
-//!   instructions are no deeper than their parent. The tree keeps each node's depth, so a check
-//!   visits nothing; a move that shifts nodes deeper or shallower visits each of them, a step.
+//! - **Depth** ([`limits::Limits::max_depth`], default 512): it bounds the tree, in every
+//!   parse, with a hook or without. No node of the tree is deeper than 512: the elements on its
+//!   path from the root, itself included, a template counted for the nodes of its contents (the
+//!   count the write surface refuses a write by); a subtree out of the tree, which a hook's
+//!   writes make, is counted from its own top. The depth checked is the one the node has in
+//!   the tree as it is at that moment. Each place that gives a node a parent checks before it:
+//!   an element inserted (also the in-head `script`, the `template` start tag and the `html`
+//!   element) is not created under a parent 512 deep; an outer iteration of the adoption agency
+//!   algorithm that would put a node past the limit makes no change, checked before its first
+//!   move; the `selectedcontent` copy makes no element under a node 512 deep. Each stops the
+//!   parse with [`limits::Limit::Depth`], and only these: the stack of open elements is not
+//!   bounded by it (foster parenting puts an entry above the `table` that is not under it).
+//!   Text, comments and processing instructions are no deeper than their parent. How the
+//!   parser knows a depth: it keeps the depth of each entry of the stack of open elements, set
+//!   when the entry is pushed, and reads them again from the tree after a hook's write that
+//!   moved or removed an element, and after an adoption agency iteration (the entries from the
+//!   formatting element's place up; all of them when a hook's writes put an entry under one
+//!   above it). An insertion place is an entry, the parent of the foster parenting `table` or
+//!   a template's contents, so a check reads a kept depth; another place is walked up to an
+//!   entry. A node no record keeps a depth for is walked only for a move of the adoption agency
+//!   that puts the furthest block's children deeper, for the deepest of them; a move that
+//!   makes no node deeper walks nothing of what it moves.
 //! - **Nodes** ([`limits::Limits::max_nodes`], default 1,048,576, template contents
 //!   included): a node whose creation would take [`Tree::node_count`] past the limit is not
 //!   created (a `template` is two nodes). The reconstruction of the active formatting elements
@@ -148,9 +156,11 @@
 //!   scopes, popping, "any other end tag", Noah's Ark, the reconstruction, the adoption agency
 //!   algorithm's scans and its walk to the root), every child visited in a parent's child
 //!   list (inserting before a reference, finding the text node to append to, removing a node,
-//!   moving children, looking for an element child), and every node whose kept depth a move
-//!   changes or whose depth the adoption agency algorithm reads to check a move down (the
-//!   depth limit). The count is checked after each token:
+//!   moving children, looking for an element child), and every node the walks of the depth
+//!   limit visit: each parent or host a walk up to a kept depth passes to, each entry of the
+//!   stack of open elements whose depth is read again, and each node under the furthest block
+//!   that the adoption agency algorithm walks to check a move down. The count is checked after
+//!   each token:
 //!   the token that takes it past the limit is processed whole, then parsing stops. The
 //!   `selectedcontent` update after the end-of-file token counts every node it visits and
 //!   copies and is checked after each, so it stops where it passes the limit.
@@ -173,8 +183,9 @@
 //! bytes a parse allocates, not its time.
 //!
 //! What a parse holds besides the tree: the input as code points, 4 bytes for each character
-//! (at most 64 MiB for an input of 16 MiB), the stack of open elements (at most
-//! [`limits::Limits::max_depth`] entries, and a count of 4 bytes for each node), the list of
+//! (at most 64 MiB for an input of 16 MiB), the stack of open elements (at most one entry for
+//! each node, and 4 bytes for each node: whether it is on the stack and its entry's depth), the
+//! list of
 //! active formatting elements with a copy of each entry's start tag token, and the tokenizer's
 //! current token and temporary buffer (a tag name of 1 byte and a buffer of 4 bytes for each
 //! letter of an end tag name in RCDATA, RAWTEXT or script data, given back as character tokens

@@ -1346,11 +1346,18 @@ fn deepest_from(tree: &Tree, roots: &[NodeId]) -> usize {
 }
 
 /// Markup that makes a tree deeper than the depth limit on `main`, with no hook: the copy of
-/// a `selectedcontent` (two forms), the adoption agency's moves and a case of a random search
-/// (the second review's report, (a): 2N − 4 deep at a limit of N, and 18 at 16).
+/// a `selectedcontent` (two forms, and a third whose option holds a `template`: the copy of
+/// its contents is one deeper than the copy of the `template`), the adoption agency's moves
+/// and a case of a random search (the second review's report, (a): 2N − 4 deep at a limit of
+/// N, and 18 at 16).
 fn deep_markup(n: usize) -> Vec<String> {
     let (k, m) = (n - 5, n - 4);
     vec![
+        format!(
+            "<select><button><div><selectedcontent></selectedcontent></div></button>\
+             <option><template>{}x",
+            "<i>".repeat(n - 5)
+        ),
         format!(
             "<select><button>{}<selectedcontent></selectedcontent>{}</button><option>{}x",
             "<div>".repeat(k),
@@ -1434,11 +1441,67 @@ fn an_adoption_agency_iteration_past_the_limit_moves_nothing() {
     );
 }
 
-/// A move of the adoption agency that shifts nodes up gives every node under them its new
-/// depth: `</b>` takes the `span` off the stack, so its first outer iteration moves the ten
+/// The start tag decides the HTML integration point of a MathML `annotation-xml` (13.2.6):
+/// an `encoding` of `text/html` or of `application/xhtml+xml`, in any ASCII case, makes one,
+/// so `<foo>` under it is an HTML element; another value does not.
+#[test]
+fn both_html_encodings_make_an_annotation_xml_an_integration_point() {
+    for (encoding, expected) in [
+        ("text/html", Namespace::Html),
+        ("TEXT/Html", Namespace::Html),
+        ("application/xhtml+xml", Namespace::Html),
+        ("Application/XHTML+XML", Namespace::Html),
+        ("image/svg+xml", Namespace::MathMl),
+    ] {
+        let input = format!(
+            "<math><annotation-xml encoding=\"{encoding}\"><foo id=f></foo></annotation-xml></math>"
+        );
+        let tree = parse_document(&input, &deep(512));
+        let namespace = match tree.data(by_id(&tree, "f")) {
+            NodeData::Element { namespace, .. } => *namespace,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(namespace, expected, "{input}");
+    }
+}
+
+/// The adoption agency stops before a move that would pass the limit, also when no element of
+/// the tree is at the limit yet: the hook moves the furthest block `p` up to the `html`
+/// element (2 deep); four `span` go under it (3 to 6), the formatting element `b` stays 6
+/// deep under three `div`. `</b>` would put `p` under the third `div` (6), the new `b` under
+/// it (7) and the `span` 8 to 11 deep. At a limit of 10 the parse stops at `Depth` with the
+/// tree 6 deep; at 11 the iteration is made and the tree is 11 deep.
+#[test]
+fn an_adoption_agency_move_past_the_limit_stops_with_no_element_at_it() {
+    let input = "<body><div><div><div id=ca><b><p id=fb><script>x</script>\
+                 <span><span><span><span>y</b><p id=after>z";
+    let hook = || {
+        Recorder::with(|tree, script, _| {
+            let p = tree.parent(script).unwrap();
+            let html = tree.children(tree.root())[0];
+            tree.append_child(html, p).unwrap();
+        })
+    };
+    let tree = parse_document_with_hook(input, &deep(10), &mut hook());
+    assert_eq!(tree.stopped_by(), Some(Limit::Depth));
+    assert_eq!(depth_of(&tree), 6);
+    assert_eq!(
+        name(&tree, tree.parent(by_id(&tree, "fb")).unwrap()),
+        "html"
+    );
+    let tree = parse_document_with_hook(input, &deep(11), &mut hook());
+    assert_eq!(tree.stopped_by(), None);
+    assert_eq!(depth_of(&tree), 11);
+    assert_eq!(tree.parent(by_id(&tree, "fb")), Some(by_id(&tree, "ca")));
+    by_id(&tree, "after");
+}
+
+/// After a move of the adoption agency that shifts nodes up, the depths the parser reads for
+/// its entries are the new ones: `</b>` takes the `span` off the stack, so its first outer
+/// iteration moves the ten
 /// `div` up by one; after its eight iterations the last two `div` hang under the last new `b`,
-/// 12 and 13 deep, and the `em` after them is 14 deep, inside a limit of 14. The stack holds
-/// 14 entries before `</b>`, so at 13 the parse stops there. With nine `div`, the ninth is the
+/// 12 and 13 deep, and the `em` after them is 14 deep, inside a limit of 14. The tenth `div`
+/// is 14 deep before `</b>`, so at 13 the parse stops there. With nine `div`, the ninth is the
 /// last iteration's moved child itself, 12 deep, and the `em` 13.
 #[test]
 fn nodes_the_adoption_agency_moves_up_keep_their_depths() {
@@ -1452,8 +1515,8 @@ fn nodes_the_adoption_agency_moves_up_keep_their_depths() {
     }
 }
 
-/// A deep clone a hook appends keeps its nodes' depths: the `body` moved under the last node
-/// of a cloned chain is 5 deep, so markup under it stops at the limit.
+/// A deep clone a hook appends counts with its nodes: the `body` moved under the last node of
+/// a cloned chain is 5 deep, so markup under it stops at the limit.
 #[test]
 fn a_cloned_chain_keeps_its_depths() {
     let mut hook = Recorder::with(|tree, script, _| {
@@ -1477,19 +1540,156 @@ fn a_cloned_chain_keeps_its_depths() {
     assert_eq!(tree.stopped_by(), Some(Limit::Depth));
 }
 
-/// The depth limit bounds the stack of open elements as well: a `b` foster parented out of a
-/// `table` is 3 deep in the tree and the fourth entry of the stack, so at a limit of 4 the `i`
-/// under it is not made, though it would be 4 deep.
+/// The depth limit bounds the tree, not the stack of open elements (ruling 1 of fix round 3:
+/// the parse stops only where a node would pass the limit in the tree): a `b` foster parented
+/// out of a `table` is 3 deep in the tree and the fourth entry of the stack, so at a limit of
+/// 4 the `i` under it is made, 4 deep and the fifth entry, and the `u` under that is not.
 #[test]
-fn the_depth_limit_bounds_the_stack_of_open_elements_too() {
-    let tree = parse_document("<table><b><i>", &deep(4));
+fn the_depth_limit_bounds_the_tree_not_the_stack_of_open_elements() {
+    let tree = parse_document("<table><b><i><u>", &deep(4));
     assert_eq!(tree.stopped_by(), Some(Limit::Depth));
-    assert_eq!(depth_of(&tree), 3);
-    assert!(
-        tree.descendants(tree.root())
-            .iter()
-            .all(|&n| name(&tree, n) != "i")
+    assert_eq!(depth_of(&tree), 4);
+    let names: Vec<String> = tree
+        .descendants(tree.root())
+        .iter()
+        .map(|&n| name(&tree, n))
+        .collect();
+    assert!(names.iter().any(|n| n == "i"), "{names:?}");
+    assert!(!names.iter().any(|n| n == "u"), "{names:?}");
+}
+
+/// At a depth limit of 0 no element is made, not even the `html` element.
+#[test]
+fn a_depth_limit_of_zero_makes_no_element() {
+    let tree = parse_document("<p>x", &deep(0));
+    assert_eq!(tree.stopped_by(), Some(Limit::Depth));
+    assert_eq!(depth_of(&tree), 0);
+}
+
+/// An adoption agency iteration reads again the entries below its formatting element when a
+/// hook left one of them under an entry above it. The hook moves the furthest block `p` up to
+/// the `html` element, the `span` `c` (with the `b` under it) under the `body`, and the `div`
+/// `d` under the `p`: `d`, an entry below `b`, is under `p`, an entry above it. `</b>` puts
+/// the `p` under `c` (4 deep), the new `b` under it (5) and `d` under that (6). After `</p>`
+/// and `</span>`, `d` is the current node: one `i` goes under it, 7 deep, and the limit of 7
+/// stops the second.
+#[test]
+fn the_entries_below_an_iteration_are_read_again_when_a_hook_put_one_under_it() {
+    let input = "<body><div id=d><span id=c><b><p id=fb><script>x</script></b></p></span>\
+                 <i><i><i>";
+    let mut hook = Recorder::with(|tree, script, _| {
+        let p = tree.parent(script).unwrap();
+        let b = tree.parent(p).unwrap();
+        let c = tree.parent(b).unwrap();
+        let d = tree.parent(c).unwrap();
+        let body = tree.parent(d).unwrap();
+        let html = tree.parent(body).unwrap();
+        tree.append_child(html, p).unwrap();
+        tree.append_child(body, c).unwrap();
+        tree.append_child(p, d).unwrap();
+    });
+    let tree = parse_document_with_hook(input, &deep(7), &mut hook);
+    assert_eq!(tree.stopped_by(), Some(Limit::Depth));
+    assert_eq!(depth_of(&tree), 7);
+    assert_eq!(name(&tree, tree.parent(by_id(&tree, "d")).unwrap()), "b");
+}
+
+/// When the furthest block holds the place step 4.23 would put it at, the iteration takes it
+/// out of the tree and its subtree counts from its own top. The hook moves the furthest block
+/// `p` up to the `html` element and the common ancestor `d` (with the `b` under it) under the
+/// `p`: `</b>` leaves the `p` 1 deep, the new `b` 2 and `d` 3, and the `i` goes under the new
+/// `b`, inside a limit of 6. Counted from `d`'s place, the moved `b` would be 7 deep.
+#[test]
+fn a_furthest_block_that_holds_the_place_counts_from_its_own_top() {
+    let input = "<body><div id=d><b><p id=fb><script>x</script></b><i id=after>";
+    let mut hook = Recorder::with(|tree, script, _| {
+        let p = tree.parent(script).unwrap();
+        let b = tree.parent(p).unwrap();
+        let d = tree.parent(b).unwrap();
+        let html = tree.parent(tree.parent(d).unwrap()).unwrap();
+        tree.append_child(html, p).unwrap();
+        tree.append_child(p, d).unwrap();
+    });
+    let tree = parse_document_with_hook(input, &deep(6), &mut hook);
+    assert_eq!(tree.stopped_by(), None);
+    assert_eq!(depth_of(&tree), 2);
+}
+
+/// The walk of an iteration that moves the furthest block's children down is steps, each node
+/// one (`limits.rs`, `Steps`): the hook moved `p` up to `html`, so `</b>` moves its 1,002
+/// children down and walks them once. Without the move nothing is walked.
+#[test]
+fn the_walk_of_a_move_down_is_steps() {
+    const S: usize = 1_000;
+    let input = format!(
+        "<b><i><p id=fb><script id=s>x</script>{}</b>",
+        "<br>".repeat(S)
     );
+    let moved = parse_document_with_hook(
+        &input,
+        &deep(512),
+        &mut Recorder::with(|tree, script, _| {
+            let p = tree.parent(script).unwrap();
+            let html = tree.children(tree.root())[0];
+            tree.append_child(html, p).unwrap();
+        }),
+    );
+    let still = parse_document_with_hook(&input, &deep(512), &mut Recorder::with(|_, _, _| {}));
+    assert_eq!(moved.stopped_by(), None);
+    assert_eq!(still.stopped_by(), None);
+    let more = moved.steps() - still.steps();
+    assert!((S + 2..2 * (S + 2)).contains(&more), "{more} more steps");
+}
+
+/// A `head` put back on the stack of open elements (after head, 13.2.6.4.6) leaves the stack
+/// ordered: a later adoption agency iteration reads only the entries from its formatting
+/// element up, as many steps as with no `head` put back.
+#[test]
+fn a_head_put_back_on_the_stack_leaves_it_ordered() {
+    let steps = |input: &str| parse_document(input, &deep(512)).steps();
+    let iteration = |prefix: &str| {
+        steps(&format!("{prefix}<a><span><div></a>")) - steps(&format!("{prefix}<a><span><div>"))
+    };
+    assert_eq!(iteration("<head></head><link>"), iteration(""));
+}
+
+/// A write that sets the text content of an element and so takes away the elements under it
+/// makes the parser read its entries' depths again: the hook empties the `body`, so the three
+/// `div` are out of the document, the last one 3 deep in its own tree, and three `i` go under
+/// it inside a limit of 6.
+#[test]
+fn a_text_content_write_that_takes_away_elements_is_read_again() {
+    let input = "<body><div><div><div><script>x</script><i><i><i>";
+    let mut hook = Recorder::with(|tree, script, _| {
+        let mut body = script;
+        for _ in 0..4 {
+            body = tree.parent(body).unwrap();
+        }
+        tree.set_text_content(body, "t").unwrap();
+    });
+    let tree = parse_document_with_hook(input, &deep(6), &mut hook);
+    assert_eq!(tree.stopped_by(), None);
+}
+
+/// The `frameset` start tag in body (13.2.6.4.7) takes the `body` out: when a hook put the
+/// `html` element under the `body`, the parser reads its depth again. The hook removes the
+/// `head`, puts the `body` under a new `div` and the `html` element under the `body`; the
+/// `frameset` then goes under the `html` element, 2 deep in the `body`'s tree, so 3 deep,
+/// inside a limit of 3.
+#[test]
+fn the_frameset_rule_reads_the_html_elements_depth_again() {
+    let input = "</body><script>x</script><frameset>";
+    let mut hook = Recorder::with(|tree, script, _| {
+        let body = tree.parent(script).unwrap();
+        let html = tree.parent(body).unwrap();
+        let head = tree.children(html)[0];
+        tree.remove_node(head).unwrap();
+        let top = tree.create_element_ns(Namespace::Html, "div").unwrap();
+        tree.append_child(top, body).unwrap();
+        tree.append_child(body, html).unwrap();
+    });
+    let tree = parse_document_with_hook(input, &deep(3), &mut hook);
+    assert_eq!(tree.stopped_by(), None);
 }
 
 /// A tiny xorshift generator: the property test is seeded and gives the same inputs each run.
@@ -1578,7 +1778,13 @@ impl Writer {
             5 => tree.set_attribute(a, "encoding", "text/html"),
             6 => match tree.clone_node(a, true) {
                 Ok(copy) => {
-                    self.made.extend(tree.descendants(copy));
+                    // The copy and every node under it, template contents included.
+                    let mut pending = vec![copy];
+                    while let Some(node) = pending.pop() {
+                        self.made.insert(node);
+                        pending.extend(tree.children(node).iter().copied());
+                        pending.extend(contents_of(tree, node));
+                    }
                     self.known.push(copy);
                     tree.append_child(b, copy)
                 }
@@ -1631,6 +1837,28 @@ fn cycle_in(tree: &Tree, nodes: &HashSet<NodeId>) -> bool {
     })
 }
 
+/// The tops of the trees of `nodes`, through parents and template hosts (no cycle: the caller
+/// checked with [`cycle_in`]).
+fn tops(tree: &Tree, nodes: &HashSet<NodeId>) -> Vec<NodeId> {
+    let hosts: std::collections::HashMap<NodeId, NodeId> = nodes
+        .iter()
+        .filter_map(|&n| contents_of(tree, n).map(|c| (c, n)))
+        .collect();
+    let mut found: Vec<NodeId> = nodes
+        .iter()
+        .map(|&node| {
+            let mut at = node;
+            while let Some(up) = tree.parent(at).or_else(|| hosts.get(&at).copied()) {
+                at = up;
+            }
+            at
+        })
+        .collect();
+    found.sort();
+    found.dedup();
+    found
+}
+
 /// Whether `node` is an HTML or SVG `script` element.
 fn is_script(tree: &Tree, node: NodeId) -> bool {
     matches!(
@@ -1654,6 +1882,9 @@ fn random_case(seed: u64, n: usize, writes: bool) -> Vec<String> {
         if depth > n {
             fault(format!("{depth} deep"));
         }
+        if tree.stopped_by() == Some(Limit::Depth) && depth != n {
+            fault(format!("stopped by Depth, {depth} deep"));
+        }
         return faults;
     }
     let mut hook = Writer {
@@ -1663,11 +1894,17 @@ fn random_case(seed: u64, n: usize, writes: bool) -> Vec<String> {
         made: HashSet::new(),
     };
     let tree = parse_document_with_hook(&input, &deep(n), &mut hook);
-    let mut reached: HashSet<NodeId> = tree.descendants(tree.root()).into_iter().collect();
-    reached.insert(tree.root());
-    for &node in &hook.known {
-        reached.extend(tree.descendants(node));
-        reached.insert(node);
+    // Every node reached from the root and from the nodes the hook knew, through children,
+    // template contents and parents.
+    let mut reached: HashSet<NodeId> = HashSet::new();
+    let mut pending: Vec<NodeId> = hook.known.clone();
+    pending.push(tree.root());
+    while let Some(node) = pending.pop() {
+        if reached.insert(node) {
+            pending.extend(tree.children(node).iter().copied());
+            pending.extend(contents_of(&tree, node));
+            pending.extend(tree.parent(node));
+        }
     }
     if cycle_in(&tree, &reached) {
         fault("a cycle".to_string());
@@ -1676,6 +1913,14 @@ fn random_case(seed: u64, n: usize, writes: bool) -> Vec<String> {
     let depth = depth_of(&tree);
     if depth > n {
         fault(format!("{depth} deep"));
+    }
+    // The trees the hook holds, each counted from its own top.
+    let held = deepest_from(&tree, &tops(&tree, &reached));
+    if held > n {
+        fault(format!("a tree the hook holds is {held} deep"));
+    }
+    if tree.stopped_by() == Some(Limit::Depth) && held != n {
+        fault(format!("stopped by Depth, {held} deep"));
     }
     let mut called = HashSet::new();
     for &script in &hook.calls {
@@ -1693,9 +1938,13 @@ fn random_case(seed: u64, n: usize, writes: bool) -> Vec<String> {
 
 /// Random markup from the alphabet of [`PIECES`] at depth limits 8, 10 and 16, each input
 /// parsed without a hook and with a hook that writes at random: after each parse no node of
-/// the tree is deeper than the limit, the nodes reached from the root and from the nodes the
-/// hook knew have no cycle of parents and hosts, and each script element the parser inserted
-/// had one call. Seeded: 3 limits × 2 ways × 1,000 seeds, 6,000 parses.
+/// the tree, nor of a tree the hook holds (counted from its own top), is deeper than the
+/// limit; a parse stopped by `Depth` holds an element at the limit (ruling 1 of fix round 3);
+/// the nodes reached from the root and from the nodes the hook knew have no cycle of parents
+/// and hosts; and each script element the parser inserted had one call. Seeded: 3 limits × 2
+/// ways × 1,000 seeds, 6,000 parses. The stop check holds for these seeds; the adoption
+/// agency's stop on a tree a hook built may hold none at the limit
+/// (`an_adoption_agency_move_past_the_limit_stops_with_no_element_at_it`).
 #[test]
 fn random_markup_and_writes_keep_the_depth_limit_a_tree_and_one_call() {
     let mut faults = Vec::new();

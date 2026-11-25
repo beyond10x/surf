@@ -115,25 +115,32 @@ impl TreeBuilder {
             // 4.12, 4.13. No pending redirects, no sanitizer.
             // 4.14.
             let (initial_target, initial_reference) = self.appropriate_place(Some(common_ancestor));
-            // 4.15.
+            // 4.15. The place's reference child, the `table` of foster parenting, is a child of
+            // its target (`appropriate_place`), so `lastNode` stays the furthest block.
             if !self.is_child_or_none(initial_reference, initial_target) {
                 last_node = None;
             }
+            debug_assert!(last_node.is_some());
+            // Whether step 4.23 will refuse to insert `lastNode` because it would be its own
+            // ancestor: the furthest block is above the place. The inner loop moves only the
+            // furthest block, with what is under it, so the answer is the same there; the walk
+            // to the root is made once, each node a step.
+            let block_holds_target =
+                self.is_host_including_inclusive_ancestor(furthest_block, initial_target);
             // The depth limit, for the whole iteration, before anything moves. The inner loop
             // removes from the stack only elements between the formatting element and the
             // furthest block, none of them a `table` or a `template` (they are not special), so
             // the place of step 4.19 is the place of step 4.14.
-            let furthest_block_depth = self.tree.depth(furthest_block);
+            let inserted =
+                !block_holds_target && *self.tree.data(initial_target) != NodeData::Document;
             if !self.adoption_fits(
                 furthest_block,
-                initial_target,
-                last_node.is_some(),
+                (initial_target, initial_reference),
+                inserted,
                 nodes - 1,
             ) {
                 return;
             }
-            // The clones step 4.18.6 makes, each the parent of the one before.
-            let mut clones = Vec::new();
             // 4.16.
             let mut inner_loop_counter = 0;
             // 4.17.
@@ -178,7 +185,6 @@ impl TreeBuilder {
                     unreachable!("`active_position` finds an element");
                 };
                 let new = self.create_admitted_element(&token.name, &token.attributes);
-                clones.push(new);
                 self.active[at] = Entry::Element { node: new, token };
                 self.open.replace(node_stack, new);
                 let node = new;
@@ -191,12 +197,13 @@ impl TreeBuilder {
                 // 4.18.11. "Keep": append `lastNode` to `node`.
                 if let Some(last) = last_node {
                     self.tree.remove(last, &self.steps);
-                    self.tree.link(node, last, None, &self.steps);
+                    self.tree.insert(node, last, None, &self.steps);
                 }
                 last_node = Some(node);
             }
             // 4.19, 4.20. Where `lastNode` goes: the appropriate place given the common ancestor.
             let (target, reference) = self.appropriate_place(Some(common_ancestor));
+            debug_assert_eq!((target, reference), (initial_target, initial_reference));
             // 4.21. No pending redirects.
             // 4.22. `lastNode` is taken out of its parent.
             if let Some(last) = last_node
@@ -205,15 +212,16 @@ impl TreeBuilder {
             {
                 self.tree.remove(last, &self.steps);
             }
-            // 4.23. And inserted at that place.
+            // 4.23. And inserted at that place, unless it is above the place: `lastNode` is the
+            // furthest block or a clone above it, so it is exactly when the furthest block is.
             if let Some(last) = last_node
                 && self.tree.parent(last).is_none()
-                && !self.is_host_including_inclusive_ancestor(last, target)
+                && !block_holds_target
                 && !(*self.tree.data(target) == NodeData::Document
                     && self.tree.has_element_child(target, &self.steps))
                 && self.is_child_or_none(reference, target)
             {
-                self.tree.link(target, last, reference, &self.steps);
+                self.tree.insert(target, last, reference, &self.steps);
             }
             // 4.24. A new element for the formatting element's token, taken out of its entry,
             // which step 4.25 removes.
@@ -260,73 +268,53 @@ impl TreeBuilder {
             {
                 self.tree
                     .move_children(furthest_block, new_element, &self.steps);
-                self.tree.link(parent, new_element, reference, &self.steps);
+                self.tree
+                    .insert(parent, new_element, reference, &self.steps);
             }
             // 4.31, 4.32. No redirection to update.
-            self.settle_depths(&clones, furthest_block, furthest_block_depth, new_element);
+            // The depths of the entries the iteration moved or made: on an ordered stack those
+            // from the formatting element's place up (the clones, the furthest block, the new
+            // element and the entries under the furthest block), else all.
+            self.settle_entries(if self.ordered { formatting_stack } else { 0 });
         }
     }
 
     /// Whether the moves of an outer iteration keep the tree inside the depth limit, checked
     /// before the inner loop changes anything; when they do not, parsing stops there and the
-    /// iteration makes no change. With the furthest block moved (`moves`), the iteration puts
-    /// `clones` new elements under `target`, the furthest block under them, the new formatting
-    /// element under it and the furthest block's children under that: the deepest new place is
-    /// the new formatting element's, and the furthest block's children, with all under them,
-    /// shift by the new formatting element's depth less the furthest block's. Only a shift
-    /// down walks them, each node a step; a shift up or none walks nothing. The places are
-    /// those of a whole iteration: a step that refuses an insertion leaves its nodes out of
-    /// the tree, which makes nothing deeper.
+    /// iteration makes no change. The iteration puts `clones` new elements in a chain, the
+    /// furthest block under the last, the new formatting element under the furthest block and
+    /// the furthest block's children under that. Step 4.23 puts the chain at `place` when it
+    /// is `inserted`; else the chain stays out of the tree, counted from its own top. The new
+    /// formatting element is the deepest new place; the furthest block's children, and every
+    /// node under them, move down when it is deeper than the furthest block was. Only then are
+    /// they walked for the deepest of them, each node a step, and the check made: a move that
+    /// makes no node deeper keeps every node inside the limit, and walks nothing.
     fn adoption_fits(
         &mut self,
         furthest_block: NodeId,
-        target: NodeId,
-        moves: bool,
+        place: (NodeId, Option<NodeId>),
+        inserted: bool,
         clones: usize,
     ) -> bool {
-        let max = self.limits.max_depth;
-        let old = self.tree.depth(furthest_block);
-        let chain = self.tree.depth(target) + clones;
-        let block = if moves { chain + 1 } else { old };
-        let new_element = block + 1;
-        let shift = new_element.saturating_sub(old);
-        let fits = chain <= max
-            && new_element <= max
-            && (shift == 0 || self.tree.deepest_below(furthest_block, &self.steps) + shift <= max);
-        if !fits {
-            self.stop_at(Limit::Depth);
-        }
-        fits
-    }
-
-    /// Gives the nodes an outer iteration moved their depths, top down, once: the clones (in
-    /// the order they were made, each the parent of the one before) and the furthest block
-    /// each from its parent, then the new formatting element, then
-    /// the furthest block's children with every node under them, shifted by the new formatting
-    /// element's depth less `old`, the furthest block's before the iteration. When that is no
-    /// change, nothing under them is visited; else each node visited is a step.
-    fn settle_depths(
-        &mut self,
-        clones: &[NodeId],
-        furthest_block: NodeId,
-        old: usize,
-        new_element: NodeId,
-    ) {
-        for &clone in clones.iter().rev() {
-            self.tree.settle(clone);
+        let old = self
+            .open
+            .depth(furthest_block)
+            .expect("the furthest block is an entry with a settled depth");
+        let top = if inserted { self.place_depth(place) } else { 0 };
+        let new_element = top + clones + 2;
+        if new_element <= old {
+            return true;
         }
         // The furthest block is no `template`: a `template` start tag puts a marker on the
         // list, so a formatting element above an open `template` is never the one step 4.3
         // finds. So nothing hangs under it but its children.
         debug_assert!(self.tree.contents(furthest_block).is_none());
-        self.tree.settle(furthest_block);
-        self.tree.settle(new_element);
-        let shift = self.tree.depth(new_element) as i64 - old as i64;
-        if shift != 0 {
-            for child in self.tree.children(new_element).to_vec() {
-                self.tree.shift(child, shift, &self.steps);
-            }
+        let below = self.tree.height_below(furthest_block, &self.steps);
+        let fits = new_element + below <= self.limits.max_depth;
+        if !fits {
+            self.stop_at(Limit::Depth);
         }
+        fits
     }
 
     /// The nodes and the stored bytes of the elements an outer iteration creates, given the

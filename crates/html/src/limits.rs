@@ -19,12 +19,13 @@ pub struct Limits {
     /// decoded; the cut input is parsed to its end. Default 16 MiB (16,777,216), the body limit
     /// of `surf-fetch`.
     pub max_input_bytes: usize,
-    /// The most elements on the stack of open elements, and the deepest node of the tree: the
-    /// elements on its path from the root, itself included, a template counted for the nodes
-    /// of its contents. An element that would be the next one on the stack, or deeper in the
-    /// tree, is not created; a move of the adoption agency algorithm or a `selectedcontent`
-    /// copy that would put a node deeper is not made (the crate documentation, "Limits").
-    /// Default 512.
+    /// The deepest node of the tree: the elements on its path from the root, itself included,
+    /// a template counted for the nodes of its contents; for a subtree out of the tree (a
+    /// hook's writes make them), from its own top. It bounds the tree as it is when the parser
+    /// would insert or move a node, not the stack of open elements: an element that would be
+    /// deeper is not created, and a move of the adoption agency algorithm or a
+    /// `selectedcontent` copy that would put a node deeper is not made (the crate
+    /// documentation, "Limits"). Default 512.
     pub max_depth: usize,
     /// The most nodes the tree holds ([`crate::Tree::node_count`]: the document, every node
     /// under it, template contents and nodes removed from their parent). Default 1,048,576.
@@ -46,8 +47,11 @@ pub struct Limits {
     /// 536 MiB (inferred from the bound, not measured).
     pub max_stored_bytes: usize,
     /// The most entries tree construction visits in its scans of the stack of open elements, of
-    /// the list of active formatting elements and of a node's children, checked after each
-    /// token ([`crate::Tree::steps`] reads them). Default 134,217,728 (2^27).
+    /// the list of active formatting elements and of a node's children, and the nodes its walks
+    /// for the depth limit visit (a walk up to read a depth, the depths of the stack's entries
+    /// read again after a hook's write or an adoption agency iteration, and the walk of the
+    /// nodes an adoption agency iteration would move deeper), checked after each token
+    /// ([`crate::Tree::steps`] reads them). Default 134,217,728 (2^27).
     pub max_steps: usize,
 }
 
@@ -80,8 +84,8 @@ impl Default for Limits {
 pub enum Limit {
     /// The input was longer than [`Limits::max_input_bytes`]; the parse ran over its prefix.
     InputBytes,
-    /// An element would have been one more than [`Limits::max_depth`] on the stack of open
-    /// elements, or a node of the tree deeper than it.
+    /// A node the parser would have made or moved would have been deeper than
+    /// [`Limits::max_depth`] in the tree as it was then.
     Depth,
     /// A node would have taken the tree past [`Limits::max_nodes`].
     Nodes,

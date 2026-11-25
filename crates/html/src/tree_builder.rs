@@ -338,14 +338,20 @@ fn token_bytes(name: &str, attributes: &[TokenAttribute]) -> usize {
 }
 
 /// The stack of open elements (13.2.4.2), the topmost (the `html` element) first, read as a
-/// slice. It keeps, for each node, how many times the node is on it, so that "is in the stack
-/// of open elements" is answered in O(1) and visits no entry ([`OpenElements::holds`]). It also
-/// keeps the positions of the entries that bound "has an element in scope", so that "has a
-/// `select` element in scope" visits one entry, also at every `input` start tag of a deep tree.
+/// slice. It keeps, for each node, whether the node is on it and the depth of its entry, so
+/// that "is in the stack of open elements" is answered in O(1) and visits no entry
+/// ([`OpenElements::holds`]), and the depth of an entry is read without a walk
+/// ([`OpenElements::depth`]). It also keeps the positions of the entries that bound "has an
+/// element in scope", so that "has a `select` element in scope" visits one entry, also at
+/// every `input` start tag of a deep tree.
 #[derive(Debug, Default)]
 struct OpenElements {
     stack: Vec<NodeId>,
-    /// For each node of the arena by its index, the times it is on the stack (0 or 1).
+    /// For each node of the arena by its index: 0 when it is not on the stack; [`UNSETTLED`]
+    /// when it is and its depth is being read again ([`TreeBuilder::settle_entries`]); else
+    /// its depth in the tree plus 1. The depth of an entry is the elements on its path from
+    /// the top of its tree, itself included, a template counted for the nodes of its contents
+    /// (the count of [`Limits::max_depth`]). A node is on the stack at most once.
     on_stack: Vec<u32>,
     /// For each node of the arena by its index, whether it bounds "has an element in scope"
     /// ([`OpenElements::mark_boundary`]).
@@ -385,21 +391,22 @@ impl OpenElements {
         self.bounds.get(node.index()).copied().unwrap_or(false)
     }
 
-    fn entered(&mut self, node: NodeId) {
+    fn entered(&mut self, node: NodeId, depth: u32) {
         let index = node.index();
         if self.on_stack.len() <= index {
             self.on_stack.resize(index + 1, 0);
         }
-        self.on_stack[index] += 1;
+        debug_assert_eq!(
+            self.on_stack[index], 0,
+            "a node is on the stack at most once"
+        );
+        self.on_stack[index] = depth;
     }
 
     fn left(&mut self, node: NodeId) {
         let index = node.index();
-        self.on_stack[index] -= 1;
-        if self.watching
-            && self.on_stack[index] == 0
-            && self.watched.get(index).copied().unwrap_or(false)
-        {
+        self.on_stack[index] = 0;
+        if self.watching && self.watched.get(index).copied().unwrap_or(false) {
             self.watched[index] = false;
             self.ended.push(node);
         }
@@ -421,6 +428,25 @@ impl OpenElements {
         self.on_stack.get(node.index()).is_some_and(|&n| n > 0)
     }
 
+    /// The depth of `node`'s entry, when `node` is on the stack and its depth is settled: no
+    /// entry is visited.
+    fn depth(&self, node: NodeId) -> Option<usize> {
+        match self.on_stack.get(node.index()) {
+            Some(&n) if n > 0 && n != UNSETTLED => Some(n as usize - 1),
+            _ => None,
+        }
+    }
+
+    /// Whether `node` is on the stack with its depth being read again.
+    fn unsettled(&self, node: NodeId) -> bool {
+        self.on_stack.get(node.index()) == Some(&UNSETTLED)
+    }
+
+    /// Sets the depth of `node`'s entry; `None` marks it [`UNSETTLED`].
+    fn set_depth(&mut self, node: NodeId, depth: Option<usize>) {
+        self.on_stack[node.index()] = entry_value(depth);
+    }
+
     /// The lowest entry that bounds "has an element in scope", if any: no entry is scanned.
     fn last_boundary(&self) -> Option<NodeId> {
         self.boundaries.last().map(|&at| self.stack[at])
@@ -435,8 +461,10 @@ impl OpenElements {
         }
     }
 
-    fn push(&mut self, node: NodeId) {
-        self.entered(node);
+    /// Pushes `node` with the depth of its entry; `None` leaves it [`UNSETTLED`] for the
+    /// caller to settle.
+    fn push(&mut self, node: NodeId, depth: Option<usize>) {
+        self.entered(node, entry_value(depth));
         self.add_boundary(self.stack.len(), node);
         self.stack.push(node);
     }
@@ -472,8 +500,9 @@ impl OpenElements {
         node
     }
 
+    /// Inserts `node` at `at`, its depth [`UNSETTLED`] for the caller to settle.
     fn insert(&mut self, at: usize, node: NodeId) {
-        self.entered(node);
+        self.entered(node, UNSETTLED);
         for b in &mut self.boundaries {
             if *b >= at {
                 *b += 1;
@@ -483,14 +512,26 @@ impl OpenElements {
         self.add_boundary(at, node);
     }
 
-    /// Puts `node` in the place of the entry at `at`.
+    /// Puts `node` in the place of the entry at `at`, its depth [`UNSETTLED`] for the caller to
+    /// settle.
     fn replace(&mut self, at: usize, node: NodeId) {
-        self.entered(node);
+        self.entered(node, UNSETTLED);
         let old = std::mem::replace(&mut self.stack[at], node);
         self.left(old);
         self.boundaries.retain(|&b| b != at);
         self.add_boundary(at, node);
     }
+}
+
+/// The value of [`OpenElements`]'s `on_stack` for an entry whose depth is being read again.
+const UNSETTLED: u32 = u32::MAX;
+
+/// The value of `on_stack` for an entry of `depth`, [`UNSETTLED`] for `None`. A depth past
+/// `u32::MAX - 2` is kept as that.
+fn entry_value(depth: Option<usize>) -> u32 {
+    depth.map_or(UNSETTLED, |d| {
+        u32::try_from(d + 1).map_or(UNSETTLED - 1, |v| v.min(UNSETTLED - 1))
+    })
 }
 
 /// An entry of the list of active formatting elements (13.2.4.3).
@@ -590,7 +631,8 @@ pub(crate) fn parse_fragment(
             builder.tokenizer.switch_to(state);
         }
     }
-    builder.open.push(html);
+    // Out of the tree: 1 deep in its own. What goes into it goes into the fragment, 0 deep.
+    builder.open.push(html, Some(1));
     if builder.is_html(element, &["template"]) {
         builder.template_modes.push(Mode::InTemplate);
     }
@@ -660,6 +702,11 @@ struct TreeBuilder {
     original_mode: Mode,
     /// The stack of open elements, the topmost (the `html` element) first.
     open: OpenElements,
+    /// No entry of the stack of open elements is under an entry above it in the tree, as the
+    /// last [`Self::settle_entries`] of the whole stack found; the parser's own insertions and
+    /// moves keep it so. Then an adoption agency iteration changes the depth of no entry below
+    /// its formatting element, and only the entries from there up are read again.
+    ordered: bool,
     /// The list of active formatting elements, the least recently added first.
     active: Vec<Entry>,
     head: Option<NodeId>,
@@ -875,6 +922,7 @@ impl TreeBuilder {
             mode: Mode::Initial,
             original_mode: Mode::Initial,
             open: OpenElements::default(),
+            ordered: true,
             active: Vec::new(),
             head: None,
             form: None,
@@ -920,7 +968,8 @@ impl TreeBuilder {
     /// input or by the end of a parse a limit stopped, `skip` with [`NotRun::Eof`]; an SVG
     /// `script`, however it left, `skip` with [`NotRun::Svg`]. After `run` the names the `html`
     /// and `body` merges keep are read again from the elements, which the hook may have
-    /// changed.
+    /// changed, and so are the depths of the entries of the stack of open elements when it
+    /// moved or removed an element.
     fn report_ended(&mut self, hook: &mut dyn ScriptHook) {
         let end_tag = self.script_end_tag.take();
         for script in std::mem::take(&mut self.open.ended) {
@@ -938,6 +987,9 @@ impl TreeBuilder {
                 None => {
                     hook.run(&mut self.tree, script);
                     self.merged_names.clear();
+                    if self.tree.take_moved() {
+                        self.settle_entries(0);
+                    }
                 }
             }
         }
@@ -1038,37 +1090,106 @@ impl TreeBuilder {
         true
     }
 
-    /// Whether the stack of open elements has room for one element more (the depth limit).
-    /// When it has not, parsing stops.
-    fn room_on_stack(&mut self) -> bool {
+    /// The depth of `node` in the tree as it is: the elements on its path from the top of its
+    /// tree (the document, or the top of a subtree out of it), itself included, a template
+    /// counted for the nodes of its contents. Read from the first entry of the stack of open
+    /// elements met on the way up whose depth is settled; each parent or host passed to is a
+    /// step. The insertion places of the parser are entries, the parent of an entry, or a
+    /// template's contents, so most reads pass to nothing or to one node.
+    fn depth_of(&self, node: NodeId) -> usize {
+        self.walk_up(node).0
+    }
+
+    /// [`Self::depth_of`], and whether the walk passed an [`UNSETTLED`] entry.
+    fn walk_up(&self, node: NodeId) -> (usize, bool) {
+        let mut depth = 0;
+        let mut passed_unsettled = false;
+        let mut at = node;
+        // A tree has no cycle; the bound only keeps the walk finite.
+        for _ in 0..=self.tree.node_count() {
+            if let Some(known) = self.open.depth(at) {
+                return (depth + known, passed_unsettled);
+            }
+            passed_unsettled |= at != node && self.open.unsettled(at);
+            depth += usize::from(self.tree.is_element(at));
+            match self.tree.parent_or_host(at) {
+                Some(up) => {
+                    self.visit();
+                    at = up;
+                }
+                None => break,
+            }
+        }
+        (depth, passed_unsettled)
+    }
+
+    /// The depth of the parent of an insertion place, `(parent, reference)`: a reference child
+    /// on the stack (the `table` of foster parenting) gives its parent's depth without a walk.
+    fn place_depth(&self, (parent, reference): (NodeId, Option<NodeId>)) -> usize {
+        match reference.and_then(|r| self.open.depth(r)) {
+            Some(depth) => depth - 1,
+            None => self.depth_of(parent),
+        }
+    }
+
+    /// Reads the depths of the entries of the stack of open elements from `from` up again
+    /// from the tree, bottom up, each entry from its parent or host up to the first entry
+    /// already read ([`Self::walk_up`]). After the parser's own changes an entry's parent is
+    /// most often the entry below it: one step. From 0 it also finds whether the stack is
+    /// [`Self::ordered`]: a walk that passes an entry above its own is under it.
+    fn settle_entries(&mut self, from: usize) {
+        for at in from..self.open.len() {
+            let node = self.open[at];
+            self.open.set_depth(node, None);
+        }
+        let mut ordered = true;
+        for at in from..self.open.len() {
+            let node = self.open[at];
+            let (depth, passed_unsettled) = self.walk_up(node);
+            ordered &= !passed_unsettled;
+            self.open.set_depth(node, Some(depth));
+        }
+        if from == 0 {
+            self.ordered = ordered;
+        } else {
+            debug_assert!(
+                ordered,
+                "an ordered stack has no entry under an entry above it"
+            );
+        }
+    }
+
+    /// Whether an element inserted at `place` stays inside the depth limit: the depth of
+    /// `place`'s parent ([`Self::place_depth`]) is below the limit. When it is not, parsing
+    /// stops: that parent is an element at the limit. `Some` with that depth when it does;
+    /// `None` after parsing stopped.
+    fn room_at(&mut self, place: (NodeId, Option<NodeId>)) -> Option<usize> {
         if self.stopped {
-            return false;
+            return None;
         }
-        if self.open.len() >= self.limits.max_depth {
+        let depth = self.place_depth(place);
+        if depth >= self.limits.max_depth {
             self.stop_at(Limit::Depth);
-            return false;
+            return None;
         }
-        true
+        Some(depth)
     }
 
-    /// Whether an element inserted under `parent` stays inside the depth limit in the tree:
-    /// `parent`'s depth ([`Tree::depth`], which the tree keeps, so nothing is walked) is below
-    /// the limit. When it is not, parsing stops. The stack of open elements does not tell the
-    /// tree's depth: foster parenting, the adoption agency algorithm, the `selectedcontent`
-    /// copy and a hook's writes put nodes deeper or shallower than their entries.
-    fn room_under(&mut self, parent: NodeId) -> bool {
-        if self.tree.depth(parent) >= self.limits.max_depth {
-            self.stop_at(Limit::Depth);
-            return false;
-        }
-        true
-    }
-
-    /// The appropriate place for an element, when it has room under it ([`Self::room_under`]);
-    /// `None`, and parsing stopped, when it has not.
-    fn place_with_room(&mut self) -> Option<(NodeId, Option<NodeId>)> {
+    /// The appropriate place for an element and its parent's depth, when it has room under it
+    /// ([`Self::room_at`]); `None`, and parsing stopped, when it has not.
+    fn place_with_room(&mut self) -> Option<((NodeId, Option<NodeId>), usize)> {
         let place = self.appropriate_place(None);
-        self.room_under(place.0).then_some(place)
+        let depth = self.room_at(place)?;
+        Some((place, depth))
+    }
+
+    /// Pushes `element`, just inserted at a place whose parent is `depth` deep, onto the stack
+    /// of open elements: its depth is one more. A place refuses an element only when its
+    /// parent is the document and has an element (13.2.6.1); then the element is the top of
+    /// its own tree, 1 deep, which is the document's 0 and one more.
+    fn push_inserted(&mut self, element: NodeId, depth: usize) {
+        debug_assert!(self.tree.parent(element).is_some() || depth == 0);
+        self.open.push(element, Some(depth + 1));
     }
 
     // 13.2.6.1 Creating and inserting nodes.
@@ -1241,16 +1362,13 @@ impl TreeBuilder {
         name: &str,
         attributes: &[TokenAttribute],
     ) -> Option<NodeId> {
-        if !self.room_on_stack() {
-            return None;
-        }
-        let location = self.place_with_room()?;
+        let (location, depth) = self.place_with_room()?;
         let element = match namespace {
             Namespace::Html => self.create_element(name, attributes)?,
             _ => self.create_foreign_element(namespace, name, attributes)?,
         };
         self.insert_element_at(element, location);
-        self.open.push(element);
+        self.push_inserted(element, depth);
         self.watch_script(element);
         Some(element)
     }

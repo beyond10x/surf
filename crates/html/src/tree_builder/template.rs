@@ -33,19 +33,16 @@ impl TreeBuilder {
         self.frameset_ok = false;
         self.mode = Mode::InTemplate;
         self.template_modes.push(Mode::InTemplate);
-        if !self.room_on_stack() {
-            return;
-        }
         // The insertion location is taken before the template is pushed, so that it is not
         // inside the template's own contents.
-        let Some(location) = self.place_with_room() else {
+        let Some((location, depth)) = self.place_with_room() else {
             return;
         };
         let Some(template) = self.create_element(name, attributes) else {
             return;
         };
-        self.open.push(template);
         self.insert_element_at(template, location);
+        self.push_inserted(template, depth);
     }
 
     /// The `template` end tag rule of in head.

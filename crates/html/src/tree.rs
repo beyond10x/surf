@@ -25,9 +25,10 @@
 //! Depth for a write: the elements among a node's inclusive ancestors, a template counted for
 //! the nodes of its contents, the count by which the depth limit bounds the tree in every parse
 //! (the crate documentation, "Limits"). An insertion that would give an element a depth past
-//! [`Limits::max_depth`] answers [`Limit::Depth`]. Each node's record keeps its depth for the
-//! parser's checks, so a write that gives a node a new parent gives every node under it its
-//! new depth: its cost grows with the subtree it moves.
+//! [`Limits::max_depth`] answers [`Limit::Depth`]; a node out of the tree is counted from the
+//! top of its own tree. No record keeps a depth: the parser keeps the depth of each entry of its
+//! stack of open elements and reads it again from the tree after a write that moved or removed
+//! an element ([`Tree::take_moved`]).
 //!
 //! Offsets and counts of character data are in UTF-16 code units, as the DOM's; an offset that
 //! falls between the two units of a surrogate pair answers [`WriteError::IndexSize`], since a
@@ -170,7 +171,6 @@ struct Node {
     /// For an element, its categories ([`Categories`]), decided when it was created; 0 for
     /// every other node.
     categories: u8,
-    depth: Depth,
 }
 
 /// The bytes of one node's record in the arena and of its entry in its parent's child list
@@ -252,18 +252,17 @@ pub struct Tree {
     stopped_by: Option<Limit>,
     steps: usize,
     limits: Limits,
+    moved: Moved,
 }
 
-/// The depth a node's record keeps ([`Tree::depth`]): the elements among its inclusive
-/// ancestors, a template counted for its contents. It is kept for every node with a parent or
-/// a host equal to its parent's or host's plus one for an element; a node with neither keeps
-/// what it had when it left its parent, at least its own count, so every node under it keeps
-/// at least its depth. It is not part of what a tree holds: two trees compare equal whatever
-/// it is.
+/// Whether a write of the public surface moved or removed an element since the parser last
+/// asked ([`Tree::take_moved`]): then the depths the parser keeps for its stack of open
+/// elements are read again from the tree. It decides no check, only when that cache is
+/// refreshed, and it is not part of what a tree holds: two trees compare equal whatever it is.
 #[derive(Clone, Copy, Debug, Default, Eq)]
-struct Depth(u32);
+struct Moved(bool);
 
-impl PartialEq for Depth {
+impl PartialEq for Moved {
     fn eq(&self, _: &Self) -> bool {
         true
     }
@@ -287,22 +286,21 @@ impl Tree {
             stopped_by: None,
             steps: 0,
             limits,
+            moved: Moved(false),
         };
         tree.create(data, 0);
         tree
     }
 
-    /// Adds a node with no parent to the arena, its depth its own count.
+    /// Adds a node with no parent to the arena.
     fn create(&mut self, data: NodeData, categories: u8) -> NodeId {
         let id = NodeId(self.nodes.len());
         self.stored_bytes += stored_bytes_of(&data);
-        let depth = Depth(u32::from(matches!(data, NodeData::Element { .. })));
         self.nodes.push(Node {
             data,
             parent: None,
             children: Vec::new(),
             categories,
-            depth,
         });
         id
     }
@@ -319,10 +317,6 @@ impl Tree {
     ) -> NodeId {
         let template_contents = (namespace == Namespace::Html && local_name == "template")
             .then(|| self.create(NodeData::DocumentFragment, 0));
-        if let Some(contents) = template_contents {
-            // Below its template, which has no parent: as deep as the template.
-            self.nodes[contents.0].depth = Depth(1);
-        }
         self.create(
             NodeData::Element {
                 namespace,
@@ -332,15 +326,6 @@ impl Tree {
             },
             categories.0,
         )
-    }
-
-    /// The depth of `node` ([`Depth`]): for a node of the tree, the elements on its path from
-    /// the root, itself included, a template counted for the nodes of its contents (the count
-    /// of [`crate::limits::Limits::max_depth`]); for a node out of the tree, at least the
-    /// elements on its path from its own root. Kept by every insertion, so reading it visits
-    /// nothing.
-    pub(crate) fn depth(&self, node: NodeId) -> usize {
-        self.nodes[node.0].depth.0 as usize
     }
 
     /// The template contents of `node`, if it is a template.
@@ -353,70 +338,36 @@ impl Tree {
         }
     }
 
-    /// Gives `node` the depth its parent or host gives it, and nothing under it: the change.
-    pub(crate) fn settle(&mut self, node: NodeId) -> i64 {
-        let above = self
-            .parent_or_host(node)
-            .map_or(0, |p| self.nodes[p.0].depth.0);
-        let new = above.saturating_add(u32::from(self.is_element(node)));
-        let old = std::mem::replace(&mut self.nodes[node.0].depth, Depth(new)).0;
-        i64::from(new) - i64::from(old)
-    }
-
-    /// Adds `change` to the depth of every node under `node`: its children and its template
-    /// contents, and theirs. Each node visited is a step, but a template's contents, which go
-    /// with their template.
-    fn shift_below(&mut self, node: NodeId, change: i64, steps: &Cell<usize>) {
-        let mut pending: Vec<NodeId> = self.contents(node).into_iter().collect();
-        pending.extend(self.nodes[node.0].children.iter().copied());
-        self.shift_all(pending, change, steps);
-    }
-
-    /// Adds `change` to the depth of `node` and of every node under it, each a step.
-    pub(crate) fn shift(&mut self, node: NodeId, change: i64, steps: &Cell<usize>) {
-        self.shift_all(vec![node], change, steps);
-    }
-
-    /// Adds `change` to the depth of the nodes of `pending` and of every node under them. Each
-    /// node visited is a step, but a template's contents, which go with their template.
-    fn shift_all(&mut self, mut pending: Vec<NodeId>, change: i64, steps: &Cell<usize>) {
-        if change == 0 {
-            return;
+    /// The most elements on a path down from a child of `node` to a node under it, the child
+    /// included, a template counted for the nodes of its contents: how much deeper than `node`
+    /// its deepest node is; 0 when no element is under it. `node`'s own template contents are
+    /// not walked. Each node visited is a step.
+    pub(crate) fn height_below(&self, node: NodeId, steps: &Cell<usize>) -> usize {
+        let mut height = 0;
+        let mut pending: Vec<(NodeId, usize)> = self.nodes[node.0]
+            .children
+            .iter()
+            .map(|&c| (c, 0))
+            .collect();
+        while let Some((at, above)) = pending.pop() {
+            visit(steps);
+            let depth = above + usize::from(self.is_element(at));
+            height = height.max(depth);
+            pending.extend(self.contents(at).map(|c| (c, depth)));
+            pending.extend(self.nodes[at.0].children.iter().map(|&c| (c, depth)));
         }
-        while let Some(at) = pending.pop() {
-            if self.nodes[at.0].data != NodeData::DocumentFragment {
-                visit(steps);
-            }
-            let depth = &mut self.nodes[at.0].depth.0;
-            *depth = u32::try_from((i64::from(*depth) + change).max(0)).unwrap_or(u32::MAX);
-            pending.extend(self.contents(at));
-            pending.extend(self.nodes[at.0].children.iter().copied());
-        }
+        height
     }
 
-    /// Gives `node`, which just got its parent, and every node under it, their depths. A node
-    /// with nothing under it visits nothing.
-    fn place(&mut self, node: NodeId, steps: &Cell<usize>) {
-        let change = self.settle(node);
-        self.shift_below(node, change, steps);
+    /// Whether a write of the public surface moved or removed an element since the last call,
+    /// which then reads `false` until the next such write ([`Moved`]).
+    pub(crate) fn take_moved(&mut self) -> bool {
+        std::mem::take(&mut self.moved.0)
     }
 
-    /// The deepest depth under `node` (its children and template contents, and theirs), or
-    /// `node`'s own when nothing is under it. Each node visited is a step, but a template's
-    /// contents.
-    pub(crate) fn deepest_below(&self, node: NodeId, steps: &Cell<usize>) -> usize {
-        let mut deepest = self.nodes[node.0].depth.0;
-        let mut pending: Vec<NodeId> = self.contents(node).into_iter().collect();
-        pending.extend(self.nodes[node.0].children.iter().copied());
-        while let Some(at) = pending.pop() {
-            if self.nodes[at.0].data != NodeData::DocumentFragment {
-                visit(steps);
-            }
-            deepest = deepest.max(self.nodes[at.0].depth.0);
-            pending.extend(self.contents(at));
-            pending.extend(self.nodes[at.0].children.iter().copied());
-        }
-        deepest as usize
+    /// Whether `node` is an element.
+    pub(crate) fn is_element(&self, node: NodeId) -> bool {
+        matches!(self.nodes[node.0].data, NodeData::Element { .. })
     }
 
     /// The categories `node` was created with: none for a node that is not an element.
@@ -448,23 +399,9 @@ impl Tree {
     }
 
     /// Inserts `node`, which has no parent, into `parent` before `reference`, or as its last
-    /// child when `reference` is `None` (the DOM's "insert"), and gives it and every node under
-    /// it their depths ([`Tree::depth`]; each node under it a step). The caller has checked
-    /// that `node` is no host-including inclusive ancestor of `parent`, and the depth limit.
+    /// child when `reference` is `None` (the DOM's "insert"). The caller has checked that
+    /// `node` is no host-including inclusive ancestor of `parent`, and the depth limit.
     pub(crate) fn insert(
-        &mut self,
-        parent: NodeId,
-        node: NodeId,
-        reference: Option<NodeId>,
-        steps: &Cell<usize>,
-    ) {
-        self.link(parent, node, reference, steps);
-        self.place(node, steps);
-    }
-
-    /// [`Tree::insert`] without the depths: the adoption agency algorithm moves a chain of
-    /// nodes and gives them their depths once, at the end of its iteration.
-    pub(crate) fn link(
         &mut self,
         parent: NodeId,
         node: NodeId,
@@ -554,8 +491,7 @@ impl Tree {
 
     /// Moves every child of `from` to the end of `to`'s children, in order, in one pass (the
     /// adoption agency algorithm's "take all of the child nodes of furthestBlock and append them
-    /// to newElement"). `to` is not `from` and not under it. Each child moved is a step. The
-    /// depths are the caller's, as for [`Tree::link`].
+    /// to newElement"). `to` is not `from` and not under it. Each child moved is a step.
     pub(crate) fn move_children(&mut self, from: NodeId, to: NodeId, steps: &Cell<usize>) {
         let children = std::mem::take(&mut self.nodes[from.0].children);
         for &child in &children {
@@ -752,10 +688,6 @@ impl Tree {
         }
     }
 
-    fn is_element(&self, node: NodeId) -> bool {
-        matches!(self.nodes[node.0].data, NodeData::Element { .. })
-    }
-
     fn is_text(&self, node: NodeId) -> bool {
         matches!(self.nodes[node.0].data, NodeData::Text(_))
     }
@@ -891,9 +823,12 @@ impl Tree {
     }
 
     /// Removes `node` from its parent, if it has one, and gives the parent's list back its
-    /// spare room.
+    /// spare room. An element removed is marked ([`Moved`]).
     fn detach(&mut self, node: NodeId) {
         if let Some(parent) = self.nodes[node.0].parent {
+            if self.is_element(node) {
+                self.moved.0 = true;
+            }
             self.remove(node, &Cell::new(0));
             shrink(&mut self.nodes[parent.0].children);
         }
@@ -987,9 +922,12 @@ impl Tree {
     }
 
     /// "Insert" (DOM) of `node` into `parent` before `child`, after the checks: a fragment's
-    /// children in its place, in order; a node with a parent leaves it first. Each node
-    /// inserted, and every node under it, gets its depth.
+    /// children in its place, in order; a node with a parent leaves it first. A node already
+    /// where it would go stays, and nothing changes. An element moved is marked ([`Moved`]).
     fn insert_checked(&mut self, node: NodeId, parent: NodeId, child: Option<NodeId>) {
+        if self.nodes[node.0].parent == Some(parent) && self.next_sibling(node) == child {
+            return;
+        }
         let nodes = match self.nodes[node.0].data {
             NodeData::DocumentFragment => {
                 let children = std::mem::take(&mut self.nodes[node.0].children);
@@ -1011,13 +949,11 @@ impl Tree {
         };
         for &n in &nodes {
             self.nodes[n.0].parent = Some(parent);
+            if self.is_element(n) {
+                self.moved.0 = true;
+            }
         }
-        self.nodes[parent.0]
-            .children
-            .splice(at..at, nodes.iter().copied());
-        for n in nodes {
-            self.place(n, &Cell::new(0));
-        }
+        self.nodes[parent.0].children.splice(at..at, nodes);
     }
 
     /// Creates an element in `namespace` named `local_name`, with no attribute and no parent
@@ -1243,7 +1179,6 @@ impl Tree {
             if let Some(parent) = parent {
                 self.nodes[copy.0].parent = Some(parent);
                 self.nodes[parent.0].children.push(copy);
-                self.place(copy, &Cell::new(0));
             }
             copy_of_node.get_or_insert(copy);
             if deep {
@@ -1446,6 +1381,13 @@ impl Tree {
                     Some(self.create_text_node(value)?)
                 };
                 // The list is taken whole: no room is kept.
+                if self.nodes[node.0]
+                    .children
+                    .iter()
+                    .any(|&c| self.is_element(c))
+                {
+                    self.moved.0 = true;
+                }
                 self.remove_children(node, &Cell::new(0));
                 if let Some(text) = text {
                     self.insert_checked(text, node, None);
