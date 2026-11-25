@@ -417,8 +417,22 @@ it be (a node is on it at most once). The step limit bounds every read of it: ea
 depth is read again is a step, also one with no parent, which no walk up reaches; an insertion
 into the stack or a removal from it counts each entry it moves and each scope boundary of the
 stack's list of them it visits; the `frameset` rule counts each entry it pops. The pops of
-"stop parsing" are not counted: they come once, after the last token, and a count there would
-change what the step limit checked for that token.
+"stop parsing" are not counted: they come once per parse pass, after its last token, and a
+count there would change what the step limit checked for that token. A `meta` that changes the
+encoding of `parse_document_bytes` ends the first pass and starts a second over the same bytes;
+that pass takes no hook, so its stack stays inside the depth limit.
+
+Read inside the token (fix round 5, ruling D423): with the stack that long, one token's work
+could pass the limit by any factor (one `</b>` whose inner loop removes N entries, each removal
+moving the M entries above it). The count is read after each token, inside every loop over the
+stack of open elements, its scope boundaries or the list of active formatting elements before
+each entry, and before every write of the parser to the tree. Past the limit the loop ends, the
+write is not made and parsing stops at `Steps`; an adoption agency iteration whose inner loop
+made clones puts them back at the place of step 4.14 first, so every node the parse made stays
+in the tree. Below the limit no read changes a tree or a count. A parse ends fewer than 4 ×
+`max_nodes` steps past the limit: past it only the rest of the stretch between two reads and
+the putting back are counted, and the longest stretches hold four pieces of work of fewer than
+`max_nodes` visits each (`limits.rs`, `max_steps`, has the derivation).
 
 Stored bytes, as `story:html-parser-limits` made them exact: the UTF-8 bytes of every string the
 tree holds, element local names, attribute names, prefixes and values, text, comment data,
@@ -435,7 +449,8 @@ and a text's first 8 bytes. At the defaults that is about 536 MiB (inferred from
 Nodes are not counted in the stored bytes: the node limit bounds them, and at 136 bytes each
 the default stored-byte limit would otherwise stop a tree long before the node limit. Steps:
 every entry visited in a scan of the stack of open elements or of the list of active formatting
-elements, and every child visited in a parent's child list, checked after each token;
+elements, and every child visited in a parent's child list, checked after each token (and,
+since fix round 5 of `story:html-script-hook`, inside the token: "Read inside the token" above);
 `Tree::steps` reads the count a parse ended with. "Is in the stack of open elements" visits no
 entry (the stack keeps a count for each node), so the reconstruction before each character of a
 text costs no step when there is nothing to reconstruct (before the review, text 20 elements

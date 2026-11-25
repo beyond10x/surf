@@ -426,6 +426,9 @@ impl TreeBuilder {
     /// by the rules of the current insertion mode.
     fn break_out_of_foreign_content(&mut self, token: &Token) -> Flow {
         while let Some(&node) = self.open.last() {
+            if self.spent(0) {
+                return Flow::Done;
+            }
             self.visit();
             if self.is_mathml_text_integration_point(node)
                 || self.is_html_integration_point(node)
@@ -443,7 +446,7 @@ impl TreeBuilder {
     /// The "any other end tag" rule of foreign content.
     fn foreign_end_tag(&mut self, token: &Token, name: &str) -> Flow {
         let mut index = self.open.len();
-        while index > 0 {
+        while index > 0 && !self.spent(0) {
             index -= 1;
             self.visit();
             let node = self.open[index];

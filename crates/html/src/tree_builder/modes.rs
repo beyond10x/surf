@@ -569,7 +569,7 @@ impl TreeBuilder {
                 if self.open.len() == 1 || !self.is_html(self.open[1], &["body"]) {
                     return Flow::Done;
                 }
-                if !self.frameset_ok {
+                if !self.frameset_ok || self.past_step_limit() {
                     return Flow::Done;
                 }
                 let body = self.open[1];
@@ -681,6 +681,9 @@ impl TreeBuilder {
             } if name == "li" => {
                 self.frameset_ok = false;
                 for index in (0..self.open.len()).rev() {
+                    if self.spent(0) {
+                        break;
+                    }
                     self.visit();
                     let node = self.open[index];
                     if self.is_html(node, &["li"]) {
@@ -701,6 +704,9 @@ impl TreeBuilder {
             } if name == "dd" || name == "dt" => {
                 self.frameset_ok = false;
                 for index in (0..self.open.len()).rev() {
+                    if self.spent(0) {
+                        break;
+                    }
                     self.visit();
                     let node = self.open[index];
                     if let Some(found @ ("dd" | "dt")) = self.html_name(node) {
@@ -1060,10 +1066,16 @@ impl TreeBuilder {
 
     /// Whether a `template` element is on the stack of open elements.
     pub(super) fn template_on_stack(&self) -> bool {
-        self.open.iter().any(|&n| {
+        for &n in self.open.iter() {
+            if self.spent(0) {
+                return false;
+            }
             self.visit();
-            self.is_html(n, &["template"])
-        })
+            if self.is_html(n, &["template"]) {
+                return true;
+            }
+        }
+        false
     }
 
     /// Insert an HTML element for a token and pop it off the stack of open elements at once:
@@ -1099,6 +1111,11 @@ impl TreeBuilder {
     pub(super) fn any_other_end_tag(&mut self, name: &str) -> Option<NodeId> {
         let len = self.open.len();
         for index in (0..len).rev() {
+            // The entries above `index` are visited, counted when the scan ends.
+            if self.spent(len - 1 - index) {
+                self.add_steps(len - 1 - index);
+                return None;
+            }
             let node = self.open[index];
             if self.html_name(node) == Some(name) {
                 self.add_steps(len - index);

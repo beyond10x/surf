@@ -42,6 +42,9 @@ impl TreeBuilder {
         let mut visited = 0;
         let mut found = false;
         for index in (0..self.open.len()).rev() {
+            if self.spent(visited) {
+                break;
+            }
             visited += 1;
             if is_target(self, index) {
                 found = true;
@@ -65,6 +68,9 @@ impl TreeBuilder {
     /// "clear the stack back to a … context" steps; each list holds `html`).
     fn clear_stack_back_to(&mut self, names: &[&str]) {
         while let Some(&node) = self.open.last() {
+            if self.spent(0) {
+                return;
+            }
             self.visit();
             if self.is_html(node, names) {
                 return;

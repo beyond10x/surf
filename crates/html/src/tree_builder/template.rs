@@ -60,6 +60,9 @@ impl TreeBuilder {
     /// Generate all implied end tags thoroughly.
     fn generate_all_implied_end_tags_thoroughly(&mut self) {
         while let Some(&node) = self.open.last() {
+            if self.spent(0) {
+                return;
+            }
             self.visit();
             if !self.is_html(node, IMPLIED_END_TAGS_THOROUGHLY) {
                 return;

@@ -1818,8 +1818,9 @@ fn a_boundary_above_an_entry_removed_keeps_its_place() {
 }
 
 /// The `frameset` rule pops the `body` and every entry above it, a step each: with k `div`
-/// open (k ≥ 1, so that a `body` is made), the `frameset` costs one step more for each `div`
-/// than the parse without it.
+/// open (k ≥ 1, so that a `body` is made), the `frameset` costs k + 1 steps for the pops (the
+/// `body` and k `div`) and 1 for taking the `body` out of the `html` element's children (its
+/// last child, the first the scan visits) more than the parse without it.
 #[test]
 fn the_pops_of_the_frameset_rule_are_steps() {
     let steps = |input: &str| parse_document(input, &deep(512)).steps();
@@ -1827,7 +1828,410 @@ fn the_pops_of_the_frameset_rule_are_steps() {
         let divs = "<div>".repeat(k);
         steps(&format!("{divs}<frameset>")) as isize - steps(&divs) as isize
     };
-    assert_eq!(frameset(8) - frameset(1), 7);
+    for k in [1, 2, 8] {
+        assert_eq!(frameset(k), k as isize + 1 + 1, "{k} div");
+    }
+}
+
+/// The nodes reached from the root, also through template contents.
+fn reachable(tree: &Tree) -> usize {
+    let mut seen = HashSet::new();
+    let mut pending = vec![tree.root()];
+    while let Some(node) = pending.pop() {
+        if seen.insert(node) {
+            pending.extend(tree.children(node).iter().copied());
+            pending.extend(contents_of(tree, node));
+        }
+    }
+    seen.len()
+}
+
+/// Each loop over the stack of open elements or the list of active formatting elements reads
+/// the step limit before each entry it visits, and ends there (ruling D423 of fix round 5;
+/// `limits.rs`, `max_steps`): a parse whose limit falls inside one such loop of its last token
+/// ends at `Steps` 1 step past the limit, and every node the parse made is in the tree. Each
+/// case is a page whose last token runs that loop over about 2,000 entries (the depth limit
+/// raised so that markup alone keeps them open; the entries read again after a hook run with
+/// [`KeepOpen`]); the limit is the steps of the page without the token and the given share of
+/// what the token costs, which falls inside the loop (a negative share: that many times 2,000
+/// steps before the token's last). The place of step 4.19 of the adoption agency is the scan
+/// of the stack for the foster parenting `table`, made a second time after the inner loop.
+#[test]
+fn each_loop_over_the_stack_or_the_list_ends_at_the_step_limit() {
+    const L: usize = 2_000;
+    let mut wrong = Vec::new();
+    for (what, page, token, share) in loop_cases(L) {
+        let whole = format!("{page}{token}");
+        let before = parse_deep(&page, usize::MAX).steps();
+        let after = parse_deep(&whole, usize::MAX).steps();
+        // A negative share counts back from the end of the token's steps, in entries: the
+        // end-of-file token of the page without `</template>` runs the same loop.
+        let max = if share < 0.0 {
+            after - (-share * L as f64) as usize
+        } else {
+            assert!(
+                after >= before + L,
+                "{what}: {before} steps, {after} with the token"
+            );
+            before + ((after - before) as f64 * share) as usize
+        };
+        let tree = parse_deep(&whole, max);
+        let hook_removed = what == "the entries read again";
+        if tree.stopped_by() != Some(Limit::Steps)
+            || tree.steps() != max + 1
+            || (!hook_removed && reachable(&tree) != tree.node_count())
+        {
+            wrong.push(format!(
+                "{what}: limit {max}, {} steps, stopped by {:?}, {} of {} nodes in the tree",
+                tree.steps(),
+                tree.stopped_by(),
+                reachable(&tree),
+                tree.node_count()
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// A parse of `input` with scripting on, [`KeepOpen`] as the hook, a depth limit of 100,000
+/// and the step limit `max_steps`.
+fn parse_deep(input: &str, max_steps: usize) -> Tree {
+    let options = scripted_with(Limits {
+        max_depth: 100_000,
+        max_steps,
+        ..Limits::default()
+    });
+    parse_document_with_hook(input, &options, &mut KeepOpen)
+}
+
+/// The pages of [`each_loop_over_the_stack_or_the_list_ends_at_the_step_limit`] with `l`
+/// entries for each loop: what the case reaches, the page, its last token, and the share.
+fn loop_cases(l: usize) -> Vec<(&'static str, String, &'static str, f64)> {
+    let span = "<span>".repeat(l);
+    let rb = "<rb>".repeat(l);
+    let g = "<g>".repeat(l);
+    let bs: String = (0..l).map(|i| format!("<b id={i}>")).collect();
+    vec![
+        ("any other end tag", span.clone(), "</q>", 0.75),
+        ("has an element in scope", span.clone(), "<p>", 0.5),
+        ("a select in scope after a scan", span.clone(), "<hr>", 0.5),
+        (
+            "generate implied end tags",
+            format!("<div>{rb}"),
+            "</div>",
+            0.75,
+        ),
+        ("pop until", format!("<div>{span}"), "</div>", 0.75),
+        (
+            "reset the insertion mode",
+            format!("{span}<table>"),
+            "</table>",
+            0.75,
+        ),
+        (
+            "the place in the stack",
+            format!("<form>{span}"),
+            "</form>",
+            0.6,
+        ),
+        ("Noah's Ark", bs.clone(), "<b>", 0.75),
+        (
+            "the reconstruction's rewind",
+            format!("<div>{bs}</div>"),
+            "x",
+            0.25,
+        ),
+        (
+            "the reconstruction's advance",
+            format!("<div>{bs}</div>"),
+            "x",
+            0.75,
+        ),
+        (
+            "clear the list to the last marker",
+            format!("<object>{bs}"),
+            "</object>",
+            0.9,
+        ),
+        ("an a in the list", bs.clone(), "<a>", 0.25),
+        ("the formatting element", bs.clone(), "</i>", 0.25),
+        (
+            "the formatting element's entry of step 4.24",
+            format!("<i><div>{bs}</div><p>"),
+            "</i>",
+            0.5,
+        ),
+        (
+            "an a left in the list",
+            format!("<a><div>{bs}</div>"),
+            "<a>",
+            0.5,
+        ),
+        ("the furthest block", format!("<b>{span}"), "</b>", 0.9),
+        ("the inner loop", format!("<b>{span}<div>"), "</b>", 0.9),
+        (
+            "the place of step 4.19",
+            format!("<table><b><div>{span}"),
+            "</b>",
+            0.32,
+        ),
+        (
+            "the place of foster parenting",
+            format!("<table><b>{span}<div>"),
+            "</b>",
+            0.45,
+        ),
+        (
+            "the entries read again",
+            format!("<body>{span}<span><script>x"),
+            "</script>",
+            0.75,
+        ),
+        (
+            "clear the stack back to a table context",
+            format!("<table>{span}"),
+            "<tr>",
+            0.75,
+        ),
+        (
+            "has an element in table scope",
+            format!("<table>{span}"),
+            "</table>",
+            0.25,
+        ),
+        ("a template on the stack", span.clone(), "<html>", 0.75),
+        (
+            "all implied end tags",
+            format!("<template>{rb}"),
+            "</template>",
+            -0.5,
+        ),
+        ("li", span.clone(), "<li>", 0.25),
+        ("dd", span.clone(), "<dd>", 0.25),
+        (
+            "the breakout of foreign content",
+            format!("<svg>{g}"),
+            "<div>",
+            0.75,
+        ),
+        (
+            "an end tag in foreign content",
+            format!("<svg>{g}"),
+            "</svg>",
+            0.75,
+        ),
+    ]
+}
+
+/// What keeps a parsed tree from being a tree, as the review's checker of fix round 3
+/// (`adversary_script_hook_3`, `faults`) reads it, among the nodes reached from the root: a
+/// child whose parent is another node, a child listed twice, a node listed by a parent it does
+/// not name, a document that is not the root, a template's contents with a parent, a root
+/// with a parent, and a cycle of parents and template hosts.
+fn tree_faults(tree: &Tree) -> Vec<String> {
+    let bound = tree.node_count();
+    let root = tree.root();
+    let mut found = Vec::new();
+    let mut seen = HashSet::new();
+    let mut hosts = std::collections::HashMap::new();
+    let mut pending = vec![root];
+    while let Some(node) = pending.pop() {
+        if !seen.insert(node) {
+            continue;
+        }
+        if seen.len() > bound {
+            found.push("more nodes reached than the arena holds".to_string());
+            break;
+        }
+        let mut listed = HashSet::new();
+        for &child in tree.children(node) {
+            if !listed.insert(child) {
+                found.push(format!("{child:?} listed twice by {node:?}"));
+            }
+            if tree.parent(child) != Some(node) {
+                found.push(format!("{child:?} listed by {node:?} names another parent"));
+            }
+            pending.push(child);
+        }
+        if let Some(contents) = contents_of(tree, node) {
+            hosts.insert(contents, node);
+            if tree.parent(contents).is_some() {
+                found.push(format!("the contents {contents:?} have a parent"));
+            }
+            pending.push(contents);
+        }
+        if let Some(parent) = tree.parent(node) {
+            if !tree.children(parent).contains(&node) {
+                found.push(format!("{node:?} names {parent:?}, which does not list it"));
+            }
+            pending.push(parent);
+        }
+        if node != root && *tree.data(node) == NodeData::Document {
+            found.push(format!("{node:?} is a document and not the root"));
+        }
+    }
+    if tree.parent(root).is_some() {
+        found.push("the root has a parent".to_string());
+    }
+    for &node in &seen {
+        let mut at = node;
+        let mut steps = 0;
+        while let Some(up) = tree.parent(at).or_else(|| hosts.get(&at).copied()) {
+            at = up;
+            steps += 1;
+            if steps > bound {
+                found.push(format!("{node:?} is on a cycle of parents and hosts"));
+                break;
+            }
+        }
+    }
+    found
+}
+
+/// A stop inside a token leaves a tree that holds the review's invariants ([`tree_faults`]),
+/// with every node the parse made in it (but the elements [`KeepOpen`] takes out), and a parse
+/// that does not pass the limit ends whole: for the pages of
+/// [`each_loop_over_the_stack_or_the_list_ends_at_the_step_limit`] with 40 entries each, every
+/// step limit from the steps of the page without its last token to those with it, so every
+/// stop the last token can reach: in each loop, between two reads, and in the adoption
+/// agency's putting back of its clones.
+#[test]
+fn every_stop_inside_a_token_leaves_a_tree() {
+    let mut wrong = Vec::new();
+    for (what, page, token, _) in loop_cases(40) {
+        let whole = format!("{page}{token}");
+        let before = parse_deep(&page, usize::MAX).steps();
+        let after = parse_deep(&whole, usize::MAX).steps();
+        for max in before.min(after)..=after {
+            let tree = parse_deep(&whole, max);
+            let mut faults = tree_faults(&tree);
+            if what != "the entries read again" && reachable(&tree) != tree.node_count() {
+                faults.push(format!(
+                    "{} of {} nodes in the tree",
+                    reachable(&tree),
+                    tree.node_count()
+                ));
+            }
+            let ended = tree.stopped_by() == Some(Limit::Steps)
+                || (tree.stopped_by().is_none() && tree.steps() <= max);
+            if !ended {
+                faults.push(format!(
+                    "{} steps, stopped by {:?}",
+                    tree.steps(),
+                    tree.stopped_by()
+                ));
+            }
+            if !faults.is_empty() {
+                wrong.push(format!("{what}, limit {max}: {faults:?}"));
+            }
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "{} stops: {:#?}",
+        wrong.len(),
+        &wrong[..wrong.len().min(10)]
+    );
+}
+
+/// Past the step limit the parser writes nothing to the tree: the node a page's last token
+/// makes is not in a tree whose parse stopped at `Steps`, for every step limit. A scan of the
+/// stack or the list the limit ends inside the token answers as if it found nothing, and the
+/// write that follows reads the limit: the scope scan of `<p>` over open `span`s (read at the
+/// element's place and at its admission, `room_at` and `admit`), the reconstruction's rewind
+/// before `x` over closed `b`s (the character's read and `admit`). An element, a character, a
+/// comment and a processing instruction after an end tag that scans the whole stack: the read
+/// after each token stops the parse before them.
+#[test]
+fn nothing_is_written_past_the_step_limit() {
+    let span = "<span>".repeat(40);
+    let after_q = format!("{span}</q>");
+    let closed: String = (0..40).map(|i| format!("<b id={i}>")).collect();
+    let closed = format!("<div>{closed}</div>");
+    // The node the token makes, as the tree prints it.
+    let made = |tree: &Tree, node: NodeId| match tree.data(node) {
+        NodeData::Element { local_name, .. } => format!("<{local_name}>"),
+        NodeData::Text(text) => text.clone(),
+        NodeData::Comment(data) => format!("<!--{data}-->"),
+        NodeData::ProcessingInstruction { target, .. } => format!("<?{target}>"),
+        _ => String::new(),
+    };
+    let cases = [
+        (&span, "<p>", "<p>"),
+        (&closed, "x", "x"),
+        (&after_q, "<i>", "<i>"),
+        (&after_q, "x", "x"),
+        (&after_q, "<!--c-->", "<!--c-->"),
+        (&after_q, "<?t d?>", "<?t>"),
+    ];
+    let mut wrong = Vec::new();
+    for (page, token, node) in cases {
+        let whole = format!("{page}{token}");
+        let all = parse_deep(&whole, usize::MAX);
+        assert_eq!(all.stopped_by(), None, "{token}");
+        let (mut stops, mut whole_parses) = (0, 0);
+        for max in 0..=all.steps() {
+            let tree = parse_deep(&whole, max);
+            let found = tree
+                .descendants(tree.root())
+                .into_iter()
+                .filter(|&n| made(&tree, n) == node)
+                .count();
+            if tree.stopped_by() == Some(Limit::Steps) {
+                stops += 1;
+                if found != 0 {
+                    wrong.push(format!("{token}: limit {max}, {} steps", tree.steps()));
+                }
+            } else {
+                whole_parses += usize::from(found == 1);
+            }
+        }
+        assert!(
+            stops > 0 && whole_parses > 0,
+            "{token}: {stops} stops, {whole_parses} whole"
+        );
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// An adoption agency iteration whose inner loop the step limit ends after it made clones puts
+/// them back into the tree (step 4.23, at the place of step 4.14), with the furthest block
+/// under the last: whatever the limit, every node the parse made stays in the tree (the crate
+/// documentation, "Limits"), and the parse ends whole or at `Steps`. Four formatting elements
+/// between the `b` and the furthest block give three clones; every limit from the steps of
+/// the page without the `</b>` to those with it is tried.
+#[test]
+fn a_limit_inside_the_adoption_agency_leaves_every_node_in_the_tree() {
+    let page = "<body><b><i><u><s><em><div>x";
+    let parse = |input: &str, max_steps: usize| {
+        let options = ParseOptions {
+            scripting_disabled: true,
+            limits: Limits {
+                max_steps,
+                ..Limits::default()
+            },
+        };
+        parse_document(input, &options)
+    };
+    let before = parse(page, usize::MAX).steps();
+    let whole = format!("{page}</b>");
+    let after = parse(&whole, usize::MAX).steps();
+    let mut wrong = Vec::new();
+    for max in before..=after {
+        let tree = parse(&whole, max);
+        let stop_ok = tree.stopped_by() == Some(Limit::Steps)
+            || (tree.stopped_by().is_none() && tree.steps() <= max);
+        if !stop_ok || reachable(&tree) != tree.node_count() {
+            wrong.push(format!(
+                "limit {max}: {} steps, stopped by {:?}, {} of {} nodes in the tree",
+                tree.steps(),
+                tree.stopped_by(),
+                reachable(&tree),
+                tree.node_count()
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
 }
 
 /// A tiny xorshift generator: the property test is seeded and gives the same inputs each run.

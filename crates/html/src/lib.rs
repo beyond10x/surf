@@ -120,7 +120,7 @@
 //!   parse with [`limits::Limit::Depth`], and only these: the stack of open elements is not
 //!   bounded by it (foster parenting puts an entry above the `table` that is not under it).
 //!   The node limit bounds the stack's length (a node of the tree is on it at most once), and
-//!   the step limit bounds every read of it.
+//!   the step limit bounds every read of it but the pops of "stop parsing" (see Steps).
 //!   Text, comments and processing instructions are no deeper than their parent. How the
 //!   parser knows a depth: it keeps the depth of each entry of the stack of open elements, set
 //!   when the entry is pushed, and reads them again from the tree after a hook's write that
@@ -164,11 +164,19 @@
 //!   reaches), and each node under the furthest block that the adoption agency algorithm walks
 //!   to check a move down. The changes to the stack count too: each entry an insertion or a
 //!   removal inside it moves, each scope boundary the stack's list of them visits then, and
-//!   each entry the `frameset` rule pops. Not counted: the pops of "stop parsing", once at the
-//!   end, one for each entry left. The count is checked after each token: the token that
-//!   takes it past the limit is processed whole, then parsing stops. The
-//!   `selectedcontent` update after the end-of-file token counts every node it visits and
-//!   copies and is checked after each, so it stops where it passes the limit.
+//!   each entry the `frameset` rule pops. Not counted: the pops of "stop parsing", once per
+//!   parse pass after its last token, one for each entry left (a `meta` that changes the
+//!   encoding of [`parse_document_bytes`] ends the first pass and starts a second; that pass
+//!   takes no hook, so its stack stays inside the depth limit). The count is read after each
+//!   token, inside every loop over the stack of open elements, its scope boundaries or the
+//!   list of active formatting elements, before each entry, and before every write of the
+//!   parser to the tree: past the limit the loop ends, the write is not made, and parsing
+//!   stops. So the token that takes the count past the limit is processed up to the next
+//!   read, and the tree keeps what it wrote before; an adoption agency iteration that the
+//!   limit ends inside puts the clones it made back into the tree first. A parse ends fewer
+//!   than 4 × `max_nodes` steps past the limit ([`limits::Limits::max_steps`] gives the
+//!   derivation). The `selectedcontent` update after the end-of-file token counts every node
+//!   it visits and copies and is checked after each, so it stops where it passes the limit.
 //!   [`Tree::steps`] reads the count a parse ended with. A scan of a child list for a reference
 //!   starts at the last child, where the `table` of foster parenting stays while it is open.
 //!   "Is in the stack of open elements"

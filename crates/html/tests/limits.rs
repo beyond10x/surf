@@ -516,7 +516,8 @@ fn a_node_limit_inside_the_adoption_agency_leaves_no_element_out_of_the_tree() {
 fn steps_reads_the_count_the_step_limit_checks() {
     // `<p>` visits `body` and `html` for "has a p element in button scope"; `x` visits nothing.
     assert_eq!(steps("<p>x"), 2);
-    // The token that passes the limit is processed whole, and its steps are counted.
+    // The token that passes the limit has its steps counted; the `p` it would insert after
+    // them is not, since the write reads the limit first.
     let tree = parse_document(
         "<p>x",
         &with_limits(Limits {

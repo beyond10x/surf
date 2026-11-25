@@ -666,7 +666,8 @@ pub(crate) fn parse_fragment(
 }
 
 /// The tokenizer and tree construction from the first token to the end, with the step limit
-/// checked after each token. A script element the token ended is reported to `hook` after it.
+/// read after each token (and inside the token's loops and before its writes,
+/// [`TreeBuilder::spent`]). A script element the token ended is reported to `hook` after it.
 fn run(mut builder: TreeBuilder, mut hook: Option<&mut dyn ScriptHook>) -> Parsed {
     while !builder.stopped {
         builder.tokenizer.set_cdata_allowed(builder.cdata_allowed());
@@ -1025,6 +1026,24 @@ impl TreeBuilder {
         self.steps.set(self.steps.get().saturating_add(n));
     }
 
+    /// A read of the step limit: whether the steps, with `pending` more that a scan counts at
+    /// its end, have passed it. Every loop over the stack of open elements, its boundaries or
+    /// the list of active formatting elements reads it before each entry it visits, and ends
+    /// there when they have; so does every write of the parser to the tree, which is then not
+    /// made ([`Self::past_step_limit`]). Below the limit it changes nothing.
+    fn spent(&self, pending: usize) -> bool {
+        self.steps.get().saturating_add(pending) > self.limits.max_steps
+    }
+
+    /// Whether the steps have passed the step limit ([`Self::spent`]); then parsing stops at it.
+    fn past_step_limit(&mut self) -> bool {
+        if self.spent(0) {
+            self.stop_at(Limit::Steps);
+            return true;
+        }
+        false
+    }
+
     /// The tree construction dispatcher (13.2.6): each token goes to the rules of the current
     /// insertion mode, or to the rules for foreign content (the module `foreign`).
     fn dispatch(&mut self, token: Token) {
@@ -1043,7 +1062,9 @@ impl TreeBuilder {
                 Flow::Reprocess => {}
                 Flow::Replace(replacement) => token = replacement,
             }
-            if self.stopped {
+            // Past the step limit no rule runs again for the token: a loop the limit ended
+            // may have left the state a rule moves on from (the insertion mode) as it was.
+            if self.stopped || self.past_step_limit() {
                 return;
             }
         }
@@ -1078,9 +1099,11 @@ impl TreeBuilder {
 
     /// Stop parsing (13.2.7, "the end"), as far as it changes the tree: pop every node off the
     /// stack of open elements. The pops are not steps: the count of a parse up to its last
-    /// token stays what the step limit checked. They run once, at the end, one for each entry
-    /// left, and every entry is an element the parser made (the node limit) or the `head` it
-    /// put back for one token.
+    /// token stays what the step limit checked. They run once per parse pass, after its last
+    /// token, one for each entry left, and every entry is an element the parser made (the node
+    /// limit) or the `head` it put back for one token. A `meta` that changes the encoding
+    /// ([`Self::change_the_encoding`]) ends the first pass here and the caller parses the bytes
+    /// again; that second pass takes no hook, so its stack stays inside the depth limit.
     fn stop_parsing(&mut self) {
         self.open.clear();
         self.stopped = true;
@@ -1096,9 +1119,9 @@ impl TreeBuilder {
 
     /// Whether a creation of `nodes` nodes that hold `bytes` bytes of strings stays inside the
     /// node and stored-byte limits. When it does not, parsing stops at the limit it would pass;
-    /// after parsing stopped, nothing is admitted.
+    /// after parsing stopped, or past the step limit (a read of it), nothing is admitted.
     fn admit(&mut self, nodes: usize, bytes: usize) -> bool {
-        if self.stopped {
+        if self.stopped || self.past_step_limit() {
             return false;
         }
         if self.tree.node_count().saturating_add(nodes) > self.limits.max_nodes {
@@ -1168,6 +1191,11 @@ impl TreeBuilder {
         }
         let mut ordered = true;
         for at in from..self.open.len() {
+            // Past the step limit the entries above stay unsettled, and parsing stops: no
+            // depth is read after it.
+            if self.past_step_limit() {
+                return;
+            }
             self.visit();
             let node = self.open[at];
             let (depth, passed_unsettled) = self.walk_up(node);
@@ -1187,9 +1215,9 @@ impl TreeBuilder {
     /// Whether an element inserted at `place` stays inside the depth limit: the depth of
     /// `place`'s parent ([`Self::place_depth`]) is below the limit. When it is not, parsing
     /// stops: that parent is an element at the limit. `Some` with that depth when it does;
-    /// `None` after parsing stopped.
+    /// `None` after parsing stopped, also past the step limit (a read of it).
     fn room_at(&mut self, place: (NodeId, Option<NodeId>)) -> Option<usize> {
-        if self.stopped {
+        if self.stopped || self.past_step_limit() {
             return None;
         }
         let depth = self.place_depth(place);
@@ -1249,11 +1277,20 @@ impl TreeBuilder {
         if self.foster_parenting
             && self.is_html(target, &["table", "tbody", "tfoot", "thead", "tr"])
         {
+            // A scan the step limit ends finds no `table`; each caller reads the limit before
+            // it writes at the place.
             let mut visited = 0;
-            let last = (0..self.open.len()).rev().find(|&index| {
+            let mut last = None;
+            for index in (0..self.open.len()).rev() {
+                if self.spent(visited) {
+                    break;
+                }
                 visited += 1;
-                self.is_html(self.open[index], &["template", "table"])
-            });
+                if self.is_html(self.open[index], &["template", "table"]) {
+                    last = Some(index);
+                    break;
+                }
+            }
             self.add_steps(visited);
             match last {
                 // The fragment case: the `html` element.
@@ -1353,6 +1390,9 @@ impl TreeBuilder {
     /// that scope itself, so it is in scope exactly when it is the lowest entry that bounds it:
     /// one entry is visited.
     fn has_select_in_scope(&self) -> bool {
+        if self.spent(0) {
+            return false;
+        }
         self.visit();
         self.open
             .last_boundary()
@@ -1406,7 +1446,8 @@ impl TreeBuilder {
             return;
         }
         let (parent, reference) = self.appropriate_place(None);
-        if self.is_document(parent) {
+        // Read after the place: a scan the step limit ended finds no `table`.
+        if self.past_step_limit() || self.is_document(parent) {
             return;
         }
         let c = char::from_u32(c).unwrap_or(char::REPLACEMENT_CHARACTER);
@@ -1437,6 +1478,9 @@ impl TreeBuilder {
             return;
         }
         let (parent, reference) = self.appropriate_place(location);
+        if self.past_step_limit() {
+            return;
+        }
         self.tree.insert_new(
             parent,
             NodeData::Comment(data.to_string()),
@@ -1456,6 +1500,9 @@ impl TreeBuilder {
             return;
         }
         let (parent, reference) = self.appropriate_place(location);
+        if self.past_step_limit() {
+            return;
+        }
         self.tree.insert_new(
             parent,
             NodeData::ProcessingInstruction {
@@ -1540,6 +1587,9 @@ impl TreeBuilder {
     /// Generate implied end tags, except for HTML elements named `except`.
     fn generate_implied_end_tags(&mut self, except: Option<&str>) {
         while let Some(&node) = self.open.last() {
+            if self.spent(0) {
+                return;
+            }
             self.visit();
             match self.html_name(node) {
                 Some(name) if IMPLIED_END_TAGS.contains(&name) && Some(name) != except => {
@@ -1602,6 +1652,9 @@ impl TreeBuilder {
         let mut visited = 0;
         let mut found = false;
         for &node in self.open.iter().rev() {
+            if self.spent(visited) {
+                break;
+            }
             visited += 1;
             if is_target(self, node) {
                 found = true;
@@ -1623,7 +1676,9 @@ impl TreeBuilder {
     /// Pops the current node off the stack until an HTML element named one of `names` has been
     /// popped.
     fn pop_until(&mut self, names: &[&str]) {
-        while let Some(node) = self.open.pop() {
+        while !self.spent(0)
+            && let Some(node) = self.open.pop()
+        {
             self.visit();
             if self.is_html(node, names) {
                 return;
@@ -1636,7 +1691,7 @@ impl TreeBuilder {
     /// fragment stands in for the `html` element. Each entry visited is a step.
     fn reset_insertion_mode(&mut self) {
         let mut index = self.open.len();
-        while index > 0 {
+        while index > 0 && !self.spent(0) {
             index -= 1;
             self.visit();
             let last = index == 0;
@@ -1681,8 +1736,19 @@ impl TreeBuilder {
 
     /// The index of `element` in the stack of open elements, scanning from the current node.
     fn stack_position(&self, element: NodeId) -> Option<usize> {
-        let at = self.open.iter().rposition(|&n| n == element);
-        self.add_steps(at.map_or(self.open.len(), |at| self.open.len() - at));
+        let mut visited = 0;
+        let mut at = None;
+        for index in (0..self.open.len()).rev() {
+            if self.spent(visited) {
+                break;
+            }
+            visited += 1;
+            if self.open[index] == element {
+                at = Some(index);
+                break;
+            }
+        }
+        self.add_steps(visited);
         at
     }
 
@@ -1710,6 +1776,9 @@ impl TreeBuilder {
         let mut identical = 0;
         let mut earliest = None;
         for (index, entry) in self.active.iter().enumerate().rev() {
+            if self.spent(0) {
+                break;
+            }
             self.visit();
             match entry {
                 Entry::Marker => break,
@@ -1750,11 +1819,17 @@ impl TreeBuilder {
         // Rewind: back to the entry after the last marker or open element, or the first entry.
         let mut index = self.active.len() - 1;
         while index > 0 && !is_open_or_marker(self, &self.active[index - 1]) {
+            if self.spent(0) {
+                return;
+            }
             self.visit();
             index -= 1;
         }
         // Advance and create, to the end of the list.
         for i in index..self.active.len() {
+            if self.spent(0) {
+                return;
+            }
             self.visit();
             if matches!(self.active[i], Entry::Marker) {
                 continue;
@@ -1774,7 +1849,9 @@ impl TreeBuilder {
 
     /// Clear the list of active formatting elements up to the last marker.
     fn clear_active_formatting_elements_to_last_marker(&mut self) {
-        while let Some(entry) = self.active.pop() {
+        while !self.spent(0)
+            && let Some(entry) = self.active.pop()
+        {
             self.visit();
             if entry == Entry::Marker {
                 return;
@@ -1786,16 +1863,25 @@ impl TreeBuilder {
     /// holds a node at most once; the scan starts at the end of the list, where the standard's
     /// rules look ("the last element in the list").
     fn active_position(&self, node: NodeId) -> Option<usize> {
-        self.active.iter().rposition(|e| {
+        for (index, entry) in self.active.iter().enumerate().rev() {
+            if self.spent(0) {
+                return None;
+            }
             self.visit();
-            matches!(e, Entry::Element { node: n, .. } if *n == node)
-        })
+            if matches!(entry, Entry::Element { node: n, .. } if *n == node) {
+                return Some(index);
+            }
+        }
+        None
     }
 
     /// The index of `node` in the list of active formatting elements after the last marker (or
     /// in the whole list when there is none), if it is there: the scan ends at the marker.
     fn active_position_after_last_marker(&self, node: NodeId) -> Option<usize> {
         for (index, entry) in self.active.iter().enumerate().rev() {
+            if self.spent(0) {
+                return None;
+            }
             self.visit();
             match entry {
                 Entry::Marker => return None,

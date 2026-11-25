@@ -40,15 +40,6 @@ struct Above {
 type Targets = Vec<(NodeId, Vec<(NodeId, usize)>)>;
 
 impl TreeBuilder {
-    /// Whether the steps have passed the step limit; then parsing stops at it.
-    fn past_step_limit(&mut self) -> bool {
-        if self.steps.get() > self.limits.max_steps {
-            self.stop_at(Limit::Steps);
-            return true;
-        }
-        false
-    }
-
     /// The update of every connected `select`'s descendant `selectedcontent` elements.
     pub(super) fn update_selectedcontents(&mut self) {
         let Some(selects) = self.selects_and_their_selectedcontents() else {

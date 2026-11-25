@@ -26,7 +26,9 @@ pub struct Limits {
     /// deeper is not created, and a move of the adoption agency algorithm or a
     /// `selectedcontent` copy that would put a node deeper is not made (the crate
     /// documentation, "Limits"). The stack of open elements is bounded by the node limit
-    /// instead (a node is on it at most once), and every read of it by the step limit.
+    /// instead (a node is on it at most once), and every read of it by the step limit, except
+    /// the pops of "stop parsing" ([`Limits::max_steps`]), one for each entry left in each
+    /// parse pass.
     /// Default 512.
     pub max_depth: usize,
     /// The most nodes the tree holds ([`crate::Tree::node_count`]: the document, every node
@@ -55,8 +57,26 @@ pub struct Limits {
     /// each parent passed to, and the walk of the nodes an adoption agency iteration would move
     /// deeper), and the stack's own changes (each entry an insertion or a removal moves, each
     /// scope boundary visited, each entry the `frameset` rule pops; not the pops of "stop
-    /// parsing" at the end), checked after each token
+    /// parsing", which run once per parse pass, after its last token)
     /// ([`crate::Tree::steps`] reads them). Default 134,217,728 (2^27).
+    ///
+    /// The count is read after each token, inside every loop over the stack of open elements,
+    /// its scope boundaries or the list of active formatting elements (before each entry it
+    /// visits), and before every write of the parser to the tree. Past the limit the loop ends,
+    /// the write is not made, and parsing stops at [`Limit::Steps`].
+    ///
+    /// A parse ends fewer than 4 × [`Limits::max_nodes`] steps past `max_steps`. Past the
+    /// limit every read ends its loop or refuses its write, so what is still counted is the
+    /// rest of the stretch between two reads in which the count passed it, and after it the
+    /// adoption agency algorithm's putting back of the clones its inner loop made (step 4.23).
+    /// Each piece of work a stretch counts at once visits fewer than `max_nodes` entries or
+    /// nodes: a node is on the stack at most once, in one child list, and under a node, so the
+    /// stack, its boundaries, a child list, a walk up the tree and the nodes under one node
+    /// each hold fewer. The longest stretches hold four such pieces: an iteration of the inner
+    /// loop that removes an entry (the entries above it and the boundaries), then the putting
+    /// back (a child list scanned for the place, and the document's children when it is the
+    /// place); and steps 4.26 to 4.30 (a removal from the stack, an insertion into it, the
+    /// furthest block's children moved). Every other stretch holds at most three.
     pub max_steps: usize,
 }
 
