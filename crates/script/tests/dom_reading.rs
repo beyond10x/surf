@@ -21,7 +21,9 @@ use surf_html::{
     NodeData, NodeId, NotRun, ParseOptions, ScriptHook, Tree, WriteError, parse_document,
     parse_document_with_hook,
 };
-use surf_script::bindings::{DomCx, DomEnd, DomException, DomResult, Mutation, Slices};
+use surf_script::bindings::{
+    DomCx, DomEnd, DomException, DomResult, Mutation, NOT_REFRESHED, Slices,
+};
 use surf_script::dom::{self, DocumentInfo};
 use surf_script::{
     Document, Mode, Reason, Runner, RunnerLimits, SESSION_ENGINE_LIMITS, ScriptEnd, run_document,
@@ -1039,7 +1041,8 @@ var all = body.getElementsByTagName("*");
 check(all.namedItem("p1") === p && all.namedItem("n1") === p, "by id and by name");
 check(all.namedItem("") === null && all.namedItem("missing") === null, "none");
 check(all.namedItem("cn") === null && all.namedItem("ci") === circle, "SVG: by id only");
-check(all["ci"] === undefined, "no named properties");
+check(all["ci"] === undefined,
+  "no named properties: a deviation the selection names, namedItem answers");
 "#
                 ),
             );
@@ -1085,6 +1088,103 @@ check(document.getElementsByClassName("c") !== document.getElementsByClassName("
         },
     )
     .expect("a runner");
+}
+
+/// The page of the refill tests: `p` with two children, `q` with three to move into it.
+const REFILL_PAGE: &str =
+    "<div id=\"p\"><b></b><b></b></div><div id=\"q\"><i></i><i></i><i></i></div>";
+
+/// A kept collection the script changed so that its refill cannot complete (frozen, sealed,
+/// non-extensible, an index past the list made non-configurable): after a write that grows the
+/// list, each read of the getter throws the `TypeError`, and the object is the old snapshot,
+/// whole: `length`, `item(i)` and `[i]` agree on the old list, and no index at or past its
+/// length answers a node. Where the change blocks only a longer list (non-extensible, the index
+/// past it), a refill to a shorter list succeeds and shows it. None of the four changes can be
+/// undone in ECMAScript.
+#[test]
+fn a_blocked_refill_keeps_the_old_snapshot() {
+    let shapes = [
+        ("Object.freeze(c)", false),
+        ("Object.seal(c)", false),
+        ("Object.preventExtensions(c)", true),
+        (
+            "Object.defineProperty(c, '2', { value: 'x', writable: false, configurable: false })",
+            true,
+        ),
+    ];
+    for member in ["childNodes", "children"] {
+        for (shape, shrinks) in shapes {
+            let source = format!(
+                r#"{CHECK}
+var MESSAGE = "{NOT_REFRESHED}";
+var p = document.getElementById("p"), q = document.getElementById("q");
+var c = p.{member};
+var old = [c[0], c[1]];
+check(c.length === 2 && old[0] === p.firstChild && old[1] === p.lastChild, "before");
+{shape};
+p.appendChild(q.firstChild);
+function blocked(what) {{
+  try {{ p.{member}; }} catch (e) {{
+    check(e instanceof TypeError && e.message === MESSAGE, what + ": " + e);
+    check(c.length === 2, what + ": length " + c.length);
+    for (var i = 0; i < 2; i++) {{
+      check(c.item(i) === old[i] && c[i] === old[i], what + ": index " + i);
+    }}
+    for (var k = 2; k < 6; k++) {{
+      check(c[k] === undefined || typeof c[k] !== "object", what + ": index " + k);
+    }}
+    return;
+  }}
+  check(false, what + ": no throw");
+}}
+blocked("the first read");
+blocked("the second read");
+if ({shrinks}) {{
+  p.removeChild(p.lastChild);
+  p.removeChild(p.lastChild);
+  check(p.{member} === c, "the kept object");
+  check(c.length === 1 && c.item(0) === old[0] && c[0] === old[0], "the new list");
+  check(c[1] === undefined && !("1" in c), "the deleted index");
+}}
+"#
+            );
+            with_page(limits(), REFILL_PAGE.to_string(), info(), |runner| {
+                let end = runner.evaluate(&source);
+                assert_eq!(end, ScriptEnd::Ran, "{member} {shape}: {end}");
+            });
+        }
+    }
+}
+
+/// A refill defines the indices, never sets them: an accessor a script put at an index of the
+/// list or past it is replaced without its setter being called.
+#[test]
+fn a_refill_calls_no_setter() {
+    for member in ["childNodes", "children"] {
+        with_page(limits(), REFILL_PAGE.to_string(), info(), |runner| {
+            ran(
+                runner,
+                &format!(
+                    r#"{CHECK}
+var p = document.getElementById("p"), q = document.getElementById("q");
+var c = p.{member}, called = [];
+["0", "2"].forEach(function (key) {{
+  Object.defineProperty(c, key, {{
+    get: function () {{ return "accessor"; }},
+    set: function (v) {{ called.push(key); }},
+    configurable: true
+  }});
+}});
+p.appendChild(q.firstChild);
+check(p.{member} === c, "the kept object");
+check(called.length === 0, "setters called: " + called.join(", "));
+check(c.length === 3 && c[0] === p.firstChild && c[2] === p.lastChild, "the new list");
+check(Object.getOwnPropertyDescriptor(c, "2").value === p.lastChild, "a data property");
+"#
+                ),
+            );
+        });
+    }
 }
 
 /// The write counter: a second read after no write answers the kept object for its one step and

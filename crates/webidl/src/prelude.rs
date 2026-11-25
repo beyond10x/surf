@@ -1219,10 +1219,59 @@ fn define_indices(
     Ok(())
 }
 
-/// A kept `[SameObject]` collection brought up to the tree: `nodes` replace its nodes, its old
-/// index properties are deleted and the new ones defined, and its `written` becomes the tree's
-/// `writes()`. A step is charged per old and per new node, before the work. The data changes
-/// last, so a refresh that ends half done leaves an object a later read refreshes again.
+/// The message of the `TypeError` a `[SameObject]` getter throws when the script changed its
+/// kept collection so that it cannot be refreshed.
+pub const NOT_REFRESHED: &str = "the kept collection cannot be refreshed";
+
+/// The key of the index `index`.
+fn index_key(cx: &mut DomCx<'_, '_>, index: usize) -> Completion<PropertyKey> {
+    Ok(PropertyKey::String(cx.engine.new_string(&index.to_string())?))
+}
+
+/// Defines the index `index` of `object` as the glue's data property of `value`: define, never
+/// set, so no accessor a script put there runs. `Ok(false)` when the object refuses it.
+fn define_index(
+    cx: &mut DomCx<'_, '_>,
+    object: ObjectRef,
+    index: usize,
+    value: Value,
+) -> Completion<bool> {
+    let key = index_key(cx, index)?;
+    let descriptor = data_property(value, false, true, true);
+    refused(engine(cx.engine.define_property_or_throw(object, key, descriptor)))
+}
+
+/// Deletes the index `index` of `object`. `Ok(false)` when the object refuses it.
+fn delete_index(cx: &mut DomCx<'_, '_>, object: ObjectRef, index: usize) -> Completion<bool> {
+    let key = index_key(cx, index)?;
+    refused(engine(cx.engine.delete_property_or_throw(object, key)))
+}
+
+/// `Ok(true)` for a step the object took, `Ok(false)` for one it refused with a throw; an end
+/// of the run stays an end.
+fn refused(step: Completion<()>) -> Completion<bool> {
+    match step {
+        Ok(()) => Ok(true),
+        Err(Abrupt::Throw(_)) => Ok(false),
+        Err(end @ Abrupt::Terminated(_)) => Err(end),
+    }
+}
+
+/// A kept `[SameObject]` collection brought up to the tree, all or nothing: its index
+/// properties and its data always show the same list. A step is charged per old and per new
+/// node, before the work. In this order:
+///   1. each old index at or past the new length is defined again as the glue's property of
+///      its old node, which fails at once on an index the script made non-configurable, and
+///      makes every such index one the glue can delete;
+///   2. the new nodes are defined over the indices `0..new` (define, never set);
+///   3. the indices `new..old` are deleted, which cannot fail after step 1;
+///   4. the data and `written` change last.
+/// A step the object refuses (frozen, sealed, non-extensible, an index the script made
+/// non-configurable) puts back what step 2 wrote (the old node at an old index, nothing past
+/// the old length), leaves the data and `written` as they were, and throws a `TypeError`
+/// ([`NOT_REFRESHED`]): the object is the old snapshot, whole, and the next read tries again.
+/// No index is deleted before every define has succeeded, so a put-back never has to add a
+/// property to an object that may refuse new ones.
 fn refresh_collection(
     cx: &mut DomCx<'_, '_>,
     slices: &mut Slices,
@@ -1230,22 +1279,40 @@ fn refresh_collection(
     interface: Interface,
     nodes: Vec<NodeId>,
 ) -> Completion<()> {
-    let old = match cx
+    let old_nodes = match cx
         .engine
         .host_data::<CollectionData>(object, interface.brand())
         .map_err(defect)?
     {
-        Some(data) => data.nodes.len(),
+        Some(data) => data.nodes.clone(),
         None => return Err(missing()),
     };
+    let old = old_nodes.len();
     let count = old.saturating_add(nodes.len());
     cx.engine
         .charge_steps(u64::try_from(count).unwrap_or(u64::MAX))?;
-    for index in 0..old {
-        let key = PropertyKey::String(cx.engine.new_string(&index.to_string())?);
-        engine(cx.engine.delete_property_or_throw(object, key))?;
+    for (index, node) in old_nodes.iter().enumerate().skip(nodes.len()) {
+        let key = index_key(cx, index)?;
+        if !engine(cx.engine.has_property(object, key))? {
+            continue;
+        }
+        let wrapper = slices.wrap.wrap(cx, *node)?;
+        if !define_index(cx, object, index, wrapper)? {
+            return Err(not_refreshed(cx));
+        }
     }
-    define_indices(cx, slices, object, &nodes)?;
+    for (index, node) in nodes.iter().enumerate() {
+        let wrapper = slices.wrap.wrap(cx, *node)?;
+        if !define_index(cx, object, index, wrapper)? {
+            put_back(cx, slices, object, &old_nodes, index)?;
+            return Err(not_refreshed(cx));
+        }
+    }
+    for index in nodes.len()..old {
+        if !delete_index(cx, object, index)? {
+            return Err(missing());
+        }
+    }
     let written = cx.state.tree.writes();
     match cx
         .engine
@@ -1259,6 +1326,37 @@ fn refresh_collection(
         }
         None => Err(missing()),
     }
+}
+
+/// Puts back what a refill wrote over the indices `0..failed`: the old node at each index of
+/// the old list, nothing at an index past it. Each of these indices holds the glue's
+/// configurable property the refill just defined, so the object takes every step.
+fn put_back(
+    cx: &mut DomCx<'_, '_>,
+    slices: &mut Slices,
+    object: ObjectRef,
+    old_nodes: &[NodeId],
+    failed: usize,
+) -> Completion<()> {
+    for index in 0..failed {
+        let taken = match old_nodes.get(index) {
+            Some(node) => {
+                let wrapper = slices.wrap.wrap(cx, *node)?;
+                define_index(cx, object, index, wrapper)?
+            }
+            None => delete_index(cx, object, index)?,
+        };
+        if !taken {
+            return Err(missing());
+        }
+    }
+    Ok(())
+}
+
+/// The `TypeError` of a kept collection the script changed so that it cannot be refreshed.
+fn not_refreshed(cx: &mut DomCx<'_, '_>) -> Abrupt {
+    let realm = cx.installed.realm;
+    error_of(cx.engine, realm, ErrorKind::TypeError, NOT_REFRESHED)
 }
 
 /// A `sequence<DOMString>` returned: a new Array of the realm's original `Array` with a String

@@ -43,7 +43,7 @@
 //! 80cf04abd88405c6c1f0ec7c28a0a53634df5fdd55e8833c6b6fe68511ca2aa6  crates/webidl/data/whatwg/dom.html
 //! 3915f58aa923a43fd03dd6fee040bbf8468856ef51270071b0a8bf11378658fe  crates/webidl/data/whatwg/webidl.html
 //! cc3aaecd4aaf3d0e63c7405191056e99d9e16eb64d356e1c8d59d5bc01265371  crates/webidl/data/whatwg/html-idl.html
-//! cb6feb084be7d5767c0cb7b491710ff8d4adaa66cf9241ed629439c3f6d4d35a  crates/webidl/selection.txt
+//! 4e9074c2caea97504e2e6ca9b7f67318d07059c6451dfda54ad443c4ca1081ba  crates/webidl/selection.txt
 //! e8b1d6e0efc188db4e1608564a7fcf305e3781c42884985e77e99f7e91d3fe5f  crates/webidl/Cargo.toml
 //! 143aaa6923355a7101127f3db0aecd9b7b3d9adeff8689c23628335884d31df1  crates/html/Cargo.toml
 //! b9c8d2d59f6f46474c0cfa0b8b77bea21d94fc73a30ad93d5bf6385c422197d2  rust-toolchain.toml
@@ -56,7 +56,7 @@
 //! 9803d546bb474bc834b29498ec0e075e0ef88ceed3de1989601c2ae8cf12eeed  crates/webidl/src/lib.rs
 //! fa6e285bfc241f9e68384ebbfd5f04e1c9172fbc254baca4c4fc8e1a154cd930  crates/webidl/src/model.rs
 //! 8db6c1d01d7d0b8dc68530edc4f5bf982f1b5cc2b1c49fbbb38496b9ff60dacd  crates/webidl/src/parser.rs
-//! 16ea3cd2daf6b2205ea3d13910c652b212c844856f9291fa89f73f2ff754ac01  crates/webidl/src/prelude.rs
+//! 659f6dde1690fb04ef70def5ad307a102f24994f62498513ea96b415e11d0fd1  crates/webidl/src/prelude.rs
 //! 22baac7ca4bee83065ca31df9ddab4faf4d6227668cb327360b0473564ed85a3  crates/webidl/src/selection.rs
 //! ```
 //!
@@ -69,7 +69,7 @@
 //! 36612fcd0caea180  6266  crates/webidl/data/whatwg/html-idl.html
 //! ```
 //!
-//! The sha256 of this whole file, with the 64 digits of this line read as zeros: eeb222f15be74b35f60c5701a649b19aed1357f739d854024b725b2fe9797b2c
+//! The sha256 of this whole file, with the 64 digits of this line read as zeros: a7ec104654e516af4805f361b4a3a5f307430769b1c4b2ef48b35b1491b24906
 
 use std::cell::Cell;
 
@@ -1321,10 +1321,63 @@ fn define_indices(
     Ok(())
 }
 
-/// A kept `[SameObject]` collection brought up to the tree: `nodes` replace its nodes, its old
-/// index properties are deleted and the new ones defined, and its `written` becomes the tree's
-/// `writes()`. A step is charged per old and per new node, before the work. The data changes
-/// last, so a refresh that ends half done leaves an object a later read refreshes again.
+/// The message of the `TypeError` a `[SameObject]` getter throws when the script changed its
+/// kept collection so that it cannot be refreshed.
+pub const NOT_REFRESHED: &str = "the kept collection cannot be refreshed";
+
+/// The key of the index `index`.
+fn index_key(cx: &mut DomCx<'_, '_>, index: usize) -> Completion<PropertyKey> {
+    Ok(PropertyKey::String(
+        cx.engine.new_string(&index.to_string())?,
+    ))
+}
+
+/// Defines the index `index` of `object` as the glue's data property of `value`: define, never
+/// set, so no accessor a script put there runs. `Ok(false)` when the object refuses it.
+fn define_index(
+    cx: &mut DomCx<'_, '_>,
+    object: ObjectRef,
+    index: usize,
+    value: Value,
+) -> Completion<bool> {
+    let key = index_key(cx, index)?;
+    let descriptor = data_property(value, false, true, true);
+    refused(engine(
+        cx.engine.define_property_or_throw(object, key, descriptor),
+    ))
+}
+
+/// Deletes the index `index` of `object`. `Ok(false)` when the object refuses it.
+fn delete_index(cx: &mut DomCx<'_, '_>, object: ObjectRef, index: usize) -> Completion<bool> {
+    let key = index_key(cx, index)?;
+    refused(engine(cx.engine.delete_property_or_throw(object, key)))
+}
+
+/// `Ok(true)` for a step the object took, `Ok(false)` for one it refused with a throw; an end
+/// of the run stays an end.
+fn refused(step: Completion<()>) -> Completion<bool> {
+    match step {
+        Ok(()) => Ok(true),
+        Err(Abrupt::Throw(_)) => Ok(false),
+        Err(end @ Abrupt::Terminated(_)) => Err(end),
+    }
+}
+
+/// A kept `[SameObject]` collection brought up to the tree, all or nothing: its index
+/// properties and its data always show the same list. A step is charged per old and per new
+/// node, before the work. In this order:
+///   1. each old index at or past the new length is defined again as the glue's property of
+///      its old node, which fails at once on an index the script made non-configurable, and
+///      makes every such index one the glue can delete;
+///   2. the new nodes are defined over the indices `0..new` (define, never set);
+///   3. the indices `new..old` are deleted, which cannot fail after step 1;
+///   4. the data and `written` change last.
+/// A step the object refuses (frozen, sealed, non-extensible, an index the script made
+/// non-configurable) puts back what step 2 wrote (the old node at an old index, nothing past
+/// the old length), leaves the data and `written` as they were, and throws a `TypeError`
+/// ([`NOT_REFRESHED`]): the object is the old snapshot, whole, and the next read tries again.
+/// No index is deleted before every define has succeeded, so a put-back never has to add a
+/// property to an object that may refuse new ones.
 fn refresh_collection(
     cx: &mut DomCx<'_, '_>,
     slices: &mut Slices,
@@ -1332,22 +1385,40 @@ fn refresh_collection(
     interface: Interface,
     nodes: Vec<NodeId>,
 ) -> Completion<()> {
-    let old = match cx
+    let old_nodes = match cx
         .engine
         .host_data::<CollectionData>(object, interface.brand())
         .map_err(defect)?
     {
-        Some(data) => data.nodes.len(),
+        Some(data) => data.nodes.clone(),
         None => return Err(missing()),
     };
+    let old = old_nodes.len();
     let count = old.saturating_add(nodes.len());
     cx.engine
         .charge_steps(u64::try_from(count).unwrap_or(u64::MAX))?;
-    for index in 0..old {
-        let key = PropertyKey::String(cx.engine.new_string(&index.to_string())?);
-        engine(cx.engine.delete_property_or_throw(object, key))?;
+    for (index, node) in old_nodes.iter().enumerate().skip(nodes.len()) {
+        let key = index_key(cx, index)?;
+        if !engine(cx.engine.has_property(object, key))? {
+            continue;
+        }
+        let wrapper = slices.wrap.wrap(cx, *node)?;
+        if !define_index(cx, object, index, wrapper)? {
+            return Err(not_refreshed(cx));
+        }
     }
-    define_indices(cx, slices, object, &nodes)?;
+    for (index, node) in nodes.iter().enumerate() {
+        let wrapper = slices.wrap.wrap(cx, *node)?;
+        if !define_index(cx, object, index, wrapper)? {
+            put_back(cx, slices, object, &old_nodes, index)?;
+            return Err(not_refreshed(cx));
+        }
+    }
+    for index in nodes.len()..old {
+        if !delete_index(cx, object, index)? {
+            return Err(missing());
+        }
+    }
     let written = cx.state.tree.writes();
     match cx
         .engine
@@ -1361,6 +1432,37 @@ fn refresh_collection(
         }
         None => Err(missing()),
     }
+}
+
+/// Puts back what a refill wrote over the indices `0..failed`: the old node at each index of
+/// the old list, nothing at an index past it. Each of these indices holds the glue's
+/// configurable property the refill just defined, so the object takes every step.
+fn put_back(
+    cx: &mut DomCx<'_, '_>,
+    slices: &mut Slices,
+    object: ObjectRef,
+    old_nodes: &[NodeId],
+    failed: usize,
+) -> Completion<()> {
+    for index in 0..failed {
+        let taken = match old_nodes.get(index) {
+            Some(node) => {
+                let wrapper = slices.wrap.wrap(cx, *node)?;
+                define_index(cx, object, index, wrapper)?
+            }
+            None => delete_index(cx, object, index)?,
+        };
+        if !taken {
+            return Err(missing());
+        }
+    }
+    Ok(())
+}
+
+/// The `TypeError` of a kept collection the script changed so that it cannot be refreshed.
+fn not_refreshed(cx: &mut DomCx<'_, '_>) -> Abrupt {
+    let realm = cx.installed.realm;
+    error_of(cx.engine, realm, ErrorKind::TypeError, NOT_REFRESHED)
 }
 
 /// A `sequence<DOMString>` returned: a new Array of the realm's original `Array` with a String
@@ -2331,7 +2433,7 @@ pub trait Reading {
         let _ = (cx, this);
         Err(not_supported("Node.hasChildNodes"))
     }
-    /// The getter of `Node.childNodes`, `NodeList`; deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: \[SameObject\] as the same snapshot object refreshed when read.
+    /// The getter of `Node.childNodes`, `NodeList`; deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: \[SameObject\] as the same snapshot object refreshed when read; deviation: a refresh the script blocked by freezing, sealing or making the object non-extensible or an index non-configurable keeps the old snapshot whole and the getter throws TypeError, where a browser refuses that change on the collection itself.
     fn node_child_nodes(&mut self, cx: &mut DomCx<'_, '_>, this: NodeId) -> DomResult<Vec<NodeId>> {
         let _ = (cx, this);
         Err(not_supported("Node.childNodes"))
@@ -2528,7 +2630,7 @@ pub trait Reading {
         let _ = (cx, this, class_names);
         Err(not_supported("Element.getElementsByClassName"))
     }
-    /// The getter of `Element.children`, `HTMLCollection`; deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: \[SameObject\] as the same snapshot object refreshed when read.
+    /// The getter of `Element.children`, `HTMLCollection`; deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: \[SameObject\] as the same snapshot object refreshed when read; deviation: a refresh the script blocked by freezing, sealing or making the object non-extensible or an index non-configurable keeps the old snapshot whole and the getter throws TypeError, where a browser refuses that change on the collection itself.
     fn element_children(&mut self, cx: &mut DomCx<'_, '_>, this: NodeId) -> DomResult<Vec<NodeId>> {
         let _ = (cx, this);
         Err(not_supported("Element.children"))
@@ -2689,7 +2791,7 @@ pub trait Reading {
         let _ = (cx, this, element_id);
         Err(not_supported("Document.getElementById"))
     }
-    /// The getter of `Document.children`, `HTMLCollection`; deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: \[SameObject\] as the same snapshot object refreshed when read.
+    /// The getter of `Document.children`, `HTMLCollection`; deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: \[SameObject\] as the same snapshot object refreshed when read; deviation: a refresh the script blocked by freezing, sealing or making the object non-extensible or an index non-configurable keeps the old snapshot whole and the getter throws TypeError, where a browser refuses that change on the collection itself.
     fn document_children(
         &mut self,
         cx: &mut DomCx<'_, '_>,
@@ -2825,7 +2927,7 @@ pub trait Reading {
         let _ = (cx, this, element_id);
         Err(not_supported("DocumentFragment.getElementById"))
     }
-    /// The getter of `DocumentFragment.children`, `HTMLCollection`; deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: \[SameObject\] as the same snapshot object refreshed when read.
+    /// The getter of `DocumentFragment.children`, `HTMLCollection`; deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: \[SameObject\] as the same snapshot object refreshed when read; deviation: a refresh the script blocked by freezing, sealing or making the object non-extensible or an index non-configurable keeps the old snapshot whole and the getter throws TypeError, where a browser refuses that change on the collection itself.
     fn document_fragment_children(
         &mut self,
         cx: &mut DomCx<'_, '_>,
@@ -2876,7 +2978,7 @@ pub trait Reading {
         let _ = (cx, this);
         Err(not_supported("NodeList.length"))
     }
-    /// The getter of `HTMLCollection.length`, `unsigned long`.
+    /// The getter of `HTMLCollection.length`, `unsigned long`; deviation: no named properties (collection\["id"\] is undefined, namedItem answers) until a later story.
     fn html_collection_length(
         &mut self,
         cx: &mut DomCx<'_, '_>,
@@ -2885,7 +2987,7 @@ pub trait Reading {
         let _ = (cx, this);
         Err(not_supported("HTMLCollection.length"))
     }
-    /// `HTMLCollection.item`: `Element? item(unsigned long index)`.
+    /// `HTMLCollection.item`: `Element? item(unsigned long index)`; deviation: no named properties (collection\["id"\] is undefined, namedItem answers) until a later story.
     fn html_collection_item(
         &mut self,
         cx: &mut DomCx<'_, '_>,
@@ -2895,7 +2997,7 @@ pub trait Reading {
         let _ = (cx, this, index);
         Err(not_supported("HTMLCollection.item"))
     }
-    /// `HTMLCollection.namedItem`: `Element? namedItem(DOMString name)`.
+    /// `HTMLCollection.namedItem`: `Element? namedItem(DOMString name)`; deviation: no named properties (collection\["id"\] is undefined, namedItem answers) until a later story.
     fn html_collection_named_item(
         &mut self,
         cx: &mut DomCx<'_, '_>,

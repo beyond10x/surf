@@ -1072,6 +1072,14 @@ live collections and `WindowProxy` stay deviations; promises, jobs and the micro
 (slice 10, HOST-192 to HOST-200); `Date` and `Math.random` (slice 4, Q6); and of what came after
 ES5 everything but generators and the sixth slice (`CHANGELOG.md:98-113 @ 0.8.0`).
 
+A `[SameObject]` collection (`childNodes`, `children`) is one snapshot object per node, refreshed
+all or nothing when its getter is read after a write to a child list; when the script froze or
+sealed it, made it non-extensible or made one of its indices non-configurable so that the
+refresh cannot complete, the object stays the old snapshot, whole, and the getter throws a
+`TypeError`, where a browser refuses that change on the collection itself. An `HTMLCollection`
+has no named properties (`collection["id"]` is `undefined`, `namedItem` answers), a deviation
+until a later story builds them.
+
 Of those exceptions, swell lists as open that "`string_units` and `string_units_in` copy without
 a memory charge" and that "The `call` and `new` instructions copy their argument list uncharged"
 (`docs/plan/second-batch.md:284-285 @ 0.8.0`). These copies are not bounded by `memory_bytes`;

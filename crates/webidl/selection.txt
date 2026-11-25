@@ -52,7 +52,7 @@ Node getRootNode reading
 Node parentNode reading
 Node parentElement reading
 Node hasChildNodes reading
-Node childNodes reading deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: [SameObject] as the same snapshot object refreshed when read
+Node childNodes reading deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: [SameObject] as the same snapshot object refreshed when read; deviation: a refresh the script blocked by freezing, sealing or making the object non-extensible or an index non-configurable keeps the old snapshot whole and the getter throws TypeError, where a browser refuses that change on the collection itself
 Node firstChild reading
 Node lastChild reading
 Node previousSibling reading
@@ -115,7 +115,7 @@ Element getElementsByTagNameNS reading deviation: a snapshot for a live collecti
 Element getElementsByClassName reading deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114)
 Element insertAdjacentElement mutation
 Element insertAdjacentText mutation
-Element children reading deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: [SameObject] as the same snapshot object refreshed when read
+Element children reading deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: [SameObject] as the same snapshot object refreshed when read; deviation: a refresh the script blocked by freezing, sealing or making the object non-extensible or an index non-configurable keeps the old snapshot whole and the getter throws TypeError, where a browser refuses that change on the collection itself
 Element firstElementChild reading
 Element lastElementChild reading
 Element childElementCount reading
@@ -164,7 +164,7 @@ Document createNodeIterator throws reason: traversal
 Document createTreeWalker throws reason: traversal
 Document getElementById reading
 Document customElementRegistry throws reason: custom elements
-Document children reading deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: [SameObject] as the same snapshot object refreshed when read
+Document children reading deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: [SameObject] as the same snapshot object refreshed when read; deviation: a refresh the script blocked by freezing, sealing or making the object non-extensible or an index non-configurable keeps the old snapshot whole and the getter throws TypeError, where a browser refuses that change on the collection itself
 Document firstElementChild reading
 Document lastElementChild reading
 Document childElementCount reading
@@ -220,7 +220,7 @@ DocumentType remove mutation
 
 DocumentFragment constructor mutation
 DocumentFragment getElementById reading
-DocumentFragment children reading deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: [SameObject] as the same snapshot object refreshed when read
+DocumentFragment children reading deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: [SameObject] as the same snapshot object refreshed when read; deviation: a refresh the script blocked by freezing, sealing or making the object non-extensible or an index non-configurable keeps the old snapshot whole and the getter throws TypeError, where a browser refuses that change on the collection itself
 DocumentFragment firstElementChild reading
 DocumentFragment lastElementChild reading
 DocumentFragment childElementCount reading
@@ -235,9 +235,9 @@ NodeList item reading
 NodeList length reading
 NodeList iterable reading
 
-HTMLCollection length reading
-HTMLCollection item reading
-HTMLCollection namedItem reading
+HTMLCollection length reading deviation: no named properties (collection["id"] is undefined, namedItem answers) until a later story
+HTMLCollection item reading deviation: no named properties (collection["id"] is undefined, namedItem answers) until a later story
+HTMLCollection namedItem reading deviation: no named properties (collection["id"] is undefined, namedItem answers) until a later story
 
 DOMException constructor exception
 DOMException name exception
