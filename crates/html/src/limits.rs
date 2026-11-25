@@ -19,8 +19,17 @@ pub struct Limits {
     /// decoded; the cut input is parsed to its end. Default 16 MiB (16,777,216), the body limit
     /// of `surf-fetch`.
     pub max_input_bytes: usize,
-    /// The most elements on the stack of open elements: an element that would be the next one
-    /// is not created. Default 512.
+    /// The deepest node of the tree: the elements on its path from the root, itself included,
+    /// a template counted for the nodes of its contents; for a subtree out of the tree (a
+    /// hook's writes make them), from its own top. It bounds the tree as it is when the parser
+    /// would insert or move a node, not the stack of open elements: an element that would be
+    /// deeper is not created, and a move of the adoption agency algorithm or a
+    /// `selectedcontent` copy that would put a node deeper is not made (the crate
+    /// documentation, "Limits"). The stack of open elements is bounded by the node limit
+    /// instead (a node is on it at most once), and every read of it by the step limit, except
+    /// the pops of "stop parsing" ([`Limits::max_steps`]), one for each entry left in each
+    /// parse pass.
+    /// Default 512.
     pub max_depth: usize,
     /// The most nodes the tree holds ([`crate::Tree::node_count`]: the document, every node
     /// under it, template contents and nodes removed from their parent). Default 1,048,576.
@@ -42,8 +51,39 @@ pub struct Limits {
     /// 536 MiB (inferred from the bound, not measured).
     pub max_stored_bytes: usize,
     /// The most entries tree construction visits in its scans of the stack of open elements, of
-    /// the list of active formatting elements and of a node's children, checked after each
-    /// token ([`crate::Tree::steps`] reads them). Default 134,217,728 (2^27).
+    /// the list of active formatting elements and of a node's children, and the nodes its walks
+    /// for the depth limit visit (a walk up to read a depth, the depths of the stack's entries
+    /// read again after a hook's write or an adoption agency iteration, each entry read and
+    /// each parent passed to, and the walk of the nodes an adoption agency iteration would move
+    /// deeper), and the stack's own changes (each entry an insertion or a removal moves, each
+    /// scope boundary visited, each entry the `frameset` rule pops; not the pops of "stop
+    /// parsing", which run once per parse pass, after its last token)
+    /// ([`crate::Tree::steps`] reads them). Default 134,217,728 (2^27).
+    ///
+    /// The count is read after each token, before each entry of every scan of the stack of
+    /// open elements or of the list of active formatting elements (and of the pass that reads
+    /// the stack's depths again), and before every write of the parser to the tree and every
+    /// stop at another limit. Past the limit the scan ends with its answer for "not found",
+    /// the write is not made, and parsing stops at [`Limit::Steps`], never at another limit.
+    /// Not read inside them, the pieces below: the pass that marks the stack's depths to be
+    /// read again (no step); the moves of a removal from inside the stack, the entries above
+    /// it and the boundaries, and of an insertion, the entries above it (counted at once); the
+    /// pops after a scan that found where to stop (that scan counted them); a walk up the tree
+    /// from one entry (a step for each hop, up to the node count); a child list scanned for a
+    /// place or moved, and the walk of the nodes under the furthest block (a step each).
+    ///
+    /// A parse ends fewer than 4 × [`Limits::max_nodes`] steps past `max_steps`. Past the
+    /// limit every read ends its scan or refuses its write, so what is still counted is the
+    /// rest of the stretch between two reads in which the count passed it, and after it the
+    /// adoption agency algorithm's putting back of the clones its inner loop made (step 4.23).
+    /// Each piece of work a stretch counts at once visits fewer than `max_nodes` entries or
+    /// nodes: a node is on the stack at most once, in one child list, and under a node, so the
+    /// stack, its boundaries, a child list, a walk up the tree and the nodes under one node
+    /// each hold fewer. The longest stretches hold four such pieces: an iteration of the inner
+    /// loop that removes an entry (the entries above it and the boundaries), then the putting
+    /// back (a child list scanned for the place, and the document's children when it is the
+    /// place); and steps 4.26 to 4.30 (a removal from the stack, an insertion into it, the
+    /// furthest block's children moved). Every other stretch holds at most three.
     pub max_steps: usize,
 }
 
@@ -76,8 +116,8 @@ impl Default for Limits {
 pub enum Limit {
     /// The input was longer than [`Limits::max_input_bytes`]; the parse ran over its prefix.
     InputBytes,
-    /// An element would have been one more than [`Limits::max_depth`] on the stack of open
-    /// elements.
+    /// A node the parser would have made or moved would have been deeper than
+    /// [`Limits::max_depth`] in the tree as it was then.
     Depth,
     /// A node would have taken the tree past [`Limits::max_nodes`].
     Nodes,

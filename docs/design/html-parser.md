@@ -373,14 +373,78 @@ Open: whether the answer wants kinds for those states, or for `summary`, `detail
 | limit | default |
 |---|---|
 | input bytes | 16,777,216 (16 MiB, the `surf-fetch` body limit) |
-| tree depth (elements on the stack of open elements) | 512 |
+| tree depth (elements on the path from the root to any node of the tree, or from the top of a subtree out of it) | 512 |
 | nodes, template contents included | 1,048,576 |
 | attributes on one element | 1,024 |
 | stored bytes (every string the tree holds, clones included, and 80 for each attribute) | 67,108,864 (64 MiB) |
-| steps (entries tree construction visits in its scans) | 134,217,728 (2^27) |
+| steps (entries tree construction visits in its scans, and nodes the walks of the depth limit visit) | 134,217,728 (2^27) |
 
 Reaching one stops parsing as "stop parsing" does; the document holds what was built and names
 the limit (a row field, item 2).
+
+Depth, since fix rounds 2 and 3 of `story:html-script-hook`: the limit bounds the tree, in
+every parse, with a script hook or without, and not the stack of open elements. Markup alone
+made a tree deeper than its stack before (a random search at a limit of 16 found 18; the
+`selectedcontent` copy made 2N − 4 at a limit of N), and a hook's writes can make it deeper
+still; foster parenting makes the stack deeper than the tree. No node of a parsed tree is
+deeper than the limit, counted as the write surface counts: the elements on its path from the
+root, itself included, a template counted for the nodes of its contents; a subtree out of the
+tree is counted from its own top. The parse stops with `Depth` only before a node it would
+make or move would pass the limit in the tree as it is then: an element inserted under a
+parent at the limit (each insertion of an element, the in-head `script`, the `template` start
+tag and the `html` element included); an outer iteration of the adoption agency algorithm
+whose moves would put a node past it, checked for the whole iteration before its first move, so
+the iteration changes nothing and the tree holds every node where it was; an element of the
+`selectedcontent` copy under a node at the limit, which leaves the copy cut there.
+
+How the parser knows a depth (fix round 3): no node's record keeps one (`NODE_BYTES` stays
+136). The parser keeps the depth of each entry of the stack of open elements, set when the
+entry is pushed from the depth of its place, and reads them again from the tree after a hook's
+write that moved or removed an element and after each adoption agency iteration: each entry
+from its parent up to the first entry already read, most often one step. After an iteration
+only the entries from the formatting element's place up are read, unless a hook's writes put
+an entry under one above it (then all). An insertion place is an entry, the parent of the
+foster parenting `table` or a template's contents, so a check reads a kept depth; a place that
+is no entry is walked up to one. The adoption agency walks the furthest block's subtree only
+when its children would end deeper than they were, for the deepest of them; a move that makes
+no node deeper walks nothing of what it moves. The `selectedcontent` update counts the depth
+of each `selectedcontent` on its walk down the document. Every parent or host a walk up passes
+to, and every node the adoption agency's walk down visits, is a step.
+
+The stack of open elements without a bound of its own (fix round 4): a hook's writes can keep
+every element of the markup open with no parent, so the stack is as long as the node limit lets
+it be (a node is on it at most once). The step limit bounds every read of it: each entry whose
+depth is read again is a step, also one with no parent, which no walk up reaches; an insertion
+into the stack or a removal from it counts each entry it moves and each scope boundary of the
+stack's list of them it visits; the `frameset` rule counts each entry it pops. The pops of
+"stop parsing" are not counted: they come once per parse pass, after its last token, and a
+count there would change what the step limit checked for that token. A `meta` that changes the
+encoding of `parse_document_bytes` ends the first pass and starts a second over the same bytes;
+that pass takes no hook, so its stack stays inside the depth limit.
+
+Read inside the token (fix round 5): with the stack that long, one token's work
+could pass the limit by any factor (one `</b>` whose inner loop removes N entries, each removal
+moving the M entries above it). The count is read after each token, before each entry of every
+scan of the stack of open elements or of the list of active formatting elements (the scopes,
+the stack position, popping, the implied end tags, "any other end tag", the `li` and `dd`/`dt`
+scans, clearing back to a table context, resetting the insertion mode, the search for a
+`template`, the place of foster parenting, the breakout of foreign content and its end tags,
+Noah's Ark, the reconstruction, the list's scans and the adoption agency's scans and inner
+loop, and the pass that reads the stack's depths again), and before every write of the parser
+to the tree and every stop at another limit. Not read inside them, counted as the derivation
+at `max_steps` says: the pass that marks the stack's depths to be read again (no step), the
+moves of a removal from inside the stack or an insertion into it (counted at once), the pops
+after a scan that found where to stop (the scan counted them), a walk up the tree from one
+entry (each hop), a child list's scan or move and the walk under the furthest block (each
+node). Past the limit the scan ends with its answer for "not found", the write is not made and
+parsing stops at `Steps`, never at another limit (a page that sets the attribute, depth, node
+or stored-byte limit just past what a cut scan's answer would do stops at `Steps`, fix round 6);
+an adoption agency iteration whose inner loop made clones puts them back at the place of step
+4.14 first, so every node the parse made stays in the tree. Below the limit no read changes a
+tree or a count. A parse ends fewer than 4 ×
+`max_nodes` steps past the limit: past it only the rest of the stretch between two reads and
+the putting back are counted, and the longest stretches hold four pieces of work of fewer than
+`max_nodes` visits each (`limits.rs`, `max_steps`, has the derivation).
 
 Stored bytes, as `story:html-parser-limits` made them exact: the UTF-8 bytes of every string the
 tree holds, element local names, attribute names, prefixes and values, text, comment data,
@@ -397,7 +461,8 @@ and a text's first 8 bytes. At the defaults that is about 536 MiB (inferred from
 Nodes are not counted in the stored bytes: the node limit bounds them, and at 136 bytes each
 the default stored-byte limit would otherwise stop a tree long before the node limit. Steps:
 every entry visited in a scan of the stack of open elements or of the list of active formatting
-elements, and every child visited in a parent's child list, checked after each token;
+elements, and every child visited in a parent's child list, checked after each token (and,
+since fix round 5 of `story:html-script-hook`, inside the token: "Read inside the token" above);
 `Tree::steps` reads the count a parse ended with. "Is in the stack of open elements" visits no
 entry (the stack keeps a count for each node), so the reconstruction before each character of a
 text costs no step when there is nothing to reconstruct (before the review, text 20 elements
@@ -536,7 +601,7 @@ section named-character-references https://html.spec.whatwg.org/multipage/named-
 wpt named-character-references html/syntax/parsing/named-character-references.html script
 data named-character-references html5lib-tests/tokenizer/namedEntities.test
 section tree-construction https://html.spec.whatwg.org/multipage/parsing.html#tree-construction
-open tree-construction script-processing The script start tag in head and the script end tag in the text insertion mode: the script element's parser flags, preparing and running the script, the script nesting level and the parser pause.
+open tree-construction script-processing The script end tag in the text insertion mode: the insertion point, a script nesting level above 1, the parser pause and the pending parsing-blocking script, and `document.write`.
 open tree-construction custom-element-creation Create an element for a token: looking up a custom element definition, willExecuteScript, the constructor and the element reactions.
 open tree-construction declarative-shadow-roots The template start tag in head with a shadowrootmode attribute: attaching a declarative shadow root.
 open tree-construction template-content-patching The template start tag in head with a for attribute: content patching, which moves the template's content into the element it marks; surf keeps it in the template contents.
@@ -1021,10 +1086,10 @@ the `open` line of `html-sections` that lists it:
 
 | where | what surf does | listed as |
 |---|---|---|
-| the `script` start tag in "in head" (`#parsing-main-inhead`): the element's parser document, "force async" and, for a fragment, "already started" | inserts the element and keeps none of these, which only running a script reads | `tree-construction script-processing` |
-| the `script` end tag in the "text" insertion mode (`#parsing-main-incdata`): prepare the script element, the script nesting level, the parser pause flag, run a pending parsing-blocking script | pops the element and returns to the original insertion mode; nothing is prepared or run, the parser never pauses | `tree-construction script-processing` |
+| the `script` start tag in "in head" (`#parsing-main-inhead`): the element's parser document, "force async" and, for a fragment, "already started" | inserts the element and keeps none of these: a parse is of one document, so the parser document is that document; "force async" is read only by external and module scripts, which do not run (`docs/design/scripts.md`, Q2); `parse_fragment` calls no hook, as "already started" would stop each script it parses | (not a gap since `story:html-script-hook`) |
+| the `script` end tag in the "text" insertion mode (`#parsing-main-incdata`): prepare the script element, the script nesting level, the parser pause flag, run a pending parsing-blocking script | pops the element and returns to the original insertion mode. With scripting enabled and a `ScriptHook` (`parse_document_with_hook`), after the token the steps of "prepare the script element" that `docs/design/scripts.md` Q2 takes decide whether the hook runs the element or reports it not run with a word of Q1; a `script` open when the parser stopped, at the end of the input or at a limit, is reported `eof`. The hook is called once for each script element the parser inserts. Parsing goes on over the tree the hook left. There is no insertion point, the script nesting level is never above 1, and the parser never pauses | `tree-construction script-processing` |
 | the insertion point (`#insertion-point`) and `document.write()` | the input stream is the whole decoded body followed by the end of file; there is no insertion point and no `document.write` | `the-input-byte-stream insertion-point` |
-| the SVG `script` end tag in foreign content (`#parsing-main-inforeign`) | pops the element; nothing is processed | `parsing-main-inforeign svg-script-processing` |
+| the SVG `script` end tag in foreign content (`#parsing-main-inforeign`) | pops the element; nothing is processed. With scripting enabled and a `ScriptHook`, the hook is told once that the element is not run, `svg`, however it is closed (its end tag, the self-closing flag, an end tag or a start tag that pops it, the end of the input), when it leaves the stack of open elements or the parse ends | `parsing-main-inforeign svg-script-processing` |
 | the end (`#the-end`): document readiness, the scripts to run when parsing has finished, `DOMContentLoaded`, the scripts to run as soon as possible, the `load` event | pops every node off the stack of open elements and ends the parse with the ending command of item 2 | `the-end scripts-and-events` |
 | custom element creation in "create an element for a token" (`#create-an-element-for-the-token`) | looks up no definition; `willExecuteScript` is always false; no constructor and no reaction runs | `tree-construction custom-element-creation` |
 | `noscript` | parsed with parser scripting disabled true, so its content is markup and is in the tree | (not a gap: surf has scripting disabled) |

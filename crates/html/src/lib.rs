@@ -47,8 +47,10 @@
 //!   `surf-html-conformance` and never edited by hand; it carries the BSD 3-Clause notice of
 //!   the WHATWG in its header.
 //! - [`tree`]: the node arena and its readers [`Tree::root`], [`Tree::data`],
-//!   [`Tree::children`], [`Tree::parent`] and [`Tree::descendants`]. Only tree construction
-//!   changes a tree; a node is never dropped from it.
+//!   [`Tree::children`], [`Tree::parent`] and [`Tree::descendants`], and its public write
+//!   surface, the DOM's operations a script's bindings need (the module documentation lists
+//!   them), each held to the limits of the parse ([`Tree::limits`]) and answering a
+//!   [`WriteError`] instead of writing. A node is never dropped from a tree.
 //! - [`tree_builder`]: written for every insertion mode of 13.2.6.4, with the stack of open
 //!   elements and its scopes, the list of active formatting elements with its Noah's Ark clause
 //!   and its reconstruction, the adoption agency algorithm, foster parenting, the stack of
@@ -56,7 +58,12 @@
 //!   adjustments, the fragment parsing algorithm, and the `meta` rules that change the
 //!   encoding. At the end of a document's parse each `select` updates its `selectedcontent`
 //!   elements' copy of the selected `option`, as the DOM's queued update would. Parse errors
-//!   are not collected, and no script runs.
+//!   are not collected, and no script runs here: with scripting enabled and a [`ScriptHook`]
+//!   ([`parse_document_with_hook`]), the hook is called once for each script element the
+//!   parser inserts, HTML or SVG, when it leaves the stack of open elements or the parse ends,
+//!   to run it or to report it not run with its reason ([`NotRun`]): an SVG `script`, however
+//!   it is closed, and an HTML `script` open when the parser stopped, at the end of the input
+//!   or at a limit, are reported not run. A MathML `script` is no script element: no call.
 //! - [`limits`]: written. [`limits::Limits`] holds the six limits of
 //!   `docs/design/html-parser.md` item 7 with their defaults, [`ParseOptions::limits`] carries
 //!   them into a parse, and [`Tree::stopped_by`] names the [`limits::Limit`] that stopped one.
@@ -66,6 +73,8 @@
 //!
 //! - [`parse_document`]: the tokenizer and tree construction over decoded text. With no
 //!   confidence in an encoding, a `meta` does not change it.
+//! - [`parse_document_with_hook`]: [`parse_document`] with a [`ScriptHook`], called while
+//!   scripting is enabled.
 //! - [`parse_fragment`]: the fragment parsing algorithm (13.4) for a context element named by
 //!   its namespace and local name, with no attribute and no ancestor: a document fragment that
 //!   holds the children of the algorithm's `html` root.
@@ -98,8 +107,30 @@
 //!   to its end, the end-of-file step included, so the tree is that of the prefix, and
 //!   [`limits::Limit::InputBytes`] is named unless another limit stopped the parse of the
 //!   prefix. The parse again after a `meta` that changes the encoding reads the same cut bytes.
-//! - **Depth** ([`limits::Limits::max_depth`], default 512): an element that would be entry
-//!   513 of the stack of open elements is not created.
+//! - **Depth** ([`limits::Limits::max_depth`], default 512): it bounds the tree, in every
+//!   parse, with a hook or without. No node of the tree is deeper than 512: the elements on its
+//!   path from the root, itself included, a template counted for the nodes of its contents (the
+//!   count the write surface refuses a write by); a subtree out of the tree, which a hook's
+//!   writes make, is counted from its own top. The depth checked is the one the node has in
+//!   the tree as it is at that moment. Each place that gives a node a parent checks before it:
+//!   an element inserted (also the in-head `script`, the `template` start tag and the `html`
+//!   element) is not created under a parent 512 deep; an outer iteration of the adoption agency
+//!   algorithm that would put a node past the limit makes no change, checked before its first
+//!   move; the `selectedcontent` copy makes no element under a node 512 deep. Each stops the
+//!   parse with [`limits::Limit::Depth`], and only these: the stack of open elements is not
+//!   bounded by it (foster parenting puts an entry above the `table` that is not under it).
+//!   The node limit bounds the stack's length (a node of the tree is on it at most once), and
+//!   the step limit bounds every read of it but the pops of "stop parsing" (see Steps).
+//!   Text, comments and processing instructions are no deeper than their parent. How the
+//!   parser knows a depth: it keeps the depth of each entry of the stack of open elements, set
+//!   when the entry is pushed, and reads them again from the tree after a hook's write that
+//!   moved or removed an element, and after an adoption agency iteration (the entries from the
+//!   formatting element's place up; all of them when a hook's writes put an entry under one
+//!   above it). An insertion place is an entry, the parent of the foster parenting `table` or
+//!   a template's contents, so a check reads a kept depth; another place is walked up to an
+//!   entry. A node no record keeps a depth for is walked only for a move of the adoption agency
+//!   that puts the furthest block's children deeper, for the deepest of them; a move that
+//!   makes no node deeper walks nothing of what it moves.
 //! - **Nodes** ([`limits::Limits::max_nodes`], default 1,048,576, template contents
 //!   included): a node whose creation would take [`Tree::node_count`] past the limit is not
 //!   created (a `template` is two nodes). The reconstruction of the active formatting elements
@@ -125,12 +156,34 @@
 //! - **Steps** ([`limits::Limits::max_steps`], default 2^27, 134,217,728): every entry visited
 //!   in a scan of the stack of open elements or of the list of active formatting elements (the
 //!   scopes, popping, "any other end tag", Noah's Ark, the reconstruction, the adoption agency
-//!   algorithm's scans and its walk to the root), and every child visited in a parent's child
+//!   algorithm's scans and its walk to the root), every child visited in a parent's child
 //!   list (inserting before a reference, finding the text node to append to, removing a node,
-//!   moving children, looking for an element child). The count is checked after each token:
-//!   the token that takes it past the limit is processed whole, then parsing stops. The
-//!   `selectedcontent` update after the end-of-file token counts every node it visits and
-//!   copies and is checked after each, so it stops where it passes the limit.
+//!   moving children, looking for an element child), and every node the walks of the depth
+//!   limit visit: each parent or host a walk up to a kept depth passes to, each entry of the
+//!   stack of open elements whose depth is read again (also one with no parent, which no walk
+//!   reaches), and each node under the furthest block that the adoption agency algorithm walks
+//!   to check a move down. The changes to the stack count too: each entry an insertion or a
+//!   removal inside it moves, each scope boundary the stack's list of them visits then, and
+//!   each entry the `frameset` rule pops. Not counted: the pops of "stop parsing", once per
+//!   parse pass after its last token, one for each entry left (a `meta` that changes the
+//!   encoding of [`parse_document_bytes`] ends the first pass and starts a second; that pass
+//!   takes no hook, so its stack stays inside the depth limit). The count is read after each
+//!   token; before each entry of every scan of the stack of open elements or of the list of
+//!   active formatting elements (the scans named above, and the pass that reads the stack's
+//!   depths again, before each entry it reads); and before every write of the parser to the
+//!   tree and every stop at another limit. Past the limit the scan ends with its answer for
+//!   "not found", the write is not made, and parsing stops at the step limit, never at another
+//!   limit. Not read inside them, and counted as said: the pass that marks the stack's depths
+//!   to be read again (no step), the moves of the entries above and of the boundaries in a
+//!   removal from inside the stack or an insertion into it (counted at once), the pops after
+//!   a scan that found where to stop (the scan counted them), a walk up the tree from one
+//!   entry (each hop), and the scans of a child list and the walk under the furthest block
+//!   (each node). So the token that takes the count past the limit is processed up to the next
+//!   read, and the tree keeps what it wrote before; an adoption agency iteration that the
+//!   limit ends inside puts the clones it made back into the tree first. A parse ends fewer
+//!   than 4 × `max_nodes` steps past the limit ([`limits::Limits::max_steps`] gives the
+//!   derivation). The `selectedcontent` update after the end-of-file token counts every node
+//!   it visits and copies and is checked after each, so it stops where it passes the limit.
 //!   [`Tree::steps`] reads the count a parse ended with. A scan of a child list for a reference
 //!   starts at the last child, where the `table` of foster parenting stays while it is open.
 //!   "Is in the stack of open elements"
@@ -150,8 +203,9 @@
 //! bytes a parse allocates, not its time.
 //!
 //! What a parse holds besides the tree: the input as code points, 4 bytes for each character
-//! (at most 64 MiB for an input of 16 MiB), the stack of open elements (at most
-//! [`limits::Limits::max_depth`] entries, and a count of 4 bytes for each node), the list of
+//! (at most 64 MiB for an input of 16 MiB), the stack of open elements (at most one entry for
+//! each node, and 4 bytes for each node: whether it is on the stack and its entry's depth), the
+//! list of
 //! active formatting elements with a copy of each entry's start tag token, and the tokenizer's
 //! current token and temporary buffer (a tag name of 1 byte and a buffer of 4 bytes for each
 //! letter of an end tag name in RCDATA, RAWTEXT or script data, given back as character tokens
@@ -169,8 +223,8 @@ pub mod tokenizer;
 pub mod tree;
 pub mod tree_builder;
 
-pub use tree::{Attribute, Namespace, NodeData, NodeId, Tree};
-pub use tree_builder::NOT_YET_PARSED;
+pub use tree::{Attribute, Namespace, NodeData, NodeId, Tree, WriteError};
+pub use tree_builder::{NOT_YET_PARSED, NotRun, ScriptHook};
 
 /// How a document or a fragment is parsed.
 ///
@@ -230,6 +284,27 @@ pub struct ParsedDocument {
 pub fn parse_document(input: &str, options: &ParseOptions) -> Tree {
     let (input, cut) = limits::cut_str(input, options.limits.max_input_bytes);
     let mut tree = tree_builder::parse(input, options, None).tree;
+    if cut {
+        tree.stop_at(limits::Limit::InputBytes);
+    }
+    tree
+}
+
+/// [`parse_document`] with a hook for the document's scripts: while scripting is enabled
+/// ([`ParseOptions::scripting_disabled`] false), `hook` is called once for each script element
+/// the parser inserts, after the token that ended it or at the end of the parse, to run it
+/// ([`ScriptHook::run`], which may
+/// write the tree) or to report it not run with its reason ([`ScriptHook::skip`]); parsing then
+/// goes on over the tree the hook left ([`tree_builder`] says when each call comes). With
+/// scripting disabled no call is made, and the tree is that of [`parse_document`]; so is the
+/// tree of a hook that writes nothing.
+pub fn parse_document_with_hook(
+    input: &str,
+    options: &ParseOptions,
+    hook: &mut dyn ScriptHook,
+) -> Tree {
+    let (input, cut) = limits::cut_str(input, options.limits.max_input_bytes);
+    let mut tree = tree_builder::parse_with_hook(input, options, None, Some(hook)).tree;
     if cut {
         tree.stop_at(limits::Limit::InputBytes);
     }

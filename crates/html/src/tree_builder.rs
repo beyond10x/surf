@@ -25,8 +25,22 @@
 //! elements at the end of a document's parse (story `html-tree-complete`).
 //!
 //! Parse errors are not collected: neither the tokenizer's nor the tree builder's reach a
-//! caller. Scripts do not run: at a `script` end tag the text mode pops the element and returns
-//! to the original insertion mode.
+//! caller. No script runs here: at a `script` end tag the text mode pops the element and returns
+//! to the original insertion mode. A document parsed with scripting enabled
+//! ([`crate::ParseOptions::scripting_disabled`] false) and a [`ScriptHook`]
+//! ([`crate::parse_document_with_hook`]) calls the hook once for each script element the parser
+//! inserts, HTML or SVG, when it leaves the stack of open elements or the parse ends, whichever
+//! comes first, after the token that ended it (story `html-script-hook`,
+//! `docs/design/scripts.md` Q1 and Q2): at an HTML `script` end tag in the text mode, after
+//! steps 2 to 4 of 13.2.6.4.8, `run` for an element that the steps of "prepare the script
+//! element" Q2 takes would run, else `skip` with the reason of Q1 ([`NotRun`]); for an HTML
+//! `script` open when the parser stopped, at the end of the input or at a limit, `skip` with
+//! [`NotRun::Eof`]; for an SVG `script`, however it is closed or open at the end, `skip` with
+//! [`NotRun::Svg`]. A MathML `script` is no script element and gets no call. The stack of open
+//! elements watches each script element it is given and notes the ones that leave it.
+//! Parsing then goes on with the stack of open elements and the list of active formatting
+//! elements as they were, over the tree the hook left. Without a hook, or with scripting
+//! disabled, no call is made and the parse is the parse without one.
 //!
 //! The limits (story `html-parser-limits`, the crate documentation's "Limits"): every element,
 //! node, text and attribute merge is admitted against the depth, node, stored-byte and attribute
@@ -57,6 +71,161 @@ use crate::tree::{Attribute, Categories, Namespace, NodeData, NodeId, Tree};
 /// does, named in `[a-z-]+`; the tree story that writes it removes its entry. Empty since
 /// story `html-tree-foreign` wrote foreign content and the fragment case.
 pub const NOT_YET_PARSED: &[&str] = &[];
+
+/// What the tree builder calls at a `script` end tag of a parser-inserted HTML script element
+/// while parser scripting is enabled ([`crate::ParseOptions::scripting_disabled`] false), after
+/// steps 2 to 4 of 13.2.6.4.8 and the steps of "prepare the script element" the design note's
+/// Q2 takes (`docs/design/scripts.md`). `skip` is called as well for an HTML `script` element
+/// open when the parser stopped ([`NotRun::Eof`]) and for an SVG `script` element, however it
+/// is closed ([`NotRun::Svg`]). The hook is called once for each script element the parser
+/// inserts, and never for an element a script inserted.
+pub trait ScriptHook {
+    /// Run the element's script to its end. The call may write the tree through its public
+    /// write surface; it returns when the script ended, however it ended.
+    fn run(&mut self, tree: &mut Tree, script: NodeId);
+    /// The element is not run, for the reason of Q1's line `reasons:`.
+    fn skip(&mut self, tree: &Tree, script: NodeId, reason: NotRun);
+}
+
+/// Why a script element is not run: one word of Q1's line `reasons:` each, but `inserted`,
+/// which no end tag reports.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum NotRun {
+    /// No `src` and no source text (step 8 of "prepare the script element").
+    Empty,
+    /// A `src` attribute: external scripts are not fetched (step 35).
+    Src,
+    /// A type that is no JavaScript MIME type essence and none of the three below (step 15).
+    Type,
+    /// `type=module` (step 12).
+    Module,
+    /// `type=importmap` (step 13).
+    Importmap,
+    /// `type=speculationrules` (step 14).
+    Speculationrules,
+    /// The element is not connected, as in a template's contents (step 9).
+    Disconnected,
+    /// `nomodule` on a classic script (step 21).
+    Nomodule,
+    /// `event` and `for` that are not `onload` for `window` (step 24).
+    Event,
+    /// An SVG `script`, however it is closed, which the first version does not run.
+    Svg,
+    /// The element was open when the parser stopped: the end of the input or a limit.
+    Eof,
+}
+
+impl NotRun {
+    /// The reason's word of Q1's line `reasons:`.
+    pub fn word(self) -> &'static str {
+        match self {
+            NotRun::Empty => "empty",
+            NotRun::Src => "src",
+            NotRun::Type => "type",
+            NotRun::Module => "module",
+            NotRun::Importmap => "importmap",
+            NotRun::Speculationrules => "speculationrules",
+            NotRun::Disconnected => "disconnected",
+            NotRun::Nomodule => "nomodule",
+            NotRun::Event => "event",
+            NotRun::Svg => "svg",
+            NotRun::Eof => "eof",
+        }
+    }
+}
+
+/// The JavaScript MIME type essences (MIME Sniffing 4.6), in lower case.
+const JAVASCRIPT_ESSENCES: &[&str] = &[
+    "application/ecmascript",
+    "application/javascript",
+    "application/x-ecmascript",
+    "application/x-javascript",
+    "text/ecmascript",
+    "text/javascript",
+    "text/javascript1.0",
+    "text/javascript1.1",
+    "text/javascript1.2",
+    "text/javascript1.3",
+    "text/javascript1.4",
+    "text/javascript1.5",
+    "text/jscript",
+    "text/livescript",
+    "text/x-ecmascript",
+    "text/x-javascript",
+];
+
+/// ASCII whitespace (Infra).
+const ASCII_WHITESPACE: [char; 5] = ['\t', '\n', '\x0C', '\r', ' '];
+
+/// The steps of "prepare the script element" (4.12.1.1) that Q2 takes, for the HTML script
+/// element `script` as the parser made it: `None` when it runs, else the reason it does not.
+/// Steps 1 to 7 hold for a parser-inserted element at its end tag in a parse with scripting
+/// enabled (one document, not started before); step 20 is the caller's.
+fn prepare(tree: &Tree, script: NodeId) -> Option<NotRun> {
+    let NodeData::Element { attributes, .. } = tree.data(script) else {
+        return Some(NotRun::Type);
+    };
+    let attribute = |name: &str| {
+        attributes
+            .iter()
+            .find(|a| a.namespace.is_none() && a.local_name == name)
+            .map(|a| a.value.as_str())
+    };
+    // 7, 8. The child text content.
+    let empty = tree.children(script).iter().all(|&c| match tree.data(c) {
+        NodeData::Text(text) => text.is_empty(),
+        _ => true,
+    });
+    if attribute("src").is_none() && empty {
+        return Some(NotRun::Empty);
+    }
+    // 9. Connected: the root is the document.
+    let mut root = script;
+    while let Some(parent) = tree.parent(root) {
+        root = parent;
+    }
+    if *tree.data(root) != NodeData::Document {
+        return Some(NotRun::Disconnected);
+    }
+    // 10. The script block's type string.
+    let type_string = match (attribute("type"), attribute("language")) {
+        (Some(""), _) | (None, Some("") | None) => "text/javascript".to_string(),
+        (Some(value), _) => value.trim_matches(ASCII_WHITESPACE).to_string(),
+        (None, Some(language)) => format!("text/{language}"),
+    };
+    // 11 to 15.
+    let is = |name: &str| type_string.eq_ignore_ascii_case(name);
+    if !JAVASCRIPT_ESSENCES.iter().any(|essence| is(essence)) {
+        return Some(if is("module") {
+            NotRun::Module
+        } else if is("importmap") {
+            NotRun::Importmap
+        } else if is("speculationrules") {
+            NotRun::Speculationrules
+        } else {
+            NotRun::Type
+        });
+    }
+    // 21. A classic script with `nomodule`.
+    if attribute("nomodule").is_some() {
+        return Some(NotRun::Nomodule);
+    }
+    // 24. `event` and `for`.
+    if let (Some(event), Some(for_)) = (attribute("event"), attribute("for")) {
+        let event = event.trim_matches(ASCII_WHITESPACE);
+        let for_ = for_.trim_matches(ASCII_WHITESPACE);
+        if !for_.eq_ignore_ascii_case("window")
+            || !(event.eq_ignore_ascii_case("onload") || event.eq_ignore_ascii_case("onload()"))
+        {
+            return Some(NotRun::Event);
+        }
+    }
+    // 35. An external script.
+    if attribute("src").is_some() {
+        return Some(NotRun::Src);
+    }
+    None
+}
 
 /// The mode of a document (DOM, "mode"), which the initial insertion mode decides from the
 /// DOCTYPE.
@@ -169,20 +338,35 @@ fn token_bytes(name: &str, attributes: &[TokenAttribute]) -> usize {
 }
 
 /// The stack of open elements (13.2.4.2), the topmost (the `html` element) first, read as a
-/// slice. It keeps, for each node, how many times the node is on it, so that "is in the stack
-/// of open elements" is answered in O(1) and visits no entry ([`OpenElements::holds`]). It also
-/// keeps the positions of the entries that bound "has an element in scope", so that "has a
-/// `select` element in scope" visits one entry, also at every `input` start tag of a deep tree.
+/// slice. It keeps, for each node, whether the node is on it and the depth of its entry, so
+/// that "is in the stack of open elements" is answered in O(1) and visits no entry
+/// ([`OpenElements::holds`]), and the depth of an entry is read without a walk
+/// ([`OpenElements::depth`]). It also keeps the positions of the entries that bound "has an
+/// element in scope", so that "has a `select` element in scope" visits one entry, also at
+/// every `input` start tag of a deep tree.
 #[derive(Debug, Default)]
 struct OpenElements {
     stack: Vec<NodeId>,
-    /// For each node of the arena by its index, the times it is on the stack (0 or 1).
+    /// For each node of the arena by its index: 0 when it is not on the stack; [`UNSETTLED`]
+    /// when it is and its depth is being read again ([`TreeBuilder::settle_entries`]); else
+    /// its depth in the tree plus 1. The depth of an entry is the elements on its path from
+    /// the top of its tree, itself included, a template counted for the nodes of its contents
+    /// (the count of [`Limits::max_depth`]). A node is on the stack at most once.
     on_stack: Vec<u32>,
     /// For each node of the arena by its index, whether it bounds "has an element in scope"
     /// ([`OpenElements::mark_boundary`]).
     bounds: Vec<bool>,
     /// The positions in `stack` of the entries that bound "has an element in scope", ascending.
     boundaries: Vec<usize>,
+    /// Some script element is watched ([`OpenElements::watch`]): a parse with a hook and
+    /// scripting enabled. Without one, an entry that leaves costs this test only.
+    watching: bool,
+    /// For each node of the arena by its index, whether it is a watched script element that
+    /// has not left the stack yet.
+    watched: Vec<bool>,
+    /// The watched script elements that left the stack, in the order they left; the hook is
+    /// called for each after the token.
+    ended: Vec<NodeId>,
 }
 
 impl std::ops::Deref for OpenElements {
@@ -207,16 +391,36 @@ impl OpenElements {
         self.bounds.get(node.index()).copied().unwrap_or(false)
     }
 
-    fn entered(&mut self, node: NodeId) {
+    fn entered(&mut self, node: NodeId, depth: u32) {
         let index = node.index();
         if self.on_stack.len() <= index {
             self.on_stack.resize(index + 1, 0);
         }
-        self.on_stack[index] += 1;
+        debug_assert_eq!(
+            self.on_stack[index], 0,
+            "a node is on the stack at most once"
+        );
+        self.on_stack[index] = depth;
     }
 
     fn left(&mut self, node: NodeId) {
-        self.on_stack[node.index()] -= 1;
+        let index = node.index();
+        self.on_stack[index] = 0;
+        if self.watching && self.watched.get(index).copied().unwrap_or(false) {
+            self.watched[index] = false;
+            self.ended.push(node);
+        }
+    }
+
+    /// Watches `node`, a script element just pushed: when it leaves the stack it goes to
+    /// `ended`, once.
+    fn watch(&mut self, node: NodeId) {
+        let index = node.index();
+        if self.watched.len() <= index {
+            self.watched.resize(index + 1, false);
+        }
+        self.watched[index] = true;
+        self.watching = true;
     }
 
     /// Whether `node` is in the stack of open elements: no entry is visited.
@@ -224,23 +428,38 @@ impl OpenElements {
         self.on_stack.get(node.index()).is_some_and(|&n| n > 0)
     }
 
+    /// The depth of `node`'s entry, when `node` is on the stack and its depth is settled: no
+    /// entry is visited.
+    fn depth(&self, node: NodeId) -> Option<usize> {
+        match self.on_stack.get(node.index()) {
+            Some(&n) if n > 0 && n != UNSETTLED => Some(n as usize - 1),
+            _ => None,
+        }
+    }
+
+    /// Whether `node` is on the stack with its depth being read again.
+    fn unsettled(&self, node: NodeId) -> bool {
+        self.on_stack.get(node.index()) == Some(&UNSETTLED)
+    }
+
+    /// Sets the depth of `node`'s entry; `None` marks it [`UNSETTLED`].
+    fn set_depth(&mut self, node: NodeId, depth: Option<usize>) {
+        self.on_stack[node.index()] = entry_value(depth);
+    }
+
     /// The lowest entry that bounds "has an element in scope", if any: no entry is scanned.
     fn last_boundary(&self) -> Option<NodeId> {
         self.boundaries.last().map(|&at| self.stack[at])
     }
 
-    /// Adds `at` to the boundaries when `node`, the entry now at `at`, is one; the boundaries
-    /// at or after `at` were moved already.
-    fn add_boundary(&mut self, at: usize, node: NodeId) {
+    /// Pushes `node` with the depth of its entry; `None` leaves it [`UNSETTLED`] for the
+    /// caller to settle. A boundary is added at the end of the boundaries: the only place
+    /// one is added.
+    fn push(&mut self, node: NodeId, depth: Option<usize>) {
+        self.entered(node, entry_value(depth));
         if self.is_boundary(node) {
-            let place = self.boundaries.partition_point(|&b| b < at);
-            self.boundaries.insert(place, at);
+            self.boundaries.push(self.stack.len());
         }
-    }
-
-    fn push(&mut self, node: NodeId) {
-        self.entered(node);
-        self.add_boundary(self.stack.len(), node);
         self.stack.push(node);
     }
 
@@ -253,6 +472,9 @@ impl OpenElements {
         Some(node)
     }
 
+    /// Pops the entries above the first `len`. Not a step: the caller counted the entries it
+    /// pops (the scan that found `len`, or the `frameset` rule), except "stop parsing"
+    /// ([`TreeBuilder::stop_parsing`]).
     fn truncate(&mut self, len: usize) {
         while self.stack.len() > len {
             self.pop();
@@ -263,10 +485,19 @@ impl OpenElements {
         self.truncate(0);
     }
 
-    fn remove(&mut self, at: usize) -> NodeId {
+    /// Removes the entry at `at`. A step for each entry above it, which moves down one place,
+    /// and for each boundary, visited once to move it. The entry removed is never a boundary:
+    /// the rules that remove an entry from inside the stack remove the `head`, a `form`, an
+    /// `a`, the formatting element of the adoption agency algorithm and the elements between
+    /// it and the furthest block, none of them of the element types of the default scope.
+    fn remove(&mut self, at: usize, steps: &Cell<usize>) -> NodeId {
         let node = self.stack.remove(at);
+        debug_assert!(
+            !self.is_boundary(node),
+            "no rule removes a boundary from inside"
+        );
+        count_steps(steps, self.stack.len() - at + self.boundaries.len());
         self.left(node);
-        self.boundaries.retain(|&b| b != at);
         for b in &mut self.boundaries {
             if *b > at {
                 *b -= 1;
@@ -275,25 +506,51 @@ impl OpenElements {
         node
     }
 
-    fn insert(&mut self, at: usize, node: NodeId) {
-        self.entered(node);
-        for b in &mut self.boundaries {
-            if *b >= at {
-                *b += 1;
-            }
-        }
+    /// Inserts `node` at `at`, its depth [`UNSETTLED`] for the caller to settle. A step for
+    /// each entry from `at` up, which moves up one place. `node` is the adoption agency's new
+    /// formatting element, never a boundary, and no boundary is at or above `at`: the algorithm
+    /// runs on only when its formatting element is in scope (step 4.5), so no boundary is above
+    /// that element, and `at` is above it. So no boundary moves and none is visited.
+    fn insert(&mut self, at: usize, node: NodeId, steps: &Cell<usize>) {
+        debug_assert!(
+            !self.is_boundary(node),
+            "a formatting element is no boundary"
+        );
+        debug_assert!(
+            self.boundaries.last().is_none_or(|&b| b < at),
+            "no boundary above a formatting element in scope"
+        );
+        count_steps(steps, self.stack.len() - at);
+        self.entered(node, UNSETTLED);
         self.stack.insert(at, node);
-        self.add_boundary(at, node);
     }
 
-    /// Puts `node` in the place of the entry at `at`.
+    /// Puts `node` in the place of the entry at `at`, its depth [`UNSETTLED`] for the caller to
+    /// settle. Neither is a boundary (the adoption agency's inner loop: a node below the
+    /// furthest block, so not special, and a new element for a formatting element), so the
+    /// boundaries do not change and no entry is visited.
     fn replace(&mut self, at: usize, node: NodeId) {
-        self.entered(node);
+        debug_assert!(!self.is_boundary(node) && !self.is_boundary(self.stack[at]));
+        self.entered(node, UNSETTLED);
         let old = std::mem::replace(&mut self.stack[at], node);
         self.left(old);
-        self.boundaries.retain(|&b| b != at);
-        self.add_boundary(at, node);
     }
+}
+
+/// The value of [`OpenElements`]'s `on_stack` for an entry whose depth is being read again.
+const UNSETTLED: u32 = u32::MAX;
+
+/// Adds `n` visits to `steps` ([`TreeBuilder::add_steps`] for the stack's own methods).
+fn count_steps(steps: &Cell<usize>, n: usize) {
+    steps.set(steps.get().saturating_add(n));
+}
+
+/// The value of `on_stack` for an entry of `depth`, [`UNSETTLED`] for `None`. A depth past
+/// `u32::MAX - 2` is kept as that.
+fn entry_value(depth: Option<usize>) -> u32 {
+    depth.map_or(UNSETTLED, |d| {
+        u32::try_from(d + 1).map_or(UNSETTLED - 1, |v| v.min(UNSETTLED - 1))
+    })
 }
 
 /// An entry of the list of active formatting elements (13.2.4.3).
@@ -333,12 +590,24 @@ pub(crate) fn parse(
     options: &ParseOptions,
     encoding: Option<InputEncoding>,
 ) -> Parsed {
+    parse_with_hook(input, options, encoding, None)
+}
+
+/// [`parse`] with the hook that the end of each parser-inserted script element is reported to
+/// while scripting is enabled.
+pub(crate) fn parse_with_hook(
+    input: &str,
+    options: &ParseOptions,
+    encoding: Option<InputEncoding>,
+    hook: Option<&mut dyn ScriptHook>,
+) -> Parsed {
     // The input stream keeps its own copy of the code points: this one goes once it is made.
-    let builder = {
+    let mut builder = {
         let code_points: Vec<u32> = input.chars().map(u32::from).collect();
         TreeBuilder::new(&code_points, options, encoding)
     };
-    run(builder)
+    builder.report_scripts = hook.is_some() && !options.scripting_disabled;
+    run(builder, hook)
 }
 
 /// Runs the fragment parsing algorithm (13.4) over decoded text for a context element with no
@@ -356,7 +625,7 @@ pub(crate) fn parse_fragment(
         let code_points: Vec<u32> = input.chars().map(u32::from).collect();
         TreeBuilder::new(&code_points, options, None)
     };
-    builder.tree = Tree::fragment();
+    builder.tree = Tree::fragment(options.limits);
     let name = context.local_name.as_str();
     let element = match context.namespace {
         Namespace::Html => builder.create_element(name, &[]),
@@ -364,7 +633,7 @@ pub(crate) fn parse_fragment(
     };
     let html = builder.create_element("html", &[]);
     let (Some(element), Some(html)) = (element, html) else {
-        return run(builder).tree;
+        return run(builder, None).tree;
     };
     builder.context = Some(element);
     builder.fragment_html = Some(html);
@@ -381,7 +650,8 @@ pub(crate) fn parse_fragment(
             builder.tokenizer.switch_to(state);
         }
     }
-    builder.open.push(html);
+    // Out of the tree: 1 deep in its own. What goes into it goes into the fragment, 0 deep.
+    builder.open.push(html, Some(1));
     if builder.is_html(element, &["template"]) {
         builder.template_modes.push(Mode::InTemplate);
     }
@@ -390,12 +660,15 @@ pub(crate) fn parse_fragment(
     if builder.is_html(element, &["form"]) {
         builder.form = Some(element);
     }
-    run(builder).tree
+    // The fragment parsing algorithm marks every script element it parses as already started
+    // (13.4): no hook.
+    run(builder, None).tree
 }
 
 /// The tokenizer and tree construction from the first token to the end, with the step limit
-/// checked after each token.
-fn run(mut builder: TreeBuilder) -> Parsed {
+/// read after each token (and inside the token's loops and before its writes,
+/// [`TreeBuilder::spent`]). A script element the token ended is reported to `hook` after it.
+fn run(mut builder: TreeBuilder, mut hook: Option<&mut dyn ScriptHook>) -> Parsed {
     while !builder.stopped {
         builder.tokenizer.set_cdata_allowed(builder.cdata_allowed());
         let Some(token) = builder.tokenizer.next_token() else {
@@ -404,14 +677,24 @@ fn run(mut builder: TreeBuilder) -> Parsed {
             break;
         };
         builder.dispatch(token);
+        if let Some(hook) = hook.as_deref_mut()
+            && !builder.open.ended.is_empty()
+        {
+            builder.report_ended(hook);
+        }
         // Also the end-of-file token, whose rules scan too (in template pops down to each open
         // `template`), unless another limit stopped the parse.
         if builder.tree.stopped_by().is_none() && builder.steps.get() > builder.limits.max_steps {
             builder.stop_at(Limit::Steps);
         }
     }
-    // "Stop parsing" pops every open element, also after a limit.
+    // "Stop parsing" pops every open element, also after a limit (not steps: `stop_parsing`).
     builder.open.clear();
+    if let Some(hook) = hook
+        && !builder.open.ended.is_empty()
+    {
+        builder.report_ended(hook);
+    }
     if builder.saw_selectedcontent
         && builder.context.is_none()
         && builder.tree.stopped_by().is_none()
@@ -439,6 +722,11 @@ struct TreeBuilder {
     original_mode: Mode,
     /// The stack of open elements, the topmost (the `html` element) first.
     open: OpenElements,
+    /// No entry of the stack of open elements is under an entry above it in the tree, as the
+    /// last [`Self::settle_entries`] of the whole stack found; the parser's own insertions and
+    /// moves keep it so. Then an adoption agency iteration changes the depth of no entry below
+    /// its formatting element, and only the entries from there up are read again.
+    ordered: bool,
     /// The list of active formatting elements, the least recently added first.
     active: Vec<Entry>,
     head: Option<NodeId>,
@@ -479,6 +767,12 @@ struct TreeBuilder {
     /// An HTML `selectedcontent` element was created: the end of the parse updates the
     /// `select` elements' copies of their selected option (the module `selectedcontent`).
     saw_selectedcontent: bool,
+    /// A hook is set and scripting is enabled: each script element the parser pushes is
+    /// watched on the stack of open elements ([`OpenElements::watch`]).
+    report_scripts: bool,
+    /// The element the last `script` end tag of the text mode popped: if it is a watched HTML
+    /// script element, its end tag ended it, and "prepare the script element" decides its call.
+    script_end_tag: Option<NodeId>,
 }
 
 const HTML_ELEMENT_SPECIAL: &[&str] = &[
@@ -600,7 +894,7 @@ fn is_whitespace(c: u32) -> bool {
 
 /// The categories of an element in `namespace` named `name`, decided once when it is created:
 /// special, and the element types of the scopes of 13.2.4.2.
-fn categories_of(namespace: Namespace, name: &str) -> Categories {
+pub(crate) fn categories_of(namespace: Namespace, name: &str) -> Categories {
     let mut bits = 0;
     match namespace {
         Namespace::Html => {
@@ -644,10 +938,11 @@ impl TreeBuilder {
     fn new(input: &[u32], options: &ParseOptions, encoding: Option<InputEncoding>) -> TreeBuilder {
         TreeBuilder {
             tokenizer: Tokenizer::new(input, options.limits.max_attributes),
-            tree: Tree::document(),
+            tree: Tree::document(options.limits),
             mode: Mode::Initial,
             original_mode: Mode::Initial,
             open: OpenElements::default(),
+            ordered: true,
             active: Vec::new(),
             head: None,
             form: None,
@@ -668,6 +963,55 @@ impl TreeBuilder {
             template_modes: Vec::new(),
             fragment_html: None,
             saw_selectedcontent: false,
+            report_scripts: false,
+            script_end_tag: None,
+        }
+    }
+
+    /// Watches `element`, just pushed, when it is a script element and a hook is set with
+    /// scripting enabled: an HTML `script` or an SVG `script`, not a MathML one.
+    fn watch_script(&mut self, element: NodeId) {
+        if self.report_scripts
+            && matches!(
+                self.tree.data(element),
+                NodeData::Element { namespace: Namespace::Html | Namespace::Svg, local_name, .. }
+                    if local_name == "script"
+            )
+        {
+            self.open.watch(element);
+        }
+    }
+
+    /// Calls `hook` once for each watched script element that left the stack of open elements,
+    /// in the order they left: an HTML `script` its end tag popped gets `run` or `skip` as
+    /// "prepare the script element" decides; another HTML `script`, popped at the end of the
+    /// input or by the end of a parse a limit stopped, `skip` with [`NotRun::Eof`]; an SVG
+    /// `script`, however it left, `skip` with [`NotRun::Svg`]. After `run` the names the `html`
+    /// and `body` merges keep are read again from the elements, which the hook may have
+    /// changed, and so are the depths of the entries of the stack of open elements when it
+    /// moved or removed an element.
+    fn report_ended(&mut self, hook: &mut dyn ScriptHook) {
+        let end_tag = self.script_end_tag.take();
+        for script in std::mem::take(&mut self.open.ended) {
+            let reason = if self.is_html(script, &["script"]) {
+                if end_tag == Some(script) {
+                    prepare(&self.tree, script)
+                } else {
+                    Some(NotRun::Eof)
+                }
+            } else {
+                Some(NotRun::Svg)
+            };
+            match reason {
+                Some(reason) => hook.skip(&self.tree, script, reason),
+                None => {
+                    hook.run(&mut self.tree, script);
+                    self.merged_names.clear();
+                    if self.tree.take_moved() {
+                        self.settle_entries(0);
+                    }
+                }
+            }
         }
     }
 
@@ -680,6 +1024,24 @@ impl TreeBuilder {
     /// more than the comparison it makes).
     fn add_steps(&self, n: usize) {
         self.steps.set(self.steps.get().saturating_add(n));
+    }
+
+    /// A read of the step limit: whether the steps, with `pending` more that a scan counts at
+    /// its end, have passed it. Every loop over the stack of open elements, its boundaries or
+    /// the list of active formatting elements reads it before each entry it visits, and ends
+    /// there when they have; so does every write of the parser to the tree, which is then not
+    /// made ([`Self::past_step_limit`]). Below the limit it changes nothing.
+    fn spent(&self, pending: usize) -> bool {
+        self.steps.get().saturating_add(pending) > self.limits.max_steps
+    }
+
+    /// Whether the steps have passed the step limit ([`Self::spent`]); then parsing stops at it.
+    fn past_step_limit(&mut self) -> bool {
+        if self.spent(0) {
+            self.stop_at(Limit::Steps);
+            return true;
+        }
+        false
     }
 
     /// The tree construction dispatcher (13.2.6): each token goes to the rules of the current
@@ -700,7 +1062,9 @@ impl TreeBuilder {
                 Flow::Reprocess => {}
                 Flow::Replace(replacement) => token = replacement,
             }
-            if self.stopped {
+            // Past the step limit no rule runs again for the token: a loop the limit ended
+            // may have left the state a rule moves on from (the insertion mode) as it was.
+            if self.stopped || self.past_step_limit() {
                 return;
             }
         }
@@ -734,7 +1098,12 @@ impl TreeBuilder {
     }
 
     /// Stop parsing (13.2.7, "the end"), as far as it changes the tree: pop every node off the
-    /// stack of open elements.
+    /// stack of open elements. The pops are not steps: the count of a parse up to its last
+    /// token stays what the step limit checked. They run once per parse pass, after its last
+    /// token, one for each entry left, and every entry is an element the parser made (the node
+    /// limit) or the `head` it put back for one token. A `meta` that changes the encoding
+    /// ([`Self::change_the_encoding`]) ends the first pass here and the caller parses the bytes
+    /// again; that second pass takes no hook, so its stack stays inside the depth limit.
     fn stop_parsing(&mut self) {
         self.open.clear();
         self.stopped = true;
@@ -750,9 +1119,9 @@ impl TreeBuilder {
 
     /// Whether a creation of `nodes` nodes that hold `bytes` bytes of strings stays inside the
     /// node and stored-byte limits. When it does not, parsing stops at the limit it would pass;
-    /// after parsing stopped, nothing is admitted.
+    /// after parsing stopped, or past the step limit (a read of it), nothing is admitted.
     fn admit(&mut self, nodes: usize, bytes: usize) -> bool {
-        if self.stopped {
+        if self.stopped || self.past_step_limit() {
             return false;
         }
         if self.tree.node_count().saturating_add(nodes) > self.limits.max_nodes {
@@ -766,17 +1135,118 @@ impl TreeBuilder {
         true
     }
 
-    /// Whether the stack of open elements has room for one element more (the depth limit).
-    /// When it has not, parsing stops.
-    fn room_on_stack(&mut self) -> bool {
-        if self.stopped {
-            return false;
+    /// The depth of `node` in the tree as it is: the elements on its path from the top of its
+    /// tree (the document, or the top of a subtree out of it), itself included, a template
+    /// counted for the nodes of its contents. Read from the first entry of the stack of open
+    /// elements met on the way up whose depth is settled; each parent or host passed to is a
+    /// step. The insertion places of the parser are entries, the parent of an entry, or a
+    /// template's contents, so most reads pass to nothing or to one node.
+    fn depth_of(&self, node: NodeId) -> usize {
+        self.walk_up(node).0
+    }
+
+    /// [`Self::depth_of`], and whether the walk passed an [`UNSETTLED`] entry.
+    fn walk_up(&self, node: NodeId) -> (usize, bool) {
+        let mut depth = 0;
+        let mut passed_unsettled = false;
+        let mut at = node;
+        // A tree has no cycle; the bound only keeps the walk finite.
+        for _ in 0..=self.tree.node_count() {
+            if let Some(known) = self.open.depth(at) {
+                return (depth + known, passed_unsettled);
+            }
+            passed_unsettled |= at != node && self.open.unsettled(at);
+            depth += usize::from(self.tree.is_element(at));
+            match self.tree.parent_or_host(at) {
+                Some(up) => {
+                    self.visit();
+                    at = up;
+                }
+                None => break,
+            }
         }
-        if self.open.len() >= self.limits.max_depth {
-            self.stop_at(Limit::Depth);
-            return false;
+        (depth, passed_unsettled)
+    }
+
+    /// The depth of the parent of an insertion place, `(parent, reference)`: a reference child
+    /// on the stack (the `table` of foster parenting) gives its parent's depth without a walk.
+    fn place_depth(&self, (parent, reference): (NodeId, Option<NodeId>)) -> usize {
+        match reference.and_then(|r| self.open.depth(r)) {
+            Some(depth) => depth - 1,
+            None => self.depth_of(parent),
         }
-        true
+    }
+
+    /// Reads the depths of the entries of the stack of open elements from `from` up again
+    /// from the tree, bottom up, each entry from its parent or host up to the first entry
+    /// already read ([`Self::walk_up`]). After the parser's own changes an entry's parent is
+    /// most often the entry below it: one step. Each entry read again is a step too, also one
+    /// with no parent, which no hop reaches (the step counts both passes over it). From 0 it
+    /// also finds whether the stack is [`Self::ordered`]: a walk that passes an entry above its
+    /// own is under it.
+    fn settle_entries(&mut self, from: usize) {
+        for at in from..self.open.len() {
+            let node = self.open[at];
+            self.open.set_depth(node, None);
+        }
+        let mut ordered = true;
+        for at in from..self.open.len() {
+            // Past the step limit the entries above stay unsettled, and parsing stops: no
+            // depth is read after it.
+            if self.past_step_limit() {
+                return;
+            }
+            self.visit();
+            let node = self.open[at];
+            let (depth, passed_unsettled) = self.walk_up(node);
+            ordered &= !passed_unsettled;
+            self.open.set_depth(node, Some(depth));
+        }
+        if from == 0 {
+            self.ordered = ordered;
+        } else {
+            debug_assert!(
+                ordered,
+                "an ordered stack has no entry under an entry above it"
+            );
+        }
+    }
+
+    /// Whether an element inserted at `place` stays inside the depth limit: the depth of
+    /// `place`'s parent ([`Self::place_depth`]) is below the limit. When it is not, parsing
+    /// stops: that parent is an element at the limit. `Some` with that depth when it does;
+    /// `None` after parsing stopped, also past the step limit (a read of it). The walk to a
+    /// template's host that `place_depth` may take is counted: past the step limit after it,
+    /// parsing stops at the step limit, never at the depth limit.
+    fn room_at(&mut self, place: (NodeId, Option<NodeId>)) -> Option<usize> {
+        if self.stopped || self.past_step_limit() {
+            return None;
+        }
+        let depth = self.place_depth(place);
+        if depth >= self.limits.max_depth {
+            if !self.past_step_limit() {
+                self.stop_at(Limit::Depth);
+            }
+            return None;
+        }
+        Some(depth)
+    }
+
+    /// The appropriate place for an element and its parent's depth, when it has room under it
+    /// ([`Self::room_at`]); `None`, and parsing stopped, when it has not.
+    fn place_with_room(&mut self) -> Option<((NodeId, Option<NodeId>), usize)> {
+        let place = self.appropriate_place(None);
+        let depth = self.room_at(place)?;
+        Some((place, depth))
+    }
+
+    /// Pushes `element`, just inserted at a place whose parent is `depth` deep, onto the stack
+    /// of open elements: its depth is one more. A place refuses an element only when its
+    /// parent is the document and has an element (13.2.6.1); then the element is the top of
+    /// its own tree, 1 deep, which is the document's 0 and one more.
+    fn push_inserted(&mut self, element: NodeId, depth: usize) {
+        debug_assert!(self.tree.parent(element).is_some() || depth == 0);
+        self.open.push(element, Some(depth + 1));
     }
 
     // 13.2.6.1 Creating and inserting nodes.
@@ -811,11 +1281,20 @@ impl TreeBuilder {
         if self.foster_parenting
             && self.is_html(target, &["table", "tbody", "tfoot", "thead", "tr"])
         {
+            // A scan the step limit ends finds no `table`; each caller reads the limit before
+            // it writes at the place.
             let mut visited = 0;
-            let last = (0..self.open.len()).rev().find(|&index| {
+            let mut last = None;
+            for index in (0..self.open.len()).rev() {
+                if self.spent(visited) {
+                    break;
+                }
                 visited += 1;
-                self.is_html(self.open[index], &["template", "table"])
-            });
+                if self.is_html(self.open[index], &["template", "table"]) {
+                    last = Some(index);
+                    break;
+                }
+            }
             self.add_steps(visited);
             match last {
                 // The fragment case: the `html` element.
@@ -876,7 +1355,13 @@ impl TreeBuilder {
         if !self.admit(1, bytes) {
             return None;
         }
-        let categories = categories_of(namespace, name);
+        let mut categories = categories_of(namespace, name);
+        if namespace == Namespace::MathMl
+            && name == "annotation-xml"
+            && foreign::encoding_is_html(&attributes)
+        {
+            categories.0 |= Categories::HTML_INTEGRATION_POINT;
+        }
         let element = self
             .tree
             .create_element(namespace, name, attributes, categories);
@@ -909,6 +1394,9 @@ impl TreeBuilder {
     /// that scope itself, so it is in scope exactly when it is the lowest entry that bounds it:
     /// one entry is visited.
     fn has_select_in_scope(&self) -> bool {
+        if self.spent(0) {
+            return false;
+        }
         self.visit();
         self.open
             .last_boundary()
@@ -934,24 +1422,23 @@ impl TreeBuilder {
     }
 
     /// Insert a foreign element for a token in `namespace` (an HTML element for
-    /// [`Namespace::Html`]), with `name` already adjusted: the appropriate place is taken, the
-    /// element created, inserted there and pushed onto the stack of open elements.
+    /// [`Namespace::Html`]), with `name` already adjusted: the appropriate place is taken and
+    /// checked for depth, the element created, inserted there and pushed onto the stack of open
+    /// elements.
     fn insert_element(
         &mut self,
         namespace: Namespace,
         name: &str,
         attributes: &[TokenAttribute],
     ) -> Option<NodeId> {
-        if !self.room_on_stack() {
-            return None;
-        }
+        let (location, depth) = self.place_with_room()?;
         let element = match namespace {
             Namespace::Html => self.create_element(name, attributes)?,
             _ => self.create_foreign_element(namespace, name, attributes)?,
         };
-        let location = self.appropriate_place(None);
         self.insert_element_at(element, location);
-        self.open.push(element);
+        self.push_inserted(element, depth);
+        self.watch_script(element);
         Some(element)
     }
 
@@ -963,7 +1450,8 @@ impl TreeBuilder {
             return;
         }
         let (parent, reference) = self.appropriate_place(None);
-        if self.is_document(parent) {
+        // Read after the place: a scan the step limit ended finds no `table`.
+        if self.past_step_limit() || self.is_document(parent) {
             return;
         }
         let c = char::from_u32(c).unwrap_or(char::REPLACEMENT_CHARACTER);
@@ -994,6 +1482,9 @@ impl TreeBuilder {
             return;
         }
         let (parent, reference) = self.appropriate_place(location);
+        if self.past_step_limit() {
+            return;
+        }
         self.tree.insert_new(
             parent,
             NodeData::Comment(data.to_string()),
@@ -1013,6 +1504,9 @@ impl TreeBuilder {
             return;
         }
         let (parent, reference) = self.appropriate_place(location);
+        if self.past_step_limit() {
+            return;
+        }
         self.tree.insert_new(
             parent,
             NodeData::ProcessingInstruction {
@@ -1025,21 +1519,32 @@ impl TreeBuilder {
     }
 
     /// The `html` and `body` start tag rules of in body: each attribute of the token whose name
-    /// `element` has no attribute of is added to it, in order. A merge that would give the
-    /// element more attributes than the attribute limit, or pass the stored-byte limit, is not
-    /// made, and parsing stops. The names of the element's attributes are kept in a set, so the
-    /// merge costs O(1) for each attribute of the token.
+    /// `element` has no attribute of is added to it, in order. A token's attribute is in no
+    /// namespace, so it matches only an attribute of the element in no namespace of its local
+    /// name: an attribute a hook set in a namespace keeps its place and counts. A merge that
+    /// would give the element more attributes than the attribute limit, its attributes counted
+    /// whatever their names, or pass the stored-byte limit, is not made, and parsing stops. The
+    /// names of the element's attributes in no namespace are kept in a set, so the merge costs
+    /// O(1) for each attribute of the token. The step limit is read first: the rules that merge
+    /// come after a scan for a `template` the limit may have ended, and past it parsing stops
+    /// at the step limit, never at the attribute limit.
     fn merge_attributes(&mut self, element: NodeId, attributes: &[TokenAttribute]) {
-        if self.stopped {
+        if self.stopped || self.past_step_limit() {
             return;
         }
+        let held = match self.tree.data(element) {
+            NodeData::Element { attributes, .. } => attributes.len(),
+            _ => 0,
+        };
         let at = match self.merged_names.iter().position(|(n, _)| *n == element) {
             Some(at) => at,
             None => {
                 let names = match self.tree.data(element) {
-                    NodeData::Element { attributes, .. } => {
-                        attributes.iter().map(|a| a.local_name.clone()).collect()
-                    }
+                    NodeData::Element { attributes, .. } => attributes
+                        .iter()
+                        .filter(|a| a.namespace.is_none())
+                        .map(|a| a.local_name.clone())
+                        .collect(),
                     _ => HashSet::new(),
                 };
                 self.merged_names.push((element, names));
@@ -1055,7 +1560,7 @@ impl TreeBuilder {
         if new.is_empty() {
             return;
         }
-        if names.len() + new.len() > self.limits.max_attributes {
+        if held + new.len() > self.limits.max_attributes {
             self.stop_at(Limit::Attributes);
             return;
         }
@@ -1088,6 +1593,9 @@ impl TreeBuilder {
     /// Generate implied end tags, except for HTML elements named `except`.
     fn generate_implied_end_tags(&mut self, except: Option<&str>) {
         while let Some(&node) = self.open.last() {
+            if self.spent(0) {
+                return;
+            }
             self.visit();
             match self.html_name(node) {
                 Some(name) if IMPLIED_END_TAGS.contains(&name) && Some(name) != except => {
@@ -1150,6 +1658,9 @@ impl TreeBuilder {
         let mut visited = 0;
         let mut found = false;
         for &node in self.open.iter().rev() {
+            if self.spent(visited) {
+                break;
+            }
             visited += 1;
             if is_target(self, node) {
                 found = true;
@@ -1171,7 +1682,9 @@ impl TreeBuilder {
     /// Pops the current node off the stack until an HTML element named one of `names` has been
     /// popped.
     fn pop_until(&mut self, names: &[&str]) {
-        while let Some(node) = self.open.pop() {
+        while !self.spent(0)
+            && let Some(node) = self.open.pop()
+        {
             self.visit();
             if self.is_html(node, names) {
                 return;
@@ -1184,7 +1697,7 @@ impl TreeBuilder {
     /// fragment stands in for the `html` element. Each entry visited is a step.
     fn reset_insertion_mode(&mut self) {
         let mut index = self.open.len();
-        while index > 0 {
+        while index > 0 && !self.spent(0) {
             index -= 1;
             self.visit();
             let last = index == 0;
@@ -1229,15 +1742,26 @@ impl TreeBuilder {
 
     /// The index of `element` in the stack of open elements, scanning from the current node.
     fn stack_position(&self, element: NodeId) -> Option<usize> {
-        let at = self.open.iter().rposition(|&n| n == element);
-        self.add_steps(at.map_or(self.open.len(), |at| self.open.len() - at));
+        let mut visited = 0;
+        let mut at = None;
+        for index in (0..self.open.len()).rev() {
+            if self.spent(visited) {
+                break;
+            }
+            visited += 1;
+            if self.open[index] == element {
+                at = Some(index);
+                break;
+            }
+        }
+        self.add_steps(visited);
         at
     }
 
     /// Removes `element` from the stack of open elements, scanning from the current node.
     fn remove_from_stack(&mut self, element: NodeId) {
         if let Some(at) = self.stack_position(element) {
-            self.open.remove(at);
+            self.open.remove(at, &self.steps);
         }
     }
 
@@ -1258,6 +1782,9 @@ impl TreeBuilder {
         let mut identical = 0;
         let mut earliest = None;
         for (index, entry) in self.active.iter().enumerate().rev() {
+            if self.spent(0) {
+                break;
+            }
             self.visit();
             match entry {
                 Entry::Marker => break,
@@ -1298,11 +1825,17 @@ impl TreeBuilder {
         // Rewind: back to the entry after the last marker or open element, or the first entry.
         let mut index = self.active.len() - 1;
         while index > 0 && !is_open_or_marker(self, &self.active[index - 1]) {
+            if self.spent(0) {
+                return;
+            }
             self.visit();
             index -= 1;
         }
         // Advance and create, to the end of the list.
         for i in index..self.active.len() {
+            if self.spent(0) {
+                return;
+            }
             self.visit();
             if matches!(self.active[i], Entry::Marker) {
                 continue;
@@ -1322,7 +1855,9 @@ impl TreeBuilder {
 
     /// Clear the list of active formatting elements up to the last marker.
     fn clear_active_formatting_elements_to_last_marker(&mut self) {
-        while let Some(entry) = self.active.pop() {
+        while !self.spent(0)
+            && let Some(entry) = self.active.pop()
+        {
             self.visit();
             if entry == Entry::Marker {
                 return;
@@ -1334,16 +1869,25 @@ impl TreeBuilder {
     /// holds a node at most once; the scan starts at the end of the list, where the standard's
     /// rules look ("the last element in the list").
     fn active_position(&self, node: NodeId) -> Option<usize> {
-        self.active.iter().rposition(|e| {
+        for (index, entry) in self.active.iter().enumerate().rev() {
+            if self.spent(0) {
+                return None;
+            }
             self.visit();
-            matches!(e, Entry::Element { node: n, .. } if *n == node)
-        })
+            if matches!(entry, Entry::Element { node: n, .. } if *n == node) {
+                return Some(index);
+            }
+        }
+        None
     }
 
     /// The index of `node` in the list of active formatting elements after the last marker (or
     /// in the whole list when there is none), if it is there: the scan ends at the marker.
     fn active_position_after_last_marker(&self, node: NodeId) -> Option<usize> {
         for (index, entry) in self.active.iter().enumerate().rev() {
+            if self.spent(0) {
+                return None;
+            }
             self.visit();
             match entry {
                 Entry::Marker => return None,

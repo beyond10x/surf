@@ -257,15 +257,15 @@ impl TreeBuilder {
     /// The `html` element of the before html mode: created for the token, appended to the
     /// document and put on the stack of open elements, when the limits admit it.
     fn insert_html_root(&mut self, name: &str, attributes: &[TokenAttribute]) {
-        if !self.room_on_stack() {
+        let document = self.document();
+        let Some(depth) = self.room_at((document, None)) else {
             return;
-        }
+        };
         let Some(element) = self.create_element(name, attributes) else {
             return;
         };
-        let document = self.document();
         self.insert_element_at(element, (document, None));
-        self.open.push(element);
+        self.push_inserted(element, depth);
     }
 
     /// 13.2.6.4.3 The "before head" insertion mode.
@@ -357,15 +357,15 @@ impl TreeBuilder {
             Token::StartTag {
                 name, attributes, ..
             } if name == "script" => {
-                let (parent, reference) = self.appropriate_place(None);
-                if !self.room_on_stack() {
+                let Some((location, depth)) = self.place_with_room() else {
                     return Flow::Done;
-                }
+                };
                 let Some(element) = self.create_element(name, attributes) else {
                     return Flow::Done;
                 };
-                self.insert_element_at(element, (parent, reference));
-                self.open.push(element);
+                self.insert_element_at(element, location);
+                self.push_inserted(element, depth);
+                self.watch_script(element);
                 self.tokenizer.switch_to(tokenizer::State::ScriptData);
                 self.original_mode = self.mode;
                 self.mode = Mode::Text;
@@ -479,7 +479,11 @@ impl TreeBuilder {
                 let Some(head) = self.head else {
                     return Flow::Done;
                 };
-                self.open.push(head);
+                // The head has its place in the tree already, and what is under it: its depth
+                // and the order of the stack are read from the tree (the stack holds the `html`
+                // element and the head).
+                self.open.push(head, None);
+                self.settle_entries(0);
                 let flow = self.in_head(t);
                 self.remove_from_stack(head);
                 flow
@@ -565,12 +569,20 @@ impl TreeBuilder {
                 if self.open.len() == 1 || !self.is_html(self.open[1], &["body"]) {
                     return Flow::Done;
                 }
-                if !self.frameset_ok {
+                if !self.frameset_ok || self.past_step_limit() {
                     return Flow::Done;
                 }
                 let body = self.open[1];
                 self.tree.remove(body, &self.steps);
+                // "Pop all the nodes from the bottom of the stack of open elements, from the
+                // current node up to, but not including, the root html element": a step each.
+                self.add_steps(self.open.len() - 1);
                 self.open.truncate(1);
+                // The `html` element is under the `body` only on a stack that is not ordered
+                // (a hook's writes put it there).
+                if !self.ordered {
+                    self.settle_entries(0);
+                }
                 self.insert_html_element(name, attributes);
                 self.mode = Mode::InFrameset;
                 Flow::Done
@@ -669,6 +681,9 @@ impl TreeBuilder {
             } if name == "li" => {
                 self.frameset_ok = false;
                 for index in (0..self.open.len()).rev() {
+                    if self.spent(0) {
+                        break;
+                    }
                     self.visit();
                     let node = self.open[index];
                     if self.is_html(node, &["li"]) {
@@ -689,6 +704,9 @@ impl TreeBuilder {
             } if name == "dd" || name == "dt" => {
                 self.frameset_ok = false;
                 for index in (0..self.open.len()).rev() {
+                    if self.spent(0) {
+                        break;
+                    }
                     self.visit();
                     let node = self.open[index];
                     if let Some(found @ ("dd" | "dt")) = self.html_name(node) {
@@ -1048,10 +1066,16 @@ impl TreeBuilder {
 
     /// Whether a `template` element is on the stack of open elements.
     pub(super) fn template_on_stack(&self) -> bool {
-        self.open.iter().any(|&n| {
+        for &n in self.open.iter() {
+            if self.spent(0) {
+                return false;
+            }
             self.visit();
-            self.is_html(n, &["template"])
-        })
+            if self.is_html(n, &["template"]) {
+                return true;
+            }
+        }
+        false
     }
 
     /// Insert an HTML element for a token and pop it off the stack of open elements at once:
@@ -1087,6 +1111,11 @@ impl TreeBuilder {
     pub(super) fn any_other_end_tag(&mut self, name: &str) -> Option<NodeId> {
         let len = self.open.len();
         for index in (0..len).rev() {
+            // The entries above `index` are visited, counted when the scan ends.
+            if self.spent(len - 1 - index) {
+                self.add_steps(len - 1 - index);
+                return None;
+            }
             let node = self.open[index];
             if self.html_name(node) == Some(name) {
                 self.add_steps(len - index);
@@ -1118,7 +1147,10 @@ impl TreeBuilder {
     }
 
     /// 13.2.6.4.8 The "text" insertion mode. A `script` end tag pops the element and returns to
-    /// the original insertion mode: no script is prepared or run.
+    /// the original insertion mode (steps 2 to 4); with a hook set and scripting enabled the
+    /// element is noted as ended by its end tag, and the hook is called after the token (the
+    /// module documentation of `tree_builder`). The end-of-file token pops it unnoted: "set its
+    /// already started to true", it is never prepared.
     pub(super) fn text(&mut self, token: &Token) -> Flow {
         match token {
             Token::Character(c) => {
@@ -1130,9 +1162,17 @@ impl TreeBuilder {
                 self.mode = self.original_mode;
                 Flow::Reprocess
             }
+            Token::EndTag { name } if name == "script" => {
+                // 2 to 4. Then 8, "prepare the script element", after the token.
+                let script = self.open.pop();
+                if self.report_scripts {
+                    self.script_end_tag = script;
+                }
+                self.mode = self.original_mode;
+                Flow::Done
+            }
             _ => {
-                // An end tag whose tag name is "script", and any other end tag; the tokenizer
-                // emits no other token in the text states.
+                // Any other end tag; the tokenizer emits no other token in the text states.
                 self.open.pop();
                 self.mode = self.original_mode;
                 Flow::Done

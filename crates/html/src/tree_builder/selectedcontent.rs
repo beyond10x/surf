@@ -27,23 +27,19 @@ use crate::limits::Limit;
 use crate::tree::{Attribute, Namespace, NodeData, NodeId, stored_bytes_of};
 
 /// What the top-down walk knows of an element's ancestors: the index in the walk's list of the
-/// nearest `select` above it, and whether a `selectedcontent` below it is disabled.
+/// nearest `select` above it, whether a `selectedcontent` below it is disabled, and the elements
+/// among them (its parent's depth).
 #[derive(Clone, Copy)]
 struct Above {
     select: Option<usize>,
     disabled: bool,
+    depth: usize,
 }
 
-impl TreeBuilder {
-    /// Whether the steps have passed the step limit; then parsing stops at it.
-    fn past_step_limit(&mut self) -> bool {
-        if self.steps.get() > self.limits.max_steps {
-            self.stop_at(Limit::Steps);
-            return true;
-        }
-        false
-    }
+/// A `select` and its `selectedcontent` elements that are not disabled, each with its depth.
+type Targets = Vec<(NodeId, Vec<(NodeId, usize)>)>;
 
+impl TreeBuilder {
     /// The update of every connected `select`'s descendant `selectedcontent` elements.
     pub(super) fn update_selectedcontents(&mut self) {
         let Some(selects) = self.selects_and_their_selectedcontents() else {
@@ -61,12 +57,14 @@ impl TreeBuilder {
     /// `selectedcontent` elements below it that are not disabled ("recalculate a selectedcontent
     /// element's disabledness": a second `select`, an `option` or a `selectedcontent` among the
     /// ancestors disables one; the nearest `select` is the one it belongs to). Template contents
-    /// are not connected and are not walked. `None` when the step limit stopped it.
-    fn selects_and_their_selectedcontents(&mut self) -> Option<Vec<(NodeId, Vec<NodeId>)>> {
-        let mut selects: Vec<(NodeId, Vec<NodeId>)> = Vec::new();
+    /// are not connected and are not walked. Each `selectedcontent` comes with its depth, which
+    /// the walk counts on its way down. `None` when the step limit stopped it.
+    fn selects_and_their_selectedcontents(&mut self) -> Option<Targets> {
+        let mut selects: Targets = Vec::new();
         let start = Above {
             select: None,
             disabled: false,
+            depth: 0,
         };
         let mut pending: Vec<(NodeId, Above)> = vec![(self.document(), start)];
         while let Some((node, above)) = pending.pop() {
@@ -75,9 +73,10 @@ impl TreeBuilder {
                 return None;
             }
             let mut below = above;
+            below.depth += usize::from(self.tree.is_element(node));
             if self.is_html(node, &["selectedcontent"]) {
                 if let (false, Some(index)) = (above.disabled, above.select) {
-                    selects[index].1.push(node);
+                    selects[index].1.push((node, below.depth));
                 }
                 below.disabled = true;
             } else if self.is_html(node, &["option"]) {
@@ -105,17 +104,17 @@ impl TreeBuilder {
 
     /// Update a select's descendant selectedcontent elements, `targets` being those that are
     /// not disabled; `false` when a limit stopped it.
-    fn update_select(&mut self, select: NodeId, targets: &[NodeId]) -> bool {
+    fn update_select(&mut self, select: NodeId, targets: &[(NodeId, usize)]) -> bool {
         let Some(option) = self.selected_option(select) else {
             return false;
         };
-        for &target in targets {
+        for &(target, depth) in targets {
             self.tree.remove_children(target, &self.steps);
             if self.past_step_limit() {
                 return false;
             }
             if let Some(option) = option
-                && !self.clone_children(option, target)
+                && !self.clone_children(option, target, depth)
             {
                 return false;
             }
@@ -196,17 +195,21 @@ impl TreeBuilder {
     /// Clone an option into a selectedcontent: each child of `option` cloned with its subtree
     /// and appended to `target`, leaving out every `script`, SVG `script`, `frame`, `iframe`,
     /// `embed` and `object` element with its subtree. `false` when a limit stopped it: the
-    /// step limit, checked after each node visited, or the node or stored-byte limit, which
-    /// admits each node before it is made.
-    fn clone_children(&mut self, option: NodeId, target: NodeId) -> bool {
-        let mut pending: Vec<(NodeId, NodeId)> = self
+    /// step limit, checked after each node visited, the depth limit, checked before each
+    /// element is made against the depth of the copy it goes under, or the node or stored-byte
+    /// limit, which admits each node before it is made. `target` is `target_depth` deep (the
+    /// top-down walk counted it); each copy is as deep as its parent and one more for an
+    /// element. A copy goes under its parent before anything goes under it, so the tree holds
+    /// a copy cut where the limit stopped it.
+    fn clone_children(&mut self, option: NodeId, target: NodeId, target_depth: usize) -> bool {
+        let mut pending: Vec<(NodeId, NodeId, usize)> = self
             .tree
             .children(option)
             .iter()
             .rev()
-            .map(|&child| (child, target))
+            .map(|&child| (child, target, target_depth))
             .collect();
-        while let Some((source, parent)) = pending.pop() {
+        while let Some((source, parent, depth)) = pending.pop() {
             self.visit();
             if self.past_step_limit() {
                 return false;
@@ -230,6 +233,10 @@ impl TreeBuilder {
                     if removed {
                         continue;
                     }
+                    if depth >= self.limits.max_depth {
+                        self.stop_at(Limit::Depth);
+                        return false;
+                    }
                     let nodes = 1 + usize::from(template_contents.is_some());
                     if !self.admit(nodes, stored_bytes_of(&data)) {
                         return false;
@@ -248,7 +255,13 @@ impl TreeBuilder {
                     ) = (template_contents, self.tree.data(element))
                     {
                         let to = *to;
-                        pending.extend(self.tree.children(*from).iter().rev().map(|&c| (c, to)));
+                        pending.extend(
+                            self.tree
+                                .children(*from)
+                                .iter()
+                                .rev()
+                                .map(|&c| (c, to, depth + 1)),
+                        );
                     }
                     element
                 }
@@ -257,12 +270,24 @@ impl TreeBuilder {
                         return false;
                     }
                     let node = self.tree.insert_new(parent, data, None, &self.steps);
-                    pending.extend(self.tree.children(source).iter().rev().map(|&c| (c, node)));
+                    pending.extend(
+                        self.tree
+                            .children(source)
+                            .iter()
+                            .rev()
+                            .map(|&c| (c, node, depth)),
+                    );
                     continue;
                 }
             };
             self.tree.insert(parent, copy, None, &self.steps);
-            pending.extend(self.tree.children(source).iter().rev().map(|&c| (c, copy)));
+            pending.extend(
+                self.tree
+                    .children(source)
+                    .iter()
+                    .rev()
+                    .map(|&c| (c, copy, depth + 1)),
+            );
         }
         true
     }

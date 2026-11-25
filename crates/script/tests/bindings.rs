@@ -903,7 +903,7 @@ fn node_charge() {
     };
     let (charged, uncharged) = (grows(Writes::Charge), grows(Writes::Uncharged));
     // Decision 13: 3 × `NODE_BYTES` (3 × 136 = 408) and twice the four bytes stored, 416 bytes,
-    // the node term of the tree's heap bound (`crates/html/src/limits.rs:36-42`). Acceptance 12
+    // the node term of the tree's heap bound (`crates/html/src/limits.rs:45-51`). Acceptance 12
     // of the story says 1,224 + 8 (3 × 408); the test holds the bound the decision names.
     let node_term = 3 * NODE_BYTES as u64 + 2 * 4;
     assert_eq!(node_term, 416);

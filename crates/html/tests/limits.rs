@@ -516,7 +516,8 @@ fn a_node_limit_inside_the_adoption_agency_leaves_no_element_out_of_the_tree() {
 fn steps_reads_the_count_the_step_limit_checks() {
     // `<p>` visits `body` and `html` for "has a p element in button scope"; `x` visits nothing.
     assert_eq!(steps("<p>x"), 2);
-    // The token that passes the limit is processed whole, and its steps are counted.
+    // The token that passes the limit has its steps counted; the `p` it would insert after
+    // them is not, since the write reads the limit first.
     let tree = parse_document(
         "<p>x",
         &with_limits(Limits {
@@ -567,9 +568,13 @@ fn steps_count_each_inner_loop_iteration_of_the_adoption_agency() {
     // the furthest block (4.7) 2, the entries `iteration_creates` looks up 1, the inner loop 2
     // iterations and the `span`'s missing entry 1 (4.18), removing the `div` from the `span`
     // (4.22) 1, the walk from the `body` to the root (4.23) 3, the formatting element's entry
-    // (4.25) 1. Second outer iteration: the entry, the stack and the scope, 1 each; no furthest
-    // block. 21 in all, 2 of them the inner loop's own.
-    assert_eq!(steps("<a><span><div></a>") - steps("<a><span><div>"), 21);
+    // (4.25) 1, the depths of the entries from the formatting element's place up read again,
+    // the `div` and the new `a`, each from its parent 2 and each entry 2. The stack's changes,
+    // each entry above the place moved and each scope boundary (the `html`) visited: the
+    // `span` removed (4.18.5) 2, the `a` removed (4.26) 2, the new `a` inserted at the top
+    // (4.26) 0. Second outer iteration: the entry, the stack and the scope, 1 each; no
+    // furthest block. 29 in all, 2 of them the inner loop's own.
+    assert_eq!(steps("<a><span><div></a>") - steps("<a><span><div>"), 29);
 }
 
 #[test]

@@ -82,10 +82,10 @@ row from the element as the parser made it and calls the hook of Q2 with "run" o
 | `event` and `for` attributes, `for` not `window` or `event` not `onload`/`onload()` | not run: event | step 24.4 and 24.5 |
 | `event=onload for=window` | runs | step 24 does not return |
 | a script in `template` contents | not run: disconnected | step 9: the contents are a document fragment, not connected |
-| an SVG `script` in foreign content (`docs/design/html-parser.md:627`) | not run: svg | not this algorithm: foreign content's own `script` end tag ("in foreign content", 13.2.6.5), which processes an SVG script element; the first version runs HTML script elements only |
+| an SVG `script` in foreign content (`docs/design/html-parser.md:627`), however it is closed: its own end tag, self-closing, `</svg>`, an HTML end tag, a breakout start tag, `</script>` while an SVG child is the current node, or open at the end of the input; one record, when it leaves the stack of open elements or the parse ends, whichever comes first | not run: svg | not this algorithm: foreign content's own `script` end tag ("in foreign content", 13.2.6.5), which processes an SVG script element; the first version runs HTML script elements only. A MathML `script` is no script element and gets no record |
 | a script element a script created and inserted into the document | not run: inserted | the DOM's insertion steps reach "prepare the script element" for an element that is not parser-inserted; the first version runs only parser-inserted elements, and the DOM write that connects one records it (Q7) |
 | a parser-inserted script element a script moved after it ran | no second record | step 1: "already started is true, then return" |
-| a `script` element still open at the end of the input (`<script>x = 1` with no end tag) | not run: eof | 13.2.6.4.8, "An end-of-file token": "If the current node is a script element, then set its already started to true"; it is popped and never prepared |
+| a `script` element open when the parser stopped: at the end of the input (`<script>x = 1` with no end tag), or because a limit stopped the parse inside it | not run: eof | 13.2.6.4.8, "An end-of-file token": "If the current node is a script element, then set its already started to true"; it is popped and never prepared. A limit stops the parse before the end tag, and "stop parsing" pops it the same way |
 | a parser-inserted element not run for `empty`, `disconnected` or `type` that a script later gives text, a usable `type` or a connected place | no second record; its first record stays | these return at steps 8, 9 and 15, before step 17 sets already started; step 3 has set the parser document to null "so that ... another script can later mutate them and cause them to run again", and a browser runs it then; the first version runs scripts only at the parser's end tag (a deviation, below) |
 | a parser-inserted element not run for `event`, `nomodule` or `src`, later changed or moved by a script | no second record | these return at steps 24, 21 and 35, after step 17 set already started, so step 1 returns on every later prepare: a browser never runs them again either |
 | any element in a document whose session has no scripts | not run, no record | step 20 ("scripting is disabled"): no hook is called, and Q7 records nothing |
@@ -191,7 +191,7 @@ script, Q4, and parsing goes on). The tree builder calls `skip` for an SVG `scri
 in foreign content with `Svg`. After either call the tree builder goes on with its stack of open
 elements and its list of active formatting elements as they were, over the tree the hook left:
 they hold node identities, and a node a script removed stays in the tree's arena
-(`crates/html/src/limits.rs:25-26` counts "nodes removed from their parent"). So an element the
+(`crates/html/src/limits.rs:34-35` counts "nodes removed from their parent"). So an element the
 script removed from the tree still receives what the markup after it holds, as the standard's
 stack of open elements keeps it (`<div><script></script>x</div>` with the `div` removed puts `x`
 into the removed `div`), and a moved element receives it where it now is. The "appropriate place
@@ -310,12 +310,12 @@ with the reason.
 | scripts run per document | 1,000, chosen: it bounds the records of Q7, at most 1,000 per document; the steps, memory and wall clock bound the work already | none: a choice, not a measurement | none: `story:scripts-parse-run` measures again whether a page with more scripts reaches it | the 1,001st script element and each later one: `not run: scripts-per-document` |
 | bytes of one script's source (UTF-8, as the tree holds it) | 524,288 (512 KiB), measured: the largest power of two of the sweep that parsed | `R limits` (the first round's parse sweep, on the build node) | `parse var source of 524260 bytes, 27324 statements, memory_bytes 64 MiB: parsed in 0.106 s, heap_bytes after 11713890`, and `parse var source of 1048540 bytes, 53538 statements, memory_bytes 64 MiB: terminated MemoryBudget in 0.155 s, heap_bytes after 202424` | that script, not parsed: `limit: source-bytes`; later scripts run |
 | wall clock per document, from its first script's start, through the interrupt handle | 5 s, chosen: twice the release time of the document's step total, and far below `surfd`'s 60 s for an answer (`crates/surfd/src/daemon.rs:34`) | `R limits` | `parse of 524260 bytes, interrupt set after 0.020 s: terminated Interrupted after 0.025 s` (the clock also ends a parse); `loop run 1: true after 1.000 s, 20780416 steps, 20777341 steps/s` | the running script: `limit: wall-clock`; each later script: `not run: wall-clock` |
-| parser: input bytes (`crates/html/src/limits.rs:17-21`) | 16,777,216, the parser's | none: a script adds no input | `crates/html/src/limits.rs:63` (`max_input_bytes: 16 * 1024 * 1024`) | not reached by a script: the first version has no `document.write`; parsing stops as today |
-| parser: depth | 512, the parser's | none: the parser's own limit | `crates/html/src/limits.rs:64` (`max_depth: 512`) | a write that would nest an element deeper: refused, the script: `limit: depth` |
-| parser: nodes | 1,048,576, the parser's | none: the parser's own limit | `crates/html/src/limits.rs:65` (`max_nodes: 1024 * 1024`) | a write that would make one more node: refused, the script: `limit: nodes` |
-| parser: attributes per element | 1,024, the parser's | none: the parser's own limit | `crates/html/src/limits.rs:66` (`max_attributes: 1024`) | `limit: attributes` |
-| parser: stored bytes | 67,108,864, the parser's | none: the parser's own limit | `crates/html/src/limits.rs:67` (`max_stored_bytes: 64 * 1024 * 1024`) | `limit: stored-bytes` |
-| parser: steps | 134,217,728 (2^27), the parser's | none: the parser's own limit | `crates/html/src/limits.rs:68` (`max_steps: 1 << 27`) | counts tree construction's scans after each token, not a script's writes; parsing stops as today (`stopped_by` `Steps`), and no later script element is reached |
+| parser: input bytes (`crates/html/src/limits.rs:17-21`) | 16,777,216, the parser's | none: a script adds no input | `crates/html/src/limits.rs:103` (`max_input_bytes: 16 * 1024 * 1024`) | not reached by a script: the first version has no `document.write`; parsing stops as today |
+| parser: depth | 512, the parser's | none: the parser's own limit | `crates/html/src/limits.rs:104` (`max_depth: 512`) | a write that would nest an element deeper: refused, the script: `limit: depth` |
+| parser: nodes | 1,048,576, the parser's | none: the parser's own limit | `crates/html/src/limits.rs:105` (`max_nodes: 1024 * 1024`) | a write that would make one more node: refused, the script: `limit: nodes` |
+| parser: attributes per element | 1,024, the parser's | none: the parser's own limit | `crates/html/src/limits.rs:106` (`max_attributes: 1024`) | `limit: attributes` |
+| parser: stored bytes | 67,108,864, the parser's | none: the parser's own limit | `crates/html/src/limits.rs:107` (`max_stored_bytes: 64 * 1024 * 1024`) | `limit: stored-bytes` |
+| parser: steps | 134,217,728 (2^27), the parser's | none: the parser's own limit | `crates/html/src/limits.rs:108` (`max_steps: 1 << 27`) | counts tree construction's scans, not a script's writes; read inside each token, before each entry of a scan of the stack of open elements or of the list of active formatting elements and before each write to the tree, so the token that passes the limit is processed only up to the next read; parsing stops (`stopped_by` `Steps`), and no later script element is reached |
 | `eval` and `Function` | allowed, chosen: `host_ensure_can_compile_strings` answers `Ok` (the default, `crates/swell/src/host/hooks.rs:176-181 @ 0.8.0`) | `R limits` and `T limits`, with a hook that answers `Throw` | `eval refused: throw not an error`; `Function refused: throw not an error` in both profiles (the hook's thrown value is what `eval` throws, HOST-116 and HOST-117, `conformance/host/requirements.txt:116-117 @ 0.8.0`) | ran: `eval` charges a step per code unit of its source before the parse (`crates/swell/tests/frontend_ledger.rs:172-176 @ 0.8.0`) and its tree to `memory_bytes` (`:127 @ 0.8.0`), and they reach nothing an inline script does not. HTML refuses them only under a Content Security Policy, which surf does not read (Q2) |
 | after `Terminated(MemoryBudget)` | `collect()` once, chosen; a second in the same document stops it | `T limits` | `memory 4 MiB, array growth: terminated MemoryBudget`; `state after memory budget: Alive`; `collect: Ok(true)`; `next entry after collect: normal` | the script: `limit: memory`; after the first such end in a document surf calls `collect()` once (HOST-188 to HOST-190, `conformance/host/requirements.txt:188-190 @ 0.8.0`); the second script of that document that ends `limit: memory`, next to the first or not, makes each later script `not run: memory` |
 
@@ -324,7 +324,7 @@ wrapper is a host object on the engine's heap, `HOST_OBJECT_LIVE_BYTES` (256) by
 data's size (`crates/swell/src/host/limits.rs:80-83 @ 0.8.0`), counted by `heap_bytes()`; and for
 each node a script creates the bindings charge, with `Cx::charge_host_bytes`
 (`crates/swell/src/host/mod.rs:577 @ 0.8.0`), the node's term of the tree's heap bound, 3 ×
-`NODE_BYTES` (408 bytes), plus twice the bytes it stores (`crates/html/src/limits.rs:36-42`),
+`NODE_BYTES` (408 bytes), plus twice the bytes it stores (`crates/html/src/limits.rs:45-51`),
 before the write, and keep the `HostBytes` until the agent is dropped. So a script that makes
 nodes ends at `limit: memory` or at a parser limit, whichever comes first; at 256 bytes a wrapper,
 262,144 wrappers alone fill `memory_bytes`.
@@ -886,7 +886,7 @@ What a session holds over its life, the terms of the address-space bound:
   tree of each parsed document ("its node tree, which `surf::Browser` keeps for the life of the
   session (each tree within `surf-html`'s limits; no bound over all documents yet)",
   `crates/session/src/lib.rs:351-353`). One tree is at most about 536 MiB of heap at the parser's
-  default limits (`crates/html/src/limits.rs:36-42`, "inferred from the bound, not measured"); the
+  default limits (`crates/html/src/limits.rs:45-51`, "inferred from the bound, not measured"); the
   number of trees has no bound until `story:session-memory-bound` is built. The records of Q7 add
   at most 1,000 per document, each message at most 1,024 characters (Q16);
 - the script engine's state of a document: only while that document is parsed. The agent is made

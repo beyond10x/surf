@@ -15,9 +15,14 @@
 //! admitted by the node and stored-byte limits all at once, after step 4.8 and before step 4.9,
 //! when nothing of the iteration has changed the tree, the stack or the list yet. So an
 //! iteration runs whole or not at all, and a limit never leaves a clone out of its parent. Every
-//! entry the scans visit, and every node of the walk to the root, is a step.
+//! entry the scans visit, and every node of the walk to the root, is a step. The step limit is
+//! read before each outer iteration, in each scan, before each iteration of the inner loop and
+//! after its scan of the list, and after step 4.23: past it, an inner loop that made clones
+//! ends with them put back at the place of step 4.14 (step 4.23), the furthest block under the
+//! last, and parsing stops (fix round 5 of `story:html-script-hook`).
 
 use super::{Entry, Scope, TreeBuilder};
+use crate::limits::Limit;
 use crate::tree::{NodeData, NodeId};
 
 /// Step 4.1: the outer loop runs at most this many times.
@@ -34,6 +39,9 @@ impl TreeBuilder {
     /// ignores at step 4.4 or 4.5 costs its steps and copies nothing.
     pub(super) fn last_active_named(&self, subject: &str) -> Option<(usize, NodeId)> {
         for (index, entry) in self.active.iter().enumerate().rev() {
+            if self.spent(0) {
+                return None;
+            }
             self.visit();
             match entry {
                 Entry::Marker => return None,
@@ -48,22 +56,25 @@ impl TreeBuilder {
 
     /// The adoption agency algorithm, run for a token whose tag name is `subject`.
     pub(super) fn adoption_agency(&mut self, subject: &str) {
-        if self.stopped {
+        if self.stopped || self.past_step_limit() {
             return;
         }
         // 1. `subject` is the token's tag name.
         // 2. The current node is an HTML element named `subject` that is not in the list.
         let current = self.current_node();
         if self.html_name(current) == Some(subject) && self.active_position(current).is_none() {
-            self.open.pop();
+            // A scan the step limit ended answers nothing: parsing stops.
+            if !self.past_step_limit() {
+                self.open.pop();
+            }
             return;
         }
         // 3.
         let mut outer_loop_counter = 0;
         // 4.
         loop {
-            // 4.1.
-            if outer_loop_counter >= OUTER_LOOP_LIMIT {
+            // 4.1. Also past the step limit, read before each iteration changes anything.
+            if outer_loop_counter >= OUTER_LOOP_LIMIT || self.past_step_limit() {
                 return;
             }
             // 4.2.
@@ -85,10 +96,17 @@ impl TreeBuilder {
             }
             // 4.6. Not the current node: a parse error, and the algorithm goes on.
             // 4.7. The furthest block: the topmost special element below the formatting element.
-            let furthest_block_stack = (formatting_stack + 1..self.open.len()).find(|&index| {
+            let mut furthest_block_stack = None;
+            for index in formatting_stack + 1..self.open.len() {
+                if self.past_step_limit() {
+                    return;
+                }
                 self.visit();
-                self.is_special(self.open[index])
-            });
+                if self.is_special(self.open[index]) {
+                    furthest_block_stack = Some(index);
+                    break;
+                }
+            }
             // 4.8. No furthest block: pop down to the formatting element, and the entry goes.
             let Some(furthest_block_stack) = furthest_block_stack else {
                 self.open.truncate(formatting_stack);
@@ -114,9 +132,35 @@ impl TreeBuilder {
             // 4.12, 4.13. No pending redirects, no sanitizer.
             // 4.14.
             let (initial_target, initial_reference) = self.appropriate_place(Some(common_ancestor));
-            // 4.15.
+            // A scan the step limit ended finds no `table`: the iteration has changed nothing.
+            if self.past_step_limit() {
+                return;
+            }
+            // 4.15. The place's reference child, the `table` of foster parenting, is a child of
+            // its target (`appropriate_place`), so `lastNode` stays the furthest block.
             if !self.is_child_or_none(initial_reference, initial_target) {
                 last_node = None;
+            }
+            debug_assert!(last_node.is_some());
+            // Whether step 4.23 will refuse to insert `lastNode` because it would be its own
+            // ancestor: the furthest block is above the place. The inner loop moves only the
+            // furthest block, with what is under it, so the answer is the same there; the walk
+            // to the root is made once, each node a step.
+            let block_holds_target =
+                self.is_host_including_inclusive_ancestor(furthest_block, initial_target);
+            // The depth limit, for the whole iteration, before anything moves. The inner loop
+            // removes from the stack only elements between the formatting element and the
+            // furthest block, none of them a `table` or a `template` (they are not special), so
+            // the place of step 4.19 is the place of step 4.14.
+            let inserted =
+                !block_holds_target && *self.tree.data(initial_target) != NodeData::Document;
+            if !self.adoption_fits(
+                furthest_block,
+                (initial_target, initial_reference),
+                inserted,
+                nodes - 1,
+            ) {
+                return;
             }
             // 4.16.
             let mut inner_loop_counter = 0;
@@ -124,8 +168,15 @@ impl TreeBuilder {
             let mut bookmark_moved = false;
             // The nodes step 4.18.5 removes, all of them above the formatting element.
             let mut removed_from_stack = 0;
+            // Whether the step limit ended the inner loop: read before each iteration and after
+            // its scan of the list, before the iteration changes anything.
+            let mut cut = false;
             // 4.18. The inner loop.
             loop {
+                if self.spent(0) {
+                    cut = true;
+                    break;
+                }
                 self.visit();
                 // 4.18.1.
                 inner_loop_counter += 1;
@@ -138,6 +189,10 @@ impl TreeBuilder {
                 }
                 // 4.18.4. After the third iteration a node leaves the list.
                 let mut node_entry = self.active_position(node);
+                if self.spent(0) {
+                    cut = true;
+                    break;
+                }
                 if inner_loop_counter > INNER_LOOP_CLONES
                     && let Some(at) = node_entry
                 {
@@ -149,7 +204,7 @@ impl TreeBuilder {
                 }
                 // 4.18.5. A node not in the list leaves the stack.
                 let Some(at) = node_entry else {
-                    self.open.remove(node_stack);
+                    self.open.remove(node_stack, &self.steps);
                     removed_from_stack += 1;
                     continue;
                 };
@@ -178,31 +233,52 @@ impl TreeBuilder {
                 }
                 last_node = Some(node);
             }
-            // 4.19, 4.20. Where `lastNode` goes: the appropriate place given the common ancestor.
-            let (target, reference) = self.appropriate_place(Some(common_ancestor));
+            // 4.19, 4.20. Where `lastNode` goes: the appropriate place given the common ancestor,
+            // which is the place of step 4.14. When the step limit ended the inner loop, or
+            // ends this scan, only the clones it made are put back into the tree, at that place
+            // (step 4.23), and parsing stops: the furthest block has not moved when it made
+            // none, and a clone that holds it has no parent.
+            let (target, reference) = if cut {
+                (initial_target, initial_reference)
+            } else {
+                let place = self.appropriate_place(Some(common_ancestor));
+                cut = self.spent(0);
+                debug_assert!(cut || place == (initial_target, initial_reference));
+                (initial_target, initial_reference)
+            };
             // 4.21. No pending redirects.
             // 4.22. `lastNode` is taken out of its parent.
             if let Some(last) = last_node
+                && !cut
                 && self.tree.parent(last).is_some()
                 && self.is_child_or_none(reference, target)
             {
                 self.tree.remove(last, &self.steps);
             }
-            // 4.23. And inserted at that place.
+            // 4.23. And inserted at that place, unless it is above the place: `lastNode` is the
+            // furthest block or a clone above it, so it is exactly when the furthest block is.
             if let Some(last) = last_node
                 && self.tree.parent(last).is_none()
-                && !self.is_host_including_inclusive_ancestor(last, target)
+                && !block_holds_target
                 && !(*self.tree.data(target) == NodeData::Document
                     && self.tree.has_element_child(target, &self.steps))
                 && self.is_child_or_none(reference, target)
             {
                 self.tree.insert(target, last, reference, &self.steps);
             }
+            // Past the step limit the tree is whole here: parsing stops before step 4.24
+            // creates the new formatting element.
+            if self.past_step_limit() {
+                return;
+            }
             // 4.24. A new element for the formatting element's token, taken out of its entry,
-            // which step 4.25 removes.
-            let formatting_at = self
-                .active_position(formatting_element)
-                .expect("the formatting element is in the list");
+            // which step 4.25 removes. The formatting element is in the list; a scan the step
+            // limit ended does not find it, and parsing stops there too.
+            let Some(formatting_at) = self.active_position(formatting_element) else {
+                let stopped = self.past_step_limit();
+                debug_assert!(stopped, "the formatting element is in the list");
+                return;
+            };
             let Entry::Element {
                 token: formatting_token,
                 ..
@@ -228,10 +304,11 @@ impl TreeBuilder {
             // `formatting_stack`, and the furthest block is lower by those nodes and by the
             // formatting element. Finishing the parsing of its children changes no tree.
             debug_assert_eq!(self.open[formatting_stack], formatting_element);
-            self.open.remove(formatting_stack);
+            self.open.remove(formatting_stack, &self.steps);
             let furthest_block_stack = furthest_block_stack - removed_from_stack - 1;
             debug_assert_eq!(self.open[furthest_block_stack], furthest_block);
-            self.open.insert(furthest_block_stack + 1, new_element);
+            self.open
+                .insert(furthest_block_stack + 1, new_element, &self.steps);
             // 4.27, 4.28. The action is "Keep".
             // 4.29. The adjusted insertion location given (furthest block, null).
             let (parent, reference) = (furthest_block, None);
@@ -247,7 +324,51 @@ impl TreeBuilder {
                     .insert(parent, new_element, reference, &self.steps);
             }
             // 4.31, 4.32. No redirection to update.
+            // The depths of the entries the iteration moved or made: on an ordered stack those
+            // from the formatting element's place up (the clones, the furthest block, the new
+            // element and the entries under the furthest block), else all.
+            self.settle_entries(if self.ordered { formatting_stack } else { 0 });
         }
+    }
+
+    /// Whether the moves of an outer iteration keep the tree inside the depth limit, checked
+    /// before the inner loop changes anything; when they do not, parsing stops there and the
+    /// iteration makes no change. The iteration puts `clones` new elements in a chain, the
+    /// furthest block under the last, the new formatting element under the furthest block and
+    /// the furthest block's children under that. Step 4.23 puts the chain at `place` when it
+    /// is `inserted`; else the chain stays out of the tree, counted from its own top. The new
+    /// formatting element is the deepest new place; the furthest block's children, and every
+    /// node under them, move down when it is deeper than the furthest block was. Only then are
+    /// they walked for the deepest of them, each node a step, and the check made: a move that
+    /// makes no node deeper keeps every node inside the limit, and walks nothing.
+    fn adoption_fits(
+        &mut self,
+        furthest_block: NodeId,
+        place: (NodeId, Option<NodeId>),
+        inserted: bool,
+        clones: usize,
+    ) -> bool {
+        let old = self
+            .open
+            .depth(furthest_block)
+            .expect("the furthest block is an entry with a settled depth");
+        let top = if inserted { self.place_depth(place) } else { 0 };
+        let new_element = top + clones + 2;
+        if new_element <= old {
+            return true;
+        }
+        // The furthest block is no `template`: a `template` start tag puts a marker on the
+        // list, so a formatting element above an open `template` is never the one step 4.3
+        // finds. So nothing hangs under it but its children.
+        debug_assert!(self.tree.contents(furthest_block).is_none());
+        let below = self.tree.height_below(furthest_block, &self.steps);
+        let fits = new_element + below <= self.limits.max_depth;
+        // The walks of `place_depth` and `height_below` are counted: past the step limit after
+        // them, parsing stops at the step limit, never at the depth limit.
+        if !fits && !self.past_step_limit() {
+            self.stop_at(Limit::Depth);
+        }
+        fits
     }
 
     /// The nodes and the stored bytes of the elements an outer iteration creates, given the
@@ -292,35 +413,22 @@ impl TreeBuilder {
     /// Whether `ancestor` is a host-including inclusive ancestor of `node` (DOM): `node`'s
     /// parents are followed up to its root, and from a root that has a host to that host. Only
     /// a document fragment has a host, and here only a template's contents is one; a Document
-    /// or an element without a parent has none, and the walk ends there. The arena keeps no link
-    /// from a template's contents to the template, so the template is looked for on the stack
-    /// of open elements.
+    /// or an element without a parent has none, and the walk ends there. The tree finds a
+    /// template's host, also a template a hook took off the stack of open elements. The walk
+    /// takes at most one step per node; a longer one is a cycle, answered as true, so that the
+    /// insertion is not made.
     fn is_host_including_inclusive_ancestor(&self, ancestor: NodeId, node: NodeId) -> bool {
         let mut next = Some(node);
-        while let Some(at) = next {
+        for _ in 0..=self.tree.node_count() {
+            let Some(at) = next else {
+                return false;
+            };
             self.visit();
             if at == ancestor {
                 return true;
             }
-            next = match self.tree.parent(at) {
-                Some(parent) => Some(parent),
-                None if *self.tree.data(at) == NodeData::DocumentFragment => self.template_host(at),
-                None => None,
-            };
+            next = self.tree.parent_or_host(at);
         }
-        false
-    }
-
-    /// The template element on the stack of open elements whose template contents is `fragment`.
-    /// A fragment is the contents of one template, so the scan starts at the current node, where
-    /// the innermost open template is.
-    fn template_host(&self, fragment: NodeId) -> Option<NodeId> {
-        self.open.iter().rev().copied().find(|&n| {
-            self.visit();
-            matches!(
-                self.tree.data(n),
-                NodeData::Element { template_contents: Some(contents), .. } if *contents == fragment
-            )
-        })
+        true
     }
 }
