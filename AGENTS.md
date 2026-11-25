@@ -363,8 +363,9 @@ above, and the list of standards itself was written from memory.
     `story:agent-cookie-jar` the `cookies <n>` line after `path` (`Answer::cookies`, from 1;
     `render` refuses 0 with `RenderError::NoCookies`, `parse` refuses it). No dependency.
   - `crates/script` (`surf-script`, `story:scripts-engine-dependency`): runs a source on one
-    swell 0.8.0 agent under surf's limits; no DOM yet, and no crate depends on it. Depends on
-    swell and `surf-secret`. 29 tests: `tests/engine.rs` 18 (3 of them ignored until swell
+    swell 0.8.0 agent under surf's limits, and a document's scripts over the generated DOM
+    bindings, whose slice `reading` reads the parsed tree (`story:scripts-dom-reading`); no
+    crate depends on it. Depends on swell, `surf-html`, `surf-secret` and `surf-url`. 29 tests: `tests/engine.rs` 18 (3 of them ignored until swell
     reaches HOST-125, HOST-26 and HOST-127), `tests/adversary.rs` 10, `tests/adversary_2.rs` 1.
   - `crates/secret` (`surf-secret`): the operating system random source, the comparison in
     constant time and the 32-byte token. Every secret and every random identity of the agent

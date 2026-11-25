@@ -45,7 +45,7 @@ Node DOCUMENT_FRAGMENT_NODE reading
 Node NOTATION_NODE reading
 Node nodeType reading
 Node nodeName reading
-Node baseURI reading
+Node baseURI reading deviation: no check of a Content Security Policy base-uri directive, surf reads none; deviation: no creator base URL for a document at about:blank or about:srcdoc, surf has no nested document; deviation: the base href parsed as UTF-8 whatever the document's encoding
 Node isConnected reading
 Node ownerDocument reading
 Node getRootNode reading
@@ -220,7 +220,7 @@ DocumentType remove mutation
 
 DocumentFragment constructor mutation
 DocumentFragment getElementById reading
-DocumentFragment children reading
+DocumentFragment children reading deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: [SameObject] as the same snapshot object refreshed when read
 DocumentFragment firstElementChild reading
 DocumentFragment lastElementChild reading
 DocumentFragment childElementCount reading

@@ -43,20 +43,20 @@
 //! 80cf04abd88405c6c1f0ec7c28a0a53634df5fdd55e8833c6b6fe68511ca2aa6  crates/webidl/data/whatwg/dom.html
 //! 3915f58aa923a43fd03dd6fee040bbf8468856ef51270071b0a8bf11378658fe  crates/webidl/data/whatwg/webidl.html
 //! cc3aaecd4aaf3d0e63c7405191056e99d9e16eb64d356e1c8d59d5bc01265371  crates/webidl/data/whatwg/html-idl.html
-//! 9b355fa6fa753f930e321be6f7d0a57e41cbce61c84bcf40850b2251f664cb79  crates/webidl/selection.txt
+//! cb6feb084be7d5767c0cb7b491710ff8d4adaa66cf9241ed629439c3f6d4d35a  crates/webidl/selection.txt
 //! e8b1d6e0efc188db4e1608564a7fcf305e3781c42884985e77e99f7e91d3fe5f  crates/webidl/Cargo.toml
 //! 143aaa6923355a7101127f3db0aecd9b7b3d9adeff8689c23628335884d31df1  crates/html/Cargo.toml
 //! b9c8d2d59f6f46474c0cfa0b8b77bea21d94fc73a30ad93d5bf6385c422197d2  rust-toolchain.toml
 //! f32d2f03b3f4b1e295c79ed49d543f1205c7dac7c3dc74f05a5a27af4fea0584  rustfmt.toml
 //! 75291cf6fa7a72d5062db3fca1f659463b3187e258d6a2d34f4f7bcf6ab86b68  crates/webidl/src/bin/bindings.rs
 //! 91c0cd2b8dc96f725518046a15c01115e61e0dec125f0ae36656c3a4e73b7356  crates/webidl/src/extract.rs
-//! fb1eb4d44a918e37011a1cc2880d91de11ca4d904121911814a540a210816a57  crates/webidl/src/generate.rs
+//! b3fbe10e75e1c160ea1bc239423bc3fb3fcc0b1e88b24ad679c2e9dd80613fe3  crates/webidl/src/generate.rs
 //! bb39103dd61d3152cfb7258514bc234c3992f1aec09d79b47b30ef3acb365e10  crates/webidl/src/html.rs
 //! 2f5c4d359f13f497b0e1d87d12b0163b20cd7c972a22cf4761106f889ecde900  crates/webidl/src/lexer.rs
 //! 9803d546bb474bc834b29498ec0e075e0ef88ceed3de1989601c2ae8cf12eeed  crates/webidl/src/lib.rs
 //! fa6e285bfc241f9e68384ebbfd5f04e1c9172fbc254baca4c4fc8e1a154cd930  crates/webidl/src/model.rs
 //! 8db6c1d01d7d0b8dc68530edc4f5bf982f1b5cc2b1c49fbbb38496b9ff60dacd  crates/webidl/src/parser.rs
-//! 57699ee05d4e9ae15deafbcc61e4634f45e8e44ac21f3eabda074cd4d79dcd70  crates/webidl/src/prelude.rs
+//! e280eafbb9e2d1be14c333ca6b049527cb47610be0677d959621d34d6620067e  crates/webidl/src/prelude.rs
 //! 22baac7ca4bee83065ca31df9ddab4faf4d6227668cb327360b0473564ed85a3  crates/webidl/src/selection.rs
 //! ```
 //!
@@ -69,7 +69,7 @@
 //! 36612fcd0caea180  6266  crates/webidl/data/whatwg/html-idl.html
 //! ```
 //!
-//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 4916e19da89d6e49c4fa84c307030f421b43c59c8c596bf8d135aa7c6fe40986
+//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 9e266590d45c1776ace461b4948a39c958d71d9b4640c656af3baf01ee0e73d7
 
 use std::cell::Cell;
 
@@ -268,14 +268,43 @@ impl<'e> DomCx<'_, 'e> {
 }
 
 /// The wrapper hook (decision 8): every node a member returns goes through `wrap`, and every
-/// `this` and node argument through `unwrap` after its brand check. `story:scripts-dom-reading`
-/// writes the real one; until then `crate::dom::wrapper` throws `NotSupportedError`.
+/// `this` and node argument through `unwrap` after its brand check. surf's own is
+/// `crate::dom::wrapper`.
+///
+/// It also holds `[SameObject]` for the attributes that return a `NodeList` or an
+/// `HTMLCollection` ([`SameObject`]): the getter asks `same_object` for the object kept for the
+/// node and the member, and hands a new one to `keep_same_object`. The getter makes and
+/// refreshes the object; the hook only finds and keeps it. With the provided methods, which
+/// keep nothing, such a getter makes a new object at each read.
 pub trait Wrap {
     /// The wrapper of `node`.
     fn wrap(&mut self, cx: &mut DomCx<'_, '_>, node: NodeId) -> Completion<Value>;
 
     /// The node of a wrapper, `None` for any other value.
     fn unwrap(&self, cx: &DomCx<'_, '_>, value: Value) -> Option<NodeId>;
+
+    /// The object kept for `node` and `member` by [`Wrap::keep_same_object`], if any.
+    fn same_object(
+        &mut self,
+        cx: &mut DomCx<'_, '_>,
+        node: NodeId,
+        member: SameObject,
+    ) -> Completion<Option<ObjectRef>> {
+        let _ = (cx, node, member);
+        Ok(None)
+    }
+
+    /// Keeps `object` as the object of `node` and `member`.
+    fn keep_same_object(
+        &mut self,
+        cx: &mut DomCx<'_, '_>,
+        node: NodeId,
+        member: SameObject,
+        object: ObjectRef,
+    ) -> Completion<()> {
+        let _ = (cx, node, member, object);
+        Ok(())
+    }
 }
 
 /// The data of a node's wrapper made by [`new_wrapper`].
@@ -294,6 +323,9 @@ impl HostData for NodeData {
 pub struct CollectionData {
     /// The nodes, in order.
     pub nodes: Vec<NodeId>,
+    /// The tree's `writes()` when the nodes were taken: a kept `[SameObject]` collection whose
+    /// count is the tree's is up to date.
+    pub written: u64,
 }
 
 impl HostData for CollectionData {
@@ -762,21 +794,75 @@ fn this_global(cx: &mut Cx<'_, ScriptHost>, this: Value, member: &str) -> Comple
     }
 }
 
-/// The nodes of a `NodeList` or `HTMLCollection` `this`, after its brand check.
+/// A `NodeList` or `HTMLCollection` `this`, after its brand check, whose data holds its nodes.
 fn this_collection(
     cx: &mut Cx<'_, ScriptHost>,
     this: Value,
     interface: Interface,
     member: &str,
-) -> Completion<Vec<NodeId>> {
+) -> Completion<ObjectRef> {
     let object = this_object(cx, this, interface, member)?;
     let brand = interface.brand();
     match cx
         .host_data::<CollectionData>(object, brand)
         .map_err(defect)?
     {
-        Some(data) => Ok(data.nodes.clone()),
+        Some(_) => Ok(object),
         None => Err(type_error(cx, &format!("{member}: `this` holds no nodes"))),
+    }
+}
+
+/// The nodes of the collection `object`, taken out of its data for a slice's call: the slice
+/// reads them in place, and [`restore_nodes`] puts them back after it, whatever it answered.
+/// Nothing is copied.
+fn take_nodes(
+    cx: &mut DomCx<'_, '_>,
+    object: ObjectRef,
+    interface: Interface,
+) -> Completion<Vec<NodeId>> {
+    match cx
+        .engine
+        .host_data_mut::<CollectionData>(object, interface.brand())
+        .map_err(defect)?
+    {
+        Some(data) => Ok(std::mem::take(&mut data.nodes)),
+        None => Err(missing()),
+    }
+}
+
+/// Puts the nodes [`take_nodes`] took back into the data of `object`.
+fn restore_nodes(
+    cx: &mut DomCx<'_, '_>,
+    object: ObjectRef,
+    interface: Interface,
+    nodes: Vec<NodeId>,
+) -> Completion<()> {
+    match cx
+        .engine
+        .host_data_mut::<CollectionData>(object, interface.brand())
+        .map_err(defect)?
+    {
+        Some(data) => {
+            data.nodes = nodes;
+            Ok(())
+        }
+        None => Err(missing()),
+    }
+}
+
+/// The `written` of the collection `object`.
+fn collection_written(
+    cx: &mut DomCx<'_, '_>,
+    object: ObjectRef,
+    interface: Interface,
+) -> Completion<u64> {
+    match cx
+        .engine
+        .host_data::<CollectionData>(object, interface.brand())
+        .map_err(defect)?
+    {
+        Some(data) => Ok(data.written),
+        None => Err(missing()),
     }
 }
 
@@ -808,8 +894,14 @@ fn finish<T>(
     answer: DomResult<T>,
     convert: impl FnOnce(&mut DomCx<'_, '_>, &mut Slices, T) -> Completion<Value>,
 ) -> Completion<Value> {
+    let value = answered(cx, answer)?;
+    convert(cx, slices, value)
+}
+
+/// A slice's answer, or its end thrown.
+fn answered<T>(cx: &mut DomCx<'_, '_>, answer: DomResult<T>) -> Completion<T> {
     match answer {
-        Ok(value) => convert(cx, slices, value),
+        Ok(value) => Ok(value),
         Err(DomEnd::Throw(exception)) => Err(throw(cx, &exception)),
         Err(DomEnd::Limit(limit)) => Err(end_with_limit(cx, limit)),
     }
@@ -1135,6 +1227,16 @@ fn collection_value(
     interface: Interface,
     nodes: Vec<NodeId>,
 ) -> Completion<Value> {
+    collection_object(cx, slices, interface, nodes).map(Value::Object)
+}
+
+/// The object of [`collection_value`], its `written` the tree's `writes()`.
+fn collection_object(
+    cx: &mut DomCx<'_, '_>,
+    slices: &mut Slices,
+    interface: Interface,
+    nodes: Vec<NodeId>,
+) -> Completion<ObjectRef> {
     let prototype = prototype_object(cx.engine, cx.installed, interface)?;
     let count = u64::try_from(nodes.len()).unwrap_or(u64::MAX);
     cx.engine.charge_steps(count)?;
@@ -1143,16 +1245,70 @@ fn collection_value(
         brand: interface.brand(),
         data: Some(Box::new(CollectionData {
             nodes: nodes.clone(),
+            written: cx.state.tree.writes(),
         })),
         error_kind: None,
     }))?;
-    for (index, node) in nodes.into_iter().enumerate() {
-        let wrapper = slices.wrap.wrap(cx, node)?;
+    define_indices(cx, slices, object, &nodes)?;
+    Ok(object)
+}
+
+/// The index properties of a collection: `nodes[index]`'s wrapper at each index.
+fn define_indices(
+    cx: &mut DomCx<'_, '_>,
+    slices: &mut Slices,
+    object: ObjectRef,
+    nodes: &[NodeId],
+) -> Completion<()> {
+    for (index, node) in nodes.iter().enumerate() {
+        let wrapper = slices.wrap.wrap(cx, *node)?;
         let key = PropertyKey::String(cx.engine.new_string(&index.to_string())?);
         let descriptor = data_property(wrapper, false, true, true);
         engine(cx.engine.define_property_or_throw(object, key, descriptor))?;
     }
-    Ok(Value::Object(object))
+    Ok(())
+}
+
+/// A kept `[SameObject]` collection brought up to the tree: `nodes` replace its nodes, its old
+/// index properties are deleted and the new ones defined, and its `written` becomes the tree's
+/// `writes()`. A step is charged per old and per new node, before the work. The data changes
+/// last, so a refresh that ends half done leaves an object a later read refreshes again.
+fn refresh_collection(
+    cx: &mut DomCx<'_, '_>,
+    slices: &mut Slices,
+    object: ObjectRef,
+    interface: Interface,
+    nodes: Vec<NodeId>,
+) -> Completion<()> {
+    let old = match cx
+        .engine
+        .host_data::<CollectionData>(object, interface.brand())
+        .map_err(defect)?
+    {
+        Some(data) => data.nodes.len(),
+        None => return Err(missing()),
+    };
+    let count = old.saturating_add(nodes.len());
+    cx.engine
+        .charge_steps(u64::try_from(count).unwrap_or(u64::MAX))?;
+    for index in 0..old {
+        let key = PropertyKey::String(cx.engine.new_string(&index.to_string())?);
+        engine(cx.engine.delete_property_or_throw(object, key))?;
+    }
+    define_indices(cx, slices, object, &nodes)?;
+    let written = cx.state.tree.writes();
+    match cx
+        .engine
+        .host_data_mut::<CollectionData>(object, interface.brand())
+        .map_err(defect)?
+    {
+        Some(data) => {
+            data.nodes = nodes;
+            data.written = written;
+            Ok(())
+        }
+        None => Err(missing()),
+    }
 }
 
 /// A `sequence<DOMString>` returned: a new Array of the realm's original `Array` with a String
@@ -1660,6 +1816,18 @@ fn throws(cx: &mut Cx<'_, ScriptHost>, member: &str, reason: &str) -> Completion
     ))
 }
 
+/// The attributes marked `[SameObject]` that return a `NodeList` or an `HTMLCollection`: the key, with the node, of the one object `Wrap` keeps for each (`Wrap::same_object`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SameObject {
+    /// `Node.childNodes`.
+    NodeChildNodes,
+    /// `Element.children`.
+    ElementChildren,
+    /// `Document.children`.
+    DocumentChildren,
+    /// `DocumentFragment.children`.
+    DocumentFragmentChildren,
+}
 /// The generated interfaces, parents first. Each is the brand of the objects that implement it, `Brand(index + 1)`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Interface {
@@ -2059,7 +2227,7 @@ pub trait Reading {
         let _ = (cx, this);
         Err(not_supported("Node.nodeName"))
     }
-    /// The getter of `Node.baseURI`, `USVString`.
+    /// The getter of `Node.baseURI`, `USVString`; deviation: no check of a Content Security Policy base-uri directive, surf reads none; deviation: no creator base URL for a document at about:blank or about:srcdoc, surf has no nested document; deviation: the base href parsed as UTF-8 whatever the document's encoding.
     fn node_base_uri(&mut self, cx: &mut DomCx<'_, '_>, this: NodeId) -> DomResult<String> {
         let _ = (cx, this);
         Err(not_supported("Node.baseURI"))
@@ -2605,7 +2773,7 @@ pub trait Reading {
         let _ = (cx, this, element_id);
         Err(not_supported("DocumentFragment.getElementById"))
     }
-    /// The getter of `DocumentFragment.children`, `HTMLCollection`.
+    /// The getter of `DocumentFragment.children`, `HTMLCollection`; deviation: a snapshot for a live collection until swell's slice 9 (HOST-112, HOST-114); deviation: \[SameObject\] as the same snapshot object refreshed when read.
     fn document_fragment_children(
         &mut self,
         cx: &mut DomCx<'_, '_>,
@@ -3665,13 +3833,31 @@ fn getter_node_child_nodes(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> C
     cx.charge_steps(1)?;
     let this = this_object(cx, call.this, Interface::Node, MEMBER)?;
     in_dom(cx, |dcx, slices| {
-        let copies = Copies::new();
         let this = unwrap_node(dcx, slices, this, MEMBER)?;
+        let writes = dcx.tree().writes();
+        let kept = slices
+            .wrap
+            .same_object(dcx, this, SameObject::NodeChildNodes)?;
+        if let Some(object) = kept
+            && collection_written(dcx, object, Interface::NodeList)? == writes
+        {
+            return Ok(Value::Object(object));
+        }
         let answer = slices.reading.node_child_nodes(dcx, this);
-        drop(copies);
-        finish(dcx, slices, answer, |dcx, slices, value| {
-            collection_value(dcx, slices, Interface::NodeList, value)
-        })
+        let nodes = answered(dcx, answer)?;
+        match kept {
+            Some(object) => {
+                refresh_collection(dcx, slices, object, Interface::NodeList, nodes)?;
+                Ok(Value::Object(object))
+            }
+            None => {
+                let object = collection_object(dcx, slices, Interface::NodeList, nodes)?;
+                slices
+                    .wrap
+                    .keep_same_object(dcx, this, SameObject::NodeChildNodes, object)?;
+                Ok(Value::Object(object))
+            }
+        }
     })
 }
 fn getter_node_first_child(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> Completion<Value> {
@@ -4742,13 +4928,31 @@ fn getter_element_children(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> C
     cx.charge_steps(1)?;
     let this = this_object(cx, call.this, Interface::Element, MEMBER)?;
     in_dom(cx, |dcx, slices| {
-        let copies = Copies::new();
         let this = unwrap_node(dcx, slices, this, MEMBER)?;
+        let writes = dcx.tree().writes();
+        let kept = slices
+            .wrap
+            .same_object(dcx, this, SameObject::ElementChildren)?;
+        if let Some(object) = kept
+            && collection_written(dcx, object, Interface::HtmlCollection)? == writes
+        {
+            return Ok(Value::Object(object));
+        }
         let answer = slices.reading.element_children(dcx, this);
-        drop(copies);
-        finish(dcx, slices, answer, |dcx, slices, value| {
-            collection_value(dcx, slices, Interface::HtmlCollection, value)
-        })
+        let nodes = answered(dcx, answer)?;
+        match kept {
+            Some(object) => {
+                refresh_collection(dcx, slices, object, Interface::HtmlCollection, nodes)?;
+                Ok(Value::Object(object))
+            }
+            None => {
+                let object = collection_object(dcx, slices, Interface::HtmlCollection, nodes)?;
+                slices
+                    .wrap
+                    .keep_same_object(dcx, this, SameObject::ElementChildren, object)?;
+                Ok(Value::Object(object))
+            }
+        }
     })
 }
 fn getter_element_first_element_child(
@@ -5575,13 +5779,31 @@ fn getter_document_children(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> 
     cx.charge_steps(1)?;
     let this = this_object(cx, call.this, Interface::Document, MEMBER)?;
     in_dom(cx, |dcx, slices| {
-        let copies = Copies::new();
         let this = unwrap_node(dcx, slices, this, MEMBER)?;
+        let writes = dcx.tree().writes();
+        let kept = slices
+            .wrap
+            .same_object(dcx, this, SameObject::DocumentChildren)?;
+        if let Some(object) = kept
+            && collection_written(dcx, object, Interface::HtmlCollection)? == writes
+        {
+            return Ok(Value::Object(object));
+        }
         let answer = slices.reading.document_children(dcx, this);
-        drop(copies);
-        finish(dcx, slices, answer, |dcx, slices, value| {
-            collection_value(dcx, slices, Interface::HtmlCollection, value)
-        })
+        let nodes = answered(dcx, answer)?;
+        match kept {
+            Some(object) => {
+                refresh_collection(dcx, slices, object, Interface::HtmlCollection, nodes)?;
+                Ok(Value::Object(object))
+            }
+            None => {
+                let object = collection_object(dcx, slices, Interface::HtmlCollection, nodes)?;
+                slices
+                    .wrap
+                    .keep_same_object(dcx, this, SameObject::DocumentChildren, object)?;
+                Ok(Value::Object(object))
+            }
+        }
     })
 }
 fn getter_document_first_element_child(
@@ -6503,13 +6725,34 @@ fn getter_document_fragment_children(
     cx.charge_steps(1)?;
     let this = this_object(cx, call.this, Interface::DocumentFragment, MEMBER)?;
     in_dom(cx, |dcx, slices| {
-        let copies = Copies::new();
         let this = unwrap_node(dcx, slices, this, MEMBER)?;
+        let writes = dcx.tree().writes();
+        let kept = slices
+            .wrap
+            .same_object(dcx, this, SameObject::DocumentFragmentChildren)?;
+        if let Some(object) = kept
+            && collection_written(dcx, object, Interface::HtmlCollection)? == writes
+        {
+            return Ok(Value::Object(object));
+        }
         let answer = slices.reading.document_fragment_children(dcx, this);
-        drop(copies);
-        finish(dcx, slices, answer, |dcx, slices, value| {
-            collection_value(dcx, slices, Interface::HtmlCollection, value)
-        })
+        let nodes = answered(dcx, answer)?;
+        match kept {
+            Some(object) => {
+                refresh_collection(dcx, slices, object, Interface::HtmlCollection, nodes)?;
+                Ok(Value::Object(object))
+            }
+            None => {
+                let object = collection_object(dcx, slices, Interface::HtmlCollection, nodes)?;
+                slices.wrap.keep_same_object(
+                    dcx,
+                    this,
+                    SameObject::DocumentFragmentChildren,
+                    object,
+                )?;
+                Ok(Value::Object(object))
+            }
+        }
     })
 }
 fn getter_document_fragment_first_element_child(
@@ -6693,7 +6936,9 @@ fn operation_node_list_item(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> 
     let a0 = to_unsigned(cx, argument(&call, 0), 32)?;
     in_dom(cx, |dcx, slices| {
         let copies = Copies::new();
-        let answer = slices.reading.node_list_item(dcx, &this, a0);
+        let nodes = take_nodes(dcx, this, Interface::NodeList)?;
+        let answer = slices.reading.node_list_item(dcx, &nodes, a0);
+        restore_nodes(dcx, this, Interface::NodeList, nodes)?;
         drop(copies);
         finish(dcx, slices, answer, nullable_node_value)
     })
@@ -6704,7 +6949,9 @@ fn getter_node_list_length(cx: &mut Cx<'_, ScriptHost>, call: HostCall<'_>) -> C
     let this = this_collection(cx, call.this, Interface::NodeList, MEMBER)?;
     in_dom(cx, |dcx, slices| {
         let copies = Copies::new();
-        let answer = slices.reading.node_list_length(dcx, &this);
+        let nodes = take_nodes(dcx, this, Interface::NodeList)?;
+        let answer = slices.reading.node_list_length(dcx, &nodes);
+        restore_nodes(dcx, this, Interface::NodeList, nodes)?;
         drop(copies);
         finish(dcx, slices, answer, |_, _, value| {
             Ok(number(f64::from(value)))
@@ -6723,7 +6970,9 @@ fn getter_html_collection_length(
     let this = this_collection(cx, call.this, Interface::HtmlCollection, MEMBER)?;
     in_dom(cx, |dcx, slices| {
         let copies = Copies::new();
-        let answer = slices.reading.html_collection_length(dcx, &this);
+        let nodes = take_nodes(dcx, this, Interface::HtmlCollection)?;
+        let answer = slices.reading.html_collection_length(dcx, &nodes);
+        restore_nodes(dcx, this, Interface::HtmlCollection, nodes)?;
         drop(copies);
         finish(dcx, slices, answer, |_, _, value| {
             Ok(number(f64::from(value)))
@@ -6741,7 +6990,9 @@ fn operation_html_collection_item(
     let a0 = to_unsigned(cx, argument(&call, 0), 32)?;
     in_dom(cx, |dcx, slices| {
         let copies = Copies::new();
-        let answer = slices.reading.html_collection_item(dcx, &this, a0);
+        let nodes = take_nodes(dcx, this, Interface::HtmlCollection)?;
+        let answer = slices.reading.html_collection_item(dcx, &nodes, a0);
+        restore_nodes(dcx, this, Interface::HtmlCollection, nodes)?;
         drop(copies);
         finish(dcx, slices, answer, nullable_node_value)
     })
@@ -6758,7 +7009,9 @@ fn operation_html_collection_named_item(
     in_dom(cx, |dcx, slices| {
         let mut copies = Copies::new();
         let a0 = copies.copy(dcx.engine(), a0)?;
-        let answer = slices.reading.html_collection_named_item(dcx, &this, a0);
+        let nodes = take_nodes(dcx, this, Interface::HtmlCollection)?;
+        let answer = slices.reading.html_collection_named_item(dcx, &nodes, a0);
+        restore_nodes(dcx, this, Interface::HtmlCollection, nodes)?;
         drop(copies);
         finish(dcx, slices, answer, nullable_node_value)
     })

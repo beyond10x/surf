@@ -201,14 +201,43 @@ impl<'e> DomCx<'_, 'e> {
 }
 
 /// The wrapper hook (decision 8): every node a member returns goes through `wrap`, and every
-/// `this` and node argument through `unwrap` after its brand check. `story:scripts-dom-reading`
-/// writes the real one; until then `crate::dom::wrapper` throws `NotSupportedError`.
+/// `this` and node argument through `unwrap` after its brand check. surf's own is
+/// `crate::dom::wrapper`.
+///
+/// It also holds `[SameObject]` for the attributes that return a `NodeList` or an
+/// `HTMLCollection` ([`SameObject`]): the getter asks `same_object` for the object kept for the
+/// node and the member, and hands a new one to `keep_same_object`. The getter makes and
+/// refreshes the object; the hook only finds and keeps it. With the provided methods, which
+/// keep nothing, such a getter makes a new object at each read.
 pub trait Wrap {
     /// The wrapper of `node`.
     fn wrap(&mut self, cx: &mut DomCx<'_, '_>, node: NodeId) -> Completion<Value>;
 
     /// The node of a wrapper, `None` for any other value.
     fn unwrap(&self, cx: &DomCx<'_, '_>, value: Value) -> Option<NodeId>;
+
+    /// The object kept for `node` and `member` by [`Wrap::keep_same_object`], if any.
+    fn same_object(
+        &mut self,
+        cx: &mut DomCx<'_, '_>,
+        node: NodeId,
+        member: SameObject,
+    ) -> Completion<Option<ObjectRef>> {
+        let _ = (cx, node, member);
+        Ok(None)
+    }
+
+    /// Keeps `object` as the object of `node` and `member`.
+    fn keep_same_object(
+        &mut self,
+        cx: &mut DomCx<'_, '_>,
+        node: NodeId,
+        member: SameObject,
+        object: ObjectRef,
+    ) -> Completion<()> {
+        let _ = (cx, node, member, object);
+        Ok(())
+    }
 }
 
 /// The data of a node's wrapper made by [`new_wrapper`].
@@ -227,6 +256,9 @@ impl HostData for NodeData {
 pub struct CollectionData {
     /// The nodes, in order.
     pub nodes: Vec<NodeId>,
+    /// The tree's `writes()` when the nodes were taken: a kept `[SameObject]` collection whose
+    /// count is the tree's is up to date.
+    pub written: u64,
 }
 
 impl HostData for CollectionData {
@@ -679,18 +711,72 @@ fn this_global(cx: &mut Cx<'_, ScriptHost>, this: Value, member: &str) -> Comple
     }
 }
 
-/// The nodes of a `NodeList` or `HTMLCollection` `this`, after its brand check.
+/// A `NodeList` or `HTMLCollection` `this`, after its brand check, whose data holds its nodes.
 fn this_collection(
     cx: &mut Cx<'_, ScriptHost>,
     this: Value,
     interface: Interface,
     member: &str,
-) -> Completion<Vec<NodeId>> {
+) -> Completion<ObjectRef> {
     let object = this_object(cx, this, interface, member)?;
     let brand = interface.brand();
     match cx.host_data::<CollectionData>(object, brand).map_err(defect)? {
-        Some(data) => Ok(data.nodes.clone()),
+        Some(_) => Ok(object),
         None => Err(type_error(cx, &format!("{member}: `this` holds no nodes"))),
+    }
+}
+
+/// The nodes of the collection `object`, taken out of its data for a slice's call: the slice
+/// reads them in place, and [`restore_nodes`] puts them back after it, whatever it answered.
+/// Nothing is copied.
+fn take_nodes(
+    cx: &mut DomCx<'_, '_>,
+    object: ObjectRef,
+    interface: Interface,
+) -> Completion<Vec<NodeId>> {
+    match cx
+        .engine
+        .host_data_mut::<CollectionData>(object, interface.brand())
+        .map_err(defect)?
+    {
+        Some(data) => Ok(std::mem::take(&mut data.nodes)),
+        None => Err(missing()),
+    }
+}
+
+/// Puts the nodes [`take_nodes`] took back into the data of `object`.
+fn restore_nodes(
+    cx: &mut DomCx<'_, '_>,
+    object: ObjectRef,
+    interface: Interface,
+    nodes: Vec<NodeId>,
+) -> Completion<()> {
+    match cx
+        .engine
+        .host_data_mut::<CollectionData>(object, interface.brand())
+        .map_err(defect)?
+    {
+        Some(data) => {
+            data.nodes = nodes;
+            Ok(())
+        }
+        None => Err(missing()),
+    }
+}
+
+/// The `written` of the collection `object`.
+fn collection_written(
+    cx: &mut DomCx<'_, '_>,
+    object: ObjectRef,
+    interface: Interface,
+) -> Completion<u64> {
+    match cx
+        .engine
+        .host_data::<CollectionData>(object, interface.brand())
+        .map_err(defect)?
+    {
+        Some(data) => Ok(data.written),
+        None => Err(missing()),
     }
 }
 
@@ -722,8 +808,14 @@ fn finish<T>(
     answer: DomResult<T>,
     convert: impl FnOnce(&mut DomCx<'_, '_>, &mut Slices, T) -> Completion<Value>,
 ) -> Completion<Value> {
+    let value = answered(cx, answer)?;
+    convert(cx, slices, value)
+}
+
+/// A slice's answer, or its end thrown.
+fn answered<T>(cx: &mut DomCx<'_, '_>, answer: DomResult<T>) -> Completion<T> {
     match answer {
-        Ok(value) => convert(cx, slices, value),
+        Ok(value) => Ok(value),
         Err(DomEnd::Throw(exception)) => Err(throw(cx, &exception)),
         Err(DomEnd::Limit(limit)) => Err(end_with_limit(cx, limit)),
     }
@@ -1043,6 +1135,16 @@ fn collection_value(
     interface: Interface,
     nodes: Vec<NodeId>,
 ) -> Completion<Value> {
+    collection_object(cx, slices, interface, nodes).map(Value::Object)
+}
+
+/// The object of [`collection_value`], its `written` the tree's `writes()`.
+fn collection_object(
+    cx: &mut DomCx<'_, '_>,
+    slices: &mut Slices,
+    interface: Interface,
+    nodes: Vec<NodeId>,
+) -> Completion<ObjectRef> {
     let prototype = prototype_object(cx.engine, cx.installed, interface)?;
     let count = u64::try_from(nodes.len()).unwrap_or(u64::MAX);
     cx.engine.charge_steps(count)?;
@@ -1051,16 +1153,70 @@ fn collection_value(
         brand: interface.brand(),
         data: Some(Box::new(CollectionData {
             nodes: nodes.clone(),
+            written: cx.state.tree.writes(),
         })),
         error_kind: None,
     }))?;
-    for (index, node) in nodes.into_iter().enumerate() {
-        let wrapper = slices.wrap.wrap(cx, node)?;
+    define_indices(cx, slices, object, &nodes)?;
+    Ok(object)
+}
+
+/// The index properties of a collection: `nodes[index]`'s wrapper at each index.
+fn define_indices(
+    cx: &mut DomCx<'_, '_>,
+    slices: &mut Slices,
+    object: ObjectRef,
+    nodes: &[NodeId],
+) -> Completion<()> {
+    for (index, node) in nodes.iter().enumerate() {
+        let wrapper = slices.wrap.wrap(cx, *node)?;
         let key = PropertyKey::String(cx.engine.new_string(&index.to_string())?);
         let descriptor = data_property(wrapper, false, true, true);
         engine(cx.engine.define_property_or_throw(object, key, descriptor))?;
     }
-    Ok(Value::Object(object))
+    Ok(())
+}
+
+/// A kept `[SameObject]` collection brought up to the tree: `nodes` replace its nodes, its old
+/// index properties are deleted and the new ones defined, and its `written` becomes the tree's
+/// `writes()`. A step is charged per old and per new node, before the work. The data changes
+/// last, so a refresh that ends half done leaves an object a later read refreshes again.
+fn refresh_collection(
+    cx: &mut DomCx<'_, '_>,
+    slices: &mut Slices,
+    object: ObjectRef,
+    interface: Interface,
+    nodes: Vec<NodeId>,
+) -> Completion<()> {
+    let old = match cx
+        .engine
+        .host_data::<CollectionData>(object, interface.brand())
+        .map_err(defect)?
+    {
+        Some(data) => data.nodes.len(),
+        None => return Err(missing()),
+    };
+    let count = old.saturating_add(nodes.len());
+    cx.engine
+        .charge_steps(u64::try_from(count).unwrap_or(u64::MAX))?;
+    for index in 0..old {
+        let key = PropertyKey::String(cx.engine.new_string(&index.to_string())?);
+        engine(cx.engine.delete_property_or_throw(object, key))?;
+    }
+    define_indices(cx, slices, object, &nodes)?;
+    let written = cx.state.tree.writes();
+    match cx
+        .engine
+        .host_data_mut::<CollectionData>(object, interface.brand())
+        .map_err(defect)?
+    {
+        Some(data) => {
+            data.nodes = nodes;
+            data.written = written;
+            Ok(())
+        }
+        None => Err(missing()),
+    }
 }
 
 /// A `sequence<DOMString>` returned: a new Array of the realm's original `Array` with a String

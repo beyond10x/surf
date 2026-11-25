@@ -1099,7 +1099,8 @@ The crate graph of the first version:
 - `surf-script` ← nobody when `story:scripts-engine-dependency` lands; `surf-html-conformance`
   from `story:scripts-html-conformance`; `surf-session` from `story:scripts-document-port`. Each
   joins the closed list in its own change, and the lock rule of Q15 holds the list.
-- `surf-script` depends on `surf-html` for the tree and its write surface.
+- `surf-script` depends on `surf-html` for the tree and its write surface, and on `surf-url` for
+  the document's address (`DocumentInfo`, the base URL of `baseURI`).
 - `surf`, `surf-agent` and `surfd` link no swell (S7). `surf-session` depends on `surf`, `surfd`
   and `surf-agent` (`crates/session/Cargo.toml:20-33`), not the other way round; `surfd` depends
   on `surf-agent`, `surf-answer`, `surf-secret` and `surf-view` only

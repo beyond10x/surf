@@ -12,6 +12,7 @@ mod depth;
 mod extraction;
 mod reader;
 mod refusals;
+mod same_object;
 mod selection;
 mod source;
 mod vendored;
