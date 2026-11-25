@@ -48,21 +48,39 @@ fn a_same_object_row_the_getter_cannot_hold_is_refused_or_held() {
             "getter_holder_kept",
         ),
     ];
+    // The generator refuses such a row, naming it; holding it is not built.
     let mut silent = Vec::new();
     let mut seen = Vec::new();
     for (name, extra, selection, getter) in cases {
         let idl = format!("{BASE}{extra}");
+        let words: Vec<&str> = selection
+            .lines()
+            .nth(2)
+            .unwrap_or_default()
+            .split(' ')
+            .collect();
+        let row = format!("`{} {}`", words[0], words[1]);
         match generated(&idl, selection) {
-            Err(refusal) => seen.push(format!("{name}: refused: {refusal}")),
+            Err(refusal) if refusal.contains("[SameObject]") && refusal.contains(&row) => {
+                seen.push(format!("{name}: refused: {refusal}"));
+            }
+            Err(refusal) => {
+                seen.push(format!("{name}: refused for another reason: {refusal}"));
+                silent.push(name);
+            }
             Ok(text) => match function(&text, getter) {
                 Some(body) if body.contains("same_object(") => {
-                    seen.push(format!("{name}: held"));
+                    seen.push(format!("{name}: held, not refused"));
+                    silent.push(name);
                 }
                 Some(_) => {
                     seen.push(format!("{name}: a getter that makes a new object per read"));
                     silent.push(name);
                 }
-                None => seen.push(format!("{name}: no function {getter}")),
+                None => {
+                    seen.push(format!("{name}: no function {getter}"));
+                    silent.push(name);
+                }
             },
         }
     }

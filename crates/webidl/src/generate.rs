@@ -52,6 +52,11 @@ pub struct Digest {
 /// element the HTML Standard defines, wrapped as a node.
 const NODE_TYPES_OUTSIDE_MODEL: &[&str] = &["HTMLSlotElement"];
 
+/// The rows whose `DOMString` answer the slice gives as UTF-16 code units, made into a String
+/// with `Cx::new_string_utf16`: a member whose standard counts code units, so its answer may
+/// hold a lone half of a surrogate pair, which a Rust string cannot.
+const UNITS_ANSWERS: &[(&str, &str)] = &[("CharacterData", "substringData")];
+
 /// Web IDL's table of error names with a legacy code: each name and the constant of
 /// `DOMException` that holds its code.
 const ERROR_NAMES: &[(&str, &str)] = &[
@@ -186,6 +191,8 @@ enum Return {
     Unsigned16,
     Unsigned32,
     String,
+    /// A `DOMString` the slice gives as UTF-16 code units (`UNITS_ANSWERS`).
+    Units,
     NullableString,
     Node,
     NullableNode,
@@ -202,6 +209,7 @@ impl Return {
             Return::Unsigned16 => "u16",
             Return::Unsigned32 => "u32",
             Return::String => "String",
+            Return::Units => "Vec<u16>",
             Return::NullableString => "Option<String>",
             Return::Node => "NodeId",
             Return::NullableNode => "Option<NodeId>",
@@ -219,6 +227,7 @@ impl Return {
                 "|_, _, value| Ok(number(f64::from(value)))".to_string()
             }
             Return::String => "|dcx, _, value| string_value(dcx, &value)".to_string(),
+            Return::Units => "|dcx, _, value| units_value(dcx, &value)".to_string(),
             Return::NullableString => {
                 "|dcx, _, value| nullable_string_value(dcx, value)".to_string()
             }
@@ -1134,6 +1143,16 @@ impl Generator<'_> {
 
     /// How a value of `ty` is returned.
     fn ret(&self, row: &Row, ty: &Type) -> Result<Return, SelectionError> {
+        let units = UNITS_ANSWERS.contains(&(row.interface.as_str(), row.member.as_str()));
+        if units && !(matches!(ty.kind, TypeKind::DomString) && !ty.nullable) {
+            return Err(self.refuse(
+                row,
+                format!(
+                    "an answer of code units for a return type that is no DOMString: {}",
+                    type_text(ty)
+                ),
+            ));
+        }
         let refuse = || {
             self.refuse(
                 row,
@@ -1160,6 +1179,7 @@ impl Generator<'_> {
                 },
                 false,
             ) => Return::Unsigned32,
+            (TypeKind::DomString, false) if units => Return::Units,
             (TypeKind::DomString | TypeKind::UsvString, false) => Return::String,
             (TypeKind::DomString | TypeKind::UsvString, true) => Return::NullableString,
             (TypeKind::Sequence(inner), false)
@@ -1412,6 +1432,18 @@ impl Generator<'_> {
                                 ret,
                                 setter: false,
                             };
+                            if has_attribute(&member, "SameObject")
+                                && matches!(method.ret, Return::Collection(_))
+                                && this != This::Node
+                            {
+                                return Err(self.refuse(
+                                    row,
+                                    "`[SameObject]` on a collection attribute of an interface \
+                                     whose `this` is no node: the wrapper hook keeps an object \
+                                     per node only"
+                                        .to_string(),
+                                ));
+                            }
                             let body = match &method.ret {
                                 Return::Collection(collection)
                                     if has_attribute(&member, "SameObject")

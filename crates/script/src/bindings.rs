@@ -50,13 +50,13 @@
 //! f32d2f03b3f4b1e295c79ed49d543f1205c7dac7c3dc74f05a5a27af4fea0584  rustfmt.toml
 //! 75291cf6fa7a72d5062db3fca1f659463b3187e258d6a2d34f4f7bcf6ab86b68  crates/webidl/src/bin/bindings.rs
 //! 91c0cd2b8dc96f725518046a15c01115e61e0dec125f0ae36656c3a4e73b7356  crates/webidl/src/extract.rs
-//! f24ef2e6f8da8efd2666ca4248c675316b3bee44c34cb245dc99634a4547ef7a  crates/webidl/src/generate.rs
+//! b778e08c9eaa9b4b41193562cd31bb2c19b2a43c82a8782a77dcb09dda91bb1a  crates/webidl/src/generate.rs
 //! bb39103dd61d3152cfb7258514bc234c3992f1aec09d79b47b30ef3acb365e10  crates/webidl/src/html.rs
 //! 2f5c4d359f13f497b0e1d87d12b0163b20cd7c972a22cf4761106f889ecde900  crates/webidl/src/lexer.rs
 //! 9803d546bb474bc834b29498ec0e075e0ef88ceed3de1989601c2ae8cf12eeed  crates/webidl/src/lib.rs
 //! fa6e285bfc241f9e68384ebbfd5f04e1c9172fbc254baca4c4fc8e1a154cd930  crates/webidl/src/model.rs
 //! 8db6c1d01d7d0b8dc68530edc4f5bf982f1b5cc2b1c49fbbb38496b9ff60dacd  crates/webidl/src/parser.rs
-//! 17deb462db98e39bcc8e1a2a669f29db27db781bc1675f21e9f2eea914d209a0  crates/webidl/src/prelude.rs
+//! a0ce36f66327d30dc77f4e3e891961d60b9f053315a9a5461a843e39e5129ceb  crates/webidl/src/prelude.rs
 //! 22baac7ca4bee83065ca31df9ddab4faf4d6227668cb327360b0473564ed85a3  crates/webidl/src/selection.rs
 //! ```
 //!
@@ -69,7 +69,7 @@
 //! 36612fcd0caea180  6266  crates/webidl/data/whatwg/html-idl.html
 //! ```
 //!
-//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 6c935c7e465ced7fef84baa0d9065d552318a0086257473bab509902f7d6438d
+//! The sha256 of this whole file, with the 64 digits of this line read as zeros: d04a0ee7348e9b7101da6396dc0b5ebcad9e819addf7e35f9ee27ae10bf55760
 
 use std::cell::Cell;
 
@@ -1243,6 +1243,16 @@ fn string_value(cx: &mut DomCx<'_, '_>, text: &str) -> Completion<Value> {
         return Err(string_length_error(cx));
     }
     cx.engine.new_string(text).map(Value::String)
+}
+
+/// A new String of the UTF-16 code units `units`: the answer of a member whose String is code
+/// units, so a lone half of a surrogate pair stays as it is. Held to `string_length` as
+/// [`string_value`]; the count of units is the length.
+fn units_value(cx: &mut DomCx<'_, '_>, units: &[u16]) -> Completion<Value> {
+    if u64::try_from(units.len()).unwrap_or(u64::MAX) > cx.string_length() {
+        return Err(string_length_error(cx));
+    }
+    cx.engine.new_string_utf16(units).map(Value::String)
 }
 
 /// `DOMString?` returned.
@@ -2850,7 +2860,7 @@ pub trait Reading {
         this: NodeId,
         offset: u32,
         count: u32,
-    ) -> DomResult<String> {
+    ) -> DomResult<Vec<u16>> {
         let _ = (cx, this, offset, count);
         Err(not_supported("CharacterData.substringData"))
     }
@@ -6260,7 +6270,7 @@ fn operation_character_data_substring_data(
             .character_data_substring_data(dcx, this, a0, a1);
         drop(copies);
         finish(dcx, slices, answer, |dcx, _, value| {
-            string_value(dcx, &value)
+            units_value(dcx, &value)
         })
     })
 }

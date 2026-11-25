@@ -306,6 +306,16 @@ fn attribute<'t>(tree: &'t Tree, node: NodeId, name: &str) -> Option<&'t str> {
     }
 }
 
+/// The bytes of UTF-8 a UTF-16 code unit of a Rust string stands for: one to three, and two
+/// for each half of a surrogate pair (four for the pair).
+fn unit_bytes(unit: u16) -> usize {
+    match unit {
+        0..=0x7f => 1,
+        0x80..=0x7ff | 0xd800..=0xdfff => 2,
+        0x800..=0xd7ff | 0xe000..=0xffff => 3,
+    }
+}
+
 /// The data of character data: a text's, a comment's or a processing instruction's.
 fn character_data(tree: &Tree, node: NodeId) -> Option<&str> {
     match tree.data(node) {
@@ -1435,24 +1445,50 @@ impl Reading for SurfReading {
         this: NodeId,
         offset: u32,
         count: u32,
-    ) -> DomResult<String> {
-        // DOM, "substring data", in UTF-16 code units; a lone half of a surrogate pair at an
-        // end is U+FFFD, since the answer is a Rust string.
+    ) -> DomResult<Vec<u16>> {
+        // DOM, "substring data", in UTF-16 code units: an offset or an end inside a surrogate
+        // pair answers its lone half. The data is walked to the offset a unit at a time, and
+        // only the answer is allocated, up to `string_length` units; one step per 64 bytes of
+        // the data walked, the offset's and the answer's.
+        let limit = cx.string_length();
         let data = character_data(cx.tree(), this).unwrap_or_default();
-        let bytes = data.len();
-        let units: Vec<u16> = data.encode_utf16().collect();
-        charge(cx, bytes / 64)?;
         let offset = usize::try_from(offset).unwrap_or(usize::MAX);
-        if offset > units.len() {
+        let count = usize::try_from(count).unwrap_or(usize::MAX);
+        let mut units = data.encode_utf16();
+        let mut walked = 0usize;
+        let mut past_the_end = false;
+        for _ in 0..offset {
+            match units.next() {
+                Some(unit) => walked += unit_bytes(unit),
+                None => {
+                    past_the_end = true;
+                    break;
+                }
+            }
+        }
+        let mut answer = Vec::new();
+        let mut over = false;
+        if !past_the_end {
+            for unit in units.take(count) {
+                if u64::try_from(answer.len()).unwrap_or(u64::MAX) >= limit {
+                    over = true;
+                    break;
+                }
+                walked += unit_bytes(unit);
+                answer.push(unit);
+            }
+        }
+        charge(cx, walked / 64)?;
+        if past_the_end {
             return Err(DomEnd::Throw(DomException::new(
                 "IndexSizeError",
                 "the offset is past the end of the data",
             )));
         }
-        let end = offset
-            .saturating_add(usize::try_from(count).unwrap_or(usize::MAX))
-            .min(units.len());
-        Ok(String::from_utf16_lossy(&units[offset..end]))
+        if over {
+            return Err(DomEnd::StringLength);
+        }
+        Ok(answer)
     }
 
     fn character_data_previous_element_sibling(

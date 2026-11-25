@@ -1803,6 +1803,44 @@ fn attributes_are_charged_where_they_are_read() {
     }
 }
 
+/// `substringData` answers UTF-16 code units: an end inside a surrogate pair answers its lone
+/// half; an answer past `string_length` is the `RangeError`, one of `string_length` units is
+/// read; the walk to the offset costs one step per 64 bytes of the data walked.
+#[test]
+fn substring_data_in_code_units() {
+    let page = format!(
+        "<p id=\"pair\">a\u{1f600}b</p><p id=\"long\">{}</p>",
+        "a".repeat(2_000)
+    );
+    with_page(short_strings(), page, info(), |runner| {
+        ran(
+            runner,
+            &with_range(
+                r#"var t = document.getElementById("pair").firstChild;
+                   var l = document.getElementById("long").firstChild;
+                   check(t.substringData(0, 2) === "a\ud83d", "an end inside the pair");
+                   check(t.substringData(2, 2) === "\ude00b", "an offset inside the pair");
+                   check(t.substringData(1, 2) === "😀", "the whole pair");
+                   check(t.substringData(4, 9) === "", "at the end");
+                   check(threw(function () { t.substringData(5, 1); }) === "IndexSizeError",
+                         "past the end");
+                   check(l.substringData(0, 1024).length === 1024, "string_length units");
+                   rangeError(function () { return l.substringData(0, 1025); }, "one more");"#,
+            ),
+        );
+    });
+    let walk = |bytes: usize| {
+        let page = format!("<p id=\"p\">{}b</p>", "a".repeat(bytes));
+        with_page(limits(), page, info(), move |runner| {
+            ran(runner, "var t = document.getElementById(\"p\").firstChild;");
+            steps(runner, &format!("t.substringData({bytes}, 1);"))
+        })
+    };
+    let (long, short) = (walk(64_000), walk(64));
+    eprintln!("substringData at the end of 64,000 bytes: {long} steps, of 64 bytes: {short}");
+    assert!(long >= short + 990, "{long} against {short}");
+}
+
 /// A String a member builds costs a step per 64 bytes.
 #[test]
 fn string_steps() {

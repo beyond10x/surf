@@ -1143,6 +1143,16 @@ fn string_value(cx: &mut DomCx<'_, '_>, text: &str) -> Completion<Value> {
     cx.engine.new_string(text).map(Value::String)
 }
 
+/// A new String of the UTF-16 code units `units`: the answer of a member whose String is code
+/// units, so a lone half of a surrogate pair stays as it is. Held to `string_length` as
+/// [`string_value`]; the count of units is the length.
+fn units_value(cx: &mut DomCx<'_, '_>, units: &[u16]) -> Completion<Value> {
+    if u64::try_from(units.len()).unwrap_or(u64::MAX) > cx.string_length() {
+        return Err(string_length_error(cx));
+    }
+    cx.engine.new_string_utf16(units).map(Value::String)
+}
+
 /// `DOMString?` returned.
 fn nullable_string_value(cx: &mut DomCx<'_, '_>, text: Option<String>) -> Completion<Value> {
     match text {
