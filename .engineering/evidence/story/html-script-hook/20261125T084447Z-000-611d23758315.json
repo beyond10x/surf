@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-25T08:44:47Z",
+  "actor": "human:operator",
+  "artifact": "story:html-script-hook",
+  "kind": "story",
+  "revision": 21,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the gate in runner form (task check-runner) on 1925eaf, the tip of impl/html-script-hook, through the pool on the build node, 2026-11-25 09:33 CET",
+    "reference": "exit 0 in 170 s at a load of 36.42 to 61.58; 221 of 221 scenarios; 1845 tests: 1842 passed, 0 failed, 3 ignored; 552 TLS tests passed; 72 page tests passed; four steps 114.9 s (test step 40.4 s); 230 test files; the docs site builds"
+  }
+}
