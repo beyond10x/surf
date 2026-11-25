@@ -326,8 +326,10 @@ each node a script creates the bindings charge, with `Cx::charge_host_bytes`
 (`crates/swell/src/host/mod.rs:577 @ 0.8.0`), the node's term of the tree's heap bound, 3 ×
 `NODE_BYTES` (408 bytes), plus twice the bytes it stores (`crates/html/src/limits.rs:45-51`),
 before the write, and keep the `HostBytes` until the agent is dropped. So a script that makes
-nodes ends at `limit: memory` or at a parser limit, whichever comes first; at 256 bytes a wrapper,
-262,144 wrappers alone fill `memory_bytes`.
+nodes ends at `limit: memory` or at a parser limit, whichever comes first. Measured on the
+reading slice (`story:scripts-dom-reading`, 1,000 wrappers grew `heap_bytes()` by 889,447 bytes
+against 465,772 for 1,000 calls that made none): a wrapper with its `NodeData` takes 423 bytes,
+so 158,649 wrappers alone fill `memory_bytes`.
 
 A rule for surf's own bindings: the host interface's reads of a String's units, `Cx::to_utf16`
 and `Cx::to_rust_string_lossy` (`crates/swell/src/host/mod.rs:504-513 @ 0.8.0`, over

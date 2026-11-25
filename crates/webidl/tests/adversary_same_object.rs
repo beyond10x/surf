@@ -1,5 +1,5 @@
-//! Adversarial cases of the generator's `[SameObject]` (story `scripts-dom-reading`, decision
-//! 10): a row marked `[SameObject]` that the generated getter cannot hold, on an interface
+//! Adversarial cases of the generator's `[SameObject]` (story `scripts-dom-reading`):
+//! a row marked `[SameObject]` that the generated getter cannot hold, on an interface
 //! whose `this` is no node or on an operation. The generator either refuses the selection or
 //! writes a getter that holds the mark; it must not write a getter that silently makes a new
 //! object at each read.

@@ -50,7 +50,7 @@ fn is_text(tree: &Tree, node: NodeId) -> bool {
 
 /// Random sequences of the public writes of `Tree` from a fixed seed: after each write, the
 /// child lists and parents of every node the test knows are compared with those before it; the
-/// counter moved if and only if one of them changed (decision 10). A refused write changes no
+/// counter moved if and only if one of them changed. A refused write changes no
 /// list. Every mismatch is listed: a list changed with the counter left is a stale kept
 /// collection; a counter raised with no list changed is a refill for nothing.
 #[test]
@@ -184,7 +184,7 @@ fn the_counter_moves_if_and_only_if_a_child_list_changed() {
 }
 
 /// An empty document fragment appended or inserted changes no child list; the counter must
-/// stay (decision 10: "raised ... by nothing else").
+/// stay (it is raised by a change of a child list and by nothing else).
 #[test]
 fn an_empty_fragment_inserted_leaves_the_counter() {
     let mut tree = parse_document("<p></p>", &ParseOptions::default());
@@ -212,7 +212,7 @@ fn mode(input: &str) -> QuirksMode {
 }
 
 /// The mode for the doctypes of the parser's quirks tables (HTML 13.2.6.4.1), a doctype after a
-/// comment, a second doctype, a fragment, a tree's clone (brief 14).
+/// comment, a second doctype, a fragment, a tree's clone.
 #[test]
 fn the_mode_of_each_quirks_table() {
     let cases = [

@@ -1697,37 +1697,44 @@ fn wrapper_charge_and_reuse() {
 
 /// Under a memory budget of 1 MiB a script that wraps every node of 100,000 ends at the budget;
 /// the wrappers stay rooted, so the heap stays near the budget, and never above it by more
-/// than one wrapper.
+/// than one wrapper. The wrappers stay: after the case the first child, reached again, is the
+/// same object with the property the script set on it.
 #[test]
 fn wrapper_limit() {
     let page = parent_of(100_000, "<b></b>");
     let (end, later, after) = with_page(small_limits(), page, info(), |runner| {
         let end = runner.evaluate(
             r#"var p = document.getElementById("p");
+               p.firstChild.mark = 1;
                for (var x = p.firstChild; x; x = x.nextSibling) {}"#,
         );
-        let later = runner.evaluate("1 + 1");
+        let later = runner.evaluate(
+            r#"if (p.firstChild.mark !== 1) throw new Error("a new wrapper for the first child");"#,
+        );
         (end, later, heap(runner))
     });
     eprintln!("wrapper_limit: {end}; then {later}; heap after {after}");
     assert_eq!(end, ScriptEnd::Limit(Reason::Memory), "{end}");
-    assert!(
-        matches!(later, ScriptEnd::Ran | ScriptEnd::Limit(Reason::Memory)),
-        "{later}"
-    );
+    assert_eq!(later, ScriptEnd::Ran, "the wrappers stay: {later}");
     let wrapper = HOST_OBJECT_LIVE_BYTES + std::mem::size_of::<NodeId>() as u64;
     assert!(after < 1024 * 1024 + wrapper, "{after}");
 }
 
 /// A script that makes collections without end ends at the budget or at the steps, and the
-/// next script runs.
+/// next script runs. Making a collection costs one step per node it holds: the first read of
+/// `childNodes` of 1,000 children, which visits nothing else, costs at least 1,000 steps.
 #[test]
 fn collection_limit() {
     let (end, later) = with_page(small_limits(), PAGE.to_string(), info(), |runner| {
         let end = runner.evaluate(r#"for (;;) document.getElementsByTagName("*");"#);
         (end, runner.evaluate("1 + 1"))
     });
-    eprintln!("collection_limit: {end}; then {later}");
+    let made = with_page(limits(), parent_of(1_000, "<b></b>"), info(), |runner| {
+        ran(runner, r#"var p = document.getElementById("p");"#);
+        steps(runner, "p.childNodes;")
+    });
+    eprintln!("collection_limit: {end}; then {later}; a collection of 1,000: {made} steps");
+    assert!(made >= 1_000, "{made}");
     assert!(
         matches!(
             end,
@@ -1839,6 +1846,43 @@ fn substring_data_in_code_units() {
     let (long, short) = (walk(64_000), walk(64));
     eprintln!("substringData at the end of 64,000 bytes: {long} steps, of 64 bytes: {short}");
     assert!(long >= short + 990, "{long} against {short}");
+}
+
+/// `wholeText` charges one step per text of the run and one per 64 bytes it gathers: 1,000
+/// adjacent texts of one byte cost at least 1,000 steps, one text of 64,000 bytes at least
+/// 1,000 more than one of 64.
+#[test]
+fn whole_text_charges_its_texts_and_bytes() {
+    let page = format!(
+        "<p id=\"p\"></p><div id=\"q\">{}</div>",
+        "a<!---->".repeat(1_000)
+    );
+    let texts = with_page(limits(), page, info(), |runner| {
+        ran(
+            runner,
+            r#"var p = document.getElementById("p"), q = document.getElementById("q");
+               while (q.firstChild) {
+                 if (q.firstChild.nodeType === 3) p.appendChild(q.firstChild);
+                 else q.removeChild(q.firstChild);
+               }
+               if (p.childNodes.length !== 1000) throw new Error("" + p.childNodes.length);"#,
+        );
+        steps(runner, "p.firstChild.wholeText;")
+    });
+    let bytes = |count: usize| {
+        let page = format!("<p id=\"p\">{}</p>", "a".repeat(count));
+        with_page(limits(), page, info(), |runner| {
+            ran(
+                runner,
+                r#"var t = document.getElementById("p").firstChild;"#,
+            );
+            steps(runner, "t.wholeText;")
+        })
+    };
+    let (long, short) = (bytes(64_000), bytes(64));
+    eprintln!("wholeText: 1,000 texts {texts} steps; 64,000 bytes {long} steps, 64 bytes {short}");
+    assert!(texts >= 1_000, "{texts}");
+    assert!(long >= short + 999, "{long} against {short}");
 }
 
 /// A String a member builds costs a step per 64 bytes.

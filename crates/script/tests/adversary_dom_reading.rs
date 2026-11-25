@@ -47,7 +47,7 @@ fn info() -> DocumentInfo {
 }
 
 /// The test's `mutation` slice: `appendChild`, `removeChild` and `createDocumentFragment`
-/// through the tree's public write surface (decision 14).
+/// through the tree's public write surface.
 struct TestMutation;
 
 fn refused(error: WriteError) -> DomEnd {
@@ -163,7 +163,7 @@ function same(c, list, what) {
 
 /// A refill that a script's own non-configurable index stops half way, then a write that
 /// shortens the list and a second refill: no index past the new length may answer a node
-/// (brief 9; `refresh_collection` deletes only the indices of the old data, which it changes
+/// (`refresh_collection` at `ace7176` deleted only the indices of the old data, which it changed
 /// last).
 #[test]
 fn a_failed_refill_leaves_no_node_past_the_length() {
@@ -194,7 +194,7 @@ check(c[1] === undefined && c[2] === undefined,
 
 /// A kept collection made non-extensible: a refill that cannot define its new indices must not
 /// leave an object whose `length` and `item` answer the old list while its indices are gone
-/// (brief 9: "must not answer the old view").
+/// (a kept collection must not answer the old view).
 #[test]
 fn a_kept_collection_never_answers_two_views() {
     let page = "<div id=\"p\"><b></b></div><div id=\"q\"><i></i></div>";
@@ -222,7 +222,7 @@ check(view.every(function (v) {{ return v; }}),
 
 /// A single call of `getElementsByClassName` compares every wanted token with every class of an
 /// element for one step per element: a script runs past a wall clock of 1 s within a few
-/// hundred steps (brief 12: a must when the work outruns the steps past the wall clock).
+/// hundred steps (the work outruns the steps past the wall clock).
 #[test]
 fn get_elements_by_class_name_costs_what_it_charges() {
     let tokens = 6_000;
@@ -249,7 +249,7 @@ fn get_elements_by_class_name_costs_what_it_charges() {
 }
 
 /// `documentElement` and `doctype` scan the document's children: the steps of one read grow
-/// with the comments before `html` (brief 12, decision 7: a member whose work grows with the
+/// with the comments before `html` (a member whose work grows with the
 /// tree charges one step per node it visits).
 #[test]
 fn document_element_and_doctype_charge_their_scan() {
@@ -389,7 +389,7 @@ check(high === "\ud83d" && low === "\ude00",
 
 // The cases below held at ace7176.
 
-/// Every hostile shape of a kept `childNodes` and `children` (brief 9), then each write of the
+/// Every hostile shape of a kept `childNodes` and `children`, then each write of the
 /// test slice: the read after it never faults, and when it answers, the object is the fresh
 /// walk. The ends are printed; a shape whose read throws is listed with its error.
 #[test]
@@ -483,7 +483,7 @@ throw new Error("ends " + ends.join(" "));
 }
 
 /// Every getter, setter and method of the slice's interfaces taken from its prototype and
-/// called with a `this` it does not implement answers a `TypeError` (brief 6).
+/// called with a `this` it does not implement answers a `TypeError`.
 #[test]
 fn a_wrong_this_is_a_type_error() {
     let page = "<!DOCTYPE html><div id=\"a\">x<p id=\"p\" name=\"n\">y</p><!--c--></div>";
@@ -535,7 +535,7 @@ check(wrong.length === 0, wrong.length + " wrong: " + wrong.slice(0, 20).join(";
 
 /// Arguments: missing, `undefined`, `null`, a Symbol, an object whose conversion throws or
 /// answers an object, and conversions that read or write the same collection, the same node and
-/// another member while the member converts them (brief 6 and 7). The collection reads whole
+/// another member while the member converts them. The collection reads whole
 /// after each.
 #[test]
 fn arguments_that_call_back_into_the_dom() {
@@ -597,8 +597,7 @@ check(got.length === 0, "getElementsByTagName after the conversion moved the nod
 
 /// One wrapper per node: every pair of members that answer the same node answers the same
 /// object; a property a script set survives `collect()` and a refill; a node the test slice
-/// removed answers what the DOM says for a detached node, and is the same object when put back
-/// (brief 8).
+/// removed answers what the DOM says for a detached node, and is the same object when put back.
 #[test]
 fn one_object_per_node_through_every_member() {
     let page = "<!DOCTYPE html><html><head><title>t</title></head><body><div id=\"a\">x<p id=\"p\" name=\"n\" class=\"k\">y</p><!--c--></div></body></html>";
@@ -659,7 +658,7 @@ check(el.lastChild === p && c === el.childNodes && c[2] === p && p.mark === 7 &&
     });
 }
 
-/// The wrapper table under the memory limit (brief 8, `wrapper_limit`, `collection_limit`):
+/// The wrapper table under the memory limit (`wrapper_limit`, `collection_limit`):
 /// reached by wrappers alone, by collections alone and by both; then what a later script can
 /// still do. Asserts the ends the story names and that nothing faults; prints what it saw.
 #[test]
@@ -731,7 +730,7 @@ fn what_a_script_can_do_after_the_memory_limit() {
 /// A member of [`steps_and_time_of_the_walking_members`]: its name, the page for `n`, the read.
 type Member<'a> = (&'a str, &'a dyn Fn(usize) -> String, &'a str);
 
-/// The steps and the time of the members of brief 12 at n = 500 and n = 5,000; printed for the
+/// The steps and the time of the walking members at n = 500 and n = 5,000; printed for the
 /// report. Each member is read 20 times. A member whose time grows faster than its steps is
 /// named in the report.
 #[test]
@@ -825,7 +824,7 @@ fn steps_and_time_of_the_walking_members() {
     eprintln!("{}", lines.join("\n"));
 }
 
-/// A member of the slice never changes the tree's write counter (brief 17).
+/// A member of the slice never changes the tree's write counter.
 #[test]
 fn no_reading_member_writes() {
     let page = "<!DOCTYPE html><title>t</title><div id=\"a\" class=\"c\">x<p id=\"p\" name=\"n\">y</p><!--c--></div>";
@@ -863,7 +862,7 @@ var reads = [document.title, document.compatMode, document.URL, document.baseURI
     assert_eq!(before, after);
 }
 
-/// The members of decision 7 that no test of the unit holds to their steps: one read of each
+/// The walking members that no test of the unit holds to their steps: one read of each
 /// charges at least the nodes it walks (`getRootNode` and `isConnected` over 500 ancestors,
 /// `isEqualNode` over 1,000 pairs of nodes, `children` refilled over 2,000 texts, an element
 /// sibling passing 2,000 texts) and `baseURI` one step per 64 bytes of a long `href` for its
@@ -933,7 +932,7 @@ fn the_walking_members_charge_what_they_walk() {
     assert!(short.is_empty(), "{short:?}");
 }
 
-/// `baseURI` and the document's facts for the cases of brief 15 that the unit's tests do not
+/// `baseURI` and the document's facts for the cases of the standard that the unit's tests do not
 /// have, against the HTML Standard's document base URL and the URL Standard's parser.
 #[test]
 fn base_url_cases_of_the_standard() {
