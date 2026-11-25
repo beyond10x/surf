@@ -28,7 +28,7 @@ tip):
 | tests | 2,168 passed and 3 ignored: 1,616 passed and the 3 ignored tests of `surf-script`, and 552 of the TLS crates |
 | agent tasks | 6 of 6 pass (`article`, `table`, `link`, `search`, `https`, `login`) |
 | live view | the panel "Now" lists a page's links, buttons and fields with their state; the panel `Changed by <action>` shows what the action changed; a typed password is shown as a count of bytes, never its value |
-| live view's page tests | 71 passed, in Chromium's headless shell |
+| live view's page tests | 72 passed, in Chromium's headless shell |
 | X.509 test data (x509-limbo) | 5,143 cases counted, 5,089 run, 5,060 pass; `task check` holds these counts |
 | URL test data | 872 of 904 cases pass; 32 skipped, listed by name |
 | HTML parser test data | 9,107 cases counted, 9,095 run, 9,095 pass (82 encoding, 7,046 tokenizer and 1,967 tree construction cases); the parser decides the encoding, tokenizes, and builds a tree in every insertion mode, foreign content and fragments included, within six limits on untrusted input, and `surf` parses every `text/html` response with it; `task check` holds these counts |

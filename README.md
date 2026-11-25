@@ -661,7 +661,7 @@ tip (57 authored scenarios and 221 in all, 57 refusals, 31 planted defects, 54 t
 conformance crate; 1619 tests, 3 of them ignored; 26 test directories and 206 test files;
 where `story:scripts-engine-dependency`'s tip had 44 and 203, 56, 29, 39; 1616 and 203). The
 times are that run's.
-That run's page tests' line, `71 passed (18.3s)`, has its slowest test (`an entry over 1 MiB`) at
+That run's page tests' line, `72 passed (18.3s)`, has its slowest test (`an entry over 1 MiB`) at
 2.350 s; the run of 2026-11-24 on `8fab187` had `71 passed (12.7s)`, its slowest test
 (`adversary: an action streamed while the detail loads after a reset is not lost`) at
 1.214 s and `an entry over 1 MiB` at 0.682 s; the run of 2026-11-24 on `eb97549`,
