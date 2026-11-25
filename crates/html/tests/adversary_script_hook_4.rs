@@ -147,6 +147,43 @@ impl ScriptHook for Unhang {
     fn skip(&mut self, _: &Tree, _: NodeId, _: NotRun) {}
 }
 
+// The cases from here to the next such line fail on the tip they were written against
+// (`4ce6829`).
+
+/// The step limit bounds the work of a parse (`limits.rs`, `max_steps`; the crate
+/// documentation, "Limits": every limit "ends a parse with a defined result; none of them is a
+/// hang"). After each hook run that moved or removed an element the parser reads every entry
+/// of its stack of open elements again (`settle_entries`, tree_builder.rs); an entry with no
+/// parent is read with no hop, so with no step. 40,000 times `<span><script>x</script>`
+/// (960 KB) with a hook that makes two writes per run keeps 40,000 entries on the stack, all
+/// but one with no parent: about 8 × 10^8 entry reads, and 3 steps a round. With `max_steps`
+/// at 1,000,000, a parse whose work the steps count ends at once; this one is not done after
+/// 4 s.
+#[test]
+fn entries_read_again_after_a_hook_run_are_bounded_by_the_steps() {
+    const ROUNDS: usize = 40_000;
+    let (send, receive) = mpsc::channel();
+    std::thread::spawn(move || {
+        let input = format!("<body>{}", "<span><script>x</script>".repeat(ROUNDS));
+        let options = ParseOptions {
+            scripting_disabled: false,
+            limits: Limits {
+                max_steps: 1_000_000,
+                ..Limits::default()
+            },
+        };
+        let mut hook = Unhang { runs: 0 };
+        let tree = parse_document_with_hook(&input, &options, &mut hook);
+        let _ = send.send((tree.stopped_by(), tree.steps(), hook.runs));
+    });
+    match receive.recv_timeout(Duration::from_secs(4)) {
+        Ok((stopped, steps, runs)) => {
+            eprintln!("stopped by {stopped:?}, {steps} steps, {runs} runs");
+        }
+        Err(_) => panic!("the parse of {ROUNDS} rounds is not done after 4 s"),
+    }
+}
+
 // The cases below held on the tip they were written against (`4ce6829`).
 
 /// The depth limit bounds the tree, not the stack (ruling 1 of fix round 2, kept in round 3):
