@@ -1,8 +1,10 @@
 //! The reads of the tree for the slice `reading` (`story:scripts-dom-reading`): every function
 //! that reads the document's tree for a member of [`super::SurfReading`]. Each one does work
 //! bounded by a constant (a node's kind, a name's length, its parent, its first or last child),
-//! or charges before its loop for everything the loop reads; its doc comment says what it
-//! charges. The members get nodes, text and attribute values from here only.
+//! or charges before its loop for everything the loop reads, a compare for both of its sides
+//! (where a loop learns what it will read only by a pass, the pass is charged first from a
+//! count read without one); its doc comment says what it charges. The members get nodes, text
+//! and attribute values from here only.
 
 use std::cell::Cell;
 use std::collections::HashMap;

@@ -4,14 +4,17 @@
 //!
 //! Steps. The bindings charge one step per call. Every read of the tree is a function of
 //! [`super::reads`], and each charges before the work it pays for: a node it walks one step,
-//! attributes it passes by name one step per 4, a byte it reads, compares, folds, collapses or
-//! copies one step per 16 (the one price of a byte, the glue's for a String it copies in or
-//! out), and a piece a value splits into (a class token, a word of a title) one step. Where the
-//! count is not known before the walk (a scan that stops at its first match), the step goes
-//! before each node it reads. So a step buys a bounded piece of work: one node, four name
-//! compares, sixteen bytes, one token; a script over a large tree ends at its step limit and
-//! not at the wall clock. The walks keep their place by a stack of one entry a level, so a
-//! deep tree does not deepen the call stack, and copy no child list.
+//! attributes it passes by name one step per 4 and attributes it reads whole one step each, a
+//! byte it reads, compares, hashes, folds, collapses or copies one step per 16 (the one price
+//! of a byte, the glue's too for a String it copies in or out, charged before the copy), and a
+//! piece a value splits into (a class token, a word of a title) one step. A compare of two
+//! nodes is charged for both before either is read; a compare of an argument with a name or
+//! an ID reads no byte that the argument's copy and the walk did not pay. Where the count is
+//! not known before the walk (a scan that stops at its first match), the step goes before each
+//! node it reads. So a step buys a bounded piece of work: one node, four name compares, one
+//! attribute of a whole list, sixteen bytes, one token; a script over a large tree ends at its
+//! step limit and not at the wall clock. The walks keep their place by a stack of one entry a
+//! level, so a deep tree does not deepen the call stack, and copy no child list.
 //!
 //! Strings. A String a member answers with more UTF-16 code units than the agent's
 //! `string_length` is the realm's `RangeError`; the bindings check every answer before the
