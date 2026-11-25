@@ -66,7 +66,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 24
+revision: 25
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 ---
@@ -82,7 +82,8 @@ false are corrected by one dated block (decision 16).
 
 `story:webidl-bindings` is on `main` (merge `6bd9bc9`). What it left to this story, read from the
 code at `6bd9bc9` (a line of `crates/html` is a line of `main` at `6bd9bc9`, or of the branch
-`impl/html-script-hook` at its tip `5d9b011` when it says "unit"):
+`impl/html-script-hook` at its tip `58d720b` when it says "unit"; `git diff --stat
+main...impl/html-script-hook` at that tip ends "22 files changed"):
 
 - The slice `reading` has 99 member rows in `crates/webidl/selection.txt`, and one more row,
   `NodeList iterable` (line 236), which is no member. The 99 are `Node` 41 (its 18 constants
@@ -106,7 +107,7 @@ code at `6bd9bc9` (a line of `crates/html` is a line of `main` at `6bd9bc9`, or 
   generated `DomState` (`bindings.rs:151-161`, its `tree` private) has no field for them. The
   members `URL`, `documentURI`, `baseURI`, `characterSet`, `charset`, `inputEncoding` and
   `contentType` need them. `surf_html::Tree` holds none and no compat mode
-  (`crates/html/src/tree.rs:195-200`; unit `tree.rs:248-255`).
+  (`crates/html/src/tree.rs:195-200`; unit `tree.rs:249-255`).
 - The parser decides the quirks mode in `pub(crate) enum QuirksMode`
   (`tree_builder.rs:64-68`; unit `:233`), in the initial insertion mode, at two places: the
   doctype token (`crates/html/src/tree_builder/modes.rs:207`) and any other token, which means
@@ -114,23 +115,25 @@ code at `6bd9bc9` (a line of `crates/html` is a line of `main` at `6bd9bc9`, or 
   (`tree_builder.rs:448`, `:656`; unit `:736`, `:951`), which `tables.rs` reads (`:486`; unit
   `:492`), and copies it into the crate-private `Parsed` when the parse ends (`tree_builder.rs:429`;
   unit `:712`), under `#[cfg_attr(not(test), allow(dead_code))]` (`:320`; unit `:577`).
-  `parse_document` returns the tree alone (`crates/html/src/lib.rs:230-237`; unit `:277-285`) and
+  `parse_document` returns the tree alone (`crates/html/src/lib.rs:230-237`; unit `:284-292`) and
   `ParsedDocument` carries only the encoding (`lib.rs:212-219`).
 - On the unit the parser calls the script hook in the middle of a parse: the loop calls
   `report_ended` after the token that ended a script (`tree_builder.rs:683`, `:696`), which
   calls `hook.run(&mut self.tree, script)` (unit `:993`, `:1008`; the trait at `:82-88`), and
-  `parse_document_with_hook` is `lib.rs:294`. So a script reads the tree before `Parsed` exists.
+  `parse_document_with_hook` is unit `lib.rs:301`. So a script reads the tree before `Parsed`
+  exists.
   The unit also adds `Tree`'s write surface (`append_child` unit `tree.rs:1033`, `remove_node`
   `:1039`, `insert_before` `:1014`), which `main` has not (`git grep -n 'pub fn append_child'
   6bd9bc9 -- crates/html/src` prints nothing), and `Tree::document(limits)` and
   `fragment(limits)` (unit
-  `tree.rs:273, 278`). Its `Tree` derives `PartialEq` and keeps its parser cache `moved` out of it
-  with a newtype (unit `tree.rs:248-269`); its tests compare a tree a hook wrote with a plain
-  parse (`crates/html/tests/adversary_script_hook_2.rs:539, 545, 574`). `Tree` has no counter of
-  writes: `steps` is the parse's and counts no write (unit `tree.rs:539-550`), and `moved` is a
-  flag for elements that the parser clears (unit `tree.rs:362-366`, set at `:830`, `:953`,
-  `:1389`). `Tree` has no sibling read (`main:tree.rs:444, 485`; the unit's `index_in_parent` and
-  `next_sibling`, `:811-826`, are private).
+  `tree.rs:273, 278`, both `pub(crate)`). Its `Tree` derives `PartialEq` and keeps its parser
+  cache `moved` out of it with a newtype (unit `tree.rs:249-269`); its tests compare a tree a
+  hook wrote with a plain parse (`crates/html/tests/adversary_script_hook_2.rs:539, 545, 574`).
+  `Tree` has no counter of writes: `steps` is the parse's and counts no write (unit
+  `tree.rs:539-550`), and `moved` is a flag for elements that the parser clears (unit
+  `tree.rs:362-366`, set at `:830`, `:953`, `:1389`). `Tree` has no sibling read
+  (`main:tree.rs:444, 485`; the unit's `index_in_parent` and `next_sibling`, `:811-826`, are
+  private).
 - `surf-script` depends on `surf-html`, `surf-secret` and `swell`
   (`crates/script/Cargo.toml:14-16`). `surf-url` is a crate of this workspace with no dependency
   (`crates/url/Cargo.toml:13`); `Url::parse(input, base)` and `Url::href()` are public
@@ -234,12 +237,21 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
    HTML namespace is matched by its ID only. The iteration methods are generated
    (`bindings.rs:1459-1477`) and need no code. The glue copies the snapshot on each call of
    `length`, `item` and `namedItem` (`this_collection`, `prelude.rs:683-696`) with no step.
-   A member's work is bounded by steps, not by the wall clock alone, so the glue passes the slice
-   a borrow of the collection's node list and makes no copy; `length` needs no list at all if
-   the glue reads the length from the data. If the borrow of the host data cannot be held while
-   the slice has its `DomCx`, the glue keeps the copy and charges one step per 64 node ids
-   copied, before the copy. The implementor finds out first, reports which borrow conflicts with
-   the compiler's message, and the report says which of the two forms was built.
+   A member's work is bounded by steps, not by the wall clock alone, so the glue stops copying.
+   A plain borrow of the node list cannot be built: `DomCx` holds `&'c mut Cx`
+   (`bindings.rs:201-205`), and a slice gets `this: &[NodeId]` beside its `dcx`
+   (`bindings.rs:2645-2687`), so the list cannot stay borrowed from the host data while `dcx`
+   exists. The first form is take and restore: the glue takes the `Vec` out of the host data
+   with `Cx::host_data_mut` (`crates/swell/src/host/mod.rs:549 @ 0.8.0`), passes `&vec` to the
+   slice, and puts it back, also when the slice returns an error. `length` reads the length from
+   the data and copies nothing, in every form. The fallback, for `item` and `namedItem` only, is
+   the copy: the glue keeps it and charges one step per 64 node ids copied, before the copy. A
+   call then costs `1 + ceil(n / 64)` steps over a collection of `n` nodes, and a loop of `m`
+   such calls costs about `m * (1 + n / 64)`: with `m` equal to `n` that reaches the 10,000,000
+   steps of an entry (`runner.rs:41`) at `n` of about 25,000 (`25,000 * 25,000 / 64` is
+   9,765,625), where the first form costs `m` steps. The implementor finds out first whether
+   take and restore builds, reports the compiler's message if it does not, and the report says
+   which of the two forms was built.
 6. No reading member records a limit. The members read the tree and never write it, so none
    answers `DomEnd::Limit` and none calls `end_with_limit` (`bindings.rs:445`); `Limit::InputBytes`
    and `Limit::Steps` keep their placeholder word `limit: wall-clock` (`runner.rs:690-693`), which
@@ -315,14 +327,16 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
       `crates/swell/src/host/mod.rs:549 @ 0.8.0`), deletes the old index properties
       (`delete_property_or_throw`, `:838 @ 0.8.0`), defines the new ones as `collection_value`
       does, sets `written` and answers the same object. If there is none, it asks the slice,
-      makes the object with `collection_value`, and hands it to `keep_same_object`.
+      makes the object with `collection_value`, sets its `written` to `cx.tree().writes()` as it
+      makes the object, and hands it to `keep_same_object`.
     - `SurfWrap` keeps a second table, `(NodeId, SameObject)` to `Root`, never emptied, and
       overrides both methods. With the defaults a getter makes a new object per read, as today:
       the four `TestWrap` implementations compile unchanged and their getters do not hold
       `[SameObject]`; only `SurfWrap` does (a test pins both, acceptance 4).
     - The write counter. `Tree` gains `writes(&self) -> u64`, raised by every public write of
-      `Tree` and by every write of the parser, kept out of `PartialEq` by a newtype as the unit
-      keeps `moved` out (unit `tree.rs:258-269`). Neither `steps` nor `moved` can serve (Context).
+      `Tree`, by `create` and by every write of the parser, kept out of `PartialEq` by a newtype
+      as the unit keeps `moved` out (unit `tree.rs:258-269`). Neither `steps` nor `moved` can
+      serve (Context).
       The reason it exists: `for (i = 0; i < el.childNodes.length; i++) el.childNodes[i]` reads
       the attribute twice per turn; refreshed at each read at one step per node, a parent of `n`
       children costs `2 * n * n` steps against 10,000,000 (`runner.rs:41`), so `n` of about 2,236
@@ -341,10 +355,10 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
     hooked parse and a plain parse of one input decide the same mode (the unit's tests of
     `assert_eq!(tree, without)` still hold). `Tree::document` and `Tree::fragment` start in
     no-quirks mode, and the fragment parse keeps what the unit's text says, that its document is
-    in no-quirks mode (`lib.rs:291`; unit `:359`). `Parsed.quirks_mode` and its
+    in no-quirks mode (`lib.rs:291`; unit `:366`). `Parsed.quirks_mode` and its
     `#[cfg_attr(not(test), allow(dead_code))]` go; the builder keeps its own field for
     `tables.rs`, and the parser's three tests of the mode (`tree_builder.rs:1416-1434`; unit
-    `:1954-1972`) read `tree.quirks_mode()`. `Document.compatMode` is `BackCompat` for the mode
+    `:1960-1978`) read `tree.quirks_mode()`. `Document.compatMode` is `BackCompat` for the mode
     "quirks" and `CSS1Compat` otherwise (DOM Standard, `dom.html:8121-8123`), and
     `getElementsByClassName` matches class names ASCII case-insensitively in "quirks" mode
     (`dom.html:7903-7906`). The caller does not give it.
@@ -382,10 +396,11 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
     result of the same parse, taken at each read: it is the value HTML freezes while the fallback
     base URL does not change, and surf's address does not change.
 14. The refresh and the sibling cases write the tree through a test slice. The module
-    `dom_reading` builds `Slices` from its public fields (`bindings.rs:455-466`) with surf's
-    `reading` and `wrap` and a test implementation of the slice `mutation` whose one member,
-    `Node.removeChild` (`bindings.rs:2938`), removes the node through `DomCx::tree_mut()` and
-    `Tree::remove_node`, and whose `Node.appendChild` (`bindings.rs:2917`) appends through
+    `dom_reading` builds its `Slices` with `dom::slices(info)` and then replaces the public field
+    `mutation` (`bindings.rs:455-466`) with a test implementation of the slice `mutation`; no
+    public constructor for surf's reading or wrap is added. Its member `Node.removeChild`
+    (`bindings.rs:2938`) removes the node through `DomCx::tree_mut()` and
+    `Tree::remove_node`, and its `Node.appendChild` (`bindings.rs:2917`) appends through
     `Tree::append_child` (both of the unit's write surface). This is test code of `dom_reading`
     only; `story:scripts-dom-mutation` writes the real slice.
 15. The cases are the rows. One table, `const CASES: &[Case]`, holds the cases; a `Case` is a row
@@ -398,9 +413,10 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
     `selection()` reads them (`tests/bindings.rs:258-275`). A row may have several entries; each
     entry has a non-empty expression and expected value.
 16. The texts that this story makes false are corrected in the same wave, each by a dated block
-    or paragraph that is part of the plan, not of this story's code: the epic by one block
-    appended to its "Decisions taken" (lines 464-468, 342-343, 854, 749-754, 704-705, 919-920,
-    925-927), `story:scripts-parse-run` by a paragraph that gives it the `DocumentInfo` duty, and
+    or paragraph that is part of the plan, not of this story's code: the epic by one block, its
+    separate last section "Corrections of 2026-11-25" (not its "Decisions taken"), which covers
+    the epic's lines 464-468, 342-343, 854, 749-754, 704-705, 716-724, 910, 919-920 and 925-927;
+    `story:scripts-parse-run` by a paragraph that gives it the `DocumentInfo` duty, and
     `story:swell-0-9-0` by a sentence in its Placement.
 
 ## Change
@@ -445,7 +461,7 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
   - `crates/webidl/src/generate.rs` and `crates/webidl/src/prelude.rs`: the enum `SameObject`,
     the getters of the four rows, the two provided methods of `Wrap` and the field `written`,
     and `this_collection` and the glue of the `NodeList` and `HTMLCollection` members
-    (decision 5: a borrow of the node list, or the copy with one step per 64 ids);
+    (decision 5: take and restore of the node list, or the copy with one step per 64 ids);
   - `crates/webidl/selection.txt`: the rows `Node childNodes` (line 55), `Element children`
     (118) and `Document children` (167) keep their notes; `DocumentFragment children` (223)
     gains both notes; `Node baseURI` (48) gains the three deviations of decision 13;
@@ -460,13 +476,16 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
 - `crates/html/src` (decisions 10 and 11), the files named here and no others: `tree.rs` (the
   mode field, `quirks_mode()`, the counter newtype and `writes()`, the constructors, the raise
   of the counter at each function that assigns a node's `children`, `parent`, `data` or
-  attributes: on the unit `insert` `:404`, `remove` `:471`, `remove_children` `:485`,
-  `move_children` `:495`, `push_text` `:444`, `add_attributes` `:455`, `insert_checked` `:927`,
-  `clone_node` `:1137`, `split_text` `:1298`, `replace_data` `:1320`, `put_attribute` `:1435`,
-  `drop_attribute` `:1463`, `normalize` `:1243`, `set_text_content` `:1375`; the implementor greps
-  the assignments to `self.nodes[...]` for any other), `tree_builder.rs` (`QuirksMode` public,
-  `Parsed.quirks_mode` and its `allow` removed, the three tests), `tree_builder/modes.rs` (the
-  two writes at `:207` and `:217`) and `lib.rs` (the re-export). Tests: `crates/html/tests/
+  attributes, and at `create`, which adds a node to the arena: on the unit `create` `:296`,
+  `insert` `:404`, `remove` `:471`, `remove_children` `:485`, `move_children` `:495`,
+  `push_text` `:444`, `add_attributes` `:455`, `insert_checked` `:927`, `clone_node` `:1137`,
+  `split_text` `:1298`, `replace_data` `:1320`, `put_attribute` `:1435`, `drop_attribute` `:1463`,
+  `normalize` `:1243`, `set_text_content` `:1375`; the implementor greps the assignments to
+  `self.nodes[...]` for any other, and checks this list against the unit's `tree.rs` at the
+  merge of this story: a write function added after this story names it is added to the list),
+  `tree_builder.rs` (`QuirksMode` public, `Parsed.quirks_mode` and its `allow` removed, the three
+  tests), `tree_builder/modes.rs` (the two writes at `:207` and `:217`) and `lib.rs` (the
+  re-export). Tests: `crates/html/tests/
   tree_state.rs`, declared in `crates/html/tests/main.rs`.
 - `crates/script/tests/dom_reading.rs`: the module `dom_reading`, already declared in
   `tests/main.rs`.
@@ -546,12 +565,15 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
       `MAX_INPUT_LENGTH` bytes: the address; a `base` in the SVG namespace: ignored.
    e. The three deviations are in the note of `Node baseURI`, and a case reads them from
       `selection.txt` as 1a does.
-6. The hook cases (`story:html-script-hook`'s `parse_document_with_hook`, unit `lib.rs:294`). A
+6. The hook cases (`story:html-script-hook`'s `parse_document_with_hook`, unit `lib.rs:301`). A
    `ScriptHook` of the test clones the tree in `run` (`Tree` is `Clone`), makes a `Document` of the
    clone with `dom::slices(info)` and reads `document.compatMode` through `run_document`.
    a. A script in `head` of a page without a doctype reads `BackCompat`.
    b. The same page with `<!DOCTYPE html>` reads `CSS1Compat`.
    c. The tree the hooked parse returns equals the plain parse's (equality includes the mode).
+   d. `Parsed.quirks_mode` is gone: `git grep -n -F 'quirks_mode' --
+      crates/html/src/tree_builder.rs` names no field of `Parsed` (the builder's own field and
+      the three tests that read `tree.quirks_mode()` remain).
    Every other case of this story runs over `parse_document` and needs no hook.
 7. Sibling reads (decision 9). `runner.steps()` is read around each script.
    a. `for (n = p.firstChild; n; n = n.nextSibling)` over 100,000 siblings ends `Ran` with the
@@ -574,8 +596,12 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
       names the number it measured per wrapper and per collection.
    b. `wrapper_limit`: under a memory limit of 1 MiB a script that wraps every node of a
       document of 100,000 elements ends `ScriptEnd::Limit` with the reason `memory`; a later
-      `runner.evaluate("1 + 1")` ends `Ran` (the one `collect()` after a memory end,
-      `docs/design/scripts.md:320`, is the runner's).
+      `runner.evaluate("1 + 1")` ends `Ran` or `Limit` with `memory` (the one `collect()` after a
+      memory end, `docs/design/scripts.md:320`, is the runner's, and the rooted wrappers are never
+      freed, so the heap may still sit at the limit). The report says which of the two the case
+      saw, and the case asserts that `heap_bytes()` after the later `evaluate` is below the
+      limit plus one wrapper, that is under 1 MiB plus 256 bytes plus the size of a wrapper's
+      data.
    c. `wrapper_reuse`: the script of 8a run a second time over the same nodes grows `heap_bytes()`
       by less than a tenth of the first run's growth: the table made no second wrapper per node.
    d. `collection_limit`: under the same limit `for (;;) document.getElementsByTagName("*")`
@@ -594,12 +620,20 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
       names its time and the end it reached and the case asserts that end instead.
    i. The loop `for (i = 0; i < el.childNodes.length; i++) el.childNodes[i]` over 5,000 children
       ends `Ran`, with the steps under 15 times those of the same loop over 500 children (a
-      refresh at each read gives 100 times).
+      refresh at each read gives 100 times). The loop calls `length` and reads index properties
+      and no `item`, so its bound is the same in both forms of decision 5.
    j. `var c = document.getElementsByTagName("*")` over 5,000 elements, then
       `for (i = 0; i < c.length; i++) c[i]`, ends `Ran`, with `runner.steps()` under 15 times
       the steps of the same loop over 500 elements (a copy charged per node gives 100 times; the
-      case states the bound after the first measure). The report says which form of decision 5
-      was built, and for the copy form which borrow conflicted, with the compiler's message.
+      case states the bound after the first measure). This loop too calls `length` and reads
+      index properties only, and `length` copies nothing in either form (decision 5), so the bound
+      holds in both forms. It does not cover `item` and `namedItem`: for them the bound holds
+      for take and restore only. With the copy form a loop of `m` calls over `n` nodes costs
+      about `m * (1 + n / 64)` steps, which is `n * n / 64` for `m` equal to `n`: over 5,000
+      nodes about 390,000 steps, over 500 about 4,000, a ratio of about 90, and an entry ends
+      `limit: steps-per-script` at `n` of about 25,000. The report says which form of
+      decision 5 was built and, if the copy, the compiler's message that stopped take and
+      restore.
 9. Hostile trees: `getRootNode`, `contains`, `compareDocumentPosition`, `isEqualNode` and
    `textContent` end on the runner's thread without overflowing its stack, each `Ran`.
    a. Over a chain of 500 nested `div` (the parser's depth is 512 with `html` and `body` in it,
@@ -649,11 +683,15 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
     c. `git grep -n -F 'No DOM yet' -- crates/script/src/lib.rs` prints nothing, and
        `git grep -n -i -F 'no DOM yet' -- AGENTS.md` prints nothing.
     d. `git grep -n -F 'surf-url' -- docs/design/scripts.md` prints the line 1102 names, and
-       `git grep -n -A6 -F '`crates/script` (`surf-script`' -- AGENTS.md` prints `surf-url`.
+       `git grep -n -A6 -F '`crates/script` (`surf-script`' -- AGENTS.md` prints `surf-url`; the
+       same entry's test count ("29 tests" at `6bd9bc9`, with its per-file counts) equals the
+       tests of `crates/script` in the `slot task check` log of the tip, and
+       `git grep -n -F '29 tests' -- AGENTS.md` prints no line of that entry.
 14. Public surfaces: the story changes, in its last commit and after merging `main`, every
     public surface its change makes false, each number taken from the `slot task check` log of
     its tip.
-    a. The old strings are read first: a command run on the story's base before any change,
+    a. The old strings are read first, after the last merge of `main` into the unit's branch: a
+       command run on the story's base before any change,
        `git grep -n -e 'passed' -e 'test files' -e 'tests:' -- README.md website/docs docs/badges`,
        whose output the report records. After `story:html-script-hook` merges, its counts are
        the base's, so the lines given below are the values of `main` at `6bd9bc9` and not
@@ -674,6 +712,8 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
     e. The paragraph that names the gate run on `5dcedfb` (`README.md:674-678`,
        `website/docs/how-it-is-built.md:119-123`) gains this story's sentence and keeps the
        bindings unit's.
+    f. The epic's correction (decision 16): `git grep -n -F 'Corrections of 2026-11-25' --
+       .engineering/planning/epic/scripts-in-a-page.md` prints one line.
 15. The report holds, as text: the rows of Q18 (`docs/design/scripts.md:1275-1281`) read at the tag
     `crates/script/Cargo.toml` pins when the work starts, each marked unchanged or changed; the
     measured numbers of 8; the output of 14a.
@@ -698,16 +738,18 @@ Writes (the three other slices); the hook and the parse that runs scripts
 and passes it to `dom::slices`); the check of a Content Security Policy `base-uri` directive, the
 creator's base URL of an `about:blank` or `about:srcdoc` document and the encoding of the `href`
 query (the three deviations of `baseURI`, decision 13); a page in a session; the limit words of
-`Limit::InputBytes` and `Limit::Steps` (the first story with a member that writes gives them); a
-the changes to the collection members of `bindings.rs` beyond decision 5.
+`Limit::InputBytes` and `Limit::Steps` (the first story with a member that writes gives them);
+changes to the collection members of `bindings.rs` beyond decision 5.
 
 ## Placement
 
 `depends_on: story:html-script-hook`, besides `story:webidl-bindings` (on `main`). Two reasons.
 The shared files: the unit (active, not on `main`) writes `crates/html/src/lib.rs`, `tree.rs`,
-`tree_builder.rs`, `tree_builder/modes.rs`, `crates/html/tests/main.rs` and
-`docs/design/scripts.md` (two lines, not line 1102), all of which this story also writes
-(`git diff --stat main...impl/html-script-hook` lists twenty files); its acceptance 10 also
+`tree_builder.rs`, `tree_builder/modes.rs`, `crates/html/tests/main.rs`,
+`crates/script/tests/bindings.rs` (one comment line) and `docs/design/scripts.md` (11 insertions
+and 11 deletions, at lines 85, 88, 194, 313-318, 327 and 889, none at line 1102), all of which
+this story also writes (`git diff --stat main...impl/html-script-hook` lists 22 files at the tip
+`58d720b`); its acceptance 10 also
 edits, in its last commit and not yet on the branch, the public surfaces this story edits
 (`html-script-hook.md:147-153`). And the cases that need it: acceptance 6 runs through
 `parse_document_with_hook`, and the test slice of decision 14 calls the unit's write surface.
@@ -731,12 +773,12 @@ first and takes its numbers from its own log, as `swell-0-9-0.md:556-562` says f
 `surf-secret` in `crates/script/Cargo.toml` and in the lock; swell's story changes the pin on the
 next line.
 
-The generator, `selection.txt` and `bindings.rs` are the bindings unit's: nothing else of the
-epic changes them in the same wave. `crates/script/src/lib.rs` and `runner.rs` are written after
-it by `story:scripts-parse-run`, ordered by that story's edge; that story builds the
-`DocumentInfo` of a page (address as a `surf_url::Url`, the response's content type, the name of
-the encoding the parse decodes with) and calls `dom::slices(info)`, and decides which encoding
-name it passes when the runner is made while the encoding is tentative.
+The generator, `selection.txt` and `bindings.rs` are on `main` since `6bd9bc9`: this story changes
+them, and nothing else of the epic changes them in the same wave. `crates/script/src/lib.rs` and
+`runner.rs` are written after it by `story:scripts-parse-run`, ordered by that story's edge; that
+story builds the `DocumentInfo` of a page (address as a `surf_url::Url`, the response's content
+type, the name of the encoding the parse decodes with) and calls `dom::slices(info)`, and
+decides which encoding name it passes when the runner is made while the encoding is tentative.
 
 `story:scripts-dom-selectors` inherits, from the merge of this story: the one object per node
 and member that `Wrap` now holds for `[SameObject]` (its own members that return a collection
