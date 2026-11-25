@@ -9,6 +9,7 @@ mod adversary_script_hook_4;
 mod adversary_script_hook_5;
 mod adversary_script_hook_6;
 mod adversary_tree;
+mod adversary_tree_state;
 mod common;
 mod encoding;
 mod limits;
