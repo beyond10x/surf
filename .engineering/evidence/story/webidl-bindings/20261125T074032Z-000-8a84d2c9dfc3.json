@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-25T07:40:32Z",
+  "actor": "human:operator",
+  "artifact": "story:webidl-bindings",
+  "kind": "story",
+  "revision": 26,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the gate in runner form (task check-runner) on c61ddfa, the tip of impl/webidl-bindings, through the pool on the build node, 2026-11-25 08:33 CET",
+    "reference": "exit 0 in 95 s; 221 of 221 scenarios; 1723 tests: 1720 passed, 0 failed, 3 ignored; 552 TLS tests passed; 72 page tests passed; four steps 46.4 s; 223 test files; the eight lines of webidl-check; the docs site builds"
+  }
+}

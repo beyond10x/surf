@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-25T07:40:32Z",
+  "actor": "human:operator",
+  "artifact": "story:webidl-bindings",
+  "kind": "story",
+  "revision": 26,
+  "change": {
+    "change": "evidence",
+    "kind": "test_result",
+    "source": "the forge runs on main at 6bd9bc9 (the merge of impl/webidl-bindings at c61ddfa), 2026-11-25",
+    "reference": "check 45569363861 success; Shared source gates 45569364196 success; Documentation validation 45569363813 success; Documentation site 45569469836 success"
+  }
+}
