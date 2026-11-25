@@ -417,17 +417,17 @@ fn scan_for(cx: &mut DomCx<'_, '_>, node: NodeId, reads: Reads) -> DomResult<Opt
     Ok(at)
 }
 
-/// The steps of reading `node`'s attributes whole: one per attribute and one per 16 bytes of
-/// their names and values, so a compare of whole lists or a scan by value is bounded by its
-/// charge.
-fn attribute_steps(tree: &Tree, node: NodeId) -> usize {
+/// The steps of the bytes of `node`'s attributes, one per 16 bytes of their names and values,
+/// found by one pass over the list; the caller has charged the pass before it, a step an
+/// attribute from the count ([`equal_cost`]).
+fn attribute_byte_steps(tree: &Tree, node: NodeId) -> usize {
     match tree.data(node) {
         NodeData::Element { attributes, .. } => {
             let bytes: usize = attributes
                 .iter()
                 .map(|attribute| attribute.local_name.len() + attribute.value.len())
                 .sum();
-            attributes.len() + bytes / BYTES_A_STEP
+            bytes / BYTES_A_STEP
         }
         NodeData::Document
         | NodeData::DocumentFragment
@@ -517,7 +517,9 @@ fn select(
 /// The elements under `node` for `getElementsByTagName(qualified_name)` (DOM, "list of
 /// elements with qualified name"): every element for `*`; else, in this HTML document, an
 /// element of the HTML namespace whose name is the name in ASCII lower case, and any other
-/// whose name is the name.
+/// whose name is the name. A compare of the argument with a name charges nothing more: the
+/// argument's copy paid its bytes, the walk charged the name's, and a compare reads no further
+/// than the shorter.
 pub(super) fn by_tag_name(
     cx: &mut DomCx<'_, '_>,
     node: NodeId,
@@ -549,7 +551,9 @@ pub(super) fn by_tag_name(
 
 /// The elements under `node` for `getElementsByTagNameNS(namespace, local_name)` (DOM, "list
 /// of elements with namespace namespace and local name localName"); the empty namespace is
-/// null, which no element of the tree has.
+/// null, which no element of the tree has. A compare of an argument with a name charges nothing
+/// more: the argument's copy paid its bytes, the walk charged the name's, and a compare reads
+/// no further than the shorter.
 pub(super) fn by_tag_name_ns(
     cx: &mut DomCx<'_, '_>,
     node: NodeId,
@@ -640,7 +644,9 @@ pub(super) fn by_class_name(
     })
 }
 
-/// The first element under `node`, `node` left out, whose ID is `id`; none for the empty ID.
+/// The first element under `node`, `node` left out, whose ID is `id`; none for the empty ID. A
+/// compare of the argument with an ID charges nothing more: the argument's copy paid its bytes,
+/// the scan charged the ID's, and a compare reads no further than the shorter.
 pub(super) fn by_id(cx: &mut DomCx<'_, '_>, node: NodeId, id: &str) -> DomResult<Option<NodeId>> {
     if id.is_empty() {
         return Ok(None);
@@ -883,8 +889,8 @@ fn shallow_equal(tree: &Tree, a: NodeId, b: NodeId) -> bool {
             },
         ) => {
             // The attribute lists compared as maps from namespace and local name to value: one
-            // hash and one lookup per attribute, linear in their bytes. The lengths first, so
-            // the other list is read no further than this one, which the walk charged.
+            // hash and one lookup per attribute, linear in their bytes, which the caller
+            // charged for both lists before the compare.
             if namespace != other_namespace
                 || local_name != other_name
                 || attributes.len() != other_attributes.len()
@@ -931,14 +937,17 @@ fn shallow_equal(tree: &Tree, a: NodeId, b: NodeId) -> bool {
     }
 }
 
-/// The steps of comparing `node` with another: one, and one per attribute and per 16 bytes of
-/// the names, values and data compared. A compare of two strings reads no further than the
-/// shorter, so the bytes of `node`'s side bound it.
+/// The steps of `node`'s side of a compare that are known without a pass over a list: one, one
+/// per 16 bytes of its names and data, and one per attribute from the count, which pays the
+/// pass [`attribute_byte_steps`] makes; a compare charges this for both sides, then both sides'
+/// attribute bytes, before it reads either.
 fn equal_cost(tree: &Tree, node: NodeId) -> usize {
     match tree.data(node) {
-        NodeData::Element { local_name, .. } => {
-            1 + local_name.len() / BYTES_A_STEP + attribute_steps(tree, node)
-        }
+        NodeData::Element {
+            local_name,
+            attributes,
+            ..
+        } => 1 + local_name.len() / BYTES_A_STEP + attributes.len(),
         NodeData::Text(data) | NodeData::Comment(data) => 1 + data.len() / BYTES_A_STEP,
         NodeData::ProcessingInstruction { target, data } => {
             1 + (target.len() + data.len()) / BYTES_A_STEP
@@ -1059,13 +1068,17 @@ pub(super) fn text_content(cx: &mut DomCx<'_, '_>, node: NodeId) -> DomResult<Op
     }
 }
 
-/// `isEqualNode`: the two trees compared node by node in tree order, each pair charged as
-/// [`equal_cost`] of `this`'s node before it is compared; the walk keeps its place by a stack of
-/// (pair, index of the next child), one entry per level, and copies no child list.
+/// `isEqualNode`: the two trees compared node by node in tree order, each pair charged for both
+/// of its nodes before either is read: [`equal_cost`] of each, then the bytes of each one's
+/// attributes ([`attribute_byte_steps`]); the walk keeps its place by a stack of (pair, index
+/// of the next child), one entry per level, and copies no child list.
 pub(super) fn is_equal(cx: &mut DomCx<'_, '_>, this: NodeId, other: NodeId) -> DomResult<bool> {
     let pair_equal = |cx: &mut DomCx<'_, '_>, a: NodeId, b: NodeId| -> DomResult<bool> {
-        let cost = equal_cost(cx.tree(), a);
-        charge(cx, cost)?;
+        let known = equal_cost(cx.tree(), a).saturating_add(equal_cost(cx.tree(), b));
+        charge(cx, known)?;
+        let bytes =
+            attribute_byte_steps(cx.tree(), a).saturating_add(attribute_byte_steps(cx.tree(), b));
+        charge(cx, bytes)?;
         let tree = cx.tree();
         Ok(shallow_equal(tree, a, b) && tree.children(a).len() == tree.children(b).len())
     };
