@@ -9,7 +9,7 @@ relations:
 - decomposes: epic:app-journeys-in-surf
 - depends_on: story:scripts-document-port
 - depends_on: story:swell-0-9-0
-revision: 1
+revision: 2
 ---
 ## Context
 
@@ -26,7 +26,10 @@ no timeout job by any engine path at `0.9.0` (HOST-85 and HOST-86 `pending slice
   and between an agent's calls, each under the document's limits (steps, memory, wall clock:
   `docs/design/scripts.md`, Q4), with a bound on timers and on tasks per answer.
 - `setTimeout`, `setInterval`, `clearTimeout`, `clearInterval`, `queueMicrotask` over the
-  session's clock; what an agent's `look` waits for (a quiet queue or a bound).
+  session's clock; what an agent's `look` waits for (a quiet queue or a bound). For
+  `queueMicrotask` its unit takes `HostError::MemoryBudget` out of `surf_defect!()` in
+  `crates/script/src/runner.rs` and handles it at the call (`story:swell-0-9-0`, decision 5), and
+  reads again the queue clearing after a limit that `story:swell-0-9-0` sets in its decision 6.
 - The end of D2: every reader of the tree that assumed it does not change after parsing.
 
 ## Waits for

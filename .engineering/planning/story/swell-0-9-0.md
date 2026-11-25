@@ -9,6 +9,7 @@ relations:
 - decomposes: epic:scripts-in-a-page
 - depends_on: story:scripts-engine-dependency
 - depends_on: story:webidl-bindings
+- depends_on: story:script-error-kind-aggregate
 scope:
 - confidence: cited
   path: AGENTS.md
@@ -52,7 +53,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 20
+revision: 21
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-25T03:16:34Z", actor: "human:operator", revision: 16}
 ---
@@ -104,12 +105,12 @@ Cargo.lock` prints 58, `grep -c '^source = ' Cargo.lock` prints 25). swell `0.10
 eight packages in its root lock, with only the version lines changed (`git diff 0.9.0 0.10.0 --
 Cargo.lock` shows eight lines `version = "0.9.0"` replaced by `"0.10.0"`; `git show
 0.10.0:Cargo.lock | grep -c '^source'` prints 0), and `swell` takes the same five by path
-(`crates/swell/Cargo.toml:12-16 @ 0.10.0`). Its workspace version is `0.10.0` (`Cargo.toml:8 @
-0.10.0`) and its root manifest sets `overflow-checks = true` in the same four profiles
-(`Cargo.toml:10-20 @ 0.10.0`). Both repositories pin rustc 1.99.1 (`rust-toolchain.toml`, and the
-same file `@ 0.10.0`). swell's `NOTICE` is the same file at `0.8.0` and `0.10.0` (`git diff
---quiet 0.8.0 0.10.0 -- NOTICE` exits 0). So the counts stay 58 and 25 and only the six packages'
-version and source change.
+(the five `path = ...` lines under `[dependencies]`, `crates/swell/Cargo.toml:13-17 @ 0.10.0`).
+Its workspace version is `0.10.0` (`Cargo.toml:8 @ 0.10.0`) and its root manifest sets
+`overflow-checks = true` in the same four profiles (`Cargo.toml:10-20 @ 0.10.0`). Both
+repositories pin rustc 1.99.1 (`rust-toolchain.toml`, and the same file `@ 0.10.0`). swell's
+`NOTICE` is the same file at `0.8.0` and `0.10.0` (`git diff --quiet 0.8.0 0.10.0 -- NOTICE`
+exits 0). So the counts stay 58 and 25 and only the six packages' version and source change.
 
 What `0.9.0` changes for a host, from `CHANGELOG.md:187-264 @ 0.10.0` ("### Host interface" of
 `0.9.0`):
@@ -237,8 +238,10 @@ floods the queue cannot spend the next scripts' budgets" (`:311-313`);
 "the microtask checkpoint after each script, its steps counted in that script's and the
 document's totals, and its end taken as the script's end. Open until then: which call of the host
 interface runs the jobs, and what a job that ends at a limit makes of the record of a script that
-already ended `ran`." This story answers both; that section no longer holds them. Five stories
-and the epic name `0.9.0` as the tag this story takes (Placement, last paragraph).
+already ended `ran`." This story answers both; that section no longer holds them. The epic and
+two stories (`story:scripts-parse-run`, `story:scripts-document-port`) named `0.9.0` as the tag
+this story takes; those lines were corrected with this revision to `0.10.0` (Placement, last
+paragraph).
 
 Where surf meets the changed types, on `main`:
 
@@ -293,8 +296,8 @@ Where surf meets the changed types, on `main`:
   `0.10.0` (`CHANGELOG.md:260-264`).
 - `crates/script/tests/adversary.rs:96-120`, `every_error_kind_keeps_its_word`, lists the seven
   kinds.
-- `crates/script/tests/adversary_6.rs:170-185`,
-  `a_record_read_that_an_interrupt_ends_gives_no_text`, rests on the behaviour `0.9.1` fixed. The
+- `crates/script/tests/adversary_6.rs:170-185`, the test of a record read that an interrupt ends,
+  rests on the behaviour `0.9.1` fixed (decision 11 names it and replaces it). The
   test slice for `document.getElementById("interrupt")` sets the agent's interrupt and then
   throws a `DOMException` (`crates/script/tests/adversary_5.rs:95-98`); the test's doc comment
   says the script "ends `threw`" and the test asserts `Ok(None)` for the record of that end. That
@@ -304,6 +307,9 @@ Where surf meets the changed types, on `main`:
   fails at `0.10.0`; nobody has run it (decision 11). Its sibling comment at
   `crates/script/tests/adversary_3.rs:312-316` says "the engine reads the interrupt only after a
   host call that returned normally", which `0.9.1` made false for a throw.
+- A test comment states what `0.10.0` makes stale: `crates/script/tests/adversary_5.rs:226` says
+  "Swell's host interface @ 0.8.0, section 4: a handle listed in the `trace` of host data the
+  engine reaches is strong", for Strings that `HOST-218` now holds with a test.
 - Four doc comments in the generated code state what `0.9.1` and `0.10.0` make stale
   (`crates/webidl/src/prelude.rs`, copied to `crates/script/src/bindings.rs`): `ExceptionData`
   says that a String listed with `Tracer::value` lives "from the sentence and the signature, not
@@ -315,7 +321,7 @@ Where surf meets the changed types, on `main`:
   the read (`prelude.rs:310-313`), which stays true. The generator's output carries digests of
   its sources; a change of these comments is a change of `prelude.rs`, a regeneration with the
   task `webidl-check` and a rewrite of `bindings.rs`, which `story:scripts-dom-reading` rewrites
-  as well. Decision 12 leaves them out of this story.
+  as well. Decision 12 leaves these four and the test comment out of this story.
 
 The swell citations in surf's code that move with the tag (`git diff --stat 0.8.0 0.10.0 --
 <path>`; a file the diff does not list keeps its lines): `crates/syntax/src/parser/statement.rs`
@@ -394,8 +400,9 @@ process that ran on `0.9.0`.
    so the quoted text stays. `AGENTS.md:366` and `:1901`, `README.md:254` and
    `website/docs/principles.md:27` name `0.10.0`. The sentence of `AGENTS.md:366-369` about
    `surf-script` is stale beyond the tag ("no DOM yet", "29 tests", the three test files it
-   lists): the unit rewrites it for what `crates/script` is on `main` and for the numbers of the
-   gate log (acceptance 8).
+   lists): the unit rewrites it for what `crates/script` is on the tree the unit merges into
+   (after `story:scripts-dom-reading` it holds `surf-url` and no "no DOM yet") and for the numbers
+   of the gate log (acceptance 8).
 4. The error kinds. `ScriptErrorKind` gains `AggregateError`, word `"AggregateError"`, mapped from
    `ErrorKind::AggregateError`, and `Runner::error` lists it with the kinds whose message is kept
    as read (`runner.rs:760-766`). `error_kind` keeps one arm per named kind and gains one wildcard
@@ -426,6 +433,8 @@ process that ran on `0.9.0`.
    (`runner.rs:21-27`, "swell's `HostError` at `0.8.0` but `Faulted`") is rewritten for `0.10.0`:
    it names the seven variants, says why `MemoryBudget` is among them, and says that it leaves
    the macro with the first call of `queue_microtask` in surf, where surf decides its reading.
+   That call is `queueMicrotask` of `story:scripts-event-loop-and-timers`, whose unit takes
+   `HostError::MemoryBudget` out of the macro and handles it at the call (Out of scope).
    No arm of its own at any call; the seven patterns `HostError::Faulted | surf_defect!()` are
    exhaustive again, and the build is the check.
 6. The microtask checkpoint, HTML's "clean up after running script", inside `Runner::evaluate`,
@@ -475,37 +484,40 @@ process that ran on `0.9.0`.
      scripts of a document (the first version has no timer and no event), each checkpoint ends
      with the queue empty or is followed by the clear. So step 1 of the end tag (the note's Q2,
      row 1) is taken in effect, with no call of its own.
-7. A job's throw and an unhandled rejection are not recorded (decided on 2026-11-24; the two
-   other forms, a job's throw as the script's end and a count per script in the record, need a
-   question to swell or a change of the specification under its synthesis bound, and no story
-   holds either): `host_clean_up_after_job` and `host_promise_rejection_tracker` keep swell's
-   defaults, a script whose job threw or whose promise stays rejected ends as the script itself
-   ended, and the note names the deviation from HTML's "report an exception"
-   (`#hostenqueuepromisejob` step 2.4) and "notify about rejected promises" in Q2. A script
-   element may so spend two entries' steps, its own and its checkpoint's (HOST-193); the
-   document's step total and the wall clock bound the sum, and `steps_per_entry` is not halved
-   (decided on 2026-11-24).
+7. A job's throw and an unhandled rejection are not recorded by this story. The two other forms,
+   a job's throw as the script's end and a count per script in the record, need a question to
+   swell or a change of the specification under its synthesis bound, and this story takes
+   neither; `story:scripts-job-errors` (draft) holds them. So `host_clean_up_after_job` and
+   `host_promise_rejection_tracker` keep swell's defaults, a script whose job threw or whose
+   promise stays rejected ends as the script itself ended, and the note names the deviation
+   from HTML's "report an exception" (`#hostenqueuepromisejob` step 2.4) and "notify about
+   rejected promises" in Q2. A script element may so spend two entries' steps, its own and its
+   checkpoint's (HOST-193). The document's step total and the wall clock bound the sum, so
+   `steps_per_entry` is not halved: it stays one number, the one of Q4.
 8. Generic, timeout and cleanup jobs and load requests stay dropped. The comment at
    `runner.rs:201-203` says so with HOST-85 and HOST-86 `pending slice 14` and HOST-87 `pending
    slice 16` (`conformance/host/requirements.txt:85-87 @ 0.10.0`), not with `hooks.rs:7-9`, whose
    sentence is stale at `0.10.0` (Context), and no longer says promises are refused.
 9. `#[ignore = "HOST-125"]` goes from `clock_advances` (`engine.rs:341-342`); `seeds_fixed`
    (`HOST-26`) and `time_zone` (`HOST-127`) stay ignored with their ids, both `pending slice 4`
-   at `0.10.0`. The module comment of `engine.rs` (`:1`, `:8-13`) names `0.10.0` and two ignored
-   tests. The swell citations in `runner.rs` (`:51`, `:202`) and `engine.rs` (`:28-36`, `:399`,
-   `:468`, `:489`, `:525`, `:541`) read `@ 0.10.0` with the lines of Context
+   at `0.10.0`; they run when a swell tag holds slice 4, which `story:scripts-seeds-and-time-zone`
+   (draft) waits for. The module comment of `engine.rs` (`:1`, `:8-13`) names `0.10.0` and two
+   ignored tests. The swell citations in `runner.rs` (`:51`, `:202`) and `engine.rs` (`:28-36`,
+   `:399`, `:468`, `:489`, `:525`, `:541`) read `@ 0.10.0` with the lines of Context
    (`statement.rs:221`, `budget.rs:58`) or the lines they have (the files that did not change),
    and the doc comment of `ScriptHost`'s `Host` impl names HOST-85 to HOST-87 as decision 8 says.
    `crates/script/tests/adversary_3.rs:490` ("swell 0.8.0 has no `Reflect`") is true at
    `0.10.0` as well (`CHANGELOG.md:263-264`: no `Reflect`) and is reworded without a version.
 10. Requirement 11 at `0.10.0` is `held`: by HOST-215 and its test, and by the probe's run on the
-    tag `0.9.0` that Context carries to `0.10.0`. The unit writes the run's output lines into the
-    note as they are in the file handed over (no path of a machine is in them) and builds no
-    probe.
+    tag `0.9.0` that Context carries to `0.10.0`. The unit writes the 18 lines of the file handed
+    over into the note verbatim, each whole on its own line, in one fenced block in Q13 (no path
+    of a machine is in them), and builds no probe. Acceptance 6 compares the note with the file.
 11. The interrupt fix of `0.9.1` and the test it breaks. The runner needs no change for it, and
     `end_with_limit` keeps its `Cx::charge_steps(0)` (a termination is read the same way with or
     without the fix). The test `a_record_read_that_an_interrupt_ends_gives_no_text`
-    (`adversary_6.rs:170-185`) is rewritten to hold what `HOST-216` says of surf's slice: the
+    (`adversary_6.rs:170-185`) is replaced by the test
+    `interrupt_set_before_a_throw_ends_at_wall_clock_and_the_next_record_is_whole`, which holds
+    what `HOST-216` says of surf's slice: the
     script `document.getElementById("interrupt");` ends `limit: wall-clock`, the interrupt flag
     is clear after it, and the next script, `throw new DOMException("m", "N");`, ends `threw Error
     "N: m" 1:1` with the record whole. The read-failure branch of `Runner::exception_text` (an
@@ -518,38 +530,44 @@ process that ran on `0.9.0`.
     `HOST-218`: recorded in the note's Q4 beside the sentence on `DOMException` data
     (`docs/design/scripts.md:338-341`), where the Strings listed in `trace` now rest on a
     requirement. `HOST-219`: recorded in Q18 as `pending slice 12`; surf has no BigInt in a host
-    object's data. `HOST-220`: recorded in Q18 and left to a later story, which replaces the
-    function `string_length` of `crates/webidl/src/prelude.rs` by `Cx::to_utf16_len` and
-    rewrites the four stale comments of Context; that change regenerates `bindings.rs` and
-    belongs after `story:scripts-dom-reading` is merged, because both rewrite the generated file.
-    No story holds that change yet. This story edits neither `crates/webidl/src/prelude.rs` nor
+    object's data. `HOST-220`: recorded in Q18 and left to `story:scripts-utf16-length` (draft),
+    which replaces the function `string_length` of `crates/webidl/src/prelude.rs` by
+    `Cx::to_utf16_len` and rewrites the stale comments of Context (the four of the generated
+    code and the one of `crates/script/tests/adversary_5.rs:226`); that change regenerates
+    `bindings.rs` and belongs after `story:scripts-dom-reading` is merged, because both rewrite
+    the generated file. This story edits neither `crates/webidl/src/prelude.rs` nor
     `crates/script/src/bindings.rs`. On `string_length`: swell states that a String the host
     makes with `Cx::new_string` is bounded by the memory budget and not by `string_length`
     (`docs/design/host-interface.md:165-168 @ 0.10.0`); `story:scripts-dom-reading` checks a
     length in its own glue, and the pin changes nothing there.
 13. The design note, `docs/design/scripts.md`. The unit rewrites the sentences the tag makes
     false and cites them `@ 0.10.0`; every other citation stays `@ 0.8.0`, read at that tag and
-    true there (decided on 2026-11-24, reversible: 114 citations, of which the statement of
-    most does not change; `git grep -o -F "@ 0.8.0" -- docs/design/scripts.md | wc -l` prints
-    114 on `main`):
+    true there. A citation names the tag it was read at, and rewriting a true one would only
+    cost a re-read of each (`git grep -o -F "@ 0.8.0" -- docs/design/scripts.md | wc -l` prints
+    114 on `main`). The edits, each with the fixed text acceptance 6 and 9 check:
     - the head (`:12-15`, `:28`, `:36`): "swell is read at its tag `0.10.0`", commit
       `b9d3d46...`, on one line; a citation names its tag, and one still written `@ 0.8.0` was
       read at that tag and is true there;
-    - Q2, row 1 (`:123`): "taken in effect: the runner performs a checkpoint after each script
-      and clears the queue after a limit, so the queue is empty at every end tag (decision 6 of
-      `story:swell-0-9-0`)"; a paragraph after the table states decisions 6 and 7 with the HTML
-      sections of Context, and names three deviations from HTML, each in a sentence that begins
-      "Deviation from HTML": a job's exception is not reported (decision 7), a rejection no
-      handler took is not notified (decision 7), and the queue is cleared after a limit, which
-      HTML and swell's note do not do, with the reason of decision 6;
-    - Q4: the cell of `memory_bytes` (`:303`) drops the sentence on the uncharged copies, citing
-      HOST-215; the row "after `Terminated(MemoryBudget)`" (`:320`) gains the clear of decision
-      6; the row of `steps_per_entry` (`:302`) says that a script element spends at most two
-      entries, the script and its checkpoint (decision 7); the paragraph on a DOM write over a
-      parser limit (`:255-265`) says that an interrupt set by a host function that then throws
-      ends the run the same way (HOST-216) and that a host function may answer
-      `Terminated(Interrupted)` itself (HOST-217); the sentence on `DOMException` data
-      (`:338-341`) cites HOST-218;
+    - Q2, row 1 (`:123`; its third cell reads "left out: no promise and no job exist" on
+      `main`) reads "taken in effect: the runner performs a checkpoint after each script and
+      clears the queue after a limit, so the queue is empty at every end tag (decision 6 of
+      `story:swell-0-9-0`)", so its first words are `taken in effect: the runner performs a
+      checkpoint after each script`; a paragraph after the table states decisions 6 and 7 with
+      the HTML sections of Context, and names three deviations from HTML, each in a sentence
+      that begins "Deviation from HTML": a job's exception is not reported (decision 7), a
+      rejection no handler took is not notified (decision 7), and the queue is cleared after a
+      limit, which HTML and swell's note do not do, with the reason of decision 6;
+    - Q4: the cells of `memory_bytes` (`:303`) and `string_length` (`:307`) drop the sentence "It
+      does not bound the copies swell lists as open" (only that sentence of `:307`: the reading
+      story reads the `RangeError` text of that row and edits none of it), and the first says
+      that the copies swell held uncharged at `0.8.0` are charged at `0.10.0` (HOST-215); the
+      row "after `Terminated(MemoryBudget)`" (`:320`) says
+      "`Agent::clear_microtasks()` first, then `collect()` once" (decision 6); the row of
+      `steps_per_entry` (`:302`) says "at most two entries, the script and its checkpoint"
+      (decision 7); the paragraph on a DOM write over a parser limit (`:255-265`) says that an
+      interrupt set by a host function that then throws ends the run the same way (HOST-216)
+      and that a host function may answer `Terminated(Interrupted)` itself (HOST-217); the
+      sentence on `DOMException` data (`:338-341`) cites HOST-218;
     - Q6 (`:412-431`): HOST-125 and HOST-126 `test`, the six others `pending slice 4`, HOST-147
       without `Map` and HOST-214 `pending slice 9`, HOST-209 to HOST-213 new and `pending slice
       4`; its `probe:` line is run again at `0.10.0`;
@@ -559,13 +577,20 @@ process that ran on `0.9.0`.
       "AggregateError"}` before `Value`, as `story:script-error-kind-aggregate` wrote it into
       `spec/domains/document.yaml:200` (this story owns the note);
     - Q11: the sentences that call requirement 11 open (`:902-909`, `:917`, `:925`, the cell at
-      `:963`) say it is held at `0.10.0`; the bound values stay, which
-      `story:scripts-document-port` decides (its decision 3);
-    - Q13 (`:1023-1091`): the tag `0.10.0` with its `probe:` line (commit, 8 packages, no
-      `source` line), the detail of requirement 11 at `0.8.0` (Context, last two paragraphs) and
-      its close at `0.9.0`, the probe's output lines of decision 10 as a `probe:` line, the
-      closing of slice 10 and of `Date`'s first wave; the decision text: `story:swell-0-9-0`
-      takes `0.10.0`, and `story:scripts-document-port` takes no tag;
+      `:963`) say it is held at `0.10.0`; so "while requirement 11 is open" (`:925`) and "and
+      requirement 11 are closed" (`:963`) go, and the sentence "Requirement 11 (Q18) asks swell
+      to charge every copy" goes at `:908` and `:1079`, and the same words at `:1257` are
+      rewritten as held; the bound values stay, which `story:scripts-document-port` decides
+      (its decision 3);
+    - Q13 (`:1023-1091`): the tag `0.10.0` with its `probe:` line, which reads
+      `probe: (workstation) git -C <swell clone> rev-parse '0.10.0^{commit}'` and the other
+      commands of Context (commit, 8 packages, no `source` line), the commit
+      `b9d3d46fa7ac4abc982f2248e903e6301e277a9f` in the text and in the `Settled:` line, the
+      detail of requirement 11 at `0.8.0` (Context, last two paragraphs) and its close at
+      `0.9.0`, the closing of slice 10 and of `Date`'s first wave; the decision text:
+      `story:swell-0-9-0` takes `0.10.0`, and `story:scripts-document-port` takes no tag; and
+      the 18 lines of the file handed over (decision 10), verbatim, each whole on its own line,
+      in one fenced block under a `probe:` line that names the three modes and the bound;
     - Q18 and the table (`:1250-1282`): the counts at `0.10.0` on one line, "220 lines, 152
       `test`, 68 `pending`"; "status at `0.10.0`" where `:1253`, `:1258` and the table's head
       `:1270` say "status at `0.8.0`"; rows 1 to 10 `held` with their lines `@ 0.10.0` (row 7:
@@ -580,16 +605,23 @@ process that ran on `0.9.0`.
   commit, with the test constants of decision 2 (`crates/surf/tests/lock_check.rs`,
   `crates/surf/tests/adversary.rs`).
 - `crates/script/src/runner.rs`: decisions 4 to 8 and 9.
-- `crates/script/tests/engine.rs`, `crates/script/tests/adversary.rs`: decision 9 and the cases of
-  acceptance 3 and 4; `crates/script/tests/bindings.rs`: the cases `dom_limit_drops_the_jobs`
-  (acceptance 3) and the `then` variant of `limit_end` (acceptance 4);
-  `crates/script/tests/adversary_6.rs` and `crates/script/tests/adversary_3.rs`: decision 11.
+- `crates/script/tests/engine.rs`: decision 9 and the cases of acceptance 3.
+  `crates/script/tests/adversary.rs`: the eight-kind case `every_error_kind_keeps_its_word`
+  (acceptance 4). `crates/script/tests/bindings.rs`: the cases `dom_limit_drops_the_jobs`
+  and the `then` variant of `limit_end` (acceptance 4). `crates/script/tests/adversary_6.rs`:
+  the test of decision 11. `crates/script/tests/adversary_3.rs`: decisions 9 and 11 (a comment
+  and a version in a comment; no `TestWrap` changes).
 - `NOTICE`, `AGENTS.md`, `README.md:254`, `website/docs/principles.md:27`: decision 3, and the
   entry of `surf-script` in `AGENTS.md` (`:365-369` on `main`).
-- `docs/design/scripts.md`: decisions 10, 12 and 13.
+- `docs/design/scripts.md`: decisions 10, 12 and 13, with the 18 probe lines in one fenced block
+  in Q13.
 - In the last commit, the public surfaces of acceptance 8 (`README.md`, `AGENTS.md`,
   `docs/badges/make.sh`, `docs/badges/tests.svg`, `website/docs/status.md`,
-  `website/docs/what-works.md`, `website/docs/how-it-is-built.md`).
+  `website/docs/what-works.md`, `website/docs/how-it-is-built.md`), among them the paragraph that
+  names the gate run (the one that holds "It is the gate run of 2026-11-25 on `58d720b`",
+  `README.md:658` to `:678`, `website/docs/how-it-is-built.md:102` to `:123` on `main`): its
+  commit and numbers are rewritten from the unit's own log by the rule of the gate blocks,
+  and a sentence another story added to it stays.
 
 ## Acceptance
 
@@ -600,16 +632,26 @@ process that ran on `0.9.0`.
    prints nothing; `git grep -c -F 'tag=0.10.0#b9d3d46fa7ac4abc982f2248e903e6301e277a9f' --
    Cargo.lock taskfiles/lock-allow.txt` counts 6 in each file; `git grep -n -F 'tag 0.8.0' --
    NOTICE` prints nothing and `git grep -c -F 'tag 0.10.0' -- NOTICE` counts 1.
-2. Every case of `crates/surf/tests/lock_check.rs` and `crates/surf/tests/adversary.rs` passes, the
-   swell cases among them, and `a_swell_package_at_another_commit_fails_naming_it` fails the check
+2. `slot cargo nextest run -p surf lock_check:: adversary::` (package `surf`, `crates/surf`) exits
+   0, within the bounds of acceptance 11 (no test over 60 s, the step within 120 s): every case of
+   `crates/surf/tests/lock_check.rs` and `crates/surf/tests/adversary.rs` passes, the swell cases
+   among them, and `a_swell_package_at_another_commit_fails_naming_it` fails the check
    with a source whose commit differs from the listed one in its first hex digit;
    `git grep -n -E '0\.(8|9|10)\.[0-9]|0c1827|b9d3d46|d49a09b' -- crates/surf/tests/lock_check.rs
    crates/surf/tests/adversary.rs` prints two lines per file, the value line of `SWELL` and the
    line of the version constant (decision 2; on `main` it prints 6 lines of `lock_check.rs` and 28
    of `adversary.rs`); `?tag=0.7.0#` at the case "another tag" is the one other version literal
    left, and it names no listed version.
-3. `crates/script/tests/main.rs`, module `engine`, each case with limits of the test's own and
-   under 5 s:
+3. `slot cargo nextest run -p surf-script engine::` (package `surf-script`, `crates/script`; one
+   test binary, `crates/script/tests/main.rs`) exits 0 within the bounds of acceptance 11, with
+   these cases in module `engine`, each with limits of the test's own and under 5 s. A script
+   below that names `globalThis` or another builtin that no test of surf has used yet (no test
+   of surf uses `globalThis` on `main`; swell holds it with `HOST-155`, a test at `0.10.0`,
+   `conformance/host/requirements.txt:155 @ 0.10.0`) is first run on its own; if a builtin is
+   missing, the case is written with a `var` at the top level instead, and the report says so.
+   The kind of an end is compared as `crates/script/tests/engine.rs:101-107` compares it for
+   `throw 1`: `let ScriptEnd::Threw(thrown) = &end else { panic!(...) };` and then
+   `assert_eq!(thrown.kind, ScriptErrorKind::<kind>)`.
    - `clock_advances` runs and passes; `git grep -n -F '#[ignore' -- crates/script/tests` prints two
      lines, `HOST-26` and `HOST-127`;
    - `aggregate_error`: `throw new AggregateError([], "m")` ends `threw AggregateError "m" 1:1`;
@@ -625,12 +667,21 @@ process that ran on `0.9.0`.
    - `async_function_runs`: `(async function () { await null; globalThis.y = 2; })();` ends `ran`,
      then `if (y !== 2) throw new Error("y")` ends `ran`;
    - `checkpoint_after_threw`: `Promise.resolve().then(function () { globalThis.z = 3; }); throw 1`
-     ends `threw value`, then `if (z !== 3) throw new Error("z")` ends `ran`;
+     ends `ScriptEnd::Threw` of kind `ScriptErrorKind::Value` (the comparison above), then
+     `if (z !== 3) throw new Error("z")` ends `ran`;
    - `job_throw_keeps_the_end`: `Promise.resolve().then(function () { throw new Error("j"); });`
      ends `ran`, and `Promise.reject(new Error("r"));` ends `ran` (decision 7);
    - `job_flood_ends_at_the_step_limit`: `function f() { Promise.resolve().then(f); } f();` ends
-     `limit: steps-per-script`; the runner's step total after it is greater than `steps_per_entry`
-     and at most twice `steps_per_entry`; a following `1` ends `ran`;
+     `limit: steps-per-script`; a following `1` ends `ran`. What swell promises of the steps:
+     a checkpoint spends at most `steps_per_entry`, and `last_entry_steps()` reads the steps of
+     the whole checkpoint also after a termination (`crates/swell/src/host/agent.rs:738-749 @
+     0.10.0`, HOST-197, whose example reads exactly `steps_per_entry` after `StepBudget`). The
+     test asserts that `runner.steps()` after the script is at most the script's own steps plus
+     `steps_per_entry`. The lower bound is not known before a first run: the implementor reads
+     the script's steps and the checkpoint's steps off the first run (a print in the test, or a
+     probe in the session scratch directory, never committed), and asserts the total equals
+     their sum; when the checkpoint's steps are under `steps_per_entry`, that sum is the lower
+     bound, and the report names both numbers;
    - `limit_clears_the_queue`: three scripts. The first,
      `Promise.resolve().then(function () { globalThis.w = 1; }); while (true) {}`, ends
      `limit: steps-per-script`; the second, `1`, ends `ran` (its checkpoint would run a job left in
@@ -641,12 +692,18 @@ process that ran on `0.9.0`.
    - `checkpoint_memory`: under a memory limit of 1 MiB,
      `Promise.resolve().then(function () { var a = []; for (;;) a.push(new Array(1000)); });` ends
      `limit: memory`, `collections()` reads 1, and `1` then ends `ran`.
-4. `crates/script/tests/main.rs`, module `adversary`: `every_error_kind_keeps_its_word` holds eight
-   kinds, `AggregateError` thrown as `new AggregateError([], "m")` ending
-   `threw AggregateError "m" 1:1`. Module `adversary_6`: the test of decision 11 passes with the
-   ends and the flag it names (the script ends `limit: wall-clock`; `is_set()` reads false after
-   it; the next script ends with the record `Ok(Some("N: m"))`), and its doc comment names
-   `HOST-216`. In `crates/script/tests/bindings.rs`, two cases beside its test `limit_end`
+4. `slot cargo nextest run -p surf-script adversary:: adversary_6:: bindings::` exits 0 within the
+   bounds of acceptance 11. In module `adversary` (`crates/script/tests/adversary.rs`, the only
+   file of this story with a case of acceptance 4 besides `bindings.rs` and `adversary_6.rs`):
+   `every_error_kind_keeps_its_word` holds eight kinds, `AggregateError` thrown as
+   `new AggregateError([], "m")` ending `threw AggregateError "m" 1:1`. Module `adversary_6`: the
+   test `interrupt_set_before_a_throw_ends_at_wall_clock_and_the_next_record_is_whole` (decision
+   11) passes with the ends and the flag it names (the script ends `limit: wall-clock`;
+   `is_set()` reads false after it; the next script ends with the record `Ok(Some("N: m"))`),
+   and its doc comment names `HOST-216`; `git grep -n -F
+   'a_record_read_that_an_interrupt_ends_gives_no_text' -- crates/script/tests` prints nothing
+   and the same with the new name prints one line. In `crates/script/tests/bindings.rs`, two
+   cases beside its test `limit_end`
    (`:775`), each in its test document whose `createElement` answers `DomEnd::Limit(Nodes)`:
    - `dom_limit_drops_the_jobs`: a script queues a job that sets a global
      (`Promise.resolve().then(function () { globalThis.q = 1; })`), then calls `createElement`; it
@@ -656,22 +713,35 @@ process that ran on `0.9.0`.
      callback; the script ends `limit: nodes`, and `1` after it ends `ran`.
 5. `git grep -n -F '_ => ScriptErrorKind::Error' -- crates/script/src/runner.rs` prints one line,
    inside `error_kind`, under a comment that names what it swallows, what the test of acceptance 3
-   cannot notice, and that test; the other wildcard of that file, `_ => {}` over surf's own
+   cannot notice, and that test, so `git grep -n -F 'every_error_constructor_keeps_its_word' --
+   crates/script/src/runner.rs` prints one line (the comment names the test); the other wildcard
+   of that file, `_ => {}` over surf's own
    `ScriptEnd` (`runner.rs:654` on `main`), is not over a swell enum. `git grep -n -F
    '| HostError::MemoryBudget' -- crates/script/src/runner.rs` prints one line, inside the macro
    `surf_defect!`; the seven patterns `HostError::Faulted | surf_defect!()` build without another
    arm (acceptance 7).
-6. The unit is handed the probe's output as one file of 18 lines (per mode one `exit 0` line and
-   five `stdout:` lines), sha256 `78fa5309cf44a42b2de1d6b4ad0abaed7e2d120ee974e5ce67c605ad40fc16da`
-   (`sha256sum`), the identity of what the unit receives. `docs/design/scripts.md` holds its lines
-   as a `probe:` line in Q13, byte for byte: `git grep -c -F 'one more doubling, to 2^24:
-   terminated StepBudget' -- docs/design/scripts.md` counts 3; Q18's row 11 reads `held` with
-   HOST-215. `git grep -n -F 'status at `0.10.0`' -- docs/design/scripts.md` prints three lines,
-   the two sentences and the table's head that read `0.8.0` at `:1253`, `:1258` and `:1270` on
-   `main`; `git grep -n -F 'swell is read at its tag `0.10.0`' -- docs/design/scripts.md` prints
-   the line of the note's head; Q2's row 1 no longer reads "left out".
-7. `slot task check` exits 0; `git diff --stat` names only the files of the Change and the public
-   surfaces of acceptance 8.
+6. The probe's output is a file of 18 lines (per mode one `exit 0` line and five `stdout:` lines;
+   `sort -u` of it prints 18 lines, so each is distinct), sha256
+   `78fa5309cf44a42b2de1d6b4ad0abaed7e2d120ee974e5ce67c605ad40fc16da` (`sha256sum`). The file is
+   not in the repository: the implementor's brief gives its path, and this check names it by its
+   hash. `docs/design/scripts.md` holds the 18 lines verbatim, each whole on its own line, in
+   one fenced block in Q13: with `<file>` the handed file, `/usr/bin/grep -c -x -F -f <file>
+   docs/design/scripts.md` prints 18 (every line of the file is a whole line of the note, and
+   no line occurs twice), and as a second check `git grep -c -F 'one more doubling, to 2^24:
+   terminated StepBudget' -- docs/design/scripts.md` counts 3 (0 on `main`). Q18's row 11 reads
+   `held` with HOST-215: `git grep -c -F 'HOST-215' -- docs/design/scripts.md` counts at least 2
+   (the cell of `memory_bytes` and row 11; 0 on `main`). `git grep -n -F 'status at `0.10.0`'
+   -- docs/design/scripts.md` prints three lines, the two sentences and the table's head that
+   read `0.8.0` at `:1253`, `:1258` and `:1270` on `main`, and `git grep -c -F 'status at
+   `0.8.0`' -- docs/design/scripts.md` prints nothing (3 on `main`); `git grep -n -F 'swell is
+   read at its tag `0.10.0`' -- docs/design/scripts.md` prints the line of the note's head
+   (nothing on `main`). Q2's row 1: `git grep -n -F 'left out: no promise and no job exist' --
+   docs/design/scripts.md` prints nothing (one line on `main`, `:123`), and `git grep -c -F
+   'taken in effect: the runner performs a checkpoint after each script' --
+   docs/design/scripts.md` counts 1 (0 on `main`).
+7. `slot task check` exits 0; `git diff --stat main...HEAD`, run after the last merge of `main`
+   into the unit's branch, names only the files of the Change and the public surfaces of
+   acceptance 8.
 8. Public surfaces: in its last commit, after merging `main`, the story changes every public surface
    its change makes false, each number from the `slot task check` log of its tip. After that
    commit `git grep -n -F -e '<old>' -- README.md website/docs docs/badges AGENTS.md` prints nothing
@@ -682,7 +752,10 @@ process that ran on `0.9.0`.
    `docs/badges/make.sh:38`, `docs/badges/tests.svg`, `website/docs/status.md:31`,
    `website/docs/what-works.md:17-18`, `README.md:626`, `website/docs/how-it-is-built.md:70`,
    `AGENTS.md:367-369` on `main`), and the gate blocks (`README.md:596-645`,
-   `website/docs/how-it-is-built.md:40-89` on `main`) hold that log's lines. The sentence "3 of
+   `website/docs/how-it-is-built.md:40-89` on `main`) hold that log's lines. An old string that
+   is also a line of the new log (a count or a line that did not change) is left out of the
+   "prints nothing" list, and the report names each such string. The paragraph that names the
+   gate run keeps a sentence the other story added (Change). The sentence "3 of
    `surf-script` are ignored until swell reaches what they call" becomes 2 ignored tests with
    their ids, and the entry of `surf-script` in `AGENTS.md` no longer says "no DOM yet". The
    lock's counts do not change (acceptance 1).
@@ -696,12 +769,27 @@ process that ran on `0.9.0`.
    'Deviation from HTML' -- docs/design/scripts.md | wc -l` prints 3, counting occurrences (0 on
    `main`); and `git grep -n -F '{name: AggregateError, summary: "AggregateError"}' --
    docs/design/scripts.md` prints one line, in the note's copy of the enum (nothing on `main`).
+   The other edits of decision 13, each false on `main` (`git grep -c -F '<text>' 77e8f3f --
+   docs/design/scripts.md` prints nothing for each positive text and 1 to 3 for each negative
+   one): `git grep -c -F 'HOST-216' -- docs/design/scripts.md` counts at least 2 (Q4 and Q18),
+   the same for `HOST-217` and `HOST-218`, and at least 1 for `HOST-219`, `HOST-220`, `HOST-209`
+   and `HOST-214` (Q18 and Q6); `git grep -c -F '`Agent::clear_microtasks()` first, then
+   `collect()` once' -- docs/design/scripts.md` counts 1 (the row after
+   `Terminated(MemoryBudget)`); `git grep -c -F 'at most two entries, the script and its
+   checkpoint' -- docs/design/scripts.md` counts 1 (the row of `steps_per_entry`);
+   `git grep -c -F 'b9d3d46fa7ac4abc982f2248e903e6301e277a9f' -- docs/design/scripts.md` counts at
+   least 1 and `git grep -c -F "rev-parse '0.10.0^{commit}'" -- docs/design/scripts.md` counts 1
+   (Q13); and these print nothing, with their counts on `main` in parentheses: `'It does not
+   bound the copies swell lists as open'` (2), `'while requirement 11 is open'` (1), `'and
+   requirement 11 are closed'` (1) and `'asks swell to charge every copy'` (3).
 10. The report lists what no test of this story holds at `0.10.0`: the reading of a checkpoint's
     `Throw` and of its `Terminated(EngineFault)` as `faulted`, that the script count does not rise
     for a checkpoint, that the clear comes before the collection after `limit: memory`, and the
-    read-failure branch of `Runner::exception_text` (decision 11). It also lists that the test of
-    decision 11 was read, not run, before the unit changed it, and the comments of the generated
-    code that decision 12 leaves stale.
+    read-failure branch of `Runner::exception_text` (decision 11). It also lists that the test
+    `a_record_read_that_an_interrupt_ends_gives_no_text` was read, not run, before the unit
+    replaced it with `interrupt_set_before_a_throw_ends_at_wall_clock_and_the_next_record_is_whole`
+    (decision 11), and the comments that decision 12 leaves stale (the four of the generated code
+    and `crates/script/tests/adversary_5.rs:226`).
 11. The folder's bounds hold: the test step ends within 120 s and no test runs over 60 s
     (`.config/nextest.toml`); no model call and no network request in a test (cargo fetches swell
     before the tests); every build and test runs through `slot`, and a job in the pool ends within
@@ -714,13 +802,16 @@ process that ran on `0.9.0`.
 ## Out of scope
 
 The specification's word for `AggregateError` (`story:script-error-kind-aggregate`, merged);
-recording a job's throw or an unhandled rejection (decision 7; no story holds it); the writer of a
-script's end and the session (`story:scripts-document-port`); the bound values of Q11; host
-microtasks queued by surf (`queue_microtask`), timers, events and generic jobs; `Math.random` and
-the time zone (`pending slice 4` at `0.10.0`); any change in swell; the use of `to_utf16_len`
-(`HOST-220`) in the generated code and the four stale comments of Context (decision 12; no story
-holds them yet). The other additions of `0.9.0` that no Rust file of surf names on `main` (`git
-grep -n -E
+recording a job's throw or an unhandled rejection (decision 7; `story:scripts-job-errors`, draft);
+the writer of a script's end and the session (`story:scripts-document-port`); the bound values of
+Q11; host microtasks queued by surf (`queue_microtask`), timers, events and generic jobs, which
+`story:scripts-event-loop-and-timers` takes (its `:28` lists `queueMicrotask`; its unit takes
+`HostError::MemoryBudget` out of `surf_defect!()` and handles it at the call, decision 5);
+`Math.random` and the time zone (`pending slice 4` at `0.10.0`; `story:scripts-seeds-and-time-zone`,
+draft, waits for a swell tag that holds the slice); any change in swell; the use of
+`to_utf16_len` (`HOST-220`) in the generated code and the stale comments of Context (decision
+12; `story:scripts-utf16-length`, draft). The other additions of `0.9.0` that no Rust file of
+surf names on `main` (`git grep -n -E
 'AsyncIterator|PromiseCapability|new_promise_capability|PromiseState|promise_state'
 -- 'crates/*.rs'` and the same with `promise_is_handled|mark_promise_as_handled` prints
 nothing): `WellKnownSymbol::AsyncIterator`, `PromiseCapability` and `new_promise_capability`,
@@ -731,13 +822,17 @@ nothing): `WellKnownSymbol::AsyncIterator`, `PromiseCapability` and `new_promise
 
 ## Placement
 
-After `story:webidl-bindings`, `story:script-error-kind-aggregate` and `story:html-script-hook`,
-which are on `main`. Before `story:scripts-parse-run`, which depends on this story (it writes
-`crates/script/src/runner.rs` and `docs/design/scripts.md`, and measures Q4 on the tag this story
-pins), and before `story:scripts-document-port` and `story:scripts-event-loop-and-timers`, which
-depend on it too and take no tag of their own. Beside `story:conformance-lock-and-lints` (draft,
+After `story:webidl-bindings` and `story:script-error-kind-aggregate`, both on `main`; this story
+has the edge `depends_on: story:script-error-kind-aggregate` because decisions 4 and 13 copy that
+story's enum line. `story:html-script-hook` (on `main`) is an ordering fact with no edge. Before
+`story:scripts-parse-run`, which depends on this story (it writes `crates/script/src/runner.rs`
+and `docs/design/scripts.md`, and measures Q4 on the tag this story pins), and before
+`story:scripts-document-port` and `story:scripts-event-loop-and-timers`, which depend on it too
+and take no tag of their own. `story:scripts-event-loop-and-timers` re-reads the queue clearing
+of decision 6 when timers and events exist. Beside `story:conformance-lock-and-lints` (draft,
 `epic:headless-rust-target`), which writes `AGENTS.md`, `website/docs/status.md` and
-`crates/surf/tests`: whichever merges second merges `main` first.
+`crates/surf/tests`: whichever merges second merges `main` first and runs `slot task check` on the
+merged tree.
 
 Beside `story:scripts-dom-reading` (active, `depends_on: story:webidl-bindings` and
 `story:html-script-hook`): no edge. The two are built in separate trees and merged one after the
@@ -745,29 +840,45 @@ other. They write the same five files, `AGENTS.md`, `Cargo.lock`, `crates/script
 `crates/script/tests/bindings.rs` and `docs/design/scripts.md`, and both rewrite the public
 surfaces (`README.md`, `docs/badges/make.sh`, `docs/badges/tests.svg`,
 `website/docs/how-it-is-built.md`, `website/docs/status.md`, `website/docs/what-works.md`).
-Whichever merges second merges `main` first and takes its numbers from its own log. The reading
-story adds the dependency `surf-url` right after `surf-secret` in `crates/script/Cargo.toml` and
-in the entry of `surf-script` in `Cargo.lock`; this story changes the pin on the next line of
-`crates/script/Cargo.toml` (line 16) and the swell entries of `Cargo.lock`, so the second merge
-may conflict in those two files and keeps both changes. The reading story regenerates
-`crates/script/src/bindings.rs` and rewrites `crates/webidl/src/prelude.rs`; this story edits
-neither (decision 12).
+Whichever merges second merges `main` first, runs `slot task check` on the merged tree and takes
+its numbers from its own log. The reading story adds the dependency `surf-url` right after
+`surf-secret` in `crates/script/Cargo.toml` and in the entry of `surf-script` in `Cargo.lock`;
+this story changes the pin on the next line of `crates/script/Cargo.toml` (line 16) and the swell
+entries of `Cargo.lock`, so the second merge may conflict in those two files and keeps both
+changes. The reading story regenerates `crates/script/src/bindings.rs` and rewrites
+`crates/webidl/src/prelude.rs`; this story edits neither (decision 12).
 
-The texts that name `0.9.0` as the tag this story takes, or this story's decisions by number, and
-that the tag `0.10.0` makes stale: the epic (`.engineering/planning/epic/scripts-in-a-page.md:121`,
-`:183-184`, `:487`, `:611-612`, `:817-818`), `story:scripts-parse-run` (`:50`, `:138-139`),
-`story:scripts-document-port` (`:89`, `:157`), `story:scripts-event-loop-and-timers` (`:20-21`),
-and `story:script-error-kind-aggregate` (`:36-39`, `:222`). Each reads `0.9.0` as the tag of a
-statement made when it was written; this story does not rewrite them, and a reader takes the pin
-from this story's decision 1. The texts that cite `0.8.0` as the tag of a statement
-(`story:scripts-dom-reading` `:77`, `story:scripts-dom-mutation` `:80` and `:105`, and the epic's
-"Corrections of 2026-11-24") are read at that tag and stay true there.
+Four overlaps and how the second merge settles each. `AGENTS.md:365-369` is one paragraph that
+both rewrite: the second merge keeps `0.10.0` and `surf-url`, has no "no DOM yet", and takes the
+test counts from its own log after merging `main`. `crates/script/tests/adversary_3.rs` is a file
+this story edits (a comment and a version in a comment, decisions 9 and 11); the reading story's
+acceptance 12d says its unit changes none of `adversary_3.rs`, `adversary_4.rs` and
+`adversary_5.rs`, which is read against that unit's own base, so the two do not conflict. The
+paragraph that names the gate run, in `README.md` and `website/docs/how-it-is-built.md`: the
+reading story adds a sentence to it; this story rewrites the paragraph's commit and numbers from
+its own gate log by the rule of the gate blocks and keeps a sentence the other story added.
+`docs/design/scripts.md`: the reading story edits line 1102 only (`surf-script` depends on
+`surf-html` for the tree, which gains `surf-url`) and reads lines 307 and 320 and the rows of
+Q18; this story edits the Q2, Q4, Q6, Q7, Q11, Q13 and Q18 passages of decision 13, none of them
+line 1102, and of line 307 only its last sentence, so the edits do not overlap. Line cites of
+the note in other planning texts move with this story's edits; the reading story's cites are
+read at its base.
+
+The texts of the plan that named `0.9.0` as the tag this story takes were corrected with this
+revision: ten edits, five in the epic, two in `story:scripts-parse-run`, two in
+`story:scripts-document-port`, and one sentence in `story:scripts-event-loop-and-timers`
+(decisions 5 and 6), each now naming `0.10.0`. None is listed here. A text that states what
+`0.9.0` holds or cites `0.8.0` or `0.9.0` as the tag of a statement true at that tag stays
+(`story:script-error-kind-aggregate` `:36-38`, `:87`, `:184` and `:193`, the epic's `:121`,
+`story:scripts-dom-reading` `:77`, `story:scripts-dom-mutation` `:80` and `:105`, and the epic's
+"Corrections of 2026-11-24").
 
 ## Why `epic:scripts-in-a-page`
 
 The epic runs page scripts on a swell tag that holds the security review's fixes; `0.9.0`
 charged the copies the review's condition left open (requirement 11), `0.9.1` makes an interrupt
 end a run also when the function that was running throws, which the wall clock and the parser
-limits rely on, and a page's promises need the checkpoint this story runs. The tag after them,
-`0.10.0`, is the one surf pins, so that the story that builds on this one measures on a tag no
-later release of swell changes under it.
+limits rely on, and a page's promises need the checkpoint this story runs. The epic's rule is
+that surf runs page scripts on the tag that holds requirement 11
+(`.engineering/planning/epic/scripts-in-a-page.md:606-612`, Q18 of the note), and `0.10.0` is
+the newest tag that does, so surf pins it.
