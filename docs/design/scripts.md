@@ -331,17 +331,33 @@ or with the limit the bindings recorded (the rule above); no text of a thrown va
 checkpoint runs, the queue is cleared and the flag withdrawn. A run that throws can answer with
 the flag set: a getter of the bindings that sets it, and then throws or is followed by a
 `throw`, meets no read of it (the tests of `crates/script/tests/run_end.rs`). A run that ends
-normally has the flag taken by swell's read at the script's return, and a job by the read after
-its function answered; at those ends, and at any end, the wall clock's thread can set the flag
-or the clock can run out after swell's last read, and the runner's question takes that case. The
-read of a thrown `DOMException`'s text is a run of engine calls, and the first takes a flag set
-after the question: that read answers that the run ended, and the script ends as above, not with
-a record without a message (`Runner::exception_text`). After a checkpoint that emptied the queue
-the runner asks again, because the checkpoint reads the flag only before it takes a job off
-(`crates/swell/src/host/jobs.rs:295-298 @ 0.10.0`): a script whose run and jobs ended well while
-the clock ran out before the runner returned ends `limit: wall-clock`. The next script of the
-document is `not run: wall-clock` when the clock ran out (the table's row); a flag set while the
-clock had not run out leaves the next script to run.
+normally has the flag taken by swell's read at the script's return; at that end, and at any end,
+the wall clock's thread can set the flag or the clock can run out after swell's last read, and
+the runner's question takes that case. The read of a thrown `DOMException`'s text is a run of
+engine calls, and the first takes a flag set after the question: that read answers that the run
+ended, and the script ends as above, not with a record without a message
+(`Runner::exception_text`). After a checkpoint that emptied the queue the runner asks again. The
+checkpoint reads the flag at its start and before it takes each job off
+(`crates/swell/src/host/agent.rs:747`, `:760`, `:965-973`, `crates/swell/src/host/jobs.rs:295-298
+@ 0.10.0`); after a job's function answered it reads it when that function is a script function,
+and not when it is a host function (`crates/swell/src/ops/promise.rs:436-500`,
+`crates/swell/src/host/jobs.rs:387-411 @ 0.10.0`). So a last job whose function is a host
+function, or the clock run out after the last read, ends the script `limit: wall-clock` by that
+question.
+
+Two of these checks are a second line: at `0.10.0` they never decide an end alone, and they
+stay. The question before the read of a thrown value: without it the read's first engine call,
+or the question before the checkpoint, gives the same end; it keeps the rule that no text is
+read after an interrupt. The flag half of the question before the checkpoint: the checkpoint's
+start takes a set flag and ends at the wall clock the same way, so there only the clock half
+decides. Both decide if a later tag of swell changes where the engine reads the flag.
+
+No script inherits an interrupt: after every script's end, whatever its word, `Runner::evaluate`
+withdraws a set flag in one place before it returns, and no way out of a script returns around
+it (a limit, `faulted`, `not run`, a parse error). The end word of a limit stays what swell or
+the bindings answered. A clock that ran out is known by the clock, not by the flag, so the next
+script of the document is `not run: wall-clock` when the clock ran out (the table's row), and a
+flag set while the clock had not run out leaves the next script to run.
 
 The basis, from the probe `swell-limits` with the limits of Q4 (Q5 names the stack), run on the
 workstation on 2026-11-24 unless a line says the build node. `R` below is `.out/probes/swell-limits/target/release/swell-limits-probe`,

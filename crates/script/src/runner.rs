@@ -638,6 +638,13 @@ impl Runner {
     /// ended well while the clock ran out or the interrupt was set before the runner returned
     /// ends `limit: wall-clock` too.
     ///
+    /// Two of these checks are a second line: at swell `0.10.0` they never decide an end
+    /// alone. The question before the read of a thrown value ([`Runner::thrown`]): without it
+    /// the read's first engine call or the question before the checkpoint gives the same end;
+    /// it keeps the rule that no text is read after an interrupt. The flag half of the question
+    /// before the checkpoint: the checkpoint's start takes a set flag and ends at the wall
+    /// clock the same way. Both decide if a later tag changes where the engine reads the flag.
+    ///
     /// The checkpoint follows a script that ended `ran`, `threw` or `refused`; after a limit or
     /// `faulted` there is none. It is one entry of swell's with a step budget of its own,
     /// `steps_per_entry` (HOST-193), and its end is the script's end: a limit or a fault of the
@@ -653,7 +660,35 @@ impl Runner {
     /// ran out ends `not run: wall-clock` (Q4). A script not run is not counted. The steps a
     /// script that ran spent and the steps of its checkpoint are added to [`Runner::steps`] and
     /// the script to [`Runner::scripts`]; the checkpoint is no script of its own.
+    ///
+    /// No script inherits an interrupt: after every end, whatever its word (a limit, `faulted`,
+    /// `not run`, a parse error), the runner withdraws a set interrupt here, in this one place,
+    /// before it returns; [`Runner::script_end`] has every way out of a script, and none of them
+    /// returns around the withdrawal. The end word stays what swell or the bindings answered. A
+    /// clock that ran out is known by the clock itself, not by the flag, so the next script is
+    /// `not run: wall-clock` all the same.
     pub fn evaluate(&mut self, source: &str) -> ScriptEnd {
+        let end = self.script_end(source);
+        if let ScriptEnd::Limit(_) = end {
+            self.clear_microtasks();
+        }
+        self.agent.interrupt_handle().clear();
+        match end {
+            ScriptEnd::Limit(Reason::Memory) => {
+                self.memory_ends += 1;
+                if self.memory_ends == 1 {
+                    self.collect();
+                }
+            }
+            ScriptEnd::Faulted => self.faulted = true,
+            _ => {}
+        }
+        end
+    }
+
+    /// The end of one script as [`Runner::evaluate`] reads it, before the clear of the queue,
+    /// the withdrawal of the interrupt and the collection.
+    fn script_end(&mut self, source: &str) -> ScriptEnd {
         let faulted = match self.agent.state() {
             AgentState::Faulted => true,
             AgentState::Alive => false,
@@ -671,6 +706,8 @@ impl Runner {
         self.clock.before_script(self.limits.wall_clock);
         self.scripts = self.scripts.saturating_add(1);
         let end = self.run_script(source);
+        // The clock half decides here; the flag half is a second line at swell 0.10.0, where
+        // the checkpoint's start takes a set flag and ends at the wall clock the same way.
         let end = self.at_run_end(end);
         let end = self.document_end(end);
         // The script's steps are read before the checkpoint, which begins an entry of its own
@@ -680,24 +717,10 @@ impl Runner {
             None => self.agent.last_entry_steps(),
         };
         self.add_steps(steps);
-        let end = match end {
+        match end {
             ScriptEnd::Ran | ScriptEnd::Threw(_) | ScriptEnd::Refused(_) => self.checkpoint(end),
             ScriptEnd::Limit(_) | ScriptEnd::Faulted | ScriptEnd::NotRun(_) => end,
-        };
-        if let ScriptEnd::Limit(_) = end {
-            self.clear_microtasks();
         }
-        match end {
-            ScriptEnd::Limit(Reason::Memory) => {
-                self.memory_ends += 1;
-                if self.memory_ends == 1 {
-                    self.collect();
-                }
-            }
-            ScriptEnd::Faulted => self.faulted = true,
-            _ => {}
-        }
-        end
     }
 
     /// Decision 10 of `story:webidl-bindings`, as ruled in its fix round 1: when the bindings
@@ -706,9 +729,9 @@ impl Runner {
     /// answered: `Terminated(Interrupted)` (the answer `end_with_limit` makes), a throw, a
     /// normal end, or `StepBudget`. Two ends keep their own word: `limit: memory`, whose
     /// collection and count the runner needs (Q4's row "after `Terminated(MemoryBudget)`"), and
-    /// `faulted`, after which the agent answers nothing. The record is cleared and the
-    /// interrupt withdrawn after every script that recorded one, so the next script inherits
-    /// neither.
+    /// `faulted`, after which the agent answers nothing. The record is cleared after every
+    /// script that recorded one, and the interrupt is withdrawn after every script
+    /// ([`Runner::evaluate`]), so the next script inherits neither.
     fn document_end(&mut self, end: ScriptEnd) -> ScriptEnd {
         let Some(dom) = self.agent.host_mut().dom.as_deref_mut() else {
             return end;
@@ -716,7 +739,6 @@ impl Runner {
         let Some(limit) = dom.state.take_limit() else {
             return end;
         };
-        self.agent.interrupt_handle().clear();
         match end {
             ScriptEnd::Limit(Reason::Memory) | ScriptEnd::Faulted => return end,
             ScriptEnd::Ran
@@ -748,10 +770,9 @@ impl Runner {
         self.clock.ran_out() || self.agent.interrupt_handle().is_set()
     }
 
-    /// The end of a script whose run's end came: `limit: wall-clock`, with the interrupt
-    /// withdrawn, used as the script's end as swell clears it when it ends a run with it.
-    fn run_end(&mut self) -> ScriptEnd {
-        self.agent.interrupt_handle().clear();
+    /// The end of a script whose run's end came: `limit: wall-clock`. The interrupt is
+    /// withdrawn by [`Runner::evaluate`] before it returns, as after every script.
+    fn run_end(&self) -> ScriptEnd {
         ScriptEnd::Limit(Reason::WallClock)
     }
 
@@ -784,10 +805,13 @@ impl Runner {
     /// `refused`), and the script's end after it. Its steps, which `last_entry_steps()` reads
     /// for the whole checkpoint also after a termination (HOST-197), are added to the total.
     /// `Normal` leaves `end`, unless the wall clock ran out or the interrupt is set when it
-    /// answered, which the wall clock's thread can make so after the last job: the checkpoint
-    /// reads the flag only before an entry is taken off
-    /// (`crates/swell/src/host/jobs.rs:295-298 @ 0.10.0`), and the end is then the run's
-    /// ([`Runner::at_run_end`]). A termination is read as a script's is ([`terminated`]); the
+    /// answered, and the end is then the run's ([`Runner::at_run_end`]). The checkpoint reads
+    /// the flag at its start and before it takes each job off (`host/agent.rs:747`, `:760`,
+    /// `:965-973`, `host/jobs.rs:295-298 @ 0.10.0`); after a job's function answered it reads
+    /// it when that function is a script function, and not when it is a host function
+    /// (`ops/promise.rs:436-500`, `host/jobs.rs:387-411 @ 0.10.0`). So a last job whose
+    /// function is a host function, or the wall clock's thread after the last read, leaves the
+    /// flag set when the checkpoint answers `Normal`. A termination is read as a script's is ([`terminated`]); the
     /// answer is then passed through [`Runner::document_end`], so a DOM limit a job recorded
     /// ends the script with that limit's word. The checkpoint never answers `Throw` (a throw
     /// there faults the agent, `crates/swell/src/host/agent.rs:765-769 @ 0.10.0`), and on a
@@ -858,6 +882,9 @@ impl Runner {
     /// with its record, or the run's end ([`Runner::run_end`]) when it came before the read or
     /// ended the read, in which case no record is made.
     fn thrown(&mut self, value: &Root, end: fn(ScriptError) -> ScriptEnd) -> ScriptEnd {
+        // A second line at swell 0.10.0: without it the read's first engine call or the
+        // question before the checkpoint gives the same end. It keeps the rule that no text is
+        // read after an interrupt, and decides if a later tag reads the flag elsewhere.
         if self.run_ended() {
             return self.run_end();
         }

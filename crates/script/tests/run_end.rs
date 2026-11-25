@@ -2,10 +2,12 @@
 //! the wall clock ran out or the interrupt is set before it reads a thrown value and before
 //! the checkpoint, and again after a checkpoint that emptied the queue. A test slice's
 //! `Window.document` getter, once armed by `getElementById`, sets the agent's interrupt. swell
-//! reads the flag at the next call, loop jump or return and after a function called from Rust,
-//! so a throw right after the getter ends the run with the flag still set, while a script that
-//! runs on to its end, or a job whose function answers, has it taken by swell. A clock that
-//! ran out is the runner's own question: a bound of 0 makes it so at the first script's end.
+//! reads the flag at the next call, loop jump or return of script code, so a throw right after
+//! the getter ends the run with the flag still set, while a script that runs on to its end, or
+//! a job whose function is a script function, has it taken by swell. The checkpoint reads it
+//! at its start and before it takes each job off, and at swell `0.10.0` not after a job whose
+//! function is a host function. A clock that ran out is the runner's own question: a bound of
+//! 0 makes it so at the first script's end.
 
 use std::cell::Cell;
 use std::time::Duration;
