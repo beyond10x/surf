@@ -7,7 +7,7 @@ title: 'Scripts in a page: surf runs a page''s inline scripts with swell'
 summary: surf embeds the organization's script engine swell and runs a page's inline classic scripts while parsing, in the session process, against a DOM generated from Web IDL and under limits per page, when the session's option asks for it, so that what a script writes is what surf and surf-agent show.
 relations:
 - depends_on: story:html-document-port
-revision: 56
+revision: 57
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:34:03Z", actor: "human:operator", revision: 43}
 - {from: "proposed", to: "active", at: "2026-11-24T10:34:09Z", actor: "human:operator", revision: 44}
@@ -132,7 +132,8 @@ Out, each with its reason:
 - Live collections: until swell's slice 9 (HOST-112 to HOST-114, internal-method overrides) a
   member that returns a live `NodeList` or `HTMLCollection` returns a snapshot with indexed own
   properties, a named deviation recorded beside each such member; selectors beyond the subset of
-  `scripts-dom-selectors` throw `NotSupportedError`, a named deviation.
+  `scripts-dom-selectors`, and selectors over its bounds, throw a `SyntaxError` whose message
+  says surf does not support them, a named deviation (a browser runs them).
 - `document.write` and the rest of HTML's `Document`, `Window` beyond `document`, `window` and
   `self`, and the element interfaces (`HTMLElement`, `HTMLAnchorElement`, ...): an element's
   wrapper is an `Element`, a named deviation. Which HTML definitions are generated is S6.
@@ -472,9 +473,10 @@ story of those waves writes.
    `crates/script/src/dom/mutation.rs` and its tests.
 10. `scripts-dom-attributes`: the 14 attribute members, held to the attribute limits. Depends on 7
     and 8. Writes `crates/script/src/dom/attributes.rs` and its tests. Beside 9 and 11.
-11. `scripts-dom-selectors`: the selector subset for the 7 selector members, `NotSupportedError`
-    outside it. Depends on 8. Writes `crates/script/src/dom/selectors.rs` and its tests. Beside 9
-    and 10.
+11. `scripts-dom-selectors`: the selector subset for the 9 selector members, a `SyntaxError`
+    whose message says surf does not support the selector outside it. Depends on 8. Writes
+    `crates/script/src/dom/selectors.rs`, `crates/script/src/dom/selector_reads.rs` and their
+    tests. Beside 9 and 10.
 12. `scripts-html-conformance`: the harness runs the four DOM-only `needs-script` cases through
     `surf-script` and the expected counts rise. Depends on 9, 10, 11 and
     `story:html-tree-tables`. Writes `crates/html-conformance/` (`src/`, `expected/`,
@@ -735,11 +737,13 @@ Behaviour in the first version, by slice (146 members of the table):
   of `ChildNode`; `Document`'s seven `create...` of nodes (`createCDATASection` throws
   `NotSupportedError` in an HTML document, as the standard says), `importNode`, `adoptNode` and
   `ParentNode`'s four. Every write is held to the parser's limits.
-- Selectors, 7: `querySelector` and `querySelectorAll` on both, `closest`, `matches`,
-  `webkitMatchesSelector`, for a subset of Selectors Level 4 that `scripts-decisions` names
-  (type, universal, `#id`, `.class`, attribute presence and equality, compounds, descendant and
-  child combinators, lists); a valid selector outside it throws `NotSupportedError`, a named
-  deviation (a browser would not throw).
+- Selectors, 9: `querySelector` and `querySelectorAll` on `Element`, `Document` and
+  `DocumentFragment`, `closest`, `matches`, `webkitMatchesSelector`, for a subset of Selectors
+  Level 4 that `scripts-dom-selectors` names (type, universal, `#id`, `.class`, attribute
+  presence and equality, compounds, descendant and child combinators, lists); a valid selector
+  outside it, or over its bounds, throws a `SyntaxError` whose message says surf does not
+  support it (the DOM Standard gives these members only `SyntaxError`), a named deviation (a
+  browser would run it).
 - Generated to throw `NotSupportedError`, naming the member and its reason, 23 and both
   constructors: events (`addEventListener`, `removeEventListener`, `dispatchEvent`,
   `createEvent`, `new EventTarget()`), attribute nodes and token lists (`attributes`, `classList`,
@@ -755,7 +759,9 @@ Behaviour in the first version, by slice (146 members of the table):
   `Document`) return a snapshot with
   indexed own properties until swell's slice 9; `[SameObject]` holds for `childNodes` and
   `children` only as the same snapshot object refreshed when it is read; an element's wrapper is
-  an `Element`, not `HTMLAnchorElement` and its kin.
+  an `Element`, not `HTMLAnchorElement` and its kin; a valid selector outside the subset of
+  `scripts-dom-selectors`, or over its bounds, throws a `SyntaxError` whose message says surf
+  does not support it, where a browser runs it.
 
 How the bindings meet swell's host interface (`docs/design/host-interface.md` sections 7, 14,
 15, and `crates/swell/src/host/` at `6a43e18`):
@@ -985,3 +991,4 @@ From swell's tree at tag `0.8.0`, read on 2026-11-24:
 - Lines 919-920 ("Where the stories differ": "The table that selects which members are generated lives in `webidl-bindings` alone; each later slice names the members it turns from "throws" to "works""). Now: `scripts-dom-reading` also changes the generator and the table (`generate.rs`, `prelude.rs`, `selection.txt`) for `[SameObject]` and for the notes of `Node baseURI` and `DocumentFragment children`, and regenerates `bindings.rs`; a later story that changes the selection does the same and lists `selection.txt` and `bindings.rs` in its scope. Decision 10.
 - Lines 910 and 925-927 ("Where the stories differ" and "Candidates 12 and 13 are not disjoint (`Cargo.lock`, `crates/script/Cargo.toml`...)"): `Cargo.lock` and `crates/script/Cargo.toml` are no longer only those two stories': `scripts-dom-reading` adds the dependency `surf-url` to `surf-script` (one line in each; `taskfiles/lock-check.sh` and the owners file do not change, because `surf-url` is a crate of this repository and not a dependent of `surf-script`), and `story:swell-0-9-0` changes the pin in the same two files; those two are merged one after the other, the second merging `main` first. Decision 12 and the Placement of the story.
 - Lines 716-724 ("Tree reading, 73"): `compatMode`, `URL`, `documentURI`, `baseURI`, `characterSet`, `charset`, `inputEncoding` and `contentType` need the document's facts, which no generated type holds: `surf_script::dom::DocumentInfo` (address as a `surf_url::Url`, content type, encoding name), built by `story:scripts-parse-run`, and the quirks mode, which the parser writes into `surf_html::Tree`. `Node.baseURI` is the HTML document base URL (the first `base` element with an `href`, parsed against the address), with three named deviations. Decisions 11 to 13.
+- Lines 134-135, 475-477, 738-742 and 753-758 (the selector members): `story:scripts-dom-selectors` replaces "`NotSupportedError`" for a valid selector outside the subset by a `SyntaxError` whose message says surf does not support it, because the DOM Standard gives `querySelector`, `querySelectorAll`, `closest`, `matches` and `webkitMatchesSelector` only `SyntaxError` and Selectors Level 4 (3.9) says an agent treats a construct it has no usable support for as invalid; the two bounds of the story (4,096 bytes, 512 simple selectors) throw the same kind; the count "7" becomes 9 (`DocumentFragment` adds two) and "that `scripts-decisions` names" becomes "that `scripts-dom-selectors` names". The deviation that stays is the subset itself, named beside the nine members.
