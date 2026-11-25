@@ -56,7 +56,7 @@
 //! 9803d546bb474bc834b29498ec0e075e0ef88ceed3de1989601c2ae8cf12eeed  crates/webidl/src/lib.rs
 //! fa6e285bfc241f9e68384ebbfd5f04e1c9172fbc254baca4c4fc8e1a154cd930  crates/webidl/src/model.rs
 //! 8db6c1d01d7d0b8dc68530edc4f5bf982f1b5cc2b1c49fbbb38496b9ff60dacd  crates/webidl/src/parser.rs
-//! 54a1b741396aade89b70c05439cac92b0b765bfeaa20ac6690ffac7538aefb3c  crates/webidl/src/prelude.rs
+//! d78ffd8d93b67f6a6f69cad5c65041d2b7a90bcf5e2d50cd28473168802f3f64  crates/webidl/src/prelude.rs
 //! 22baac7ca4bee83065ca31df9ddab4faf4d6227668cb327360b0473564ed85a3  crates/webidl/src/selection.rs
 //! ```
 //!
@@ -69,7 +69,7 @@
 //! 36612fcd0caea180  6266  crates/webidl/data/whatwg/html-idl.html
 //! ```
 //!
-//! The sha256 of this whole file, with the 64 digits of this line read as zeros: b3e8bca9cb811c43b39ae4f4c418ddc04f86cb3cc51ca232928619da86ded18d
+//! The sha256 of this whole file, with the 64 digits of this line read as zeros: 1e2b45141d2435ec13f25587adcb7f424fe4b9e8be0b155bb5033969b1df49fb
 
 use std::cell::Cell;
 
@@ -1245,14 +1245,27 @@ fn number(value: f64) -> Value {
     Value::Number(value)
 }
 
-/// A new String of `text`: the one conversion of a member's String answer. swell applies
-/// `string_length` to a String its own operations create, not to one `Cx::new_string` makes,
-/// so a text longer than the agent's `string_length` is the realm's `RangeError` here, before
-/// the engine copies and charges it.
+/// The steps of one node of a collection made or refilled: its wrapper, found or made, and the
+/// define of its index. One step a node bought work of about forty steps of a plain walk in the
+/// test profile (measured on the reading slice), so a node is charged as eight.
+pub const COLLECTION_NODE_STEPS: u64 = 8;
+
+/// The bytes of a String answer whose copy into the engine is charged one step: the copy
+/// converts each byte to UTF-16 code units, about the time of a plain walk's step for 16 bytes
+/// in the test profile (measured on the reading slice). The member charges its own reading of
+/// the bytes beside this.
+pub const STRING_BYTES_A_STEP: u64 = 16;
+
+/// A new String of `text`: the one conversion of a member's String answer, charged one step per
+/// [`STRING_BYTES_A_STEP`] bytes before the copy. swell applies `string_length` to a String its
+/// own operations create, not to one `Cx::new_string` makes, so a text longer than the agent's
+/// `string_length` is the realm's `RangeError` here, before the engine copies and charges it.
 fn string_value(cx: &mut DomCx<'_, '_>, text: &str) -> Completion<Value> {
     if longer_than(text, cx.string_length()) {
         return Err(string_length_error(cx));
     }
+    let bytes = u64::try_from(text.len()).unwrap_or(u64::MAX);
+    cx.engine.charge_steps(bytes / STRING_BYTES_A_STEP)?;
     cx.engine.new_string(text).map(Value::String)
 }
 
@@ -1260,9 +1273,12 @@ fn string_value(cx: &mut DomCx<'_, '_>, text: &str) -> Completion<Value> {
 /// units, so a lone half of a surrogate pair stays as it is. Held to `string_length` as
 /// [`string_value`]; the count of units is the length.
 fn units_value(cx: &mut DomCx<'_, '_>, units: &[u16]) -> Completion<Value> {
-    if u64::try_from(units.len()).unwrap_or(u64::MAX) > cx.string_length() {
+    let count = u64::try_from(units.len()).unwrap_or(u64::MAX);
+    if count > cx.string_length() {
         return Err(string_length_error(cx));
     }
+    cx.engine
+        .charge_steps(count.saturating_mul(2) / STRING_BYTES_A_STEP)?;
     cx.engine.new_string_utf16(units).map(Value::String)
 }
 
@@ -1293,7 +1309,8 @@ fn nullable_node_value(
 
 /// A `NodeList` or an `HTMLCollection` returned: a new host object of the interface's brand
 /// holding the snapshot of `nodes`, with an indexed own property for each, its wrapper (the
-/// deviation of decision 6, until swell's slice 9). A step is charged per node.
+/// deviation of decision 6, until swell's slice 9). [`COLLECTION_NODE_STEPS`] are charged a
+/// node.
 fn collection_value(
     cx: &mut DomCx<'_, '_>,
     slices: &mut Slices,
@@ -1312,7 +1329,8 @@ fn collection_object(
 ) -> Completion<ObjectRef> {
     let prototype = prototype_object(cx.engine, cx.installed, interface)?;
     let count = u64::try_from(nodes.len()).unwrap_or(u64::MAX);
-    cx.engine.charge_steps(count)?;
+    cx.engine
+        .charge_steps(count.saturating_mul(COLLECTION_NODE_STEPS))?;
     let object = engine(cx.engine.new_host_object(HostObjectSpec {
         prototype: Prototype::Object(prototype),
         brand: interface.brand(),
@@ -1422,8 +1440,11 @@ fn refresh_collection(
         None => return Err(missing()),
     };
     let count = old_nodes.len().saturating_add(nodes.len());
-    cx.engine
-        .charge_steps(u64::try_from(count).unwrap_or(u64::MAX))?;
+    cx.engine.charge_steps(
+        u64::try_from(count)
+            .unwrap_or(u64::MAX)
+            .saturating_mul(COLLECTION_NODE_STEPS),
+    )?;
     let mut changed = false;
     match refill(cx, slices, object, &old_nodes, &nodes, &mut changed) {
         Ok(()) => {}

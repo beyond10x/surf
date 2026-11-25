@@ -1463,9 +1463,10 @@ check(document.lookupNamespaceURI(null) === HTML, "the document: its element's n
     );
 }
 
-/// `baseURI` charges a long `href` twice, one step per 64 bytes each: where it reads the value
-/// to parse it, and the String it answers. The walk that finds the `base` element passes the
-/// attributes' names and charges none of their bytes.
+/// `baseURI` charges a long `href` before each piece of work on it: one step per 64 bytes where
+/// it reads the value to parse it, one per 64 bytes of the String it answers, and the glue one
+/// per 16 bytes of that String's copy into the engine. The walk that finds the `base` element
+/// passes the attributes' names and charges none of their bytes.
 #[test]
 fn base_uri_charges_its_href() {
     let spent = |bytes: usize| {
@@ -1480,7 +1481,7 @@ fn base_uri_charges_its_href() {
     let (long, short) = (spent(64_000), spent(64));
     eprintln!("baseURI of a href of 64,000 bytes: {long} steps, of 64 bytes: {short}");
     assert!(
-        (short + 1_990..short + 2_100).contains(&long),
+        (short + 5_990..short + 6_100).contains(&long),
         "{long} against {short}"
     );
 }
