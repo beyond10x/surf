@@ -25,6 +25,8 @@ scope:
 - confidence: cited
   path: crates/html/src/tree_builder/modes.rs
 - confidence: cited
+  path: crates/html/tests/adversary_tree_state.rs
+- confidence: cited
   path: crates/html/tests/main.rs
 - confidence: cited
   path: crates/html/tests/tree_state.rs
@@ -41,6 +43,8 @@ scope:
 - confidence: cited
   path: crates/script/src/lib.rs
 - confidence: cited
+  path: crates/script/tests/adversary_dom_reading.rs
+- confidence: cited
   path: crates/script/tests/bindings.rs
 - confidence: cited
   path: crates/script/tests/dom_reading.rs
@@ -50,6 +54,8 @@ scope:
   path: crates/webidl/src/generate.rs
 - confidence: cited
   path: crates/webidl/src/prelude.rs
+- confidence: cited
+  path: crates/webidl/tests/adversary_same_object.rs
 - confidence: cited
   path: crates/webidl/tests/main.rs
 - confidence: cited
@@ -66,7 +72,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 31
+revision: 33
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 - {from: "proposed", to: "active", at: "2026-11-25T08:44:48Z", actor: "human:operator", revision: 27, executor: "agent:coordinator"}
@@ -437,6 +443,46 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
     the epic's lines 464-468, 342-343, 854, 749-754, 704-705, 716-724, 910, 919-920 and 925-927;
     `story:scripts-parse-run` by a paragraph that gives it the `DocumentInfo` duty, and
     `story:swell-0-9-0` by a sentence in its Placement.
+17. What the review of the unit's first tip found, as rules. Each narrows the decision it names
+    and wins where the two differ.
+    - The refill of a kept collection is all or nothing (decision 10). A kept `childNodes` or
+      `children` object is a snapshot: its data (`length`, `item`, `namedItem`) and its index
+      properties always show the same list. The refill writes the new nodes in place with
+      define and never with set, so no script code runs in a refill and a setter a script put
+      at an index is not called; it deletes the tail and writes the data and `written` last. If
+      a step fails (the script froze or sealed the object, made it non-extensible or made an
+      index non-configurable), the refill puts back what it wrote, leaves the data and `written`
+      untouched, and the getter throws a `TypeError`. The object is then the old snapshot,
+      whole, and each later read of the getter tries again. No index at or past `length`
+      answers a node the glue put there. This is a deviation: a browser refuses the freeze or
+      the define on the collection itself. The notes of the four rows and the design note name
+      it.
+    - A member charges what it does (decision 7). No member does work of `k * m` behind a charge
+      of one. `getElementsByClassName` takes its argument as an ordered set (duplicates dropped,
+      as the DOM says), charged one step per 64 bytes, and charges per element one step and one
+      per 64 bytes of its `class` attribute before a scan that is linear in those bytes.
+      `documentElement`, `doctype` and the lookups that start at the document charge one step
+      per child of the document they scan. The reason: an interrupt is taken only after a host
+      call, so one call whose time is not bounded by its steps runs past the wall clock.
+    - `baseURI` (decision 13): the first `base` with an `href` decides; if its URL does not
+      parse or its scheme is `data` or `javascript`, the answer is the fallback base URL, as
+      "set the frozen base URL" says. A later `base` is not read instead.
+    - A sibling hint holds two positions per parent, the two last answered (decision 9), so a
+      parent read from both ends in turn stays linear. The table keeps its eight entries.
+    - `lookupNamespaceURI`, `lookupPrefix` and `isDefaultNamespace` on a `DocumentType` and a
+      `DocumentFragment` answer what the DOM's "locate a namespace" and "locate a namespace
+      prefix" answer there, null also for the prefixes `xml` and `xmlns`.
+    - `substringData` answers UTF-16 code units: a cut inside a surrogate pair answers the lone
+      half. The answer is made with `Cx::new_string_utf16`; the length check of decision 7 and
+      the charge per 64 bytes apply; the member walks to its offset and does not convert the
+      whole data.
+    - The write counter is not raised by an insert that moves no node, such as an empty
+      `DocumentFragment` appended (decision 10: "by nothing else").
+    - The generator refuses a `[SameObject]` row it cannot hold (an attribute of the global or
+      of a non-node interface that returns a collection) with an error that names the row.
+    - An `HTMLCollection` has no named properties: `collection["id"]` is undefined and
+      `namedItem` answers. A named deviation in the notes of its rows; a later story builds
+      them.
 
 ## Change
 
@@ -773,6 +819,31 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
        `slot --timeout`, at most 30 minutes, and is not started again unchanged; every compiling
        or testing command carries `slot` (`slot cargo run -p surf-webidl --bin bindings`); a
        script that measures or waits starts without the `slot` prefix.
+17. The review's rules (decision 17), in the modules `adversary_dom_reading` of
+    `crates/script/tests`, `adversary_tree_state` of `crates/html/tests` and
+    `adversary_same_object` of `crates/webidl/tests`.
+    a. After a refill that failed, for each of the shapes frozen, sealed, non-extensible and
+       non-configurable index: the getter throws a `TypeError`, and `c.length`, `c.item(i)` and
+       `c[i]` agree for every `i` of the old list. After a failed refill and a later one to a
+       shorter list, no index at or past `length` answers a node. A setter a script put at an
+       index is not called by a refill.
+    b. `getElementsByClassName` of 5,000 wanted tokens against elements of 5,000 class tokens
+       ends `Ran` under the wall clock of 1 s, with steps that grow with the bytes scanned.
+    c. One test fails when the step charge of a walking member is removed, for each of
+       `getRootNode`, `isConnected`, `compareDocumentPosition`, `isEqualNode`, `children`,
+       `wholeText`, the sibling members and `baseURI`; `wrapper_limit` fails when a wrapper is
+       not kept; `collection_limit` fails when making a collection charges no step.
+    d. A `base` whose `href` is a `data:` or a `javascript:` URL gives the document's address as
+       `baseURI`.
+    e. 5,000 children walked from both ends in turn end `Ran`, with the steps under 15 times
+       those of 500 children.
+    f. `lookupNamespaceURI("xml")` on a doctype and on a fragment is null.
+    g. `substringData` cut inside a surrogate pair answers the lone half (`charCodeAt(0)` is the
+       half's unit, not 0xFFFD).
+    h. An empty fragment inserted leaves `Tree::writes()`; over random sequences of the public
+       writes the counter moves if and only if a child list changed.
+    i. The generator's run on a selection with a `[SameObject]` collection attribute of the
+       global ends with an error that names the row.
 
 ## Out of scope
 
