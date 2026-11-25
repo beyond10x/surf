@@ -916,6 +916,19 @@ timeline:
       name: surf.document.InvalidScriptEnd
       fields: {end: Ran}
 
+  - at: 2026-01-09T09:01:12Z
+    command: surf.document.AddScriptEnd
+    input:
+      document_id: {$instance: page}
+      position: 71
+      end: Refused
+      error_kind: AggregateError
+      message: m
+    outcome: invalid-end
+    error:
+      name: surf.document.InvalidScriptEnd
+      fields: {end: Refused}
+
 assert:
   - view: surf.document.Scripts
     params: {document_id: {$instance: page}}
