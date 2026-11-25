@@ -66,7 +66,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 28
+revision: 29
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 14}
 - {from: "proposed", to: "active", at: "2026-11-25T08:44:48Z", actor: "human:operator", revision: 27, executor: "agent:coordinator"}
@@ -334,10 +334,22 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
       overrides both methods. With the defaults a getter makes a new object per read, as today:
       the four `TestWrap` implementations compile unchanged and their getters do not hold
       `[SameObject]`; only `SurfWrap` does (a test pins both, acceptance 4).
-    - The write counter. `Tree` gains `writes(&self) -> u64`, raised by every public write of
-      `Tree`, by `create` and by every write of the parser, kept out of `PartialEq` by a newtype
-      as the unit keeps `moved` out (unit `tree.rs:258-269`). Neither `steps` nor `moved` can
-      serve (Context).
+    - The write counter. `Tree` gains `writes(&self) -> u64`, kept out of `PartialEq` by a
+      newtype as the unit keeps `moved` out (unit `tree.rs:258-269`). Neither `steps` nor `moved`
+      can serve (Context). It is raised by each write that changes a child list, that is each
+      function that assigns a node's `children` or `parent`, a parse's inserts included, and by
+      nothing else. A write that changes only a node's `data` or its attributes does not raise it
+      (`set_attribute`, `set_attribute_ns`, `remove_attribute`, `remove_attribute_ns`,
+      `toggle_attribute`, `add_attributes`; `replace_data`, `set_data`, `append_data`,
+      `insert_data`, `delete_data`; `push_text`, which only extends an existing text), and neither
+      does `create` or a `create_*` function, which adds a node to the arena and to no child list.
+      A function that can do both raises it when it changes a child list (`set_text_content`,
+      `normalize`, `split_text`). The reason for the narrow rule: the counter exists only to
+      refill the kept `childNodes` and `children` objects. If every write raised it, a loop
+      `for (i = 0; i < p.children.length; i++) p.children[i].className = "x"` (the attribute
+      slice's members, a later story) would read the kept object twice per turn after a write
+      that changed no child list, cost `2 * n * n` steps and end `limit: steps-per-script` at
+      about 2,236 children, as the loop below does.
       The reason it exists: `for (i = 0; i < el.childNodes.length; i++) el.childNodes[i]` reads
       the attribute twice per turn; refreshed at each read at one step per node, a parent of `n`
       children costs `2 * n * n` steps against 10,000,000 (`runner.rs:41`), so `n` of about 2,236
@@ -476,14 +488,20 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
     last line change (`bindings.rs:40-61`).
 - `crates/html/src` (decisions 10 and 11), the files named here and no others: `tree.rs` (the
   mode field, `quirks_mode()`, the counter newtype and `writes()`, the constructors, the raise
-  of the counter at each function that assigns a node's `children`, `parent`, `data` or
-  attributes, and at `create`, which adds a node to the arena: on the unit `create` `:296`,
-  `insert` `:404`, `remove` `:471`, `remove_children` `:485`, `move_children` `:495`,
-  `push_text` `:444`, `add_attributes` `:455`, `insert_checked` `:927`, `clone_node` `:1137`,
-  `split_text` `:1298`, `replace_data` `:1320`, `put_attribute` `:1435`, `drop_attribute` `:1463`,
-  `normalize` `:1243`, `set_text_content` `:1375`; the implementor greps the assignments to
-  `self.nodes[...]` for any other, and checks this list against the unit's `tree.rs` at the
-  merge of this story: a write function added after this story names it is added to the list),
+  of the counter at each function that assigns a node's `children` or `parent`: on the unit
+  `insert` `:404`, `remove` `:471` (when the node has a parent), `remove_children` `:485` and
+  `move_children` `:495` (when a child moves), `insert_checked` `:927` (after its return for a
+  node already in place) and `clone_node` `:1137` (when a copy gets a child: a deep clone of a
+  node with children, or of a `template`). `insert_new`, `detach`, `remove_node`, `adopt_node`,
+  `insert_before`, `append_child`, `replace_child`, `move_before`, `split_text` (with a parent),
+  `normalize` (when it removes a node) and `set_text_content` (when it removes or adds a child)
+  raise it through those, with no site of their own. Left out, because they assign `data` or
+  attributes or add a node to no child list: `create` `:296` and the `create_*` functions,
+  `push_text` `:444`, `add_attributes` `:455`, `put_attribute` `:1435`, `drop_attribute` `:1463`,
+  `replace_data` `:1320` and the functions on it, `set_attribute` and the other attribute
+  writes; the implementor greps the assignments to `self.nodes[...]` for any other, and checks
+  this list against `tree.rs` at the merge of this story: a write function added after this story
+  names it is added to the list),
   `tree_builder.rs` (`QuirksMode` public, `Parsed.quirks_mode` and its `allow` removed, the three
   tests), `tree_builder/modes.rs` (the two writes at `:207` and `:217`) and `lib.rs` (the
   re-export). Tests: `crates/html/tests/
@@ -658,12 +676,22 @@ fill it (`docs/design/scripts.md:330`). Decision 4 says what bounds the memory.
        for the doctypes of the parser's own three tests, and `NoQuirks` for a fragment parse's
        tree.
     b. `writes()` is raised by a parse, and by each public write function of the unit's write
-       surface (`tree.rs:962-1561`: the `create_*` functions, `insert_before`, `append_child`,
-       `remove_node`, `replace_child`, `move_before`, `clone_node`, `import_node`, `adopt_node`,
-       `normalize`, `split_text`, `replace_data`, `set_data`, `append_data`, `insert_data`,
-       `delete_data`, `set_text_content`, `set_attribute`, `set_attribute_ns`,
-       `remove_attribute`, `remove_attribute_ns`, `toggle_attribute`), one case per function in a
-       table, on a successful write; a refused write may leave it.
+       surface that changes a child list, and left as it was by each that does not: one table,
+       one case per function, each asserting "raised" or "left as it was" on a successful write
+       (`tree.rs:962-1561`); a refused write may leave it.
+       - Raised: `insert_before`, `append_child`, `replace_child` and `move_before` (a node that
+         is already at that place is the "left as it was" case of each), `remove_node` and
+         `adopt_node` of a node with a parent.
+       - Left as it was: `create_element_ns`, `create_text_node`, `create_comment`,
+         `create_processing_instruction`, `create_document_fragment`; `replace_data`, `set_data`,
+         `append_data`, `insert_data`, `delete_data`; `set_attribute`, `set_attribute_ns`,
+         `remove_attribute`, `remove_attribute_ns`, `toggle_attribute`.
+       - One case per side: `remove_node` and `adopt_node` of a node with no parent (left);
+         `clone_node` and `import_node` of a node with no child (left) and a deep clone of one
+         with children (raised); `normalize` of a parent with two adjacent texts (raised) and
+         with none (left); `split_text` of a text with a parent (raised) and with none (left);
+         `set_text_content` on an element with a child, or with a non-empty value (raised), on an
+         empty element with the empty value, on a text node and on a document (left).
     c. Two trees that differ only in `writes()` compare equal; two that differ in the mode do not.
     d. The unit's tests, which compare a hooked tree with a plain parse, still pass.
 12. The repository's rules.
