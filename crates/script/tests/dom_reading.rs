@@ -1971,7 +1971,8 @@ fn the_lookups_charge_the_xmlns_values_they_read() {
 
 /// `substringData` answers UTF-16 code units: an end inside a surrogate pair answers its lone
 /// half; an answer past `string_length` is the `RangeError`, one of `string_length` units is
-/// read; the walk to the offset costs one step per 16 bytes of the data walked.
+/// read; the call is charged before its walk one step per 16 bytes the walk can pass: three
+/// bytes a code unit of `offset + count`, at most the data's bytes.
 #[test]
 fn substring_data_in_code_units() {
     let page = format!(

@@ -1267,7 +1267,8 @@ pub(super) fn length(cx: &mut DomCx<'_, '_>, node: NodeId) -> DomResult<u32> {
 }
 
 /// `substringData(offset, count)` (DOM, "substring data", in UTF-16 code units): one step
-/// per 16 of `offset + count`, at most the data's bytes, before the walk.
+/// per 16 bytes the walk can pass, before the walk: three bytes a unit of `offset + count`
+/// (a unit is at most three bytes of the data's UTF-8), at most the data's bytes.
 pub(super) fn substring_data(
     cx: &mut DomCx<'_, '_>,
     node: NodeId,
@@ -1276,13 +1277,15 @@ pub(super) fn substring_data(
 ) -> DomResult<Vec<u16>> {
     // An offset or an end inside a surrogate pair answers its lone half. The data is walked
     // to the offset a unit at a time, and only the answer is allocated, up to
-    // `string_length` units. The data's bytes bound the units the walk can pass (a unit
-    // stands for one byte of UTF-8 or more).
+    // `string_length` units. A unit stands for one to three bytes of UTF-8 (a character of
+    // four bytes is two units), so the walk passes at most three bytes a unit, and never more
+    // than the data's bytes.
     let limit = cx.string_length();
     let offset = usize::try_from(offset).unwrap_or(usize::MAX);
     let count = usize::try_from(count).unwrap_or(usize::MAX);
     let bytes = character_data(cx.tree(), node).map_or(0, str::len);
-    charge(cx, offset.saturating_add(count).min(bytes) / BYTES_A_STEP)?;
+    let passed = offset.saturating_add(count).saturating_mul(3).min(bytes);
+    charge(cx, passed / BYTES_A_STEP)?;
     let data = character_data(cx.tree(), node).unwrap_or_default();
     let mut units = data.encode_utf16();
     let mut past_the_end = false;
