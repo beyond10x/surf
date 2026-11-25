@@ -36,6 +36,8 @@ scope:
 - confidence: cited
   path: crates/script/tests/engine.rs
 - confidence: cited
+  path: crates/script/tests/run_end.rs
+- confidence: cited
   path: crates/surf/tests/adversary.rs
 - confidence: cited
   path: crates/surf/tests/lock_check.rs
@@ -55,7 +57,7 @@ scope:
   path: website/docs/status.md
 - confidence: cited
   path: website/docs/what-works.md
-revision: 25
+revision: 26
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-25T03:16:34Z", actor: "human:operator", revision: 16}
 - {from: "proposed", to: "active", at: "2026-11-25T10:35:48Z", actor: "human:operator", revision: 23, executor: "agent:coordinator"}
