@@ -1,6 +1,6 @@
 [package]
 name = "surf-webidl"
-description = "Reads the Web IDL of the vendored IDL Index of the DOM Standard and of the Web IDL Standard into a model, refusing every construct it does not know."
+description = "Reads the Web IDL of the vendored DOM, Web IDL and HTML Standards into a model, refusing every construct it does not know, and generates the DOM bindings of surf-script from it."
 version = "0.1.0"
 edition = "2024"
 publish = false
@@ -18,3 +18,8 @@ surf-html = { path = "../html" }
 [[test]]
 name = "main"
 path = "tests/main.rs"
+
+[[bin]]
+name = "bindings"
+path = "src/bin/bindings.rs"
+test = false

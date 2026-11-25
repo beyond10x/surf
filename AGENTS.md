@@ -170,7 +170,13 @@ above, and the list of standards itself was written from memory.
   `taskfiles/tls-flights.yml` the tasks
   `tls-flights-check` (over `taskfiles/tls-flights-check.sh`, a step of `check`) and
   `tls-flights-slow` (a step of `slow`: records the flights again and replays them; `WRITE=1`
-  writes them). `taskfiles/slowest-tests.sh` is no task's own: `task test`, `task test-tls`
+  writes them); `taskfiles/webidl.yml` the tasks `webidl-check` (a step of `check`: the
+  digests in the header of `crates/script/src/bindings.rs`), `webidl-slow` (a step of `slow`)
+  and `webidl-html-cut` (`SNAPSHOT=<file>`, never a step of `check` or `slow`, and it fetches
+  nothing: it cuts the blocks of Web IDL out of a snapshot of the HTML Standard and compares
+  them with `crates/webidl/data/whatwg/html-idl.html` byte for byte; it trusts a snapshot
+  file a person fetched from the address `SOURCE` names, and refuses one whose sha256 is not
+  `SOURCE`'s `snapshot-sha256`). `taskfiles/slowest-tests.sh` is no task's own: `task test`, `task test-tls`
   and `task conform-rust` call it, each on a copy of its own of nextest's report, and `task
   view-test` on the JUnit report Playwright writes for it alone. Four tasks of the root
   `Taskfile.yml` run a script of their own, so that their tests run it with `sh` and start no
@@ -190,6 +196,11 @@ above, and the list of standards itself was written from memory.
   prints that release; `.github/workflows/check.yml` and `release.yml` read the channel and the
   components from it and name no release of their own. A `RUSTUP_TOOLCHAIN` in the environment
   wins over the file; `task check-runner` unsets it.
+- `rustfmt.toml`: the one configuration of `rustfmt`, `edition = "2024"`, the edition every
+  crate names, so `cargo fmt` formats as without it. The generator of the DOM bindings names
+  it with `--config-path`, so no `rustfmt.toml` above the checkout and none of a user's
+  configuration directory changes the bytes of `crates/script/src/bindings.rs`; its sha256 is
+  in that file's header.
 - `spec/scenarios/*.yaml`: forty-four authored scenario files (`ess-scenario/6`), for what
   synthesis does not write. Two cover the flows synthesis refuses (the page load that commits and the one that
   fails); both also read the request's address back from `Requests`. The third,
@@ -1008,12 +1019,16 @@ above, and the list of standards itself was written from memory.
     `entities_table` 2, `inventory` 4, `readers` 2, `tree_format` 2).
   - `crates/webidl` (`surf-webidl`, tooling, not shipped: a library only, and no crate depends
     on it): reads the Web IDL of the DOM Standard and of the Web IDL Standard into a model.
-    `data/whatwg/` holds both pages unchanged, each a commit snapshot (`dom.html`, commit
-    `e4f4f4f0ace83fe6c52ab68e047351ce7f2dcd69`, Last Updated 15 November 2026; `webidl.html`,
-    commit `54a5f2de6a34e27a517a49370bc07d8943b0be11`, Last Updated 14 November 2026; CC BY
-    4.0), with a `SOURCE` file naming each file's address, commit, date, licence, copyright,
-    index lines and sha256; `data/.gitattributes` (`* -text`); the two pages are never
-    edited. `read_page` parses a page with `surf-html` and takes the text of every `pre`
+    `data/whatwg/` holds three files of commit snapshots (CC BY 4.0): two pages copied
+    unchanged (`dom.html`, commit `e4f4f4f0ace83fe6c52ab68e047351ce7f2dcd69`, Last Updated 15
+    November 2026; `webidl.html`, commit `54a5f2de6a34e27a517a49370bc07d8943b0be11`, Last
+    Updated 14 November 2026) and one cut, `html-idl.html`: the 213 blocks of Web IDL of the
+    HTML Standard's snapshot (commit `546d834701d171e3b164da8463d62878deb1e954`, Last Updated
+    23 November 2026), byte for byte, not the page, which `task webidl-html-cut` makes again
+    from a snapshot file and compares. A `SOURCE` file names each file's address, commit,
+    date, licence, copyright, index lines or the cut's rule, and sha256; `data/.gitattributes`
+    (`* -text`); none of the three is edited by hand. `read_page` parses a page with
+    `surf-html` and takes the text of every `pre`
     element after the `h2` whose `id` is `idl-index`, up to the next `h2` (each page has one
     such `pre`: 673 lines of the DOM, 57 of Web IDL); `read` lexes and parses such a text.
     Every construct it does not know fails as `<file>:<line>: refused: <construct>`, the line
@@ -1719,6 +1734,17 @@ release (`ess toolchain which` says which release runs and why; seen with ess 0.
   planted defect of `conformance/` over the whole suite and compares the list it writes,
   `.out/noticed.txt`, with `conformance/tests/noticed.txt` byte for byte; it needs no
   `openssl`, and `task conform-slow` runs it alone after a change to a source of the list.
+  Its step `webidl-slow` (`taskfiles/webidl.yml`) builds and runs the binary `bindings` of
+  `surf-webidl` and compares what it writes with `crates/script/src/bindings.rs` byte for
+  byte; it needs no `openssl`. No list of files triggers it: `webidl-check` holds what decides
+  those bytes (the digests in the header, among them `crates/html/Cargo.toml` and
+  `rustfmt.toml`; and `Cargo.lock`, read and no manifest, holds one `surf-html` without source
+  and dependencies and one `surf-webidl` without source depending on `surf-html` alone, so
+  the lock decides nothing; `task lock-check` and every `--locked` build hold the lock to the
+  manifests), and a test of `surf-webidl` compares what `surf-html` reads of the pages with
+  the header. A digest line recomputed by hand passes `webidl-check`; this byte compare is the
+  check against that. It stays
+  the full regeneration with a byte compare, run by hand like the other steps of `task slow`.
 - `task view-test`: the page tests in a browser (`taskfiles/view-test.yml`), the page step,
   within a budget of 120 s of its own (`story:page-test-step-within-budget`). It removes
   `.out/page-step.seconds`, builds `surf-agent`, `surf-session` and `surf-view-fixture`, and

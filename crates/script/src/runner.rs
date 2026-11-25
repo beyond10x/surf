@@ -8,10 +8,15 @@ use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use surf_html::Tree;
+use surf_html::limits::Limit;
 use swell::{
-    Agent, AgentState, CreateError, ErrorKind, HookCx, Host, HostError, InterruptHandle, Job,
-    Limits, LoadRequest, ObjectRef, Outcome, Parsed, Realm, Root, Seeds, Source, Termination,
+    Abrupt, Agent, AgentState, Completion, CreateError, ErrorKind, GlobalObjects, GlobalSetup,
+    HookCx, Host, HostError, InterruptHandle, Job, Limits, LoadRequest, ObjectRef, Outcome, Parsed,
+    Realm, RealmRef, Root, Seeds, Source, Termination, Value,
 };
+
+use crate::bindings::{self, Dom, DomState, Slices};
 
 /// The host errors that are no fault of the engine (swell's `HostError` at `0.8.0` but
 /// `Faulted`): a stale or foreign handle, a value of the wrong kind, the module errors and an
@@ -147,6 +152,9 @@ impl Mode {
 /// The host value of the runner's agent: the hooks of Q6.
 pub struct ScriptHost {
     clock: Clock,
+    /// The DOM bindings of a document's runner ([`run_document`]); `None` for a runner
+    /// without a document.
+    pub(crate) dom: Option<Box<Dom>>,
 }
 
 enum Clock {
@@ -163,7 +171,12 @@ impl ScriptHost {
                 next: TEST_CLOCK_START,
             },
         };
-        Self { clock }
+        Self { clock, dom: None }
+    }
+
+    /// The document of a runner with the DOM bindings, `None` for one without.
+    pub fn document(&self) -> Option<&DomState> {
+        self.dom.as_deref().map(|dom| &dom.state)
     }
 
     /// What `host_system_utc_epoch_nanoseconds` answers now (Q6).
@@ -310,8 +323,10 @@ pub struct Site {
 pub struct ScriptError {
     pub kind: ScriptErrorKind,
     /// The own `message`, decoded from UTF-16 with unpaired surrogates replaced and cut to its
-    /// first [`MESSAGE_CHARS`] characters; `None` for a value that is no error object or an
-    /// error without a String `message`.
+    /// first [`MESSAGE_CHARS`] characters; for a `DOMException`, `<name>: <message>` from its
+    /// data, cut the same; `None` for a value that is no error object or an error without a
+    /// String `message`, and for a `DOMException` whose read an interrupt set after the throw
+    /// or the memory budget ended.
     pub message: Option<String>,
     /// `None` when swell names no site: a throw raised outside any ECMAScript frame.
     pub site: Option<Site>,
@@ -398,13 +413,54 @@ where
     R: Send,
     F: FnOnce(&mut Runner) -> R + Send,
 {
+    run_on(limits, mode, None::<fn() -> Document>, body)
+}
+
+/// The document of a runner with the DOM bindings: its tree, the limits of the parser it was
+/// parsed under, which every write of a script is held to, and the slices.
+pub struct Document {
+    pub tree: Tree,
+    pub limits: surf_html::limits::Limits,
+    pub slices: Slices,
+}
+
+/// Runs `body` as [`run`] does, with a runner whose realm has the DOM bindings of the document
+/// `document` makes on the runner's thread: the global object is a `Window`, and the realm's
+/// setup defines the interface objects and the global's members in a `with_cx` right after
+/// `create_realm`, outside the runner's totals and before the first script.
+pub fn run_document<R, D, F>(
+    limits: RunnerLimits,
+    mode: Mode,
+    document: D,
+    body: F,
+) -> Result<R, RunnerError>
+where
+    R: Send,
+    D: FnOnce() -> Document + Send,
+    F: FnOnce(&mut Runner) -> R + Send,
+{
+    run_on(limits, mode, Some(document), body)
+}
+
+fn run_on<R, D, F>(
+    limits: RunnerLimits,
+    mode: Mode,
+    document: Option<D>,
+    body: F,
+) -> Result<R, RunnerError>
+where
+    R: Send,
+    D: FnOnce() -> Document + Send,
+    F: FnOnce(&mut Runner) -> R + Send,
+{
     let stack_bytes = limits.stack_bytes();
     thread::scope(|scope| {
         let thread = thread::Builder::new()
             .name("surf-script".to_string())
             .stack_size(stack_bytes)
             .spawn_scoped(scope, move || {
-                let mut runner = Runner::new(limits, mode, stack_bytes)?;
+                let document = document.map(|make| make());
+                let mut runner = Runner::new(limits, mode, stack_bytes, document)?;
                 Ok(body(&mut runner))
             })
             .map_err(RunnerError::Thread)?;
@@ -500,14 +556,31 @@ pub struct Runner {
     collections: u32,
     memory_ends: u32,
     faulted: bool,
+    /// The steps of the script's entry, read in [`Runner::error`] before the read of a
+    /// `DOMException`'s data, whose engine calls begin entries of their own.
+    thrown_steps: Option<u64>,
 }
 
 impl Runner {
-    fn new(limits: RunnerLimits, mode: Mode, stack_bytes: usize) -> Result<Self, RunnerError> {
+    fn new(
+        limits: RunnerLimits,
+        mode: Mode,
+        stack_bytes: usize,
+        document: Option<Document>,
+    ) -> Result<Self, RunnerError> {
         let seeds = mode.seeds().map_err(RunnerError::Seeds)?;
         let mut agent =
             Agent::new(ScriptHost::new(mode), limits.engine, seeds).map_err(RunnerError::Agent)?;
-        let realm = match agent.create_realm(None, None) {
+        let mut window = |cx: &mut HookCx<'_, ScriptHost>, realm: RealmRef| {
+            let global = cx
+                .new_host_object(bindings::window_spec(realm))
+                .map_err(|_| Abrupt::Terminated(Termination::EngineFault))??;
+            Completion::Ok(GlobalObjects { global, this: None })
+        };
+        let setup: Option<GlobalSetup<'_, ScriptHost>> = document
+            .as_ref()
+            .map(|_| &mut window as GlobalSetup<'_, ScriptHost>);
+        let realm = match agent.create_realm(setup, None) {
             Ok(Outcome::Normal(realm)) => realm,
             Ok(other @ (Outcome::Throw(_) | Outcome::Terminated(_))) => {
                 return Err(RunnerError::Realm(format!("{other:?}")));
@@ -516,6 +589,9 @@ impl Runner {
                 return Err(RunnerError::Realm(format!("{error:?}")));
             }
         };
+        if let Some(document) = document {
+            install(&mut agent, &realm, document)?;
+        }
         let clock = WallClock::new(agent.interrupt_handle()).map_err(RunnerError::Thread)?;
         Ok(Self {
             clock,
@@ -528,6 +604,7 @@ impl Runner {
             collections: 0,
             memory_ends: 0,
             faulted: false,
+            thrown_steps: None,
         })
     }
 
@@ -556,7 +633,12 @@ impl Runner {
         self.clock.before_script(self.limits.wall_clock);
         self.scripts = self.scripts.saturating_add(1);
         let end = self.run_script(source);
-        match self.agent.last_entry_steps() {
+        let end = self.document_end(end);
+        let steps = match self.thrown_steps.take() {
+            Some(steps) => Ok(steps),
+            None => self.agent.last_entry_steps(),
+        };
+        match steps {
             Ok(steps) => self.steps = self.steps.saturating_add(steps),
             // A faulted agent answers no count; the script's end says `faulted`.
             Err(HostError::Faulted | surf_defect!()) => {}
@@ -572,6 +654,44 @@ impl Runner {
             _ => {}
         }
         end
+    }
+
+    /// Decision 10 of `story:webidl-bindings`, as ruled in its fix round 1: when the bindings
+    /// recorded a limit during the entry (`bindings::end_with_limit`), that limit is the
+    /// script's end, in the words of Q4's column `outcome when reached`, whatever swell
+    /// answered: `Terminated(Interrupted)` (the answer `end_with_limit` makes), a throw, a
+    /// normal end, or `StepBudget`. Two ends keep their own word: `limit: memory`, whose
+    /// collection and count the runner needs (Q4's row "after `Terminated(MemoryBudget)`"), and
+    /// `faulted`, after which the agent answers nothing. The record is cleared and the
+    /// interrupt withdrawn after every script that recorded one, so the next script inherits
+    /// neither.
+    fn document_end(&mut self, end: ScriptEnd) -> ScriptEnd {
+        let Some(dom) = self.agent.host_mut().dom.as_deref_mut() else {
+            return end;
+        };
+        let Some(limit) = dom.state.take_limit() else {
+            return end;
+        };
+        self.agent.interrupt_handle().clear();
+        match end {
+            ScriptEnd::Limit(Reason::Memory) | ScriptEnd::Faulted => return end,
+            ScriptEnd::Ran
+            | ScriptEnd::Threw(_)
+            | ScriptEnd::Refused(_)
+            | ScriptEnd::Limit(_)
+            | ScriptEnd::NotRun(_) => {}
+        }
+        match limit {
+            Limit::Nodes => ScriptEnd::Limit(Reason::Nodes),
+            Limit::Depth => ScriptEnd::Limit(Reason::Depth),
+            Limit::Attributes => ScriptEnd::Limit(Reason::Attributes),
+            Limit::StoredBytes => ScriptEnd::Limit(Reason::StoredBytes),
+            // The limits of the parser's input and of its steps: no member of
+            // `story:webidl-bindings` records these two, and Q4 gives them no word for a
+            // script, so the end is the interrupt's. The first story with a member that writes
+            // into the tree gives each a word of Q4 or shows that no write reaches it.
+            Limit::InputBytes | Limit::Steps => ScriptEnd::Limit(Reason::WallClock),
+        }
     }
 
     /// The parse and the run of one script, and its end.
@@ -611,8 +731,10 @@ impl Runner {
         }
     }
 
-    /// What a thrown value or a parse error holds, read without running code (Q16).
-    fn error(&self, value: &Root) -> ScriptError {
+    /// What a thrown value or a parse error holds, read without running code (Q16). In a
+    /// document's runner a `DOMException`'s message is `<name>: <message>` from the exception's
+    /// own data ([`Runner::exception_text`]).
+    fn error(&mut self, value: &Root) -> ScriptError {
         let (kind, message) = match self.agent.error_summary(value) {
             Ok(Some(summary)) => (
                 error_kind(summary.kind),
@@ -624,11 +746,49 @@ impl Runner {
             // `Throw`. Read as a thrown value with nothing known of it.
             Err(HostError::Faulted | surf_defect!()) => (ScriptErrorKind::Value, None),
         };
+        // The site first: the read of an exception's data below is an entry of its own, after
+        // which `last_entry_error_site` answers nothing.
+        let site = self.site();
+        let message = match kind {
+            ScriptErrorKind::Error => {
+                // The steps first too: that read's engine calls begin entries of their own.
+                if let Ok(steps) = self.agent.last_entry_steps() {
+                    self.thrown_steps = Some(steps);
+                }
+                self.exception_text(value).or(message)
+            }
+            ScriptErrorKind::EvalError
+            | ScriptErrorKind::RangeError
+            | ScriptErrorKind::ReferenceError
+            | ScriptErrorKind::SyntaxError
+            | ScriptErrorKind::TypeError
+            | ScriptErrorKind::UriError
+            | ScriptErrorKind::Value => message,
+        };
         ScriptError {
             kind,
             message,
-            site: self.site(),
+            site,
         }
+    }
+
+    /// The `<name>: <message>` of a `DOMException` a script threw and did not catch, cut to
+    /// [`MESSAGE_CHARS`] characters (Q16, as ruled in fix round 1 of `story:webidl-bindings`; no
+    /// longer prefix is copied), read from its data in a `with_cx` that runs no code
+    /// (`bindings::exception_text`); `None` for a runner without a document and for any other
+    /// value, and when the read ends early: the memory budget spent by the read, or an
+    /// interrupt set after the throw, which the read's first engine call takes. The record is
+    /// then an `Error` without a message.
+    fn exception_text(&mut self, value: &Root) -> Option<String> {
+        self.agent.host().dom.as_ref()?;
+        let text = self
+            .agent
+            .with_cx(&self.realm, |cx| {
+                let value = cx.get(value).ok()?;
+                bindings::exception_text(cx, value, MESSAGE_CHARS)
+            })
+            .ok()??;
+        Some(text.chars().take(MESSAGE_CHARS).collect())
     }
 
     /// Where the error the last entry answered arose.
@@ -688,6 +848,38 @@ impl Runner {
     /// first script may use it.
     pub fn agent_and_realm(&mut self) -> (&mut Agent<ScriptHost>, &Realm) {
         (&mut self.agent, &self.realm)
+    }
+}
+
+/// The realm's setup of a document's runner: the interface objects and the global's members,
+/// defined in one `with_cx` right after `create_realm` (`bindings::install`), the bindings then
+/// held by the host.
+fn install(
+    agent: &mut Agent<ScriptHost>,
+    realm: &Realm,
+    document: Document,
+) -> Result<(), RunnerError> {
+    let failed = |what: String| RunnerError::Realm(format!("the DOM bindings: {what}"));
+    let interrupt = agent.interrupt_handle();
+    let global = agent
+        .global_object(realm)
+        .map_err(|error| failed(format!("{error:?}")))?;
+    let dom = Dom::new(
+        DomState::new(document.tree, document.limits, interrupt),
+        document.slices,
+    );
+    let answer = agent.with_cx(realm, |cx| {
+        let realm_ref = cx.realm_ref(realm).map_err(|error| format!("{error:?}"))?;
+        let global = match cx.get(&global) {
+            Ok(Value::Object(global)) => global,
+            other => return Err(format!("the global object: {other:?}")),
+        };
+        bindings::install(cx, realm_ref, global, dom).map_err(|abrupt| format!("{abrupt:?}"))
+    });
+    match answer {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(what)) => Err(failed(what)),
+        Err(error) => Err(failed(format!("{error:?}"))),
     }
 }
 

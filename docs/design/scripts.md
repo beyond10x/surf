@@ -255,11 +255,14 @@ One agent per document (Q5). The agent's seven limits are fixed when it is creat
 `Agent::new`), so a limit of the document is held between two scripts: after each script surf
 adds `last_entry_steps()` to the document's total and counts the script, and a later script
 starts only while each total is under its limit. A DOM write over a parser limit ends its script
-through the agent's interrupt: the bindings note the limit's word in the host value, set the
-`InterruptHandle` (`crates/swell/src/host/agent.rs:359 @ 0.8.0`) and return; the entry ends in
-`Terminated(Interrupted)` at the engine's next read of the flag, the way an interrupt set by a
-hook ends `eval` (HOST-168, `conformance/host/requirements.txt:168 @ 0.8.0`), so a `try` in the
-script does not catch it, and the session records the noted word, not `wall-clock`.
+where it is reached: the bindings note the limit's word in the host value, set the
+`InterruptHandle` (`crates/swell/src/host/agent.rs:359 @ 0.8.0`) and read it at once with
+`Cx::charge_steps`, which ends the run in `Terminated(Interrupted)` (HOST-177,
+`conformance/host/requirements.txt:177 @ 0.8.0`) and clears the flag; the termination is sticky
+for the run (HOST-72), so no `catch` and no `finally` of the script runs after the limit. The
+session records the noted word, not `wall-clock`, whatever the entry answered, but for `limit:
+memory` and `faulted`, which keep their own word; the note is cleared and the interrupt withdrawn
+after the entry (`Runner::document_end`, `bindings::end_with_limit`).
 
 The basis, from the probe `swell-limits` with the limits of Q4 (Q5 names the stack), run on the
 workstation on 2026-11-24 unless a line says the build node. `R` below is `.out/probes/swell-limits/target/release/swell-limits-probe`,
@@ -332,7 +335,9 @@ and `Cx::to_rust_string_lossy` (`crates/swell/src/host/mod.rs:504-513 @ 0.8.0`, 
 every argument (Web IDL's conversions may run script) before it copies any String out of the
 engine, or charges the copy with `Cx::charge_host_bytes` before it makes it and drops the
 `HostBytes` with the copy; no uncharged copy of surf's is alive while script runs.
-`story:webidl-bindings` holds the rule with a test.
+`story:webidl-bindings` holds the rule with a test. A `DOMException` holds its `name` and
+`message` as the engine's Strings, which its host data lists in `trace`: they are on swell's heap
+and charged there, and surf keeps no copy of them.
 
 A test gives limits of its own, as swell's tests do (`crates/swell/tests/support/host.rs:70-80 @
 0.8.0`): the values above are the session's.
@@ -1182,7 +1187,10 @@ The most kept: the message is decoded from UTF-16, unpaired surrogates replaced,
 first 1,024 characters (Unicode scalar values), the bound the answer gives a field's value
 (`docs/agent-answer.md:304`); the cut is marked by the answer's quoting rules, not stored. The
 line and column are integers below 2^32. Nothing else of the error is read: no `stack`, no
-`name`, no own property but `message`.
+`name`, no own property but `message`. A `DOMException` the script did not catch, made by the
+bindings or by `new DOMException(...)`, is recorded with kind `Error` and the message `<name>:
+<message>` (`NotSupportedError: Node.appendChild is not supported: ...`), read from the
+exception's own data without running script and cut to the same 1,024 characters.
 
 How they reach an answer: through the record of Q7 (`error_kind`, `message`, `line`, `column`,
 `dynamic`) and the `scripts` lines of Q7, where the message is quoted as untrusted page text and
@@ -1232,7 +1240,10 @@ Settled: the fields (kind, message, line, column, `dynamic`) and their sources, 
   union `(DOMString or DOMString)`; the reader reads the whole union `(TrustedType or DOMString)`
   as `DOMString`. No value a script can make is a `TrustedHTML`, `TrustedScript` or
   `TrustedScriptURL` (none is generated), so every value converts as the union would convert it;
-  it stays a named deviation in the selection.
+  it stays a named deviation in the selection. A deviation of every `DOMString` argument of the
+  bindings, named once in the head of `selection.txt`: a lone surrogate reaches the slice as
+  U+FFFD, because the tree holds Rust strings, where Web IDL's `DOMString` keeps every code unit.
+  `DOMException`'s `name` and `message` reach no slice and keep every code unit.
 
 Settled: each of the four statements confirmed or corrected with its citation: HTML Standard 4.12.1.1 step 21 (snapshot `546d834701d171e3b164da8463d62878deb1e954`), The Cargo Book "Profiles" (fetched 2026-11-24), Apache License 2.0 section 4(d) with `NOTICE:1-2 @ 0.8.0`, and Trusted Types (Editor's Draft 18 November 2026) with DOM Standard 4.9 (snapshot `e4f4f4f0ace83fe6c52ab68e047351ce7f2dcd69`).
 

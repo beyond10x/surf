@@ -225,6 +225,7 @@ dependencies = [
 name = "surf-script"
 version = "0.1.0"
 dependencies = [
+ "surf-html",
  "surf-secret",
  "swell",
 ]

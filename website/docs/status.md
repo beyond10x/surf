@@ -18,14 +18,15 @@ On 2026-11-24, with ess 0.97.4, after round 2, which follows round 1 and wave 10
 plan, after the live view's control states and changed panel, after TLS 1.3 and `https:`, and
 after the cookie jar and `surf-agent help --for-agent`, and with the Web IDL reader
 `surf-webidl` (the gate run on `91f7ff1`, its tests counted again after it), and with the
-specification of scripts' ends (`story:scripts-spec`, its scenarios and tests counted on its
-tip):
+specification of scripts' ends (`story:scripts-spec`, its scenarios counted on its tip), and
+with the generated DOM bindings (`story:webidl-bindings`, its tests counted by the gate run on
+its tip `5dcedfb` on 2026-11-25):
 
 | what | value |
 |---|---|
 | specification | ESS 0.97.4, valid |
 | conformance scenarios | 221 of 221 pass, against the interpreter and against the Rust code |
-| tests | 2,168 passed and 3 ignored: 1,616 passed and the 3 ignored tests of `surf-script`, and 552 of the TLS crates |
+| tests | 2,272 passed and 3 ignored: 1,720 passed and the 3 ignored tests of `surf-script`, and 552 of the TLS crates |
 | agent tasks | 6 of 6 pass (`article`, `table`, `link`, `search`, `https`, `login`) |
 | live view | the panel "Now" lists a page's links, buttons and fields with their state; the panel `Changed by <action>` shows what the action changed; a typed password is shown as a count of bytes, never its value |
 | live view's page tests | 72 passed, in Chromium's headless shell |

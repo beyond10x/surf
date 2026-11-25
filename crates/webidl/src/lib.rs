@@ -2,8 +2,15 @@
 //! DOM Standard and Web IDL Standard into a model, and refuses every construct it does not know,
 //! naming the file and line, so that a newer index fails instead of being read wrong.
 //!
-//! `data/whatwg/` holds the two pages unchanged, each a commit snapshot, with `SOURCE` (address,
-//! commit, date, licence, the line count of each index and the sha256 of each file).
+//! The bindings (`story:webidl-bindings`): [`Selection`] reads `selection.txt`, the one table
+//! of the definitions generated and the slice of each member; [`extract_selected`] reads of
+//! the cut of the HTML Standard ([`cut_idl_blocks`]) only what the selection names
+//! ([`bindings_model`]); [`generate`] writes `crates/script/src/bindings.rs`, which the binary
+//! `bindings` formats and writes.
+//!
+//! `data/whatwg/` holds the two pages unchanged, each a commit snapshot, and the cut of a third,
+//! the HTML Standard (`html-idl.html`: its blocks of Web IDL, not the page), with `SOURCE`
+//! (address, commit, date, licence, the line count of each index and the sha256 of each file).
 //!
 //! # Reading
 //!
@@ -75,18 +82,30 @@
 
 #![forbid(unsafe_code)]
 
+use std::collections::{BTreeMap, BTreeSet};
+
 mod extract;
+mod generate;
+mod html;
 mod lexer;
 mod model;
 mod parser;
+mod prelude;
+mod selection;
 
 pub use extract::extract_index;
+pub use generate::{
+    Digest, FILE_DIGEST_LINE, RUST_PRELUDE, camel, fill_file_digest, generate, generate_bindings,
+    snake,
+};
+pub use html::{HTML_DEFINITIONS, HtmlIdl, Skipped, cut_idl_blocks, extract_selected};
 pub use model::{
     Argument, ConstValue, Counts, DefaultValue, Definition, DefinitionKind, DictionaryMember,
     ExtendedAttribute, ExtendedAttributeValue, IntegerSize, Member, MemberKind, Model, Reference,
     Type, TypeKind, Unresolved,
 };
 pub use parser::MAX_TYPE_DEPTH;
+pub use selection::{Note, Row, Selection, SelectionError, Slice};
 
 /// The names of the extended attributes the reader knows; every other one is refused.
 pub const EXTENDED_ATTRIBUTES: &[&str] = &[
@@ -188,4 +207,85 @@ pub fn read_page(bytes: &[u8], file: &str) -> Result<Page, ReadError> {
     let index = extract_index(bytes, file)?;
     let definitions = read(&index, file)?;
     Ok(Page { index, definitions })
+}
+
+/// The members `selection` names for each of [`HTML_DEFINITIONS`]: what
+/// [`extract_selected`] keeps of the HTML Standard.
+pub fn html_wanted(selection: &Selection) -> BTreeMap<String, BTreeSet<String>> {
+    HTML_DEFINITIONS
+        .iter()
+        .map(|name| {
+            let members = selection
+                .rows_of(name)
+                .filter(|row| !row.is_constructor() && !row.is_iterable())
+                .map(|row| row.member.clone())
+                .collect();
+            (name.to_string(), members)
+        })
+        .collect()
+}
+
+/// The model of the bindings: the IDL Indexes of the DOM Standard and of the Web IDL Standard,
+/// and of the HTML Standard's cut (`html-idl.html`, [`cut_idl_blocks`]) what `selection` names
+/// of [`HTML_DEFINITIONS`] ([`extract_selected`]), each file named by its name in
+/// `data/whatwg/`; with the model, what was read of the cut, and the Web IDL text read of each
+/// of the three files, in this order ([`ReadText`]).
+pub fn bindings_model(
+    dom: &[u8],
+    webidl: &[u8],
+    html: &[u8],
+    selection: &Selection,
+) -> Result<(Model, HtmlIdl, Vec<ReadText>), ReadError> {
+    let dom = read_page(dom, "dom.html")?;
+    let webidl = read_page(webidl, "webidl.html")?;
+    let extracted = extract_selected(html, "html-idl.html", &html_wanted(selection))?;
+    let mut definitions = dom.definitions;
+    definitions.extend(webidl.definitions);
+    definitions.extend(read(&extracted.text, "html-idl.html")?);
+    let texts = vec![
+        ReadText::new("dom.html", &dom.index),
+        ReadText::new("webidl.html", &webidl.index),
+        ReadText::new("html-idl.html", &extracted.text),
+    ];
+    Ok((Model::new(definitions)?, extracted, texts))
+}
+
+/// What the generator read of one file of `data/whatwg/` through `surf-html`: the Web IDL text
+/// ([`Page::index`], or [`HtmlIdl::text`] of the cut), as its count of bytes and its 64-bit
+/// FNV-1a ([`fnv1a_64`]). The header of `bindings.rs` holds one line per file
+/// ([`ReadText::line`]), so that a change of `surf-html` that changes what is read shows as a
+/// change of those lines, and one that does not changes nothing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReadText {
+    /// The file's path from the repository root.
+    pub path: String,
+    /// The bytes of the text read.
+    pub bytes: usize,
+    /// The FNV-1a of the text read.
+    pub fnv1a: u64,
+}
+
+impl ReadText {
+    /// The text `text` read of the file `file` of `data/whatwg/`.
+    pub fn new(file: &str, text: &str) -> ReadText {
+        ReadText {
+            path: format!("crates/webidl/data/whatwg/{file}"),
+            bytes: text.len(),
+            fnv1a: fnv1a_64(text.as_bytes()),
+        }
+    }
+
+    /// The line of the header of `bindings.rs`, after its `//! `: the FNV-1a in 16 lowercase
+    /// hex digits, the count of bytes and the path, two spaces apart.
+    pub fn line(&self) -> String {
+        format!("{:016x}  {}  {}", self.fnv1a, self.bytes, self.path)
+    }
+}
+
+/// The 64-bit FNV-1a hash of `bytes` (offset basis `0xcbf29ce484222325`, prime
+/// `0x100000001b3`).
+pub fn fnv1a_64(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, &byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+    })
 }
