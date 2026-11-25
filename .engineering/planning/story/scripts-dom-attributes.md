@@ -13,8 +13,6 @@ scope:
 - confidence: cited
   path: AGENTS.md
 - confidence: cited
-  path: README.md
-- confidence: cited
   path: crates/html/src/tree.rs
 - confidence: cited
   path: crates/html/tests/script_hook.rs
@@ -45,18 +43,8 @@ scope:
 - confidence: cited
   path: crates/webidl/src/prelude.rs
 - confidence: cited
-  path: docs/badges/make.sh
-- confidence: cited
-  path: docs/badges/tests.svg
-- confidence: cited
   path: docs/design/scripts.md
-- confidence: cited
-  path: website/docs/how-it-is-built.md
-- confidence: cited
-  path: website/docs/status.md
-- confidence: cited
-  path: website/docs/what-works.md
-revision: 44
+revision: 45
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 13}
 ---
