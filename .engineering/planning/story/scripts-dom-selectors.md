@@ -29,7 +29,7 @@ scope:
   path: crates/webidl/selection.txt
 - confidence: cited
   path: docs/design/scripts.md
-revision: 35
+revision: 36
 transitions:
 - {from: "draft", to: "proposed", at: "2026-11-24T10:46:13Z", actor: "human:operator", revision: 13}
 ---
@@ -456,7 +456,8 @@ slice keeps none), 7, 19 and 20 (charges), 14 and 15 (the test slice and the tab
    (its gate) + `n` (its chain) + 64 n (the memo, 2 x 512 x n / 16) + 512 n (the cells) = 577 n
    + 2 steps before the names, for elements without attributes. The sum over the chains 512
    down to 1, with the step that finds no element parent past the outermost, is 577 x 131,328
-   + 1,024 = 75,777,280 steps, 7.6 times the entry: the entry ends in the 36th candidate
+   + 1,024 = 75,777,280 steps, 7.6 times the entry: the entry ends in the 36th candidate, or
+   in the 35th when the glue and the parse of a long text have used more than 3,406 steps
    (35 candidates cost 577 x (512 x 35 - 595) + 69 = 9,996,594: 35 gates and 34 reaching
    steps), `limit: steps-per-script`, and the memos are never more than 524,288 bytes alive.
    Result: a `NodeList` costs 8 steps a node in the glue, charged for the whole list in one
@@ -465,8 +466,9 @@ slice keeps none), 7, 19 and 20 (charges), 14 and 15 (the test slice and the tab
    costs 2 steps in the slice and 8 in the glue, 10 in all, so a list of 1,048,576 elements
    costs 10,485,760 steps and the entry's step limit ends the call in the glue's charge,
    before a wrapper is made. The heap ends the call (`limit: memory`, while it wraps, at about
-   123,000 nodes, Context) only for a list of at least about 123,000 and at most 1,000,000
-   nodes. The slice's own `Vec<NodeId>` is at most 8 MiB of capacity (decision 6), each id
+   123,000 nodes, Context) only for a list of at least about 123,000 and below about
+   1,000,000 nodes (from there the step limit ends the call first). The slice's own
+   `Vec<NodeId>` is at most 8 MiB of capacity (decision 6), each id
    paid by its node's visit step. In the test profile a script runs 1,372,567 to 1,405,663
    steps per second (`docs/design/scripts.md:273-274 @ a14e3b0`, the same lines at `83e6b8a`;
    `:369 @ f463e24`, a commit not on `main`, holds the same text), so 10,000,000 steps take
@@ -980,18 +982,25 @@ merge commit or a later one, because acceptance 1a holds the work until the read
    names the public surfaces that the epic keeps out of a story's recorded scope).
    The change of `reads.rs` is visibility and the lifetime only (decision 17). This command,
    run in zsh or bash at the tip, prints nothing and exits 0: the lines the diff removes equal
-   the lines it adds once `pub(super) ` is taken out of the added lines, `Reads<'a>` and
-   `Reads<'_>` are read as `Reads` and `&'a str` as `&'static str`:
+   the lines it adds once `pub(super)` and `<'a>` are taken out of the added lines, `Reads<'_>`
+   is read as `Reads` and `&'a str` as `&'static str`, and both sides lose their spaces, newlines
+   and commas, so that the layout does not count:
    ```
    b=$(git merge-base main HEAD); f=crates/script/src/dom/reads.rs
-   diff <(git diff -U0 "$b"..HEAD -- $f | sed -n 's/^-\([^-]\)/\1/p') \
+   diff <(git diff -U0 "$b"..HEAD -- $f | sed -n 's/^-\([^-]\)/\1/p' | tr -d ' \n,') \
         <(git diff -U0 "$b"..HEAD -- $f | sed -n 's/^+\([^+]\)/\1/p' \
-          | sed -e 's/pub(super) //' -e "s/Reads<'a>/Reads/" -e "s/Reads<'_>/Reads/" \
-                -e "s/&'a str/\&'static str/g")
+          | sed -e 's/pub(super)//g' -e "s/<'a>//g" -e "s/Reads<'_>/Reads/g" \
+                -e "s/&'a str/\&'static str/g" | tr -d ' \n,')
    ```
-   At `83e6b8a` the lines it can touch are `reads.rs:120, 236, 241, 244, 252, 255, 269, 287`
-   and `303`; against a base that already holds some of them (the attributes story's three
-   tokens, if it merged first) the diff is smaller and the command still prints nothing.
+   Why: `reads.rs:269` (`positions`) and `:303` (`scan_for`) are 97 and 93 columns at `83e6b8a`
+   and pass 100 with `pub(super) ` added, so `cargo fmt` wraps them, one parameter a line with
+   a comma after the last; a comparison of lines would print them. The command reduces the old
+   and the wrapped signature of each to the same text (for `scan_for`:
+   `fnscan_for(cx:&mutDomCx<'_'_>node:NodeIdreads:Reads)->DomResult<Option<usize>>{`), and a
+   change of a token (a name, a type) shows. At `83e6b8a` the lines it can touch are
+   `reads.rs:120, 236, 241, 244, 252, 255, 269, 287` and `303`; against a base that already
+   holds some of them (the attributes story's three tokens, if it merged first) the diff is
+   smaller and the command still prints nothing.
 10. Public surfaces: the story changes, in its last commit and after merging `main`, every public
     surface its change makes false, each number taken from the `slot task check` log of its tip.
     These files change in the last commit, after merging `main`, from one gate log, and by the
@@ -1102,7 +1111,8 @@ merge commit or a later one, because acceptance 1a holds the work until the read
        `charge_steps(`, or when `children(` occurs in it anywhere but inside `Frames::next` (the
        test cuts the text of `Frames::next`, from its `fn next(` to the first line that is
        four spaces and a closing brace, asserts it holds `children(`, and asserts the rest of
-       the file holds none), so that `descendant_elements` cannot copy a child list itself. The
+       the file holds none, so the comments of `selector_reads.rs` never write that call: they
+       say "the child list"), so that `descendant_elements` cannot copy a child list itself. The
        implementor shows each failure red once, with a string added, and reports the output.
     b. Two pairs of texts, each pair valid and within the 512 simple selectors. First, one
        comment around `a` (`/*`, filler, `*/`, `a`), padded to 4,096 bytes in one text and to 16
@@ -1121,7 +1131,10 @@ merge commit or a later one, because acceptance 1a holds the work until the read
        over bare elements; `document.querySelector` of `[`, a name of 4,000 bytes and `]` over
        10 elements of 100 attributes each charges at least 10 x 100 x 250 = 250,000 steps (the
        name's bytes / 16 for each attribute passed; the scans add 10 x 25 and the visits and
-       gates 20), and without that charge it charges about 1,030.
+       gates 20), and without that charge it charges about 1,030. The same for equality
+       (`attribute_equals`): `document.querySelector` of `[`, a name of 4,000 bytes and `="v"]`
+       over the same 10 elements charges at least 250,000 steps, as no element has the
+       attribute and its value is never read; without the name's charge it charges about 1,030.
     d. `document.querySelector(".a")` over 100 elements whose `class` is 64 KiB of one-letter
        tokens (none is `a`) charges at least one step per 16 bytes and one per token of each
        value (at least 100 x (4,096 + 32,768) = 3,686,400); in quirks mode the same, the fold
@@ -1160,14 +1173,17 @@ merge commit or a later one, because acceptance 1a holds the work until the read
        - the type-name bytes of `test_compound`: 15f: from 999 to 249.
        - the walk's step for each node: 6a: about 1,010 for 1,000 elements, under 2,000.
        - `gate`'s step: 6a: the same, about 1,010.
-       - `next_ancestor`: 6b: 7,169 less the 503 steps of the chain is 6,666, under 7,000.
+       - `next_ancestor`: 6b: 7,169 and about 30 for the glue and the parse, less the 503 steps
+         of the chain, is about 6,696, under 7,000.
        - `memo`: 6d: 292,520 less 32,192 is 260,328, under 280,000; and 17h: about 530,900,
          under 560,000.
        - `cell`'s step: 6d: 292,520 less the 257,536 cells is 34,984, under 280,000.
        - the further simple selectors of `test_compound`: 17i: 3,700 for 1,000 elements,
          under 500,000.
-       - `attribute_count x (name bytes / 16)` of `has_attribute` and its kin: 15c, second
-         case: about 1,030, under 250,000.
+       - `attribute_count x (name bytes / 16)` of `has_attribute`: 15c, second case: from about
+         251,300 to about 1,030, under 250,000.
+       - the same charge of `attribute_equals`: 15c, third case: the same figures. (The charge
+         is a line of its own in each function, so each has its case.)
        Two charges are one step in a whole walk or chain, and no floor of this
        story is that close to its arithmetic: the step that finds the end of the walk, and the
        read of `next_ancestor` that finds no element parent. The report says they are not held.
