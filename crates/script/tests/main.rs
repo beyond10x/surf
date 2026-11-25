@@ -9,6 +9,7 @@ mod adversary_3;
 mod adversary_4;
 mod adversary_5;
 mod adversary_6;
+mod adversary_dom_reading;
 mod bindings;
 mod dom_attributes;
 mod dom_mutation;
