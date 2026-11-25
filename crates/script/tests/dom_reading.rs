@@ -1463,8 +1463,9 @@ check(document.lookupNamespaceURI(null) === HTML, "the document: its element's n
     );
 }
 
-/// `baseURI` charges a long `href` three times, one step per 64 bytes each: the walk that
-/// reads the `base` element's attributes, the parse, and the String it answers.
+/// `baseURI` charges a long `href` twice, one step per 64 bytes each: where it reads the value
+/// to parse it, and the String it answers. The walk that finds the `base` element passes the
+/// attributes' names and charges none of their bytes.
 #[test]
 fn base_uri_charges_its_href() {
     let spent = |bytes: usize| {
@@ -1478,7 +1479,10 @@ fn base_uri_charges_its_href() {
     };
     let (long, short) = (spent(64_000), spent(64));
     eprintln!("baseURI of a href of 64,000 bytes: {long} steps, of 64 bytes: {short}");
-    assert!(long >= short + 2_990, "{long} against {short}");
+    assert!(
+        (short + 1_990..short + 2_100).contains(&long),
+        "{long} against {short}"
+    );
 }
 
 /// The three deviations of `baseURI` are named in the note of its row.
@@ -1853,27 +1857,15 @@ fn steps_in_proportion() {
     assert!(position >= 999, "{position}");
 }
 
-/// A member that reads an element's attributes charges one step per attribute and per 64 bytes
-/// of them before it reads them: an attribute of 128,000 bytes costs at least 1,000 steps more
-/// than one of 64, in each member that scans or compares attribute lists.
+/// A member charges the attributes it reads, before it reads them. A scan for attributes by
+/// name (`getElementById` for `id`, `getElementsByClassName` for `class`, `namedItem` for `id`
+/// and `name`, `baseURI`'s walk for `href`) charges one step per 64 attributes it passes and one
+/// per 64 bytes of each value of those names, and nothing for the bytes of the others. A compare
+/// of whole lists (`isEqualNode`) or a scan by value (`lookupPrefix`) charges every attribute's
+/// bytes. Values of 128,000 bytes against 64, and 640 attributes against 2.
 #[test]
 fn attributes_are_charged_where_they_are_read() {
-    let reads = [
-        ("getElementById", "document.getElementById(\"none\");"),
-        (
-            "getElementsByClassName",
-            "document.getElementsByClassName(\"c\");",
-        ),
-        ("namedItem", "all.namedItem(\"none\");"),
-        ("isEqualNode", "a.isEqualNode(b);"),
-        ("lookupPrefix", "a.lookupPrefix(\"urn:x\");"),
-        ("baseURI", "a.baseURI;"),
-    ];
-    let spent = |bytes: usize, read: &str| {
-        let value = "x".repeat(bytes);
-        let page = format!(
-            "<p id=\"a\" title=\"{value}\" class=\"c\"></p><p id=\"b\" title=\"{value}\" class=\"c\"></p>"
-        );
+    let spent = |page: String, read: &str| {
         with_page(limits(), page, info(), |runner| {
             ran(
                 runner,
@@ -1883,10 +1875,57 @@ fn attributes_are_charged_where_they_are_read() {
             steps(runner, read)
         })
     };
-    for (name, read) in reads {
-        let (long, short) = (spent(128_000, read), spent(64, read));
-        eprintln!("{name}: an attribute of 128,000 bytes {long} steps, of 64 bytes {short}");
+    // The long value is one the member reads: `title` of the two compared elements, and `id`,
+    // `name` and `class` of a third.
+    let read = |bytes: usize| {
+        let value = "x".repeat(bytes);
+        format!(
+            "<p id=\"a\" title=\"{value}\" class=\"c\"></p><p id=\"b\" title=\"{value}\" \
+             class=\"c\"></p><i id=\"{value}\" name=\"{value}\" class=\"{value}\"></i>"
+        )
+    };
+    for (name, source) in [
+        ("getElementById", "document.getElementById(\"none\");"),
+        (
+            "getElementsByClassName",
+            "document.getElementsByClassName(\"c\");",
+        ),
+        ("namedItem", "all.namedItem(\"none\");"),
+        ("isEqualNode", "a.isEqualNode(b);"),
+        ("lookupPrefix", "a.lookupPrefix(\"urn:x\");"),
+    ] {
+        let (long, short) = (spent(read(128_000), source), spent(read(64), source));
+        eprintln!("{name}: a value it reads of 128,000 bytes {long} steps, of 64 bytes {short}");
         assert!(long >= short + 1_000, "{name}: {long} against {short}");
+    }
+    // The long value is one the scans by name pass without reading it.
+    let passed = |bytes: usize| {
+        let value = "x".repeat(bytes);
+        format!(
+            "<p id=\"a\" title=\"{value}\" class=\"c\"></p><p id=\"b\" class=\"c\"></p>\
+             <i id=\"i\" name=\"i\" class=\"i\" data-x=\"{value}\"></i>"
+        )
+    };
+    // Many attributes: the names a scan passes.
+    let many = |count: usize| {
+        let names: String = (0..count).map(|k| format!(" data-k{k}")).collect();
+        format!("<p id=\"a\" class=\"c\"{names}></p><p id=\"b\" class=\"c\"></p>")
+    };
+    for (name, source) in [
+        ("getElementById", "document.getElementById(\"none\");"),
+        (
+            "getElementsByClassName",
+            "document.getElementsByClassName(\"c\");",
+        ),
+        ("namedItem", "all.namedItem(\"none\");"),
+        ("baseURI", "a.baseURI;"),
+    ] {
+        let (long, short) = (spent(passed(128_000), source), spent(passed(64), source));
+        eprintln!("{name}: a value it passes of 128,000 bytes {long} steps, of 64 bytes {short}");
+        assert!(long < short + 10, "{name}: {long} against {short}");
+        let (more, few) = (spent(many(640), source), spent(many(0), source));
+        eprintln!("{name}: 640 attributes {more} steps, 2 {few}");
+        assert!(more >= few + 10, "{name}: {more} against {few}");
     }
 }
 

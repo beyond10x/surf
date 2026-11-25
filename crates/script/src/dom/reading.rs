@@ -6,8 +6,10 @@
 //! charges one step per node it visits and one per 64 bytes of a String it builds, before the
 //! work, so a script over a large tree ends at its step limit and not at the wall clock. The
 //! walks keep their own list of nodes, so a deep tree does not deepen the call stack. A member
-//! that reads an element's attributes also charges one step per attribute and per 64 bytes of
-//! them, and its scan or compare of them is linear in those bytes.
+//! that looks for attributes by name charges one step per 64 attributes it passes and one per 64
+//! bytes of each value it reads or compares; one that reads attributes whole (a compare of two
+//! lists, a scan by value) charges one step per attribute and per 64 bytes of their names and
+//! values. Either is linear in what it charges.
 //!
 //! Strings. A String a member answers with more UTF-16 code units than the agent's
 //! `string_length` is the realm's `RangeError`; the bindings check every answer before the
@@ -167,7 +169,8 @@ impl SurfReading {
     /// longer than the URL parser reads, or gives a `data` or `javascript` URL gives the address.
     fn base_url(&self, cx: &mut DomCx<'_, '_>) -> DomResult<String> {
         let root = cx.tree().root();
-        let base = find(cx, root, Reads::Attributes, |tree, node| {
+        // The walk passes the attributes' names; the one `href` it reads is charged below.
+        let base = find(cx, root, Reads::Named(&[]), |tree, node| {
             html_element(tree, node, "base") && attribute(tree, node, "href").is_some()
         })?;
         let href = base.and_then(|base| attribute(cx.tree(), base, "href").map(str::to_string));
@@ -306,16 +309,6 @@ fn attribute<'t>(tree: &'t Tree, node: NodeId, name: &str) -> Option<&'t str> {
     }
 }
 
-/// The bytes of UTF-8 a UTF-16 code unit of a Rust string stands for: one to three, and two
-/// for each half of a surrogate pair (four for the pair).
-fn unit_bytes(unit: u16) -> usize {
-    match unit {
-        0..=0x7f => 1,
-        0x80..=0x7ff | 0xd800..=0xdfff => 2,
-        0x800..=0xd7ff | 0xe000..=0xffff => 3,
-    }
-}
-
 /// The data of character data: a text's, a comment's or a processing instruction's.
 fn character_data(tree: &Tree, node: NodeId) -> Option<&str> {
     match tree.data(node) {
@@ -333,12 +326,38 @@ fn character_data(tree: &Tree, node: NodeId) -> Option<&str> {
 enum Reads {
     /// The node's kind and names only: one step a node.
     Names,
-    /// Also the attributes: one step a node, plus [`attribute_steps`].
-    Attributes,
+    /// Also the attributes of the given names, found by name: one step a node, plus
+    /// [`named_steps`].
+    Named(&'static [&'static str]),
 }
 
-/// The steps of reading `node`'s attributes: one per attribute and one per 64 bytes of their
-/// names and values, so a scan or a compare over them is bounded by its charge.
+/// The steps of a scan of `node`'s attributes for those of `names` in no namespace: one per 64
+/// attributes passed, and one per 64 bytes of each value of those names, which the scan reads or
+/// compares. The bytes of the other attributes are not read and not charged.
+fn named_steps(tree: &Tree, node: NodeId, names: &[&str]) -> usize {
+    match tree.data(node) {
+        NodeData::Element { attributes, .. } => {
+            let values: usize = attributes
+                .iter()
+                .filter(|attribute| {
+                    attribute.namespace.is_none() && names.contains(&attribute.local_name.as_str())
+                })
+                .map(|attribute| attribute.value.len() / 64)
+                .sum();
+            attributes.len() / 64 + values
+        }
+        NodeData::Document
+        | NodeData::DocumentFragment
+        | NodeData::Doctype { .. }
+        | NodeData::Text(_)
+        | NodeData::Comment(_)
+        | NodeData::ProcessingInstruction { .. } => 0,
+    }
+}
+
+/// The steps of reading `node`'s attributes whole: one per attribute and one per 64 bytes of
+/// their names and values, so a compare of whole lists or a scan by value is bounded by its
+/// charge.
 fn attribute_steps(tree: &Tree, node: NodeId) -> usize {
     match tree.data(node) {
         NodeData::Element { attributes, .. } => {
@@ -370,7 +389,7 @@ fn find(
     while let Some(next) = pending.pop() {
         let steps = match reads {
             Reads::Names => 1,
-            Reads::Attributes => 1 + attribute_steps(cx.tree(), next),
+            Reads::Named(names) => 1 + named_steps(cx.tree(), next, names),
         };
         charge(cx, steps)?;
         let tree = cx.tree();
@@ -491,7 +510,7 @@ fn by_class_name(
     let mut matched_by = vec![0usize; wanted.len()];
     let mut element = 0usize;
     let mut folded = String::new();
-    select(cx, node, Reads::Attributes, |tree, next| {
+    select(cx, node, Reads::Named(&["class"]), |tree, next| {
         let Some(classes) = attribute(tree, next, "class") else {
             return false;
         };
@@ -521,7 +540,7 @@ fn by_id(cx: &mut DomCx<'_, '_>, node: NodeId, id: &str) -> DomResult<Option<Nod
     if id.is_empty() {
         return Ok(None);
     }
-    find(cx, node, Reads::Attributes, |tree, next| {
+    find(cx, node, Reads::Named(&["id"]), |tree, next| {
         next != node && attribute(tree, next, "id") == Some(id)
     })
 }
@@ -1448,22 +1467,21 @@ impl Reading for SurfReading {
     ) -> DomResult<Vec<u16>> {
         // DOM, "substring data", in UTF-16 code units: an offset or an end inside a surrogate
         // pair answers its lone half. The data is walked to the offset a unit at a time, and
-        // only the answer is allocated, up to `string_length` units; one step per 64 bytes of
-        // the data walked, the offset's and the answer's.
+        // only the answer is allocated, up to `string_length` units. Charged before the walk:
+        // one step per 64 of `offset + count`, at most the data's bytes, which bound the units
+        // the walk can pass (a unit stands for one byte of UTF-8 or more).
         let limit = cx.string_length();
-        let data = character_data(cx.tree(), this).unwrap_or_default();
         let offset = usize::try_from(offset).unwrap_or(usize::MAX);
         let count = usize::try_from(count).unwrap_or(usize::MAX);
+        let bytes = character_data(cx.tree(), this).map_or(0, str::len);
+        charge(cx, offset.saturating_add(count).min(bytes) / 64)?;
+        let data = character_data(cx.tree(), this).unwrap_or_default();
         let mut units = data.encode_utf16();
-        let mut walked = 0usize;
         let mut past_the_end = false;
         for _ in 0..offset {
-            match units.next() {
-                Some(unit) => walked += unit_bytes(unit),
-                None => {
-                    past_the_end = true;
-                    break;
-                }
+            if units.next().is_none() {
+                past_the_end = true;
+                break;
             }
         }
         let mut answer = Vec::new();
@@ -1474,11 +1492,9 @@ impl Reading for SurfReading {
                     over = true;
                     break;
                 }
-                walked += unit_bytes(unit);
                 answer.push(unit);
             }
         }
-        charge(cx, walked / 64)?;
         if past_the_end {
             return Err(DomEnd::Throw(DomException::new(
                 "IndexSizeError",
@@ -1697,9 +1713,9 @@ impl Reading for SurfReading {
         if name.is_empty() {
             return Ok(None);
         }
-        // One step per element visited and its attributes, before it is read.
+        // One step per element visited, and its `id` and `name` found by name, before it is read.
         for &node in this {
-            let steps = 1 + attribute_steps(cx.tree(), node);
+            let steps = 1 + named_steps(cx.tree(), node, &["id", "name"]);
             charge(cx, steps)?;
             let tree = cx.tree();
             if attribute(tree, node, "id") == Some(name.as_str())
